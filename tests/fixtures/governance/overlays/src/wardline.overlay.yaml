@@ -1,5 +1,5 @@
-# schema_version: 0.1
-$id: "https://wardline.dev/schemas/0.1/overlay.schema.json"
+# schema_version: 1.0
+$id: "https://wardline.dev/schemas/1.0/overlay.schema.json"
 
 overlay_for: "src/"
 

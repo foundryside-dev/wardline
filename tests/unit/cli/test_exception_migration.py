@@ -25,7 +25,7 @@ def _make_exceptions_file(tmp_path: Path, exceptions: list[dict[str, Any]]) -> P
     """Write a wardline.exceptions.json into tmp_path and return its path."""
     exc_path = tmp_path / "wardline.exceptions.json"
     data = {
-        "$id": "https://wardline.dev/schemas/0.1/exceptions.schema.json",
+        "$id": "https://wardline.dev/schemas/1.0/exceptions.schema.json",
         "exceptions": exceptions,
     }
     exc_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")

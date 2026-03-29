@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://wardline.dev/schemas/0.1/exceptions.schema.json",
+  "$id": "https://wardline.dev/schemas/1.0/exceptions.schema.json",
   "title": "Wardline Exception Register",
   "description": "Granted exceptions to wardline rule findings.",
   "type": "object",

@@ -405,7 +405,7 @@ def write_manifest(manifest: dict[str, dict]) -> None:
 
     out = {
         "version": "1.0",
-        "spec_version": "0.1",
+        "spec_version": "1.0",
         "corpus_hash": _compute_corpus_hash(Path(BASE)),
         "generated": __import__("datetime").date.today().isoformat(),
         "specimen_count": len(disk_entries),

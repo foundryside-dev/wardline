@@ -78,7 +78,7 @@ class TestCorpusSkeleton:
         manifest_path = CORPUS_ROOT / "corpus_manifest.json"
         data = json.loads(manifest_path.read_text(encoding="utf-8"))
         assert "spec_version" in data, "corpus_manifest.json missing spec_version"
-        assert data["spec_version"] == "0.1"
+        assert data["spec_version"] == "1.0"
 
     def test_corpus_manifest_has_corpus_hash(self) -> None:
         manifest_path = CORPUS_ROOT / "corpus_manifest.json"

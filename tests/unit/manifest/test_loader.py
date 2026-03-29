@@ -70,7 +70,7 @@ metadata:
     def test_manifest_with_id(self, tmp_path: Path) -> None:
         f = tmp_path / "wardline.yaml"
         f.write_text("""\
-"$id": "https://wardline.dev/schemas/0.1/wardline.schema.json"
+"$id": "https://wardline.dev/schemas/1.0/wardline.schema.json"
 tiers: []
 """)
         manifest = load_manifest(f)
@@ -325,7 +325,7 @@ class TestVersionCheck:
     def test_matching_version_accepted(self, tmp_path: Path) -> None:
         f = tmp_path / "wardline.yaml"
         f.write_text("""\
-"$id": "https://wardline.dev/schemas/0.1/wardline.schema.json"
+"$id": "https://wardline.dev/schemas/1.0/wardline.schema.json"
 tiers: []
 """)
         manifest = load_manifest(f)
@@ -637,7 +637,7 @@ class TestTemporalSeparationLoading:
 
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
-            '$id: "https://wardline.dev/schemas/0.1/wardline.schema.json"\n'
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"
@@ -661,7 +661,7 @@ class TestTemporalSeparationLoading:
 
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
-            '$id: "https://wardline.dev/schemas/0.1/wardline.schema.json"\n'
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"
@@ -681,7 +681,7 @@ class TestTemporalSeparationLoading:
 
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
-            '$id: "https://wardline.dev/schemas/0.1/wardline.schema.json"\n'
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
             "metadata:\n"
             "  organisation: test\n"
             "tiers:\n"
@@ -698,7 +698,7 @@ class TestTemporalSeparationLoading:
 
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
-            '$id: "https://wardline.dev/schemas/0.1/wardline.schema.json"\n'
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"
@@ -717,7 +717,7 @@ class TestTemporalSeparationLoading:
 
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
-            '$id: "https://wardline.dev/schemas/0.1/wardline.schema.json"\n'
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"
@@ -736,7 +736,7 @@ class TestTemporalSeparationLoading:
 
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
-            '$id: "https://wardline.dev/schemas/0.1/wardline.schema.json"\n'
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"

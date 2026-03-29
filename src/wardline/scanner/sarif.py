@@ -257,7 +257,7 @@ class SarifReport:
     """Holds scan results and produces SARIF v2.1.0 output."""
 
     findings: list[Finding] = field(default_factory=list)
-    tool_version: str = "0.1.0"
+    tool_version: str = "1.0.0"
     verification_mode: bool = False
     implemented_rule_ids: frozenset[RuleId] | None = None
     base_path: str | None = None

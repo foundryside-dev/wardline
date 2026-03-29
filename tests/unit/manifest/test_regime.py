@@ -101,7 +101,7 @@ class TestCollectManifestMetrics:
         """Fixture manifest: ratified 2026-03-01, interval 180 days."""
         m = collect_manifest_metrics(_FIXTURE_MANIFEST)
         assert m.governance_profile == "lite"
-        assert m.schema_version == "0.1"
+        assert m.schema_version == "1.0"
         assert m.ratification_date == "2026-03-01"
         # 2026-03-24 - 2026-03-01 = 23 days
         assert m.ratification_age_days == 23
@@ -112,7 +112,7 @@ class TestCollectManifestMetrics:
         """Ratification overdue when age >= interval."""
         # Create a manifest with old ratification date and short interval
         manifest_content = """\
-$id: "https://wardline.dev/schemas/0.1/wardline"
+$id: "https://wardline.dev/schemas/1.0/wardline"
 metadata:
   organisation: "test"
   ratified_by:

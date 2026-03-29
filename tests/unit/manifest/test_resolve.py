@@ -50,7 +50,7 @@ class TestResolveBoundaries:
         _write_overlay(
             overlay_dir / "wardline.overlay.yaml",
             (
-                '$id: "https://wardline.dev/schemas/0.1/overlay.schema.json"\n'
+                '$id: "https://wardline.dev/schemas/1.0/overlay.schema.json"\n'
                 "overlay_for: adapters\n"
                 "boundaries:\n"
                 '  - function: "Handler.handle"\n'
@@ -73,7 +73,7 @@ class TestResolveBoundaries:
         _write_overlay(
             rogue_dir / "wardline.overlay.yaml",
             (
-                '$id: "https://wardline.dev/schemas/0.1/overlay.schema.json"\n'
+                '$id: "https://wardline.dev/schemas/1.0/overlay.schema.json"\n'
                 "overlay_for: rogue\n"
                 "boundaries: []\n"
             ),
@@ -90,7 +90,7 @@ class TestResolveBoundaries:
         _write_overlay(
             overlay_dir / "wardline.overlay.yaml",
             (
-                '$id: "https://wardline.dev/schemas/0.1/overlay.schema.json"\n'
+                '$id: "https://wardline.dev/schemas/1.0/overlay.schema.json"\n'
                 "overlay_for: core\n"
                 "boundaries:\n"
                 '  - function: "Handler.handle"\n'
@@ -129,7 +129,7 @@ class TestResolveBoundaries:
         _write_overlay(
             overlay_dir / "wardline.overlay.yaml",
             (
-                '$id: "https://wardline.dev/schemas/0.1/overlay.schema.json"\n'
+                '$id: "https://wardline.dev/schemas/1.0/overlay.schema.json"\n'
                 "overlay_for: audit\n"
                 "boundaries: []\n"
             ),
@@ -147,7 +147,7 @@ class TestResolveBoundaries:
         _write_overlay(
             overlay_dir / "wardline.overlay.yaml",
             (
-                '$id: "https://wardline.dev/schemas/0.1/overlay.schema.json"\n'
+                '$id: "https://wardline.dev/schemas/1.0/overlay.schema.json"\n'
                 "overlay_for: adapters/partner\n"
                 "boundaries:\n"
                 '  - function: "Client.call"\n'
@@ -167,7 +167,7 @@ class TestResolveBoundaries:
         _write_overlay(
             overlay_dir / "wardline.overlay.yaml",
             (
-                '$id: "https://wardline.dev/schemas/0.1/overlay.schema.json"\n'
+                '$id: "https://wardline.dev/schemas/1.0/overlay.schema.json"\n'
                 "overlay_for: adapters\n"
                 "boundaries:\n"
                 '  - function: "Client.call"\n'
@@ -193,7 +193,7 @@ class TestResolveBoundaries:
         _write_overlay(
             overlay_dir / "wardline.overlay.yaml",
             (
-                '$id: "https://wardline.dev/schemas/0.1/overlay.schema.json"\n'
+                '$id: "https://wardline.dev/schemas/1.0/overlay.schema.json"\n'
                 "overlay_for: adapters\n"
                 "boundaries:\n"
                 '  - function: "Client.ingest"\n'
@@ -214,7 +214,7 @@ class TestResolveBoundaries:
         _write_overlay(
             overlay_dir / "wardline.overlay.yaml",
             (
-                '$id: "https://wardline.dev/schemas/0.1/overlay.schema.json"\n'
+                '$id: "https://wardline.dev/schemas/1.0/overlay.schema.json"\n'
                 "overlay_for: adapters\n"
                 "boundaries:\n"
                 '  - function: "Handler.handle"\n'

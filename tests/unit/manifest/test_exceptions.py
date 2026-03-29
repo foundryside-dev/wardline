@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 def _write_exceptions(path: Path, entries: list[dict]) -> None:
     data = {
-        "$id": "https://wardline.dev/schemas/0.1/exceptions.schema.json",
+        "$id": "https://wardline.dev/schemas/1.0/exceptions.schema.json",
         "exceptions": entries,
     }
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -64,7 +64,7 @@ class TestLoadExceptions:
         assert result[0].ast_fingerprint == "abcdef0123456789"
 
     def test_invalid_schema_raises(self, tmp_path: Path) -> None:
-        bad = {"$id": "https://wardline.dev/schemas/0.1/exceptions.schema.json", "exceptions": [{"bad": True}]}
+        bad = {"$id": "https://wardline.dev/schemas/1.0/exceptions.schema.json", "exceptions": [{"bad": True}]}
         (tmp_path / "wardline.exceptions.json").write_text(json.dumps(bad), encoding="utf-8")
         with pytest.raises(ManifestLoadError):
             load_exceptions(tmp_path)

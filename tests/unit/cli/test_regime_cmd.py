@@ -66,7 +66,7 @@ def _write_minimal_manifest(tmp_path: Path) -> Path:
     """Write a minimal valid wardline.yaml and return its path."""
     manifest_yaml = tmp_path / "wardline.yaml"
     manifest_yaml.write_text(
-        '$id: "https://wardline.dev/schemas/0.1/wardline"\n'
+        '$id: "https://wardline.dev/schemas/1.0/wardline"\n'
         "metadata:\n"
         "  organisation: test\n"
         "  ratified_by:\n"
@@ -100,7 +100,7 @@ def _write_tier_downgrade_fixture(tmp_path: Path) -> Path:
     """
     manifest_yaml = tmp_path / "wardline.yaml"
     manifest_yaml.write_text(
-        '$id: "https://wardline.dev/schemas/0.1/wardline"\n'
+        '$id: "https://wardline.dev/schemas/1.0/wardline"\n'
         "metadata:\n"
         "  organisation: test\n"
         "  ratified_by:\n"
@@ -229,7 +229,7 @@ class TestRegimeVerifyAllPass:
         # Add fingerprint baseline
         (tmp_path / "wardline.fingerprint.json").write_text(
             json.dumps({
-                "schema_version": "0.1",
+                "schema_version": "1.0",
                 "generated_at": "2026-03-22T00:00:00Z",
                 "python_version": "3.12",
                 "coverage": {
@@ -324,7 +324,7 @@ class TestRegimeVerifyGateOnUnconditionalException:
         # load_exceptions will reject this at schema validation.
         (tmp_path / "wardline.exceptions.json").write_text(
             json.dumps({
-                "$id": "https://wardline.dev/schemas/0.1/exceptions.schema.json",
+                "$id": "https://wardline.dev/schemas/1.0/exceptions.schema.json",
                 "exceptions": [
                     {
                         "id": "EXC-BAD",
@@ -417,7 +417,7 @@ class TestManifestMetricsFields:
 
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
-            '$id: "https://wardline.dev/schemas/0.1/wardline.schema.json"\n'
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
             "metadata:\n"
             "  organisation: test\n"
             "tiers:\n"
@@ -433,7 +433,7 @@ class TestManifestMetricsFields:
 
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
-            '$id: "https://wardline.dev/schemas/0.1/wardline.schema.json"\n'
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"
@@ -453,7 +453,7 @@ class TestManifestMetricsFields:
 
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
-            '$id: "https://wardline.dev/schemas/0.1/wardline.schema.json"\n'
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"
@@ -471,7 +471,7 @@ class TestManifestMetricsFields:
 
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
-            '$id: "https://wardline.dev/schemas/0.1/wardline.schema.json"\n'
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
             "metadata:\n"
             "  organisation: test\n"
             "tiers:\n"
@@ -498,7 +498,7 @@ class TestVerifyLiteGovernanceChecks:
     ) -> None:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
-            '$id: "https://wardline.dev/schemas/0.1/wardline.schema.json"\n'
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
             "metadata:\n"
             "  organisation: test\n"
             '  ratification_date: "2026-03-01"\n'
@@ -519,7 +519,7 @@ class TestVerifyLiteGovernanceChecks:
     ) -> None:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
-            '$id: "https://wardline.dev/schemas/0.1/wardline.schema.json"\n'
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  ratified_by:\n"
@@ -541,7 +541,7 @@ class TestVerifyLiteGovernanceChecks:
     ) -> None:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
-            '$id: "https://wardline.dev/schemas/0.1/wardline.schema.json"\n'
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"
@@ -563,7 +563,7 @@ class TestVerifyLiteGovernanceChecks:
     ) -> None:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
-            '$id: "https://wardline.dev/schemas/0.1/wardline.schema.json"\n'
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"
@@ -583,7 +583,7 @@ class TestVerifyLiteGovernanceChecks:
     ) -> None:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
-            '$id: "https://wardline.dev/schemas/0.1/wardline.schema.json"\n'
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
             "metadata:\n"
             "  organisation: test\n"
             "tiers:\n"

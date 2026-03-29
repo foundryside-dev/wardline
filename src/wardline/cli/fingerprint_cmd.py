@@ -154,7 +154,7 @@ def update(
     # --- Build baseline JSON ---
     python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
     baseline = {
-        "$id": "https://wardline.dev/schemas/0.1/fingerprint.schema.json",
+        "$id": "https://wardline.dev/schemas/1.0/fingerprint.schema.json",
         "python_version": python_version,
         "generated_at": datetime.now(UTC).isoformat(),
         "coverage": {

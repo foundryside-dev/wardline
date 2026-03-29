@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://wardline.dev/schemas/0.1/overlay.schema.json",
+  "$id": "https://wardline.dev/schemas/1.0/overlay.schema.json",
   "title": "Wardline Overlay",
   "description": "Local boundary declarations and rule tuning for a module directory.",
   "type": "object",

@@ -26,7 +26,7 @@ def _write_manifest(tmp_path: Path) -> Path:
     """Write a minimal valid wardline.yaml and return its path."""
     manifest_path = tmp_path / "wardline.yaml"
     manifest_path.write_text(
-        '$id: "https://wardline.dev/schemas/0.1/wardline"\n'
+        '$id: "https://wardline.dev/schemas/1.0/wardline"\n'
         "metadata:\n"
         "  organisation: test\n"
         "tiers:\n"
@@ -80,7 +80,7 @@ def _write_baseline(
     """Write a fingerprint baseline JSON."""
     py_ver = python_version or f"{sys.version_info.major}.{sys.version_info.minor}"
     baseline = {
-        "$id": "https://wardline.dev/schemas/0.1/fingerprint.schema.json",
+        "$id": "https://wardline.dev/schemas/1.0/fingerprint.schema.json",
         "python_version": py_ver,
         "generated_at": "2026-03-22T00:00:00+00:00",
         "coverage": coverage or {
@@ -915,7 +915,7 @@ def test_fingerprint_diff_old_baseline_missing_fields(
     real_hashes = _compute_real_hashes(src_dir)
     # Write an old-format baseline with "entries" key and missing fields
     old_baseline = {
-        "schema_version": "0.1",
+        "schema_version": "1.0",
         "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
         "generated_at": "2026-03-22T00:00:00+00:00",
         "coverage": {

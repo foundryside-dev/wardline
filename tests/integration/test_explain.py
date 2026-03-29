@@ -80,7 +80,7 @@ class TestExplainUndeclaredModule:
         manifest_file = tmp_path / "wardline.yaml"
         manifest_file.write_text(
             textwrap.dedent("""\
-                $id: "https://wardline.dev/schemas/0.1/wardline"
+                $id: "https://wardline.dev/schemas/1.0/wardline"
                 tiers:
                   - id: core
                     tier: 1
@@ -239,7 +239,7 @@ def _build_governance_fixture(tmp_path: Path, *, with_overlay: bool = False) -> 
     manifest_file = tmp_path / "wardline.yaml"
     manifest_file.write_text(
         textwrap.dedent("""\
-            $id: "https://wardline.dev/schemas/0.1/wardline"
+            $id: "https://wardline.dev/schemas/1.0/wardline"
             tiers:
               - id: "tier1-audit"
                 tier: 1
@@ -261,7 +261,7 @@ def _build_governance_fixture(tmp_path: Path, *, with_overlay: bool = False) -> 
     exceptions_file.write_text(
         json.dumps(
             {
-                "$id": "https://wardline.dev/schemas/0.1/exceptions.schema.json",
+                "$id": "https://wardline.dev/schemas/1.0/exceptions.schema.json",
                 "exceptions": [
                     {
                         "id": "EXC-001",
@@ -300,7 +300,7 @@ def _build_governance_fixture(tmp_path: Path, *, with_overlay: bool = False) -> 
         overlay_file = src_dir / "wardline.overlay.yaml"
         overlay_file.write_text(
             textwrap.dedent("""\
-                $id: "https://wardline.dev/schemas/0.1/overlay.schema.json"
+                $id: "https://wardline.dev/schemas/1.0/overlay.schema.json"
                 overlay_for: "src/"
                 boundaries:
                   - function: "fetch_data"
@@ -492,7 +492,7 @@ class TestExplainOverlay:
         )
         (tmp_path / "wardline.yaml").write_text(
             textwrap.dedent("""\
-                $id: "https://wardline.dev/schemas/0.1/wardline"
+                $id: "https://wardline.dev/schemas/1.0/wardline"
                 tiers:
                   - id: "tier4-external"
                     tier: 4
@@ -504,7 +504,7 @@ class TestExplainOverlay:
         )
         (src_api / "wardline.overlay.yaml").write_text(
             textwrap.dedent("""\
-                $id: "https://wardline.dev/schemas/0.1/overlay.schema.json"
+                $id: "https://wardline.dev/schemas/1.0/overlay.schema.json"
                 overlay_for: "src/api/"
                 boundaries:
                   - function: "something"
@@ -554,7 +554,7 @@ class TestExplainFingerprint:
 
         # Write a baseline that matches
         baseline = {
-            "schema_version": "0.1",
+            "schema_version": "1.0",
             "generated_at": "2026-03-22T00:00:00Z",
             "python_version": "3.12",
             "coverage": {
@@ -605,7 +605,7 @@ class TestExplainFingerprint:
 
         # Write a baseline with a wrong hash
         baseline = {
-            "schema_version": "0.1",
+            "schema_version": "1.0",
             "generated_at": "2026-03-22T00:00:00Z",
             "python_version": "3.12",
             "coverage": {
@@ -690,7 +690,7 @@ class TestExplainJson:
         assert entry is not None
 
         baseline = {
-            "schema_version": "0.1",
+            "schema_version": "1.0",
             "generated_at": "2026-03-22T00:00:00Z",
             "python_version": "3.12",
             "coverage": {

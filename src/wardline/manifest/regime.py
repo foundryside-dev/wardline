@@ -215,7 +215,7 @@ def collect_manifest_metrics(manifest_path: Path) -> ManifestMetrics:
 
     return ManifestMetrics(
         governance_profile=manifest.governance_profile,
-        schema_version="0.1",
+        schema_version="1.0",
         analysis_level=1,
         ratification_date=ratification_date,
         ratification_age_days=ratification_age_days,

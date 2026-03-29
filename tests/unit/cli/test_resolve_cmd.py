@@ -25,7 +25,7 @@ def _write_minimal_manifest(tmp_path: Path) -> Path:
     """Write a minimal valid wardline.yaml with no overlays."""
     manifest = tmp_path / "wardline.yaml"
     manifest.write_text(
-        '$id: "https://wardline.dev/schemas/0.1/wardline"\n'
+        '$id: "https://wardline.dev/schemas/1.0/wardline"\n'
         "metadata:\n"
         '  organisation: "test"\n'
         "tiers:\n"
@@ -46,7 +46,7 @@ def _write_manifest_with_overlay(tmp_path: Path) -> Path:
     """Write manifest + overlay under tmp_path."""
     manifest = tmp_path / "wardline.yaml"
     manifest.write_text(
-        '$id: "https://wardline.dev/schemas/0.1/wardline"\n'
+        '$id: "https://wardline.dev/schemas/1.0/wardline"\n'
         "metadata:\n"
         '  organisation: "test"\n'
         "tiers:\n"
@@ -73,7 +73,7 @@ def _write_manifest_with_overlay(tmp_path: Path) -> Path:
     overlay_dir.mkdir(parents=True, exist_ok=True)
     overlay_file = overlay_dir / "wardline.overlay.yaml"
     overlay_file.write_text(
-        '$id: "https://wardline.dev/schemas/0.1/overlay.schema.json"\n'
+        '$id: "https://wardline.dev/schemas/1.0/overlay.schema.json"\n'
         'overlay_for: "src/"\n'
         "boundaries:\n"
         '  - function: "validate_input"\n'

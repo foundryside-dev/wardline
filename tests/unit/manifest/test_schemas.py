@@ -40,7 +40,7 @@ class TestSchemaValidity:
     ) -> None:
         schema_id = schema.get("$id", "")
         assert isinstance(schema_id, str)
-        assert "0.1" in schema_id
+        assert "1.0" in schema_id
         assert schema_id.startswith("https://wardline.dev/schemas/")
 
     def test_schema_has_title(self, schema: dict[str, object]) -> None:

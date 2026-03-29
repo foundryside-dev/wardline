@@ -1,5 +1,5 @@
 {
-  "$id": "https://wardline.dev/schemas/0.1/exceptions.schema.json",
+  "$id": "https://wardline.dev/schemas/1.0/exceptions.schema.json",
   "exceptions": [
     {
       "id": "EXC-DC658B46",

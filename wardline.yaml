@@ -3,7 +3,7 @@
 # This file documents the tier assignment for every src/wardline/
 # sub-package, with rationale for Tier 3/4 assignments.
 
-$id: "https://wardline.dev/schemas/0.1/wardline.schema.json"
+$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"
 
 governance_profile: "lite"
 

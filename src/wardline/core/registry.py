@@ -7,7 +7,7 @@ from types import MappingProxyType
 
 from wardline.core.taints import TaintState
 
-REGISTRY_VERSION = "0.1"
+REGISTRY_VERSION = "1.0"
 
 # Import-time consistency check added after REGISTRY is constructed (below).
 

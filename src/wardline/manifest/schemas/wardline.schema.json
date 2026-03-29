@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://wardline.dev/schemas/0.1/wardline.schema.json",
+  "$id": "https://wardline.dev/schemas/1.0/wardline.schema.json",
   "title": "Wardline Root Manifest",
   "description": "Root trust topology and governance policy for a wardline-managed project.",
   "type": "object",

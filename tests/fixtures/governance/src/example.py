@@ -1,4 +1,4 @@
-# schema_version: 0.1
+# schema_version: 1.0
 from wardline.decorators import external_boundary, integral_read, validates_shape
 
 

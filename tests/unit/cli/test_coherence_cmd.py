@@ -62,7 +62,7 @@ def _write_minimal_manifest(
         for tid, tnum in tier_ids
     )
     manifest_yaml.write_text(
-        '$id: "https://wardline.dev/schemas/0.1/wardline"\n'
+        '$id: "https://wardline.dev/schemas/1.0/wardline"\n'
         "metadata:\n"
         "  organisation: test\n"
         f'governance_profile: "{governance_profile}"\n'
@@ -80,7 +80,7 @@ def _write_minimal_manifest(
         overlay_dir = tmp_path / "overlays" / "src"
         overlay_dir.mkdir(parents=True)
         (overlay_dir / "wardline.overlay.yaml").write_text(
-            '$id: "https://wardline.dev/schemas/0.1/overlay.schema.json"\n'
+            '$id: "https://wardline.dev/schemas/1.0/overlay.schema.json"\n'
             'overlay_for: "src/"\n'
             "boundaries:\n"
             f'  - function: "{overlay_function}"\n'
@@ -345,7 +345,7 @@ class TestCoherenceRestorationEvidenceGate:
         overlay_dir.mkdir(exist_ok=True)
         (overlay_dir / "__init__.py").write_text("")
         (overlay_dir / "wardline.overlay.yaml").write_text(
-            '$id: "https://wardline.dev/schemas/0.1/overlay.schema.json"\n'
+            '$id: "https://wardline.dev/schemas/1.0/overlay.schema.json"\n'
             'overlay_for: "src/"\n'
             "boundaries:\n"
             '  - function: "do_restore"\n'

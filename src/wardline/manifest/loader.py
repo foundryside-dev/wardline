@@ -37,7 +37,7 @@ from wardline.manifest.models import (
 _SCHEMA_DIR = Path(__file__).parent / "schemas"
 
 # Expected schema version — compared against document $id
-EXPECTED_SCHEMA_VERSION = "0.1"
+EXPECTED_SCHEMA_VERSION = "1.0"
 
 # File size limit: 1MB
 MAX_FILE_SIZE = 1_048_576

@@ -640,7 +640,7 @@ def _load_or_create(path: Path) -> dict[str, Any]:
         result: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
         return result
     return {
-        "$id": "https://wardline.dev/schemas/0.1/exceptions.schema.json",
+        "$id": "https://wardline.dev/schemas/1.0/exceptions.schema.json",
         "exceptions": [],
     }
 
