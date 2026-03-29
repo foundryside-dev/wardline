@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wardline-decorators"
-version = "0.4.0"
+version = "1.0.0"
 description = "Decorator library for wardline semantic boundary annotations"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
@@ -19,7 +19,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "wardline>=0.4.0",
+    "wardline>=1.0.0",
 ]
 keywords = [
     "security",
