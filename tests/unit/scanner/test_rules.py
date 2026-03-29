@@ -200,15 +200,11 @@ class TestDispatch:
         assert ("async_method", True) in rule.visited
 
 
-# ── ast.TryStar (except*) ────────────────────────────────────────
+# ── except* syntax ──────────────────────────────────────────
 
 
-class TestTryStar:
-    """ast.TryStar nodes are accessible — no hasattr guard needed."""
-
-    def test_try_star_node_exists(self) -> None:
-        """ast.TryStar is present in Python 3.12+."""
-        assert hasattr(ast, "TryStar")
+class TestExceptStar:
+    """except* syntax parses and rules visit the enclosing function."""
 
     def test_except_star_parseable(self) -> None:
         """except* syntax parses correctly."""

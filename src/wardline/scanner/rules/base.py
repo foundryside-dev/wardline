@@ -30,11 +30,6 @@ if TYPE_CHECKING:
 
 _GUARDED_METHODS = frozenset({"visit_FunctionDef", "visit_AsyncFunctionDef"})
 
-# Python 3.11 introduced ast.TryStar for ``except*``. Python 3.12 merged
-# it back into ast.Try, so TryStar may not exist. Cache at module level
-# to avoid repeated getattr() inside hot rule loops.
-_AST_TRY_STAR: type | None = getattr(ast, "TryStar", None)
-
 
 # ── Shared AST helpers ──────────────────────────────────────────
 
@@ -95,20 +90,9 @@ def receiver_name(node: ast.expr) -> str | None:
 
 
 def iter_exception_handlers(node: ast.AST) -> Iterator[ast.ExceptHandler]:
-    """Yield all ExceptHandler nodes under *node*, deduplicating TryStar.
-
-    Handles both regular ``try/except`` and Python 3.11+ ``try/except*``
-    (``ast.TryStar``). TryStar handlers are yielded when the TryStar
-    node is encountered; those same handlers are then skipped when
-    encountered again as children during the walk.
-    """
-    trystar_ids: set[int] = set()
+    """Yield all ExceptHandler nodes under *node*, skipping nested defs."""
     for child in walk_skip_nested_defs(node):
-        if _AST_TRY_STAR is not None and isinstance(child, _AST_TRY_STAR):
-            for handler in child.handlers:  # type: ignore[attr-defined]
-                trystar_ids.add(id(handler))
-                yield handler
-        elif isinstance(child, ast.ExceptHandler) and id(child) not in trystar_ids:
+        if isinstance(child, ast.ExceptHandler):
             yield child
 
 
