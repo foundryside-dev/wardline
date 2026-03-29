@@ -38,3 +38,44 @@ class TestCorpusVerifyIntegration:
         result = runner.invoke(cli, ["corpus", "verify", "--help"])
         assert result.exit_code == 0
         assert "--corpus-dir" in result.output
+
+
+@pytest.mark.integration
+class TestRealCorpusVerify:
+    """Run corpus verify against the real corpus/ directory."""
+
+    _CORPUS_ROOT = Path(__file__).parent.parent.parent / "corpus"
+
+    def test_real_corpus_verify_passes(self) -> None:
+        """corpus verify exits 0 on the real corpus."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["corpus", "verify", "--corpus-dir", str(self._CORPUS_ROOT)],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, (
+            f"corpus verify failed (exit {result.exit_code}):\n{result.output}"
+        )
+
+    def test_real_corpus_has_minimum_specimens(self) -> None:
+        """Real corpus has at least 200 specimens across rules."""
+        specimen_count = len(
+            list((self._CORPUS_ROOT / "specimens").glob("**/positive/*.py"))
+            + list((self._CORPUS_ROOT / "specimens").glob("**/negative/*.py"))
+        )
+        assert specimen_count >= 200, (
+            f"Only {specimen_count} specimen .py files — expected >= 200"
+        )
+
+    def test_real_corpus_covers_all_9_rules(self) -> None:
+        """Every PY-WL rule 001-009 has at least one specimen."""
+        specimens_dir = self._CORPUS_ROOT / "specimens"
+        for i in range(1, 10):
+            rule_dir = specimens_dir / f"PY-WL-{i:03d}"
+            assert rule_dir.is_dir(), f"Missing corpus directory for PY-WL-{i:03d}"
+            py_files = list(rule_dir.glob("**/*.py"))
+            assert len(py_files) >= 2, (
+                f"PY-WL-{i:03d} has only {len(py_files)} specimen .py files — "
+                f"expected >= 2 (at least one TP and one TN)"
+            )
