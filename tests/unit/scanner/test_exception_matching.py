@@ -381,3 +381,106 @@ def test_no_severity_drift_no_governance(tmp_path: Path) -> None:
         if g.rule_id == RuleId.GOVERNANCE_EXCEPTION_SEVERITY_DRIFT
     ]
     assert len(drift) == 0
+
+
+# ── Test 14: exception expiring today is still active ────────────────
+
+def test_expiry_on_today_still_active(tmp_path: Path) -> None:
+    """An exception whose expires == today's date is still active."""
+    source = "def my_func():\n    pass\n"
+    fpath = _write_source(tmp_path, "src/app.py", source)
+    fp = compute_ast_fingerprint(Path(fpath), "my_func", project_root=tmp_path)
+    assert fp is not None
+
+    finding = _make_finding(file_path=fpath)
+    exc = _make_exception(
+        location="src/app.py::my_func",
+        ast_fingerprint=fp,
+        expires="2026-03-23",  # same as NOW
+    )
+
+    processed, governance = apply_exceptions(
+        [finding], (exc,), tmp_path, now=NOW
+    )
+
+    assert len(processed) == 1
+    assert processed[0].severity == Severity.SUPPRESS
+    assert processed[0].exception_id == "EXC-001"
+
+
+# ── Test 15: recurrence_count == 3 also fires governance ─────────────
+
+def test_recurrence_count_three_fires_governance(tmp_path: Path) -> None:
+    """Higher recurrence counts (> 2) also emit governance."""
+    exc = _make_exception(recurrence_count=3)
+
+    processed, governance = apply_exceptions(
+        [], (exc,), tmp_path, now=NOW
+    )
+
+    recurring = [
+        g for g in governance
+        if g.rule_id == RuleId.GOVERNANCE_RECURRING_EXCEPTION
+    ]
+    assert len(recurring) == 1
+    assert "renewed 3 times" in recurring[0].message
+
+
+# ── Test 16: agent_originated=True → no unknown-provenance finding ────
+
+def test_agent_originated_true_no_unknown_provenance(tmp_path: Path) -> None:
+    """Known agent provenance does not emit UNKNOWN-PROVENANCE."""
+    exc = _make_exception(agent_originated=True)
+
+    processed, governance = apply_exceptions(
+        [], (exc,), tmp_path, now=NOW
+    )
+
+    provenance = [
+        g for g in governance
+        if g.rule_id == RuleId.GOVERNANCE_UNKNOWN_PROVENANCE
+    ]
+    assert len(provenance) == 0
+
+
+# ── Test 17: agent_originated=True + no expiry → no-expiry but not unknown-provenance ──
+
+def test_agent_originated_true_no_expiry(tmp_path: Path) -> None:
+    """Agent-originated without expiry emits no-expiry but not unknown-provenance."""
+    exc = _make_exception(agent_originated=True, expires=None)
+
+    processed, governance = apply_exceptions(
+        [], (exc,), tmp_path, now=NOW
+    )
+
+    provenance = [
+        g for g in governance
+        if g.rule_id == RuleId.GOVERNANCE_UNKNOWN_PROVENANCE
+    ]
+    assert len(provenance) == 0
+
+    no_expiry = [
+        g for g in governance
+        if g.rule_id == RuleId.GOVERNANCE_NO_EXPIRY_EXCEPTION
+    ]
+    assert len(no_expiry) == 1
+
+
+# ── Test 18: exception with all three governance triggers ────────────
+
+def test_compound_governance_findings(tmp_path: Path) -> None:
+    """Exception with recurrence + no expiry + unknown provenance emits all three."""
+    exc = _make_exception(
+        recurrence_count=2,
+        expires=None,
+        agent_originated=None,
+    )
+
+    processed, governance = apply_exceptions(
+        [], (exc,), tmp_path, now=NOW
+    )
+
+    rule_ids = {g.rule_id for g in governance}
+    assert RuleId.GOVERNANCE_RECURRING_EXCEPTION in rule_ids
+    assert RuleId.GOVERNANCE_NO_EXPIRY_EXCEPTION in rule_ids
+    assert RuleId.GOVERNANCE_UNKNOWN_PROVENANCE in rule_ids
