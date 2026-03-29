@@ -19,53 +19,59 @@ class _CombinationSpec:
     right: str
     severity: Severity
     rationale: str
+    spec_entry: int | None = None
 
 
 _CONTRADICTORY = Severity.ERROR
 _SUSPICIOUS = Severity.WARNING
 
 _COMBINATIONS: tuple[_CombinationSpec, ...] = (
-    _CombinationSpec("fail_open", "fail_closed", _CONTRADICTORY, "Mutually exclusive failure modes"),
+    _CombinationSpec("fail_open", "fail_closed", _CONTRADICTORY, "Mutually exclusive failure modes", spec_entry=1),
     _CombinationSpec(
         "fail_open",
         "integral_read",
         _CONTRADICTORY,
         "Tier 1 requires offensive programming; fail-open is structurally incompatible",
+        spec_entry=2,
     ),
-    _CombinationSpec("fail_open", "integral_writer", _CONTRADICTORY, "Audit writes must not silently degrade"),
+    _CombinationSpec("fail_open", "integral_writer", _CONTRADICTORY, "Audit writes must not silently degrade", spec_entry=3),
     _CombinationSpec(
         "fail_open",
         "integral_construction",
         _CONTRADICTORY,
         "Authoritative artefacts must not have fallback construction paths",
+        spec_entry=4,
     ),
-    _CombinationSpec("fail_open", "integrity_critical", _CONTRADICTORY, "Audit-critical paths must not have fallback paths"),
-    _CombinationSpec("external_boundary", "int_data", _CONTRADICTORY, "External and internal data sources are mutually exclusive"),
-    _CombinationSpec("external_boundary", "integral_read", _CONTRADICTORY, "External data is Tier 4; Tier 1 reads are internal"),
-    _CombinationSpec("external_boundary", "integral_construction", _CONTRADICTORY, "External data cannot be directly authoritative"),
-    _CombinationSpec("validates_shape", "validates_semantic", _CONTRADICTORY, "Use validates_external for combined T4→T2 validation"),
-    _CombinationSpec("validates_shape", "integral_read", _CONTRADICTORY, "Shape validation produces T3, not T1"),
-    _CombinationSpec("validates_semantic", "external_boundary", _CONTRADICTORY, "Semantic validation operates on T3 input, not T4"),
+    _CombinationSpec("fail_open", "integrity_critical", _CONTRADICTORY, "Audit-critical paths must not have fallback paths", spec_entry=5),
+    _CombinationSpec("external_boundary", "int_data", _CONTRADICTORY, "External and internal data sources are mutually exclusive", spec_entry=6),
+    _CombinationSpec("external_boundary", "integral_read", _CONTRADICTORY, "External data is Tier 4; Tier 1 reads are internal", spec_entry=7),
+    _CombinationSpec("external_boundary", "integral_construction", _CONTRADICTORY, "External data cannot be directly authoritative", spec_entry=8),
+    _CombinationSpec("validates_shape", "validates_semantic", _CONTRADICTORY, "Use validates_external for combined T4→T2 validation", spec_entry=9),
+    _CombinationSpec("validates_shape", "integral_read", _CONTRADICTORY, "Shape validation produces T3, not T1", spec_entry=10),
+    _CombinationSpec("validates_semantic", "external_boundary", _CONTRADICTORY, "Semantic validation operates on T3 input, not T4", spec_entry=11),
     _CombinationSpec(
         "exception_boundary",
         "must_propagate",
         _CONTRADICTORY,
         "Exception boundaries terminate; must-propagate requires forwarding",
+        spec_entry=12,
     ),
-    _CombinationSpec("idempotent", "compensatable", _CONTRADICTORY, "Idempotent operations need no compensation"),
-    _CombinationSpec("deterministic", "time_dependent", _CONTRADICTORY, "Time-dependent operations are inherently non-deterministic"),
-    _CombinationSpec("deterministic", "external_boundary", _CONTRADICTORY, "External calls are non-deterministic by definition"),
+    _CombinationSpec("idempotent", "compensatable", _CONTRADICTORY, "Idempotent operations need no compensation", spec_entry=13),
+    _CombinationSpec("deterministic", "time_dependent", _CONTRADICTORY, "Time-dependent operations are inherently non-deterministic", spec_entry=14),
+    _CombinationSpec("deterministic", "external_boundary", _CONTRADICTORY, "External calls are non-deterministic by definition", spec_entry=15),
     _CombinationSpec(
         "integral_read",
         "restoration_boundary",
         _CONTRADICTORY,
         "Tier 1 reads access existing authoritative data; restoration reconstructs from raw representation",
+        spec_entry=16,
     ),
     _CombinationSpec(
         "integral_writer",
         "restoration_boundary",
         _CONTRADICTORY,
         "Audit writes create new records; restoration reconstructs existing ones",
+        spec_entry=17,
     ),
     _CombinationSpec(
         "external_boundary",
@@ -107,27 +113,31 @@ _COMBINATIONS: tuple[_CombinationSpec, ...] = (
         "emits_or_explains",
         _CONTRADICTORY,
         "Fail-closed raises on failure; emits-or-explains requires structured error output",
+        spec_entry=18,
     ),
     # Spec entry #19 (integrity_critical + fail_open) is an alias of #5 — removed to prevent duplicate findings.
-    _CombinationSpec("validates_external", "validates_shape", _CONTRADICTORY, "validates_external already encompasses shape validation"),
+    _CombinationSpec("validates_external", "validates_shape", _CONTRADICTORY, "validates_external already encompasses shape validation", spec_entry=20),
     _CombinationSpec(
         "validates_external",
         "validates_semantic",
         _CONTRADICTORY,
         "validates_external already encompasses semantic validation",
+        spec_entry=21,
     ),
-    _CombinationSpec("int_data", "validates_shape", _CONTRADICTORY, "Internal data does not need shape validation"),
+    _CombinationSpec("int_data", "validates_shape", _CONTRADICTORY, "Internal data does not need shape validation", spec_entry=22),
     _CombinationSpec(
         "preserve_cause",
         "exception_boundary",
         _CONTRADICTORY,
         "preserve_cause implies propagation; exception boundaries terminate",
+        spec_entry=23,
     ),
-    _CombinationSpec("compensatable", "integral_writer", _CONTRADICTORY, "Audit writes must not be compensated"),
-    _CombinationSpec("system_plugin", "integral_read", _CONTRADICTORY, "Plugins receive external input; Tier 1 reads are internal"),
-    _CombinationSpec("fail_open", "deterministic", _SUSPICIOUS, "Fail-open with fallback defaults may produce non-deterministic output"),
-    _CombinationSpec("compensatable", "deterministic", _SUSPICIOUS, "Compensation introduces state changes that may affect determinism"),
-    _CombinationSpec("time_dependent", "idempotent", _SUSPICIOUS, "Time-dependent operations may not be idempotent across invocations"),
+    _CombinationSpec("compensatable", "integral_writer", _CONTRADICTORY, "Audit writes must not be compensated", spec_entry=24),
+    # Spec entry #25 (@data_flow(produces=...) + @external_boundary) requires parameterized-decorator analysis (L2+).
+    _CombinationSpec("system_plugin", "integral_read", _CONTRADICTORY, "Plugins receive external input; Tier 1 reads are internal", spec_entry=26),
+    _CombinationSpec("fail_open", "deterministic", _SUSPICIOUS, "Fail-open with fallback defaults may produce non-deterministic output", spec_entry=27),
+    _CombinationSpec("compensatable", "deterministic", _SUSPICIOUS, "Compensation introduces state changes that may affect determinism", spec_entry=28),
+    _CombinationSpec("time_dependent", "idempotent", _SUSPICIOUS, "Time-dependent operations may not be idempotent across invocations", spec_entry=29),
 )
 
 
