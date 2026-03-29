@@ -117,8 +117,15 @@ class TestDeterminism:
         sarif_str = _run_scan(str(tmp_path), str(manifest))
         sarif = json.loads(sarif_str)
 
+        import re
+
         # No timestamp keys in the run
         run = sarif["runs"][0]
-        assert "startTimeUtc" not in run.get("invocations", [{}])[0] if run.get("invocations") else True
-        # The raw JSON should not contain ISO timestamp patterns
-        assert "T00:" not in sarif_str and "Z" not in sarif_str
+        invocations = run.get("invocations", [{}])
+        if invocations:
+            assert "startTimeUtc" not in invocations[0]
+        # The raw JSON should not contain ISO-8601 timestamp patterns
+        # (e.g. "2024-01-01T00:00:00Z" or "2024-01-01T12:34:56+00:00")
+        assert not re.search(
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", sarif_str
+        ), f"Found ISO-8601 timestamp in verification-mode output"
