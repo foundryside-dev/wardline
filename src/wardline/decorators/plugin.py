@@ -16,3 +16,4 @@ system_plugin = wardline_decorator(
     "system_plugin",
     _wardline_system_plugin=True,
 )
+"""Mark a function as a system plugin entry point. Enforced by SCN-021."""

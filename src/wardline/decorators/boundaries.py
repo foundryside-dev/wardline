@@ -18,9 +18,11 @@ trust_boundary = wardline_decorator(
     "trust_boundary",
     _wardline_trust_boundary=True,
 )
+"""Mark a function at a trust boundary crossing. Enforced by SCN-021."""
 
 tier_transition = wardline_decorator(
     6,
     "tier_transition",
     _wardline_tier_transition=True,
 )
+"""Mark a function that transitions data between tiers. Enforced by SCN-021."""

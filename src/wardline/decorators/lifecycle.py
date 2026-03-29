@@ -13,6 +13,7 @@ __all__ = [
 ]
 
 test_only = wardline_decorator(15, "test_only", _wardline_test_only=True)
+"""Mark a function as test-only — production code importing it triggers SUP-001. Enforced by SUP-001, SCN-021."""
 
 
 def deprecated_by(*, date: str, replacement: str) -> Any:

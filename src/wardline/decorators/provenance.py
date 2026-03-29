@@ -17,3 +17,4 @@ int_data = wardline_decorator(
     "int_data",
     _wardline_int_data=True,
 )
+"""Mark a function that produces or manages internal provenance-sensitive data. Enforced by SCN-021."""

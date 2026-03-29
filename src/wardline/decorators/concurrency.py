@@ -15,6 +15,7 @@ thread_safe = wardline_decorator(
     "thread_safe",
     _wardline_thread_safe=True,
 )
+"""Assert a function is safe to call from multiple threads. Enforced by SCN-021."""
 
 
 def ordered_after(name: str) -> object:
@@ -31,3 +32,4 @@ not_reentrant = wardline_decorator(
     "not_reentrant",
     _wardline_not_reentrant=True,
 )
+"""Assert a function must not be called recursively or re-entered. Enforced by SUP-001, SCN-021."""

@@ -13,3 +13,4 @@ handles_secrets = wardline_decorator(
     "handles_secrets",
     _wardline_handles_secrets=True,
 )
+"""Mark a function that handles secret material (keys, tokens, credentials). Enforced by SUP-001, SCN-021."""

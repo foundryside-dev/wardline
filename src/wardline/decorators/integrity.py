@@ -17,3 +17,4 @@ integrity_critical = wardline_decorator(
     "integrity_critical",
     _wardline_integrity_critical=True,
 )
+"""Mark a function as audit-critical (integrity logging, compliance events). Enforced by PY-WL-006, SCN-021, SUP-001."""
