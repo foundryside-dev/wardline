@@ -162,6 +162,38 @@ class TestSarifResults:
         assert level_by_line[10] == "error"
         assert level_by_line[20] == "warning"
 
+    def test_suppress_severity_maps_to_note_level(self) -> None:
+        """SUPPRESS findings must emit SARIF level 'note', not 'error' or 'warning'.
+
+        SUPPRESS means the pattern is *expected* at this taint level — it is
+        not a violation.  SARIF 'note' is the correct level for informational
+        findings that should not trigger review queues.
+        """
+        finding = _make_finding(
+            severity=Severity.SUPPRESS,
+            exceptionability=Exceptionability.TRANSPARENT,
+        )
+        report = SarifReport(findings=[finding])
+        result = report.to_dict()["runs"][0]["results"][0]
+        assert result["level"] == "note", (
+            f"SUPPRESS finding must have SARIF level 'note', got {result['level']!r}"
+        )
+
+    def test_suppress_sarif_level_all_three_variants(self) -> None:
+        """All three severity levels map to distinct SARIF levels."""
+        suppress = _make_finding(severity=Severity.SUPPRESS, line=1)
+        warning = _make_finding(severity=Severity.WARNING, line=2)
+        error = _make_finding(severity=Severity.ERROR, line=3)
+        report = SarifReport(findings=[suppress, warning, error])
+        results = report.to_dict()["runs"][0]["results"]
+        level_by_line = {
+            r["locations"][0]["physicalLocation"]["region"]["startLine"]: r["level"]
+            for r in results
+        }
+        assert level_by_line[1] == "note"
+        assert level_by_line[2] == "warning"
+        assert level_by_line[3] == "error"
+
     def test_column_is_1_based(self) -> None:
         finding = _make_finding(col=0, end_col=5)
         report = SarifReport(findings=[finding])
@@ -415,6 +447,47 @@ class TestSarifPropertyBags:
         report = SarifReport(findings=[])
         props = report.to_dict()["runs"][0]["properties"]
         assert props["wardline.conformanceGaps"] == []
+
+    def test_suppressed_cell_finding_count_increments_for_suppress_findings(
+        self,
+    ) -> None:
+        """wardline.suppressedCellFindingCount counts SUPPRESS-severity findings.
+
+        SUPPRESS findings are emitted into SARIF (not dropped) so they appear
+        in the diagnostic counters.  The gateBlockingCount must remain zero for
+        these findings.
+        """
+        suppress1 = _make_finding(
+            severity=Severity.SUPPRESS,
+            exceptionability=Exceptionability.TRANSPARENT,
+            line=1,
+        )
+        suppress2 = _make_finding(
+            severity=Severity.SUPPRESS,
+            exceptionability=Exceptionability.TRANSPARENT,
+            line=2,
+        )
+        error = _make_finding(severity=Severity.ERROR, line=3)
+        report = SarifReport(findings=[suppress1, suppress2, error])
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.suppressedCellFindingCount"] == 2
+        assert props["wardline.errorFindingCount"] == 1
+        assert props["wardline.gateBlockingCount"] == 1
+
+    def test_suppress_findings_do_not_increment_gate_blocking_count(self) -> None:
+        """SUPPRESS findings must not contribute to wardline.gateBlockingCount."""
+        findings = [
+            _make_finding(
+                severity=Severity.SUPPRESS,
+                exceptionability=Exceptionability.TRANSPARENT,
+                line=i,
+            )
+            for i in range(1, 6)
+        ]
+        report = SarifReport(findings=findings)
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.gateBlockingCount"] == 0
+        assert props["wardline.suppressedCellFindingCount"] == 5
 
 
 # ---------------------------------------------------------------------------
