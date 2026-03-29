@@ -17,8 +17,7 @@ if TYPE_CHECKING:
 import jsonschema
 
 from wardline.core import matrix
-from wardline.core.severity import Exceptionability, GovernancePath, RuleId
-from wardline.core.taints import TaintState
+from wardline.core.severity import Exceptionability, GovernancePath
 from wardline.manifest.loader import ManifestLoadError
 from wardline.manifest.models import ExceptionEntry
 
@@ -88,11 +87,8 @@ def load_exceptions(manifest_dir: Path) -> tuple[ExceptionEntry, ...]:
 
 def _validate_not_unconditional(entry: ExceptionEntry, path: Path) -> None:
     """Reject exceptions targeting UNCONDITIONAL severity matrix cells."""
-    try:
-        rule_id = RuleId(entry.rule)
-        taint = TaintState(entry.taint_state)
-    except ValueError:
-        return  # Unknown rule/taint — can't validate
+    rule_id = entry.rule
+    taint = entry.taint_state
 
     cell = matrix.lookup(rule_id, taint)
     if cell.exceptionability == Exceptionability.UNCONDITIONAL:
