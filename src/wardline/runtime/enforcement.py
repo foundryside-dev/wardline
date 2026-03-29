@@ -463,18 +463,24 @@ def check_subclass_tier_consistency(cls: type) -> list[str]:
     for name, value in cls.__dict__.items():
         if name.startswith("_") and not name.startswith("__"):
             continue
-        if not callable(value):
+
+        # Unwrap staticmethod/classmethod descriptors to access the
+        # inner decorated function — _wardline_* attrs live there.
+        unwrapped = value
+        if isinstance(value, (staticmethod, classmethod)):
+            unwrapped = value.__func__
+        elif not callable(value):
             continue
 
         try:
-            _groups = value._wardline_groups
+            _groups = unwrapped._wardline_groups
         except AttributeError:
             _groups = None  # not a wardline-decorated callable — skip
             continue
 
         # Derive tier from _wardline_tier_source
         try:
-            tier_source = value._wardline_tier_source
+            tier_source = unwrapped._wardline_tier_source
         except AttributeError:
             tier_source = None
         if tier_source is not None:
@@ -484,7 +490,7 @@ def check_subclass_tier_consistency(cls: type) -> list[str]:
 
         # Derive tier from _wardline_transition (use "to" state = index 1)
         try:
-            transition = value._wardline_transition
+            transition = unwrapped._wardline_transition
         except AttributeError:
             transition = None
         if transition is not None and len(transition) >= 2:

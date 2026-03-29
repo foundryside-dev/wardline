@@ -600,7 +600,7 @@ class ScanEngine:
                 # Rejection path seeding: check each function for direct rejection
                 if module_name is not None:
                     qualname_map = build_qualname_map(tree)
-                    alias_map = build_import_alias_map(tree)
+                    alias_map = build_import_alias_map(tree, module_path=module_name or "")
                     file_data.append((tree, alias_map, qualname_map, module_name))
                     for node in ast.walk(tree):
                         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):

@@ -8,12 +8,21 @@ from __future__ import annotations
 import ast
 
 
-def build_import_alias_map(tree: ast.Module) -> dict[str, str]:
+def build_import_alias_map(
+    tree: ast.Module,
+    module_path: str = "",
+) -> dict[str, str]:
     """Build {local_name: fully_qualified_name} from module-level imports.
 
     Only processes top-level statements (not imports inside functions).
     Star imports (``from X import *``) are ignored — they cannot be
     resolved without executing the import.
+
+    Args:
+        tree: Parsed AST module.
+        module_path: Dotted module path of the file being analysed
+            (e.g. ``"mypackage.submod"``).  Required to resolve
+            relative imports (``from .validators import check``).
     """
     alias_map: dict[str, str] = {}
 
@@ -24,13 +33,27 @@ def build_import_alias_map(tree: ast.Module) -> dict[str, str]:
                 alias_map[local_name] = alias.name if alias.asname else alias.name.split(".")[0]
             continue
         if isinstance(node, ast.ImportFrom):
-            if node.module is None:
+            if node.module is None and (node.level or 0) == 0:
                 continue
             for alias in node.names:
                 if alias.name == "*":
                     continue
                 local_name = alias.asname if alias.asname else alias.name
-                fqn = f"{node.module}.{alias.name}"
+                level = node.level or 0
+                if level > 0 and module_path:
+                    # Relative import: climb `level` packages up from module_path
+                    parts = module_path.split(".")
+                    # level=1 means current package (drop module name),
+                    # level=2 means parent package, etc.
+                    base = ".".join(parts[:-level]) if level <= len(parts) else ""
+                    if node.module:
+                        fqn = f"{base}.{node.module}.{alias.name}" if base else f"{node.module}.{alias.name}"
+                    else:
+                        fqn = f"{base}.{alias.name}" if base else alias.name
+                elif node.module is not None:
+                    fqn = f"{node.module}.{alias.name}"
+                else:
+                    continue
                 alias_map[local_name] = fqn
 
     return alias_map

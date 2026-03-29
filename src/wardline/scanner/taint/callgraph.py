@@ -8,6 +8,7 @@ from __future__ import annotations
 import ast
 
 from wardline.core.taints import TaintState
+from wardline.scanner.rules.base import walk_skip_nested_defs
 
 TRUST_RANK: dict[TaintState, int] = {
     TaintState.INTEGRAL: 0,
@@ -123,8 +124,9 @@ def extract_call_edges(
         if len(caller_parts) >= 2 and caller_parts[0] in class_names:
             caller_class = caller_parts[0]
 
-        # Walk the function body for Call nodes (ast.walk is iterative)
-        for child in ast.walk(node):
+        # Walk the function body for Call nodes, skipping nested function defs
+        # so that inner function calls are not attributed to the outer function.
+        for child in walk_skip_nested_defs(node):
             if not isinstance(child, ast.Call):
                 continue
 

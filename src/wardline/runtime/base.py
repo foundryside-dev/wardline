@@ -56,18 +56,24 @@ def _check_decorated_methods(cls: type) -> None:
         # __init__, __call__, etc. can legitimately carry decorators.
         if name.startswith("_") and not name.startswith("__"):
             continue
-        if not callable(value):
+
+        # Unwrap staticmethod/classmethod descriptors to access the
+        # inner decorated function — _wardline_* attrs live there.
+        unwrapped = value
+        if isinstance(value, (staticmethod, classmethod)):
+            unwrapped = value.__func__
+        elif not callable(value):
             continue
 
         # Check for wardline decorator attributes
         try:
-            _groups = value._wardline_groups
+            _groups = unwrapped._wardline_groups
         except AttributeError:
             _groups = None  # not a wardline-decorated callable — skip
             continue
 
         # Verify decorated methods use registered decorators
-        for attr_name in dir(value):
+        for attr_name in dir(unwrapped):
             if not attr_name.startswith("_wardline_"):
                 continue
             if attr_name == "_wardline_groups":
