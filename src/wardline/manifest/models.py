@@ -12,15 +12,11 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING
 
-from wardline.core.severity import GovernancePath
+from wardline.core.severity import Exceptionability, GovernancePath, RuleId, Severity
+from wardline.core.taints import TaintState
 
 logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from wardline.core.severity import RuleId
-    from wardline.core.taints import TaintState
 
 
 @dataclass(frozen=True)
@@ -28,11 +24,11 @@ class ExceptionEntry:
     """A granted exception to a wardline rule finding."""
 
     id: str
-    rule: str
-    taint_state: str
+    rule: RuleId
+    taint_state: TaintState
     location: str
-    exceptionability: str
-    severity_at_grant: str
+    exceptionability: Exceptionability
+    severity_at_grant: Severity
     rationale: str
     reviewer: str
     expires: str | None = None
@@ -47,6 +43,16 @@ class ExceptionEntry:
     analysis_level: int = 1
     migrated_from: str | None = None
     migrated_by: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.rule, RuleId):
+            object.__setattr__(self, "rule", RuleId(self.rule))
+        if not isinstance(self.taint_state, TaintState):
+            object.__setattr__(self, "taint_state", TaintState(self.taint_state))
+        if not isinstance(self.exceptionability, Exceptionability):
+            object.__setattr__(self, "exceptionability", Exceptionability(self.exceptionability))
+        if not isinstance(self.severity_at_grant, Severity):
+            object.__setattr__(self, "severity_at_grant", Severity(self.severity_at_grant))
 
 
 @dataclass(frozen=True)

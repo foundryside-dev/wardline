@@ -71,7 +71,7 @@ def _exception(
     return ExceptionEntry(
         id=exc_id,
         rule="PY-WL-001",
-        taint_state="UNTRUSTED",
+        taint_state="EXTERNAL_RAW",
         location=location,
         exceptionability="STANDARD",
         severity_at_grant="WARNING",

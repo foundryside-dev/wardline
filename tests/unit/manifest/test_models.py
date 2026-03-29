@@ -8,9 +8,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from wardline.core.severity import RuleId
+from wardline.core.severity import Exceptionability, RuleId, Severity
 from wardline.core.taints import TaintState
 from wardline.manifest.models import (
+    DependencyTaintEntry,
     BoundaryEntry,
     ContractBinding,
     DelegationConfig,
@@ -66,13 +67,13 @@ class TestExceptionEntry:
     def test_optional_fields(self) -> None:
         e = ExceptionEntry(
             id="E1",
-            rule="R",
-            taint_state="T",
+            rule="PY-WL-001",
+            taint_state="EXTERNAL_RAW",
             location="L",
-            exceptionability="S",
-            severity_at_grant="W",
-            rationale="R",
-            reviewer="R",
+            exceptionability="STANDARD",
+            severity_at_grant="WARNING",
+            rationale="reason",
+            reviewer="reviewer",
             expires="2026-12-31",
             provenance="manual",
         )
@@ -433,3 +434,79 @@ class TestTemporalSeparation:
         assert meta.temporal_separation.alternative == "same-actor-with-retrospective"
         assert meta.temporal_separation.retrospective_window_days == 15
         assert meta.temporal_separation.rationale == "small team"
+
+
+# ── ExceptionEntry enum field coercion ────────────────────────────
+
+
+class TestExceptionEntryEnumFields:
+    """ExceptionEntry stores enum values, not raw strings."""
+
+    def test_construction_from_strings_coerces_to_enums(self) -> None:
+        entry = ExceptionEntry(
+            id="EXC-TEST",
+            rule="PY-WL-004",
+            taint_state="EXTERNAL_RAW",
+            location="src/foo.py::bar",
+            exceptionability="STANDARD",
+            severity_at_grant="ERROR",
+            rationale="test",
+            reviewer="test",
+        )
+        assert isinstance(entry.rule, RuleId)
+        assert isinstance(entry.taint_state, TaintState)
+        assert isinstance(entry.exceptionability, Exceptionability)
+        assert isinstance(entry.severity_at_grant, Severity)
+        assert entry.rule == "PY-WL-004"
+        assert entry.taint_state == "EXTERNAL_RAW"
+
+    def test_construction_from_enums_works(self) -> None:
+        entry = ExceptionEntry(
+            id="EXC-TEST",
+            rule=RuleId.PY_WL_004,
+            taint_state=TaintState.EXTERNAL_RAW,
+            location="src/foo.py::bar",
+            exceptionability=Exceptionability.STANDARD,
+            severity_at_grant=Severity.ERROR,
+            rationale="test",
+            reviewer="test",
+        )
+        assert entry.rule is RuleId.PY_WL_004
+        assert entry.taint_state is TaintState.EXTERNAL_RAW
+
+    def test_invalid_rule_raises(self) -> None:
+        with pytest.raises(ValueError, match="INVALID"):
+            ExceptionEntry(
+                id="EXC-TEST",
+                rule="INVALID",
+                taint_state="EXTERNAL_RAW",
+                location="src/foo.py::bar",
+                exceptionability="STANDARD",
+                severity_at_grant="ERROR",
+                rationale="test",
+                reviewer="test",
+            )
+
+
+# ── DependencyTaintEntry enum field coercion ──────────────────────
+
+
+class TestDependencyTaintEntryEnumFields:
+    def test_returns_taint_coerced_to_enum(self) -> None:
+        entry = DependencyTaintEntry(
+            package="requests",
+            function="requests.get",
+            returns_taint="EXTERNAL_RAW",
+            rationale="HTTP response is external",
+        )
+        assert isinstance(entry.returns_taint, TaintState)
+        assert entry.returns_taint == "EXTERNAL_RAW"
+
+    def test_invalid_returns_taint_raises(self) -> None:
+        with pytest.raises(ValueError, match="BOGUS"):
+            DependencyTaintEntry(
+                package="requests",
+                function="requests.get",
+                returns_taint="BOGUS",
+                rationale="test",
+            )
