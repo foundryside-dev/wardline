@@ -1,0 +1,70 @@
+name: Package Split Verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/wardline/decorators/**'
+      - 'src/wardline/core/**'
+      - 'packages/wardline-decorators/**'
+      - 'pyproject.toml'
+  pull_request:
+    paths:
+      - 'src/wardline/decorators/**'
+      - 'src/wardline/core/**'
+      - 'packages/wardline-decorators/**'
+      - 'pyproject.toml'
+
+jobs:
+  verify-split:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Build wardline-decorators wheel
+        run: cd packages/wardline-decorators && uv build --wheel
+
+      - name: Verify wheel contents
+        run: |
+          python3 -c "
+          import zipfile, sys
+          whl = list(__import__('pathlib').Path('packages/wardline-decorators/dist').glob('*.whl'))[0]
+          with zipfile.ZipFile(whl) as zf:
+              names = zf.namelist()
+          dec = [n for n in names if n.startswith('wardline/decorators/')]
+          assert len(dec) >= 15, f'Only {len(dec)} decorator files'
+          for forbidden in ['wardline/core/', 'wardline/scanner/', 'wardline/cli/']:
+              leaked = [n for n in names if n.startswith(forbidden)]
+              assert not leaked, f'Leaked: {leaked}'
+          print(f'Wheel OK: {len(dec)} decorator files, no leaks')
+          "
+
+      - name: Install wardline and run decorator smoke test
+        run: |
+          uv venv /tmp/venv-combined
+          source /tmp/venv-combined/bin/activate
+          uv pip install .
+          uv pip install packages/wardline-decorators/dist/wardline_decorators-*.whl
+          python3 -c "
+          from wardline.decorators import integrity_critical, validates_shape
+          @integrity_critical
+          def f(): pass
+          print(f'_wardline_groups: {f._wardline_groups}')
+          print('Combined install OK')
+          "
+
+      - name: Run package split integration tests
+        run: |
+          uv sync --all-extras
+          uv run pytest tests/integration/test_package_split.py -v -m integration
