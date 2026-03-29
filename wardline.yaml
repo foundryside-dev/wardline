@@ -10,7 +10,7 @@ governance_profile: "lite"
 metadata:
   organisation: "wardline"
   ratified_by:
-    name: "John"
+    name: "John Morrissey"
     role: "Project Lead"
   ratification_date: "2026-03-27"
   review_interval_days: 180
