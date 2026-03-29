@@ -29,20 +29,24 @@ _RULE_GOVERNANCE_CONTEXT: dict[str, str] = {
         "inject unvalidated values into trusted pipelines."
     ),
     "PY-WL-002": (
-        "This rule detects missing shape validation on external input. Without shape "
-        "checks, malformed data can propagate through the pipeline uncaught."
+        "This rule detects attribute access that silently fabricates values via "
+        "fallback defaults (three-argument getattr). Fabricated defaults bypass "
+        "validation and can inject unvalidated values into trusted pipelines."
     ),
     "PY-WL-003": (
-        "This rule detects raw external data used without sanitisation. Unsanitised "
-        "data from untrusted sources can lead to injection or data corruption."
+        "This rule detects existence-checking patterns used as structural gates "
+        "(hasattr, 'key' in dict, match/case). Existence checks in place of proper "
+        "validation create a false sense of structural safety."
     ),
     "PY-WL-004": (
-        "This rule detects unvalidated decorator arguments. Invalid arguments to "
-        "wardline decorators can misconfigure security boundaries."
+        "This rule detects exception handlers that catch too broadly (bare except, "
+        "except Exception, except BaseException). Broad handlers can mask errors, "
+        "swallow security-relevant exceptions, and hide data corruption."
     ),
     "PY-WL-005": (
-        "This rule detects unsafe type coercion on tainted data. Implicit type "
-        "conversion can silently alter data semantics."
+        "This rule detects exception handlers that silently swallow exceptions "
+        "(pass, ellipsis, continue, break). Silent exception handling destroys "
+        "diagnostic evidence and can mask security-relevant failures."
     ),
     "PY-WL-006": (
         "This rule detects audit writes in broad exception handlers. Catching "
