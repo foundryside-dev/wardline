@@ -403,6 +403,34 @@ class TestExplainExceptionStatus:
         assert "EXC-" not in result.output
 
 
+@pytest.mark.integration
+class TestExplainExceptionNarrowPath:
+    """Exception matching works when --path is narrower than manifest root."""
+
+    def test_narrow_path_still_matches_exception(self, tmp_path: Path) -> None:
+        """Running explain with --path=src/ still finds exceptions stored as src/example.py::func."""
+        fixture = _build_governance_fixture(tmp_path)
+
+        runner = CliRunner()
+        # Use src/ as --path (narrower than project root where manifest lives)
+        result = runner.invoke(
+            cli,
+            [
+                "explain",
+                "fetch_data",
+                "--path",
+                str(fixture["src_dir"]),
+                "--manifest",
+                fixture["manifest_path"],
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "EXC-001" in result.output, (
+            "Exception should be found even when --path is narrower than manifest root"
+        )
+
+
 # ── Test: Overlay resolution section ──────────────────────────────────
 
 

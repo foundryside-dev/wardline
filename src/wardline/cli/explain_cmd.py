@@ -298,9 +298,11 @@ def _build_exception_section(
         except (OSError, ValueError) as exc:
             click.echo(f"warning: could not load exception register: {exc}", err=True)
 
-    # Build relative location key for matching
+    # Build relative location key for matching — use manifest root (not --path)
+    # to match how exceptions are stored and how wardline scan matches them.
+    exception_root = manifest_path.parent.resolve() if manifest_path is not None else root
     try:
-        rel_path = str(Path(file_path_str).relative_to(root))
+        rel_path = str(Path(file_path_str).relative_to(exception_root))
     except ValueError:
         rel_path = file_path_str
     location_key = f"{rel_path}::{qualname}"
