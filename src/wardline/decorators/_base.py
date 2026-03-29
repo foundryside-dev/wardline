@@ -91,6 +91,26 @@ def _try_stamp_tier(
         )
 
 
+def _is_underlying_coroutine(fn: Any) -> bool:
+    """Check if *fn* or any function in its ``__wrapped__`` chain is async.
+
+    ``functools.wraps`` copies ``__wrapped__`` but not the ``CO_COROUTINE``
+    code flag.  A sync third-party wrapper between two wardline decorators
+    will hide the async nature from ``inspect.iscoroutinefunction``.  This
+    function walks the ``__wrapped__`` chain to find the real answer.
+    """
+    current: Any = fn
+    seen: set[int] = set()
+    while current is not None:
+        if id(current) in seen:
+            break
+        seen.add(id(current))
+        if inspect.iscoroutinefunction(current):
+            return True
+        current = getattr(current, "__wrapped__", None)
+    return False
+
+
 def wardline_decorator(
     group: int,
     name: str,
@@ -150,7 +170,7 @@ def wardline_decorator(
             unwrapped = fn.__func__
             wrapper_type = classmethod
 
-        if inspect.iscoroutinefunction(unwrapped):
+        if _is_underlying_coroutine(unwrapped):
             @functools.wraps(unwrapped)
             async def wrapper(*args: Any, **kwargs: Any) -> Any:
                 result = await unwrapped(*args, **kwargs)

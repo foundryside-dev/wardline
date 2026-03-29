@@ -226,15 +226,12 @@ class TestMixedStacking:
         assert my_func._wardline_integrity_critical is True  # type: ignore[attr-defined]
 
     def test_mixed_stacking_async(self) -> None:
-        """Mixed stacking with a sync third-party wrapper loses coroutine status.
+        """Wardline preserves coroutine status across sync third-party wrappers.
 
-        A sync third-party wrapper using functools.wraps does NOT propagate the
-        CO_COROUTINE flag, so asyncio.iscoroutinefunction returns False on the
-        final function. wardline groups still accumulate correctly because
-        wardline uses __wrapped__ chain traversal to merge attrs — but the
-        async nature of the original function is hidden by the sync wrapper.
-        This is a known limitation: inserting a non-async third-party decorator
-        between wardline decorators breaks coroutine detection.
+        A sync third-party wrapper using functools.wraps sets __wrapped__,
+        which wardline follows to discover the underlying async function.
+        The outermost wardline decorator creates an async wrapper even though
+        its immediate input is sync.
         """
         import functools
 
@@ -250,9 +247,9 @@ class TestMixedStacking:
         async def my_async_func() -> int:
             return 42
 
-        # Limitation: sync third-party wrapper loses the coroutine flag
-        assert not asyncio.iscoroutinefunction(my_async_func)
-        # wardline groups still accumulate via __wrapped__ traversal
+        assert asyncio.iscoroutinefunction(my_async_func)
+        result = asyncio.run(my_async_func())
+        assert result == 42
         groups = my_async_func._wardline_groups  # type: ignore[attr-defined]
         assert 1 in groups
         assert 2 in groups
