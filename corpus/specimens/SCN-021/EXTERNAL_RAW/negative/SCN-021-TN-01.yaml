@@ -1,0 +1,20 @@
+---
+specimen_id: "SCN-021-TN-01"
+description: "@not_reentrant + @idempotent is a valid combination — no contradictory pair"
+rule: "SCN-021"
+fragment: |
+  """SCN-021 true negative: @not_reentrant + @idempotent is a valid combination."""
+  from wardline.decorators import idempotent, not_reentrant
+
+
+  @not_reentrant
+  @idempotent
+  def publish_event(event_type: str) -> None:
+      pass
+taint_state: "EXTERNAL_RAW"
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
+sha256: "c14c354a53cbcd4923323b279729b6eac8b5fdb651a549a14e760cd160e77ad1"
+verdict: "true_negative"

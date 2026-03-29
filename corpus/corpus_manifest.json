@@ -1,9 +1,9 @@
 {
   "version": "1.0",
   "spec_version": "0.1",
-  "corpus_hash": "sha256:f79e75eb18c15adacb534e7f03cb2b5763204ed36f8e118076471f5cb96f7169",
-  "generated": "2026-03-28",
-  "specimen_count": 244,
+  "corpus_hash": "sha256:c837aac5bcde3c8291259b41464989bf1992e0acdf6cf6215e6ffdb88220ac97",
+  "generated": "2026-03-29",
+  "specimen_count": 248,
   "specimens": [
     {
       "specimen_id": "L3-anchored-immutable",
@@ -2444,6 +2444,46 @@
       "verdict": "true_positive",
       "expected_match": true,
       "sha256": "e2c64c4a8f1a54863389478f3dbb78454c4b14f24e12eea8998db88516bbfd7c"
+    },
+    {
+      "specimen_id": "SCN-021-TP-01",
+      "path": "specimens/SCN-021/EXTERNAL_RAW/positive/SCN-021-TP-01.yaml",
+      "py_exists": true,
+      "rule": "SCN-021",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_positive",
+      "expected_match": true,
+      "sha256": "cb3ec315c2bb4508b9faf0525906aea5885ecbb4d50cec4d76101b4e1eb21d7a"
+    },
+    {
+      "specimen_id": "SCN-021-TN-01",
+      "path": "specimens/SCN-021/EXTERNAL_RAW/negative/SCN-021-TN-01.yaml",
+      "py_exists": true,
+      "rule": "SCN-021",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_negative",
+      "expected_match": false,
+      "sha256": "c14c354a53cbcd4923323b279729b6eac8b5fdb651a549a14e760cd160e77ad1"
+    },
+    {
+      "specimen_id": "SUP-001-TP-01",
+      "path": "specimens/SUP-001/EXTERNAL_RAW/positive/SUP-001-TP-01.yaml",
+      "py_exists": true,
+      "rule": "SUP-001",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_positive",
+      "expected_match": true,
+      "sha256": "0e99cd155d0fa58d9e26a5a309e5cec64259262052f3d315f175367beae12be2"
+    },
+    {
+      "specimen_id": "SUP-001-TN-01",
+      "path": "specimens/SUP-001/EXTERNAL_RAW/negative/SUP-001-TN-01.yaml",
+      "py_exists": true,
+      "rule": "SUP-001",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_negative",
+      "expected_match": false,
+      "sha256": "d0f8d7afbf26089a3f42ff735e48aa33d35d419d1fbe0ddc99956be3fce98fa1"
     }
   ]
 }

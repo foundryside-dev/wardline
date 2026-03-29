@@ -1,0 +1,19 @@
+---
+specimen_id: "SUP-001-TN-01"
+description: "@deterministic on a pure arithmetic function — no non-deterministic calls, contract satisfied"
+rule: "SUP-001"
+fragment: |
+  """SUP-001 true negative: @deterministic on a pure function with no non-deterministic calls."""
+  from wardline.decorators import deterministic
+
+
+  @deterministic
+  def add(x: int, y: int) -> int:
+      return x + y
+taint_state: "EXTERNAL_RAW"
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
+sha256: "d0f8d7afbf26089a3f42ff735e48aa33d35d419d1fbe0ddc99956be3fce98fa1"
+verdict: "true_negative"

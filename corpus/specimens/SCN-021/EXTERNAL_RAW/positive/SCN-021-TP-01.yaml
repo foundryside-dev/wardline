@@ -1,0 +1,21 @@
+---
+specimen_id: "SCN-021-TP-01"
+description: "@fail_open + @fail_closed on the same function is contradictory — mutually exclusive failure modes"
+rule: "SCN-021"
+fragment: |
+  """SCN-021 true positive: @fail_open + @fail_closed is contradictory."""
+  from wardline.decorators import fail_closed, fail_open
+
+
+  @fail_open
+  @fail_closed
+  def fetch_config(key: str) -> str:
+      return key
+taint_state: "EXTERNAL_RAW"
+expected_rules:
+  - "SCN-021"
+expected_severity: "ERROR"
+expected_exceptionability: "UNCONDITIONAL"
+expected_match: true
+sha256: "cb3ec315c2bb4508b9faf0525906aea5885ecbb4d50cec4d76101b4e1eb21d7a"
+verdict: "true_positive"
