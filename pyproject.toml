@@ -29,7 +29,7 @@ keywords = [
     "boundary-enforcement",
 ]
 authors = [
-    { name = "John M" },
+    { name = "John Morrissey" },
 ]
 
 [project.optional-dependencies]

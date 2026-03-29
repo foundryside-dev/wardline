@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wardline-decorators"
+version = "0.4.0"
+description = "Decorator library for wardline semantic boundary annotations"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+    "Typing :: Typed",
+]
+dependencies = [
+    "wardline>=0.4.0",
+]
+keywords = [
+    "security",
+    "trust-boundaries",
+    "boundary-enforcement",
+    "decorators",
+]
+authors = [
+    { name = "John Morrissey" },
+]
+
+[project.urls]
+Homepage = "https://wardline.dev"
+Repository = "https://github.com/johnm-dta/wardline"
+
+[tool.hatch.build.targets.wheel.force-include]
+"../../src/wardline/decorators" = "wardline/decorators"
