@@ -1,7 +1,7 @@
 """Integration test: ScanEngine end-to-end with fixture project.
 
 Validates rule execution end-to-end: ScanEngine discovers files,
-parses AST, and runs all 5 rules against a fixture project.
+parses AST, and runs all 9 rules against a fixture project.
 Manifest loading and taint assignment are NOT wired into this
 test — that integration is deferred to T-6.4a.
 
@@ -23,6 +23,10 @@ from wardline.scanner.rules.py_wl_002 import RulePyWl002
 from wardline.scanner.rules.py_wl_003 import RulePyWl003
 from wardline.scanner.rules.py_wl_004 import RulePyWl004
 from wardline.scanner.rules.py_wl_005 import RulePyWl005
+from wardline.scanner.rules.py_wl_006 import RulePyWl006
+from wardline.scanner.rules.py_wl_007 import RulePyWl007
+from wardline.scanner.rules.py_wl_008 import RulePyWl008
+from wardline.scanner.rules.py_wl_009 import RulePyWl009
 
 FIXTURE_ROOT = (
     Path(__file__).parent.parent
@@ -44,6 +48,10 @@ class TestScanEngineIntegration:
             RulePyWl003(file_path=""),
             RulePyWl004(file_path=""),
             RulePyWl005(file_path=""),
+            RulePyWl006(file_path=""),
+            RulePyWl007(file_path=""),
+            RulePyWl008(file_path=""),
+            RulePyWl009(file_path=""),
         )
         engine = ScanEngine(
             target_paths=(FIXTURE_ROOT,),
@@ -58,6 +66,8 @@ class TestScanEngineIntegration:
         assert (FIXTURE_ROOT / "wardline.yaml").is_file()
         assert (FIXTURE_ROOT / "adapters" / "partner_client.py").is_file()
         assert (FIXTURE_ROOT / "core" / "processor.py").is_file()
+        assert (FIXTURE_ROOT / "core" / "audit_handler.py").is_file()
+        assert (FIXTURE_ROOT / "core" / "boundary_checks.py").is_file()
 
     def test_engine_scans_fixture_files(self) -> None:
         """Engine scans .py files in the fixture project."""
@@ -67,8 +77,9 @@ class TestScanEngineIntegration:
         )
         result = engine.scan()
         # adapters/__init__.py, adapters/partner_client.py,
-        # core/__init__.py, core/processor.py
-        assert result.files_scanned >= 4
+        # core/__init__.py, core/processor.py,
+        # core/audit_handler.py, core/boundary_checks.py
+        assert result.files_scanned >= 6
         assert result.files_skipped == 0
 
     def test_findings_are_produced(self) -> None:
@@ -126,6 +137,34 @@ class TestScanEngineIntegration:
         wl005 = [f for f in findings if f.rule_id == RuleId.PY_WL_005]
         assert len(wl005) >= 1
         assert any("partner_client" in f.file_path for f in wl005)
+
+    def test_py_wl_006_fires_on_audit_in_broad_handler(self) -> None:
+        """PY-WL-006 fires on audit call inside a broad exception handler in audit_handler."""
+        findings = self._scan_fixture()
+        wl006 = [f for f in findings if f.rule_id == RuleId.PY_WL_006]
+        assert len(wl006) >= 1
+        assert any("audit_handler" in f.file_path for f in wl006)
+
+    def test_py_wl_007_fires_on_isinstance_check(self) -> None:
+        """PY-WL-007 fires on isinstance() runtime type check in audit_handler."""
+        findings = self._scan_fixture()
+        wl007 = [f for f in findings if f.rule_id == RuleId.PY_WL_007]
+        assert len(wl007) >= 1
+        assert any("audit_handler" in f.file_path for f in wl007)
+
+    def test_py_wl_008_fires_on_boundary_without_rejection(self) -> None:
+        """PY-WL-008 fires on @validates_shape with no raise in boundary_checks."""
+        findings = self._scan_fixture()
+        wl008 = [f for f in findings if f.rule_id == RuleId.PY_WL_008]
+        assert len(wl008) >= 1
+        assert any("boundary_checks" in f.file_path for f in wl008)
+
+    def test_py_wl_009_fires_on_semantic_without_shape(self) -> None:
+        """PY-WL-009 fires on @validates_semantic with subscript before shape check in boundary_checks."""
+        findings = self._scan_fixture()
+        wl009 = [f for f in findings if f.rule_id == RuleId.PY_WL_009]
+        assert len(wl009) >= 1
+        assert any("boundary_checks" in f.file_path for f in wl009)
 
     def test_finding_severity_from_matrix(self) -> None:
         """Canonical findings have severity derived from the matrix (not TOOL-ERROR)."""
