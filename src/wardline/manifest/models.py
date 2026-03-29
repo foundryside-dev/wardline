@@ -104,8 +104,12 @@ class DependencyTaintEntry:
 
     package: str
     function: str
-    returns_taint: str
+    returns_taint: TaintState
     rationale: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.returns_taint, TaintState):
+            object.__setattr__(self, "returns_taint", TaintState(self.returns_taint))
 
 
 @dataclass(frozen=True)
