@@ -177,6 +177,88 @@ class TestStacking:
 
 
 # ---------------------------------------------------------------------------
+# TestMixedStacking
+# ---------------------------------------------------------------------------
+
+
+class TestMixedStacking:
+    """Wardline decorators interleaved with third-party decorators."""
+
+    def test_wardline_third_party_wardline_preserves_groups(self) -> None:
+        """wardline + third-party + wardline: both wardline groups survive."""
+        import functools
+
+        def third_party(fn):
+            @functools.wraps(fn)
+            def wrapper(*args, **kwargs):
+                return fn(*args, **kwargs)
+            return wrapper
+
+        @integrity_critical
+        @third_party
+        @external_boundary
+        def my_func() -> int:
+            return 42
+
+        assert my_func() == 42
+        groups = my_func._wardline_groups  # type: ignore[attr-defined]
+        assert 1 in groups  # external_boundary
+        assert 2 in groups  # integrity_critical
+
+    def test_third_party_does_not_add_wardline_attrs(self) -> None:
+        """Third-party wrapper between wardline decorators doesn't inject attrs."""
+        import functools
+
+        def third_party(fn):
+            @functools.wraps(fn)
+            def wrapper(*args, **kwargs):
+                return fn(*args, **kwargs)
+            return wrapper
+
+        @integrity_critical
+        @third_party
+        @external_boundary
+        def my_func() -> int:
+            return 1
+
+        # Inner wardline attrs survive through the third-party layer
+        assert my_func._wardline_tier_source is TaintState.EXTERNAL_RAW  # type: ignore[attr-defined]
+        assert my_func._wardline_integrity_critical is True  # type: ignore[attr-defined]
+
+    def test_mixed_stacking_async(self) -> None:
+        """Mixed stacking with a sync third-party wrapper loses coroutine status.
+
+        A sync third-party wrapper using functools.wraps does NOT propagate the
+        CO_COROUTINE flag, so asyncio.iscoroutinefunction returns False on the
+        final function. wardline groups still accumulate correctly because
+        wardline uses __wrapped__ chain traversal to merge attrs — but the
+        async nature of the original function is hidden by the sync wrapper.
+        This is a known limitation: inserting a non-async third-party decorator
+        between wardline decorators breaks coroutine detection.
+        """
+        import functools
+
+        def third_party(fn):
+            @functools.wraps(fn)
+            def wrapper(*args, **kwargs):
+                return fn(*args, **kwargs)
+            return wrapper
+
+        @integrity_critical
+        @third_party
+        @external_boundary
+        async def my_async_func() -> int:
+            return 42
+
+        # Limitation: sync third-party wrapper loses the coroutine flag
+        assert not asyncio.iscoroutinefunction(my_async_func)
+        # wardline groups still accumulate via __wrapped__ traversal
+        groups = my_async_func._wardline_groups  # type: ignore[attr-defined]
+        assert 1 in groups
+        assert 2 in groups
+
+
+# ---------------------------------------------------------------------------
 # TestWrappedChain
 # ---------------------------------------------------------------------------
 
@@ -292,6 +374,37 @@ class TestCallableTypes:
                 return x + 1
 
         assert MyClass.my_cls(5) == 6
+
+    def test_works_on_init(self) -> None:
+        class MyClass:
+            @external_boundary
+            def __init__(self) -> None:
+                self.value = 42
+
+        obj = MyClass()
+        assert obj.value == 42
+        assert hasattr(MyClass.__init__, "_wardline_groups")
+
+    def test_works_on_generator(self) -> None:
+        @external_boundary
+        def my_gen():
+            yield 1
+            yield 2
+            yield 3
+
+        result = list(my_gen())
+        assert result == [1, 2, 3]
+        assert hasattr(my_gen, "_wardline_groups")
+
+    def test_works_on_property_getter(self) -> None:
+        class MyClass:
+            @property
+            @external_boundary
+            def value(self) -> int:
+                return 42
+
+        obj = MyClass()
+        assert obj.value == 42
 
 
 # ---------------------------------------------------------------------------
