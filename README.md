@@ -27,24 +27,37 @@ uv sync --all-extras
 Create `wardline.yaml` in your project root:
 
 ```yaml
-$schema: "wardline/v0.1"
+$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"
 
 tiers:
-  - id: INTERNAL
+  - id: "primary_db"
     tier: 1
-    description: "Trusted internal code"
-  - id: BOUNDARY
-    tier: 2
-    description: "Validated boundary layer"
-  - id: EXTERNAL
+  - id: "partner_api"
     tier: 4
-    description: "Untrusted external input"
 
 module_tiers:
   - path: "src/myapp/core/"
-    tier_id: INTERNAL
-  - path: "src/myapp/api/"
-    tier_id: EXTERNAL
+    default_taint: "ASSURED"
+  - path: "src/myapp/adapters/"
+    default_taint: "EXTERNAL_RAW"
+
+metadata:
+  organisation: "My Company"
+```
+
+Annotate trust-critical functions:
+
+```python
+from wardline.decorators import integrity_critical, validates_shape
+
+@integrity_critical
+def write_audit_log(event: dict) -> None:
+    ...
+
+@validates_shape
+def check_payload(data: dict) -> None:
+    if not isinstance(data, dict):
+        raise TypeError("Expected dict")
 ```
 
 Run the scanner:
@@ -53,20 +66,18 @@ Run the scanner:
 wardline scan src/
 ```
 
-Violations are reported with rule IDs, file locations, and remediation guidance. Pass `--sarif` to write SARIF output for CI ingestion.
+Violations are reported with rule IDs, file locations, and remediation guidance.
 
-## Architecture
+## Trust Hierarchy
 
-| Subsystem | Description |
-|-----------|-------------|
-| `core/` | Trust tiers, taint lattice, severity matrix |
-| `scanner/` | AST-based static analysis with taint propagation |
-| `scanner/rules/` | Pluggable rule implementations (PY-WL-001 through PY-WL-009) |
-| `scanner/taint/` | Three-phase taint assignment (variable, function, callgraph) |
-| `manifest/` | YAML manifest loading, overlay merge, coherence validation |
-| `decorators/` | `@audit`, `@authority`, `@validates_shape` and friends |
-| `runtime/` | Descriptor-based boundary enforcement at execution time |
-| `cli/` | Click-based CLI (`scan`, `explain`, `manifest`, `corpus`) |
+| Tier | Taint State | Description |
+|------|-------------|-------------|
+| 1 | INTEGRAL | Audit-critical, highest trust (database writes, compliance logging) |
+| 2 | ASSURED | Validated internal data (business logic on checked inputs) |
+| 3 | GUARDED | Shape-validated but not semantically verified |
+| 4 | EXTERNAL_RAW | Untrusted external input (API payloads, user input) |
+
+Data flows downward freely. Upward flow requires explicit validation boundaries (`@validates_shape`, `@validates_semantic`).
 
 ## Rules
 
@@ -79,17 +90,48 @@ Violations are reported with rule IDs, file locations, and remediation guidance.
 | PY-WL-005 | Silent exception handlers |
 | PY-WL-006 | Audit-critical writes in broad handlers |
 | PY-WL-007 | Runtime type-checking on internal data |
-| PY-WL-008 | Validation with no rejection path |
-| PY-WL-009 | Semantic validation without shape validation |
+| PY-WL-008 | Validation boundary with no rejection path |
+| PY-WL-009 | Semantic validation without prior shape validation |
+| SCN-021 | Contradictory decorator combinations |
+| SUP-001 | Decorator contract violations |
+
+## Architecture
+
+| Subsystem | Description |
+|-----------|-------------|
+| `core/` | Trust tiers, taint lattice, severity matrix, decorator registry |
+| `scanner/` | AST-based static analysis with taint propagation |
+| `scanner/rules/` | 11 pluggable rule implementations |
+| `scanner/taint/` | Three-phase taint assignment (variable, function, callgraph) |
+| `manifest/` | YAML manifest loading, overlay merge, coherence validation |
+| `decorators/` | 38 semantic boundary annotations (`@integrity_critical`, `@validates_shape`, etc.) |
+| `runtime/` | Descriptor-based boundary enforcement at execution time |
+| `cli/` | 9 Click-based CLI commands |
+
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `wardline scan` | Run the static analysis scanner |
+| `wardline explain` | Explain a rule ID or finding |
+| `wardline manifest` | Validate and inspect the manifest |
+| `wardline coherence` | Cross-manifest consistency checks |
+| `wardline corpus` | Manage and verify the test specimen corpus |
+| `wardline exception` | Grant, review, and manage exception entries |
+| `wardline fingerprint` | Track annotation changes via AST fingerprints |
+| `wardline regime` | Assess and report governance posture |
+| `wardline resolve` | Resolve tier assignments for a module path |
 
 ## Development
 
 ```bash
 uv run pytest                    # Unit tests
+uv run pytest -m integration     # Integration tests
 uv run ruff check src/           # Lint
 uv run mypy src/                 # Type-check (strict)
+uv run wardline scan src/        # Self-hosting scan
 ```
 
 ## Links
 
-[Specification](docs/spec/) | [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md) | [License](LICENSE)
+[Documentation](https://wardline.dev) | [Specification](docs/spec/) | [Contributing](CONTRIBUTING.md) | [Security](SECURITY.md) | [License](LICENSE)
