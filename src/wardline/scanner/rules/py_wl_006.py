@@ -117,35 +117,32 @@ def _has_normal_path_audit(
     exception handlers.
     """
     for stmt in stmts:
-        if isinstance(stmt, ast.Try):
-            if _has_normal_path_audit(stmt.body, local_audit_names):
+        match stmt:
+            case ast.Try():
+                if _has_normal_path_audit(stmt.body, local_audit_names):
+                    return True
+                if _has_normal_path_audit(stmt.orelse, local_audit_names):
+                    return True
+                if _has_normal_path_audit(stmt.finalbody, local_audit_names):
+                    return True
+            case ast.If():
+                if _has_normal_path_audit(stmt.body, local_audit_names):
+                    return True
+                if _has_normal_path_audit(stmt.orelse, local_audit_names):
+                    return True
+            case ast.Match():
+                if any(
+                    _has_normal_path_audit(case.body, local_audit_names)
+                    for case in stmt.cases
+                ):
+                    return True
+            case ast.For() | ast.AsyncFor() | ast.While():
+                if _has_normal_path_audit(stmt.body, local_audit_names):
+                    return True
+                if _has_normal_path_audit(stmt.orelse, local_audit_names):
+                    return True
+            case _ if _contains_audit_call(stmt, local_audit_names):
                 return True
-            if _has_normal_path_audit(stmt.orelse, local_audit_names):
-                return True
-            if _has_normal_path_audit(stmt.finalbody, local_audit_names):
-                return True
-            continue
-        if isinstance(stmt, ast.If):
-            if _has_normal_path_audit(stmt.body, local_audit_names):
-                return True
-            if _has_normal_path_audit(stmt.orelse, local_audit_names):
-                return True
-            continue
-        if isinstance(stmt, ast.Match):
-            if any(
-                _has_normal_path_audit(case.body, local_audit_names)
-                for case in stmt.cases
-            ):
-                return True
-            continue
-        if isinstance(stmt, (ast.For, ast.AsyncFor, ast.While)):
-            if _has_normal_path_audit(stmt.body, local_audit_names):
-                return True
-            if _has_normal_path_audit(stmt.orelse, local_audit_names):
-                return True
-            continue
-        if _contains_audit_call(stmt, local_audit_names):
-            return True
     return False
 
 
@@ -261,24 +258,25 @@ class RulePyWl006(RuleBase):
         audited: bool,
     ) -> _BlockAnalysis:
         """Analyze one statement under the given incoming audit state."""
-        if isinstance(stmt, ast.Return):
-            return self._analyze_return(stmt, audited=audited)
-        if isinstance(stmt, ast.Raise):
-            return _BlockAnalysis()
-        if isinstance(stmt, ast.If):
-            return self._analyze_if(stmt, audited=audited)
-        if isinstance(stmt, ast.Try):
-            return self._analyze_try(stmt, audited=audited)
-        if isinstance(stmt, (ast.For, ast.AsyncFor, ast.While)):
-            return self._analyze_loop(stmt, audited=audited)
-        if isinstance(stmt, ast.Match):
-            return self._analyze_match(stmt, audited=audited)
-
-        next_audited = audited or _contains_audit_call(
-            stmt,
-            self._local_audit_names,
-        )
-        return _BlockAnalysis(continue_states=frozenset({next_audited}))
+        match stmt:
+            case ast.Return():
+                return self._analyze_return(stmt, audited=audited)
+            case ast.Raise():
+                return _BlockAnalysis()
+            case ast.If():
+                return self._analyze_if(stmt, audited=audited)
+            case ast.Try():
+                return self._analyze_try(stmt, audited=audited)
+            case ast.For() | ast.AsyncFor() | ast.While():
+                return self._analyze_loop(stmt, audited=audited)
+            case ast.Match():
+                return self._analyze_match(stmt, audited=audited)
+            case _:
+                next_audited = audited or _contains_audit_call(
+                    stmt,
+                    self._local_audit_names,
+                )
+                return _BlockAnalysis(continue_states=frozenset({next_audited}))
 
     def _analyze_return(
         self,
