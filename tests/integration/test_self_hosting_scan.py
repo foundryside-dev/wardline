@@ -123,8 +123,8 @@ class TestSelfHostingScan:
         """Per-rule finding counts are within expected ranges.
 
         Prevents baseline erosion when tier-aware severity changes
-        finding distribution. L1 ranges are +/- 50% of measured baselines.
-        L3 ranges are initially wide (+/- 100%) until stabilized.
+        finding distribution. L1 and L3 ranges are +/- 50% of measured
+        baselines.
         """
         import json
         from collections import Counter
@@ -141,28 +141,28 @@ class TestSelfHostingScan:
         counts = Counter(r["ruleId"] for r in scan_findings)
 
         # Per-rule baselines by analysis level.
-        # L1: measured 2026-03-29 (re-baselined after PY-WL-003 exception updates), +/- 50% tolerance.
-        # L3: measured 2026-03-25 (re-baselined), +/- 100% tolerance (wide initial ranges).
+        # L1: measured 2026-03-29 (re-baselined), +/- 50% tolerance.
+        # L3: measured 2026-03-29, +/- 50% tolerance.
         expected_ranges_by_level: dict[int, dict[str, tuple[int, int]]] = {
             1: {
-                "PY-WL-001": (66, 200),
-                "PY-WL-002": (29, 87),
-                "PY-WL-003": (22, 66),
-                "PY-WL-004": (8, 24),
-                "PY-WL-005": (14, 42),
+                "PY-WL-001": (68, 202),
+                "PY-WL-002": (18, 54),
+                "PY-WL-003": (39, 117),
+                "PY-WL-004": (5, 15),
+                "PY-WL-005": (14, 44),
                 "PY-WL-006": (0, 10),
-                "PY-WL-007": (24, 74),
+                "PY-WL-007": (30, 90),
                 "PY-WL-008": (0, 10),
                 "PY-WL-009": (0, 10),
             },
             3: {
-                "PY-WL-001": (0, 266),
-                "PY-WL-002": (0, 116),
-                "PY-WL-003": (0, 270),
-                "PY-WL-004": (0, 32),
-                "PY-WL-005": (0, 56),
+                "PY-WL-001": (68, 202),
+                "PY-WL-002": (18, 54),
+                "PY-WL-003": (39, 117),
+                "PY-WL-004": (5, 15),
+                "PY-WL-005": (14, 44),
                 "PY-WL-006": (0, 10),
-                "PY-WL-007": (0, 98),
+                "PY-WL-007": (30, 90),
                 "PY-WL-008": (0, 10),
                 "PY-WL-009": (0, 10),
             },
