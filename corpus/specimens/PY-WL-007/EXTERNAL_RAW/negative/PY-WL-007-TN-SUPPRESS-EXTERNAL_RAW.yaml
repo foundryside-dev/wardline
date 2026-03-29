@@ -1,8 +1,8 @@
-specimen_id: PY-WL-007-TP-UNKNOWN_RAW
-description: PY-WL-007 true negative (SUPPRESS) at UNKNOWN_RAW
+specimen_id: PY-WL-007-TN-SUPPRESS-EXTERNAL_RAW
+description: PY-WL-007 true negative (SUPPRESS) at EXTERNAL_RAW
 rule: PY-WL-007
 fragment: "def process(data):\n    if isinstance(data, dict):\n        pass\n"
-taint_state: UNKNOWN_RAW
+taint_state: EXTERNAL_RAW
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null

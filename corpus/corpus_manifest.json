@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "spec_version": "0.1",
-  "corpus_hash": "sha256:2bfe7bafe6dab648e6470d6cd1a4c632a533bced785ad589647447972e5b90be",
+  "corpus_hash": "sha256:f79e75eb18c15adacb534e7f03cb2b5763204ed36f8e118076471f5cb96f7169",
   "generated": "2026-03-28",
   "specimen_count": 244,
   "specimens": [
@@ -1786,8 +1786,8 @@
       "sha256": "a1b2cd704802a9e44b5424b692522a07b85a5f78745f41b1af0af21881110b52"
     },
     {
-      "specimen_id": "PY-WL-007-TP-EXTERNAL_RAW",
-      "path": "specimens/PY-WL-007/EXTERNAL_RAW/negative/PY-WL-007-TP-EXTERNAL_RAW.yaml",
+      "specimen_id": "PY-WL-007-TN-SUPPRESS-EXTERNAL_RAW",
+      "path": "specimens/PY-WL-007/EXTERNAL_RAW/negative/PY-WL-007-TN-SUPPRESS-EXTERNAL_RAW.yaml",
       "py_exists": false,
       "rule": "PY-WL-007",
       "taint_state": "EXTERNAL_RAW",
@@ -1916,8 +1916,8 @@
       "sha256": "a1b2cd704802a9e44b5424b692522a07b85a5f78745f41b1af0af21881110b52"
     },
     {
-      "specimen_id": "PY-WL-007-TP-UNKNOWN_RAW",
-      "path": "specimens/PY-WL-007/UNKNOWN_RAW/negative/PY-WL-007-TP-UNKNOWN_RAW.yaml",
+      "specimen_id": "PY-WL-007-TN-SUPPRESS-UNKNOWN_RAW",
+      "path": "specimens/PY-WL-007/UNKNOWN_RAW/negative/PY-WL-007-TN-SUPPRESS-UNKNOWN_RAW.yaml",
       "py_exists": false,
       "rule": "PY-WL-007",
       "taint_state": "UNKNOWN_RAW",
