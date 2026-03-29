@@ -203,3 +203,38 @@ def target():
         assert len(scn_findings) == 0, (
             f"Valid combination {left}+{right} should not fire SCN-021"
         )
+
+
+class TestSpecCoverage:
+    """Verify _COMBINATIONS covers all 29 spec entries."""
+
+    # Spec entries intentionally not in _COMBINATIONS:
+    # #19: integrity_critical + fail_open — alias of #5, would duplicate
+    # #25: @data_flow(produces=...) + @external_boundary — requires L2 parameterized-decorator analysis
+    _INTENTIONALLY_MISSING = frozenset({19, 25})
+    _SPEC_ENTRIES = frozenset(range(1, 30))  # 1..29
+
+    def test_all_spec_entries_covered_or_documented(self) -> None:
+        """Every spec entry is either in _COMBINATIONS or in _INTENTIONALLY_MISSING."""
+        covered = {s.spec_entry for s in _COMBINATIONS if s.spec_entry is not None}
+        expected = self._SPEC_ENTRIES - self._INTENTIONALLY_MISSING
+        assert covered == expected, (
+            f"Missing spec entries: {expected - covered}; "
+            f"unexpected entries: {covered - expected}"
+        )
+
+    def test_extensions_have_no_spec_entry(self) -> None:
+        """Implementation extensions must have spec_entry=None."""
+        extensions = [s for s in _COMBINATIONS if s.spec_entry is None]
+        assert len(extensions) == 5, (
+            f"Expected 5 restoration_boundary extensions, got {len(extensions)}"
+        )
+        for ext in extensions:
+            assert "restoration_boundary" in (ext.left, ext.right)
+
+    def test_no_duplicate_spec_entries(self) -> None:
+        """Each spec entry number appears at most once."""
+        entries = [s.spec_entry for s in _COMBINATIONS if s.spec_entry is not None]
+        assert len(entries) == len(set(entries)), (
+            f"Duplicate spec entries: {[e for e in entries if entries.count(e) > 1]}"
+        )
