@@ -38,8 +38,8 @@ class RulePyWl004(RuleBase):
         is_async: bool,
     ) -> None:
         """Walk the function body looking for PY-WL-004 patterns."""
-        for child in iter_exception_handlers(node):
-            self._check_handler(child, node)
+        for handler in iter_exception_handlers(node):
+            self._check_handler(handler, node)
         for child in walk_skip_nested_defs(node):
             if isinstance(child, ast.Call):
                 self._check_suppress_call(child, node)
