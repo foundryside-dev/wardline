@@ -34,7 +34,8 @@ class TestCorpusSkeleton:
 
     @pytest.mark.parametrize("rule", [
         "PY-WL-001", "PY-WL-002", "PY-WL-003",
-        "PY-WL-004", "PY-WL-005",
+        "PY-WL-004", "PY-WL-005", "PY-WL-006",
+        "PY-WL-007", "PY-WL-008", "PY-WL-009",
     ])
     def test_rule_directory_exists(self, rule: str) -> None:
         rule_dir = CORPUS_ROOT / "specimens" / rule
