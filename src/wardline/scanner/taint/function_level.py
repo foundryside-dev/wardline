@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from wardline.manifest.models import WardlineManifest
     from wardline.scanner.context import WardlineAnnotation
 
-TaintSource = Literal["decorator", "module_default", "fallback"]
+type TaintSource = Literal["decorator", "module_default", "fallback"]
 
 
 class TaintConflict(NamedTuple):
