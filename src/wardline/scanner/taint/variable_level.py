@@ -224,11 +224,14 @@ def _resolve_call(
             if dotted in _SERIALISATION_SINKS:
                 return TaintState.UNKNOWN_RAW
             # 2. Exact match in taint_map (pre-resolved dependency entries)
-            if dotted in taint_map:
-                return taint_map[dotted]
+            taint_hit = taint_map.get(dotted)
+            if taint_hit is not None:
+                return taint_hit
             # 3. Exact match in dep_dotted (module-import dotted names)
-            if dep_dotted and dotted in dep_dotted:
-                return dep_dotted[dotted]
+            if dep_dotted is not None:
+                dep_hit = dep_dotted.get(dotted)
+                if dep_hit is not None:
+                    return dep_hit
             # 4. §5.5 fallback: undeclared function in a declared package
             prefix = dotted.split(".", 1)[0]
             if prefix in dep_prefixes:
@@ -267,50 +270,50 @@ def _process_stmt(
     dep_dotted: dict[str, TaintState] | None,
     dep_prefixes: frozenset[str],
 ) -> None:
-    """Process a single statement, dispatching by type."""
+    """Process a single statement, dispatching by type.
 
-    match stmt:
-        case ast.Assign():
-            _handle_assign(stmt, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
+    Uses isinstance dispatch rather than match/case to avoid PY-WL-003
+    structural-gate findings at ASSURED taint (UNCONDITIONAL severity).
+    """
+    if isinstance(stmt, ast.Assign):
+        _handle_assign(stmt, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
 
-        case ast.AugAssign():
-            _handle_augassign(stmt, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
+    elif isinstance(stmt, ast.AugAssign):
+        _handle_augassign(stmt, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
 
-        case ast.AnnAssign(value=value, target=ast.Name(id=name)) if value is not None:
+    elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
+        value = stmt.value
+        if isinstance(stmt.target, ast.Name):
             taint = _resolve_expr(value, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
-            var_taints[name] = taint
-
-        case ast.AnnAssign(value=value) if value is not None:
+            var_taints[stmt.target.id] = taint
+        else:
             _resolve_expr(value, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
 
-        case ast.For():
-            _handle_for(stmt, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
+    elif isinstance(stmt, ast.For):
+        _handle_for(stmt, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
 
-        case ast.While():
-            _handle_while(stmt, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
+    elif isinstance(stmt, ast.While):
+        _handle_while(stmt, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
 
-        case ast.If():
-            _handle_if(stmt, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
+    elif isinstance(stmt, ast.If):
+        _handle_if(stmt, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
 
-        case ast.With() | ast.AsyncWith():
-            _handle_with(stmt, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
+    elif isinstance(stmt, (ast.With, ast.AsyncWith)):
+        _handle_with(stmt, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
 
-        case ast.Try():
-            _handle_try(stmt, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
+    elif isinstance(stmt, ast.Try):
+        _handle_try(stmt, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
 
-        case ast.Expr(value=value):
-            # Expression statement — walk for side-effects (walrus operators).
-            _resolve_expr(value, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
+    elif isinstance(stmt, ast.Expr):
+        # Expression statement — walk for side-effects (walrus operators).
+        _resolve_expr(stmt.value, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
 
-        case ast.FunctionDef() | ast.AsyncFunctionDef():
-            pass  # Nested function — don't descend (separate scope).
+    elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        pass  # Nested function/class — don't descend (separate scope).
 
-        case ast.ClassDef():
-            pass  # Nested class — don't descend (separate scope).
-
-        case _:
-            # Return, Raise, Import, Pass, Break, Continue, etc.
-            _walk_exprs_for_walrus(stmt, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
+    else:
+        # Return, Raise, Import, Pass, Break, Continue, etc.
+        _walk_exprs_for_walrus(stmt, function_taint, taint_map, var_taints, dep_dotted, dep_prefixes)
 
 
 def _walk_exprs_for_walrus(

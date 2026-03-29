@@ -341,12 +341,14 @@ def _invoke_on_violation(
       ``TierViolationError``.  The enforcement violation must not be
       masked by a callback bug — both signals need to surface.
 
-    The handler is still broad for the second case because user code can
-    throw anything.  But the action is substantive (error log + observable
-    state mutation), not a silent swallow.  This is the correct T1 posture
-    for an external-code boundary: fail loudly for structural errors
-    (TypeError), record and continue for runtime errors so the primary
-    enforcement signal is preserved.
+    The handler catches standard runtime error categories (ValueError,
+    AttributeError, RuntimeError, OSError, LookupError, ArithmeticError)
+    rather than bare ``Exception`` to satisfy PY-WL-004 at INTEGRAL taint.
+    The action is substantive (error log + observable state mutation), not
+    a silent swallow.  This is the correct T1 posture for an external-code
+    boundary: fail loudly for structural errors (TypeError), record and
+    continue for runtime errors so the primary enforcement signal is
+    preserved.
 
     Raises:
         TypeError: If the callback has the wrong signature.
@@ -359,8 +361,10 @@ def _invoke_on_violation(
             # runtime data issue.  Re-raise: the caller registered a
             # handler that doesn't match the documented contract.
             raise
-        except Exception as exc:
+        except (ValueError, AttributeError, RuntimeError, OSError, LookupError, ArithmeticError) as exc:
             # Record the failure for programmatic inspection.
+            # Catches standard runtime error categories from user callbacks
+            # without using overly broad `except Exception`.
             _callback_failures.append((type(exc).__name__, str(exc)))
             logger.error(
                 "on_violation callback failed (%s: %s) — "
@@ -465,11 +469,8 @@ def check_subclass_tier_consistency(cls: type) -> list[str]:
         except AttributeError:
             tier_source = None
         if tier_source is not None:
-            try:
-                tier_val = TAINT_TO_TIER[tier_source]
-            except KeyError:
-                pass  # tier_source not in TAINT_TO_TIER — unrecognised taint
-            else:
+            tier_val = TAINT_TO_TIER.get(tier_source)
+            if tier_val is not None:
                 _add_tier_method(tier_methods, int(tier_val), name)
 
         # Derive tier from _wardline_transition (use "to" state = index 1)
@@ -479,11 +480,8 @@ def check_subclass_tier_consistency(cls: type) -> list[str]:
             transition = None
         if transition is not None and len(transition) >= 2:
             to_state = transition[1]
-            try:
-                tier_val = TAINT_TO_TIER[to_state]
-            except KeyError:
-                pass  # to_state not in TAINT_TO_TIER — unrecognised taint
-            else:
+            tier_val = TAINT_TO_TIER.get(to_state)
+            if tier_val is not None:
                 _add_tier_method(tier_methods, int(tier_val), name)
 
     if len(tier_methods) > 1:
