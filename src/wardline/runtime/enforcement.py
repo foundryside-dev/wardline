@@ -150,7 +150,7 @@ class TierStamped[T]:  # PEP 695 syntax; works on 3.12+, stabilised in 3.13
     _wardline_stamped_by: str = ""
 
     def __post_init__(self) -> None:
-        if not isinstance(self._wardline_tier, int) or not (1 <= self._wardline_tier <= 4):
+        if isinstance(self._wardline_tier, bool) or not isinstance(self._wardline_tier, int) or not (1 <= self._wardline_tier <= 4):
             raise ValueError(
                 f"TierStamped tier must be int 1-4, got {self._wardline_tier!r}"
             )
@@ -182,7 +182,7 @@ def stamp_tier(
         TypeError: If object is frozen/slotted and cannot accept attributes.
             A WARNING is logged before raising.
     """
-    if not isinstance(tier, int) or not (1 <= tier <= 4):
+    if isinstance(tier, bool) or not isinstance(tier, int) or not (1 <= tier <= 4):
         raise ValueError(f"tier must be int 1-4, got {tier!r}")
 
     if not overwrite:
@@ -260,7 +260,7 @@ def check_tier_boundary(
             expected_tier=expected_min_tier,
         ) from err
 
-    if not isinstance(tier, int):
+    if isinstance(tier, bool) or not isinstance(tier, int):
         ctx = f" (context: {context})" if context else ""
         msg = (
             f"{type(obj).__name__} has non-int _wardline_tier={tier!r}{ctx}"

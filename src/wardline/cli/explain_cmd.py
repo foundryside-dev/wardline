@@ -71,6 +71,10 @@ def explain(
     manifest_model = None
     manifest_path = Path(manifest) if manifest is not None else discover_manifest(Path(scan_path))
 
+    if manifest is not None and manifest_path is not None and not manifest_path.exists():
+        cli_error(f"manifest not found: {manifest_path}")
+        sys.exit(EXIT_CONFIG_ERROR)
+
     if manifest_path is not None and manifest_path.exists():
         try:
             manifest_model = load_manifest(manifest_path)
@@ -373,6 +377,7 @@ def _build_overlay_section(
     output_json: bool,
 ) -> dict[str, Any] | None:
     """Build overlay resolution section for the explain output."""
+    from wardline.manifest.loader import ManifestLoadError
     from wardline.manifest.resolve import resolve_boundaries, resolve_optional_fields
     from wardline.manifest.scope import path_within_scope, scope_specificity
     from wardline.scanner.context import ScanContext
@@ -387,10 +392,10 @@ def _build_overlay_section(
     try:
         boundaries, _ = resolve_boundaries(root, manifest_model)  # type: ignore[arg-type]
         optional_fields = resolve_optional_fields(root, manifest_model)  # type: ignore[arg-type]
-    except Exception:
+    except (ManifestLoadError, OSError) as exc:
         if not output_json:
             click.echo()
-            click.echo("Overlay: none (error resolving overlays)")
+            click.echo(f"Overlay: error resolving overlays: {exc}")
         return None
 
     # Filter boundaries by scope matching the file

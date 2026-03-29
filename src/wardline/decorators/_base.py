@@ -69,6 +69,13 @@ def _try_stamp_tier(
     """
     from wardline.runtime.enforcement import TierStamped, stamp_tier
 
+    # Pre-stamped by inner decorator — innermost tier wins.
+    # Check explicitly rather than catching ValueError, so that
+    # stamp_tier's "invalid tier" ValueError propagates instead
+    # of being silently swallowed alongside "already stamped".
+    if hasattr(result, "_wardline_tier"):
+        return result
+
     try:
         stamp_tier(
             result,
@@ -77,9 +84,6 @@ def _try_stamp_tier(
             stamped_by=stamped_by,
             overwrite=False,
         )
-        return result
-    except ValueError:
-        # Pre-stamped by inner decorator — innermost tier wins
         return result
     except TypeError:
         # stamp_tier already logged WARNING before raising TypeError
