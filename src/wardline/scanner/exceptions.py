@@ -146,7 +146,10 @@ def apply_exceptions(
             rel_path = finding.file_path
 
         location = f"{rel_path}::{finding.qualname}"
-        key = (str(finding.rule_id), str(finding.taint_state), location)
+        if finding.taint_state is None:
+            processed.append(finding)
+            continue
+        key = (finding.rule_id, finding.taint_state, location)
         candidates = index.get(key)
 
         if candidates is None:

@@ -259,7 +259,7 @@ def _git_head_ref() -> str | None:
             # Check if working tree is dirty
             try:
                 dirty_check = subprocess.run(
-                    ["git", "diff", "--quiet"],
+                    ["git", "diff-index", "--quiet", "HEAD"],
                     capture_output=True,
                     timeout=5,
                 )

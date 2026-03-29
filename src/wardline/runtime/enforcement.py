@@ -421,6 +421,14 @@ def check_validated_record(obj: Any) -> None:
         logger.warning("ValidatedRecord check failed: %s", msg)
         _invoke_on_violation(obj, 0, tier)
         raise TierViolationError(msg, obj=obj)
+    if not all(isinstance(g, int) for g in groups):
+        msg = (
+            f"{type(obj).__name__}._wardline_groups elements must be int, "
+            f"got {[type(g).__name__ for g in groups if not isinstance(g, int)]}"
+        )
+        logger.warning("ValidatedRecord check failed: %s", msg)
+        _invoke_on_violation(obj, 0, tier)
+        raise TierViolationError(msg, obj=obj)
 
 
 # ── WardlineBase enforcement extension ────────────────────────
@@ -442,9 +450,10 @@ def check_subclass_tier_consistency(cls: type) -> list[str]:
     """Check tier consistency across decorated methods in a class.
 
     Returns a list of warning messages (empty if consistent).
-    This runs at class definition time regardless of enforcement flag.
-    Reads ``_wardline_tier_source`` and ``_wardline_transition`` from
-    decorated methods, mapping via ``TAINT_TO_TIER``.
+    Called from ``enforce_construction()`` at instance creation time,
+    only when enforcement is enabled.  Reads ``_wardline_tier_source``
+    and ``_wardline_transition`` from decorated methods, mapping via
+    ``TAINT_TO_TIER``.
     """
     from wardline.core.tiers import TAINT_TO_TIER
 
