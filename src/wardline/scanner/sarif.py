@@ -349,9 +349,7 @@ class SarifReport:
                 "wardline.implementedRules": self._implemented_rules(),
                 "wardline.inputFiles": self.input_files,
                 "wardline.inputHash": self.input_hash,
-                **({"wardline.manifestHash": self.manifest_hash}
-                   if self.manifest_hash is not None
-                   else {}),
+                "wardline.manifestHash": self.manifest_hash,
                 "wardline.overlayHashes": list(self.overlay_hashes),
                 "wardline.propertyBagVersion": "0.4",
                 **({"wardline.scanTimestamp": self.scan_timestamp}

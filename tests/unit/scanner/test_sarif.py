@@ -549,7 +549,8 @@ class TestSarifGovernanceMetadata:
     def test_manifest_hash_none_when_not_set(self) -> None:
         report = SarifReport(findings=[])
         props = report.to_dict()["runs"][0]["properties"]
-        assert "wardline.manifestHash" not in props
+        assert "wardline.manifestHash" in props
+        assert props["wardline.manifestHash"] is None
 
     def test_scan_timestamp_present_when_not_verification_mode(self) -> None:
         report = SarifReport(
