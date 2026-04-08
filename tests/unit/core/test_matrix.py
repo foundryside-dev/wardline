@@ -223,3 +223,34 @@ def test_no_matrix_import_at_module_level() -> None:
             assert "matrix" not in node.module, (
                 f"Module-level import of matrix found: {ast.dump(node)}"
             )
+
+
+# --- Split-rule deviation documentation (§7.1) ---
+# PY-WL-002 establishes its own matrix row per §7.1.
+# These cells intentionally differ from WL-001's framework matrix.
+# See ADR-003 for rationale.
+SPLIT_RULE_DEVIATIONS: list[tuple[RuleId, TaintState, Severity, Exceptionability, str]] = [
+    (RuleId.PY_WL_002, TaintState.EXTERNAL_RAW, W, R, "falsy-substitution risk (ADR-003)"),
+    (RuleId.PY_WL_002, TaintState.UNKNOWN_RAW, W, R, "falsy-substitution risk (ADR-003)"),
+    (RuleId.PY_WL_002, TaintState.MIXED_RAW, W, St, "falsy-substitution risk (ADR-003)"),
+]
+
+
+@pytest.mark.parametrize(
+    "rule, taint, expected_sev, expected_exc, rationale",
+    SPLIT_RULE_DEVIATIONS,
+    ids=[f"{r.name}-{t.name}" for r, t, _, _, _ in SPLIT_RULE_DEVIATIONS],
+)
+def test_split_rule_deviation_is_documented(
+    rule: RuleId,
+    taint: TaintState,
+    expected_sev: Severity,
+    expected_exc: Exceptionability,
+    rationale: str,
+) -> None:
+    """Split-rule deviations from framework matrix are intentional and documented."""
+    from wardline.core.matrix import SEVERITY_MATRIX
+
+    cell = SEVERITY_MATRIX[(rule, taint)]
+    assert cell.severity == expected_sev, f"Deviation {rule}×{taint}: {rationale}"
+    assert cell.exceptionability == expected_exc, f"Deviation {rule}×{taint}: {rationale}"
