@@ -9,12 +9,9 @@ early return that clearly represents rejection.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import ast
 
 from wardline.core.severity import Exceptionability, RuleId
-
-if TYPE_CHECKING:
-    import ast
 from wardline.manifest.scope import path_within_scope
 from wardline.scanner.import_resolver import resolve_call_fqn
 from wardline.scanner.rejection_path import has_rejection_path as _has_rejection_path
@@ -95,10 +92,23 @@ class RulePyWl008(RuleBase):
             fqn for fqn in index if fqn.startswith(f"{module_prefix}.")
         ) if module_prefix else frozenset()
 
+        # Build the enclosing qualname prefix so nested local helpers
+        # (e.g. module.outer.inner) can be resolved from bare calls.
+        enclosing_prefix = (
+            f"{module_prefix}.{self._current_qualname}"
+            if module_prefix and self._current_qualname
+            else self._current_qualname or module_prefix
+        )
+
         for child in iter_reachable_calls(node):
             fqn = resolve_call_fqn(child, alias_map, local_fqns, module_prefix)
             if fqn is not None and fqn in index:
                 return True
+            # Try resolving as a nested local helper under the enclosing function
+            if enclosing_prefix and isinstance(child.func, ast.Name):
+                nested_candidate = f"{enclosing_prefix}.{child.func.id}"
+                if nested_candidate in index:
+                    return True
         return False
 
     def _is_checked_boundary(

@@ -79,6 +79,7 @@ _DECORATOR_FACTORIES: dict[str, Any] = {
     "restoration_boundary": restoration.restoration_boundary(
         restored_tier=1, structural_evidence=True
     ),
+    "data_flow": boundaries.data_flow(consumes=4, produces=3),
 }
 
 for _mod in _DECORATOR_MODULES:

@@ -151,6 +151,7 @@ class ScanEngine:
         known_validators: frozenset[str] | None = None,
         max_expansion_rounds: int = 1,
         project_root: Path | None = None,
+        changed_files: frozenset[Path] | None = None,
     ) -> None:
         self._target_paths = target_paths
         self._exclude_paths = tuple(p.resolve() for p in exclude_paths)
@@ -162,6 +163,7 @@ class ScanEngine:
         self._known_validators = known_validators if known_validators is not None else BUILTIN_KNOWN_VALIDATORS
         self._max_expansion_rounds = max_expansion_rounds
         self._project_root = project_root
+        self._changed_files = changed_files
         self._project_index: ProjectIndex | None = None
 
     def scan(self) -> ScanResult:
@@ -208,6 +210,8 @@ class ScanEngine:
 
                 file_path = dir_resolved / filename
                 if self._is_excluded(file_path):
+                    continue
+                if self._changed_files is not None and file_path not in self._changed_files:
                     continue
 
                 self._scan_file(file_path, result)

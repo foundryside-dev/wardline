@@ -30,8 +30,10 @@ if TYPE_CHECKING:
 
 _BROAD_NAMES = frozenset({"Exception", "BaseException"})
 _INTEGRITY_DECORATORS = frozenset({"integral_writer", "integrity_critical"})
-_AUDIT_ATTR_PREFIXES = ("audit", "record", "emit")
-_AUDIT_FUNC_NAMES = frozenset({"audit", "record", "emit"})
+_STRONG_AUDIT_ATTR_PREFIXES = ("audit", "record")
+_WEAK_AUDIT_ATTR_PREFIXES = ("emit",)
+_AUDIT_RECEIVER_KEYWORDS = ("audit", "ledger")
+_AUDIT_FUNC_NAMES = frozenset({"audit", "record", "write_audit", "log_audit", "emit_audit"})
 
 @dataclass(frozen=True)
 class _BlockAnalysis:
@@ -74,16 +76,28 @@ def _is_broad_handler(handler: ast.ExceptHandler) -> bool:
 
 
 def _looks_audit_scoped(call: ast.Call) -> bool:
-    """Heuristic for obviously audit-shaped sinks, excluding telemetry."""
+    """Heuristic for obviously audit-shaped sinks, excluding telemetry.
+
+    Strong prefixes (``audit``, ``record``) fire regardless of receiver.
+    Weak prefixes (``emit``) only fire when the receiver itself looks
+    audit-related — bare ``bus.emit()`` is a common non-audit pattern.
+    """
     if isinstance(call.func, ast.Name):
         return call.func.id in _AUDIT_FUNC_NAMES
     if isinstance(call.func, ast.Attribute):
         attr = call.func.attr
         receiver = receiver_name(call.func.value) or ""
-        if any(attr == prefix or attr.startswith(prefix + "_") for prefix in _AUDIT_ATTR_PREFIXES):
-            return True
         receiver_lower = receiver.lower()
-        return "audit" in receiver_lower or "ledger" in receiver_lower
+        is_audit_receiver = any(kw in receiver_lower for kw in _AUDIT_RECEIVER_KEYWORDS)
+
+        # Strong prefixes fire regardless of receiver
+        if any(attr == prefix or attr.startswith(prefix + "_") for prefix in _STRONG_AUDIT_ATTR_PREFIXES):
+            return True
+        # Weak prefixes require an audit-related receiver
+        if any(attr == prefix or attr.startswith(prefix + "_") for prefix in _WEAK_AUDIT_ATTR_PREFIXES):
+            return is_audit_receiver
+        # Receiver alone is enough (e.g. audit_ledger.write(...))
+        return is_audit_receiver
     return False
 
 

@@ -54,6 +54,22 @@ def resolve(manifest: str | None, path: str, output: str | None) -> None:
 
     manifest_model = load_manifest(manifest_path)
 
+    # --- Validate manifest belongs to the overlay root ---
+    resolved_manifest = manifest_path.resolve()
+    try:
+        resolved_manifest.relative_to(root)
+    except ValueError:
+        try:
+            root.relative_to(resolved_manifest.parent)
+        except ValueError:
+            cli_error(
+                f"Manifest {manifest_path} is outside the overlay root {root}. "
+                f"This could mix one project's manifest with another project's "
+                f"overlays. Use --path as a parent of the manifest, or omit "
+                f"--manifest to auto-discover."
+            )
+            sys.exit(2)
+
     # --- Manifest hash ---
     manifest_bytes = manifest_path.read_bytes()
     manifest_hash = "sha256:" + hashlib.sha256(manifest_bytes).hexdigest()

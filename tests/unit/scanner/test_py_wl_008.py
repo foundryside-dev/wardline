@@ -360,3 +360,79 @@ class TestTaintMatrix:
         assert len(rule.findings) == 1
         assert rule.findings[0].severity == Severity.ERROR
         assert rule.findings[0].exceptionability == Exceptionability.UNCONDITIONAL
+
+
+class TestDelegatedRejection:
+    """Delegated rejection path resolution via rejection_path_index."""
+
+    def test_nested_local_helper_resolves(self) -> None:
+        """A nested helper function with a rejection path should suppress PY-WL-008."""
+        source = """\
+def target():
+    def _check(data):
+        if not data:
+            raise ValueError("bad")
+    _check(payload)
+    return payload
+"""
+        tree = parse_module_source(source)
+        rule = RulePyWl008(file_path="/project/src/api/handler.py")
+        ctx = ScanContext(
+            file_path="/project/src/api/handler.py",
+            function_level_taint_map={"target": TaintState.UNKNOWN_RAW},
+            boundaries=(_boundary(),),
+            rejection_path_index=frozenset({
+                "mymod.target._check",
+            }),
+            module_file_map={"mymod": "/project/src/api/handler.py"},
+        )
+        rule.set_context(ctx)
+        rule.visit(tree)
+
+        assert len(rule.findings) == 0
+
+    def test_module_level_helper_still_resolves(self) -> None:
+        """A module-level helper in the index should still resolve."""
+        source = """\
+def target():
+    _validate(payload)
+    return payload
+"""
+        tree = parse_module_source(source)
+        rule = RulePyWl008(file_path="/project/src/api/handler.py")
+        ctx = ScanContext(
+            file_path="/project/src/api/handler.py",
+            function_level_taint_map={"target": TaintState.UNKNOWN_RAW},
+            boundaries=(_boundary(),),
+            rejection_path_index=frozenset({
+                "mymod._validate",
+            }),
+            module_file_map={"mymod": "/project/src/api/handler.py"},
+        )
+        rule.set_context(ctx)
+        rule.visit(tree)
+
+        assert len(rule.findings) == 0
+
+    def test_nested_helper_not_in_index_still_fires(self) -> None:
+        """A nested call not in the rejection index should still fire."""
+        source = """\
+def target():
+    def _check(data):
+        pass
+    _check(payload)
+    return payload
+"""
+        tree = parse_module_source(source)
+        rule = RulePyWl008(file_path="/project/src/api/handler.py")
+        ctx = ScanContext(
+            file_path="/project/src/api/handler.py",
+            function_level_taint_map={"target": TaintState.UNKNOWN_RAW},
+            boundaries=(_boundary(),),
+            rejection_path_index=frozenset(),
+            module_file_map={"mymod": "/project/src/api/handler.py"},
+        )
+        rule.set_context(ctx)
+        rule.visit(tree)
+
+        assert len(rule.findings) == 1

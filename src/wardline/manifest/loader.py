@@ -98,6 +98,22 @@ def make_wardline_loader(
                     )
             return super().compose_node(parent, index)
 
+    # Fix the "Norway problem": YAML 1.1 coerces YES/NO/ON/OFF to
+    # booleans, silently corrupting taint states and identifiers.
+    # Remove the implicit bool resolver and re-add only YAML 1.2
+    # strict booleans (true/false).
+    import re
+
+    WardlineSafeLoader.yaml_implicit_resolvers = {
+        key: [(tag, regexp) for tag, regexp in resolvers if tag != "tag:yaml.org,2002:bool"]
+        for key, resolvers in WardlineSafeLoader.yaml_implicit_resolvers.items()
+    }
+    WardlineSafeLoader.add_implicit_resolver(  # type: ignore[no-untyped-call]
+        "tag:yaml.org,2002:bool",
+        re.compile(r"^(?:true|True|TRUE|false|False|FALSE)$"),
+        list("tTfF"),
+    )
+
     return WardlineSafeLoader
 
 

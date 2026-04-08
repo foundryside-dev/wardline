@@ -3,21 +3,17 @@
 from __future__ import annotations
 
 import functools
-import inspect
 import logging
 from typing import Any, Protocol, overload
 
 from wardline.core.registry import REGISTRY
+from wardline.decorators._introspect import (
+    _safe_name,
+    is_underlying_coroutine,
+    try_stamp_tier,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _safe_name(obj: object) -> str:
-    """Return __name__ if available, otherwise repr."""
-    try:
-        return obj.__name__  # type: ignore[attr-defined, no-any-return]
-    except AttributeError:
-        return repr(obj)
 
 
 class _WardlineDecorated(Protocol):
@@ -49,70 +45,6 @@ def _compute_output_tier(semantic_attrs: dict[str, Any]) -> int | None:
             return int(tier)
 
     return None
-
-
-def _try_stamp_tier(
-    result: Any,
-    output_tier: int,
-    groups: tuple[int, ...],
-    stamped_by: str,
-) -> Any:
-    """Attempt to stamp tier metadata on a result, auto-wrapping if needed.
-
-    Returns the (possibly wrapped) result.
-
-    - Tries setattr on the result directly.
-    - On TypeError (frozen/slotted objects): logs WARNING,
-      returns TierStamped wrapper instead.
-    - On ValueError (pre-stamped result, overwrite=False): silently returns
-      the pre-stamped result (innermost tier wins for stacked decorators).
-    """
-    from wardline.runtime.enforcement import TierStamped, stamp_tier
-
-    # Pre-stamped by inner decorator — innermost tier wins.
-    # Check explicitly rather than catching ValueError, so that
-    # stamp_tier's "invalid tier" ValueError propagates instead
-    # of being silently swallowed alongside "already stamped".
-    if hasattr(result, "_wardline_tier"):
-        return result
-
-    try:
-        stamp_tier(
-            result,
-            output_tier,
-            groups=groups,
-            stamped_by=stamped_by,
-            overwrite=False,
-        )
-        return result
-    except TypeError:
-        # stamp_tier already logged WARNING before raising TypeError
-        return TierStamped(
-            value=result,
-            _wardline_tier=output_tier,
-            _wardline_groups=groups,
-            _wardline_stamped_by=stamped_by,
-        )
-
-
-def _is_underlying_coroutine(fn: Any) -> bool:
-    """Check if *fn* or any function in its ``__wrapped__`` chain is async.
-
-    ``functools.wraps`` copies ``__wrapped__`` but not the ``CO_COROUTINE``
-    code flag.  A sync third-party wrapper between two wardline decorators
-    will hide the async nature from ``inspect.iscoroutinefunction``.  This
-    function walks the ``__wrapped__`` chain to find the real answer.
-    """
-    current: Any = fn
-    seen: set[int] = set()
-    while current is not None:
-        if id(current) in seen:
-            break
-        seen.add(id(current))
-        if inspect.iscoroutinefunction(current):
-            return True
-        current = getattr(current, "__wrapped__", None)
-    return False
 
 
 def wardline_decorator(
@@ -174,7 +106,7 @@ def wardline_decorator(
             unwrapped = fn.__func__
             wrapper_type = classmethod
 
-        if _is_underlying_coroutine(unwrapped):
+        if is_underlying_coroutine(unwrapped):
             @functools.wraps(unwrapped)
             async def wrapper(*args: Any, **kwargs: Any) -> Any:
                 result = await unwrapped(*args, **kwargs)
@@ -185,7 +117,7 @@ def wardline_decorator(
                             current_groups = tuple(sorted(wrapper._wardline_groups))  # type: ignore[attr-defined]
                         except AttributeError:
                             current_groups = ()
-                        result = _try_stamp_tier(result, output_tier, current_groups, wrapper.__qualname__)
+                        result = try_stamp_tier(result, output_tier, current_groups, wrapper.__qualname__)
                 return result
         else:
             @functools.wraps(unwrapped)
@@ -198,7 +130,7 @@ def wardline_decorator(
                             current_groups = tuple(sorted(wrapper._wardline_groups))  # type: ignore[attr-defined]
                         except AttributeError:
                             current_groups = ()
-                        result = _try_stamp_tier(result, output_tier, current_groups, wrapper.__qualname__)
+                        result = try_stamp_tier(result, output_tier, current_groups, wrapper.__qualname__)
                 return result
 
         # CRITICAL: set _wardline_groups AFTER functools.wraps()

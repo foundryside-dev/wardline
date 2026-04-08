@@ -1,0 +1,23 @@
+---
+specimen_id: "SUP-001-TP-AFN-nested-uuid"
+description: "Adversarial false negative: uuid.uuid4() call hidden inside f-string expression"
+rule: "SUP-001"
+category: "adversarial_false_negative"
+fragment: |
+  """SUP-001 adversarial false negative: uuid call hidden in nested expression."""
+  import uuid
+
+  from wardline.decorators import deterministic
+
+
+  @deterministic
+  def generate_key(prefix: str) -> str:
+      return f"{prefix}-{uuid.uuid4().hex[:8]}"
+taint_state: "EXTERNAL_RAW"
+expected_rules:
+  - "SUP-001"
+expected_severity: "ERROR"
+expected_exceptionability: "STANDARD"
+expected_match: true
+sha256: "e9a04cde3b0d9d6146c2f68b55d5ba69f67decfd82d09360b3dec318fb9c55fa"
+verdict: "true_positive"

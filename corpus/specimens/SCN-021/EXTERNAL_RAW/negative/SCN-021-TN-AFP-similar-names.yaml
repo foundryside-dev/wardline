@@ -1,0 +1,23 @@
+---
+specimen_id: "SCN-021-TN-AFP-similar-names"
+description: "Adversarial false positive: @idempotent + @deterministic looks contradictory but is a valid combination"
+rule: "SCN-021"
+category: "adversarial_false_positive"
+fragment: |
+  def validate_and_transform(data):
+      """@idempotent + @deterministic looks contradictory but is valid."""
+      from wardline.decorators import deterministic, idempotent
+
+      @idempotent
+      @deterministic
+      def normalize(value: str) -> str:
+          return value.strip().lower()
+
+      return normalize(data)
+taint_state: "EXTERNAL_RAW"
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
+sha256: "7636664b4037ad60bd20def341bb75b57ede55829ee250be96ff1778e4ce3faf"
+verdict: "true_negative"

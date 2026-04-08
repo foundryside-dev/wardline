@@ -88,8 +88,8 @@ def test_groups_7_to_15_match_authoritative_binding() -> None:
 
 
 def test_total_count() -> None:
-    """39 decorators total after authoritative Groups 7-15 reconciliation."""
-    assert len(REGISTRY) == 39
+    """40 decorators total after Group 16 data_flow addition."""
+    assert len(REGISTRY) == 40
 
 
 

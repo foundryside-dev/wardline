@@ -17,6 +17,15 @@ from wardline.decorators._base import wardline_decorator
 
 __all__ = ["restoration_boundary"]
 
+# Enumerated vocabulary for institutional_provenance values.
+VALID_INSTITUTIONAL_PROVENANCE: frozenset[str] = frozenset({
+    "org-db",
+    "partner-api",
+    "government-registry",
+    "internal-authority",
+    "contractual-sla",
+})
+
 
 def restoration_boundary(
     *,
@@ -34,10 +43,16 @@ def restoration_boundary(
         semantic_evidence: Whether domain constraint checking is performed.
         integrity_evidence: Integrity mechanism name ("checksum", "signature",
             "hmac") or None if absent.
-        institutional_provenance: Institutional attestation string or None.
+        institutional_provenance: Institutional attestation string from the
+            enumerated vocabulary (``VALID_INSTITUTIONAL_PROVENANCE``), or None.
     """
     if restored_tier not in range(1, 5):
         raise ValueError(f"restored_tier must be 1-4, got {restored_tier}")
+    if institutional_provenance is not None and institutional_provenance not in VALID_INSTITUTIONAL_PROVENANCE:
+        raise ValueError(
+            f"institutional_provenance must be one of "
+            f"{sorted(VALID_INSTITUTIONAL_PROVENANCE)}, got {institutional_provenance!r}"
+        )
     return wardline_decorator(
         17,
         "restoration_boundary",

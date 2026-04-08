@@ -286,6 +286,23 @@ class MyClass:
         assert len(rule.findings) == 1
         assert rule.findings[0].rule_id == RuleId.PY_WL_001_GOVERNED_DEFAULT
 
+    def test_optional_field_only_no_boundary_suppresses(self) -> None:
+        """optional_fields is the primary governance mechanism — no boundary needed."""
+        optional_field = OptionalFieldEntry(
+            field="key",
+            approved_default="fallback",
+            rationale="Optional by partner contract",
+            overlay_scope="/project/src/adapters",
+        )
+        rule = _run_rule_with_context(
+            'schema_default(d.get("key", "fallback"))\n',
+            optional_fields=(optional_field,),
+        )
+        assert len(rule.findings) == 1
+        f = rule.findings[0]
+        assert f.rule_id == RuleId.PY_WL_001_GOVERNED_DEFAULT
+        assert f.severity == Severity.SUPPRESS
+
     def test_multiple_boundaries_only_match_suppresses(self) -> None:
         boundaries = (
             BoundaryEntry(function="other", transition="shape_validation", overlay_scope="/project/src/adapters"),
@@ -319,7 +336,10 @@ class TestSchemaDefaultUngoverned:
         assert f.severity == Severity.ERROR
         assert f.exceptionability == Exceptionability.STANDARD
 
-    def test_wrong_function_emits_error(self) -> None:
+    def test_wrong_function_boundary_still_governed_by_optional_field(self) -> None:
+        """Boundary qualname mismatch does not block governance when
+        optional_field covers the file scope (optional_fields is the
+        primary governance mechanism for schema_default)."""
         boundary = BoundaryEntry(
             function="other_fn",
             transition="shape_validation",
@@ -337,9 +357,11 @@ class TestSchemaDefaultUngoverned:
             optional_fields=(optional_field,),
         )
         assert len(rule.findings) == 1
-        assert rule.findings[0].rule_id == RuleId.PY_WL_001_UNGOVERNED_DEFAULT
+        assert rule.findings[0].rule_id == RuleId.PY_WL_001_GOVERNED_DEFAULT
 
-    def test_wrong_transition_emits_error(self) -> None:
+    def test_wrong_transition_boundary_still_governed_by_optional_field(self) -> None:
+        """Non-governance transition on boundary does not block governance
+        when optional_field covers the file scope."""
         boundary = BoundaryEntry(
             function="target",
             transition="semantic_validation",
@@ -357,7 +379,7 @@ class TestSchemaDefaultUngoverned:
             optional_fields=(optional_field,),
         )
         assert len(rule.findings) == 1
-        assert rule.findings[0].rule_id == RuleId.PY_WL_001_UNGOVERNED_DEFAULT
+        assert rule.findings[0].rule_id == RuleId.PY_WL_001_GOVERNED_DEFAULT
 
     def test_wrong_scope_emits_error(self) -> None:
         boundary = BoundaryEntry(
@@ -413,7 +435,9 @@ class TestSchemaDefaultUngoverned:
         assert rule.findings[0].rule_id == RuleId.PY_WL_001_UNGOVERNED_DEFAULT
         assert rule.findings[0].severity == Severity.ERROR
 
-    def test_case_sensitive_qualname(self) -> None:
+    def test_case_sensitive_qualname_boundary_still_governed_by_optional_field(self) -> None:
+        """Case-mismatched boundary qualname does not block governance
+        when optional_field covers the file scope."""
         boundary = BoundaryEntry(
             function="Target",
             transition="shape_validation",
@@ -431,7 +455,7 @@ class TestSchemaDefaultUngoverned:
             optional_fields=(optional_field,),
         )
         assert len(rule.findings) == 1
-        assert rule.findings[0].rule_id == RuleId.PY_WL_001_UNGOVERNED_DEFAULT
+        assert rule.findings[0].rule_id == RuleId.PY_WL_001_GOVERNED_DEFAULT
 
     def test_missing_optional_field_declaration_emits_error(self) -> None:
         boundary = BoundaryEntry(

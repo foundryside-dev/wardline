@@ -43,12 +43,62 @@ _SHAPE_VALIDATION_SUBSTRINGS = ("schema", "shape", "structure")
 _SCHEMA_QUALIFIED_METHODS = frozenset({"validate", "is_valid"})
 
 
+def _subscript_targets(node: ast.AST) -> frozenset[str]:
+    """Extract variable names used as subscript targets in *node*.
+
+    For ``data["key"]`` returns ``{"data"}``.  For ``a["x"] + b["y"]``
+    returns ``{"a", "b"}``.  Attribute chains like ``self.data["key"]``
+    yield the root ``"self"``.
+    """
+    names: set[str] = set()
+    for child in ast.walk(node):
+        if isinstance(child, ast.Subscript):
+            target = child.value
+            # Walk through attribute chains to find the root Name.
+            while isinstance(target, ast.Attribute):
+                target = target.value
+            if isinstance(target, ast.Name):
+                names.add(target.id)
+    return frozenset(names)
+
+
+def _shape_check_target(node: ast.AST) -> str | None:
+    """Extract the variable name being validated by a shape-check node.
+
+    For calls like ``isinstance(data, dict)``, ``validate_schema(data)``,
+    or ``schema.validate(data)`` returns the first-argument variable name.
+    For membership tests like ``"key" in data`` returns the comparator
+    variable name.  Returns ``None`` when the target cannot be determined.
+    """
+    if isinstance(node, ast.Call) and node.args:
+        arg = node.args[0]
+        while isinstance(arg, ast.Attribute):
+            arg = arg.value
+        if isinstance(arg, ast.Name):
+            return arg.id
+    if isinstance(node, ast.Compare) and _is_membership_test(node):
+        # ``"key" in data`` — the right side of ``in`` is the container.
+        for i, op in enumerate(node.ops):
+            if isinstance(op, (ast.In, ast.NotIn)):
+                comparator = node.comparators[i]
+                while isinstance(comparator, ast.Attribute):
+                    comparator = comparator.value
+                if isinstance(comparator, ast.Name):
+                    return comparator.id
+    return None
+
+
 def _has_shape_check_before(
     stmts: list[ast.stmt],
     *,
     stop_line: int,
+    target_names: frozenset[str] = frozenset(),
 ) -> bool:
     """Check if any statement before *stop_line* is a shape validation.
+
+    When *target_names* is non-empty, only shape checks whose validated
+    variable overlaps with *target_names* count.  This prevents a shape
+    check on variable ``x`` from suppressing a finding about ``y``.
 
     Shape validations include:
     - isinstance(...) calls whose result is consumed (in a conditional,
@@ -80,10 +130,11 @@ def _has_shape_check_before(
     for node in walk_skip_nested_defs(module):
         if getattr(node, "lineno", 0) >= stop_line:
             continue
-        if isinstance(node, ast.Call):
-            if id(node) not in bare_expr_calls and _is_shape_validation_call(node):
-                return True
-        elif isinstance(node, ast.Compare) and _is_membership_test(node):
+        is_shape = (
+            (isinstance(node, ast.Call) and id(node) not in bare_expr_calls and _is_shape_validation_call(node))
+            or (isinstance(node, ast.Compare) and _is_membership_test(node))
+        )
+        if is_shape and (not target_names or _shape_check_target(node) in target_names):
             return True
     return False
 
@@ -172,8 +223,11 @@ def _test_contains_shape_check(test: ast.expr) -> bool:
 
 def _get_semantic_check_nodes(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
-) -> list[ast.AST]:
+) -> list[tuple[ast.AST, frozenset[str]]]:
     """Find if/assert nodes that perform semantic checks on subscript data.
+
+    Returns a list of ``(node, target_names)`` tuples where *target_names*
+    is the set of variable names accessed via subscript in the check.
 
     A semantic check is an if-test or assert that accesses data via
     subscript (``data["key"]``) and compares or tests a value — business
@@ -188,7 +242,7 @@ def _get_semantic_check_nodes(
     hasattr, membership test) are excluded — the shape guard in the
     condition itself covers the subscript access.
     """
-    results: list[ast.AST] = []
+    results: list[tuple[ast.AST, frozenset[str]]] = []
     for child in walk_skip_nested_defs(node):
         if not isinstance(child, (ast.If, ast.Assert)):
             continue
@@ -196,7 +250,8 @@ def _get_semantic_check_nodes(
             continue
         if _test_contains_shape_check(child.test):
             continue
-        results.append(child)
+        targets = _subscript_targets(child.test)
+        results.append((child, targets))
     return results
 
 
@@ -230,9 +285,10 @@ class RulePyWl009(RuleBase):
             return
 
         # For each semantic check, see if there's a shape check before it
-        for check in semantic_checks:
+        # that operates on the SAME variable being subscript-accessed.
+        for check, target_names in semantic_checks:
             check_line = getattr(check, "lineno", 0)
-            if not _has_shape_check_before(node.body, stop_line=check_line):
+            if not _has_shape_check_before(node.body, stop_line=check_line, target_names=target_names):
                 self._emit_matrix_finding(
                     check,
                     "Semantic validation without prior shape validation"

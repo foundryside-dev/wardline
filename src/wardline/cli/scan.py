@@ -419,6 +419,10 @@ def _custom_known_validator_findings(
               help="Treat GOVERNANCE findings as scan failures (exit 1).")
 @click.option("--retrospective", default=None, type=str,
               help="Retrospective scan for degraded-law window (commit range, e.g. abc123..def456).")
+@click.option("--changed-only", is_flag=True, default=False,
+              help="Only scan files changed since HEAD (requires git).")
+@click.option("--compare", default=None, type=click.Path(exists=True, dir_okay=False),
+              help="Baseline SARIF file to compare against (reports new/resolved findings).")
 def scan(
     path: str,
     manifest: str | None,
@@ -435,13 +439,15 @@ def scan(
     allow_stale_resolved: bool,
     strict_governance: bool,
     retrospective: str | None,
+    changed_only: bool,
+    compare: str | None,
 ) -> None:
     """Scan Python files for boundary violations."""
     cli_handler = _setup_logging(verbose=verbose, debug=debug)
     click.get_current_context().call_on_close(lambda: _teardown_logging(cli_handler))
 
     # --- Load manifest ---
-    _manifest_result = _load_manifest(manifest)
+    _manifest_result = _load_manifest(manifest, Path(path).resolve())
     if _manifest_result is None:
         sys.exit(EXIT_CONFIG_ERROR)
     manifest_model, manifest_path = _manifest_result
@@ -565,10 +571,23 @@ def scan(
         except _PolicyError as exc:
             cli_error(str(exc))
             sys.exit(EXIT_CONFIG_ERROR)
-        optional_fields = resolve_optional_fields(
-            manifest_path.parent,
-            manifest_model,
-        )
+        try:
+            optional_fields = resolve_optional_fields(
+                manifest_path.parent,
+                manifest_model,
+            )
+        except _PolicyError as exc:
+            cli_error(str(exc))
+            sys.exit(EXIT_CONFIG_ERROR)
+
+    # --- Resolve changed-only file set ---
+    changed_file_set: frozenset[Path] | None = None
+    if changed_only:
+        changed_file_set = _git_changed_files(scan_path)
+        if changed_file_set is None:
+            cli_error("--changed-only requires a git repository")
+            sys.exit(EXIT_CONFIG_ERROR)
+        logger.info("Incremental scan: %d changed file(s)", len(changed_file_set))
 
     # --- Create engine and run scan ---
     from wardline.scanner.engine import ScanEngine, ScanResult
@@ -585,6 +604,7 @@ def scan(
         known_validators=effective_known_validators,
         max_expansion_rounds=cfg.max_expansion_rounds if cfg is not None else 1,
         project_root=manifest_path.parent,
+        changed_files=changed_file_set,
     )
 
     logger.info("Scanning %d target path(s)...", len(target_paths))
@@ -865,6 +885,19 @@ def scan(
         err=True,
     )
 
+    # --- Baseline comparison ---
+    if compare is not None:
+        try:
+            new_count, resolved_count = _compare_sarif_baseline(
+                all_findings, compare, base_path=str(scan_path),
+            )
+            click.echo(
+                f"{new_count} new finding(s), {resolved_count} resolved finding(s).",
+                err=True,
+            )
+        except (OSError, KeyError, ValueError) as exc:
+            cli_error(f"baseline comparison failed: {exc}")
+
     # --- Determine exit code ---
     # Exit code priority (highest wins):
     #   EXIT_TOOL_ERROR (3) — a rule or scanner component raised an
@@ -891,6 +924,48 @@ def scan(
         sys.exit(EXIT_FINDINGS)
     else:
         sys.exit(EXIT_CLEAN)
+
+
+def _compare_sarif_baseline(
+    current_findings: list[Finding],
+    baseline_path: str,
+    base_path: str | None,
+) -> tuple[int, int]:
+    """Compare current findings against a baseline SARIF file.
+
+    Returns (new_count, resolved_count). Comparison uses the composite
+    key (ruleId, file, qualname).
+    """
+    import json
+
+    from wardline.scanner.sarif import _normalize_artifact_uri
+
+    def _finding_key(rule_id: str, file_uri: str, qualname: str | None) -> tuple[str, str, str]:
+        return (rule_id, file_uri, qualname or "")
+
+    # Extract keys from baseline SARIF
+    baseline_data = json.loads(Path(baseline_path).read_text(encoding="utf-8"))
+    baseline_keys: set[tuple[str, str, str]] = set()
+    for run in baseline_data.get("runs", []):
+        for result in run.get("results", []):
+            rule_id = result.get("ruleId", "")
+            file_uri = ""
+            locs = result.get("locations", [])
+            if locs:
+                phys = locs[0].get("physicalLocation", {})
+                file_uri = phys.get("artifactLocation", {}).get("uri", "")
+            qualname = result.get("properties", {}).get("wardline.qualname", "")
+            baseline_keys.add(_finding_key(rule_id, file_uri, qualname))
+
+    # Extract keys from current findings
+    current_keys: set[tuple[str, str, str]] = set()
+    for f in current_findings:
+        file_uri = _normalize_artifact_uri(f.file_path, base_path)
+        current_keys.add(_finding_key(str(f.rule_id), file_uri, f.qualname))
+
+    new_count = len(current_keys - baseline_keys)
+    resolved_count = len(baseline_keys - current_keys)
+    return new_count, resolved_count
 
 
 _CLI_HANDLER_NAME = "wardline_cli"
@@ -932,8 +1007,65 @@ def _teardown_logging(handler: logging.Handler) -> None:
     logger.removeHandler(handler)
 
 
+def _git_changed_files(repo_path: Path) -> frozenset[Path] | None:
+    """Return resolved paths of files changed since HEAD, or None if not a git repo."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD", "--diff-filter=ACMR"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+
+    if result.returncode != 0:
+        return None
+
+    # Also include untracked .py files
+    try:
+        untracked = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard", "*.py"],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        untracked = None
+
+    files: set[Path] = set()
+    git_root_result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=str(repo_path),
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if git_root_result.returncode != 0:
+        return None
+    git_root = Path(git_root_result.stdout.strip())
+
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line and line.endswith(".py"):
+            files.add((git_root / line).resolve())
+
+    if untracked is not None and untracked.returncode == 0:
+        for line in untracked.stdout.splitlines():
+            line = line.strip()
+            if line:
+                files.add((git_root / line).resolve())
+
+    return frozenset(files)
+
+
 def _load_manifest(
     manifest_arg: str | None,
+    scan_path: Path | None = None,
 ) -> tuple[WardlineManifest, Path] | None:
     """Load and validate the wardline.yaml manifest.
 
@@ -954,11 +1086,12 @@ def _load_manifest(
     if manifest_arg is not None:
         manifest_path = Path(manifest_arg)
     else:
-        manifest_path = discover_manifest(Path.cwd())
+        start = scan_path if scan_path is not None else Path.cwd()
+        manifest_path = discover_manifest(start)
         if manifest_path is None:
             cli_error(
                 "no wardline.yaml found (searched upward from "
-                f"{Path.cwd()})"
+                f"{start})"
             )
             return None
 
@@ -1154,11 +1287,33 @@ def _load_resolved(
             for entry in data.get("optional_fields", [])
         )
 
-        # Reconstruct overlay file paths from overlays_discovered
-        overlay_paths = tuple(
-            project_root / entry["path"]
-            for entry in data.get("overlays_discovered", [])
-        )
+        # V5: Overlay existence validation — verify referenced overlays still exist
+        overlay_paths_list: list[Path] = []
+        for entry in data.get("overlays_discovered", []):
+            overlay_path = project_root / entry["path"]
+            if not overlay_path.exists():
+                cli_error(
+                    f"resolved file references overlay '{entry['path']}' "
+                    f"which no longer exists. Re-run `wardline resolve`."
+                )
+                return None
+            overlay_paths_list.append(overlay_path)
+        overlay_paths = tuple(overlay_paths_list)
+
+        # V6: Boundary scope validation — overlay_scope must be within module_tiers
+        if manifest_model is not None and manifest_model.module_tiers:
+            declared_paths = {mt.path.rstrip("/") for mt in manifest_model.module_tiers}
+            for b in boundaries:
+                scope = b.overlay_scope
+                if scope and scope != str(project_root.resolve()):
+                    rel_scope = str(Path(scope).relative_to(project_root))
+                    if not any(rel_scope.startswith(dp) or dp.startswith(rel_scope) for dp in declared_paths):
+                        cli_error(
+                            f"resolved boundary for '{b.function}' has overlay_scope "
+                            f"'{rel_scope}' outside declared module_tiers. "
+                            f"Re-run `wardline resolve`."
+                        )
+                        return None
 
         return boundaries, rule_overrides, optional_fields, overlay_paths
     except ManifestPolicyError as exc:

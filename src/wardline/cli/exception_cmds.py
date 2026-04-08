@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import sys
+import tokenize
 import uuid
 from pathlib import Path
 from typing import Any
@@ -298,9 +299,10 @@ def refresh(
         file_path, qualname = location.split("::", 1)
         if file_path not in _ast_cache:
             try:
-                source = Path(file_path).read_text(encoding="utf-8")
+                with tokenize.open(file_path) as fh:
+                    source = fh.read()
                 _ast_cache[file_path] = ast.parse(source, filename=file_path)
-            except (OSError, SyntaxError):
+            except (OSError, SyntaxError, UnicodeDecodeError):
                 _ast_cache[file_path] = None
         new_fp = compute_ast_fingerprint(
             Path(file_path), qualname, tree=_ast_cache[file_path],
@@ -565,9 +567,10 @@ def review(json_output: bool) -> None:
             fp, qn = location.split("::", 1)
             if fp not in _review_ast_cache:
                 try:
-                    source = Path(fp).read_text(encoding="utf-8")
+                    with tokenize.open(fp) as fh:
+                        source = fh.read()
                     _review_ast_cache[fp] = ast.parse(source, filename=fp)
-                except (OSError, SyntaxError):
+                except (OSError, SyntaxError, UnicodeDecodeError):
                     _review_ast_cache[fp] = None
             current = compute_ast_fingerprint(
                 Path(fp), qn, tree=_review_ast_cache[fp],
@@ -624,6 +627,124 @@ def review(json_output: bool) -> None:
                 f"  Last batch refresh: {last_batch.get('at', '?')} "
                 f"by {last_batch.get('by', '?')}"
             )
+
+
+@exception.command("audit-mvp")
+@click.option("--json", "json_output", is_flag=True, help="JSON output")
+def audit_mvp(json_output: bool) -> None:
+    """Re-evaluate MVP-era exceptions against the current severity matrix.
+
+    Scans the exception register for entries with a ``migrated_from`` field
+    (set during ``wardline exception migrate``) and compares the severity and
+    exceptionability recorded at grant time against the current matrix result
+    for the same (rule, taint_state) pair.
+
+    This is a read-only command — it reports discrepancies but makes no changes.
+    """
+    exc_path = _find_exceptions_file()
+    data = _load_or_create(exc_path)
+
+    if not data["exceptions"]:
+        if json_output:
+            click.echo(json.dumps({"migrated_count": 0, "changed": [], "unchanged": 0}, indent=2))
+        else:
+            click.echo("No exceptions in register.")
+        return
+
+    migrated_entries = [e for e in data["exceptions"] if e.get("migrated_from")]
+    if not migrated_entries:
+        if json_output:
+            click.echo(json.dumps({"migrated_count": 0, "changed": [], "unchanged": 0}, indent=2))
+        else:
+            click.echo("No MVP-migrated exceptions found (no entries with 'migrated_from' field).")
+        return
+
+    changed: list[dict[str, Any]] = []
+    unchanged = 0
+    errors: list[dict[str, Any]] = []
+
+    for entry in migrated_entries:
+        exc_id = entry.get("id", "<unknown>")
+        rule_str = entry.get("rule", "")
+        taint_str = entry.get("taint_state", "")
+
+        # Validate rule and taint_state
+        try:
+            rule_id = RuleId(rule_str)
+        except ValueError:
+            errors.append({"id": exc_id, "error": f"invalid rule ID: {rule_str}"})
+            continue
+
+        try:
+            taint = TaintState(taint_str)
+        except ValueError:
+            errors.append({"id": exc_id, "error": f"invalid taint state: {taint_str}"})
+            continue
+
+        # Look up current matrix cell
+        try:
+            current_cell = matrix.lookup(rule_id, taint)
+        except KeyError:
+            errors.append({"id": exc_id, "error": f"no matrix entry for ({rule_str}, {taint_str})"})
+            continue
+
+        current_severity = str(current_cell.severity)
+        current_exceptionability = str(current_cell.exceptionability)
+
+        # Compare against grant-time values
+        grant_severity = entry.get("severity_at_grant", "")
+        grant_exceptionability = entry.get("exceptionability", "")
+
+        severity_changed = grant_severity and grant_severity != current_severity
+        exceptionability_changed = grant_exceptionability and grant_exceptionability != current_exceptionability
+
+        if severity_changed or exceptionability_changed:
+            record: dict[str, Any] = {
+                "id": exc_id,
+                "rule": rule_str,
+                "taint_state": taint_str,
+                "location": entry.get("location", ""),
+                "migrated_from": entry.get("migrated_from", ""),
+            }
+            if severity_changed:
+                record["severity_at_grant"] = grant_severity
+                record["severity_current"] = current_severity
+            if exceptionability_changed:
+                record["exceptionability_at_grant"] = grant_exceptionability
+                record["exceptionability_current"] = current_exceptionability
+            changed.append(record)
+        else:
+            unchanged += 1
+
+    if json_output:
+        result: dict[str, Any] = {
+            "migrated_count": len(migrated_entries),
+            "changed": changed,
+            "unchanged": unchanged,
+        }
+        if errors:
+            result["errors"] = errors
+        click.echo(json.dumps(result, indent=2))
+    else:
+        click.echo(f"MVP-migrated exceptions: {len(migrated_entries)}")
+        if changed:
+            click.echo(f"\nMatrix changes detected ({len(changed)}):")
+            for c in changed:
+                click.echo(f"  {c['id']} ({c['rule']} @ {c['taint_state']})")
+                click.echo(f"    location: {c['location']}")
+                click.echo(f"    migrated_from: {c['migrated_from']}")
+                if "severity_at_grant" in c:
+                    click.echo(f"    severity: {c['severity_at_grant']} -> {c['severity_current']}")
+                if "exceptionability_at_grant" in c:
+                    click.echo(f"    exceptionability: {c['exceptionability_at_grant']} -> {c['exceptionability_current']}")
+        else:
+            click.echo("No matrix changes detected — all migrated exceptions match current matrix.")
+        if unchanged:
+            click.echo(f"\nUnchanged: {unchanged}")
+        if errors:
+            click.echo(f"\nErrors ({len(errors)}):")
+            for e in errors:
+                click.echo(f"  {e['id']}: {e['error']}")
 
 
 # --- Helpers ---
@@ -690,9 +811,10 @@ def _compute_taints(
 
     for file_path in py_files:
         try:
-            source = file_path.read_text(encoding="utf-8")
+            with tokenize.open(file_path) as fh:
+                source = fh.read()
             tree = ast.parse(source, filename=str(file_path))
-        except (OSError, SyntaxError):
+        except (OSError, SyntaxError, UnicodeDecodeError):
             continue
 
         try:

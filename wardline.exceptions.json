@@ -13,15 +13,15 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "e4fea35dc4cbafcb",
+      "ast_fingerprint": "23a1131228515892",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "migrated_from": "taint_state was UNKNOWN_RAW at level 1",
       "migrated_by": "Claude",
       "last_refreshed_by": "Claude",
-      "last_refresh_rationale": "AST fingerprints stale after ADR-001/002 taint state and decorator rename \u2014 code behaviour unchanged",
-      "last_refreshed_at": "2026-03-29"
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-2FAEA819",
@@ -35,12 +35,15 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "5692437839a38c83",
+      "ast_fingerprint": "0a0c157a9579c4ca",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "migrated_from": "taint_state was UNKNOWN_RAW at level 1",
-      "migrated_by": "Claude"
+      "migrated_by": "Claude",
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-1844C974",
@@ -54,12 +57,15 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "521bc749a88878a5",
+      "ast_fingerprint": "92c49be3f939050a",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "migrated_from": "taint_state was UNKNOWN_RAW at level 1",
-      "migrated_by": "Claude"
+      "migrated_by": "Claude",
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-71EFE0FE",
@@ -111,12 +117,15 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "0e7aa37fcdeced17",
+      "ast_fingerprint": "30071c45396b258d",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "migrated_from": "taint_state was UNKNOWN_RAW at level 1",
-      "migrated_by": "Claude"
+      "migrated_by": "Claude",
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-D56566C2",
@@ -166,13 +175,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "a5b71fad3367aa67",
+      "ast_fingerprint": "43415cd30e1883f4",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "last_refreshed_by": "Claude",
-      "last_refresh_rationale": "AST fingerprints stale after ADR-001/002 taint state and decorator rename \u2014 code behaviour unchanged",
-      "last_refreshed_at": "2026-03-29"
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-F696E4DB",
@@ -186,15 +195,15 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "dd2e1f14a17d0d7a",
+      "ast_fingerprint": "4f4cbfc76b489935",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "migrated_from": "taint_state was UNKNOWN_RAW at level 1",
       "migrated_by": "Claude",
       "last_refreshed_by": "Claude",
-      "last_refresh_rationale": "Fingerprints stale after try/except refactors for PY-WL-001/002/003 compliance \u2014 code behaviour unchanged",
-      "last_refreshed_at": "2026-03-28"
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-83FBF050",
@@ -263,12 +272,15 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "e840579829f6c200",
+      "ast_fingerprint": "ee92ddba9959c7a8",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "migrated_from": "taint_state was UNKNOWN_RAW at level 1",
-      "migrated_by": "Claude"
+      "migrated_by": "Claude",
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-371D2D2C",
@@ -282,15 +294,15 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "b580e3ded1e1338d",
+      "ast_fingerprint": "94f34af5705400a2",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "migrated_from": "taint_state was UNKNOWN_RAW at level 1",
       "migrated_by": "Claude",
       "last_refreshed_by": "Claude",
-      "last_refresh_rationale": "Fingerprints stale after try/except refactors for PY-WL-001/002/003 compliance \u2014 code behaviour unchanged",
-      "last_refreshed_at": "2026-03-28"
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-451939A6",
@@ -304,12 +316,15 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "a835d8bf085957f2",
+      "ast_fingerprint": "7e25dd35ac825c4e",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "migrated_from": "taint_state was UNKNOWN_RAW at level 1",
-      "migrated_by": "Claude"
+      "migrated_by": "Claude",
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-EDD11C05",
@@ -323,15 +338,15 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "b6e8c8ba95c9bd66",
+      "ast_fingerprint": "8cea3fcfd3a1a1ed",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "migrated_from": "taint_state was UNKNOWN_RAW at level 1",
       "migrated_by": "Claude",
       "last_refreshed_by": "Claude",
-      "last_refresh_rationale": "AST fingerprints stale after ADR-001/002 taint state and decorator rename \u2014 code behaviour unchanged",
-      "last_refreshed_at": "2026-03-29"
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-0689F558",
@@ -362,10 +377,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "77c797d8d47c8b89",
+      "ast_fingerprint": "fab88d14e029282b",
       "recurrence_count": 0,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-BAEDDEF4",
@@ -379,13 +397,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "6842079c38cb4e2d",
+      "ast_fingerprint": "e353857a54932a47",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "last_refreshed_by": "Claude",
-      "last_refresh_rationale": "Fingerprints stale after try/except refactors for PY-WL-001/002/003 compliance \u2014 code behaviour unchanged",
-      "last_refreshed_at": "2026-03-28"
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-B3DC508D",
@@ -416,15 +434,15 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "07e2e207b5d77435",
+      "ast_fingerprint": "3ca7e2e501ed418a",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "migrated_from": "taint_state was UNKNOWN_RAW at level 1",
       "migrated_by": "Claude",
       "last_refreshed_by": "Claude",
-      "last_refresh_rationale": "Fingerprints stale after try/except refactors for PY-WL-001/002/003 compliance \u2014 code behaviour unchanged",
-      "last_refreshed_at": "2026-03-28"
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-56139FD5",
@@ -438,12 +456,15 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "5692437839a38c83",
+      "ast_fingerprint": "0a0c157a9579c4ca",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "migrated_from": "taint_state was UNKNOWN_RAW at level 1",
-      "migrated_by": "Claude"
+      "migrated_by": "Claude",
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-5E545913",
@@ -457,12 +478,15 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "e5c32344c38feb23",
+      "ast_fingerprint": "ca1f9c503194f312",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "migrated_from": "taint_state was UNKNOWN_RAW at level 1",
-      "migrated_by": "Claude"
+      "migrated_by": "Claude",
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-42C371C3",
@@ -514,13 +538,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "aa8e7c637ed8a341",
+      "ast_fingerprint": "d77e738fec917788",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "last_refreshed_by": "Claude",
-      "last_refresh_rationale": "Fingerprints stale after try/except refactors for PY-WL-001/002/003 compliance \u2014 code behaviour unchanged",
-      "last_refreshed_at": "2026-03-28"
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-F5846AED",
@@ -534,13 +558,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "aa8e7c637ed8a341",
+      "ast_fingerprint": "d77e738fec917788",
       "recurrence_count": 1,
       "governance_path": "standard",
       "analysis_level": 1,
       "last_refreshed_by": "Claude",
-      "last_refresh_rationale": "Fingerprints stale after try/except refactors for PY-WL-001/002/003 compliance \u2014 code behaviour unchanged",
-      "last_refreshed_at": "2026-03-28"
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-E4BBA3AE",
@@ -554,10 +578,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "e5313a6410342d5d",
+      "ast_fingerprint": "3c4cd66589f636ff",
       "recurrence_count": 0,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-65F0BEBC",
@@ -571,13 +598,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "f12a025f46bf2082",
+      "ast_fingerprint": "a41ad0dc4043d4c8",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "last_refreshed_by": "Claude",
-      "last_refresh_rationale": "Fingerprints stale after try/except refactors for PY-WL-001/002/003 compliance \u2014 code behaviour unchanged",
-      "last_refreshed_at": "2026-03-28"
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-50E4238A",
@@ -608,13 +635,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "e213f0f95666b9fc",
+      "ast_fingerprint": "23ef1a497271c894",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "last_refreshed_by": "Claude",
-      "last_refresh_rationale": "AST fingerprints stale after ADR-001/002 taint state and decorator rename \u2014 code behaviour unchanged",
-      "last_refreshed_at": "2026-03-29"
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-8DC74334",
@@ -628,10 +655,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "2cf1bec03b48d098",
+      "ast_fingerprint": "ff063b5d383a0b1d",
       "recurrence_count": 0,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-DFF0B31A",
@@ -645,10 +675,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "2cf1bec03b48d098",
+      "ast_fingerprint": "ff063b5d383a0b1d",
       "recurrence_count": 1,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-33CDD88E",
@@ -662,10 +695,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "2cf1bec03b48d098",
+      "ast_fingerprint": "ff063b5d383a0b1d",
       "recurrence_count": 2,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-4463EC24",
@@ -679,10 +715,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "2cf1bec03b48d098",
+      "ast_fingerprint": "ff063b5d383a0b1d",
       "recurrence_count": 3,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-E71B8540",
@@ -696,13 +735,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "3dec9cd6bdb6d904",
+      "ast_fingerprint": "89bbe01b197a518a",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "last_refreshed_by": "Claude",
-      "last_refresh_rationale": "Fingerprints stale after try/except refactors for PY-WL-001/002/003 compliance \u2014 code behaviour unchanged",
-      "last_refreshed_at": "2026-03-28"
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-2B896CF4",
@@ -716,10 +755,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "64c1a32f256572fd",
+      "ast_fingerprint": "c5839bd41654f662",
       "recurrence_count": 0,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-50A12F50",
@@ -733,10 +775,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "64c1a32f256572fd",
+      "ast_fingerprint": "c5839bd41654f662",
       "recurrence_count": 1,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-E1A6FA5B",
@@ -750,10 +795,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "8276e5eb8ef3416c",
+      "ast_fingerprint": "264d9faea0fa7cd2",
       "recurrence_count": 0,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-12D2F1CC",
@@ -767,10 +815,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "8276e5eb8ef3416c",
+      "ast_fingerprint": "264d9faea0fa7cd2",
       "recurrence_count": 1,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-EE549E84",
@@ -952,10 +1003,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "5692437839a38c83",
+      "ast_fingerprint": "0a0c157a9579c4ca",
       "recurrence_count": 0,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-48258F72",
@@ -1210,10 +1264,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "626f70c69e666f19",
+      "ast_fingerprint": "4ab81c3fc9aa9326",
       "recurrence_count": 0,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-643D67D2",
@@ -1227,10 +1284,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "626f70c69e666f19",
+      "ast_fingerprint": "4ab81c3fc9aa9326",
       "recurrence_count": 1,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-A9C4ACF3",
@@ -1244,10 +1304,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "709d87bb78d90eca",
+      "ast_fingerprint": "44afc6bdc4ab9514",
       "recurrence_count": 0,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-1DB4836F",
@@ -1261,10 +1324,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "709d87bb78d90eca",
+      "ast_fingerprint": "44afc6bdc4ab9514",
       "recurrence_count": 1,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-B5F19EFD",
@@ -1312,10 +1378,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "398b65fbd42437e6",
+      "ast_fingerprint": "6cb2e9dc5bcfcae8",
       "recurrence_count": 0,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-B478E46C",
@@ -1397,13 +1466,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "e077e6cab557888f",
+      "ast_fingerprint": "0ac78c99b1cf6318",
       "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1,
       "last_refreshed_by": "Claude",
-      "last_refresh_rationale": "AST fingerprints stale after ADR-001/002 taint state and decorator rename \u2014 code behaviour unchanged",
-      "last_refreshed_at": "2026-03-29"
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-53957A32",
@@ -1417,10 +1486,13 @@
       "expires": "2027-03-28",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "3d6ddd81dd178526",
+      "ast_fingerprint": "3f3b551ed0df7c49",
       "recurrence_count": 0,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-6D46E0C4",
@@ -1434,10 +1506,13 @@
       "expires": "2027-03-29",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "6842079c38cb4e2d",
+      "ast_fingerprint": "e353857a54932a47",
       "recurrence_count": 0,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-E6DF8933",
@@ -1451,10 +1526,13 @@
       "expires": "2027-03-29",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "61cc201f97cdef52",
+      "ast_fingerprint": "0cdb4edca0a72e0d",
       "recurrence_count": 0,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-06926436",
@@ -1536,10 +1614,13 @@
       "expires": "2027-03-29",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "521bc749a88878a5",
+      "ast_fingerprint": "92c49be3f939050a",
       "recurrence_count": 0,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-A5CE8245",
@@ -1553,10 +1634,13 @@
       "expires": "2027-03-29",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "6842079c38cb4e2d",
+      "ast_fingerprint": "e353857a54932a47",
       "recurrence_count": 1,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-1C00C64B",
@@ -1604,10 +1688,13 @@
       "expires": "2027-03-29",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "1ea900e21163958e",
+      "ast_fingerprint": "d77e738fec917788",
       "recurrence_count": 2,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-C0DE40AD",
@@ -1655,10 +1742,13 @@
       "expires": "2027-03-29",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "dc207a57e3bd3fc1",
+      "ast_fingerprint": "04743da9f9604df8",
       "recurrence_count": 0,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-A0C63EA0",
@@ -1876,10 +1966,13 @@
       "expires": "2027-03-29",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "1c22c6fab6a58970",
+      "ast_fingerprint": "fab88d14e029282b",
       "recurrence_count": 1,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-4518FB47",
@@ -1910,10 +2003,13 @@
       "expires": "2027-03-29",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "6f4e5fa4bae10def",
+      "ast_fingerprint": "14efbf247a2af98e",
       "recurrence_count": 0,
       "governance_path": "standard",
-      "analysis_level": 1
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
     },
     {
       "id": "EXC-F65FD6B7",
@@ -1927,15 +2023,259 @@
       "expires": "2027-03-29",
       "provenance": "cli",
       "agent_originated": true,
-      "ast_fingerprint": "c5ec588434cfc97e",
+      "ast_fingerprint": "23ef1a497271c894",
       "recurrence_count": 1,
+      "governance_path": "standard",
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
+    },
+    {
+      "id": "EXC-8BC9AB03",
+      "rule": "PY-WL-007",
+      "taint_state": "INTEGRAL",
+      "location": "src/wardline/decorators/_base.py::wardline_decorator",
+      "exceptionability": "STANDARD",
+      "severity_at_grant": "ERROR",
+      "rationale": "Framework internal: isinstance() distinguishes staticmethod/classmethod for correct wrapping \u2014 the decorator factory IS the trust infrastructure",
+      "reviewer": "John",
+      "expires": "2027-04-08",
+      "provenance": "cli",
+      "agent_originated": true,
+      "ast_fingerprint": "6431e746533a31ca",
+      "recurrence_count": 0,
+      "governance_path": "standard",
+      "analysis_level": 1,
+      "last_refreshed_by": "Claude",
+      "last_refresh_rationale": "Refactored _base.py: moved introspection helpers to _introspect.py",
+      "last_refreshed_at": "2026-04-08"
+    },
+    {
+      "id": "EXC-A34CC8DA",
+      "rule": "PY-WL-001",
+      "taint_state": "ASSURED",
+      "location": "src/wardline/manifest/exceptions.py::load_exceptions",
+      "exceptionability": "STANDARD",
+      "severity_at_grant": "ERROR",
+      "rationale": "JSON parsing: .get() provides defaults for optional exception register fields \u2014 schema-validated input with known optional fields",
+      "reviewer": "John",
+      "expires": "2027-04-08",
+      "provenance": "cli",
+      "agent_originated": true,
+      "ast_fingerprint": "04743da9f9604df8",
+      "recurrence_count": 1,
+      "governance_path": "standard",
+      "analysis_level": 1
+    },
+    {
+      "id": "EXC-02573B7C",
+      "rule": "PY-WL-005",
+      "taint_state": "ASSURED",
+      "location": "src/wardline/manifest/regime.py::collect_manifest_metrics",
+      "exceptionability": "STANDARD",
+      "severity_at_grant": "ERROR",
+      "rationale": "Resilient metrics: swallows malformed ratification_date to avoid crashing metrics collection \u2014 date is advisory, not trust-critical",
+      "reviewer": "John",
+      "expires": "2027-04-08",
+      "provenance": "cli",
+      "agent_originated": true,
+      "ast_fingerprint": "fab88d14e029282b",
+      "recurrence_count": 2,
+      "governance_path": "standard",
+      "analysis_level": 1
+    },
+    {
+      "id": "EXC-88783DB4",
+      "rule": "PY-WL-007",
+      "taint_state": "INTEGRAL",
+      "location": "src/wardline/runtime/base.py::_check_decorated_methods",
+      "exceptionability": "STANDARD",
+      "severity_at_grant": "ERROR",
+      "rationale": "Runtime enforcement: isinstance() verifies descriptor protocol compliance \u2014 the enforcement layer IS the type boundary",
+      "reviewer": "John",
+      "expires": "2027-04-08",
+      "provenance": "cli",
+      "agent_originated": true,
+      "ast_fingerprint": "002ed456ae590354",
+      "recurrence_count": 0,
+      "governance_path": "standard",
+      "analysis_level": 1
+    },
+    {
+      "id": "EXC-961B14C4",
+      "rule": "PY-WL-007",
+      "taint_state": "INTEGRAL",
+      "location": "src/wardline/runtime/enforcement.py::TierStamped.__post_init__",
+      "exceptionability": "STANDARD",
+      "severity_at_grant": "ERROR",
+      "rationale": "Runtime enforcement: isinstance() validates tier stamp construction \u2014 canonical type-checking at the trust boundary definition",
+      "reviewer": "John",
+      "expires": "2027-04-08",
+      "provenance": "cli",
+      "agent_originated": true,
+      "ast_fingerprint": "3c4cd66589f636ff",
+      "recurrence_count": 1,
+      "governance_path": "standard",
+      "analysis_level": 1
+    },
+    {
+      "id": "EXC-FABB4821",
+      "rule": "PY-WL-007",
+      "taint_state": "INTEGRAL",
+      "location": "src/wardline/runtime/enforcement.py::stamp_tier",
+      "exceptionability": "STANDARD",
+      "severity_at_grant": "ERROR",
+      "rationale": "Runtime enforcement: isinstance() validates tier value \u2014 the stamp function IS the trust boundary",
+      "reviewer": "John",
+      "expires": "2027-04-08",
+      "provenance": "cli",
+      "agent_originated": true,
+      "ast_fingerprint": "a41ad0dc4043d4c8",
+      "recurrence_count": 1,
+      "governance_path": "standard",
+      "analysis_level": 1
+    },
+    {
+      "id": "EXC-95EB165D",
+      "rule": "PY-WL-007",
+      "taint_state": "INTEGRAL",
+      "location": "src/wardline/runtime/enforcement.py::check_tier_boundary",
+      "exceptionability": "STANDARD",
+      "severity_at_grant": "ERROR",
+      "rationale": "Runtime enforcement: isinstance() checks tier stamps for boundary crossing validation \u2014 canonical enforcement point",
+      "reviewer": "John",
+      "expires": "2027-04-08",
+      "provenance": "cli",
+      "agent_originated": true,
+      "ast_fingerprint": "23ef1a497271c894",
+      "recurrence_count": 2,
+      "governance_path": "standard",
+      "analysis_level": 1
+    },
+    {
+      "id": "EXC-F3A84672",
+      "rule": "PY-WL-007",
+      "taint_state": "INTEGRAL",
+      "location": "src/wardline/runtime/enforcement.py::check_validated_record",
+      "exceptionability": "STANDARD",
+      "severity_at_grant": "ERROR",
+      "rationale": "Runtime enforcement: isinstance() validates record structure at tier boundaries \u2014 the function IS the trust boundary checker",
+      "reviewer": "John",
+      "expires": "2027-04-08",
+      "provenance": "cli",
+      "agent_originated": true,
+      "ast_fingerprint": "ff063b5d383a0b1d",
+      "recurrence_count": 4,
+      "governance_path": "standard",
+      "analysis_level": 1
+    },
+    {
+      "id": "EXC-9C12AA3E",
+      "rule": "PY-WL-007",
+      "taint_state": "INTEGRAL",
+      "location": "src/wardline/runtime/enforcement.py::check_subclass_tier_consistency",
+      "exceptionability": "STANDARD",
+      "severity_at_grant": "ERROR",
+      "rationale": "Runtime enforcement: isinstance() verifies tier inheritance \u2014 canonical enforcement point for class hierarchies",
+      "reviewer": "John",
+      "expires": "2027-04-08",
+      "provenance": "cli",
+      "agent_originated": true,
+      "ast_fingerprint": "a8715bbc165d5461",
+      "recurrence_count": 0,
+      "governance_path": "standard",
+      "analysis_level": 1
+    },
+    {
+      "id": "EXC-7114A00A",
+      "rule": "PY-WL-003",
+      "taint_state": "GUARDED",
+      "location": "src/wardline/scanner/exceptions.py::apply_exceptions",
+      "exceptionability": "STANDARD",
+      "severity_at_grant": "ERROR",
+      "rationale": "Exception matching: 'in' checks against internal dict caches for O(1) lookup \u2014 not trust-boundary gating, just cache membership",
+      "reviewer": "John",
+      "expires": "2027-04-08",
+      "provenance": "cli",
+      "agent_originated": true,
+      "ast_fingerprint": "e353857a54932a47",
+      "recurrence_count": 2,
+      "governance_path": "standard",
+      "analysis_level": 1
+    },
+    {
+      "id": "EXC-4E84EDAF",
+      "rule": "PY-WL-003",
+      "taint_state": "GUARDED",
+      "location": "src/wardline/scanner/fingerprint.py::compute_single_annotation_fingerprint",
+      "exceptionability": "STANDARD",
+      "severity_at_grant": "ERROR",
+      "rationale": "Fingerprint computation: 'in' checks annotation dict for known key presence \u2014 internal data structure, not trust boundary",
+      "reviewer": "John",
+      "expires": "2027-04-08",
+      "provenance": "cli",
+      "agent_originated": true,
+      "ast_fingerprint": "0cdb4edca0a72e0d",
+      "recurrence_count": 1,
+      "governance_path": "standard",
+      "analysis_level": 1
+    },
+    {
+      "id": "EXC-4BB6CD97",
+      "rule": "PY-WL-005",
+      "taint_state": "ASSURED",
+      "location": "src/wardline/scanner/taint/variable_level.py::_resolve_call",
+      "exceptionability": "STANDARD",
+      "severity_at_grant": "ERROR",
+      "rationale": "Taint resolution: KeyError pass for unknown callee falls through to function_taint default \u2014 intentional graceful degradation in taint analysis",
+      "reviewer": "John",
+      "expires": "2027-04-08",
+      "provenance": "cli",
+      "agent_originated": true,
+      "ast_fingerprint": "14efbf247a2af98e",
+      "recurrence_count": 1,
+      "governance_path": "standard",
+      "analysis_level": 1
+    },
+    {
+      "id": "EXC-0973AF0E",
+      "rule": "PY-WL-003",
+      "taint_state": "GUARDED",
+      "location": "src/wardline/decorators/_introspect.py::is_pre_stamped",
+      "exceptionability": "STANDARD",
+      "severity_at_grant": "ERROR",
+      "rationale": "Introspection on arbitrary user objects: hasattr() is correct for checking tier stamp on objects whose type is not controlled by the framework",
+      "reviewer": "John",
+      "expires": "2027-04-08",
+      "provenance": "cli",
+      "agent_originated": true,
+      "ast_fingerprint": "ce7005e931bafe62",
+      "recurrence_count": 0,
+      "governance_path": "standard",
+      "analysis_level": 1
+    },
+    {
+      "id": "EXC-28A6DCD0",
+      "rule": "PY-WL-003",
+      "taint_state": "GUARDED",
+      "location": "src/wardline/decorators/_introspect.py::try_stamp_tier",
+      "exceptionability": "STANDARD",
+      "severity_at_grant": "ERROR",
+      "rationale": "Introspection on arbitrary user objects: hasattr() is correct for checking tier stamp on objects whose type is not controlled by the framework",
+      "reviewer": "John",
+      "expires": "2027-04-08",
+      "provenance": "cli",
+      "agent_originated": true,
+      "ast_fingerprint": "9a0aca1049bdb881",
+      "recurrence_count": 0,
       "governance_path": "standard",
       "analysis_level": 1
     }
   ],
   "last_batch_refresh": {
-    "at": "2026-03-29",
+    "at": "2026-04-08",
     "by": "Claude",
-    "rationale": "AST fingerprints stale after ADR-001/002 taint state and decorator rename \u2014 code behaviour unchanged"
+    "rationale": "Refactored _base.py: moved introspection helpers to _introspect.py"
   }
 }

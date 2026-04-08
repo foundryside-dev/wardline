@@ -66,8 +66,12 @@ def check_coverage(
     # Identify Tier 1 and Tier 4 modules
     tier_map: dict[str, int] = {t.id: t.tier for t in manifest.tiers}
     target_modules: list[tuple[str, int]] = []
+    unrecognised_taints: list[tuple[str, str]] = []
     for mt in manifest.module_tiers:
         tier_num = tier_map.get(mt.default_taint)
+        if tier_num is None:
+            unrecognised_taints.append((mt.path, mt.default_taint))
+            continue
         if tier_num in (1, 4):
             target_modules.append((mt.path, tier_num))
 
@@ -117,6 +121,13 @@ def check_coverage(
                         f"{qualname}"
                     )
 
+    # Warn about modules with unrecognised tier IDs (not silently skipped)
+    for mod_path, taint_id in unrecognised_taints:
+        details.append(
+            f"  WARNING: {mod_path} has unrecognised tier ID "
+            f"'{taint_id}' — skipped from coverage check"
+        )
+
     if total_functions == 0:
         return 100.0, 0, 0, details
 
@@ -159,9 +170,18 @@ def main() -> None:
         f"{decorated}/{total} = {pct:.1f}%"
     )
 
-    if args.verbose and details:
-        print(f"\nUndecorated public functions ({len(details)}):")
-        for d in sorted(details):
+    # Always print warnings (unrecognised tier IDs) regardless of verbosity
+    warnings = [d for d in details if d.strip().startswith("WARNING:")]
+    non_warnings = [d for d in details if not d.strip().startswith("WARNING:")]
+
+    if warnings:
+        print(file=sys.stderr)
+        for w in warnings:
+            print(w, file=sys.stderr)
+
+    if args.verbose and non_warnings:
+        print(f"\nUndecorated public functions ({len(non_warnings)}):")
+        for d in sorted(non_warnings):
             print(d)
 
     if pct >= args.threshold:

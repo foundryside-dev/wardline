@@ -174,6 +174,53 @@ if "amount" in data and data["amount"] > MAX_AMOUNT:
 
         assert len(rule.findings) == 0
 
+    def test_shape_check_on_wrong_variable_still_fires(self) -> None:
+        """Shape validation on a different variable does not suppress.
+
+        ``isinstance(other, dict)`` validates ``other``, not ``data``.
+        The semantic check on ``data["amount"]`` is still unguarded.
+        """
+        rule = _run_rule(
+            """\
+if not isinstance(other, dict):
+    raise TypeError("expected dict")
+if data["amount"] > MAX_AMOUNT:
+    raise ValueError("too large")
+""",
+            boundaries=(_boundary(),),
+        )
+
+        assert len(rule.findings) == 1
+        assert rule.findings[0].rule_id == RuleId.PY_WL_009
+
+    def test_shape_check_on_correct_variable_suppresses(self) -> None:
+        """Shape validation on the same variable suppresses the finding."""
+        rule = _run_rule(
+            """\
+if not isinstance(other, dict):
+    raise TypeError("expected dict")
+validate_schema(data)
+if data["amount"] > MAX_AMOUNT:
+    raise ValueError("too large")
+""",
+            boundaries=(_boundary(),),
+        )
+
+        assert len(rule.findings) == 0
+
+    def test_validate_schema_on_wrong_variable_still_fires(self) -> None:
+        """validate_schema(other) does not suppress a finding about data."""
+        rule = _run_rule(
+            """\
+validate_schema(other)
+if data["amount"] > MAX_AMOUNT:
+    raise ValueError("too large")
+""",
+            boundaries=(_boundary(),),
+        )
+
+        assert len(rule.findings) == 1
+
 
 class TestDecoratorFallback:
     """Direct wardline decorators count as boundary declarations."""

@@ -1,0 +1,22 @@
+---
+specimen_id: "SCN-021-TP-AFN-tier-conflict"
+description: "Adversarial false negative: @external_boundary + @integral_read is contradictory but separated by blank lines"
+rule: "SCN-021"
+category: "adversarial_false_negative"
+fragment: |
+  """SCN-021 adversarial false negative: contradictory pair via star import aliasing."""
+  from wardline.decorators import external_boundary, integral_read
+
+
+  @external_boundary
+  @integral_read
+  def fetch_record(record_id: str) -> dict:
+      return {"id": record_id}
+taint_state: "EXTERNAL_RAW"
+expected_rules:
+  - "SCN-021"
+expected_severity: "ERROR"
+expected_exceptionability: "UNCONDITIONAL"
+expected_match: true
+sha256: "5745c2195fb4b717fb2f504eddd9ca33ce1a6ccedf2fee651516b70e671c5091"
+verdict: "true_positive"

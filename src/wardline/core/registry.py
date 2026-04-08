@@ -194,7 +194,16 @@ REGISTRY: MappingProxyType[str, RegistryEntry] = MappingProxyType({
             "_wardline_feature_flag": str,
         },
     ),
-    # --- Group 16: Generic Trust Boundary (data_flow) — not yet implemented ---
+    # --- Group 16: Data Flow Annotations ---
+    "data_flow": RegistryEntry(
+        canonical_name="data_flow",
+        group=16,
+        attrs={  # type: ignore[arg-type]  # __post_init__ converts
+            "_wardline_data_flow": bool,
+            "_wardline_consumes": int,
+            "_wardline_produces": int,
+        },
+    ),
     # --- Group 17: Restoration Boundaries ---
     "restoration_boundary": RegistryEntry(
         canonical_name="restoration_boundary",

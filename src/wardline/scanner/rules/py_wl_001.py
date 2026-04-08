@@ -214,7 +214,10 @@ class RulePyWl001(RuleBase):
         if (
             optional_field is not None
             and default_value == optional_field.approved_default
-            and self._is_governed_by_boundary(optional_field.overlay_scope)
+            and (
+                self._is_governed_by_boundary(optional_field.overlay_scope)
+                or self._is_governed_by_optional_field(optional_field)
+            )
         ):
             self.findings.append(
                 Finding(
@@ -290,6 +293,18 @@ class RulePyWl001(RuleBase):
             ):
                 best_match = optional_field
         return best_match
+
+    def _is_governed_by_optional_field(self, optional_field: OptionalFieldEntry) -> bool:
+        """Check if the optional_field declaration itself constitutes governance.
+
+        An optional_field entry with a non-empty overlay_scope that covers
+        the current file is sufficient governance for schema_default() —
+        the optional_fields list is the primary governance mechanism.
+        """
+        return bool(
+            optional_field.overlay_scope
+            and path_within_scope(self._file_path, optional_field.overlay_scope)
+        )
 
     def _is_governed_by_boundary(self, overlay_scope: str) -> bool:
         """Check if current function has a matching governance boundary.

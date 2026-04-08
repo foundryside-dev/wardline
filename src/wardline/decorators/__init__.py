@@ -10,7 +10,7 @@ from wardline.decorators.authority import (
     validates_semantic,
     validates_shape,
 )
-from wardline.decorators.boundaries import tier_transition, trust_boundary
+from wardline.decorators.boundaries import data_flow, tier_transition, trust_boundary
 from wardline.decorators.concurrency import not_reentrant, ordered_after, thread_safe
 from wardline.decorators.determinism import deterministic, time_dependent
 from wardline.decorators.integrity import integrity_critical
@@ -45,6 +45,7 @@ __all__ = [
     "integral_writer",
     "integral_construction",
     "compensatable",
+    "data_flow",
     "declassifies",
     "deprecated_by",
     "deterministic",

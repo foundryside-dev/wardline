@@ -14,6 +14,7 @@ import hashlib
 import logging
 import os
 import sys
+import tokenize
 from datetime import date
 from typing import TYPE_CHECKING
 
@@ -63,9 +64,10 @@ def compute_ast_fingerprint(
     """
     if tree is None:
         try:
-            source = file_path.read_text(encoding="utf-8")
+            with tokenize.open(file_path) as fh:
+                source = fh.read()
             tree = ast.parse(source, filename=str(file_path))
-        except (OSError, SyntaxError):
+        except (OSError, SyntaxError, UnicodeDecodeError):
             return None
 
     func_node = find_function_node(tree, qualname)
@@ -206,9 +208,10 @@ def compute_single_annotation_fingerprint(
     from wardline.manifest.models import FingerprintEntry
 
     try:
-        source = file_path.read_text(encoding="utf-8")
+        with tokenize.open(file_path) as fh:
+            source = fh.read()
         tree = ast.parse(source, filename=str(file_path))
-    except (OSError, SyntaxError):
+    except (OSError, SyntaxError, UnicodeDecodeError):
         return None
 
     file_str = str(file_path)
@@ -306,10 +309,10 @@ def batch_compute_fingerprints(
 
             file_path = os.path.join(dirpath, filename)
             try:
-                with open(file_path, "rb") as fh:
-                    source = fh.read().decode("utf-8")
+                with tokenize.open(file_path) as fh:
+                    source = fh.read()
                 tree = ast.parse(source, filename=file_path)
-            except (OSError, SyntaxError):
+            except (OSError, SyntaxError, UnicodeDecodeError):
                 logger.debug("Skipping unparseable file: %s", file_path)
                 continue
 

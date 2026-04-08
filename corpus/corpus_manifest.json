@@ -1,9 +1,9 @@
 {
   "version": "1.0",
   "spec_version": "1.0",
-  "corpus_hash": "sha256:c837aac5bcde3c8291259b41464989bf1992e0acdf6cf6215e6ffdb88220ac97",
+  "corpus_hash": "sha256:6d6dceed8363699d8c2b86d8fa4143e36554a7462de540db2e511ccc4c6f0401",
   "generated": "2026-03-29",
-  "specimen_count": 248,
+  "specimen_count": 252,
   "specimens": [
     {
       "specimen_id": "L3-anchored-immutable",
@@ -2484,6 +2484,46 @@
       "verdict": "true_negative",
       "expected_match": false,
       "sha256": "d0f8d7afbf26089a3f42ff735e48aa33d35d419d1fbe0ddc99956be3fce98fa1"
+    },
+    {
+      "specimen_id": "SCN-021-TN-AFP-similar-names",
+      "path": "specimens/SCN-021/EXTERNAL_RAW/negative/SCN-021-TN-AFP-similar-names.yaml",
+      "py_exists": true,
+      "rule": "SCN-021",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_negative",
+      "expected_match": false,
+      "sha256": "7636664b4037ad60bd20def341bb75b57ede55829ee250be96ff1778e4ce3faf"
+    },
+    {
+      "specimen_id": "SCN-021-TP-AFN-tier-conflict",
+      "path": "specimens/SCN-021/EXTERNAL_RAW/positive/SCN-021-TP-AFN-tier-conflict.yaml",
+      "py_exists": true,
+      "rule": "SCN-021",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_positive",
+      "expected_match": true,
+      "sha256": "5745c2195fb4b717fb2f504eddd9ca33ce1a6ccedf2fee651516b70e671c5091"
+    },
+    {
+      "specimen_id": "SUP-001-TN-AFP-misleading-name",
+      "path": "specimens/SUP-001/EXTERNAL_RAW/negative/SUP-001-TN-AFP-misleading-name.yaml",
+      "py_exists": true,
+      "rule": "SUP-001",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_negative",
+      "expected_match": false,
+      "sha256": "3361bb7e9db9bb96c80b45c8a48199398e21c9cc851d46cdd2f5eebe29c5a6f3"
+    },
+    {
+      "specimen_id": "SUP-001-TP-AFN-nested-uuid",
+      "path": "specimens/SUP-001/EXTERNAL_RAW/positive/SUP-001-TP-AFN-nested-uuid.yaml",
+      "py_exists": true,
+      "rule": "SUP-001",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_positive",
+      "expected_match": true,
+      "sha256": "e9a04cde3b0d9d6146c2f68b55d5ba69f67decfd82d09360b3dec318fb9c55fa"
     }
   ]
 }

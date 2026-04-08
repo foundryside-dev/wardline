@@ -10,6 +10,7 @@ from __future__ import annotations
 import ast
 import datetime
 import logging
+import tokenize
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -170,11 +171,12 @@ def apply_exceptions(
             abs_path = finding.file_path
             if abs_path not in _ast_cache:
                 try:
-                    source = Path(abs_path).read_text(encoding="utf-8")
+                    with tokenize.open(abs_path) as fh:
+                        source = fh.read()
                     _ast_cache[abs_path] = ast.parse(
                         source, filename=abs_path,
                     )
-                except (OSError, SyntaxError):
+                except (OSError, SyntaxError, UnicodeDecodeError):
                     _ast_cache[abs_path] = None
             _fp_cache[fp_key] = compute_ast_fingerprint(
                 Path(abs_path), finding.qualname,

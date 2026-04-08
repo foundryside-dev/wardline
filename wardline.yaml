@@ -68,6 +68,12 @@ module_tiers:
     # No external input processing.
     # Includes: __init__.py, base.py, types.py, descriptors.py
 
+  - path: "src/wardline/decorators/_introspect.py"
+    default_taint: "GUARDED"
+    # Rationale: Introspection helpers that handle arbitrary user objects
+    # (return values, callables).  hasattr/getattr/isinstance on objects
+    # of unknown type — the framework does not control their structure.
+
   - path: "src/wardline/decorators"
     default_taint: "INTEGRAL"
     # Rationale: wardline_decorator() factory + all decorator definitions
