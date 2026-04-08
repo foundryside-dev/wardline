@@ -166,7 +166,13 @@ _COMBINATIONS: tuple[_CombinationSpec, ...] = (
         spec_entry=23,
     ),
     _CombinationSpec("compensatable", "integral_writer", _CONTRADICTORY, "Audit writes must not be compensated", spec_entry=24),
-    # Spec entry #25 (@data_flow(produces=...) + @external_boundary) requires parameterized-decorator analysis (L2+).
+    _CombinationSpec(
+        "data_flow",
+        "external_boundary",
+        _CONTRADICTORY,
+        "@data_flow declares internal data production; @external_boundary declares external intake — contradictory flow direction",
+        spec_entry=25,
+    ),
     _CombinationSpec(
         "system_plugin", "integral_read", _CONTRADICTORY,
         "Plugins receive external input; Tier 1 reads are internal", spec_entry=26,

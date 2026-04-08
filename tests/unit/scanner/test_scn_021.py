@@ -82,6 +82,23 @@ def target():
         assert len(rule.findings) == 1
         assert rule.findings[0].severity == Severity.ERROR
 
+    def test_data_flow_and_external_boundary_fire(self) -> None:
+        """Entry #25: @data_flow + @external_boundary — contradictory flow direction."""
+        rule = _run_rule(
+            """\
+@data_flow
+@external_boundary
+def target():
+    return 1
+""",
+            annotations=("data_flow", "external_boundary"),
+        )
+
+        assert len(rule.findings) == 1
+        assert rule.findings[0].severity == Severity.ERROR
+        assert "@data_flow" in rule.findings[0].message
+        assert "@external_boundary" in rule.findings[0].message
+
 
 class TestSuspiciousCombinations:
     def test_fail_open_and_deterministic_warn(self) -> None:
@@ -210,8 +227,7 @@ class TestSpecCoverage:
 
     # Spec entries intentionally not in _COMBINATIONS:
     # #19: integrity_critical + fail_open — alias of #5, would duplicate
-    # #25: @data_flow(produces=...) + @external_boundary — requires L2 parameterized-decorator analysis
-    _INTENTIONALLY_MISSING = frozenset({19, 25})
+    _INTENTIONALLY_MISSING = frozenset({19})
     _SPEC_ENTRIES = frozenset(range(1, 30))  # 1..29
 
     def test_all_spec_entries_covered_or_documented(self) -> None:
