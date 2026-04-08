@@ -945,7 +945,7 @@ class TestSarifRunLevelProperties:
         assert props["wardline.propertyBagVersion"] == "0.4"
 
     def test_input_hash_failure_exits_tool_error(self, tmp_path: Path) -> None:
-        """inputHash OSError produces TOOL_ERROR finding AND exit code 3."""
+        """inputHash OSError produces TOOL_ERROR finding AND exit code 1."""
         from unittest.mock import patch
 
         from wardline.scanner.engine import ScanResult
@@ -970,7 +970,7 @@ class TestSarifRunLevelProperties:
                 "--allow-registry-mismatch",
             ])
 
-        assert result.exit_code == 3
+        assert result.exit_code == 1
         sarif = json.loads(result.stdout)
         tool_errors = [
             r for r in sarif["runs"][0]["results"]

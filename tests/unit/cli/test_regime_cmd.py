@@ -615,3 +615,54 @@ class TestVerifyLiteGovernanceChecks:
         data = json.loads(result.output)
         check = next(c for c in data["checks"] if c["check"] == "annotation_change_tracking")
         assert check["passed"] is False
+
+
+class TestRegimeDirectLaw:
+    """Exit code 3 when regime is in direct law (no valid manifest)."""
+
+    def test_status_exit_3_manifest_not_found(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """regime status exits 3 when manifest does not exist."""
+        (tmp_path / "dummy.py").write_text("x = 1\n")
+        result = runner.invoke(regime, [
+            "status",
+            "--manifest", str(tmp_path / "wardline.yaml"),
+            "--path", str(tmp_path),
+        ])
+        assert result.exit_code == 3, (
+            f"Expected exit 3 (direct law), got {result.exit_code}.\n"
+            f"stdout: {result.output}\n"
+        )
+
+    def test_verify_exit_3_manifest_not_found(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """regime verify exits 3 when manifest does not exist."""
+        (tmp_path / "dummy.py").write_text("x = 1\n")
+        result = runner.invoke(regime, [
+            "verify",
+            "--manifest", str(tmp_path / "wardline.yaml"),
+            "--path", str(tmp_path),
+        ])
+        assert result.exit_code == 3, (
+            f"Expected exit 3 (direct law), got {result.exit_code}.\n"
+            f"stdout: {result.output}\n"
+        )
+
+    def test_verify_exit_3_manifest_invalid(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """regime verify exits 3 when manifest fails to load (invalid YAML)."""
+        bad_manifest = tmp_path / "wardline.yaml"
+        bad_manifest.write_text("not_a_valid_key: true\n")
+        (tmp_path / "dummy.py").write_text("x = 1\n")
+        result = runner.invoke(regime, [
+            "verify",
+            "--manifest", str(bad_manifest),
+            "--path", str(tmp_path),
+        ])
+        assert result.exit_code == 3, (
+            f"Expected exit 3 (direct law), got {result.exit_code}.\n"
+            f"stdout: {result.output}\n"
+        )

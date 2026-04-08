@@ -55,8 +55,9 @@ class TestL3Performance:
             )
             elapsed = time.perf_counter() - start
 
-            # Scanner should not crash (exit 3) or have config errors (exit 2)
-            assert result.exit_code not in (2, 3), (
+            # Scanner should not have config errors (exit 2)
+            # Valid scan exit codes are 0 (clean) or 1 (findings present)
+            assert result.exit_code in (0, 1), (
                 f"Scan failed with exit code {result.exit_code}"
             )
 

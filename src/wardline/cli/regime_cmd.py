@@ -19,6 +19,10 @@ from wardline.cli._helpers import COHERENCE_SEVERITY_MAP as _COHERENCE_SEVERITY_
 from wardline.cli._helpers import cli_error
 from wardline.cli.scan import EXIT_CONFIG_ERROR
 
+# Exit code 3: direct law — regime cannot produce meaningful enforcement
+# output because no valid manifest exists (§A.10).
+EXIT_DIRECT_LAW = 3
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -159,10 +163,25 @@ def status(
         collect_rule_metrics,
     )
 
+    import yaml
+
+    from wardline.manifest.loader import (
+        ManifestLoadError,
+        WardlineYAMLError,
+        load_manifest,
+    )
+
     manifest_path = Path(manifest_file)
     if not manifest_path.exists():
-        cli_error(f"manifest not found: {manifest_file}")
-        sys.exit(EXIT_CONFIG_ERROR)
+        cli_error(f"manifest not found: {manifest_file} — direct law applies")
+        sys.exit(EXIT_DIRECT_LAW)
+
+    # Validate manifest loads — if not, direct law applies (exit 3)
+    try:
+        load_manifest(manifest_path)
+    except (WardlineYAMLError, yaml.YAMLError, ManifestLoadError, OSError) as exc:
+        cli_error(f"manifest invalid: {exc} — direct law applies")
+        sys.exit(EXIT_DIRECT_LAW)
 
     manifest_dir = manifest_path.parent
     config_path = manifest_dir / "wardline.toml"
@@ -363,8 +382,8 @@ def verify(
 
     manifest_path = Path(manifest_file)
     if not manifest_path.exists():
-        cli_error(f"manifest not found: {manifest_file}")
-        sys.exit(EXIT_CONFIG_ERROR)
+        cli_error(f"manifest not found: {manifest_file} — direct law applies")
+        sys.exit(EXIT_DIRECT_LAW)
 
     manifest_dir = manifest_path.parent
     config_path = manifest_dir / "wardline.toml"
@@ -372,18 +391,14 @@ def verify(
     # --- Collect all checks ---
     checks: list[dict[str, Any]] = []
 
-    # Check 1: Manifest loads
+    # Check 1: Manifest loads — if not, direct law applies (exit 3)
     manifest_load_ok = True
     try:
         load_manifest(manifest_path)
     except (WardlineYAMLError, yaml.YAMLError, ManifestLoadError, OSError) as exc:
         manifest_load_ok = False
-        checks.append({
-            "check": "manifest_loads",
-            "passed": False,
-            "severity": "ERROR",
-            "evidence": f"Manifest load failed: {exc}",
-        })
+        cli_error(f"manifest invalid: {exc} — direct law applies")
+        sys.exit(EXIT_DIRECT_LAW)
 
     if manifest_load_ok:
         checks.append({

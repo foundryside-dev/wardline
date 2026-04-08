@@ -45,7 +45,8 @@ _CONFIG_ERROR = _ConfigError()
 EXIT_CLEAN = 0
 EXIT_FINDINGS = 1
 EXIT_CONFIG_ERROR = 2
-EXIT_TOOL_ERROR = 3
+# Exit code 3 is reserved for regime direct law — NOT used by scan.
+# TOOL_ERROR findings exit 1 (EXIT_FINDINGS) like any other finding.
 
 
 
@@ -727,9 +728,7 @@ def scan(
             f.rule_id == RuleId.TOOL_ERROR for f in result.findings
         )
         preview_blocking = count_gate_blocking(result.findings)
-        if has_tool_error:
-            sys.exit(EXIT_TOOL_ERROR)
-        elif exceeded_pct or preview_blocking > 0:
+        if has_tool_error or exceeded_pct or preview_blocking > 0:
             sys.exit(EXIT_FINDINGS)
         else:
             sys.exit(EXIT_CLEAN)
@@ -900,12 +899,12 @@ def scan(
 
     # --- Determine exit code ---
     # Exit code priority (highest wins):
-    #   EXIT_TOOL_ERROR (3) — a rule or scanner component raised an
-    #       unhandled exception; signals infrastructure failure.
     #   EXIT_FINDINGS   (1) — at least one unexcepted ERROR finding
-    #       exists, or the max_unknown_raw_percent ceiling was exceeded,
-    #       or --strict-governance is set and GOVERNANCE findings exist.
+    #       exists (including TOOL_ERROR), or the max_unknown_raw_percent
+    #       ceiling was exceeded, or --strict-governance is set and
+    #       GOVERNANCE findings exist.
     #   EXIT_CLEAN      (0) — no gate-blocking findings.
+    #   (Exit code 3 is reserved for regime direct law — not used by scan.)
     #
     # The three-tier signal model (§7.3–§7.5):
     #   SUPPRESS findings are excluded (pattern is expected at this tier).
@@ -918,9 +917,7 @@ def scan(
         str(f.rule_id).startswith("GOVERNANCE-") for f in all_findings
     )
 
-    if has_tool_error:
-        sys.exit(EXIT_TOOL_ERROR)
-    elif exceeded_pct or bd.gate_blocking > 0 or has_governance_findings:
+    if has_tool_error or exceeded_pct or bd.gate_blocking > 0 or has_governance_findings:
         sys.exit(EXIT_FINDINGS)
     else:
         sys.exit(EXIT_CLEAN)

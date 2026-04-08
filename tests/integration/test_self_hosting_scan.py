@@ -1,7 +1,7 @@
 """Integration tests for self-hosting scan gate (T-6.4a).
 
 Verifies that wardline can scan its own codebase:
-- Scanner runs without crashing (no TOOL-ERROR exit code 3)
+- Scanner runs without crashing (no TOOL-ERROR findings)
 - Manifest loads and validates
 - Tier-distribution check passes at configured threshold
 - Coverage check script runs
@@ -91,15 +91,16 @@ class TestSelfHostingScan:
     """Wardline scans its own codebase without crashing."""
 
     def test_scan_does_not_crash(self) -> None:
-        """Exit code is not 3 (TOOL-ERROR) — scanner processes all files."""
+        """Scanner processes all files without config errors."""
         exit_code, output = _run_scan()
-        # Exit 1 (findings present) is expected; exit 3 (crash) is not
-        assert exit_code != 3, (
-            f"Scanner crashed (exit 3): {output[:500]}"
-        )
+        # Exit 1 (findings present) is expected and normal
         # Exit 2 (config error) should not happen
         assert exit_code != 2, (
             f"Config error (exit 2): {output[:500]}"
+        )
+        # Exit 0 or 1 are the only valid scan exit codes
+        assert exit_code in (0, 1), (
+            f"Unexpected exit code {exit_code}: {output[:500]}"
         )
 
     def test_scan_produces_valid_sarif(self) -> None:

@@ -112,10 +112,10 @@ class TestCliExitCodes:
             f"stdout: {result.output}\n"
         )
 
-    def test_exit_3_tool_error(
+    def test_tool_error_exits_1(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """TOOL-ERROR finding exits 3."""
+        """TOOL-ERROR finding exits 1 (findings present), not 3."""
         from unittest.mock import patch
 
         from wardline.core.severity import (
@@ -168,8 +168,8 @@ class TestCliExitCodes:
                 "--manifest", str(manifest),
                 "--allow-registry-mismatch",
             ])
-        assert result.exit_code == 3, (
-            f"Expected exit 3, got {result.exit_code}.\n"
+        assert result.exit_code == 1, (
+            f"Expected exit 1, got {result.exit_code}.\n"
             f"stdout: {result.output}\n"
         )
 
