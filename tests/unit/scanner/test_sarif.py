@@ -988,3 +988,44 @@ class TestGovernanceEvents:
         import pytest
         with pytest.raises(AttributeError):
             event.event_type = "other"  # type: ignore[misc]
+
+
+class TestSarifDeterministicAndDeferredFixRatio:
+    """R2: wardline.deterministic and wardline.deferredFixRatio properties."""
+
+    def test_deterministic_always_true(self) -> None:
+        """wardline.deterministic is always True."""
+        report = SarifReport(findings=[])
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.deterministic"] is True
+
+    def test_deferred_fix_ratio_default_null(self) -> None:
+        """Default deferred fix ratio is null (unclassified)."""
+        report = SarifReport(findings=[])
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.deferredFixRatio"] is None
+
+    def test_deferred_fix_ratio_zero(self) -> None:
+        """Zero active exceptions → 0.0 (not null)."""
+        report = SarifReport(findings=[], deferred_fix_ratio=0.0)
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.deferredFixRatio"] == 0.0
+
+    def test_deferred_fix_ratio_computed(self) -> None:
+        """Deferred fix ratio reflects the value passed in."""
+        report = SarifReport(findings=[], deferred_fix_ratio=0.5)
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.deferredFixRatio"] == 0.5
+
+    def test_deferred_fix_ratio_rounded(self) -> None:
+        """Deferred fix ratio is rounded to 4 decimal places."""
+        report = SarifReport(findings=[], deferred_fix_ratio=1 / 3)
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.deferredFixRatio"] == 0.3333
+
+    def test_deterministic_not_stripped_in_verification_mode(self) -> None:
+        """Deterministic property survives verification mode."""
+        report = SarifReport(findings=[], verification_mode=True)
+        props = report.to_dict()["runs"][0]["properties"]
+        assert "wardline.deterministic" in props
+        assert "wardline.deferredFixRatio" in props

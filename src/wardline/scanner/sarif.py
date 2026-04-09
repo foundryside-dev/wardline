@@ -284,6 +284,8 @@ class SarifReport:
     active_exception_count: int = 0
     stale_exception_count: int = 0
     expedited_exception_ratio: float = 0.0
+    deterministic: bool = True
+    deferred_fix_ratio: float | None = None
     governance_profile: str = "lite"
     # WP 2.4: Governance metadata
     control_law: str = "normal"
@@ -398,6 +400,12 @@ class SarifReport:
                 "wardline.activeExceptionCount": self.active_exception_count,
                 "wardline.staleExceptionCount": self.stale_exception_count,
                 "wardline.expeditedExceptionRatio": round(self.expedited_exception_ratio, 3),
+                "wardline.deterministic": self.deterministic,
+                "wardline.deferredFixRatio": (
+                    round(self.deferred_fix_ratio, 4)
+                    if self.deferred_fix_ratio is not None
+                    else None
+                ),
                 **({"wardline.governanceEvents": [
                     {"eventType": e.event_type, "message": e.message,
                      **({"timestamp": e.timestamp} if e.timestamp else {})}

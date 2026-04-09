@@ -630,6 +630,7 @@ def scan(
     active_exception_count = 0
     stale_exception_count = 0
     expedited_exception_ratio = 0.0
+    deferred_fix_ratio: float | None = 0.0
 
     if exceptions:
         # NOTE: taint_map is not passed here. ScanResult does not carry a
@@ -670,6 +671,21 @@ def scan(
         expedited_exception_ratio = (
             _expedited / _active if _active > 0 else 0.0
         )
+
+        # Compute deferredFixRatio for SARIF (§10.1, §13.1.3).
+        # Reuse the active-exception filtering already done above.
+        if _active > 0:
+            _deferred = 0
+            for _exc in exceptions:
+                if _exc.expires is not None:
+                    try:
+                        if _dt.date.fromisoformat(_exc.expires) < _today:
+                            continue
+                    except ValueError:
+                        pass
+                if _exc.elimination_path:
+                    _deferred += 1
+            deferred_fix_ratio = None if _deferred == 0 else _deferred / _active
 
     # --- Merge governance findings ---
     all_findings = governance_findings + result.findings
@@ -845,6 +861,7 @@ def scan(
         active_exception_count=active_exception_count,
         stale_exception_count=stale_exception_count,
         expedited_exception_ratio=expedited_exception_ratio,
+        deferred_fix_ratio=deferred_fix_ratio,
         governance_profile=manifest_model.governance_profile,
         analysis_level=analysis_level,
         manifest_hash=manifest_hash,
