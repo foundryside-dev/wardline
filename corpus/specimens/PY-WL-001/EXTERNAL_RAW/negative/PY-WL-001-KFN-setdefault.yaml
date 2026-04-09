@@ -1,0 +1,14 @@
+---
+specimen_id: PY-WL-001-KFN-setdefault
+description: "SUPPRESS at EXTERNAL_RAW: dict.setdefault triggers PY-WL-001"
+rule: PY-WL-001
+fragment: "def process(data):\n    x = data.setdefault(\"key\", [])\n"
+taint_state: EXTERNAL_RAW
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
+verdict: known_false_negative
+tags:
+- setdefault
+sha256: 9ca53318246017be037df9afa506ae736e068440aa69f5d133ab50c1717636f5

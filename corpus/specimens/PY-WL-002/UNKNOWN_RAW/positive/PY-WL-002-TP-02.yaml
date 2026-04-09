@@ -16,6 +16,6 @@ expected_match:
   line: 2
   text: "handler = getattr(module, \"on_event\", None)"
   function: get_handler
+expected_match_source: ast-reimplemented
 sha256: "5b04adbca8a6fddca368dae498fa3581c320e8f85c562198d9ce81b3ee64a857"
 verdict: "true_positive"
-expected_match_source: ast-reimplemented

@@ -10,10 +10,10 @@ expected_match:
   line: 2
   text: "x = getattr(obj, \"name\", None)"
   function: process
+expected_match_source: ast-reimplemented
 verdict: true_positive
 tags:
 - async
 sha256: 108360958fe9ef1d9af9b3b8518c115dbd94e3a47731753d99f5a67e8d382c92
 expected_severity: ERROR
 expected_exceptionability: STANDARD
-expected_match_source: ast-reimplemented

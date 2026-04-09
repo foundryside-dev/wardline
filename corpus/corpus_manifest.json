@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "spec_version": "1.0",
-  "corpus_hash": "sha256:0e5814ac38bbb09695ebeb12de01bce63457b9ad39c0edabeb3681fdc903ba08",
+  "corpus_hash": "sha256:459401e1c33eab249da45608a0a99d94321535132196f1c12fdb0e76ae8d830b",
   "generated": "2026-03-29",
   "specimen_count": 252,
   "specimens": [
@@ -254,143 +254,103 @@
       "sha256": "b84d32c496bba4dcf61f9ddbfcd62741d4b139a0e90bd88ae8043e0b18aaf220"
     },
     {
-      "specimen_id": "PY-WL-001-TP-01",
-      "path": "specimens/PY-WL-001/EXTERNAL_RAW/positive/PY-WL-001-TP-01.yaml",
+      "specimen_id": "PY-WL-001-KFN-get-default",
+      "path": "specimens/PY-WL-001/EXTERNAL_RAW/negative/PY-WL-001-KFN-get-default.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
       "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = data.get(\"key\", \"default\")",
-        "function": "process"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5"
     },
     {
-      "specimen_id": "PY-WL-001-TP-03",
-      "path": "specimens/PY-WL-001/EXTERNAL_RAW/positive/PY-WL-001-TP-03.yaml",
+      "specimen_id": "PY-WL-001-KFN-03",
+      "path": "specimens/PY-WL-001/EXTERNAL_RAW/negative/PY-WL-001-KFN-03.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
       "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "config.setdefault(\"timeout\", 30)",
-        "function": "ensure_key"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "ccb173df358aeafa7ecbc085e4673f03f0bb90029843948e80c80dcff41f30f8"
     },
     {
-      "specimen_id": "PY-WL-001-TP-AFN-nested-get",
-      "path": "specimens/PY-WL-001/EXTERNAL_RAW/positive/PY-WL-001-TP-AFN-nested-get.yaml",
+      "specimen_id": "PY-WL-001-KFN-AFN-nested-get",
+      "path": "specimens/PY-WL-001/EXTERNAL_RAW/negative/PY-WL-001-KFN-AFN-nested-get.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
       "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 3,
-        "text": "config = raw_input.get(\"settings\", {}).get(\"timeout\", 30)",
-        "function": "extract_config"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "6183b014e422cb968f015b62aa3e3fd07b7ed302eba6a781b6e3f562ea115ca5"
     },
     {
-      "specimen_id": "PY-WL-001-TP-EXTERNAL_RAW",
-      "path": "specimens/PY-WL-001/EXTERNAL_RAW/positive/PY-WL-001-TP-EXTERNAL_RAW.yaml",
+      "specimen_id": "PY-WL-001-KFN-EXTERNAL_RAW",
+      "path": "specimens/PY-WL-001/EXTERNAL_RAW/negative/PY-WL-001-KFN-EXTERNAL_RAW.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
       "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = data.get(\"key\", \"default\")",
-        "function": "process"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5"
     },
     {
-      "specimen_id": "PY-WL-001-TP-TF-direct-boundary",
-      "path": "specimens/PY-WL-001/EXTERNAL_RAW/positive/PY-WL-001-TP-TF-direct-boundary.yaml",
+      "specimen_id": "PY-WL-001-KFN-TF-direct-boundary",
+      "path": "specimens/PY-WL-001/EXTERNAL_RAW/negative/PY-WL-001-KFN-TF-direct-boundary.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
       "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 9,
-        "text": "user_id = payload.get(\"user_id\", \"anonymous\")",
-        "function": "consume_in_audit_context"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "d0084426e431f159bbee0f4435aec2e6c61c287fd27dbb1bd863030c312d676e"
     },
     {
-      "specimen_id": "PY-WL-001-TP-TF-ungoverned-overlay",
-      "path": "specimens/PY-WL-001/EXTERNAL_RAW/positive/PY-WL-001-TP-TF-ungoverned-overlay.yaml",
+      "specimen_id": "PY-WL-001-KFN-TF-ungoverned-overlay",
+      "path": "specimens/PY-WL-001/EXTERNAL_RAW/negative/PY-WL-001-KFN-TF-ungoverned-overlay.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
       "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 5,
-        "text": "return schema_default(data.get(\"region\", \"us-east-1\"))",
-        "function": "apply_default"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "86b82edf867cc1d4faaeabd43f21e23f148d9ca132478844111de2297d003e6c"
     },
     {
-      "specimen_id": "PY-WL-001-TP-async-get",
-      "path": "specimens/PY-WL-001/EXTERNAL_RAW/positive/PY-WL-001-TP-async-get.yaml",
+      "specimen_id": "PY-WL-001-KFN-async-get",
+      "path": "specimens/PY-WL-001/EXTERNAL_RAW/negative/PY-WL-001-KFN-async-get.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
       "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = data.get(\"key\", \"default\")",
-        "function": "process"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "26d9f988e68efc350bbe1d8e16af1a75a6cceb1aeed6ae528bcff2d8770ef3ca"
     },
     {
-      "specimen_id": "PY-WL-001-TP-schema-default-ungoverned",
-      "path": "specimens/PY-WL-001/EXTERNAL_RAW/positive/PY-WL-001-TP-schema-default-ungoverned.yaml",
+      "specimen_id": "PY-WL-001-KFN-schema-default-ungoverned",
+      "path": "specimens/PY-WL-001/EXTERNAL_RAW/negative/PY-WL-001-KFN-schema-default-ungoverned.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
       "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "return schema_default(data.get(\"key\", \"\"))",
-        "function": "process"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "b84d32c496bba4dcf61f9ddbfcd62741d4b139a0e90bd88ae8043e0b18aaf220"
     },
     {
-      "specimen_id": "PY-WL-001-TP-setdefault",
-      "path": "specimens/PY-WL-001/EXTERNAL_RAW/positive/PY-WL-001-TP-setdefault.yaml",
+      "specimen_id": "PY-WL-001-KFN-setdefault",
+      "path": "specimens/PY-WL-001/EXTERNAL_RAW/negative/PY-WL-001-KFN-setdefault.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
       "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = data.setdefault(\"key\", [])",
-        "function": "process"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "9ca53318246017be037df9afa506ae736e068440aa69f5d133ab50c1717636f5"
     },
     {
-      "specimen_id": "PY-WL-001-TP-suppression-default-mismatch",
-      "path": "specimens/PY-WL-001/EXTERNAL_RAW/positive/PY-WL-001-TP-suppression-default-mismatch.yaml",
+      "specimen_id": "PY-WL-001-KFN-suppression-default-mismatch",
+      "path": "specimens/PY-WL-001/EXTERNAL_RAW/negative/PY-WL-001-KFN-suppression-default-mismatch.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
       "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "return schema_default(data.get(\"key\", \"UNKNOWN\"))",
-        "function": "process"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "6938e3ff084660e6633f75a9f0705a5e27a434f8a3fd7fb904667c071bda6776"
     },
     {
@@ -476,31 +436,23 @@
       "sha256": "e32a7a05619471256f0fd952576e21a72ff3f5952c687fc782626247ca798e19"
     },
     {
-      "specimen_id": "PY-WL-001-TP-MIXED_RAW",
-      "path": "specimens/PY-WL-001/MIXED_RAW/positive/PY-WL-001-TP-MIXED_RAW.yaml",
+      "specimen_id": "PY-WL-001-KFN-MIXED_RAW",
+      "path": "specimens/PY-WL-001/MIXED_RAW/negative/PY-WL-001-KFN-MIXED_RAW.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
       "taint_state": "MIXED_RAW",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = data.get(\"key\", \"default\")",
-        "function": "process"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5"
     },
     {
-      "specimen_id": "PY-WL-001-TP-TF-container-merge",
-      "path": "specimens/PY-WL-001/MIXED_RAW/positive/PY-WL-001-TP-TF-container-merge.yaml",
+      "specimen_id": "PY-WL-001-KFN-TF-container-merge",
+      "path": "specimens/PY-WL-001/MIXED_RAW/negative/PY-WL-001-KFN-TF-container-merge.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
       "taint_state": "MIXED_RAW",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "timeout = merged.get(\"timeout\", 60)",
-        "function": "merge_configs"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "2f29b27ef3f59b19d31726c065295058efecc2d9851ae10f3c54a6aac3570965"
     },
     {
@@ -582,45 +534,33 @@
       "sha256": "e32a7a05619471256f0fd952576e21a72ff3f5952c687fc782626247ca798e19"
     },
     {
-      "specimen_id": "PY-WL-001-TP-02",
-      "path": "specimens/PY-WL-001/UNKNOWN_RAW/positive/PY-WL-001-TP-02.yaml",
+      "specimen_id": "PY-WL-001-KFN-02",
+      "path": "specimens/PY-WL-001/UNKNOWN_RAW/negative/PY-WL-001-KFN-02.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
       "taint_state": "UNKNOWN_RAW",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "groups = defaultdict(list)",
-        "function": "aggregate"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "902f8fffbad84067ca2795805b87790a666d416214acee8288d3c4c56ac81283"
     },
     {
-      "specimen_id": "PY-WL-001-TP-UNKNOWN_RAW",
-      "path": "specimens/PY-WL-001/UNKNOWN_RAW/positive/PY-WL-001-TP-UNKNOWN_RAW.yaml",
+      "specimen_id": "PY-WL-001-KFN-UNKNOWN_RAW",
+      "path": "specimens/PY-WL-001/UNKNOWN_RAW/negative/PY-WL-001-KFN-UNKNOWN_RAW.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
       "taint_state": "UNKNOWN_RAW",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = data.get(\"key\", \"default\")",
-        "function": "process"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5"
     },
     {
-      "specimen_id": "PY-WL-001-TP-defaultdict",
-      "path": "specimens/PY-WL-001/UNKNOWN_RAW/positive/PY-WL-001-TP-defaultdict.yaml",
+      "specimen_id": "PY-WL-001-KFN-defaultdict",
+      "path": "specimens/PY-WL-001/UNKNOWN_RAW/negative/PY-WL-001-KFN-defaultdict.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
       "taint_state": "UNKNOWN_RAW",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 3,
-        "text": "d = defaultdict(list)",
-        "function": "process"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "c0088880862f3022c94a7496808be3aebafc7ec6aae565327f054687ea56bb93"
     },
     {

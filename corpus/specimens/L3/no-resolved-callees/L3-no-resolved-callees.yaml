@@ -19,5 +19,6 @@ expected_match:
   line: 5
   text: 'return data.get("key", "default")'
   function: parse
+expected_match_source: "ast-reimplemented"
 verdict: "true_positive"
 sha256: "d8f2eda90d2e8732c7f867c1114f1ac3886f2269df500731504a2d79fe81dae2"

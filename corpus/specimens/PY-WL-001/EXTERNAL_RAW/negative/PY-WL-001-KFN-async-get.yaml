@@ -1,0 +1,14 @@
+---
+specimen_id: PY-WL-001-KFN-async-get
+description: "SUPPRESS at EXTERNAL_RAW: Async function with dict.get pattern"
+rule: PY-WL-001
+fragment: "async def process(data):\n    x = data.get(\"key\", \"default\")\n"
+taint_state: EXTERNAL_RAW
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
+verdict: known_false_negative
+tags:
+- async
+sha256: 26d9f988e68efc350bbe1d8e16af1a75a6cceb1aeed6ae528bcff2d8770ef3ca

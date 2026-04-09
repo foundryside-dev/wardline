@@ -1,0 +1,17 @@
+---
+specimen_id: "PY-WL-001-KFN-schema-default-ungoverned"
+description: "SUPPRESS at EXTERNAL_RAW: schema_default() without overlay governance still fires PY-WL-001"
+rule: "PY-WL-001"
+category: "suppression_interaction"
+fragment: |
+  from wardline import schema_default
+
+  def process(data):
+      return schema_default(data.get("key", ""))
+taint_state: "EXTERNAL_RAW"
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
+verdict: "known_false_negative"
+sha256: "b84d32c496bba4dcf61f9ddbfcd62741d4b139a0e90bd88ae8043e0b18aaf220"

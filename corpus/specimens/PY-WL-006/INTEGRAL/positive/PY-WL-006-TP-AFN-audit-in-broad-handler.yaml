@@ -15,6 +15,10 @@ expected_rules:
 - PY-WL-006
 expected_severity: ERROR
 expected_exceptionability: UNCONDITIONAL
-expected_match: true
+expected_match:
+  line: 6
+  text: 'audit_log.emit_event("write_failed", record.id)'
+  function: "save_record"
+expected_match_source: "manual"
 sha256: "700469d61af592d5b0cb8685296fd1a3db5b32463412a7ee5483dc66fd6f00c8"
 verdict: "true_positive"

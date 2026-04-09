@@ -1,0 +1,14 @@
+---
+specimen_id: "PY-WL-001-KFN-03"
+description: "SUPPRESS at EXTERNAL_RAW: dict.setdefault() with default fires PY-WL-001"
+rule: "PY-WL-001"
+fragment: |
+  def ensure_key(config):
+      config.setdefault("timeout", 30)
+taint_state: "EXTERNAL_RAW"
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
+sha256: "ccb173df358aeafa7ecbc085e4673f03f0bb90029843948e80c80dcff41f30f8"
+verdict: "known_false_negative"

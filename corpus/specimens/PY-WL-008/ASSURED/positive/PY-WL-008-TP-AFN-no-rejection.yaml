@@ -17,7 +17,11 @@ expected_rules:
 - PY-WL-008
 expected_severity: ERROR
 expected_exceptionability: UNCONDITIONAL
-expected_match: true
+expected_match:
+  line: 4
+  text: "def check_input(data):"
+  function: "check_input"
+expected_match_source: "manual"
 sha256: "debc4a2f82cdb30878756c60c13dbd4a266e7afabafac5ddbddef243a1d44833"
 verdict: "true_positive"
 boundaries:

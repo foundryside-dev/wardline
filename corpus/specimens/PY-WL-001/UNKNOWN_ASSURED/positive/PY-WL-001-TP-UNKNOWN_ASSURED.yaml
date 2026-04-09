@@ -12,6 +12,6 @@ expected_match:
   line: 2
   text: "x = data.get(\"key\", \"default\")"
   function: process
+expected_match_source: ast-reimplemented
 sha256: fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5
 verdict: true_positive
-expected_match_source: ast-reimplemented

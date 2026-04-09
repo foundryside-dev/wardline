@@ -52,7 +52,7 @@ class TestCorpusSkeleton:
         # Use an actual specimen instead of the template
         specimen_path = (
             CORPUS_ROOT / "specimens" / "PY-WL-001"
-            / "EXTERNAL_RAW" / "positive" / "PY-WL-001-TP-01.yaml"
+            / "INTEGRAL" / "positive" / "PY-WL-001-TP-INTEGRAL.yaml"
         )
         assert specimen_path.is_file()
 

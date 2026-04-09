@@ -17,6 +17,6 @@ expected_match:
   line: 3
   text: "value = getattr(obj, name, None)"
   function: resolve_attribute
+expected_match_source: ast-reimplemented
 sha256: "1f79588372314700d86a40db0257adc0e3b779bc2e0ab64417217889669aedf9"
 verdict: "true_positive"
-expected_match_source: ast-reimplemented

@@ -1,0 +1,14 @@
+---
+specimen_id: "PY-WL-001-KFN-get-default"
+description: "SUPPRESS at EXTERNAL_RAW: dict.get() with default value fires PY-WL-001"
+rule: "PY-WL-001"
+fragment: |
+  def process(data):
+      x = data.get("key", "default")
+taint_state: "EXTERNAL_RAW"
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
+sha256: "fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5"
+verdict: "known_false_negative"

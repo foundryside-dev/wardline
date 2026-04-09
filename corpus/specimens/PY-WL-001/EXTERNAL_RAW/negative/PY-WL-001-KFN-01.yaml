@@ -8,7 +8,11 @@ taint_state: EXTERNAL_RAW
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
-expected_match: true
+expected_match:
+  line: 2
+  text: 'result = safe_lookup(data, "key")'
+  function: process
+expected_match_source: manual
 sha256: 2e98701803d209a5d0e6dffb065ec0545b144e7971eb01f0faac31375beff6b4
 verdict: true_positive
 analysis_level_required: 3

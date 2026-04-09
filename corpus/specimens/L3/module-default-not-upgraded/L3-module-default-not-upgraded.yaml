@@ -23,5 +23,6 @@ expected_match:
   line: 9
   text: 'return data.get("key", "default")'
   function: pipeline_step
+expected_match_source: "ast-reimplemented"
 verdict: "true_positive"
 sha256: "81d7025a88366eb657dab169be6ca7ee71f46fb2192f958ca990c5f01d11b8de"

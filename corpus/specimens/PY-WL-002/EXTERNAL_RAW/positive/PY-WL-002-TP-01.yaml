@@ -14,6 +14,6 @@ expected_match:
   line: 2
   text: "value = getattr(obj, \"timeout\", 30)"
   function: read_config
+expected_match_source: ast-reimplemented
 sha256: "75414996f8a7b8d8b24c527101611cad2268f27f46d1175f2d09caa058b0f0a0"
 verdict: "true_positive"
-expected_match_source: ast-reimplemented

@@ -18,6 +18,6 @@ expected_match:
   line: 3
   text: "if key in data and len(data[key]) > 0:"
   function: safe_access
+expected_match_source: ast-reimplemented
 sha256: "807a4f730e8c0284a2b0ad69ddba48eec22d670e27ccf9bcec6496a984cc647e"
 verdict: "true_positive"
-expected_match_source: "ast-reimplemented"

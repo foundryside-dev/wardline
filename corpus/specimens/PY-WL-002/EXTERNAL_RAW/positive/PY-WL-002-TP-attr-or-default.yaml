@@ -14,6 +14,6 @@ expected_match:
   line: 2
   text: "return obj.name or \"fallback\""
   function: process
+expected_match_source: ast-reimplemented
 verdict: "true_positive"
 sha256: "ef483665888b254dbbb0d297931aa916579808126bb3aa52666549862cedea91"
-expected_match_source: ast-reimplemented

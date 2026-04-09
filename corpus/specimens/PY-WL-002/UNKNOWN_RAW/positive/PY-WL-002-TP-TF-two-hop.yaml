@@ -20,6 +20,6 @@ expected_match:
   line: 7
   text: "return getattr(config, \"timeout\", 30)"
   function: extract_setting
+expected_match_source: ast-reimplemented
 sha256: "e611cb171652f100087b26f1d750004cea99314c67f35b62969ce74a04a43afb"
 verdict: "true_positive"
-expected_match_source: ast-reimplemented

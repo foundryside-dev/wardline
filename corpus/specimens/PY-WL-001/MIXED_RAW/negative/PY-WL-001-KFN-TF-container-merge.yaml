@@ -1,0 +1,18 @@
+---
+specimen_id: "PY-WL-001-KFN-TF-container-merge"
+description: "SUPPRESS at MIXED_RAW: Taint-flow: cross-tier dict merge with .get default on contaminated container"
+rule: "PY-WL-001"
+category: "taint_flow"
+fragment: |
+  def merge_configs(trusted, untrusted):
+      """Merging trusted and untrusted dicts contaminates the result."""
+      merged = {**trusted, **untrusted}
+      timeout = merged.get("timeout", 60)
+      return timeout
+taint_state: "MIXED_RAW"
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
+sha256: "2f29b27ef3f59b19d31726c065295058efecc2d9851ae10f3c54a6aac3570965"
+verdict: "known_false_negative"

@@ -1,0 +1,14 @@
+---
+specimen_id: PY-WL-001-KFN-defaultdict
+description: "SUPPRESS at UNKNOWN_RAW: defaultdict with factory triggers PY-WL-001"
+rule: PY-WL-001
+fragment: "from collections import defaultdict\ndef process():\n    d = defaultdict(list)\n"
+taint_state: UNKNOWN_RAW
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
+verdict: known_false_negative
+tags:
+- defaultdict
+sha256: c0088880862f3022c94a7496808be3aebafc7ec6aae565327f054687ea56bb93

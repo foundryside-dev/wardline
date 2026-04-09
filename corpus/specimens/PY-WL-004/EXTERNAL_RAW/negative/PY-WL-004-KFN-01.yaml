@@ -13,7 +13,11 @@ taint_state: "EXTERNAL_RAW"
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
-expected_match: true
+expected_match:
+  line: 6
+  text: "return safe_call(lambda: fetch(url))"
+  function: "process"
+expected_match_source: "manual"
 sha256: "57dbd059c0c8eebe3847d842727ed99530bd473e4a60faeb0bb16d3670838c55"
 verdict: "true_positive"
 analysis_level_required: 3

@@ -8,6 +8,10 @@ expected_rules:
 - PY-WL-006
 expected_severity: ERROR
 expected_exceptionability: UNCONDITIONAL
-expected_match: true
+expected_match:
+  line: 5
+  text: return cached_result
+  function: process
+expected_match_source: manual
 sha256: 8e9345d485916926e66d380437bc22d07189cc60b5162453931fd3138b84b907
 verdict: true_positive

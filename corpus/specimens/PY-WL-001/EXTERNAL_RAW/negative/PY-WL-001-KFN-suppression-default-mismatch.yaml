@@ -1,6 +1,6 @@
 ---
-specimen_id: "PY-WL-001-TP-suppression-default-mismatch"
-description: "Suppression interaction: optional_field declares approved_default='' but code uses 'UNKNOWN'"
+specimen_id: "PY-WL-001-KFN-suppression-default-mismatch"
+description: "SUPPRESS at EXTERNAL_RAW: Suppression interaction: optional_field declares approved_default='' but code uses 'UNKNOWN'"
 rule: "PY-WL-001"
 category: "suppression_interaction"
 fragment: |
@@ -16,14 +16,9 @@ optional_fields:
   - field: "key"
     approved_default: ""
     rationale: "optional by contract"
-expected_rules:
-- PY-WL-001
-expected_severity: ERROR
-expected_exceptionability: UNCONDITIONAL
-expected_match:
-  line: 4
-  text: "return schema_default(data.get(\"key\", \"UNKNOWN\"))"
-  function: process
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
 sha256: "6938e3ff084660e6633f75a9f0705a5e27a434f8a3fd7fb904667c071bda6776"
-verdict: "true_positive"
-expected_match_source: ast-reimplemented
+verdict: "known_false_negative"

@@ -15,6 +15,6 @@ expected_match:
   line: 2
   text: 'if "database" in config:'
   function: check_config
+expected_match_source: ast-reimplemented
 sha256: "a02df1f433fba6a9dfd0bc67d7b0bd3270491a61bb66e48c81965ea55c0dd937"
 verdict: "true_positive"
-expected_match_source: "ast-reimplemented"

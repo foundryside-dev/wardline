@@ -27,5 +27,6 @@ expected_match:
   line: 10
   text: 'return data.get("key", "default")'
   function: boundary_func
+expected_match_source: "ast-reimplemented"
 verdict: "true_positive"
 sha256: "2eb2bdc88ab92f3137af35191a0f019bc7a5508bcc7291ca0deea43b3b3be66e"

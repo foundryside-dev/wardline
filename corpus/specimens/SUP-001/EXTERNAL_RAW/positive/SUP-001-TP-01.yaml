@@ -17,6 +17,10 @@ expected_rules:
   - "SUP-001"
 expected_severity: "ERROR"
 expected_exceptionability: "STANDARD"
-expected_match: true
+expected_match:
+  line: 9
+  text: "return random.random()"
+  function: "pick_value"
+expected_match_source: "manual"
 sha256: "0e99cd155d0fa58d9e26a5a309e5cec64259262052f3d315f175367beae12be2"
 verdict: "true_positive"

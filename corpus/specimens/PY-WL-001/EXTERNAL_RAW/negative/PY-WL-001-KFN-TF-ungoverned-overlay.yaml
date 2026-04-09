@@ -1,0 +1,18 @@
+---
+specimen_id: "PY-WL-001-KFN-TF-ungoverned-overlay"
+description: "SUPPRESS at EXTERNAL_RAW: Taint-flow: schema_default wrapper with no overlay — ungoverned default fires"
+rule: "PY-WL-001"
+category: "taint_flow"
+fragment: |
+  from wardline import schema_default
+
+  def apply_default(data):
+      """schema_default without any overlay or boundary declaration."""
+      return schema_default(data.get("region", "us-east-1"))
+taint_state: "EXTERNAL_RAW"
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
+sha256: "86b82edf867cc1d4faaeabd43f21e23f148d9ca132478844111de2297d003e6c"
+verdict: "known_false_negative"

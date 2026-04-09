@@ -12,10 +12,10 @@ expected_match:
   line: 9
   text: "x = data.get(\"key\", \"default\")"
   function: process
+expected_match_source: ast-reimplemented
 verdict: true_positive
 tags:
 - decorator-stack
 sha256: 79729ceb608a77ed594033dfa698c9ba72e12663deb134318fc5c5d6bd4e8c8d
 expected_severity: ERROR
 expected_exceptionability: STANDARD
-expected_match_source: ast-reimplemented

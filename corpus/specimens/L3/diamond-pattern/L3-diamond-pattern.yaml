@@ -32,5 +32,6 @@ expected_match:
   line: 18
   text: 'x = data.get("key", "default")'
   function: process
+expected_match_source: "ast-reimplemented"
 verdict: "true_positive"
 sha256: "3eb0350b074e9b08091f8ae95882380d857ec07f4fc04a138241e0e32a1b971e"

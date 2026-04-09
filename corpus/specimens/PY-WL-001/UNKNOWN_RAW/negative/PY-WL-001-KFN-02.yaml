@@ -1,0 +1,18 @@
+---
+specimen_id: "PY-WL-001-KFN-02"
+description: "SUPPRESS at UNKNOWN_RAW: defaultdict(list) constructor fires PY-WL-001"
+rule: "PY-WL-001"
+fragment: |
+  from collections import defaultdict
+
+  def aggregate(records):
+      groups = defaultdict(list)
+      for r in records:
+          groups[r["type"]].append(r)
+taint_state: "UNKNOWN_RAW"
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
+sha256: "902f8fffbad84067ca2795805b87790a666d416214acee8288d3c4c56ac81283"
+verdict: "known_false_negative"

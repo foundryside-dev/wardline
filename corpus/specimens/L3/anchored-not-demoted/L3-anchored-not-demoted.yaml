@@ -24,5 +24,6 @@ expected_match:
   line: 10
   text: 'x = data.get("key", cfg.get("safe", "default"))'
   function: handle_request
+expected_match_source: "ast-reimplemented"
 verdict: "true_positive"
 sha256: "6c0a68b2bd2c14e8474f67400ec99730ae4b0a22d00db00f33d22ccec744dd8f"

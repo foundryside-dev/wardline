@@ -30,7 +30,7 @@ from datetime import date
 
 from wardline.core.severity import Exceptionability, RuleId, Severity
 from wardline.scanner.context import Finding
-from wardline.scanner.rules.base import RuleBase, call_name, walk_skip_nested_defs
+from wardline.scanner.rules.base import RuleBase, call_name, decorator_name, walk_skip_nested_defs
 
 _ALLOWED_PARSE_CALLERS = ("__init__", "__post_init__", "setup")
 _STATE_MUTATION_NAMES = frozenset({
@@ -314,7 +314,7 @@ class RuleSup001(RuleBase):
         *,
         is_async: bool,
     ) -> None:
-        annotations = self._annotation_names()
+        annotations = self._annotation_names(node)
 
         self._check_parse_at_init_calls(node)
         self._check_ordered_after(node)
@@ -360,12 +360,20 @@ class RuleSup001(RuleBase):
         basename = self._file_path.rsplit("/", 1)[-1].lower()
         return basename.startswith("test_") or basename.endswith("_test.py")
 
-    def _annotation_names(self) -> frozenset[str]:
-        if self._context is None or self._context.annotations_map is None:
-            return frozenset()
+    def _annotation_names(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef,
+    ) -> frozenset[str]:
+        """Resolve canonical decorator names, falling back to direct syntax."""
+        names: set[str] = set()
+        if self._context is not None and self._context.annotations_map is not None:
+            for ann in self._context.annotations_map.get(self._current_qualname, ()):
+                names.add(ann.canonical_name)
+        if names:
+            return frozenset(names)
         return frozenset(
-            ann.canonical_name
-            for ann in self._context.annotations_map.get(self._current_qualname, ())
+            name
+            for decorator in node.decorator_list
+            if (name := decorator_name(decorator)) is not None
         )
 
     def _annotation_attr(self, name: str, attr: str) -> object | None:

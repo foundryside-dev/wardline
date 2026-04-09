@@ -12,6 +12,6 @@ expected_match:
   line: 2
   text: 'if "key" in data:'
   function: process
+expected_match_source: ast-reimplemented
 sha256: 83658d70103eb68eea677c3b88ae80be30fda5fd76b89f1dba18e61b3409df44
 verdict: true_positive
-expected_match_source: "ast-reimplemented"

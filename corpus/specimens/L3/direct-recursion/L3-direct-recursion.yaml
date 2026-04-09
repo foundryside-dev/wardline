@@ -18,5 +18,6 @@ expected_match:
   line: 3
   text: 'return data.get("key", "default")'
   function: recurse
+expected_match_source: "ast-reimplemented"
 verdict: "true_positive"
 sha256: "24e53c051001d0a3b292d32c24af6f455ebbdfaa9676ec112de6ea5bfa6f65f7"

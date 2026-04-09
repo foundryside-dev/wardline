@@ -1,0 +1,17 @@
+---
+specimen_id: "PY-WL-001-KFN-AFN-nested-get"
+description: "SUPPRESS at EXTERNAL_RAW: Adversarial false negative: dict.get with default hidden inside chained method calls"
+rule: "PY-WL-001"
+category: "adversarial_false_negative"
+fragment: |
+  def extract_config(raw_input):
+      """Default hidden in chained call — scanner must still detect .get(k, default)."""
+      config = raw_input.get("settings", {}).get("timeout", 30)
+      return config
+taint_state: "EXTERNAL_RAW"
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
+sha256: "6183b014e422cb968f015b62aa3e3fd07b7ed302eba6a781b6e3f562ea115ca5"
+verdict: "known_false_negative"

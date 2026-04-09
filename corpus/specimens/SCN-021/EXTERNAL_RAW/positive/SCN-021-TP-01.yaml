@@ -16,6 +16,10 @@ expected_rules:
   - "SCN-021"
 expected_severity: "ERROR"
 expected_exceptionability: "UNCONDITIONAL"
-expected_match: true
+expected_match:
+  line: 7
+  text: "def fetch_config(key: str) -> str:"
+  function: "fetch_config"
+expected_match_source: "manual"
 sha256: "cb3ec315c2bb4508b9faf0525906aea5885ecbb4d50cec4d76101b4e1eb21d7a"
 verdict: "true_positive"

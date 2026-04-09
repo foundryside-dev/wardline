@@ -18,7 +18,11 @@ expected_rules:
 - PY-WL-009
 expected_severity: ERROR
 expected_exceptionability: UNCONDITIONAL
-expected_match: true
+expected_match:
+  line: 7
+  text: 'if data["priority"] > 100:'
+  function: "check_constraints"
+expected_match_source: "manual"
 sha256: "9c8f6148b3a69c06ba7c3baf20bf0e8c527435256a086263d6623cb876094a6e"
 verdict: "true_positive"
 boundaries:

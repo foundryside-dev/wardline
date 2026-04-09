@@ -1,6 +1,6 @@
 ---
-specimen_id: "PY-WL-001-TP-TF-direct-boundary"
-description: "Taint-flow: external data with .get default reaching audit-tier consumer without validation"
+specimen_id: "PY-WL-001-KFN-TF-direct-boundary"
+description: "SUPPRESS at EXTERNAL_RAW: Taint-flow: external data with .get default reaching audit-tier consumer without validation"
 rule: "PY-WL-001"
 category: "taint_flow"
 fragment: |
@@ -8,21 +8,16 @@ fragment: |
       """Tier 4 boundary: fetches raw external data."""
       response = api_client.get("/data")
       return response.json()
-  
+
   def consume_in_audit_context(api_client):
       """Audit-tier consumer uses .get with default on external data."""
       payload = fetch_external(api_client)
       user_id = payload.get("user_id", "anonymous")
       return user_id
 taint_state: "EXTERNAL_RAW"
-expected_rules:
-- PY-WL-001
-expected_severity: ERROR
-expected_exceptionability: STANDARD
-expected_match:
-  line: 9
-  text: "user_id = payload.get(\"user_id\", \"anonymous\")"
-  function: consume_in_audit_context
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
 sha256: "d0084426e431f159bbee0f4435aec2e6c61c287fd27dbb1bd863030c312d676e"
-verdict: "true_positive"
-expected_match_source: ast-reimplemented
+verdict: "known_false_negative"
