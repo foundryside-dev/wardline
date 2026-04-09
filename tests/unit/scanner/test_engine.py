@@ -669,3 +669,77 @@ class TestSyntaxErrorEscalation:
         syntax_findings = [f for f in result.findings if "syntax" in f.message.lower()]
         assert len(syntax_findings) == 1
         assert syntax_findings[0].severity == Severity.WARNING
+
+
+# ── TestPopulateSnippets ──────────────────────────────────────────
+
+
+class TestPopulateSnippets:
+    """Tests for the shared snippet-population helper."""
+
+    def test_populates_none_snippet_from_source(self) -> None:
+        from wardline.core.severity import Exceptionability
+        from wardline.scanner.context import Finding, populate_snippets
+
+        source = "line_zero\ndef process(data):\n    x = data.get('key', 'default')\n"
+        f = Finding(
+            rule_id=RuleId.PY_WL_001, file_path="test.py", line=3, col=4,
+            end_line=3, end_col=30, message="test", severity=Severity.ERROR,
+            exceptionability=Exceptionability.STANDARD, taint_state=None,
+            analysis_level=1, source_snippet=None, qualname="process",
+        )
+        result = populate_snippets([f], source)
+        assert len(result) == 1
+        assert result[0].source_snippet == "x = data.get('key', 'default')"
+
+    def test_preserves_existing_snippet(self) -> None:
+        from wardline.core.severity import Exceptionability
+        from wardline.scanner.context import Finding, populate_snippets
+
+        f = Finding(
+            rule_id=RuleId.PY_WL_001, file_path="test.py", line=1, col=0,
+            end_line=1, end_col=10, message="test", severity=Severity.ERROR,
+            exceptionability=Exceptionability.STANDARD, taint_state=None,
+            analysis_level=1, source_snippet="already set", qualname=None,
+        )
+        result = populate_snippets([f], "some source")
+        assert result[0].source_snippet == "already set"
+
+    def test_none_source_returns_findings_unchanged(self) -> None:
+        from wardline.core.severity import Exceptionability
+        from wardline.scanner.context import Finding, populate_snippets
+
+        f = Finding(
+            rule_id=RuleId.PY_WL_001, file_path="test.py", line=1, col=0,
+            end_line=None, end_col=None, message="test", severity=Severity.ERROR,
+            exceptionability=Exceptionability.STANDARD, taint_state=None,
+            analysis_level=1, source_snippet=None, qualname=None,
+        )
+        result = populate_snippets([f], None)
+        assert result[0].source_snippet is None
+
+    def test_out_of_range_line_keeps_none(self) -> None:
+        from wardline.core.severity import Exceptionability
+        from wardline.scanner.context import Finding, populate_snippets
+
+        f = Finding(
+            rule_id=RuleId.PY_WL_001, file_path="test.py", line=0, col=0,
+            end_line=None, end_col=None, message="test", severity=Severity.ERROR,
+            exceptionability=Exceptionability.STANDARD, taint_state=None,
+            analysis_level=1, source_snippet=None, qualname=None,
+        )
+        result = populate_snippets([f], "one line")
+        assert result[0].source_snippet is None
+
+    def test_snippet_is_stripped(self) -> None:
+        from wardline.core.severity import Exceptionability
+        from wardline.scanner.context import Finding, populate_snippets
+
+        f = Finding(
+            rule_id=RuleId.PY_WL_001, file_path="test.py", line=1, col=0,
+            end_line=None, end_col=None, message="test", severity=Severity.ERROR,
+            exceptionability=Exceptionability.STANDARD, taint_state=None,
+            analysis_level=1, source_snippet=None, qualname=None,
+        )
+        result = populate_snippets([f], "    indented_code    ")
+        assert result[0].source_snippet == "indented_code"

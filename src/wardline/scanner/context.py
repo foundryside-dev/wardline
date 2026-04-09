@@ -7,7 +7,7 @@ ScanContext's function_level_taint_map is deeply frozen via MappingProxyType.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
@@ -178,6 +178,29 @@ class ScanContext:
                 "import_alias_map",
                 MappingProxyType(self.import_alias_map),
             )
+
+
+def populate_snippets(
+    findings: list[Finding],
+    source: str | None,
+) -> list[Finding]:
+    """Populate source_snippet on findings that lack it.
+
+    Uses line-range extraction from source text. Returns new Finding
+    instances (Finding is frozen — uses dataclasses.replace).
+
+    Both the scan engine and the corpus pipeline call this function
+    to avoid duplicating snippet-population logic.
+    """
+    if source is None:
+        return list(findings)
+    source_lines = source.splitlines()
+    result: list[Finding] = []
+    for f in findings:
+        if f.source_snippet is None and 1 <= f.line <= len(source_lines):
+            f = replace(f, source_snippet=source_lines[f.line - 1].strip())
+        result.append(f)
+    return result
 
 
 def make_governance_finding(
