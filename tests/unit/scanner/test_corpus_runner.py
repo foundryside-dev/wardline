@@ -831,3 +831,157 @@ class TestCorpusPublish:
         assert len(adversarial_gaps) == 1
         assert "PY-WL-002" in adversarial_gaps[0]
         assert "adversarial_false_positive" in adversarial_gaps[0]
+
+
+class TestStructuralComparison:
+    """Tests for _normalize_snippet_text, _find_matching_finding, _check_location_match."""
+
+    def test_normalize_strips_and_collapses(self) -> None:
+        from wardline.cli.corpus_cmds import _normalize_snippet_text
+        assert _normalize_snippet_text("  x =  data.get('k')  ") == "x = data.get('k')"
+
+    def test_normalize_empty_string(self) -> None:
+        from wardline.cli.corpus_cmds import _normalize_snippet_text
+        assert _normalize_snippet_text("") == ""
+
+    def test_normalize_tabs_and_newlines(self) -> None:
+        from wardline.cli.corpus_cmds import _normalize_snippet_text
+        assert _normalize_snippet_text("\t  x\n  =  1\t") == "x = 1"
+
+    def test_find_matching_exact_line(self) -> None:
+        from wardline.cli.corpus_cmds import _find_matching_finding
+        from wardline.core.severity import Exceptionability, RuleId, Severity
+        from wardline.scanner.context import Finding
+
+        f1 = Finding(
+            rule_id=RuleId.PY_WL_001, file_path="t.py", line=2, col=0,
+            end_line=None, end_col=None, message="m", severity=Severity.ERROR,
+            exceptionability=Exceptionability.STANDARD, taint_state=None,
+            analysis_level=1, source_snippet="x = 1", qualname="process",
+        )
+        f2 = Finding(
+            rule_id=RuleId.PY_WL_001, file_path="t.py", line=5, col=0,
+            end_line=None, end_col=None, message="m", severity=Severity.ERROR,
+            exceptionability=Exceptionability.STANDARD, taint_state=None,
+            analysis_level=1, source_snippet="y = 2", qualname="other",
+        )
+        result = _find_matching_finding([f1, f2], "PY-WL-001", expected_line=5)
+        assert result is f2
+
+    def test_find_matching_no_exact_returns_none(self) -> None:
+        from wardline.cli.corpus_cmds import _find_matching_finding
+        from wardline.core.severity import Exceptionability, RuleId, Severity
+        from wardline.scanner.context import Finding
+
+        f1 = Finding(
+            rule_id=RuleId.PY_WL_001, file_path="t.py", line=2, col=0,
+            end_line=None, end_col=None, message="m", severity=Severity.ERROR,
+            exceptionability=Exceptionability.STANDARD, taint_state=None,
+            analysis_level=1, source_snippet="x = 1", qualname="process",
+        )
+        result = _find_matching_finding([f1], "PY-WL-001", expected_line=10)
+        assert result is None
+
+    def test_check_location_line_mismatch(self) -> None:
+        from wardline.cli.corpus_cmds import _check_location_match
+        from wardline.core.severity import Exceptionability, RuleId, Severity
+        from wardline.scanner.context import Finding
+
+        f = Finding(
+            rule_id=RuleId.PY_WL_001, file_path="t.py", line=5, col=0,
+            end_line=None, end_col=None, message="m", severity=Severity.ERROR,
+            exceptionability=Exceptionability.STANDARD, taint_state=None,
+            analysis_level=1, source_snippet="x = 1", qualname="process",
+        )
+        ok, reasons = _check_location_match(f, {"line": 2})
+        assert not ok
+        assert any("line" in r for r in reasons)
+
+    def test_check_location_text_mismatch(self) -> None:
+        from wardline.cli.corpus_cmds import _check_location_match
+        from wardline.core.severity import Exceptionability, RuleId, Severity
+        from wardline.scanner.context import Finding
+
+        f = Finding(
+            rule_id=RuleId.PY_WL_001, file_path="t.py", line=2, col=0,
+            end_line=None, end_col=None, message="m", severity=Severity.ERROR,
+            exceptionability=Exceptionability.STANDARD, taint_state=None,
+            analysis_level=1, source_snippet="x = 1", qualname="process",
+        )
+        ok, reasons = _check_location_match(f, {"text": "y = 2"})
+        assert not ok
+        assert any("text" in r for r in reasons)
+
+    def test_check_location_none_snippet_with_expected_text(self) -> None:
+        from wardline.cli.corpus_cmds import _check_location_match
+        from wardline.core.severity import Exceptionability, RuleId, Severity
+        from wardline.scanner.context import Finding
+
+        f = Finding(
+            rule_id=RuleId.PY_WL_001, file_path="t.py", line=2, col=0,
+            end_line=None, end_col=None, message="m", severity=Severity.ERROR,
+            exceptionability=Exceptionability.STANDARD, taint_state=None,
+            analysis_level=1, source_snippet=None, qualname="process",
+        )
+        ok, reasons = _check_location_match(f, {"text": "x = 1"})
+        assert not ok
+        assert any("None" in r for r in reasons)
+
+    def test_check_location_function_mismatch(self) -> None:
+        from wardline.cli.corpus_cmds import _check_location_match
+        from wardline.core.severity import Exceptionability, RuleId, Severity
+        from wardline.scanner.context import Finding
+
+        f = Finding(
+            rule_id=RuleId.PY_WL_001, file_path="t.py", line=2, col=0,
+            end_line=None, end_col=None, message="m", severity=Severity.ERROR,
+            exceptionability=Exceptionability.STANDARD, taint_state=None,
+            analysis_level=1, source_snippet="x = 1", qualname="wrong_func",
+        )
+        ok, reasons = _check_location_match(f, {"function": "process"})
+        assert not ok
+        assert any("function" in r for r in reasons)
+
+    def test_check_location_all_pass(self) -> None:
+        from wardline.cli.corpus_cmds import _check_location_match
+        from wardline.core.severity import Exceptionability, RuleId, Severity
+        from wardline.scanner.context import Finding
+
+        f = Finding(
+            rule_id=RuleId.PY_WL_001, file_path="t.py", line=2, col=0,
+            end_line=None, end_col=None, message="m", severity=Severity.ERROR,
+            exceptionability=Exceptionability.STANDARD, taint_state=None,
+            analysis_level=1, source_snippet="x = 1", qualname="process",
+        )
+        ok, reasons = _check_location_match(f, {"line": 2, "text": "x = 1", "function": "process"})
+        assert ok
+        assert reasons == []
+
+    def test_check_location_partial_fields(self) -> None:
+        from wardline.cli.corpus_cmds import _check_location_match
+        from wardline.core.severity import Exceptionability, RuleId, Severity
+        from wardline.scanner.context import Finding
+
+        f = Finding(
+            rule_id=RuleId.PY_WL_001, file_path="t.py", line=2, col=0,
+            end_line=None, end_col=None, message="m", severity=Severity.ERROR,
+            exceptionability=Exceptionability.STANDARD, taint_state=None,
+            analysis_level=1, source_snippet="x = 1", qualname="process",
+        )
+        ok, reasons = _check_location_match(f, {"line": 2})
+        assert ok
+
+    def test_text_normalization_handles_indentation(self) -> None:
+        from wardline.cli.corpus_cmds import _check_location_match
+        from wardline.core.severity import Exceptionability, RuleId, Severity
+        from wardline.scanner.context import Finding
+
+        f = Finding(
+            rule_id=RuleId.PY_WL_001, file_path="t.py", line=2, col=0,
+            end_line=None, end_col=None, message="m", severity=Severity.ERROR,
+            exceptionability=Exceptionability.STANDARD, taint_state=None,
+            analysis_level=1, source_snippet="x = data.get('key', 'default')",
+            qualname="process",
+        )
+        ok, _ = _check_location_match(f, {"text": "  x = data.get('key',   'default')  "})
+        assert ok

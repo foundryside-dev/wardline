@@ -37,6 +37,7 @@ class _CellStats:
     tn: int = 0
     fn: int = 0
     kfn: int = 0
+    location_mismatches: int = 0
 
     @property
     def sample_size(self) -> int:
@@ -226,6 +227,88 @@ def _run_rules_on_fragment(
         boundaries=boundaries, optional_fields=optional_fields,
     )
     return {str(f.rule_id) for f in findings}
+
+
+def _normalize_snippet_text(text: str) -> str:
+    """Normalize snippet text for comparison.
+
+    Strips leading/trailing whitespace and collapses internal whitespace
+    runs to single spaces. Handles indentation differences between
+    source extraction and YAML round-tripping.
+    """
+    return " ".join(text.split())
+
+
+def _find_matching_finding(
+    findings: list[Finding],
+    rule_id: str,
+    expected_line: int | None,
+    expected_text: str | None = None,
+) -> Finding | None:
+    """Find the finding matching the expected rule and line.
+
+    Uses (rule_id, line) as the match key. Returns None if no exact line
+    match exists — no nearest-line fallback. Uses normalized text as a
+    tiebreaker for same-line duplicates.
+    """
+    candidates = [f for f in findings if str(f.rule_id) == rule_id]
+    if not candidates:
+        return None
+    if expected_line is not None:
+        exact = [f for f in candidates if f.line == expected_line]
+        if not exact:
+            return None
+        if len(exact) == 1:
+            return exact[0]
+        if expected_text is not None:
+            norm_expected = _normalize_snippet_text(expected_text)
+            for f in exact:
+                if _normalize_snippet_text(f.source_snippet or "") == norm_expected:
+                    return f
+        return exact[0]
+    return candidates[0]
+
+
+def _check_location_match(
+    finding: Finding,
+    expected: dict[str, Any],
+) -> tuple[bool, list[str]]:
+    """Check if finding matches expected line/text/function.
+
+    Returns (ok, mismatch_reasons) where mismatch_reasons lists
+    which fields failed for diagnostic output.
+    """
+    mismatches: list[str] = []
+
+    expected_line = expected.get("line")
+    if expected_line is not None and finding.line != expected_line:
+        mismatches.append(
+            f"line: expected {expected_line}, got {finding.line}"
+        )
+
+    expected_text = expected.get("text")
+    if expected_text is not None:
+        if finding.source_snippet is None:
+            mismatches.append(
+                f"text: expected {expected_text!r}, got None (source_snippet not populated)"
+            )
+        elif _normalize_snippet_text(finding.source_snippet) != _normalize_snippet_text(expected_text):
+            mismatches.append(
+                f"text: expected {expected_text!r}, got {finding.source_snippet!r}"
+            )
+
+    expected_func = expected.get("function")
+    if expected_func is not None:
+        actual_func = (
+            finding.qualname.rsplit(".", 1)[-1]
+            if finding.qualname else None
+        )
+        if actual_func != expected_func:
+            mismatches.append(
+                f"function: expected {expected_func!r}, got {actual_func!r}"
+            )
+
+    return (len(mismatches) == 0, mismatches)
 
 
 def _evaluate_specimen(
