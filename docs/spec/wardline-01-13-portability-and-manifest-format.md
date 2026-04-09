@@ -171,6 +171,7 @@ boundaries:
   - function: "myproject.audit.load_audit_record"
     transition: "restoration"
     restored_tier: 1   # claimed restoration target (subject to evidence)
+    serialization_boundary: true   # data source involves serialization (database)
     provenance:
       structural: true       # body contains shape validation
       semantic: true         # body contains domain-constraint checks
@@ -238,6 +239,8 @@ The `provenance` object fields (with decorator parameter name equivalents from t
 - `institutional` (`institutional_provenance`) — string or null: institutional provenance attestation
 
 Without institutional evidence, the restored tier cannot exceed UNKNOWN_GUARDED or UNKNOWN_ASSURED regardless of other evidence (§5.3). Enforcement tools MUST map between manifest field names and decorator parameter names — a mismatch between the overlay declaration and the decorator arguments is a finding.
+
+The optional `serialization_boundary` flag (default `false`) indicates that the boundary involves serialization/deserialization — database read/write, file I/O, message queue, or cache. When set, `@integral_read` and `@integral_construction` functions using this boundary as a data source are subject to WL-009 (restoration symmetry). In-memory data sources — such as in-process caches or pre-validated objects passed by reference — should not set this flag. The flag is backward-compatible: existing manifests without `serialization_boundary` entries are unaffected, and the enforcement tool treats a missing flag as `false`.
 
 The enforcement tool validates restoration boundaries against the evidence matrix in §5.3: if the evidence declared in the manifest is insufficient for the `restored_tier` claim (e.g., `restored_tier: 1` but `integrity` is null), the tool produces a finding. The `restored_tier` is a *claim*, not a guarantee — the evidence MUST support it.
 
@@ -377,7 +380,7 @@ The timestamp fields in the fingerprint baseline (`generated_at`, `last_changed`
 
 #### 13.1.5 Manifest validation
 
-Enforcement tools MUST validate all manifest files against their respective JSON Schemas before consuming them. Validation failures are hard errors — the tool does not proceed with a malformed manifest. The JSON Schemas for all four file types are normative artefacts of the framework and are versioned alongside this specification. A binding's conformance (§14) includes manifest schema validation. Schema files are not yet published as of DRAFT v0.2.0; they will be co-located with the reference implementation and versioned to match the specification revision. Until the normative schema bundle is published, implementations MAY derive manifest schemas from the field specifications in §13.1.1–§13.1.4, but MUST document the derived schema revision they are using and treat it as provisional rather than silently claiming final-schema conformance. Implementations deriving schemas at DRAFT v0.2.0 SHOULD publish their derived schemas alongside their tool for interoperability testing. Schema divergences discovered during interoperability testing are specification defects, not implementation defects — they indicate that the prose in §13.1.1–§13.1.4 is ambiguous and should be tightened before v1.0. Conformance at v1.0 requires validation against published schemas.
+Enforcement tools MUST validate all manifest files against their respective JSON Schemas before consuming them. Validation failures are hard errors — the tool does not proceed with a malformed manifest. The JSON Schemas for all four file types are normative artefacts of the framework and are versioned alongside this specification. A binding's conformance (§14) includes manifest schema validation. Schema files are not yet published as of DRAFT v0.3.0; they will be co-located with the reference implementation and versioned to match the specification revision. Until the normative schema bundle is published, implementations MAY derive manifest schemas from the field specifications in §13.1.1–§13.1.4, but MUST document the derived schema revision they are using and treat it as provisional rather than silently claiming final-schema conformance. Implementations deriving schemas at DRAFT v0.3.0 SHOULD publish their derived schemas alongside their tool for interoperability testing. Schema divergences discovered during interoperability testing are specification defects, not implementation defects — they indicate that the prose in §13.1.1–§13.1.4 is ambiguous and should be tightened before v1.0. Conformance at v1.0 requires validation against published schemas.
 
 #### 13.2 Scanner operational configuration (`wardline.toml`)
 

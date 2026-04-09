@@ -103,9 +103,9 @@ Any tool that implements Wardline-Core rules for the Python regime — whether a
 
 9. **Run-level SARIF properties.** In addition to the mandatory result-level properties above, the tool MUST emit the required run-level SARIF properties defined in Part I §10.1 for Wardline-Core tools, including `wardline.inputHash`, `wardline.inputFiles`, `wardline.manifestHash`, and `wardline.controlLaw`.
 
-A tool that satisfies this contract and implements at least one PY-WL rule is a partial Wardline-Core tool. A tool that implements all nine binding rules (PY-WL-001 through PY-WL-009) with tier-aware severity grading is a complete Wardline-Core tool. Note: PY-WL-001 and PY-WL-002 both derive from framework rule WL-001 (split by access idiom). PY-WL-003 derives from framework WL-002, and the binding numbering is offset by one from PY-WL-003 onward.
+A tool that satisfies this contract and implements at least one PY-WL rule is a partial Wardline-Core tool. A tool that implements all ten binding rules (PY-WL-001 through PY-WL-010) with tier-aware severity grading is a complete Wardline-Core tool. Note: PY-WL-001 and PY-WL-002 both derive from framework rule WL-001 (split by access idiom). PY-WL-003 derives from framework WL-002, and the binding numbering is offset by two from PY-WL-003 onward (WL-001 splits into PY-WL-001/002).
 
-**Rule mapping.** The nine Python binding rules derive from the eight framework rules (Part I §7) as follows. WL-001 splits into two binding rules because Python has two distinct access-with-fallback idioms (`dict.get()` and `getattr()`); all other framework rules map one-to-one with a numbering offset:
+**Rule mapping.** The ten Python binding rules derive from the nine framework rules (Part I §7) as follows. WL-001 splits into two binding rules because Python has two distinct access-with-fallback idioms (`dict.get()` and `getattr()`); all other framework rules map one-to-one with a numbering offset:
 
 | Python Rule | Framework Rule | Pattern |
 |---|---|---|
@@ -118,8 +118,9 @@ A tool that satisfies this contract and implements at least one PY-WL rule is a 
 | PY-WL-007 | WL-006 | Runtime type-checking internal data (tier-dependent — suppressed at Tier 4) |
 | PY-WL-008 | WL-007 | Validation boundary with no rejection path (structural verification) |
 | PY-WL-009 | WL-008 | Semantic validation without prior shape validation (validation ordering) |
+| PY-WL-010 | WL-009 | Tier 1 promotion on serialisation path without restoration evidence (restoration symmetry) |
 
-PY-WL-001 through PY-WL-005 are syntactic patterns detectable by per-file AST analysis (the ruff advisory path). PY-WL-006 through PY-WL-009 require semantic context — audit-path awareness, tier classification, structural verification, or validation ordering — and are implemented by the reference scanner.
+PY-WL-001 through PY-WL-005 are syntactic patterns detectable by per-file AST analysis (the ruff advisory path). PY-WL-006 through PY-WL-010 require semantic context — audit-path awareness, tier classification, structural verification, validation ordering, or restoration symmetry — and are implemented by the reference scanner.
 
 Tools that detect wardline-relevant patterns without satisfying this contract — e.g., ruff rules that match `.get()` calls without consuming the manifest — are **advisory tools**, not Wardline-Core tools. Advisory tools provide useful early-warning feedback but their findings are not governance-grade.
 
@@ -272,7 +273,7 @@ The 17 annotation groups are defined as language-agnostic semantic requirements 
 
 **PY-WL-002 (attribute access with fallback default).** PY-WL-002 derives from WL-001 but covers `getattr(obj, name, default)` and `obj.attr or default`. The `obj.attr or default` form has a falsy-substitution risk absent from dict-key access: it silently replaces *present but falsy* attribute values (0, `""`, `False`, `None`) with the default, not just missing attributes. This language-specific semantic risk — absent from the framework-level WL-001 pattern — justifies PY-WL-002 establishing its own matrix row under §7.1's split-rule provision. PY-WL-002 uses WARNING/RELAXED at EXTERNAL_RAW and UNKNOWN_RAW, and WARNING/STANDARD at MIXED_RAW (in all three cases departing from the framework's SUPPRESS/TRANSPARENT) because the falsy-substitution risk warrants visibility even at T4 boundaries where dict-key fallback defaults are expected and safe. This is a widening relative to the framework's WL-001 SUPPRESS at those cells, authorized by §7.1 for split sub-rules where language-specific semantics create risks absent from the framework pattern. See ADR-003 for the decision record.
 
-The Python binding matrix for PY-WL-001 through PY-WL-009 (72 cells) is:
+The Python binding matrix for PY-WL-001 through PY-WL-010 (80 cells) is:
 
 | Rule | Pattern | Integral | Assured | Guarded | Ext. Raw | Unk. Raw | Unk. Guarded | Unk. Assured | Mixed Raw |
 |------|---------|---|---|---|---|---|---|---|---|
@@ -285,6 +286,36 @@ The Python binding matrix for PY-WL-001 through PY-WL-009 (72 cells) is:
 | **PY-WL-007** | Runtime type-checking internal data | E/St | W/R | W/R | Su/T | Su/T | W/R | W/R | W/St |
 | **PY-WL-008** | Validation with no rejection path | E/U | E/U | E/U | E/U | E/U | E/U | E/U | E/U |
 | **PY-WL-009** | Semantic validation without shape validation | E/U | E/U | E/U | E/U | E/U | E/U | E/U | E/U |
+| **PY-WL-010** | Tier 1 promotion without restoration evidence | E/U | E/U | E/U | E/U | E/U | E/U | E/U | E/U |
+
+##### A.4.4 PY-WL-010: Tier 1 promotion on serialisation path without restoration evidence
+
+PY-WL-010 maps to framework rule WL-009 (restoration symmetry). It is a structural verification rule. PY-WL-010 fires when all three conditions hold:
+
+1. A function is declared `@integral_read` or `@integral_construction` (Group 1).
+2. The function's data source is a manifest-declared serialisation boundary (identified via `BoundaryEntry` objects in the overlay's `boundaries` array with `serialization_boundary: true`).
+3. The function does not co-declare `@restoration_boundary` (Group 17) with at least one evidence category, and its inputs do not trace through a declared restoration boundary with sufficient evidence within the two-hop analysis scope.
+
+**Severity:** ERROR/UNCONDITIONAL across all eight taint states (framework invariant, same as PY-WL-008 and PY-WL-009).
+
+##### A.4.5 Supplementary rules: SUP-010 and SUP-011
+
+SUP-010 and SUP-011 are binding-specific supplementary rules with no framework counterpart. They implement the non-normative deep-immutability principle from §8 of the prime spec. Both are opt-in supplementary enforcement and are not required for framework conformance.
+
+**SUP-010: Frozen dataclass with mutable container fields and no deep-freeze.** A frozen dataclass (`@dataclass(frozen=True)`) with one or more fields whose type annotations indicate mutable containers (`dict`, `list`, `set`, `Mapping`, `MutableMapping`, or parameterised variants), where the `__post_init__` method does not call a recognised deep-freeze function on those fields. The mutable container type list is extensible via `mutable_container_types` in scanner configuration.
+
+Detection: AST visitor that identifies frozen dataclasses, inspects field annotations for mutable container types, and checks whether `__post_init__` calls a recognised deep-freeze function (from `deep_freeze_functions` in scanner configuration) with `self.<field>` as argument.
+
+**SUP-011: Conditional freeze guard in `__post_init__`.** An `isinstance` type guard in `__post_init__` of a frozen dataclass that conditionally skips freezing based on the container type of a field. Matches `isinstance` calls where the first argument is `self.<field>`, any checked type is in `{dict, tuple, MappingProxyType, frozenset, Mapping, list, set}`, and the call is the test of an `if` whose body contains `object.__setattr__` calls.
+
+SUP-011 fires independently of SUP-010. Conditional freezing is independently problematic even when a deep-freeze call exists.
+
+Severity matrix for SUP-010 and SUP-011:
+
+| Rule | INTEGRAL | ASSURED | GUARDED | Ext. Raw | Unk. Raw | Unk. Guarded | Unk. Assured | Mixed Raw |
+|------|----------|---------|---------|----------|----------|--------------|--------------|-----------|
+| **SUP-010** | E/U | E/St | W/R | Su/T | Su/T | W/R | E/St | Su/T |
+| **SUP-011** | E/U | E/St | W/R | Su/T | Su/T | W/R | E/St | Su/T |
 
 ---
 
@@ -320,7 +351,7 @@ The Python enforcement regime composes existing ecosystem tools with a reference
 | Syntactic pattern detection (PY-WL-001 through PY-WL-005) | ruff rules | Advisory (not conformant) | Pure AST pattern match. Fast, fires at IDE time. Advisory only: no manifest, no tier-graded SARIF. |
 | Tier-aware severity grading (all WL rules) | Reference scanner | Wardline-Core (authoritative) | Requires manifest consumption and decorator metadata for context-sensitive grading. |
 | Taint-flow tracking between declared boundaries | Reference scanner | Wardline-Core | No existing tool consumes the manifest's trust topology. |
-| Context-dependent rules (PY-WL-006 through PY-WL-009) | Reference scanner | Wardline-Core | Requires semantic context: audit-path awareness, tier classification, structural verification, validation ordering. |
+| Context-dependent rules (PY-WL-006 through PY-WL-010) | Reference scanner | Wardline-Core | Requires semantic context: audit-path awareness, tier classification, structural verification, validation ordering, restoration symmetry. |
 | Type-layer tier-mismatch diagnostics | mypy plugin | Wardline-Type | Extends mypy's existing type-flow analysis with tier metadata. |
 | Runtime tier enforcement | Decorator library | Foundation | Python-native OOP machinery; ships with decorator vocabulary. |
 | Manifest validation, schema checking | wardline CLI | Wardline-Governance | Validates `wardline.yaml`, overlays, exception registers. |
@@ -632,7 +663,7 @@ Adoption follows a phased model. Each phase is independently valuable.
 | Phase | Components | Coverage |
 |-------|-----------|----------|
 | **1: Decorators + advisory ruff rules** | `wardline-decorators`, `wardline-ruff` | IDE-time and pre-commit advisory warnings for PY-WL-001 through PY-WL-005 at uniform severity. No manifest required. Lowest-cost entry point. |
-| **2: Manifest + reference scanner** | Add `wardline.yaml`, `wardline-scanner` | Tier-aware severity grading for all nine binding rules. Taint-flow tracking. SARIF output. Governance-grade findings begin here. |
+| **2: Manifest + reference scanner** | Add `wardline.yaml`, `wardline-scanner` | Tier-aware severity grading for all ten binding rules. Taint-flow tracking. SARIF output. Governance-grade findings begin here. |
 | **3: Type-system enforcement** | `wardline-mypy` | Development-time tier-mismatch diagnostics. Requires `typing.Annotated` tier annotations on data models. |
 | **4: Runtime structural enforcement** | `AuthoritativeField` descriptors, `__init_subclass__` bases | Specific high-risk paths become structurally impossible to violate. Deploy on audit records and decision products first. |
 | **5: Full regime governance** | `wardline-cli` | Fingerprint baseline tracking, exception register management, SARIF aggregation, control-law state reporting. Provides governance evidence for independent assessment. |
@@ -668,7 +699,7 @@ Adoption follows a phased model. Each phase is independently valuable.
 | All configured tools ran successfully | Normal | Full enforcement |
 | ruff plugin unavailable or failed | Alternate | Advisory fast-path absent; reference scanner provides authoritative coverage at CI time |
 | mypy plugin unavailable or failed | Alternate | Type-layer diagnostics absent; no compensating tool at development time |
-| Reference scanner unavailable | Alternate (severe) | Authoritative analysis absent; ruff provides advisory coverage for five of nine rules only |
+| Reference scanner unavailable | Alternate (severe) | Authoritative analysis absent; ruff provides advisory coverage for five of ten rules only |
 | Manifest validation failed | Direct | Trust topology unavailable; no governance-grade findings possible |
 | wardline CLI itself unavailable | Direct | No regime orchestration, SARIF aggregation, or control-law reporting |
 
@@ -684,10 +715,10 @@ The distinction between alternate and direct law follows Part I §9.5: alternate
 |---|---|---|---|
 | 1 | Annotation vocabulary covers 17 groups | `wardline-decorators` package: 16/17 groups enforced; Group 16 `@data_flow` declared advisory-only | §A.4.2 decorator table; `wardline.toml` group configuration |
 | 2 | Pattern rules WL-001–WL-006 detected | PY-WL-001 through PY-WL-007 (WL-001 splits into two) | `wardline scan`; SARIF `implementedRules`; corpus specimens |
-| 3 | Structural verification WL-007/WL-008 | PY-WL-008 (rejection path), PY-WL-009 (validation ordering) | `wardline corpus verify`; engine L3 integration tests |
+| 3 | Structural verification WL-007/WL-008/WL-009 | PY-WL-008 (rejection path), PY-WL-009 (validation ordering), PY-WL-010 (restoration symmetry) | `wardline corpus verify`; engine L3 integration tests |
 | 4 | Taint-flow tracking (direct + two-hop) | Three-level taint: L1 function, L2 variable, L3 callgraph with SCC fixed-point | `wardline scan`; `wardline.analysisLevel` in SARIF |
-| 5 | Precision/recall measured per cell | `wardline corpus publish` computes TP/FP/TN/FN per (rule × taint) cell | `wardline corpus verify --json`; 72-cell coverage |
-| 6 | Golden corpus maintained | 244 specimens across PY-WL-001–009 + adversarial + suppression-interaction | `corpus/`; `corpus_manifest.json`; `wardline corpus verify` |
+| 5 | Precision/recall measured per cell | `wardline corpus publish` computes TP/FP/TN/FN per (rule × taint) cell | `wardline corpus verify --json`; 80-cell coverage |
+| 6 | Golden corpus maintained | 244 specimens across PY-WL-001–010 + adversarial + suppression-interaction | `corpus/`; `corpus_manifest.json`; `wardline corpus verify` |
 | 7 | Self-hosting gate | `test_self_hosting_scan.py` runs scanner against `src/wardline/`; per-rule baseline regression | `uv run pytest -k self_hosting`; CI self-hosting-scan job |
 | 8 | Deterministic SARIF v2.1.0 with property bags | `sarif.py` emits v2.1.0; `--verification-mode` for byte-identical output | `wardline scan --verification-mode`; `test_determinism.py` |
 | 9 | Governance model (protected files, temporal separation, fingerprint) | CODEOWNERS protects all governance artefacts; `wardline.yaml` declares `temporal_separation`; `wardline fingerprint` provides baseline tracking | `wardline fingerprint diff`; `wardline regime status` |
@@ -698,8 +729,8 @@ The distinction between alternate and direct law follows Part I §9.5: alternate
 | Criterion | wardline-scanner | wardline-ruff (advisory) | wardline-mypy (optional) | wardline-cli |
 |---|---|---|---|---|
 | 1 (vocabulary) | Discovery + enforcement | Partial (5 rules) | Type annotations | — |
-| 2 (pattern rules) | All 9 rules | 5 of 9 (advisory) | — | — |
-| 3 (structural verification) | PY-WL-008, PY-WL-009 | — | — | — |
+| 2 (pattern rules) | All 10 rules | 5 of 10 (advisory) | — | — |
+| 3 (structural verification) | PY-WL-008, PY-WL-009, PY-WL-010 | — | — | — |
 | 4 (taint tracking) | L1–L3 | — | — | — |
 | 5 (precision/recall) | — | — | — | `corpus publish` |
 | 6 (corpus) | — | — | — | `corpus verify` |

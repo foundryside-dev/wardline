@@ -1,8 +1,8 @@
 ## Wardline Framework Specification
 ### Semantic Boundary Classification and Enforcement
 
-**Date:** 18 March 2026
-**Status:** Design — DRAFT v0.2.0
+**Date:** 9 April 2026
+**Status:** Design — DRAFT v0.3.0
 **Protective Marking:** OFFICIAL
 **Prepared by:** Digital Transformation Agency
 **Document type:** Conformity assessment scheme comprising a data classification model, enforcement rules, governance requirements, and conformance criteria

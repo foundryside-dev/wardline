@@ -1,5 +1,14 @@
 ### Part II-B: Java Language Binding Reference
 
+> **⚠ Binding version notice.** This binding was last updated against the framework specification v0.2.0. The framework specification v0.3.0 added WL-009 (restoration symmetry), updated the severity matrix from 8 to 9 framework rules, added a non-normative deep-immutability note to §8, and updated conformance criterion 3 to include WL-009. This binding does not yet reflect these changes. In particular:
+>
+> - WL-009 has no Java binding mapping (the Python binding maps it to PY-WL-010).
+> - The conformance criterion table (B.3/B.6) does not include WL-009 in the structural verification row.
+> - The regime composition matrix has not been updated for the ninth framework rule.
+> - The deep-immutability supplementary rules (SUP-010/SUP-011 in the Python binding) have no Java equivalents. Java's `final` keyword on reference fields presents the same shallow-immutability gap that motivates these rules — a Java binding update should consider equivalent rules targeting `final` fields holding mutable collections.
+>
+> These updates will be applied in a future revision.
+
 This section defines the Java language binding for the Wardline classification framework. It maps the 17 abstract annotation groups (Part I §6) to concrete Java annotations, defines the interface contract for conformant scanners, and documents the residual risks specific to Java's language and ecosystem characteristics.
 
 **Normative status.** Section B.3 (interface contract) is normative. All other sections are non-normative — they provide design rationale, implementation guidance, and assessment material.
