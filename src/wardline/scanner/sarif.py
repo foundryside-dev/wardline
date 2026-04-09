@@ -13,8 +13,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from wardline.core.severity import RuleId, Severity
+from wardline.core.tiers import TAINT_TO_TIER
 
 if TYPE_CHECKING:
+    from wardline.core.taints import TaintState
     from wardline.scanner.context import Finding
 
 _SARIF_SCHEMA = (
@@ -192,6 +194,17 @@ def _normalize_artifact_uri(file_path: str, base_path: str | None) -> str:
     return path.as_posix()
 
 
+def _taint_to_tier_value(taint_state: TaintState | None) -> int | None:
+    """Map taint state to authority tier integer (1-4).
+
+    Returns None for pseudo-rule findings (taint_state is None) —
+    governance findings operate outside the tier model.
+    """
+    if taint_state is None:
+        return None
+    return TAINT_TO_TIER[taint_state].value
+
+
 def _make_result(finding: Finding, *, base_path: str | None) -> dict[str, Any]:
     """Convert a single Finding to a SARIF result entry."""
     # Mandatory properties (§A.3) — always present, never filtered by _clean_none.
@@ -205,6 +218,10 @@ def _make_result(finding: Finding, *, base_path: str | None) -> dict[str, Any]:
         "wardline.severity": str(finding.severity),
         "wardline.exceptionability": str(finding.exceptionability),
         "wardline.analysisLevel": finding.analysis_level,
+        "wardline.enclosingTier": _taint_to_tier_value(finding.taint_state),
+        "wardline.annotationGroups": sorted(set(finding.annotation_groups)),
+        "wardline.excepted": finding.exception_id is not None,
+        "wardline.dataSource": finding.data_source,
     }
     # Optional properties — omit when None.
     properties.update(_clean_none({
@@ -351,7 +368,10 @@ class SarifReport:
                 "wardline.inputHash": self.input_hash,
                 "wardline.manifestHash": self.manifest_hash,
                 "wardline.overlayHashes": list(self.overlay_hashes),
-                "wardline.propertyBagVersion": "0.4",
+                # Property bag versions:
+                # "0.4" — initial stable schema (17 run-level, 5 result-level mandatory)
+                # "0.5" — R1+R2: 19 run-level, 9 result-level mandatory (§10.1 complete)
+                "wardline.propertyBagVersion": "0.5",
                 **({"wardline.scanTimestamp": self.scan_timestamp}
                    if not self.verification_mode and self.scan_timestamp
                    else {}),

@@ -942,7 +942,7 @@ class TestSarifRunLevelProperties:
         ])
         sarif = json.loads(result.stdout)
         props = sarif["runs"][0]["properties"]
-        assert props["wardline.propertyBagVersion"] == "0.4"
+        assert props["wardline.propertyBagVersion"] == "0.5"
 
     def test_input_hash_failure_exits_tool_error(self, tmp_path: Path) -> None:
         """inputHash OSError produces TOOL_ERROR finding AND exit code 1."""

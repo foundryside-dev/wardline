@@ -5,12 +5,15 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+import pytest
+
 from wardline.core.severity import Exceptionability, RuleId, Severity
+from wardline.core.taints import TaintState
 
 if TYPE_CHECKING:
     from pathlib import Path
 from wardline.scanner.context import Finding
-from wardline.scanner.sarif import GovernanceEvent, SarifReport, compute_control_law
+from wardline.scanner.sarif import GovernanceEvent, SarifReport, _make_result, compute_control_law
 
 
 def _make_finding(
@@ -134,7 +137,7 @@ class TestSarifResults:
             "wardline.exceptionability",
             "wardline.analysisLevel",
         ]
-        nullable = {"wardline.taintState"}
+        nullable = {"wardline.taintState", "wardline.enclosingTier", "wardline.dataSource"}
         for key in mandatory:
             assert key in props, f"mandatory key {key!r} missing from properties"
             if key not in nullable:
@@ -234,6 +237,100 @@ class TestSarifResults:
         result = report.to_dict()["runs"][0]["results"][0]
         uri = result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
         assert uri == "src/example.py"
+
+
+# ---------------------------------------------------------------------------
+# TestR1ResultProperties
+# ---------------------------------------------------------------------------
+
+
+class TestR1ResultProperties:
+    """R1: enclosingTier, annotationGroups, excepted, dataSource (§10.1)."""
+
+    @pytest.mark.parametrize("taint,expected_tier", [
+        (TaintState.INTEGRAL, 1),
+        (TaintState.ASSURED, 2),
+        (TaintState.GUARDED, 3),
+        (TaintState.UNKNOWN_ASSURED, 3),
+        (TaintState.UNKNOWN_GUARDED, 3),
+        (TaintState.EXTERNAL_RAW, 4),
+        (TaintState.UNKNOWN_RAW, 4),
+        (TaintState.MIXED_RAW, 4),
+        (None, None),
+    ])
+    def test_enclosing_tier_from_taint_state(self, taint, expected_tier) -> None:
+        """enclosingTier derived from TAINT_TO_TIER for all 8 states + None."""
+        finding = _make_finding(taint_state=taint)
+        result = _make_result(finding, base_path=None)
+        assert result["properties"]["wardline.enclosingTier"] == expected_tier
+
+    def test_annotation_groups_sorted(self) -> None:
+        """Annotation groups appear sorted in result properties."""
+        finding = _make_finding(annotation_groups=(5, 1, 12))
+        result = _make_result(finding, base_path=None)
+        assert result["properties"]["wardline.annotationGroups"] == [1, 5, 12]
+
+    def test_annotation_groups_empty(self) -> None:
+        """No annotations -> empty list."""
+        finding = _make_finding(annotation_groups=())
+        result = _make_result(finding, base_path=None)
+        assert result["properties"]["wardline.annotationGroups"] == []
+
+    def test_annotation_groups_deduplicated(self) -> None:
+        """Duplicate group numbers are deduplicated at emission time."""
+        finding = _make_finding(annotation_groups=(3, 1, 3, 1))
+        result = _make_result(finding, base_path=None)
+        assert result["properties"]["wardline.annotationGroups"] == [1, 3]
+
+    def test_excepted_true_when_exception_id_set(self) -> None:
+        """Finding with exception_id -> excepted True."""
+        finding = _make_finding(exception_id="EXC-001")
+        result = _make_result(finding, base_path=None)
+        assert result["properties"]["wardline.excepted"] is True
+
+    def test_excepted_false_when_no_exception(self) -> None:
+        """Finding without exception_id -> excepted False."""
+        finding = _make_finding(exception_id=None)
+        result = _make_result(finding, base_path=None)
+        assert result["properties"]["wardline.excepted"] is False
+
+    def test_data_source_null_by_default(self) -> None:
+        """Data source is null when not set."""
+        finding = _make_finding()
+        result = _make_result(finding, base_path=None)
+        assert result["properties"]["wardline.dataSource"] is None
+
+    def test_data_source_string_when_set(self) -> None:
+        """Data source appears as string when set."""
+        finding = _make_finding(data_source="partner-api")
+        result = _make_result(finding, base_path=None)
+        assert result["properties"]["wardline.dataSource"] == "partner-api"
+
+    def test_nullable_mandatory_properties_present_as_keys(self) -> None:
+        """Nullable mandatory properties present as KEYS even when null."""
+        finding = _make_finding(taint_state=None, data_source=None)
+        result = _make_result(finding, base_path=None)
+        props = result["properties"]
+        assert "wardline.enclosingTier" in props
+        assert "wardline.dataSource" in props
+        assert "wardline.taintState" in props
+        assert props["wardline.enclosingTier"] is None
+        assert props["wardline.dataSource"] is None
+        assert props["wardline.taintState"] is None
+
+    def test_all_mandatory_result_properties_present(self) -> None:
+        """All 9 mandatory result-level properties present (§10.1)."""
+        finding = _make_finding(taint_state=TaintState.INTEGRAL)
+        result = _make_result(finding, base_path=None)
+        props = set(result["properties"].keys())
+        required = {
+            "wardline.rule", "wardline.taintState", "wardline.severity",
+            "wardline.exceptionability", "wardline.analysisLevel",
+            "wardline.enclosingTier", "wardline.annotationGroups",
+            "wardline.excepted", "wardline.dataSource",
+        }
+        missing = required - props
+        assert not missing, f"Missing mandatory properties: {missing}"
 
 
 # ---------------------------------------------------------------------------
@@ -380,7 +477,7 @@ class TestSarifPropertyBags:
     def test_property_bag_version(self) -> None:
         report = SarifReport(findings=[])
         props = report.to_dict()["runs"][0]["properties"]
-        assert props["wardline.propertyBagVersion"] == "0.4"
+        assert props["wardline.propertyBagVersion"] == "0.5"
 
     def test_input_hash_always_emitted(self) -> None:
         """wardline.inputHash is always present in run properties."""
