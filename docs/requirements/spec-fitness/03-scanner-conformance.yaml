@@ -43,9 +43,10 @@ requirements:
   - id: WL-FIT-SCAN-003
     title: Two-hop taint and delegated validation are assessable
     statement: >
-      If the scanner claims support for taint-flow tracking or delegated WL-007
-      satisfaction, it MUST test direct flows, two-hop intermediary flows, and
-      convergence behavior explicitly.
+      If the scanner claims support for taint-flow tracking, delegated WL-007
+      satisfaction, or WL-009 restoration-symmetry topology checking, it
+      MUST test direct flows, two-hop intermediary flows, and convergence
+      behavior explicitly.
     normative_sources:
       - file: docs/spec/wardline-01-14-conformance.md
         section: "14.2 Conformance criteria"

@@ -189,7 +189,9 @@ requirements:
     statement: >
       An enforcement regime MUST satisfy: coverage completeness (every
       criterion covered by at least one tool), rule coverage completeness
-      (union of all tools covers all nine rules), corpus union (regime
+      (union of all tools covers all nine rules — six pattern rules
+      WL-001 through WL-006 and three structural verification rules
+      WL-007, WL-008, and WL-009), corpus union (regime
       corpus satisfies minimum specimen counts across the full rule set),
       SARIF aggregation (multi-run SARIF log), and per-tool self-hosting
       where applicable.

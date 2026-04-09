@@ -112,7 +112,16 @@ requirements:
         - corpus/specimens
         - tests/unit/scanner/test_rules.py
     fitness_dimensions: [conformance, interoperability]
-    notes: This overlaps with scanner conformance, but remains part of the Python interface contract.
+    notes: >
+      The complete Wardline-Core tool implements PY-WL-001 through PY-WL-010
+      (10 rules). The binding severity matrix is 80 cells (10 rules x 8 taint
+      states). PY-WL-001 through PY-WL-005 are syntactic patterns detectable
+      by per-file AST analysis (the advisory ruff path). PY-WL-006 through
+      PY-WL-010 require semantic context (audit-path awareness, tier
+      classification, structural verification, validation ordering, restoration
+      symmetry) and are implemented by the reference scanner only. This
+      advisory/authoritative split is normative in §A.3. This overlaps with
+      scanner conformance, but remains part of the Python interface contract.
 
   - id: WL-FIT-PY-007
     title: Verification mode exists and is deterministic
@@ -248,3 +257,119 @@ requirements:
     notes: >
       Analysis levels enable assessors to understand which scanner
       capabilities were needed for each finding.
+
+  - id: WL-FIT-PY-013
+    title: "PY-WL-010: Restoration symmetry for serialization boundaries"
+    statement: >
+      The Python implementation MUST implement PY-WL-010, which fires when a
+      function declared @integral_read or @integral_construction (Group 1) has
+      a data source that is a manifest-declared serialization boundary
+      (BoundaryEntry with serialization_boundary: true), and the function does
+      not co-declare @restoration_boundary (Group 17) with at least one
+      evidence category, and inputs do not trace through a restoration boundary
+      within two-hop scope. Severity is ERROR/UNCONDITIONAL across all 8
+      taint states. PY-WL-010 maps to framework WL-009.
+    normative_sources:
+      - file: docs/spec/wardline-02-A-python-binding.md
+        section: "A.4.4 PY-WL-010: Tier 1 promotion on serialisation path without restoration evidence"
+    verification:
+      method: rule_tests
+      target_paths:
+        - src/wardline/scanner/rules/py_wl_010.py
+        - tests/unit/scanner/test_py_wl_010.py
+        - corpus/specimens/PY-WL-010
+    fitness_dimensions: [correctness, conformance]
+    notes: >
+      PY-WL-010 is a structural verification rule. All three conditions
+      (Group 1 decorator, serialization boundary source, missing restoration
+      boundary) must hold simultaneously. Two-hop scope limits the
+      restoration-boundary search to the function and its immediate callees.
+
+  - id: WL-FIT-PY-014
+    title: "SUP-010: Frozen dataclass mutable container detection"
+    statement: >
+      The Python implementation MUST implement SUP-010, which detects frozen
+      dataclasses with mutable container fields (dict, list, set, Mapping,
+      MutableMapping) that lack a deep-freeze call in __post_init__. SUP-010
+      is a binding-specific supplementary rule with no framework counterpart,
+      implementing the non-normative deep-immutability principle from Part I
+      section 8. The mutable container type list MUST be extensible via
+      `mutable_container_types` in scanner configuration, and the
+      recognised deep-freeze function list MUST be extensible via
+      `deep_freeze_functions` in scanner configuration. Severity matrix: INTEGRAL=E/U, ASSURED=E/St,
+      GUARDED=W/R, EXT_RAW=Su/T, UNK_RAW=Su/T, UNK_GUARDED=W/R,
+      UNK_ASSURED=E/St, MIXED_RAW=Su/T.
+    normative_sources:
+      - file: docs/spec/wardline-02-A-python-binding.md
+        section: "A.4.5 Supplementary rules: SUP-010 and SUP-011"
+    verification:
+      method: rule_tests
+      target_paths:
+        - src/wardline/scanner/rules/sup_010.py
+        - tests/unit/scanner/test_sup_010.py
+        - corpus/specimens/SUP-010
+    fitness_dimensions: [correctness, conformance]
+    notes: >
+      SUP-010 uses AST visitor analysis on frozen dataclasses. Detection
+      checks for mutable field types and verifies __post_init__ calls a
+      recognised deep-freeze function with `self.<field>` as argument for
+      each mutable field — the check is per-field, not just presence of
+      any deep-freeze call. No framework WL-xxx counterpart exists.
+
+  - id: WL-FIT-PY-015
+    title: "SUP-011: Conditional freeze guard detection"
+    statement: >
+      The Python implementation MUST implement SUP-011, which detects
+      isinstance type guards in __post_init__ of a frozen dataclass that
+      conditionally skip freezing. Detection matches isinstance calls
+      where the first argument is `self.<field>`, any checked type is in
+      {dict, tuple, MappingProxyType, frozenset, Mapping, list, set},
+      and the call is the test of an `if` whose body contains
+      `object.__setattr__` calls. SUP-011 fires independently of SUP-010
+      and is a binding-specific supplementary rule with no framework
+      counterpart.
+      Severity matrix: INTEGRAL=E/U, ASSURED=E/St, GUARDED=W/R,
+      EXT_RAW=Su/T, UNK_RAW=Su/T, UNK_GUARDED=W/R, UNK_ASSURED=E/St,
+      MIXED_RAW=Su/T.
+    normative_sources:
+      - file: docs/spec/wardline-02-A-python-binding.md
+        section: "A.4.5 Supplementary rules: SUP-010 and SUP-011"
+    verification:
+      method: rule_tests
+      target_paths:
+        - src/wardline/scanner/rules/sup_011.py
+        - tests/unit/scanner/test_sup_011.py
+        - corpus/specimens/SUP-011
+    fitness_dimensions: [correctness, conformance]
+    notes: >
+      SUP-011 fires independently of SUP-010. A conditional freeze guard
+      (isinstance check that skips freezing for certain types) undermines
+      the deep-immutability guarantee even when SUP-010 is satisfied.
+
+  - id: WL-FIT-PY-016
+    title: "PY-WL-002 deviation is a split-rule widening under section 7.1"
+    statement: >
+      The Python implementation MUST treat the PY-WL-002 severity deviation
+      as a WIDENING authorized by the section 7.1 split-rule provision, not a
+      narrowing. PY-WL-002 establishes its own matrix row because the
+      language-specific falsy-substitution risk of `obj.attr or default` —
+      silently replacing present-but-falsy attribute values (0, "", False,
+      None) with the default — is absent from the framework-level WL-001
+      dict-key access pattern. PY-WL-002 at EXTERNAL_RAW and UNKNOWN_RAW
+      MUST be WARNING/RELAXED, and at MIXED_RAW MUST be WARNING/STANDARD.
+    normative_sources:
+      - file: docs/spec/wardline-02-A-python-binding.md
+        section: "A.4.3 Non-obvious design rationale"
+    informative_sources:
+      - file: docs/spec/wardline-01-07-severity-matrix.md
+        section: "7.1 Split-rule provision"
+    verification:
+      method: unit_tests
+      target_paths:
+        - src/wardline/scanner/rules/py_wl_002.py
+        - tests/unit/scanner/test_py_wl_002.py
+        - src/wardline/core/severity.py
+    fitness_dimensions: [conformance, correctness]
+    notes: >
+      v0.3.0 clarifies that PY-WL-002 is a widening (not narrowing) of WL-001.
+      MIXED_RAW severity is WARNING/STANDARD (was WARNING/RELAXED pre-v0.3.0).

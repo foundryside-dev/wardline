@@ -42,8 +42,9 @@ requirements:
         - tests/unit/scanner/test_delegated_rejection.py
     fitness_dimensions: [conformance, correctness]
     notes: >
-      This is conformance criterion 3 (first half). Restoration boundaries
-      are subject to WL-007 alongside validation boundaries.
+      This is the WL-007 portion of conformance criterion 3 (which also
+      includes WL-008 and WL-009). Restoration boundaries are subject to
+      WL-007 alongside validation boundaries.
 
   - id: WL-FIT-ENF-003
     title: Validation ordering WL-008 is enforced
@@ -65,8 +66,9 @@ requirements:
         - src/wardline/scanner/taint
     fitness_dimensions: [conformance, safety]
     notes: >
-      This is conformance criterion 3 (second half). WL-008 fires when any
-      input to a semantic-validation boundary is in EXTERNAL_RAW, UNKNOWN_RAW,
+      This is the WL-008 portion of conformance criterion 3 (which also
+      includes WL-007 and WL-009). WL-008 fires when any input to a
+      semantic-validation boundary is in EXTERNAL_RAW, UNKNOWN_RAW,
       or MIXED_RAW.
 
   - id: WL-FIT-ENF-004
@@ -302,10 +304,9 @@ requirements:
       SHOULD define supplementary rules that detect Tier 1 and Tier 2
       data structures whose declared immutability does not achieve deep
       immutability.
-    normative_sources:
-      - file: docs/spec/wardline-01-08-enforcement-layers.md
-        section: "8"
     informative_sources:
+      - file: docs/spec/wardline-01-08-enforcement-layers.md
+        section: "8 (non-normative note)"
       - file: docs/spec/wardline-02-A-python-binding.md
         section: "A.3 Interface contract (Wardline-Core)"
     verification:

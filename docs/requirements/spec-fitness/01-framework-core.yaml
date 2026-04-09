@@ -388,9 +388,11 @@ requirements:
       matrix row that deviates from the inherited default where language-specific
       semantics create risks absent from the framework-level pattern. Such
       deviations MUST be documented in the binding's matrix with explicit rationale
-      identifying the language-specific semantic risk. The §7.3 narrowing
-      constraint applies to each sub-rule relative to its own documented matrix
-      row, not relative to the parent framework rule's row.
+      identifying the language-specific semantic risk. A sub-rule that
+      establishes its own matrix row MAY deviate from the inherited default
+      where the language-specific semantics justify it (§7.1).
+      The §7.3 narrowing constraint then applies to that sub-rule's own
+      documented matrix row, not relative to the parent framework rule's row.
     normative_sources:
       - file: docs/spec/wardline-01-07-pattern-rules.md
         section: "7.1 The rules"
