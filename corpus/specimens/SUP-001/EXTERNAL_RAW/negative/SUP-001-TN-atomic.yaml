@@ -1,0 +1,17 @@
+---
+specimen_id: "SUP-001-TN-atomic"
+description: "@atomic function with single state-modifying call — no violation"
+rule: "SUP-001"
+fragment: |
+  from wardline.decorators import atomic
+
+  @atomic
+  def safe_update(item):
+      db.save(item)
+taint_state: "EXTERNAL_RAW"
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
+sha256: "bbd33283f6699841d2c8196ba9c9220a644712c360d7b5e15bd0b8c3e92152c2"
+verdict: "true_negative"

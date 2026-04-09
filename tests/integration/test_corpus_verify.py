@@ -58,6 +58,23 @@ class TestRealCorpusVerify:
             f"corpus verify failed (exit {result.exit_code}):\n{result.output}"
         )
 
+    def test_real_corpus_verify_level3_passes(self) -> None:
+        """corpus verify at analysis level 3 includes L3 specimens."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["corpus", "verify", "--corpus-dir", str(self._CORPUS_ROOT),
+             "--analysis-level", "3"],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, (
+            f"corpus verify --analysis-level 3 failed (exit {result.exit_code}):\n"
+            f"{result.output}"
+        )
+        assert "skipped" not in result.output, (
+            "L3 specimens should not be skipped at analysis level 3"
+        )
+
     def test_real_corpus_has_minimum_specimens(self) -> None:
         """Real corpus has at least 200 specimens across rules."""
         specimen_count = len(

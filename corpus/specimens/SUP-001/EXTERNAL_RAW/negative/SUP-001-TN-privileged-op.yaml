@@ -1,0 +1,18 @@
+---
+specimen_id: "SUP-001-TN-privileged-op"
+description: "@privileged_operation with auth check before mutation — no violation"
+rule: "SUP-001"
+fragment: |
+  from wardline.decorators import privileged_operation
+
+  @privileged_operation
+  def delete_user(user_id):
+      check_permission(user_id)
+      db.delete(user_id)
+taint_state: "EXTERNAL_RAW"
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
+sha256: "f85799a9db7e2ddee61650c2f5d0b56b3031d5b71fe22da13f106b59f7ff602e"
+verdict: "true_negative"

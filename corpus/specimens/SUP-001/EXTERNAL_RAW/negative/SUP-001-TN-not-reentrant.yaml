@@ -1,0 +1,17 @@
+---
+specimen_id: "SUP-001-TN-not-reentrant"
+description: "@not_reentrant function with no self-recursion — no violation"
+rule: "SUP-001"
+fragment: |
+  from wardline.decorators import not_reentrant
+
+  @not_reentrant
+  def process(data):
+      return data.upper()
+taint_state: "EXTERNAL_RAW"
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
+sha256: "d7bf301563eaa603838859b118d8c5c87982beeb01deece77afff351414b14e1"
+verdict: "true_negative"

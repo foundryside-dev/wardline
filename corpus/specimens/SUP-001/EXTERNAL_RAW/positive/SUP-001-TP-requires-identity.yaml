@@ -1,0 +1,22 @@
+---
+specimen_id: "SUP-001-TP-requires-identity"
+description: "@requires_identity function has no identity-like parameter"
+rule: "SUP-001"
+fragment: |
+  from wardline.decorators import requires_identity
+
+  @requires_identity
+  def audit_action(data):
+      return data
+taint_state: "EXTERNAL_RAW"
+expected_rules:
+  - "SUP-001"
+expected_severity: "ERROR"
+expected_exceptionability: "STANDARD"
+expected_match:
+  line: 4
+  text: "def audit_action(data):"
+  function: "audit_action"
+expected_match_source: "manual"
+sha256: "98e18edb14827067579254ba0ea119a7933a687a221a1242c3d94affd485d2d1"
+verdict: "true_positive"

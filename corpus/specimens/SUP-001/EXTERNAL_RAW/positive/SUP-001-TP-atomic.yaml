@@ -1,0 +1,23 @@
+---
+specimen_id: "SUP-001-TP-atomic"
+description: "@atomic function has multiple unguarded state-modifying calls"
+rule: "SUP-001"
+fragment: |
+  from wardline.decorators import atomic
+
+  @atomic
+  def batch_update(items):
+      db.save(items[0])
+      db.delete(items[1])
+taint_state: "EXTERNAL_RAW"
+expected_rules:
+  - "SUP-001"
+expected_severity: "ERROR"
+expected_exceptionability: "STANDARD"
+expected_match:
+  line: 6
+  text: "db.delete(items[1])"
+  function: "batch_update"
+expected_match_source: "manual"
+sha256: "c9c912114964df9d18b0d016f6317768b4bcb598404db264bfbff41c0f247dbc"
+verdict: "true_positive"

@@ -1,0 +1,22 @@
+---
+specimen_id: "SUP-001-TP-privileged-op"
+description: "@privileged_operation mutates state before any authorization check"
+rule: "SUP-001"
+fragment: |
+  from wardline.decorators import privileged_operation
+
+  @privileged_operation
+  def delete_user(user_id):
+      db.delete(user_id)
+taint_state: "EXTERNAL_RAW"
+expected_rules:
+  - "SUP-001"
+expected_severity: "ERROR"
+expected_exceptionability: "STANDARD"
+expected_match:
+  line: 5
+  text: "db.delete(user_id)"
+  function: "delete_user"
+expected_match_source: "manual"
+sha256: "85835ad3b7d80d5a2701e89080e84d82a31da9b129a083bc2978e26ee8779cbe"
+verdict: "true_positive"

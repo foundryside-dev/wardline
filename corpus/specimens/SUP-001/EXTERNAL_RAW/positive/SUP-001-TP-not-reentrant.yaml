@@ -1,0 +1,23 @@
+---
+specimen_id: "SUP-001-TP-not-reentrant"
+description: "@not_reentrant function participates in a local call cycle"
+rule: "SUP-001"
+fragment: |
+  from wardline.decorators import not_reentrant
+
+  @not_reentrant
+  def process(data):
+      if data:
+          process(data[1:])
+taint_state: "EXTERNAL_RAW"
+expected_rules:
+  - "SUP-001"
+expected_severity: "ERROR"
+expected_exceptionability: "STANDARD"
+expected_match:
+  line: 4
+  text: "def process(data):"
+  function: "process"
+expected_match_source: "manual"
+sha256: "d05a1a13897153a3fe63699a2a28463c2bacd825ed56f0a0aa34e169e570687f"
+verdict: "true_positive"

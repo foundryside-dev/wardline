@@ -1,9 +1,9 @@
 {
   "version": "1.0",
   "spec_version": "1.0",
-  "corpus_hash": "sha256:e0a184a9f39886f94a92b33e5e4a24b884a3547f2ea37f9f4cf2bf6854431af5",
+  "corpus_hash": "sha256:08385e937fd1298ddd6cab745f56ebfdfb086ed204c771274735833fb57a1eea",
   "generated": "2026-04-10",
-  "specimen_count": 252,
+  "specimen_count": 261,
   "specimens": [
     {
       "specimen_id": "L3-anchored-immutable",
@@ -2796,6 +2796,46 @@
       "sha256": "3361bb7e9db9bb96c80b45c8a48199398e21c9cc851d46cdd2f5eebe29c5a6f3"
     },
     {
+      "specimen_id": "SUP-001-TN-atomic",
+      "path": "specimens/SUP-001/EXTERNAL_RAW/negative/SUP-001-TN-atomic.yaml",
+      "py_exists": true,
+      "rule": "SUP-001",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_negative",
+      "expected_match": false,
+      "sha256": "bbd33283f6699841d2c8196ba9c9220a644712c360d7b5e15bd0b8c3e92152c2"
+    },
+    {
+      "specimen_id": "SUP-001-TN-handles-secrets",
+      "path": "specimens/SUP-001/EXTERNAL_RAW/negative/SUP-001-TN-handles-secrets.yaml",
+      "py_exists": true,
+      "rule": "SUP-001",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_negative",
+      "expected_match": false,
+      "sha256": "b387e552ebf2b0dce60cfeeb226b685038b5fe0a434852692ce149215b8b38f6"
+    },
+    {
+      "specimen_id": "SUP-001-TN-not-reentrant",
+      "path": "specimens/SUP-001/EXTERNAL_RAW/negative/SUP-001-TN-not-reentrant.yaml",
+      "py_exists": true,
+      "rule": "SUP-001",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_negative",
+      "expected_match": false,
+      "sha256": "d7bf301563eaa603838859b118d8c5c87982beeb01deece77afff351414b14e1"
+    },
+    {
+      "specimen_id": "SUP-001-TN-privileged-op",
+      "path": "specimens/SUP-001/EXTERNAL_RAW/negative/SUP-001-TN-privileged-op.yaml",
+      "py_exists": true,
+      "rule": "SUP-001",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_negative",
+      "expected_match": false,
+      "sha256": "f85799a9db7e2ddee61650c2f5d0b56b3031d5b71fe22da13f106b59f7ff602e"
+    },
+    {
       "specimen_id": "SUP-001-TP-01",
       "path": "specimens/SUP-001/EXTERNAL_RAW/positive/SUP-001-TP-01.yaml",
       "py_exists": true,
@@ -2822,6 +2862,76 @@
         "function": "generate_key"
       },
       "sha256": "e9a04cde3b0d9d6146c2f68b55d5ba69f67decfd82d09360b3dec318fb9c55fa"
+    },
+    {
+      "specimen_id": "SUP-001-TP-atomic",
+      "path": "specimens/SUP-001/EXTERNAL_RAW/positive/SUP-001-TP-atomic.yaml",
+      "py_exists": true,
+      "rule": "SUP-001",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_positive",
+      "expected_match": {
+        "line": 6,
+        "text": "db.delete(items[1])",
+        "function": "batch_update"
+      },
+      "sha256": "c9c912114964df9d18b0d016f6317768b4bcb598404db264bfbff41c0f247dbc"
+    },
+    {
+      "specimen_id": "SUP-001-TP-handles-secrets",
+      "path": "specimens/SUP-001/EXTERNAL_RAW/positive/SUP-001-TP-handles-secrets.yaml",
+      "py_exists": true,
+      "rule": "SUP-001",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_positive",
+      "expected_match": {
+        "line": 5,
+        "text": "print(password)",
+        "function": "store_credential"
+      },
+      "sha256": "eda813bf88add6f2884bbd407a883bd15b7f1154b722fa10d636ae627ad3e1ec"
+    },
+    {
+      "specimen_id": "SUP-001-TP-not-reentrant",
+      "path": "specimens/SUP-001/EXTERNAL_RAW/positive/SUP-001-TP-not-reentrant.yaml",
+      "py_exists": true,
+      "rule": "SUP-001",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_positive",
+      "expected_match": {
+        "line": 4,
+        "text": "def process(data):",
+        "function": "process"
+      },
+      "sha256": "d05a1a13897153a3fe63699a2a28463c2bacd825ed56f0a0aa34e169e570687f"
+    },
+    {
+      "specimen_id": "SUP-001-TP-privileged-op",
+      "path": "specimens/SUP-001/EXTERNAL_RAW/positive/SUP-001-TP-privileged-op.yaml",
+      "py_exists": true,
+      "rule": "SUP-001",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_positive",
+      "expected_match": {
+        "line": 5,
+        "text": "db.delete(user_id)",
+        "function": "delete_user"
+      },
+      "sha256": "85835ad3b7d80d5a2701e89080e84d82a31da9b129a083bc2978e26ee8779cbe"
+    },
+    {
+      "specimen_id": "SUP-001-TP-requires-identity",
+      "path": "specimens/SUP-001/EXTERNAL_RAW/positive/SUP-001-TP-requires-identity.yaml",
+      "py_exists": true,
+      "rule": "SUP-001",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_positive",
+      "expected_match": {
+        "line": 4,
+        "text": "def audit_action(data):",
+        "function": "audit_action"
+      },
+      "sha256": "98e18edb14827067579254ba0ea119a7933a687a221a1242c3d94affd485d2d1"
     },
     {
       "specimen_id": "ADV-001-alias",

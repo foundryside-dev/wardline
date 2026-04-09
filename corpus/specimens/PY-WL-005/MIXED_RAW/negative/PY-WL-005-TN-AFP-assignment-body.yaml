@@ -11,7 +11,8 @@ fragment: |
       except Exception:
           resource.state = "abandoned"
 taint_state: "MIXED_RAW"
-expected_rules: []
+expected_rules:
+  - "PY-WL-004"
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
