@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 from wardline.core.severity import Exceptionability, RuleId, Severity
 from wardline.core.taints import TaintState
 from wardline.scanner._qualnames import build_qualname_map
-from wardline.scanner.context import Finding, ScanContext, WardlineAnnotation
+from wardline.scanner.context import Finding, ScanContext, WardlineAnnotation, populate_snippets
 from wardline.scanner.discovery import _detect_dynamic_imports, discover_annotations
 from wardline.scanner.import_resolver import build_import_alias_map, resolve_call_fqn
 from wardline.scanner.rejection_path import (
@@ -550,7 +550,7 @@ class ScanEngine:
         # Pass 2: Run rules with context
         for rule in self._rules:
             rule.set_context(ctx)
-            self._run_rule(rule, tree, file_path, result)
+            self._run_rule(rule, tree, file_path, result, source=source)
 
     def _build_project_indexes(self) -> ProjectIndex:
         """Build project-wide discovery indexes before rule execution.
@@ -874,6 +874,7 @@ class ScanEngine:
         tree: ast.Module,
         file_path: Path,
         result: ScanResult,
+        source: str | None = None,
     ) -> None:
         """Execute a single rule, catching crashes as TOOL-ERROR findings."""
         try:
@@ -883,7 +884,7 @@ class ScanEngine:
             rule.visit(tree)
 
             # Collect findings from the rule into the result
-            result.findings.extend(rule.findings)
+            result.findings.extend(populate_snippets(rule.findings, source))
         except Exception as exc:
             logger.error(
                 "Rule %s crashed on %s: %s",

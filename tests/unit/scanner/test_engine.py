@@ -743,3 +743,28 @@ class TestPopulateSnippets:
         )
         result = populate_snippets([f], "    indented_code    ")
         assert result[0].source_snippet == "indented_code"
+
+
+class TestEngineSnippetPopulation:
+    """Verify _run_rule populates source_snippet on findings."""
+
+    def test_source_snippet_populated_after_rule_visit(self, tmp_path: Path) -> None:
+        """Scan a Python file containing a PY-WL-001 pattern, verify snippets."""
+        code = 'def process(data):\n    x = data.get("key", "default")\n'
+        py_file = tmp_path / "test_snippet.py"
+        py_file.write_text(code)
+
+        from wardline.scanner.rules import make_rules
+        rules = make_rules()
+        engine = ScanEngine(
+            target_paths=(tmp_path,),
+            rules=rules,
+        )
+        result = engine.scan()
+
+        pywl001 = [f for f in result.findings if str(f.rule_id) == "PY-WL-001"]
+        assert len(pywl001) >= 1, f"Expected PY-WL-001 finding, got: {[str(f.rule_id) for f in result.findings]}"
+        for f in pywl001:
+            assert f.source_snippet is not None, (
+                f"source_snippet should be populated, got None for finding at line {f.line}"
+            )
