@@ -1051,7 +1051,7 @@ def _git_changed_files(repo_path: Path) -> frozenset[Path] | None:
     # Also include untracked .py files
     try:
         untracked = subprocess.run(
-            ["git", "ls-files", "--others", "--exclude-standard", "*.py"],
+            ["git", "ls-files", "--others", "--exclude-standard", "--full-name", "*.py"],
             cwd=str(repo_path),
             capture_output=True,
             text=True,
