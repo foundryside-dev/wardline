@@ -14,7 +14,7 @@ fragment: |
       data = fetch_external()
       return data.get("key", "default")
   
-taint_state: "EXTERNAL_RAW"
+taint_state: "ASSURED"
 analysis_level_required: 3
 expected_rules: ["PY-WL-001"]
 expected_severity: "ERROR"

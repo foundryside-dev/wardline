@@ -9,7 +9,7 @@ fragment: |
           return data.get("key", "default")
       return recurse(data, depth + 1)
   
-taint_state: "UNKNOWN_RAW"
+taint_state: "ASSURED"
 analysis_level_required: 3
 expected_rules: ["PY-WL-001"]
 expected_severity: "ERROR"

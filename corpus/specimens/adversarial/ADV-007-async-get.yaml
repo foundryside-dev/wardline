@@ -3,7 +3,7 @@ specimen_id: ADV-007-async-get
 description: Async function with dict.get pattern
 rule: PY-WL-001
 fragment: "async def process(data):\n    x = data.get(\"key\", \"default\")\n"
-taint_state: EXTERNAL_RAW
+taint_state: INTEGRAL
 expected_rules:
 - PY-WL-001
 expected_match:
@@ -16,5 +16,5 @@ tags:
 - adversarial
 - async
 sha256: 26d9f988e68efc350bbe1d8e16af1a75a6cceb1aeed6ae528bcff2d8770ef3ca
-expected_severity: null
-expected_exceptionability: null
+expected_severity: error
+expected_exceptionability: unconditional

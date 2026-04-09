@@ -3,7 +3,7 @@ specimen_id: ADV-012-setdefault
 description: dict.setdefault triggers PY-WL-001
 rule: PY-WL-001
 fragment: "def process(data):\n    x = data.setdefault(\"key\", [])\n"
-taint_state: EXTERNAL_RAW
+taint_state: INTEGRAL
 expected_rules:
 - PY-WL-001
 expected_match:
@@ -16,5 +16,5 @@ tags:
 - adversarial
 - setdefault
 sha256: 9ca53318246017be037df9afa506ae736e068440aa69f5d133ab50c1717636f5
-expected_severity: null
-expected_exceptionability: null
+expected_severity: error
+expected_exceptionability: unconditional

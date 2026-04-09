@@ -4,7 +4,7 @@ description: Pattern inside nested function (visited separately)
 rule: PY-WL-001
 fragment: "def outer():\n    def inner(data):\n        x = data.get(\"key\", \"default\"\
   )\n    return inner\n"
-taint_state: EXTERNAL_RAW
+taint_state: INTEGRAL
 expected_rules:
 - PY-WL-001
 expected_match:
@@ -17,5 +17,5 @@ tags:
 - adversarial
 - nested-scope
 sha256: 160606166fe2ab35b2334f2adfa98e901a885d091633502a9801642fa88f305f
-expected_severity: null
-expected_exceptionability: null
+expected_severity: error
+expected_exceptionability: unconditional
