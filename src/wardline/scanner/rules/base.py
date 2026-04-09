@@ -180,12 +180,23 @@ class RuleBase(ast.NodeVisitor, ABC):
             return TaintState.UNKNOWN_RAW
         return taint
 
-    def _emit_matrix_finding(self, node: ast.AST, message: str) -> None:
-        """Emit a finding using the severity matrix for ``self.RULE_ID``.
+    def _get_annotation_groups(self) -> tuple[int, ...]:
+        """Get sorted, deduplicated annotation group numbers for the current function.
 
-        Looks up the (rule, taint) severity cell and appends a Finding
-        with standard location extraction from *node*.
+        Returns the Part I group numbers (1-17) of all wardline annotations
+        declared on the function. Used to populate the §10.1 SARIF
+        property ``wardline.annotationGroups``.
         """
+        if not self._current_qualname or self._context is None:
+            return ()
+        annotations_map = self._context.annotations_map
+        if annotations_map is None:
+            return ()
+        annotations = annotations_map.get(self._current_qualname, ())
+        return tuple(sorted({a.group for a in annotations}))
+
+    def _emit_matrix_finding(self, node: ast.AST, message: str) -> None:
+        """Emit a finding using the severity matrix for ``self.RULE_ID``."""
         taint = self._get_function_taint(self._current_qualname)
         cell = matrix.lookup(self.RULE_ID, taint)
         self.findings.append(
@@ -203,6 +214,7 @@ class RuleBase(ast.NodeVisitor, ABC):
                 analysis_level=1,
                 source_snippet=None,
                 qualname=self._current_qualname,
+                annotation_groups=self._get_annotation_groups(),
             )
         )
 
