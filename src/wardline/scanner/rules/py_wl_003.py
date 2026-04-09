@@ -558,5 +558,6 @@ class RulePyWl003(RuleBase):
                 analysis_level=1,
                 source_snippet=None,
                 qualname=self._current_qualname,
+                annotation_groups=self._get_annotation_groups(),
             )
         )

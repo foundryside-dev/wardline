@@ -933,9 +933,10 @@ class RuleSup001(RuleBase):
                 message=message,
                 severity=severity,
                 exceptionability=Exceptionability.STANDARD,
-                taint_state=None,
+                taint_state=self._get_function_taint(self._current_qualname),
                 analysis_level=1,
                 source_snippet=None,
                 qualname=self._current_qualname,
+                annotation_groups=self._get_annotation_groups(),
             )
         )

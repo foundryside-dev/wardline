@@ -61,10 +61,11 @@ class RuleScn022(RuleBase):
                         f"not found in this file",
                 severity=Severity.ERROR,
                 exceptionability=Exceptionability.STANDARD,
-                taint_state=None,
+                taint_state=self._get_function_taint(self._current_qualname),
                 analysis_level=1,
                 source_snippet=None,
                 qualname=self._current_qualname,
+                annotation_groups=self._get_annotation_groups(),
             ))
             return
 
@@ -84,10 +85,11 @@ class RuleScn022(RuleBase):
                         f"accessed — possible silent data loss",
                 severity=Severity.WARNING,
                 exceptionability=Exceptionability.STANDARD,
-                taint_state=None,
+                taint_state=self._get_function_taint(self._current_qualname),
                 analysis_level=1,
                 source_snippet=None,
                 qualname=self._current_qualname,
+                annotation_groups=self._get_annotation_groups(),
             ))
 
 

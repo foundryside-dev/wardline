@@ -250,9 +250,10 @@ class RuleScn021(RuleBase):
                 ),
                 severity=spec.severity,
                 exceptionability=Exceptionability.UNCONDITIONAL,
-                taint_state=None,
+                taint_state=self._get_function_taint(self._current_qualname),
                 analysis_level=1,
                 source_snippet=None,
                 qualname=self._current_qualname,
+                annotation_groups=self._get_annotation_groups(),
             )
         )
