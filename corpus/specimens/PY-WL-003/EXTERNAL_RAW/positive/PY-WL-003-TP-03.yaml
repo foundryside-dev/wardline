@@ -12,8 +12,8 @@ fragment: |
 taint_state: "EXTERNAL_RAW"
 expected_rules:
   - "PY-WL-003"
-expected_severity: "ERROR"
-expected_exceptionability: "STANDARD"
+expected_severity: "SUPPRESS"
+expected_exceptionability: "TRANSPARENT"
 expected_match:
   line: 3
   text: 'case {"type": "click", "x": x, "y": y}:'

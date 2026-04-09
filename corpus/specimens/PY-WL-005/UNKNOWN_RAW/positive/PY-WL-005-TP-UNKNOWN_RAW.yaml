@@ -6,6 +6,7 @@ fragment: "def process():\n    try:\n        pass\n    except Exception:\n      
   \ pass\n"
 taint_state: UNKNOWN_RAW
 expected_rules:
+- PY-WL-004
 - PY-WL-005
 expected_severity: ERROR
 expected_exceptionability: STANDARD

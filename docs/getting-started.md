@@ -298,9 +298,12 @@ uses all three annotations when evaluating data flow through this function.
 
 ## Next Steps
 
-- Read the rule reference (`wardline explain PY-WL-001`) to understand each
-  finding type and its remediation.
-- Use `wardline manifest validate` to check your `wardline.yaml` against the
-  JSON Schema.
-- Use `wardline scan --sarif-output findings.sarif` to write SARIF output to a
-  file for upload to GitHub Code Scanning or another SAST platform.
+- **Quick lookups:** [Rule Quick Reference](reference/rules.md) and [Severity Matrix](reference/severity-matrix.md)
+- **Understanding taint:** [Taint State Reference](reference/taint-states.md) and [Glossary](reference/glossary.md)
+- **Adopting at scale:** [Adoption Guide](guides/adoption.md)
+- **CI integration:** [CI Integration Guide](guides/ci-integration.md)
+- **Managing exceptions:** [Governance Walkthrough](guides/governance.md)
+- **Diagnostic help:** [Troubleshooting](guides/troubleshooting.md) and [Error Messages](reference/error-messages.md)
+- **CLI deep dive:** [CLI Reference](reference/cli.md)
+- **SARIF output:** [SARIF Format Guide](reference/sarif-format.md)
+- **Full specification:** [docs/spec/](spec/) (normative)

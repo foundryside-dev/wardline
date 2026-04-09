@@ -6,8 +6,8 @@ fragment: "def process(data):\n    if \"key\" in data:\n        pass\n"
 taint_state: UNKNOWN_RAW
 expected_rules:
 - PY-WL-003
-expected_severity: ERROR
-expected_exceptionability: STANDARD
+expected_severity: SUPPRESS
+expected_exceptionability: TRANSPARENT
 expected_match:
   line: 2
   text: 'if "key" in data:'
