@@ -18,11 +18,11 @@ import click
 import yaml
 
 from wardline.manifest.loader import make_wardline_loader
+from wardline.scanner.context import Finding, ScanContext, populate_snippets
 from wardline.scanner.rules import make_rules
 
 if TYPE_CHECKING:
     from wardline.manifest.models import BoundaryEntry, OptionalFieldEntry
-    from wardline.scanner.context import ScanContext
     from wardline.scanner.rules.base import RuleBase
 
 logger = logging.getLogger(__name__)
@@ -82,7 +82,6 @@ def _build_specimen_context(
     resolve correctly for class methods and nested functions.
     """
     from wardline.core.taints import TaintState
-    from wardline.scanner.context import ScanContext
 
     taint = TaintState(taint_state)
     qualnames: dict[str, None] = {}
@@ -166,18 +165,18 @@ def _parse_specimen_optional_fields(
     return tuple(entries)
 
 
-def _run_rules_on_fragment(
+def _collect_findings_on_fragment(
     source: str,
     rules: tuple[RuleBase, ...],
     taint_state: str | None = None,
     *,
     boundaries: tuple[BoundaryEntry, ...] = (),
     optional_fields: tuple[OptionalFieldEntry, ...] = (),
-) -> set[str]:
-    """Run all rules on a source fragment, return set of fired rule IDs.
+) -> list[Finding]:
+    """Run all rules on a source fragment, return non-suppressed findings.
 
-    Findings with ``Severity.SUPPRESS`` are excluded — they represent
-    matrix cells where the rule is intentionally silent at that taint state.
+    Findings have source_snippet populated via the shared populate_snippets
+    helper — same logic as the scan engine.
     """
     from wardline.core.severity import Severity
 
@@ -192,7 +191,7 @@ def _run_rules_on_fragment(
             optional_fields=optional_fields,
         )
 
-    fired: set[str] = set()
+    all_findings: list[Finding] = []
     for rule in rules:
         rule.findings.clear()
         rule.set_context(ctx)
@@ -203,9 +202,30 @@ def _run_rules_on_fragment(
                 "Rule %s crashed on specimen: %s", rule.RULE_ID, exc,
             )
             continue
-        if any(f.severity != Severity.SUPPRESS for f in rule.findings):
-            fired.add(str(rule.RULE_ID))
-    return fired
+        all_findings.extend(
+            f for f in rule.findings if f.severity != Severity.SUPPRESS
+        )
+    return populate_snippets(all_findings, source)
+
+
+def _run_rules_on_fragment(
+    source: str,
+    rules: tuple[RuleBase, ...],
+    taint_state: str | None = None,
+    *,
+    boundaries: tuple[BoundaryEntry, ...] = (),
+    optional_fields: tuple[OptionalFieldEntry, ...] = (),
+) -> set[str]:
+    """Run all rules on a source fragment, return set of fired rule IDs.
+
+    Findings with ``Severity.SUPPRESS`` are excluded — they represent
+    matrix cells where the rule is intentionally silent at that taint state.
+    """
+    findings = _collect_findings_on_fragment(
+        source, rules, taint_state,
+        boundaries=boundaries, optional_fields=optional_fields,
+    )
+    return {str(f.rule_id) for f in findings}
 
 
 def _evaluate_specimen(

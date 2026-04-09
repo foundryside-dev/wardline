@@ -498,6 +498,59 @@ class TestPrecisionRecall:
         assert "recall=100.0%" in result.output
 
 
+class TestCollectFindings:
+    """Tests for _collect_findings_on_fragment."""
+
+    def test_returns_finding_objects(self) -> None:
+        from wardline.cli.corpus_cmds import _collect_findings_on_fragment
+        from wardline.scanner.context import Finding
+        from wardline.scanner.rules import make_rules
+
+        # PY-WL-001 fires as ERROR for INTEGRAL (not SUPPRESS)
+        source = 'def process(data):\n    x = data.get("key", "default")\n'
+        rules = make_rules()
+        findings = _collect_findings_on_fragment(source, rules, taint_state="INTEGRAL")
+        assert isinstance(findings, list)
+        assert all(isinstance(f, Finding) for f in findings)
+        pywl001 = [f for f in findings if str(f.rule_id) == "PY-WL-001"]
+        assert len(pywl001) >= 1
+
+    def test_excludes_suppressed(self) -> None:
+        from wardline.cli.corpus_cmds import _collect_findings_on_fragment
+        from wardline.core.severity import Severity
+        from wardline.scanner.rules import make_rules
+
+        # EXTERNAL_RAW → PY-WL-001 is SUPPRESS; _collect_findings_on_fragment must exclude it
+        source = 'def process(data):\n    x = data.get("key", "default")\n'
+        rules = make_rules()
+        findings = _collect_findings_on_fragment(source, rules, taint_state="EXTERNAL_RAW")
+        for f in findings:
+            assert f.severity != Severity.SUPPRESS
+
+    def test_populates_source_snippet(self) -> None:
+        from wardline.cli.corpus_cmds import _collect_findings_on_fragment
+        from wardline.scanner.rules import make_rules
+
+        # Use INTEGRAL so PY-WL-001 fires as non-SUPPRESS and we can check the snippet
+        source = 'def process(data):\n    x = data.get("key", "default")\n'
+        rules = make_rules()
+        findings = _collect_findings_on_fragment(source, rules, taint_state="INTEGRAL")
+        pywl001 = [f for f in findings if str(f.rule_id) == "PY-WL-001"]
+        assert len(pywl001) >= 1
+        assert pywl001[0].source_snippet is not None
+
+    def test_run_rules_on_fragment_unchanged_behavior(self) -> None:
+        from wardline.cli.corpus_cmds import _run_rules_on_fragment
+        from wardline.scanner.rules import make_rules
+
+        # Use INTEGRAL so PY-WL-001 fires as ERROR (not SUPPRESS)
+        source = 'def process(data):\n    x = data.get("key", "default")\n'
+        rules = make_rules()
+        fired = _run_rules_on_fragment(source, rules, taint_state="INTEGRAL")
+        assert isinstance(fired, set)
+        assert "PY-WL-001" in fired
+
+
 class TestPerCellStats:
     """Per-cell (rule x taint_state) metric accumulation."""
 
