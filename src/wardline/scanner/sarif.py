@@ -200,7 +200,7 @@ def _make_result(finding: Finding, *, base_path: str | None) -> dict[str, Any]:
         "wardline.taintState": (
             str(finding.taint_state)
             if finding.taint_state is not None
-            else "UNKNOWN"
+            else None
         ),
         "wardline.severity": str(finding.severity),
         "wardline.exceptionability": str(finding.exceptionability),

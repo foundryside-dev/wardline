@@ -114,10 +114,10 @@ class TestSarifResults:
         report = SarifReport(findings=[_make_finding(taint_state=None)])
         result = report.to_dict()["runs"][0]["results"][0]
         props = result["properties"]
-        assert props["wardline.taintState"] == "UNKNOWN"
+        assert props["wardline.taintState"] is None
 
     def test_mandatory_properties_never_omitted(self) -> None:
-        """All 5 mandatory properties (§A.3) present even when taint_state is None."""
+        """All mandatory properties (§A.3) present even when taint_state is None."""
         report = SarifReport(findings=[_make_finding(taint_state=None)])
         result = report.to_dict()["runs"][0]["results"][0]
         props = result["properties"]
@@ -128,9 +128,22 @@ class TestSarifResults:
             "wardline.exceptionability",
             "wardline.analysisLevel",
         ]
+        nullable = {"wardline.taintState"}
         for key in mandatory:
             assert key in props, f"mandatory key {key!r} missing from properties"
-            assert props[key] is not None, f"mandatory key {key!r} is None"
+            if key not in nullable:
+                assert props[key] is not None, f"mandatory key {key!r} is None"
+
+    def test_no_unknown_string_in_taint_state(self) -> None:
+        """No non-canonical 'UNKNOWN' token in taintState — must be null or canonical."""
+        report = SarifReport(findings=[_make_finding(taint_state=None)])
+        sarif = json.loads(report.to_json_string())
+        for result in sarif["runs"][0]["results"]:
+            ts = result["properties"]["wardline.taintState"]
+            assert ts is None or ts in {
+                "INTEGRAL", "ASSURED", "GUARDED", "EXTERNAL_RAW",
+                "UNKNOWN_RAW", "UNKNOWN_GUARDED", "UNKNOWN_ASSURED", "MIXED_RAW",
+            }, f"Non-canonical taintState: {ts!r}"
 
     def test_result_property_bag_qualname_and_snippet(self) -> None:
         """wardline.qualname and wardline.sourceSnippet appear when set."""
