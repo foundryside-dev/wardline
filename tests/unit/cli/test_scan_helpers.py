@@ -162,6 +162,44 @@ class TestComputeOverlayHashes:
         result = _compute_overlay_hashes([real, link], tmp_path)
         assert len(result) == 1
 
+    def test_path_order_differs_from_hash_order(self, tmp_path: Path) -> None:
+        """Overlay hashes sorted by POSIX path, not by hash value (§10.1)."""
+        import hashlib
+
+        from wardline.cli.scan import _compute_overlay_hashes
+
+        overlays_dir = tmp_path / "overlays"
+        (overlays_dir / "a").mkdir(parents=True)
+        (overlays_dir / "b").mkdir(parents=True)
+
+        # Content deliberately chosen so hash-alphabetical order
+        # differs from path-alphabetical order.
+        files = {
+            overlays_dir / "a" / "z.yaml": b"overlay_for: a/z\n",
+            overlays_dir / "b" / "a.yaml": b"overlay_for: b/a\n",
+            overlays_dir / "a" / "a.yaml": b"overlay_for: a/a\n",
+        }
+        for path, content in files.items():
+            path.write_bytes(content)
+
+        # Pass in NON-sorted order to verify internal sorting.
+        result = _compute_overlay_hashes(
+            [overlays_dir / "b" / "a.yaml",
+             overlays_dir / "a" / "z.yaml",
+             overlays_dir / "a" / "a.yaml"],
+            tmp_path,
+        )
+
+        def sha(content: bytes) -> str:
+            return f"sha256:{hashlib.sha256(content).hexdigest()}"
+
+        expected = (
+            sha(b"overlay_for: a/a\n"),   # overlays/a/a.yaml
+            sha(b"overlay_for: a/z\n"),   # overlays/a/z.yaml
+            sha(b"overlay_for: b/a\n"),   # overlays/b/a.yaml
+        )
+        assert result == expected
+
 
 class TestReadCoverageRatio:
     def test_no_baseline_returns_none(self, tmp_path: Path) -> None:
