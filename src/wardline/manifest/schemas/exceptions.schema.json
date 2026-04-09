@@ -103,6 +103,14 @@
           "migrated_by": {
             "type": ["string", "null"],
             "description": "Who performed the taint migration."
+          },
+          "elimination_path": {
+            "type": ["string", "null"],
+            "description": "Architectural change that would eliminate the need for this exception (§13.1.3)."
+          },
+          "elimination_cost": {
+            "type": ["string", "null"],
+            "description": "Estimated effort to implement the elimination path."
           }
         },
         "required": [

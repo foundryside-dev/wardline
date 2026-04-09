@@ -78,6 +78,8 @@ def load_exceptions(manifest_dir: Path) -> tuple[ExceptionEntry, ...]:
             analysis_level=raw.get("analysis_level", 1),
             migrated_from=raw.get("migrated_from"),
             migrated_by=raw.get("migrated_by"),
+            elimination_path=raw.get("elimination_path"),
+            elimination_cost=raw.get("elimination_cost"),
         )
         _validate_not_unconditional(entry, path)
         _validate_ast_fingerprint(entry, path)

@@ -43,6 +43,8 @@ class ExceptionEntry:
     analysis_level: int = 1
     migrated_from: str | None = None
     migrated_by: str | None = None
+    elimination_path: str | None = None
+    elimination_cost: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.rule, RuleId):
