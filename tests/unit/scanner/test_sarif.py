@@ -258,7 +258,7 @@ class TestR1ResultProperties:
         (TaintState.MIXED_RAW, 4),
         (None, None),
     ])
-    def test_enclosing_tier_from_taint_state(self, taint, expected_tier) -> None:
+    def test_enclosing_tier_from_taint_state(self, taint: TaintState | None, expected_tier: int | None) -> None:
         """enclosingTier derived from TAINT_TO_TIER for all 8 states + None."""
         finding = _make_finding(taint_state=taint)
         result = _make_result(finding, base_path=None)
@@ -321,6 +321,20 @@ class TestR1ResultProperties:
     def test_all_mandatory_result_properties_present(self) -> None:
         """All 9 mandatory result-level properties present (§10.1)."""
         finding = _make_finding(taint_state=TaintState.INTEGRAL)
+        result = _make_result(finding, base_path=None)
+        props = set(result["properties"].keys())
+        required = {
+            "wardline.rule", "wardline.taintState", "wardline.severity",
+            "wardline.exceptionability", "wardline.analysisLevel",
+            "wardline.enclosingTier", "wardline.annotationGroups",
+            "wardline.excepted", "wardline.dataSource",
+        }
+        missing = required - props
+        assert not missing, f"Missing mandatory properties: {missing}"
+
+    def test_all_mandatory_keys_present_when_all_nullable_are_null(self) -> None:
+        """All 9 mandatory keys present even when all nullable ones are null."""
+        finding = _make_finding(taint_state=None, data_source=None)
         result = _make_result(finding, base_path=None)
         props = set(result["properties"].keys())
         required = {
@@ -1028,4 +1042,11 @@ class TestSarifDeterministicAndDeferredFixRatio:
         report = SarifReport(findings=[], verification_mode=True)
         props = report.to_dict()["runs"][0]["properties"]
         assert "wardline.deterministic" in props
+        assert props["wardline.deterministic"] is True
         assert "wardline.deferredFixRatio" in props
+
+    def test_deferred_fix_ratio_one(self) -> None:
+        """All active exceptions have elimination paths → 1.0."""
+        report = SarifReport(findings=[], deferred_fix_ratio=1.0)
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.deferredFixRatio"] == 1.0

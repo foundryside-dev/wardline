@@ -121,6 +121,29 @@ class TestComputeInputHash:
             _compute_input_hash([missing], tmp_path)
 
 
+class TestComputeDeferredFixRatio:
+    def test_zero_active_returns_none(self) -> None:
+        from wardline.cli.scan import _compute_deferred_fix_ratio
+        assert _compute_deferred_fix_ratio(0, 0) is None
+
+    def test_active_but_zero_deferred_returns_none(self) -> None:
+        """Unclassified exceptions — none have elimination_path."""
+        from wardline.cli.scan import _compute_deferred_fix_ratio
+        assert _compute_deferred_fix_ratio(10, 0) is None
+
+    def test_all_deferred_returns_one(self) -> None:
+        from wardline.cli.scan import _compute_deferred_fix_ratio
+        assert _compute_deferred_fix_ratio(5, 5) == 1.0
+
+    def test_partial_deferred_returns_ratio(self) -> None:
+        from wardline.cli.scan import _compute_deferred_fix_ratio
+        assert _compute_deferred_fix_ratio(4, 1) == 0.25
+
+    def test_single_active_single_deferred(self) -> None:
+        from wardline.cli.scan import _compute_deferred_fix_ratio
+        assert _compute_deferred_fix_ratio(1, 1) == 1.0
+
+
 class TestComputeOverlayHashes:
     def test_sorted_by_normalized_path(self, tmp_path: Path) -> None:
         """Overlay hashes are sorted by forward-slash path relative to project root."""

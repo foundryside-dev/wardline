@@ -51,6 +51,23 @@ EXIT_CONFIG_ERROR = 2
 
 
 
+def _compute_deferred_fix_ratio(
+    active_count: int,
+    deferred_count: int,
+) -> float | None:
+    """Compute deferredFixRatio from active exception counts.
+
+    Returns None when no active exceptions exist or when active
+    exceptions exist but none have elimination_path (unclassified).
+    Returns the ratio when at least one has elimination_path.
+    """
+    if active_count == 0:
+        return None
+    if deferred_count == 0:
+        return None  # unclassified — distinct from 0.0
+    return deferred_count / active_count
+
+
 def _compute_manifest_hash(manifest_path: Path) -> str | None:
     """SHA-256 of root manifest raw bytes only (§10.1).
 
@@ -677,7 +694,7 @@ def scan(
         # §10.1/§13.1.3: null = unclassified, 0.0 never emitted from scan
         # path (0.0 only valid when no exceptions exist, handled by init).
         if _active > 0:
-            deferred_fix_ratio = None if _deferred == 0 else _deferred / _active
+            deferred_fix_ratio = _compute_deferred_fix_ratio(_active, _deferred)
 
     # --- Merge governance findings ---
     all_findings = governance_findings + result.findings
