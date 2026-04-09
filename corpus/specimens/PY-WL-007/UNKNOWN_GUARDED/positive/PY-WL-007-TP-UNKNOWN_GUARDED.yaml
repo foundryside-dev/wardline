@@ -8,6 +8,10 @@ expected_rules:
 - PY-WL-007
 expected_severity: WARNING
 expected_exceptionability: RELAXED
-expected_match: true
+expected_match:
+  line: 2
+  text: "if isinstance(data, dict):"
+  function: "process"
+expected_match_source: "ast-reimplemented"
 sha256: 93c25bb124d137b5c69c9160596af8df53b94714b4ee6f176fddfb8dd5e867a0
 verdict: true_positive

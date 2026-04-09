@@ -1,3 +1,4 @@
+---
 specimen_id: PY-WL-001-TP-defaultdict
 description: defaultdict with factory triggers PY-WL-001
 rule: PY-WL-001
@@ -5,10 +6,14 @@ fragment: "from collections import defaultdict\ndef process():\n    d = defaultd
 taint_state: UNKNOWN_RAW
 expected_rules:
 - PY-WL-001
-expected_match: true
+expected_match:
+  line: 3
+  text: "d = defaultdict(list)"
+  function: process
 verdict: true_positive
 tags:
 - defaultdict
 sha256: c0088880862f3022c94a7496808be3aebafc7ec6aae565327f054687ea56bb93
 expected_severity: ERROR
 expected_exceptionability: STANDARD
+expected_match_source: ast-reimplemented

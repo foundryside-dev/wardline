@@ -6,7 +6,11 @@ fragment: "async def process(obj):\n    x = getattr(obj, \"name\", None)\n"
 taint_state: ASSURED
 expected_rules:
 - PY-WL-002
-expected_match: true
+expected_match:
+  line: 2
+  text: "x = getattr(obj, \"name\", None)"
+  function: "process"
+expected_match_source: "ast-reimplemented"
 verdict: true_positive
 tags:
 - adversarial

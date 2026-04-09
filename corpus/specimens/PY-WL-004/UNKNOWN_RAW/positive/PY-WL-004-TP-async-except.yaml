@@ -6,7 +6,11 @@ fragment: "async def process():\n    try:\n        pass\n    except BaseExceptio
 taint_state: UNKNOWN_RAW
 expected_rules:
 - PY-WL-004
-expected_match: true
+expected_match:
+  line: 4
+  text: "except BaseException:"
+  function: "process"
+expected_match_source: "ast-reimplemented"
 verdict: true_positive
 tags:
 - async

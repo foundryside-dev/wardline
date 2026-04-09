@@ -15,7 +15,11 @@ fragment: "def process():\n    x0 = 0\n    x1 = 1\n    x2 = 2\n    x3 = 3\n    x
 taint_state: EXTERNAL_RAW
 expected_rules:
 - PY-WL-005
-expected_match: true
+expected_match:
+  line: 54
+  text: "except Exception:"
+  function: "process"
+expected_match_source: "ast-reimplemented"
 verdict: true_positive
 tags:
 - adversarial

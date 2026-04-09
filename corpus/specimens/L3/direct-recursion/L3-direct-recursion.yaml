@@ -14,6 +14,9 @@ analysis_level_required: 3
 expected_rules: ["PY-WL-001"]
 expected_severity: "ERROR"
 expected_exceptionability: "STANDARD"
-expected_match: true
+expected_match:
+  line: 3
+  text: 'return data.get("key", "default")'
+  function: recurse
 verdict: "true_positive"
 sha256: "24e53c051001d0a3b292d32c24af6f455ebbdfaa9676ec112de6ea5bfa6f65f7"

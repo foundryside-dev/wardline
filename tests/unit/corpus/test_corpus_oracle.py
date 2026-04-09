@@ -51,7 +51,7 @@ class TestCorpusOracle:
         assert "true_negative" in verdicts, "Corpus has no true_negative specimens"
 
     def test_expected_match_aligns_with_verdict(self) -> None:
-        """TP specimens should have expected_match=True, TN should have expected_match=False."""
+        """TP specimens should have expected_match=True or structured dict, TN should have False."""
         manifest_path = CORPUS_ROOT / "corpus_manifest.json"
         data = json.loads(manifest_path.read_text(encoding="utf-8"))
 
@@ -59,8 +59,12 @@ class TestCorpusOracle:
         for s in data["specimens"]:
             verdict = s["verdict"]
             expected = s.get("expected_match")
-            if verdict == "true_positive" and expected is not True:
-                mismatches.append(f"{s['specimen_id']}: TP but expected_match={expected}")
+            if verdict == "true_positive":
+                if not (isinstance(expected, dict) or expected is True):
+                    mismatches.append(f"{s['specimen_id']}: TP but expected_match={expected}")
+                if isinstance(expected, dict):
+                    if "line" not in expected or "text" not in expected:
+                        mismatches.append(f"{s['specimen_id']}: TP structured match missing line/text")
             elif verdict == "true_negative" and expected is not False:
                 mismatches.append(f"{s['specimen_id']}: TN but expected_match={expected}")
 

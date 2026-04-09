@@ -10,6 +10,10 @@ expected_rules:
   - "PY-WL-001"
 expected_severity: "ERROR"
 expected_exceptionability: "STANDARD"
-expected_match: true
+expected_match:
+  line: 2
+  text: "config.setdefault(\"timeout\", 30)"
+  function: ensure_key
 sha256: "ccb173df358aeafa7ecbc085e4673f03f0bb90029843948e80c80dcff41f30f8"
 verdict: "true_positive"
+expected_match_source: ast-reimplemented

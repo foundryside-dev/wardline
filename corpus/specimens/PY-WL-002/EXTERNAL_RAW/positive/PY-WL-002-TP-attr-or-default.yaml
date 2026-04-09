@@ -10,6 +10,10 @@ expected_rules:
   - "PY-WL-002"
 expected_severity: "ERROR"
 expected_exceptionability: "STANDARD"
-expected_match: true
+expected_match:
+  line: 2
+  text: "return obj.name or \"fallback\""
+  function: process
 verdict: "true_positive"
 sha256: "ef483665888b254dbbb0d297931aa916579808126bb3aa52666549862cedea91"
+expected_match_source: ast-reimplemented

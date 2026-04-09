@@ -23,6 +23,9 @@ analysis_level_required: 3
 expected_rules: ["PY-WL-001"]
 expected_severity: "ERROR"
 expected_exceptionability: "STANDARD"
-expected_match: true
+expected_match:
+  line: 10
+  text: 'return data.get("key", "default")'
+  function: boundary_func
 verdict: "true_positive"
-sha256: "6eee2dc33bbc3f6a0028b2d0bc6b35b8d11e3c6081bfa51cfc473607fb5f6012"
+sha256: "2eb2bdc88ab92f3137af35191a0f019bc7a5508bcc7291ca0deea43b3b3be66e"

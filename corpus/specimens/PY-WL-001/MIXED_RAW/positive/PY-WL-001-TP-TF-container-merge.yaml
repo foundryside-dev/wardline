@@ -14,6 +14,10 @@ expected_rules:
 - PY-WL-001
 expected_severity: ERROR
 expected_exceptionability: STANDARD
-expected_match: true
+expected_match:
+  line: 4
+  text: "timeout = merged.get(\"timeout\", 60)"
+  function: merge_configs
 sha256: "2f29b27ef3f59b19d31726c065295058efecc2d9851ae10f3c54a6aac3570965"
 verdict: "true_positive"
+expected_match_source: ast-reimplemented

@@ -13,6 +13,10 @@ expected_rules:
 - PY-WL-002
 expected_severity: ERROR
 expected_exceptionability: STANDARD
-expected_match: true
+expected_match:
+  line: 3
+  text: "value = getattr(obj, name, None)"
+  function: resolve_attribute
 sha256: "1f79588372314700d86a40db0257adc0e3b779bc2e0ab64417217889669aedf9"
 verdict: "true_positive"
+expected_match_source: ast-reimplemented

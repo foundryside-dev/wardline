@@ -28,6 +28,9 @@ analysis_level_required: 3
 expected_rules: ["PY-WL-001"]
 expected_severity: "ERROR"
 expected_exceptionability: "STANDARD"
-expected_match: true
+expected_match:
+  line: 18
+  text: 'x = data.get("key", "default")'
+  function: process
 verdict: "true_positive"
-sha256: "1406cea701121153b636215f6fbfe7dd4bf771343c8c49d2d771b2721da287b4"
+sha256: "3eb0350b074e9b08091f8ae95882380d857ec07f4fc04a138241e0e32a1b971e"

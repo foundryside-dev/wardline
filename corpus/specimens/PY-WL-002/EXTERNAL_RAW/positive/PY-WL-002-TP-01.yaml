@@ -10,6 +10,10 @@ expected_rules:
   - "PY-WL-002"
 expected_severity: "ERROR"
 expected_exceptionability: "STANDARD"
-expected_match: true
+expected_match:
+  line: 2
+  text: "value = getattr(obj, \"timeout\", 30)"
+  function: read_config
 sha256: "75414996f8a7b8d8b24c527101611cad2268f27f46d1175f2d09caa058b0f0a0"
 verdict: "true_positive"
+expected_match_source: ast-reimplemented

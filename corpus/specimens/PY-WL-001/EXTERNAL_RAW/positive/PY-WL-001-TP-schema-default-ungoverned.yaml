@@ -13,6 +13,10 @@ expected_rules:
   - "PY-WL-001"
 expected_severity: "ERROR"
 expected_exceptionability: "STANDARD"
-expected_match: true
+expected_match:
+  line: 4
+  text: "return schema_default(data.get(\"key\", \"\"))"
+  function: process
 verdict: "true_positive"
 sha256: "b84d32c496bba4dcf61f9ddbfcd62741d4b139a0e90bd88ae8043e0b18aaf220"
+expected_match_source: ast-reimplemented

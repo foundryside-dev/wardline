@@ -13,6 +13,10 @@ expected_rules:
   - "PY-WL-004"
 expected_severity: "WARNING"
 expected_exceptionability: "RELAXED"
-expected_match: true
+expected_match:
+  line: 4
+  text: "except:"
+  function: "fetch"
+expected_match_source: "ast-reimplemented"
 sha256: "4faebf5b026b3067802d158cadab56620c5173740e5fe2f0a7349bf633d9cfe1"
 verdict: "true_positive"

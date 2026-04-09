@@ -15,6 +15,10 @@ expected_rules:
   - "PY-WL-004"
 expected_severity: "WARNING"
 expected_exceptionability: "RELAXED"
-expected_match: true
+expected_match:
+  line: 6
+  text: "except* BaseException as eg:"
+  function: "run_tasks"
+expected_match_source: "ast-reimplemented"
 sha256: "a17cd4168852b246dbb1fbd2038ba7336a726e04304e55d4dad77eea62257280"
 verdict: "true_positive"

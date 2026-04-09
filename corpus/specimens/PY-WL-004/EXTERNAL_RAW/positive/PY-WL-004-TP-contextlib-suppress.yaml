@@ -13,6 +13,10 @@ expected_rules:
   - "PY-WL-004"
 expected_severity: "ERROR"
 expected_exceptionability: "STANDARD"
-expected_match: true
+expected_match:
+  line: 4
+  text: "with contextlib.suppress(Exception):"
+  function: "process"
+expected_match_source: "ast-reimplemented"
 verdict: "true_positive"
 sha256: "d0adb009df5cd75fe67034979ae46d37d93c1feda6f1d08f29621aba95f6f909"

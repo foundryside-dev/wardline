@@ -13,6 +13,10 @@ expected_rules:
   - "PY-WL-005"
 expected_severity: "ERROR"
 expected_exceptionability: "STANDARD"
-expected_match: true
+expected_match:
+  line: 4
+  text: "except ConnectionError:"
+  function: "try_connect"
+expected_match_source: "ast-reimplemented"
 sha256: "355e12e80997b1be42991387b46766e8911daa6761c0a0ce6f91e60527eb6f7d"
 verdict: "true_positive"

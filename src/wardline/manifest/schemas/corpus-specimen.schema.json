@@ -51,8 +51,29 @@
       "description": "Expected exceptionability class of the finding."
     },
     "expected_match": {
-      "type": "boolean",
-      "description": "Whether the scanner is expected to produce a finding for this specimen."
+      "oneOf": [
+        { "type": "boolean" },
+        {
+          "type": "object",
+          "properties": {
+            "line": { "type": "integer", "minimum": 1 },
+            "text": { "type": "string" },
+            "function": { "type": "string" }
+          },
+          "required": ["line", "text", "function"],
+          "additionalProperties": false
+        }
+      ],
+      "description": "Whether the scanner is expected to produce a finding. Boolean for simple cases, structured {line, text, function} for location-precise assertions."
+    },
+    "expected_match_source": {
+      "type": "string",
+      "enum": ["ast-reimplemented", "manual"],
+      "description": "Provenance tag indicating how expected_match was populated."
+    },
+    "category": {
+      "type": "string",
+      "description": "Specimen category (e.g. adversarial_false_negative, taint_flow, suppression_interaction)."
     },
     "verdict": {
       "type": "string",

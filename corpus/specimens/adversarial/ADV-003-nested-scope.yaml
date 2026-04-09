@@ -7,7 +7,11 @@ fragment: "def outer():\n    def inner(data):\n        x = data.get(\"key\", \"d
 taint_state: EXTERNAL_RAW
 expected_rules:
 - PY-WL-001
-expected_match: true
+expected_match:
+  line: 3
+  text: "x = data.get(\"key\", \"default\")"
+  function: "inner"
+expected_match_source: "ast-reimplemented"
 verdict: true_positive
 tags:
 - adversarial

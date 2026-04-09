@@ -13,6 +13,10 @@ expected_rules:
 - PY-WL-001
 expected_severity: ERROR
 expected_exceptionability: STANDARD
-expected_match: true
+expected_match:
+  line: 3
+  text: "config = raw_input.get(\"settings\", {}).get(\"timeout\", 30)"
+  function: extract_config
 sha256: "6183b014e422cb968f015b62aa3e3fd07b7ed302eba6a781b6e3f562ea115ca5"
 verdict: "true_positive"
+expected_match_source: ast-reimplemented

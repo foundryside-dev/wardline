@@ -14,6 +14,10 @@ expected_rules:
   - "PY-WL-003"
 expected_severity: "ERROR"
 expected_exceptionability: "STANDARD"
-expected_match: true
+expected_match:
+  line: 3
+  text: 'case {"type": "click", "x": x, "y": y}:'
+  function: route
 sha256: "922008b78dbc817889d0a1f9872c6bb6c08badab7b52e6da62100497161ea0af"
 verdict: "true_positive"
+expected_match_source: "ast-reimplemented"

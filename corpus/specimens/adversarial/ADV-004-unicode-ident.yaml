@@ -7,7 +7,11 @@ fragment: "def pr\xF6cess():\n    try:\n        pass\n    except Exception:\n   
 taint_state: EXTERNAL_RAW
 expected_rules:
 - PY-WL-004
-expected_match: true
+expected_match:
+  line: 4
+  text: "except Exception:"
+  function: "pröcess"
+expected_match_source: "ast-reimplemented"
 verdict: true_positive
 tags:
 - adversarial

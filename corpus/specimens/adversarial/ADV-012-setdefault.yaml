@@ -6,7 +6,11 @@ fragment: "def process(data):\n    x = data.setdefault(\"key\", [])\n"
 taint_state: EXTERNAL_RAW
 expected_rules:
 - PY-WL-001
-expected_match: true
+expected_match:
+  line: 2
+  text: "x = data.setdefault(\"key\", [])"
+  function: "process"
+expected_match_source: "ast-reimplemented"
 verdict: true_positive
 tags:
 - adversarial

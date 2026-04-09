@@ -16,6 +16,9 @@ analysis_level_required: 3
 expected_rules: ["PY-WL-001"]
 expected_severity: "ERROR"
 expected_exceptionability: "STANDARD"
-expected_match: true
+expected_match:
+  line: 2
+  text: 'x = data.get("key", "default")'
+  function: ping
 verdict: "true_positive"
 sha256: "23e6efa24c641c640e0cc0061f69f135972451fe9fd42149bbe4c9cc79378214"

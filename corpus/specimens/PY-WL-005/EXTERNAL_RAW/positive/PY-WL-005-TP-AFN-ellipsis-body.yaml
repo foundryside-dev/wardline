@@ -15,6 +15,10 @@ expected_rules:
 - PY-WL-005
 expected_severity: ERROR
 expected_exceptionability: STANDARD
-expected_match: true
+expected_match:
+  line: 5
+  text: "except ValueError:"
+  function: "try_parse"
+expected_match_source: "ast-reimplemented"
 sha256: "50508eda38a77e028986322b2a0b59dab5078e974c239d489c927e865b30d060"
 verdict: "true_positive"

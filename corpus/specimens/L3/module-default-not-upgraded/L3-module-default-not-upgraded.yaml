@@ -19,6 +19,9 @@ analysis_level_required: 3
 expected_rules: ["PY-WL-001"]
 expected_severity: "ERROR"
 expected_exceptionability: "STANDARD"
-expected_match: true
+expected_match:
+  line: 9
+  text: 'return data.get("key", "default")'
+  function: pipeline_step
 verdict: "true_positive"
-sha256: "5314a3a17e6601eb265af27c4b6b9cac7b941c5b523e27dc05e5da82f0510bb5"
+sha256: "81d7025a88366eb657dab169be6ca7ee71f46fb2192f958ca990c5f01d11b8de"

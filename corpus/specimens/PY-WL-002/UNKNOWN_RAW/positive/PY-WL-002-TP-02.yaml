@@ -12,6 +12,10 @@ expected_rules:
   - "PY-WL-002"
 expected_severity: "ERROR"
 expected_exceptionability: "STANDARD"
-expected_match: true
+expected_match:
+  line: 2
+  text: "handler = getattr(module, \"on_event\", None)"
+  function: get_handler
 sha256: "5b04adbca8a6fddca368dae498fa3581c320e8f85c562198d9ce81b3ee64a857"
 verdict: "true_positive"
+expected_match_source: ast-reimplemented

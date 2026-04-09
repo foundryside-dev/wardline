@@ -1,3 +1,4 @@
+---
 specimen_id: PY-WL-001-TP-setdefault
 description: dict.setdefault triggers PY-WL-001
 rule: PY-WL-001
@@ -5,10 +6,14 @@ fragment: "def process(data):\n    x = data.setdefault(\"key\", [])\n"
 taint_state: EXTERNAL_RAW
 expected_rules:
 - PY-WL-001
-expected_match: true
+expected_match:
+  line: 2
+  text: "x = data.setdefault(\"key\", [])"
+  function: process
 verdict: true_positive
 tags:
 - setdefault
 sha256: 9ca53318246017be037df9afa506ae736e068440aa69f5d133ab50c1717636f5
 expected_severity: ERROR
 expected_exceptionability: STANDARD
+expected_match_source: ast-reimplemented

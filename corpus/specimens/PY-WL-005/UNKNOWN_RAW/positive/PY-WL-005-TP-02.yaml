@@ -13,6 +13,10 @@ expected_rules:
   - "PY-WL-005"
 expected_severity: "ERROR"
 expected_exceptionability: "STANDARD"
-expected_match: true
+expected_match:
+  line: 4
+  text: "except ImportError:"
+  function: "load_plugin"
+expected_match_source: "ast-reimplemented"
 sha256: "90e8b83322a1cf9855cf4db0ea8b85d473844be01a26a6b1c9703ad591476105"
 verdict: "true_positive"

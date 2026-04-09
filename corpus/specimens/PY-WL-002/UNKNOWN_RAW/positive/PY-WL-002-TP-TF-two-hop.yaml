@@ -16,6 +16,10 @@ expected_rules:
 - PY-WL-002
 expected_severity: ERROR
 expected_exceptionability: STANDARD
-expected_match: true
+expected_match:
+  line: 7
+  text: "return getattr(config, \"timeout\", 30)"
+  function: extract_setting
 sha256: "e611cb171652f100087b26f1d750004cea99314c67f35b62969ce74a04a43afb"
 verdict: "true_positive"
+expected_match_source: ast-reimplemented

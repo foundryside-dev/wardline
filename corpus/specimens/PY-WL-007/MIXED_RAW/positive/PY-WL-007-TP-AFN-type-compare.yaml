@@ -16,6 +16,10 @@ expected_rules:
 - PY-WL-007
 expected_severity: WARNING
 expected_exceptionability: STANDARD
-expected_match: true
+expected_match:
+  line: 3
+  text: "if type(value) is str:"
+  function: "normalize"
+expected_match_source: "ast-reimplemented"
 sha256: "9b6390ae1137ba6291946a8568b5a0ec3d65eb9e9889372dfb152ef96ec3a099"
 verdict: "true_positive"

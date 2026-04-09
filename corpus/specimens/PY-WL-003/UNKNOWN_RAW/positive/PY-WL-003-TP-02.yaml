@@ -11,6 +11,10 @@ expected_rules:
   - "PY-WL-003"
 expected_severity: "ERROR"
 expected_exceptionability: "STANDARD"
-expected_match: true
+expected_match:
+  line: 2
+  text: 'if "database" in config:'
+  function: check_config
 sha256: "a02df1f433fba6a9dfd0bc67d7b0bd3270491a61bb66e48c81965ea55c0dd937"
 verdict: "true_positive"
+expected_match_source: "ast-reimplemented"

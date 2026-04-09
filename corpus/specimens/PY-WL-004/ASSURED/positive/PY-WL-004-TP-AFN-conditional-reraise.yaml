@@ -18,6 +18,10 @@ expected_rules:
 - PY-WL-004
 expected_severity: ERROR
 expected_exceptionability: STANDARD
-expected_match: true
+expected_match:
+  line: 5
+  text: "except Exception as e:"
+  function: "process_batch"
+expected_match_source: "ast-reimplemented"
 sha256: "187e8d441fc71ad92e236375eaa2cd80a4ad6e8921a9cb0f3cc14b5d7cca0dd3"
 verdict: "true_positive"

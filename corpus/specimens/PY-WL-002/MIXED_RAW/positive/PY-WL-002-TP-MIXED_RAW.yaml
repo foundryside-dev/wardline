@@ -8,6 +8,10 @@ expected_rules:
 - PY-WL-002
 expected_severity: WARNING
 expected_exceptionability: STANDARD
-expected_match: true
+expected_match:
+  line: 2
+  text: "x = getattr(obj, \"name\", None)"
+  function: process
 sha256: 81262cfdd145242d53158977787ca82583cf2df86bf100658db8414c1296cfda
 verdict: true_positive
+expected_match_source: ast-reimplemented

@@ -11,6 +11,10 @@ expected_rules:
   - "PY-WL-003"
 expected_severity: "ERROR"
 expected_exceptionability: "STANDARD"
-expected_match: true
+expected_match:
+  line: 2
+  text: 'if hasattr(obj, "process"):'
+  function: dispatch
 sha256: "d22c0a8e0d51dd489a179948970fc87ccb8c7ac9303122f9f39a2b8854707071"
 verdict: "true_positive"
+expected_match_source: "ast-reimplemented"
