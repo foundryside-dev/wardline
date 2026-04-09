@@ -29,6 +29,9 @@ def _make_finding(
     source_snippet: str | None = None,
     qualname: str | None = None,
     retroactive_scan: bool = False,
+    exception_id: str | None = None,
+    annotation_groups: tuple[int, ...] = (),
+    data_source: str | None = None,
 ) -> Finding:
     return Finding(
         rule_id=rule_id,
@@ -45,6 +48,9 @@ def _make_finding(
         source_snippet=source_snippet,
         qualname=qualname,
         retroactive_scan=retroactive_scan,
+        exception_id=exception_id,
+        annotation_groups=annotation_groups,
+        data_source=data_source,
     )
 
 

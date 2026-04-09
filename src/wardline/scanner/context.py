@@ -44,6 +44,9 @@ class Finding:
     exception_expires: str | None = None
     original_rule: str | None = None
     retroactive_scan: bool = False
+    # R1: §10.1 result-level properties
+    annotation_groups: tuple[int, ...] = ()
+    data_source: str | None = None  # Always None in v1.0 — requires taint provenance threading
 
 
 @dataclass(frozen=True)
