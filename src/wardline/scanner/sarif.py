@@ -177,6 +177,8 @@ def _make_region(finding: Finding) -> dict[str, Any]:
         region["endLine"] = finding.end_line
     if finding.end_col is not None:
         region["endColumn"] = finding.end_col + 1
+    if finding.source_snippet is not None:
+        region["snippet"] = {"text": finding.source_snippet}
     return region
 
 

@@ -1050,3 +1050,27 @@ class TestSarifDeterministicAndDeferredFixRatio:
         report = SarifReport(findings=[], deferred_fix_ratio=1.0)
         props = report.to_dict()["runs"][0]["properties"]
         assert props["wardline.deferredFixRatio"] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# TestRegionSnippet
+# ---------------------------------------------------------------------------
+
+
+class TestRegionSnippet:
+    """Test snippet.text in SARIF region (§3.30.13)."""
+
+    def test_region_includes_snippet_when_present(self) -> None:
+        finding = _make_finding(source_snippet='x = data.get("key", "default")')
+        report = SarifReport(findings=[finding])
+        sarif = report.to_dict()
+        region = sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"]
+        assert "snippet" in region
+        assert region["snippet"]["text"] == 'x = data.get("key", "default")'
+
+    def test_region_omits_snippet_when_none(self) -> None:
+        finding = _make_finding(source_snippet=None)
+        report = SarifReport(findings=[finding])
+        sarif = report.to_dict()
+        region = sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"]
+        assert "snippet" not in region
