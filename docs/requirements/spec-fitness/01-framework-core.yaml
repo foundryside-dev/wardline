@@ -89,7 +89,10 @@ requirements:
         - tests/unit/core/test_matrix.py
         - tests/unit/scanner/test_matrix_cells.py
     fitness_dimensions: [correctness, conformance]
-    notes: Use the project’s implemented rule set rather than the whole theoretical framework.
+    notes: >
+      The framework defines 9 rules (WL-001 through WL-009) across 8 taint states
+      yielding a 72-cell matrix, of which 31 are UNCONDITIONAL (43%). Use the
+      project’s implemented rule set rather than the whole theoretical framework.
 
   - id: WL-FIT-CORE-006
     title: Transition semantics prevent illegal skip-promotions
@@ -341,3 +344,70 @@ requirements:
     notes: >
       CORE-011 covers compound call fallback; this covers the baseline
       default for undeclared functions and import-time validation.
+
+  - id: WL-FIT-CORE-018
+    title: WL-009 structural verification — integral-read without restoration evidence
+    statement: >
+      The implementation MUST enforce WL-009: a function declared @integral_read or
+      @integral_construction (Group 1) whose data source is a manifest-declared
+      serialization boundary (BoundaryEntry with serialization_boundary: true) MUST
+      co-declare @restoration_boundary with at least one evidence category, or its
+      inputs MUST trace through a declared restoration boundary within the two-hop
+      analysis scope (§8.1). WL-009 is ERROR/UNCONDITIONAL across all 8 taint
+      states (framework invariant). Functions whose Group 1 data source is not
+      manifest-declared as a serialization boundary are not subject to WL-009.
+    normative_sources:
+      - file: docs/spec/wardline-01-07-pattern-rules.md
+        section: "7.1 The rules"
+      - file: docs/spec/wardline-01-07-pattern-rules.md
+        section: "7.2 Structural verification"
+      - file: docs/spec/wardline-01-07-pattern-rules.md
+        section: "7.3 Severity and exceptionability matrix"
+    verification:
+      method: unit_tests_and_design_review
+      target_paths:
+        - src/wardline/scanner/rules/py_wl_009.py
+        - src/wardline/core/severity.py
+        - src/wardline/core/matrix.py
+        - tests/unit/scanner/test_py_wl_009.py
+        - tests/unit/core/test_matrix.py
+    fitness_dimensions: [correctness, safety, conformance]
+    notes: >
+      WL-009 is a structural verification rule (like WL-007, WL-008), not a
+      pattern rule. It enforces that the restoration model is invoked, not that
+      the evidence is sufficient — sufficiency remains a governance-reviewed
+      claim. The manifest dependency is intentional: serialization boundaries
+      are part of the trust topology declared in the manifest.
+
+  - id: WL-FIT-CORE-019
+    title: Sub-rule matrix deviation semantics for split framework rules
+    statement: >
+      When a language binding splits a framework rule (e.g., WL-001) into
+      language-specific sub-rules, the sub-rules MUST inherit the parent rule's
+      severity matrix entries as their default. A sub-rule MAY establish its own
+      matrix row that deviates from the inherited default where language-specific
+      semantics create risks absent from the framework-level pattern. Such
+      deviations MUST be documented in the binding's matrix with explicit rationale
+      identifying the language-specific semantic risk. The §7.3 narrowing
+      constraint applies to each sub-rule relative to its own documented matrix
+      row, not relative to the parent framework rule's row.
+    normative_sources:
+      - file: docs/spec/wardline-01-07-pattern-rules.md
+        section: "7.1 The rules"
+      - file: docs/spec/wardline-01-07-pattern-rules.md
+        section: "7.3 Severity and exceptionability matrix"
+    verification:
+      method: static_review_and_unit_tests
+      target_paths:
+        - src/wardline/core/matrix.py
+        - src/wardline/core/severity.py
+        - docs/spec/wardline-02-A-python-binding.md
+        - tests/unit/core/test_matrix.py
+    fitness_dimensions: [correctness, conformance, interoperability]
+    notes: >
+      This requirement governs the relationship between framework-level rules
+      and binding-level sub-rules. The Python binding splits WL-001 into
+      sub-rules for dictionary key access vs object attribute access. Each
+      sub-rule's documented matrix row becomes the baseline for §7.3
+      conformance — narrowing is measured relative to the sub-rule's own
+      matrix, not the parent framework rule.

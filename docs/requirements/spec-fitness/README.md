@@ -24,11 +24,11 @@ Some records also carry `informative_sources` when a non-normative binding secti
 
 ## File Layout
 
-- [01-framework-core.yaml](01-framework-core.yaml): authority model, taint-state invariants, effective-state closure, transition semantics, cross-language taint, dependency taint, annotation vocabulary expressiveness
+- [01-framework-core.yaml](01-framework-core.yaml): authority model, taint-state invariants, effective-state closure, transition semantics, cross-language taint, dependency taint, annotation vocabulary expressiveness, WL-009 restoration symmetry
 - [02-manifest-governance.yaml](02-manifest-governance.yaml): manifests, overlays, governance profile, coherence checks, delegation policy, module-tier mappings, YAML safety, agent-authored change detection
-- [03-scanner-conformance.yaml](03-scanner-conformance.yaml): scanner rules, corpus, SARIF, living catalogue, taint propagation, corpus independence, group-specific enforcement minima (Groups 2, 5, 12, 13)
-- [04-python-binding.yaml](04-python-binding.yaml): Python decorator and runtime contract, contradictory combinations, error handling, exit codes
-- [05-enforcement-layers.yaml](05-enforcement-layers.yaml): §8 enforcement layer requirements — static analysis, structural verification, taint flow, SARIF output, interprocedural analysis, incremental analysis, pre-generation projection, type system, runtime structural
+- [03-scanner-conformance.yaml](03-scanner-conformance.yaml): scanner rules, corpus, SARIF, living catalogue, taint propagation, corpus independence, group-specific enforcement minima (Groups 2, 5, 12, 13), WL-009 restoration symmetry enforcement
+- [04-python-binding.yaml](04-python-binding.yaml): Python decorator and runtime contract, contradictory combinations, error handling, exit codes, PY-WL-010, SUP-010/SUP-011
+- [05-enforcement-layers.yaml](05-enforcement-layers.yaml): §8 enforcement layer requirements — static analysis, structural verification, taint flow, SARIF output, interprocedural analysis, incremental analysis, pre-generation projection, type system, runtime structural, WL-009 enforcement, deep-immutability supplementary rules
 - [06-governance-operations.yaml](06-governance-operations.yaml): §9 governance model operations — exceptionability, fingerprinting, audit logging, control law, exception recurrence, exception age management, policy/enforcement artefact distinction, provenance justification
 - [07-conformance-profiles.yaml](07-conformance-profiles.yaml): §14 conformance criteria, enforcement/governance profiles, regime composition, assessment procedure, Lite governance checklist
 - [assessment-template.md](assessment-template.md): a lightweight worksheet for a repo fitness pass
@@ -56,13 +56,13 @@ The baseline covers normative requirements from the following spec sections:
 | §2 Problem Statement | 05-enforcement-layers | ACF coverage claims |
 | §4–5 Authority Tier Model | 01-framework-core | Taint vocabulary, join algebra, tier mapping, transitions, serialisation authority-shedding, non-contagion, cross-language taint reset, dependency taint defaults |
 | §6 Annotation Vocabulary | 01-framework-core, 03-scanner | 17-group expressiveness, Group 2 audit-primacy ordering, Group 5 field completeness, Group 12 determinism scope, Group 13 concurrency scope |
-| §7 Pattern Rules | 03-scanner-conformance, 01-core | Living catalogue, rejection paths, WL-001 suppression, matrix deviations, taint analysis scope, implicit-flow heuristic |
-| §8 Enforcement Layers | 05-enforcement-layers | Static analysis, structural verification, taint flow, SARIF output, interprocedural (SHOULD), incremental (SHOULD), pre-generation projection, type system (SHOULD), runtime structural (SHOULD) |
+| §7 Pattern Rules | 03-scanner-conformance, 01-core | Living catalogue, rejection paths, WL-001 suppression, matrix deviations, taint analysis scope, implicit-flow heuristic, WL-009 restoration symmetry |
+| §8 Enforcement Layers | 05-enforcement-layers | Static analysis, structural verification, taint flow, SARIF output, interprocedural (SHOULD), incremental (SHOULD), pre-generation projection, type system (SHOULD), runtime structural (SHOULD), WL-009 enforcement, deep-immutability supplementary rules (SHOULD) |
 | §9 Governance Model | 02-manifest, 06-governance | Coherence, exceptionability, fingerprinting, audit logging, control law, exception age management, policy/enforcement artefact distinction, supplementary group governance, provenance justification, audit retention |
 | §10 Verification Properties | 03-scanner, 07-conformance | Corpus, precision/recall, taint propagation, determinism, specimen schema, adversarial minimums |
 | §13 Manifest Format | 02-manifest-governance | Schema validation, overlays, boundaries, contracts, ratification, delegation policy, module-tier mappings, YAML quoting, merge conflict rejection, UNCONDITIONAL cell protection |
 | §14 Conformance | 07-conformance-profiles | Ten criteria, profiles, regime composition rules, assessment procedure, Lite governance checklist |
-| §A Python Binding | 04-python-binding | AST discovery, decorators, SARIF properties, verification mode, contradictory combinations, error handling, exit codes, analysis level |
+| §A Python Binding | 04-python-binding | AST discovery, decorators, SARIF properties, verification mode, contradictory combinations, error handling, exit codes, analysis level, PY-WL-010, SUP-010/SUP-011 |
 
 Sections §3 (non-goals), §11 (language evaluation criteria), §12 (residual risks), and §B (Java binding) are non-normative or out of scope for this Python implementation baseline.
 

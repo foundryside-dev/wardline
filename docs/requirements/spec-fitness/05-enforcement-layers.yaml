@@ -263,3 +263,61 @@ requirements:
     notes: >
       This is the §8.2 enforcement layer. Document current type-system
       tier enforcement status and any planned Wardline-Type tooling.
+
+  - id: WL-FIT-ENF-013
+    title: Restoration symmetry enforcement WL-009
+    statement: >
+      The scanner MUST enforce restoration symmetry (WL-009): a function
+      declared @integral_read or @integral_construction whose data source
+      is a manifest-declared serialization boundary (identified via
+      BoundaryEntry objects with serialization_boundary: true) MUST
+      co-declare @restoration_boundary with at least one evidence category,
+      or its inputs MUST trace through a declared restoration boundary
+      within the two-hop analysis scope. WL-009 is a topology check on
+      the annotation surface and does not require body-content analysis
+      beyond what taint-flow tracing already provides. This is a framework
+      invariant.
+    normative_sources:
+      - file: docs/spec/wardline-01-08-enforcement-layers.md
+        section: "8.1 Static analysis"
+      - file: docs/spec/wardline-01-07-pattern-rules.md
+        section: "7.2 Structural verification"
+    verification:
+      method: unit_tests_and_corpus
+      target_paths:
+        - src/wardline/scanner/rules/py_wl_009.py
+        - tests/unit/scanner/test_py_wl_009.py
+        - corpus/specimens/PY-WL-009
+    fitness_dimensions: [conformance, safety]
+    notes: >
+      Added in spec v0.3.0 (RFC-01 ELSPETH enhancements). WL-009 is a
+      structural verification rule at the same level as WL-007 (ENF-002)
+      and WL-008 (ENF-003). It enforces that serialization boundaries are
+      paired with restoration evidence, closing the ELSPETH integrity gap.
+
+  - id: WL-FIT-ENF-014
+    title: Deep-immutability supplementary rules (SHOULD)
+    statement: >
+      Bindings whose target language has shallow immutability mechanisms
+      SHOULD define supplementary rules that detect Tier 1 and Tier 2
+      data structures whose declared immutability does not achieve deep
+      immutability.
+    normative_sources:
+      - file: docs/spec/wardline-01-08-enforcement-layers.md
+        section: "8"
+    informative_sources:
+      - file: docs/spec/wardline-02-A-python-binding.md
+        section: "A.3 Interface contract (Wardline-Core)"
+    verification:
+      method: code_and_documentation_review
+      target_paths:
+        - src/wardline/scanner/rules
+        - src/wardline/core
+    fitness_dimensions: [conformance, safety]
+    notes: >
+      Added in spec v0.3.0 (RFC-01 ELSPETH enhancements). This is a
+      non-normative note elevated to a SHOULD-level binding requirement.
+      Python's immutability is shallow (e.g. tuple of lists, frozen
+      dataclass with mutable fields). Document whether supplementary
+      rules exist or are planned for detecting shallow-immutability gaps
+      in Tier 1 and Tier 2 structures.

@@ -118,7 +118,10 @@ requirements:
         - tests/unit/scanner/test_corpus_runner.py
         - tests/unit/corpus/test_corpus_skeleton.py
     fitness_dimensions: [conformance, maintainability]
-    notes: Coverage claims without a maintained corpus are weak evidence.
+    notes: >
+      Coverage claims without a maintained corpus are weak evidence.
+      WL-009 (ELSPETH structural verification) requires at least 2
+      specimens at INTEGRAL taint state in the bootstrap corpus.
 
   - id: WL-FIT-SCAN-007
     title: Self-hosting gate is substantive
@@ -223,7 +226,7 @@ requirements:
         - tests/integration/test_corpus_verify.py
     fitness_dimensions: [conformance, assessability]
     notes: >
-      At DRAFT v0.2.0, the corpus is maintained alongside the spec and is not
+      At DRAFT v0.3.0, the corpus is maintained alongside the spec and is not
       yet independently published. Full independence requirements apply from v1.0.
       Verify that the existing corpus infrastructure supports the path to independence.
 
@@ -291,7 +294,11 @@ requirements:
     fitness_dimensions: [conformance, safety]
     notes: >
       Verify that any Python binding matrix deviations from the framework
-      matrix are documented and narrowing-only.
+      matrix are documented and narrowing-only. When a binding splits a
+      framework rule into sub-rules under §7.1, each sub-rule's documented
+      matrix row is the baseline for §7.3 conformance — the narrowing
+      constraint applies relative to the sub-rule's own matrix, not
+      relative to the parent framework rule.
 
   - id: WL-FIT-SCAN-015
     title: Group 2 audit-primacy ordering verification
@@ -388,7 +395,7 @@ requirements:
     statement: >
       The corpus MUST include adversarial specimens: at least 1
       adversarial_false_positive and 1 adversarial_false_negative per rule
-      (8 minimum each), targeting known false-positive and evasion patterns.
+      (9 minimum each), targeting known false-positive and evasion patterns.
       At least 3 suppression_interaction specimens MUST test WL-001
       optional-field suppression.
     normative_sources:
@@ -424,3 +431,29 @@ requirements:
     notes: >
       The minimum analysis scope is binding-defined. If the Python binding
       claims Group 13 enforcement, the scope must be documented.
+
+  - id: WL-FIT-SCAN-021
+    title: Structural verification findings omit taint state from primary messages
+    statement: >
+      SARIF findings for structural verification rules (WL-007, WL-008,
+      WL-009) SHOULD omit taint state from the primary message text.
+      Taint state MAY appear in the property bag but MUST NOT clutter
+      the human-readable message for rules whose violation semantics
+      are independent of taint propagation.
+    normative_sources:
+      - file: docs/spec/wardline-01-10-verification-properties.md
+        section: "10. Verification properties"
+    verification:
+      method: unit_tests_and_corpus
+      target_paths:
+        - src/wardline/scanner/sarif.py
+        - src/wardline/scanner/rules/py_wl_007.py
+        - src/wardline/scanner/rules/py_wl_008.py
+        - src/wardline/scanner/rules/py_wl_009.py
+        - tests/unit/scanner/test_sarif.py
+    fitness_dimensions: [conformance, interoperability]
+    notes: >
+      §10 guidance: structural verification rules detect the absence of
+      a required code construct, not a taint-flow violation. Including
+      taint state in the primary message misleads readers about the
+      nature of the finding.

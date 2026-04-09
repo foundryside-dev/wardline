@@ -389,3 +389,37 @@ requirements:
     notes: >
       This is the constraint that prevents manifest configuration from
       converting the specification into decorative wallpaper.
+
+  - id: WL-FIT-MAN-020
+    title: BoundaryEntry supports serialization_boundary flag
+    statement: >
+      BoundaryEntry objects in the overlay boundaries array MUST support an
+      optional `serialization_boundary` flag (default `false`) that indicates
+      the boundary involves serialization/deserialization — database read/write,
+      file I/O, message queue, or cache. When set, `@integral_read` and
+      `@integral_construction` functions using this boundary as a data source
+      are subject to WL-009 (restoration symmetry). In-memory data sources
+      MUST NOT set this flag. A missing flag MUST be treated as `false`,
+      preserving backward compatibility with existing manifests.
+    normative_sources:
+      - file: docs/spec/wardline-01-13-portability-and-manifest-format.md
+        section: "Restoration boundaries"
+    informative_sources:
+      - file: docs/spec/wardline-01-13-portability-and-manifest-format.md
+        section: "13.1.2 Overlay schema"
+    verification:
+      method: schema_model_and_loader_tests
+      target_paths:
+        - src/wardline/manifest/models.py
+        - src/wardline/manifest/schemas/overlay.schema.json
+        - src/wardline/manifest/loader.py
+        - tests/unit/manifest/test_models.py
+        - tests/unit/manifest/test_schemas.py
+        - tests/unit/manifest/test_loader.py
+    fitness_dimensions: [governance, correctness, safety]
+    notes: >
+      The flag is the mechanism by which the manifest distinguishes boundaries
+      that require WL-009 restoration-symmetry enforcement from in-memory
+      boundaries that do not. Backward compatibility is a hard constraint:
+      existing manifests without `serialization_boundary` entries must be
+      unaffected.
