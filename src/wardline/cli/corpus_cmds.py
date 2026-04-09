@@ -333,18 +333,68 @@ def _evaluate_specimen(
 
     boundaries = _parse_specimen_boundaries(data)
     optional_fields = _parse_specimen_optional_fields(data)
-    fired = _run_rules_on_fragment(
+
+    findings = _collect_findings_on_fragment(
         source,
         rules,
         taint_state=taint_state if taint_state != "UNKNOWN" else None,
         boundaries=boundaries,
         optional_fields=optional_fields,
     )
+    fired = {str(f.rule_id) for f in findings}
     rule_fired = rule_id in fired
 
     if verdict == "true_positive":
         if rule_fired:
             stats[key].tp += 1
+
+            expected_match = data.get("expected_match")
+            if isinstance(expected_match, dict):
+                _valid_keys = {"line", "text", "function"}
+                unknown = set(expected_match) - _valid_keys
+                if unknown:
+                    click.echo(
+                        f"  warning: {rule_id}/{taint_state}: "
+                        f"unknown expected_match keys: {unknown}",
+                        err=True,
+                    )
+                if not expected_match:
+                    click.echo(
+                        f"  warning: {rule_id}/{taint_state}: "
+                        f"empty expected_match dict (no fields to verify)",
+                        err=True,
+                    )
+                    stats[key].location_mismatches += 1
+                else:
+                    match_finding = _find_matching_finding(
+                        findings, rule_id,
+                        expected_match.get("line"),
+                        expected_text=expected_match.get("text"),
+                    )
+                    if match_finding is None:
+                        stats[key].location_mismatches += 1
+                        click.echo(
+                            f"  location mismatch: {rule_id}/{taint_state}: "
+                            f"no finding at expected line {expected_match.get('line')}",
+                            err=True,
+                        )
+                    else:
+                        ok, reasons = _check_location_match(
+                            match_finding, expected_match,
+                        )
+                        if not ok:
+                            stats[key].location_mismatches += 1
+                            click.echo(
+                                f"  location mismatch: {rule_id}/{taint_state}: "
+                                + "; ".join(reasons),
+                                err=True,
+                            )
+            elif isinstance(expected_match, bool) and expected_match:
+                click.echo(
+                    f"  deprecated: {data.get('specimen_id', '?')} uses "
+                    f"boolean expected_match=true (upgrade to structured form)",
+                    err=True,
+                )
         else:
             stats[key].fn += 1
     elif verdict == "true_negative":
@@ -547,9 +597,15 @@ def _build_json_report(
             "precision_floor": prec_floor,
             "recall_floor": recall_floor,
             "cell_verdict": verdict,
+            "location_mismatches": s.location_mismatches,
+            "location_match_rate": (
+                round(max(0, s.tp - s.location_mismatches) / s.tp, 4)
+                if s.tp > 0 else None
+            ),
         })
 
-    overall = "PASS" if failing == 0 and no_data == 0 else "FAIL"
+    total_loc_mismatches = sum(s.location_mismatches for s in stats.values())
+    overall = "PASS" if failing == 0 and no_data == 0 and total_loc_mismatches == 0 else "FAIL"
 
     return {
         "format_version": "1.0",
@@ -564,6 +620,7 @@ def _build_json_report(
             "no_data_cells": no_data,
             "cells_below_precision_floor": below_precision,
             "cells_below_recall_floor": below_recall,
+            "total_location_mismatches": total_loc_mismatches,
         },
     }
 

@@ -985,3 +985,76 @@ class TestStructuralComparison:
         )
         ok, _ = _check_location_match(f, {"text": "  x = data.get('key',   'default')  "})
         assert ok
+
+
+class TestStructuredEvaluation:
+    """Tests for structural expected_match in corpus verify pipeline."""
+
+    def test_structured_match_passes(self, tmp_path: Path) -> None:
+        """Specimen with correct structured expected_match passes."""
+        source = (
+            "def f():\n"
+            "    try:\n"
+            "        pass\n"
+            "    except Exception:\n"
+            "        pass\n"
+        )
+        sha = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        specimen = tmp_path / "tp.yaml"
+        specimen.write_text(
+            f'rule: "PY-WL-004"\n'
+            f'verdict: "true_positive"\n'
+            f'taint_state: "EXTERNAL_RAW"\n'
+            f'sha256: "{sha}"\n'
+            f"expected_match:\n"
+            f"  line: 4\n"
+            f"  text: 'except Exception:'\n"
+            f"  function: f\n"
+            f"fragment: |\n"
+            f"  def f():\n"
+            f"      try:\n"
+            f"          pass\n"
+            f"      except Exception:\n"
+            f"          pass\n"
+        )
+        runner = CliRunner()
+        result = runner.invoke(
+            cli, ["corpus", "verify", "--corpus-dir", str(tmp_path)],
+        )
+        assert result.exit_code == 0
+
+    def test_boolean_expected_match_backward_compat(self, tmp_path: Path) -> None:
+        """Boolean expected_match: true still works with deprecation warning."""
+        source = (
+            "def f():\n"
+            "    try:\n"
+            "        pass\n"
+            "    except Exception:\n"
+            "        pass\n"
+        )
+        sha = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        specimen = tmp_path / "tp.yaml"
+        specimen.write_text(
+            f'rule: "PY-WL-004"\n'
+            f'verdict: "true_positive"\n'
+            f'expected_match: true\n'
+            f'sha256: "{sha}"\n'
+            f"fragment: |\n"
+            f"  def f():\n"
+            f"      try:\n"
+            f"          pass\n"
+            f"      except Exception:\n"
+            f"          pass\n"
+        )
+        runner = CliRunner()
+        result = runner.invoke(
+            cli, ["corpus", "verify", "--corpus-dir", str(tmp_path)],
+        )
+        assert result.exit_code == 0
+        assert "1 TP" in result.output
+        # Must emit deprecation warning via click.echo(err=True)
+        stderr_text = getattr(result, "stderr", "") or ""
+        combined = result.output + stderr_text
+        assert "deprecated" in combined.lower(), (
+            f"Expected deprecation warning, got output={result.output!r} stderr={stderr_text!r}"
+        )
