@@ -42,7 +42,7 @@ class TestRuleId:
 
     def test_canonical_count(self) -> None:
         """Total RuleId member count (canonical + supplementary + pseudo)."""
-        assert len(RuleId) == 38
+        assert len(RuleId) == 39
 
     def test_json_serialisation(self) -> None:
         """StrEnum members serialise as plain strings."""

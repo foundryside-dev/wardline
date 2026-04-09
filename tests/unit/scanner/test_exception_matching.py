@@ -68,6 +68,7 @@ def _make_exception(
     ast_fingerprint: str = "",
     recurrence_count: int = 0,
     governance_path: str = "standard",
+    elimination_path: str | None = None,
 ) -> ExceptionEntry:
     return ExceptionEntry(
         id=id,
@@ -84,6 +85,7 @@ def _make_exception(
         ast_fingerprint=ast_fingerprint,
         recurrence_count=recurrence_count,
         governance_path=governance_path,
+        elimination_path=elimination_path,
     )
 
 
@@ -484,3 +486,91 @@ def test_compound_governance_findings(tmp_path: Path) -> None:
     assert RuleId.GOVERNANCE_RECURRING_EXCEPTION in rule_ids
     assert RuleId.GOVERNANCE_NO_EXPIRY_EXCEPTION in rule_ids
     assert RuleId.GOVERNANCE_UNKNOWN_PROVENANCE in rule_ids
+
+
+# ── Test 19: weak elimination_path — placeholder ──────────────────────
+
+def test_weak_elimination_path_placeholder(tmp_path: Path) -> None:
+    """Placeholder elimination_path emits governance finding."""
+    exc = _make_exception(elimination_path="TBD")
+
+    processed, governance = apply_exceptions(
+        [], (exc,), tmp_path, now=NOW
+    )
+
+    weak = [
+        g for g in governance
+        if g.rule_id == RuleId.GOVERNANCE_WEAK_ELIMINATION_PATH
+    ]
+    assert len(weak) == 1
+    assert "weak elimination_path" in weak[0].message
+
+
+# ── Test 20: weak elimination_path — whitespace-only ──────────────────
+
+def test_weak_elimination_path_whitespace(tmp_path: Path) -> None:
+    """Whitespace-only elimination_path emits governance finding."""
+    exc = _make_exception(elimination_path="   ")
+
+    processed, governance = apply_exceptions(
+        [], (exc,), tmp_path, now=NOW
+    )
+
+    weak = [
+        g for g in governance
+        if g.rule_id == RuleId.GOVERNANCE_WEAK_ELIMINATION_PATH
+    ]
+    assert len(weak) == 1
+
+
+# ── Test 21: weak elimination_path — too short ────────────────────────
+
+def test_weak_elimination_path_short(tmp_path: Path) -> None:
+    """elimination_path shorter than 10 chars emits governance finding."""
+    exc = _make_exception(elimination_path="fix it")
+
+    processed, governance = apply_exceptions(
+        [], (exc,), tmp_path, now=NOW
+    )
+
+    weak = [
+        g for g in governance
+        if g.rule_id == RuleId.GOVERNANCE_WEAK_ELIMINATION_PATH
+    ]
+    assert len(weak) == 1
+
+
+# ── Test 22: valid elimination_path — no finding ──────────────────────
+
+def test_valid_elimination_path_no_finding(tmp_path: Path) -> None:
+    """A real elimination path does not emit governance finding."""
+    exc = _make_exception(
+        elimination_path="Restructure process_partner() to receive validated PartnerRecord",
+    )
+
+    processed, governance = apply_exceptions(
+        [], (exc,), tmp_path, now=NOW
+    )
+
+    weak = [
+        g for g in governance
+        if g.rule_id == RuleId.GOVERNANCE_WEAK_ELIMINATION_PATH
+    ]
+    assert len(weak) == 0
+
+
+# ── Test 23: elimination_path=None — no finding ──────────────────────
+
+def test_no_elimination_path_no_weak_finding(tmp_path: Path) -> None:
+    """Missing elimination_path does not emit weak-path finding."""
+    exc = _make_exception(elimination_path=None)
+
+    processed, governance = apply_exceptions(
+        [], (exc,), tmp_path, now=NOW
+    )
+
+    weak = [
+        g for g in governance
+        if g.rule_id == RuleId.GOVERNANCE_WEAK_ELIMINATION_PATH
+    ]
+    assert len(weak) == 0

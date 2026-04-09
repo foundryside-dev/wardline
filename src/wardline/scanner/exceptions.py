@@ -28,6 +28,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_PLACEHOLDER_PATTERNS: frozenset[str] = frozenset(
+    {"tbd", "todo", "n/a", "na", "fixme", "xxx", "later"}
+)
+
 
 def _parse_location(location: str) -> tuple[str, str | None]:
     """Parse 'file_path::qualname' into (file_path, qualname)."""
@@ -321,6 +325,21 @@ def _emit_register_governance(
                 exception_id=exc.id,
                 original_rule=exc.rule,
             ))
+
+        if exc.elimination_path is not None:
+            _stripped = exc.elimination_path.strip()
+            if not _stripped or _stripped.lower() in _PLACEHOLDER_PATTERNS or len(_stripped) < 10:
+                governance.append(_governance_finding(
+                    RuleId.GOVERNANCE_WEAK_ELIMINATION_PATH,
+                    exc_file,
+                    1,
+                    f"Exception '{exc.id}' has a weak elimination_path: "
+                    f"{exc.elimination_path!r} — should describe the architectural "
+                    f"change that eliminates the need for this exception",
+                    qualname=exc_qualname,
+                    exception_id=exc.id,
+                    original_rule=exc.rule,
+                ))
 
 
 def _governance_finding(
