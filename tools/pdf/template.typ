@@ -120,7 +120,6 @@
       row-gutter: 6pt,
       [*Status:*], [$status$ v$version$],
       [*Date:*], [$date$],
-      [*Prepared by:*], [$author$],
     )
   ]
 ]
