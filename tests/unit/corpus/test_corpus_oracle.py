@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections import defaultdict
 from pathlib import Path
 
 import pytest
@@ -69,3 +70,27 @@ class TestCorpusOracle:
                 mismatches.append(f"{s['specimen_id']}: TN but expected_match={expected}")
 
         assert not mismatches, f"{len(mismatches)} verdict/match mismatches: {mismatches[:5]}"
+
+
+class TestCorpusIntegrity:
+    """Corpus structural invariants — runs by default (no integration marker)."""
+
+    def test_no_duplicate_sha256_within_rule(self) -> None:
+        """Every specimen within a rule must have a unique fragment (sha256)."""
+        manifest_path = CORPUS_ROOT / "corpus_manifest.json"
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+        by_rule_sha: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+        for s in data["specimens"]:
+            by_rule_sha[s["rule"]][s["sha256"]].append(s["specimen_id"])
+
+        duplicates: list[str] = []
+        for rule, sha_groups in sorted(by_rule_sha.items()):
+            for sha, ids in sha_groups.items():
+                if len(ids) > 1:
+                    duplicates.append(f"{rule} sha={sha[:10]}: {ids}")
+
+        assert not duplicates, (
+            f"{len(duplicates)} duplicate sha256 groups:\n"
+            + "\n".join(duplicates[:10])
+        )
