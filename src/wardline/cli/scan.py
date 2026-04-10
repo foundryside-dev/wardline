@@ -796,7 +796,7 @@ def scan(
     conformance_gaps = _read_conformance_gaps(manifest_path, scan_path=scan_path)
 
     # --- Compute control law (§9.5) ---
-    from wardline.manifest.regime import collect_manifest_metrics
+    from wardline.manifest.regime import collect_fingerprint_metrics, collect_manifest_metrics
     from wardline.scanner.sarif import compute_control_law
 
     manifest_metrics = collect_manifest_metrics(manifest_path)
@@ -804,11 +804,56 @@ def scan(
     disabled_rule_values = tuple(sorted(
         r.value for r in canonical_rule_ids - loaded_rule_ids
     ))
+
+    # Read floor violation counts from conformance data
+    conf_path = manifest_path.parent / "wardline.conformance.json"
+    precision_violations = 0
+    recall_violations = 0
+    conformance_never_run = False
+    conformance_data_unavailable = False
+
+    if not conf_path.exists():
+        conformance_never_run = True
+        logger.warning("wardline.conformance.json not found — corpus floor violations unknown")
+    else:
+        import json
+        try:
+            _conf_data = json.loads(conf_path.read_text(encoding="utf-8"))
+            if "cells_below_precision_floor" not in _conf_data or "cells_below_recall_floor" not in _conf_data:
+                conformance_data_unavailable = True
+                logger.warning("wardline.conformance.json missing floor violation keys — treating as unavailable")
+            else:
+                precision_violations = int(_conf_data["cells_below_precision_floor"])
+                recall_violations = int(_conf_data["cells_below_recall_floor"])
+        except (json.JSONDecodeError, OSError, ValueError, TypeError):
+            conformance_data_unavailable = True
+            logger.warning("wardline.conformance.json malformed — treating as unavailable")
+
+    # Read fingerprint baseline age
+    _fp_metrics = collect_fingerprint_metrics(manifest_path.parent)
+    raw_age = _fp_metrics.age_days  # None when no baseline
+    fingerprint_age_days: int | None = raw_age
+    fingerprint_age_unknown = False
+    no_fingerprint_baseline = raw_age is None
+
+    if no_fingerprint_baseline:
+        fingerprint_age_unknown = True  # No baseline → can't vouch for freshness
+
+    # Detect initial setup: both conformance file and fingerprint baseline absent
+    is_initial_setup = conformance_never_run and no_fingerprint_baseline
+
     control_law, control_law_degradations = compute_control_law(
         ratification_overdue=manifest_metrics.ratification_overdue,
         conformance_gaps=conformance_gaps,
         rules_disabled=disabled_rule_values,
         stale_exception_count=stale_exception_count,
+        precision_floor_violations=precision_violations,
+        recall_floor_violations=recall_violations,
+        fingerprint_age_days=fingerprint_age_days,
+        fingerprint_max_age_days=180,  # TODO: read from wardline.toml [governance] section
+        fingerprint_age_unknown=fingerprint_age_unknown,
+        conformance_data_unavailable=conformance_data_unavailable,
+        conformance_never_run=conformance_never_run,
     )
 
     # inputHash — hard failure if a scanned file becomes unreadable
@@ -925,6 +970,9 @@ def scan(
         data_paths_traced_ratio=result.call_edge_resolution_ratio,
         low_resolution_function_count=result.low_resolution_function_count,
         denominator_excluded_count=result.lambda_count,
+        precision_floor_violations=precision_violations,
+        recall_floor_violations=recall_violations,
+        is_initial_setup=is_initial_setup,
     )
 
     sarif_text = sarif_report.to_json_string() + "\n"

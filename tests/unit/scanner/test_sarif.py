@@ -491,7 +491,7 @@ class TestSarifPropertyBags:
     def test_property_bag_version(self) -> None:
         report = SarifReport(findings=[])
         props = report.to_dict()["runs"][0]["properties"]
-        assert props["wardline.propertyBagVersion"] == "0.6"
+        assert props["wardline.propertyBagVersion"] == "0.7"
 
     def test_input_hash_always_emitted(self) -> None:
         """wardline.inputHash is always present in run properties."""
@@ -1130,8 +1130,165 @@ class TestSarifDataPathsTraced:
         props = report.to_dict()["runs"][0]["properties"]
         assert props["wardline.denominatorExcludedCount"] == 0
 
-    def test_property_bag_version_0_6(self) -> None:
-        """Property bag version is 0.6 after R7."""
+    def test_property_bag_version_0_7(self) -> None:
+        """Property bag version is 0.7 after R4."""
         report = SarifReport(findings=[])
         props = report.to_dict()["runs"][0]["properties"]
-        assert props["wardline.propertyBagVersion"] == "0.6"
+        assert props["wardline.propertyBagVersion"] == "0.7"
+
+
+# ---------------------------------------------------------------------------
+# TestControlLawFloorViolations  (R4)
+# ---------------------------------------------------------------------------
+
+
+class TestControlLawFloorViolations:
+    """R4: Precision/recall floor violations and corpus staleness in control law."""
+
+    def test_control_law_precision_floor_violation(self) -> None:
+        """precision_floor_violations > 0 triggers 'precision_below_floor' alternate."""
+        law, degradations = compute_control_law(precision_floor_violations=3)
+        assert law == "alternate"
+        assert "precision_below_floor" in degradations
+
+    def test_control_law_recall_floor_violation(self) -> None:
+        """recall_floor_violations > 0 triggers 'recall_below_floor' alternate."""
+        law, degradations = compute_control_law(recall_floor_violations=2)
+        assert law == "alternate"
+        assert "recall_below_floor" in degradations
+
+    def test_control_law_fingerprint_stale(self) -> None:
+        """Old fingerprint triggers 'fingerprint_baseline_stale' alternate."""
+        law, degradations = compute_control_law(
+            fingerprint_age_days=200,
+            fingerprint_max_age_days=180,
+        )
+        assert law == "alternate"
+        assert "fingerprint_baseline_stale" in degradations
+
+    def test_control_law_fingerprint_within_threshold(self) -> None:
+        """Young fingerprint does not trigger staleness."""
+        law, degradations = compute_control_law(
+            fingerprint_age_days=90,
+            fingerprint_max_age_days=180,
+        )
+        assert law == "normal"
+        assert "fingerprint_baseline_stale" not in degradations
+
+    def test_control_law_fingerprint_age_exactly_at_threshold(self) -> None:
+        """Exactly at threshold is NOT stale (strict >)."""
+        law, degradations = compute_control_law(
+            fingerprint_age_days=180,
+            fingerprint_max_age_days=180,
+        )
+        assert law == "normal"
+        assert "fingerprint_baseline_stale" not in degradations
+
+    def test_control_law_multiple_degradations(self) -> None:
+        """Multiple conditions produce multiple degradation strings."""
+        law, degradations = compute_control_law(
+            precision_floor_violations=1,
+            recall_floor_violations=1,
+            fingerprint_age_days=200,
+            fingerprint_max_age_days=180,
+        )
+        assert law == "alternate"
+        assert "precision_below_floor" in degradations
+        assert "recall_below_floor" in degradations
+        assert "fingerprint_baseline_stale" in degradations
+
+    def test_control_law_conformance_never_run(self) -> None:
+        """conformance_never_run=True triggers 'conformance_never_run' alternate."""
+        law, degradations = compute_control_law(conformance_never_run=True)
+        assert law == "alternate"
+        assert "conformance_never_run" in degradations
+
+    def test_control_law_conformance_data_unavailable(self) -> None:
+        """conformance_data_unavailable=True triggers 'conformance_data_unavailable' alternate."""
+        law, degradations = compute_control_law(conformance_data_unavailable=True)
+        assert law == "alternate"
+        assert "conformance_data_unavailable" in degradations
+
+    def test_fingerprint_max_age_clamped(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Values above 365 are clamped with a warning."""
+        import logging
+        with caplog.at_level(logging.WARNING):
+            law, degradations = compute_control_law(
+                fingerprint_age_days=370,
+                fingerprint_max_age_days=400,
+            )
+        assert law == "alternate"
+        assert "fingerprint_baseline_stale" in degradations
+        assert "clamping" in caplog.text
+
+    def test_fingerprint_max_age_at_exactly_365(self) -> None:
+        """Exactly 365 is NOT clamped."""
+        law, degradations = compute_control_law(
+            fingerprint_age_days=370,
+            fingerprint_max_age_days=365,
+        )
+        assert law == "alternate"
+        assert "fingerprint_baseline_stale" in degradations
+
+    def test_fingerprint_age_unknown_triggers_alternate(self) -> None:
+        """fingerprint_age_unknown=True triggers alternate."""
+        law, degradations = compute_control_law(fingerprint_age_unknown=True)
+        assert law == "alternate"
+        assert "fingerprint_age_unknown" in degradations
+
+    def test_control_law_clean_path(self) -> None:
+        """All healthy inputs produce normal law with zero degradations."""
+        law, degradations = compute_control_law(
+            ratification_overdue=False,
+            conformance_gaps=(),
+            rules_disabled=(),
+            stale_exception_count=0,
+            precision_floor_violations=0,
+            recall_floor_violations=0,
+            fingerprint_age_days=30,
+            fingerprint_max_age_days=180,
+            fingerprint_age_unknown=False,
+            conformance_data_unavailable=False,
+            conformance_never_run=False,
+        )
+        assert law == "normal"
+        assert degradations == ()
+
+
+# ---------------------------------------------------------------------------
+# TestSarifFloorViolationProperties  (R4)
+# ---------------------------------------------------------------------------
+
+
+class TestSarifFloorViolationProperties:
+    """R4: Floor violation counts and initial setup flag in SARIF properties."""
+
+    def test_floor_violation_counts_in_sarif_properties(self) -> None:
+        """precisionFloorViolations and recallFloorViolations in run properties."""
+        report = SarifReport(
+            findings=[],
+            precision_floor_violations=3,
+            recall_floor_violations=2,
+        )
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.precisionFloorViolations"] == 3
+        assert props["wardline.recallFloorViolations"] == 2
+
+    def test_floor_violation_counts_default_zero(self) -> None:
+        """Default floor violation counts are zero."""
+        report = SarifReport(findings=[])
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.precisionFloorViolations"] == 0
+        assert props["wardline.recallFloorViolations"] == 0
+
+    def test_is_initial_setup_in_sarif(self) -> None:
+        """wardline.isInitialSetup appears in run properties."""
+        report = SarifReport(findings=[], is_initial_setup=True)
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.isInitialSetup"] is True
+
+    def test_is_initial_setup_default_false(self) -> None:
+        """Default isInitialSetup is False."""
+        report = SarifReport(findings=[])
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.isInitialSetup"] is False

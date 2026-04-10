@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -18,6 +19,8 @@ from wardline.core.tiers import TAINT_TO_TIER
 if TYPE_CHECKING:
     from wardline.core.taints import TaintState
     from wardline.scanner.context import Finding
+
+logger = logging.getLogger(__name__)
 
 _SARIF_SCHEMA = (
     "https://docs.oasis-open.org/sarif/sarif/v2.1.0/"
@@ -126,6 +129,13 @@ def compute_control_law(
     conformance_gaps: tuple[str, ...] = (),
     rules_disabled: tuple[str, ...] = (),
     stale_exception_count: int = 0,
+    precision_floor_violations: int = 0,
+    recall_floor_violations: int = 0,
+    fingerprint_age_days: int | None = None,
+    fingerprint_max_age_days: int = 180,
+    fingerprint_age_unknown: bool = False,
+    conformance_data_unavailable: bool = False,
+    conformance_never_run: bool = False,
 ) -> tuple[str, tuple[str, ...]]:
     """Compute the enforcement control law state per spec §9.5.
 
@@ -140,6 +150,14 @@ def compute_control_law(
     if manifest_unavailable:
         return "direct", ("manifest_unavailable",)
 
+    MAX_FINGERPRINT_AGE_CAP = 365
+    if fingerprint_max_age_days > MAX_FINGERPRINT_AGE_CAP:
+        logger.warning(
+            "fingerprint_max_age_days=%d exceeds cap of %d — clamping",
+            fingerprint_max_age_days, MAX_FINGERPRINT_AGE_CAP,
+        )
+        fingerprint_max_age_days = MAX_FINGERPRINT_AGE_CAP
+
     degradations: list[str] = []
     if ratification_overdue:
         degradations.append("ratification_overdue")
@@ -149,6 +167,18 @@ def compute_control_law(
         degradations.append("rules_disabled")
     if stale_exception_count > 0:
         degradations.append("stale_exceptions_present")
+    if precision_floor_violations > 0:
+        degradations.append("precision_below_floor")
+    if recall_floor_violations > 0:
+        degradations.append("recall_below_floor")
+    if fingerprint_age_days is not None and fingerprint_age_days > fingerprint_max_age_days:
+        degradations.append("fingerprint_baseline_stale")
+    if fingerprint_age_unknown:
+        degradations.append("fingerprint_age_unknown")
+    if conformance_data_unavailable:
+        degradations.append("conformance_data_unavailable")
+    if conformance_never_run:
+        degradations.append("conformance_never_run")
 
     degradations.sort()
     law = "alternate" if degradations else "normal"
@@ -312,6 +342,10 @@ class SarifReport:
     data_paths_traced_ratio: float | None = None
     low_resolution_function_count: int = 0
     denominator_excluded_count: int = 0
+    # R4: Precision/recall floor violations
+    precision_floor_violations: int = 0
+    recall_floor_violations: int = 0
+    is_initial_setup: bool = False
 
     def _implemented_rules(self) -> list[str]:
         """Return sorted list of canonical rule ID values (excludes pseudo-IDs).
@@ -382,11 +416,15 @@ class SarifReport:
                 "wardline.lowResolutionFunctionCount": self.low_resolution_function_count,
                 "wardline.manifestHash": self.manifest_hash,
                 "wardline.overlayHashes": list(self.overlay_hashes),
+                "wardline.isInitialSetup": self.is_initial_setup,
+                "wardline.precisionFloorViolations": self.precision_floor_violations,
                 # Property bag versions:
                 # "0.4" — initial stable schema (17 run-level, 5 result-level mandatory)
                 # "0.5" — R1+R2: 19 run-level, 9 result-level mandatory (§10.1 complete)
                 # "0.6" — R7: data-path coverage (dataPathsTracedRatio, lowResolutionFunctionCount, denominatorExcludedCount)
-                "wardline.propertyBagVersion": "0.6",
+                # "0.7" — R4: precision/recall floor violations, isInitialSetup
+                "wardline.propertyBagVersion": "0.7",
+                "wardline.recallFloorViolations": self.recall_floor_violations,
                 **({"wardline.scanTimestamp": self.scan_timestamp}
                    if not self.verification_mode and self.scan_timestamp
                    else {}),
