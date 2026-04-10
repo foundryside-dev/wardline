@@ -245,7 +245,7 @@ specimens since fragment content changed.
    which are out of scope)
 2. **`corpus verify` passes** with zero failures
 3. **`uv run pytest` passes** — full test suite, not just corpus verification
-4. **Specimen count drops** from 259 to 230 (28 deleted from PY-WL-008/009 + 1 PY-WL-002-TN-01 duplicate)
+4. **Specimen count drops** from 259 to 224 (28 from PY-WL-008/009 + 1 PY-WL-002-TN-01 + 6 ADV duplicates)
 5. **Every taint-matrix function name** follows the `{rule_pattern}_{taint_context}`
    convention
 6. **No functional change** to scanner behavior — only corpus metadata changes
@@ -273,9 +273,43 @@ for each specimen, every fragment will produce unique values — making the
 structured verification genuinely meaningful rather than verifying the same
 match point 8 times.
 
-## 10. Out of Scope
+## 10. ADV-vs-Rule Duplicate Resolution
 
-- Adversarial specimen duplicates (ADV-* sharing fragments with rule specimens)
+9 adversarial specimens share identical fragments with rule-specific specimens.
+These fall into two categories:
+
+### 10.1 Conflicting-verdict pairs (keep both — rename ADV fragment)
+
+These pairs have the same code but different verdicts. The ADV specimen asserts
+"this should be caught" while the KFN specimen asserts "we know it isn't."
+Both are legitimate tests. Rename the ADV fragment's function with an `adv_`
+prefix to make the sha256 unique while preserving the semantic tension.
+
+| ADV Specimen | Rule Specimen | Shared Fragment |
+|-------------|---------------|-----------------|
+| ADV-007-async-get (TP) | PY-WL-001-KFN-async-get (KFN) | `async def process(data): x = data.get(...)` |
+| ADV-012-setdefault (TP) | PY-WL-001-KFN-setdefault (KFN) | `def process(data): x = data.setdefault(...)` |
+| ADV-013-defaultdict (TP) | PY-WL-001-KFN-defaultdict (KFN) | `from collections import defaultdict; ...` |
+
+### 10.2 Same-verdict pairs (delete ADV duplicate)
+
+These pairs have identical fragment, taint, and verdict — pure duplication.
+Delete the ADV specimen; the rule-specific specimen provides the same coverage.
+
+| ADV Specimen (DELETE) | Rule Specimen (KEEP) | Rule | Verdict |
+|----------------------|---------------------|------|---------|
+| ADV-005-long-function | PY-WL-005-TP-long-function | PY-WL-005 | TP |
+| ADV-006-decorator-stack | PY-WL-001-TP-decorator-stack | PY-WL-001 | TP |
+| ADV-008-async-except | PY-WL-004-TP-async-except | PY-WL-004 | TP |
+| ADV-009-async-silent | PY-WL-005-TP-async-silent | PY-WL-005 | TP |
+| ADV-010-async-getattr | PY-WL-002-TP-async-getattr | PY-WL-002 | TP |
+| ADV-011-class-method | PY-WL-001-TP-class-method | PY-WL-001 | TP |
+
+This deletes 6 additional specimens, bringing the total from 259 to 224
+(29 taint-matrix + 6 ADV duplicates = 35 deletions).
+
+## 11. Out of Scope
+
 - Realistic/enhanced fragments (different code patterns per taint level)
 - PY-WL-001 KFN-get-default and schema-default duplicates (semantic, not taint-matrix)
 - SCN-021 and SUP-001 (no taint clones)
