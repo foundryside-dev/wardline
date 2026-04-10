@@ -26,7 +26,7 @@ variants assumes taint matters for each, but the code is byte-for-byte identical
 | Fragment naming | `{rule_pattern}_{taint_context}` function names | Self-documenting: the function name tells you the rule and trust level |
 | Structural complexity | Minimal — same pattern shape, different names | Maintenance-friendly; realistic corpus enhancement deferred to future work |
 | SCN-021, SUP-001 | No changes | Already unique — no taint clones exist |
-| ADV-vs-rule duplicates | Out of scope | Cross-category duplication is a separate concern |
+| ADV-vs-rule duplicates | Resolve in this work | Same-verdict pairs deleted; conflicting-verdict pairs get `adv_` prefix (§10) |
 
 ## 3. Taint Context Vocabulary
 
@@ -168,6 +168,11 @@ Apply naming: `def audit_broad_{context}(): try: risky(); except Exception: logg
 
 Apply naming: `def audit_specific_{context}(): try: risky(); except ValueError: logger.error("failed")`
 
+**Naming exception:** The `audit_` prefix in PY-WL-006 function names intentionally
+contains the banned substring "audit" — PY-WL-006 *is* the audit-write-in-broad-handler
+rule, and these specimens are testing that rule. The naming constraint in §3
+applies to specimens for *other* rules where "audit" would cause false classification.
+
 ### 4.7 PY-WL-007: Runtime type-checking on internal data
 
 **Pattern:** `isinstance(data, type)` used as control flow.
@@ -197,7 +202,7 @@ Keep: `PY-WL-008-TN-EXTERNAL_RAW` → rename to `PY-WL-008-TN-standard`
 
 Delete the other 14 taint variants (7 TP + 7 TN). Keep taint_state as
 EXTERNAL_RAW on the retained specimens (conservative default; the rule ignores
-it). Move kept specimens from `EXTERNAL_RAW/` into a `standard/` subdirectory.
+it). Specimens stay in `EXTERNAL_RAW/positive/` and `EXTERNAL_RAW/negative/`.
 
 Existing unique adversarial specimens are untouched:
 - `PY-WL-008-TN-AFP-has-rejection` (ASSURED)
@@ -241,8 +246,7 @@ specimens since fragment content changed.
 
 ## 7. Acceptance Criteria
 
-1. **Zero duplicate sha256 values** within any rule (except ADV cross-references,
-   which are out of scope)
+1. **Zero duplicate sha256 values** within any rule — no exceptions
 2. **`corpus verify` passes** with zero failures
 3. **`uv run pytest` passes** — full test suite, not just corpus verification
 4. **Specimen count drops** from 259 to 224 (28 from PY-WL-008/009 + 1 PY-WL-002-TN-01 + 6 ADV duplicates)
@@ -252,10 +256,12 @@ specimens since fragment content changed.
 7. **Taint-invariance of PY-WL-008/009 is test-verified** — a parametrized test
    demonstrates that these rules produce identical severity, exceptionability,
    and detection results across all 8 taint states
+8. **Manifest integrity** — no specimen ID in `corpus_manifest.json` references
+   a nonexistent file, and no deleted specimen ID remains in the manifest
 
 ## 8. Conformance Evidence
 
-The specimen count reduction (259→230) must be recorded in the conformance
+The specimen count reduction (259→224) must be recorded in the conformance
 evidence trail, not just this design spec. After implementation, add a note to
 `docs/requirements/spec-fitness/` documenting:
 - Which specimens were removed and why (taint-invariance of PY-WL-008/009)
@@ -306,7 +312,8 @@ Delete the ADV specimen; the rule-specific specimen provides the same coverage.
 | ADV-011-class-method | PY-WL-001-TP-class-method | PY-WL-001 | TP |
 
 This deletes 6 additional specimens, bringing the total from 259 to 224
-(29 taint-matrix + 6 ADV duplicates = 35 deletions).
+(28 PY-WL-008/009 collapse + 1 PY-WL-002-TN-01 duplicate + 6 ADV duplicates
+= 35 deletions).
 
 ## 11. Out of Scope
 
