@@ -22,3 +22,7 @@ max_unknown_raw_percent = 5.0
 # GOVERNANCE findings rather than exit code 2.
 allow_registry_mismatch = true
 allow_permissive_distribution = false
+
+# Governance thresholds (§10.5 control law).
+[wardline.governance]
+fingerprint_max_age_days = 180

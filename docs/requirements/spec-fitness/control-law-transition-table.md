@@ -30,6 +30,10 @@ No further conditions are evaluated.
 |-----------|----------------|---------|-------------------|
 | `manifest_unavailable` | `manifest_unavailable: bool` | `wardline.yaml` not found or unreadable | Create or restore `wardline.yaml` |
 
+> This table is exhaustive. `manifest_unavailable` is the only condition
+> that produces direct law. All other conditions produce alternate law.
+> Normal law is returned when no conditions are active.
+
 ### Alternate Law Conditions
 
 Alternate law is produced when one or more of these conditions hold and
@@ -61,9 +65,15 @@ input parameters are at their healthy defaults.
 
 - **Default threshold:** 180 days (`fingerprint_max_age_days` parameter)
 - **Configurable:** Yes, via `wardline.toml` `[governance]` section
+  (`fingerprint_max_age_days` key, default 180)
 - **Hard cap:** 365 days (enforced inside `compute_control_law()`, not caller)
 - **Boundary behavior:** `age_days == max_age_days` does NOT trigger staleness (strict `>`)
 - **Rationale:** 180-day default aligns with semi-annual governance review cadence. The 365-day cap prevents config manipulation from disabling staleness detection.
+- **ISM-aligned deployments:** The ISM quarterly assurance cycle implies a
+  90-day defensible maximum. The 180-day default is appropriate for non-ISM
+  semi-annual cadences. ISM deployments SHOULD override this via
+  `wardline.toml [governance] fingerprint_max_age_days = 90`. Assessors
+  evaluating ISM-governed deployments should verify this override is in place.
 
 ### Precision/Recall Floors
 
@@ -97,9 +107,29 @@ When the scanner detects (via `--compare` baseline) that the previous scan
 operated under `"alternate"` or `"direct"` law and the current scan is
 `"normal"`, it emits a `retrospective_scan_recommended` governance event.
 
-This is advisory, not enforced by the scanner. Enforcement is delegated to
-CI pipelines which should read `wardline.controlLaw` and governance events
-from SARIF output to gate merges when a retrospective scan is outstanding.
+**Enforcement status (v1.0):** This is advisory — the scanner emits a
+governance event but does not enforce the retrospective scan requirement.
+No qualifying CI gate currently exists in the Wardline project's own CI
+to enforce this automatically. The spec §10.5 MUST requirement for
+retrospective scans is therefore **unenforceable by tooling alone at v1.0**.
+This is a residual risk. Mitigation: operators must manually monitor
+`wardline.controlLaw` transitions in SARIF output and perform retrospective
+scans when control law improves from degraded to normal. CI pipelines
+SHOULD be configured to read governance events and gate merges when
+`retrospective_scan_recommended` is present.
+
+### Limitation: --compare Required
+
+Retrospective scan detection requires the `--compare` CLI flag pointing to
+a baseline SARIF file from the previous scan. Without `--compare`, the
+scanner has no visibility into the previous control law state and cannot
+detect transitions. Teams not using baseline comparison will never receive
+retrospective scan recommendations.
+
+This is an accepted architectural limitation for v1.0. A future enhancement
+could persist control law state in a lightweight file (e.g.,
+`wardline.law-state.json`) written on every scan, providing retrospective
+detection without requiring `--compare`.
 
 ## Accepted Risks
 

@@ -868,7 +868,7 @@ class TestScanResolved:
 
 @pytest.mark.integration
 class TestSarifRunLevelProperties:
-    """Gap 3: SARIF run-level identity properties (§10.1)."""
+    """Gap 3: SARIF run-level identity properties (§11.1)."""
 
     def test_sarif_output_contains_input_hash(self, tmp_path: Path) -> None:
         """wardline.inputHash present and starts with sha256:."""
@@ -931,8 +931,8 @@ class TestSarifRunLevelProperties:
             == sarif2["runs"][0]["properties"]["wardline.inputHash"]
         )
 
-    def test_sarif_property_bag_version_is_0_3(self, tmp_path: Path) -> None:
-        """Property bag version is 0.3 after Gap 3."""
+    def test_sarif_property_bag_version_is_0_7(self, tmp_path: Path) -> None:
+        """Property bag version is 0.7 after run-level SARIF additions."""
         manifest = _minimal_manifest(tmp_path)
         runner = CliRunner()
         result = runner.invoke(cli, [
@@ -942,7 +942,46 @@ class TestSarifRunLevelProperties:
         ])
         sarif = json.loads(result.stdout)
         props = sarif["runs"][0]["properties"]
-        assert props["wardline.propertyBagVersion"] == "0.5"
+        assert props["wardline.propertyBagVersion"] == "0.7"
+
+    def test_sarif_run_level_properties_present(self, tmp_path: Path) -> None:
+        """New run-level SARIF properties are present with valid types/ranges."""
+        manifest = _minimal_manifest(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "scan", str(tmp_path),
+            "--manifest", str(manifest),
+            "--allow-registry-mismatch",
+        ])
+        sarif = json.loads(result.stdout)
+        props = sarif["runs"][0]["properties"]
+
+        # Coverage ratio: key always present, None or float in [0, 1]
+        assert "wardline.coverageRatio" in props
+        assert props["wardline.coverageRatio"] is None or 0 <= props["wardline.coverageRatio"] <= 1
+
+        # Data paths traced ratio
+        assert "wardline.dataPathsTracedRatio" in props
+
+        # Low resolution function count
+        assert "wardline.lowResolutionFunctionCount" in props
+        assert isinstance(props["wardline.lowResolutionFunctionCount"], int)
+
+        # Lambda count
+        assert "wardline.lambdaCount" in props
+
+        # Precision/recall floor violations
+        assert "wardline.precisionFloorViolations" in props
+        assert "wardline.recallFloorViolations" in props
+
+        # Initial setup flag
+        assert "wardline.isInitialSetup" in props
+
+        # Data paths traced scope
+        assert "wardline.dataPathsTracedScope" in props
+
+        # Version check
+        assert props["wardline.propertyBagVersion"] == "0.7"
 
     def test_input_hash_failure_exits_tool_error(self, tmp_path: Path) -> None:
         """inputHash OSError produces TOOL_ERROR finding AND exit code 1."""

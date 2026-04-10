@@ -10,6 +10,8 @@ import ast
 from wardline.core.taints import TaintState
 from wardline.scanner.rules.base import walk_skip_nested_defs
 
+L3_LOW_RESOLUTION_THRESHOLD = 0.70
+
 TRUST_RANK: dict[TaintState, int] = {
     TaintState.INTEGRAL: 0,
     TaintState.ASSURED: 1,

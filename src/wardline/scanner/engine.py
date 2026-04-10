@@ -20,7 +20,7 @@ import tokenize
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from wardline.core.severity import Exceptionability, RuleId, Severity
 from wardline.core.taints import TaintState
@@ -33,7 +33,7 @@ from wardline.scanner.rejection_path import (
     has_rejection_path,
     iter_reachable_calls,
 )
-from wardline.scanner.taint.callgraph import extract_call_edges
+from wardline.scanner.taint.callgraph import L3_LOW_RESOLUTION_THRESHOLD, extract_call_edges
 from wardline.scanner.taint.callgraph_propagation import (
     TaintProvenance,
     propagate_callgraph_taints,
@@ -60,6 +60,14 @@ def _read_python_source(file_path: Path) -> str:
         raise UnicodeError(str(exc)) from exc
 
 
+class _CallgraphResult(NamedTuple):
+    refined_map: dict[str, TaintState]
+    provenance: dict[str, TaintProvenance] | None
+    resolved_edges: int
+    unresolved_edges: int
+    low_resolution_count: int
+
+
 @dataclass
 class ScanResult:
     """Aggregated result of a scan run."""
@@ -75,8 +83,8 @@ class ScanResult:
     call_edge_resolution_ratio: float | None = None  # None when L3 didn't run
     low_resolution_function_count: int = 0
     # Accumulators for cross-file L3 edge resolution (used to compute ratio)
-    _total_resolved_edges: int = 0
-    _total_unresolved_edges: int = 0
+    total_resolved_edges: int = 0
+    total_unresolved_edges: int = 0
     lambda_count: int = 0
 
 
@@ -197,9 +205,9 @@ class ScanEngine:
             self._scan_tree(resolved_target, result)
 
         # Compute cross-file L3 edge resolution ratio from accumulators
-        total_edges = result._total_resolved_edges + result._total_unresolved_edges
+        total_edges = result.total_resolved_edges + result.total_unresolved_edges
         if total_edges > 0:
-            result.call_edge_resolution_ratio = result._total_resolved_edges / total_edges
+            result.call_edge_resolution_ratio = result.total_resolved_edges / total_edges
 
         return result
 
@@ -532,8 +540,8 @@ class ScanEngine:
                 tree, body_taint_map, taint_sources, file_path, result,
                 return_taint_map=return_taint_map,
             )
-            result._total_resolved_edges += file_resolved
-            result._total_unresolved_edges += file_unresolved
+            result.total_resolved_edges += file_resolved
+            result.total_unresolved_edges += file_unresolved
             result.low_resolution_function_count += low_res
 
         # Pass 1.75: Level 2 variable-level taint (when analysis_level >= 2)
@@ -826,7 +834,7 @@ class ScanEngine:
         result: ScanResult,
         *,
         return_taint_map: dict[str, TaintState],
-    ) -> tuple[dict[str, TaintState], dict[str, TaintProvenance] | None, int, int, int]:
+    ) -> _CallgraphResult:
         """Run Level 3 call-graph taint propagation.
 
         On success, returns ``(refined_map, provenance, resolved_edge_count,
@@ -848,7 +856,7 @@ class ScanEngine:
             low_resolution_count = 0
             for qn in unresolved_counts:
                 fn_total = resolved_counts.get(qn, 0) + unresolved_counts[qn]
-                if fn_total > 0 and unresolved_counts[qn] / fn_total > 0.70:
+                if fn_total > 0 and unresolved_counts[qn] / fn_total > L3_LOW_RESOLUTION_THRESHOLD:
                     low_resolution_count += 1
 
             refined_map, provenance, l3_diagnostics = propagate_callgraph_taints(
@@ -880,7 +888,7 @@ class ScanEngine:
                             qualname=None,
                         )
                     )
-            return refined_map, provenance, file_resolved, file_unresolved, low_resolution_count
+            return _CallgraphResult(refined_map, provenance, file_resolved, file_unresolved, low_resolution_count)
         except Exception as exc:
             logger.warning(
                 "L3 call-graph taint failed for %s: %s", file_path, exc
@@ -908,7 +916,7 @@ class ScanEngine:
                     qualname=None,
                 )
             )
-            return taint_map, None, 0, 0, 0
+            return _CallgraphResult(taint_map, None, 0, 0, 0)
 
     @staticmethod
     def _build_qualname_map(tree: ast.Module) -> dict[int, str]:

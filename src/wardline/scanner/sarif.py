@@ -124,6 +124,9 @@ class GovernanceEvent:
     timestamp: str | None = None  # ISO 8601, None in verification mode
 
 
+MAX_FINGERPRINT_AGE_CAP = 365
+
+
 def compute_control_law(
     *,
     manifest_unavailable: bool = False,
@@ -152,7 +155,6 @@ def compute_control_law(
     if manifest_unavailable:
         return "direct", ("manifest_unavailable",)
 
-    MAX_FINGERPRINT_AGE_CAP = 365
     if fingerprint_max_age_days > MAX_FINGERPRINT_AGE_CAP:
         logger.warning(
             "fingerprint_max_age_days=%d exceeds cap of %d — clamping",
@@ -343,7 +345,8 @@ class SarifReport:
     # R7: Data-path coverage metrics
     data_paths_traced_ratio: float | None = None
     low_resolution_function_count: int = 0
-    denominator_excluded_count: int = 0
+    lambda_count: int = 0
+    data_paths_traced_scope: str = "project"
     # R4: Precision/recall floor violations
     precision_floor_violations: int = 0
     recall_floor_violations: int = 0
@@ -406,7 +409,8 @@ class SarifReport:
                 "wardline.dataPathsTracedRatio": (
                     round(self.data_paths_traced_ratio, 4) if self.data_paths_traced_ratio is not None else None
                 ),
-                "wardline.denominatorExcludedCount": self.denominator_excluded_count,
+                "wardline.dataPathsTracedScope": self.data_paths_traced_scope,
+                "wardline.lambdaCount": self.lambda_count,
                 **({"wardline.retroactiveScan": True,
                     "wardline.retroactiveScanRange": self.retroactive_scan_range}
                    if self.retroactive_scan and self.retroactive_scan_range
@@ -423,7 +427,7 @@ class SarifReport:
                 # Property bag versions:
                 # "0.4" — initial stable schema (17 run-level, 5 result-level mandatory)
                 # "0.5" — R1+R2: 19 run-level, 9 result-level mandatory (§11.1 complete)
-                # "0.6" — R7: data-path coverage (dataPathsTracedRatio, lowResolutionFunctionCount, denominatorExcludedCount)
+                # "0.6" — R7: data-path coverage (dataPathsTracedRatio, lowResolutionFunctionCount, lambdaCount)
                 # "0.7" — R4: precision/recall floor violations, isInitialSetup
                 "wardline.propertyBagVersion": "0.7",
                 "wardline.recallFloorViolations": self.recall_floor_violations,

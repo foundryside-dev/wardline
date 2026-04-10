@@ -245,7 +245,7 @@ class TestSarifResults:
 
 
 class TestR1ResultProperties:
-    """R1: enclosingTier, annotationGroups, excepted, dataSource (§10.1)."""
+    """R1: enclosingTier, annotationGroups, excepted, dataSource (§11.1)."""
 
     @pytest.mark.parametrize("taint,expected_tier", [
         (TaintState.INTEGRAL, 1),
@@ -319,7 +319,7 @@ class TestR1ResultProperties:
         assert props["wardline.taintState"] is None
 
     def test_all_mandatory_result_properties_present(self) -> None:
-        """All 9 mandatory result-level properties present (§10.1)."""
+        """All 9 mandatory result-level properties present (§11.1)."""
         finding = _make_finding(taint_state=TaintState.INTEGRAL)
         result = _make_result(finding, base_path=None)
         props = set(result["properties"].keys())
@@ -751,7 +751,7 @@ class TestSarifGovernanceMetadata:
 
 
 class TestComputeControlLaw:
-    """Tests for §9.5 control law computation."""
+    """Tests for §10.5 control law computation."""
 
     def test_normal_when_no_degradation(self) -> None:
         law, degradations = compute_control_law(
@@ -898,7 +898,7 @@ class TestControlLawDegradationsEmission:
 
 
 class TestRetrospectiveScan:
-    """§9.5 retrospective scan SARIF properties."""
+    """§10.5 retrospective scan SARIF properties."""
 
     def test_run_level_retroactive_scan_emitted(self) -> None:
         report = SarifReport(
@@ -935,7 +935,7 @@ class TestRetrospectiveScan:
 
 
 class TestGovernanceEvents:
-    """Tests for §9 governance audit event logging in SARIF (GOV-005)."""
+    """Tests for §10 governance audit event logging in SARIF (GOV-005)."""
 
     def test_no_events_omitted_from_sarif(self) -> None:
         """Empty governance_events -> no wardline.governanceEvents in SARIF."""
@@ -1090,7 +1090,7 @@ class TestRegionSnippet:
 
 
 class TestSarifDataPathsTraced:
-    """R7: wardline.dataPathsTracedRatio, lowResolutionFunctionCount, denominatorExcludedCount."""
+    """R7: wardline.dataPathsTracedRatio, lowResolutionFunctionCount, lambdaCount."""
 
     def test_data_paths_traced_in_sarif(self) -> None:
         """dataPathsTracedRatio appears in run properties when set."""
@@ -1118,17 +1118,17 @@ class TestSarifDataPathsTraced:
         props = report.to_dict()["runs"][0]["properties"]
         assert props["wardline.lowResolutionFunctionCount"] == 0
 
-    def test_denominator_excluded_count_in_sarif(self) -> None:
-        """denominatorExcludedCount appears in run properties."""
-        report = SarifReport(findings=[], denominator_excluded_count=12)
+    def test_lambda_count_in_sarif(self) -> None:
+        """lambdaCount appears in run properties."""
+        report = SarifReport(findings=[], lambda_count=12)
         props = report.to_dict()["runs"][0]["properties"]
-        assert props["wardline.denominatorExcludedCount"] == 12
+        assert props["wardline.lambdaCount"] == 12
 
-    def test_denominator_excluded_count_default_zero(self) -> None:
-        """denominatorExcludedCount defaults to 0."""
+    def test_lambda_count_default_zero(self) -> None:
+        """lambdaCount defaults to 0."""
         report = SarifReport(findings=[])
         props = report.to_dict()["runs"][0]["properties"]
-        assert props["wardline.denominatorExcludedCount"] == 0
+        assert props["wardline.lambdaCount"] == 0
 
     def test_property_bag_version_0_7(self) -> None:
         """Property bag version is 0.7 after R4."""

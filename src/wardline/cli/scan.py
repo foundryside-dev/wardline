@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import click
 
@@ -219,8 +219,44 @@ def _resolve_coverage_ratio(
     return resolved, scan_time
 
 
+def _read_conformance_data(
+    manifest_path: Path,
+) -> tuple[bool, bool, dict[str, Any]]:
+    """Read and parse wardline.conformance.json once.
+
+    Returns ``(never_run, data_unavailable, parsed_data)`` where:
+    - *never_run* is True when the file does not exist
+    - *data_unavailable* is True when the file exists but is malformed
+      or missing required keys
+    - *parsed_data* is the raw dict (empty when absent/malformed)
+    """
+    import json
+
+    conf_path = manifest_path.parent / "wardline.conformance.json"
+    if not conf_path.exists():
+        return True, False, {}
+
+    try:
+        data = json.loads(conf_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        logger.warning("wardline.conformance.json malformed — treating as unavailable")
+        return False, True, {}
+
+    if (
+        "cells_below_precision_floor" not in data
+        or "cells_below_recall_floor" not in data
+    ):
+        logger.warning(
+            "wardline.conformance.json missing floor violation keys — treating as unavailable"
+        )
+        return False, True, data
+
+    return False, False, data
+
+
 def _read_conformance_gaps(
-    manifest_path: Path, scan_path: Path | None = None
+    manifest_path: Path, scan_path: Path | None = None,
+    *, _preloaded_data: dict[str, Any] | None = None,
 ) -> tuple[str, ...]:
     """Read conformance gaps from wardline.conformance.json.
 
@@ -232,17 +268,21 @@ def _read_conformance_gaps(
         scan_path: Resolved scan target path. When provided and it overlaps
             the self-hosting source path, self_hosting_input_hash is also
             validated for staleness.
+        _preloaded_data: If provided, skip file read and use this dict.
     """
     import json
 
     conf_path = manifest_path.parent / "wardline.conformance.json"
-    if not conf_path.exists():
-        return ("conformance status not generated — run 'wardline corpus publish'",)
 
-    try:
-        data = json.loads(conf_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return ("conformance status file unreadable",)
+    if _preloaded_data is not None:
+        data = _preloaded_data
+    else:
+        if not conf_path.exists():
+            return ("conformance status not generated — run 'wardline corpus publish'",)
+        try:
+            data = json.loads(conf_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return ("conformance status file unreadable",)
 
     # Staleness check: compare input identities against current state
     import wardline as _pkg
@@ -810,7 +850,24 @@ def scan(
     )
     if result.total_function_count == 0:
         logger.debug("Zero functions discovered during scan — coverage ratio unavailable")
-    conformance_gaps = _read_conformance_gaps(manifest_path, scan_path=scan_path)
+    # Read conformance data once for both gaps and floor violations (I1)
+    conformance_never_run, conformance_data_unavailable, _conf_data = _read_conformance_data(manifest_path)
+    if conformance_never_run:
+        conformance_gaps: tuple[str, ...] = ("conformance status not generated — run 'wardline corpus publish'",)
+    elif conformance_data_unavailable and not _conf_data:
+        conformance_gaps = ("conformance status file unreadable",)
+    else:
+        conformance_gaps = _read_conformance_gaps(manifest_path, scan_path=scan_path, _preloaded_data=_conf_data)
+
+    precision_violations = 0
+    recall_violations = 0
+    if not conformance_never_run and not conformance_data_unavailable:
+        try:
+            precision_violations = int(_conf_data["cells_below_precision_floor"])
+            recall_violations = int(_conf_data["cells_below_recall_floor"])
+        except (ValueError, TypeError):
+            conformance_data_unavailable = True
+            logger.warning("wardline.conformance.json floor violation values not parseable")
 
     # --- Compute control law (§10.5) ---
     from wardline.manifest.regime import collect_fingerprint_metrics, collect_manifest_metrics
@@ -822,42 +879,19 @@ def scan(
         r.value for r in canonical_rule_ids - loaded_rule_ids
     ))
 
-    # Read floor violation counts from conformance data
-    conf_path = manifest_path.parent / "wardline.conformance.json"
-    precision_violations = 0
-    recall_violations = 0
-    conformance_never_run = False
-    conformance_data_unavailable = False
-
-    if not conf_path.exists():
-        conformance_never_run = True
-        logger.warning("wardline.conformance.json not found — corpus floor violations unknown")
-    else:
-        import json
-        try:
-            _conf_data = json.loads(conf_path.read_text(encoding="utf-8"))
-            if "cells_below_precision_floor" not in _conf_data or "cells_below_recall_floor" not in _conf_data:
-                conformance_data_unavailable = True
-                logger.warning("wardline.conformance.json missing floor violation keys — treating as unavailable")
-            else:
-                precision_violations = int(_conf_data["cells_below_precision_floor"])
-                recall_violations = int(_conf_data["cells_below_recall_floor"])
-        except (json.JSONDecodeError, OSError, ValueError, TypeError):
-            conformance_data_unavailable = True
-            logger.warning("wardline.conformance.json malformed — treating as unavailable")
-
     # Read fingerprint baseline age
     _fp_metrics = collect_fingerprint_metrics(manifest_path.parent)
-    raw_age = _fp_metrics.age_days  # None when no baseline
+    raw_age = _fp_metrics.age_days  # None when no baseline or unparseable
     fingerprint_age_days: int | None = raw_age
     fingerprint_age_unknown = False
-    no_fingerprint_baseline = raw_age is None
 
-    if no_fingerprint_baseline:
-        fingerprint_age_unknown = True  # No baseline → can't vouch for freshness
+    if raw_age is None:
+        fingerprint_age_unknown = True  # Can't vouch for baseline freshness
 
-    # Detect initial setup: both conformance file and fingerprint baseline absent
-    is_initial_setup = conformance_never_run and no_fingerprint_baseline
+    # Detect initial setup: both conformance file and fingerprint baseline
+    # truly absent (not just corrupt). A corrupt file that exists is NOT
+    # initial setup — it's an ongoing problem (I7 security fix).
+    is_initial_setup = conformance_never_run and not _fp_metrics.present
 
     control_law, control_law_degradations = compute_control_law(
         ratification_overdue=manifest_metrics.ratification_overdue,
@@ -867,7 +901,7 @@ def scan(
         precision_floor_violations=precision_violations,
         recall_floor_violations=recall_violations,
         fingerprint_age_days=fingerprint_age_days,
-        fingerprint_max_age_days=180,  # TODO: read from wardline.toml [governance] section
+        fingerprint_max_age_days=cfg.fingerprint_max_age_days if cfg is not None else 180,
         fingerprint_age_unknown=fingerprint_age_unknown,
         conformance_data_unavailable=conformance_data_unavailable,
         conformance_never_run=conformance_never_run,
@@ -943,14 +977,18 @@ def scan(
         ))
 
     # coverage_ratio_divergence — dual-source baseline vs scan-time divergence
+    # When divergence exceeds 10%, prefer scan-time ratio as authoritative
+    # (the baseline is stale) and emit a governance event.
     if baseline_coverage_ratio is not None and scan_time_coverage_ratio is not None:
         _divergence = abs(baseline_coverage_ratio - scan_time_coverage_ratio)
         if _divergence > 0.10:
+            coverage_ratio = scan_time_coverage_ratio
             _gov_events.append(GovernanceEvent(
                 event_type="coverage_ratio_divergence",
                 message=(
                     f"Coverage ratio divergence: baseline={baseline_coverage_ratio:.4f}, "
-                    f"scan={scan_time_coverage_ratio:.4f}, delta={_divergence:.4f}"
+                    f"scan={scan_time_coverage_ratio:.4f}, delta={_divergence:.4f} — "
+                    f"using scan-time ratio as authoritative"
                 ),
             ))
 
@@ -998,7 +1036,8 @@ def scan(
         governance_events=governance_events,
         data_paths_traced_ratio=result.call_edge_resolution_ratio,
         low_resolution_function_count=result.low_resolution_function_count,
-        denominator_excluded_count=result.lambda_count,
+        lambda_count=result.lambda_count,
+        data_paths_traced_scope="changed_files_only" if changed_only else "project",
         precision_floor_violations=precision_violations,
         recall_floor_violations=recall_violations,
         is_initial_setup=is_initial_setup,

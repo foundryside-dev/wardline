@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from wardline.scanner.taint.callgraph import TRUST_RANK
+from wardline.scanner.taint.callgraph import L3_LOW_RESOLUTION_THRESHOLD, TRUST_RANK
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -339,7 +339,7 @@ def propagate_callgraph_taints(
         total_calls = res + unres
         if total_calls > 0:
             unresolved_ratio = unres / total_calls
-            if unresolved_ratio > 0.7:
+            if unresolved_ratio > L3_LOW_RESOLUTION_THRESHOLD:
                 pct = int(unresolved_ratio * 100)
                 diagnostics.append((
                     "L3_LOW_RESOLUTION",

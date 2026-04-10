@@ -265,6 +265,7 @@ _KNOWN_KEYS: frozenset[str] = frozenset({
     "known_validators_extra",
     "max_expansion_rounds",
     "strict_governance",
+    "governance",
 })
 
 
@@ -292,6 +293,7 @@ class ScannerConfig:
     known_validators_extra: tuple[str, ...] = ()
     max_expansion_rounds: int = 1
     strict_governance: bool = False
+    fingerprint_max_age_days: int = 180
 
     def __post_init__(self) -> None:
         if not (1 <= self.analysis_level <= 3):
@@ -456,6 +458,20 @@ class ScannerConfig:
         except KeyError:
             _strict_governance = False
 
+        # Parse [governance] section (optional)
+        governance_section = wardline_section.get("governance", {})
+        if not isinstance(governance_section, dict):
+            raise ScannerConfigError("governance must be a table, not a scalar")
+        _fp_max_age = governance_section.get("fingerprint_max_age_days", 180)
+        if not isinstance(_fp_max_age, int) or isinstance(_fp_max_age, bool):
+            raise ScannerConfigError(
+                f"governance.fingerprint_max_age_days must be an integer, got {type(_fp_max_age).__name__}"
+            )
+        if _fp_max_age < 1:
+            raise ScannerConfigError(
+                f"governance.fingerprint_max_age_days must be >= 1, got {_fp_max_age}"
+            )
+
         return cls(
             target_paths=target_paths,
             exclude_paths=exclude_paths,
@@ -470,4 +486,5 @@ class ScannerConfig:
             known_validators_extra=known_validators_extra,
             max_expansion_rounds=max_expansion_rounds,
             strict_governance=bool(_strict_governance),
+            fingerprint_max_age_days=_fp_max_age,
         )
