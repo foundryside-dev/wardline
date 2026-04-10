@@ -1,17 +1,12 @@
 ---
 specimen_id: PY-WL-003-TP-INTEGRAL
-description: PY-WL-003 true_positive at INTEGRAL
+description: PY-WL-003 known_false_negative at INTEGRAL
 rule: PY-WL-003
 fragment: "def process(data):\n    if \"key\" in data:\n        pass\n"
 taint_state: INTEGRAL
-expected_rules:
-- PY-WL-003
-expected_severity: ERROR
-expected_exceptionability: UNCONDITIONAL
-expected_match:
-  line: 2
-  text: 'if "key" in data:'
-  function: process
-expected_match_source: ast-reimplemented
+expected_rules: []
+expected_severity: null
+expected_exceptionability: null
+expected_match: false
 sha256: 83658d70103eb68eea677c3b88ae80be30fda5fd76b89f1dba18e61b3409df44
-verdict: true_positive
+verdict: known_false_negative

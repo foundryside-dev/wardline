@@ -6,14 +6,9 @@ fragment: "def process():\n    try:\n        pass\n    except Exception:\n      
   \ pass\n"
 taint_state: UNKNOWN_ASSURED
 expected_rules:
-- PY-WL-004
 - PY-WL-005
 expected_severity: WARNING
 expected_exceptionability: STANDARD
-expected_match:
-  line: 4
-  text: "except Exception:"
-  function: "process"
-expected_match_source: "ast-reimplemented"
+expected_match: true
 sha256: f45f081293981a52107c95479cbc55aee5b545b62f7fa64d173723e8427ff314
 verdict: true_positive

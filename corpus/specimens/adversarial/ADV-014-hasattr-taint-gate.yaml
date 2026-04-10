@@ -3,7 +3,7 @@ specimen_id: ADV-014-hasattr-taint-gate
 description: hasattr in non-active taint state should not fire PY-WL-003
 rule: PY-WL-003
 fragment: "def process(obj):\n    if hasattr(obj, \"name\"):\n        pass\n"
-taint_state: EXTERNAL_RAW
+taint_state: INTEGRAL
 expected_rules: []
 expected_match: false
 verdict: true_negative

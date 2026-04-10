@@ -3,16 +3,12 @@ specimen_id: PY-WL-006-TP-GUARDED
 description: PY-WL-006 true_positive at GUARDED
 rule: PY-WL-006
 fragment: "def process():\n    try:\n        risky()\n    except Exception:\n    \
-  \    audit.record(\"failed\")\n"
+  \    logger.error(\"failed\")\n"
 taint_state: GUARDED
 expected_rules:
 - PY-WL-006
 expected_severity: ERROR
 expected_exceptionability: STANDARD
-expected_match:
-  line: 5
-  text: 'audit.record("failed")'
-  function: process
-expected_match_source: manual
-sha256: 078c13ad241e04bf554fe64d177fedd3e481c8958d5484016b8d745f7b8411a5
+expected_match: true
+sha256: c7eae2aef49a3d7b1b4dab451d1cd931556aabbae7fdf9aafb04b6c7bbe11f12
 verdict: true_positive

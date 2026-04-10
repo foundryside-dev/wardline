@@ -1,3 +1,4 @@
+---
 specimen_id: PY-WL-001-KFN-01
 description: 'KFN: cross-function default hidden from call site (safe_lookup defined
   elsewhere) — requires analysis_level 3 for inter-procedural taint tracking'

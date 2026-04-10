@@ -2,4 +2,4 @@ def process():
     try:
         risky()
     except Exception:
-        audit.record("failed")
+        logger.error("failed")

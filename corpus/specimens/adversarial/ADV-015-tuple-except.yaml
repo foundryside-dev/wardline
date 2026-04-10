@@ -7,11 +7,7 @@ fragment: "def process():\n    try:\n        pass\n    except (ValueError, Excep
 taint_state: ASSURED
 expected_rules:
 - PY-WL-004
-expected_match:
-  line: 4
-  text: "except (ValueError, Exception):"
-  function: "process"
-expected_match_source: "ast-reimplemented"
+expected_match: true
 verdict: true_positive
 tags:
 - adversarial

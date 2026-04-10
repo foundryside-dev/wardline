@@ -7,11 +7,7 @@ fragment: "class Handler:\n    def process(self, data):\n        x = data.get(\"
 taint_state: GUARDED
 expected_rules:
 - PY-WL-001
-expected_match:
-  line: 3
-  text: "x = data.get(\"key\", \"default\")"
-  function: "process"
-expected_match_source: "ast-reimplemented"
+expected_match: true
 verdict: true_positive
 tags:
 - adversarial

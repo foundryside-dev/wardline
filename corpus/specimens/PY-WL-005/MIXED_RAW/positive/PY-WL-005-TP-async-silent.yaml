@@ -1,3 +1,4 @@
+---
 specimen_id: PY-WL-005-TP-async-silent
 description: Async function with silent exception handler (ellipsis)
 rule: PY-WL-005

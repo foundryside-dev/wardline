@@ -59,7 +59,7 @@ TN_FRAGMENTS: dict[str, str] = {
     "PY-WL-006": 'def process():\n    try:\n        risky()\n    except ValueError:\n        logger.error("failed")\n',
     "PY-WL-007": "def process(data):\n    x = len(data)\n",
     "PY-WL-008": 'def process(data):\n    result = validate(data)\n    if not result:\n        raise ValueError("invalid")\n',
-    "PY-WL-009": 'def process(data):\n    if isinstance(data, dict):\n        pass\n    if data["status"] == "active":\n        pass\n',
+    "PY-WL-009": 'from wardline.decorators import validates_semantic\n\n@validates_semantic\ndef validate_order(data):\n    if not isinstance(data, dict):\n        raise TypeError("expected dict")\n    if data["amount"] > 1000:\n        raise ValueError("amount exceeds limit")\n    return data\n',
 }
 
 # PY-WL-003 only fires at these taint states (taint-gated in rule implementation)

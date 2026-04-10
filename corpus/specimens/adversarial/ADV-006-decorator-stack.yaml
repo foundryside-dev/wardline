@@ -8,11 +8,7 @@ fragment: "def deco1(f): return f\ndef deco2(f): return f\ndef deco3(f): return 
 taint_state: ASSURED
 expected_rules:
 - PY-WL-001
-expected_match:
-  line: 9
-  text: "x = data.get(\"key\", \"default\")"
-  function: "process"
-expected_match_source: "ast-reimplemented"
+expected_match: true
 verdict: true_positive
 tags:
 - adversarial

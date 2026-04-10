@@ -1,3 +1,4 @@
+---
 specimen_id: PY-WL-004-TP-async-except
 description: Async function with broad exception handler
 rule: PY-WL-004

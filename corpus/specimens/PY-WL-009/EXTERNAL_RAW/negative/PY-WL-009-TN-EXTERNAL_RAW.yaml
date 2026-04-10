@@ -2,12 +2,14 @@
 specimen_id: PY-WL-009-TN-EXTERNAL_RAW
 description: PY-WL-009 true negative at EXTERNAL_RAW
 rule: PY-WL-009
-fragment: "def process(data):\n    if isinstance(data, dict):\n        pass\n    if\
-  \ data[\"status\"] == \"active\":\n        pass\n"
+fragment: "from wardline.decorators import validates_semantic\n\n@validates_semantic\n\
+  def validate_order(data):\n    if not isinstance(data, dict):\n        raise TypeError(\"\
+  expected dict\")\n    if data[\"amount\"] > 1000:\n        raise ValueError(\"amount\
+  \ exceeds limit\")\n    return data\n"
 taint_state: EXTERNAL_RAW
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 965d3796983070162f1b4ac0b2b7b0e022c245da1eba9f272b9a13b4a317894d
+sha256: 9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840
 verdict: true_negative

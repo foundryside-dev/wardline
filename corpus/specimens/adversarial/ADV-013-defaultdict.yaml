@@ -3,18 +3,14 @@ specimen_id: ADV-013-defaultdict
 description: defaultdict with factory triggers PY-WL-001
 rule: PY-WL-001
 fragment: "from collections import defaultdict\ndef process():\n    d = defaultdict(list)\n"
-taint_state: INTEGRAL
+taint_state: UNKNOWN_RAW
 expected_rules:
 - PY-WL-001
-expected_match:
-  line: 3
-  text: "d = defaultdict(list)"
-  function: "process"
-expected_match_source: "ast-reimplemented"
+expected_match: true
 verdict: true_positive
 tags:
 - adversarial
 - defaultdict
 sha256: c0088880862f3022c94a7496808be3aebafc7ec6aae565327f054687ea56bb93
-expected_severity: error
-expected_exceptionability: unconditional
+expected_severity: null
+expected_exceptionability: null

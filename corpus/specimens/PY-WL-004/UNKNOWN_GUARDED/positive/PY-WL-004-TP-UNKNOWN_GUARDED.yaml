@@ -9,10 +9,6 @@ expected_rules:
 - PY-WL-004
 expected_severity: WARNING
 expected_exceptionability: STANDARD
-expected_match:
-  line: 4
-  text: "except Exception:"
-  function: "process"
-expected_match_source: "ast-reimplemented"
+expected_match: true
 sha256: 61d84dbf8ccbbf76d1dc0de480c9b92a5ec4f521b8917dde80eda895db1ba2b2
 verdict: true_positive

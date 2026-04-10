@@ -1329,7 +1329,15 @@ def _load_resolved(
             for b in boundaries:
                 scope = b.overlay_scope
                 if scope and scope != str(project_root.resolve()):
-                    rel_scope = str(Path(scope).relative_to(project_root))
+                    try:
+                        rel_scope = str(Path(scope).relative_to(project_root))
+                    except ValueError:
+                        cli_error(
+                            f"resolved boundary for '{b.function}' has overlay_scope "
+                            f"'{scope}' outside project root. "
+                            f"Re-run `wardline resolve`."
+                        )
+                        return None
                     if not any(rel_scope.startswith(dp) or dp.startswith(rel_scope) for dp in declared_paths):
                         cli_error(
                             f"resolved boundary for '{b.function}' has overlay_scope "

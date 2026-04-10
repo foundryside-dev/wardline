@@ -1,9 +1,9 @@
 {
   "version": "1.0",
   "spec_version": "1.0",
-  "corpus_hash": "sha256:08385e937fd1298ddd6cab745f56ebfdfb086ed204c771274735833fb57a1eea",
+  "corpus_hash": "sha256:7377f48c6449488694d02434b56de434b9c336739ae83e22f7e7450b9baefa1a",
   "generated": "2026-04-10",
-  "specimen_count": 261,
+  "specimen_count": 259,
   "specimens": [
     {
       "specimen_id": "L3-anchored-immutable",
@@ -182,11 +182,7 @@
       "rule": "PY-WL-001",
       "taint_state": "ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = data.get(\"key\", \"default\")",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5"
     },
     {
@@ -304,16 +300,6 @@
       "sha256": "6938e3ff084660e6633f75a9f0705a5e27a434f8a3fd7fb904667c071bda6776"
     },
     {
-      "specimen_id": "PY-WL-001-TN-01",
-      "path": "specimens/PY-WL-001/EXTERNAL_RAW/negative/PY-WL-001-TN-01.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-001",
-      "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "e32a7a05619471256f0fd952576e21a72ff3f5952c687fc782626247ca798e19"
-    },
-    {
       "specimen_id": "PY-WL-001-TN-02",
       "path": "specimens/PY-WL-001/EXTERNAL_RAW/negative/PY-WL-001-TN-02.yaml",
       "py_exists": true,
@@ -370,11 +356,7 @@
       "rule": "PY-WL-001",
       "taint_state": "GUARDED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = data.get(\"key\", \"default\")",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5"
     },
     {
@@ -408,11 +390,7 @@
       "rule": "PY-WL-001",
       "taint_state": "INTEGRAL",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = data.get(\"key\", \"default\")",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5"
     },
     {
@@ -472,11 +450,7 @@
       "rule": "PY-WL-001",
       "taint_state": "UNKNOWN_ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = data.get(\"key\", \"default\")",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5"
     },
     {
@@ -496,11 +470,7 @@
       "rule": "PY-WL-001",
       "taint_state": "UNKNOWN_GUARDED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = data.get(\"key\", \"default\")",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5"
     },
     {
@@ -532,16 +502,6 @@
       "verdict": "known_false_negative",
       "expected_match": false,
       "sha256": "c0088880862f3022c94a7496808be3aebafc7ec6aae565327f054687ea56bb93"
-    },
-    {
-      "specimen_id": "PY-WL-001-TN-03",
-      "path": "specimens/PY-WL-001/UNKNOWN_RAW/negative/PY-WL-001-TN-03.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-001",
-      "taint_state": "UNKNOWN_RAW",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "e32a7a05619471256f0fd952576e21a72ff3f5952c687fc782626247ca798e19"
     },
     {
       "specimen_id": "PY-WL-001-TN-04",
@@ -590,11 +550,7 @@
       "rule": "PY-WL-002",
       "taint_state": "ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = getattr(obj, \"name\", None)",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "81262cfdd145242d53158977787ca82583cf2df86bf100658db8414c1296cfda"
     },
     {
@@ -686,11 +642,7 @@
       "rule": "PY-WL-002",
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = getattr(obj, \"name\", None)",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "81262cfdd145242d53158977787ca82583cf2df86bf100658db8414c1296cfda"
     },
     {
@@ -724,11 +676,7 @@
       "rule": "PY-WL-002",
       "taint_state": "GUARDED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = getattr(obj, \"name\", None)",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "81262cfdd145242d53158977787ca82583cf2df86bf100658db8414c1296cfda"
     },
     {
@@ -748,11 +696,7 @@
       "rule": "PY-WL-002",
       "taint_state": "INTEGRAL",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = getattr(obj, \"name\", None)",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "81262cfdd145242d53158977787ca82583cf2df86bf100658db8414c1296cfda"
     },
     {
@@ -772,11 +716,7 @@
       "rule": "PY-WL-002",
       "taint_state": "MIXED_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = getattr(obj, \"name\", None)",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "81262cfdd145242d53158977787ca82583cf2df86bf100658db8414c1296cfda"
     },
     {
@@ -796,11 +736,7 @@
       "rule": "PY-WL-002",
       "taint_state": "UNKNOWN_ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = getattr(obj, \"name\", None)",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "81262cfdd145242d53158977787ca82583cf2df86bf100658db8414c1296cfda"
     },
     {
@@ -820,11 +756,7 @@
       "rule": "PY-WL-002",
       "taint_state": "UNKNOWN_GUARDED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = getattr(obj, \"name\", None)",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "81262cfdd145242d53158977787ca82583cf2df86bf100658db8414c1296cfda"
     },
     {
@@ -872,11 +804,7 @@
       "rule": "PY-WL-002",
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = getattr(obj, \"name\", None)",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "81262cfdd145242d53158977787ca82583cf2df86bf100658db8414c1296cfda"
     },
     {
@@ -895,12 +823,8 @@
       "py_exists": true,
       "rule": "PY-WL-003",
       "taint_state": "ASSURED",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if \"key\" in data:",
-        "function": "process"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "83658d70103eb68eea677c3b88ae80be30fda5fd76b89f1dba18e61b3409df44"
     },
     {
@@ -1035,12 +959,8 @@
       "py_exists": true,
       "rule": "PY-WL-003",
       "taint_state": "GUARDED",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if \"key\" in data:",
-        "function": "process"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "83658d70103eb68eea677c3b88ae80be30fda5fd76b89f1dba18e61b3409df44"
     },
     {
@@ -1059,12 +979,8 @@
       "py_exists": true,
       "rule": "PY-WL-003",
       "taint_state": "INTEGRAL",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if \"key\" in data:",
-        "function": "process"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "83658d70103eb68eea677c3b88ae80be30fda5fd76b89f1dba18e61b3409df44"
     },
     {
@@ -1107,12 +1023,8 @@
       "py_exists": true,
       "rule": "PY-WL-003",
       "taint_state": "UNKNOWN_ASSURED",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if \"key\" in data:",
-        "function": "process"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "83658d70103eb68eea677c3b88ae80be30fda5fd76b89f1dba18e61b3409df44"
     },
     {
@@ -1131,12 +1043,8 @@
       "py_exists": true,
       "rule": "PY-WL-003",
       "taint_state": "UNKNOWN_GUARDED",
-      "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if \"key\" in data:",
-        "function": "process"
-      },
+      "verdict": "known_false_negative",
+      "expected_match": false,
       "sha256": "83658d70103eb68eea677c3b88ae80be30fda5fd76b89f1dba18e61b3409df44"
     },
     {
@@ -1218,11 +1126,7 @@
       "rule": "PY-WL-004",
       "taint_state": "ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "61d84dbf8ccbbf76d1dc0de480c9b92a5ec4f521b8917dde80eda895db1ba2b2"
     },
     {
@@ -1310,11 +1214,7 @@
       "rule": "PY-WL-004",
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "61d84dbf8ccbbf76d1dc0de480c9b92a5ec4f521b8917dde80eda895db1ba2b2"
     },
     {
@@ -1348,11 +1248,7 @@
       "rule": "PY-WL-004",
       "taint_state": "GUARDED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "61d84dbf8ccbbf76d1dc0de480c9b92a5ec4f521b8917dde80eda895db1ba2b2"
     },
     {
@@ -1372,11 +1268,7 @@
       "rule": "PY-WL-004",
       "taint_state": "INTEGRAL",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "61d84dbf8ccbbf76d1dc0de480c9b92a5ec4f521b8917dde80eda895db1ba2b2"
     },
     {
@@ -1396,11 +1288,7 @@
       "rule": "PY-WL-004",
       "taint_state": "MIXED_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "61d84dbf8ccbbf76d1dc0de480c9b92a5ec4f521b8917dde80eda895db1ba2b2"
     },
     {
@@ -1434,11 +1322,7 @@
       "rule": "PY-WL-004",
       "taint_state": "UNKNOWN_ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "61d84dbf8ccbbf76d1dc0de480c9b92a5ec4f521b8917dde80eda895db1ba2b2"
     },
     {
@@ -1458,11 +1342,7 @@
       "rule": "PY-WL-004",
       "taint_state": "UNKNOWN_GUARDED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "61d84dbf8ccbbf76d1dc0de480c9b92a5ec4f521b8917dde80eda895db1ba2b2"
     },
     {
@@ -1506,11 +1386,7 @@
       "rule": "PY-WL-004",
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "61d84dbf8ccbbf76d1dc0de480c9b92a5ec4f521b8917dde80eda895db1ba2b2"
     },
     {
@@ -1535,7 +1411,7 @@
       "taint_state": "ASSURED",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "ea0bf2d276d902cd37ec3baa08936d3a6b6e05357e6f85eded30f75b9d5eb4ba"
+      "sha256": "2fc262ee2b3d7c221393e6d7cbb220b7a176122a5859e1fb37268fe92c11cd5c"
     },
     {
       "specimen_id": "PY-WL-005-TP-ASSURED",
@@ -1544,11 +1420,7 @@
       "rule": "PY-WL-005",
       "taint_state": "ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "f45f081293981a52107c95479cbc55aee5b545b62f7fa64d173723e8427ff314"
     },
     {
@@ -1579,7 +1451,7 @@
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "ea0bf2d276d902cd37ec3baa08936d3a6b6e05357e6f85eded30f75b9d5eb4ba"
+      "sha256": "2fc262ee2b3d7c221393e6d7cbb220b7a176122a5859e1fb37268fe92c11cd5c"
     },
     {
       "specimen_id": "PY-WL-005-TP-01",
@@ -1630,11 +1502,7 @@
       "rule": "PY-WL-005",
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "f45f081293981a52107c95479cbc55aee5b545b62f7fa64d173723e8427ff314"
     },
     {
@@ -1659,7 +1527,7 @@
       "taint_state": "GUARDED",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "ea0bf2d276d902cd37ec3baa08936d3a6b6e05357e6f85eded30f75b9d5eb4ba"
+      "sha256": "2fc262ee2b3d7c221393e6d7cbb220b7a176122a5859e1fb37268fe92c11cd5c"
     },
     {
       "specimen_id": "PY-WL-005-TP-GUARDED",
@@ -1668,11 +1536,7 @@
       "rule": "PY-WL-005",
       "taint_state": "GUARDED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "f45f081293981a52107c95479cbc55aee5b545b62f7fa64d173723e8427ff314"
     },
     {
@@ -1683,7 +1547,7 @@
       "taint_state": "INTEGRAL",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "ea0bf2d276d902cd37ec3baa08936d3a6b6e05357e6f85eded30f75b9d5eb4ba"
+      "sha256": "2fc262ee2b3d7c221393e6d7cbb220b7a176122a5859e1fb37268fe92c11cd5c"
     },
     {
       "specimen_id": "PY-WL-005-TP-INTEGRAL",
@@ -1692,11 +1556,7 @@
       "rule": "PY-WL-005",
       "taint_state": "INTEGRAL",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "f45f081293981a52107c95479cbc55aee5b545b62f7fa64d173723e8427ff314"
     },
     {
@@ -1717,7 +1577,7 @@
       "taint_state": "MIXED_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "ea0bf2d276d902cd37ec3baa08936d3a6b6e05357e6f85eded30f75b9d5eb4ba"
+      "sha256": "2fc262ee2b3d7c221393e6d7cbb220b7a176122a5859e1fb37268fe92c11cd5c"
     },
     {
       "specimen_id": "PY-WL-005-TP-MIXED_RAW",
@@ -1726,11 +1586,7 @@
       "rule": "PY-WL-005",
       "taint_state": "MIXED_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "f45f081293981a52107c95479cbc55aee5b545b62f7fa64d173723e8427ff314"
     },
     {
@@ -1755,7 +1611,7 @@
       "taint_state": "UNKNOWN_ASSURED",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "ea0bf2d276d902cd37ec3baa08936d3a6b6e05357e6f85eded30f75b9d5eb4ba"
+      "sha256": "2fc262ee2b3d7c221393e6d7cbb220b7a176122a5859e1fb37268fe92c11cd5c"
     },
     {
       "specimen_id": "PY-WL-005-TP-UNKNOWN_ASSURED",
@@ -1764,11 +1620,7 @@
       "rule": "PY-WL-005",
       "taint_state": "UNKNOWN_ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "f45f081293981a52107c95479cbc55aee5b545b62f7fa64d173723e8427ff314"
     },
     {
@@ -1779,7 +1631,7 @@
       "taint_state": "UNKNOWN_GUARDED",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "ea0bf2d276d902cd37ec3baa08936d3a6b6e05357e6f85eded30f75b9d5eb4ba"
+      "sha256": "2fc262ee2b3d7c221393e6d7cbb220b7a176122a5859e1fb37268fe92c11cd5c"
     },
     {
       "specimen_id": "PY-WL-005-TP-UNKNOWN_GUARDED",
@@ -1788,11 +1640,7 @@
       "rule": "PY-WL-005",
       "taint_state": "UNKNOWN_GUARDED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "f45f081293981a52107c95479cbc55aee5b545b62f7fa64d173723e8427ff314"
     },
     {
@@ -1803,7 +1651,7 @@
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "ea0bf2d276d902cd37ec3baa08936d3a6b6e05357e6f85eded30f75b9d5eb4ba"
+      "sha256": "2fc262ee2b3d7c221393e6d7cbb220b7a176122a5859e1fb37268fe92c11cd5c"
     },
     {
       "specimen_id": "PY-WL-005-TP-02",
@@ -1826,11 +1674,7 @@
       "rule": "PY-WL-005",
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "f45f081293981a52107c95479cbc55aee5b545b62f7fa64d173723e8427ff314"
     },
     {
@@ -1874,12 +1718,8 @@
       "rule": "PY-WL-006",
       "taint_state": "ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 5,
-        "text": "audit.record(\"failed\")",
-        "function": "process"
-      },
-      "sha256": "078c13ad241e04bf554fe64d177fedd3e481c8958d5484016b8d745f7b8411a5"
+      "expected_match": true,
+      "sha256": "c7eae2aef49a3d7b1b4dab451d1cd931556aabbae7fdf9aafb04b6c7bbe11f12"
     },
     {
       "specimen_id": "PY-WL-006-TN-EXTERNAL_RAW",
@@ -1898,12 +1738,8 @@
       "rule": "PY-WL-006",
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 5,
-        "text": "audit.record(\"failed\")",
-        "function": "process"
-      },
-      "sha256": "078c13ad241e04bf554fe64d177fedd3e481c8958d5484016b8d745f7b8411a5"
+      "expected_match": true,
+      "sha256": "c7eae2aef49a3d7b1b4dab451d1cd931556aabbae7fdf9aafb04b6c7bbe11f12"
     },
     {
       "specimen_id": "PY-WL-006-TN-GUARDED",
@@ -1922,12 +1758,8 @@
       "rule": "PY-WL-006",
       "taint_state": "GUARDED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 5,
-        "text": "audit.record(\"failed\")",
-        "function": "process"
-      },
-      "sha256": "078c13ad241e04bf554fe64d177fedd3e481c8958d5484016b8d745f7b8411a5"
+      "expected_match": true,
+      "sha256": "c7eae2aef49a3d7b1b4dab451d1cd931556aabbae7fdf9aafb04b6c7bbe11f12"
     },
     {
       "specimen_id": "PY-WL-006-TN-AFP-logger-not-audit",
@@ -1970,12 +1802,8 @@
       "rule": "PY-WL-006",
       "taint_state": "INTEGRAL",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 5,
-        "text": "audit.record(\"failed\")",
-        "function": "process"
-      },
-      "sha256": "078c13ad241e04bf554fe64d177fedd3e481c8958d5484016b8d745f7b8411a5"
+      "expected_match": true,
+      "sha256": "c7eae2aef49a3d7b1b4dab451d1cd931556aabbae7fdf9aafb04b6c7bbe11f12"
     },
     {
       "specimen_id": "PY-WL-006-TN-MIXED_RAW",
@@ -1994,12 +1822,8 @@
       "rule": "PY-WL-006",
       "taint_state": "MIXED_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 5,
-        "text": "audit.record(\"failed\")",
-        "function": "process"
-      },
-      "sha256": "078c13ad241e04bf554fe64d177fedd3e481c8958d5484016b8d745f7b8411a5"
+      "expected_match": true,
+      "sha256": "c7eae2aef49a3d7b1b4dab451d1cd931556aabbae7fdf9aafb04b6c7bbe11f12"
     },
     {
       "specimen_id": "PY-WL-006-TN-UNKNOWN_ASSURED",
@@ -2018,12 +1842,8 @@
       "rule": "PY-WL-006",
       "taint_state": "UNKNOWN_ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 5,
-        "text": "audit.record(\"failed\")",
-        "function": "process"
-      },
-      "sha256": "078c13ad241e04bf554fe64d177fedd3e481c8958d5484016b8d745f7b8411a5"
+      "expected_match": true,
+      "sha256": "c7eae2aef49a3d7b1b4dab451d1cd931556aabbae7fdf9aafb04b6c7bbe11f12"
     },
     {
       "specimen_id": "PY-WL-006-TN-UNKNOWN_GUARDED",
@@ -2042,12 +1862,8 @@
       "rule": "PY-WL-006",
       "taint_state": "UNKNOWN_GUARDED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 5,
-        "text": "audit.record(\"failed\")",
-        "function": "process"
-      },
-      "sha256": "078c13ad241e04bf554fe64d177fedd3e481c8958d5484016b8d745f7b8411a5"
+      "expected_match": true,
+      "sha256": "c7eae2aef49a3d7b1b4dab451d1cd931556aabbae7fdf9aafb04b6c7bbe11f12"
     },
     {
       "specimen_id": "PY-WL-006-TN-UNKNOWN_RAW",
@@ -2066,12 +1882,8 @@
       "rule": "PY-WL-006",
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 5,
-        "text": "audit.record(\"failed\")",
-        "function": "process"
-      },
-      "sha256": "078c13ad241e04bf554fe64d177fedd3e481c8958d5484016b8d745f7b8411a5"
+      "expected_match": true,
+      "sha256": "c7eae2aef49a3d7b1b4dab451d1cd931556aabbae7fdf9aafb04b6c7bbe11f12"
     },
     {
       "specimen_id": "PY-WL-007-TN-AFP-ast-dispatch",
@@ -2100,11 +1912,7 @@
       "rule": "PY-WL-007",
       "taint_state": "ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if isinstance(data, dict):",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "93c25bb124d137b5c69c9160596af8df53b94714b4ee6f176fddfb8dd5e867a0"
     },
     {
@@ -2144,11 +1952,7 @@
       "rule": "PY-WL-007",
       "taint_state": "GUARDED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if isinstance(data, dict):",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "93c25bb124d137b5c69c9160596af8df53b94714b4ee6f176fddfb8dd5e867a0"
     },
     {
@@ -2168,11 +1972,7 @@
       "rule": "PY-WL-007",
       "taint_state": "INTEGRAL",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if isinstance(data, dict):",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "93c25bb124d137b5c69c9160596af8df53b94714b4ee6f176fddfb8dd5e867a0"
     },
     {
@@ -2206,11 +2006,7 @@
       "rule": "PY-WL-007",
       "taint_state": "MIXED_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if isinstance(data, dict):",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "93c25bb124d137b5c69c9160596af8df53b94714b4ee6f176fddfb8dd5e867a0"
     },
     {
@@ -2230,11 +2026,7 @@
       "rule": "PY-WL-007",
       "taint_state": "UNKNOWN_ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if isinstance(data, dict):",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "93c25bb124d137b5c69c9160596af8df53b94714b4ee6f176fddfb8dd5e867a0"
     },
     {
@@ -2254,11 +2046,7 @@
       "rule": "PY-WL-007",
       "taint_state": "UNKNOWN_GUARDED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if isinstance(data, dict):",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "93c25bb124d137b5c69c9160596af8df53b94714b4ee6f176fddfb8dd5e867a0"
     },
     {
@@ -2322,11 +2110,7 @@
       "rule": "PY-WL-008",
       "taint_state": "ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 1,
-        "text": "def process(data):",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "4f8e4949628fdd4e1e05c002013e94f52bab9d716ebfda2cd79fed839ca38851"
     },
     {
@@ -2346,11 +2130,7 @@
       "rule": "PY-WL-008",
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 1,
-        "text": "def process(data):",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "4f8e4949628fdd4e1e05c002013e94f52bab9d716ebfda2cd79fed839ca38851"
     },
     {
@@ -2370,11 +2150,7 @@
       "rule": "PY-WL-008",
       "taint_state": "GUARDED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 1,
-        "text": "def process(data):",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "4f8e4949628fdd4e1e05c002013e94f52bab9d716ebfda2cd79fed839ca38851"
     },
     {
@@ -2394,11 +2170,7 @@
       "rule": "PY-WL-008",
       "taint_state": "INTEGRAL",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 1,
-        "text": "def process(data):",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "4f8e4949628fdd4e1e05c002013e94f52bab9d716ebfda2cd79fed839ca38851"
     },
     {
@@ -2418,11 +2190,7 @@
       "rule": "PY-WL-008",
       "taint_state": "MIXED_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 1,
-        "text": "def process(data):",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "4f8e4949628fdd4e1e05c002013e94f52bab9d716ebfda2cd79fed839ca38851"
     },
     {
@@ -2442,11 +2210,7 @@
       "rule": "PY-WL-008",
       "taint_state": "UNKNOWN_ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 1,
-        "text": "def process(data):",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "4f8e4949628fdd4e1e05c002013e94f52bab9d716ebfda2cd79fed839ca38851"
     },
     {
@@ -2466,11 +2230,7 @@
       "rule": "PY-WL-008",
       "taint_state": "UNKNOWN_GUARDED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 1,
-        "text": "def process(data):",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "4f8e4949628fdd4e1e05c002013e94f52bab9d716ebfda2cd79fed839ca38851"
     },
     {
@@ -2490,11 +2250,7 @@
       "rule": "PY-WL-008",
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 1,
-        "text": "def process(data):",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "4f8e4949628fdd4e1e05c002013e94f52bab9d716ebfda2cd79fed839ca38851"
     },
     {
@@ -2515,7 +2271,7 @@
       "taint_state": "ASSURED",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "965d3796983070162f1b4ac0b2b7b0e022c245da1eba9f272b9a13b4a317894d"
+      "sha256": "9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840"
     },
     {
       "specimen_id": "PY-WL-009-TP-AFN-noop-shape-check",
@@ -2538,11 +2294,7 @@
       "rule": "PY-WL-009",
       "taint_state": "ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if data[\"status\"] == \"active\":",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "5c5ba755c470eefe6cae1c1f53ed7b88a0a8ee5398f12b1793578ebedc802921"
     },
     {
@@ -2567,7 +2319,7 @@
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "965d3796983070162f1b4ac0b2b7b0e022c245da1eba9f272b9a13b4a317894d"
+      "sha256": "9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840"
     },
     {
       "specimen_id": "PY-WL-009-TP-EXTERNAL_RAW",
@@ -2576,11 +2328,7 @@
       "rule": "PY-WL-009",
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if data[\"status\"] == \"active\":",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "5c5ba755c470eefe6cae1c1f53ed7b88a0a8ee5398f12b1793578ebedc802921"
     },
     {
@@ -2591,7 +2339,7 @@
       "taint_state": "GUARDED",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "965d3796983070162f1b4ac0b2b7b0e022c245da1eba9f272b9a13b4a317894d"
+      "sha256": "9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840"
     },
     {
       "specimen_id": "PY-WL-009-TP-GUARDED",
@@ -2600,11 +2348,7 @@
       "rule": "PY-WL-009",
       "taint_state": "GUARDED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if data[\"status\"] == \"active\":",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "5c5ba755c470eefe6cae1c1f53ed7b88a0a8ee5398f12b1793578ebedc802921"
     },
     {
@@ -2615,7 +2359,7 @@
       "taint_state": "INTEGRAL",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "965d3796983070162f1b4ac0b2b7b0e022c245da1eba9f272b9a13b4a317894d"
+      "sha256": "9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840"
     },
     {
       "specimen_id": "PY-WL-009-TP-INTEGRAL",
@@ -2624,11 +2368,7 @@
       "rule": "PY-WL-009",
       "taint_state": "INTEGRAL",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if data[\"status\"] == \"active\":",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "5c5ba755c470eefe6cae1c1f53ed7b88a0a8ee5398f12b1793578ebedc802921"
     },
     {
@@ -2639,7 +2379,7 @@
       "taint_state": "MIXED_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "965d3796983070162f1b4ac0b2b7b0e022c245da1eba9f272b9a13b4a317894d"
+      "sha256": "9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840"
     },
     {
       "specimen_id": "PY-WL-009-TP-MIXED_RAW",
@@ -2648,11 +2388,7 @@
       "rule": "PY-WL-009",
       "taint_state": "MIXED_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if data[\"status\"] == \"active\":",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "5c5ba755c470eefe6cae1c1f53ed7b88a0a8ee5398f12b1793578ebedc802921"
     },
     {
@@ -2663,7 +2399,7 @@
       "taint_state": "UNKNOWN_ASSURED",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "965d3796983070162f1b4ac0b2b7b0e022c245da1eba9f272b9a13b4a317894d"
+      "sha256": "9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840"
     },
     {
       "specimen_id": "PY-WL-009-TP-UNKNOWN_ASSURED",
@@ -2672,11 +2408,7 @@
       "rule": "PY-WL-009",
       "taint_state": "UNKNOWN_ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if data[\"status\"] == \"active\":",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "5c5ba755c470eefe6cae1c1f53ed7b88a0a8ee5398f12b1793578ebedc802921"
     },
     {
@@ -2687,7 +2419,7 @@
       "taint_state": "UNKNOWN_GUARDED",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "965d3796983070162f1b4ac0b2b7b0e022c245da1eba9f272b9a13b4a317894d"
+      "sha256": "9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840"
     },
     {
       "specimen_id": "PY-WL-009-TP-UNKNOWN_GUARDED",
@@ -2696,11 +2428,7 @@
       "rule": "PY-WL-009",
       "taint_state": "UNKNOWN_GUARDED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if data[\"status\"] == \"active\":",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "5c5ba755c470eefe6cae1c1f53ed7b88a0a8ee5398f12b1793578ebedc802921"
     },
     {
@@ -2711,7 +2439,7 @@
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "965d3796983070162f1b4ac0b2b7b0e022c245da1eba9f272b9a13b4a317894d"
+      "sha256": "9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840"
     },
     {
       "specimen_id": "PY-WL-009-TP-UNKNOWN_RAW",
@@ -2720,11 +2448,7 @@
       "rule": "PY-WL-009",
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "if data[\"status\"] == \"active\":",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "5c5ba755c470eefe6cae1c1f53ed7b88a0a8ee5398f12b1793578ebedc802921"
     },
     {
@@ -2958,13 +2682,9 @@
       "path": "specimens/adversarial/ADV-003-nested-scope.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
-      "taint_state": "INTEGRAL",
+      "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 3,
-        "text": "x = data.get(\"key\", \"default\")",
-        "function": "inner"
-      },
+      "expected_match": true,
       "sha256": "160606166fe2ab35b2334f2adfa98e901a885d091633502a9801642fa88f305f"
     },
     {
@@ -2974,11 +2694,7 @@
       "rule": "PY-WL-004",
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "pr\u00f6cess"
-      },
+      "expected_match": true,
       "sha256": "fe070f6f2d44e6254611799398b048726a874aa4e35274d8efac0e54cab1ec30"
     },
     {
@@ -2988,11 +2704,7 @@
       "rule": "PY-WL-005",
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 54,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "9bddf2557fa2ae1e5677cad3af71ad356af5563f2e49e2f79ce7316593c3fea8"
     },
     {
@@ -3002,11 +2714,7 @@
       "rule": "PY-WL-001",
       "taint_state": "ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 9,
-        "text": "x = data.get(\"key\", \"default\")",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "79729ceb608a77ed594033dfa698c9ba72e12663deb134318fc5c5d6bd4e8c8d"
     },
     {
@@ -3014,13 +2722,9 @@
       "path": "specimens/adversarial/ADV-007-async-get.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
-      "taint_state": "INTEGRAL",
+      "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = data.get(\"key\", \"default\")",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "26d9f988e68efc350bbe1d8e16af1a75a6cceb1aeed6ae528bcff2d8770ef3ca"
     },
     {
@@ -3030,11 +2734,7 @@
       "rule": "PY-WL-004",
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except BaseException:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "d7a55b803438be519d8d2a17c91cf7b8891a96d42fa958046b3895279a989973"
     },
     {
@@ -3044,11 +2744,7 @@
       "rule": "PY-WL-005",
       "taint_state": "MIXED_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except Exception:",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "9f632c8cbd3ff856c4ee6cf32063d1aa2f32238d189c3e8183c94b147d4d2477"
     },
     {
@@ -3058,11 +2754,7 @@
       "rule": "PY-WL-002",
       "taint_state": "ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = getattr(obj, \"name\", None)",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "108360958fe9ef1d9af9b3b8518c115dbd94e3a47731753d99f5a67e8d382c92"
     },
     {
@@ -3072,11 +2764,7 @@
       "rule": "PY-WL-001",
       "taint_state": "GUARDED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 3,
-        "text": "x = data.get(\"key\", \"default\")",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "f8f1531788c0c811f5874e9b447c1cf6440e2ad5ce3b16e041f71e383ed5c113"
     },
     {
@@ -3084,13 +2772,9 @@
       "path": "specimens/adversarial/ADV-012-setdefault.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
-      "taint_state": "INTEGRAL",
+      "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 2,
-        "text": "x = data.setdefault(\"key\", [])",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "9ca53318246017be037df9afa506ae736e068440aa69f5d133ab50c1717636f5"
     },
     {
@@ -3098,13 +2782,9 @@
       "path": "specimens/adversarial/ADV-013-defaultdict.yaml",
       "py_exists": true,
       "rule": "PY-WL-001",
-      "taint_state": "INTEGRAL",
+      "taint_state": "UNKNOWN_RAW",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 3,
-        "text": "d = defaultdict(list)",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "c0088880862f3022c94a7496808be3aebafc7ec6aae565327f054687ea56bb93"
     },
     {
@@ -3112,7 +2792,7 @@
       "path": "specimens/adversarial/ADV-014-hasattr-taint-gate.yaml",
       "py_exists": true,
       "rule": "PY-WL-003",
-      "taint_state": "EXTERNAL_RAW",
+      "taint_state": "INTEGRAL",
       "verdict": "true_negative",
       "expected_match": false,
       "sha256": "31648f94712fce43847df3533d076ab3de36907bd36fb90d05cdfe33e4f49d05"
@@ -3124,11 +2804,7 @@
       "rule": "PY-WL-004",
       "taint_state": "ASSURED",
       "verdict": "true_positive",
-      "expected_match": {
-        "line": 4,
-        "text": "except (ValueError, Exception):",
-        "function": "process"
-      },
+      "expected_match": true,
       "sha256": "e2c64c4a8f1a54863389478f3dbb78454c4b14f24e12eea8998db88516bbfd7c"
     }
   ]

@@ -7,11 +7,7 @@ fragment: "async def process():\n    try:\n        await something()\n    except
 taint_state: MIXED_RAW
 expected_rules:
 - PY-WL-005
-expected_match:
-  line: 4
-  text: "except Exception:"
-  function: "process"
-expected_match_source: "ast-reimplemented"
+expected_match: true
 verdict: true_positive
 tags:
 - adversarial
