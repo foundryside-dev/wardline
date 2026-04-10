@@ -9,7 +9,13 @@ from pathlib import Path
 import pytest
 import yaml
 
+from wardline.core.severity import RuleId
+
 CORPUS_ROOT = Path(__file__).parent.parent.parent.parent / "corpus"
+
+# Rules where taint doesn't affect detection — only EXTERNAL_RAW specimens exist.
+# Matches TAINT_INVARIANT_RULES in scripts/generate_corpus.py.
+_TAINT_INVARIANT_RULES = {str(r) for r in (RuleId.PY_WL_008, RuleId.PY_WL_009)}
 SCHEMA_PATH = (
     Path(__file__).parent.parent.parent.parent
     / "src"
@@ -43,8 +49,8 @@ class TestCorpusSkeleton:
         # Check taint state subdirectories
         assert (rule_dir / "EXTERNAL_RAW" / "positive").is_dir()
         assert (rule_dir / "EXTERNAL_RAW" / "negative").is_dir()
-        # PY-WL-008/009 are taint-invariant — only EXTERNAL_RAW specimens exist
-        if rule not in {"PY-WL-008", "PY-WL-009"}:
+        # Taint-invariant rules only have EXTERNAL_RAW specimens
+        if rule not in _TAINT_INVARIANT_RULES:
             assert (rule_dir / "UNKNOWN_RAW" / "positive").is_dir()
             assert (rule_dir / "UNKNOWN_RAW" / "negative").is_dir()
 

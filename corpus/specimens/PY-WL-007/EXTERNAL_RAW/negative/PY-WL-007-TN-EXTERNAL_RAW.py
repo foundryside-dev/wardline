@@ -1,2 +1,2 @@
-def direct_access_request_param(request_param):
-    x = request_param["key"]
+def no_typecheck_request_param(request_param):
+    x = len(request_param)

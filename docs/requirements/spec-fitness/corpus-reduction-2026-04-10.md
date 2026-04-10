@@ -56,5 +56,5 @@ and verified by existing matrix tests.
 - All remaining specimens use unique code fragments per rule (verified by
   `test_no_duplicate_sha256_within_rule`)
 - `wardline corpus verify` passes with zero failures
-- Full test suite (`uv run pytest`) passes with 2224 tests
+- Full test suite passes (verified at commit `0d6f78e` on `phase-4.4-test-quality-gates`)
 - Scanner detection logic unchanged — only corpus metadata was modified

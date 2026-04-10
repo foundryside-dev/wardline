@@ -8,13 +8,16 @@ plus adversarial specimens.  Run from the repo root:
 """
 from __future__ import annotations
 
+import glob
 import hashlib
 import json
 import os
 import sys
+from pathlib import Path
 
 import yaml
 
+from wardline.cli.corpus_cmds import _compute_corpus_hash
 from wardline.core.matrix import SEVERITY_MATRIX
 from wardline.core.severity import Exceptionability, RuleId, Severity
 from wardline.core.taints import TaintState
@@ -365,11 +368,6 @@ def write_manifest() -> None:
     prevent manifest drift.
     """
     # Scan disk for all YAML specimens (authoritative source)
-    import glob
-    from pathlib import Path
-
-    from wardline.cli.corpus_cmds import _compute_corpus_hash
-
     disk_entries = []
     for yaml_path in sorted(glob.glob(f"{BASE}/**/*.yaml", recursive=True)):
         with open(yaml_path) as f:

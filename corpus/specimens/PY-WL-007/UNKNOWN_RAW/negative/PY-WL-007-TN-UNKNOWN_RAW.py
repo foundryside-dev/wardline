@@ -1,2 +1,2 @@
-def direct_access_unknown_input(unknown_input):
-    x = unknown_input["key"]
+def no_typecheck_unknown_input(unknown_input):
+    x = len(unknown_input)

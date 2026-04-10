@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "spec_version": "1.0",
-  "corpus_hash": "sha256:f16e8aecd52210935ed48f4347c715cb9fc463baf77605f972c0d4e383bb4d8f",
+  "corpus_hash": "sha256:3e74d53d9a6a9daa34ceb68db3c4db05d643378b7b81215f591452de5ea4f6a6",
   "generated": "2026-04-10",
   "specimen_count": 224,
   "specimens": [
@@ -1913,7 +1913,7 @@
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "11f37a2539523f173194972e7476c7c2fc2d61737c7d47004f57f2885ca2cf5c"
+      "sha256": "e05ec25b7836a0cbc3a33ef7804b67a8e61fe4a9f9e232d6c8408d13aa4357b0"
     },
     {
       "specimen_id": "PY-WL-007-TN-SUPPRESS-EXTERNAL_RAW",
@@ -2057,7 +2057,7 @@
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "5d3e1b68c69913ceecf82ca2897eb951a89f101865b7a509e890dcbe408e932a"
+      "sha256": "038d4b67458c308bb09ef6c14d830b7988f1b30323fba3eefa51d296c7edd4a6"
     },
     {
       "specimen_id": "PY-WL-008-TN-AFP-has-rejection",

@@ -2,11 +2,11 @@
 specimen_id: PY-WL-007-TN-EXTERNAL_RAW
 description: PY-WL-007 true negative at EXTERNAL_RAW
 rule: PY-WL-007
-fragment: "def direct_access_request_param(request_param):\n    x = request_param[\"key\"]\n"
+fragment: "def no_typecheck_request_param(request_param):\n    x = len(request_param)\n"
 taint_state: EXTERNAL_RAW
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 11f37a2539523f173194972e7476c7c2fc2d61737c7d47004f57f2885ca2cf5c
+sha256: e05ec25b7836a0cbc3a33ef7804b67a8e61fe4a9f9e232d6c8408d13aa4357b0
 verdict: true_negative
