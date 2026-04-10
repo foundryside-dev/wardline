@@ -36,7 +36,7 @@ The spec defines three enforcement states:
 - **Alternate:** Degraded but running — findings are still governance-grade
 - **Direct:** No meaningful enforcement output
 
-`compute_control_law()` at `src/wardline/scanner/sarif.py:118-151` currently
+`compute_control_law()` at `src/wardline/scanner/sarif.py:122-155` currently
 accepts 5 inputs: `manifest_unavailable`, `ratification_overdue`,
 `conformance_gaps`, `rules_disabled`, `stale_exception_count`.
 
@@ -63,7 +63,7 @@ accepts 5 inputs: `manifest_unavailable`, `ratification_overdue`,
 The spec (§12) says coverage metrics MUST be visible. Currently,
 `coverageRatio` is read from the fingerprint baseline file
 (`wardline.fingerprint.json`) via `_read_coverage_ratio()` in
-`src/wardline/cli/scan.py:149-165`. When no baseline exists, the property is
+`src/wardline/cli/scan.py:166-182`. When no baseline exists, the property is
 omitted entirely from SARIF.
 
 **R6 requirement:** Compute coverage ratio independently of the fingerprint
@@ -104,7 +104,7 @@ baseline comparison is enabled via `--compare`).
 
 ## 3. Current State Audit
 
-### 3.1 `compute_control_law()` (`sarif.py:118-151`)
+### 3.1 `compute_control_law()` (`sarif.py:122-155`)
 
 ```python
 def compute_control_law(
@@ -129,7 +129,7 @@ Alternate when any other condition triggers. Normal when all clear.
 
 ### 3.2 Precision/Recall Floor Checking (`corpus_cmds.py`)
 
-Floors are defined in `_get_floors()` at lines 261-305:
+Floors are defined in `_get_floors()` at lines 434-477:
 - Precision: 80% (65% for MIXED_RAW)
 - Recall: 90% for UNCONDITIONAL, 70% for STANDARD/RELAXED
 
@@ -143,7 +143,7 @@ Floor violations currently flow into control law indirectly:
 input. The control law cannot distinguish "corpus cell failed" from "tool
 version changed" — both are just conformance gaps.
 
-### 3.3 Coverage Ratio (`scan.py:149-165`)
+### 3.3 Coverage Ratio (`scan.py:166-182`)
 
 ```python
 def _read_coverage_ratio(manifest_path: Path) -> float | None:
@@ -223,7 +223,7 @@ vs total functions to produce a coverage ratio without needing the baseline.
   ```
   This catches the silent failure where a stale baseline inflates the
   reported coverage ratio.
-- Modify: `src/wardline/scanner/sarif.py:342-343` — Always emit
+- Modify: `src/wardline/scanner/sarif.py:365-366` — Always emit
   `coverageRatio` as a key (never conditionally omit), but use `null` when
   no data is available (zero functions discovered):
   ```python
@@ -254,6 +254,11 @@ vs total functions to produce a coverage ratio without needing the baseline.
 - `test_dual_source_no_warning_below_threshold` — 5% divergence → no warning
 - `test_zero_functions_logs_debug` — when total_function_count == 0, emit
   debug-level log: "no functions discovered, coverageRatio will be null"
+- `test_engine_coverage_counts` — Add to `tests/unit/scanner/test_engine.py`:
+  scan a fixture with known annotated and unannotated functions, assert
+  `result.annotated_function_count` and `result.total_function_count` are
+  the expected raw values. This catches counting bugs that CLI/SARIF tests
+  would miss (they only see the derived ratio).
 
 **Commit:** `fix(R6): compute coverage ratio from scan when fingerprint baseline absent`
 
@@ -268,16 +273,30 @@ already computes internally.
 
 **Files:**
 - **DO NOT modify `src/wardline/scanner/taint/callgraph_propagation.py`.**
-  The resolution statistics already exist at the `engine.py` call site as
-  `resolved_counts: dict[str, int]` and `unresolved_counts: dict[str, int]`
-  dicts that are passed INTO `propagate_callgraph_taints()`. Compute the
-  aggregate ratio directly in `engine.py`:
+  The `resolved_counts: dict[str, int]` and `unresolved_counts: dict[str, int]`
+  dicts are computed by `extract_call_edges()` at `engine.py:801` — but they
+  are **local variables inside `_run_callgraph_taint()`**, NOT accessible at
+  the main scan loop call site (`engine.py:512`). The return value of
+  `_run_callgraph_taint()` is currently `(refined_map, provenance)` and does
+  not include these dicts.
+
+  **Fix:** Compute the aggregate stats **inside `_run_callgraph_taint()`**
+  (which is in `engine.py`, respecting the no-modify constraint on
+  `callgraph_propagation.py`), and extend its return value to include them:
   ```python
+  # Inside _run_callgraph_taint(), after extract_call_edges():
   total_resolved = sum(resolved_counts.values())
   total_unresolved = sum(unresolved_counts.values())
   total_edges = total_resolved + total_unresolved
   call_edge_resolution_ratio = total_resolved / total_edges if total_edges > 0 else None
+  low_resolution_count = ...  # count from existing L3_LOW_RESOLUTION logic
+
+  # Return extended tuple:
+  return refined_map, provenance, call_edge_resolution_ratio, low_resolution_count
   ```
+  Then at the call site in the main scan loop, unpack the extended return
+  and assign to `ScanResult` fields.
+
   Do NOT create a `PropagationStats` dataclass — it adds unnecessary churn
   to `callgraph_propagation.py` and risks breaking the fixed-point algorithm.
 - Modify: `src/wardline/scanner/engine.py` — Add to `ScanResult`:
@@ -303,8 +322,11 @@ already computes internally.
   result to SARIF report.
 
 **Note:** When analysis level is L1 (no call-graph propagation), the metric
-is `null` because no paths were traced. This is correct — the metric reports
-what the engine actually did, not what it could have done.
+is `null` because no paths were traced. At L2, the metric is also `null` —
+L2 performs intra-module taint propagation but does NOT run the call-graph
+(L3) pass, so no call edges are resolved. Only L3 produces a non-null ratio.
+This is correct — the metric reports what the engine actually did, not what
+it could have done.
 
 **Coverage ratio denominator:** Count all functions that appear in the taint
 engine's qualname map (`build_qualname_map()` in `src/wardline/scanner/_qualnames.py`).
@@ -335,6 +357,8 @@ This lets assessors judge whether the denominator is representative:
 **Tests:**
 - `test_data_paths_traced_ratio_from_l3_scan` — L3 scan produces non-null ratio
 - `test_data_paths_traced_ratio_null_at_l1` — L1 scan produces null
+- `test_data_paths_traced_ratio_null_at_l2` — L2 scan produces null (L2 does
+  not run call-graph propagation)
 - `test_data_paths_traced_in_sarif` — ratio appears in run properties
 - `test_low_resolution_function_count_in_sarif` — count appears alongside ratio
 - `test_data_paths_traced_ratio_zero_edges` — L3 scan with zero call edges
@@ -358,7 +382,7 @@ into generic `conformance_gaps`. The control law should distinguish these.
 **Approach:** Add dedicated inputs to `compute_control_law()`.
 
 **Files:**
-- Modify: `src/wardline/scanner/sarif.py:118-151` — Extend
+- Modify: `src/wardline/scanner/sarif.py:122-155` — Extend
   `compute_control_law()` with new parameters:
   ```python
   def compute_control_law(
@@ -385,6 +409,11 @@ into generic `conformance_gaps`. The control law should distinguish these.
   if (fingerprint_age_days is not None
           and fingerprint_age_days > fingerprint_max_age_days):
       degradations.append("fingerprint_baseline_stale")
+  # NOTE: Uses strict > (not >=) intentionally. A fingerprint that is
+  # exactly at the threshold is still within its validity window. This
+  # differs from ratification_overdue which uses >= (in regime.py:205).
+  # The difference is deliberate: ratification is a deadline (due on
+  # the day), while staleness is a decay window (stale only after).
   ```
 
   **IMPORTANT:** Degradation condition names are FIXED strings — do NOT
@@ -433,6 +462,16 @@ into generic `conformance_gaps`. The control law should distinguish these.
   This distinction gives operators a clear corrective action. Both trigger
   alternate law.
 
+  **Known limitation of the heuristic:** The file-absent = `conformance_never_run`
+  heuristic is fragile. If a project has been using the tool but the
+  conformance file was deleted (CI artifact cleanup, repo clone without
+  artifacts), the scanner will report `conformance_never_run` instead of
+  `conformance_data_unavailable`, giving the operator the wrong corrective
+  action ("run corpus publish" vs "investigate deletion"). This is an
+  accepted simplification for v1.0 — document in conformance evidence as
+  a known limitation. A future enhancement could check git history or a
+  `.wardline/conformance/` directory for evidence of prior runs.
+
   **Handle present-but-malformed conformance file:** If the file exists but
   fails JSON parsing or is missing expected keys (`cells_below_precision_floor`,
   `cells_below_recall_floor`), treat as `"conformance_data_unavailable"` with
@@ -440,6 +479,20 @@ into generic `conformance_gaps`. The control law should distinguish these.
 
   This ensures a missing conformance file produces alternate law (degraded
   but running) rather than silently claiming normal law with unknown quality.
+
+  **First-run alternate law is expected and must be documented.** A brand-new
+  project will enter alternate law on its first scan from TWO simultaneous
+  conditions: (1) no `wardline.conformance.json` → `conformance_never_run`,
+  (2) no fingerprint baseline → `fingerprint_age_unknown`. This is
+  architecturally correct (unknown quality IS degraded), but creates a bad
+  onboarding experience if undocumented.
+
+  To help downstream tooling distinguish "first run" from "ongoing degradation":
+  - Emit `wardline.isInitialSetup: true` in SARIF run properties when BOTH
+    conformance file AND fingerprint baseline are absent on the same scan
+  - This lets CI pipelines apply different alerting thresholds for new project
+    onboarding (e.g., suppress alternate-law alerts on first scan)
+  - Add to `SarifReport` as `is_initial_setup: bool = False`
 
 - Modify: `src/wardline/cli/scan.py` — Read fingerprint age from the
   fingerprint baseline. The `FingerprintMetrics` dataclass in
@@ -522,6 +575,14 @@ into generic `conformance_gaps`. The control law should distinguish these.
   degradation
 - `test_floor_violation_counts_in_sarif_properties` — `precisionFloorViolations`
   and `recallFloorViolations` appear as separate run-level SARIF properties
+- `test_control_law_clean_path` — all inputs at healthy values
+  (`precision_floor_violations=0`, `recall_floor_violations=0`,
+  `fingerprint_age_days=10`, `fingerprint_max_age_days=180`) produces
+  normal law with zero degradation strings. Explicitly tests the clean path
+  to catch regressions where a new degradation condition fires spuriously.
+- `test_conformance_missing_keys_logs_warning` — file present but missing
+  `cells_below_precision_floor` key → warning logged (not just silent
+  degradation). Operators watching stdout need the diagnostic.
 
 **Commit:** `fix(R4): add precision/recall floor and corpus staleness to control law`
 
@@ -592,12 +653,15 @@ chain.
   "direct")` check naturally skips detection (correct: unknown ≠ clean).
 
   **Baseline integrity note:** The SARIF baseline file has no integrity
-  protection (signing, hashing). A repo committer can edit `wardline.controlLaw`
-  to suppress retrospective scan detection. This is an **accepted risk** for
-  v1.0 — document it in the conformance evidence. The mitigation is that CI
-  pipelines should generate baseline SARIF in a trusted environment, not read
-  it from the repo. Future work: add hash-based integrity verification for
-  SARIF baseline files.
+  protection (signing, hashing). There are THREE suppression paths an
+  attacker can exploit: (1) edit `wardline.controlLaw` to `"normal"`,
+  (2) delete the baseline file entirely (`prev_control_law` → `None`, check
+  skipped), (3) corrupt the JSON to trigger the malformed-JSON handler (no
+  baseline, no detection). All three are **accepted risks** for v1.0 —
+  document ALL THREE in the conformance evidence (not just the edit path).
+  The mitigation is that CI pipelines should generate baseline SARIF in a
+  trusted environment, not read it from the repo. Future work: add
+  hash-based integrity verification for SARIF baseline files.
 
   **Malformed baseline JSON handling:** Wrap the entire baseline-reading block
   in a try/except. If the baseline fails JSON parsing, treat as no baseline
@@ -609,10 +673,14 @@ chain.
   governance model, not the scanner exit code.
 
   **Enforcement delegation:** The conformance evidence MUST explicitly:
-  1. Name the CI gate mechanism that reads `wardline.controlLaw` and governance
-     events to enforce retrospective scans
+  1. Name the **specific, existing** CI gate mechanism that reads
+     `wardline.controlLaw` and governance events to enforce retrospective
+     scans — not a hypothetical future gate
   2. Confirm that a qualifying CI gate exists in every deployment context
-  3. Document that without a CI gate, the MUST requirement is unenforceable
+  3. If no qualifying CI gate exists at v1.0 ship, honestly disclose that
+     the spec §9.5 MUST requirement for retrospective scans is unenforceable
+     by tooling alone — this is a **residual risk**, not a "future work" item
+  4. Document that without a CI gate, the MUST requirement is unenforced
      (honest disclosure for assessors)
 
 **Tests:**
@@ -629,6 +697,12 @@ chain.
   no crash, no event (guard against IndexError)
 - `test_retrospective_baseline_malformed_json` — baseline file has invalid
   JSON → treated as no baseline, warning logged, no crash
+- `test_is_initial_setup_true_when_both_absent` — no conformance file AND no
+  fingerprint baseline → `wardline.isInitialSetup` is `true`
+- `test_is_initial_setup_false_when_conformance_exists` — conformance file
+  present (even if fingerprint absent) → `isInitialSetup` is `false`
+- `test_is_initial_setup_false_when_fingerprint_exists` — fingerprint present
+  (even if conformance absent) → `isInitialSetup` is `false`
 
 **Commit:** `fix(R10): detect control law improvement and recommend retrospective scan`
 
@@ -707,17 +781,20 @@ chain.
     `"conformance_data_unavailable"` (file deleted or malformed — investigate).
     Both trigger alternate law but give operators different corrective actions.
 
-13. **Baseline SARIF has no integrity protection (accepted risk).** A repo
-    committer can edit `wardline.controlLaw` in the baseline to suppress
-    retrospective scan detection. For v1.0, this is an accepted risk documented
-    in the conformance evidence. The mitigation is that CI pipelines should
-    generate baseline SARIF in a trusted environment, not read it from the repo.
+13. **Baseline SARIF has no integrity protection (accepted risk).** Three
+    suppression paths exist: (1) edit `wardline.controlLaw` to `"normal"`,
+    (2) delete the baseline file, (3) corrupt the JSON. All three are
+    accepted risks for v1.0 — document ALL THREE in conformance evidence.
+    The mitigation is that CI pipelines should generate baseline SARIF in a
+    trusted environment, not read it from the repo.
 
 14. **180-day fingerprint staleness default.** The 180-day default must be
     justified in the conformance evidence against the project's governance
-    cadence. For ISM-aligned projects, consider 90 days (quarterly assurance
-    cycle). The value is configurable in `wardline.toml` — the conformance
-    evidence must explain why the chosen value is appropriate.
+    cadence. For ISM-aligned projects, 90 days (quarterly assurance cycle)
+    is the defensible default. The value is configurable in `wardline.toml`
+    — the conformance evidence must explain why the chosen value is
+    appropriate. The 365-day cap may be too generous for security tools —
+    consider whether the cap itself should be reduced for ISM deployments.
 
 15. **`wardline.denominatorExcludedCount` surfaces denominator scoping.** The
     count of lambda expressions excluded from the coverage ratio denominator
@@ -728,7 +805,20 @@ chain.
     state machine (normal/alternate/direct with all degradation conditions)
     must be expressed as a declarative transition table in the conformance
     evidence, not only as source code. Assessors should not need to read
-    Python to verify transition completeness.
+    Python to verify transition completeness. **This is an explicit
+    deliverable of this workstream** (commit 5), not just a constraint.
+
+17. **`wardline.isInitialSetup` run property.** Emit `true` when BOTH
+    conformance file AND fingerprint baseline are absent on the same scan.
+    This helps downstream tooling distinguish first-run degradation from
+    ongoing quality problems. Emit `false` otherwise.
+
+18. **`wardline.conformance.json` lacks integrity protection (accepted risk).**
+    A fake file with `cells_below_precision_floor: 0` is indistinguishable
+    from a legitimate one. The same CI-trusted-environment mitigation applies
+    as for baseline SARIF (constraint 13). Document in conformance evidence.
+    Future enhancement: cross-validate `generated_at` timestamp against
+    corpus manifest hash to detect stale conformance data.
 
 ---
 
@@ -752,7 +842,25 @@ chain.
 | R4 | `tests/unit/cli/test_scan_cmd.py` | fingerprint_age_days boundary (== threshold, == 365) |
 | R10 | `tests/unit/cli/test_scan_cmd.py` | Retrospective detection from `--compare` |
 | R10 | `tests/unit/cli/test_scan_cmd.py` | Missing controlLaw → None (not "normal"), empty runs, malformed JSON |
-| All | `tests/integration/test_self_hosting_scan.py` | Self-hosting scan passes + explicit assertion on: `wardline.coverageRatio` (key present), `wardline.dataPathsTracedRatio`, `wardline.lowResolutionFunctionCount`, `wardline.denominatorExcludedCount`, `wardline.deterministic`, `wardline.deferredFixRatio`, `wardline.controlLaw`, `wardline.precisionFloorViolations`, `wardline.recallFloorViolations` |
+| R6 | `tests/unit/scanner/test_engine.py` | `test_engine_coverage_counts` — raw annotated/total function counts from fixture |
+| All | `tests/integration/test_self_hosting_scan.py` | Self-hosting scan passes + assertions on new SARIF properties (see below) |
+
+**Integration test guidance:** The self-hosting integration test MUST use
+**key-existence and range checks**, NOT exact value assertions. The codebase
+changes over time, so exact values (e.g., `coverageRatio == 0.42`) will break.
+Use:
+```python
+assert "wardline.coverageRatio" in props  # key always present
+assert props["wardline.coverageRatio"] is None or 0 <= props["wardline.coverageRatio"] <= 1
+assert "wardline.dataPathsTracedRatio" in props
+assert "wardline.lowResolutionFunctionCount" in props
+assert isinstance(props["wardline.lowResolutionFunctionCount"], int)
+assert "wardline.denominatorExcludedCount" in props
+assert "wardline.precisionFloorViolations" in props
+assert "wardline.recallFloorViolations" in props
+assert "wardline.isInitialSetup" in props
+assert props["wardline.propertyBagVersion"] == "0.6"
+```
 
 ---
 
@@ -789,15 +897,59 @@ stats are already available at the `engine.py` call site via `resolved_counts` /
 
 ## 9. Commit Strategy
 
-4 commits, one per fix:
+5 commits, one per fix plus one for the transition table:
 
 1. `fix(R6): compute coverage ratio from scan when fingerprint baseline absent`
 2. `fix(R7): add wardline.dataPathsTracedRatio to SARIF run properties`
 3. `fix(R4): add precision/recall floor and corpus staleness to control law`
 4. `fix(R10): detect control law improvement and recommend retrospective scan`
+5. `docs(governance): add control law transition table to conformance evidence`
+
+**Property bag version:** Bump `wardline.propertyBagVersion` to `"0.6"` in
+the R7 commit (when the first new run-level properties land). The R6 commit
+changes `coverageRatio` from conditionally-absent to always-present — that's
+a behavior change but not a new property, so the bump happens at R7.
+
+**Each commit must leave tests passing.**
 
 ---
 
-## 10. Status Protocol
+## 10. Deliverables Beyond Code
+
+### 10.1 Control Law Transition Table (§5.16)
+
+**This is an explicit deliverable, not just a constraint.** Create a
+declarative transition table in the conformance evidence
+(`docs/requirements/spec-fitness/`) that documents ALL degradation conditions,
+their trigger thresholds, which law they produce, and the corrective action.
+Assessors should be able to verify transition completeness from this table
+without reading Python source code.
+
+Example format:
+
+| Condition | Trigger | Law | Corrective Action |
+|-----------|---------|-----|-------------------|
+| `manifest_unavailable` | wardline.yaml not found | direct | Create wardline.yaml |
+| `conformance_never_run` | wardline.conformance.json absent | alternate | Run `wardline corpus publish` |
+| `precision_below_floor` | Any corpus cell precision < floor | alternate | Investigate false positives |
+| `fingerprint_baseline_stale` | age_days > max_age_days (capped 365) | alternate | Regenerate fingerprint baseline |
+| `fingerprint_age_unknown` | generated_at missing or unparseable | alternate | Fix fingerprint baseline |
+| ... | ... | ... | ... |
+
+This table must cover ALL conditions from both the existing implementation
+AND this workstream's additions.
+
+### 10.2 First-Run Onboarding Documentation
+
+Document in the operator guide that a brand-new project will immediately
+enter alternate law on its first scan. Explain that this is expected behavior
+(unknown quality IS degraded) and list the steps to reach normal law:
+1. Run `wardline corpus publish` (clears `conformance_never_run`)
+2. Run `wardline fingerprint generate` (clears `fingerprint_age_unknown`)
+3. Re-scan
+
+---
+
+## 11. Status Protocol
 
 Report after each fix: DONE, DONE_WITH_CONCERNS, NEEDS_CONTEXT, or BLOCKED.
