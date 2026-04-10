@@ -768,3 +768,57 @@ class TestEngineSnippetPopulation:
             assert f.source_snippet is not None, (
                 f"source_snippet should be populated, got None for finding at line {f.line}"
             )
+
+
+class TestEngineCoverageCounts:
+    """Coverage counting: annotated vs total functions from project index."""
+
+    def test_engine_coverage_counts(self, tmp_path: Path) -> None:
+        """Scan counts annotated and total functions correctly."""
+        _write_py(
+            tmp_path / "annotated.py",
+            """\
+from wardline.decorators.lifecycle import test_only
+
+@test_only
+def decorated_func():
+    pass
+
+def plain_func():
+    pass
+""",
+        )
+        _write_py(
+            tmp_path / "plain.py",
+            """\
+def another_func():
+    pass
+
+def yet_another():
+    pass
+""",
+        )
+
+        engine = ScanEngine(target_paths=(tmp_path,), rules=())
+        result = engine.scan()
+
+        assert result.total_function_count == 4
+        assert result.annotated_function_count == 1
+
+    def test_coverage_counts_zero_when_no_files(self, tmp_path: Path) -> None:
+        """Empty directory yields zero counts."""
+        engine = ScanEngine(target_paths=(tmp_path,), rules=())
+        result = engine.scan()
+
+        assert result.total_function_count == 0
+        assert result.annotated_function_count == 0
+
+    def test_coverage_counts_zero_annotations_when_no_decorators(self, tmp_path: Path) -> None:
+        """Files with functions but no wardline decorators → annotated=0."""
+        _write_py(tmp_path / "mod.py", "def foo(): pass\ndef bar(): pass\n")
+
+        engine = ScanEngine(target_paths=(tmp_path,), rules=())
+        result = engine.scan()
+
+        assert result.total_function_count == 2
+        assert result.annotated_function_count == 0

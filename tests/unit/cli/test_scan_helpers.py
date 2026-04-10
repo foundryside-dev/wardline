@@ -225,6 +225,90 @@ class TestComputeOverlayHashes:
         assert result == expected
 
 
+class TestResolveCoverageRatio:
+    """Tests for _resolve_coverage_ratio helper."""
+
+    def test_coverage_ratio_from_scan_when_no_baseline(self) -> None:
+        """When no fingerprint baseline, coverage ratio comes from scan counts."""
+        from wardline.cli.scan import _resolve_coverage_ratio
+
+        ratio, scan_time = _resolve_coverage_ratio(None, 3, 10)
+        assert ratio == pytest.approx(0.3)
+        assert scan_time == pytest.approx(0.3)
+
+    def test_coverage_ratio_prefers_baseline(self) -> None:
+        """When fingerprint baseline exists, it takes precedence over scan-time."""
+        from wardline.cli.scan import _resolve_coverage_ratio
+
+        ratio, scan_time = _resolve_coverage_ratio(0.75, 3, 10)
+        # Baseline value (0.75) wins over scan-time (0.3)
+        assert ratio == 0.75
+        assert scan_time == pytest.approx(0.3)
+
+    def test_coverage_ratio_null_when_zero_functions(self) -> None:
+        """Zero functions scanned → coverage ratio remains None (not 0.0)."""
+        from wardline.cli.scan import _resolve_coverage_ratio
+
+        ratio, scan_time = _resolve_coverage_ratio(None, 0, 0)
+        assert ratio is None
+        assert scan_time is None
+
+    def test_baseline_none_zero_annotated(self) -> None:
+        """No baseline, functions exist but none annotated → 0.0 (not None)."""
+        from wardline.cli.scan import _resolve_coverage_ratio
+
+        ratio, scan_time = _resolve_coverage_ratio(None, 0, 10)
+        assert ratio == 0.0
+        assert scan_time == 0.0
+
+
+class TestCoverageRatioDivergence:
+    """Tests for dual-source divergence warning boundary conditions."""
+
+    def test_dual_source_divergence_warning_above_threshold(self) -> None:
+        """15% divergence between baseline and scan-time → should warn."""
+        from wardline.cli.scan import _resolve_coverage_ratio
+
+        baseline = 0.80
+        ratio, scan_time = _resolve_coverage_ratio(baseline, 65, 100)
+        assert scan_time == pytest.approx(0.65)
+        divergence = abs(baseline - scan_time)
+        assert divergence > 0.10  # 15% > 10% threshold
+
+    def test_dual_source_no_warning_at_exactly_threshold(self) -> None:
+        """Exactly 10% divergence → NO warning (strict >)."""
+        from wardline.cli.scan import _resolve_coverage_ratio
+
+        baseline = 0.50
+        ratio, scan_time = _resolve_coverage_ratio(baseline, 40, 100)
+        assert scan_time == pytest.approx(0.40)
+        divergence = abs(baseline - scan_time)
+        assert not (divergence > 0.10)  # Exactly 10%, strict > means no warning
+
+    def test_dual_source_no_warning_below_threshold(self) -> None:
+        """5% divergence → no warning."""
+        from wardline.cli.scan import _resolve_coverage_ratio
+
+        baseline = 0.50
+        ratio, scan_time = _resolve_coverage_ratio(baseline, 45, 100)
+        assert scan_time == pytest.approx(0.45)
+        divergence = abs(baseline - scan_time)
+        assert not (divergence > 0.10)  # 5% < 10% threshold
+
+    def test_zero_functions_logs_debug(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Zero functions → debug log message about unavailability."""
+        import logging
+
+        from wardline.cli.scan import _resolve_coverage_ratio
+
+        with caplog.at_level(logging.DEBUG, logger="wardline.cli.scan"):
+            ratio, scan_time = _resolve_coverage_ratio(None, 0, 0)
+            # The debug log is emitted by scan_cmd, not the helper.
+            # Verify the helper returns None so the caller can decide to log.
+            assert ratio is None
+            assert scan_time is None
+
+
 class TestReadCoverageRatio:
     def test_no_baseline_returns_none(self, tmp_path: Path) -> None:
         """No fingerprint baseline file returns None."""

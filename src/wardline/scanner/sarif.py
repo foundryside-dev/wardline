@@ -362,8 +362,7 @@ class SarifReport:
                 "wardline.controlLaw": self.control_law,
                 **({"wardline.controlLawDegradations": list(self.control_law_degradations)}
                    if self.control_law_degradations else {}),
-                **({"wardline.coverageRatio": round(self.coverage_ratio, 4)}
-                   if self.coverage_ratio is not None else {}),
+                "wardline.coverageRatio": round(self.coverage_ratio, 4) if self.coverage_ratio is not None else None,
                 **({"wardline.retroactiveScan": True,
                     "wardline.retroactiveScanRange": self.retroactive_scan_range}
                    if self.retroactive_scan and self.retroactive_scan_range

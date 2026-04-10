@@ -6,9 +6,9 @@
 
 **Branch:** `phase-4.4-test-quality-gates`
 **Conformance review:** `docs/requirements/spec-fitness/conformance-review-2026-04-09.md`
-**Spec authority:** `docs/spec/wardline-01-09-governance-model.md` (§9.5),
-`docs/spec/wardline-01-10-verification-properties.md` (§10),
-`docs/spec/wardline-01-14-conformance.md` (§14)
+**Spec authority:** `docs/spec/wardline-01-10-governance-model.md` (§10.5),
+`docs/spec/wardline-01-11-verification-properties.md` (§11),
+`docs/spec/wardline-01-15-conformance.md` (§15)
 
 ---
 
@@ -29,7 +29,7 @@ own health accurately.
 
 ## 2. Normative Requirements
 
-### 2.1 Control Law Degradation (§9.5)
+### 2.1 Control Law Degradation (§10.5)
 
 The spec defines three enforcement states:
 - **Normal:** Full enforcement capability
@@ -44,7 +44,7 @@ accepts 5 inputs: `manifest_unavailable`, `ratification_overdue`,
 
 1. **Precision floor violations** — When any corpus cell's precision falls
    below the defined floor (80% default, 65% for MIXED_RAW), this indicates a
-   tool defect producing false positives. Per §10 property 3, this should be a
+   tool defect producing false positives. Per §11 property 3, this should be a
    distinct degradation condition, not bundled into generic `conformance_gaps`.
 
 2. **Recall floor violations** — When any corpus cell's recall falls below
@@ -54,13 +54,13 @@ accepts 5 inputs: `manifest_unavailable`, `ratification_overdue`,
 3. **Corpus staleness (time-based)** — The fingerprint baseline tracks
    `generated_at` and computes `age_days` (in `src/wardline/manifest/regime.py`).
    When the fingerprint baseline is old enough that governance claims are
-   unreliable, control law should degrade. The spec (§14.3.3) mentions
+   unreliable, control law should degrade. The spec (§15.3.3) mentions
    "fingerprint baseline established" but doesn't define a hard threshold.
    Use a configurable threshold (default 180 days) in `wardline.toml`.
 
-### 2.2 Coverage Ratio Independence (§12)
+### 2.2 Coverage Ratio Independence (§13)
 
-The spec (§12) says coverage metrics MUST be visible. Currently,
+The spec (§13) says coverage metrics MUST be visible. Currently,
 `coverageRatio` is read from the fingerprint baseline file
 (`wardline.fingerprint.json`) via `_read_coverage_ratio()` in
 `src/wardline/cli/scan.py:166-182`. When no baseline exists, the property is
@@ -71,9 +71,9 @@ baseline. The scanner already discovers all functions and their annotations
 during pass 1 — it can count annotated vs total functions without needing a
 pre-existing baseline file.
 
-### 2.3 Data Paths Traced (§10, §12)
+### 2.3 Data Paths Traced (§11, §13)
 
-The spec (§12) requires reporting both:
+The spec (§13) requires reporting both:
 1. Annotation coverage (% of functions annotated) — **implemented**
 2. Data paths traced (% of data-flow paths the taint engine actually followed)
    — **not implemented**
@@ -85,9 +85,9 @@ L3 call-graph propagation pass (`src/wardline/scanner/taint/callgraph_propagatio
 which already tracks resolution statistics for the `L3_LOW_RESOLUTION`
 governance finding.
 
-### 2.4 Retrospective Scan Detection (§9.5)
+### 2.4 Retrospective Scan Detection (§10.5)
 
-The spec (§9.5) requires that when control law transitions from direct/alternate
+The spec (§10.5) requires that when control law transitions from direct/alternate
 back to normal, a retrospective scan MUST occur covering the commit range during
 which degraded law was in effect.
 
@@ -274,11 +274,17 @@ already computes internally.
 **Files:**
 - **DO NOT modify `src/wardline/scanner/taint/callgraph_propagation.py`.**
   The `resolved_counts: dict[str, int]` and `unresolved_counts: dict[str, int]`
-  dicts are computed by `extract_call_edges()` at `engine.py:801` — but they
-  are **local variables inside `_run_callgraph_taint()`**, NOT accessible at
-  the main scan loop call site (`engine.py:512`). The return value of
-  `_run_callgraph_taint()` is currently `(refined_map, provenance)` and does
-  not include these dicts.
+  dicts are returned by `extract_call_edges()` (defined in
+  `src/wardline/scanner/taint/callgraph.py:37`) and unpacked at
+  `engine.py:801`:
+  ```python
+  edges, resolved_counts, unresolved_counts = extract_call_edges(tree, qualname_map)
+  ```
+  They are then passed as positional arguments to `propagate_callgraph_taints()`
+  at `engine.py:804-807`. They are **local variables inside
+  `_run_callgraph_taint()`**, NOT accessible at the main scan loop call site
+  (`engine.py:512`). The return value of `_run_callgraph_taint()` is currently
+  `(refined_map, provenance)` and does not include these dicts.
 
   **Fix:** Compute the aggregate stats **inside `_run_callgraph_taint()`**
   (which is in `engine.py`, respecting the no-modify constraint on
@@ -332,7 +338,9 @@ it could have done.
 engine's qualname map (`build_qualname_map()` in `src/wardline/scanner/_qualnames.py`).
 This includes:
 - Module-level `def`/`async def` nodes
-- Class methods (including `@property`-decorated methods — they are `FunctionDef` nodes)
+- Class methods (including `@property`-decorated methods — `build_qualname_map()`
+  has no decorator awareness, but `@property` methods are `FunctionDef` nodes
+  and are therefore included by the generic node-type match)
 - Inner/nested function definitions (mapped with dotted qualnames like `outer.inner`)
 
 Exclude ONLY:
@@ -616,32 +624,58 @@ chain.
 - Modify: `src/wardline/scanner/sarif.py` — Add
   `GOVERNANCE_RETROSPECTIVE_REQUIRED` to the `_PSEUDO_RULE_IDS` frozenset.
   Without this, the SARIF emitter will reject findings with the new rule ID.
-- Modify: `src/wardline/cli/scan.py` — In the baseline comparison section
-  (the `_compare_sarif_baseline()` function at line ~952), after computing
-  current control law:
+- Modify: `src/wardline/cli/scan.py` — Add a new helper
+  `_read_baseline_control_law(compare: str | None) -> str | None` that reads
+  ONLY the `wardline.controlLaw` property from the baseline SARIF file. Call
+  this helper **before line 859** (before `governance_events` is frozen),
+  NOT inside `_compare_sarif_baseline()`.
+
+  **Why this placement matters:** The current code flow is:
+  1. Line 783: `control_law` computed
+  2. Line 845–858: governance events accumulated in `_gov_events` list
+  3. Line 859: `governance_events = tuple(_gov_events)` — frozen
+  4. Line 861: `SarifReport` constructed with `governance_events`
+  5. Line 891: SARIF serialized to JSON
+  6. Line 914: `_compare_sarif_baseline()` called — **after SARIF is written**
+
+  If retrospective detection runs inside `_compare_sarif_baseline()` (step 6),
+  the governance event cannot appear in the SARIF output (already written at
+  step 5). The detection MUST happen between steps 1 and 3.
+
+  **Implementation:**
   ```python
-  if baseline_data is not None:
-      # Guard against empty or malformed runs list
-      runs = baseline_data.get("runs", [])
-      prev_run = next(iter(runs), {}) if isinstance(runs, list) else {}
-      prev_control_law = (
-          prev_run
-          .get("properties", {})
-          .get("wardline.controlLaw")  # None when absent — NOT "normal"
-      )
-      if (
-          prev_control_law in ("alternate", "direct")
-          and control_law == "normal"
-      ):
-          # Control law improved — retrospective scan recommended
-          governance_events = (*governance_events, GovernanceEvent(
-              event_type="retrospective_scan_recommended",
-              message=(
-                  f"Control law improved from {prev_control_law} to normal. "
-                  f"Code merged during {prev_control_law} law should be "
-                  f"retrospectively scanned."
-              ),
-          ))
+  def _read_baseline_control_law(compare: str | None) -> str | None:
+      """Read wardline.controlLaw from baseline SARIF, or None."""
+      if compare is None:
+          return None
+      import json
+      try:
+          data = json.loads(Path(compare).read_text(encoding="utf-8"))
+          runs = data.get("runs", [])
+          if not isinstance(runs, list) or not runs:
+              return None
+          return runs[0].get("properties", {}).get("wardline.controlLaw")
+      except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+          logger.warning("Cannot read baseline control law: %s", exc)
+          return None
+  ```
+
+  Then, in the scan command function, between `compute_control_law()` (line 783)
+  and the governance events freeze (line 859):
+  ```python
+  prev_control_law = _read_baseline_control_law(compare)
+  if (
+      prev_control_law in ("alternate", "direct")
+      and control_law == "normal"
+  ):
+      _gov_events.append(GovernanceEvent(
+          event_type="retrospective_scan_recommended",
+          message=(
+              f"Control law improved from {prev_control_law} to normal. "
+              f"Code merged during {prev_control_law} law should be "
+              f"retrospectively scanned."
+          ),
+      ))
   ```
 
   **CRITICAL: Do NOT default missing `wardline.controlLaw` to `"normal"`.** When
@@ -678,7 +712,7 @@ chain.
      scans — not a hypothetical future gate
   2. Confirm that a qualifying CI gate exists in every deployment context
   3. If no qualifying CI gate exists at v1.0 ship, honestly disclose that
-     the spec §9.5 MUST requirement for retrospective scans is unenforceable
+     the spec §10.5 MUST requirement for retrospective scans is unenforceable
      by tooling alone — this is a **residual risk**, not a "future work" item
   4. Document that without a CI gate, the MUST requirement is unenforced
      (honest disclosure for assessors)
@@ -767,10 +801,12 @@ chain.
 10. **Coverage ratio denominator: all qualname-mapped functions.** Count all
     functions in the taint engine's qualname map (`build_qualname_map()` in
     `src/wardline/scanner/_qualnames.py`). This INCLUDES inner/nested functions
-    (mapped with dotted qualnames) and `@property` methods (they are
-    `FunctionDef` nodes). EXCLUDES only `ast.Lambda` (not matched by
-    `build_qualname_map()`). This was corrected from the initial plan which
-    incorrectly claimed inner functions and `@property` were excluded.
+    (mapped with dotted qualnames) and `@property` methods (`build_qualname_map()`
+    has no decorator awareness but matches all `FunctionDef`/`AsyncFunctionDef`
+    nodes, so `@property` methods are included by node type). EXCLUDES only
+    `ast.Lambda` (not matched by `build_qualname_map()`). This was corrected
+    from the initial plan which incorrectly claimed inner functions and
+    `@property` were excluded.
 
 11. **`MAX_FINGERPRINT_AGE_CAP` enforced inside `compute_control_law()`.**
     The 365-day cap must be enforced inside the function, not in the caller.
@@ -840,8 +876,8 @@ chain.
 | R4 | `tests/unit/cli/test_scan_cmd.py` | Malformed generated_at triggers fingerprint_age_unknown |
 | R4 | `tests/unit/cli/test_scan_cmd.py` | conformance_never_run vs conformance_data_unavailable |
 | R4 | `tests/unit/cli/test_scan_cmd.py` | fingerprint_age_days boundary (== threshold, == 365) |
-| R10 | `tests/unit/cli/test_scan_cmd.py` | Retrospective detection from `--compare` |
-| R10 | `tests/unit/cli/test_scan_cmd.py` | Missing controlLaw → None (not "normal"), empty runs, malformed JSON |
+| R10 | `tests/unit/cli/test_scan_cmd.py` | Retrospective detection via `_read_baseline_control_law()` + governance event before SARIF freeze |
+| R10 | `tests/unit/cli/test_scan_cmd.py` | Missing controlLaw → None (not "normal"), empty runs, malformed JSON — all via `_read_baseline_control_law()` |
 | R6 | `tests/unit/scanner/test_engine.py` | `test_engine_coverage_counts` — raw annotated/total function counts from fixture |
 | All | `tests/integration/test_self_hosting_scan.py` | Self-hosting scan passes + assertions on new SARIF properties (see below) |
 
@@ -872,7 +908,7 @@ assert props["wardline.propertyBagVersion"] == "0.6"
 | `src/wardline/scanner/sarif.py` | `SarifReport` — add fields + `to_dict()` emit; add to `_PSEUDO_RULE_IDS` |
 | `src/wardline/scanner/engine.py:63` | `ScanResult` — add coverage/resolution stats (aggregate from existing dicts) |
 | `src/wardline/cli/scan.py:166` | `_read_coverage_ratio()` — fallback logic |
-| `src/wardline/cli/scan.py:952` | `_compare_sarif_baseline()` — retrospective detection |
+| `src/wardline/cli/scan.py` | New `_read_baseline_control_law()` — retrospective detection (called before line 859, NOT inside `_compare_sarif_baseline()`) |
 | `src/wardline/cli/scan.py` | Control law invocation — wire new inputs + conformance.json handling |
 | `src/wardline/core/severity.py` | `RuleId` — add `GOVERNANCE_RETROSPECTIVE_REQUIRED` member |
 | `src/wardline/manifest/regime.py` | `FingerprintMetrics` — `age_days` |
@@ -880,8 +916,10 @@ assert props["wardline.propertyBagVersion"] == "0.6"
 | `src/wardline/scanner/_qualnames.py:12` | `build_qualname_map()` — denominator source of truth |
 
 **DO NOT modify:** `src/wardline/scanner/taint/callgraph_propagation.py` — resolution
-stats are already available at the `engine.py` call site via `resolved_counts` /
-`unresolved_counts` dicts.
+stats originate from `extract_call_edges()` in `callgraph.py` and are unpacked
+as local variables inside `_run_callgraph_taint()` at `engine.py:801`. Aggregate
+them there and extend the return value — no changes needed in
+`callgraph_propagation.py`.
 
 ---
 
@@ -916,7 +954,7 @@ a behavior change but not a new property, so the bump happens at R7.
 
 ## 10. Deliverables Beyond Code
 
-### 10.1 Control Law Transition Table (§5.16)
+### 10.1 Control Law Transition Table (§6.16)
 
 **This is an explicit deliverable, not just a constraint.** Create a
 declarative transition table in the conformance evidence

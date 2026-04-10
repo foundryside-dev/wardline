@@ -531,11 +531,12 @@ class TestSarifPropertyBags:
         props = report.to_dict()["runs"][0]["properties"]
         assert props["wardline.overlayHashes"] == ["sha256:aaa", "sha256:bbb"]
 
-    def test_coverage_ratio_omitted_when_none(self) -> None:
-        """wardline.coverageRatio is absent when coverage_ratio is None."""
+    def test_coverage_ratio_null_when_none(self) -> None:
+        """wardline.coverageRatio key is always present; null when coverage_ratio is None."""
         report = SarifReport(findings=[], coverage_ratio=None)
         props = report.to_dict()["runs"][0]["properties"]
-        assert "wardline.coverageRatio" not in props
+        assert "wardline.coverageRatio" in props
+        assert props["wardline.coverageRatio"] is None
 
     def test_coverage_ratio_present_when_set(self) -> None:
         report = SarifReport(findings=[], coverage_ratio=0.73456789)
@@ -548,6 +549,13 @@ class TestSarifPropertyBags:
         props = report.to_dict()["runs"][0]["properties"]
         assert "wardline.coverageRatio" in props
         assert props["wardline.coverageRatio"] == 0.0
+
+    def test_coverage_ratio_always_present_in_sarif(self) -> None:
+        """wardline.coverageRatio key is always in run properties regardless of value."""
+        for ratio in (None, 0.0, 0.5, 1.0):
+            report = SarifReport(findings=[], coverage_ratio=ratio)
+            props = report.to_dict()["runs"][0]["properties"]
+            assert "wardline.coverageRatio" in props, f"key missing when coverage_ratio={ratio}"
 
     def test_input_hash_not_suppressed_in_verification_mode(self) -> None:
         """inputHash is deterministic — present even in verification mode."""

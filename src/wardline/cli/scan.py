@@ -183,6 +183,25 @@ def _read_coverage_ratio(manifest_path: Path) -> float | None:
         return None
 
 
+def _resolve_coverage_ratio(
+    baseline_ratio: float | None,
+    annotated_count: int,
+    total_count: int,
+) -> tuple[float | None, float | None]:
+    """Resolve coverage ratio from baseline and scan-time sources.
+
+    Returns ``(coverage_ratio, scan_time_ratio)`` where *coverage_ratio*
+    is the best available value (baseline preferred) and *scan_time_ratio*
+    is the ratio computed from annotation counts (``None`` when
+    *total_count* is zero).
+    """
+    scan_time: float | None = None
+    if total_count > 0:
+        scan_time = annotated_count / total_count
+    resolved = baseline_ratio if baseline_ratio is not None else scan_time
+    return resolved, scan_time
+
+
 def _read_conformance_gaps(
     manifest_path: Path, scan_path: Path | None = None
 ) -> tuple[str, ...]:
@@ -768,7 +787,12 @@ def scan(
     overlay_hashes = _compute_overlay_hashes(
         consumed_overlay_paths, manifest_path.parent
     )
-    coverage_ratio = _read_coverage_ratio(manifest_path)
+    baseline_coverage_ratio = _read_coverage_ratio(manifest_path)
+    coverage_ratio, scan_time_coverage_ratio = _resolve_coverage_ratio(
+        baseline_coverage_ratio, result.annotated_function_count, result.total_function_count,
+    )
+    if result.total_function_count == 0:
+        logger.debug("Zero functions discovered during scan — coverage ratio unavailable")
     conformance_gaps = _read_conformance_gaps(manifest_path, scan_path=scan_path)
 
     # --- Compute control law (§9.5) ---
@@ -855,6 +879,18 @@ def scan(
             event_type="ratification_renewed",
             message="Manifest ratification is overdue",
         ))
+
+    # coverage_ratio_divergence — dual-source baseline vs scan-time divergence
+    if baseline_coverage_ratio is not None and scan_time_coverage_ratio is not None:
+        _divergence = abs(baseline_coverage_ratio - scan_time_coverage_ratio)
+        if _divergence > 0.10:
+            _gov_events.append(GovernanceEvent(
+                event_type="coverage_ratio_divergence",
+                message=(
+                    f"Coverage ratio divergence: baseline={baseline_coverage_ratio:.4f}, "
+                    f"scan={scan_time_coverage_ratio:.4f}, delta={_divergence:.4f}"
+                ),
+            ))
 
     governance_events = tuple(_gov_events)
 

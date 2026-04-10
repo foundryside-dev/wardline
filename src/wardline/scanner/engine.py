@@ -70,6 +70,8 @@ class ScanResult:
     files_with_degraded_taint: int = 0
     errors: list[str] = field(default_factory=list)
     scanned_file_paths: list[Path] = field(default_factory=list)
+    annotated_function_count: int = 0
+    total_function_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,8 @@ class ProjectIndex:
     module_file_map: MappingProxyType[str, str]
     string_literal_counts: MappingProxyType[str, int]
     rejection_path_index: frozenset[str] = frozenset()
+    annotated_function_count: int = 0
+    total_function_count: int = 0
 
 
 def expand_rejection_index(
@@ -173,6 +177,8 @@ class ScanEngine:
         """
         result = ScanResult()
         self._project_index = self._build_project_indexes()
+        result.annotated_function_count = self._project_index.annotated_function_count
+        result.total_function_count = self._project_index.total_function_count
 
         for target in self._target_paths:
             resolved_target = target.resolve()
@@ -572,6 +578,8 @@ class ScanEngine:
         file_data: list[_FileData] = []  # (tree, alias_map, qualname_map, module_name)
 
         rejection_seed: set[str] = set()
+        total_function_count = 0
+        annotated_function_count = 0
 
         for root in self._target_paths:
             resolved_root = root.resolve()
@@ -601,9 +609,16 @@ class ScanEngine:
                 for key, value in discovered.items():
                     all_annotations[key] = tuple(value)
 
+                # Coverage counting: count functions via qualname map
+                qualname_map = build_qualname_map(tree)
+                file_path_str = str(file_path)
+                total_function_count += len(qualname_map)
+                for _qn in qualname_map.values():
+                    if (file_path_str, _qn) in all_annotations:
+                        annotated_function_count += 1
+
                 # Rejection path seeding: check each function for direct rejection
                 if module_name is not None:
-                    qualname_map = build_qualname_map(tree)
                     alias_map = build_import_alias_map(tree, module_path=module_name or "")
                     file_data.append((tree, alias_map, qualname_map, module_name))
                     for node in ast.walk(tree):
@@ -651,6 +666,8 @@ class ScanEngine:
             module_file_map=MappingProxyType(module_file_map),
             string_literal_counts=MappingProxyType(string_literal_counts),
             rejection_path_index=rejection_path_index,
+            annotated_function_count=annotated_function_count,
+            total_function_count=total_function_count,
         )
 
     def _iter_python_files(self, root: Path) -> list[Path]:
