@@ -20,7 +20,10 @@ import yaml
 from wardline.cli.corpus_cmds import _compute_corpus_hash
 from wardline.core.matrix import SEVERITY_MATRIX
 from wardline.core.severity import Exceptionability, RuleId, Severity
-from wardline.core.taints import TaintState
+from wardline.core.taints import TAINT_CONTEXT, TaintState
+
+sys.path.insert(0, str(Path(__file__).parent))
+from migrate_expected_match import compute_expected_location  # noqa: E402
 
 TAINT_ORDER = [
     TaintState.INTEGRAL,
@@ -34,19 +37,6 @@ TAINT_ORDER = [
 ]
 RULES = [getattr(RuleId, f"PY_WL_{i:03d}") for i in range(1, 10)]
 BASE = "corpus/specimens"
-
-# Taint context vocabulary — authoritative reference from spec §3
-# Maps taint name → (function_suffix, variable_name)
-TAINT_CONTEXT: dict[str, tuple[str, str]] = {
-    "INTEGRAL": ("system_config", "sys_config"),
-    "ASSURED": ("verified_payload", "verified_payload"),
-    "GUARDED": ("session_data", "session_data"),
-    "UNKNOWN_ASSURED": ("claimed_token", "claimed_token"),
-    "UNKNOWN_GUARDED": ("cached_profile", "cached_profile"),
-    "UNKNOWN_RAW": ("unknown_input", "unknown_input"),
-    "EXTERNAL_RAW": ("request_param", "request_param"),
-    "MIXED_RAW": ("mixed_source", "mixed_source"),
-}
 
 # Rules where taint does not affect severity/exceptionability/detection.
 # These get a single specimen per verdict instead of 8.
@@ -109,7 +99,7 @@ def _write_specimen(path: str, data: dict) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         f.write("---\n")
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        yaml.dump(data, f, Dumper=yaml.SafeDumper, default_flow_style=False, sort_keys=False)
 
     # Generate matching .py file from the fragment
     fragment = data.get("fragment", "")
@@ -167,7 +157,8 @@ def generate_matrix_specimens() -> dict[str, dict]:
                 exp_rules = []
                 kfn_count += 1
 
-            tp_data = {
+            em = compute_expected_location(tp_frag, rule_str) if tp_will_fire else False
+            tp_data: dict[str, object] = {
                 "specimen_id": tp_id,
                 "description": f"{rule_str} {verdict} at {taint_name}",
                 "rule": rule_str,
@@ -176,10 +167,12 @@ def generate_matrix_specimens() -> dict[str, dict]:
                 "expected_rules": exp_rules,
                 "expected_severity": exp_sev,
                 "expected_exceptionability": exp_exc,
-                "expected_match": tp_will_fire,
+                "expected_match": em if em is not None else tp_will_fire,
                 "sha256": tp_hash,
                 "verdict": verdict,
             }
+            if isinstance(em, dict):
+                tp_data["expected_match_source"] = "ast-reimplemented"
             tp_path = os.path.join(
                 BASE, rule_str, taint_name, "positive", f"{tp_id}.yaml"
             )
@@ -262,7 +255,7 @@ def generate_adversarial_specimens() -> dict[str, dict]:
             "fragment": 'def outer():\n    def inner(data):\n        x = data.get("key", "default")\n    return inner\n',
             "taint_state": "EXTERNAL_RAW",
             "expected_rules": ["PY-WL-001"],
-            "expected_match": True,
+            "expected_match": True,  # placeholder — computed below
             "verdict": "true_positive",
             "tags": ["adversarial", "nested-scope"],
         },
@@ -273,7 +266,7 @@ def generate_adversarial_specimens() -> dict[str, dict]:
             "fragment": "def pr\u00f6cess():\n    try:\n        pass\n    except Exception:\n        handle()\n",
             "taint_state": "EXTERNAL_RAW",
             "expected_rules": ["PY-WL-004"],
-            "expected_match": True,
+            "expected_match": True,  # placeholder — computed below
             "verdict": "true_positive",
             "tags": ["adversarial", "unicode"],
         },
@@ -284,7 +277,7 @@ def generate_adversarial_specimens() -> dict[str, dict]:
             "fragment": 'async def adv_async_get(data):\n    x = data.get("key", "default")\n',
             "taint_state": "EXTERNAL_RAW",
             "expected_rules": ["PY-WL-001"],
-            "expected_match": True,
+            "expected_match": True,  # placeholder — computed below
             "verdict": "true_positive",
             "tags": ["adversarial", "async"],
         },
@@ -295,7 +288,7 @@ def generate_adversarial_specimens() -> dict[str, dict]:
             "fragment": 'def adv_setdefault(data):\n    x = data.setdefault("key", [])\n',
             "taint_state": "EXTERNAL_RAW",
             "expected_rules": ["PY-WL-001"],
-            "expected_match": True,
+            "expected_match": True,  # placeholder — computed below
             "verdict": "true_positive",
             "tags": ["adversarial", "setdefault"],
         },
@@ -306,7 +299,7 @@ def generate_adversarial_specimens() -> dict[str, dict]:
             "fragment": "from collections import defaultdict\ndef adv_defaultdict():\n    d = defaultdict(list)\n",
             "taint_state": "UNKNOWN_RAW",
             "expected_rules": ["PY-WL-001"],
-            "expected_match": True,
+            "expected_match": True,  # placeholder — computed below
             "verdict": "true_positive",
             "tags": ["adversarial", "defaultdict"],
         },
@@ -328,9 +321,84 @@ def generate_adversarial_specimens() -> dict[str, dict]:
             "fragment": "def process():\n    try:\n        pass\n    except (ValueError, Exception):\n        handle()\n",
             "taint_state": "ASSURED",
             "expected_rules": ["PY-WL-004"],
-            "expected_match": True,
+            "expected_match": True,  # placeholder — computed below
             "verdict": "true_positive",
             "tags": ["adversarial", "tuple-except"],
+        },
+        # ── PY-WL-006 adversarial specimens ──
+        {
+            "specimen_id": "ADV-016-aliased-audit",
+            "description": "Audit function aliased via local variable evades detection",
+            "rule": "PY-WL-006",
+            "fragment": (
+                "def process():\n"
+                "    writer = audit_ledger.record\n"
+                "    try:\n"
+                "        risky()\n"
+                "    except Exception:\n"
+                "        writer(event)\n"
+            ),
+            "taint_state": "EXTERNAL_RAW",
+            "expected_rules": [],
+            "expected_match": False,
+            "verdict": "known_false_negative",
+            "tags": ["adversarial", "alias", "audit"],
+        },
+        {
+            "specimen_id": "ADV-017-audit-in-finally",
+            "description": "Audit call in finally block inside broad handler still fires",
+            "rule": "PY-WL-006",
+            "fragment": (
+                "def process():\n"
+                "    try:\n"
+                "        risky()\n"
+                "    except Exception:\n"
+                "        try:\n"
+                '            audit_ledger.record("failed")\n'
+                "        finally:\n"
+                "            pass\n"
+            ),
+            "taint_state": "EXTERNAL_RAW",
+            "expected_rules": ["PY-WL-006"],
+            "expected_match": True,  # placeholder — computed below
+            "verdict": "true_positive",
+            "tags": ["adversarial", "nested-try", "audit"],
+        },
+        # ── PY-WL-007 adversarial specimens ──
+        {
+            "specimen_id": "ADV-018-isinstance-boundary",
+            "description": "isinstance in declared boundary function is suppressed",
+            "rule": "PY-WL-007",
+            "fragment": (
+                "from wardline.decorators import validates_shape\n"
+                "\n"
+                "@validates_shape\n"
+                "def validate(data):\n"
+                "    if not isinstance(data, dict):\n"
+                '        raise TypeError("expected dict")\n'
+            ),
+            "taint_state": "ASSURED",
+            "expected_rules": [],
+            "expected_match": False,
+            "verdict": "true_negative",
+            "tags": ["adversarial", "boundary-suppression"],
+        },
+        {
+            "specimen_id": "ADV-019-isinstance-dunder-eq",
+            "description": "isinstance in __eq__ with NotImplemented is suppressed",
+            "rule": "PY-WL-007",
+            "fragment": (
+                "class Value:\n"
+                "    def __eq__(self, other):\n"
+                "        if not isinstance(other, Value):\n"
+                "            return NotImplemented\n"
+                "        return self.x == other.x\n"
+            ),
+            "taint_state": "INTEGRAL",
+            "expected_rules": [],
+            "expected_match": False,
+            "verdict": "true_negative",
+            "tags": ["adversarial", "dunder-protocol"],
         },
     ]
 
@@ -338,6 +406,14 @@ def generate_adversarial_specimens() -> dict[str, dict]:
         frag = spec["fragment"]
         sha = _sha256(frag)
         spec["sha256"] = sha
+
+        # Compute structured expected_match for TP specimens
+        if spec.get("expected_match") is True and spec["verdict"] == "true_positive":
+            rule_str = spec["rule"]
+            location = compute_expected_location(frag, rule_str)
+            if location is not None:
+                spec["expected_match"] = location
+                spec["expected_match_source"] = "ast-reimplemented"
 
         # Populate severity/exceptionability from matrix for TP specimens
         if spec.get("expected_match"):
@@ -365,13 +441,29 @@ def write_manifest() -> None:
     """Write the corpus manifest JSON from actual files on disk.
 
     Regenerates from disk to catch any manually-added specimens and
-    prevent manifest drift.
+    prevent manifest drift.  Fails if orphaned .py files exist without
+    corresponding .yaml metadata.
     """
+    # Detect orphaned .py files (no matching .yaml)
+    yaml_stems = {
+        os.path.splitext(p)[0]
+        for p in glob.glob(f"{BASE}/**/*.yaml", recursive=True)
+    }
+    orphans = [
+        p for p in sorted(glob.glob(f"{BASE}/**/*.py", recursive=True))
+        if os.path.splitext(p)[0] not in yaml_stems
+    ]
+    if orphans:
+        print(f"ERROR: {len(orphans)} orphaned .py file(s) without YAML metadata:")
+        for p in orphans:
+            print(f"  {p}")
+        sys.exit(1)
+
     # Scan disk for all YAML specimens (authoritative source)
     disk_entries = []
     for yaml_path in sorted(glob.glob(f"{BASE}/**/*.yaml", recursive=True)):
         with open(yaml_path) as f:
-            data = yaml.safe_load(f)
+            data = yaml.safe_load(f)  # noqa: S506 — safe_load is safe
         if not isinstance(data, dict):
             continue
         py_path = yaml_path.rsplit(".", 1)[0] + ".py"

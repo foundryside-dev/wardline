@@ -9,6 +9,10 @@ expected_rules:
 - PY-WL-007
 expected_severity: WARNING
 expected_exceptionability: RELAXED
-expected_match: true
+expected_match:
+  line: 2
+  text: 'if isinstance(claimed_token, dict):'
+  function: isinstance_check_claimed_token
 sha256: 00d3f941f92ea6f8d085bb3178e918b4bdaf9e1667d3526d72dcc3332bdc1f2f
 verdict: true_positive
+expected_match_source: ast-reimplemented

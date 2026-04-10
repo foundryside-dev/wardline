@@ -9,6 +9,10 @@ expected_rules:
 - PY-WL-001
 expected_severity: ERROR
 expected_exceptionability: UNCONDITIONAL
-expected_match: true
+expected_match:
+  line: 2
+  text: x = sys_config.get("key", "default")
+  function: dict_default_system_config
 sha256: a68a910462ed0c88a43ab1d626ccb1a73268593771108dd419f49170620592a3
 verdict: true_positive
+expected_match_source: ast-reimplemented

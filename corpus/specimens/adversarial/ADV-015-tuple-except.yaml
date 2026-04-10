@@ -7,11 +7,15 @@ fragment: "def process():\n    try:\n        pass\n    except (ValueError, Excep
 taint_state: ASSURED
 expected_rules:
 - PY-WL-004
-expected_match: true
+expected_match:
+  line: 4
+  text: 'except (ValueError, Exception):'
+  function: process
 verdict: true_positive
 tags:
 - adversarial
 - tuple-except
 sha256: e2c64c4a8f1a54863389478f3dbb78454c4b14f24e12eea8998db88516bbfd7c
+expected_match_source: ast-reimplemented
 expected_severity: ERROR
 expected_exceptionability: STANDARD

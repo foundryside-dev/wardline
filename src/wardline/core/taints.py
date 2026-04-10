@@ -23,6 +23,20 @@ class TaintState(StrEnum):
     MIXED_RAW = "MIXED_RAW"
 
 
+# Taint context vocabulary — authoritative reference from spec §3.
+# Maps taint state name → (function_suffix, variable_name) for code generation.
+TAINT_CONTEXT: dict[str, tuple[str, str]] = {
+    "INTEGRAL": ("system_config", "sys_config"),
+    "ASSURED": ("verified_payload", "verified_payload"),
+    "GUARDED": ("session_data", "session_data"),
+    "UNKNOWN_ASSURED": ("claimed_token", "claimed_token"),
+    "UNKNOWN_GUARDED": ("cached_profile", "cached_profile"),
+    "UNKNOWN_RAW": ("unknown_input", "unknown_input"),
+    "EXTERNAL_RAW": ("request_param", "request_param"),
+    "MIXED_RAW": ("mixed_source", "mixed_source"),
+}
+
+
 # Non-trivial join pairs (upper triangle, excluding self-joins).
 # Self-joins are handled via identity check: join(a, a) == a.
 # Operand order is normalised for lookup: min(a, b), max(a, b) by value.

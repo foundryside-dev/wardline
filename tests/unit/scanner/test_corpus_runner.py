@@ -1058,3 +1058,148 @@ class TestStructuredEvaluation:
         assert "deprecated" in combined.lower(), (
             f"Expected deprecation warning, got output={result.output!r} stderr={stderr_text!r}"
         )
+
+    def test_structured_expected_match_line_mismatch(self) -> None:
+        """Finding at wrong line produces location_mismatches == 1."""
+        from wardline.cli.corpus_cmds import _CellStats, _evaluate_specimen
+        from wardline.scanner.rules import make_rules
+
+        source = 'def f(d):\n    x = d.get("k", "default")\n'
+        data = {
+            "rule": "PY-WL-001",
+            "verdict": "true_positive",
+            "taint_state": "ASSURED",
+            "expected_match": {"line": 99, "text": 'x = d.get("k", "default")'},
+        }
+        stats: dict[tuple[str, str], _CellStats] = {}
+        _evaluate_specimen(data, source, make_rules(), stats)
+        key = ("PY-WL-001", "ASSURED")
+        assert stats[key].tp == 1
+        assert stats[key].location_mismatches == 1
+
+    def test_structured_expected_match_text_mismatch(self) -> None:
+        """Finding with wrong snippet text produces location_mismatches == 1."""
+        from wardline.cli.corpus_cmds import _CellStats, _evaluate_specimen
+        from wardline.scanner.rules import make_rules
+
+        source = 'def f(d):\n    x = d.get("k", "default")\n'
+        data = {
+            "rule": "PY-WL-001",
+            "verdict": "true_positive",
+            "taint_state": "ASSURED",
+            "expected_match": {"line": 2, "text": "WRONG TEXT HERE"},
+        }
+        stats: dict[tuple[str, str], _CellStats] = {}
+        _evaluate_specimen(data, source, make_rules(), stats)
+        key = ("PY-WL-001", "ASSURED")
+        assert stats[key].tp == 1
+        assert stats[key].location_mismatches == 1
+
+    def test_structured_expected_match_function_mismatch(self) -> None:
+        """Finding in wrong function produces location_mismatches == 1."""
+        from wardline.cli.corpus_cmds import _CellStats, _evaluate_specimen
+        from wardline.scanner.rules import make_rules
+
+        source = 'def f(d):\n    x = d.get("k", "default")\n'
+        data = {
+            "rule": "PY-WL-001",
+            "verdict": "true_positive",
+            "taint_state": "ASSURED",
+            "expected_match": {"line": 2, "text": 'x = d.get("k", "default")', "function": "wrong_func"},
+        }
+        stats: dict[tuple[str, str], _CellStats] = {}
+        _evaluate_specimen(data, source, make_rules(), stats)
+        key = ("PY-WL-001", "ASSURED")
+        assert stats[key].tp == 1
+        assert stats[key].location_mismatches == 1
+
+    def test_boolean_false_expected_match_no_comparison(self) -> None:
+        """TN specimen with expected_match: false — no structural comparison."""
+        from wardline.cli.corpus_cmds import _CellStats, _evaluate_specimen
+        from wardline.scanner.rules import make_rules
+
+        source = 'def f(d):\n    x = d.get("k")\n'
+        data = {
+            "rule": "PY-WL-001",
+            "verdict": "true_negative",
+            "taint_state": "ASSURED",
+            "expected_match": False,
+        }
+        stats: dict[tuple[str, str], _CellStats] = {}
+        _evaluate_specimen(data, source, make_rules(), stats)
+        key = ("PY-WL-001", "ASSURED")
+        assert stats[key].tn == 1
+        assert stats[key].location_mismatches == 0
+
+    def test_empty_dict_expected_match_is_error(self) -> None:
+        """expected_match: {} is counted as location mismatch."""
+        from wardline.cli.corpus_cmds import _CellStats, _evaluate_specimen
+        from wardline.scanner.rules import make_rules
+
+        source = 'def f(d):\n    x = d.get("k", "default")\n'
+        data = {
+            "rule": "PY-WL-001",
+            "verdict": "true_positive",
+            "taint_state": "ASSURED",
+            "expected_match": {},
+        }
+        stats: dict[tuple[str, str], _CellStats] = {}
+        _evaluate_specimen(data, source, make_rules(), stats)
+        key = ("PY-WL-001", "ASSURED")
+        assert stats[key].location_mismatches == 1
+
+    def test_unknown_keys_in_expected_match_warned(self) -> None:
+        """expected_match with typo keys emits warning."""
+        from wardline.cli.corpus_cmds import _CellStats, _evaluate_specimen
+        from wardline.scanner.rules import make_rules
+
+        source = 'def f(d):\n    x = d.get("k", "default")\n'
+        data = {
+            "rule": "PY-WL-001",
+            "verdict": "true_positive",
+            "taint_state": "ASSURED",
+            "expected_match": {"lien": 2},  # typo
+        }
+        stats: dict[tuple[str, str], _CellStats] = {}
+        _evaluate_specimen(data, source, make_rules(), stats)
+        # Typo key should still be counted (empty valid fields after filtering)
+        key = ("PY-WL-001", "ASSURED")
+        assert stats[key].tp == 1
+
+    def test_location_mismatch_in_json_report(self) -> None:
+        """JSON report includes location_mismatches and location_match_rate."""
+        from wardline.cli.corpus_cmds import _build_json_report, _CellStats
+
+        stats: dict[tuple[str, str], _CellStats] = {
+            ("PY-WL-001", "ASSURED"): _CellStats(tp=3, tn=1, location_mismatches=1),
+        }
+        report = _build_json_report(stats)
+        # Find the PY-WL-001/ASSURED cell in the report
+        target = [c for c in report["cells"] if c["rule"] == "PY-WL-001" and c["taint_state"] == "ASSURED"]
+        assert len(target) == 1
+        cell = target[0]
+        assert cell["location_mismatches"] == 1
+        assert cell["location_match_rate"] is not None
+        assert report["summary"]["total_location_mismatches"] == 1
+        assert report["overall_verdict"] == "FAIL"
+
+    def test_find_matching_finding_same_line_text_tiebreaker(self) -> None:
+        """Two findings on same line — text tiebreaker selects correct one."""
+        from wardline.cli.corpus_cmds import _find_matching_finding
+        from wardline.core.severity import Exceptionability, RuleId, Severity
+        from wardline.scanner.context import Finding
+
+        f1 = Finding(
+            rule_id=RuleId.PY_WL_001, file_path="t.py", line=2, col=0,
+            end_line=None, end_col=None, message="m", severity=Severity.ERROR,
+            exceptionability=Exceptionability.STANDARD, taint_state=None,
+            analysis_level=1, source_snippet="x = d.get('a', 1)",
+        )
+        f2 = Finding(
+            rule_id=RuleId.PY_WL_001, file_path="t.py", line=2, col=10,
+            end_line=None, end_col=None, message="m", severity=Severity.ERROR,
+            exceptionability=Exceptionability.STANDARD, taint_state=None,
+            analysis_level=1, source_snippet="y = d.get('b', 2)",
+        )
+        result = _find_matching_finding([f1, f2], "PY-WL-001", expected_line=2, expected_text="y = d.get('b', 2)")
+        assert result is f2

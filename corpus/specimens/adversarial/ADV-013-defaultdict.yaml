@@ -6,11 +6,15 @@ fragment: "from collections import defaultdict\ndef adv_defaultdict():\n    d = 
 taint_state: UNKNOWN_RAW
 expected_rules:
 - PY-WL-001
-expected_match: true
+expected_match:
+  line: 3
+  text: d = defaultdict(list)
+  function: adv_defaultdict
 verdict: true_positive
 tags:
 - adversarial
 - defaultdict
 sha256: dc0cd3f798c47af53f5f0bd2bcfde8bd250f2e4b38ca6f3044d827ab275d53fc
+expected_match_source: ast-reimplemented
 expected_severity: SUPPRESS
 expected_exceptionability: TRANSPARENT

@@ -6,11 +6,15 @@ fragment: "def adv_setdefault(data):\n    x = data.setdefault(\"key\", [])\n"
 taint_state: EXTERNAL_RAW
 expected_rules:
 - PY-WL-001
-expected_match: true
+expected_match:
+  line: 2
+  text: x = data.setdefault("key", [])
+  function: adv_setdefault
 verdict: true_positive
 tags:
 - adversarial
 - setdefault
 sha256: cb1ee458cddc1dc20a99baf94728911120aa7dbe4943d9434c33c812912fa282
+expected_match_source: ast-reimplemented
 expected_severity: SUPPRESS
 expected_exceptionability: TRANSPARENT

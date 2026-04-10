@@ -9,6 +9,10 @@ expected_rules:
 - PY-WL-002
 expected_severity: ERROR
 expected_exceptionability: UNCONDITIONAL
-expected_match: true
+expected_match:
+  line: 2
+  text: x = getattr(sys_config, "name", None)
+  function: getattr_default_system_config
 sha256: edabdff3412d92f070e96d2fa642b38c3939161a87087d59babc2b0e46a4b318
 verdict: true_positive
+expected_match_source: ast-reimplemented

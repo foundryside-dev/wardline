@@ -3,10 +3,7 @@
 
 **Date:** 9 April 2026
 **Status:** Design — DRAFT v0.3.0
-**Protective Marking:** OFFICIAL
-**Prepared by:** Digital Transformation Agency
 **Document type:** Conformity assessment scheme comprising a data classification model, enforcement rules, governance requirements, and conformance criteria
-**Parent paper:** When Good Code Becomes Dangerous: A Threat Model for AI-Assisted Software Development in High-Stakes Code (GCBD)
 **Language bindings:** Python (Part II-A), Java (Part II-B)
 
 ---

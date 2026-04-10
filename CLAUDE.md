@@ -240,3 +240,5 @@ context needed to pick up where the previous session left off.
 - P3: Low
 - P4: Backlog
 <!-- /filigree:instructions -->
+
+Note that we are currently pushing to relase 1.0 - No deferrals will be approved. You should ask. YOU MUST NOT UNILATERALLY DEFER SCOPE.

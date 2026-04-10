@@ -9,6 +9,10 @@ expected_rules:
 - PY-WL-005
 expected_severity: ERROR
 expected_exceptionability: STANDARD
-expected_match: true
+expected_match:
+  line: 4
+  text: 'except Exception:'
+  function: silent_except_mixed_source
 sha256: 445f68d85d524b29c5614ff287630b60c499e6bb6c49d693b58e3bc6c2044229
 verdict: true_positive
+expected_match_source: ast-reimplemented

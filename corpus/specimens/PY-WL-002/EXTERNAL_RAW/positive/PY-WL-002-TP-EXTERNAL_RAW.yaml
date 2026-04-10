@@ -9,6 +9,10 @@ expected_rules:
 - PY-WL-002
 expected_severity: WARNING
 expected_exceptionability: RELAXED
-expected_match: true
+expected_match:
+  line: 2
+  text: x = getattr(request_param, "name", None)
+  function: getattr_default_request_param
 sha256: e7ce8ee4dc2d997b2701b22031ecb3ed58edbcc7f7f14cda40a6f3e8fb81d1e5
 verdict: true_positive
+expected_match_source: ast-reimplemented

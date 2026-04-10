@@ -9,6 +9,10 @@ expected_rules:
 - PY-WL-005
 expected_severity: WARNING
 expected_exceptionability: RELAXED
-expected_match: true
+expected_match:
+  line: 4
+  text: 'except Exception:'
+  function: silent_except_request_param
 sha256: fb4eb51cd255cf8214c47d6d4bf8e42b0b1ae003922424b6e3ce4cb3d8591e3e
 verdict: true_positive
+expected_match_source: ast-reimplemented

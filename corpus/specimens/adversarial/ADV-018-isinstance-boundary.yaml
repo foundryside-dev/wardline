@@ -1,0 +1,17 @@
+---
+specimen_id: ADV-018-isinstance-boundary
+description: isinstance in declared boundary function is suppressed
+rule: PY-WL-007
+fragment: "from wardline.decorators import validates_shape\n\n@validates_shape\ndef\
+  \ validate(data):\n    if not isinstance(data, dict):\n        raise TypeError(\"\
+  expected dict\")\n"
+taint_state: ASSURED
+expected_rules: []
+expected_match: false
+verdict: true_negative
+tags:
+- adversarial
+- boundary-suppression
+sha256: f7f954dce9426acab9ccdcb8a211081014462b5e8ccace4c0b1c91d370410be1
+expected_severity: null
+expected_exceptionability: null

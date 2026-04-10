@@ -9,6 +9,10 @@ expected_rules:
 - PY-WL-001
 expected_severity: WARNING
 expected_exceptionability: RELAXED
-expected_match: true
+expected_match:
+  line: 2
+  text: x = session_data.get("key", "default")
+  function: dict_default_session_data
 sha256: f26ae37e3071666e53e4a2c9dda27cdb9e3c4fed7253de29c74fcfb53ac46d88
 verdict: true_positive
+expected_match_source: ast-reimplemented

@@ -9,6 +9,10 @@ expected_rules:
 - PY-WL-007
 expected_severity: WARNING
 expected_exceptionability: RELAXED
-expected_match: true
+expected_match:
+  line: 2
+  text: 'if isinstance(session_data, dict):'
+  function: isinstance_check_session_data
 sha256: 3dbbfe328819b11ac2a3ccb3df73106945bcbf251fe0007fa412248fe30eff90
 verdict: true_positive
+expected_match_source: ast-reimplemented

@@ -1,0 +1,16 @@
+---
+specimen_id: ADV-019-isinstance-dunder-eq
+description: isinstance in __eq__ with NotImplemented is suppressed
+rule: PY-WL-007
+fragment: "class Value:\n    def __eq__(self, other):\n        if not isinstance(other,\
+  \ Value):\n            return NotImplemented\n        return self.x == other.x\n"
+taint_state: INTEGRAL
+expected_rules: []
+expected_match: false
+verdict: true_negative
+tags:
+- adversarial
+- dunder-protocol
+sha256: dcba815b03ce84895406df6bad379a813fc05a9e67c69bd7bbfa4fa843e18745
+expected_severity: null
+expected_exceptionability: null

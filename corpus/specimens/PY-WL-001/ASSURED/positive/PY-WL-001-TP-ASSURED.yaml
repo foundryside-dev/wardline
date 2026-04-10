@@ -9,6 +9,10 @@ expected_rules:
 - PY-WL-001
 expected_severity: ERROR
 expected_exceptionability: STANDARD
-expected_match: true
+expected_match:
+  line: 2
+  text: x = verified_payload.get("key", "default")
+  function: dict_default_verified_payload
 sha256: 5978b0e7faa0712cd55bc8a59ec5ec36c590a9dc752d099cd43c4d6be6013db0
 verdict: true_positive
+expected_match_source: ast-reimplemented

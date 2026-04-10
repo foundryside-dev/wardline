@@ -7,11 +7,15 @@ fragment: "def pr\xF6cess():\n    try:\n        pass\n    except Exception:\n   
 taint_state: EXTERNAL_RAW
 expected_rules:
 - PY-WL-004
-expected_match: true
+expected_match:
+  line: 4
+  text: 'except Exception:'
+  function: "pr\xF6cess"
 verdict: true_positive
 tags:
 - adversarial
 - unicode
 sha256: fe070f6f2d44e6254611799398b048726a874aa4e35274d8efac0e54cab1ec30
+expected_match_source: ast-reimplemented
 expected_severity: WARNING
 expected_exceptionability: RELAXED

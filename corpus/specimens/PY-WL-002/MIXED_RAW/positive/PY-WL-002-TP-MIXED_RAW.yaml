@@ -9,6 +9,10 @@ expected_rules:
 - PY-WL-002
 expected_severity: WARNING
 expected_exceptionability: STANDARD
-expected_match: true
+expected_match:
+  line: 2
+  text: x = getattr(mixed_source, "name", None)
+  function: getattr_default_mixed_source
 sha256: 6171e2a66a2211db9fd6ec48183a9c80f10e56a8344f5de7b123aacadaeab441
 verdict: true_positive
+expected_match_source: ast-reimplemented

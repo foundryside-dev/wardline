@@ -9,6 +9,10 @@ expected_rules:
 - PY-WL-007
 expected_severity: WARNING
 expected_exceptionability: STANDARD
-expected_match: true
+expected_match:
+  line: 2
+  text: 'if isinstance(mixed_source, dict):'
+  function: isinstance_check_mixed_source
 sha256: 90a8cd382f6af5e4ed51fcfd21f3a8f9b6b51408caee25592e8bdb87f2fefc15
 verdict: true_positive
+expected_match_source: ast-reimplemented

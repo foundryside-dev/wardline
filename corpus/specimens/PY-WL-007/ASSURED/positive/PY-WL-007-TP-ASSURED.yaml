@@ -9,6 +9,10 @@ expected_rules:
 - PY-WL-007
 expected_severity: WARNING
 expected_exceptionability: RELAXED
-expected_match: true
+expected_match:
+  line: 2
+  text: 'if isinstance(verified_payload, dict):'
+  function: isinstance_check_verified_payload
 sha256: 5dc638f35997d3bc9b823e1e6adb9011b9b6ca2ed3dfeb3d1f768d116d0eed84
 verdict: true_positive
+expected_match_source: ast-reimplemented

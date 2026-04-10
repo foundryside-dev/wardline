@@ -9,6 +9,10 @@ expected_rules:
 - PY-WL-001
 expected_severity: ERROR
 expected_exceptionability: STANDARD
-expected_match: true
+expected_match:
+  line: 2
+  text: x = claimed_token.get("key", "default")
+  function: dict_default_claimed_token
 sha256: 21bd17db927d6340854d5e1d4905786ee20cbbcdcd7d0709b82860422be51e17
 verdict: true_positive
+expected_match_source: ast-reimplemented

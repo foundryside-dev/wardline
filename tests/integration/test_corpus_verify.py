@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
+import yaml
 from click.testing import CliRunner
 
 from wardline.cli.main import cli
+from wardline.manifest.loader import make_wardline_loader
 
 FIXTURE_CORPUS = (
     Path(__file__).parent.parent / "fixtures" / "corpus"
@@ -96,3 +99,46 @@ class TestRealCorpusVerify:
                 f"PY-WL-{i:03d} has only {len(py_files)} specimen .py files — "
                 f"expected >= 2 (at least one TP and one TN)"
             )
+
+    def test_real_corpus_zero_location_mismatches(self) -> None:
+        """corpus verify --json reports zero location mismatches."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["corpus", "verify", "--corpus-dir", str(self._CORPUS_ROOT), "--json"],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, (
+            f"corpus verify --json failed (exit {result.exit_code}):\n{result.output}"
+        )
+        # CliRunner mixes stderr (notices/warnings) into output.
+        # Extract JSON by finding the opening brace.
+        output = result.output
+        json_start = output.index("{")
+        data = json.loads(output[json_start:])
+        total_mismatches = data["summary"]["total_location_mismatches"]
+        assert total_mismatches == 0, (
+            f"Expected 0 location mismatches, got {total_mismatches}"
+        )
+
+    def test_migrated_specimens_structural_integrity(self) -> None:
+        """Every TP specimen with structured expected_match has valid fields."""
+        Loader = make_wardline_loader()
+        specimens_dir = self._CORPUS_ROOT / "specimens"
+        invalid: list[str] = []
+
+        for yaml_path in sorted(specimens_dir.glob("**/positive/*.yaml")):
+            with open(yaml_path) as f:
+                data = yaml.load(f, Loader=Loader)  # noqa: S506
+            em = data.get("expected_match")
+            if not isinstance(em, dict):
+                continue  # boolean — skip (covered by coverage test)
+            if not isinstance(em.get("line"), int) or em["line"] < 1:
+                invalid.append(f"{yaml_path.name}: line={em.get('line')}")
+            if not isinstance(em.get("text"), str) or not em["text"].strip():
+                invalid.append(f"{yaml_path.name}: text={em.get('text')!r}")
+
+        assert not invalid, (
+            f"{len(invalid)} specimens have invalid structured expected_match: "
+            f"{invalid[:10]}"
+        )

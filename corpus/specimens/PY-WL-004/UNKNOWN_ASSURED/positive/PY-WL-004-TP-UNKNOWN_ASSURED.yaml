@@ -9,6 +9,10 @@ expected_rules:
 - PY-WL-004
 expected_severity: WARNING
 expected_exceptionability: STANDARD
-expected_match: true
+expected_match:
+  line: 4
+  text: 'except Exception:'
+  function: broad_except_claimed_token
 sha256: 2668e95ed61054747ee1448c47824d47b5a056d8101a01572dbed9d67dbb42e6
 verdict: true_positive
+expected_match_source: ast-reimplemented

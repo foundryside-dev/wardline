@@ -1,0 +1,19 @@
+---
+specimen_id: ADV-017-audit-in-finally
+description: Audit call in finally block inside broad handler still fires
+rule: PY-WL-006
+fragment: "def process():\n    try:\n        risky()\n    except Exception:\n    \
+  \    try:\n            audit_ledger.record(\"failed\")\n        finally:\n     \
+  \       pass\n"
+taint_state: EXTERNAL_RAW
+expected_rules:
+- PY-WL-006
+expected_match: true
+verdict: true_positive
+tags:
+- adversarial
+- nested-try
+- audit
+sha256: e0974b56e1b43b89dd79f58edf617922ad4c58a47d2039b2b9884f5208c5d90b
+expected_severity: ERROR
+expected_exceptionability: STANDARD

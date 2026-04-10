@@ -9,6 +9,10 @@ expected_rules:
 - PY-WL-004
 expected_severity: ERROR
 expected_exceptionability: UNCONDITIONAL
-expected_match: true
+expected_match:
+  line: 4
+  text: 'except Exception:'
+  function: broad_except_system_config
 sha256: b2a1085a8c25ed6eeef304e55572add4d83f7e1b000e7c5de401c40b6dd1f780
 verdict: true_positive
+expected_match_source: ast-reimplemented

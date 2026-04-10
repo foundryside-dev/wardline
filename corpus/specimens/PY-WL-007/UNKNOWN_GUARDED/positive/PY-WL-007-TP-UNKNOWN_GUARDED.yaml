@@ -9,6 +9,10 @@ expected_rules:
 - PY-WL-007
 expected_severity: WARNING
 expected_exceptionability: RELAXED
-expected_match: true
+expected_match:
+  line: 2
+  text: 'if isinstance(cached_profile, dict):'
+  function: isinstance_check_cached_profile
 sha256: 2b471a5cdf36727c4d940f82ee11785d0e092e7de01fe459209981dd7c753042
 verdict: true_positive
+expected_match_source: ast-reimplemented

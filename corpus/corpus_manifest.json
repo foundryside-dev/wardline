@@ -1,9 +1,9 @@
 {
   "version": "1.0",
   "spec_version": "1.0",
-  "corpus_hash": "sha256:3e74d53d9a6a9daa34ceb68db3c4db05d643378b7b81215f591452de5ea4f6a6",
+  "corpus_hash": "sha256:07ca41de1d37151157a25ccc5b7ea3cffb55cc0b9f0feb1c022e18aea4cb0eff",
   "generated": "2026-04-10",
-  "specimen_count": 224,
+  "specimen_count": 228,
   "specimens": [
     {
       "specimen_id": "L3-anchored-immutable",
@@ -182,7 +182,11 @@
       "rule": "PY-WL-001",
       "taint_state": "ASSURED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "x = verified_payload.get(\"key\", \"default\")",
+        "function": "dict_default_verified_payload"
+      },
       "sha256": "5978b0e7faa0712cd55bc8a59ec5ec36c590a9dc752d099cd43c4d6be6013db0"
     },
     {
@@ -356,7 +360,11 @@
       "rule": "PY-WL-001",
       "taint_state": "GUARDED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "x = session_data.get(\"key\", \"default\")",
+        "function": "dict_default_session_data"
+      },
       "sha256": "f26ae37e3071666e53e4a2c9dda27cdb9e3c4fed7253de29c74fcfb53ac46d88"
     },
     {
@@ -390,7 +398,11 @@
       "rule": "PY-WL-001",
       "taint_state": "INTEGRAL",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "x = sys_config.get(\"key\", \"default\")",
+        "function": "dict_default_system_config"
+      },
       "sha256": "a68a910462ed0c88a43ab1d626ccb1a73268593771108dd419f49170620592a3"
     },
     {
@@ -450,7 +462,11 @@
       "rule": "PY-WL-001",
       "taint_state": "UNKNOWN_ASSURED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "x = claimed_token.get(\"key\", \"default\")",
+        "function": "dict_default_claimed_token"
+      },
       "sha256": "21bd17db927d6340854d5e1d4905786ee20cbbcdcd7d0709b82860422be51e17"
     },
     {
@@ -470,7 +486,11 @@
       "rule": "PY-WL-001",
       "taint_state": "UNKNOWN_GUARDED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "x = cached_profile.get(\"key\", \"default\")",
+        "function": "dict_default_cached_profile"
+      },
       "sha256": "ec218f03c4bf40c1fe20ef6ce1b0f5049ea1ad591505e7178f6a3f7f85c773e4"
     },
     {
@@ -550,7 +570,11 @@
       "rule": "PY-WL-002",
       "taint_state": "ASSURED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "x = getattr(verified_payload, \"name\", None)",
+        "function": "getattr_default_verified_payload"
+      },
       "sha256": "bf337ca4ff4f400de02243fdfb4b50b5b79f95580fd43ac6518527d422f2ad04"
     },
     {
@@ -632,7 +656,11 @@
       "rule": "PY-WL-002",
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "x = getattr(request_param, \"name\", None)",
+        "function": "getattr_default_request_param"
+      },
       "sha256": "e7ce8ee4dc2d997b2701b22031ecb3ed58edbcc7f7f14cda40a6f3e8fb81d1e5"
     },
     {
@@ -666,7 +694,11 @@
       "rule": "PY-WL-002",
       "taint_state": "GUARDED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "x = getattr(session_data, \"name\", None)",
+        "function": "getattr_default_session_data"
+      },
       "sha256": "f733b43ace071b7b6578163ea21aba3ee37b5dd04eb1b4ccd6e257208cbd2b3f"
     },
     {
@@ -686,7 +718,11 @@
       "rule": "PY-WL-002",
       "taint_state": "INTEGRAL",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "x = getattr(sys_config, \"name\", None)",
+        "function": "getattr_default_system_config"
+      },
       "sha256": "edabdff3412d92f070e96d2fa642b38c3939161a87087d59babc2b0e46a4b318"
     },
     {
@@ -706,7 +742,11 @@
       "rule": "PY-WL-002",
       "taint_state": "MIXED_RAW",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "x = getattr(mixed_source, \"name\", None)",
+        "function": "getattr_default_mixed_source"
+      },
       "sha256": "6171e2a66a2211db9fd6ec48183a9c80f10e56a8344f5de7b123aacadaeab441"
     },
     {
@@ -726,7 +766,11 @@
       "rule": "PY-WL-002",
       "taint_state": "UNKNOWN_ASSURED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "x = getattr(claimed_token, \"name\", None)",
+        "function": "getattr_default_claimed_token"
+      },
       "sha256": "99b265c60ef4a524d65915ddd4080cb7cb624b789cb32eb3beb22d26152b21c0"
     },
     {
@@ -746,7 +790,11 @@
       "rule": "PY-WL-002",
       "taint_state": "UNKNOWN_GUARDED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "x = getattr(cached_profile, \"name\", None)",
+        "function": "getattr_default_cached_profile"
+      },
       "sha256": "12c6cc232c718f0a925a5307e5a89f1bdb77b0a8ed37cf8f183164d07ffe84dd"
     },
     {
@@ -794,7 +842,11 @@
       "rule": "PY-WL-002",
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "x = getattr(unknown_input, \"name\", None)",
+        "function": "getattr_default_unknown_input"
+      },
       "sha256": "bfd44a06c59592abbf1701d2adbefa78d218c0bb9dfdbea55607437ca76935f8"
     },
     {
@@ -1116,7 +1168,11 @@
       "rule": "PY-WL-004",
       "taint_state": "ASSURED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except Exception:",
+        "function": "broad_except_verified_payload"
+      },
       "sha256": "0413abb327227a233a28f6cf585c801ed48a950c5b9ccb11d1da639581efc0ae"
     },
     {
@@ -1204,7 +1260,11 @@
       "rule": "PY-WL-004",
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except Exception:",
+        "function": "broad_except_request_param"
+      },
       "sha256": "edbc6edd65a4280e81375c62e01a706e76ba73d0f8d5543b19bcc31e23a35f01"
     },
     {
@@ -1238,7 +1298,11 @@
       "rule": "PY-WL-004",
       "taint_state": "GUARDED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except Exception:",
+        "function": "broad_except_session_data"
+      },
       "sha256": "4523a73f5cd86cf4c5a2226ecc5c870110411b6df3c73df6436fbaafa8994f79"
     },
     {
@@ -1258,7 +1322,11 @@
       "rule": "PY-WL-004",
       "taint_state": "INTEGRAL",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except Exception:",
+        "function": "broad_except_system_config"
+      },
       "sha256": "b2a1085a8c25ed6eeef304e55572add4d83f7e1b000e7c5de401c40b6dd1f780"
     },
     {
@@ -1278,7 +1346,11 @@
       "rule": "PY-WL-004",
       "taint_state": "MIXED_RAW",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except Exception:",
+        "function": "broad_except_mixed_source"
+      },
       "sha256": "b8dda8c5df68c22f4d6e3da280aceaa0adce5c1cf56ea41ebff35d142ca24d87"
     },
     {
@@ -1312,7 +1384,11 @@
       "rule": "PY-WL-004",
       "taint_state": "UNKNOWN_ASSURED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except Exception:",
+        "function": "broad_except_claimed_token"
+      },
       "sha256": "2668e95ed61054747ee1448c47824d47b5a056d8101a01572dbed9d67dbb42e6"
     },
     {
@@ -1332,7 +1408,11 @@
       "rule": "PY-WL-004",
       "taint_state": "UNKNOWN_GUARDED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except Exception:",
+        "function": "broad_except_cached_profile"
+      },
       "sha256": "14cfb4cef7d6b3d20ed407891de2ac1ab531e677c720165f753d44d432b8256a"
     },
     {
@@ -1376,7 +1456,11 @@
       "rule": "PY-WL-004",
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except Exception:",
+        "function": "broad_except_unknown_input"
+      },
       "sha256": "a40853f74b905d09c638be23132c6f48291ed527ced3c594af520f15605f26b2"
     },
     {
@@ -1410,7 +1494,11 @@
       "rule": "PY-WL-005",
       "taint_state": "ASSURED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except Exception:",
+        "function": "silent_except_verified_payload"
+      },
       "sha256": "9b23ec4dca842403a4076434b6da694fe4d97bfa81ea372c0401a19b8fd6f828"
     },
     {
@@ -1492,7 +1580,11 @@
       "rule": "PY-WL-005",
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except Exception:",
+        "function": "silent_except_request_param"
+      },
       "sha256": "fb4eb51cd255cf8214c47d6d4bf8e42b0b1ae003922424b6e3ce4cb3d8591e3e"
     },
     {
@@ -1526,7 +1618,11 @@
       "rule": "PY-WL-005",
       "taint_state": "GUARDED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except Exception:",
+        "function": "silent_except_session_data"
+      },
       "sha256": "cd73b6e4e483bdff37f5b99cc12df2756bf136e612da615a58e700b7573623a5"
     },
     {
@@ -1546,7 +1642,11 @@
       "rule": "PY-WL-005",
       "taint_state": "INTEGRAL",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except Exception:",
+        "function": "silent_except_system_config"
+      },
       "sha256": "0dbb28aac3ee214023b02ba33a1e45a358463d7e2e7a5b46eca824b6bc815e93"
     },
     {
@@ -1576,7 +1676,11 @@
       "rule": "PY-WL-005",
       "taint_state": "MIXED_RAW",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except Exception:",
+        "function": "silent_except_mixed_source"
+      },
       "sha256": "445f68d85d524b29c5614ff287630b60c499e6bb6c49d693b58e3bc6c2044229"
     },
     {
@@ -1610,7 +1714,11 @@
       "rule": "PY-WL-005",
       "taint_state": "UNKNOWN_ASSURED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except Exception:",
+        "function": "silent_except_claimed_token"
+      },
       "sha256": "67f1977dd3db0a9161b9e50007d38a1a6ee7f66c6f24101efc31f774fd5393b4"
     },
     {
@@ -1630,7 +1738,11 @@
       "rule": "PY-WL-005",
       "taint_state": "UNKNOWN_GUARDED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except Exception:",
+        "function": "silent_except_cached_profile"
+      },
       "sha256": "263f39bc81846f3d80569b712c1ff3e4ee0dc02014c35168d95f6bc82738ab1d"
     },
     {
@@ -1664,7 +1776,11 @@
       "rule": "PY-WL-005",
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except Exception:",
+        "function": "silent_except_unknown_input"
+      },
       "sha256": "08e780974b51cee10f8610ef61d2ffb020df54dd0b3bf841fb304139dd80a266"
     },
     {
@@ -1902,7 +2018,11 @@
       "rule": "PY-WL-007",
       "taint_state": "ASSURED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "if isinstance(verified_payload, dict):",
+        "function": "isinstance_check_verified_payload"
+      },
       "sha256": "5dc638f35997d3bc9b823e1e6adb9011b9b6ca2ed3dfeb3d1f768d116d0eed84"
     },
     {
@@ -1942,7 +2062,11 @@
       "rule": "PY-WL-007",
       "taint_state": "GUARDED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "if isinstance(session_data, dict):",
+        "function": "isinstance_check_session_data"
+      },
       "sha256": "3dbbfe328819b11ac2a3ccb3df73106945bcbf251fe0007fa412248fe30eff90"
     },
     {
@@ -1962,7 +2086,11 @@
       "rule": "PY-WL-007",
       "taint_state": "INTEGRAL",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "if isinstance(sys_config, dict):",
+        "function": "isinstance_check_system_config"
+      },
       "sha256": "2d27a26735009fb105c191f9333ff37f8885ec743514be09a2d94d59a1aebc50"
     },
     {
@@ -1996,7 +2124,11 @@
       "rule": "PY-WL-007",
       "taint_state": "MIXED_RAW",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "if isinstance(mixed_source, dict):",
+        "function": "isinstance_check_mixed_source"
+      },
       "sha256": "90a8cd382f6af5e4ed51fcfd21f3a8f9b6b51408caee25592e8bdb87f2fefc15"
     },
     {
@@ -2016,7 +2148,11 @@
       "rule": "PY-WL-007",
       "taint_state": "UNKNOWN_ASSURED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "if isinstance(claimed_token, dict):",
+        "function": "isinstance_check_claimed_token"
+      },
       "sha256": "00d3f941f92ea6f8d085bb3178e918b4bdaf9e1667d3526d72dcc3332bdc1f2f"
     },
     {
@@ -2036,7 +2172,11 @@
       "rule": "PY-WL-007",
       "taint_state": "UNKNOWN_GUARDED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "if isinstance(cached_profile, dict):",
+        "function": "isinstance_check_cached_profile"
+      },
       "sha256": "2b471a5cdf36727c4d940f82ee11785d0e092e7de01fe459209981dd7c753042"
     },
     {
@@ -2394,7 +2534,11 @@
       "rule": "PY-WL-001",
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 3,
+        "text": "x = data.get(\"key\", \"default\")",
+        "function": "inner"
+      },
       "sha256": "160606166fe2ab35b2334f2adfa98e901a885d091633502a9801642fa88f305f"
     },
     {
@@ -2404,7 +2548,11 @@
       "rule": "PY-WL-004",
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except Exception:",
+        "function": "pr\u00f6cess"
+      },
       "sha256": "fe070f6f2d44e6254611799398b048726a874aa4e35274d8efac0e54cab1ec30"
     },
     {
@@ -2414,7 +2562,11 @@
       "rule": "PY-WL-001",
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "x = data.get(\"key\", \"default\")",
+        "function": "adv_async_get"
+      },
       "sha256": "481f09f232a4da8b19b72d587b43cb2f8d2e2ebe98cb6061eefcd081d07e052a"
     },
     {
@@ -2424,7 +2576,11 @@
       "rule": "PY-WL-001",
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 2,
+        "text": "x = data.setdefault(\"key\", [])",
+        "function": "adv_setdefault"
+      },
       "sha256": "cb1ee458cddc1dc20a99baf94728911120aa7dbe4943d9434c33c812912fa282"
     },
     {
@@ -2434,7 +2590,11 @@
       "rule": "PY-WL-001",
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 3,
+        "text": "d = defaultdict(list)",
+        "function": "adv_defaultdict"
+      },
       "sha256": "dc0cd3f798c47af53f5f0bd2bcfde8bd250f2e4b38ca6f3044d827ab275d53fc"
     },
     {
@@ -2454,8 +2614,52 @@
       "rule": "PY-WL-004",
       "taint_state": "ASSURED",
       "verdict": "true_positive",
-      "expected_match": true,
+      "expected_match": {
+        "line": 4,
+        "text": "except (ValueError, Exception):",
+        "function": "process"
+      },
       "sha256": "e2c64c4a8f1a54863389478f3dbb78454c4b14f24e12eea8998db88516bbfd7c"
+    },
+    {
+      "specimen_id": "ADV-016-aliased-audit",
+      "path": "specimens/adversarial/ADV-016-aliased-audit.yaml",
+      "py_exists": true,
+      "rule": "PY-WL-006",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "known_false_negative",
+      "expected_match": false,
+      "sha256": "a37de9e2590dca0c4fc8bf477cf4de44c3832e91eb68f05aa4fab3d0026738ca"
+    },
+    {
+      "specimen_id": "ADV-017-audit-in-finally",
+      "path": "specimens/adversarial/ADV-017-audit-in-finally.yaml",
+      "py_exists": true,
+      "rule": "PY-WL-006",
+      "taint_state": "EXTERNAL_RAW",
+      "verdict": "true_positive",
+      "expected_match": true,
+      "sha256": "e0974b56e1b43b89dd79f58edf617922ad4c58a47d2039b2b9884f5208c5d90b"
+    },
+    {
+      "specimen_id": "ADV-018-isinstance-boundary",
+      "path": "specimens/adversarial/ADV-018-isinstance-boundary.yaml",
+      "py_exists": true,
+      "rule": "PY-WL-007",
+      "taint_state": "ASSURED",
+      "verdict": "true_negative",
+      "expected_match": false,
+      "sha256": "f7f954dce9426acab9ccdcb8a211081014462b5e8ccace4c0b1c91d370410be1"
+    },
+    {
+      "specimen_id": "ADV-019-isinstance-dunder-eq",
+      "path": "specimens/adversarial/ADV-019-isinstance-dunder-eq.yaml",
+      "py_exists": true,
+      "rule": "PY-WL-007",
+      "taint_state": "INTEGRAL",
+      "verdict": "true_negative",
+      "expected_match": false,
+      "sha256": "dcba815b03ce84895406df6bad379a813fc05a9e67c69bd7bbfa4fa843e18745"
     }
   ]
 }
