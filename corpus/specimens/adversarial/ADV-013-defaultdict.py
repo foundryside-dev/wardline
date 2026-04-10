@@ -1,3 +1,3 @@
 from collections import defaultdict
-def process():
+def adv_defaultdict():
     d = defaultdict(list)

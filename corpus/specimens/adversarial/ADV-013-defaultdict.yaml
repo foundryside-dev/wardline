@@ -2,7 +2,7 @@
 specimen_id: ADV-013-defaultdict
 description: defaultdict with factory triggers PY-WL-001
 rule: PY-WL-001
-fragment: "from collections import defaultdict\ndef process():\n    d = defaultdict(list)\n"
+fragment: "from collections import defaultdict\ndef adv_defaultdict():\n    d = defaultdict(list)\n"
 taint_state: UNKNOWN_RAW
 expected_rules:
 - PY-WL-001
@@ -11,6 +11,6 @@ verdict: true_positive
 tags:
 - adversarial
 - defaultdict
-sha256: c0088880862f3022c94a7496808be3aebafc7ec6aae565327f054687ea56bb93
+sha256: dc0cd3f798c47af53f5f0bd2bcfde8bd250f2e4b38ca6f3044d827ab275d53fc
 expected_severity: SUPPRESS
 expected_exceptionability: TRANSPARENT

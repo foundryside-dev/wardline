@@ -2,7 +2,7 @@
 specimen_id: ADV-012-setdefault
 description: dict.setdefault triggers PY-WL-001
 rule: PY-WL-001
-fragment: "def process(data):\n    x = data.setdefault(\"key\", [])\n"
+fragment: "def adv_setdefault(data):\n    x = data.setdefault(\"key\", [])\n"
 taint_state: EXTERNAL_RAW
 expected_rules:
 - PY-WL-001
@@ -11,6 +11,6 @@ verdict: true_positive
 tags:
 - adversarial
 - setdefault
-sha256: 9ca53318246017be037df9afa506ae736e068440aa69f5d133ab50c1717636f5
+sha256: cb1ee458cddc1dc20a99baf94728911120aa7dbe4943d9434c33c812912fa282
 expected_severity: SUPPRESS
 expected_exceptionability: TRANSPARENT
