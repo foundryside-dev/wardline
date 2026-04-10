@@ -9,6 +9,10 @@ from pathlib import Path
 
 import pytest
 
+from wardline.core.matrix import SEVERITY_MATRIX
+from wardline.core.severity import RuleId
+from wardline.core.taints import TaintState
+
 CORPUS_ROOT = Path(__file__).parent.parent.parent.parent / "corpus"
 
 
@@ -94,3 +98,19 @@ class TestCorpusIntegrity:
             f"{len(duplicates)} duplicate sha256 groups:\n"
             + "\n".join(duplicates[:10])
         )
+
+    def test_taint_invariant_rules_produce_identical_outputs(self) -> None:
+        """PY-WL-008 and PY-WL-009 must produce identical severity/exceptionability for all taint states."""
+        taint_invariant_rules = [RuleId.PY_WL_008, RuleId.PY_WL_009]
+        all_taints = list(TaintState)
+
+        for rule in taint_invariant_rules:
+            cells = [SEVERITY_MATRIX[(rule, t)] for t in all_taints]
+            severities = {c.severity for c in cells}
+            exceptionabilities = {c.exceptionability for c in cells}
+            assert len(severities) == 1, (
+                f"{rule}: expected uniform severity, got {severities}"
+            )
+            assert len(exceptionabilities) == 1, (
+                f"{rule}: expected uniform exceptionability, got {exceptionabilities}"
+            )
