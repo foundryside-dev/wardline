@@ -47,7 +47,7 @@ TAINT_CONTEXT: dict[str, tuple[str, str]] = {
 
 # Rules where taint does not affect severity/exceptionability/detection.
 # These get a single specimen per verdict instead of 8.
-TAINT_INVARIANT_RULES = {"PY-WL-008", "PY-WL-009"}
+TAINT_INVARIANT_RULES = {RuleId.PY_WL_008, RuleId.PY_WL_009}
 # For taint-invariant rules, use this as the single representative taint state.
 TAINT_INVARIANT_REPRESENTATIVE = "EXTERNAL_RAW"
 
@@ -91,7 +91,9 @@ def _tn_fragment(rule: str, taint_name: str) -> str:
     }
     return templates[rule]
 
-# PY-WL-003 only fires at these taint states (taint-gated in rule implementation)
+
+# PY-WL-003 produces SUPPRESS severity at these taint states — the rule still
+# fires, but findings are suppressed.  Specimens here are marked KFN.
 PY_WL_003_ACTIVE_TAINTS = {"EXTERNAL_RAW", "UNKNOWN_RAW", "MIXED_RAW"}
 
 
@@ -132,7 +134,7 @@ def generate_matrix_specimens() -> dict[str, dict]:
                 continue
 
             # For taint-invariant rules, only generate the representative taint state
-            if rule_str in TAINT_INVARIANT_RULES and taint_name != TAINT_INVARIANT_REPRESENTATIVE:
+            if rule in TAINT_INVARIANT_RULES and taint_name != TAINT_INVARIANT_REPRESENTATIVE:
                 continue
 
             # PY-WL-003 is taint-gated: only fires at 3 taint states
@@ -144,7 +146,7 @@ def generate_matrix_specimens() -> dict[str, dict]:
             tp_frag = _tp_fragment(rule_str, taint_name)
             tp_hash = _sha256(tp_frag)
 
-            if rule_str in TAINT_INVARIANT_RULES:
+            if rule in TAINT_INVARIANT_RULES:
                 tp_id = f"{rule_str}-TP-standard"
             else:
                 tp_id = f"{rule_str}-TP-{taint_name}"
@@ -188,7 +190,7 @@ def generate_matrix_specimens() -> dict[str, dict]:
             tn_frag = _tn_fragment(rule_str, taint_name)
             tn_hash = _sha256(tn_frag)
 
-            if rule_str in TAINT_INVARIANT_RULES:
+            if rule in TAINT_INVARIANT_RULES:
                 tn_id = f"{rule_str}-TN-standard"
             else:
                 tn_id = f"{rule_str}-TN-{taint_name}"
@@ -356,7 +358,7 @@ def generate_adversarial_specimens() -> dict[str, dict]:
     return manifest
 
 
-def write_manifest(manifest: dict[str, dict]) -> None:
+def write_manifest() -> None:
     """Write the corpus manifest JSON from actual files on disk.
 
     Regenerates from disk to catch any manually-added specimens and
@@ -403,11 +405,9 @@ def write_manifest(manifest: dict[str, dict]) -> None:
 
 
 def main() -> None:
-    manifest = generate_matrix_specimens()
-    adv_manifest = generate_adversarial_specimens()
-    manifest.update(adv_manifest)
-    write_manifest(manifest)
-    print(f"\nTotal specimens: {len(manifest)}")
+    generate_matrix_specimens()
+    generate_adversarial_specimens()
+    write_manifest()
 
 
 if __name__ == "__main__":
