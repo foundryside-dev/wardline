@@ -152,6 +152,11 @@ def compute_control_law(
     or trust topology cannot be established. Alternate law means degraded
     but running. Normal law means full enforcement capability.
     """
+    if conformance_data_unavailable and conformance_never_run:
+        raise ValueError(
+            "conformance_data_unavailable and conformance_never_run are mutually exclusive"
+        )
+
     if manifest_unavailable:
         return "direct", ("manifest_unavailable",)
 

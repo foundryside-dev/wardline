@@ -183,21 +183,26 @@ def _read_coverage_ratio(manifest_path: Path) -> float | None:
         return None
 
 
-def _read_baseline_control_law(compare: str | None) -> str | None:
-    """Read wardline.controlLaw from baseline SARIF, or None."""
+def _read_baseline_control_law(compare: str | None) -> tuple[str | None, bool]:
+    """Read wardline.controlLaw from baseline SARIF.
+
+    Returns ``(control_law, read_failed)`` where *read_failed* is True
+    when the baseline file exists but could not be parsed (malformed JSON,
+    missing structure, etc.). When *compare* is None, returns ``(None, False)``.
+    """
     if compare is None:
-        return None
+        return None, False
     import json
     try:
         data = json.loads(Path(compare).read_text(encoding="utf-8"))
         runs = data.get("runs", [])
         if not isinstance(runs, list) or not runs:
-            return None
+            return None, False
         result: str | None = runs[0].get("properties", {}).get("wardline.controlLaw")
-        return result
+        return result, False
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         logger.warning("Cannot read baseline control law: %s", exc)
-        return None
+        return None, True
 
 
 def _resolve_coverage_ratio(
@@ -993,8 +998,13 @@ def scan(
             ))
 
     # retrospective_scan_recommended — detect control law improvement from baseline
-    prev_control_law = _read_baseline_control_law(compare)
-    if prev_control_law in ("alternate", "direct") and control_law == "normal":
+    prev_control_law, baseline_read_failed = _read_baseline_control_law(compare)
+    if baseline_read_failed:
+        _gov_events.append(GovernanceEvent(
+            event_type="baseline_read_failed",
+            message="Baseline SARIF could not be parsed — retrospective detection skipped",
+        ))
+    elif prev_control_law in ("alternate", "direct") and control_law == "normal":
         _gov_events.append(GovernanceEvent(
             event_type="retrospective_scan_recommended",
             message=(

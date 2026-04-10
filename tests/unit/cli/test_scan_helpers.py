@@ -295,18 +295,41 @@ class TestCoverageRatioDivergence:
         divergence = abs(baseline - scan_time)
         assert not (divergence > 0.10)  # 5% < 10% threshold
 
-    def test_zero_functions_logs_debug(self, caplog: pytest.LogCaptureFixture) -> None:
-        """Zero functions → debug log message about unavailability."""
-        import logging
+    def test_divergence_triggers_scan_time_preference(self) -> None:
+        """When divergence >10%, _resolve_coverage_ratio returns baseline but
+        production code overrides to scan-time. Verify the override logic."""
+        from wardline.cli.scan import _resolve_coverage_ratio
+        from wardline.scanner.sarif import GovernanceEvent
 
+        baseline = 0.90
+        ratio, scan_time = _resolve_coverage_ratio(baseline, 70, 100)
+        # Helper prefers baseline
+        assert ratio == 0.90
+        assert scan_time == pytest.approx(0.70)
+
+        # Production divergence logic (from scan.py:~950)
+        _gov_events: list[GovernanceEvent] = []
+        if baseline is not None and scan_time is not None:
+            _divergence = abs(baseline - scan_time)
+            if _divergence > 0.10:
+                ratio = scan_time  # I5 fix: prefer scan-time
+                _gov_events.append(GovernanceEvent(
+                    event_type="coverage_ratio_divergence",
+                    message=f"delta={_divergence:.4f}",
+                ))
+
+        assert ratio == pytest.approx(0.70)  # scan-time now authoritative
+        assert len(_gov_events) == 1
+        assert _gov_events[0].event_type == "coverage_ratio_divergence"
+        assert "0.2000" in _gov_events[0].message
+
+    def test_zero_functions_returns_none(self) -> None:
+        """Zero functions → both ratio and scan_time are None."""
         from wardline.cli.scan import _resolve_coverage_ratio
 
-        with caplog.at_level(logging.DEBUG, logger="wardline.cli.scan"):
-            ratio, scan_time = _resolve_coverage_ratio(None, 0, 0)
-            # The debug log is emitted by scan_cmd, not the helper.
-            # Verify the helper returns None so the caller can decide to log.
-            assert ratio is None
-            assert scan_time is None
+        ratio, scan_time = _resolve_coverage_ratio(None, 0, 0)
+        assert ratio is None
+        assert scan_time is None
 
 
 class TestReadCoverageRatio:
@@ -372,7 +395,9 @@ class TestReadBaselineControlLaw:
         sarif.write_text(json.dumps({
             "runs": [{"properties": {"wardline.controlLaw": "alternate"}}],
         }))
-        assert _read_baseline_control_law(str(sarif)) == "alternate"
+        law, failed = _read_baseline_control_law(str(sarif))
+        assert law == "alternate"
+        assert failed is False
 
     def test_read_baseline_control_law_normal(self, tmp_path: Path) -> None:
         """Baseline with 'normal' control law returns 'normal'."""
@@ -384,13 +409,17 @@ class TestReadBaselineControlLaw:
         sarif.write_text(json.dumps({
             "runs": [{"properties": {"wardline.controlLaw": "normal"}}],
         }))
-        assert _read_baseline_control_law(str(sarif)) == "normal"
+        law, failed = _read_baseline_control_law(str(sarif))
+        assert law == "normal"
+        assert failed is False
 
     def test_read_baseline_control_law_no_compare(self) -> None:
         """compare=None returns None immediately."""
         from wardline.cli.scan import _read_baseline_control_law
 
-        assert _read_baseline_control_law(None) is None
+        law, failed = _read_baseline_control_law(None)
+        assert law is None
+        assert failed is False
 
     def test_read_baseline_control_law_missing_property(self, tmp_path: Path) -> None:
         """Baseline SARIF without wardline.controlLaw returns None."""
@@ -402,7 +431,9 @@ class TestReadBaselineControlLaw:
         sarif.write_text(json.dumps({
             "runs": [{"properties": {"wardline.analysisLevel": 1}}],
         }))
-        assert _read_baseline_control_law(str(sarif)) is None
+        law, failed = _read_baseline_control_law(str(sarif))
+        assert law is None
+        assert failed is False
 
     def test_read_baseline_control_law_empty_runs(self, tmp_path: Path) -> None:
         """Empty runs array returns None without crash."""
@@ -412,12 +443,14 @@ class TestReadBaselineControlLaw:
 
         sarif = tmp_path / "baseline.sarif"
         sarif.write_text(json.dumps({"runs": []}))
-        assert _read_baseline_control_law(str(sarif)) is None
+        law, failed = _read_baseline_control_law(str(sarif))
+        assert law is None
+        assert failed is False
 
     def test_read_baseline_control_law_malformed_json(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Invalid JSON returns None and logs a warning."""
+        """Invalid JSON returns (None, True) and logs a warning."""
         import logging
 
         from wardline.cli.scan import _read_baseline_control_law
@@ -425,21 +458,23 @@ class TestReadBaselineControlLaw:
         sarif = tmp_path / "baseline.sarif"
         sarif.write_text("NOT VALID JSON {{{")
         with caplog.at_level(logging.WARNING, logger="wardline.cli.scan"):
-            result = _read_baseline_control_law(str(sarif))
-        assert result is None
+            law, failed = _read_baseline_control_law(str(sarif))
+        assert law is None
+        assert failed is True
         assert any("Cannot read baseline control law" in r.message for r in caplog.records)
 
     def test_read_baseline_control_law_file_not_found(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Nonexistent path returns None and logs a warning."""
+        """Nonexistent path returns (None, True) and logs a warning."""
         import logging
 
         from wardline.cli.scan import _read_baseline_control_law
 
         with caplog.at_level(logging.WARNING, logger="wardline.cli.scan"):
-            result = _read_baseline_control_law("/nonexistent/path/baseline.sarif")
-        assert result is None
+            law, failed = _read_baseline_control_law("/nonexistent/path/baseline.sarif")
+        assert law is None
+        assert failed is True
         assert any("Cannot read baseline control law" in r.message for r in caplog.records)
 
 
@@ -520,7 +555,7 @@ class TestRetrospectiveDetectionWiring:
         sarif.write_text(json.dumps({
             "runs": [{"properties": {"wardline.controlLaw": "alternate"}}],
         }))
-        prev_law = _read_baseline_control_law(str(sarif))
+        prev_law, _ = _read_baseline_control_law(str(sarif))
         current_law = "normal"
 
         # Replicate the production logic pattern from scan.py
@@ -544,8 +579,9 @@ class TestRetrospectiveDetectionWiring:
         sarif.write_text(json.dumps({
             "runs": [{"properties": {"wardline.controlLaw": "normal"}}],
         }))
-        prev_law = _read_baseline_control_law(str(sarif))
-        assert prev_law not in ("alternate", "direct") or True  # normal is not in the set
+        prev_law, _ = _read_baseline_control_law(str(sarif))
+        assert prev_law == "normal"
+        assert prev_law not in ("alternate", "direct")
 
     def test_no_event_when_law_degrades(self, tmp_path: Path) -> None:
         """normal->alternate produces no event (only improvement triggers)."""
@@ -557,7 +593,7 @@ class TestRetrospectiveDetectionWiring:
         sarif.write_text(json.dumps({
             "runs": [{"properties": {"wardline.controlLaw": "normal"}}],
         }))
-        prev_law = _read_baseline_control_law(str(sarif))
+        prev_law, _ = _read_baseline_control_law(str(sarif))
         current_law = "alternate"
         should_emit = prev_law in ("alternate", "direct") and current_law == "normal"
         assert not should_emit
@@ -566,7 +602,9 @@ class TestRetrospectiveDetectionWiring:
         """No --compare -> no detection possible."""
         from wardline.cli.scan import _read_baseline_control_law
 
-        assert _read_baseline_control_law(None) is None
+        law, failed = _read_baseline_control_law(None)
+        assert law is None
+        assert failed is False
 
 
 class TestIsInitialSetup:

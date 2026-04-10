@@ -823,6 +823,60 @@ def yet_another():
         assert result.total_function_count == 2
         assert result.annotated_function_count == 0
 
+    def test_denominator_includes_inner_functions(self, tmp_path: Path) -> None:
+        """Inner/nested functions are counted in the denominator."""
+        _write_py(
+            tmp_path / "nested.py",
+            """\
+def outer():
+    def inner():
+        pass
+    return inner
+""",
+        )
+        engine = ScanEngine(target_paths=(tmp_path,), rules=())
+        result = engine.scan()
+        # Both outer and outer.inner are in the qualname map
+        assert result.total_function_count == 2
+
+    def test_denominator_includes_property_methods(self, tmp_path: Path) -> None:
+        """@property methods are FunctionDef nodes and counted in denominator."""
+        _write_py(
+            tmp_path / "props.py",
+            """\
+class Foo:
+    @property
+    def value(self):
+        return 42
+
+    def regular(self):
+        pass
+""",
+        )
+        engine = ScanEngine(target_paths=(tmp_path,), rules=())
+        result = engine.scan()
+        # value (property getter) + regular = 2
+        assert result.total_function_count == 2
+
+    def test_denominator_excludes_lambdas(self, tmp_path: Path) -> None:
+        """ast.Lambda nodes are NOT counted in the function denominator."""
+        _write_py(
+            tmp_path / "lambdas.py",
+            """\
+def real_func():
+    pass
+
+fn = lambda x: x + 1
+also_fn = lambda: None
+""",
+        )
+        engine = ScanEngine(target_paths=(tmp_path,), rules=())
+        result = engine.scan()
+        # Only real_func in denominator, lambdas excluded
+        assert result.total_function_count == 1
+        # But lambdas are counted separately
+        assert result.lambda_count == 2
+
 
 class TestDataPathsTracedRatio:
     """call_edge_resolution_ratio and low_resolution_function_count from L3 taint."""
