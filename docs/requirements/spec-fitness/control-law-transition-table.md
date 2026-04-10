@@ -1,6 +1,6 @@
 # Control Law Transition Table
 
-> **Spec authority:** wardline-01-10-governance-model.md (SS9.5)
+> **Spec authority:** wardline-01-10-governance-model.md (§10.5)
 > **Implementation:** `src/wardline/scanner/sarif.py:compute_control_law()`
 > **Workstream:** C (Governance & Control Law), 2026-04-11
 

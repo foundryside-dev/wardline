@@ -153,7 +153,7 @@ class RulesConfig:
 
 @dataclass(frozen=True)
 class TemporalSeparation:
-    """Temporal separation alternative declaration (§14.3.2)."""
+    """Temporal separation alternative declaration (§15.3.2)."""
 
     alternative: str = "same-actor-with-retrospective"
     retrospective_window_days: int = 10

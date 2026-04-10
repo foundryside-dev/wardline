@@ -1432,7 +1432,7 @@ class TestDirectLawExclusion:
         result = check_direct_law_exclusion("direct")
         assert len(result) == 1
         assert "direct" in result[0]
-        assert "\u00a79.5" in result[0]
+        assert "\u00a710.5" in result[0]
 
     def test_per_path_warnings_when_direct_with_paths(self) -> None:
         """Direct law with governance paths emits per-path warnings."""
@@ -1443,8 +1443,8 @@ class TestDirectLawExclusion:
         assert len(result) == 2
         assert "wardline.yaml" in result[0]
         assert "wardline.exceptions.json" in result[1]
-        assert "\u00a79.5" in result[0]
-        assert "\u00a79.5" in result[1]
+        assert "\u00a710.5" in result[0]
+        assert "\u00a710.5" in result[1]
 
     def test_empty_governance_paths_treated_as_no_paths(self) -> None:
         """Direct law with empty tuple emits the general warning."""

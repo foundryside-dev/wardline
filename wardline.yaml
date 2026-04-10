@@ -22,7 +22,7 @@ metadata:
       enforcement artefact changes with mandatory retrospective review
       within 10 business days. Policy artefact changes (tier definitions,
       boundary declarations, restoration provenance) require different-actor
-      review per §9.3.1.
+      review per §10.3.1.
 
 # ── Tier definitions ──────────────────────────────────────────
 tiers:

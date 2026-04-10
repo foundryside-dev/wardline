@@ -1,4 +1,4 @@
-"""§5.3 evidence-to-tier matrix — pure domain function."""
+"""§6.3 evidence-to-tier matrix — pure domain function."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ def max_restorable_tier(
     integrity: bool,
     institutional: bool,
 ) -> TaintState:
-    """Return the maximum tier evidence supports per §5.3.
+    """Return the maximum tier evidence supports per §6.3.
 
     The caller coerces string evidence values to bool before calling:
     ``integrity_evidence="hmac"`` → ``integrity=True``,

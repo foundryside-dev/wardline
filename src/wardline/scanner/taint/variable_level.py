@@ -171,7 +171,7 @@ def _resolve_expr(
     return function_taint
 
 
-# Serialisation sinks — calls that cross the representation boundary (§5.2).
+# Serialisation sinks — calls that cross the representation boundary (§6.2).
 # Results shed direct authority: output is raw bytes/string, not typed objects.
 _SERIALISATION_SINKS: frozenset[str] = frozenset({
     # JSON
@@ -209,10 +209,10 @@ def _resolve_call(
     """Resolve taint for a function call expression.
 
     Resolution order for dotted calls (``obj.method()``):
-    1. Serialisation sinks (§5.2) → UNKNOWN_RAW
+    1. Serialisation sinks (§6.2) → UNKNOWN_RAW
     2. Exact match in taint_map (pre-resolved bare dependency imports)
     3. Exact match in dep_dotted (module-import dotted names)
-    4. §5.5 fallback: undeclared function in a declared package → UNKNOWN_RAW
+    4. §6.5 fallback: undeclared function in a declared package → UNKNOWN_RAW
 
     Simple name calls (``foo()``) look up in taint_map.
     Everything else → function_taint.
@@ -232,7 +232,7 @@ def _resolve_call(
                 dep_hit = dep_dotted.get(dotted)
                 if dep_hit is not None:
                     return dep_hit
-            # 4. §5.5 fallback: undeclared function in a declared package
+            # 4. §6.5 fallback: undeclared function in a declared package
             prefix = dotted.split(".", 1)[0]
             if prefix in dep_prefixes:
                 return TaintState.UNKNOWN_RAW

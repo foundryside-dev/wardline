@@ -161,7 +161,7 @@ def _create_exception(
 
     # Recurrence detection: if any existing exception matches the same
     # (rule, location), carry forward the highest recurrence_count + 1.
-    # Per spec §9.4: "when an exception for the same rule at the same code
+    # Per spec §10.4: "when an exception for the same rule at the same code
     # location is renewed after expiry, the renewal MUST be flagged as a
     # recurrence event."
     prior_count = max(

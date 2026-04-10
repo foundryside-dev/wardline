@@ -199,5 +199,5 @@ For the full governance exception lifecycle see [governance-retention.md](govern
 
 - [severity-matrix.md](severity-matrix.md) — Taint-state × rule severity matrix
 - [decorators.md](decorators.md) — Full wardline decorator catalogue
-- Spec §7 — Semantic boundary enforcement normative requirements
+- Spec §8 — Semantic boundary enforcement normative requirements
 - [semantic-equivalents/](semantic-equivalents/) — Equivalent patterns across languages

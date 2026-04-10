@@ -716,7 +716,7 @@ def check_restoration_evidence(
 
     For each boundary with ``transition == "restoration"`` and a
     non-None ``restored_tier``, compares the claimed tier against the
-    maximum tier the declared evidence supports per §5.3.
+    maximum tier the declared evidence supports per §6.3.
     """
     from wardline.core.evidence import max_restorable_tier
     from wardline.core.tiers import TAINT_TO_TIER
@@ -738,7 +738,7 @@ def check_restoration_evidence(
                         f"transition='restoration' with restored_tier="
                         f"{boundary.restored_tier} but has no provenance "
                         f"declaration. Restoration boundaries require "
-                        f"provenance evidence (§5.3)."
+                        f"provenance evidence (§6.3)."
                     ),
                 )
             )
@@ -752,7 +752,7 @@ def check_restoration_evidence(
         ceiling_taint = max_restorable_tier(structural, semantic, integrity, institutional)
 
         # If evidence only supports an UNKNOWN-family state, no numeric tier claim
-        # is valid — UNKNOWN states are outside the T1-T4 tier ladder (§5.3).
+        # is valid — UNKNOWN states are outside the T1-T4 tier ladder (§6.3).
         if ceiling_taint in _UNKNOWN_FAMILY:
             issues.append(
                 CoherenceIssue(
@@ -764,7 +764,7 @@ def check_restoration_evidence(
                         f"restored_tier={boundary.restored_tier} but evidence "
                         f"supports only {ceiling_taint.value} (no institutional "
                         f"provenance — numeric tier restoration requires "
-                        f"institutional provenance, §5.3)."
+                        f"institutional provenance, §6.3)."
                     ),
                 )
             )
@@ -783,7 +783,7 @@ def check_restoration_evidence(
                         f"Boundary '{boundary.function}' claims "
                         f"restored_tier={boundary.restored_tier} but evidence "
                         f"supports at most tier {ceiling_tier} "
-                        f"({ceiling_taint.value}). §5.3 evidence matrix."
+                        f"({ceiling_taint.value}). §6.3 evidence matrix."
                     ),
                 )
             )
@@ -801,18 +801,18 @@ def check_direct_law_exclusion(
 
     Governance artefacts include: wardline.yaml, overlay files, exception
     register, fingerprint baseline. Under direct law, these MUST NOT be
-    modified (§9.5).
+    modified (§10.5).
     """
     if control_law != "direct":
         return ()
     if not governance_paths:
         return (
             "Control law is 'direct' — governance artefact changes MUST NOT "
-            "proceed without enforcement-unavailable governance (§9.5).",
+            "proceed without enforcement-unavailable governance (§10.5).",
         )
     return tuple(
         f"Control law is 'direct' — modification of governance artefact "
-        f"'{path}' is prohibited without enforcement-unavailable governance (§9.5)"
+        f"'{path}' is prohibited without enforcement-unavailable governance (§10.5)"
         for path in governance_paths
     )
 

@@ -338,7 +338,7 @@ def reject_skip_promotions(boundaries: Iterable[dict[str, Any]]) -> None:
 
     Raises ``ManifestPolicyError`` on the first invalid boundary found.
     Called by both ``_build_overlay()`` and ``_load_resolved()`` to enforce
-    the skip-promotion invariant (§13.1.2) regardless of load path.
+    the skip-promotion invariant (§14.1.2) regardless of load path.
     """
     for b in boundaries:
         to_tier = b.get("to_tier")
@@ -349,7 +349,7 @@ def reject_skip_promotions(boundaries: Iterable[dict[str, Any]]) -> None:
                     f"Boundary '{b.get('function', '<unknown>')}' declares "
                     f"from_tier={from_tier}, to_tier=1 — skip-promotions to "
                     f"Tier 1 are prohibited. Use composed steps: "
-                    f"validation to T2, then T2→T1 construction (§13.1.2)."
+                    f"validation to T2, then T2→T1 construction (§14.1.2)."
                 )
 
 

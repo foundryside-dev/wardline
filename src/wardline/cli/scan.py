@@ -70,7 +70,7 @@ def _compute_deferred_fix_ratio(
 
 
 def _compute_manifest_hash(manifest_path: Path) -> str | None:
-    """SHA-256 of root manifest raw bytes only (§10.1).
+    """SHA-256 of root manifest raw bytes only (§11.1).
 
     The spec defines wardline.manifestHash as the hash of the root manifest
     file content — not a combined hash with overlays. Overlay hashes are
@@ -88,7 +88,7 @@ def _compute_manifest_hash(manifest_path: Path) -> str | None:
 def _compute_input_hash(
     file_paths: Sequence[Path], project_root: Path
 ) -> tuple[str, int]:
-    """Hash-of-hashes over analysed files (§10.1 algorithm).
+    """Hash-of-hashes over analysed files (§11.1 algorithm).
 
     Args:
         file_paths: Files the engine analysed (from ScanResult.scanned_file_paths).
@@ -107,7 +107,7 @@ def _compute_input_hash(
 
     resolved_root = project_root.resolve()
 
-    # Deduplicate after symlink resolution (§10.1 step 2)
+    # Deduplicate after symlink resolution (§11.1 step 2)
     seen: dict[Path, None] = {}
     for fp in file_paths:
         resolved = fp.resolve()
@@ -140,7 +140,7 @@ def _compute_overlay_hashes(
     consumed_overlay_paths: Sequence[Path],
     project_root: Path,
 ) -> tuple[str, ...]:
-    """SHA-256 of each consumed overlay, sorted by normalized path (§10.1).
+    """SHA-256 of each consumed overlay, sorted by normalized path (§11.1).
 
     Symlinked overlay files are excluded (consistent with overlay discovery).
     """
@@ -728,7 +728,7 @@ def scan(
         expedited_exception_ratio = (
             _expedited / _active if _active > 0 else 0.0
         )
-        # §10.1/§13.1.3: null = unclassified, 0.0 = no deferred fixes.
+        # §11.1/§14.1.3: null = unclassified, 0.0 = no deferred fixes.
         if _active > 0:
             deferred_fix_ratio = _compute_deferred_fix_ratio(_active, _deferred)
 
@@ -800,7 +800,7 @@ def scan(
     if manifest_hash is None:
         logger.warning("Manifest hash unavailable — SARIF report has no policy binding")
 
-    # --- Compute run identity properties (§10.1) ---
+    # --- Compute run identity properties (§11.1) ---
     overlay_hashes = _compute_overlay_hashes(
         consumed_overlay_paths, manifest_path.parent
     )
@@ -812,7 +812,7 @@ def scan(
         logger.debug("Zero functions discovered during scan — coverage ratio unavailable")
     conformance_gaps = _read_conformance_gaps(manifest_path, scan_path=scan_path)
 
-    # --- Compute control law (§9.5) ---
+    # --- Compute control law (§10.5) ---
     from wardline.manifest.regime import collect_fingerprint_metrics, collect_manifest_metrics
     from wardline.scanner.sarif import compute_control_law
 
@@ -891,7 +891,7 @@ def scan(
         input_hash = ""
         input_files = 0
 
-    # --- Retrospective scan mode (§9.5) ---
+    # --- Retrospective scan mode (§10.5) ---
     if retrospective:
         import dataclasses as _dc_retro
 
@@ -901,7 +901,7 @@ def scan(
 
     import wardline as _wardline_pkg
 
-    # --- Collect governance audit events (§9 / GOV-005) ---
+    # --- Collect governance audit events (§10 / GOV-005) ---
     from wardline.scanner.sarif import GovernanceEvent
 
     _gov_events: list[GovernanceEvent] = []
@@ -1048,7 +1048,7 @@ def scan(
     #   EXIT_CLEAN      (0) — no gate-blocking findings.
     #   (Exit code 3 is reserved for regime direct law — not used by scan.)
     #
-    # The three-tier signal model (§7.3–§7.5):
+    # The three-tier signal model (§8.3–§8.5):
     #   SUPPRESS findings are excluded (pattern is expected at this tier).
     #   WARNING findings are excluded (suspicious, non-blocking).
     #   Only ERROR findings block the gate.
@@ -1345,7 +1345,7 @@ def _load_resolved(
                 )
                 return None
 
-        # V2: Skip-promotion rejection (§13.1.2)
+        # V2: Skip-promotion rejection (§14.1.2)
         reject_skip_promotions(raw_boundaries)
 
         # V3: Duplicate boundary detection

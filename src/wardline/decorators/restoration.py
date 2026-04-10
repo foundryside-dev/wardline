@@ -1,4 +1,4 @@
-"""Group 17 decorator — restoration boundaries (§5.3).
+"""Group 17 decorator — restoration boundaries (§6.3).
 
 Restoration boundaries govern the act by which raw serialised
 representations may be restored to a tier supported by available
@@ -35,7 +35,7 @@ def restoration_boundary(
     integrity_evidence: str | None = None,
     institutional_provenance: str | None = None,
 ) -> object:
-    """Mark a function as a restoration boundary (Group 17, §5.3).
+    """Mark a function as a restoration boundary (Group 17, §6.3).
 
     Args:
         restored_tier: The tier this restoration claims to achieve (1-4).

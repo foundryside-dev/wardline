@@ -184,7 +184,7 @@ class RuleBase(ast.NodeVisitor, ABC):
         """Get sorted, deduplicated annotation group numbers for the current function.
 
         Returns the Part I group numbers (1-17) of all wardline annotations
-        declared on the function. Used to populate the §10.1 SARIF
+        declared on the function. Used to populate the §11.1 SARIF
         property ``wardline.annotationGroups``.
         """
         if not self._current_qualname or self._context is None:

@@ -117,7 +117,7 @@ _PSEUDO_RULE_IDS: frozenset[RuleId] = frozenset(
 
 @dataclass(frozen=True)
 class GovernanceEvent:
-    """A discrete governance event for audit trail (§9)."""
+    """A discrete governance event for audit trail (§10)."""
 
     event_type: str
     message: str
@@ -139,7 +139,7 @@ def compute_control_law(
     conformance_data_unavailable: bool = False,
     conformance_never_run: bool = False,
 ) -> tuple[str, tuple[str, ...]]:
-    """Compute the enforcement control law state per spec §9.5.
+    """Compute the enforcement control law state per spec §10.5.
 
     Returns (law, degradations) where law is "normal", "alternate", or
     "direct" and degradations is a sorted tuple of degradation condition
@@ -330,7 +330,7 @@ class SarifReport:
     manifest_hash: str | None = None
     scan_timestamp: str | None = None
     commit_ref: str | None = None
-    # Gap 3: Run-level identity properties (§10.1)
+    # Gap 3: Run-level identity properties (§11.1)
     input_hash: str = ""
     input_files: int = 0
     overlay_hashes: tuple[str, ...] = ()
@@ -338,7 +338,7 @@ class SarifReport:
     conformance_gaps: tuple[str, ...] = ()
     retroactive_scan: bool = False
     retroactive_scan_range: str | None = None
-    # GOV-005: Structured governance audit events (§9)
+    # GOV-005: Structured governance audit events (§10)
     governance_events: tuple[GovernanceEvent, ...] = ()
     # R7: Data-path coverage metrics
     data_paths_traced_ratio: float | None = None
@@ -422,7 +422,7 @@ class SarifReport:
                 "wardline.precisionFloorViolations": self.precision_floor_violations,
                 # Property bag versions:
                 # "0.4" — initial stable schema (17 run-level, 5 result-level mandatory)
-                # "0.5" — R1+R2: 19 run-level, 9 result-level mandatory (§10.1 complete)
+                # "0.5" — R1+R2: 19 run-level, 9 result-level mandatory (§11.1 complete)
                 # "0.6" — R7: data-path coverage (dataPathsTracedRatio, lowResolutionFunctionCount, denominatorExcludedCount)
                 # "0.7" — R4: precision/recall floor violations, isInitialSetup
                 "wardline.propertyBagVersion": "0.7",

@@ -1,6 +1,6 @@
 """Scan gate logic — three-tier signal model.
 
-The severity matrix (§7.3) assigns each (rule, taint) pair a severity:
+The severity matrix (§8.3) assigns each (rule, taint) pair a severity:
 
 - **SUPPRESS** — pattern is expected at this taint state.  Excluded from
   the CI gate.  Tracked as a diagnostic counter.

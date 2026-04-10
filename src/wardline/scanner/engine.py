@@ -424,7 +424,7 @@ class ScanEngine:
                         f"@restoration_boundary on {overclaim.qualname} claims "
                         f"restored_tier={overclaim.claimed_tier} but evidence "
                         f"supports at most tier {overclaim.evidence_ceiling} "
-                        f"({overclaim.evidence_taint.value}). §5.3 evidence matrix."
+                        f"({overclaim.evidence_taint.value}). §6.3 evidence matrix."
                     ),
                     severity=Severity.WARNING,
                     exceptionability=Exceptionability.STANDARD,

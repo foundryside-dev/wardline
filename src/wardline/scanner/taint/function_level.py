@@ -272,14 +272,14 @@ def _restoration_taint_from_annotations(
     annotations: dict[tuple[str, str], list[WardlineAnnotation]],
     overclaims: list[RestorationOverclaim] | None = None,
 ) -> TaintState | None:
-    """Resolve taint for restoration_boundary via §5.3 evidence matrix.
+    """Resolve taint for restoration_boundary via §6.3 evidence matrix.
 
     Returns the evidence-derived taint state if the function has a
     restoration_boundary annotation, or None if it does not.
 
     When *overclaims* is provided, appends a ``RestorationOverclaim``
     diagnostic if the decorator's ``restored_tier`` exceeds the evidence
-    ceiling per §5.3.
+    ceiling per §6.3.
     """
     from wardline.core.evidence import max_restorable_tier
     from wardline.core.tiers import TAINT_TO_TIER

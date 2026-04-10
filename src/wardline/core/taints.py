@@ -6,7 +6,7 @@ from enum import StrEnum
 
 
 class TaintState(StrEnum):
-    """Canonical taint states per spec §5.
+    """Canonical taint states per spec §6.
 
     Values are explicit uppercase strings — do NOT use auto() which
     produces lowercase and would silently break SARIF output, matrix
@@ -23,7 +23,7 @@ class TaintState(StrEnum):
     MIXED_RAW = "MIXED_RAW"
 
 
-# Taint context vocabulary — authoritative reference from spec §3.
+# Taint context vocabulary — authoritative reference from spec §4.
 # Maps taint state name → (function_suffix, variable_name) for code generation.
 TAINT_CONTEXT: dict[str, tuple[str, str]] = {
     "INTEGRAL": ("system_config", "sys_config"),
@@ -56,7 +56,7 @@ _JOIN_TABLE: dict[tuple[TaintState, TaintState], TaintState] = {
 
 
 def taint_join(a: TaintState, b: TaintState) -> TaintState:
-    """Compute the join of two taint states per spec §5.
+    """Compute the join of two taint states per spec §6.
 
     The join is commutative: join(a, b) == join(b, a).
     MIXED_RAW is the absorbing element: join(MIXED_RAW, X) == MIXED_RAW for all X.

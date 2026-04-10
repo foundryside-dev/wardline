@@ -39,7 +39,7 @@
         },
         "temporal_separation": {
           "type": "object",
-          "description": "Temporal separation posture declaration (§14.3.2).",
+          "description": "Temporal separation posture declaration (§15.3.2).",
           "properties": {
             "alternative": {
               "type": "string",

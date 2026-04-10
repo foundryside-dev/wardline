@@ -57,7 +57,7 @@ class SeverityCell:
     exceptionability: Exceptionability
 
 
-# Column order matches spec §7.3:
+# Column order matches spec §8.3:
 # INTEGRAL, ASSURED, GUARDED, EXTERNAL_RAW,
 # UNKNOWN_RAW, UNKNOWN_GUARDED, UNKNOWN_ASSURED, MIXED_RAW
 _TAINT_ORDER = [
@@ -73,7 +73,7 @@ _TAINT_ORDER = [
 
 # fmt: off
 #
-# Design intent — §7.5 calibration principle:
+# Design intent — §8.5 calibration principle:
 #
 #   These boundaries exist because the language permits these patterns for
 #   valid reasons.  The tier system carves out code paths where those patterns

@@ -279,7 +279,7 @@ def _find_matching_finding(
                     return f
         # Same-line duplicates with no text match — return None so caller
         # counts this as a location mismatch rather than silently selecting
-        # the first finding (§5.11: single finding per specimen).
+        # the first finding (§6.11: single finding per specimen).
         logger.warning(
             "Multiple findings for %s at line %d with no text match — "
             "returning None (expected text: %r)",
@@ -649,7 +649,7 @@ def _compute_corpus_hash(corpus_path: Path) -> str:
     """Hash-of-hashes over the full corpus artefact set.
 
     Covers specimen YAML files, corpus_manifest.json, and schema files.
-    Uses the same §10.1 construction as inputHash.
+    Uses the same §11.1 construction as inputHash.
     """
     all_files = sorted(
         list(corpus_path.glob("**/*.yaml"))
@@ -835,7 +835,7 @@ def verify(corpus_dir: str, analysis_level: int, output_json: bool) -> None:
         import json as json_mod
 
         report = _build_json_report(stats)
-        # No timestamp — deterministic output per §10 property 5.
+        # No timestamp — deterministic output per §11 property 5.
         # corpus publish adds generated_at when producing the conformance file.
         click.echo(json_mod.dumps(report, indent=2, sort_keys=True))
     else:
