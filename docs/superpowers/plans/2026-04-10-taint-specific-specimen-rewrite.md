@@ -17,7 +17,8 @@
 | File | Action | Purpose |
 |------|--------|---------|
 | `scripts/generate_corpus.py` | Modify | Add per-taint fragment generation, collapse 008/009, fix ADV duplicates |
-| `tests/unit/corpus/test_corpus_oracle.py` | Modify | Add sha256 uniqueness test + taint-invariance test |
+| `tests/unit/corpus/test_corpus_oracle.py` | Modify | Add sha256 uniqueness test + taint-invariance test (new `TestCorpusIntegrity` class, NOT under `@pytest.mark.integration`) |
+| `tests/unit/corpus/test_corpus_skeleton.py` | Modify | Update `test_rule_directory_exists` for PY-WL-008/009 collapsed directories |
 | `corpus/specimens/PY-WL-*/` | Regenerated | Matrix specimens get unique fragments |
 | `corpus/specimens/adversarial/` | Modify+Delete | 6 ADV specimens deleted, 3 renamed |
 | `corpus/corpus_manifest.json` | Regenerated | Updated specimen index |
@@ -32,36 +33,40 @@
 
 This test asserts acceptance criterion #1: zero duplicate sha256 values within any rule. It will FAIL on the current corpus (139 duplicates exist) and PASS after the rewrite.
 
+**Important:** `TestCorpusOracle` is marked `@pytest.mark.integration` and bare `uv run pytest` skips integration tests. These new tests only read JSON/matrix data (no subprocess calls), so they must go in a **separate unmarked class** to run by default.
+
 - [ ] **Step 1: Write the failing test**
 
-Add to the `TestCorpusOracle` class in `tests/unit/corpus/test_corpus_oracle.py`:
+Add a new class **after** `TestCorpusOracle` at the bottom of `tests/unit/corpus/test_corpus_oracle.py`. Add `from collections import defaultdict` to the module-level imports.
 
 ```python
-def test_no_duplicate_sha256_within_rule(self) -> None:
-    """Every specimen within a rule must have a unique fragment (sha256)."""
-    manifest_path = CORPUS_ROOT / "corpus_manifest.json"
-    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+class TestCorpusIntegrity:
+    """Corpus structural invariants — runs by default (no integration marker)."""
 
-    from collections import defaultdict
-    by_rule_sha: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
-    for s in data["specimens"]:
-        by_rule_sha[s["rule"]][s["sha256"]].append(s["specimen_id"])
+    def test_no_duplicate_sha256_within_rule(self) -> None:
+        """Every specimen within a rule must have a unique fragment (sha256)."""
+        manifest_path = CORPUS_ROOT / "corpus_manifest.json"
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    duplicates: list[str] = []
-    for rule, sha_groups in sorted(by_rule_sha.items()):
-        for sha, ids in sha_groups.items():
-            if len(ids) > 1:
-                duplicates.append(f"{rule} sha={sha[:10]}: {ids}")
+        by_rule_sha: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+        for s in data["specimens"]:
+            by_rule_sha[s["rule"]][s["sha256"]].append(s["specimen_id"])
 
-    assert not duplicates, (
-        f"{len(duplicates)} duplicate sha256 groups:\n"
-        + "\n".join(duplicates[:10])
-    )
+        duplicates: list[str] = []
+        for rule, sha_groups in sorted(by_rule_sha.items()):
+            for sha, ids in sha_groups.items():
+                if len(ids) > 1:
+                    duplicates.append(f"{rule} sha={sha[:10]}: {ids}")
+
+        assert not duplicates, (
+            f"{len(duplicates)} duplicate sha256 groups:\n"
+            + "\n".join(duplicates[:10])
+        )
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest tests/unit/corpus/test_corpus_oracle.py::TestCorpusOracle::test_no_duplicate_sha256_within_rule -v`
+Run: `uv run pytest tests/unit/corpus/test_corpus_oracle.py::TestCorpusIntegrity::test_no_duplicate_sha256_within_rule -v`
 
 Expected: FAIL with "duplicate sha256 groups" listing the clone groups.
 
@@ -83,7 +88,7 @@ This test proves acceptance criterion #7: PY-WL-008 and PY-WL-009 produce identi
 
 - [ ] **Step 1: Write the test**
 
-Add to `TestCorpusOracle` in `tests/unit/corpus/test_corpus_oracle.py`. Add the required imports at the top of the file:
+Add to the new `TestCorpusIntegrity` class (created in Task 1). Add the required imports at the **module level** of `tests/unit/corpus/test_corpus_oracle.py`:
 
 ```python
 from wardline.core.matrix import SEVERITY_MATRIX
@@ -91,7 +96,7 @@ from wardline.core.severity import RuleId
 from wardline.core.taints import TaintState
 ```
 
-Then add the test method:
+Then add the test method to `TestCorpusIntegrity`:
 
 ```python
 def test_taint_invariant_rules_produce_identical_outputs(self) -> None:
@@ -111,9 +116,11 @@ def test_taint_invariant_rules_produce_identical_outputs(self) -> None:
         )
 ```
 
+**Note:** Acceptance criterion #7 also requires verifying "identical detection results." The severity matrix check proves the rule's output is uniform, but does not exercise the scanner. This is sufficient because detection logic for these rules does not branch on taint (verified by SA-Dev review of the rule implementations). If scanner-level verification is desired later, a parametrized integration test running the scanner on a single fragment with all 8 taint states can be added.
+
 - [ ] **Step 2: Run test to verify it passes**
 
-Run: `uv run pytest tests/unit/corpus/test_corpus_oracle.py::TestCorpusOracle::test_taint_invariant_rules_produce_identical_outputs -v`
+Run: `uv run pytest tests/unit/corpus/test_corpus_oracle.py::TestCorpusIntegrity::test_taint_invariant_rules_produce_identical_outputs -v`
 
 Expected: PASS
 
@@ -160,7 +167,8 @@ TAINT_INVARIANT_REPRESENTATIVE = "EXTERNAL_RAW"
 
 - [ ] **Step 2: Replace static fragment dicts with template functions**
 
-Replace the `TP_FRAGMENTS` dict (lines 38-48) with:
+Find and replace the `TP_FRAGMENTS: dict[str, str] = {` block (use content matching,
+not line numbers — Step 1's insertion shifts line numbers) with:
 
 ```python
 def _tp_fragment(rule: str, taint_name: str) -> str:
@@ -180,7 +188,7 @@ def _tp_fragment(rule: str, taint_name: str) -> str:
     return templates[rule]
 ```
 
-Replace the `TN_FRAGMENTS` dict (lines 53-63) with:
+Find and replace the `TN_FRAGMENTS: dict[str, str] = {` block with:
 
 ```python
 def _tn_fragment(rule: str, taint_name: str) -> str:
@@ -469,11 +477,50 @@ rm corpus/specimens/PY-WL-002/EXTERNAL_RAW/negative/PY-WL-002-TN-01.yaml
 rm -f corpus/specimens/PY-WL-002/EXTERNAL_RAW/negative/PY-WL-002-TN-01.py
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Delete old EXTERNAL_RAW-named files for PY-WL-008/009**
+
+Task 3 generated new `*-standard` files but the old `*-EXTERNAL_RAW` files still
+exist alongside them. Both would appear in the manifest causing duplicate sha256.
 
 ```bash
-git add -A corpus/specimens/
-git commit -m "fix(corpus): delete 35 stale/duplicate specimen files"
+rm corpus/specimens/PY-WL-008/EXTERNAL_RAW/positive/PY-WL-008-TP-EXTERNAL_RAW.yaml
+rm -f corpus/specimens/PY-WL-008/EXTERNAL_RAW/positive/PY-WL-008-TP-EXTERNAL_RAW.py
+rm corpus/specimens/PY-WL-008/EXTERNAL_RAW/negative/PY-WL-008-TN-EXTERNAL_RAW.yaml
+rm -f corpus/specimens/PY-WL-008/EXTERNAL_RAW/negative/PY-WL-008-TN-EXTERNAL_RAW.py
+rm corpus/specimens/PY-WL-009/EXTERNAL_RAW/positive/PY-WL-009-TP-EXTERNAL_RAW.yaml
+rm -f corpus/specimens/PY-WL-009/EXTERNAL_RAW/positive/PY-WL-009-TP-EXTERNAL_RAW.py
+rm corpus/specimens/PY-WL-009/EXTERNAL_RAW/negative/PY-WL-009-TN-EXTERNAL_RAW.yaml
+rm -f corpus/specimens/PY-WL-009/EXTERNAL_RAW/negative/PY-WL-009-TN-EXTERNAL_RAW.py
+```
+
+- [ ] **Step 6: Delete orphaned PY-WL-001-KFN-01.py**
+
+This `.py` file has no YAML companion and would be a stale artifact.
+
+```bash
+rm -f corpus/specimens/PY-WL-001/EXTERNAL_RAW/negative/PY-WL-001-KFN-01.py
+```
+
+- [ ] **Step 7: Update test_corpus_skeleton.py for PY-WL-008/009 directory changes**
+
+`tests/unit/corpus/test_corpus_skeleton.py` has a parametrized `test_rule_directory_exists`
+that asserts `UNKNOWN_RAW/positive` and `UNKNOWN_RAW/negative` exist for ALL 9 rules.
+Since PY-WL-008/009 no longer have UNKNOWN_RAW directories, update the test to skip
+the UNKNOWN_RAW assertion for taint-invariant rules.
+
+Read the test file and modify the parametrized assertion to either:
+- Exclude PY-WL-008/009 from the UNKNOWN_RAW check, or
+- Make the UNKNOWN_RAW assertion conditional on the rule not being in
+  `{"PY-WL-008", "PY-WL-009"}`
+
+The exact edit depends on the test's current structure — read
+`tests/unit/corpus/test_corpus_skeleton.py` and apply the minimal change.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add -A corpus/specimens/ tests/unit/corpus/test_corpus_skeleton.py
+git commit -m "fix(corpus): delete 35 stale/duplicate specimen files and update skeleton test"
 ```
 
 ---
@@ -515,11 +562,23 @@ fragment: "def kfn_dict_default_get_default(request_param):\n    x = request_par
   , \"default\")\n"
 ```
 
-For each file, recompute sha256 using:
-```python
-import hashlib
-hashlib.sha256(fragment.encode()).hexdigest()
+For each file, recompute sha256 after editing the fragment. Use this helper command
+which reads the fragment from the YAML and prints the correct sha256:
+
+```bash
+uv run python -c "
+import yaml, hashlib, sys
+with open(sys.argv[1]) as f:
+    data = yaml.safe_load(f)
+print(hashlib.sha256(data['fragment'].encode()).hexdigest())
+" <path-to-yaml-file>
 ```
+
+Then update the `sha256` field in the YAML to match the printed value.
+
+**Verification after all Task 6 edits:** Run the helper on every edited file and
+confirm the YAML `sha256` field matches. A mismatch means the fragment text in
+the YAML wasn't saved correctly (common cause: YAML quoting/escaping differences).
 
 - [ ] **Step 2: Update PY-WL-001 non-matrix duplicates**
 
@@ -724,14 +783,32 @@ Adversarial specimens (AFP, AFN, TF) were preserved.
 
 ### PY-WL-002-TN-01 (1 specimen)
 
-True duplicate of PY-WL-002-TN-EXTERNAL_RAW: same taint state, same fragment,
-same verdict. Removed as redundant.
+True duplicate of PY-WL-002-TN-EXTERNAL_RAW (kept): same taint state
+(EXTERNAL_RAW), same fragment (`def process(obj): x = getattr(obj, "name")`),
+same verdict (true_negative). Removed as redundant.
 
 ### ADV same-verdict duplicates (6 specimens)
 
-Six adversarial specimens had identical fragments, taint states, and verdicts
-as their corresponding rule-specific specimens. The rule specimens were kept;
-the ADV duplicates removed.
+Each ADV specimen below had an identical fragment, taint state, and verdict
+as the listed rule-specific specimen. The rule specimen was kept.
+
+| Deleted Specimen | Kept Specimen | Rule | Taint | Verdict |
+|-----------------|---------------|------|-------|---------|
+| ADV-005-long-function | PY-WL-005-TP-long-function | PY-WL-005 | EXTERNAL_RAW | TP |
+| ADV-006-decorator-stack | PY-WL-001-TP-decorator-stack | PY-WL-001 | ASSURED | TP |
+| ADV-008-async-except | PY-WL-004-TP-async-except | PY-WL-004 | UNKNOWN_RAW | TP |
+| ADV-009-async-silent | PY-WL-005-TP-async-silent | PY-WL-005 | MIXED_RAW | TP |
+| ADV-010-async-getattr | PY-WL-002-TP-async-getattr | PY-WL-002 | ASSURED | TP |
+| ADV-011-class-method | PY-WL-001-TP-class-method | PY-WL-001 | GUARDED | TP |
+
+## PY-WL-001 SUPPRESS Taint States
+
+PY-WL-001 suppresses findings at EXTERNAL_RAW, MIXED_RAW, and UNKNOWN_RAW
+(Tier 3-4 taint states). This is a deliberate design choice: at these trust
+levels, dict-default patterns are expected and flagging them would produce
+excessive noise. KFN specimens at these taint states document the known
+suppression gap. The suppression policy is defined in the severity matrix
+and verified by existing matrix tests.
 
 ## Coverage Assurance
 
