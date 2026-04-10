@@ -148,11 +148,7 @@
 
 // --- Body ---
 
-= Wardline Framework Specification
-<wardline-framework-specification>
-== Semantic Boundary Classification and Enforcement
-<semantic-boundary-classification-and-enforcement>
-== How to read this document
+= How to read this document
 <how-to-read-this-document>
 This document comprises two parts: Part I (the framework specification) and Part II (language binding references for
 Python and Java). Not all readers need all sections. The paths below route to the most relevant content for each
@@ -185,7 +181,7 @@ REQUIRED, RECOMMENDED, and OPTIONAL as defined in RFC 2119 and clarified in RFC 
 uppercase, they carry normative force. Lowercase equivalents carry no normative weight and are used in their ordinary
 English sense.
 
-=== 1.1 Terms and definitions
+== 1.1 Terms and definitions
 <terms-and-definitions>
 The following terms carry specific meaning in this specification. Where a term is used in its everyday sense, it appears
 in lowercase without emphasis; where it carries its defined meaning, the surrounding tier, boundary, or annotation
@@ -311,7 +307,7 @@ A wardline is therefore a prescriptive declaration: it describes what the applic
 currently achieves. The gap between declaration and enforcement is measurable, auditable, and --- critically --- visible
 to assessors who have no access to the development team's tacit knowledge.
 
-== 2. The problem a Wardline solves
+= 2. The problem a Wardline solves
 <the-problem-a-wardline-solves>
 There is a structural gap between what automated tooling checks and what high-stakes code requires. The standard
 assurance stack --- linters, type checkers, SAST, DAST, unit tests, conventional peer review --- verifies
@@ -432,7 +428,7 @@ correspondingly reduced ACF coverage.
   , kind: table
   )
 
-== 3. Non-goals
+= 3. Non-goals
 <non-goals>
 The following are explicitly outside the scope of this framework:
 
@@ -469,12 +465,12 @@ The following are explicitly outside the scope of this framework:
   structure judgement and make semantic boundaries visible; it is not a substitute for domain understanding, training,
   or accountable review.
 
-== 4. Authority tier model
+= 4. Authority tier model
 <authority-tier-model>
 The authority tier model is the foundation of any wardline. It defines how an application categorises its data according
 to the guarantees the system is entitled to assume about each value.
 
-=== 4.1 Four tiers
+== 4.1 Four tiers
 <four-tiers>
 #figure(
   align(center)[#table(
@@ -610,12 +606,12 @@ are defined in §5.
 The enforcement implementation of this model --- effective states, taint-state algebra, transition semantics,
 restoration boundaries, and cross-language taint propagation --- is specified in §5.
 
-== 5. Authority tier model: enforcement specification
+= 5. Authority tier model: enforcement specification
 <authority-tier-model-enforcement-specification>
 This section specifies the enforcement implementation of the four-tier authority model defined in §4. Tool implementers,
 scanner developers, and security assessors need this section; adopters and practitioners may skip to §6.
 
-=== 5.1 Trust classification and validation status
+== 5.1 Trust classification and validation status
 <trust-classification-and-validation-status>
 The four tiers describe semantic authority. The eight effective states describe the enforcement contexts actually needed
 to grade pattern severity.
@@ -884,7 +880,7 @@ theoretical combinations. Eight are reachable as effective states; sixteen are i
 All sixteen non-reachable combinations are accounted for by the Impossible or Collapsed entries in the Rationale column.
 The normalisation boundary mechanism for MIXED data is specified in §5.2 (transition semantics).
 
-=== 5.2 Transition semantics
+== 5.2 Transition semantics
 <transition-semantics>
 Tier transitions are directional and constrained:
 
@@ -979,7 +975,7 @@ Seven invariants govern these transitions:
   alter the trust classification of its source inputs. This prevents laundering lower tiers into higher tiers by
   accident --- the failure mode where "validated once" magically turns all downstream uses into authoritative truth.
 
-=== 5.3 Trusted restoration boundaries
+== 5.3 Trusted restoration boundaries
 <trusted-restoration-boundaries>
 The serialisation/restoration model distinguishes #emph[construction] from #emph[restoration]. Construction produces a
 new Tier 1 artefact from Tier 2 inputs under institutional rules (§5.2, T2-to-T1 transition). Restoration reconstitutes
@@ -1048,7 +1044,7 @@ states (UNKNOWN\_\*). A mere assertion of internal provenance --- without instit
 data above unknown-origin status. This prevents trust-classification uplift on assertion rather than evidence: an agent
 or developer claiming "this is internal data" without institutional backing receives no tier benefit from the claim.
 
-=== 5.4 Cross-language taint propagation
+== 5.4 Cross-language taint propagation
 <cross-language-taint-propagation>
 In polyglot applications where data crosses language boundaries (e.g., a Python service calling a Go microservice, or a
 shared database accessed by multiple language runtimes), the receiving language's enforcement tool cannot verify the
@@ -1088,7 +1084,7 @@ bindings' restoration boundaries are independent: each declares its own evidence
 neither trusts the other's classification. The shared wardline manifest (§13) ensures both bindings agree on the data
 source's tier assignment, but the restoration evidence is evaluated independently by each binding.
 
-=== 5.5 Third-party in-process dependency taint
+== 5.5 Third-party in-process dependency taint
 <third-party-in-process-dependency-taint>
 In-process calls to third-party libraries --- code that executes within the same runtime but is not under the deploying
 organisation's governance --- present an analogous problem to cross-language boundaries (§5.4). The enforcement tool
@@ -1156,7 +1152,7 @@ renames across library version upgrades. The `package` version constraint in `de
 provides a secondary defence: version changes that fall outside the declared constraint range trigger a fingerprint
 baseline change (§9.2), surfacing the entry for governance review.
 
-== 6. Annotation vocabulary
+= 6. Annotation vocabulary
 <annotation-vocabulary>
 A wardline MUST be able to express the following categories of institutional knowledge. Each category represents a class
 of semantic constraint that is invisible to standard tooling but routinely violated by agent-generated code. The
@@ -1340,7 +1336,7 @@ following interactions:
 - Groups 1 + 10: failure-mode enforcement often depends on the enclosing trust topology established by core
   classification annotations.
 
-== 7. Pattern rules
+= 7. Pattern rules
 <pattern-rules>
 This section defines nine rules in two categories. #strong[Six pattern rules] (WL-001 through WL-006) detect syntactic
 proxies for semantic violations in declared semantic contexts. Each takes the form: "if the application declares context
@@ -1375,7 +1371,7 @@ Three categories of validity underpin the rule vocabulary:
 Pattern rules operate at the structural-validity layer: they detect structural signals that correlate with semantic
 violations. They do not verify semantic correctness directly.
 
-=== 7.1 The rules
+== 7.1 The rules
 <the-rules>
 #figure(
   align(center)[#table(
@@ -1461,7 +1457,7 @@ violations. They do not verify semantic correctness directly.
   , kind: table
   )
 
-=== 7.2 Structural verification
+== 7.2 Structural verification
 <structural-verification>
 In addition to the pattern rules, structural verification requirements apply to validation boundary functions:
 
@@ -1525,7 +1521,7 @@ The following do NOT constitute rejection paths:
   never produces a valid output. This is a degenerate case: the scanner SHOULD emit an advisory finding (distinct from
   WL-007) when a validation boundary function contains no success path
 
-=== 7.2.1 Structural-guarantee defaults and WL-001
+== 7.2.1 Structural-guarantee defaults and WL-001
 <structural-guarantee-defaults-and-wl-001>
 WL-001 is SUPPRESS in EXTERNAL\_RAW context. Tier 4 is the developer-freedom zone --- boundary code legitimately uses
 `.get()`, `getattr()`, and similar patterns to handle optional fields, missing config keys, and malformed input. The
@@ -1596,7 +1592,7 @@ security-relevant field --- declaring `security_classification` as optional with
 classification decision that warrants the same governance scrutiny as a tier-escalation declaration. The fingerprint
 baseline makes it visible; the governance model ensures it's reviewed.
 
-=== 7.3 Severity matrix
+== 7.3 Severity matrix
 <severity-matrix>
 #strong[How to read this matrix.] Each cell encodes severity / exceptionability as a two-letter code (see key below the
 next paragraph). Suppress severity always pairs with Transparent exceptionability (Su/T). Read across a row to see how a
@@ -1647,7 +1643,7 @@ for the general principle governing binding-level deviations. When a binding spl
 under §7.1, each sub-rule's documented matrix row is the baseline for §7.3 conformance --- the narrowing constraint
 applies relative to the sub-rule's own matrix, not relative to the parent framework rule.
 
-=== 7.4 Worked examples
+== 7.4 Worked examples
 <worked-examples>
 #emph[Subsections 7.4 and 7.5 are non-normative. They explain the reasoning behind the severity matrix but do not impose
 additional requirements on implementations.]
@@ -1722,7 +1718,7 @@ re-raise (`except Exception: raise`) --- those are genuinely not swallowing the 
 `except Exception: logger.warning(...); return fallback` continues execution with fabricated state, which is the exact
 pattern WL-003 and WL-004 exist to flag.
 
-=== 7.5 Derivation principles
+== 7.5 Derivation principles
 <derivation-principles>
 Four principles govern the matrix:
 
@@ -1776,7 +1772,7 @@ error regardless of context. A Tier 1 promotion function (`@integral_read` or `@
 serialization path without declared restoration evidence is a topology deficiency regardless of context. These are
 framework invariants, not context-dependent judgements.
 
-=== 7.6 Taint analysis scope
+== 7.6 Taint analysis scope
 <taint-analysis-scope>
 Taint analysis for tier-flow enforcement is scoped to explicit flows (data dependencies) only. An explicit flow occurs
 when data from one tier is directly assigned, passed, or returned to a sink expecting a different tier. Implicit flows
@@ -1795,7 +1791,7 @@ three-tier version of this framework (without the Tier 2 / Tier 3 distinction) h
 pairs. The four-tier model adds two states and extends the trust ordering by one level --- modest scaling cost for
 substantially finer enforcement granularity.]
 
-===== 7.6.1 Implicit-flow evasion heuristic
+=== 7.6.1 Implicit-flow evasion heuristic
 <implicit-flow-evasion-heuristic>
 Full implicit-flow analysis is not required by this framework (see above), but the dominant implicit-flow evasion
 pattern is detectable with a simple heuristic. Enforcement tools SHOULD flag functions that contain both (a) a
@@ -1819,7 +1815,7 @@ the conservative fallback that the framework mandates as the default. The framew
 field-sensitivity algorithm; bindings declare which product types they track and demonstrate precision through their
 golden corpus.
 
-== 8. Enforcement layers
+= 8. Enforcement layers
 <enforcement-layers>
 A wardline can be enforced at three layers, each catching different classes of violation. The layers are orthogonal:
 each catches things the others cannot. A single tool that implements only one layer still gains value; the combination
@@ -1864,7 +1860,7 @@ Bindings for languages where the immutability mechanism is inherently deep (e.g.
 persistent data structures) need not define such rules --- the language guarantee is sufficient.
 ]
 
-=== 8.1 Static analysis
+== 8.1 Static analysis
 <static-analysis>
 #figure(
   align(center)[#table(
@@ -1927,7 +1923,7 @@ Requirements:
 #strong[Scaling characteristics:] Pattern detection scales linearly with the annotated surface area; taint analysis
 scales O(V+E) with the call graph. These are desirable properties but not enforceable as framework invariants.
 
-=== 8.2 Type system
+== 8.2 Type system
 <type-system>
 #figure(
   align(center)[#table(
@@ -1955,7 +1951,7 @@ Where a binding's type system enforces tier distinctions at development time, WL
 states may be narrowed through binding-level matrix deviations (§7.3), because runtime type-checking becomes
 structurally redundant rather than merely suspicious.
 
-=== 8.3 Runtime structural
+== 8.3 Runtime structural
 <runtime-structural>
 #figure(
   align(center)[#table(
@@ -1984,7 +1980,7 @@ Requirements:
 - MAY provide optional runtime enforcement that complements static analysis for contexts where static analysis alone is
   insufficient #emph[\(tool quality target)]
 
-=== 8.4 Orthogonality principle
+== 8.4 Orthogonality principle
 <orthogonality-principle>
 Static analysis cannot cross serialisation boundaries. Mainstream type systems cannot enforce behavioural constraints
 (dependent types and session types can, but are not available in the languages this framework targets). Runtime
@@ -1999,7 +1995,7 @@ independently and that adopters can deploy layers incrementally as their annotat
 profiles (§14.3; see §14.3.1 for the normative profile definitions) encode this principle: Wardline-Type, Wardline-Core,
 and Wardline-Governance correspond to the natural tool boundaries that the orthogonality principle predicts.
 
-=== 8.5 Pre-generation context projection (advisory mechanism --- not an enforcement layer)
+== 8.5 Pre-generation context projection (advisory mechanism --- not an enforcement layer)
 <pre-generation-context-projection-advisory-mechanism-not-an-enforcement-layer>
 The three enforcement layers above operate on code that has already been written. The following mechanism is #strong[not
 a fourth enforcement layer] --- it is an advisory, read-only projection that operates upstream of code generation. It
@@ -2012,7 +2008,7 @@ control surface itself. It does not modify the manifest, annotations, or excepti
 artefacts. Its inputs are the same structured declarations that the enforcement layers consume; its output is a resolved
 summary tailored to a specific file at a specific point in time.
 
-===== 8.5.1 Projection content
+=== 8.5.1 Projection content
 <projection-content>
 For a given file path, the projection resolves:
 
@@ -2036,7 +2032,7 @@ For a given file path, the projection resolves:
 - #strong[Currency.] The commit at which the derived state was last computed (or a timestamp where commit identity is
   unavailable), so the consumer can assess alignment between the projection and the current repository state.
 
-===== 8.5.2 Relationship to enforcement
+=== 8.5.2 Relationship to enforcement
 <relationship-to-enforcement>
 Pre-generation projection does not replace post-generation enforcement. The enforcement layers remain the terminal
 control --- an agent or developer that receives the projection may still produce a violation, and the static analysis,
@@ -2072,7 +2068,7 @@ enforcement, its operational status is a meaningful governance signal. A deploym
 explanation may see increased finding volume, governance load, and exception pressure --- all indicators the governance
 model monitors. Under the Lite governance profile, projection tracking is RECOMMENDED but not required.
 
-===== 8.5.3 Delivery mechanisms
+=== 8.5.3 Delivery mechanisms
 <delivery-mechanisms>
 The projection may be delivered through any mechanism that interposes between the agent and the file at read or edit
 time. MCP tool servers (§13.1.3), IDE extensions, editor hooks, and agentic harness hooks are all valid delivery
@@ -2082,7 +2078,7 @@ For agentic development environments, delivery at file-read time is preferable t
 the file, forms its editing plan, then modifies. Context that arrives at read time shapes the plan; context that arrives
 at edit time competes with it.
 
-== 9. Governance model
+= 9. Governance model
 <governance-model>
 A wardline without governance is an honour system. The governance model defines how designated reviewers manage
 exceptions to wardline declarations, who may authorise them, and what evidence trail they leave.
@@ -2142,7 +2138,7 @@ governance profiles (§14.3.2). Use this as a quick reference; the subsections b
   , kind: table
   )
 
-=== 9.1 Exceptionability classes
+== 9.1 Exceptionability classes
 <exceptionability-classes>
 Four classes govern how findings may be overridden:
 
@@ -2165,7 +2161,7 @@ Four classes govern how findings may be overridden:
   , kind: table
   )
 
-=== 9.2 Governance mechanisms
+== 9.2 Governance mechanisms
 <governance-mechanisms>
 The following mechanisms apply to the wardline declaration and its exception register, not only to the enforcement tool.
 
@@ -2310,7 +2306,7 @@ from an external source should be treated as internal (Tier 1) --- the governanc
 the actual data source, the trust basis, and the institutional authority for the escalation. "We trust this because we
 always have" is not a sufficient rationale.
 
-=== 9.2.1 Governance audit logging
+== 9.2.1 Governance audit logging
 <governance-audit-logging>
 Governance events --- exception grants, baseline changes, manifest modifications, and control-law transitions --- MUST
 produce an auditable trail. This subsection defines the logging requirements.
@@ -2361,7 +2357,7 @@ audit infrastructure that handles other security events.
 the duration of the system's accreditation period. For ISM-assessed systems, this is typically 3 years from the last
 IRAP assessment.
 
-=== 9.3 Scope of governance
+== 9.3 Scope of governance
 <scope-of-governance>
 The governance model applies to the wardline #emph[declaration], not only to the enforcement tool's findings. A change
 to the wardline manifest --- adding a new trust boundary, reclassifying a data source, modifying an authority tier
@@ -2405,7 +2401,7 @@ specific supplementary findings as UNCONDITIONAL. This distinction is stated her
 matrix governs pattern rules; supplementary groups generate their own findings with their own severity, and the
 governance model applies to both.
 
-=== 9.3.1 Artefact classification: policy and enforcement
+== 9.3.1 Artefact classification: policy and enforcement
 <artefact-classification-policy-and-enforcement>
 Not all wardline artefacts carry the same governance weight. A tier assignment is a policy decision with security
 implications; a scanner severity threshold is operational configuration. Conflating the two --- governing both through
@@ -2461,7 +2457,7 @@ enables manifest-level threat modelling --- governance-layer attack vectors (man
 target policy artefacts specifically; and it aligns the wardline with established security governance practice ---
 security classification guides are policy artefacts governed differently from the systems that enforce them.
 
-=== 9.3.2 Manifest threat model
+== 9.3.2 Manifest threat model
 <manifest-threat-model>
 As annotation coverage grows, coding-level risk falls --- annotations constrain generation by making institutional
 knowledge part of the agent's context window. But the governance risk rises correspondingly: the annotations themselves
@@ -2553,7 +2549,7 @@ These signals are governance-level findings, not code-level findings. They appea
 `ruleId: "GOVERNANCE"` and are subject to the governance model's own exception mechanism (STANDARD exceptionability ---
 they can be overridden with documented rationale, but they cannot be silently suppressed).
 
-=== 9.4 Governance capacity
+== 9.4 Governance capacity
 <governance-capacity>
 Governance capacity is finite. Every finding that requires human review consumes reviewer attention, and reviewer
 attention is the scarcest resource in any assurance process.
@@ -2628,7 +2624,7 @@ MUST instead document their expedited exception approval process in the root man
 manifest ratification cycle. This provides a weaker but non-zero governance signal --- the organisation is at least
 recording and periodically examining its use of expedited paths, even if the metric is not yet automated.
 
-=== 9.5 Enforcement availability (control law)
+== 9.5 Enforcement availability (control law)
 <enforcement-availability-control-law>
 The enforcement tool is itself a system that can fail. When it is unavailable --- CI outage, tool crash, licence expiry,
 infrastructure failure --- the branch protection gate (§9.2) cannot pass. Pure fail-closed blocks delivery indefinitely
@@ -2701,7 +2697,7 @@ This mechanism makes the #emph[absence] of a required scan detectable. Without i
 would see a direct-law window followed by normal-law runs, with no way to distinguish "retrospective scan was performed
 and found nothing" from "retrospective scan was never performed."
 
-== 10. Verification properties
+= 10. Verification properties
 <verification-properties>
 Six properties determine whether a wardline enforcement tool --- or enforcement regime (§14.4) --- is assessable by an
 independent evaluator (IRAP --- Information Security Registered Assessors Program --- or equivalent). These are
@@ -2718,7 +2714,7 @@ lower bound for stabilising simple proportion estimates. The corpus MUST include
 looks like a violation but is not, and code that looks clean but contains one. The corpus is CODEOWNERS-protected;
 changes require designated reviewer approval. An assessor can run the corpus independently and compare results.
 
-=== Specimen structure
+== Specimen structure
 <specimen-structure>
 Each corpus specimen is a self-contained, labelled test case in YAML format. A specimen declares: a unique identifier,
 the rule it tests, the taint state context, the expected severity and exceptionability, a verdict (positive --- should
@@ -2992,7 +2988,7 @@ assessor evaluates each constituent tool against the properties for its declared
 union of all tools' coverage satisfies the regime-level requirements. If any tool or the regime as a whole does not
 satisfy its applicable properties, the claims are unverifiable regardless of actual capability.
 
-=== 10.1 Findings interchange format
+== 10.1 Findings interchange format
 <findings-interchange-format>
 Enforcement tools MUST produce findings in SARIF v2.1.0 (Static Analysis Results Interchange Format, OASIS standard).
 SARIF is the established interchange format for static analysis tools; adopting it provides native integration with code
@@ -3230,7 +3226,7 @@ Binding-specific annotation names such as `@validates_shape` or `@ValidatesShape
 properties (for example, `wardline.enclosingAnnotation`) for diagnostic context, but those names are not part of the
 framework's cross-binding interoperability contract.
 
-=== 10.2 Finding presentation guidance
+== 10.2 Finding presentation guidance
 <finding-presentation-guidance>
 This subsection is non-normative except where explicitly marked. It provides binding guidance for how findings are
 rendered to developers --- in terminal output, IDE diagnostics, CI summaries, and code review annotations. The
@@ -3242,7 +3238,7 @@ severity matrix are analytically necessary for the framework's precision guarant
 primary finding messages trains developers to ignore findings rather than act on them. The presentation layer exists to
 translate framework semantics into actionable developer guidance without losing the precision that assessors require.
 
-===== Three-layer finding message format
+=== Three-layer finding message format
 <three-layer-finding-message-format>
 Bindings SHOULD present findings in three layers, progressively disclosing detail:
 
@@ -3285,7 +3281,7 @@ The primary span marks the violation site; the secondary span marks the annotati
 This dual-span rendering lets developers see both #emph[what is wrong] and #emph[where the context comes from] in a
 single diagnostic, without requiring them to understand the tier model before they can act on the finding.
 
-===== Presentation-layer state collapse
+=== Presentation-layer state collapse
 <presentation-layer-state-collapse>
 For developer-facing output --- terminal, IDE, code review --- bindings SHOULD collapse the eight effective states into
 three groups:
@@ -3318,7 +3314,7 @@ at least one verification gate, untrusted data requires validation before use. D
 vs.~UNKNOWN\_ASSURED) matter for governance and assessment but rarely change what the developer does in response to a
 finding.
 
-===== `wardline explain` subcommand
+=== `wardline explain` subcommand
 <wardline-explain-subcommand>
 Bindings SHOULD implement a `wardline explain` subcommand that renders the full derivation for a finding, following the
 `rustc --explain` pattern. Two invocation forms:
@@ -3337,7 +3333,7 @@ current project's manifest, annotations, or configuration. Bindings MAY generate
 at build time or bundle it as static text. The output SHOULD be renderable in a terminal (plain text with ANSI
 formatting) and as Markdown (for IDE hover panels and web documentation).
 
-===== Disagree workflow for UNCONDITIONAL findings
+=== Disagree workflow for UNCONDITIONAL findings
 <disagree-workflow-for-unconditional-findings>
 The 41% UNCONDITIONAL ratio in the severity matrix is high by industry standards. Developers who encounter false
 positives on UNCONDITIONAL findings --- which cannot be excepted --- have no governance mechanism to manage the
@@ -3377,7 +3373,7 @@ are candidates for corpus review and rule recalibration. The review outcome --- 
 "finding confirmed correct, developer guidance issued," or "no action" --- SHOULD be recorded against the disagreement
 log entries to close the feedback loop.
 
-===== Visual distinction for exceptionability classes
+=== Visual distinction for exceptionability classes
 <visual-distinction-for-exceptionability-classes>
 Bindings SHOULD render UNCONDITIONAL findings with a visually distinct presentation from STANDARD and RELAXED findings.
 The specific mechanism is binding-dependent --- different prefix markers, colour coding, iconography, or severity
@@ -3391,7 +3387,7 @@ Suggested conventions (non-normative):
 - STANDARD: rendered as `error` with standard formatting
 - RELAXED: rendered as `warning`
 
-===== Taint state omission for structural verification rules
+=== Taint state omission for structural verification rules
 <taint-state-omission-for-structural-verification-rules>
 For WL-007 (validation boundary integrity), WL-008 (validation ordering integrity), and WL-009 (restoration symmetry),
 bindings SHOULD omit the taint state from primary finding messages. These structural verification rules are
@@ -3428,7 +3424,7 @@ error[WL-007]: Validation boundary has unreachable rejection path
 The "in INTEGRAL context" qualifier adds no information --- WL-007 fires identically regardless of context. Omitting it
 reinforces the correct understanding that structural verification is context-independent.
 
-== 11. Language evaluation criteria
+= 11. Language evaluation criteria
 <language-evaluation-criteria>
 The wardline classification framework is language-agnostic; language-specific enforcement regimes (§14.4) implement its
 requirements using language-native mechanisms. Not all languages provide equal support across the three enforcement
@@ -3512,7 +3508,7 @@ evaluation alongside the language and tooling versions they target, because pars
 propagation, concurrency primitives, and available enforcement tooling can change materially across runtime and compiler
 releases.
 
-== 12. Residual risks
+= 12. Residual risks
 <residual-risks>
 Seventeen risks are inherent to the wardline model regardless of language, tooling, or governance maturity. They are
 structural limitations, not implementation defects.
@@ -3778,7 +3774,7 @@ it. Compensating controls: per-binding review of shared manifest interpretations
 shared resources, projection currency tracking and staleness checks, and treating stale or cross-binding-divergent
 projections as advisory context that requires human review rather than trusted policy truth.
 
-== 13. Portability and manifest format
+= 13. Portability and manifest format
 <portability-and-manifest-format>
 The wardline classification framework is language-neutral --- a single `wardline.yaml` serves all language bindings in a
 polyglot project. The authority tier model (§4), annotation vocabulary (§6), pattern rules (§7), governance model (§9),
@@ -3791,7 +3787,7 @@ II-B). The conformance profiles (§14.3) allow each tool in a regime to implemen
 capabilities. Further language regimes (C\#, Go, C++, Rust) are future work --- the full candidate language list and
 per-language evaluation rationale are in §15.
 
-=== 13.1 Wardline manifest format
+== 13.1 Wardline manifest format
 <wardline-manifest-format>
 The wardline manifest is the machine-readable declaration of an application's trust topology, rule configuration, and
 exception register. It is language-neutral --- a project's wardline is a property of the application's semantic
@@ -3885,7 +3881,7 @@ validation on the assumption that another tool has already checked.
 An enforcement tool that encounters a widening override in an overlay MUST reject the overlay with an error, not a
 warning. Widening is a policy violation, not a configuration issue.
 
-=== 13.1.1 Root manifest schema
+== 13.1.1 Root manifest schema
 <root-manifest-schema>
 The root `wardline.yaml` contains five sections:
 
@@ -3971,7 +3967,7 @@ module_tiers:
 All root manifest fields are validated against a JSON Schema. Enforcement tools MUST validate the manifest against this
 schema before consuming it --- a malformed manifest is a hard error, not a best-effort parse.
 
-=== 13.1.2 Overlay schema
+== 13.1.2 Overlay schema
 <overlay-schema>
 Overlays declare what is #emph[here] --- boundaries, local rule tuning, and module-specific policy --- without restating
 or contradicting the trust topology.
@@ -3983,7 +3979,7 @@ of the overlay file's actual path; an overlay whose file location is outside the
 regardless of what `overlay_for` declares. This is the stronger guarantee: it prevents an `adapters/` overlay from
 claiming governance over `audit/` through declaration alone.
 
-===== Boundary declarations
+=== Boundary declarations
 <boundary-declarations>
 #strong[Boundary declarations.] The primary content of most overlays. Boundaries declare where tier transitions happen:
 shape-validation boundaries (Tier 4 → Tier 3), semantic-validation boundaries (Tier 3 → Tier 2), combined validation
@@ -4073,7 +4069,7 @@ direct the author to the required composed-steps form, for example: T4→T3 shap
 then T2→T1 construction. T4→T1 or T3→T1 MUST be expressed through composed steps: validation boundaries to reach Tier 2,
 then a construction boundary to reach Tier 1.
 
-===== Validation-scope declarations
+=== Validation-scope declarations
 <validation-scope-declarations>
 #strong[Validation-scope declarations.] Every boundary that claims Tier 2 semantics --- `semantic_validation`
 boundaries, `combined_validation` boundaries, and restoration boundaries with `semantic: true` in their provenance
@@ -4096,7 +4092,7 @@ identity MUST be preserved across function renames, signature changes, and refac
 field is the stable identifier; the function-level binding (which function implements the contract) is configuration
 that updates independently.
 
-===== Contract bindings
+=== Contract bindings
 <contract-bindings>
 #strong[Contract bindings.] The function-level binding --- which functions currently implement each contract --- resides
 in the overlay as a secondary mapping under `contract_bindings`. This separates the stable policy declaration (what
@@ -4137,7 +4133,7 @@ baseline as a distinct change category. Contract declaration changes (names, tie
 changes (§9.3.1) and require the governance escalation appropriate to their artefact class. Contract binding changes
 (function mappings) are enforcement artefact changes and follow standard configuration management.
 
-===== Restoration boundaries
+=== Restoration boundaries
 <restoration-boundaries>
 #strong[Restoration boundaries] use a distinct schema: `restored_tier` declares the claimed restoration target, and the
 `provenance` object declares the four evidence categories that determine whether the claim is justified. Restoration
@@ -4173,7 +4169,7 @@ semantic validation, satisfying invariant 3 from §5.2 (shape validation MUST pr
 `combined_validation` transition type is syntactic sugar --- it is equivalent to declaring a `shape_validation` (T4→T3)
 and `semantic_validation` (T3→T2) boundary at the same function location.
 
-===== Optional-field declarations
+=== Optional-field declarations
 <optional-field-declarations>
 #strong[Optional-field declarations.] Boundaries may declare which fields are optional-by-contract, with approved
 defaults and governance rationale. This is the overlay-level counterpart to the code-level `schema_default()` function
@@ -4195,13 +4191,13 @@ in the overlay. A `schema_default()` without an overlay declaration is a finding
 optional, but the governance artefact does not confirm it. See Part II-A §A.8 for a worked example of the three-state
 field classification (required, optional-with-approved-default, optional-no-default).
 
-===== Rule overrides
+=== Rule overrides
 <rule-overrides>
 #strong[Rule overrides.] Per-module narrowing of the severity matrix. Overrides specify (rule, taint state, severity)
 tuples that replace specific cells for code within the overlay's scope. Only narrowing is permitted --- raising severity
 or raising exceptionability (from RELAXED to STANDARD). The enforcement tool rejects lowering overrides.
 
-===== Supplementary group enforcement
+=== Supplementary group enforcement
 <supplementary-group-enforcement>
 #strong[Supplementary group enforcement.] Bindings define their own enforcement rules for supplementary contract
 annotations (Groups 5--15, §6). The overlay provides a structured location for these rules --- each entry declares the
@@ -4209,7 +4205,7 @@ annotation group, the scope (module path or function glob), the enforcement seve
 bindings a place to declare Groups 5--15 enforcement without polluting the core severity matrix, and gives assessors a
 single location to check which supplementary groups have enforcement rules in each module.
 
-===== Dependency taint declarations
+=== Dependency taint declarations
 <dependency-taint-declarations>
 #strong[Dependency taint declarations.] Third-party library functions --- code that executes in-process but is outside
 the wardline's annotation surface and governance perimeter --- are taint sources whose return values MUST be classified
@@ -4287,7 +4283,7 @@ potentially stale. A library update may change the function's validation behavio
 invalidating the taint assumption. The finding is non-blocking (governance-level, not code-level) but ensures the taint
 declaration is re-reviewed when the dependency it describes changes.
 
-=== 13.1.3 Exception register
+== 13.1.3 Exception register
 <exception-register>
 The exception register is a structured data store recording governance-approved exceptions to wardline findings. The
 schema below defines the logical record format --- what each exception MUST contain. The access mechanism is an
@@ -4347,7 +4343,7 @@ Each exception record contains:
   that assessors can see both governance health indicators --- exception quality and exception process --- in the same
   output.
 
-=== 13.1.4 Fingerprint baseline
+== 13.1.4 Fingerprint baseline
 <fingerprint-baseline>
 The fingerprint baseline interchange format is defined in §9.2. It is co-located with the exception register and follows
 the same access model --- the logical record format is specified; the access mechanism is an implementation detail. The
@@ -4423,7 +4419,7 @@ to `annotation_hash`. In verification-mode or byte-comparison workflows, tools S
 fields from generated baselines or normalise them to fixed values; otherwise a baseline regenerated from unchanged
 annotations may differ for purely temporal reasons.
 
-=== 13.1.5 Manifest validation
+== 13.1.5 Manifest validation
 <manifest-validation>
 Enforcement tools MUST validate all manifest files against their respective JSON Schemas before consuming them.
 Validation failures are hard errors --- the tool does not proceed with a malformed manifest. The JSON Schemas for all
@@ -4437,7 +4433,7 @@ derived schemas alongside their tool for interoperability testing. Schema diverg
 testing are specification defects, not implementation defects --- they indicate that the prose in §13.1.1--§13.1.4 is
 ambiguous and should be tightened before v1.0. Conformance at v1.0 requires validation against published schemas.
 
-=== 13.2 Scanner operational configuration (`wardline.toml`)
+== 13.2 Scanner operational configuration (`wardline.toml`)
 <scanner-operational-configuration-wardline.toml>
 Scanner operational settings reside in `wardline.toml`. This file is #strong[not] part of the manifest system --- it is
 binding-specific enforcement configuration, not trust topology. However, because `wardline.toml` controls the
@@ -4510,9 +4506,9 @@ a structured error (exit code 2) --- this prevents silent misconfiguration from 
 tokens, or paths MUST produce structured errors. A missing `wardline.toml` is not an error --- the tool runs with
 defaults (all groups enabled, all rules enabled, advisory mode).
 
-== 14. Conformance
+= 14. Conformance
 <conformance>
-=== 14.1 Conformance model
+== 14.1 Conformance model
 <conformance-model>
 The wardline classification framework is designed to be implemented by existing tooling ecosystems, not only by bespoke
 enforcement products. A single tool need not --- and in most ecosystems will not --- satisfy every conformance
@@ -4524,7 +4520,7 @@ slice that matches its capabilities.
 To support this, the conformance model distinguishes between #strong[tool-level conformance] (what a single tool
 implements) and #strong[regime-level conformance] (what the combined tooling achieves for a given language ecosystem).
 
-=== 14.2 Conformance criteria
+== 14.2 Conformance criteria
 <conformance-criteria>
 Ten criteria define the full wardline conformance surface. They are grouped by what they certify: #emph[expressiveness]
 (can the ecosystem represent the wardline?), #emph[enforcement capability] (can tools detect violations?), and
@@ -4567,7 +4563,7 @@ Ten criteria define the full wardline conformance surface. They are grouped by w
   validation MUST document that delegation.
 ]
 
-=== 14.3 Conformance profiles
+== 14.3 Conformance profiles
 <conformance-profiles>
 All-or-nothing conformance deters adoption. The conformance model therefore defines two orthogonal profile dimensions:
 #strong[enforcement profiles] partition the ten criteria into implementable slices that match existing tool categories;
@@ -4576,7 +4572,7 @@ both: an enforcement profile (or regime of profiles) and a governance profile. T
 #emph[what the tools can do]\; the governance profiles tell an assessor #emph[how rigorously the organisation governs
 the policy surface].
 
-===== 14.3.1 Enforcement profiles
+=== 14.3.1 Enforcement profiles
 <enforcement-profiles>
 An open-source type checker maintainer who sees a ten-criterion checklist spanning static analysis, taint tracking,
 governance registers, and SARIF output will correctly conclude that the specification expects a bespoke product, not a
@@ -4637,7 +4633,7 @@ Conditional criteria are elaborated in the profile semantics below.
 - #strong[Wardline-Full] is not a separate profile --- it is the assertion that all ten criteria are satisfied. A single
   tool MAY claim Wardline-Full. More commonly, Wardline-Full conformance is a property of an enforcement regime (§14.4).
 
-===== 14.3.2 Governance profiles
+=== 14.3.2 Governance profiles
 <governance-profiles>
 Enforcement profiles partition what the tools implement. Governance profiles partition what the organisation commits to
 governing. The conformance criteria in §14.2 describe the full governance surface --- but the full surface is calibrated
@@ -4761,7 +4757,7 @@ Wardline-Core enforcement regime at the Assurance governance level is also valid
 governance) --- though unusual, this might apply where a single scanner covers the required rules and the organisation's
 accreditation demands full governance.
 
-===== 14.3.3 Governance profile graduation
+=== 14.3.3 Governance profile graduation
 <governance-profile-graduation>
 Graduation from Lite to Assurance is tied to team maturity and accreditation requirements. It is not a calendar
 milestone --- it occurs when the organisation's governance capacity and risk context warrant the full governance
@@ -4794,7 +4790,7 @@ The graduation is recorded as a manifest change --- the `governance_profile` fie
 `"assurance"` --- and is itself a policy artefact change subject to ratification. The first Assurance-level enforcement
 run establishes the fingerprint baseline as the new governance reference point.
 
-=== 14.4 Enforcement regimes
+== 14.4 Enforcement regimes
 <enforcement-regimes>
 An #strong[enforcement regime] is the set of tools that collectively enforce a wardline for a given language ecosystem.
 The regime is Wardline-Full conformant if and only if the union of its constituent tools' profiles covers all ten
@@ -4830,7 +4826,7 @@ regime composition is documented in the language binding reference --- for examp
 composition matrix for the Python ecosystem, and Part II-B §B.6 for Java. Assessors evaluating a regime consult the
 binding reference for the composition table and the combined corpus.
 
-=== 14.5 Supplementary group enforcement scope
+== 14.5 Supplementary group enforcement scope
 <supplementary-group-enforcement-scope>
 Criterion 1 requires that the ecosystem can #emph[express] all 17 annotation groups. Criteria 2--8 require
 #emph[enforcement] only for the nine rules --- six pattern rules (WL-001--WL-006) and three structural verification
@@ -4849,7 +4845,7 @@ supplementary enforcement depth. What matters is that the binding can express th
 documentation accurately declares which supplementary groups are enforced versus expressiveness-only at the current
 stage.
 
-=== 14.6 Assessment procedure
+== 14.6 Assessment procedure
 <assessment-procedure>
 This subsection defines a repeatable verification procedure for assessors evaluating a wardline deployment. The
 procedure is tool-agnostic --- it applies to any conformant regime regardless of language binding.
@@ -4917,7 +4913,7 @@ passes | Tool passes own rules | Tool violates own rules |
 A deployment that fails any criterion is not conformant at the corresponding profile level. The assessor documents which
 criteria pass, which fail, and the overall conformance determination (Wardline-Full, partial, or non-conformant).
 
-=== 14.6.1 Worked example: conformant Phase 3 deployment
+== 14.6.1 Worked example: conformant Phase 3 deployment
 <worked-example-conformant-phase-3-deployment>
 This example shows the governance artefacts and CI configuration for a synthetic government Java project
 ("partner-landscape") at Phase 3 (Wardline-Core) conformance. It is not a real project --- it demonstrates the minimum
@@ -5097,7 +5093,7 @@ advisory Error Prone path (Phase 2) is integrated into compilation, and governan
 authoritative scanner at Phase 3. Both bindings reach Wardline-Full conformance through a regime (§14.4) that combines
 all constituent tools, not through any single phase.
 
-=== 14.6.2 Worked example: Lite governance deployment
+== 14.6.2 Worked example: Lite governance deployment
 <worked-example-lite-governance-deployment>
 This example shows a five-person team ("health-notifications") adopting wardline at the Lite governance level. The team
 builds a Python service that processes health notification records from an external API and stores summaries in an
@@ -5237,7 +5233,7 @@ service begins processing PROTECTED data. The 90-day ratification cycle means th
 review cycles within 180 days --- sufficient enforcement experience to expand the corpus and establish the full
 fingerprint baseline.
 
-=== 14.6.3 Navigating to Part II
+== 14.6.3 Navigating to Part II
 <navigating-to-part-ii>
 Part I defines the framework; Part II translates it to language-specific enforcement. The Python binding (Part II-A) and
 Java binding (Part II-B) show how the tiers, patterns, and governance model are expressed in each language. They do not
@@ -5246,7 +5242,7 @@ are implementing or evaluating a Python regime; start with Part II-B for Java. B
 design history, language evaluation, normative interface contract, non-normative annotation vocabulary and worked
 examples, regime composition matrix, and residual risks.
 
-=== 14.7 Partial conformance
+== 14.7 Partial conformance
 <partial-conformance>
 Tool quality targets (MAY) are not conformance criteria --- they represent maturity targets that improve enforcement
 quality.
@@ -5265,7 +5261,7 @@ target Wardline-Core without understanding taint analysis. A CI platform can tar
 understanding AST pattern matching. The profiles make wardline something tools can implement, not something they must
 become.
 
-== 15. Document scope
+= 15. Document scope
 <document-scope>
 This document defines the language-agnostic wardline classification framework. Language-specific enforcement regimes
 (§14.4) --- which implement the framework's requirements using language-native mechanisms and existing tooling
@@ -5342,7 +5338,7 @@ rationale are in Part I §15. The evaluation criteria in Part I §11 define how 
   prior Parts III/V agent guidance sections; publication deferred until reference implementation reaches production
   maturity.)]
 
-== Part II-A: Python Language Binding Reference
+= Part II-A: Python Language Binding Reference
 <part-ii-a-python-language-binding-reference>
 This section provides the Python-specific binding reference for the Wardline framework specification (Part I). It covers
 the annotation vocabulary, interface contract, enforcement mechanisms, and residual risks specific to Python. The parent
@@ -5351,7 +5347,7 @@ specification (Part I) governs; this binding implements.
 #strong[Normative status.] Section A.3 (interface contract) is normative. All other sections are non-normative --- they
 provide design rationale, worked examples, and implementation guidance.
 
-=== A.1 Design history
+== A.1 Design history
 <a.1-design-history>
 #emph[This section is non-normative.]
 
@@ -5382,7 +5378,7 @@ the durable artefact. The reference implementation proves the specification is i
 designed so that any tool author can implement a compatible Wardline-Core scanner, Wardline-Type plugin, or
 Wardline-Governance orchestrator independently. The regime matures when DTA owns the specification, not the code.
 
-=== A.2 Python language evaluation
+== A.2 Python language evaluation
 <a.2-python-language-evaluation>
 #emph[This section is non-normative. It models how future binding authors should assess their language against Part I
 §11's evaluation criteria.]
@@ -5419,7 +5415,7 @@ Wardline-Governance orchestrator independently. The regime matures when DTA owns
   , kind: table
   )
 
-===== A.2.1 Where Python falls short
+=== A.2.1 Where Python falls short
 <a.2.1-where-python-falls-short>
 Three significant limitations shape this language binding:
 
@@ -5441,7 +5437,7 @@ These limitations define the ceiling of assurance achievable through this langua
 that Python's assurance ceiling is lower than what a language with ownership semantics and mandatory type checking could
 provide.
 
-===== A.2.2 Ecosystem tool coverage
+=== A.2.2 Ecosystem tool coverage
 <a.2.2-ecosystem-tool-coverage>
 #figure(
   align(center)[#table(
@@ -5463,7 +5459,7 @@ provide.
   , kind: table
   )
 
-=== A.3 Interface contract (Wardline-Core)
+== A.3 Interface contract (Wardline-Core)
 <a.3-interface-contract-wardline-core>
 #emph[This section is normative.]
 
@@ -5574,11 +5570,11 @@ Tools that detect wardline-relevant patterns without satisfying this contract --
 calls without consuming the manifest --- are #strong[advisory tools], not Wardline-Core tools. Advisory tools provide
 useful early-warning feedback but their findings are not governance-grade.
 
-=== A.4 Annotation vocabulary: design principles, mapping table, and rationale
+== A.4 Annotation vocabulary: design principles, mapping table, and rationale
 <a.4-annotation-vocabulary-design-principles-mapping-table-and-rationale>
 #emph[This section is non-normative except where explicitly stated.]
 
-===== A.4.1 Design principles
+=== A.4.1 Design principles
 <a.4.1-design-principles>
 #strong[Parasitic, not parallel.] The decorators extend Python's existing machinery. They are standard decorators
 importable from a PyPI package. No custom syntax, no runtime overhead beyond attribute assignment, no framework lock-in.
@@ -5616,7 +5612,7 @@ styles:
 #strong[Minimum Python version: 3.12+.] The scanner targets Python 3.12+ only. `ast.Constant` is the canonical node at
 this floor; `ast.Match` (3.10+) and `ast.unparse()` (3.9+) are available.
 
-===== A.4.2 Decorator mapping table
+=== A.4.2 Decorator mapping table
 <a.4.2-decorator-mapping-table>
 The 17 annotation groups are defined as language-agnostic semantic requirements in Part I §6. This table provides the
 Python-specific decorator syntax. Decorators set `_wardline_*` metadata attributes on the decorated callable; they do
@@ -5740,7 +5736,7 @@ configurations:
   , kind: table
   )
 
-===== A.4.3 Non-obvious design rationale
+=== A.4.3 Non-obvious design rationale
 <a.4.3-non-obvious-design-rationale>
 #strong[Why Python uses decorator stacking.] Python decorators compose naturally via stacking --- `@int_data` above
 `@restoration_boundary` produces a function with both Group 4 body restrictions and Group 17 evidence verification. This
@@ -5920,7 +5916,7 @@ The Python binding matrix for PY-WL-001 through PY-WL-010 (80 cells) is:
   , kind: table
   )
 
-===== A.4.4 PY-WL-010: Tier 1 promotion on serialisation path without restoration evidence
+=== A.4.4 PY-WL-010: Tier 1 promotion on serialisation path without restoration evidence
 <a.4.4-py-wl-010-tier-1-promotion-on-serialisation-path-without-restoration-evidence>
 PY-WL-010 maps to framework rule WL-009 (restoration symmetry). It is a structural verification rule. PY-WL-010 fires
 when all three conditions hold:
@@ -5935,7 +5931,7 @@ when all three conditions hold:
 #strong[Severity:] ERROR/UNCONDITIONAL across all eight taint states (framework invariant, same as PY-WL-008 and
 PY-WL-009).
 
-===== A.4.5 Supplementary rules: SUP-010 and SUP-011
+=== A.4.5 Supplementary rules: SUP-010 and SUP-011
 <a.4.5-supplementary-rules-sup-010-and-sup-011>
 SUP-010 and SUP-011 are binding-specific supplementary rules with no framework counterpart. They implement the
 non-normative deep-immutability principle from §8 of the prime spec. Both are opt-in supplementary enforcement and are
@@ -5974,7 +5970,7 @@ Severity matrix for SUP-010 and SUP-011:
   , kind: table
   )
 
-=== A.5 Type system and runtime enforcement
+== A.5 Type system and runtime enforcement
 <a.5-type-system-and-runtime-enforcement>
 #emph[This section is non-normative.]
 
@@ -6014,7 +6010,7 @@ machinery shipped in the `wardline-decorators` package.
   , kind: table
   )
 
-=== A.6 Regime composition matrix
+== A.6 Regime composition matrix
 <a.6-regime-composition-matrix>
 #emph[This section is non-normative.]
 
@@ -6063,21 +6059,21 @@ conventions, (3) rule identifiers and semantics, (4) golden corpus format, (5) S
 profile vocabulary, (7) regime composition contract. If these interfaces are stable, any tool author can build
 wardline-compatible tooling without coordination with DTA.
 
-=== A.7 Residual risks
+== A.7 Residual risks
 <a.7-residual-risks>
 #emph[This section is non-normative. Assessors evaluating a Python wardline deployment should review these risks
 alongside the framework-level residual risks (Part I §12), particularly risk 12 (evasion surface trajectory) --- as
 annotation coverage grows, coding-level risk falls but governance risk rises, and the risks below should be read in that
 context.]
 
-===== A.7.1 Dynamic dispatch and metaprogramming
+=== A.7.1 Dynamic dispatch and metaprogramming
 <a.7.1-dynamic-dispatch-and-metaprogramming>
 Python's dynamic nature creates fundamental blind spots for static analysis. `getattr(obj, method_name)()`, `**kwargs`
 forwarding, decorator factories that modify function signatures, and metaclass-generated methods are all invisible to
 the AST scanner. The scanner tags these as UNKNOWN --- conservative but noisy in heavily dynamic codebases. Projects
 with heavy dynamic dispatch should use the coverage metric to measure whether the UNKNOWN surface is acceptable.
 
-===== A.7.2 Taint laundering via serialisation
+=== A.7.2 Taint laundering via serialisation
 <a.7.2-taint-laundering-via-serialisation>
 The serialisation boundary creates a fundamental blind spot for trust-escalation paths (a Python-specific instantiation
 of ACF-T1, authority tier conflation). Tier 4 data written to a database by one code path and read back through an
@@ -6094,7 +6090,7 @@ value is tagged UNKNOWN\_RAW.
 `@int_data` + `@restoration_boundary` with dishonest or incorrect evidence claims. The allow-list, deny-list, provenance
 justification, and fingerprint baseline are compensating controls.
 
-===== A.7.3 Combined false-negative surface
+=== A.7.3 Combined false-negative surface
 <a.7.3-combined-false-negative-surface>
 Two analysis approximations compound at the first analysis level: the two-hop undecorated heuristic misses deeper
 indirection chains, and the function-level taint approximation treats all values within a function body under the
@@ -6102,7 +6098,7 @@ enclosing function's trust classification. When both apply simultaneously, the s
 The combined effect is multiplicative, not additive. Variable-level tracking (level 2) and transitive call-graph
 inference (level 3) eliminate these false-negative surfaces respectively.
 
-===== A.7.4 Decorator selection correctness
+=== A.7.4 Decorator selection correctness
 <a.7.4-decorator-selection-correctness>
 The scanner verifies structural consistency #emph[given] a declared decorator. It #strong[cannot verify that the
 decorator choice itself is correct.] An agent that applies `@fail_open` to a function that should be `@fail_closed`
@@ -6111,7 +6107,7 @@ suspicious-combination advisories, body-behaviour contradiction advisories, and 
 confirmation. The irreducible residual: choosing the correct decorator requires understanding business context --- a
 semantic judgement the scanner cannot make.
 
-===== A.7.5 Governance decay
+=== A.7.5 Governance decay
 <a.7.5-governance-decay>
 The governance model specifies rigorous human gates: CODEOWNERS review, temporal separation, baseline ratification,
 provenance justification. Every one of these is a human activity. Under deadline pressure, each gate becomes a candidate
@@ -6119,14 +6115,14 @@ for rubber-stamping. The scanner cannot verify the quality of the human judgemen
 topology. The governance capacity mechanisms defined in §9.4 --- particularly the expedited governance ratio --- provide
 quantitative signals that can detect governance decay before it reaches systemic rubber-stamping.
 
-===== A.7.6 Fingerprint baseline deletion
+=== A.7.6 Fingerprint baseline deletion
 <a.7.6-fingerprint-baseline-deletion>
 Deleting `wardline.fingerprint.json` resets the entire governance history. If the scanner silently re-establishes the
 baseline, any injected misannotations become the accepted baseline with no diff. Compensating controls: the scanner
 distinguishes initial establishment from deletion by checking VCS history; CODEOWNERS protection on governance
 artefacts.
 
-===== A.7.7 Runtime structural enforcement bypass
+=== A.7.7 Runtime structural enforcement bypass
 <a.7.7-runtime-structural-enforcement-bypass>
 The `AuthoritativeField` descriptor stores values as `obj.__dict__["_authoritative_{name}"]`. Direct `__dict__`
 manipulation bypasses the descriptor's `__set__` sentinel check --- a fundamental limitation of Python's descriptor
@@ -6136,7 +6132,7 @@ backing state without the descriptor's guard semantics. Compensating controls: A
 and supplementary reflective-write advisory findings (`__dict__`, `setattr`, `vars`, `object.__setattr__`) on
 authoritative data types.
 
-===== A.7.8 Third-party library taint accuracy
+=== A.7.8 Third-party library taint accuracy
 <a.7.8-third-party-library-taint-accuracy>
 Python applications commonly depend on third-party libraries for data processing, validation, and serialisation ---
 Pydantic, marshmallow, pandas, requests, and similar packages. These libraries execute in-process but are outside the
@@ -6159,7 +6155,7 @@ Compensating controls: `dependency_taint` declarations with version pinning; the
 as the terminal control; governance review of taint declarations when dependency versions change; the two-hop heuristic
 as a best-effort mechanism for delegation resolution into available source.
 
-=== A.8 Worked example with SARIF output
+== A.8 Worked example with SARIF output
 <a.8-worked-example-with-sarif-output>
 #emph[This section is non-normative. It demonstrates decorators in context through the full tier lifecycle --- from raw
 external input to authoritative artefact --- proving implementability.]
@@ -6417,7 +6413,7 @@ compliance status changes. This gives developers and reviewers a before-and-afte
 is committed, reducing the risk of annotation changes that inadvertently widen the enforcement surface or silently
 resolve findings that should remain visible.
 
-=== A.9 Adoption strategy
+== A.9 Adoption strategy
 <a.9-adoption-strategy>
 #emph[This section is non-normative.]
 
@@ -6450,7 +6446,7 @@ external boundaries (15--25), validators (15--25), audit writers/readers (10--15
 layer declarations (module-level). Phases are a recommended ordering, not a mandatory sequence; a project may skip Phase
 3 (no mypy) and still achieve Phases 1, 2, 4, and 5.
 
-=== A.10 Error handling and control law
+== A.10 Error handling and control law
 <a.10-error-handling-and-control-law>
 #emph[This section is non-normative.]
 
@@ -6500,7 +6496,7 @@ cannot produce meaningful enforcement output; `wardline regime` only).
 The distinction between alternate and direct law follows Part I §9.5: alternate means degraded but running; direct means
 no meaningful enforcement output. Changes to wardline policy artefacts MUST NOT proceed under direct-law bypass.
 
-=== A.11 Conformance criteria mapping
+== A.11 Conformance criteria mapping
 <a.11-conformance-criteria-mapping>
 #emph[This section is non-normative. It maps the ten conformance criteria from Part I §14 to the Python binding's
 implementation artefacts.]
@@ -6557,7 +6553,7 @@ implementation artefacts.]
   , kind: table
   )
 
-=== A.12 Branch protection and CI gating
+== A.12 Branch protection and CI gating
 <a.12-branch-protection-and-ci-gating>
 #emph[This section is non-normative. It documents adopter responsibilities for CI enforcement.]
 
@@ -6574,7 +6570,7 @@ Adopters SHOULD:
 The wardline toolchain provides the enforcement mechanisms; the adopter provides the branch protection configuration
 that gates merges on those mechanisms.
 
-=== A.13 Provenance justification guidelines
+== A.13 Provenance justification guidelines
 <a.13-provenance-justification-guidelines>
 #emph[This section is non-normative. It documents expected provenance fields for trust escalation.]
 
@@ -6615,7 +6611,7 @@ The scanner checks that `provenance` is present for escalations but does not enf
 evaluating governance quality SHOULD verify that provenance entries contain sufficient rationale for the claimed
 escalation.
 
-=== A.14 Governance profile graduation guide
+== A.14 Governance profile graduation guide
 <a.14-governance-profile-graduation-guide>
 #emph[This section is non-normative. It documents the path from Lite to Assurance governance profile.]
 
@@ -6651,7 +6647,7 @@ when all five conditions are met:
 + Change `governance_profile: "lite"` to `governance_profile: "assurance"` in `wardline.yaml`.
 + Run `wardline coherence` to validate the new profile.
 
-=== A.15 Dependency taint (§5.5)
+== A.15 Dependency taint (§5.5)
 <a.15-dependency-taint-5.5>
 #emph[This section is non-normative. It documents the Python binding's approach to third-party dependency taint.]
 
@@ -6714,7 +6710,7 @@ assigned to variables inherit through the variable taint system.
 #strong[Dependency taint is not a boundary declaration.] The manifest declares what data #emph[is] when it arrives from
 ungoverned code. The application's own annotated boundaries declare what happens to it next.
 
-== Part II-B: Java Language Binding Reference
+= Part II-B: Java Language Binding Reference
 <part-ii-b-java-language-binding-reference>
 #quote(block: true)[
 #strong[⚠ Binding version notice.] This binding was last updated against the framework specification v0.2.0. The
@@ -6743,7 +6739,7 @@ provide design rationale, implementation guidance, and assessment material.
 pattern matching for instanceof (Java 16) are essential language features for the binding's type-system enforcement and
 runtime structural model.
 
-=== B.1 Design history
+== B.1 Design history
 <b.1-design-history>
 The Java binding is the second wardline language binding, developed after the Python binding (Part II-A) with the
 benefit of knowing which design decisions were framework-dictated versus Python-specific compensations.
@@ -6768,7 +6764,7 @@ specification. It demonstrates that the wardline framework is implementable on t
 design decisions a production implementation must make. A production scanner may use different analysis tools (e.g.,
 CodeQL instead of JavaParser) provided it satisfies the interface contract (B.3).
 
-=== B.2 Java language evaluation
+== B.2 Java language evaluation
 <b.2-java-language-evaluation>
 The parent specification (§11) defines language evaluation criteria for wardline bindings. This section assesses Java
 against those criteria, modelling how future binding authors should evaluate their target language.
@@ -6808,7 +6804,7 @@ against those criteria, modelling how future binding authors should evaluate the
   , kind: table
   )
 
-===== Where Java falls short
+=== Where Java falls short
 <where-java-falls-short>
 #strong[No ownership model.] Like Python, Java lacks ownership semantics. A validated record can be aliased and
 referenced after the validation context has changed. Records mitigate this partially --- immutability means aliases
@@ -6825,7 +6821,7 @@ dispatch issues.
 not see Lombok-generated constructors, getters, or builders. A `@Builder` on a Tier 1 class generates a permissive
 builder pattern that accepts partial construction --- exactly the anti-pattern the wardline exists to prevent.
 
-===== Where Java structurally exceeds Python
+=== Where Java structurally exceeds Python
 <where-java-structurally-exceeds-python>
 + #strong[Compile-time enforcement is mandatory.] Java's type system is not optional. Checker Framework qualifiers are
   enforced at compile time. There is no gap between authoring time and CI feedback.
@@ -6840,7 +6836,7 @@ builder pattern that accepts partial construction --- exactly the anti-pattern t
 
 These structural advantages mean the Java binding's assurance ceiling is meaningfully higher than the Python binding's.
 
-===== Ecosystem tool coverage
+=== Ecosystem tool coverage
 <ecosystem-tool-coverage>
 #figure(
   align(center)[#table(
@@ -6865,7 +6861,7 @@ The "Required --- bespoke" surface is smaller than in Python. Error Prone provid
 (vs.~ruff's pre-commit feedback). The Checker Framework provides mandatory type-system enforcement (vs.~mypy's optional
 enforcement). The Java regime achieves higher assurance with less bespoke tooling.
 
-=== B.3 Interface contract (NORMATIVE)
+== B.3 Interface contract (NORMATIVE)
 <b.3-interface-contract-normative>
 #emph[This section is normative.]
 
@@ -6893,9 +6889,9 @@ Any tool that implements Wardline-Core rules for the Java regime MUST satisfy th
 + #strong[Verification mode.] The tool SHOULD support `--verification-mode` for deterministic output against the golden
   corpus.
 
-=== B.4 Annotation vocabulary: design principles, mapping table, and rationale
+== B.4 Annotation vocabulary: design principles, mapping table, and rationale
 <b.4-annotation-vocabulary-design-principles-mapping-table-and-rationale>
-===== B.4.1 Design principles
+=== B.4.1 Design principles
 <b.4.1-design-principles>
 #strong[Meta-annotations for composition.] Java's meta-annotation mechanism allows wardline annotations to be composed
 into project-specific shorthand:
@@ -6936,7 +6932,7 @@ but not requiring runtime reflection. Annotations that activate runtime structur
 `@Retention(RUNTIME)`. The Checker Framework tier qualifiers (`@Tier1` through `@Tier4`, `@TierBottom`) use
 `@Retention(RUNTIME)` as required by the Checker Framework.
 
-===== B.4.2 Meta-annotation composition model
+=== B.4.2 Meta-annotation composition model
 <b.4.2-meta-annotation-composition-model>
 Where the Python binding uses decorator stacking to compose wardline markers, the Java binding uses meta-annotation
 composition. The difference is architectural:
@@ -6956,7 +6952,7 @@ their meta-annotation vocabulary during Phase 1 adoption so the vocabulary is st
 composed annotation MUST also be `RUNTIME`. The scanner resolves meta-annotations from bytecode (`CLASS` retention) or
 from source (`SOURCE` retention would be invisible to bytecode-level tools --- avoid).
 
-===== B.4.3 Annotation mapping table
+=== B.4.3 Annotation mapping table
 <b.4.3-annotation-mapping-table>
 The following table maps each of the 17 abstract annotation groups (Part I §6) to their concrete Java annotations. In
 SARIF and other cross-binding interchange, annotation context is identified by Part I group numbers
@@ -7050,7 +7046,7 @@ SARIF and other cross-binding interchange, annotation context is identified by P
   , kind: table
   )
 
-===== B.4.4 Non-obvious design rationale
+=== B.4.4 Non-obvious design rationale
 <b.4.4-non-obvious-design-rationale>
 #strong[Why meta-annotation composition, not decorator stacking.] Python decorators are functions --- they execute at
 function definition time, top-to-bottom. Java annotations are metadata --- they are discovered by tools, not executed by
@@ -7123,9 +7119,9 @@ parent specification's framework matrix with two cell changes, both moving towar
 The Java matrix has 4 SUPPRESS cells (vs.~the framework's 2), 25 UNCONDITIONAL cells (vs.~26), and a corpus minimum of
 120 effective specimens (60 active cells × 2).
 
-=== B.5 Type system and runtime enforcement
+== B.5 Type system and runtime enforcement
 <b.5-type-system-and-runtime-enforcement>
-===== Type system enforcement
+=== Type system enforcement
 <type-system-enforcement>
 Java uses the Checker Framework for pluggable type-system enforcement. The Checker Framework extends Java's type-use
 annotations (`@Target(TYPE_USE)`) into a qualifier hierarchy with flow-sensitive type refinement. A wardline Checker
@@ -7149,7 +7145,7 @@ The reference scanner handles these states independently.
 #strong[No reference implementation exists] at the time of writing. The Checker Framework design is specified to
 implementation-ready detail but has not been validated against a production codebase.
 
-===== Runtime structural enforcement
+=== Runtime structural enforcement
 <runtime-structural-enforcement>
 Java's runtime structural enforcement layer is #strong[substantially thinner] than Python's because the language
 provides most enforcement structurally:
@@ -7166,7 +7162,7 @@ construction time --- runs on every construction path including deserialisation)
 (`module-info.java` restricts which packages are accessible, providing module-level access control over authoritative
 construction paths, enforced by the JVM).
 
-=== B.6 Regime composition matrix
+== B.6 Regime composition matrix
 <b.6-regime-composition-matrix>
 #figure(
   align(center)[#table(
@@ -7231,7 +7227,7 @@ compilation, before any separate analysis step.
 (alternative advisory), SpotBugs (supplementary bytecode), ArchUnit (architectural constraints), CodeQL (deep call-graph
 analysis). All optional --- the core regime provides Wardline-Full conformance.
 
-=== B.7 Residual risks
+== B.7 Residual risks
 <b.7-residual-risks>
 The following residual risks are specific to the Java language binding. The parent specification (§12) documents
 binding-independent residual risks --- particularly risk 12 (evasion surface trajectory), which applies to both
@@ -7241,7 +7237,7 @@ bindings: as annotation coverage grows, coding-level risk falls but governance r
 classifies data by provenance and validation status. It does NOT classify data by PSPF security classification.
 Assessors SHOULD NOT equate "Tier 1" with "SECRET" or "Tier 4" with "OFFICIAL" --- the dimensions are orthogonal.
 
-===== Framework proxy blind spots
+=== Framework proxy blind spots
 <framework-proxy-blind-spots>
 Enterprise Java frameworks generate runtime proxies that wrap annotated methods in interceptor chains. The scanner
 analyses source code and does not see the proxy's behaviour.
@@ -7284,7 +7280,7 @@ methods cannot be overridden. All are dangerous when the method also carries `@A
 #strong[Self-invocation proxy bypass.] The scanner SHOULD emit an advisory finding when a class contains both wardline
 annotations and Spring AOP annotations and contains intra-class method calls targeting those annotated methods.
 
-===== JPA entity lifecycle
+=== JPA entity lifecycle
 <jpa-entity-lifecycle>
 JPA entities transition through managed → detached → merged states. A managed entity is live --- field changes are
 automatically persisted. `entityManager.merge()` is a restoration boundary in disguise --- it reinstitutes a detached
@@ -7294,7 +7290,7 @@ representation as managed without explicit provenance evidence.
 T1 artefacts. Annotate repository methods with `@IntData` and `@RestorationBoundary`. Prefer DTO projection queries
 (`SELECT new PartnerDTO(...)`) or Spring Data interface projections over entity fetching for read-only paths.
 
-===== Lombok-generated code
+=== Lombok-generated code
 <lombok-generated-code>
 #strong[`@Builder` on tier-sensitive classes] generates a permissive `build()` that accepts partial construction --- an
 unconditional finding. #strong[`@Data`] generates mutable setters violating immutability expectations for T1/T2.
@@ -7318,27 +7314,27 @@ checked exceptions, undermining `@MustPropagate` and `@FailClosed`.
 
 Migration is remediation, not prerequisite. The recommended migration target for flagged classes is Java records.
 
-===== Reflection bypass
+=== Reflection bypass
 <reflection-bypass>
 Java reflection (`setAccessible(true)`, `Field.set()`) can bypass access controls and modify final fields. The module
 system restricts reflection access: if the package is not `opens`-ed in `module-info.java`, external modules cannot use
 reflection. The fingerprint baseline tracks classes in tier-sensitive modules.
 
-===== Serialisation attacks
+=== Serialisation attacks
 <serialisation-attacks>
 `ObjectInputStream.readObject()` is a restoration boundary that provides no evidence --- an object deserialised from
 untrusted bytes is T4 regardless of class type. Jackson/Gson deserialisation is safer but still creates objects without
 validation boundaries. Never use Java serialisation for tier-sensitive data. Annotate Jackson deserialisation entry
 points with `@ExternalBoundary` or `@RestorationBoundary`.
 
-===== Annotation retention and injection
+=== Annotation retention and injection
 <annotation-retention-and-injection>
 A build tool or obfuscator (ProGuard, R8) may strip annotations from bytecode. A malicious annotation processor could
 inject annotations not present in source. The reference scanner compensates: it operates on source files (JavaParser),
 so processor-injected annotations are invisible. The Checker Framework does see processor-injected annotations --- this
 vector is covered by the supply chain threat model.
 
-===== Spring-specific residual risks
+=== Spring-specific residual risks
 <spring-specific-residual-risks>
 #strong[`@Async void` exception swallowing.] Exceptions are dispatched to `AsyncUncaughtExceptionHandler`, which by
 default logs and discards. Scanner SHOULD emit BLOCKING when `@Async` (without `CompletableFuture` return) appears with
@@ -7354,7 +7350,7 @@ different implementations to be injected at deployment time. The scanner sees ea
 cannot determine which is active at runtime. Annotate each implementation with its actual tier, not the interface's
 declared tier.
 
-===== Reactive and asynchronous pipelines
+=== Reactive and asynchronous pipelines
 <reactive-and-asynchronous-pipelines>
 Reactive pipelines (Spring WebFlux, Project Reactor) express data flow as lambda chains connected by operators. The
 scanner analyses each method individually but cannot verify that the pipeline composition respects tier ordering or that
@@ -7364,13 +7360,13 @@ error operators (`onErrorResume`, `onErrorReturn`) do not introduce implicit `@F
 into the reactive pipeline. Annotate terminal operations with the expected output tier. Document reactive pipeline tier
 flows in governance.
 
-===== Combined false-negative surface
+=== Combined false-negative surface
 <combined-false-negative-surface>
 Java's stronger type system narrows the false-negative surface compared to Python, but virtual method dispatch on
 non-sealed, non-final classes introduces an additional false-negative source proportional to the codebase's use of
 non-sealed hierarchies.
 
-=== B.8 Worked example with SARIF output
+== B.8 Worked example with SARIF output
 <b.8-worked-example-with-sarif-output>
 This example traces data through the full tier lifecycle --- from raw external input to authoritative artefact ---
 demonstrating annotations in context.
@@ -7628,7 +7624,7 @@ changes, and affected modules. The primary span is the changed annotation; secon
 2 advisory implementations MAY surface a simplified cascade view at compile time; the full SARIF-based impact preview is
 a Phase 3 (Wardline-Core) capability.
 
-=== B.9 Adoption strategy
+== B.9 Adoption strategy
 <b.9-adoption-strategy>
 The Java regime supports four incremental adoption phases:
 
@@ -7672,7 +7668,7 @@ a GPL-licensed dependency that government legal may flag. Each transition crosse
 dependency approval, security assessment, platform team onboarding, and pilot validation. Phase 1 can proceed
 immediately while remaining dependencies are in the approval pipeline.
 
-=== B.10 Error handling and control law
+== B.10 Error handling and control law
 <b.10-error-handling-and-control-law>
 The Java regime's scanner error handling follows the same principles as the Python binding, with Java-specific
 adaptations.

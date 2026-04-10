@@ -83,16 +83,38 @@ with open(sys.argv[1], 'r') as f:
     content = f.read()
 # Remove the Contents heading and the numbered link list that follows
 content = re.sub(
-    r'## Contents\n.*?(?=# \d+\.|# Part II)',
+    r'### Contents\n.*?(?=### \d+\.|## Part II)',
     '', content, flags=re.DOTALL
 )
 with open(sys.argv[1], 'w') as f:
     f.write(content)
 " "$COMBINED"
 
-# Demote ## to # and ### to ## for proper chapter structure
-# The spec uses ## for top-level headings and ### for sections
-sed -i 's/^## /# /; s/^### /## /; s/^#### /### /' "$COMBINED"
+# Strip document-level headings — the title page handles these
+sed -i '/^## Wardline Framework Specification$/d' "$COMBINED"
+sed -i '/^### Semantic Boundary Classification and Enforcement$/d' "$COMBINED"
+
+# Convert Part II title to a chapter-level heading
+sed -i 's/^## Part II/# Part II/' "$COMBINED"
+
+# Promote headings by removing two leading # characters:
+# ### → #, #### → ##, ##### → ###, ###### → ####
+# Uses python to avoid sed's sequential-substitution pitfall.
+python3 -c "
+import re, sys
+with open(sys.argv[1], 'r') as f:
+    lines = f.readlines()
+out = []
+for line in lines:
+    m = re.match(r'^(#{3,})\s', line)
+    if m:
+        old_level = len(m.group(1))
+        new_hashes = '#' * (old_level - 2)
+        line = new_hashes + line[old_level:]
+    out.append(line)
+with open(sys.argv[1], 'w') as f:
+    f.writelines(out)
+" "$COMBINED"
 
 echo "Generating Typst intermediate..."
 pandoc "$COMBINED" \
