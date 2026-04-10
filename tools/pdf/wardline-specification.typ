@@ -4,9 +4,7 @@
 // Fonts: TeX Gyre Heros (headings), Libertinus Serif (body), Liberation Mono (code)
 // Colours: deep steel blue #1E3A5F (primary), teal #0D7377 (accent), warm grey for rules
 //
-// Pandoc variables used:
-//   Wardline Framework Specification, Semantic Boundary Classification and Enforcement, , 9 April 2026, 0.3.0, RELEASE
-CANDIDATE
+// Pandoc variables: title, subtitle, author, date, version, status
 
 // ─────────────────────────────────────────────────────────────
 // COLOUR PALETTE
@@ -55,8 +53,8 @@ CANDIDATE
 
 #set page(
   paper: "a4",
-  // Wider left margin gives a subtle asymmetry — professional publication feel.
-  // Extra bottom room for footer rule + page number.
+  // Asymmetric margins: wider left (2.8cm) accommodates a ~0.6cm binding gutter
+  // for A4 print.  Extra bottom room for footer rule + page number.
   margin: (top: 2.6cm, bottom: 2.8cm, left: 2.8cm, right: 2.2cm),
 
   header: context {
@@ -210,6 +208,7 @@ CANDIDATE
     stroke: 0.5pt + c-rule,
     inset: (x: 3pt, y: 1.5pt),
     radius: 2pt,
+    baseline: 1.5pt,
     it,
   )
 }
@@ -250,19 +249,33 @@ CANDIDATE
   if it.y == 0 {
     set text(
       font: "TeX Gyre Heros",
-      size: 9pt,
+      size: 8.5pt,
       weight: "bold",
       fill: white,
       tracking: 0.2pt,
+      hyphenate: false,
     )
     it
   } else {
     set par(justify: false)
     set text(
       font: ("TeX Gyre Heros", "Liberation Sans"),
-      size: 8pt,
+      size: 9pt,
       fill: rgb("#1A1A1A"),
+      hyphenate: false,
     )
+    // Shrink inline code in table cells to prevent overflow on long tokens
+    show raw.where(block: false): r => {
+      set text(6.5pt, font: ("Liberation Mono", "DejaVu Sans Mono"))
+      box(
+        fill: c-shade,
+        stroke: 0.5pt + c-rule,
+        inset: (x: 1.5pt, y: 0.5pt),
+        radius: 1.5pt,
+        baseline: 1pt,
+        r,
+      )
+    }
     it
   }
 }
@@ -289,7 +302,7 @@ CANDIDATE
 #set list(
   indent: 1.2em,
   body-indent: 0.6em,
-  marker: ([#text(fill: c-teal)[▸]], [–], [·]),
+  marker: ([#text(fill: c-teal, size: 7pt)[▸]], [–], [·]),
 )
 
 #set enum(
@@ -319,6 +332,7 @@ CANDIDATE
       stroke: 0.5pt + c-rule,
       inset: (x: 2.5pt, y: 1pt),
       radius: 2pt,
+      baseline: 1.5pt,
       r,
     )
   }
@@ -531,6 +545,8 @@ CANDIDATE
   [#text(font: "TeX Gyre Heros", size: 9pt)[9 April 2026]],
   [#text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted, weight: "bold")[Document type]],
   [#text(font: "TeX Gyre Heros", size: 9pt)[Conformity assessment scheme]],
+  [#text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted, weight: "bold")[Classification]],
+  [#text(font: "TeX Gyre Heros", size: 9pt)[OFFICIAL]],
   [#text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted, weight: "bold")[Identifier]],
   [#text(font: "TeX Gyre Heros", size: 9pt)[WFS-0.3.0]],
 )
@@ -611,34 +627,74 @@ This document comprises two parts: Part I (the framework specification) and Part
 Python and Java). Not all readers need all sections. The paths below route to the most relevant content for each
 audience.
 
-#strong[Tool implementers] (building a Wardline-Core scanner, linter plugin, or type checker plugin): → Part I: §1--3
-(concepts), §4 (tier model), §5 (enforcement specification), §6--7 (annotations, pattern rules), §8 (enforcement
-layers), §14 (conformance) → Part II: A.3/B.3 (interface contract --- read first), then A.4/B.4 (annotation vocabulary)
+#strong[Tool implementers] (building a Wardline-Core scanner, linter plugin, or type checker plugin): → Part I: §2--4
+(concepts), §5 (tier model), §6 (enforcement specification), §7--8 (annotations, pattern rules), §9 (enforcement
+layers), §15 (conformance) → Part II: A.3/B.3 (interface contract --- read first), then A.4/B.4 (annotation vocabulary)
 
-#strong[Security assessors] (IRAP or equivalent, evaluating a wardline deployment): → Part I: §1--3 (scope), §4 (tier
-model), §10 (verification properties and golden corpus), §14 (conformance criteria and profiles) → Part II: A.3/B.3
+#strong[Security assessors] (IRAP or equivalent, evaluating a wardline deployment): → Part I: §2--4 (scope), §5 (tier
+model), §11 (verification properties and golden corpus), §15 (conformance criteria and profiles) → Part II: A.3/B.3
 (interface contract), A.6/B.6 (regime composition), A.7/B.7 (residual risks)
 
-#strong[Adopters] (deploying wardline on a project): → Part I: §1--4 (what it is, why, tier model), §9 (governance
+#strong[Adopters] (deploying wardline on a project): → Part I: §2--5 (what it is, why, tier model), §10 (governance
 model) → Part II: A.9/B.9 (adoption strategy), A.4/B.4 (annotation vocabulary)
 
-#strong[Governance leads] (managing wardline policy and exceptions): → Part I: §9 (governance model), §13 (manifest and
-exception register), §14.1 (conformance model) → Part II: A.7/B.7 (residual risks), A.10/B.10 (error handling and
+#strong[Governance leads] (managing wardline policy and exceptions): → Part I: §10 (governance model), §14 (manifest and
+exception register), §15.1 (conformance model) → Part II: A.7/B.7 (residual risks), A.10/B.10 (error handling and
 control law)
 
 #strong[Citizen programmers] (reviewing or writing code in a wardline-annotated codebase, without developer tooling): →
 Wardline Lite practical guide (`wardline-lite.md`, separate companion document): five review questions, worked code
 examples, hot-path identification. This guide is not part of the formal specification --- it translates the annotation
-vocabulary (§6) and pattern rules (§7) into questions a non-specialist can apply during code review.
+vocabulary (§7) and pattern rules (§8) into questions a non-specialist can apply during code review.
 
-= 1. What a Wardline is
+= 1. Document scope
+<document-scope>
+This document defines the language-agnostic wardline classification framework. Language-specific enforcement regimes
+(§15.4) --- which implement the framework's requirements using language-native mechanisms and existing tooling
+ecosystems --- are defined in separate companion documents. This document governs; companion documents implement. A
+companion document describes the enforcement regime for a language ecosystem: which tools implement which conformance
+profiles (§15.3), how they compose into a regime, and where structural gaps exist.
+
+Two language bindings are currently defined in Part II:
+
+- #emph[Python Language Binding Reference] (Part II-A) describes how Python's ecosystem --- type checkers (mypy,
+  pyright), linters (ruff, semgrep), AST analysis, and CI orchestration --- can compose a Wardline-Full regime.
+- #emph[Java Language Binding Reference] (Part II-B) describes how Java's ecosystem --- Error Prone, the Checker
+  Framework's pluggable type system, a reference scanner, and Java's records and module system --- can compose a
+  Wardline-Full regime. Java's annotation system provides richer enforcement layer coverage than Python's decorator
+  model, and the Checker Framework enables compile-time tier-flow enforcement that has no Python equivalent.
+
+Future companions for other languages will reference this specification as their normative basis and evaluate their
+language against the criteria in §12, with particular attention to which conformance profiles existing tools in that
+ecosystem can implement.
+
+#strong[Candidate language bindings.] The following languages are candidates for future bindings. C\# and Go are the
+next regimes under active consideration; C++ and Rust are listed for completeness based on prevalence across government
+enterprise and defence software estates: - #strong[C\#/.NET] --- widely used in Australian and UK government systems.
+C\# attributes, Roslyn analysers, and the .NET type system provide good coverage across all three enforcement layers. -
+#strong[Go] --- increasingly adopted for cloud-native government services. Go's structural typing, `go vet`, and
+`staticcheck` ecosystem provide static analysis coverage, though the minimal annotation system requires different
+declaration mechanisms. - #strong[C++] --- prevalent in defence, signals intelligence, and safety-critical systems
+(avionics, weapons systems, real-time platforms). C++ attributes (`[[nodiscard]]`, custom attributes via Clang),
+clang-tidy, and the ownership model provide enforcement leverage, though the absence of runtime reflection limits the
+runtime structural layer. C++ bindings are particularly relevant to Five Eyes defence programmes and AUKUS Pillar II
+software interoperability. - #strong[Rust] --- relevant for new safety-critical and cryptographic systems. Rust's
+ownership model, trait system, and `clippy` linting provide the strongest structural guarantees of any candidate
+language --- two pattern rules (WL-002, WL-006) may be structurally inapplicable because the type system already
+prevents the violations they detect.
+
+The binding roadmap is driven by community demand and contribution. Organisations whose software estates are
+concentrated in languages not yet covered should engage with the consultation process to signal priority --- see the
+project repository's issue tracker or the contact details in the front matter.
+
+= 2. What a Wardline is
 <what-a-wardline-is>
 #strong[Normative language.] This specification uses MUST, MUST NOT, SHALL, SHALL NOT, SHOULD, SHOULD NOT, MAY,
 REQUIRED, RECOMMENDED, and OPTIONAL as defined in RFC 2119 and clarified in RFC 8174. When these words appear in
 uppercase, they carry normative force. Lowercase equivalents carry no normative weight and are used in their ordinary
 English sense.
 
-== 1.1 Terms and definitions
+== 2.1 Terms and definitions
 <terms-and-definitions>
 The following terms carry specific meaning in this specification. Where a term is used in its everyday sense, it appears
 in lowercase without emphasis; where it carries its defined meaning, the surrounding tier, boundary, or annotation
@@ -655,73 +711,73 @@ the declared topology. The terms below formalise the pieces of that model.
     table.header([Term], [Definition],),
     table.hline(),
     [#strong[Authority tier]], [One of four hierarchical classifications (Tier 1 through Tier 4) that describe the level
-    of trust a system is entitled to assume about a data value. See §4.1],
+    of trust a system is entitled to assume about a data value. See §5.1],
     [#strong[Annotation coverage]], [The proportion of the intended enforcement perimeter whose trust topology has been
     made explicit through wardline declarations. Coverage is a governance and adoption measure, not a direct correctness
-    guarantee. See §3, §9.2],
+    guarantee. See §4, §10.2],
     [#strong[Boundary contract]], [A named semantic identifier declaring what data crosses a boundary and at what tier,
     replacing the previous function-name consumer list. Each contract specifies a contract name (e.g.,
-    `"landscape_recording"`, `"partner_reporting"`), the data tier expected, and the direction of flow. See §5.2,
-    §13.1.2],
+    `"landscape_recording"`, `"partner_reporting"`), the data tier expected, and the direction of flow. See §6.2,
+    §14.1.2],
     [#strong[Validation scope]], [Formerly 'bounded context' in prior drafts; renamed to avoid collision with the
     Domain-Driven Design term of the same name. The declared set of boundary contracts for which a semantic validation
     boundary establishes domain-constraint satisfaction. A validation is comprehensive within its validation scope ---
     it establishes that data satisfies every domain constraint for every intended use within the declared scope. See
-    §5.2, §13.1.2],
+    §6.2, §14.1.2],
     [#strong[Coding posture]], [The programming style appropriate to a given tier: strict \[offensive\] (T1),
     governance-assured \[confident\] (T2), structure-verified \[guarded\] (T3), or untrusted-input \[sceptical\] (T4).
-    See §4.1. The primary term (e.g., 'strict') is the canonical identifier used in machine-readable output; the
+    See §5.1. The primary term (e.g., 'strict') is the canonical identifier used in machine-readable output; the
     bracketed term (e.g., 'offensive') describes the programming paradigm and is used as a human-readable label in prose
     and documentation],
     [#strong[Effective state]], [One of eight enforcement contexts produced by combining trust classification and
-    validation status. The eight states are enumerated in §5.1 (Table: Trust classification and validation status);
-    conformant implementations MUST treat this as a closed set. The severity matrix (§7.3) maps pattern rules to
+    validation status. The eight states are enumerated in §6.1 (Table: Trust classification and validation status);
+    conformant implementations MUST treat this as a closed set. The severity matrix (§8.3) maps pattern rules to
     effective states],
     [#strong[Enforcement perimeter]], [The set of source files, modules, or packages that a wardline declaration covers.
     Code outside the enforcement perimeter is not analysed; data crossing the perimeter boundary is treated as UNKNOWN],
     [#strong[Exception] (governance)], [A documented, time-limited override of a scanner finding, managed through the
-    exception register (§9, §13.1.3). Distinct from a programming-language exception],
+    exception register (§10, §14.1.3). Distinct from a programming-language exception],
     [#strong[Fingerprint baseline]], [A cryptographic record of the annotation surface at a governance checkpoint.
-    Baseline diffs surface all wardline-relevant changes for review. See §9.2],
+    Baseline diffs surface all wardline-relevant changes for review. See §10.2],
     [#strong[Governance capacity]], [The available reviewer attention, decision authority, and process bandwidth needed
     to ratify manifests, review boundary changes, and assess exceptions. Governance capacity constrains how quickly
-    annotation coverage and supplementary enforcement can grow without degrading review quality. See §2, §9.4],
+    annotation coverage and supplementary enforcement can grow without degrading review quality. See §3, §10.4],
     [#strong[Mixed]], [A trust classification assigned to data that merges values from different trust classifications.
-    Once mixed, always mixed --- MIXED\_RAW is the absorbing element of the join operation. See §5.1],
+    Once mixed, always mixed --- MIXED\_RAW is the absorbing element of the join operation. See §6.1],
     [#strong[Normalisation boundary]], [A declared boundary that collapses MIXED-taint inputs into a new Tier 2
-    artefact. Normalisation is semantically a new construction, not a passthrough. See §5.1],
+    artefact. Normalisation is semantically a new construction, not a passthrough. See §6.1],
     [#strong[Overlay]], [A YAML file (`wardline.overlay.yaml`) that narrows or extends the root manifest for a specific
-    module, boundary, or data source. See §13.1.2],
+    module, boundary, or data source. See §14.1.2],
     [#strong[Rejection path]], [A control-flow path within a validation boundary function that terminates without
-    producing the function's normal return value (e.g., `throw`, guarded early return). See §7.2],
+    producing the function's normal return value (e.g., `throw`, guarded early return). See §8.2],
     [#strong[Restoration boundary]], [A declared function that reconstitutes a previously serialised artefact,
-    reinstating a tier classification supported by evidence categories. See §5.3],
+    reinstating a tier classification supported by evidence categories. See §6.3],
     [#strong[Semantic boundary]], [A point in the codebase where data crosses between authority tiers or where
     institutional meaning is assigned. Wardline annotations make semantic boundaries explicit and machine-readable],
     [#strong[Structural guarantee]], [The set of structural guarantees that a data representation provides after shape
     validation --- field presence, type correctness, schema conformance],
     [#strong[Taint state]], [The effective state assigned to a data value by the taint analysis engine. Determined by
-    the value's trust classification and validation status. See §5.1],
+    the value's trust classification and validation status. See §6.1],
     [#strong[Non-normative]], [Content that advises or recommends but does not impose requirements on implementations.
     In Part II, sections not marked "This section is normative" are non-normative. Non-normative sections use
     "recommended", "preferred", "avoid" --- never uppercase RFC 2119 keywords],
     [#strong[Trust classification]], [The dimension of the effective-state model that describes what guarantees the
     system is entitled to assume about a data value. Five values: Tier 1 (authoritative internal), Tier 2 (semantically
     validated), Tier 3 (guarded), Tier 4 (external raw), Unknown (provenance not established), and Mixed (values from
-    different classifications merged). See §5.1],
+    different classifications merged). See §6.1],
     [#strong[Trust topology]], [The complete set of tier assignments, boundary declarations, and data-flow constraints
     declared in a project's wardline manifest and overlays],
     [#strong[Unknown]], [A trust classification assigned to data whose provenance has not been established --- typically
     data crossing the enforcement perimeter from outside, or return values from unannotated third-party libraries.
-    Distinguished from the four named tiers (T1--T4) in that no institutional trust claim has been made. See §5.1],
+    Distinguished from the four named tiers (T1--T4) in that no institutional trust claim has been made. See §6.1],
     [#strong[Validation boundary]], [A declared function that transitions data from one tier to another through
     structural (shape) or domain-constraint (semantic) verification],
     [#strong[Validation status]], [The dimension of the effective-state model that describes what processing a data
     value has received. Three values: raw (no validation), shape-validated (structural guarantee verified), semantically
     validated (domain constraints verified). Combines with trust classification to produce the eight effective states
-    (§5.1)],
+    (§6.1)],
     [#strong[Wardline manifest]], [The root YAML file (`wardline.yaml`) that declares a project's trust topology,
-    enforcement configuration, and governance policy. See §13],
+    enforcement configuration, and governance policy. See §14],
   )]
   , kind: table
   )
@@ -736,7 +792,7 @@ of its data and code paths. A complete wardline declaration includes all of the 
 - Where serialised representations of authoritative artefacts may be restored to a tier supported by available evidence
   (restoration boundary declarations)
 
-All five elements above are REQUIRED components of a complete wardline declaration. The conformance profiles in §14
+All five elements above are REQUIRED components of a complete wardline declaration. The conformance profiles in §15
 specify the minimum enforcement and governance expectations for each profile, not an alternate five-part definition of
 what a wardline declaration contains.
 
@@ -764,7 +820,7 @@ A wardline is therefore a prescriptive declaration: it describes what the applic
 currently achieves. The gap between declaration and enforcement is measurable, auditable, and --- critically --- visible
 to assessors who have no access to the development team's tacit knowledge.
 
-= 2. The problem a Wardline solves
+= 3. The problem a Wardline solves
 <the-problem-a-wardline-solves>
 There is a structural gap between what automated tooling checks and what high-stakes code requires. The standard
 assurance stack --- linters, type checkers, SAST, DAST, unit tests, conventional peer review --- verifies
@@ -816,7 +872,7 @@ overhead should be evaluated against this baseline.
 #strong[Cold-start and adoption dynamics.] A wardline has an unavoidable delay between annotation effort and visible
 risk reduction. Teams invest first in making trust topology explicit; only after enough boundaries are declared do the
 enforcement layers and governance metrics become materially informative. The framework addresses this with incremental
-adoption (§6, §14): core classification groups establish the topology first, supplementary groups deepen enforcement
+adoption (§7, §15): core classification groups establish the topology first, supplementary groups deepen enforcement
 later. This delay is real and should be treated as an adoption property of the system, not as evidence that the model
 has no value.
 
@@ -824,28 +880,28 @@ has no value.
 governance capacity. A deployment can fail even with a sound tier model if tacit institutional knowledge is not
 converted into manifests and boundary declarations quickly enough, or if exception review and boundary-ratification work
 outgrow reviewer capacity. Later sections address these limits through visibility mechanisms rather than pretending they
-disappear: fingerprint baselines surface annotation drift (§9.2), governance metrics surface review pressure (§9.4), and
-conformance profiles allow staged build-out (§14).
+disappear: fingerprint baselines surface annotation drift (§10.2), governance metrics surface review pressure (§10.4),
+and conformance profiles allow staged build-out (§15).
 
 Wardline addresses the semantic-boundary gap; it does not address all 13 ACF (Agent Code Failure) failure modes defined
 in the parent paper (GCBD). ACF failure mode identifiers are defined in \[GCBD\]. The following table is informative ---
-it describes intended coverage, not conformance requirements. Conformance is assessed against §14, not against ACF
+it describes intended coverage, not conformance requirements. Conformance is assessed against §15, not against ACF
 coverage. Coverage entries that reference taint analysis assume a conformant taint-tracking implementation as specified
-in §5.1--§5.5 and §8.1; implementations that do not implement taint tracking MUST NOT claim coverage of ACF-T1, ACF-E1,
-or ACF-E2. Coverage entries that reference supplementary annotation groups (Groups 2, 8, 9, 11, 14 --- see §6) are
-conditional on those groups being deployed; deployments using incremental adoption (§6) without these groups have
+in §6.1--§6.5 and §9.1; implementations that do not implement taint tracking MUST NOT claim coverage of ACF-T1, ACF-E1,
+or ACF-E2. Coverage entries that reference supplementary annotation groups (Groups 2, 8, 9, 11, 14 --- see §7) are
+conditional on those groups being deployed; deployments using incremental adoption (§7) without these groups have
 correspondingly reduced ACF coverage.
 
 #figure(
   align(center)[#table(
     columns: (37.93%, 62.07%),
     table.header([ACF Entry], [Wardline Coverage #footnote["Group N" references refer to the annotation vocabulary
-      groups defined in Part I §6. Part II-A §A.4 (Python) and Part II-B §B.4 (Java) map these groups to
+      groups defined in Part I §7. Part II-A §A.4 (Python) and Part II-B §B.4 (Java) map these groups to
       language-specific mechanisms.]],),
     table.hline(),
     [ACF-S1 (Competence Spoofing)], [WL-001 (member access with fallback default)],
     [ACF-S2 (Hallucinated Field Access)], [WL-002 (existence-checking as structural gate); type system enforcement
-    (§8.2) #footnote[WL-002 catches concealment of hallucinated access via existence-checking patterns (e.g.,
+    (§9.2) #footnote[WL-002 catches concealment of hallucinated access via existence-checking patterns (e.g.,
     `hasattr()` in Python, `Map.containsKey()` in Java). Type system enforcement catches the hallucinated access
     directly where type annotations are present --- a misspelled field produces a type error.]],
     [ACF-S3 (Structural Identity Spoofing)], [WL-002 (catches existence-checking structural gates --- e.g.,
@@ -885,17 +941,17 @@ correspondingly reduced ACF coverage.
   , kind: table
   )
 
-= 3. Non-goals
+= 4. Non-goals
 <non-goals>
 The following are explicitly outside the scope of this framework:
 
 + #strong[Wardline does not prove semantic correctness in full.] It detects syntactic proxies for semantic violations in
   declared contexts (structural signals that correlate with semantic errors, not the semantic errors themselves). See
-  §12 for the residual risk analysis of this limitation.
+  §13 for the residual risk analysis of this limitation.
 + #strong[Wardline does not replace human judgement.] It structures what judgement must address. The governance model
-  (§9) defines the decision points; the framework makes them visible but does not resolve them.
+  (§10) defines the decision points; the framework makes them visible but does not resolve them.
 + #strong[Wardline does not independently establish provenance truth across serialisation boundaries.] The framework can
-  enforce structural checks at restoration points (§5.3), but the ultimate provenance claim rests on institutional trust
+  enforce structural checks at restoration points (§6.3), but the ultimate provenance claim rests on institutional trust
   and governance assurance, not technical proof.
 + #strong[Wardline does not eliminate the need for ordinary assurance controls.] It supplements them. The standard
   assurance stack (linters, type checkers, SAST, DAST, unit tests, peer review) remains necessary; the wardline adds the
@@ -907,7 +963,7 @@ The following are explicitly outside the scope of this framework:
   or operational assumptions.] A wardline manifest captures data-flow boundaries, validation requirements, restoration
   semantics, failure posture, exception models, and audit obligations. Everything outside that list remains an
   engineering decision that the manifest neither encodes nor eliminates.
-+ #strong[Wardline does not provide runtime security enforcement.] Runtime structural checks (§8.3) verify data shape at
++ #strong[Wardline does not provide runtime security enforcement.] Runtime structural checks (§9.3) verify data shape at
   declared boundaries; they do not constitute a security control against adversarial input. The runtime layer enforces
   structural guarantees (e.g., raising on invalid field access rather than returning a default), not input sanitisation,
   authentication, or access control.
@@ -922,22 +978,22 @@ The following are explicitly outside the scope of this framework:
   structure judgement and make semantic boundaries visible; it is not a substitute for domain understanding, training,
   or accountable review.
 
-= 4. Authority tier model
+= 5. Authority tier model
 <authority-tier-model>
 The authority tier model is the foundation of any wardline. It defines how an application categorises its data according
 to the guarantees the system is entitled to assume about each value.
 
-== 4.1 Four tiers
+== 5.1 Four tiers
 <four-tiers>
 #figure(
   align(center)[#table(
-    columns: (18%, 22%, 28%, 32%),
+    columns: (20%, 18%, 34%, 28%),
     table.header([Tier], [Classification], [Meaning], [Verification basis],),
     table.hline(),
     [#strong[Tier 1: Trusted assertion]], [Authoritative internal data], [Audit records, decision products, fact
     records. Missingness or corruption is an integrity failure.], [Institutional (not tool-verifiable)],
     [#strong[Tier 2: Semantically validated representation]], [Semantically validated data], [Has passed through both
-    structural and semantic validation boundaries within the declared validation scope (§13.1.2). Safe to use for its
+    structural and semantic validation boundaries within the declared validation scope (§14.1.2). Safe to use for its
     declared semantic purposes without further value-level validation.], [Machine-verified routing + governance-assured
     adequacy],
     [#strong[Tier 3: Guarded representation]], [Guarded data], [Has passed through a structural validation boundary.
@@ -949,9 +1005,9 @@ to the guarantees the system is entitled to assume about each value.
   , kind: table
   )
 
-The coding posture column is normative in the following sense: the pattern rules (§7) and severity matrix (§7.3) are
+The coding posture column is normative in the following sense: the pattern rules (§8) and severity matrix (§8.3) are
 derived from the posture requirements of each tier. Posture compliance is assessed through the pattern rules and
-enforcement layers specified in §7 and §8; conformant implementations are not required to enforce posture beyond these
+enforcement layers specified in §8 and §9; conformant implementations are not required to enforce posture beyond these
 mechanisms. Each tier's posture is a consequence of what the preceding validation step has established:
 
 - #strong[Tier 1] is not defensive against malformed data --- it is strict (offensive) against invariant violation.
@@ -962,7 +1018,7 @@ mechanisms. Each tier's posture is a consequence of what the preceding validatio
   directly in calculations, comparisons, and decision logic. Cross-cutting concerns --- authorisation checks, freshness
   verification, concurrency guards, state-transition validation --- remain necessary because they are not properties of
   the data's values. The distinction between redundant value-level re-validation and required cross-cutting validation
-  is code-review guidance, not a scanner enforcement target; the pattern rules in §7 do not include detection of either
+  is code-review guidance, not a scanner enforcement target; the pattern rules in §8 do not include detection of either
   redundant re-validation or missing cross-cutting checks at Tier 2.
 - #strong[Tier 3] trusts structure but not values. Field access is safe (the structural guarantee establishes that the
   field exists and has the right type), but using a value in a division, a URL fetch, or a security decision without
@@ -970,13 +1026,13 @@ mechanisms. Each tier's posture is a consequence of what the preceding validatio
   present) but the value it returns may still be dangerous.
 - #strong[Tier 4] trusts nothing. Even accessing a field may crash if the field is absent or the data is malformed.
 
-Once these postures are explicit, the pattern rules in §7 stop looking arbitrary and start looking like consequences.
+Once these postures are explicit, the pattern rules in §8 stop looking arbitrary and start looking like consequences.
 
 #strong[Adoption order.] The tier model is not only a classification scheme; it is also the dependency structure for
 incremental adoption. Core classification declarations establish the trust topology on which later checks depend. A
 deployment that has not yet made its Tier 4 intake paths, Tier 2 validation boundaries, and Tier 1 construction points
 explicit cannot expect supplementary annotations to produce stable, intelligible enforcement results. This is why the
-framework permits core-first adoption (§6, §14): the topology must exist before richer local contracts can be
+framework permits core-first adoption (§7, §15): the topology must exist before richer local contracts can be
 interpreted consistently.
 
 #strong[Failure scope.] The wardline prescribes #emph[that] code at a given tier must fail in certain ways (e.g., halt
@@ -990,7 +1046,7 @@ and SARIF output --- see Part II-A §A.8 (Python) and Part II-B §B.8 (Java).
 #strong[Coding posture model.] The conventional contrast in defensive programming literature is binary: fail-soft
 (graceful degradation) versus fail-fast (halt-on-anomaly). AI coding agents uniformly apply the former even where the
 latter is required. This framework extends the binary contrast to four postures --- strict (offensive),
-governance-assured (confident), structure-verified (guarded), untrusted-input (sceptical) (see §1.1 for canonical vs
+governance-assured (confident), structure-verified (guarded), untrusted-input (sceptical) (see §2.1 for canonical vs
 display-label conventions) --- each tied to a specific tier. The extension is motivated by the need for finer posture
 granularity: a binary model maps postures only to the endpoints (strict at Tier 1, untrusted-input at Tier 4). The
 intermediate postures --- governance-assured (Tier 2) and structure-verified (Tier 3) --- occupy the space between those
@@ -1003,8 +1059,8 @@ same patterns handle corruption of Tier 1 records as routine and recoverable rat
 The collapse is bidirectional because it degrades the authority model from both ends at once --- too permissive at the
 perimeter and too casual at the core. This framework's tier model and pattern rules address both directions: rules
 WL-001 through WL-004 fire at Tier 1 taint states to prevent the downward collapse (authoritative data treated as
-negotiable), and the same rules fire at Tier 4 / UNKNOWN / MIXED states (effective states defined in §5.1) to prevent
-the upward collapse (unvalidated data given unearned authority). The severity matrix (§7) encodes these asymmetric
+negotiable), and the same rules fire at Tier 4 / UNKNOWN / MIXED states (effective states defined in §6.1) to prevent
+the upward collapse (unvalidated data given unearned authority). The severity matrix (§8) encodes these asymmetric
 enforcement consequences.
 
 #strong[The knowledge requirement at each promotion.] Each tier transition requires knowledge proportional to its scope.
@@ -1022,8 +1078,8 @@ confirm that the structural guarantee is satisfied --- the check and the thing b
 machine-accessible. T2 verifies #emph[ceremony] but governance-reviews #emph[substance]: the enforcement tool
 machine-verifies the routing --- these four checks are exhaustive for T2 ceremony: (1) a checkpoint exists in the
 declared data flow, (2) taint flow passes through it, (3) a rejection path is present (WL-007), and (4) declared
-contracts are coherent (§9.2) --- but the #emph[adequacy] of the business logic inside the checkpoint is a
-governance-reviewed claim, not a machine-verified one (§12, residual risk 10). The machine guarantees the governance
+contracts are coherent (§10.2) --- but the #emph[adequacy] of the business logic inside the checkpoint is a
+governance-reviewed claim, not a machine-verified one (§13, residual risk 10). The machine guarantees the governance
 gate was hit; governance guarantees the gate is adequate. T1 verifies #emph[neither]: trusted construction is an act of
 institutional interpretation that no tool can verify --- both ceremony and substance are institutional.
 
@@ -1039,7 +1095,7 @@ machine-verify that a validation function tests every constraint declared in its
 surface at T2 is reduced to manifest adequacy review. The framework does not require this capability --- T2's epistemic
 basis remains governance-assured at the framework level --- but bindings that implement it provide a tighter
 verification envelope. Manifest completeness remains a governance responsibility; the gap narrows but does not close.
-The presence or absence of constraint manifests does not affect a binding's conformance status (§14). It narrows the
+The presence or absence of constraint manifests does not affect a binding's conformance status (§15). It narrows the
 residual governance surface but does not change which conformance profile applies.
 
 Semantic validation is always comprehensive within its scope: it establishes that the data satisfies every domain
@@ -1052,23 +1108,23 @@ where different consumers impose different constraints, and the semantic validat
 The model deliberately permits combined validation boundaries (T4→T2 in one function) because ceremony affects adoption
 rate. Where structural and semantic checks are simple enough to co-locate without obscuring the distinction between
 them, combined validation reduces annotation friction while preserving the logical ordering constraint that shape
-validation precedes semantic validation (§5.2).
+validation precedes semantic validation (§6.2).
 
 Data whose tier classification cannot be determined --- typically data crossing the enforcement perimeter from outside,
 or return values from unannotated code --- is assigned the UNKNOWN trust classification. Data combining values from
 multiple tiers is assigned MIXED. These classifications, along with the four named tiers, produce the eight effective
-states that the severity matrix (§7.3) uses to grade findings. The effective states and their enforcement consequences
-are defined in §5.
+states that the severity matrix (§8.3) uses to grade findings. The effective states and their enforcement consequences
+are defined in §6.
 
 The enforcement implementation of this model --- effective states, taint-state algebra, transition semantics,
-restoration boundaries, and cross-language taint propagation --- is specified in §5.
+restoration boundaries, and cross-language taint propagation --- is specified in §6.
 
-= 5. Authority tier model: enforcement specification
+= 6. Authority tier model: enforcement specification
 <authority-tier-model-enforcement-specification>
-This section specifies the enforcement implementation of the four-tier authority model defined in §4. Tool implementers,
-scanner developers, and security assessors need this section; adopters and practitioners may skip to §6.
+This section specifies the enforcement implementation of the four-tier authority model defined in §5. Tool implementers,
+scanner developers, and security assessors need this section; adopters and practitioners may skip to §7.
 
-== 5.1 Trust classification and validation status
+== 6.1 Trust classification and validation status
 <trust-classification-and-validation-status>
 The four tiers describe semantic authority. The eight effective states describe the enforcement contexts actually needed
 to grade pattern severity.
@@ -1094,7 +1150,7 @@ validation status (what processing the data has received) --- to produce eight e
   )
 
 These eight states determine finding severity when pattern rules are evaluated: the same pattern may be an error in one
-state and suppressed in another (§7).
+state and suppressed in another (§8).
 
 #strong[Canonical tokens.] The following identifiers are normative and MUST be used consistently in manifest schemas,
 SARIF output, configuration files, and implementation code: `INTEGRAL`, `ASSURED`, `GUARDED`, `EXTERNAL_RAW`,
@@ -1125,7 +1181,7 @@ produce the same result regardless of operand order:
 
 #figure(
   align(center)[#table(
-    columns: (20%, 20%, 20%, 40%),
+    columns: (25%, 25%, 22%, 28%),
     table.header([Operand A], [Operand B], [Result], [Examples],),
     table.hline(),
     [Any state in {INTEGRAL, ASSURED, GUARDED, EXTERNAL\_RAW}], [Different state in {INTEGRAL, ASSURED, GUARDED,
@@ -1199,7 +1255,7 @@ MIXED\_RAW. This is the current behaviour and remains conformant. Field-sensitiv
 implement `MIXED_TRACKED` extend the matrix with a ninth column whose severity inherits from the MIXED\_RAW column
 unless the binding explicitly narrows it. Narrowing is permitted (a binding MAY reduce severity where field-level
 resolution eliminates false positives); widening is not (a binding MUST NOT assign higher severity in the MIXED\_TRACKED
-column than in the corresponding MIXED\_RAW cell). This follows the overlay narrowing principle in §13.
+column than in the corresponding MIXED\_RAW cell). This follows the overlay narrowing principle in §14.
 
 #strong[SARIF representation for MIXED\_TRACKED.] MIXED\_TRACKED findings MUST use `MIXED_TRACKED` as the taint-state
 token in SARIF output (`properties.taintState`). SARIF consumers that do not recognise `MIXED_TRACKED` SHOULD treat it
@@ -1281,7 +1337,7 @@ theoretical combinations. Eight are reachable as effective states; sixteen are i
 
 #figure(
   align(center)[#table(
-    columns: (14%, 14%, 10%, 18%, 16%, 28%),
+    columns: (15%, 15%, 11%, 13%, 13%, 33%),
     table.header([Classification], [Not Applicable], [Raw], [Shape-Validated], [Sem. Validated], [Rationale],),
     table.hline(),
     [Tier 1], [#strong[Integral]], [Impossible], [Impossible], [Impossible], [Tier 1 artefacts are produced under
@@ -1307,9 +1363,9 @@ theoretical combinations. Eight are reachable as effective states; sixteen are i
   )
 
 All sixteen non-reachable combinations are accounted for by the Impossible or Collapsed entries in the Rationale column.
-The normalisation boundary mechanism for MIXED data is specified in §5.2 (transition semantics).
+The normalisation boundary mechanism for MIXED data is specified in §6.2 (transition semantics).
 
-== 5.2 Transition semantics
+== 6.2 Transition semantics
 <transition-semantics>
 Tier transitions are directional and constrained:
 
@@ -1333,7 +1389,7 @@ Tier transitions are directional and constrained:
   expected, and the direction of flow.
 
   #emph[Contract-to-function mapping.] The function-level binding (which functions currently implement each contract) is
-  a secondary mapping that resides in the overlay (§13.1.2) and survives refactoring independently of the contract
+  a secondary mapping that resides in the overlay (§14.1.2) and survives refactoring independently of the contract
   declarations.
 
 - #strong[T2 to T1 --- trusted construction.] The transition is an act of institutional interpretation: only via
@@ -1350,9 +1406,9 @@ Field-by-field interleaving --- validating a field's type and then immediately c
 to the next field --- is conformant; invariant 3 requires that structural establishment logically precedes semantic
 establishment, not that all structural checks must complete before any semantic check begins.
 
-Combined validation boundaries are declared with a combined-validation annotation (§6, Group 1) --- e.g.,
+Combined validation boundaries are declared with a combined-validation annotation (§7, Group 1) --- e.g.,
 `@validates_external` in the Python binding (Part II-A §A.4), `@ValidatesExternal` in the Java binding (Part II-B §B.4)
---- or the generic trust-boundary annotation with `from_tier=4, to_tier=2` (§6, Group 16). The decomposed annotations
+--- or the generic trust-boundary annotation with `from_tier=4, to_tier=2` (§7, Group 16). The decomposed annotations
 --- shape validation (T4→T3) and semantic validation (T3→T2) --- are used when the two phases are separate functions.
 
 Seven invariants govern these transitions:
@@ -1376,15 +1432,15 @@ Seven invariants govern these transitions:
   writing to a file, database, message queue, or socket; encoding to JSON, protobuf, or any wire format. The common
   property is that the output is bytes, not typed objects --- the type system's guarantees do not survive the boundary.
 + #strong[Trusted restoration may reinstate prior authority.] A raw representation may be restored to Tier 1 only
-  through a declared #emph[trusted restoration boundary] with provenance and integrity guarantees (see §5.3).
+  through a declared #emph[trusted restoration boundary] with provenance and integrity guarantees (see §6.3).
 + #strong[Tier assignment is not contagious.] Authority assigned to a derived Tier 1 artefact does not retroactively
   alter the trust classification of its source inputs. This prevents laundering lower tiers into higher tiers by
   accident --- the failure mode where "validated once" magically turns all downstream uses into authoritative truth.
 
-== 5.3 Trusted restoration boundaries
+== 6.3 Trusted restoration boundaries
 <trusted-restoration-boundaries>
 The serialisation/restoration model distinguishes #emph[construction] from #emph[restoration]. Construction produces a
-new Tier 1 artefact from Tier 2 inputs under institutional rules (§5.2, T2-to-T1 transition). Restoration reconstitutes
+new Tier 1 artefact from Tier 2 inputs under institutional rules (§6.2, T2-to-T1 transition). Restoration reconstitutes
 a previously serialised Tier 1 artefact from its raw representation. The distinguishing criterion: restoration requires
 an evidence-backed provenance claim supported by institutional attestation --- a mere assertion of internal origin does
 not suffice (see evidence categories below).
@@ -1409,14 +1465,14 @@ unknown-provenance state (UNKNOWN\_\*). The restoration table below specifies th
   the representation has not been modified since serialisation --- checksums, signatures, or equivalent mechanisms.
   Restoration with structural, semantic, and institutional evidence but without integrity evidence produces at most Tier
   2 --- the data's structure and domain validity are verified but its integrity since serialisation is not established.
-  Integrity evidence may be absent by exception only, under STANDARD exception governance (§9). The exception MUST
+  Integrity evidence may be absent by exception only, under STANDARD exception governance (§10). The exception MUST
   document why integrity verification is not feasible and MUST specify the compensating controls that mitigate the
   absence of integrity evidence.
 + #strong[Provenance-institutional evidence (REQUIRED for restoration to any known-provenance tier).] Institutional
   attestation that the storage boundary is trustworthy --- that the file, database, or message queue is under the
   organisation's control, that access controls are in place, and that the serialisation path is known. This evidence is
   explicitly institutional, not technical. It cannot be verified by the enforcement tool and is governed through the
-  governance model (§9). Without institutional evidence, restoration cannot produce a known-provenance tier --- only
+  governance model (§10). Without institutional evidence, restoration cannot produce a known-provenance tier --- only
   UNKNOWN states are reachable.
 
 The four evidence categories determine the restored tier:
@@ -1450,7 +1506,7 @@ states (UNKNOWN\_\*). A mere assertion of internal provenance --- without instit
 data above unknown-origin status. This prevents trust-classification uplift on assertion rather than evidence: an agent
 or developer claiming "this is internal data" without institutional backing receives no tier benefit from the claim.
 
-== 5.4 Cross-language taint propagation
+== 6.4 Cross-language taint propagation
 <cross-language-taint-propagation>
 In polyglot applications where data crosses language boundaries (e.g., a Python service calling a Go microservice, or a
 shared database accessed by multiple language runtimes), the receiving language's enforcement tool cannot verify the
@@ -1458,7 +1514,7 @@ emitting language's taint assertions. Data crossing a language boundary resets t
 unless the receiving binding can independently verify the emitting binding's taint assertion. Independent verification
 means the receiving binding can establish the taint state from evidence available in its own enforcement context,
 without trusting an assertion from the emitting binding. The verification mechanism MUST be declared in the wardline
-manifest (§13). The current conformant mechanism is a shared wardline manifest that declares the cross-language
+manifest (§14). The current conformant mechanism is a shared wardline manifest that declares the cross-language
 interface as a typed trust boundary with both bindings enforcing the same tier assignment; future mechanisms (e.g.,
 taint metadata in serialisation formats) are permitted provided they satisfy the independent-verification requirement
 and are manifest-declared.
@@ -1477,36 +1533,36 @@ resets by making cross-language interfaces explicit and jointly governed.
 #strong[Scope clarification.] This section applies to cross-#emph[binding] boundaries --- where data passes between
 different language runtimes, each with its own enforcement tool. It does not apply to serialisation boundaries within
 the same binding (e.g., a Python application reading from a database that the same Python application wrote to).
-Serialisation boundaries within a single binding are governed by the restoration boundary model (§5.3) using the
-restoration boundary annotation (§6, Group 17), which provides more precise taint tracking through provenance evidence
+Serialisation boundaries within a single binding are governed by the restoration boundary model (§6.3) using the
+restoration boundary annotation (§7, Group 17), which provides more precise taint tracking through provenance evidence
 categories. A Python application reading its own audit trail from PostgreSQL is a restoration boundary, not a
 cross-language boundary --- the emitting and receiving binding are the same, and the restoration model applies.
 
 #strong[Shared-storage polyglot pattern.] When different bindings share a storage medium --- e.g., a Python service
 writes to PostgreSQL and a Java service reads from the same database --- each binding's read is an independent
-restoration boundary (§5.3), not a cross-language boundary. The Java service does not receive data "from Python" --- it
+restoration boundary (§6.3), not a cross-language boundary. The Java service does not receive data "from Python" --- it
 reads a raw representation from storage and restores it under its own evidence categories and governance. The two
 bindings' restoration boundaries are independent: each declares its own evidence basis, each is governed separately, and
-neither trusts the other's classification. The shared wardline manifest (§13) ensures both bindings agree on the data
+neither trusts the other's classification. The shared wardline manifest (§14) ensures both bindings agree on the data
 source's tier assignment, but the restoration evidence is evaluated independently by each binding.
 
-== 5.5 Third-party in-process dependency taint
+== 6.5 Third-party in-process dependency taint
 <third-party-in-process-dependency-taint>
 In-process calls to third-party libraries --- code that executes within the same runtime but is not under the deploying
-organisation's governance --- present an analogous problem to cross-language boundaries (§5.4). The enforcement tool
+organisation's governance --- present an analogous problem to cross-language boundaries (§6.4). The enforcement tool
 cannot verify a third-party library's internal validation logic, taint handling, or failure semantics, because the
 library's code is outside the wardline's annotation surface and governance perimeter. A third-party library function
 that performs internal validation does not constitute a wardline validation boundary --- the application has no
 governance evidence that the library's checks are adequate, comprehensive, or stable across releases.
 
-Data returned from a third-party library call defaults to UNKNOWN\_RAW unless a `dependency_taint` declaration (§13.1.2)
+Data returned from a third-party library call defaults to UNKNOWN\_RAW unless a `dependency_taint` declaration (§14.1.2)
 assigns a specific taint state with governance rationale. The enforcement tool does not need a general mechanism to
 classify which calls are "third-party" --- it matches call targets against the fully qualified function paths declared
 in `dependency_taint` entries, using the same import-resolution mechanism it uses for boundary declarations. Functions
 not declared in `dependency_taint` and not carrying wardline annotations receive UNKNOWN\_RAW by default. This is
 conservative: it may over-taint data that the library has already validated. The alternative --- trusting a third-party
 library's internal validation without independent verification --- would allow ungoverned code to perform tier
-promotions, which is the same trust-laundering problem that §5.4 addresses for cross-language boundaries.
+promotions, which is the same trust-laundering problem that §6.4 addresses for cross-language boundaries.
 
 The correct application architecture validates data at #emph[your] boundary regardless of what the library does
 internally. A third-party library that performs shape validation is defence in depth --- the application's own
@@ -1514,7 +1570,7 @@ internally. A third-party library that performs shape validation is defence in d
 likelihood of rejection at the application boundary; it does not replace it. This is the same principle that governs
 cross-language taint: the receiving side validates independently because it cannot verify the emitting side's claims.
 
-The "both MUST agree" constraint (§13.1.2) --- which requires manifest boundary declarations to have corresponding code
+The "both MUST agree" constraint (§14.1.2) --- which requires manifest boundary declarations to have corresponding code
 annotations --- does not apply to `dependency_taint` declarations. These are taint source declarations about code
 outside the governance perimeter, not boundary declarations within it. The manifest declares what the data #emph[is]
 when it arrives from ungoverned code; the application's own annotated boundaries declare what happens to it next.
@@ -1554,11 +1610,11 @@ library updates its API --- function renames, signature changes, or removal. Enf
 `dependency_taint` entries against import resolution at scan time: if a declared function path does not resolve to an
 importable symbol, the tool SHOULD emit a WARNING-level finding. This does not catch silent semantic changes (a function
 that keeps its name but changes its validation behaviour), but it catches the most common staleness vector --- API
-renames across library version upgrades. The `package` version constraint in `dependency_taint` entries (§13.1.2)
+renames across library version upgrades. The `package` version constraint in `dependency_taint` entries (§14.1.2)
 provides a secondary defence: version changes that fall outside the declared constraint range trigger a fingerprint
-baseline change (§9.2), surfacing the entry for governance review.
+baseline change (§10.2), surfacing the entry for governance review.
 
-= 6. Annotation vocabulary
+= 7. Annotation vocabulary
 <annotation-vocabulary>
 A wardline MUST be able to express the following categories of institutional knowledge. Each category represents a class
 of semantic constraint that is invisible to standard tooling but routinely violated by agent-generated code. The
@@ -1577,7 +1633,7 @@ may cross them. These are the annotations that define the wardline's classificat
 contract annotations] (groups 5--15) declare code-behaviour contracts --- failure modes, sensitivity handling, lifecycle
 constraints --- that the enforcement tool can verify but that are not classification decisions in themselves.
 
-Both categories are part of the wardline vocabulary and REQUIRED for conformance at the expressiveness level (§14.5),
+Both categories are part of the wardline vocabulary and REQUIRED for conformance at the expressiveness level (§15.5),
 but the distinction clarifies what the wardline #emph[classifies] (trust topology) versus what it additionally
 #emph[enforces] (code contracts). Conformance requires that a binding can express all 17 groups; it does not require
 uniform enforcement depth for all supplementary groups. Organisations adopting the framework incrementally MAY deploy
@@ -1587,21 +1643,21 @@ supplementary checks depend.
 
 #strong[Annotation identity across bindings.] The #strong[Key Declarations] column names abstract declaration concepts,
 not binding syntax. Where a label resembles Python decorator spelling, it is a mnemonic, not a requirement that other
-bindings use Python syntax. Cross-binding machine identity is carried by the manifest schema identifiers in §13 and the
-SARIF `wardline.annotationGroups` property in §10.1. Bindings MAY expose binding-specific names such as
+bindings use Python syntax. Cross-binding machine identity is carried by the manifest schema identifiers in §14 and the
+SARIF `wardline.annotationGroups` property in §11.1. Bindings MAY expose binding-specific names such as
 `@validates_shape` or `@ValidatesShape` in diagnostics, but those names are presentation-layer details, not the
 framework's interoperability surface.
 
 #figure(
   align(center)[#table(
-    columns: (3%, 7%, 28%, 22%, 40%),
+    columns: (3%, 15%, 21%, 23%, 38%),
     table.header([\#], [Group], [Institutional Knowledge], [Key Declarations], [Enforcement Consequences],),
     table.hline(),
     [#strong[1]], [#strong[Authority Tier Flow]], [Where the system's trust boundaries are --- which functions receive
     external data, shape-validate it, semantically validate it, read authoritative records, or write to the audit
     trail], [`@external_boundary`\; `@validates_shape` (T4→T3); `@validates_semantic` (T3→T2); `@validates_external`
     (combined T4→T2); `@integral_read`\; `@integral_writer`\; `@integral_construction`], [Taint analysis between
-    declared boundaries. Pattern rules (§7) activate per enclosing tier. Data reaching a sink without the validation
+    declared boundaries. Pattern rules (§8) activate per enclosing tier. Data reaching a sink without the validation
     required by its target tier produces a finding: T4 data reaching a T3/T2/T1 sink without shape validation; T3 data
     reaching a T2/T1 sink without semantic validation],
     [#strong[2]], [#strong[Integrity Primacy]], [Which operations constitute the legal record and their ordering
@@ -1618,22 +1674,22 @@ framework's interoperability surface.
     #emph[restoration act] by which serialised representations regain their tier], [Internal data source], [Same
     restrictions as Tier 1 --- no fallback defaults, no broad exception handling. Parse failure on internal data is an
     integrity failure, not a data quality issue. Group 4 does not by itself establish Tier 1 restoration; without Group
-    17 evidence, restored values remain in UNKNOWN\_\* states as specified in §5.3],
+    17 evidence, restored values remain in UNKNOWN\_\* states as specified in §6.3],
     [#strong[5]], [#strong[Schema Contracts]], [That transformations MUST map all fields from a source type, that
     outputs conform to declared schemas, that field coverage is complete, that optional fields with approved defaults
     are declared as such, and that schema-level defaults on tier-classified fields are governed --- partial mappings and
     unmapped output fields risk silent data loss; undeclared defaults on external data risk silent data fabrication
-    (§7.2.1); defaults declared in schema definitions (e.g., Pydantic model `Field(default=...)`, dataclass
+    (§8.2.1); defaults declared in schema definitions (e.g., Pydantic model `Field(default=...)`, dataclass
     `field(default=...)`, JSON Schema `"default"` properties) on fields that participate in tier-classified flows are
     semantically equivalent to optional-field declarations and MUST be scanned and governed as such under the Assurance
-    governance profile (§14.3.2), and SHOULD be scanned under the Lite governance profile], [Complete field mapping from
+    governance profile (§15.3.2), and SHOULD be scanned under the Lite governance profile], [Complete field mapping from
     declared source type; output schema; field completeness; optional field with approved default; schema-level default
     governance], [Conformant scanners SHALL verify that all fields of the source type are accessed. Unmapped fields
     produce a finding. Multiple functions declaring the same output field produce a collision finding. Optional-field
-    declarations interact with WL-001 at declared boundaries (§7.2.1). Schema-level defaults on fields that participate
+    declarations interact with WL-001 at declared boundaries (§8.2.1). Schema-level defaults on fields that participate
     in tier-classified data flows MUST be treated as implicit optional-field declarations under the Assurance governance
-    profile (§14.3.2) and SHOULD be treated as such under the Lite governance profile --- if the default value has not
-    been declared as an approved default in the overlay (§7.2.1), the enforcement tool SHOULD produce a finding
+    profile (§15.3.2) and SHOULD be treated as such under the Lite governance profile --- if the default value has not
+    been declared as an approved default in the overlay (§8.2.1), the enforcement tool SHOULD produce a finding
     equivalent to an undeclared WL-001 access with fallback default. This closes the evasion path where a fabricated
     default is declared in the schema definition rather than at the access site, bypassing WL-001's AST-level pattern
     detection],
@@ -1677,18 +1733,18 @@ framework's interoperability surface.
     [#strong[16]], [#strong[Generic Trust Boundary]], [Parameterised tier transitions for non-standard trust models. Two
     declaration types: #strong[trust boundary] (enforcement-bearing tier transition) and #strong[data flow] (descriptive
     documentation marker for pass-through or consumption/production roles --- no enforcement activated)], [Trust
-    boundary (from-tier, to-tier): tier values 1, 2, 3, 4. Constraint: to-tier=1 is valid only when from-tier=2 (§5.2
+    boundary (from-tier, to-tier): tier values 1, 2, 3, 4. Constraint: to-tier=1 is valid only when from-tier=2 (§6.2
     invariant 4). Data flow (consumes, produces): descriptive-only, does not activate tier-promotion
     enforcement], [Trust boundary: parameterised tier flow validation. Declared transitions are verified for structural
     support. Promotions spanning multiple tiers (e.g., T4→T2) are verified against the intermediate validation
-    requirements (§5.2 invariant 3); the scanner produces a finding when they are not satisfied. Skip-promotions to Tier
+    requirements (§6.2 invariant 3); the scanner produces a finding when they are not satisfied. Skip-promotions to Tier
     1 (e.g., T4→T1, T3→T1) are schema-invalid and MUST be rejected at declaration-load time --- Tier 1 construction is
     reached through composed steps. Data flow: no enforcement consequences --- the declaration documents the function's
     tier role for humans and tooling but does not activate pattern rules, require rejection paths, or participate in
     taint-flow tracking. Functions that perform actual tier transitions are expected to use a trust boundary
     declaration, not a data flow declaration],
     [#strong[17]], [#strong[Restoration Boundaries]], [The governed restoration act by which raw representations may be
-    restored to a tier supported by available evidence (§5.3) --- distinct from Group 4, which declares
+    restored to a tier supported by available evidence (§6.3) --- distinct from Group 4, which declares
     provenance-sensitive data sources], [Trusted restoration boundary; provenance evidence categories], [Structural
     verification (WL-007) applies. Four evidence categories (structural, semantic, integrity, provenance-institutional)
     govern the restoration. Institutional evidence is the gate between known-provenance tiers (T1--T3) and
@@ -1711,12 +1767,12 @@ the analysis boundary.
 checks: field-mapping completeness, output-schema conformance, field-collision detection, optional-field declaration
 governance, and schema-level default governance. These mechanisms are independently assessable for tooling and
 conformance reporting. The schema-default governance behaviour is closely coupled to WL-001 evasion prevention and
-therefore cross-references §7.2.1; §6 states the declaration surface and enforcement intent, while rule-specific
-fallback-default semantics remain defined in §7.
+therefore cross-references §8.2.1; §7 states the declaration surface and enforcement intent, while rule-specific
+fallback-default semantics remain defined in §8.
 
 #strong[Group 9 --- Binding-defined detection criteria.] The framework requires that bindings define what counts as a
 guard for idempotency, what constitutes transaction context for atomicity, and how declared compensation is represented.
-§6 establishes the declaration categories and enforcement intent; Part II defines the language-specific detection
+§7 establishes the declaration categories and enforcement intent; Part II defines the language-specific detection
 criteria and minimum scanner behaviour.
 
 #strong[Group 12 --- Determinism minimum analysis scope.] Conformant scanners SHALL verify that deterministic-annotated
@@ -1742,7 +1798,7 @@ following interactions:
 - Groups 1 + 10: failure-mode enforcement often depends on the enclosing trust topology established by core
   classification annotations.
 
-= 7. Pattern rules
+= 8. Pattern rules
 <pattern-rules>
 This section defines nine rules in two categories. #strong[Six pattern rules] (WL-001 through WL-006) detect syntactic
 proxies for semantic violations in declared semantic contexts. Each takes the form: "if the application declares context
@@ -1750,7 +1806,7 @@ X, then pattern Y is prohibited." #strong[Three structural verification rules] (
 invariants on declared boundary functions --- they verify structural properties of the boundary itself rather than
 detecting patterns within annotated bodies. All nine rules are language-agnostic --- they describe structural patterns
 whose danger depends on the declared semantic context, not on syntax alone. The distinction matters for conformance
-(§14): pattern rules and structural verification rules have different conformance criteria and may be implemented by
+(§15): pattern rules and structural verification rules have different conformance criteria and may be implemented by
 different tools.
 
 #strong[Living pattern catalogue.] WL-001 through WL-006 are a starting vocabulary, not a closed set. Each pattern rule
@@ -1758,10 +1814,10 @@ detects a syntactic proxy for a semantic violation, and models that learn to avo
 semantic equivalents --- helper wrappers, conditional assignments, schema-level defaults, language-specific suppression
 idioms --- that carry the same risk but do not match the original AST pattern. Language bindings MUST maintain
 version-tracked lists of semantic equivalents for each pattern rule, extending detection coverage as new evasion
-variants are identified. The precision/recall corpus (§10) SHOULD include evasion-variant specimens alongside standard
+variants are identified. The precision/recall corpus (§11) SHOULD include evasion-variant specimens alongside standard
 specimens, so that detection of semantic equivalents is measured under the same precision floors as the base patterns.
 Conformance evidence for these catalogues is provided through the declared rule subset, regime documentation, and the
-golden corpus specimens that exercise evasion variants (§10, §14.2). The rule set evolves as model capability evolves:
+golden corpus specimens that exercise evasion variants (§11, §15.2). The rule set evolves as model capability evolves:
 patterns that current models produce clumsily will be produced cleanly by future models, and the enforcement surface
 MUST track that trajectory deliberately rather than assuming a fixed pattern vocabulary.
 
@@ -1772,12 +1828,12 @@ Three categories of validity underpin the rule vocabulary:
 - #strong[Semantic validity] --- properties requiring human judgement: whether a default is institutionally appropriate,
   whether an exception translation preserves severity, whether a field mapping captures the intended meaning.
 - #strong[Authority restoration] --- properties requiring institutional permission: whether a serialised representation
-  may be restored to a tier supported by available evidence, governed through restoration boundary declarations (§5.3).
+  may be restored to a tier supported by available evidence, governed through restoration boundary declarations (§6.3).
 
 Pattern rules operate at the structural-validity layer: they detect structural signals that correlate with semantic
 violations. They do not verify semantic correctness directly.
 
-== 7.1 The rules
+== 8.1 The rules
 <the-rules>
 #figure(
   align(center)[#table(
@@ -1797,7 +1853,7 @@ violations. They do not verify semantic correctness directly.
     severity matrix entries as their default. Where the language-specific semantics that motivated the split create
     risks absent from the framework-level pattern, a sub-rule MAY establish its own matrix row that deviates from the
     inherited default. Such deviations MUST be documented in the binding's matrix with explicit rationale identifying
-    the language-specific semantic risk. The §7.3 narrowing constraint applies to each sub-rule relative to its own
+    the language-specific semantic risk. The §8.3 narrowing constraint applies to each sub-rule relative to its own
     documented matrix row, not relative to the parent framework rule's row. The binding documents the mapping between
     its sub-rules and this framework rule.],
     [#strong[WL-002]], [Using existence-checking as a structural gate], [ERROR in all eight taint states, with
@@ -1812,10 +1868,10 @@ violations. They do not verify semantic correctness directly.
     Architectural guidance: EXTERNAL\_RAW (Tier 4) data processing should occur within validation boundaries where
     existence-checking is expected.],
     [#strong[WL-003]], [Catching all exceptions broadly], [Prevents crashes but also prevents errors from being
-    recorded. In high-assurance contexts, unrecorded errors are worse than crashes. The severity gradient in §7.3
+    recorded. In high-assurance contexts, unrecorded errors are worse than crashes. The severity gradient in §8.3
     reflects how much structural certainty the wardline has already established: broad catches are most severe where the
     context claims high trust, and less severe where raw external parsing legitimately encounters malformed input. See
-    §7.4(c).],
+    §8.4(c).],
     [#strong[WL-004]], [Catching exceptions silently (no action taken)], [Destroys evidence. The exception and its
     diagnostic context are lost. In Tier 1 code, every exception should be understood and handled specifically --- a
     broad silent catch means you don't understand your own failure modes well enough to handle them individually, and
@@ -1825,12 +1881,12 @@ violations. They do not verify semantic correctness directly.
     applies: T1/T2 is where you need surgical exception handling; T4 is the sandbox where defensive suppression of
     unpredictable external failures is expected practice. Note: a `logger.warning()` in a handler is noting that
     something happened, not resolving it --- the exception is still swallowed and execution continues as if nothing went
-    wrong. The log entry is a confession, not a remedy. See §7.4(g).],
+    wrong. The log entry is a confession, not a remedy. See §8.4(g).],
     [#strong[WL-005]], [Audit-critical writes inside broad exception handlers], [The audit write may fail silently,
     creating gaps in the legal record. The handler catches the audit failure along with everything else, and execution
     continues as though the record was written. This rule is narrower than WL-003: it is the audit-critical intersection
     of broad exception handling and Group 2 audit primacy, which is why its severity escalates to UNCONDITIONAL in
-    ASSURED as well as INTEGRAL. See §7.4(e).],
+    ASSURED as well as INTEGRAL. See §8.4(e).],
     [#strong[WL-006]], [Type-checking internal data at runtime], [Runtime type-checking is suspicious whenever the
     wardline already declares structural type guarantees for the data --- authoritative tiers, validated tiers, and
     validated UNKNOWN states. In EXTERNAL\_RAW and UNKNOWN\_RAW, runtime type-checking is expected because the type
@@ -1838,39 +1894,39 @@ violations. They do not verify semantic correctness directly.
     runtime type-checking suggests structural doubt about the artefact rather than legitimate input handling.],
     [#strong[WL-007]], [Boundary with no rejection path], [A boundary function that accepts all input is structurally
     unsound. Applies to shape-validation boundaries (T4→T3), semantic-validation boundaries (T3→T2), combined-validation
-    boundaries (T4→T2), and restoration boundaries (§5.3). The scanner enforces that at least one rejection path exists
-    (§7.2). The expected nature of the rejection varies by boundary type --- structural checks for shape validators,
+    boundaries (T4→T2), and restoration boundaries (§6.3). The scanner enforces that at least one rejection path exists
+    (§8.2). The expected nature of the rejection varies by boundary type --- structural checks for shape validators,
     domain-constraint checks for semantic validators, evidence-appropriate checks for restoration boundaries --- but the
     scanner enforces presence, not kind.],
     [#strong[WL-008]], [Semantic validation without prior shape validation], [Data reaching a declared
     semantic-validation boundary (e.g., `@validates_semantic` in Python, `@ValidatesSemantic` in Java, or equivalent)
     whose inputs have not passed through a declared shape-validation boundary is structurally unsound. Applying
     domain-constraint checks to data whose field presence and type correctness have not been established may crash,
-    produce misleading results, or silently operate on wrong types. This rule formalises invariant 3 from §5.2: shape
+    produce misleading results, or silently operate on wrong types. This rule formalises invariant 3 from §6.2: shape
     validation MUST precede semantic validation.],
     [#strong[WL-009]], [Tier 1 promotion on serialization path without restoration evidence], [A function declared
     `@integral_read` or `@integral_construction` (or binding equivalent) whose data source is a manifest-declared
     serialization boundary, and which neither co-declares `@restoration_boundary` with at least one evidence category
-    nor traces its inputs through a declared restoration boundary within the two-hop analysis scope (§8.1). The function
-    claims Tier 1 authority for deserialized data on assertion alone --- the restoration model (§5.3) requires
+    nor traces its inputs through a declared restoration boundary within the two-hop analysis scope (§9.1). The function
+    claims Tier 1 authority for deserialized data on assertion alone --- the restoration model (§6.3) requires
     evidence-backed provenance claims, but no evidence is declared, no governance review of the restoration act is
     possible, and the scanner cannot verify that write-side invariants are re-established on read. This is the
     restoration-symmetry failure: construction paths include validation that serialization strips, and the read side
     re-stamps the deserialized representation as authoritative without re-verifying. WL-009 enforces that the
     restoration model is #emph[invoked], not that the evidence is #emph[sufficient] --- sufficiency remains a
-    governance-reviewed claim (§12, residual risk 10).],
+    governance-reviewed claim (§13, residual risk 10).],
   )]
   , kind: table
   )
 
-== 7.2 Structural verification
+== 8.2 Structural verification
 <structural-verification>
 In addition to the pattern rules, structural verification requirements apply to validation boundary functions:
 
 #strong[WL-007: Boundary functions MUST contain rejection paths.] A function declared as a validation or restoration
 boundary that contains no conditional branching, no exception raising, and no early return is structurally unsound. A
 boundary that accepts all input is not a boundary. Under the four-tier model, shape-validation boundaries,
-semantic-validation boundaries, combined-validation boundaries, and restoration boundaries (§5.3) are all subject to
+semantic-validation boundaries, combined-validation boundaries, and restoration boundaries (§6.3) are all subject to
 WL-007. The scanner enforces #strong[presence] of at least one rejection path, not the #strong[kind] of check the
 rejection path performs. The expected nature of the rejection depends on the boundary type --- shape validators are
 expected to reject on structural grounds (schema conformance, type correctness, field presence), semantic validators on
@@ -1895,7 +1951,7 @@ annotations. WL-009 fires when all three conditions hold: (1) a function is decl
 `@integral_construction` (Group 1); (2) the function's data source is a manifest-declared serialization boundary
 (identified via `BoundaryEntry` objects in the overlay's `boundaries` array with `serialization_boundary: true`); (3)
 the function does not co-declare `@restoration_boundary` (Group 17) with at least one evidence category, and its inputs
-do not trace through a declared restoration boundary with sufficient evidence within the two-hop analysis scope (§8.1).
+do not trace through a declared restoration boundary with sufficient evidence within the two-hop analysis scope (§9.1).
 Functions whose Group 1 decorator data source is not manifest-declared as a serialization boundary (e.g., in-memory Tier
 1 reads) are not subject to WL-009. The manifest dependency is intentional: serialization boundaries are part of the
 trust topology and are declared in the manifest, not inferred by the scanner.
@@ -1906,7 +1962,7 @@ producing the function's normal return value. The following constructs constitut
 - An exception-raising statement (`raise` in Python, `throw` in Java, or equivalent)
 - An early return preceded by a conditional guard (the guard establishes that some inputs are rejected)
 - A call to a function that unconditionally raises, if the called function is resolvable via two-hop call-graph analysis
-  (§8.1). For WL-007, "resolvable" means the call target is statically identifiable by the binding as a named function
+  (§9.1). For WL-007, "resolvable" means the call target is statically identifiable by the binding as a named function
   or method, including a local alias to a statically identifiable target where the binding supports alias resolution.
   Targets that require dynamic dispatch, reflection, interface/protocol dispatch, higher-order callback resolution, or
   framework-generated indirection are outside the required minimum scope. Real validation commonly delegates through two
@@ -1927,7 +1983,7 @@ The following do NOT constitute rejection paths:
   never produces a valid output. This is a degenerate case: the scanner SHOULD emit an advisory finding (distinct from
   WL-007) when a validation boundary function contains no success path
 
-== 7.2.1 Structural-guarantee defaults and WL-001
+== 8.2.1 Structural-guarantee defaults and WL-001
 <structural-guarantee-defaults-and-wl-001>
 WL-001 is SUPPRESS in EXTERNAL\_RAW context. Tier 4 is the developer-freedom zone --- boundary code legitimately uses
 `.get()`, `getattr()`, and similar patterns to handle optional fields, missing config keys, and malformed input. The
@@ -1962,7 +2018,7 @@ institutionally approved." The distinction matters for governance: exceptions ac
 require periodic re-review; structural-guarantee declarations are part of the trust topology and are reviewed as part of
 the manifest.
 
-#strong[Where declarations live.] Optional-field declarations reside in the overlay's boundary declarations (§13.1.2),
+#strong[Where declarations live.] Optional-field declarations reside in the overlay's boundary declarations (§14.1.2),
 associated with a specific data source and validation boundary --- they are properties of the data source's structural
 guarantee, not of individual functions. A partner feed's structural guarantee declares which fields are required, which
 are optional, and what the approved defaults are. Multiple functions may access the same optional field; the declaration
@@ -1987,23 +2043,23 @@ governance-relevant under this section. The library maintainer chose those defau
 individual `optional_fields` overlay entries for every field. Instead, the application should either (a) wrap the
 library model in an application-owned validation boundary that constructs the tier-appropriate representation, treating
 the library model as a data transfer format rather than a governance artefact, or (b) review the library model's
-defaults as a batch using the `schema_defaults_reviewed` field in the `dependency_taint` declaration (§13.1.2), which
+defaults as a batch using the `schema_defaults_reviewed` field in the `dependency_taint` declaration (§14.1.2), which
 suppresses per-field findings for models whose defaults have been assessed and accepted at the governance level. Option
 (a) is architecturally preferred --- it places the validation boundary within the application's governance perimeter.
 Option (b) is a governance expedient for cases where wrapping every library model is disproportionate to the risk.
 
 #strong[Governance visibility.] Approved structural-guarantee default declarations are tracked in the fingerprint
-baseline (§9.2) as a distinct change category alongside annotation changes. A new optional-field declaration on a
+baseline (§10.2) as a distinct change category alongside annotation changes. A new optional-field declaration on a
 security-relevant field --- declaring `security_classification` as optional with default `"OFFICIAL"` --- is a high-risk
 classification decision that warrants the same governance scrutiny as a tier-escalation declaration. The fingerprint
 baseline makes it visible; the governance model ensures it's reviewed.
 
-== 7.3 Severity matrix
+== 8.3 Severity matrix
 <severity-matrix>
 #strong[How to read this matrix.] Each cell encodes severity / exceptionability as a two-letter code (see key below the
 next paragraph). Suppress severity always pairs with Transparent exceptionability (Su/T). Read across a row to see how a
 single rule varies by context; read down a column to see how a single context treats all rules. The exceptionability
-classes are defined in §9.1.
+classes are defined in §10.1.
 
 WL-007, WL-008, and WL-009 are structural verification rules (not pattern rules) and apply only to declared boundary
 functions, but are shown in the matrix for completeness. Their severity is UNCONDITIONAL across all contexts because
@@ -2013,15 +2069,16 @@ they are framework invariants rather than context-dependent judgements.
 #strong[Su] = Suppress (expected). Exceptionability: #strong[U] = Unconditional, #strong[St] = Standard, #strong[R] =
 Relaxed, #strong[T] = Transparent.
 
+#page(flipped: true)[
 #figure(
   align(center)[#table(
-    columns: (15.38%, 23.08%, 7.69%, 7.69%, 7.69%, 7.69%, 7.69%, 7.69%, 7.69%, 7.69%),
+    columns: (10%, 18%, 8%, 8%, 9%, 8%, 8%, 9%, 9%, 13%),
     table.header([Rule], [Pattern], [Integral], [Assured], [Guarded], [Ext. Raw], [Unk. Raw], [Unk. Guarded], [Unk.
       Assured], [Mixed Raw],),
     table.hline(),
     [#strong[WL-001]], [Member access with fallback default#footnote[WL-001's matrix cells describe the default
     framework severity. Optional-field suppression for approved defaults within shape-validation and combined-validation
-    boundaries is specified in §7.2.1.]], [E/U], [E/St], [W/R], [Su/T], [Su/T], [W/R], [E/St], [Su/T],
+    boundaries is specified in §8.2.1.]], [E/U], [E/St], [W/R], [Su/T], [Su/T], [W/R], [E/St], [Su/T],
     [#strong[WL-002]], [Existence-checking as structural
     gate], [E/U], [E/U], [E/St], [Su/T], [Su/T], [E/St], [E/St], [Su/T],
     [#strong[WL-003]], [Catching all exceptions broadly], [E/U], [E/St], [W/St], [W/R], [E/St], [W/St], [W/St], [E/St],
@@ -2038,20 +2095,21 @@ Relaxed, #strong[T] = Transparent.
   )]
   , kind: table
   )
+]
 
 #strong[Binding-level matrix deviations.] Language bindings MAY modify individual cells where the target language's type
 system structurally prevents a violation class. Binding-level deviations MUST narrow severity or exceptionability
 relative to the framework matrix, not widen them. A binding MUST NOT assign higher severity or more restrictive
 exceptionability than the framework matrix specifies for the same cell. For example, the Java binding (Part II-B §B.4.4)
 changes WL-002 in GUARDED from E/U to Su/T for records, because Java records guarantee complete construction. Such
-deviations MUST be documented in the binding's matrix with explicit rationale. See §11 (language evaluation criteria)
+deviations MUST be documented in the binding's matrix with explicit rationale. See §12 (language evaluation criteria)
 for the general principle governing binding-level deviations. When a binding splits a framework rule into sub-rules
-under §7.1, each sub-rule's documented matrix row is the baseline for §7.3 conformance --- the narrowing constraint
+under §8.1, each sub-rule's documented matrix row is the baseline for §8.3 conformance --- the narrowing constraint
 applies relative to the sub-rule's own matrix, not relative to the parent framework rule.
 
-== 7.4 Worked examples
+== 8.4 Worked examples
 <worked-examples>
-#emph[Subsections 7.4 and 7.5 are non-normative. They explain the reasoning behind the severity matrix but do not impose
+#emph[Subsections 8.4 and 8.5 are non-normative. They explain the reasoning behind the severity matrix but do not impose
 additional requirements on implementations.]
 
 Six pressure-point cells illustrate the matrix's reasoning:
@@ -2064,13 +2122,13 @@ tier system carves out the code paths (T1 and T2) where those patterns are not p
 The enforcement activates when data crosses a boundary upward, not at the T4 access site. A fabricated default at T4
 that survives the T4→T3 shape-validation boundary and the T3→T2 semantic-validation boundary is caught by the boundary
 transition rules (WL-007, WL-008) at the crossing point --- the validation boundary is where field-presence requirements
-are enforced. The declared-domain-default mechanism (§7.2.1, `schema_default()`) provides a governed path for optional
+are enforced. The declared-domain-default mechanism (§8.2.1, `schema_default()`) provides a governed path for optional
 fields with approved defaults within those boundaries.
 
 Where domain policy requires enforcement of specific default values on external data --- e.g., preventing agents from
 spraying `.get("security_classification", "OFFICIAL")` --- the governed mechanism is the optional-field declaration in
-§7.2.1, not the WL-001 severity at T4. The declaration says "this field's default is institutionally approved"\; a
-`.get()` with a #emph[different] default is a §7.2.1 mismatch finding (ERROR/UNCONDITIONAL), which is a stronger signal
+§8.2.1, not the WL-001 severity at T4. The declaration says "this field's default is institutionally approved"\; a
+`.get()` with a #emph[different] default is a §8.2.1 mismatch finding (ERROR/UNCONDITIONAL), which is a stronger signal
 than a blanket WL-001 ERROR on every `.get()` in every loader.
 
 #strong[\(b) WL-002 is ERROR/STANDARD in GUARDED but SUPPRESS in EXTERNAL\_RAW.] Guarded data has passed structural
@@ -2124,7 +2182,7 @@ re-raise (`except Exception: raise`) --- those are genuinely not swallowing the 
 `except Exception: logger.warning(...); return fallback` continues execution with fabricated state, which is the exact
 pattern WL-003 and WL-004 exist to flag.
 
-== 7.5 Derivation principles
+== 8.5 Derivation principles
 <derivation-principles>
 Four principles govern the matrix:
 
@@ -2144,7 +2202,7 @@ the mere presence of the pattern.
 
 #strong[Exceptionability] answers "can a human override this finding?" UNCONDITIONAL means the finding cannot be
 overridden --- it is a project invariant, hardcoded in the wardline. STANDARD means the finding is wrong by default but
-overridable through the governance model (§9) with documented rationale, reviewer identity, and expiry. RELAXED means
+overridable through the governance model (§10) with documented rationale, reviewer identity, and expiry. RELAXED means
 lighter governance burden --- warning-level findings that can be acknowledged with less ceremony.
 
 #strong[Distribution.] Of the 72 cells, 31 (43%) are UNCONDITIONAL --- project invariants that are not
@@ -2178,16 +2236,16 @@ error regardless of context. A Tier 1 promotion function (`@integral_read` or `@
 serialization path without declared restoration evidence is a topology deficiency regardless of context. These are
 framework invariants, not context-dependent judgements.
 
-== 7.6 Taint analysis scope
+== 8.6 Taint analysis scope
 <taint-analysis-scope>
 Taint analysis for tier-flow enforcement is scoped to explicit flows (data dependencies) only. An explicit flow occurs
 when data from one tier is directly assigned, passed, or returned to a sink expecting a different tier. Implicit flows
 (control dependencies --- where the mere fact that a branch was taken leaks information about a tier-classified value)
 are noted as a tool quality target for future enforcement but are not required by this framework. The rationale:
 explicit-flow taint analysis is tractable for static analysis at acceptable scaling cost; implicit-flow analysis
-requires substantially more sophisticated tooling and may not be achievable within the precision floors defined in §10.
+requires substantially more sophisticated tooling and may not be achievable within the precision floors defined in §11.
 
-The taint-state model has eight effective states (§5.1) and 36 unique state-pairs in the join table. The trust ordering
+The taint-state model has eight effective states (§6.1) and 36 unique state-pairs in the join table. The trust ordering
 has a maximum chain height of five (`MIXED_RAW`/raw-context bottom through the validated chain to `INTEGRAL`); the
 join-induced order is shallower because cross-classification merges collapse directly to MIXED\_RAW. For fixed-point
 convergence in dataflow analysis, the relevant height is that of the join-semilattice --- each variable can change state
@@ -2197,7 +2255,7 @@ three-tier version of this framework (without the Tier 2 / Tier 3 distinction) h
 pairs. The four-tier model adds two states and extends the trust ordering by one level --- modest scaling cost for
 substantially finer enforcement granularity.]
 
-=== 7.6.1 Implicit-flow evasion heuristic
+=== 8.6.1 Implicit-flow evasion heuristic
 <implicit-flow-evasion-heuristic>
 Full implicit-flow analysis is not required by this framework (see above), but the dominant implicit-flow evasion
 pattern is detectable with a simple heuristic. Enforcement tools SHOULD flag functions that contain both (a) a
@@ -2206,11 +2264,11 @@ target variable. This pattern --- branching on a tier-classified value and writi
 in each branch --- launders the tier-classified information into an untracked variable without any explicit data flow
 from the classified source. The heuristic catches the 80% case (the conditional-assignment pattern that models produce
 naturally when optimising for plausibility) without requiring the full implicit-flow analysis that would compromise the
-precision floors defined in §10. Findings from this heuristic SHOULD be classified as WARNING/STANDARD --- suspicious
+precision floors defined in §11. Findings from this heuristic SHOULD be classified as WARNING/STANDARD --- suspicious
 and worth reviewing, but not ERROR, because legitimate conditional logic on tier-classified values is common (e.g.,
 routing decisions based on data tier).
 
-#strong[Field sensitivity as a binding capability.] The `join_fuse` / `join_product` distinction (§5.1) enables bindings
+#strong[Field sensitivity as a binding capability.] The `join_fuse` / `join_product` distinction (§6.1) enables bindings
 to implement field-level taint tracking for named product types --- dataclasses, records, POJOs, and equivalent
 structures where field membership is statically resolvable. When a binding implements the `MIXED_TRACKED` extension
 state, taint analysis operates at field granularity within product-type composites: each field retains its individual
@@ -2221,13 +2279,13 @@ the conservative fallback that the framework mandates as the default. The framew
 field-sensitivity algorithm; bindings declare which product types they track and demonstrate precision through their
 golden corpus.
 
-= 8. Enforcement layers
+= 9. Enforcement layers
 <enforcement-layers>
 A wardline can be enforced at three layers, each catching different classes of violation. The layers are orthogonal:
 each catches things the others cannot. A single tool that implements only one layer still gains value; the combination
 closes residual risk surfaces that any single layer leaves open. In most language ecosystems, different tools will
 implement different layers --- a type checker handles the type-system layer, a linter or pattern-matching tool handles
-static analysis, and a CI orchestrator handles governance. An enforcement regime (§14.4) is the set of tools that
+static analysis, and a CI orchestrator handles governance. An enforcement regime (§15.4) is the set of tools that
 collectively cover all three layers.
 
 These three layers implement a natural escalation path: institutional knowledge that is #emph[machine-readable] (the
@@ -2266,7 +2324,7 @@ Bindings for languages where the immutability mechanism is inherently deep (e.g.
 persistent data structures) need not define such rules --- the language guarantee is sufficient.
 ]
 
-== 8.1 Static analysis
+== 9.1 Static analysis
 <static-analysis>
 #figure(
   align(center)[#table(
@@ -2289,7 +2347,7 @@ Requirements:
 - MAY provide context-sensitive analysis where a function's findings depend on the tier of its call site #emph[\(tool
   quality target)]
 - MUST perform structural verification (WL-007) on all validation boundary functions --- shape-validation,
-  semantic-validation, combined-validation, and restoration boundary functions (§5.3) #emph[\(framework invariant)].
+  semantic-validation, combined-validation, and restoration boundary functions (§6.3) #emph[\(framework invariant)].
   WL-007 is primarily intraprocedural: a validation function that delegates to a called function for rejection (e.g.,
   calling a schema validator that raises on failure) does not satisfy WL-007 unless the delegation is resolvable via
   two-hop call-graph analysis. For this minimum requirement, a call is resolvable when the call target can be determined
@@ -2312,16 +2370,16 @@ Requirements:
   unannotated intermediaries; ideally: full transitive inference across the call graph #emph[\(framework invariant for
   direct flows; tool quality target for full transitive inference)]. Unannotated intermediaries are functions within the
   enforcement perimeter that lack wardline annotations. Functions outside the enforcement perimeter (for example,
-  third-party libraries) are governed by `dependency_taint` declarations (§5.5), not by intermediary tracing
-- SHOULD distinguish `join_fuse` from `join_product` operations (§5.1) when computing taint joins. `join_fuse` applies
+  third-party libraries) are governed by `dependency_taint` declarations (§6.5), not by intermediary tracing
+- SHOULD distinguish `join_fuse` from `join_product` operations (§6.1) when computing taint joins. `join_fuse` applies
   to operations that genuinely merge data (string concatenation, dict merge, format-string interpolation);
   `join_product` applies to product-type composites where components retain their identity (dataclass construction,
   named-tuple packing, typed constructor invocation). Bindings that implement this distinction MAY define a
   `MIXED_TRACKED` extension state for `join_product` on named product types where the binding can statically resolve
   field membership. Bindings that do not implement the distinction treat all cross-tier joins as `join_fuse`, producing
   MIXED\_RAW --- the conservative fallback #emph[\(binding requirement)]
-- MUST produce deterministic, auditable output in SARIF v2.1.0 as specified in §10.1, or in an equivalent structured
-  format that satisfies §10.1's interchange requirements and documents an explicit mapping to the required wardline
+- MUST produce deterministic, auditable output in SARIF v2.1.0 as specified in §11.1, or in an equivalent structured
+  format that satisfies §11.1's interchange requirements and documents an explicit mapping to the required wardline
   properties #emph[\(binding requirement --- the framework does not produce output; tools do)]
 - SHOULD support incremental analysis --- analysing only changed files and their transitive dependents rather than the
   full codebase on every commit #emph[\(binding requirement --- critical for CI adoption at scale)]
@@ -2329,7 +2387,7 @@ Requirements:
 #strong[Scaling characteristics:] Pattern detection scales linearly with the annotated surface area; taint analysis
 scales O(V+E) with the call graph. These are desirable properties but not enforceable as framework invariants.
 
-== 8.2 Type system
+== 9.2 Type system
 <type-system>
 #figure(
   align(center)[#table(
@@ -2354,10 +2412,10 @@ Requirements:
   with identical field structures SHOULD be distinguishable types #emph[\(binding requirement)]
 
 Where a binding's type system enforces tier distinctions at development time, WL-006 findings at the corresponding taint
-states may be narrowed through binding-level matrix deviations (§7.3), because runtime type-checking becomes
+states may be narrowed through binding-level matrix deviations (§8.3), because runtime type-checking becomes
 structurally redundant rather than merely suspicious.
 
-== 8.3 Runtime structural
+== 9.3 Runtime structural
 <runtime-structural>
 #figure(
   align(center)[#table(
@@ -2382,11 +2440,11 @@ Requirements:
 - SHOULD make serialisation boundary violations detectable at access time --- deserialised data that claims a tier it
   has not earned produces an error. Bindings that implement this layer MUST include restoration boundary verification:
   deserialised data passing through a declared restoration boundary MUST satisfy the structural evidence requirement
-  (§5.3) #emph[\(binding requirement)]
+  (§6.3) #emph[\(binding requirement)]
 - MAY provide optional runtime enforcement that complements static analysis for contexts where static analysis alone is
   insufficient #emph[\(tool quality target)]
 
-== 8.4 Orthogonality principle
+== 9.4 Orthogonality principle
 <orthogonality-principle>
 Static analysis cannot cross serialisation boundaries. Mainstream type systems cannot enforce behavioural constraints
 (dependent types and session types can, but are not available in the languages this framework targets). Runtime
@@ -2395,13 +2453,13 @@ wrong value). Each layer's blind spots are another layer's coverage area.
 
 The orthogonality principle has a direct structural consequence for implementation: because each layer catches what the
 others cannot, there is no requirement --- and no advantage --- in building a single tool that spans all three. A
-multi-tool enforcement regime where a type checker handles §8.2, a linter handles §8.1, and a runtime library handles
-§8.3 achieves the same coverage as a monolithic tool, with the additional benefit that each component can evolve
+multi-tool enforcement regime where a type checker handles §9.2, a linter handles §9.1, and a runtime library handles
+§9.3 achieves the same coverage as a monolithic tool, with the additional benefit that each component can evolve
 independently and that adopters can deploy layers incrementally as their annotation investment grows. The conformance
-profiles (§14.3; see §14.3.1 for the normative profile definitions) encode this principle: Wardline-Type, Wardline-Core,
+profiles (§15.3; see §15.3.1 for the normative profile definitions) encode this principle: Wardline-Type, Wardline-Core,
 and Wardline-Governance correspond to the natural tool boundaries that the orthogonality principle predicts.
 
-== 8.5 Pre-generation context projection (advisory mechanism --- not an enforcement layer)
+== 9.5 Pre-generation context projection (advisory mechanism --- not an enforcement layer)
 <pre-generation-context-projection-advisory-mechanism-not-an-enforcement-layer>
 The three enforcement layers above operate on code that has already been written. The following mechanism is #strong[not
 a fourth enforcement layer] --- it is an advisory, read-only projection that operates upstream of code generation. It
@@ -2414,31 +2472,31 @@ control surface itself. It does not modify the manifest, annotations, or excepti
 artefacts. Its inputs are the same structured declarations that the enforcement layers consume; its output is a resolved
 summary tailored to a specific file at a specific point in time.
 
-=== 8.5.1 Projection content
+=== 9.5.1 Projection content
 <projection-content>
 For a given file path, the projection resolves:
 
 - #strong[Taint state summary.] Per-region taint states resolved from the current manifest state and the latest
   available derived state (the taint-state map computed by the most recent static-analysis run, typically extracted from
-  SARIF output or an equivalent state cache; it may also incorporate the fingerprint baseline, §9.2). Where annotations
-  are absent, the module-level default taint from the governing overlay (§13.1.2) applies.
-- #strong[Active rules.] The severity matrix (§7.3) projected onto the resolved taint states --- which rules are active,
+  SARIF output or an equivalent state cache; it may also incorporate the fingerprint baseline, §10.2). Where annotations
+  are absent, the module-level default taint from the governing overlay (§14.1.2) applies.
+- #strong[Active rules.] The severity matrix (§8.3) projected onto the resolved taint states --- which rules are active,
   at what severity, and whether each is UNCONDITIONAL or STANDARD in this context.
-- #strong[Live exceptions.] Exceptions from the exception register (§13.1.3) resolved against the current date. Expired
+- #strong[Live exceptions.] Exceptions from the exception register (§14.1.3) resolved against the current date. Expired
   exceptions do not appear.
-- #strong[Boundary context.] Any transition boundaries (§5.2) declared in this file, with source and destination tiers.
+- #strong[Boundary context.] Any transition boundaries (§6.2) declared in this file, with source and destination tiers.
 - #strong[Optional-field classification.] For validation and normalisation boundaries that carry structural-contract
-  declarations (§7.2.1), the projection SHOULD include the field-level classification needed to avoid WL-001 noise:
+  declarations (§8.2.1), the projection SHOULD include the field-level classification needed to avoid WL-001 noise:
   required fields, optional fields with approved defaults, and optional fields with no approved default. Where approved
   defaults exist, the projection SHOULD surface the default values and their governing boundary context so that
   generated code can apply the institutionally approved default at the boundary rather than inventing one ad hoc in
   downstream logic.
 - #strong[Rationale.] Narrative sufficient to explain the operational significance of active constraints in the current
-  context, assembled from the manifest's `threat_model` metadata and the rule descriptions (§7.1).
+  context, assembled from the manifest's `threat_model` metadata and the rule descriptions (§8.1).
 - #strong[Currency.] The commit at which the derived state was last computed (or a timestamp where commit identity is
   unavailable), so the consumer can assess alignment between the projection and the current repository state.
 
-=== 8.5.2 Relationship to enforcement
+=== 9.5.2 Relationship to enforcement
 <relationship-to-enforcement>
 Pre-generation projection does not replace post-generation enforcement. The enforcement layers remain the terminal
 control --- an agent or developer that receives the projection may still produce a violation, and the static analysis,
@@ -2451,7 +2509,7 @@ reduces pressure on human review capacity.
 
 Pre-generation projection is the primary mechanism for making the governance model sustainable at LLM code volumes.
 Without operational projection, violation volume is unmitigated and governance burden scales with code volume rather
-than annotation coverage. The capacity baseline (§2) establishes that human review has already failed at scale;
+than annotation coverage. The capacity baseline (§3) establishes that human review has already failed at scale;
 projection is the mechanism that prevents the wardline from simply adding another layer of unscalable review on top of
 the existing overwhelmed process.
 
@@ -2459,12 +2517,12 @@ the existing overwhelmed process.
 not merely cause enforcement to miss violations --- it causes the LLM to actively generate code conforming to the wrong
 policy at scale. The generated code passes enforcement (because enforcement faithfully implements the manifest) and
 appears correct to reviewers (because it is consistent with its declared context). This amplifies the consequences of
-residual risk 1 (declaration correctness, §12) when LLMs are active consumers of the projection. The accidental
+residual risk 1 (declaration correctness, §13) when LLMs are active consumers of the projection. The accidental
 defensive patterns that would otherwise serve as symptoms of misclassification --- patterns that a human reviewer might
 notice as anomalous --- are eliminated by the projection, because the LLM generates code that is stylistically
 consistent with the (wrong) declared tier.
 
-#strong[Conformance tracking.] Under the Assurance governance profile (§14.3.2), deployments SHOULD track whether
+#strong[Conformance tracking.] Under the Assurance governance profile (§15.3.2), deployments SHOULD track whether
 pre-generation projection is operational and report its availability in SARIF run-level properties
 (`wardline.projectionAvailable: true|false`). When `wardline.projectionAvailable` is `true`, the SARIF run properties
 SHOULD also include `wardline.projectionCurrency` containing the commit hash or timestamp at which the projection was
@@ -2474,17 +2532,17 @@ enforcement, its operational status is a meaningful governance signal. A deploym
 explanation may see increased finding volume, governance load, and exception pressure --- all indicators the governance
 model monitors. Under the Lite governance profile, projection tracking is RECOMMENDED but not required.
 
-=== 8.5.3 Delivery mechanisms
+=== 9.5.3 Delivery mechanisms
 <delivery-mechanisms>
 The projection may be delivered through any mechanism that interposes between the agent and the file at read or edit
-time. MCP tool servers (§13.1.3), IDE extensions, editor hooks, and agentic harness hooks are all valid delivery
-mechanisms. The specific mechanism is an implementation choice; the projection content (§8.5.1) is the stable interface.
+time. MCP tool servers (§14.1.3), IDE extensions, editor hooks, and agentic harness hooks are all valid delivery
+mechanisms. The specific mechanism is an implementation choice; the projection content (§9.5.1) is the stable interface.
 
 For agentic development environments, delivery at file-read time is preferable to delivery at edit time. The agent reads
 the file, forms its editing plan, then modifies. Context that arrives at read time shapes the plan; context that arrives
 at edit time competes with it.
 
-= 9. Governance model
+= 10. Governance model
 <governance-model>
 A wardline without governance is an honour system. The governance model defines how designated reviewers manage
 exceptions to wardline declarations, who may authorise them, and what evidence trail they leave.
@@ -2493,70 +2551,73 @@ exceptions to wardline declarations, who may authorise them, and what evidence t
 #strong[Start here: governance profiles.]
 
 This section describes the #strong[full governance model]. Most teams should start with the #strong[Wardline Lite
-governance profile] (§14.3.2), which requires a subset of these mechanisms. Lite defers full temporal separation, the
+governance profile] (§15.3.2), which requires a subset of these mechanisms. Lite defers full temporal separation, the
 complete golden corpus, and the structured fingerprint baseline --- these are graduated into when the project reaches
-specific maturity triggers (§14.3.3). Read this section to understand the mechanisms available; consult §14.3.2 to
+specific maturity triggers (§15.3.3). Read this section to understand the mechanisms available; consult §15.3.2 to
 determine which ones apply to your project today.
 
-#strong[If you are following the adopter reading path] and skipped §5--7: this section references concepts from those
-sections. The key concepts you need: a #emph[restoration boundary] (§5.3) is a declared function that re-loads data your
+#strong[If you are following the adopter reading path] and skipped §6--8: this section references concepts from those
+sections. The key concepts you need: a #emph[restoration boundary] (§6.3) is a declared function that re-loads data your
 system previously stored, and the #emph[evidence categories] are four things the governance model requires you to
 document when declaring such a boundary (structural checks, semantic checks, integrity verification, and institutional
-attestation of provenance). You can read §5.3 when you encounter restoration boundaries in practice.
+attestation of provenance). You can read §6.3 when you encounter restoration boundaries in practice.
+]
 
 #quote(block: true)[
 #strong[For governance leads and CISOs.]
-]
 
-#strong[What you own:] The wardline manifest (§13.1) is a policy artefact --- you ratify it, set the review interval,
+#strong[What you own:] The wardline manifest (§14.1) is a policy artefact --- you ratify it, set the review interval,
 and approve tier assignments for data sources. Exception grants require a designated reviewer with documented rationale
-and expiry (§9.1). You decide the governance profile --- Lite or Assurance (§14.3.2) --- and when to graduate (§14.3.3).
+and expiry (§10.1). You decide the governance profile --- Lite or Assurance (§15.3.2) --- and when to graduate
+(§15.3.3).
 
 #strong[What you approve:] Tier assignment changes (which data is trusted at which level), boundary declarations (where
 trust transitions occur), exception grants (which findings are overridden and why), and the expedited governance ratio
 threshold (how much emergency bypass is tolerable).
 
-#strong[What you monitor:] Exception register growth, expedited/standard ratio trends (§9.4), annotation coverage in
-Tier 1 modules (§9.2), and manifest ratification currency. The enforcement tool produces governance-level findings for
-overdue ratification, ratio breaches, and anomalous annotation change patterns (§9.3.2).
+#strong[What you monitor:] Exception register growth, expedited/standard ratio trends (§10.4), annotation coverage in
+Tier 1 modules (§10.2), and manifest ratification currency. The enforcement tool produces governance-level findings for
+overdue ratification, ratio breaches, and anomalous annotation change patterns (§10.3.2).
 
 #strong[Review cadence:] Manifest ratification at the interval you declare (recommended: 180 days). Exception re-review
-at expiry. Graduation readiness when triggers are met (§14.3.3).
+at expiry. Graduation readiness when triggers are met (§15.3.3).
+]
 
 #strong[Governance mechanism summary.] The following table maps each governance mechanism to its status under the two
-governance profiles (§14.3.2). Use this as a quick reference; the subsections below provide full detail.
-]
+governance profiles (§15.3.2). Use this as a quick reference; the subsections below provide full detail.
 
 #figure(
   align(center)[#table(
-    columns: (24%, 12%, 24%, 24%, 16%),
+    columns: (22%, 17%, 21%, 24%, 16%),
     table.header([Mechanism], [Lite], [Assurance], [Enforcement], [Reference],),
     table.hline(),
-    [Root wardline manifest (`wardline.yaml`)], [MUST], [MUST], [Scanner + Process], [§13.1.1],
-    [CODEOWNERS protection for governance artefacts], [MUST], [MUST], [VCS], [§9.2],
-    [Exception register with reviewer identity, rationale, expiry], [MUST], [MUST], [Scanner + Process], [§9.1,
-    §13.1.3],
-    [Branch protection (CI gates before merge)], [MUST], [MUST], [VCS], [§9.2],
+    [Root wardline manifest (`wardline.yaml`)], [MUST], [MUST], [Scanner + Process], [§14.1.1],
+    [CODEOWNERS protection for governance artefacts], [MUST], [MUST], [VCS], [§10.2],
+    [Exception register with reviewer identity, rationale, expiry], [MUST], [MUST], [Scanner + Process], [§10.1,
+    §14.1.3],
+    [Branch protection (CI gates before merge)], [MUST], [MUST], [VCS], [§10.2],
     [Temporal separation (separate change, different actor)], [SHOULD (documented alternative permitted)], [MUST (no
-    alternatives)], [Process + VCS], [§9.2],
+    alternatives)], [Process + VCS], [§10.2],
     [Annotation change tracking], [MUST (VCS diff or equivalent)], [MUST (full fingerprint baseline)], [Scanner +
-    VCS], [§9.2],
-    [Full fingerprint baseline (canonical hashing, structured change detection)], [Deferred], [MUST], [Scanner], [§9.2],
-    [Golden corpus], [SHOULD (bootstrap: 20--30 specimens)], [MUST (full: 126+ specimens)], [Scanner + Process], [§10],
-    [Expedited governance ratio], [RECOMMENDED], [MUST (threshold declared, automated finding)], [Scanner], [§9.4],
-    [Exception recurrence tracking], [MUST], [MUST], [Scanner + Process], [§9.4],
-    [Manifest coherence checks], [RECOMMENDED], [MUST (CI gate)], [Scanner], [§9.2],
-    [Control-law reporting], [MUST], [MUST], [Scanner], [§9.5],
-    [Governance artefact exclusion during direct law], [MUST], [MUST], [VCS + Process], [§9.5],
-    [Mandatory retrospective scan after alternate/direct law], [MUST], [MUST], [Scanner + Process], [§9.5],
-    [Governance audit logging], [MUST], [MUST], [Scanner + VCS], [§9.2.1],
-    [SIEM export of governance events], [---], [SHOULD (MUST for ISM-assessed)], [Scanner / SIEM integration], [§9.2.1],
-    [Agent-authored governance change detection], [MUST], [MUST], [Scanner + VCS], [§9.3],
+    VCS], [§10.2],
+    [Full fingerprint baseline (canonical hashing, structured change
+    detection)], [Deferred], [MUST], [Scanner], [§10.2],
+    [Golden corpus], [SHOULD (bootstrap: 20--30 specimens)], [MUST (full: 126+ specimens)], [Scanner + Process], [§11],
+    [Expedited governance ratio], [RECOMMENDED], [MUST (threshold declared, automated finding)], [Scanner], [§10.4],
+    [Exception recurrence tracking], [MUST], [MUST], [Scanner + Process], [§10.4],
+    [Manifest coherence checks], [RECOMMENDED], [MUST (CI gate)], [Scanner], [§10.2],
+    [Control-law reporting], [MUST], [MUST], [Scanner], [§10.5],
+    [Governance artefact exclusion during direct law], [MUST], [MUST], [VCS + Process], [§10.5],
+    [Mandatory retrospective scan after alternate/direct law], [MUST], [MUST], [Scanner + Process], [§10.5],
+    [Governance audit logging], [MUST], [MUST], [Scanner + VCS], [§10.2.1],
+    [SIEM export of governance events], [---], [SHOULD (MUST for ISM-assessed)], [Scanner / SIEM
+    integration], [§10.2.1],
+    [Agent-authored governance change detection], [MUST], [MUST], [Scanner + VCS], [§10.3],
   )]
   , kind: table
   )
 
-== 9.1 Exceptionability classes
+== 10.1 Exceptionability classes
 <exceptionability-classes>
 Four classes govern how findings may be overridden:
 
@@ -2579,7 +2640,7 @@ Four classes govern how findings may be overridden:
   , kind: table
   )
 
-== 9.2 Governance mechanisms
+== 10.2 Governance mechanisms
 <governance-mechanisms>
 The following mechanisms apply to the wardline declaration and its exception register, not only to the enforcement tool.
 
@@ -2591,10 +2652,10 @@ prohibited by the version control system (CODEOWNERS or equivalent).
 If a developer adds a wardline exception and modifies the code that requires it in the same commit, the exception has no
 independent review.
 
-#emph[For deployments at the Assurance governance level (§14.3.2):] temporal separation is a MUST requirement. Minimum:
+#emph[For deployments at the Assurance governance level (§15.3.2):] temporal separation is a MUST requirement. Minimum:
 separate change, different actor, approved before the dependent code merges. No documented alternatives are permitted.
 
-#emph[For deployments at the Lite governance level (§14.3.2):] temporal separation is a SHOULD requirement. Teams that
+#emph[For deployments at the Lite governance level (§15.3.2):] temporal separation is a SHOULD requirement. Teams that
 cannot sustain full temporal separation MUST document their alternative in the root manifest. The documented alternative
 MUST include a compensating control --- same-actor approval is permitted with mandatory retrospective review within a
 defined window (recommended: next sprint boundary or 10 business days, whichever is shorter). A Lite deployment that
@@ -2613,11 +2674,11 @@ change that moves a finding from ERROR to SUPPRESS (or vice versa) is a policy c
 fingerprint diff. This prevents silent erosion of the wardline through gradual annotation removal or classification
 drift.
 
-#emph[For deployments at the Assurance governance level (§14.3.2):] the full fingerprint baseline as described in this
+#emph[For deployments at the Assurance governance level (§15.3.2):] the full fingerprint baseline as described in this
 subsection is a MUST requirement --- structured data store, canonical hashing, coverage reporting, and the
 three-category change detection (added, modified, removed).
 
-#emph[For deployments at the Lite governance level (§14.3.2):] annotation change tracking is REQUIRED, but the full
+#emph[For deployments at the Lite governance level (§15.3.2):] annotation change tracking is REQUIRED, but the full
 structured fingerprint baseline is deferred. Lite deployments MUST ensure that annotation changes are visible for human
 review --- this MAY be implemented through VCS diff review of annotation-bearing files, PR-level annotation change
 summaries, or any mechanism that makes annotation additions, modifications, and removals visible to governance
@@ -2628,12 +2689,12 @@ Assurance.
 #strong[Polyglot fingerprint baselines.] In polyglot deployments, fingerprint baselines are per-binding --- each binding
 maintains its own baseline with its own canonical form (see hash canonicalisation above). Cross-binding fingerprint
 comparison is not a framework requirement. Each binding's baseline tracks its own annotation surface independently; the
-shared wardline manifest (§13) provides the cross-binding policy alignment, not the fingerprint hashes.
+shared wardline manifest (§14) provides the cross-binding policy alignment, not the fingerprint hashes.
 
-#strong[Fingerprint record structure.] The fingerprint baseline is a structured data store (see §13 for the interchange
+#strong[Fingerprint record structure.] The fingerprint baseline is a structured data store (see §14 for the interchange
 format). Each entry records: the annotated function's fully qualified name, its file location, which of the 17
 annotation groups are declared on it, the tier context, whether the function is a boundary (and of what type), the
-artefact class of any changed declarations (policy or enforcement, per §9.3.1), a cryptographic hash of the annotation
+artefact class of any changed declarations (policy or enforcement, per §10.3.1), a cryptographic hash of the annotation
 declarations (not the function body --- implementation changes do not trigger governance review), and temporal metadata
 (first appearance date, last change date).
 
@@ -2650,7 +2711,7 @@ Cross-binding fingerprint comparison is not a framework requirement.
 
 #strong[Coverage reporting.] The baseline MUST also report annotation coverage: the count and ratio of annotated
 functions to total functions, with specific enumeration of unannotated functions in Tier 1 modules. This directly
-addresses residual risk 4 (annotation coverage gaps --- §12) --- unannotated functions in high-authority modules are the
+addresses residual risk 4 (annotation coverage gaps --- §13) --- unannotated functions in high-authority modules are the
 highest-risk blind spots, and the baseline makes them visible.
 
 Change detection operates by diff between the current annotation surface and the stored baseline. Three categories of
@@ -2665,25 +2726,25 @@ change are flagged:
   review item.
 
 #strong[Policy and enforcement change presentation.] Fingerprint baseline diffs SHOULD distinguish policy artefact
-changes from enforcement artefact changes (§9.3.1). Changes to tier assignments, boundary declarations, validation-scope
-consumer lists, restoration boundary provenance claims, and optional-field declarations are policy changes --- they
-alter the trust topology and require security-policy-grade review. Changes to rule severity overrides, precision
-thresholds, and tool configuration are enforcement changes --- they alter detection behaviour and require standard
-configuration management review. Presenting these as distinct categories in the diff output allows governance reviewers
-to prioritise policy changes and delegate enforcement changes to standard CM processes.
+changes from enforcement artefact changes (§10.3.1). Changes to tier assignments, boundary declarations,
+validation-scope consumer lists, restoration boundary provenance claims, and optional-field declarations are policy
+changes --- they alter the trust topology and require security-policy-grade review. Changes to rule severity overrides,
+precision thresholds, and tool configuration are enforcement changes --- they alter detection behaviour and require
+standard configuration management review. Presenting these as distinct categories in the diff output allows governance
+reviewers to prioritise policy changes and delegate enforcement changes to standard CM processes.
 
 The baseline is updated after governance review --- the reviewed state becomes the new baseline. The specific access
-mechanism is an implementation detail (§13): the interchange format defines the logical record structure; file
+mechanism is an implementation detail (§14): the interchange format defines the logical record structure; file
 manipulation, CLI commands, or MCP tool interfaces are all valid mechanisms for reading and updating the baseline.
 
 #strong[Restoration boundary declarations.] Declarations that serialised representations may be restored with their
 original tier are subject to the same governance as trust-escalation declarations. The provenance justification MUST
-address the four evidence categories defined in §5.3. Restoration boundaries are reviewed as part of the annotation
+address the four evidence categories defined in §6.3. Restoration boundaries are reviewed as part of the annotation
 fingerprint baseline.
 
 #strong[Manifest coherence checks.] Before code-level enforcement runs, the manifest itself SHOULD pass a static
 coherence analysis that verifies internal consistency and completeness of the annotation surface. #emph[For deployments
-at the Assurance governance level (§14.3.2):] manifest coherence is a MUST gate --- all coherence conditions MUST pass
+at the Assurance governance level (§15.3.2):] manifest coherence is a MUST gate --- all coherence conditions MUST pass
 before code-level findings are considered valid. #emph[For deployments at the Lite governance level:] manifest coherence
 is RECOMMENDED. Manifest coherence checks operate on the manifest, overlay, and code-level annotation declarations ---
 they do not analyse application behaviour. Five coherence conditions are checked:
@@ -2703,7 +2764,7 @@ they do not analyse application behaviour. Five coherence conditions are checked
 - #strong[Unmatched contracts.] Contract declarations in the manifest or overlay (e.g., validation-scope consumer
   entries) that do not match any code-level annotation at the declared location. This detects contract declarations that
   have drifted from the code through refactoring, renaming, or deletion without corresponding manifest updates.
-- #strong[Stale contract bindings.] A `contract_bindings` entry (§13.1.2) whose declared function path does not resolve
+- #strong[Stale contract bindings.] A `contract_bindings` entry (§14.1.2) whose declared function path does not resolve
   to an existing function in the codebase. This is the inverse of unmatched contracts --- a contract binding that
   silently points nowhere after a function deletion or rename, leaving the contract nominally satisfied but with no
   actual consumer. Detection is a simple existence check (no semantic analysis needed).
@@ -2711,7 +2772,7 @@ they do not analyse application behaviour. Five coherence conditions are checked
 Manifest coherence checks run as a CI gate #emph[before] code-level enforcement. The sequencing is deliberate: coherence
 failures indicate that the annotation surface is incomplete or contradictory, and code-level findings produced against
 an incoherent manifest are unreliable. A coherence failure SHOULD block the enforcement run; under the Assurance
-governance profile, coherence failures MUST block the enforcement run (§14.3.2). Running pattern rules against a
+governance profile, coherence failures MUST block the enforcement run (§15.3.2). Running pattern rules against a
 manifest with orphaned annotations or undeclared boundaries produces findings whose governance status is ambiguous.
 
 Coherence check findings appear in the SARIF output with `ruleId` prefixed `COHERENCE-` (e.g., `COHERENCE-ORPHAN`,
@@ -2724,7 +2785,7 @@ from an external source should be treated as internal (Tier 1) --- the governanc
 the actual data source, the trust basis, and the institutional authority for the escalation. "We trust this because we
 always have" is not a sufficient rationale.
 
-== 9.2.1 Governance audit logging
+== 10.2.1 Governance audit logging
 <governance-audit-logging>
 Governance events --- exception grants, baseline changes, manifest modifications, and control-law transitions --- MUST
 produce an auditable trail. This subsection defines the logging requirements.
@@ -2737,7 +2798,7 @@ produce an auditable trail. This subsection defines the logging requirements.
     table.header([Event], [What is recorded], [Source],),
     table.hline(),
     [Exception granted], [Exception ID, rule, location, exceptionability class, reviewer identity, rationale, expiry,
-    governance path (standard/expedited), agent-originated flag], [Exception register (§13.1.3)],
+    governance path (standard/expedited), agent-originated flag], [Exception register (§14.1.3)],
     [Exception expired or lapsed], [Exception ID, expiry date, whether re-review occurred], [Exception register +
     enforcement tool],
     [Fingerprint baseline change], [Change category (added/modified/removed), affected function, old and new annotation
@@ -2746,7 +2807,7 @@ produce an auditable trail. This subsection defines the logging requirements.
     commit reference], [VCS diff on `wardline.yaml`],
     [Overlay modification], [Changed overlay path, changed fields, commit reference], [VCS diff on overlay files],
     [Control-law transition], [Previous state, new state, missing component, timestamp, acknowledged (yes/no)], [SARIF
-    run properties (§9.5; binding-specific: Part II-A §A.10 for Python, Part II-B §B.10 for Java)],
+    run properties (§10.5; binding-specific: Part II-A §A.10 for Python, Part II-B §B.10 for Java)],
     [Retrospective scan completed], [Scan date, commit range covered, finding count], [SARIF run properties
     (`wardline.retroactiveScan`)],
     [Phase change], [Previous phase, new phase, commit reference (adoption phase as declared in the binding's
@@ -2775,7 +2836,7 @@ audit infrastructure that handles other security events.
 the duration of the system's accreditation period. For ISM-assessed systems, this is typically 3 years from the last
 IRAP assessment.
 
-== 9.3 Scope of governance
+== 10.3 Scope of governance
 <scope-of-governance>
 The governance model applies to the wardline #emph[declaration], not only to the enforcement tool's findings. A change
 to the wardline manifest --- adding a new trust boundary, reclassifying a data source, modifying an authority tier
@@ -2800,14 +2861,14 @@ varies by toolchain; the requirement is that agent-originated governance changes
 human-originated ones. This is a framework invariant, not a binding convenience --- the governance model's integrity
 depends on distinguishing human from agent authorship of policy artefacts.
 
-The temporal separation requirement (§9.2) provides partial protection --- the agent cannot atomically combine the
+The temporal separation requirement (§10.2) provides partial protection --- the agent cannot atomically combine the
 governance change with the code that requires it --- but "different actor" in temporal separation MUST mean a different
 #emph[human] actor for the governance change when the dependent code change is agent-originated. An agent that generates
 both the governance exception and the code that requires it in separate commits satisfies temporal separation in form
 but not in spirit --- the two artefacts share the same generative context. The human reviewer must understand that
 agent-authored rationales warrant the same scepticism as agent-authored code.
 
-#strong[Governance of supplementary contract annotations (Groups 5--15).] The severity matrix (§7) and its
+#strong[Governance of supplementary contract annotations (Groups 5--15).] The severity matrix (§8) and its
 UNCONDITIONAL/STANDARD/RELAXED exceptionability classes govern findings from the eight rules --- six pattern rules
 (WL-001 through WL-006) and two structural verification rules (WL-007 through WL-008). These rules apply to code
 annotated with core classification groups (1--4, 16--17). Findings generated by supplementary contract annotations
@@ -2819,7 +2880,7 @@ specific supplementary findings as UNCONDITIONAL. This distinction is stated her
 matrix governs pattern rules; supplementary groups generate their own findings with their own severity, and the
 governance model applies to both.
 
-== 9.3.1 Artefact classification: policy and enforcement
+== 10.3.1 Artefact classification: policy and enforcement
 <artefact-classification-policy-and-enforcement>
 Not all wardline artefacts carry the same governance weight. A tier assignment is a policy decision with security
 implications; a scanner severity threshold is operational configuration. Conflating the two --- governing both through
@@ -2830,44 +2891,44 @@ introduces an explicit classification that drives governance requirements.
 policy artefacts alter what the wardline #emph[means] --- they change the security posture of the application. Policy
 artefacts include:
 
-- #strong[Tier assignments] --- which data sources are classified at which authority tier (§13.1.1)
-- #strong[Boundary declarations] --- where tier transitions occur, including validation-scope consumer lists (§13.1.2)
+- #strong[Tier assignments] --- which data sources are classified at which authority tier (§14.1.1)
+- #strong[Boundary declarations] --- where tier transitions occur, including validation-scope consumer lists (§14.1.2)
 - #strong[Restoration boundary provenance claims] --- which serialised representations may be restored to which tiers,
-  and on what evidence basis (§5.3, §13.1.2)
+  and on what evidence basis (§6.3, §14.1.2)
 - #strong[Exception rationale] --- the documented justification for governance overrides, including the reviewer
-  identity and expiry (§13.1.3)
+  identity and expiry (§14.1.3)
 - #strong[Optional-field declarations] --- which fields on which data sources are optional-by-contract, and what their
-  approved defaults are (§7.2.1, §13.1.2)
+  approved defaults are (§8.2.1, §14.1.2)
 
 Policy artefacts are governed under security policy procedures: changes require ratification by a designated authority,
 mandatory impact assessment before deployment, and scheduled adequacy review at intervals defined in the manifest
-metadata (§13.1.1). The governance mechanisms in §9.2 (protected-file review, temporal separation, fingerprint baseline)
-apply in full to policy artefact changes.
+metadata (§14.1.1). The governance mechanisms in §10.2 (protected-file review, temporal separation, fingerprint
+baseline) apply in full to policy artefact changes.
 
 #strong[Enforcement artefacts] encode how the wardline's policy is operationalised by tooling. Changes to enforcement
 artefacts alter how the wardline #emph[works] --- they affect detection capability and operational behaviour, but they
 do not change the trust topology. Enforcement artefacts include:
 
-- #strong[Pattern rule severity configuration] --- per-cell overrides in the root manifest or overlays (§13.1.1,
-  §13.1.2)
+- #strong[Pattern rule severity configuration] --- per-cell overrides in the root manifest or overlays (§14.1.1,
+  §14.1.2)
 - #strong[Scanner operational settings] --- `wardline.toml` entries: rule severity thresholds, external-call heuristic
   lists, determinism ban lists
-- #strong[Precision and recall thresholds] --- project-defined calibration points (§10)
-- #strong[Expedited governance ratio threshold] --- the project's declared tolerance for expedited exceptions (§9.4)
+- #strong[Precision and recall thresholds] --- project-defined calibration points (§11)
+- #strong[Expedited governance ratio threshold] --- the project's declared tolerance for expedited exceptions (§10.4)
 - #strong[Tool configuration] --- scanner flags, CI integration settings, SARIF output options
 
 Enforcement artefacts are governed under configuration management: version control, CI integration, standard code
 review. They do not require ratification authority, impact assessment, or scheduled adequacy review beyond standard CM
 practices.
 
-#strong[The manifest contains both types.] The root `wardline.yaml` (§13.1.1) carries tier definitions (policy)
-alongside rule configuration (enforcement). The overlay (§13.1.2) carries boundary declarations (policy) alongside rule
+#strong[The manifest contains both types.] The root `wardline.yaml` (§14.1.1) carries tier definitions (policy)
+alongside rule configuration (enforcement). The overlay (§14.1.2) carries boundary declarations (policy) alongside rule
 overrides (enforcement). The distinction is per-field, not per-file. Enforcement tools SHOULD present policy artefact
 changes and enforcement artefact changes as distinct categories in the fingerprint baseline diff, so that governance
 reviewers can prioritise policy changes and configuration managers can handle enforcement changes through standard
 processes.
 
-#strong[Why this matters now.] The governance model (§9.2, §9.3) already implicitly distinguishes these categories ---
+#strong[Why this matters now.] The governance model (§10.2, §10.3) already implicitly distinguishes these categories ---
 tier changes receive heavier governance scrutiny than tool configuration changes in practice. Making the distinction
 explicit serves three purposes: it gives the governance profile graduation (future work) its vocabulary --- a "Wardline
 Lite" profile can require full governance for policy artefacts while relaxing governance for enforcement artefacts; it
@@ -2875,7 +2936,7 @@ enables manifest-level threat modelling --- governance-layer attack vectors (man
 target policy artefacts specifically; and it aligns the wardline with established security governance practice ---
 security classification guides are policy artefacts governed differently from the systems that enforce them.
 
-== 9.3.2 Manifest threat model
+== 10.3.2 Manifest threat model
 <manifest-threat-model>
 As annotation coverage grows, coding-level risk falls --- annotations constrain generation by making institutional
 knowledge part of the agent's context window. But the governance risk rises correspondingly: the annotations themselves
@@ -2890,16 +2951,16 @@ on policy artefacts rather than code:
 policy. A tier assignment that classifies external API data as Tier 1 (INTEGRAL) causes downstream code to treat
 unvalidated input as authoritative --- and the code will be structurally correct against the declared wardline. The
 poisoning is invisible to enforcement because enforcement faithfully implements the policy it is given. This vector
-targets the most consequential policy artefact: the tier definition in the root manifest (§13.1.1).
+targets the most consequential policy artefact: the tier definition in the root manifest (§14.1.1).
 
 #emph[Integrity control:] Tier assignment changes (particularly downgrades from a higher to a lower tier, e.g., Tier 1 →
 Tier 2, or upgrades from a lower to a higher tier, e.g., Tier 4 → Tier 1) MUST require two-person review. Tier changes
-MUST be tracked as a distinct change category in the fingerprint baseline (§9.2) and presented separately from
+MUST be tracked as a distinct change category in the fingerprint baseline (§10.2) and presented separately from
 annotation changes. A tier change on a data source that feeds Tier 1 consumers SHOULD trigger an impact assessment
 showing the cascade: which boundaries, which pattern rules, and which code paths are affected.
 
 #strong[\2. Governance fatigue exploitation.] Submitting high volumes of annotation change requests that overwhelm
-review capacity, smuggling consequential changes in noise. This exploits the finite governance capacity (§9.4) by
+review capacity, smuggling consequential changes in noise. This exploits the finite governance capacity (§10.4) by
 consuming reviewer attention with legitimate-looking changes, then including a boundary widening or tier
 reclassification in the same review batch. The attack is effective because the governance mechanisms (protected-file
 review, temporal separation) are per-change --- they do not distinguish routine from consequential changes within a
@@ -2910,7 +2971,7 @@ review session.
 manifest), clustered tier changes (multiple tier reassignments in the same commit or PR), and boundary widenings without
 corresponding code changes (a validation-scope consumer list grows without new consumer functions appearing). These
 anomaly signals are governance-level findings (distinct from code-level findings) that alert reviewers to potential
-fatigue exploitation. The expedited governance ratio metric (§9.4) provides a lagging indicator; the anomaly signals
+fatigue exploitation. The expedited governance ratio metric (§10.4) provides a lagging indicator; the anomaly signals
 defined here provide a leading one.
 
 #strong[\3. Boundary declaration manipulation.] Subtly widening validation-scope declarations so that prohibited data
@@ -2925,7 +2986,7 @@ boundary claims Tier 2 semantics. New consumers added to a validation-scope decl
 review with a governance-level finding that identifies the new consumer and asks whether the validator's checks cover
 the new consumer's preconditions. Consumer removal SHOULD be flagged as a scope contraction that may indicate
 architectural change. The fingerprint baseline already tracks validation-scope changes as a distinct change category
-(§9.2); this control adds the two-person review requirement specifically for Tier 2 boundaries.
+(§10.2); this control adds the two-person review requirement specifically for Tier 2 boundaries.
 
 #strong[Anomaly detection requirements.] The three attack vectors above share a common detection surface: unusual
 patterns in policy artefact changes. Enforcement tools SHOULD implement the following anomaly signals as
@@ -2950,8 +3011,8 @@ governance-level findings:
     project-defined)], [WARNING],
     [SUPPRESS activation/deactivation], [A change activates or deactivates a SUPPRESS classification for an existing
     finding class], [WARNING --- policy change that alters visibility of violations],
-    [Agent-originated policy change], [Any policy artefact change (§9.3.1) authored by an agent], [ERROR --- requires
-    human ratification (§9.3)],
+    [Agent-originated policy change], [Any policy artefact change (§10.3.1) authored by an agent], [ERROR --- requires
+    human ratification (§10.3)],
     [New dependency taint above UNKNOWN\_RAW], [A `dependency_taint` entry is added with `returns_taint` above
     UNKNOWN\_RAW (e.g., GUARDED, ASSURED) for a function not previously declared], [WARNING --- the reviewer is making a
     trust claim about code outside the governance perimeter; the rationale SHOULD identify the evidence basis (code
@@ -2967,20 +3028,20 @@ These signals are governance-level findings, not code-level findings. They appea
 `ruleId: "GOVERNANCE"` and are subject to the governance model's own exception mechanism (STANDARD exceptionability ---
 they can be overridden with documented rationale, but they cannot be silently suppressed).
 
-== 9.4 Governance capacity
+== 10.4 Governance capacity
 <governance-capacity>
 Governance capacity is finite. Every finding that requires human review consumes reviewer attention, and reviewer
 attention is the scarcest resource in any assurance process.
 
 #strong[Capacity substitution.] The wardline's governance model is designed to shift human review from syntactic pattern
 detection (which enforcement tooling and LLMs handle well) to semantic classification review (which requires human
-judgement). The governance burden is not purely additive --- pattern-rule enforcement (§7) automates away code-level
-review that humans previously performed manually, and pre-generation context projection (§8.5) reduces violation volume
+judgement). The governance burden is not purely additive --- pattern-rule enforcement (§8) automates away code-level
+review that humans previously performed manually, and pre-generation context projection (§9.5) reduces violation volume
 upstream of enforcement. The net effect is that human attention is redirected from low-leverage syntactic review to
-high-leverage semantic classification decisions. However, the governance mechanisms in §9.2 (fingerprint baseline,
+high-leverage semantic classification decisions. However, the governance mechanisms in §10.2 (fingerprint baseline,
 temporal separation, manifest ratification) are net-new activities with no pre-wardline analogue. The substitution holds
 for code-level review; the governance surface is genuinely additional. The governance burden should be evaluated against
-the baseline described in §2 --- in LLM-heavy development environments, the alternative to wardline governance is not
+the baseline described in §3 --- in LLM-heavy development environments, the alternative to wardline governance is not
 "relaxed human review" but "no effective semantic review at all."
 
 Three mechanisms implicitly regulate governance load:
@@ -2988,7 +3049,7 @@ Three mechanisms implicitly regulate governance load:
 - #strong[Finding rate scales with annotation coverage.] Unannotated code produces no findings. As annotation coverage
   grows, finding volume grows proportionally. This means governance load is controllable through annotation investment
   --- the organisation decides how much of its codebase to bring under wardline enforcement.
-- #strong[Precision floor as implicit load limiter.] The 80% precision floor (§10) ensures that no more than 20% of
+- #strong[Precision floor as implicit load limiter.] The 80% precision floor (§11) ensures that no more than 20% of
   findings are false positives. A rule that generates excessive governance overhead through false positives is
   structurally prohibited from reaching blocking status.
 - #strong[Exception boundary dynamics.] Exception boundaries (STANDARD and RELAXED overrides) tend toward a reinforcing
@@ -3022,30 +3083,30 @@ the temporal separation requirement (e.g., same-PR approval by a designated emer
 MUST be flagged for retrospective review within a defined window.
 
 #strong[Expedited governance ratio.] Each exception register entry carries a provenance field indicating whether the
-exception was granted through the standard or expedited governance path (§13). The enforcement tool MUST compute and
+exception was granted through the standard or expedited governance path (§14). The enforcement tool MUST compute and
 report the expedited/standard ratio --- the proportion of active (non-expired) exceptions granted through the expedited
-path --- in its findings output (§10.1). This ratio is a leading indicator of governance decay (residual risk 6 ---
-§12): a ratio that trends upward signals that "time-critical" has expanded to include routine work. The framework does
+path --- in its findings output (§11.1). This ratio is a leading indicator of governance decay (residual risk 6 ---
+§13): a ratio that trends upward signals that "time-critical" has expanded to include routine work. The framework does
 not mandate a specific threshold --- the appropriate ratio depends on operational tempo and organisational risk appetite
 --- but projects SHOULD declare a threshold in their root wardline manifest. When the computed ratio exceeds the
 declared threshold, the enforcement tool produces a governance-level finding (distinct from code-level findings) that
 flags the ratio for review. The threshold is a governance parameter, not a precision metric --- there is no "correct"
 value, only a value the organisation has chosen to defend.
 
-#emph[For deployments at the Assurance governance level (§14.3.2):] the expedited governance ratio MUST be computed and
+#emph[For deployments at the Assurance governance level (§15.3.2):] the expedited governance ratio MUST be computed and
 reported. Projects MUST declare a threshold in the root manifest. The automated governance-level finding when the
 threshold is exceeded is a MUST requirement.
 
-#emph[For deployments at the Lite governance level (§14.3.2):] the expedited governance ratio is RECOMMENDED. Projects
+#emph[For deployments at the Lite governance level (§15.3.2):] the expedited governance ratio is RECOMMENDED. Projects
 that compute the ratio benefit from the governance decay signal immediately. Projects that do not yet compute the ratio
 MUST instead document their expedited exception approval process in the root manifest and review that process at each
 manifest ratification cycle. This provides a weaker but non-zero governance signal --- the organisation is at least
 recording and periodically examining its use of expedited paths, even if the metric is not yet automated.
 
-== 9.5 Enforcement availability (control law)
+== 10.5 Enforcement availability (control law)
 <enforcement-availability-control-law>
 The enforcement tool is itself a system that can fail. When it is unavailable --- CI outage, tool crash, licence expiry,
-infrastructure failure --- the branch protection gate (§9.2) cannot pass. Pure fail-closed blocks delivery indefinitely
+infrastructure failure --- the branch protection gate (§10.2) cannot pass. Pure fail-closed blocks delivery indefinitely
 over tooling problems. Pure fail-open is uncontrolled bypass. Neither is acceptable. The framework adopts a three-state
 control law model:
 
@@ -3054,7 +3115,7 @@ not overdue), golden corpus maintained, precision and recall above floors. Merge
 expected operating state.
 
 #strong[Alternate law.] The enforcement tool runs but in a degraded state. Degradation conditions include: manifest
-ratification overdue (§13.1.1), golden corpus not updated within a defined window, a rule's precision or recall below
+ratification overdue (§14.1.1), golden corpus not updated within a defined window, a rule's precision or recall below
 the declared floor but not yet returned to development, partial rule coverage (some rules disabled for remediation), or
 advisory-only mode. The enforcement output reports which capabilities are degraded. Merge MAY proceed with documented
 acknowledgment of the specific degradation. Not all degradations are equal --- bindings SHOULD classify alternate-law
@@ -3065,7 +3126,7 @@ full outages but are also not full enforcement.
 
 #strong[Direct law.] The enforcement tool cannot run at all. This is a governance incident, not an expedited exception.
 Merges MAY proceed only under #strong[enforcement-unavailable governance], which is structurally distinct from the
-expedited exception path (§9.4) --- otherwise "tool unavailable" becomes a cheap costume that routine bypass can wear.
+expedited exception path (§10.4) --- otherwise "tool unavailable" becomes a cheap costume that routine bypass can wear.
 
 Enforcement-unavailable governance requires:
 
@@ -3079,7 +3140,7 @@ Enforcement-unavailable governance requires:
   `wardline.yaml`, overlay files, exception registers, or fingerprint baselines. The minimum technical control is VCS
   branch protection that restricts modification of governance file paths to designated governance actors independently
   of CI status. Where the VCS platform does not support path-scoped protection independent of CI, the manifest MUST
-  document the compensating process control, and the retrospective scan (§9.5) MUST verify that governance artefacts
+  document the compensating process control, and the retrospective scan (§10.5) MUST verify that governance artefacts
   were not modified during the direct-law window. If the enforcement tool is down, code MAY proceed under emergency
   governance, but changes to the guardrails themselves remain blocked unless a stronger manual governance path exists
   (e.g., designated authority approval outside the normal CI flow). This prevents an outage from being used to rewrite
@@ -3115,9 +3176,9 @@ This mechanism makes the #emph[absence] of a required scan detectable. Without i
 would see a direct-law window followed by normal-law runs, with no way to distinguish "retrospective scan was performed
 and found nothing" from "retrospective scan was never performed."
 
-= 10. Verification properties
+= 11. Verification properties
 <verification-properties>
-Six properties determine whether a wardline enforcement tool --- or enforcement regime (§14.4) --- is assessable by an
+Six properties determine whether a wardline enforcement tool --- or enforcement regime (§15.4) --- is assessable by an
 independent evaluator (IRAP --- Information Security Registered Assessors Program --- or equivalent). These are
 evaluation criteria, not product features --- they define what an assessor can verify, not what a vendor should market.
 In a multi-tool regime, each property applies per tool for the rules and layers that tool implements; the regime
@@ -3147,7 +3208,7 @@ coverage gaps are visible at the filesystem level.
 id: "WL-001-AT-001"
 rule: "WL-001"                    # Framework rule identifier
 binding_rule: "PY-WL-001"         # Binding-specific rule (if applicable)
-taint_state: "INTEGRAL"        # One of the eight effective states (§5.1)
+taint_state: "INTEGRAL"        # One of the eight effective states (§6.1)
 expected_severity: "ERROR"         # ERROR, WARNING, or SUPPRESS
 expected_exceptionability: "UNCONDITIONAL"  # UNCONDITIONAL, STANDARD, or RELAXED
 verdict: "positive"                # "positive" (should fire) or "negative" (should not)
@@ -3206,7 +3267,7 @@ Minimum adversarial specimen requirements:
 
 #figure(
   align(center)[#table(
-    columns: (18%, 26%, 18%, 38%),
+    columns: (28%, 22%, 12%, 38%),
     table.header([Category], [Description], [Minimum Count], [Target],),
     table.hline(),
     [`adversarial_false_positive`], [Code that #emph[looks like] a violation but is structurally clean --- the tool MUST
@@ -3220,7 +3281,7 @@ Minimum adversarial specimen requirements:
     [`taint_flow`], [Specimens testing taint propagation correctness across boundaries --- the tool MUST correctly
     assign taint states at merge points and across function calls], [See property 6 below], [Tier contamination through
     container operations; one-hop indirection; declared-domain-default marker with and without overlay declaration],
-    [`suppression_interaction`], [Specimens testing WL-001 optional-field suppression (§7.2.1) --- the three-condition
+    [`suppression_interaction`], [Specimens testing WL-001 optional-field suppression (§8.2.1) --- the three-condition
     suppression rule where the field is declared optional-by-contract, the default matches the approved default, and the
     access occurs within a declared validation boundary], [3 minimum], [One negative (all three conditions met ---
     suppressed); one positive (default differs from approved default --- ERROR/UNCONDITIONAL mismatch); one positive
@@ -3232,7 +3293,7 @@ Minimum adversarial specimen requirements:
 The adversarial categories are not exhaustive --- tool authors SHOULD add adversarial specimens for any pattern where
 the tool's analysis produces borderline results. The minimum counts above are the floor for conformance assessment.
 
-The expected match in each specimen aligns with the SARIF result structure (§10.1): rule identifier, location (file,
+The expected match in each specimen aligns with the SARIF result structure (§11.1): rule identifier, location (file,
 function, line), and matched text. Verification is a structural comparison --- the enforcement tool's SARIF output for
 the specimen MUST match the specimen's expected result fields. This makes the "independently evaluable" claim concrete:
 an assessor runs the tool against the corpus, compares SARIF output to expected results, and produces a pass/fail
@@ -3248,11 +3309,11 @@ specimens for the rules it implements. A Wardline-Core linter that implements WL
 for those four rules. A separate tool implementing WL-005 through WL-007 maintains specimens for those three rules. Each
 tool's specimens are tagged with the tool identifier so that an assessor can run each tool against its own specimen
 subset and verify independently. The regime's corpus is the union of all constituent tools' corpora; regime-level
-coverage MUST satisfy the minimum specimen counts (§10, per cell in the severity matrix) across the full rule set.
+coverage MUST satisfy the minimum specimen counts (§11, per cell in the severity matrix) across the full rule set.
 Specimens MAY additionally be tagged with the enforcement layer they test (static analysis, type system, runtime
 structural) so that Wardline-Type tools can maintain type-system-specific specimens distinct from pattern-rule
 specimens. Taint-flow specimens are maintained by the tool that implements taint-flow tracking (conformance criterion 4,
-§14.2). In a multi-tool regime, this is typically the Wardline-Core scanner. Tools that implement only pattern detection
+§15.2). In a multi-tool regime, this is typically the Wardline-Core scanner. Tools that implement only pattern detection
 without taint tracking are exempt from taint-flow specimens but MUST accept taint-state context from the taint-tracking
 tool's output or the regime orchestrator's equivalent interchange.
 
@@ -3272,7 +3333,7 @@ corpus MUST satisfy the following independence requirements:
   SHA-256 hashes. An assessor verifies corpus integrity before running tests. A specimen whose hash does not match the
   manifest is rejected.
 - #strong[Reproducible evaluation.] The `wardline corpus verify` command (a Wardline-Governance capability --- see
-  §14.3.1) takes a corpus path and a tool binary, runs the tool against every specimen, and produces a structured
+  §15.3.1) takes a corpus path and a tool binary, runs the tool against every specimen, and produces a structured
   pass/fail report. The evaluation is deterministic (verification property 5) --- identical corpus + identical tool =
   identical report.
 
@@ -3292,13 +3353,13 @@ state), not merely per rule #emph[\(framework invariant)]. The recommended calib
 applied to each cell individually: below this threshold, a rule SHOULD NOT earn blocking status in that cell's CI gate
 context. A rule at 90% precision in INTEGRAL but 55% in UNKNOWN\_GUARDED SHOULD NOT earn blocking status in the failing
 cell --- the averaged number hides the context where trust is being lost. For MIXED\_RAW cells specifically, a lower
-precision floor of 65% is permitted, acknowledging that the conservative join (§5.1) generates higher false-positive
+precision floor of 65% is permitted, acknowledging that the conservative join (§6.1) generates higher false-positive
 rates in mixed-taint contexts; this lower floor prevents MIXED\_RAW noise from forcing premature demotion of rules that
 perform well in single-tier contexts. Projects MAY adjust thresholds with documented rationale --- a greenfield project
 with limited corpus MAY accept 75% during early development. For systems under the ISM or equivalent high-assurance
 frameworks, the starting recommendation is 90% precision for UNCONDITIONAL cells, since false positives on invariant
 findings directly erode assessor confidence. The measurement and publication obligations are non-negotiable regardless
-of threshold. The golden corpus is already organised by rule and taint state (§10, property 1) --- the infrastructure
+of threshold. The golden corpus is already organised by rule and taint state (§11, property 1) --- the infrastructure
 for per-cell measurement is present; this requirement makes the normative expectation match.
 
 #strong[Interaction with UNCONDITIONAL exceptionability.] The per-cell precision floor and the exceptionability model
@@ -3323,7 +3384,7 @@ specifically, agent-generated code versus human-written code. As annotation cove
 generation space and agents produce fewer pattern-rule violations in annotated contexts, but the false-positive rate may
 differ systematically between agent-generated and human-written code. Segmented measurement empirically validates
 whether annotation-constrained generation reduces MIXED\_RAW noise (the conservative join is the primary source of false
-positives on container types --- §5.1) and identifies whether the precision floors need separate calibration for
+positives on container types --- §6.1) and identifies whether the precision floors need separate calibration for
 agent-heavy codebases. The segmentation mechanism is a binding-level decision --- bindings MAY use VCS-level provenance
 metadata (e.g., commit author tags distinguishing human and agent contributions), IDE-level origin tracking, or any
 mechanism that reliably attributes code origin. This is a SHOULD-level binding requirement, not a framework invariant
@@ -3331,7 +3392,7 @@ mechanism that reliably attributes code origin. This is a SHOULD-level binding r
 
 #strong[Compound call pattern annotation.] When measuring precision and recall across implementations, the golden corpus
 SHOULD annotate specimens that contain compound call patterns (method chaining, generators, context managers, async
-iterators) so that divergent taint tracking at SHOULD-level patterns (§5.5) can be isolated from true precision/recall
+iterators) so that divergent taint tracking at SHOULD-level patterns (§6.5) can be isolated from true precision/recall
 differences. Without this annotation, a scanner that tracks taint through method chains and one that falls back to
 UNKNOWN\_RAW will appear to have different precision on the same corpus, confounding tool quality with compound-pattern
 support.
@@ -3351,7 +3412,7 @@ corpus-vs-operational distinction applies: corpus recall measures detection agai
 depends on the diversity and representativeness of the corpus.
 
 #strong[\5. Deterministic output.] The same tool binary, given identical input, MUST produce byte-identical SARIF output
-in verification mode (§10.1). No randomness, no model inference, no non-deterministic ordering. An assessor who runs the
+in verification mode (§11.1). No randomness, no model inference, no non-deterministic ordering. An assessor who runs the
 tool twice on the same codebase and gets different results cannot certify the tool. Determinism is a binding requirement
 --- language-specific bindings MUST ensure deterministic output for their enforcement tools. It is not a quality-of-life
 feature --- it is an auditability requirement. #strong[Scope:] this property requires same-tool repeatability --- the
@@ -3401,12 +3462,12 @@ These properties are independently evaluable #emph[\(framework invariants --- pr
 properties 5--6)]. An assessor does not need access to the development team, the tool's source, or the project's
 history. They need the golden corpus, the tool binaries, and a test environment. For a single tool, if the tool
 satisfies all six properties for the rules it implements, the assessor can certify that the tool's declared enforcement
-behaviour is testable, deterministic, and evidenced against the supplied corpus. For an enforcement regime (§14.4), the
+behaviour is testable, deterministic, and evidenced against the supplied corpus. For an enforcement regime (§15.4), the
 assessor evaluates each constituent tool against the properties for its declared rule subset, then verifies that the
 union of all tools' coverage satisfies the regime-level requirements. If any tool or the regime as a whole does not
 satisfy its applicable properties, the claims are unverifiable regardless of actual capability.
 
-== 10.1 Findings interchange format
+== 11.1 Findings interchange format
 <findings-interchange-format>
 Enforcement tools MUST produce findings in SARIF v2.1.0 (Static Analysis Results Interchange Format, OASIS standard).
 SARIF is the established interchange format for static analysis tools; adopting it provides native integration with code
@@ -3490,8 +3551,8 @@ The following wardline-specific properties are required:
 
 #strong[Property name reuse --- `wardline.retroactiveScan`.] This property is defined at both `result` level and `run`
 level with distinct semantics. The result-level property marks individual findings arising from retrospective review of
-code merged during a prior direct-law or alternate-law window (§9.5). The run-level property marks the run as containing
-any retrospective findings. Both may be present simultaneously and are independently meaningful.
+code merged during a prior direct-law or alternate-law window (§10.5). The run-level property marks the run as
+containing any retrospective findings. Both may be present simultaneously and are independently meaningful.
 
 #strong[On each `result` (individual finding):]
 
@@ -3506,11 +3567,11 @@ any retrospective findings. Both may be present simultaneously and are independe
   still emitted --- they are visible, not suppressed
 - `wardline.dataSource` --- the named data source from the wardline manifest, if applicable
 - `wardline.retroactiveScan` --- boolean indicating whether this specific finding arose from retrospective review of
-  code merged during a prior direct-law or alternate-law window (§9.5), as distinct from a finding caught at the normal
+  code merged during a prior direct-law or alternate-law window (§10.5), as distinct from a finding caught at the normal
   enforcement boundary
 - `wardline.exceptionRecurrence` #emph[\(SHOULD)] --- integer count of how many times the exception at this location has
-  been renewed (§9.4). Present only on findings with active exceptions. A count of 2 or more indicates the exception has
-  been renewed at least once without resolving the underlying violation
+  been renewed (§10.4). Present only on findings with active exceptions. A count of 2 or more indicates the exception
+  has been renewed at least once without resolving the underlying violation
 - `wardline.tierLabel` #emph[\(SHOULD)] --- see the definition below
 
 #strong[On each `run` (tool execution):]
@@ -3522,25 +3583,25 @@ any retrospective findings. Both may be present simultaneously and are independe
   `wardline.manifestHash`. The array MUST be sorted lexicographically by the overlay's forward-slash-normalized path
   relative to the project root, so that the ordering is deterministic regardless of filesystem enumeration order
 - `wardline.expeditedExceptionRatio` --- the proportion of active exceptions granted through the expedited governance
-  path (§9.4), computed from the exception register
+  path (§10.4), computed from the exception register
 - `wardline.deferredFixRatio` --- the proportion of active exceptions that represent deferred architectural fixes rather
-  than genuine domain variance (§13.1.3)
-- `wardline.coverageRatio` --- annotation coverage from the fingerprint baseline (§9.2)
-- `wardline.controlLaw` --- current enforcement state: `"normal"`, `"alternate"`, or `"direct"` (§9.5)
+  than genuine domain variance (§14.1.3)
+- `wardline.coverageRatio` --- annotation coverage from the fingerprint baseline (§10.2)
+- `wardline.controlLaw` --- current enforcement state: `"normal"`, `"alternate"`, or `"direct"` (§10.5)
 - `wardline.controlLawDegradations` --- when control law is alternate, lists the specific degradation conditions (e.g.,
-  `["manifest_ratification_overdue", "WL-003_precision_below_floor"]`)
+  `["precision_below_floor", "ratification_overdue"]`)
 - `wardline.retroactiveScan` --- boolean indicating whether this run includes retrospective findings from a prior
-  direct-law or alternate-law window (§9.5)
+  direct-law or alternate-law window (§10.5)
 - `wardline.deterministic` --- boolean self-report that the tool believes its output is deterministic. This property is
   a declaration of intent, not verification evidence. Assessors verify determinism independently by comparing outputs
   from identical inputs (property 5). The self-report allows SARIF consumers that do not perform independent
   verification to distinguish runs that claim determinism from runs that do not
-- `wardline.governanceProfile` --- the declared governance profile: `"lite"` or `"assurance"` (§14.3.2). Recorded from
+- `wardline.governanceProfile` --- the declared governance profile: `"lite"` or `"assurance"` (§15.3.2). Recorded from
   the root manifest's `governance_profile` field
 - `wardline.inputHash` --- cryptographic hash of the analysed source files, computed using the hash-of-hashes
   construction defined below. This enables an assessor to verify determinism independently from the SARIF output alone:
   two runs with identical `wardline.inputHash` and identical `wardline.manifestHash` MUST produce byte-identical SARIF
-  in verification mode (§10.1). Without this property, an assessor comparing two SARIF runs cannot distinguish
+  in verification mode (§11.1). Without this property, an assessor comparing two SARIF runs cannot distinguish
   "different output because different input" from "different output because non-deterministic tool"
 
 Example run-level properties when pre-generation projection is available:
@@ -3620,7 +3681,7 @@ formatting, and floating-point representation instability across platforms (rati
 MAY include volatile invocation metadata for operational use, but that output is not subject to the byte-identical
 requirement and MUST NOT be used for independent assessment.
 
-#strong[Multi-tool SARIF aggregation.] In an enforcement regime (§14.4) comprising multiple tools, each tool produces
+#strong[Multi-tool SARIF aggregation.] In an enforcement regime (§15.4) comprising multiple tools, each tool produces
 its own SARIF `run` within the SARIF log. A SARIF log is defined as an array of runs; multi-tool output is a single
 SARIF log containing one run per tool. Each run identifies its producing tool via the `tool.driver` object and declares
 which wardline rules it covers in the `tool.driver.rules` array. Regime-level run properties ---
@@ -3644,11 +3705,11 @@ Binding-specific annotation names such as `@validates_shape` or `@ValidatesShape
 properties (for example, `wardline.enclosingAnnotation`) for diagnostic context, but those names are not part of the
 framework's cross-binding interoperability contract.
 
-== 10.2 Finding presentation guidance
+== 11.2 Finding presentation guidance
 <finding-presentation-guidance>
 This subsection is non-normative except where explicitly marked. It provides binding guidance for how findings are
 rendered to developers --- in terminal output, IDE diagnostics, CI summaries, and code review annotations. The
-underlying SARIF output (§10.1) is unchanged; this subsection addresses the presentation layer that sits between SARIF
+underlying SARIF output (§11.1) is unchanged; this subsection addresses the presentation layer that sits between SARIF
 and the developer.
 
 The core principle: developers interact with findings, not matrices. The eight-state taint model and the 64-cell
@@ -3690,7 +3751,7 @@ the finding it produced. Example:
 ```
 
 #strong[Properties bag] (SARIF): full metadata unchanged. The `wardline.taintState`, `wardline.enclosingTier`,
-`wardline.exceptionability`, and all other properties defined in §10.1 remain in the SARIF output for assessors,
+`wardline.exceptionability`, and all other properties defined in §11.1 remain in the SARIF output for assessors,
 governance tooling, and downstream automation. The presentation layer does not alter, filter, or summarise the SARIF ---
 it renders a human-readable view on top of it.
 
@@ -3739,7 +3800,7 @@ Bindings SHOULD implement a `wardline explain` subcommand that renders the full 
 
 - #strong[`wardline explain WL-001 INTEGRAL`] --- renders the full derivation for a specific rule in a specific
   taint-state context: why the rule exists, why it carries ERROR severity in this context, why it is UNCONDITIONAL, the
-  relevant worked example from the severity matrix rationale (§7.4), and the detection approach. This is the developer's
+  relevant worked example from the severity matrix rationale (§8.4), and the detection approach. This is the developer's
   entry point to the matrix without reading a 64-cell table.
 
 - #strong[`wardline explain WL-001`] --- renders the full row: the rule's purpose, its severity across all eight taint
@@ -3815,7 +3876,7 @@ restoration evidence presence) rather than data-flow properties.
 
 Including the taint state in WL-007/WL-008/WL-009 primary messages trains developers to believe it matters for
 structural verification, creating a false mental model of how these rules operate. The taint state remains in the SARIF
-properties bag (§10.1) for completeness and assessor use, but the presentation layer should not foreground it.
+properties bag (§11.1) for completeness and assessor use, but the presentation layer should not foreground it.
 
 Example --- WL-007 without taint state (preferred):
 
@@ -3842,12 +3903,12 @@ error[WL-007]: Validation boundary has unreachable rejection path
 The "in INTEGRAL context" qualifier adds no information --- WL-007 fires identically regardless of context. Omitting it
 reinforces the correct understanding that structural verification is context-independent.
 
-= 11. Language evaluation criteria
+= 12. Language evaluation criteria
 <language-evaluation-criteria>
-The wardline classification framework is language-agnostic; language-specific enforcement regimes (§14.4) implement its
+The wardline classification framework is language-agnostic; language-specific enforcement regimes (§15.4) implement its
 requirements using language-native mechanisms. Not all languages provide equal support across the three enforcement
 layers. The following rubric assesses how well a given language ecosystem supports wardline enforcement across the three
-enforcement layers and the conformance profiles defined in §14.3.
+enforcement layers and the conformance profiles defined in §15.3.
 
 #figure(
   align(center)[#table(
@@ -3875,7 +3936,7 @@ enforcement layers and the conformance profiles defined in §14.3.
     [#strong[Tooling ecosystem]], [Does the language have mature static analysis infrastructure (custom lint rules, AST
     analysis frameworks)?],
     [#strong[Existing tool coverage]], [Can existing tools in this ecosystem implement wardline conformance profiles
-    (§14.3) without requiring a bespoke product? Which profiles are achievable through plugins or extensions to existing
+    (§15.3) without requiring a bespoke product? Which profiles are achievable through plugins or extensions to existing
     tools, and which require new tooling?],
   )]
   , kind: table
@@ -3908,10 +3969,10 @@ parameter), annotations are type constraints that make non-compliant code unrepr
 compile errors, not lint findings. Stronger bindings reduce #emph[generation risk]: an agent coding against a structural
 binding receives tighter feedback and produces fewer violations, because the language itself rejects non-compliant code
 before any wardline tool runs. However, stronger bindings do not reduce #emph[governance risk]: the type definitions
-that encode tier semantics still need human ratification, periodic review, and change authority (§9.3.1). A Rust binding
-where tier assignments are wrong at the type level produces code that is structurally compliant with the wrong policy
---- the same manifest poisoning risk (§9.3.2) as any other binding, expressed through the type system rather than
-through decorator metadata. The evaluation criteria in this section help identify where each language sits on this
+that encode tier semantics still need human ratification, periodic review, and change authority (§10.3.1). A Rust
+binding where tier assignments are wrong at the type level produces code that is structurally compliant with the wrong
+policy --- the same manifest poisoning risk (§10.3.2) as any other binding, expressed through the type system rather
+than through decorator metadata. The evaluation criteria in this section help identify where each language sits on this
 spectrum and where governance controls must compensate for the binding's enforcement limitations.
 
 Some pattern rules may be structurally inapplicable in certain languages. In statically typed languages, WL-002
@@ -3926,7 +3987,7 @@ evaluation alongside the language and tooling versions they target, because pars
 propagation, concurrency primitives, and available enforcement tooling can change materially across runtime and compiler
 releases.
 
-= 12. Residual risks
+= 13. Residual risks
 <residual-risks>
 Seventeen risks are inherent to the wardline model regardless of language, tooling, or governance maturity. They are
 structural limitations, not implementation defects.
@@ -3936,38 +3997,38 @@ structural limitations, not implementation defects.
     columns: (5%, 25%, 70%),
     table.header([\#], [Risk], [Primary Compensating Control],),
     table.hline(),
-    [1], [Declaration correctness --- wardline itself could be wrong], [Governance model (§9), baseline ratification],
-    [2], [Governance decay --- rubber-stamping under deadline pressure], [Annotation fingerprint baseline (§9.2)],
+    [1], [Declaration correctness --- wardline itself could be wrong], [Governance model (§10), baseline ratification],
+    [2], [Governance decay --- rubber-stamping under deadline pressure], [Annotation fingerprint baseline (§10.2)],
     [3], [Serialisation boundary blindness --- static analysis cannot verify bytes on disk], [Restoration boundaries
-    (§5.3), institutional trust],
+    (§6.3), institutional trust],
     [4], [Annotation coverage gaps --- unannotated code is invisible], [Coverage reporting in fingerprint baseline
-    (§9.2)],
+    (§10.2)],
     [5], [Semantic downgrade --- exception translation defeating original intent], [Golden corpus specimens, governance
     review of translation authority],
     [6], [Expedited governance path normalisation --- "time-critical" becomes default], [Expedited governance ratio
-    metric (§9.4)],
+    metric (§10.4)],
     [7], [Implicit-flow taint bypass --- control-flow encoding launders taint], [Implicit-flow evasion heuristic
-    (§7.6.1), prompted review],
+    (§8.6.1), prompted review],
     [8], [SHOULD-layer verification gap --- no independent verification for type/runtime layers], [Binding-level corpus
     extension (tool quality target)],
     [9], [Adversarial annotation injection --- deliberately dishonest declarations], [Code review, WL-007, fingerprint
-    baseline (§9.2)],
+    baseline (§10.2)],
     [10], [Contract adequacy --- validation-scope declarations may be incomplete], [Contract declarations reviewable in
     fingerprint baseline],
     [11], [MIXED state coarseness --- field-level taint lost on cross-tier composites], [`join_product` / MIXED\_TRACKED
-    binding extension (§5.1)],
+    binding extension (§6.1)],
     [12], [Evasion surface trajectory --- models learn to route around syntactic tripwires], [Semantic equivalent
     catalogues, adversarial corpus specimens],
     [13], [Governance-layer attack surface --- manifest poisoning, fatigue exploitation, boundary
-    manipulation], [Two-person review, anomaly detection (§9.3.2)],
+    manipulation], [Two-person review, anomaly detection (§10.3.2)],
     [14], [Third-party library boundary taint --- ungoverned code performing tier promotions], [`dependency_taint`
-    declarations (§13.1.2), version pinning],
+    declarations (§14.1.2), version pinning],
     [15], [Capacity-driven classification drift --- manifest born wrong under capacity pressure], [Lite governance
-    profile (§14.3.2), phased adoption],
+    profile (§15.3.2), phased adoption],
     [16], [Type/encoding coercion gap --- silent conversions preserve structure while changing
-    meaning], [Boundary-contract review, domain-specific validation, non-goal disclosure (§3)],
+    meaning], [Boundary-contract review, domain-specific validation, non-goal disclosure (§4)],
     [17], [Polyglot/projection coherence drift --- bindings or projections disagree with current policy state], [Shared
-    manifest governance (§13), projection currency (§8.5), per-binding review],
+    manifest governance (§14), projection currency (§9.5), per-binding review],
   )]
   , kind: table
   )
@@ -3975,26 +4036,26 @@ structural limitations, not implementation defects.
 #strong[\1. Declaration correctness.] The wardline itself could be wrong. If the application declares the wrong tier for
 a data source --- classifying external API data as Tier 1, or authoritative audit records as Tier 3 --- enforcement is
 structurally correct but semantically meaningless. The tool faithfully enforces the wrong policy. Pre-generation context
-projection (§8.5) amplifies the consequences of declaration errors when LLMs are active consumers: a wrong tier
+projection (§9.5) amplifies the consequences of declaration errors when LLMs are active consumers: a wrong tier
 declaration causes the LLM to generate code conforming to the wrong policy, and that code passes enforcement because
 enforcement faithfully implements the poisoned manifest. The accidental defensive patterns that would otherwise serve as
 symptoms of misclassification --- patterns that a human reviewer might notice as anomalous --- are eliminated by the
 projection, because the LLM generates code that is stylistically consistent with the (wrong) declared tier. Compensating
-control: governance model (§9), baseline ratification with classification confirmation, and independent review of
+control: governance model (§10), baseline ratification with classification confirmation, and independent review of
 trust-escalation declarations.
 
 #strong[\2. Governance decay.] Every governance gate is a human activity. Protected-file review, temporal separation,
 provenance justification --- each requires a human to exercise judgement under deadline pressure. Under sustained
 pressure, each becomes a candidate for rubber-stamping. The wardline cannot verify the quality of the human judgement
 that governs it. It can only make the judgement visible and auditable. Compensating control: annotation fingerprint
-baseline (§9.2), which makes governance erosion detectable even if it cannot prevent it.
+baseline (§10.2), which makes governance erosion detectable even if it cannot prevent it.
 
 #strong[\3. Serialisation boundary blindness.] Static analysis cannot cross the serialisation boundary to verify that
 bytes on disk were written by a trusted code path. When a function declares "this data is internal" and deserialises
 from a file, the enforcement tool verifies that the function's body treats the data as Tier 1 --- but it cannot verify
 that the file was written by a Tier 1 code path rather than manually edited, corrupted, or replaced. Trust-escalation
 declarations at serialisation boundaries are governance-verified only. This is the point where the wardline's
-machine-readable guarantees yield to institutional trust. Restoration boundaries (§5.3, Group 17) are where this risk is
+machine-readable guarantees yield to institutional trust. Restoration boundaries (§6.3, Group 17) are where this risk is
 most acute --- and where it converges with risk \#9 (adversarial annotation injection): an adversarially injected
 restoration boundary declaration bypasses technical enforcement entirely and relies solely on governance quality.
 
@@ -4004,7 +4065,7 @@ The enforcement system MUST report coverage metrics (percentage of functions ann
 as a binding requirement --- coverage below 100% means the wardline has blind spots, and those blind spots MUST be
 visible. In practice, 100% annotation coverage is neither achievable nor desirable --- the annotation budget SHOULD be
 spent at boundaries, not on internal utility functions. The residual risk is that a critical code path falls outside the
-annotated surface. Compensating control: the annotation fingerprint baseline (§9.2) makes the coverage boundary visible
+annotated surface. Compensating control: the annotation fingerprint baseline (§10.2) makes the coverage boundary visible
 and tracks its evolution over time, ensuring that coverage gaps do not silently widen.
 
 #strong[\5. Semantic downgrade.] A function authorised as an exception translation boundary --- architecturally
@@ -4019,22 +4080,22 @@ authority.
 #strong[\6. Expedited governance path normalisation.] Every expedited governance path becomes the default path under
 sustained delivery pressure. The ratio of expedited to standard governance approvals is a leading indicator of
 governance decay --- a ratio that trends upward signals that "time-critical" has expanded to include routine work.
-Compensating control: the expedited governance ratio metric (§9.4), computed from the exception register's provenance
-field (§13.1.3) and reported in the SARIF findings output (§10.1), with a project-defined threshold declared in the root
+Compensating control: the expedited governance ratio metric (§10.4), computed from the exception register's provenance
+field (§14.1.3) and reported in the SARIF findings output (§11.1), with a project-defined threshold declared in the root
 wardline manifest that triggers a governance-level finding when exceeded.
 
-#strong[\7. Implicit-flow taint bypass.] The framework scopes taint analysis to explicit flows only (§7.6). An implicit
+#strong[\7. Implicit-flow taint bypass.] The framework scopes taint analysis to explicit flows only (§8.6). An implicit
 flow --- where the fact that a branch was taken leaks information about a tier-classified value
 (`if tier1_field == "sensitive": x = True; else: x = False`) --- launders taint through control flow without a data
 dependency. This is a known limitation of explicit-flow taint analysis, deliberately accepted because implicit-flow
 analysis is computationally expensive and a prolific source of false positives. The residual risk is that an adversary
 or careless agent can bypass tier enforcement through control-flow encoding. Compensating controls: the implicit-flow
-evasion heuristic (§7.6.1), which catches the dominant conditional-assignment pattern as a warning-level signal; and
+evasion heuristic (§8.6.1), which catches the dominant conditional-assignment pattern as a warning-level signal; and
 prompted review and code inspection at tier boundaries for cases the heuristic does not cover.
 
-#strong[\8. SHOULD-layer verification gap.] The verification properties (§10) define six independently evaluable
+#strong[\8. SHOULD-layer verification gap.] The verification properties (§11) define six independently evaluable
 criteria, but all six apply to the static analysis layer. There is no equivalent verification mechanism for the type
-system layer (§8.2) or the runtime structural layer (§8.3). A binding that claims SHOULD compliance for these layers has
+system layer (§9.2) or the runtime structural layer (§9.3). A binding that claims SHOULD compliance for these layers has
 no independently assessable way to demonstrate it. Compensating control: language bindings MAY extend the golden corpus
 concept to cover type system and runtime enforcement --- a type-checking corpus that verifies tier mismatches produce
 diagnostics, and a runtime corpus that verifies fabricated defaults raise errors. For the Assurance governance profile,
@@ -4047,11 +4108,11 @@ distinct from residual risk \#1 (declaration correctness), which addresses hones
 intentional or agent-induced: an agent that generates code with wardline annotations may produce structurally valid but
 semantically dishonest declarations, and a human reviewer may approve them without recognising the misclassification.
 Compensating controls: code review of annotation correctness (not just code correctness), structural checks where
-feasible (WL-007 catches validators with no rejection path), and the annotation fingerprint baseline (§9.2) which flags
+feasible (WL-007 catches validators with no rejection path), and the annotation fingerprint baseline (§10.2) which flags
 new or changed annotations for explicit review. The highest-risk combination is adversarial injection at restoration
 boundaries (Group 17), where risk \#3 (serialisation boundary blindness) and this risk converge: an injected restoration
 boundary declaration faces no technical verification of the provenance claim and relies entirely on governance. Note:
-the fingerprint baseline's hash scope (§9.2) --- which covers annotation declarations but not function bodies --- is a
+the fingerprint baseline's hash scope (§10.2) --- which covers annotation declarations but not function bodies --- is a
 deliberate trade-off that creates a documented gap in coverage for this attack vector. An adversary or agent can modify
 a function's body to circumvent the wardline's intent (e.g., making a rejection path unreachable by guarding it with a
 condition that is always false due to upstream logic rather than a constant expression) while leaving annotations
@@ -4061,7 +4122,7 @@ bodies in the hash would close this gap but generate governance noise on every i
 accepts this trade-off on the basis that code review of function bodies is already a standard development practice,
 whereas annotation changes are wardline-specific and require wardline-specific governance visibility.
 
-#strong[\10. Contract adequacy.] The `validation_scope.contracts` declaration (§13.1.2) makes the scope of a Tier 2
+#strong[\10. Contract adequacy.] The `validation_scope.contracts` declaration (§14.1.2) makes the scope of a Tier 2
 semantic-validation claim explicit --- each named boundary contract declares what data crosses the boundary and at what
 tier, replacing the previous function-name consumer list. The enforcement tool verifies that the declaration
 #emph[exists] but cannot verify that it is #emph[adequate]: whether the validator's checks actually satisfy the
@@ -4071,7 +4132,7 @@ landscape recording actually requires passes all structural checks. The abstract
 identifiers rather than volatile function names --- reduces governance noise from refactoring and makes contracts more
 legible for both human reviewers and agent consumers, but the core adequacy problem remains: the contract name describes
 intent, not coverage. Compensating controls: contract declarations are reviewable and auditable (tracked in the
-fingerprint baseline as policy artefact changes); the separation of contracts from contract bindings (§13.1.2) means
+fingerprint baseline as policy artefact changes); the separation of contracts from contract bindings (§14.1.2) means
 that governance review focuses on semantic adequacy rather than function-name bookkeeping; and the consumers themselves
 may fail at runtime if the validator's coverage is incomplete --- surfacing the gap through operational evidence rather
 than static analysis. The declaration converts the most important semantic claim in the framework from implicit to
@@ -4080,7 +4141,7 @@ explicit, but the adequacy of that claim remains a governance judgement.
 #strong[\11. MIXED state coarseness (partially addressed).] The framework now distinguishes `join_fuse` (operations that
 genuinely merge data into an inseparable artefact, e.g., string concatenation, dict merge) from `join_product`
 (operations that compose data into a product-type structure where components retain their identity, e.g., dataclass
-construction, named-tuple packing) --- see §5.1. Bindings MAY implement a `MIXED_TRACKED` extension state for
+construction, named-tuple packing) --- see §6.1. Bindings MAY implement a `MIXED_TRACKED` extension state for
 `join_product` on named product types where the binding can statically resolve field membership, preserving per-field
 taint rather than collapsing to MIXED\_RAW. This reduces false-positive volume on container types without weakening the
 conservative join for genuinely fused artefacts. The risk is reduced but not eliminated. MIXED\_TRACKED implementations
@@ -4091,7 +4152,7 @@ field-level resolution defaults to the safe behaviour. The residual risk is that
 precision disparity between bindings --- the same composite type may be MIXED\_TRACKED in one binding and MIXED\_RAW in
 another, producing different finding sets for structurally equivalent code. Compensating controls: bindings that
 implement `MIXED_TRACKED` declare which product types they track, demonstrate precision through golden corpus specimens,
-and inherit MIXED\_RAW severity unless they explicitly narrow it (§5.1). The STANDARD exceptionability on MIXED\_RAW
+and inherit MIXED\_RAW severity unless they explicitly narrow it (§6.1). The STANDARD exceptionability on MIXED\_RAW
 cells continues to allow governance overrides where the composite structure is documented but the binding does not
 implement field-level tracking.
 
@@ -4110,13 +4171,13 @@ to adapt to new evasion patterns, but that adaptation MUST be deliberate and adv
 control: version-tracked semantic equivalent lists for each pattern rule (binding requirement), adversarial specimens in
 the golden corpus, and the governance mechanisms that address the manifest as a policy surface.
 
-#strong[\13. Governance-layer attack surface.] The manifest threat model (§9.3.2) identifies three attack vectors that
+#strong[\13. Governance-layer attack surface.] The manifest threat model (§10.3.2) identifies three attack vectors that
 target the governance surface rather than the code surface: manifest poisoning (corrupting tier assignments so agents
 generate code compliant with the wrong policy), governance fatigue exploitation (overwhelming review capacity to smuggle
 consequential changes), and boundary declaration manipulation (widening validation-scope declarations to permit
 previously prohibited data flows). These attacks are harder to detect than code-level evasion because they exploit the
 governance mechanisms that are supposed to catch code-level problems --- the guardrails themselves become the target.
-The compensating controls specified in §9.3.2 (two-person review for tier changes and boundary widenings, anomaly
+The compensating controls specified in §10.3.2 (two-person review for tier changes and boundary widenings, anomaly
 detection for change patterns, mandatory human ratification for agent-originated policy changes) reduce the attack
 surface but do not eliminate it. The irreducible residual: governance quality depends on human attention, and human
 attention is the resource the governance model is designed to economise. A governance model that requires sustained
@@ -4133,7 +4194,7 @@ seams in the application's trust topology: data crosses them, but the library co
 surface and governance perimeter. The enforcement tool cannot verify a library's internal validation logic, and the
 library maintainer has no obligation to annotate their code.
 
-The framework addresses this through `dependency_taint` declarations (§13.1.2) --- overlay entries that assign taint
+The framework addresses this through `dependency_taint` declarations (§14.1.2) --- overlay entries that assign taint
 states to third-party function return values with governance rationale and version pinning. These are taint source
 declarations, not boundary declarations: the library function's return value is classified, but the library itself is
 not treated as a wardline validation boundary. The application's own annotated boundaries perform tier promotion under
@@ -4144,8 +4205,8 @@ Three residual risks remain within this model. First, the taint declaration may 
 declared as returning GUARDED may not actually guarantee structural properties, and the enforcement tool cannot verify
 the claim. This is analogous to risk 1 (declaration correctness) applied to the dependency surface. Second, library
 updates may silently change the function's validation behaviour, error handling, or return structure, invalidating the
-taint assumption. The `package` version pinning, staleness detection SHOULD, and fingerprint baseline flagging (§5.5,
-§13.1.2) provide leading indicators but do not guarantee that the taint declaration is re-reviewed promptly. Third, the
+taint assumption. The `package` version pinning, staleness detection SHOULD, and fingerprint baseline flagging (§6.5,
+§14.1.2) provide leading indicators but do not guarantee that the taint declaration is re-reviewed promptly. Third, the
 default conservative treatment (UNKNOWN\_RAW) may generate governance noise in applications with heavy third-party
 library usage, creating pressure to over-declare taint states to reduce finding volume --- the same "governance fatigue"
 dynamic identified in risk 6, applied to dependency declarations.
@@ -4158,12 +4219,12 @@ application's own validation boundaries as the terminal control regardless of th
 something that was once good) and risk 9 (adversarial annotation injection, which requires intent). Capacity-driven
 classification drift occurs when a manifest is authored under the same capacity pressure the wardline exists to mitigate
 --- the initial classification was never accurate because nobody had time to make careful tier assignments. The "already
-drowning" context (§2) makes this the most likely deployment scenario: the team adopting the wardline is the team that
+drowning" context (§3) makes this the most likely deployment scenario: the team adopting the wardline is the team that
 is already overwhelmed by unreviewed LLM-generated code, and the manifest authoring process inherits that capacity
 constraint. The result is a wardline that faithfully enforces a policy that was never carefully considered ---
 enforcement is structurally sound but semantically hollow. Unlike governance decay (risk 2), there is no prior good
 state to erode; unlike adversarial injection (risk 9), there is no malicious or careless intent --- the classification
-was simply never given the attention it required. Compensating controls: the Lite governance profile (§14.3.2), which
+was simply never given the attention it required. Compensating controls: the Lite governance profile (§15.3.2), which
 reduces the governance surface to a manageable size for capacity-constrained teams; phased adoption with advisory-only
 early stages, which allows the team to observe enforcement behaviour before committing to blocking enforcement; and
 manifest ratification with explicit classification confirmation, which forces at least one deliberate review of tier
@@ -4172,19 +4233,19 @@ assignments before the wardline becomes authoritative.
 #strong[\16. Type/encoding coercion gap.] The framework does not attempt to prove the semantic safety of type, encoding,
 or format coercions that preserve structural compatibility while changing meaning --- for example, `float()` hiding
 precision loss, lossy datetime parsing, enum-to-string coercion, or normalisation steps that collapse distinct external
-representations into a single internal value. This gap is called out in §2 and explicitly left as a non-goal in §3
+representations into a single internal value. This gap is called out in §3 and explicitly left as a non-goal in §4
 because coercion safety is domain-specific and often undecidable from syntax alone. The residual risk is silent semantic
 corruption of tier-classified data even when boundary declarations, taint propagation, and pattern rules all pass.
 Compensating controls: boundary-contract review that names coercion-sensitive fields, domain-specific validators,
 targeted corpus specimens in bindings that choose to model common coercion hazards, and explicit governance
 acknowledgement that some semantic losses remain outside framework scope.
 
-#strong[\17. Polyglot/projection coherence drift.] Polyglot deployments rely on a shared manifest (§13) while allowing
+#strong[\17. Polyglot/projection coherence drift.] Polyglot deployments rely on a shared manifest (§14) while allowing
 per-binding canonical forms, per-binding fingerprint baselines, and different implementation depths across scanners.
 This creates two related residual risks. First, bindings may make inconsistent practical decisions about the same shared
 policy surface --- for example, one binding may treat a shared database artefact as effectively Tier 2 in code
 generation and governance workflows while another enforces it as Tier 3, even when the logical manifest identifier is
-the same. Second, pre-generation context projection (§8.5) may be stale relative to the current manifest or derived
+the same. Second, pre-generation context projection (§9.5) may be stale relative to the current manifest or derived
 taint state: the declaration can be correct, but the projection delivered to an LLM may reflect a previous commit or
 analysis run and therefore steer generation toward code that is compliant with yesterday's policy rather than today's.
 The `wardline.projectionCurrency` property and shared manifest identifiers reduce this risk, but they do not eliminate
@@ -4192,20 +4253,20 @@ it. Compensating controls: per-binding review of shared manifest interpretations
 shared resources, projection currency tracking and staleness checks, and treating stale or cross-binding-divergent
 projections as advisory context that requires human review rather than trusted policy truth.
 
-= 13. Portability and manifest format
+= 14. Portability and manifest format
 <portability-and-manifest-format>
 The wardline classification framework is language-neutral --- a single `wardline.yaml` serves all language bindings in a
-polyglot project. The authority tier model (§4), annotation vocabulary (§6), pattern rules (§7), governance model (§9),
-and verification properties (§10) are stated as requirements that any language-specific enforcement regime (§14.4) MUST
+polyglot project. The authority tier model (§5), annotation vocabulary (§7), pattern rules (§8), governance model (§10),
+and verification properties (§11) are stated as requirements that any language-specific enforcement regime (§15.4) MUST
 satisfy. Languages with weaker type systems or object models will have structural gaps that require compensating
-controls (§11).
+controls (§12).
 
 Two enforcement regimes are currently defined: #emph[Wardline for Python] (Part II-A) and #emph[Wardline for Java] (Part
-II-B). The conformance profiles (§14.3) allow each tool in a regime to implement the slice that matches its
+II-B). The conformance profiles (§15.3) allow each tool in a regime to implement the slice that matches its
 capabilities. Further language regimes (C\#, Go, C++, Rust) are future work --- the full candidate language list and
-per-language evaluation rationale are in §15.
+per-language evaluation rationale are in §1.
 
-== 13.1 Wardline manifest format
+== 14.1 Wardline manifest format
 <wardline-manifest-format>
 The wardline manifest is the machine-readable declaration of an application's trust topology, rule configuration, and
 exception register. It is language-neutral --- a project's wardline is a property of the application's semantic
@@ -4219,19 +4280,19 @@ binding-specific configuration, not part of the manifest system.
 Manifest schemas identify boundaries, transitions, contracts, and supplementary-group policy using canonical schema
 fields and enumeration values, not language-specific annotation syntax. Python decorators, Java annotations, and future
 binding syntaxes each map onto the same manifest declarations. Cross-binding interchange therefore depends on manifest
-identifiers and SARIF group numbers (§10.1), not on any binding's surface spelling.
+identifiers and SARIF group numbers (§11.1), not on any binding's surface spelling.
 
 The manifest system is hierarchical, comprising four file types. The root manifest declares the trust topology; overlays
 narrow policy for specific modules; tool-generated files track exceptions and annotation state. Each file contains both
-policy artefacts and enforcement artefacts (§9.3.1) --- the distinction is per-field, not per-file. The artefact class
+policy artefacts and enforcement artefacts (§10.3.1) --- the distinction is per-field, not per-file. The artefact class
 column in the table below identifies which governance regime applies to each file's contents.
 
-#align(center)[#image(".mermaid-tmp/diagram-3.png", width: 90%)]
+#align(center)[#image(".mermaid-tmp/diagram-3.png", width: 100%)]
 
 #figure(
   align(center)[#table(
-    columns: (14%, 10%, 14%, 22%, 40%),
-    table.header([File], [Format], [Authored By], [Purpose], [Artefact class (§9.3.1)],),
+    columns: (28%, 8%, 9%, 20%, 35%),
+    table.header([File], [Format], [Authored By], [Purpose], [Artefact class (§10.3.1)],),
     table.hline(),
     [`wardline.yaml`], [YAML], [Human], [Root trust topology --- tier definitions, data source classifications,
     delegation policy, rule defaults, governance thresholds], [Mixed --- tier definitions and delegation policy are
@@ -4244,7 +4305,7 @@ column in the table below identifies which governance regime applies to each fil
     reviewer identity, rationale, expiry, provenance], [#strong[Policy] --- exception rationale is a governance
     decision],
     [`wardline.fingerprint.json`], [JSON], [Tool], [Annotation fingerprint baseline --- per-function annotation hash,
-    coverage metrics (§9.2)], [#strong[Enforcement] --- tool-generated tracking artefact],
+    coverage metrics (§10.2)], [#strong[Enforcement] --- tool-generated tracking artefact],
   )]
   , kind: table
   )
@@ -4259,24 +4320,24 @@ Tool-generated files use JSON for schema strictness and round-trip fidelity --- 
 The ISO country code `"NO"` for Norway becomes the boolean `false` when unquoted in YAML 1.1. Many popular libraries
 (PyYAML, LibYAML) still default to YAML 1.1 behaviour. Always quote string identifiers in `wardline.yaml` and
 `wardline.overlay.yaml`.
+]
 
 #strong[Location conventions.] The root manifest resides at the repository root: `wardline.yaml`. Overlays reside in
 module directories: `<module>/wardline.overlay.yaml`. Exception registers and fingerprint baselines are co-located with
 their governing manifest --- `wardline.exceptions.json` at the root for cross-cutting exceptions,
 `<module>/wardline.exceptions.json` for module-level exceptions (subject to delegation). Each enforcement tool in a
 regime discovers manifests by walking up the directory tree from the analysed file to the repository root, merging
-overlays with the root manifest. In a multi-tool regime (§14.4), each tool independently discovers and validates the
+overlays with the root manifest. In a multi-tool regime (§15.4), each tool independently discovers and validates the
 manifest --- this is defence-in-depth, not redundancy. A regime orchestrator (Wardline-Governance tool) MAY additionally
 pre-validate the manifest and pass a validated configuration to other tools, but each tool MUST NOT skip its own
 validation on the assumption that another tool has already checked.
-]
 
 #strong[Merge semantics.] Overlays inherit from the root manifest and MAY narrow but MUST NOT widen:
 
 - An overlay CANNOT relax a tier assignment (declare Tier 1 data as Tier 2 or lower)
 - An overlay CANNOT lower severity (change ERROR to WARNING for a rule)
 - An overlay CAN raise severity, add boundaries, or further restrict rule configuration
-- An overlay CANNOT grant exception classes it has not been delegated authority for (§13.1.3)
+- An overlay CANNOT grant exception classes it has not been delegated authority for (§14.1.3)
 - Nested overlays compose from the repository root toward the analysed file's directory; the nearest in-scope overlay
   applies last, but only within the framework's narrowing-only rule
 - If two in-scope overlays make incompatible declarations that cannot be composed by narrowing, the enforcement tool
@@ -4285,7 +4346,7 @@ validation on the assumption that another tool has already checked.
 An enforcement tool that encounters a widening override in an overlay MUST reject the overlay with an error, not a
 warning. Widening is a policy violation, not a configuration issue.
 
-== 13.1.1 Root manifest schema
+== 14.1.1 Root manifest schema
 <root-manifest-schema>
 The root `wardline.yaml` contains five sections:
 
@@ -4296,15 +4357,15 @@ topology --- they define what the application considers authoritative (Tier 1), 
 not permitted.
 
 #strong[Rule configuration.] Global severity and exceptionability overrides. The default is the framework severity
-matrix (§7.3) --- the manifest need not restate the matrix. Overrides are stated as tuples of (rule, taint state,
+matrix (§8.3) --- the manifest need not restate the matrix. Overrides are stated as tuples of (rule, taint state,
 severity, exceptionability) that replace specific cells in the matrix. Three constraints govern override power: the root
 manifest MAY narrow governable cells (raise severity or tighten exceptionability); the root manifest MUST NOT alter
-UNCONDITIONAL cells --- changing an UNCONDITIONAL cell requires modifying the framework specification itself (§9.1), not
-project configuration; the root manifest MUST NOT lower the framework's minimum severity for any cell unless the
+UNCONDITIONAL cells --- changing an UNCONDITIONAL cell requires modifying the framework specification itself (§10.1),
+not project configuration; the root manifest MUST NOT lower the framework's minimum severity for any cell unless the
 framework explicitly permits project-level relaxation (currently no cells carry such permission). Without these
 constraints, a root manifest could quietly convert the specification into decorative wallpaper. This section also
-declares the project's precision and recall thresholds (§10) if they differ from the framework recommendations, and the
-expedited governance ratio threshold (§9.4).
+declares the project's precision and recall thresholds (§11) if they differ from the framework recommendations, and the
+expedited governance ratio threshold (§10.4).
 
 #strong[Delegation policy.] Which overlays may grant which exception classes. The root manifest declares a default
 delegation authority (RECOMMENDED: RELAXED) and per-path grants that raise or lower the authority for specific module
@@ -4331,7 +4392,7 @@ the acquiring organisation's CISO or delegate, not the contractor's, since the m
 institutional knowledge about its own data semantics. The enforcement tool MUST compute the age of the ratification
 (current date minus ratification date) and compare it to the declared review interval. When the ratification age exceeds
 the review interval, the enforcement tool produces a governance-level finding (analogous to the expedited ratio finding
-in §9.4) indicating the manifest is overdue for review. Without this enforcement, the review interval is advisory
+in §10.4) indicating the manifest is overdue for review. Without this enforcement, the review interval is advisory
 documentation, not an enforceable control.
 
 #strong[Root manifest example:]
@@ -4353,7 +4414,7 @@ tiers:
     description: "External partner data API"
 
 rules:
-  overrides: []   # Default severity matrix (§7.3) applies
+  overrides: []   # Default severity matrix (§8.3) applies
 
 delegation:
   default_authority: "RELAXED"
@@ -4371,7 +4432,7 @@ module_tiers:
 All root manifest fields are validated against a JSON Schema. Enforcement tools MUST validate the manifest against this
 schema before consuming it --- a malformed manifest is a hard error, not a best-effort parse.
 
-== 13.1.2 Overlay schema
+== 14.1.2 Overlay schema
 <overlay-schema>
 Overlays declare what is #emph[here] --- boundaries, local rule tuning, and module-specific policy --- without restating
 or contradicting the trust topology.
@@ -4389,7 +4450,7 @@ claiming governance over `audit/` through declaration alone.
 shape-validation boundaries (Tier 4 → Tier 3), semantic-validation boundaries (Tier 3 → Tier 2), combined validation
 boundaries (Tier 4 → Tier 2), trust construction boundaries (Tier 2 → Tier 1), and restoration boundaries (raw
 representation → restored tier). Each boundary entry identifies the function (by fully qualified name), the tier
-transition, and --- for restoration boundaries --- the four provenance evidence categories from §5.3 (structural,
+transition, and --- for restoration boundaries --- the four provenance evidence categories from §6.3 (structural,
 semantic, integrity, institutional). The manifest says "a boundary exists here"\; the code annotation on the function
 says "I am that boundary." Both MUST agree --- an enforcement tool that finds a manifest boundary declaration without a
 corresponding code annotation, or vice versa, produces a finding. Changes to a declared boundary function's signature
@@ -4444,7 +4505,7 @@ boundaries:
 
   # Restoration boundary: no from_tier — restoration semantics are
   # governed by the evidence object, not the tier-flow ordering.
-  # The restored tier is determined by available evidence (§5.3).
+  # The restored tier is determined by available evidence (§6.3).
   - function: "myproject.audit.load_audit_record"
     transition: "restoration"
     restored_tier: 1   # claimed restoration target (subject to evidence)
@@ -4464,9 +4525,9 @@ boundaries:
 ```
 
 #strong[Tier-flow boundaries] (shape\_validation, semantic\_validation, combined\_validation, construction) use
-`from_tier` and `to_tier` from the four-tier model. These declare transitions within the tier-flow ordering (§5.2).
+`from_tier` and `to_tier` from the four-tier model. These declare transitions within the tier-flow ordering (§6.2).
 #strong[Constraint on `to_tier=1`:] Tier 1 construction is a fundamentally different act from validation --- it produces
-a new semantic object under institutional rules, not a validated representation of existing data (§5.2 invariant 4).
+a new semantic object under institutional rules, not a validated representation of existing data (§6.2 invariant 4).
 Accordingly, `to_tier: 1` is valid only when `from_tier: 2`. Skip-promotions to Tier 1 (`from_tier: 3, to_tier: 1` or
 `from_tier: 4, to_tier: 1`) are schema-invalid --- the enforcement tool MUST reject them. The rejection message SHOULD
 direct the author to the required composed-steps form, for example: T4→T3 shape validation, T3→T2 semantic validation,
@@ -4517,7 +4578,7 @@ contract_bindings:
       - "myproject.reports.generate_partner_summary"
 ```
 
-Contract bindings are enforcement artefacts (§9.3.1) --- they are governed under configuration management, not security
+Contract bindings are enforcement artefacts (§10.3.1) --- they are governed under configuration management, not security
 policy. Changes to `contract_bindings` are tracked in the fingerprint baseline but do not trigger the governance
 escalation required for contract declaration changes.
 
@@ -4530,11 +4591,11 @@ validation-scope model is validated in practice.
 
 #strong[Enforcement:] The tool presence-checks the `validation_scope` field --- a boundary claiming Tier 2 semantics
 without a `validation_scope` declaration is a finding. The tool does not verify that the listed contracts' constraints
-are actually satisfied by the validator's body; that remains a governance judgement (see §12, residual risk 10).
+are actually satisfied by the validator's body; that remains a governance judgement (see §13, residual risk 10).
 
 Changes to the `validation_scope` (contracts added, removed, or modified) are tracked in the annotation fingerprint
 baseline as a distinct change category. Contract declaration changes (names, tiers, directions) are policy artefact
-changes (§9.3.1) and require the governance escalation appropriate to their artefact class. Contract binding changes
+changes (§10.3.1) and require the governance escalation appropriate to their artefact class. Contract binding changes
 (function mappings) are enforcement artefact changes and follow standard configuration management.
 
 === Restoration boundaries
@@ -4542,7 +4603,7 @@ changes (§9.3.1) and require the governance escalation appropriate to their art
 #strong[Restoration boundaries] use a distinct schema: `restored_tier` declares the claimed restoration target, and the
 `provenance` object declares the four evidence categories that determine whether the claim is justified. Restoration
 boundaries do not use `from_tier` because the input is a raw representation (serialised bytes whose authority was shed
-at serialisation time, §5.2 invariant 5), not Tier 4 external data --- conflating the two would obscure the
+at serialisation time, §6.2 invariant 5), not Tier 4 external data --- conflating the two would obscure the
 governance-heavy provenance requirements that distinguish restoration from validation.
 
 The `provenance` object fields (with decorator parameter name equivalents from the Python binding, Part II-A §A.4):
@@ -4554,7 +4615,7 @@ The `provenance` object fields (with decorator parameter name equivalents from t
 - `institutional` (`institutional_provenance`) --- string or null: institutional provenance attestation
 
 Without institutional evidence, the restored tier cannot exceed UNKNOWN\_GUARDED or UNKNOWN\_ASSURED regardless of other
-evidence (§5.3). Enforcement tools MUST map between manifest field names and decorator parameter names --- a mismatch
+evidence (§6.3). Enforcement tools MUST map between manifest field names and decorator parameter names --- a mismatch
 between the overlay declaration and the decorator arguments is a finding.
 
 The optional `serialization_boundary` flag (default `false`) indicates that the boundary involves
@@ -4564,12 +4625,12 @@ In-memory data sources --- such as in-process caches or pre-validated objects pa
 this flag. The flag is backward-compatible: existing manifests without `serialization_boundary` entries are unaffected,
 and the enforcement tool treats a missing flag as `false`.
 
-The enforcement tool validates restoration boundaries against the evidence matrix in §5.3: if the evidence declared in
+The enforcement tool validates restoration boundaries against the evidence matrix in §6.3: if the evidence declared in
 the manifest is insufficient for the `restored_tier` claim (e.g., `restored_tier: 1` but `integrity` is null), the tool
 produces a finding. The `restored_tier` is a #emph[claim], not a guarantee --- the evidence MUST support it.
 
 For combined validation boundaries (T4→T2), the enforcement tool verifies that the function performs both structural and
-semantic validation, satisfying invariant 3 from §5.2 (shape validation MUST precede semantic validation). The
+semantic validation, satisfying invariant 3 from §6.2 (shape validation MUST precede semantic validation). The
 `combined_validation` transition type is syntactic sugar --- it is equivalent to declaring a `shape_validation` (T4→T3)
 and `semantic_validation` (T3→T2) boundary at the same function location.
 
@@ -4604,7 +4665,7 @@ or raising exceptionability (from RELAXED to STANDARD). The enforcement tool rej
 === Supplementary group enforcement
 <supplementary-group-enforcement>
 #strong[Supplementary group enforcement.] Bindings define their own enforcement rules for supplementary contract
-annotations (Groups 5--15, §6). The overlay provides a structured location for these rules --- each entry declares the
+annotations (Groups 5--15, §7). The overlay provides a structured location for these rules --- each entry declares the
 annotation group, the scope (module path or function glob), the enforcement severity, and a description. This gives
 bindings a place to declare Groups 5--15 enforcement without polluting the core severity matrix, and gives assessors a
 single location to check which supplementary groups have enforcement rules in each module.
@@ -4614,7 +4675,7 @@ single location to check which supplementary groups have enforcement rules in ea
 #strong[Dependency taint declarations.] Third-party library functions --- code that executes in-process but is outside
 the wardline's annotation surface and governance perimeter --- are taint sources whose return values MUST be classified
 for the scanner's taint propagation engine. Without a declaration, data returned from an unannotated third-party
-function defaults to UNKNOWN\_RAW (§5.5). The `dependency_taint` section allows the overlay to assign specific taint
+function defaults to UNKNOWN\_RAW (§6.5). The `dependency_taint` section allows the overlay to assign specific taint
 states to third-party function return values with governance rationale.
 
 ```yaml
@@ -4638,9 +4699,9 @@ Each entry declares:
   that applies to an unpinned dependency is a governance risk, because a library update may change the function's
   validation behaviour without the wardline detecting it.
 - `functions` --- list of function paths and their declared return taint states. Taint states use the canonical tokens
-  from §5.1 (e.g., `UNKNOWN_RAW`, `GUARDED`, `EXTERNAL_RAW`). Declaring a return taint that implies completed validation
+  from §6.1 (e.g., `UNKNOWN_RAW`, `GUARDED`, `EXTERNAL_RAW`). Declaring a return taint that implies completed validation
   (e.g., `GUARDED`, `ASSURED`) requires documented rationale justifying the trust claim --- the same governance scrutiny
-  as a trust-escalation declaration (§9.2).
+  as a trust-escalation declaration (§10.2).
 - `rationale` --- documented justification for the taint assignment. For entries declaring `returns_taint` above
   UNKNOWN\_RAW, the rationale SHOULD identify: (a) the evidence basis (source code review, upstream advisory,
   documentation review, test-verified behaviour, or prior-version inference), (b) the scope of review (full function
@@ -4648,7 +4709,7 @@ Each entry declares:
   against the specific pinned version or inferred from a prior version. Under the Assurance governance profile, bindings
   SHOULD require these rationale elements as separately identifiable structured fields or an equivalent schema-validated
   representation rather than relying on undifferentiated free text. This structure does not eliminate the epistemic
-  asymmetry inherent in assessing code outside the governance perimeter (§12, risk 14), but it makes the governance
+  asymmetry inherent in assessing code outside the governance perimeter (§13, risk 14), but it makes the governance
   quality auditable --- an assessor can distinguish "reviewed the source of v2.3.1" from "assumed based on
   documentation."
 - `reviewed` --- date of last review. The enforcement tool SHOULD flag dependency taint declarations whose review date
@@ -4670,15 +4731,15 @@ Each entry declares:
   findings for `.get()` calls on instances of these models --- only for schema-level defaults declared in the model
   class definition itself.
 
-Dependency taint declarations are #strong[policy artefacts] (§9.3.1) --- they encode institutional decisions about what
+Dependency taint declarations are #strong[policy artefacts] (§10.3.1) --- they encode institutional decisions about what
 trust the application places in third-party code. They are subject to the same governance mechanisms as tier
 assignments: protected-file review, fingerprint baseline tracking, and ratification review.
 
 Dependency taint declarations are NOT boundary declarations. They do not activate pattern rules on the library
 function's body, do not require the library function to carry a code annotation, and do not participate in the "both
-MUST agree" coherence check (§9.2). The library function is outside the governance perimeter --- the declaration
+MUST agree" coherence check (§10.2). The library function is outside the governance perimeter --- the declaration
 describes the taint state of data arriving from ungoverned code, not the behaviour of the code itself. The application's
-own annotated validation boundaries (§5.2) perform the actual tier promotion under governance.
+own annotated validation boundaries (§6.2) perform the actual tier promotion under governance.
 
 The `package` field participates in the fingerprint baseline as a distinct change category. When the installed version
 of a declared dependency changes --- detected through lock file comparison or equivalent mechanism --- the enforcement
@@ -4687,13 +4748,13 @@ potentially stale. A library update may change the function's validation behavio
 invalidating the taint assumption. The finding is non-blocking (governance-level, not code-level) but ensures the taint
 declaration is re-reviewed when the dependency it describes changes.
 
-== 13.1.3 Exception register
+== 14.1.3 Exception register
 <exception-register>
 The exception register is a structured data store recording governance-approved exceptions to wardline findings. The
 schema below defines the logical record format --- what each exception MUST contain. The access mechanism is an
 implementation detail of the enforcement toolchain: direct file manipulation, command-line interface, MCP tool
 interface, or API endpoint are all valid mechanisms. MCP tool interfaces may also serve as a delivery mechanism for
-pre-generation context projection (§8.5). The security guarantee comes from validation at consumption --- the
+pre-generation context projection (§9.5). The security guarantee comes from validation at consumption --- the
 enforcement tool validates register integrity on every run --- not from the recording mechanism.
 
 Each exception record contains:
@@ -4723,9 +4784,9 @@ Each exception record contains:
   supports auditing whether the reviewer had authority to grant at that exceptionability class
 - #strong[Temporal bounds] --- grant date, expiry date, and review interval. Every exception has an expiry --- no
   permanent exceptions. The governance model's temporal separation is enforced structurally in the schema
-- #strong[Provenance] --- governance path (standard or expedited) and whether the exception was agent-originated (§9.3).
-  The `expedited` field enables the expedited governance ratio metric (§9.4). The `agent_originated` field flags
-  exceptions that were authored by an AI agent and require human review as a distinct governance step
+- #strong[Provenance] --- governance path (standard or expedited) and whether the exception was agent-originated
+  (§10.3). The `expedited` field enables the expedited governance ratio metric (§10.4). The `agent_originated` field
+  flags exceptions that were authored by an AI agent and require human review as a distinct governance step
 - #strong[Architectural consequence] #emph[\(optional but recommended)] --- two fields that convert the exception
   register from a finding-suppression mechanism into an architectural debt ledger:
   - `elimination_path` --- what architectural change would eliminate the need for this exception? Free-text description
@@ -4743,19 +4804,19 @@ Each exception record contains:
   implemented. If the ratio remains dominated by deferred fixes, the wardline is functioning as a compliance layer over
   unresolved architectural debt --- a "shifting the burden" dynamic where governance exceptions absorb the symptoms
   while the structural causes persist. This ratio SHOULD be surfaced as a SARIF run-level property
-  (`wardline.deferredFixRatio`) alongside the expedited governance ratio (§9.4, `wardline.expeditedExceptionRatio`), so
+  (`wardline.deferredFixRatio`) alongside the expedited governance ratio (§10.4, `wardline.expeditedExceptionRatio`), so
   that assessors can see both governance health indicators --- exception quality and exception process --- in the same
   output.
 
-== 13.1.4 Fingerprint baseline
+== 14.1.4 Fingerprint baseline
 <fingerprint-baseline>
-The fingerprint baseline interchange format is defined in §9.2. It is co-located with the exception register and follows
-the same access model --- the logical record format is specified; the access mechanism is an implementation detail. The
-fingerprint baseline participates in manifest validation (§13.1.5): enforcement tools MUST validate the fingerprint file
-against its schema before consuming it, and a missing or malformed fingerprint baseline produces a governance-level
-finding. The fingerprint baseline's `generated_at` field is a governance timestamp, not a determinism-sensitive field.
-The deterministic output requirement (§10, property 5) applies to SARIF output only. Fingerprint baselines are
-regenerated on demand and their timestamps reflect the generation time.
+The fingerprint baseline interchange format is defined in §10.2. It is co-located with the exception register and
+follows the same access model --- the logical record format is specified; the access mechanism is an implementation
+detail. The fingerprint baseline participates in manifest validation (§14.1.5): enforcement tools MUST validate the
+fingerprint file against its schema before consuming it, and a missing or malformed fingerprint baseline produces a
+governance-level finding. The fingerprint baseline's `generated_at` field is a governance timestamp, not a
+determinism-sensitive field. The deterministic output requirement (§11, property 5) applies to SARIF output only.
+Fingerprint baselines are regenerated on demand and their timestamps reflect the generation time.
 
 #strong[Record format.] Each entry in the fingerprint baseline records the annotation state of a single function at a
 point in time. The minimal record structure:
@@ -4807,9 +4868,9 @@ wardline decorator names lexicographically, concatenate each decorator name and 
 concatenated string (UTF-8 encoded). The `annotation_hash` field is the first 16 hexadecimal characters (64 bits) of the
 SHA-256 digest. A minimum of 16 hex characters (64 bits) is REQUIRED --- shorter truncations are vulnerable to birthday
 collisions at modest annotation counts (32-bit truncation collides at \~65K annotations, which is reachable in large
-codebases). Implementations MAY emit the full 64-character SHA-256 hex digest. The governance model (§9.2) uses hash
+codebases). Implementations MAY emit the full 64-character SHA-256 hex digest. The governance model (§10.2) uses hash
 changes to detect annotation surface drift between governance review cycles. The `summary` section supports the coverage
-metrics referenced in the conformance criteria (§14.2).
+metrics referenced in the conformance criteria (§15.2).
 
 Canonical argument serialisation uses explicit source-order rendering. A decorator with no arguments serialises as
 `decorator_name()`. Positional arguments are rendered first in declaration order; keyword arguments follow in
@@ -4823,21 +4884,21 @@ to `annotation_hash`. In verification-mode or byte-comparison workflows, tools S
 fields from generated baselines or normalise them to fixed values; otherwise a baseline regenerated from unchanged
 annotations may differ for purely temporal reasons.
 
-== 13.1.5 Manifest validation
+== 14.1.5 Manifest validation
 <manifest-validation>
 Enforcement tools MUST validate all manifest files against their respective JSON Schemas before consuming them.
 Validation failures are hard errors --- the tool does not proceed with a malformed manifest. The JSON Schemas for all
 four file types are normative artefacts of the framework and are versioned alongside this specification. A binding's
-conformance (§14) includes manifest schema validation. Schema files are not yet published as of DRAFT v0.3.0; they will
+conformance (§15) includes manifest schema validation. Schema files are not yet published as of DRAFT v0.3.0; they will
 be co-located with the reference implementation and versioned to match the specification revision. Until the normative
 schema bundle is published, implementations MAY derive manifest schemas from the field specifications in
-§13.1.1--§13.1.4, but MUST document the derived schema revision they are using and treat it as provisional rather than
+§14.1.1--§14.1.4, but MUST document the derived schema revision they are using and treat it as provisional rather than
 silently claiming final-schema conformance. Implementations deriving schemas at DRAFT v0.3.0 SHOULD publish their
 derived schemas alongside their tool for interoperability testing. Schema divergences discovered during interoperability
-testing are specification defects, not implementation defects --- they indicate that the prose in §13.1.1--§13.1.4 is
+testing are specification defects, not implementation defects --- they indicate that the prose in §14.1.1--§14.1.4 is
 ambiguous and should be tightened before v1.0. Conformance at v1.0 requires validation against published schemas.
 
-== 13.2 Scanner operational configuration (`wardline.toml`)
+== 14.2 Scanner operational configuration (`wardline.toml`)
 <scanner-operational-configuration-wardline.toml>
 Scanner operational settings reside in `wardline.toml`. This file is #strong[not] part of the manifest system --- it is
 binding-specific enforcement configuration, not trust topology. However, because `wardline.toml` controls the
@@ -4845,7 +4906,7 @@ enforcement perimeter and rule enablement, a modification that excludes a direct
 equivalent to a tier reassignment. Implementations SHOULD protect `wardline.toml` with CODEOWNERS review alongside other
 governance artefacts.
 
-#strong[Artefact classification:] `wardline.toml` is an enforcement artefact (§9.3.1) --- changes are subject to
+#strong[Artefact classification:] `wardline.toml` is an enforcement artefact (§10.3.1) --- changes are subject to
 standard change management, not the policy artefact ratification process. However, changes to the enforcement perimeter
 (`[scanner.paths]`) and rule enablement (`[rules]`) SHOULD trigger a GOVERNANCE-level finding for reviewer visibility.
 
@@ -4853,7 +4914,7 @@ standard change management, not the policy artefact ratification process. Howeve
 
 #figure(
   align(center)[#table(
-    columns: (21.43%, 11.9%, 14.29%, 21.43%, 30.95%),
+    columns: (10%, 21%, 8%, 20%, 41%),
     table.header([Section], [Key], [Type], [Default], [Description],),
     table.hline(),
     [`[scanner]`], [`root`], [string (path)], [`"."`], [Root directory for scanning (relative to `wardline.toml`
@@ -4869,7 +4930,7 @@ standard change management, not the policy artefact ratification process. Howeve
     UNCONDITIONAL rule emits a GOVERNANCE-level finding],
     [`[regime]`], [`phase`], [integer (1--5)], [`2`], [Declared adoption phase (§A.9/B.9). Phase transitions are
     governance events],
-    [`[regime]`], [`governance_profile`], [string], [`"lite"`], [`"lite"` or `"assurance"` (§14.3.2)],
+    [`[regime]`], [`governance_profile`], [string], [`"lite"`], [`"lite"` or `"assurance"` (§15.3.2)],
     [`[regime]`], [`strict_registry`], [boolean], [`true`], [Whether registry mismatch is a hard error or warning],
     [`[corpus]`], [`path`], [string (path)], [`"corpus/"`], [Path to the golden corpus directory],
     [`[output]`], [`format`], [string], [`"sarif"`], [Output format: `"sarif"`, `"json"`, or `"text"`],
@@ -4910,9 +4971,9 @@ a structured error (exit code 2) --- this prevents silent misconfiguration from 
 tokens, or paths MUST produce structured errors. A missing `wardline.toml` is not an error --- the tool runs with
 defaults (all groups enabled, all rules enabled, advisory mode).
 
-= 14. Conformance
+= 15. Conformance
 <conformance>
-== 14.1 Conformance model
+== 15.1 Conformance model
 <conformance-model>
 The wardline classification framework is designed to be implemented by existing tooling ecosystems, not only by bespoke
 enforcement products. A single tool need not --- and in most ecosystems will not --- satisfy every conformance
@@ -4924,7 +4985,7 @@ slice that matches its capabilities.
 To support this, the conformance model distinguishes between #strong[tool-level conformance] (what a single tool
 implements) and #strong[regime-level conformance] (what the combined tooling achieves for a given language ecosystem).
 
-== 14.2 Conformance criteria
+== 15.2 Conformance criteria
 <conformance-criteria>
 Ten criteria define the full wardline conformance surface. They are grouped by what they certify: #emph[expressiveness]
 (can the ecosystem represent the wardline?), #emph[enforcement capability] (can tools detect violations?), and
@@ -4933,26 +4994,26 @@ Ten criteria define the full wardline conformance surface. They are grouped by w
 #strong[Expressiveness] (non-negotiable):
 
 + The ecosystem can express all 17 annotation groups at the function, class, or field level using language-native
-  mechanisms (§6)
+  mechanisms (§7)
 
 #strong[Enforcement capability] (non-negotiable):
 
 #block[
 #set enum(numbering: "1.", start: 2)
 + Pattern rule detection: the six active pattern rules (WL-001 through WL-006) are detected intraprocedurally within
-  annotated bodies (§7, §8.1)
+  annotated bodies (§8, §9.1)
 + Structural verification: WL-007 is enforced on all validation boundary functions (shape, semantic, combined, and
   restoration), WL-008 (validation ordering) is enforced on semantic-validation boundaries, and WL-009 (restoration
   symmetry) is enforced on `@integral_read` and `@integral_construction` functions whose data sources are
-  manifest-declared serialization boundaries (§7.2, §8.1)
+  manifest-declared serialization boundaries (§8.2, §9.1)
 + Taint-flow tracking: explicit-flow taint between declared boundaries is traced for at minimum direct flows and two-hop
-  unannotated intermediaries (§8.1). The two-hop scope also applies to WL-007 delegation --- a validation function that
-  delegates to a called validator satisfies WL-007 through two-hop call-graph analysis (§8.1)
-+ Precision and recall are measured, tracked, and published per cell (rule × taint state), per tool (§10)
-+ A golden corpus of labelled specimens exists and is maintained (§10), including evasion-variant specimens where a tool
+  unannotated intermediaries (§9.1). The two-hop scope also applies to WL-007 delegation --- a validation function that
+  delegates to a called validator satisfies WL-007 through two-hop call-graph analysis (§9.1)
++ Precision and recall are measured, tracked, and published per cell (rule × taint state), per tool (§11)
++ A golden corpus of labelled specimens exists and is maintained (§11), including evasion-variant specimens where a tool
   claims semantic-equivalent coverage for a rule
-+ Each enforcement tool passes its own rules where applicable (self-hosting gate) (§10)
-+ Enforcement output is deterministic SARIF v2.1.0 with the wardline-specific property bags defined in §10.1
++ Each enforcement tool passes its own rules where applicable (self-hosting gate) (§11)
++ Enforcement output is deterministic SARIF v2.1.0 with the wardline-specific property bags defined in §11.1
 ]
 
 #strong[Governance infrastructure] (necessary for assessable enforcement):
@@ -4960,14 +5021,14 @@ Ten criteria define the full wardline conformance surface. They are grouped by w
 #block[
 #set enum(numbering: "1.", start: 9)
 + The governance model supports at minimum: protected-file review, temporal separation, and annotation fingerprint
-  baseline (§9)
-+ The wardline manifest system (§13) --- root manifest, overlays, exception register, and fingerprint baseline --- is
+  baseline (§10)
++ The wardline manifest system (§14) --- root manifest, overlays, exception register, and fingerprint baseline --- is
   consumed by the tools that depend on it, and JSON Schema validation is performed either by that tool or by a declared
   Wardline-Governance tool in the same regime. A tool that relies on manifest context but delegates full schema
   validation MUST document that delegation.
 ]
 
-== 14.3 Conformance profiles
+== 15.3 Conformance profiles
 <conformance-profiles>
 All-or-nothing conformance deters adoption. The conformance model therefore defines two orthogonal profile dimensions:
 #strong[enforcement profiles] partition the ten criteria into implementable slices that match existing tool categories;
@@ -4976,7 +5037,7 @@ both: an enforcement profile (or regime of profiles) and a governance profile. T
 #emph[what the tools can do]\; the governance profiles tell an assessor #emph[how rigorously the organisation governs
 the policy surface].
 
-=== 14.3.1 Enforcement profiles
+=== 15.3.1 Enforcement profiles
 <enforcement-profiles>
 An open-source type checker maintainer who sees a ten-criterion checklist spanning static analysis, taint tracking,
 governance registers, and SARIF output will correctly conclude that the specification expects a bespoke product, not a
@@ -4998,7 +5059,7 @@ which profile(s) it satisfies; an enforcement regime declares which profiles its
     groups only), 5, 6 (+ 7 conditionally)], [Type checker (mypy, pyright, mypy plugin)],
     [#strong[Wardline-Governance]], [Exception register, fingerprint baseline, control-law reporting, retrospective scan
     markers], [9, 10], [CI orchestrator, thin wardline runner],
-    [#strong[Wardline-Full]], [The complete conformance surface], [All ten criteria], [An enforcement regime (§14.4
+    [#strong[Wardline-Full]], [The complete conformance surface], [All ten criteria], [An enforcement regime (§15.4
     below), or a monolithic tool that covers everything],
   )]
   , kind: table
@@ -5024,7 +5085,7 @@ Conditional criteria are elaborated in the profile semantics below.
   meaningfully be checked against the rules it implements --- a scanner written in the same language it analyses SHOULD
   pass its own rules on its own codebase. Tools whose source is not in the analysed language (e.g., a Rust-based scanner
   that analyses Python) are exempt.
-- #strong[Wardline-Type] requires that the type-system layer (§8.2) makes tier mismatches visible at development time.
+- #strong[Wardline-Type] requires that the type-system layer (§9.2) makes tier mismatches visible at development time.
   It requires criterion 1 at the type layer for the core classification groups only --- the type system can express
   Groups 1--4 and 16--17 to the extent that the type system can represent them --- but does not require the full
   17-group annotation vocabulary at the type layer. Full-vocabulary expressiveness remains a regime-level requirement
@@ -5035,18 +5096,18 @@ Conditional criteria are elaborated in the profile semantics below.
   state reporting, retrospective scan verification for degraded windows, and the expedited governance ratio metric. A
   governance tool need not perform any code analysis.
 - #strong[Wardline-Full] is not a separate profile --- it is the assertion that all ten criteria are satisfied. A single
-  tool MAY claim Wardline-Full. More commonly, Wardline-Full conformance is a property of an enforcement regime (§14.4).
+  tool MAY claim Wardline-Full. More commonly, Wardline-Full conformance is a property of an enforcement regime (§15.4).
 
-=== 14.3.2 Governance profiles
+=== 15.3.2 Governance profiles
 <governance-profiles>
 Enforcement profiles partition what the tools implement. Governance profiles partition what the organisation commits to
-governing. The conformance criteria in §14.2 describe the full governance surface --- but the full surface is calibrated
+governing. The conformance criteria in §15.2 describe the full governance surface --- but the full surface is calibrated
 for mature teams with dedicated security governance capacity. A five-person team adopting wardline for the first time
 faces a governance burden designed for a 50-person team with an established IRAP assessment cycle. The conformance
 profiles partition enforcement but not governance --- and governance is where adoption stalls.
 
 Two governance profiles are defined. A deployment MUST declare which governance profile it operates under. The
-governance profile is recorded in the root wardline manifest (§13.1.1) and reported in SARIF output as
+governance profile is recorded in the root wardline manifest (§14.1.1) and reported in SARIF output as
 `wardline.governanceProfile` with values `"lite"` or `"assurance"`.
 
 #strong[Wardline Lite.] The small-team and early-adopter governance profile. Wardline Lite provides a viable governance
@@ -5058,7 +5119,7 @@ Wardline Lite requirements:
 
 #figure(
   align(center)[#table(
-    columns: (35%, 15%, 50%),
+    columns: (30%, 18%, 52%),
     table.header([Requirement], [Status], [Notes],),
     table.hline(),
     [Root wardline manifest (`wardline.yaml`)], [MUST], [Tier definitions, ratification authority, review interval ---
@@ -5070,32 +5131,32 @@ Wardline Lite requirements:
     and is maintained --- exceptions are not granted informally],
     [Temporal separation], [SHOULD], [Separate change, different actor, approved before dependent code merges. Teams
     that cannot sustain temporal separation MUST document their alternative: same-actor approval is permitted for
-    #emph[enforcement artefact] changes (§9.3.1) with mandatory retrospective review within a defined window
+    #emph[enforcement artefact] changes (§10.3.1) with mandatory retrospective review within a defined window
     (recommended: next sprint boundary or 10 business days, whichever is shorter). However, #emph[policy artefact]
     changes (tier definitions, delegation policy, validation-scope declarations) MUST require different-actor approval
     even under the Lite profile --- the governance risk of same-actor policy changes is categorically higher, since a
-    poisoned policy artefact corrupts all downstream enforcement (§9.3.2). The documented alternative is recorded in the
-    root manifest and is an assessable governance decision, not a silent omission],
+    poisoned policy artefact corrupts all downstream enforcement (§10.3.2). The documented alternative is recorded in
+    the root manifest and is an assessable governance decision, not a silent omission],
     [Bootstrap golden corpus], [SHOULD], [A minimum of 20--30 specimens covering UNCONDITIONAL cells and Tier 1 taint
     states (INTEGRAL, ASSURED). The bootstrap corpus demonstrates that the enforcement tools detect the
-    highest-consequence violations. The full 126+ specimen requirement (§10) is deferred to the Assurance governance
+    highest-consequence violations. The full 126+ specimen requirement (§11) is deferred to the Assurance governance
     profile],
     [Annotation change tracking], [MUST], [Changes to the annotation surface (annotations added, modified, or removed)
     are flagged for human review. This MAY be implemented through VCS diff review of annotation-bearing files rather
     than a full fingerprint baseline --- the requirement is visibility of annotation changes, not a specific tracking
     mechanism],
-    [Expedited governance ratio], [RECOMMENDED], [The ratio metric (§9.4) SHOULD be computed and reported. Projects that
-    do not yet compute the ratio MUST instead document their expedited exception approval process and review it at each
-    manifest ratification],
+    [Expedited governance ratio], [RECOMMENDED], [The ratio metric (§10.4) SHOULD be computed and reported. Projects
+    that do not yet compute the ratio MUST instead document their expedited exception approval process and review it at
+    each manifest ratification],
   )]
   , kind: table
   )
 
-Wardline Lite deferred items --- these are not omitted, they are explicitly deferred with a graduation path (§14.3.3):
+Wardline Lite deferred items --- these are not omitted, they are explicitly deferred with a graduation path (§15.3.3):
 
 - #strong[Full golden corpus] (126+ specimens with adversarial cases) --- deferred until the team has sufficient
   enforcement experience to curate meaningful adversarial specimens
-- #strong[Full fingerprint baseline] (structured data store with canonical hashing per §9.2) --- deferred in favour of
+- #strong[Full fingerprint baseline] (structured data store with canonical hashing per §10.2) --- deferred in favour of
   annotation change tracking through simpler mechanisms. The full baseline is required at Assurance level
 - #strong[Expedited ratio threshold enforcement] --- the metric is recommended at Lite level; the automated threshold
   and governance-level finding are required at Assurance level
@@ -5103,11 +5164,11 @@ Wardline Lite deferred items --- these are not omitted, they are explicitly defe
 Wardline Lite is not "Wardline minus the unpleasant bits." It includes a governance checklist (below) that makes the
 governance posture assessable even without the full artefact set. An assessor evaluating a Lite deployment verifies the
 checklist, not a reduced version of the Assurance procedure. For the graduation path from Lite to Assurance ---
-including triggers and a pre-graduation checklist --- see §14.3.3.
+including triggers and a pre-graduation checklist --- see §15.3.3.
 
 #quote(block: true)[
 #strong[ISM-layer perspective.] The companion recommendations document (#emph[Proposed Framework Changes and
-Recommendations], §3.2) proposes ISM-style controls for manifest governance --- semantic policy change authority,
+Recommendations], §4.2) proposes ISM-style controls for manifest governance --- semantic policy change authority,
 adequacy review, exception governance, and tool assurance --- framed as outcome-stated controls sitting above this
 specification. Those controls address the same governance surface from the policy framework's perspective: where this
 section specifies #emph[how] the governance mechanisms work, the ISM-layer controls specify #emph[what outcomes] the
@@ -5127,9 +5188,9 @@ organisation MUST demonstrate to an assessor.
 + If a bootstrap corpus exists: enforcement tools detect the specimens correctly
 + If expedited exceptions were granted: the process is documented and retrospective review occurred
 
-#strong[Wardline Assurance.] The full governance profile as described in §9. Wardline Assurance requires all governance
-mechanisms defined in §9.2 without relaxation: full temporal separation (MUST; no documented alternatives permitted),
-full golden corpus (126+ specimens with adversarial cases per §10), full fingerprint baseline with canonical hashing and
+#strong[Wardline Assurance.] The full governance profile as described in §10. Wardline Assurance requires all governance
+mechanisms defined in §10.2 without relaxation: full temporal separation (MUST; no documented alternatives permitted),
+full golden corpus (126+ specimens with adversarial cases per §11), full fingerprint baseline with canonical hashing and
 structured change detection, expedited governance ratio computation with declared threshold and automated
 governance-level findings when exceeded, and SIEM export for ISM-assessed systems (SHOULD). Wardline Assurance is the
 governance profile expected for systems undergoing IRAP assessment, systems processing data at PROTECTED or above, or
@@ -5144,7 +5205,7 @@ Wardline Assurance requirements add to or strengthen the Lite requirements:
     table.hline(),
     [Temporal separation], [MUST], [No documented alternatives --- separate change, different actor, full stop],
     [Golden corpus], [MUST --- full 126+ specimens], [Expanded from bootstrap corpus of 20--30 specimens],
-    [Fingerprint baseline], [MUST --- full structured baseline per §9.2], [Replaces annotation change tracking],
+    [Fingerprint baseline], [MUST --- full structured baseline per §10.2], [Replaces annotation change tracking],
     [Manifest coherence checks], [MUST --- CI gate before code-level enforcement], [New requirement],
     [Expedited governance ratio], [MUST --- computed, threshold declared, automated finding], [Strengthened from
     RECOMMENDED],
@@ -5161,7 +5222,7 @@ Wardline-Core enforcement regime at the Assurance governance level is also valid
 governance) --- though unusual, this might apply where a single scanner covers the required rules and the organisation's
 accreditation demands full governance.
 
-=== 14.3.3 Governance profile graduation
+=== 15.3.3 Governance profile graduation
 <governance-profile-graduation>
 Graduation from Lite to Assurance is tied to team maturity and accreditation requirements. It is not a calendar
 milestone --- it occurs when the organisation's governance capacity and risk context warrant the full governance
@@ -5179,9 +5240,9 @@ surface.
 #strong[Graduation checklist.] Before changing the governance profile declaration from Lite to Assurance, the following
 MUST be satisfied:
 
-+ #strong[Golden corpus expansion.] The bootstrap corpus has been expanded to the full 126+ specimen requirement (§10),
++ #strong[Golden corpus expansion.] The bootstrap corpus has been expanded to the full 126+ specimen requirement (§11),
   including at least one adversarial false positive and one adversarial false negative per rule
-+ #strong[Fingerprint baseline established.] The full structured fingerprint baseline (§9.2) is in place with canonical
++ #strong[Fingerprint baseline established.] The full structured fingerprint baseline (§10.2) is in place with canonical
   hashing, and at least one baseline review cycle has been completed
 + #strong[Temporal separation operational.] Temporal separation is implemented without documented alternatives --- all
   governance artefact changes are reviewed by a different actor before dependent code merges
@@ -5194,7 +5255,7 @@ The graduation is recorded as a manifest change --- the `governance_profile` fie
 `"assurance"` --- and is itself a policy artefact change subject to ratification. The first Assurance-level enforcement
 run establishes the fingerprint baseline as the new governance reference point.
 
-== 14.4 Enforcement regimes
+== 15.4 Enforcement regimes
 <enforcement-regimes>
 An #strong[enforcement regime] is the set of tools that collectively enforce a wardline for a given language ecosystem.
 The regime is Wardline-Full conformant if and only if the union of its constituent tools' profiles covers all ten
@@ -5213,9 +5274,9 @@ criteria with no gaps.
   rule coverage is complete. Gaps in rule coverage MUST be documented.
 - #strong[Corpus union.] Each tool maintains corpus specimens for the rules it implements. The regime's corpus is the
   union of all constituent tools' corpora. Regime-level corpus coverage MUST satisfy the minimum specimen counts defined
-  in §10 across the full rule set.
+  in §11 across the full rule set.
 - #strong[SARIF aggregation.] Each tool produces its own SARIF run. The regime's combined output is a multi-run SARIF
-  log (§10.1). A regime orchestrator --- which may be a Wardline-Governance tool --- aggregates runs and computes
+  log (§11.1). A regime orchestrator --- which may be a Wardline-Governance tool --- aggregates runs and computes
   regime-level metrics (coverage ratio, expedited ratio, control-law state).
 - #strong[Self-hosting.] Criterion 7 (self-hosting gate) applies per tool: each enforcement tool in the regime MUST pass
   the wardline rules that it itself implements, applied to its own source code. A type checker plugin that enforces tier
@@ -5230,14 +5291,14 @@ regime composition is documented in the language binding reference --- for examp
 composition matrix for the Python ecosystem, and Part II-B §B.6 for Java. Assessors evaluating a regime consult the
 binding reference for the composition table and the combined corpus.
 
-== 14.5 Supplementary group enforcement scope
+== 15.5 Supplementary group enforcement scope
 <supplementary-group-enforcement-scope>
 Criterion 1 requires that the ecosystem can #emph[express] all 17 annotation groups. Criteria 2--8 require
 #emph[enforcement] only for the nine rules --- six pattern rules (WL-001--WL-006) and three structural verification
 rules (WL-007--WL-009) --- plus taint-flow tracking --- all of which operate on core classification annotations (Groups
 1--4, 16--17). The framework does not mandate standardised enforcement semantics for supplementary contract annotations
 (Groups 5--15). Tools define their own enforcement rules for supplementary groups, with their own severity and
-exceptionability (§9.3), declared in the overlay's supplementary section (§13.1.2). This means a regime can be
+exceptionability (§10.3), declared in the overlay's supplementary section (§14.1.2). This means a regime can be
 Wardline-Full conformant while providing rich enforcement for some supplementary groups and minimal enforcement for
 others. An assessor evaluating a regime SHOULD document which supplementary groups have enforcement rules and which are
 expressiveness-only --- the overlay supplementary section provides the structured location for this documentation, so
@@ -5249,7 +5310,7 @@ supplementary enforcement depth. What matters is that the binding can express th
 documentation accurately declares which supplementary groups are enforced versus expressiveness-only at the current
 stage.
 
-== 14.6 Assessment procedure
+== 15.6 Assessment procedure
 <assessment-procedure>
 This subsection defines a repeatable verification procedure for assessors evaluating a wardline deployment. The
 procedure is tool-agnostic --- it applies to any conformant regime regardless of language binding.
@@ -5263,18 +5324,18 @@ overlays - Verify exit code 0 (schema-valid) - Review manifest content: tier def
 delegation policy, ratification date and review interval - Check that ratification is not overdue (ratification age \<
 review interval)
 
-#strong[Step 2.5: Manifest coherence verification.] - Run manifest coherence checks (§9.2) against the project's
+#strong[Step 2.5: Manifest coherence verification.] - Run manifest coherence checks (§10.2) against the project's
 manifest, overlays, and code-level annotations - Verify that no orphaned annotations exist (code annotations without
 manifest declarations) - Verify that no undeclared boundaries exist (manifest boundary declarations without
 corresponding code annotations) - Verify that tier assignments are consistent with declared data-flow topology - Verify
 that contract declarations match code-level annotations at the declared locations
 
-#emph[For deployments at the Assurance governance level (§14.3.2):] manifest coherence is a MUST gate. All five
+#emph[For deployments at the Assurance governance level (§15.3.2):] manifest coherence is a MUST gate. All five
 coherence conditions MUST pass before code-level enforcement findings (Steps 3--4) are considered valid. Coherence
 failures that are excepted through the standard governance path (STANDARD exceptionability) MUST have documented
 rationale explaining why the incoherence is acceptable.
 
-#emph[For deployments at the Lite governance level (§14.3.2):] manifest coherence checking is RECOMMENDED. Lite
+#emph[For deployments at the Lite governance level (§15.3.2):] manifest coherence checking is RECOMMENDED. Lite
 deployments that run coherence checks benefit from early detection of annotation surface drift. Lite deployments that do
 not yet run coherence checks SHOULD document their approach to maintaining manifest--code alignment (e.g., periodic
 manual review of annotation coverage against manifest declarations).
@@ -5283,11 +5344,11 @@ manual review of annotation coverage against manifest declarations).
 manifest) - Run `wardline corpus verify` with each tool in the regime against its specimen subset - Record pass/fail per
 specimen, per tool - Compute corpus precision and recall per cell. Verify precision meets the applicable floor: ≥ 80%
 generally, ≥ 65% permitted for MIXED\_RAW cells; and recall meets the applicable floor: ≥ 70% for STANDARD/RELAXED cells
-and ≥ 90% for UNCONDITIONAL cells (§10 properties 3--4) - Check adversarial specimen coverage: ≥1 adversarial false
+and ≥ 90% for UNCONDITIONAL cells (§11 properties 3--4) - Check adversarial specimen coverage: ≥1 adversarial false
 positive and ≥1 adversarial false negative per rule
 
 #strong[Step 4: Enforcement execution.] - Run the full regime against the project codebase - Verify SARIF output
-contains required wardline property bags (§10.1) - Verify `wardline.controlLaw` reports "normal" for the declared
+contains required wardline property bags (§11.1) - Verify `wardline.controlLaw` reports "normal" for the declared
 adoption phase - Run the tool twice on the same codebase and verify byte-identical SARIF in verification mode (property
 5) - Confirm `wardline.deterministic: true` is present in the SARIF output as the tool's self-report
 
@@ -5317,7 +5378,7 @@ passes | Tool passes own rules | Tool violates own rules |
 A deployment that fails any criterion is not conformant at the corresponding profile level. The assessor documents which
 criteria pass, which fail, and the overall conformance determination (Wardline-Full, partial, or non-conformant).
 
-== 14.6.1 Worked example: conformant Phase 3 deployment
+== 15.6.1 Worked example: conformant Phase 3 deployment
 <worked-example-conformant-phase-3-deployment>
 This example shows the governance artefacts and CI configuration for a synthetic government Java project
 ("partner-landscape") at Phase 3 (Wardline-Core) conformance. It is not a real project --- it demonstrates the minimum
@@ -5454,13 +5515,13 @@ corpus/                      @security-team
 ]
 ```
 
-#strong[What the assessor verifies against this deployment] (mapped to §14.6 steps):
+#strong[What the assessor verifies against this deployment] (mapped to §15.6 steps):
 
 + `wardline manifest validate` → exit code 0 ✓
 + Ratification date (2026-02-01) within review interval (180 days) ✓
 + Scanner runs in CI and gates on exit code ✓
 + `wardline regime status --phase 3` → "normal" ✓
-+ SARIF output contains wardline property bags (§10.1) ✓
++ SARIF output contains wardline property bags (§11.1) ✓
 + Exception register entries have reviewer, rationale, expiry ✓
 + CODEOWNERS protects all governance artefacts ✓
 + Golden corpus present with specimens covering non-SUPPRESS cells ✓
@@ -5494,10 +5555,10 @@ entry points and capabilities. The mapping is:
 Python has five phases because its tooling ecosystem layers differently --- the reference scanner (Phase 2) precedes
 type-system integration (Phase 3), and governance tooling is a distinct Phase 5. Java has four phases because the
 advisory Error Prone path (Phase 2) is integrated into compilation, and governance tooling ships alongside the
-authoritative scanner at Phase 3. Both bindings reach Wardline-Full conformance through a regime (§14.4) that combines
+authoritative scanner at Phase 3. Both bindings reach Wardline-Full conformance through a regime (§15.4) that combines
 all constituent tools, not through any single phase.
 
-== 14.6.2 Worked example: Lite governance deployment
+== 15.6.2 Worked example: Lite governance deployment
 <worked-example-lite-governance-deployment>
 This example shows a five-person team ("health-notifications") adopting wardline at the Lite governance level. The team
 builds a Python service that processes health notification records from an external API and stores summaries in an
@@ -5615,7 +5676,7 @@ assessment. Full coverage of all 126+ cells is deferred to governance graduation
   run: wardline-scanner --check sarif/wardline-scanner.sarif
 ```
 
-#strong[What the assessor verifies against this deployment] (Lite governance checklist --- §14.3.2):
+#strong[What the assessor verifies against this deployment] (Lite governance checklist --- §15.3.2):
 
 + `wardline manifest validate` → exit code 0 ✓
 + Ratification date (2026-03-01) within review interval (90 days) ✓
@@ -5637,7 +5698,7 @@ service begins processing PROTECTED data. The 90-day ratification cycle means th
 review cycles within 180 days --- sufficient enforcement experience to expand the corpus and establish the full
 fingerprint baseline.
 
-== 14.6.3 Navigating to Part II
+== 15.6.3 Navigating to Part II
 <navigating-to-part-ii>
 Part I defines the framework; Part II translates it to language-specific enforcement. The Python binding (Part II-A) and
 Java binding (Part II-B) show how the tiers, patterns, and governance model are expressed in each language. They do not
@@ -5646,7 +5707,7 @@ are implementing or evaluating a Python regime; start with Part II-B for Java. B
 design history, language evaluation, normative interface contract, non-normative annotation vocabulary and worked
 examples, regime composition matrix, and residual risks.
 
-== 14.7 Partial conformance
+== 15.7 Partial conformance
 <partial-conformance>
 Tool quality targets (MAY) are not conformance criteria --- they represent maturity targets that improve enforcement
 quality.
@@ -5668,7 +5729,7 @@ become.
 = Part II --- Language Binding Reference
 <part-ii-language-binding-reference>
 This part provides compressed binding references for each language the Wardline framework currently targets. Each
-binding maps the framework's 17 abstract annotation groups (Part I §6) to concrete language mechanisms, defines the
+binding maps the framework's 17 abstract annotation groups (Part I §7) to concrete language mechanisms, defines the
 interface contract for conformant scanners, and documents language-specific residual risks.
 
 #strong[Normative status.] This part uses per-section normative markers. Interface contract sections (A.3, B.3) are
@@ -5689,7 +5750,7 @@ language-specific enforcement. Where a binding-level statement conflicts with Pa
   enforcement. #emph[Not yet updated to framework v0.3.0 --- see binding version notice in B.1.]
 
 #strong[Future bindings] (not yet specified): C\#, Go, Rust. The candidate language list and per-language evaluation
-rationale are in Part I §15. The evaluation criteria in Part I §11 define how to assess a new target language.
+rationale are in Part I §1. The evaluation criteria in Part I §12 define how to assess a new target language.
 
 #strong[Companion documents] (not part of this specification):
 
@@ -5728,7 +5789,7 @@ was implemented as a pattern-matching enforcement gate and deployed in productio
 
 Iteration 3 used seven specialist agent perspectives to refine the design. Binary taint tracking was rejected by all
 seven agents; the team replaced it with the two-dimensional model tracking trust classification and validation status as
-orthogonal dimensions --- now formalised in the parent specification (§5).
+orthogonal dimensions --- now formalised in the parent specification (§6).
 
 #strong[Feasibility finding.] The deployed predecessor validates the approach at the pattern-matching level: automated
 detection of common agentic code failure modes is technically feasible for Python, compatible with existing development
@@ -5745,7 +5806,7 @@ Wardline-Governance orchestrator independently. The regime matures when DTA owns
 == A.2 Python language evaluation
 <a.2-python-language-evaluation>
 #emph[This section is non-normative. It models how future binding authors should assess their language against Part I
-§11's evaluation criteria.]
+§12's evaluation criteria.]
 
 #figure(
   align(center)[#table(
@@ -5846,7 +5907,7 @@ Semgrep rule pack, or a future competing implementation --- MUST satisfy the fol
   governed by the overlay declaration, not by PY-WL-001.
 
 + #strong[SARIF output.] The tool MUST produce findings in SARIF v2.1.0 with the wardline-specific property bags defined
-  in the parent specification (§10.1). The Python regime requires the following mandatory property bag keys on each
+  in the parent specification (§11.1). The Python regime requires the following mandatory property bag keys on each
   `result` object:
 
   #figure(
@@ -5877,7 +5938,7 @@ Semgrep rule pack, or a future competing implementation --- MUST satisfy the fol
 
 + #strong[Decorator composition.] The tool MUST resolve decorator stacking on the same function. In particular,
   `@int_data` without `@restoration_boundary` produces `UNKNOWN_RAW`\; `@int_data` composed with `@restoration_boundary`
-  produces the effective tier determined by the Part I §5.3 evidence matrix.
+  produces the effective tier determined by the Part I §6.3 evidence matrix.
 
 + #strong[Third-party delegation resolution.] For PY-WL-008 / framework WL-007 delegation analysis, the tool SHOULD
   resolve calls into installed package source where that source is available to static analysis. Where installed source
@@ -5888,10 +5949,10 @@ Semgrep rule pack, or a future competing implementation --- MUST satisfy the fol
   for those rules.
 
 + #strong[Verification mode.] The tool MUST support the `--verification-mode` output profile for deterministic
-  byte-identical output against the golden corpus (Part I §10, property 5).
+  byte-identical output against the golden corpus (Part I §11, property 5).
 
 + #strong[Run-level SARIF properties.] In addition to the mandatory result-level properties above, the tool MUST emit
-  the required run-level SARIF properties defined in Part I §10.1 for Wardline-Core tools, including
+  the required run-level SARIF properties defined in Part I §11.1 for Wardline-Core tools, including
   `wardline.inputHash`, `wardline.inputFiles`, `wardline.manifestHash`, and `wardline.controlLaw`.
 
 A tool that satisfies this contract and implements at least one PY-WL rule is a partial Wardline-Core tool. A tool that
@@ -5900,7 +5961,7 @@ Wardline-Core tool. Note: PY-WL-001 and PY-WL-002 both derive from framework rul
 PY-WL-003 derives from framework WL-002, and the binding numbering is offset by two from PY-WL-003 onward (WL-001 splits
 into PY-WL-001/002).
 
-#strong[Rule mapping.] The ten Python binding rules derive from the nine framework rules (Part I §7) as follows. WL-001
+#strong[Rule mapping.] The ten Python binding rules derive from the nine framework rules (Part I §8) as follows. WL-001
 splits into two binding rules because Python has two distinct access-with-fallback idioms (`dict.get()` and
 `getattr()`); all other framework rules map one-to-one with a numbering offset:
 
@@ -5953,7 +6014,7 @@ decorators for an 80k-line codebase in the initial annotation pass.
 #strong[Decorators as machine-readable institutional knowledge.] Each decorator converts a prose-level institutional
 constraint ("audit records must not have fabricated defaults") into a machine-checkable declaration.
 
-#strong[Coding posture per tier.] The parent specification's authority tier model (§4) implies distinct programming
+#strong[Coding posture per tier.] The parent specification's authority tier model (§5) implies distinct programming
 styles:
 
 #figure(
@@ -5978,7 +6039,7 @@ this floor; `ast.Match` (3.10+) and `ast.unparse()` (3.9+) are available.
 
 === A.4.2 Decorator mapping table
 <a.4.2-decorator-mapping-table>
-The 17 annotation groups are defined as language-agnostic semantic requirements in Part I §6. This table provides the
+The 17 annotation groups are defined as language-agnostic semantic requirements in Part I §7. This table provides the
 Python-specific decorator syntax. Decorators set `_wardline_*` metadata attributes on the decorated callable; they do
 almost nothing at runtime. In SARIF and other cross-binding interchange, annotation context is identified by Part I
 group numbers (`wardline.annotationGroups`), while Python decorator names remain binding-specific diagnostic detail.
@@ -5994,9 +6055,9 @@ group numbers (`wardline.annotationGroups`), while Python decorator names remain
     → T3 constructor.],
     [1], [], [`@validates_semantic`], [#emph[\(none)]], [Absence of rejection path in body produces a finding (WL-007).
     Inputs that do not trace to `@validates_shape` output produce a finding (WL-008/PY-WL-009). T3 → T2 constructor.
-    Validation scope declared in the overlay per Part I §13.1.2.],
+    Validation scope declared in the overlay per Part I §14.1.2.],
     [1], [], [`@validates_external`], [#emph[\(none)]], [Combined T4 → T2. Absence of rejection path in body produces a
-    finding (WL-007). The scanner verifies that the body performs both structural and semantic checks (§5.2).],
+    finding (WL-007). The scanner verifies that the body performs both structural and semantic checks (§6.2).],
     [1], [], [`@integral_read`], [#emph[\(none)]], [Body bans: `.get()` with defaults, `getattr()` with fallbacks,
     `hasattr()`, broad `except`. Return tagged TIER\_1.],
     [1], [], [`@integral_writer`], [#emph[\(none)]], [Call-site bans: enclosing swallowing `except`. Audit call MUST
@@ -6074,7 +6135,7 @@ group numbers (`wardline.annotationGroups`), while Python decorator names remain
     documentation marker. No enforcement. Advisory if produces \> consumes.],
     [17], [Restoration Boundaries], [`@restoration_boundary(...)`], [`restored_tier`: int; `institutional_provenance`:
     str (opt); `structural_evidence`: bool; `semantic_evidence`: bool (opt); `integrity_evidence`: str (opt)], [Body
-    that does not satisfy WL-007 produces a finding. Evidence that does not support the claimed tier per §5.3 evidence
+    that does not satisfy WL-007 produces a finding. Evidence that does not support the claimed tier per §6.3 evidence
     matrix produces a finding. Scanner demotes effective taint state when evidence is insufficient.],
   )]
   , kind: table
@@ -6137,7 +6198,7 @@ bodies) bypasses this enforcement.
 #strong[How `@validates_external` relates to the decomposed validators.] `@validates_external` (combined T4→T2) performs
 both shape and semantic validation in a single function body. The model treats this as two logical transitions
 (T4→T3→T2) occurring within one function. The scanner establishes that the body performs both structural and semantic
-checks (§5.2 invariant 3). The decomposed form (`@validates_shape` + `@validates_semantic` on separate functions) is
+checks (§6.2 invariant 3). The decomposed form (`@validates_shape` + `@validates_semantic` on separate functions) is
 preferred for large validators where the structural and semantic concerns are distinct. The combined form is appropriate
 when both checks are simple enough to co-locate without confusion. Stacking `@validates_shape` + `@validates_semantic`
 on the same function is contradictory (SCN-021) --- use `@validates_external` for the combined case.
@@ -6235,7 +6296,7 @@ ERROR findings. The 29 detected combinations (26 contradictory, 3 suspicious) ar
   , kind: table
   )
 
-#strong[Severity matrix.] The Python binding inherits the parent specification's 8×8 severity matrix (Part I §7.3).
+#strong[Severity matrix.] The Python binding inherits the parent specification's 8×8 severity matrix (Part I §8.3).
 Where the binding splits a framework rule into binding-specific sub-rules (e.g., WL-001 → PY-WL-001 and PY-WL-002), the
 sub-rules inherit the framework rule's severity matrix entries with the following binding-level deviation:
 
@@ -6243,18 +6304,18 @@ sub-rules inherit the framework rule's severity matrix entries with the followin
 `getattr(obj, name, default)` and `obj.attr or default`. The `obj.attr or default` form has a falsy-substitution risk
 absent from dict-key access: it silently replaces #emph[present but falsy] attribute values (0, `""`, `False`, `None`)
 with the default, not just missing attributes. This language-specific semantic risk --- absent from the framework-level
-WL-001 pattern --- justifies PY-WL-002 establishing its own matrix row under §7.1's split-rule provision. PY-WL-002 uses
+WL-001 pattern --- justifies PY-WL-002 establishing its own matrix row under §8.1's split-rule provision. PY-WL-002 uses
 WARNING/RELAXED at EXTERNAL\_RAW and UNKNOWN\_RAW, and WARNING/STANDARD at MIXED\_RAW (in all three cases departing from
 the framework's SUPPRESS/TRANSPARENT) because the falsy-substitution risk warrants visibility even at T4 boundaries
 where dict-key fallback defaults are expected and safe. This is a widening relative to the framework's WL-001 SUPPRESS
-at those cells, authorized by §7.1 for split sub-rules where language-specific semantics create risks absent from the
+at those cells, authorized by §8.1 for split sub-rules where language-specific semantics create risks absent from the
 framework pattern. See ADR-003 for the decision record.
 
 The Python binding matrix for PY-WL-001 through PY-WL-010 (80 cells) is:
 
 #figure(
   align(center)[#table(
-    columns: 10,
+    columns: (10%, 18%, 8%, 8%, 9%, 8%, 8%, 9%, 9%, 13%),
     table.header([Rule], [Pattern], [Integral], [Assured], [Guarded], [Ext. Raw], [Unk. Raw], [Unk. Guarded], [Unk.
       Assured], [Mixed Raw],),
     table.hline(),
@@ -6298,7 +6359,7 @@ PY-WL-009).
 === A.4.5 Supplementary rules: SUP-010 and SUP-011
 <a.4.5-supplementary-rules-sup-010-and-sup-011>
 SUP-010 and SUP-011 are binding-specific supplementary rules with no framework counterpart. They implement the
-non-normative deep-immutability principle from §8 of the prime spec. Both are opt-in supplementary enforcement and are
+non-normative deep-immutability principle from §9 of the prime spec. Both are opt-in supplementary enforcement and are
 not required for framework conformance.
 
 #strong[SUP-010: Frozen dataclass with mutable container fields and no deep-freeze.] A frozen dataclass
@@ -6379,7 +6440,7 @@ machinery shipped in the `wardline-decorators` package.
 #emph[This section is non-normative.]
 
 The Python enforcement regime composes existing ecosystem tools with a reference implementation to achieve Wardline-Full
-conformance (Part I §14.4).
+conformance (Part I §15.4).
 
 #figure(
   align(center)[#table(
@@ -6426,7 +6487,7 @@ wardline-compatible tooling without coordination with DTA.
 == A.7 Residual risks
 <a.7-residual-risks>
 #emph[This section is non-normative. Assessors evaluating a Python wardline deployment should review these risks
-alongside the framework-level residual risks (Part I §12), particularly risk 12 (evasion surface trajectory) --- as
+alongside the framework-level residual risks (Part I §13), particularly risk 12 (evasion surface trajectory) --- as
 annotation coverage grows, coding-level risk falls but governance risk rises, and the risks below should be read in that
 context.]
 
@@ -6476,8 +6537,8 @@ semantic judgement the scanner cannot make.
 The governance model specifies rigorous human gates: CODEOWNERS review, temporal separation, baseline ratification,
 provenance justification. Every one of these is a human activity. Under deadline pressure, each gate becomes a candidate
 for rubber-stamping. The scanner cannot verify the quality of the human judgement that governs the scanner's own trust
-topology. The governance capacity mechanisms defined in §9.4 --- particularly the expedited governance ratio --- provide
-quantitative signals that can detect governance decay before it reaches systemic rubber-stamping.
+topology. The governance capacity mechanisms defined in §10.4 --- particularly the expedited governance ratio ---
+provide quantitative signals that can detect governance decay before it reaches systemic rubber-stamping.
 
 === A.7.6 Fingerprint baseline deletion
 <a.7.6-fingerprint-baseline-deletion>
@@ -6500,16 +6561,16 @@ authoritative data types.
 <a.7.8-third-party-library-taint-accuracy>
 Python applications commonly depend on third-party libraries for data processing, validation, and serialisation ---
 Pydantic, marshmallow, pandas, requests, and similar packages. These libraries execute in-process but are outside the
-wardline's annotation surface. The framework's `dependency_taint` declarations (§13.1.2) allow the overlay to assign
+wardline's annotation surface. The framework's `dependency_taint` declarations (§14.1.2) allow the overlay to assign
 taint states to third-party function return values, but the accuracy of those declarations depends on governance review,
 not machine verification.
 
 Two Python-specific concerns sharpen this risk. First, Pydantic model defaults on fields that participate in
-tier-classified data flows are subject to the Group 5 scanning requirement (§6, SHOULD). When a Pydantic model is
+tier-classified data flows are subject to the Group 5 scanning requirement (§7, SHOULD). When a Pydantic model is
 defined in a third-party library, the enforcement tool's ability to scan those defaults depends on whether it analyses
 installed package source --- which is binding-specific and not specified in the §A.3 interface contract. Library-defined
-Pydantic defaults that escape scanning create a gap at exactly the point where §6 Group 5 says they SHOULD be caught.
-Second, the two-hop call-graph heuristic (§8.1) that enables WL-007 delegation analysis may or may not follow calls into
+Pydantic defaults that escape scanning create a gap at exactly the point where §7 Group 5 says they SHOULD be caught.
+Second, the two-hop call-graph heuristic (§9.1) that enables WL-007 delegation analysis may or may not follow calls into
 third-party library source depending on the scanner's resolution of installed packages. A `@validates_shape` function
 whose body delegates to a library function (e.g., `return my_library.validate(raw)`) satisfies WL-007 only if the
 scanner follows the delegation and finds a rejection path in the library's source. If the scanner does not resolve
@@ -6769,7 +6830,7 @@ decorator. If the tier is unknown, leave the function unannotated; UNKNOWN is sa
 guidance is maintained as a living document outside the specification (evolved from Part III §37).
 
 #strong[Annotation change impact preview.] Python binding implementations SHOULD support annotation change impact
-preview using the SARIF metadata defined in Part I §10.1. When a developer modifies a tier assignment or decorator ---
+preview using the SARIF metadata defined in Part I §11.1. When a developer modifies a tier assignment or decorator ---
 e.g., changing `@validates_shape` to `@validates_external`, or promoting a module from Tier 3 to Tier 2 --- the tool
 shows the cascade: newly applicable pattern rules, resolved findings, severity changes, and affected modules. The
 primary span is the changed annotation; secondary spans (carried in SARIF `relatedLocations`) are code locations whose
@@ -6857,18 +6918,18 @@ cannot produce meaningful enforcement output; `wardline regime` only).
   , kind: table
   )
 
-The distinction between alternate and direct law follows Part I §9.5: alternate means degraded but running; direct means
-no meaningful enforcement output. Changes to wardline policy artefacts MUST NOT proceed under direct-law bypass.
+The distinction between alternate and direct law follows Part I §10.5: alternate means degraded but running; direct
+means no meaningful enforcement output. Changes to wardline policy artefacts MUST NOT proceed under direct-law bypass.
 
 == A.11 Conformance criteria mapping
 <a.11-conformance-criteria-mapping>
-#emph[This section is non-normative. It maps the ten conformance criteria from Part I §14 to the Python binding's
+#emph[This section is non-normative. It maps the ten conformance criteria from Part I §15 to the Python binding's
 implementation artefacts.]
 
 #figure(
   align(center)[#table(
     columns: (5%, 25%, 35%, 35%),
-    table.header([\#], [Criterion (§14)], [Implementation], [Evidence / CLI],),
+    table.header([\#], [Criterion (§15)], [Implementation], [Evidence / CLI],),
     table.hline(),
     [1], [Annotation vocabulary covers 17 groups], [`wardline-decorators` package: 16/17 groups enforced; Group 16
     `@data_flow` declared advisory-only], [§A.4.2 decorator table; `wardline.toml` group configuration],
@@ -7011,8 +7072,8 @@ when all five conditions are met:
 + Change `governance_profile: "lite"` to `governance_profile: "assurance"` in `wardline.yaml`.
 + Run `wardline coherence` to validate the new profile.
 
-== A.15 Dependency taint (§5.5)
-<a.15-dependency-taint-5.5>
+== A.15 Dependency taint (§6.5)
+<a.15-dependency-taint-6.5>
 #emph[This section is non-normative. It documents the Python binding's approach to third-party dependency taint.]
 
 #strong[Manifest declaration.] Third-party library function return taints are declared in the root manifest under
@@ -7048,7 +7109,7 @@ justification for the declaration).
   , kind: table
   )
 
-#strong[UNKNOWN\_RAW fallback (§5.5 MUST).] When a call targets a function in a package that has `dependency_taint`
+#strong[UNKNOWN\_RAW fallback (§6.5 MUST).] When a call targets a function in a package that has `dependency_taint`
 declarations, but the specific function is not declared, the return taint is `UNKNOWN_RAW`. This prevents undeclared
 library functions from inheriting the caller's taint --- a conservative default that surfaces as a finding if the return
 value reaches a high-tier code path.
@@ -7079,7 +7140,7 @@ ungoverned code. The application's own annotated boundaries declare what happens
 #quote(block: true)[
 #strong[⚠ Binding version notice.] This binding was last updated against the framework specification v0.2.0. The
 framework specification v0.3.0 added WL-009 (restoration symmetry), updated the severity matrix from 8 to 9 framework
-rules, added a non-normative deep-immutability note to §8, and updated conformance criterion 3 to include WL-009. This
+rules, added a non-normative deep-immutability note to §9, and updated conformance criterion 3 to include WL-009. This
 binding does not yet reflect these changes. In particular:
 
 - WL-009 has no Java binding mapping (the Python binding maps it to PY-WL-010).
@@ -7093,7 +7154,7 @@ These updates will be applied in a future revision.
 ]
 
 This section defines the Java language binding for the Wardline classification framework. It maps the 17 abstract
-annotation groups (Part I §6) to concrete Java annotations, defines the interface contract for conformant scanners, and
+annotation groups (Part I §7) to concrete Java annotations, defines the interface contract for conformant scanners, and
 documents the residual risks specific to Java's language and ecosystem characteristics.
 
 #strong[Normative status.] Section B.3 (interface contract) is normative. All other sections are non-normative --- they
@@ -7130,7 +7191,7 @@ CodeQL instead of JavaParser) provided it satisfies the interface contract (B.3)
 
 == B.2 Java language evaluation
 <b.2-java-language-evaluation>
-The parent specification (§11) defines language evaluation criteria for wardline bindings. This section assesses Java
+The parent specification (§12) defines language evaluation criteria for wardline bindings. This section assesses Java
 against those criteria, modelling how future binding authors should evaluate their target language.
 
 #figure(
@@ -7245,7 +7306,7 @@ Any tool that implements Wardline-Core rules for the Java regime MUST satisfy th
   governed by the overlay declaration, not by JV-WL-001.
 
 + #strong[SARIF output.] The tool MUST produce findings in SARIF v2.1.0 with the wardline-specific property bags defined
-  in the parent specification (§10.1).
+  in the parent specification (§11.1).
 
 + #strong[Rule declaration.] The tool MUST declare which rules it implements and MUST maintain golden corpus specimens
   for those rules.
@@ -7318,7 +7379,7 @@ from source (`SOURCE` retention would be invisible to bytecode-level tools --- a
 
 === B.4.3 Annotation mapping table
 <b.4.3-annotation-mapping-table>
-The following table maps each of the 17 abstract annotation groups (Part I §6) to their concrete Java annotations. In
+The following table maps each of the 17 abstract annotation groups (Part I §7) to their concrete Java annotations. In
 SARIF and other cross-binding interchange, annotation context is identified by Part I group numbers
 (`wardline.annotationGroups`), while Java annotation names remain binding-specific diagnostic detail.
 
@@ -7405,7 +7466,7 @@ SARIF and other cross-binding interchange, annotation context is identified by P
     [#strong[17]], [Restoration boundaries], [`@RestorationBoundary(...)`], [`@Target(METHOD)`, `int restoredTier`,
     `String institutionalProvenance`, `boolean structuralEvidence`, `boolean semanticEvidence`,
     `IntegrityMethod integrityEvidence`], [Restores serialised internal data to declared tier. Evidence-to-tier mapping
-    per §5.3],
+    per §6.3],
   )]
   , kind: table
   )
@@ -7593,7 +7654,7 @@ analysis). All optional --- the core regime provides Wardline-Full conformance.
 
 == B.7 Residual risks
 <b.7-residual-risks>
-The following residual risks are specific to the Java language binding. The parent specification (§12) documents
+The following residual risks are specific to the Java language binding. The parent specification (§13) documents
 binding-independent residual risks --- particularly risk 12 (evasion surface trajectory), which applies to both
 bindings: as annotation coverage grows, coding-level risk falls but governance risk rises.
 
@@ -7968,7 +8029,7 @@ construction path, the scanner would produce:
 
 The mandatory property bags (`wardline.rule`, `wardline.taintState`, `wardline.enclosingTier`, `wardline.severity`,
 `wardline.exceptionability`, `wardline.excepted`, `wardline.annotationGroups`) follow the parent specification's SARIF
-contract (Part I §10.1). The additional properties (`wardline.enclosingAnnotation`, `wardline.boundaryFunction`) are
+contract (Part I §11.1). The additional properties (`wardline.enclosingAnnotation`, `wardline.boundaryFunction`) are
 binding-specific extensions that provide Java-specific diagnostic context --- they are not required by the interface
 contract but are recommended for implementers.
 
@@ -7980,7 +8041,7 @@ expected to treat wardline annotations and governance artefacts as requiring the
 output.
 
 #strong[Annotation change impact preview.] Java binding implementations SHOULD support annotation change impact preview
-using the SARIF metadata defined in Part I §10.1. When a developer modifies a tier assignment or annotation --- e.g.,
+using the SARIF metadata defined in Part I §11.1. When a developer modifies a tier assignment or annotation --- e.g.,
 adding `@ValidatesExternal` to replace a `@ValidatesShape` + `@ValidatesSemantic` pair, or changing a module's tier
 declaration in the manifest --- the tool shows the cascade: newly applicable pattern rules, resolved findings, severity
 changes, and affected modules. The primary span is the changed annotation; secondary spans (carried in SARIF

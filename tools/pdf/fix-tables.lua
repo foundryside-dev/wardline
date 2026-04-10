@@ -58,19 +58,19 @@ local profiles = {
   { match = function(h, n)
       return n == 5 and h[1] == "#" and starts(h[2], "group") and has(h[3] or "", "institutional")
     end,
-    widths = {0.03, 0.07, 0.28, 0.22, 0.40} },
+    widths = {0.03, 0.15, 0.21, 0.23, 0.38} },
 
   -- §10.2  Governance mechanisms (Mechanism | Lite | Assurance | Enforcement | Reference)
   { match = function(h, n)
       return n == 5 and starts(h[1], "mechanism") and has(h[2], "lite")
     end,
-    widths = {0.24, 0.12, 0.24, 0.24, 0.16} },
+    widths = {0.22, 0.17, 0.21, 0.24, 0.16} },
 
   -- §11   Adversarial specimen categories (Category | Description | Minimum Count | Target)
   { match = function(h, n)
       return n == 4 and starts(h[1], "category") and has(h[3] or "", "minimum")
     end,
-    widths = {0.18, 0.26, 0.18, 0.38} },
+    widths = {0.28, 0.22, 0.12, 0.38} },
 
   -- §13   Residual risks (# | Risk | Primary Compensating Control)
   { match = function(h, n)
@@ -82,7 +82,7 @@ local profiles = {
   { match = function(h, n)
       return n == 5 and starts(h[1], "file") and has(h[3] or "", "authored")
     end,
-    widths = {0.14, 0.10, 0.14, 0.22, 0.40} },
+    widths = {0.28, 0.08, 0.09, 0.20, 0.35} },
 
   -- §15.3.2  Governance profiles (Profile | What it covers | Criteria | Typical implementer)
   { match = function(h, n)
@@ -94,7 +94,13 @@ local profiles = {
   { match = function(h, n)
       return n == 3 and starts(h[1], "requirement") and h[2] == "status" and h[3] == "notes"
     end,
-    widths = {0.35, 0.15, 0.50} },
+    widths = {0.30, 0.18, 0.52} },
+
+  -- §14.2  wardline.toml configuration (Section | Key | Type | Default | Description)
+  { match = function(h, n)
+      return n == 5 and starts(h[1], "section") and starts(h[2], "key") and has(h[3] or "", "type")
+    end,
+    widths = {0.10, 0.21, 0.08, 0.20, 0.41} },
 
   -- §15.3  Adoption phase (Adoption Phase | Python | Java | Conformance Profile)
   { match = function(h, n)
@@ -119,6 +125,12 @@ local profiles = {
       return n == 3 and starts(h[1], "criterion") and has(h[2], "assessment")
     end,
     widths = {0.30, 0.35, 0.35} },
+
+  -- §8.3  Severity matrix (Rule | Pattern | Integral | Assured | Guarded | Ext.Raw | Unk.Raw | Unk.Guarded | Unk.Assured | Mixed Raw)
+  { match = function(h, n)
+      return n == 10 and starts(h[1], "rule") and starts(h[2], "pattern") and has(h[3] or "", "integral")
+    end,
+    widths = {0.10, 0.18, 0.08, 0.08, 0.09, 0.08, 0.08, 0.09, 0.09, 0.13} },
 
   -- B.4.3  Annotation mapping — Java (Group | Abstract | Java Annotation | Signature | Description)
   { match = function(h, n)

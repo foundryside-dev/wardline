@@ -436,7 +436,7 @@ class TestReadBaselineControlLaw:
         assert failed is False
 
     def test_read_baseline_control_law_empty_runs(self, tmp_path: Path) -> None:
-        """Empty runs array returns None without crash."""
+        """Empty runs array is treated as read failure (H3 anti-bypass)."""
         import json
 
         from wardline.cli.scan import _read_baseline_control_law
@@ -445,7 +445,7 @@ class TestReadBaselineControlLaw:
         sarif.write_text(json.dumps({"runs": []}))
         law, failed = _read_baseline_control_law(str(sarif))
         assert law is None
-        assert failed is False
+        assert failed is True
 
     def test_read_baseline_control_law_malformed_json(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture

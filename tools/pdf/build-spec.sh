@@ -117,7 +117,11 @@ def convert_admonition(m):
         else:
             lines.append('> ' + line)
     body_text = '\n'.join(lines).lstrip('> ')
-    return '> **' + title + '.**\n>\n> ' + body_text
+    # Strip trailing bare '>' lines and ensure a blank line after the blockquote
+    # so pandoc doesn't merge it with the following paragraph
+    while body_text.endswith('\n>'):
+        body_text = body_text[:-2]
+    return '> **' + title + '.**\n>\n> ' + body_text.rstrip() + '\n\n'
 content = re.sub(
     r'^!!! +(\w+) *(?:\"([^\"]*)\")?\n((?:    .*\n|\n)*)',
     convert_admonition, content, flags=re.MULTILINE
@@ -203,10 +207,45 @@ sed -i '/^    align: ([^)]*),$/d' "$OUTPUT_TYP"
 # AST level — no sed fixups needed.  The filter matches tables by header cell
 # content and overrides pandoc-computed widths with hand-tuned values.
 
+# Rotate the severity matrix table to landscape — it has 10 columns and needs the width
+python3 -c "
+import sys
+with open(sys.argv[1], 'r') as f:
+    content = f.read()
+# Find the severity matrix figure by its unique header pattern
+marker = 'table.header([Rule], [Pattern], [Integral], [Assured], [Guarded]'
+idx = content.find(marker)
+if idx > 0:
+    # Walk backwards to find the #figure( that contains this table
+    fig_start = content.rfind('#figure(', 0, idx)
+    # Walk forwards to find the closing ]) of the figure
+    # Count parens/brackets from #figure(
+    depth = 0
+    i = fig_start
+    fig_end = -1
+    while i < len(content):
+        if content[i] == '(' or content[i] == '[':
+            depth += 1
+        elif content[i] == ')' or content[i] == ']':
+            depth -= 1
+            if depth == 0:
+                fig_end = i + 1
+                break
+        i += 1
+    if fig_end > fig_start:
+        figure_text = content[fig_start:fig_end]
+        replacement = '#page(flipped: true)[\n' + figure_text + '\n]'
+        content = content[:fig_start] + replacement + content[fig_end:]
+        # Only patch the first occurrence (framework matrix, not binding matrices)
+        print('  Rotated severity matrix to landscape', file=sys.stderr)
+with open(sys.argv[1], 'w') as f:
+    f.write(content)
+" "$OUTPUT_TYP"
+
 # Fix mermaid diagram images — pandoc wraps in #box(image(...)) with no width; add width and center
 # Constrain diagrams: use height for tall vertical diagrams, width for others
 sed -i 's|#box(image("\.mermaid-tmp/diagram-2\.png"))|#align(center)[#image(".mermaid-tmp/diagram-2.png", height: 90%)]|' "$OUTPUT_TYP"
-sed -i 's|#box(image("\.mermaid-tmp/diagram-3\.png"))|#align(center)[#image(".mermaid-tmp/diagram-3.png", width: 90%)]|' "$OUTPUT_TYP"
+sed -i 's|#box(image("\.mermaid-tmp/diagram-3\.png"))|#align(center)[#image(".mermaid-tmp/diagram-3.png", width: 100%)]|' "$OUTPUT_TYP"
 sed -i 's|#box(image("\(\.mermaid-tmp/diagram-[0-9]*\.png\)"))|#align(center)[#image("\1", width: 75%)]|g' "$OUTPUT_TYP"
 
 if [[ "${1:-}" == "--pdf" ]]; then

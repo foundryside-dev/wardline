@@ -4,8 +4,7 @@
 // Fonts: TeX Gyre Heros (headings), Libertinus Serif (body), Liberation Mono (code)
 // Colours: deep steel blue #1E3A5F (primary), teal #0D7377 (accent), warm grey for rules
 //
-// Pandoc variables used:
-//   $title$, $subtitle$, $author$, $date$, $version$, $status$
+// Pandoc variables: title, subtitle, author, date, version, status
 
 // ─────────────────────────────────────────────────────────────
 // COLOUR PALETTE
@@ -54,8 +53,8 @@
 
 #set page(
   paper: "a4",
-  // Wider left margin gives a subtle asymmetry — professional publication feel.
-  // Extra bottom room for footer rule + page number.
+  // Asymmetric margins: wider left (2.8cm) accommodates a ~0.6cm binding gutter
+  // for A4 print.  Extra bottom room for footer rule + page number.
   margin: (top: 2.6cm, bottom: 2.8cm, left: 2.8cm, right: 2.2cm),
 
   header: context {
@@ -209,6 +208,7 @@
     stroke: 0.5pt + c-rule,
     inset: (x: 3pt, y: 1.5pt),
     radius: 2pt,
+    baseline: 1.5pt,
     it,
   )
 }
@@ -249,19 +249,33 @@
   if it.y == 0 {
     set text(
       font: "TeX Gyre Heros",
-      size: 9pt,
+      size: 8.5pt,
       weight: "bold",
       fill: white,
       tracking: 0.2pt,
+      hyphenate: false,
     )
     it
   } else {
     set par(justify: false)
     set text(
       font: ("TeX Gyre Heros", "Liberation Sans"),
-      size: 8pt,
+      size: 9pt,
       fill: rgb("#1A1A1A"),
+      hyphenate: false,
     )
+    // Shrink inline code in table cells to prevent overflow on long tokens
+    show raw.where(block: false): r => {
+      set text(6.5pt, font: ("Liberation Mono", "DejaVu Sans Mono"))
+      box(
+        fill: c-shade,
+        stroke: 0.5pt + c-rule,
+        inset: (x: 1.5pt, y: 0.5pt),
+        radius: 1.5pt,
+        baseline: 1pt,
+        r,
+      )
+    }
     it
   }
 }
@@ -288,7 +302,7 @@
 #set list(
   indent: 1.2em,
   body-indent: 0.6em,
-  marker: ([#text(fill: c-teal)[▸]], [–], [·]),
+  marker: ([#text(fill: c-teal, size: 7pt)[▸]], [–], [·]),
 )
 
 #set enum(
@@ -318,6 +332,7 @@
       stroke: 0.5pt + c-rule,
       inset: (x: 2.5pt, y: 1pt),
       radius: 2pt,
+      baseline: 1.5pt,
       r,
     )
   }
@@ -530,6 +545,8 @@
   [#text(font: "TeX Gyre Heros", size: 9pt)[$date$]],
   [#text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted, weight: "bold")[Document type]],
   [#text(font: "TeX Gyre Heros", size: 9pt)[Conformity assessment scheme]],
+  [#text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted, weight: "bold")[Classification]],
+  [#text(font: "TeX Gyre Heros", size: 9pt)[OFFICIAL]],
   [#text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted, weight: "bold")[Identifier]],
   [#text(font: "TeX Gyre Heros", size: 9pt)[WFS-$version$]],
 )

@@ -197,12 +197,74 @@ def _read_baseline_control_law(compare: str | None) -> tuple[str | None, bool]:
         data = json.loads(Path(compare).read_text(encoding="utf-8"))
         runs = data.get("runs", [])
         if not isinstance(runs, list) or not runs:
-            return None, False
+            logger.warning("Baseline SARIF has missing or empty 'runs' array — treating as read failure")
+            return None, True
         result: str | None = runs[0].get("properties", {}).get("wardline.controlLaw")
         return result, False
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         logger.warning("Cannot read baseline control law: %s", exc)
         return None, True
+
+
+_RETROSPECTIVE_STATE_FILE = "wardline.retrospective-required.json"
+
+
+def _read_retrospective_state(project_root: Path) -> dict[str, str] | None:
+    """Read persistent retrospective-required marker, or None if absent.
+
+    Returns the marker dict (with ``from_law``, ``detected_at``,
+    ``commit_ref``) when a retrospective scan is outstanding.
+    """
+    import json
+
+    state_path = project_root / _RETROSPECTIVE_STATE_FILE
+    if not state_path.exists():
+        return None
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and "from_law" in data:
+            return data
+        return None
+    except (OSError, json.JSONDecodeError, TypeError):
+        logger.warning("Cannot read %s — ignoring", _RETROSPECTIVE_STATE_FILE)
+        return None
+
+
+def _write_retrospective_state(
+    project_root: Path,
+    from_law: str,
+    commit_ref: str | None,
+) -> None:
+    """Write persistent retrospective-required marker (§10.5 step 3).
+
+    This marker persists across scan cycles until a retrospective scan
+    is performed or the marker file is manually removed.
+    """
+    import json
+    from datetime import datetime, timezone
+
+    state_path = project_root / _RETROSPECTIVE_STATE_FILE
+    payload = {
+        "from_law": from_law,
+        "detected_at": datetime.now(tz=timezone.utc).isoformat(),
+        "commit_ref": commit_ref or "unknown",
+    }
+    try:
+        state_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        logger.info("Wrote %s — retrospective scan outstanding", _RETROSPECTIVE_STATE_FILE)
+    except OSError as exc:
+        logger.warning("Cannot write %s: %s", _RETROSPECTIVE_STATE_FILE, exc)
+
+
+def _clear_retrospective_state(project_root: Path) -> None:
+    """Remove the retrospective-required marker after retrospective scan."""
+    state_path = project_root / _RETROSPECTIVE_STATE_FILE
+    if state_path.exists():
+        try:
+            state_path.unlink()
+            logger.info("Cleared %s — retrospective scan performed", _RETROSPECTIVE_STATE_FILE)
+        except OSError as exc:
+            logger.warning("Cannot remove %s: %s", _RETROSPECTIVE_STATE_FILE, exc)
 
 
 def _resolve_coverage_ratio(
@@ -937,6 +999,8 @@ def scan(
         all_findings = [
             _dc_retro.replace(f, retroactive_scan=True) for f in all_findings
         ]
+        # Clear persistent retrospective-required marker — the scan was performed.
+        _clear_retrospective_state(project_root)
 
     import wardline as _wardline_pkg
 
@@ -998,7 +1062,13 @@ def scan(
             ))
 
     # retrospective_scan_recommended — detect control law improvement from baseline
+    # Two sources: (1) --compare baseline SARIF, (2) persistent state file.
+    # The state file ensures the finding persists across scan cycles (§10.5
+    # steps 3-4) even when --compare is not used or the baseline rotates.
     prev_control_law, baseline_read_failed = _read_baseline_control_law(compare)
+    _retro_state = _read_retrospective_state(project_root)
+    _retro_newly_detected = False
+
     if baseline_read_failed:
         _gov_events.append(GovernanceEvent(
             event_type="baseline_read_failed",
@@ -1014,13 +1084,39 @@ def scan(
             event_type="retrospective_scan_recommended",
             message=_retro_message,
         ))
-        # §10.5 step 3: If the normal-law run does NOT include the retrospective
-        # scan marker, emit a persistent governance FINDING (not just event).
+        _retro_newly_detected = True
+        # Write persistent state so finding survives baseline rotation
         if not retrospective:
+            _write_retrospective_state(project_root, prev_control_law, _git_head_ref())
+
+    # §10.5 steps 3-4: Emit GOVERNANCE_RETROSPECTIVE_REQUIRED finding when
+    # a retrospective scan is outstanding. Sources: newly detected transition
+    # OR persistent state file from a previous scan cycle.
+    if not retrospective:
+        if _retro_newly_detected:
             all_findings.append(
                 _make_governance_finding(
                     RuleId.GOVERNANCE_RETROSPECTIVE_REQUIRED,
                     _retro_message,
+                    Severity.WARNING,
+                )
+            )
+        elif _retro_state is not None:
+            # Persistent state from a previous scan cycle — finding carries forward
+            _carried_message = (
+                f"Retrospective scan still outstanding (originally detected "
+                f"transitioning from {_retro_state['from_law']} law at "
+                f"commit {_retro_state.get('commit_ref', 'unknown')}). "
+                f"Run with --retrospective <range> to clear."
+            )
+            _gov_events.append(GovernanceEvent(
+                event_type="retrospective_scan_recommended",
+                message=_carried_message,
+            ))
+            all_findings.append(
+                _make_governance_finding(
+                    RuleId.GOVERNANCE_RETROSPECTIVE_REQUIRED,
+                    _carried_message,
                     Severity.WARNING,
                 )
             )

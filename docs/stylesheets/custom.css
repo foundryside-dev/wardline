@@ -1,75 +1,301 @@
-/* Dark theme (default) — deep indigo with cyan accent */
+/* ============================================================
+   Wardline Design Tokens & Site Styling
+   Palette aligned with PDF specification: navy + teal
+   ============================================================ */
+
+/* ---- Dark theme (slate) — deep navy with teal accent ---- */
 [data-md-color-scheme="slate"] {
-  --md-default-bg-color: #1a1a2e;
-  --md-default-fg-color: #e0e7ff;
-  --md-default-fg-color--light: #8b9dc3;
-  --md-default-fg-color--lighter: #5a6b8a;
-  --md-default-fg-color--lightest: #3d4f6f;
-  --md-primary-fg-color: #06b6d4;
-  --md-primary-bg-color: #1a1a2e;
-  --md-accent-fg-color: #06b6d4;
-  --md-typeset-a-color: #06b6d4;
-  --md-code-bg-color: #2a2a4a;
-  --md-code-fg-color: #e0e7ff;
-  --md-footer-bg-color: #141428;
-  --md-footer-fg-color: #8b9dc3;
+  --md-default-bg-color: #0f172a;
+  --md-default-fg-color: #e2e8f0;
+  --md-default-fg-color--light: #94a3b8;
+  --md-default-fg-color--lighter: #64748b;
+  --md-default-fg-color--lightest: #475569;
+  --md-primary-fg-color: #0d9488;
+  --md-primary-bg-color: #0f172a;
+  --md-accent-fg-color: #14b8a6;
+  --md-typeset-a-color: #14b8a6;
+  --md-code-bg-color: #1e293b;
+  --md-code-fg-color: #e2e8f0;
+  --md-footer-bg-color: #0b1120;
+  --md-footer-fg-color: #94a3b8;
+
+  /* Wardline tokens */
+  --wl-navy: #1e3a5f;
+  --wl-teal: #0a6e72;
+  --wl-teal-light: #14b8a6;
+  --wl-surface: #1e293b;
+  --wl-surface-raised: #273548;
+  --wl-border: #334155;
+  --wl-text-hero: #f1f5f9;
+  --wl-text-muted: #94a3b8;
 }
 
-/* Light theme overrides */
+/* ---- Light theme ---- */
 [data-md-color-scheme="default"] {
-  --md-primary-fg-color: #0891b2;
-  --md-primary-bg-color: #f0f9ff;
-  --md-accent-fg-color: #0891b2;
-  --md-typeset-a-color: #0891b2;
+  --md-primary-fg-color: #1e3a5f;
+  --md-primary-bg-color: #f8fafc;
+  --md-accent-fg-color: #0a6e72;
+  --md-typeset-a-color: #0a6e72;
+  --md-code-bg-color: #f1f5f9;
+
+  /* Wardline tokens */
+  --wl-navy: #1e3a5f;
+  --wl-teal: #0a6e72;
+  --wl-teal-light: #0d9488;
+  --wl-surface: #ffffff;
+  --wl-surface-raised: #f8fafc;
+  --wl-border: #e2e8f0;
+  --wl-text-hero: #0f172a;
+  --wl-text-muted: #64748b;
 }
 
-/* Header bar — match dark background */
+/* ---- Header bar ---- */
 [data-md-color-scheme="slate"] .md-header {
-  background-color: #141428;
+  background-color: #0b1120;
+  border-bottom: 1px solid #1e293b;
 }
 
-/* Navigation sidebar */
+[data-md-color-scheme="default"] .md-header {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+/* ---- Navigation sidebar ---- */
 [data-md-color-scheme="slate"] .md-sidebar {
-  background-color: #1a1a2e;
+  background-color: #0f172a;
 }
 
-/* Buttons on landing page */
+/* ============================================================
+   Hero Section
+   ============================================================ */
+.wl-hero {
+  text-align: center;
+  padding: 3rem 1rem 2rem;
+  max-width: 48rem;
+  margin: 0 auto;
+}
+
+.wl-hero h1 {
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.25rem;
+  color: var(--wl-text-hero);
+}
+
+.wl-hero h3 {
+  font-size: 1.35rem;
+  font-weight: 400;
+  color: var(--wl-teal-light);
+  margin-top: 0;
+  margin-bottom: 1rem;
+  letter-spacing: -0.01em;
+}
+
+.wl-hero > p {
+  font-size: 1.05rem;
+  line-height: 1.65;
+  color: var(--wl-text-muted);
+  max-width: 38rem;
+  margin: 0 auto 1.5rem;
+}
+
+/* Install command block */
+.wl-install {
+  margin: 1.5rem auto;
+  max-width: 22rem;
+}
+
+.wl-install .highlight {
+  border-radius: 8px;
+  border: 1px solid var(--wl-border);
+}
+
+.wl-install pre {
+  text-align: left;
+  font-size: 1rem;
+}
+
+/* ============================================================
+   Buttons
+   ============================================================ */
 .md-typeset .md-button--primary {
-  background-color: #06b6d4;
-  border-color: #06b6d4;
-  color: #1a1a2e;
+  background-color: var(--wl-teal);
+  border-color: var(--wl-teal);
+  color: #ffffff;
+  font-weight: 600;
 }
 
 .md-typeset .md-button--primary:hover {
-  background-color: #22d3ee;
-  border-color: #22d3ee;
+  background-color: var(--wl-teal-light);
+  border-color: var(--wl-teal-light);
 }
 
-[data-md-color-scheme="slate"] .md-typeset .md-button {
-  border-color: #334155;
-  color: #8b9dc3;
+[data-md-color-scheme="slate"] .md-typeset .md-button:not(.md-button--primary) {
+  border-color: var(--wl-border);
+  color: var(--wl-text-muted);
 }
 
-[data-md-color-scheme="slate"] .md-typeset .md-button:hover {
-  border-color: #06b6d4;
-  color: #06b6d4;
+[data-md-color-scheme="slate"] .md-typeset .md-button:not(.md-button--primary):hover {
+  border-color: var(--wl-teal-light);
+  color: var(--wl-teal-light);
 }
 
-[data-md-color-scheme="default"] .md-typeset .md-button {
-  border-color: #94a3b8;
+[data-md-color-scheme="default"] .md-typeset .md-button:not(.md-button--primary) {
+  border-color: #cbd5e1;
   color: #475569;
 }
 
-[data-md-color-scheme="default"] .md-typeset .md-button:hover {
-  border-color: #0891b2;
-  color: #0891b2;
+[data-md-color-scheme="default"] .md-typeset .md-button:not(.md-button--primary):hover {
+  border-color: var(--wl-teal);
+  color: var(--wl-teal);
 }
 
-/* Table styling — tighter for reference tables */
+/* ============================================================
+   Feature Cards
+   ============================================================ */
+.wl-features {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+  max-width: 52rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+@media (max-width: 768px) {
+  .wl-features {
+    grid-template-columns: 1fr;
+  }
+}
+
+.wl-feature {
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--wl-border);
+  border-radius: 8px;
+  background: var(--wl-surface);
+  transition: border-color 0.15s;
+}
+
+.wl-feature:hover {
+  border-color: var(--wl-teal-light);
+}
+
+.wl-feature h3 {
+  margin-top: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--wl-teal-light);
+}
+
+.wl-feature p {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--wl-text-muted);
+  margin-bottom: 0;
+}
+
+/* ============================================================
+   Code Example Section
+   ============================================================ */
+.wl-example {
+  max-width: 48rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+.wl-example h2 {
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+/* ============================================================
+   Quick Navigation Table
+   ============================================================ */
+.wl-quicknav {
+  max-width: 48rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+.wl-quicknav h2 {
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+/* ============================================================
+   Specification Page Enhancements
+   ============================================================ */
+.wl-spec-header {
+  text-align: center;
+  padding: 2rem 1rem 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.wl-spec-header h1 {
+  font-size: 2.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.wl-spec-meta {
+  display: inline-flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  font-size: 0.85rem;
+  color: var(--wl-text-muted);
+  margin: 0.75rem 0 1.5rem;
+  padding: 0.75rem 1.5rem;
+  border: 1px solid var(--wl-border);
+  border-radius: 6px;
+  background: var(--wl-surface);
+}
+
+.wl-spec-meta strong {
+  color: var(--md-default-fg-color);
+}
+
+.wl-chapter-grid {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr;
+  gap: 0.25rem 1rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 1rem 0 1.5rem;
+}
+
+.wl-chapter-num {
+  text-align: right;
+  color: var(--wl-text-muted);
+  font-family: var(--md-code-font, monospace);
+  font-size: 0.8rem;
+}
+
+.wl-chapter-title a {
+  text-decoration: none;
+}
+
+/* ============================================================
+   General Table Styling — compact for reference tables
+   ============================================================ */
 .md-typeset table:not([class]) {
   font-size: 0.8rem;
 }
 
 .md-typeset table:not([class]) th {
   white-space: nowrap;
+}
+
+/* ============================================================
+   Admonition refinements
+   ============================================================ */
+.md-typeset .admonition,
+.md-typeset details {
+  border-radius: 6px;
+}
+
+/* ============================================================
+   Footer
+   ============================================================ */
+.md-footer-meta {
+  font-size: 0.8rem;
 }

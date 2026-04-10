@@ -1,21 +1,27 @@
 site_name: Wardline
 site_url: https://www.wardline.dev
-site_description: Semantic boundary enforcement for Python
+site_description: >-
+  Semantic boundary enforcement for Python. Statically verify that untrusted
+  input never reaches privileged code — via AST analysis with taint propagation.
+site_author: Tachyon Beep
 repo_url: https://github.com/tachyon-beep/wardline
 repo_name: tachyon-beep/wardline
 
 theme:
   name: material
+  favicon: assets/favicon.svg
+  icon:
+    logo: material/shield-check
   palette:
     - scheme: slate
       primary: custom
-      accent: cyan
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
     - scheme: default
       primary: custom
-      accent: cyan
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
@@ -26,9 +32,11 @@ theme:
     - navigation.expand
     - navigation.indexes
     - navigation.top
+    - navigation.footer
     - search.highlight
     - search.suggest
     - content.code.copy
+    - content.code.annotate
     - toc.follow
 
 extra_css:
@@ -38,6 +46,12 @@ extra_css:
 extra_javascript:
   - javascripts/severity-matrix.js
 
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/tachyon-beep/wardline
+  generator: false
+
 markdown_extensions:
   - tables
   - admonition
@@ -46,7 +60,14 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
   - attr_list
+  - md_in_html
+  - def_list
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - toc:
       permalink: true
 
@@ -54,23 +75,23 @@ nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Reference:
-    - reference/index.md
-    - Rules: reference/rules.md
-    - Severity Matrix: reference/severity-matrix.md
-    - Taint States: reference/taint-states.md
-    - Decorators: reference/decorators.md
-    - Supplementary Groups: reference/supplementary-groups.md
-    - CLI: reference/cli.md
-    - Manifest: reference/manifest.md
-    - SARIF Format: reference/sarif-format.md
-    - Error Messages: reference/error-messages.md
-    - Governance Retention: reference/governance-retention.md
-    - Glossary: reference/glossary.md
+      - reference/index.md
+      - Rules: reference/rules.md
+      - Severity Matrix: reference/severity-matrix.md
+      - Taint States: reference/taint-states.md
+      - Decorators: reference/decorators.md
+      - Supplementary Groups: reference/supplementary-groups.md
+      - CLI: reference/cli.md
+      - Manifest: reference/manifest.md
+      - SARIF Format: reference/sarif-format.md
+      - Error Messages: reference/error-messages.md
+      - Governance Retention: reference/governance-retention.md
+      - Glossary: reference/glossary.md
   - Guides:
-    - Adopting Wardline: guides/adoption.md
-    - CI Integration: guides/ci-integration.md
-    - Governance: guides/governance.md
-    - Analysis Levels: guides/analysis-levels.md
-    - Profiles: guides/profiles.md
-  - Troubleshooting: guides/troubleshooting.md
+      - Adopting Wardline: guides/adoption.md
+      - CI Integration: guides/ci-integration.md
+      - Governance: guides/governance.md
+      - Analysis Levels: guides/analysis-levels.md
+      - Profiles: guides/profiles.md
+      - Troubleshooting: guides/troubleshooting.md
   - Specification: specification.md

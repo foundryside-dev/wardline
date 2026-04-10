@@ -86,6 +86,15 @@ Specimens organized by rule ID (e.g., `corpus/specimens/PY-WL-001/`). Each speci
 - **`wardline.toml`** — Scanner configuration for self-hosting (target paths, excluded paths, thresholds).
 - **`pyproject.toml`** — Build config (hatchling), test config (pytest markers: `integration`, `network`), ruff rules, mypy strict.
 
+## Website & PDF Specification
+
+The project website is served by Caddy at `wardline.dev` from `/var/www/wardline.dev/`.
+
+- **Web root**: `/var/www/wardline.dev/` (static file server)
+- **PDF spec**: `/var/www/wardline.dev/assets/wardline-specification.pdf`
+- **Build pipeline**: `tools/pdf/build-spec.sh [--pdf]` — concatenates spec chapters, runs pandoc with a Typst template and Lua filter (`fix-tables.lua`), compiles to PDF
+- **Deploy**: after rebuilding, copy `docs/assets/wardline-specification.pdf` to `/var/www/wardline.dev/assets/`
+
 ## Code Conventions
 
 - **Zero runtime dependencies** — the core package has no deps. Scanner extras: `pyyaml`, `jsonschema`, `click`.

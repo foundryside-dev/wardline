@@ -122,29 +122,44 @@ alternate or direct law records `wardline.degradedCommitRange` in run
 properties — the commit ref at scan time. Assessors reconstruct the full
 degraded window by examining all non-normal SARIF runs in sequence.
 
-### Limitation: --compare Required
+### Retrospective Finding Persistence (§10.5 steps 3-4)
 
-Retrospective scan detection requires the `--compare` CLI flag pointing to
-a baseline SARIF file from the previous scan. Without `--compare`, the
-scanner has no visibility into the previous control law state and cannot
-detect transitions. Teams not using baseline comparison will never receive
-retrospective scan recommendations.
+When a control law improvement is detected (alternate/direct → normal), the
+scanner writes a persistent marker file (`wardline.retrospective-required.json`)
+alongside the manifest. This marker ensures the `GOVERNANCE-RETROSPECTIVE-REQUIRED`
+finding persists across scan cycles — even when `--compare` is not used or
+the baseline SARIF rotates — until:
 
-This is an accepted architectural limitation for v1.0. A future enhancement
-could persist control law state in a lightweight file (e.g.,
-`wardline.law-state.json`) written on every scan, providing retrospective
-detection without requiring `--compare`.
+1. A retrospective scan is performed with `--retrospective <range>`, which
+   clears the marker file, OR
+2. The marker file is manually removed (governance exception path).
+
+**Detection sources (evaluated in order):**
+1. `--compare` baseline SARIF: detects the transition in the current scan cycle
+2. Persistent marker file: carries the finding forward from a previous cycle
+
+Without `--compare`, the scanner cannot detect the *initial* transition —
+but once detected, the marker file ensures the finding persists indefinitely.
+Teams using `--compare` get both initial detection and persistence. Teams not
+using `--compare` will not receive the initial recommendation, but if another
+scan (e.g., a CI run with `--compare`) detects the transition, subsequent
+scans will carry it forward via the marker file.
+
+The marker file has no integrity protection — the same CI-trusted-environment
+mitigation applies as for the baseline SARIF (see Accepted Risks below).
 
 ## Accepted Risks
 
 ### Baseline SARIF Integrity (v1.0)
 
 The SARIF baseline file used for retrospective detection has no integrity
-protection. Three suppression paths exist:
+protection. Four suppression paths exist:
 
 1. Edit `wardline.controlLaw` to `"normal"` in the baseline file
 2. Delete the baseline file entirely (`prev_control_law` -> `None`, check skipped)
 3. Corrupt the JSON to trigger the malformed-JSON handler (no baseline, no detection)
+4. Replace `"runs"` with an empty list or non-list value (structurally valid
+   JSON but no run data — treated as read failure with governance event)
 
 **Mitigation:** CI pipelines should generate baseline SARIF in a trusted
 environment, not read it from the repository.
@@ -161,15 +176,33 @@ The spec §10.5 requires that direct-law bypass MUST NOT cover changes to
 wardline policy artefacts (`wardline.yaml`, overlay files, exception
 registers, fingerprint baselines). The implementation provides an advisory
 check (`check_direct_law_exclusion()` in `coherence.py`) but NOT an
-enforcement gate. Enforcement is delegated to VCS branch protection rules
-that restrict modification of governance file paths independently of CI
-status.
+enforcement gate.
 
-**Residual risk:** If VCS branch protection is not configured for
-governance file paths, direct-law bypass can be used to modify policy
-artefacts while enforcement is unavailable. The scanner will detect the
-modification on the next normal-law run (coherence checks compare manifest
-hash), but cannot prevent it during the direct-law window.
+**Enforcement status (v1.0):** The wardline scanner does NOT enforce this
+requirement. No CI gate, VCS branch protection rule, or CODEOWNERS
+configuration is provided as part of the scanner distribution. The scanner
+emits an advisory coherence warning when artefact modification is detected
+under direct law, but this is a detection signal, not a prevention gate.
+
+**Residual risk (MUST requirement unmet by tooling alone):** The spec §10.5
+MUST requirement for governance artefact exclusion during direct law is
+**not enforceable by the scanner alone**. Enforcement requires deployment-
+specific controls configured by the adopter:
+
+- VCS branch protection rules restricting governance file paths
+- CODEOWNERS entries requiring governance team approval
+- CI pipeline gates that read coherence warnings and block merges
+
+Until these controls are configured by the adopter, direct-law bypass can
+be used to modify policy artefacts while enforcement is unavailable. The
+scanner will detect the modification on the next normal-law run (coherence
+checks compare manifest hash), but cannot prevent it during the direct-law
+window.
+
+**Assessor note:** This is a residual risk, not a deferred feature. The
+scanner provides the detection signal; the adopter provides the enforcement
+gate. Assessors should verify that deployment-specific controls exist in
+each evaluated environment.
 
 ### Conformance Absence Heuristic (v1.0)
 
