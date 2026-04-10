@@ -3,13 +3,18 @@
 //
 // Targets the first <table> on /reference/severity-matrix/ pages.
 // Parses cell text like "E/U" to determine severity and exceptionability.
+// Supports both full page loads and MkDocs Material instant navigation.
 
-document.addEventListener("DOMContentLoaded", function () {
+function enhanceMatrix() {
   // Only run on the severity matrix page
   if (!window.location.pathname.includes("/severity-matrix")) return;
 
   var table = document.querySelector(".md-typeset table");
   if (!table) return;
+
+  // Skip if already enhanced
+  if (table.dataset.matrixEnhanced) return;
+  table.dataset.matrixEnhanced = "true";
 
   var SEVERITY = {
     E: { cls: "severity-error", label: "ERROR" },
@@ -59,19 +64,28 @@ document.addEventListener("DOMContentLoaded", function () {
       var span = document.createElement("span");
       span.className = "matrix-cell " + sev.cls;
       span.setAttribute("data-tooltip", tooltip);
-      span.textContent = text;
 
-      // Make clickable if we have a rule link
+      // Make clickable if we have a rule link, otherwise plain text
       if (ruleHref) {
         var a = document.createElement("a");
         a.href = ruleHref;
         a.textContent = text;
-        span.textContent = "";
         span.appendChild(a);
+      } else {
+        span.textContent = text;
       }
 
       cell.textContent = "";
       cell.appendChild(span);
     }
   });
-});
+}
+
+// Support both standard page loads and MkDocs Material instant navigation
+if (typeof document$ !== "undefined") {
+  document$.subscribe(function () {
+    enhanceMatrix();
+  });
+} else {
+  document.addEventListener("DOMContentLoaded", enhanceMatrix);
+}
