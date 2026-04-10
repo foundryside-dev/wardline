@@ -32,35 +32,64 @@ TAINT_ORDER = [
 RULES = [getattr(RuleId, f"PY_WL_{i:03d}") for i in range(1, 10)]
 BASE = "corpus/specimens"
 
+# Taint context vocabulary — authoritative reference from spec §3
+# Maps taint name → (function_suffix, variable_name)
+TAINT_CONTEXT: dict[str, tuple[str, str]] = {
+    "INTEGRAL": ("system_config", "sys_config"),
+    "ASSURED": ("verified_payload", "verified_payload"),
+    "GUARDED": ("session_data", "session_data"),
+    "UNKNOWN_ASSURED": ("claimed_token", "claimed_token"),
+    "UNKNOWN_GUARDED": ("cached_profile", "cached_profile"),
+    "UNKNOWN_RAW": ("unknown_input", "unknown_input"),
+    "EXTERNAL_RAW": ("request_param", "request_param"),
+    "MIXED_RAW": ("mixed_source", "mixed_source"),
+}
+
+# Rules where taint does not affect severity/exceptionability/detection.
+# These get a single specimen per verdict instead of 8.
+TAINT_INVARIANT_RULES = {"PY-WL-008", "PY-WL-009"}
+# For taint-invariant rules, use this as the single representative taint state.
+TAINT_INVARIANT_REPRESENTATIVE = "EXTERNAL_RAW"
+
+
 # ---------------------------------------------------------------------------
 # TP fragments — code that SHOULD trigger the rule
 # ---------------------------------------------------------------------------
-TP_FRAGMENTS: dict[str, str] = {
-    "PY-WL-001": 'def process(data):\n    x = data.get("key", "default")\n',
-    "PY-WL-002": 'def process(obj):\n    x = getattr(obj, "name", None)\n',
-    "PY-WL-003": 'def process(data):\n    if "key" in data:\n        pass\n',
-    "PY-WL-004": "def process():\n    try:\n        pass\n    except Exception:\n        handle()\n",
-    "PY-WL-005": "def process():\n    try:\n        pass\n    except Exception:\n        pass\n",
-    "PY-WL-006": 'def process():\n    try:\n        risky()\n    except Exception:\n        logger.error("failed")\n',
-    "PY-WL-007": "def process(data):\n    if isinstance(data, dict):\n        pass\n",
-    "PY-WL-008": "def process(data):\n    result = validate(data)\n    return data\n",
-    "PY-WL-009": 'def process(data):\n    if data["status"] == "active":\n        pass\n',
-}
+def _tp_fragment(rule: str, taint_name: str) -> str:
+    """Generate a TP fragment with taint-specific function/variable names."""
+    suffix, var = TAINT_CONTEXT[taint_name]
+    templates: dict[str, str] = {
+        "PY-WL-001": f'def dict_default_{suffix}({var}):\n    x = {var}.get("key", "default")\n',
+        "PY-WL-002": f'def getattr_default_{suffix}({var}):\n    x = getattr({var}, "name", None)\n',
+        "PY-WL-003": f'def key_check_{suffix}({var}):\n    if "key" in {var}:\n        pass\n',
+        "PY-WL-004": f"def broad_except_{suffix}():\n    try:\n        pass\n    except Exception:\n        handle()\n",
+        "PY-WL-005": f"def silent_except_{suffix}():\n    try:\n        pass\n    except Exception:\n        pass\n",
+        "PY-WL-006": f'def audit_broad_{suffix}():\n    try:\n        risky()\n    except Exception:\n        logger.error("failed")\n',
+        "PY-WL-007": f"def isinstance_check_{suffix}({var}):\n    if isinstance({var}, dict):\n        pass\n",
+        "PY-WL-008": "def process(data):\n    result = validate(data)\n    return data\n",
+        "PY-WL-009": 'def process(data):\n    if data["status"] == "active":\n        pass\n',
+    }
+    return templates[rule]
+
 
 # ---------------------------------------------------------------------------
 # TN fragments — code that should NOT trigger the rule
 # ---------------------------------------------------------------------------
-TN_FRAGMENTS: dict[str, str] = {
-    "PY-WL-001": 'def process(data):\n    x = data.get("key")\n',
-    "PY-WL-002": 'def process(obj):\n    x = getattr(obj, "name")\n',
-    "PY-WL-003": 'def process(data):\n    x = data["key"]\n',
-    "PY-WL-004": "def process():\n    try:\n        pass\n    except ValueError:\n        handle()\n",
-    "PY-WL-005": "def process():\n    try:\n        pass\n    except ValueError:\n        pass\n",
-    "PY-WL-006": 'def process():\n    try:\n        risky()\n    except ValueError:\n        logger.error("failed")\n',
-    "PY-WL-007": "def process(data):\n    x = len(data)\n",
-    "PY-WL-008": 'def process(data):\n    result = validate(data)\n    if not result:\n        raise ValueError("invalid")\n',
-    "PY-WL-009": 'from wardline.decorators import validates_semantic\n\n@validates_semantic\ndef validate_order(data):\n    if not isinstance(data, dict):\n        raise TypeError("expected dict")\n    if data["amount"] > 1000:\n        raise ValueError("amount exceeds limit")\n    return data\n',
-}
+def _tn_fragment(rule: str, taint_name: str) -> str:
+    """Generate a TN fragment with taint-specific function/variable names."""
+    suffix, var = TAINT_CONTEXT[taint_name]
+    templates: dict[str, str] = {
+        "PY-WL-001": f'def no_default_{suffix}({var}):\n    x = {var}.get("key")\n',
+        "PY-WL-002": f'def getattr_no_default_{suffix}({var}):\n    x = getattr({var}, "name")\n',
+        "PY-WL-003": f'def direct_access_{suffix}({var}):\n    x = {var}["key"]\n',
+        "PY-WL-004": f"def specific_except_{suffix}():\n    try:\n        pass\n    except ValueError:\n        handle()\n",
+        "PY-WL-005": f"def silent_specific_{suffix}():\n    try:\n        pass\n    except ValueError:\n        pass\n",
+        "PY-WL-006": f'def audit_specific_{suffix}():\n    try:\n        risky()\n    except ValueError:\n        logger.error("failed")\n',
+        "PY-WL-007": f"def no_typecheck_{suffix}({var}):\n    x = len({var})\n",
+        "PY-WL-008": 'def process(data):\n    result = validate(data)\n    if not result:\n        raise ValueError("invalid")\n',
+        "PY-WL-009": 'from wardline.decorators import validates_semantic\n\n@validates_semantic\ndef validate_order(data):\n    if not isinstance(data, dict):\n        raise TypeError("expected dict")\n    if data["amount"] > 1000:\n        raise ValueError("amount exceeds limit")\n    return data\n',
+    }
+    return templates[rule]
 
 # PY-WL-003 only fires at these taint states (taint-gated in rule implementation)
 PY_WL_003_ACTIVE_TAINTS = {"EXTERNAL_RAW", "UNKNOWN_RAW", "MIXED_RAW"}
@@ -102,15 +131,23 @@ def generate_matrix_specimens() -> dict[str, dict]:
             if cell.severity == Severity.SUPPRESS:
                 continue
 
+            # For taint-invariant rules, only generate the representative taint state
+            if rule_str in TAINT_INVARIANT_RULES and taint_name != TAINT_INVARIANT_REPRESENTATIVE:
+                continue
+
             # PY-WL-003 is taint-gated: only fires at 3 taint states
             tp_will_fire = True
             if rule_str == "PY-WL-003" and taint_name not in PY_WL_003_ACTIVE_TAINTS:
                 tp_will_fire = False
 
             # --- TP specimen ---
-            tp_id = f"{rule_str}-TP-{taint_name}"
-            tp_frag = TP_FRAGMENTS[rule_str]
+            tp_frag = _tp_fragment(rule_str, taint_name)
             tp_hash = _sha256(tp_frag)
+
+            if rule_str in TAINT_INVARIANT_RULES:
+                tp_id = f"{rule_str}-TP-standard"
+            else:
+                tp_id = f"{rule_str}-TP-{taint_name}"
 
             if tp_will_fire:
                 verdict = "true_positive"
@@ -148,9 +185,13 @@ def generate_matrix_specimens() -> dict[str, dict]:
             }
 
             # --- TN specimen ---
-            tn_id = f"{rule_str}-TN-{taint_name}"
-            tn_frag = TN_FRAGMENTS[rule_str]
+            tn_frag = _tn_fragment(rule_str, taint_name)
             tn_hash = _sha256(tn_frag)
+
+            if rule_str in TAINT_INVARIANT_RULES:
+                tn_id = f"{rule_str}-TN-standard"
+            else:
+                tn_id = f"{rule_str}-TN-{taint_name}"
 
             tn_data = {
                 "specimen_id": tn_id,
