@@ -11,17 +11,122 @@ These nine rules detect structural boundary violations in Python code. All are
 emitted as `Finding` objects with taint-gated severity (see
 [severity-matrix.md](severity-matrix.md)).
 
-| Rule | Name | Detects | Fix |
-|------|------|---------|-----|
-| PY-WL-001 | Dict key access with fallback default | `d.get(key, default)`, `d.pop(key, default)`, `d.setdefault(key, default)`, `defaultdict(factory)` — patterns that silently fabricate values for missing keys, bypassing validation. `schema_default()` without a matching overlay boundary also fires here. | Replace fallback defaults with explicit key access that raises on missing keys; or declare an overlay boundary and use `schema_default()` inside it. |
-| PY-WL-002 | Attribute access with fallback default | Three-argument `getattr(obj, name, default)` — silently returns a fabricated value when the attribute is absent, masking structural gaps. Two-argument `getattr` (which raises `AttributeError`) is not flagged. | Use two-argument `getattr` and handle `AttributeError` explicitly, or access the attribute directly. |
-| PY-WL-003 | Existence-checking as structural gate | `"key" in d`, `key not in d`, `d.get(key) is None`, `hasattr(obj, name)`, `match/case` with `MatchMapping` or `MatchClass` — treating presence/absence of a key or attribute as a control-flow branch rather than enforcing known shape up front. | Validate structure at a declared shape-validation boundary; within the boundary body, direct key/attribute access is permitted. |
-| PY-WL-004 | Broad exception handler | Bare `except:`, `except Exception:`, `except BaseException:`, and `except*` with those broad types — handlers that catch far more than intended, masking unexpected failures. | Catch specific exception types. If broad handling is required, re-raise after logging or use a governed suppression. |
-| PY-WL-005 | Silent exception handler | Exception handlers whose bodies are `pass`, `...`, `continue`, or `break` — the exception is caught and completely discarded with no log, re-raise, or side effect. | Log the exception, re-raise it, or convert it to a domain error with meaningful context. |
-| PY-WL-006 | Audit-critical write in broad exception handler | Audit/ledger write calls (e.g. functions decorated `@integral_writer` / `@integrity_critical`, calls to `audit`, `record`, `write_audit`, etc.) inside a broad exception handler — if the write itself raises, the handler silently masks the failure and the audit trail loses a record. | Move audit writes outside broad handlers, or catch only the specific exceptions the write can raise and propagate the rest. |
-| PY-WL-007 | Runtime type-checking on internal data | `isinstance()` and `type() ==` / `type() is` checks on data that should have a statically known type. Severity is taint-gated: suppressed for `EXTERNAL_RAW`/`UNKNOWN_RAW` taint states where type checks are expected; escalated for internal taint states. AST node dispatch, dunder comparison protocol, and frozen-dataclass `__post_init__` patterns are structurally suppressed. | Enforce types at the external boundary with a shape-validation decorator so internal code can rely on the type statically. |
-| PY-WL-008 | Validation boundary with no rejection path | A function declared as a validation or restoration boundary (via manifest transition or `@validates_shape` / `@validates_semantic` / `@validates_external` decorator) whose body contains no raised exception or guarded early-return that constitutes a rejection path. | Add an explicit rejection path — raise a domain exception or return early on invalid input before the function proceeds. |
-| PY-WL-009 | Semantic validation without prior shape validation | A function declared as a `semantic_validation` boundary (or decorated `@validates_semantic`) that performs semantic checks on data before structural validation has occurred within the same boundary. Combined-validation boundaries are excluded because they satisfy the ordering requirement internally. | Either precede semantic checks with a call to a shape-validation boundary, or promote the boundary to `combined_validation`. |
+| Rule | Name | One-line summary |
+|------|------|-----------------|
+| [PY-WL-001](#py-wl-001) | Dict key access with fallback default | `.get()`, `.pop()`, `.setdefault()`, `defaultdict` silently fabricate values |
+| [PY-WL-002](#py-wl-002) | Attribute access with fallback default | Three-argument `getattr()` silently fabricates values |
+| [PY-WL-003](#py-wl-003) | Existence-checking as structural gate | `in`, `hasattr()`, `match/case` used as control flow instead of shape validation |
+| [PY-WL-004](#py-wl-004) | Broad exception handler | `except Exception:` catches far more than intended |
+| [PY-WL-005](#py-wl-005) | Silent exception handler | `except: pass` discards exceptions with no trace |
+| [PY-WL-006](#py-wl-006) | Audit-critical write in broad handler | Audit writes inside broad handlers can silently fail |
+| [PY-WL-007](#py-wl-007) | Runtime type-checking on internal data | `isinstance()` on data that should be statically typed |
+| [PY-WL-008](#py-wl-008) | Validation boundary with no rejection path | Boundary function never raises or returns early on invalid input |
+| [PY-WL-009](#py-wl-009) | Semantic validation without prior shape | Semantic checks before structural validation |
+
+### PY-WL-001
+
+**Dict key access with fallback default**
+
+**Detects:** `d.get(key, default)`, `d.pop(key, default)`, `d.setdefault(key, default)`,
+`defaultdict(factory)` — patterns that silently fabricate values for missing keys,
+bypassing validation. `schema_default()` without a matching overlay boundary also
+fires here.
+
+**Fix:** Replace fallback defaults with explicit key access that raises on missing
+keys; or declare an overlay boundary and use `schema_default()` inside it.
+
+### PY-WL-002
+
+**Attribute access with fallback default**
+
+**Detects:** Three-argument `getattr(obj, name, default)` — silently returns a
+fabricated value when the attribute is absent, masking structural gaps.
+Two-argument `getattr` (which raises `AttributeError`) is not flagged.
+
+**Fix:** Use two-argument `getattr` and handle `AttributeError` explicitly, or
+access the attribute directly.
+
+### PY-WL-003
+
+**Existence-checking as structural gate**
+
+**Detects:** `"key" in d`, `key not in d`, `d.get(key) is None`, `hasattr(obj, name)`,
+`match/case` with `MatchMapping` or `MatchClass` — treating presence/absence of a
+key or attribute as a control-flow branch rather than enforcing known shape up front.
+
+**Fix:** Validate structure at a declared shape-validation boundary; within the
+boundary body, direct key/attribute access is permitted.
+
+### PY-WL-004
+
+**Broad exception handler**
+
+**Detects:** Bare `except:`, `except Exception:`, `except BaseException:`, and
+`except*` with those broad types — handlers that catch far more than intended,
+masking unexpected failures.
+
+**Fix:** Catch specific exception types. If broad handling is required, re-raise
+after logging or use a governed suppression.
+
+### PY-WL-005
+
+**Silent exception handler**
+
+**Detects:** Exception handlers whose bodies are `pass`, `...`, `continue`, or
+`break` — the exception is caught and completely discarded with no log, re-raise,
+or side effect.
+
+**Fix:** Log the exception, re-raise it, or convert it to a domain error with
+meaningful context.
+
+### PY-WL-006
+
+**Audit-critical write in broad exception handler**
+
+**Detects:** Audit/ledger write calls (e.g. functions decorated `@integral_writer` /
+`@integrity_critical`, calls to `audit`, `record`, `write_audit`, etc.) inside a
+broad exception handler — if the write itself raises, the handler silently masks
+the failure and the audit trail loses a record.
+
+**Fix:** Move audit writes outside broad handlers, or catch only the specific
+exceptions the write can raise and propagate the rest.
+
+### PY-WL-007
+
+**Runtime type-checking on internal data**
+
+**Detects:** `isinstance()` and `type() ==` / `type() is` checks on data that
+should have a statically known type. Severity is taint-gated: suppressed for
+`EXTERNAL_RAW`/`UNKNOWN_RAW` where type checks are expected; escalated for
+internal taint states. AST node dispatch, dunder comparison protocol, and
+frozen-dataclass `__post_init__` patterns are structurally suppressed.
+
+**Fix:** Enforce types at the external boundary with a shape-validation decorator
+so internal code can rely on the type statically.
+
+### PY-WL-008
+
+**Validation boundary with no rejection path**
+
+**Detects:** A function declared as a validation or restoration boundary (via
+manifest transition or `@validates_shape` / `@validates_semantic` /
+`@validates_external` decorator) whose body contains no raised exception or
+guarded early-return that constitutes a rejection path.
+
+**Fix:** Add an explicit rejection path — raise a domain exception or return early
+on invalid input before the function proceeds.
+
+### PY-WL-009
+
+**Semantic validation without prior shape validation**
+
+**Detects:** A function declared as a `semantic_validation` boundary (or decorated
+`@validates_semantic`) that performs semantic checks on data before structural
+validation has occurred within the same boundary. Combined-validation boundaries
+are excluded because they satisfy the ordering requirement internally.
+
+**Fix:** Either precede semantic checks with a call to a shape-validation boundary,
+or promote the boundary to `combined_validation`.
 
 ---
 
