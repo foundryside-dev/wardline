@@ -14,5 +14,5 @@ tags:
 - async
 - ellipsis
 sha256: 9f632c8cbd3ff856c4ee6cf32063d1aa2f32238d189c3e8183c94b147d4d2477
-expected_severity: null
-expected_exceptionability: null
+expected_severity: ERROR
+expected_exceptionability: STANDARD

@@ -13,5 +13,5 @@ tags:
 - adversarial
 - async
 sha256: d7a55b803438be519d8d2a17c91cf7b8891a96d42fa958046b3895279a989973
-expected_severity: null
-expected_exceptionability: null
+expected_severity: ERROR
+expected_exceptionability: STANDARD

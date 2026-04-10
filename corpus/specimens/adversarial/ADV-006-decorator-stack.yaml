@@ -14,5 +14,5 @@ tags:
 - adversarial
 - decorator-stack
 sha256: 79729ceb608a77ed594033dfa698c9ba72e12663deb134318fc5c5d6bd4e8c8d
-expected_severity: null
-expected_exceptionability: null
+expected_severity: ERROR
+expected_exceptionability: STANDARD

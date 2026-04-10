@@ -13,5 +13,5 @@ tags:
 - adversarial
 - unicode
 sha256: fe070f6f2d44e6254611799398b048726a874aa4e35274d8efac0e54cab1ec30
-expected_severity: null
-expected_exceptionability: null
+expected_severity: WARNING
+expected_exceptionability: RELAXED

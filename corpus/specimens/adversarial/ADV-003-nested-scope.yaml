@@ -13,5 +13,5 @@ tags:
 - adversarial
 - nested-scope
 sha256: 160606166fe2ab35b2334f2adfa98e901a885d091633502a9801642fa88f305f
-expected_severity: null
-expected_exceptionability: null
+expected_severity: SUPPRESS
+expected_exceptionability: TRANSPARENT

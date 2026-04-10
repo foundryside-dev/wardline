@@ -13,5 +13,5 @@ tags:
 - adversarial
 - class-method
 sha256: f8f1531788c0c811f5874e9b447c1cf6440e2ad5ce3b16e041f71e383ed5c113
-expected_severity: null
-expected_exceptionability: null
+expected_severity: WARNING
+expected_exceptionability: RELAXED

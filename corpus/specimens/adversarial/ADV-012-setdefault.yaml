@@ -12,5 +12,5 @@ tags:
 - adversarial
 - setdefault
 sha256: 9ca53318246017be037df9afa506ae736e068440aa69f5d133ab50c1717636f5
-expected_severity: null
-expected_exceptionability: null
+expected_severity: SUPPRESS
+expected_exceptionability: TRANSPARENT

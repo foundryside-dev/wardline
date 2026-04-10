@@ -358,8 +358,17 @@ def generate_adversarial_specimens() -> dict[str, dict]:
         frag = spec["fragment"]
         sha = _sha256(frag)
         spec["sha256"] = sha
-        spec.setdefault("expected_severity", None)
-        spec.setdefault("expected_exceptionability", None)
+
+        # Populate severity/exceptionability from matrix for TP specimens
+        if spec.get("expected_match"):
+            rule = RuleId(spec["rule"])
+            taint = TaintState[spec["taint_state"]]
+            cell = SEVERITY_MATRIX[(rule, taint)]
+            spec.setdefault("expected_severity", cell.severity.name)
+            spec.setdefault("expected_exceptionability", cell.exceptionability.name)
+        else:
+            spec.setdefault("expected_severity", None)
+            spec.setdefault("expected_exceptionability", None)
 
         path = os.path.join(ADV_DIR, f"{spec['specimen_id']}.yaml")
         _write_specimen(path, spec)

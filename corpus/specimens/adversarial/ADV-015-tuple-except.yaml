@@ -13,5 +13,5 @@ tags:
 - adversarial
 - tuple-except
 sha256: e2c64c4a8f1a54863389478f3dbb78454c4b14f24e12eea8998db88516bbfd7c
-expected_severity: null
-expected_exceptionability: null
+expected_severity: ERROR
+expected_exceptionability: STANDARD

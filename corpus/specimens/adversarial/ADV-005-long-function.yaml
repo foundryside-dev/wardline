@@ -21,5 +21,5 @@ tags:
 - adversarial
 - long-function
 sha256: 9bddf2557fa2ae1e5677cad3af71ad356af5563f2e49e2f79ce7316593c3fea8
-expected_severity: null
-expected_exceptionability: null
+expected_severity: WARNING
+expected_exceptionability: RELAXED
