@@ -183,6 +183,23 @@ def _read_coverage_ratio(manifest_path: Path) -> float | None:
         return None
 
 
+def _read_baseline_control_law(compare: str | None) -> str | None:
+    """Read wardline.controlLaw from baseline SARIF, or None."""
+    if compare is None:
+        return None
+    import json
+    try:
+        data = json.loads(Path(compare).read_text(encoding="utf-8"))
+        runs = data.get("runs", [])
+        if not isinstance(runs, list) or not runs:
+            return None
+        result: str | None = runs[0].get("properties", {}).get("wardline.controlLaw")
+        return result
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        logger.warning("Cannot read baseline control law: %s", exc)
+        return None
+
+
 def _resolve_coverage_ratio(
     baseline_ratio: float | None,
     annotated_count: int,
@@ -936,6 +953,18 @@ def scan(
                     f"scan={scan_time_coverage_ratio:.4f}, delta={_divergence:.4f}"
                 ),
             ))
+
+    # retrospective_scan_recommended — detect control law improvement from baseline
+    prev_control_law = _read_baseline_control_law(compare)
+    if prev_control_law in ("alternate", "direct") and control_law == "normal":
+        _gov_events.append(GovernanceEvent(
+            event_type="retrospective_scan_recommended",
+            message=(
+                f"Control law improved from {prev_control_law} to normal. "
+                f"Code merged during {prev_control_law} law should be "
+                f"retrospectively scanned."
+            ),
+        ))
 
     governance_events = tuple(_gov_events)
 

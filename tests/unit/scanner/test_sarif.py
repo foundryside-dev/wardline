@@ -1292,3 +1292,9 @@ class TestSarifFloorViolationProperties:
         report = SarifReport(findings=[])
         props = report.to_dict()["runs"][0]["properties"]
         assert props["wardline.isInitialSetup"] is False
+
+    def test_governance_retrospective_required_in_pseudo_rule_ids(self) -> None:
+        """GOVERNANCE_RETROSPECTIVE_REQUIRED is in _PSEUDO_RULE_IDS."""
+        from wardline.scanner.sarif import _PSEUDO_RULE_IDS
+
+        assert RuleId.GOVERNANCE_RETROSPECTIVE_REQUIRED in _PSEUDO_RULE_IDS

@@ -357,3 +357,87 @@ class TestReadCoverageRatio:
         baseline.write_text("NOT JSON")
         result = _read_coverage_ratio(manifest)
         assert result is None
+
+
+class TestReadBaselineControlLaw:
+    """Tests for _read_baseline_control_law helper."""
+
+    def test_read_baseline_control_law_alternate(self, tmp_path: Path) -> None:
+        """Baseline with 'alternate' control law returns 'alternate'."""
+        import json
+
+        from wardline.cli.scan import _read_baseline_control_law
+
+        sarif = tmp_path / "baseline.sarif"
+        sarif.write_text(json.dumps({
+            "runs": [{"properties": {"wardline.controlLaw": "alternate"}}],
+        }))
+        assert _read_baseline_control_law(str(sarif)) == "alternate"
+
+    def test_read_baseline_control_law_normal(self, tmp_path: Path) -> None:
+        """Baseline with 'normal' control law returns 'normal'."""
+        import json
+
+        from wardline.cli.scan import _read_baseline_control_law
+
+        sarif = tmp_path / "baseline.sarif"
+        sarif.write_text(json.dumps({
+            "runs": [{"properties": {"wardline.controlLaw": "normal"}}],
+        }))
+        assert _read_baseline_control_law(str(sarif)) == "normal"
+
+    def test_read_baseline_control_law_no_compare(self) -> None:
+        """compare=None returns None immediately."""
+        from wardline.cli.scan import _read_baseline_control_law
+
+        assert _read_baseline_control_law(None) is None
+
+    def test_read_baseline_control_law_missing_property(self, tmp_path: Path) -> None:
+        """Baseline SARIF without wardline.controlLaw returns None."""
+        import json
+
+        from wardline.cli.scan import _read_baseline_control_law
+
+        sarif = tmp_path / "baseline.sarif"
+        sarif.write_text(json.dumps({
+            "runs": [{"properties": {"wardline.analysisLevel": 1}}],
+        }))
+        assert _read_baseline_control_law(str(sarif)) is None
+
+    def test_read_baseline_control_law_empty_runs(self, tmp_path: Path) -> None:
+        """Empty runs array returns None without crash."""
+        import json
+
+        from wardline.cli.scan import _read_baseline_control_law
+
+        sarif = tmp_path / "baseline.sarif"
+        sarif.write_text(json.dumps({"runs": []}))
+        assert _read_baseline_control_law(str(sarif)) is None
+
+    def test_read_baseline_control_law_malformed_json(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Invalid JSON returns None and logs a warning."""
+        import logging
+
+        from wardline.cli.scan import _read_baseline_control_law
+
+        sarif = tmp_path / "baseline.sarif"
+        sarif.write_text("NOT VALID JSON {{{")
+        with caplog.at_level(logging.WARNING, logger="wardline.cli.scan"):
+            result = _read_baseline_control_law(str(sarif))
+        assert result is None
+        assert any("Cannot read baseline control law" in r.message for r in caplog.records)
+
+    def test_read_baseline_control_law_file_not_found(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Nonexistent path returns None and logs a warning."""
+        import logging
+
+        from wardline.cli.scan import _read_baseline_control_law
+
+        with caplog.at_level(logging.WARNING, logger="wardline.cli.scan"):
+            result = _read_baseline_control_law("/nonexistent/path/baseline.sarif")
+        assert result is None
+        assert any("Cannot read baseline control law" in r.message for r in caplog.records)
