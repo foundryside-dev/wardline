@@ -1,9 +1,9 @@
 {
   "version": "1.0",
   "spec_version": "1.0",
-  "corpus_hash": "sha256:dd5e7b544bfecaddb8b69fd6add300761febe11c7f3747f002c05d4ba6315e6b",
+  "corpus_hash": "sha256:f16e8aecd52210935ed48f4347c715cb9fc463baf77605f972c0d4e383bb4d8f",
   "generated": "2026-04-10",
-  "specimen_count": 263,
+  "specimen_count": 224,
   "specimens": [
     {
       "specimen_id": "L3-anchored-immutable",
@@ -227,7 +227,7 @@
       "taint_state": "EXTERNAL_RAW",
       "verdict": "known_false_negative",
       "expected_match": false,
-      "sha256": "fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5"
+      "sha256": "0debf00c667c8034cde60c6a181eba0d1d0ba4b2ec36164ac93ba2cb56763de8"
     },
     {
       "specimen_id": "PY-WL-001-KFN-TF-direct-boundary",
@@ -267,7 +267,7 @@
       "taint_state": "EXTERNAL_RAW",
       "verdict": "known_false_negative",
       "expected_match": false,
-      "sha256": "fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5"
+      "sha256": "5b0563c9a147bbe4a84990148a1a3f8c00ce8b6273586d7972a42c6952a64708"
     },
     {
       "specimen_id": "PY-WL-001-KFN-schema-default-ungoverned",
@@ -277,7 +277,7 @@
       "taint_state": "EXTERNAL_RAW",
       "verdict": "known_false_negative",
       "expected_match": false,
-      "sha256": "b84d32c496bba4dcf61f9ddbfcd62741d4b139a0e90bd88ae8043e0b18aaf220"
+      "sha256": "70077194059cb5f82f98dc44599d83d88999b8c124ef3998c01a06da0d3ab6d9"
     },
     {
       "specimen_id": "PY-WL-001-KFN-setdefault",
@@ -307,7 +307,7 @@
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "a1b2cd704802a9e44b5424b692522a07b85a5f78745f41b1af0af21881110b52"
+      "sha256": "7c3fab4b0a64cd29124afe1b2c01ca15b0c5f59a4702815f9b42db89ae9ba8a0"
     },
     {
       "specimen_id": "PY-WL-001-TN-EXTERNAL_RAW",
@@ -317,7 +317,7 @@
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "e32a7a05619471256f0fd952576e21a72ff3f5952c687fc782626247ca798e19"
+      "sha256": "d6e3da68fac314ebacfa05d5ff3de3b5bc6b64738f6ecb1e1eafff19c0cae4df"
     },
     {
       "specimen_id": "PY-WL-001-TN-TF-governed-overlay",
@@ -337,7 +337,7 @@
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "b84d32c496bba4dcf61f9ddbfcd62741d4b139a0e90bd88ae8043e0b18aaf220"
+      "sha256": "31324c0d26d5963591063b16ddf6f047a30d96776bbfed79780ebcf101e82991"
     },
     {
       "specimen_id": "PY-WL-001-TN-GUARDED",
@@ -401,7 +401,7 @@
       "taint_state": "MIXED_RAW",
       "verdict": "known_false_negative",
       "expected_match": false,
-      "sha256": "fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5"
+      "sha256": "3d849d2dba557bca9d4654e91a38a7906de8ef6d62b872dd3296e390765ca83f"
     },
     {
       "specimen_id": "PY-WL-001-KFN-TF-container-merge",
@@ -431,7 +431,7 @@
       "taint_state": "MIXED_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "e32a7a05619471256f0fd952576e21a72ff3f5952c687fc782626247ca798e19"
+      "sha256": "326c2b39a331b61c831e7f368af66ad4854460e8010ce6bef3bf53f20e97d018"
     },
     {
       "specimen_id": "PY-WL-001-TN-UNKNOWN_ASSURED",
@@ -491,7 +491,7 @@
       "taint_state": "UNKNOWN_RAW",
       "verdict": "known_false_negative",
       "expected_match": false,
-      "sha256": "fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5"
+      "sha256": "b44d70769791dca9bf0726b1f9a161a0423a816ce1e1f64cde0b9611dcdb0c39"
     },
     {
       "specimen_id": "PY-WL-001-KFN-defaultdict",
@@ -511,7 +511,7 @@
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "a1b2cd704802a9e44b5424b692522a07b85a5f78745f41b1af0af21881110b52"
+      "sha256": "db6d64390cabb2ec5e88949499558077c9f9c292e71f5c0c480af7d92c44fb8d"
     },
     {
       "specimen_id": "PY-WL-001-TN-UNKNOWN_RAW",
@@ -521,7 +521,7 @@
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "e32a7a05619471256f0fd952576e21a72ff3f5952c687fc782626247ca798e19"
+      "sha256": "cf8e95b72f0e607945d961ff535cff53d0e27d6ab477f06ecf9e0d4fe7233708"
     },
     {
       "specimen_id": "PY-WL-002-TN-AFP-two-arg-getattr",
@@ -566,16 +566,6 @@
         "function": "process"
       },
       "sha256": "108360958fe9ef1d9af9b3b8518c115dbd94e3a47731753d99f5a67e8d382c92"
-    },
-    {
-      "specimen_id": "PY-WL-002-TN-01",
-      "path": "specimens/PY-WL-002/EXTERNAL_RAW/negative/PY-WL-002-TN-01.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-002",
-      "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "1970dc85fea70d8a183f420151271333aef99e01453c47c0ffa9ea39f2a4d738"
     },
     {
       "specimen_id": "PY-WL-002-TN-02",
@@ -865,7 +855,7 @@
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "a1b2cd704802a9e44b5424b692522a07b85a5f78745f41b1af0af21881110b52"
+      "sha256": "11f37a2539523f173194972e7476c7c2fc2d61737c7d47004f57f2885ca2cf5c"
     },
     {
       "specimen_id": "PY-WL-003-TN-TF-validated-boundary",
@@ -938,10 +928,10 @@
       "verdict": "true_positive",
       "expected_match": {
         "line": 2,
-        "text": "if \"key\" in data:",
-        "function": "process"
+        "text": "if \"key\" in request_param:",
+        "function": "key_check_request_param"
       },
-      "sha256": "83658d70103eb68eea677c3b88ae80be30fda5fd76b89f1dba18e61b3409df44"
+      "sha256": "cee0aa16efe2e85578a53a1281ce8ce687accb28effab49df0524698b3775a30"
     },
     {
       "specimen_id": "PY-WL-003-TN-GUARDED",
@@ -991,7 +981,7 @@
       "taint_state": "MIXED_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "a1b2cd704802a9e44b5424b692522a07b85a5f78745f41b1af0af21881110b52"
+      "sha256": "37871a11078635259525f781020a597a95777bb6fa2f70ebdb071a14d528dbf4"
     },
     {
       "specimen_id": "PY-WL-003-TP-MIXED_RAW",
@@ -1002,10 +992,10 @@
       "verdict": "true_positive",
       "expected_match": {
         "line": 2,
-        "text": "if \"key\" in data:",
-        "function": "process"
+        "text": "if \"key\" in mixed_source:",
+        "function": "key_check_mixed_source"
       },
-      "sha256": "83658d70103eb68eea677c3b88ae80be30fda5fd76b89f1dba18e61b3409df44"
+      "sha256": "214113c46b56d1b6a40be7616d4b073ae1e1befe8de29e117136033dea0f0689"
     },
     {
       "specimen_id": "PY-WL-003-TN-UNKNOWN_ASSURED",
@@ -1055,7 +1045,7 @@
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "a1b2cd704802a9e44b5424b692522a07b85a5f78745f41b1af0af21881110b52"
+      "sha256": "5d3e1b68c69913ceecf82ca2897eb951a89f101865b7a509e890dcbe408e932a"
     },
     {
       "specimen_id": "PY-WL-003-TP-02",
@@ -1080,10 +1070,10 @@
       "verdict": "true_positive",
       "expected_match": {
         "line": 2,
-        "text": "if \"key\" in data:",
-        "function": "process"
+        "text": "if \"key\" in unknown_input:",
+        "function": "key_check_unknown_input"
       },
-      "sha256": "83658d70103eb68eea677c3b88ae80be30fda5fd76b89f1dba18e61b3409df44"
+      "sha256": "f299c2a7657b5ca2edd6bd2faa57ac9abcee880324e8fe8794ed839aa2e5fe7d"
     },
     {
       "specimen_id": "PY-WL-004-TN-AFP-immediate-reraise",
@@ -1147,7 +1137,7 @@
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "64d34174871f2415ba5569ceb906fd1ddf03df2f5a2ed5b0ed663aa44fe84766"
+      "sha256": "db49f73ca397b1a4e0944dcdd808cee162fa28d6235d0330e6174e38b0166646"
     },
     {
       "specimen_id": "PY-WL-004-TN-02",
@@ -1353,7 +1343,7 @@
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "64d34174871f2415ba5569ceb906fd1ddf03df2f5a2ed5b0ed663aa44fe84766"
+      "sha256": "76c24dd6cbdfb9b8ff389244695c99b02de242f3ab0eae00ceca2b5f16103479"
     },
     {
       "specimen_id": "PY-WL-004-TN-UNKNOWN_RAW",
@@ -1923,17 +1913,17 @@
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "a1b2cd704802a9e44b5424b692522a07b85a5f78745f41b1af0af21881110b52"
+      "sha256": "11f37a2539523f173194972e7476c7c2fc2d61737c7d47004f57f2885ca2cf5c"
     },
     {
       "specimen_id": "PY-WL-007-TN-SUPPRESS-EXTERNAL_RAW",
       "path": "specimens/PY-WL-007/EXTERNAL_RAW/negative/PY-WL-007-TN-SUPPRESS-EXTERNAL_RAW.yaml",
-      "py_exists": false,
+      "py_exists": true,
       "rule": "PY-WL-007",
       "taint_state": "EXTERNAL_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "93c25bb124d137b5c69c9160596af8df53b94714b4ee6f176fddfb8dd5e867a0"
+      "sha256": "fe35153a96867ad0517d8d30a2c8ccf2ab4d0af8d0e513254f3ade2b4d1f8ccb"
     },
     {
       "specimen_id": "PY-WL-007-TN-GUARDED",
@@ -2052,12 +2042,12 @@
     {
       "specimen_id": "PY-WL-007-TN-SUPPRESS-UNKNOWN_RAW",
       "path": "specimens/PY-WL-007/UNKNOWN_RAW/negative/PY-WL-007-TN-SUPPRESS-UNKNOWN_RAW.yaml",
-      "py_exists": false,
+      "py_exists": true,
       "rule": "PY-WL-007",
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "93c25bb124d137b5c69c9160596af8df53b94714b4ee6f176fddfb8dd5e867a0"
+      "sha256": "10b9c9f88a1abbbba2c314369202195f5d5d2a5c3da1af3837823be19b884088"
     },
     {
       "specimen_id": "PY-WL-007-TN-UNKNOWN_RAW",
@@ -2067,7 +2057,7 @@
       "taint_state": "UNKNOWN_RAW",
       "verdict": "true_negative",
       "expected_match": false,
-      "sha256": "a1b2cd704802a9e44b5424b692522a07b85a5f78745f41b1af0af21881110b52"
+      "sha256": "5d3e1b68c69913ceecf82ca2897eb951a89f101865b7a509e890dcbe408e932a"
     },
     {
       "specimen_id": "PY-WL-008-TN-AFP-has-rejection",
@@ -2078,16 +2068,6 @@
       "verdict": "true_negative",
       "expected_match": false,
       "sha256": "2c988f406c4b8a300b0f3b98925b32e34d61dd0b4e0ffabebc4fbb19d784562a"
-    },
-    {
-      "specimen_id": "PY-WL-008-TN-ASSURED",
-      "path": "specimens/PY-WL-008/ASSURED/negative/PY-WL-008-TN-ASSURED.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-008",
-      "taint_state": "ASSURED",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "7e9b90b1446bb5852948f381456292446320a8075ac34e26ebb6e73731df9806"
     },
     {
       "specimen_id": "PY-WL-008-TP-AFN-no-rejection",
@@ -2104,26 +2084,6 @@
       "sha256": "debc4a2f82cdb30878756c60c13dbd4a266e7afabafac5ddbddef243a1d44833"
     },
     {
-      "specimen_id": "PY-WL-008-TP-ASSURED",
-      "path": "specimens/PY-WL-008/ASSURED/positive/PY-WL-008-TP-ASSURED.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-008",
-      "taint_state": "ASSURED",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "4f8e4949628fdd4e1e05c002013e94f52bab9d716ebfda2cd79fed839ca38851"
-    },
-    {
-      "specimen_id": "PY-WL-008-TN-EXTERNAL_RAW",
-      "path": "specimens/PY-WL-008/EXTERNAL_RAW/negative/PY-WL-008-TN-EXTERNAL_RAW.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-008",
-      "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "7e9b90b1446bb5852948f381456292446320a8075ac34e26ebb6e73731df9806"
-    },
-    {
       "specimen_id": "PY-WL-008-TN-standard",
       "path": "specimens/PY-WL-008/EXTERNAL_RAW/negative/PY-WL-008-TN-standard.yaml",
       "py_exists": true,
@@ -2134,141 +2094,11 @@
       "sha256": "7e9b90b1446bb5852948f381456292446320a8075ac34e26ebb6e73731df9806"
     },
     {
-      "specimen_id": "PY-WL-008-TP-EXTERNAL_RAW",
-      "path": "specimens/PY-WL-008/EXTERNAL_RAW/positive/PY-WL-008-TP-EXTERNAL_RAW.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-008",
-      "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "4f8e4949628fdd4e1e05c002013e94f52bab9d716ebfda2cd79fed839ca38851"
-    },
-    {
       "specimen_id": "PY-WL-008-TP-standard",
       "path": "specimens/PY-WL-008/EXTERNAL_RAW/positive/PY-WL-008-TP-standard.yaml",
       "py_exists": true,
       "rule": "PY-WL-008",
       "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "4f8e4949628fdd4e1e05c002013e94f52bab9d716ebfda2cd79fed839ca38851"
-    },
-    {
-      "specimen_id": "PY-WL-008-TN-GUARDED",
-      "path": "specimens/PY-WL-008/GUARDED/negative/PY-WL-008-TN-GUARDED.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-008",
-      "taint_state": "GUARDED",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "7e9b90b1446bb5852948f381456292446320a8075ac34e26ebb6e73731df9806"
-    },
-    {
-      "specimen_id": "PY-WL-008-TP-GUARDED",
-      "path": "specimens/PY-WL-008/GUARDED/positive/PY-WL-008-TP-GUARDED.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-008",
-      "taint_state": "GUARDED",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "4f8e4949628fdd4e1e05c002013e94f52bab9d716ebfda2cd79fed839ca38851"
-    },
-    {
-      "specimen_id": "PY-WL-008-TN-INTEGRAL",
-      "path": "specimens/PY-WL-008/INTEGRAL/negative/PY-WL-008-TN-INTEGRAL.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-008",
-      "taint_state": "INTEGRAL",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "7e9b90b1446bb5852948f381456292446320a8075ac34e26ebb6e73731df9806"
-    },
-    {
-      "specimen_id": "PY-WL-008-TP-INTEGRAL",
-      "path": "specimens/PY-WL-008/INTEGRAL/positive/PY-WL-008-TP-INTEGRAL.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-008",
-      "taint_state": "INTEGRAL",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "4f8e4949628fdd4e1e05c002013e94f52bab9d716ebfda2cd79fed839ca38851"
-    },
-    {
-      "specimen_id": "PY-WL-008-TN-MIXED_RAW",
-      "path": "specimens/PY-WL-008/MIXED_RAW/negative/PY-WL-008-TN-MIXED_RAW.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-008",
-      "taint_state": "MIXED_RAW",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "7e9b90b1446bb5852948f381456292446320a8075ac34e26ebb6e73731df9806"
-    },
-    {
-      "specimen_id": "PY-WL-008-TP-MIXED_RAW",
-      "path": "specimens/PY-WL-008/MIXED_RAW/positive/PY-WL-008-TP-MIXED_RAW.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-008",
-      "taint_state": "MIXED_RAW",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "4f8e4949628fdd4e1e05c002013e94f52bab9d716ebfda2cd79fed839ca38851"
-    },
-    {
-      "specimen_id": "PY-WL-008-TN-UNKNOWN_ASSURED",
-      "path": "specimens/PY-WL-008/UNKNOWN_ASSURED/negative/PY-WL-008-TN-UNKNOWN_ASSURED.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-008",
-      "taint_state": "UNKNOWN_ASSURED",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "7e9b90b1446bb5852948f381456292446320a8075ac34e26ebb6e73731df9806"
-    },
-    {
-      "specimen_id": "PY-WL-008-TP-UNKNOWN_ASSURED",
-      "path": "specimens/PY-WL-008/UNKNOWN_ASSURED/positive/PY-WL-008-TP-UNKNOWN_ASSURED.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-008",
-      "taint_state": "UNKNOWN_ASSURED",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "4f8e4949628fdd4e1e05c002013e94f52bab9d716ebfda2cd79fed839ca38851"
-    },
-    {
-      "specimen_id": "PY-WL-008-TN-UNKNOWN_GUARDED",
-      "path": "specimens/PY-WL-008/UNKNOWN_GUARDED/negative/PY-WL-008-TN-UNKNOWN_GUARDED.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-008",
-      "taint_state": "UNKNOWN_GUARDED",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "7e9b90b1446bb5852948f381456292446320a8075ac34e26ebb6e73731df9806"
-    },
-    {
-      "specimen_id": "PY-WL-008-TP-UNKNOWN_GUARDED",
-      "path": "specimens/PY-WL-008/UNKNOWN_GUARDED/positive/PY-WL-008-TP-UNKNOWN_GUARDED.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-008",
-      "taint_state": "UNKNOWN_GUARDED",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "4f8e4949628fdd4e1e05c002013e94f52bab9d716ebfda2cd79fed839ca38851"
-    },
-    {
-      "specimen_id": "PY-WL-008-TN-UNKNOWN_RAW",
-      "path": "specimens/PY-WL-008/UNKNOWN_RAW/negative/PY-WL-008-TN-UNKNOWN_RAW.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-008",
-      "taint_state": "UNKNOWN_RAW",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "7e9b90b1446bb5852948f381456292446320a8075ac34e26ebb6e73731df9806"
-    },
-    {
-      "specimen_id": "PY-WL-008-TP-UNKNOWN_RAW",
-      "path": "specimens/PY-WL-008/UNKNOWN_RAW/positive/PY-WL-008-TP-UNKNOWN_RAW.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-008",
-      "taint_state": "UNKNOWN_RAW",
       "verdict": "true_positive",
       "expected_match": true,
       "sha256": "4f8e4949628fdd4e1e05c002013e94f52bab9d716ebfda2cd79fed839ca38851"
@@ -2282,16 +2112,6 @@
       "verdict": "true_negative",
       "expected_match": false,
       "sha256": "b2df43769adc1d0d95cf6daa9f94c858246432eb99daeff102c61b2f3cace930"
-    },
-    {
-      "specimen_id": "PY-WL-009-TN-ASSURED",
-      "path": "specimens/PY-WL-009/ASSURED/negative/PY-WL-009-TN-ASSURED.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-009",
-      "taint_state": "ASSURED",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840"
     },
     {
       "specimen_id": "PY-WL-009-TP-AFN-noop-shape-check",
@@ -2308,16 +2128,6 @@
       "sha256": "9c8f6148b3a69c06ba7c3baf20bf0e8c527435256a086263d6623cb876094a6e"
     },
     {
-      "specimen_id": "PY-WL-009-TP-ASSURED",
-      "path": "specimens/PY-WL-009/ASSURED/positive/PY-WL-009-TP-ASSURED.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-009",
-      "taint_state": "ASSURED",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "5c5ba755c470eefe6cae1c1f53ed7b88a0a8ee5398f12b1793578ebedc802921"
-    },
-    {
       "specimen_id": "PY-WL-009-TP-TF-shape-only",
       "path": "specimens/PY-WL-009/ASSURED/positive/PY-WL-009-TP-TF-shape-only.yaml",
       "py_exists": true,
@@ -2332,16 +2142,6 @@
       "sha256": "6484ca64dd97f1246f391a7a7344c1ab00cda31533dd7501df3f954f2009a072"
     },
     {
-      "specimen_id": "PY-WL-009-TN-EXTERNAL_RAW",
-      "path": "specimens/PY-WL-009/EXTERNAL_RAW/negative/PY-WL-009-TN-EXTERNAL_RAW.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-009",
-      "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840"
-    },
-    {
       "specimen_id": "PY-WL-009-TN-standard",
       "path": "specimens/PY-WL-009/EXTERNAL_RAW/negative/PY-WL-009-TN-standard.yaml",
       "py_exists": true,
@@ -2352,141 +2152,11 @@
       "sha256": "9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840"
     },
     {
-      "specimen_id": "PY-WL-009-TP-EXTERNAL_RAW",
-      "path": "specimens/PY-WL-009/EXTERNAL_RAW/positive/PY-WL-009-TP-EXTERNAL_RAW.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-009",
-      "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "5c5ba755c470eefe6cae1c1f53ed7b88a0a8ee5398f12b1793578ebedc802921"
-    },
-    {
       "specimen_id": "PY-WL-009-TP-standard",
       "path": "specimens/PY-WL-009/EXTERNAL_RAW/positive/PY-WL-009-TP-standard.yaml",
       "py_exists": true,
       "rule": "PY-WL-009",
       "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "5c5ba755c470eefe6cae1c1f53ed7b88a0a8ee5398f12b1793578ebedc802921"
-    },
-    {
-      "specimen_id": "PY-WL-009-TN-GUARDED",
-      "path": "specimens/PY-WL-009/GUARDED/negative/PY-WL-009-TN-GUARDED.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-009",
-      "taint_state": "GUARDED",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840"
-    },
-    {
-      "specimen_id": "PY-WL-009-TP-GUARDED",
-      "path": "specimens/PY-WL-009/GUARDED/positive/PY-WL-009-TP-GUARDED.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-009",
-      "taint_state": "GUARDED",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "5c5ba755c470eefe6cae1c1f53ed7b88a0a8ee5398f12b1793578ebedc802921"
-    },
-    {
-      "specimen_id": "PY-WL-009-TN-INTEGRAL",
-      "path": "specimens/PY-WL-009/INTEGRAL/negative/PY-WL-009-TN-INTEGRAL.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-009",
-      "taint_state": "INTEGRAL",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840"
-    },
-    {
-      "specimen_id": "PY-WL-009-TP-INTEGRAL",
-      "path": "specimens/PY-WL-009/INTEGRAL/positive/PY-WL-009-TP-INTEGRAL.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-009",
-      "taint_state": "INTEGRAL",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "5c5ba755c470eefe6cae1c1f53ed7b88a0a8ee5398f12b1793578ebedc802921"
-    },
-    {
-      "specimen_id": "PY-WL-009-TN-MIXED_RAW",
-      "path": "specimens/PY-WL-009/MIXED_RAW/negative/PY-WL-009-TN-MIXED_RAW.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-009",
-      "taint_state": "MIXED_RAW",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840"
-    },
-    {
-      "specimen_id": "PY-WL-009-TP-MIXED_RAW",
-      "path": "specimens/PY-WL-009/MIXED_RAW/positive/PY-WL-009-TP-MIXED_RAW.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-009",
-      "taint_state": "MIXED_RAW",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "5c5ba755c470eefe6cae1c1f53ed7b88a0a8ee5398f12b1793578ebedc802921"
-    },
-    {
-      "specimen_id": "PY-WL-009-TN-UNKNOWN_ASSURED",
-      "path": "specimens/PY-WL-009/UNKNOWN_ASSURED/negative/PY-WL-009-TN-UNKNOWN_ASSURED.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-009",
-      "taint_state": "UNKNOWN_ASSURED",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840"
-    },
-    {
-      "specimen_id": "PY-WL-009-TP-UNKNOWN_ASSURED",
-      "path": "specimens/PY-WL-009/UNKNOWN_ASSURED/positive/PY-WL-009-TP-UNKNOWN_ASSURED.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-009",
-      "taint_state": "UNKNOWN_ASSURED",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "5c5ba755c470eefe6cae1c1f53ed7b88a0a8ee5398f12b1793578ebedc802921"
-    },
-    {
-      "specimen_id": "PY-WL-009-TN-UNKNOWN_GUARDED",
-      "path": "specimens/PY-WL-009/UNKNOWN_GUARDED/negative/PY-WL-009-TN-UNKNOWN_GUARDED.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-009",
-      "taint_state": "UNKNOWN_GUARDED",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840"
-    },
-    {
-      "specimen_id": "PY-WL-009-TP-UNKNOWN_GUARDED",
-      "path": "specimens/PY-WL-009/UNKNOWN_GUARDED/positive/PY-WL-009-TP-UNKNOWN_GUARDED.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-009",
-      "taint_state": "UNKNOWN_GUARDED",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "5c5ba755c470eefe6cae1c1f53ed7b88a0a8ee5398f12b1793578ebedc802921"
-    },
-    {
-      "specimen_id": "PY-WL-009-TN-UNKNOWN_RAW",
-      "path": "specimens/PY-WL-009/UNKNOWN_RAW/negative/PY-WL-009-TN-UNKNOWN_RAW.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-009",
-      "taint_state": "UNKNOWN_RAW",
-      "verdict": "true_negative",
-      "expected_match": false,
-      "sha256": "9c75d7e7c77c5aaf11a0ff921b77e44538313133a4b9d527d686df20916fe840"
-    },
-    {
-      "specimen_id": "PY-WL-009-TP-UNKNOWN_RAW",
-      "path": "specimens/PY-WL-009/UNKNOWN_RAW/positive/PY-WL-009-TP-UNKNOWN_RAW.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-009",
-      "taint_state": "UNKNOWN_RAW",
       "verdict": "true_positive",
       "expected_match": true,
       "sha256": "5c5ba755c470eefe6cae1c1f53ed7b88a0a8ee5398f12b1793578ebedc802921"
@@ -2738,26 +2408,6 @@
       "sha256": "fe070f6f2d44e6254611799398b048726a874aa4e35274d8efac0e54cab1ec30"
     },
     {
-      "specimen_id": "ADV-005-long-function",
-      "path": "specimens/adversarial/ADV-005-long-function.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-005",
-      "taint_state": "EXTERNAL_RAW",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "9bddf2557fa2ae1e5677cad3af71ad356af5563f2e49e2f79ce7316593c3fea8"
-    },
-    {
-      "specimen_id": "ADV-006-decorator-stack",
-      "path": "specimens/adversarial/ADV-006-decorator-stack.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-001",
-      "taint_state": "ASSURED",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "79729ceb608a77ed594033dfa698c9ba72e12663deb134318fc5c5d6bd4e8c8d"
-    },
-    {
       "specimen_id": "ADV-007-async-get",
       "path": "specimens/adversarial/ADV-007-async-get.yaml",
       "py_exists": true,
@@ -2766,46 +2416,6 @@
       "verdict": "true_positive",
       "expected_match": true,
       "sha256": "481f09f232a4da8b19b72d587b43cb2f8d2e2ebe98cb6061eefcd081d07e052a"
-    },
-    {
-      "specimen_id": "ADV-008-async-except",
-      "path": "specimens/adversarial/ADV-008-async-except.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-004",
-      "taint_state": "UNKNOWN_RAW",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "d7a55b803438be519d8d2a17c91cf7b8891a96d42fa958046b3895279a989973"
-    },
-    {
-      "specimen_id": "ADV-009-async-silent",
-      "path": "specimens/adversarial/ADV-009-async-silent.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-005",
-      "taint_state": "MIXED_RAW",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "9f632c8cbd3ff856c4ee6cf32063d1aa2f32238d189c3e8183c94b147d4d2477"
-    },
-    {
-      "specimen_id": "ADV-010-async-getattr",
-      "path": "specimens/adversarial/ADV-010-async-getattr.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-002",
-      "taint_state": "ASSURED",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "108360958fe9ef1d9af9b3b8518c115dbd94e3a47731753d99f5a67e8d382c92"
-    },
-    {
-      "specimen_id": "ADV-011-class-method",
-      "path": "specimens/adversarial/ADV-011-class-method.yaml",
-      "py_exists": true,
-      "rule": "PY-WL-001",
-      "taint_state": "GUARDED",
-      "verdict": "true_positive",
-      "expected_match": true,
-      "sha256": "f8f1531788c0c811f5874e9b447c1cf6440e2ad5ce3b16e041f71e383ed5c113"
     },
     {
       "specimen_id": "ADV-012-setdefault",
