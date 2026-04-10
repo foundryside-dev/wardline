@@ -2,11 +2,11 @@
 specimen_id: PY-WL-007-TN-SUPPRESS-UNKNOWN_RAW
 description: PY-WL-007 true negative (SUPPRESS) at UNKNOWN_RAW
 rule: PY-WL-007
-fragment: "def process(data):\n    if isinstance(data, dict):\n        pass\n"
+fragment: "def isinstance_check_unknown_input(unknown_input):\n    if isinstance(unknown_input, dict):\n        pass\n"
 taint_state: UNKNOWN_RAW
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 93c25bb124d137b5c69c9160596af8df53b94714b4ee6f176fddfb8dd5e867a0
+sha256: 10b9c9f88a1abbbba2c314369202195f5d5d2a5c3da1af3837823be19b884088
 verdict: true_negative

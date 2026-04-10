@@ -6,7 +6,7 @@ category: "suppression_interaction"
 fragment: |
   from wardline import schema_default
 
-  def process(data):
+  def governed_schema_default(data):
       return schema_default(data.get("key", ""))
 taint_state: "EXTERNAL_RAW"
 boundaries:
@@ -21,4 +21,4 @@ expected_severity: null
 expected_exceptionability: null
 expected_match: false
 verdict: "true_negative"
-sha256: "b84d32c496bba4dcf61f9ddbfcd62741d4b139a0e90bd88ae8043e0b18aaf220"
+sha256: "31324c0d26d5963591063b16ddf6f047a30d96776bbfed79780ebcf101e82991"

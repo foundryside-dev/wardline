@@ -1,2 +1,2 @@
-def process(data):
-    x = data["key"]
+def direct_access_unknown_input(unknown_input):
+    x = unknown_input["key"]

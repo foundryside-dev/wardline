@@ -3,9 +3,9 @@ specimen_id: "PY-WL-004-TN-03"
 description: "except ValueError (specific exception) in UNKNOWN_RAW does not fire PY-WL-004"
 rule: "PY-WL-004"
 fragment: |
-  def process(data):
+  def specific_convert_unknown_input(unknown_input):
       try:
-          x = int(data)
+          x = int(unknown_input)
       except ValueError:
           x = 0
 taint_state: "UNKNOWN_RAW"
@@ -13,5 +13,5 @@ expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: "64d34174871f2415ba5569ceb906fd1ddf03df2f5a2ed5b0ed663aa44fe84766"
+sha256: "76c24dd6cbdfb9b8ff389244695c99b02de242f3ab0eae00ceca2b5f16103479"
 verdict: "true_negative"

@@ -2,11 +2,11 @@
 specimen_id: PY-WL-007-TN-SUPPRESS-EXTERNAL_RAW
 description: PY-WL-007 true negative (SUPPRESS) at EXTERNAL_RAW
 rule: PY-WL-007
-fragment: "def process(data):\n    if isinstance(data, dict):\n        pass\n"
+fragment: "def isinstance_check_request_param(request_param):\n    if isinstance(request_param, dict):\n        pass\n"
 taint_state: EXTERNAL_RAW
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 93c25bb124d137b5c69c9160596af8df53b94714b4ee6f176fddfb8dd5e867a0
+sha256: fe35153a96867ad0517d8d30a2c8ccf2ab4d0af8d0e513254f3ade2b4d1f8ccb
 verdict: true_negative

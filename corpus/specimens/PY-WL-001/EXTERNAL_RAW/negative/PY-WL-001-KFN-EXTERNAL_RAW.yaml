@@ -2,11 +2,11 @@
 specimen_id: PY-WL-001-KFN-EXTERNAL_RAW
 description: "SUPPRESS at EXTERNAL_RAW: PY-WL-001 true_positive at EXTERNAL_RAW"
 rule: PY-WL-001
-fragment: "def process(data):\n    x = data.get(\"key\", \"default\")\n"
+fragment: "def kfn_dict_default_request_param(request_param):\n    x = request_param.get(\"key\", \"default\")\n"
 taint_state: EXTERNAL_RAW
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5
+sha256: 0debf00c667c8034cde60c6a181eba0d1d0ba4b2ec36164ac93ba2cb56763de8
 verdict: known_false_negative

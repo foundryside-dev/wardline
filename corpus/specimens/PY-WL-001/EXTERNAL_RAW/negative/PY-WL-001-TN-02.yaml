@@ -3,12 +3,12 @@ specimen_id: "PY-WL-001-TN-02"
 description: "Direct dict[key] access does not fire PY-WL-001"
 rule: "PY-WL-001"
 fragment: |
-  def process(data):
-      x = data["key"]
+  def direct_key_request_param(request_param):
+      x = request_param["key"]
 taint_state: "EXTERNAL_RAW"
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: "a1b2cd704802a9e44b5424b692522a07b85a5f78745f41b1af0af21881110b52"
+sha256: "7c3fab4b0a64cd29124afe1b2c01ca15b0c5f59a4702815f9b42db89ae9ba8a0"
 verdict: "true_negative"

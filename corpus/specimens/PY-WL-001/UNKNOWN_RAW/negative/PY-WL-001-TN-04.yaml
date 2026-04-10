@@ -3,12 +3,12 @@ specimen_id: "PY-WL-001-TN-04"
 description: "Direct dict[key] access in UNKNOWN_RAW context does not fire PY-WL-001"
 rule: "PY-WL-001"
 fragment: |
-  def process(data):
-      x = data["key"]
+  def direct_key_unknown_input(unknown_input):
+      x = unknown_input["key"]
 taint_state: "UNKNOWN_RAW"
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: "a1b2cd704802a9e44b5424b692522a07b85a5f78745f41b1af0af21881110b52"
+sha256: "db6d64390cabb2ec5e88949499558077c9f9c292e71f5c0c480af7d92c44fb8d"
 verdict: "true_negative"

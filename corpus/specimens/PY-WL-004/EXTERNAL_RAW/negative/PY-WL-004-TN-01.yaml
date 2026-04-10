@@ -3,9 +3,9 @@ specimen_id: "PY-WL-004-TN-01"
 description: "except ValueError (specific exception) does not fire PY-WL-004"
 rule: "PY-WL-004"
 fragment: |
-  def process(data):
+  def specific_convert_request_param(request_param):
       try:
-          x = int(data)
+          x = int(request_param)
       except ValueError:
           x = 0
 taint_state: "EXTERNAL_RAW"
@@ -13,5 +13,5 @@ expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: "64d34174871f2415ba5569ceb906fd1ddf03df2f5a2ed5b0ed663aa44fe84766"
+sha256: "db49f73ca397b1a4e0944dcdd808cee162fa28d6235d0330e6174e38b0166646"
 verdict: "true_negative"
