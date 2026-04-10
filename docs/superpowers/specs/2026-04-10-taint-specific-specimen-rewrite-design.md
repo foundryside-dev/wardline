@@ -30,7 +30,10 @@ variants assumes taint matters for each, but the code is byte-for-byte identical
 
 ## 3. Taint Context Vocabulary
 
-Each taint state maps to a consistent naming context used across all rules:
+Each taint state maps to a consistent naming context used across all rules.
+This table is the authoritative reference for specimen naming — all fragment
+rewrites must use these exact mappings. When a new taint state is added to the
+core model, a new row must be added here before any specimens are created.
 
 | Taint State | Tier | Context Noun | Example Variable | Example Function Suffix |
 |-------------|------|-------------|-----------------|------------------------|
@@ -42,6 +45,13 @@ Each taint state maps to a consistent naming context used across all rules:
 | UNKNOWN_RAW | 3 | unknown_input | `unknown_input` | `_unknown_input` |
 | EXTERNAL_RAW | 4 | request_param | `request_param` | `_request_param` |
 | MIXED_RAW | 4 | mixed_source | `mixed_source` | `_mixed_source` |
+
+**Naming constraint:** Fragment function and variable names MUST NOT contain
+substrings that trigger heuristic classifiers in other rules:
+- `audit`, `ledger`, `record` — matched by PY-WL-006 `_AUDIT_RECEIVER_KEYWORDS`
+- `logger`, `print` — matched by SUP-001 `_LOG_SINK_HINTS`
+
+The context nouns above are verified clean against these keyword lists.
 
 ## 4. Fragment Rewrites by Rule
 
@@ -76,11 +86,11 @@ Each taint state maps to a consistent naming context used across all rules:
 | MIXED_RAW | `def no_default_mixed_source(mixed_source):\n    x = mixed_source.get("key")\n` |
 
 **Note:** PY-WL-001 also has a KFN group (sha `fde5ab3dd8`, 9 specimens mixing
-TP and KFN verdicts). These share the same fragment as the TP group. Apply the
-same naming pattern — each specimen gets the fragment matching its taint state.
-The KFN specimens at EXTERNAL_RAW, MIXED_RAW, UNKNOWN_RAW use the same function
-name as their taint's TP counterpart since the fragment is structurally identical
-(the difference is only in expected verdict).
+TP and KFN verdicts). These share the same fragment as the TP group. KFN
+specimens must use a `kfn_` prefix to differentiate from their TP counterparts
+at the same taint state (e.g., `kfn_dict_default_request_param` vs
+`dict_default_request_param`). This ensures unique sha256 values within the
+rule, satisfying acceptance criterion #1.
 
 **PY-WL-001 non-matrix duplicates:**
 - `PY-WL-001-TN-02` (EXTERNAL_RAW) and `PY-WL-001-TN-04` (UNKNOWN_RAW) share
@@ -210,24 +220,18 @@ Existing unique adversarial specimens are untouched:
 
 ## 5. Directory Structure Changes
 
-### Before (PY-WL-004 example)
-```
-PY-WL-004/
-  ASSURED/positive/PY-WL-004-TP-ASSURED.yaml
-  ASSURED/negative/PY-WL-004-TN-ASSURED.yaml
-  EXTERNAL_RAW/positive/PY-WL-004-TP-EXTERNAL_RAW.yaml
-  EXTERNAL_RAW/negative/PY-WL-004-TN-EXTERNAL_RAW.yaml
-  ...8 taint dirs, each with positive/ and negative/
-```
+### PY-WL-001 through 007
 
-### After (unchanged)
+No directory changes. Specimens remain in their existing
+`{TAINT_STATE}/{positive,negative}/` directories. Only YAML content changes.
 
-The directory structure stays the same — specimens remain in their
-`{TAINT_STATE}/{positive,negative}/` directories. Only the YAML content changes.
+### PY-WL-008 and 009
 
-For PY-WL-008/009, the 7 deleted taint directories become empty and are removed.
-The kept specimen stays in `EXTERNAL_RAW/` (the taint_state field value is
-preserved for directory consistency, though the rule ignores it).
+The 7 deleted taint-state directories (ASSURED, GUARDED, INTEGRAL, MIXED_RAW,
+UNKNOWN_ASSURED, UNKNOWN_GUARDED, UNKNOWN_RAW) are removed after their
+specimens are deleted. The kept specimens remain in `EXTERNAL_RAW/positive/`
+and `EXTERNAL_RAW/negative/` — renamed from `*-EXTERNAL_RAW` to `*-standard`
+but staying in the EXTERNAL_RAW directory for filesystem consistency.
 
 ## 6. Manifest Regeneration
 
@@ -240,12 +244,28 @@ specimens since fragment content changed.
 1. **Zero duplicate sha256 values** within any rule (except ADV cross-references,
    which are out of scope)
 2. **`corpus verify` passes** with zero failures
-3. **Specimen count drops** from 259 to 230 (28 deleted from PY-WL-008/009 + 1 PY-WL-002-TN-01 duplicate)
-4. **Every taint-matrix function name** follows the `{rule_pattern}_{taint_context}`
+3. **`uv run pytest` passes** — full test suite, not just corpus verification
+4. **Specimen count drops** from 259 to 230 (28 deleted from PY-WL-008/009 + 1 PY-WL-002-TN-01 duplicate)
+5. **Every taint-matrix function name** follows the `{rule_pattern}_{taint_context}`
    convention
-5. **No functional change** to scanner behavior — only corpus metadata changes
+6. **No functional change** to scanner behavior — only corpus metadata changes
+7. **Taint-invariance of PY-WL-008/009 is test-verified** — a parametrized test
+   demonstrates that these rules produce identical severity, exceptionability,
+   and detection results across all 8 taint states
 
-## 8. Relationship to Workstream B
+## 8. Conformance Evidence
+
+The specimen count reduction (259→230) must be recorded in the conformance
+evidence trail, not just this design spec. After implementation, add a note to
+`docs/requirements/spec-fitness/` documenting:
+- Which specimens were removed and why (taint-invariance of PY-WL-008/009)
+- The parametrized test proving taint-invariance (acceptance criterion #7)
+- That detection coverage is unchanged (same AST patterns, same rule logic)
+
+This ensures an auditor following §14.6 can trace the reduction to a justified
+rationale without needing to read this spec.
+
+## 9. Relationship to Workstream B
 
 This work should be completed BEFORE Workstream B (structured `expected_match`
 upgrade). When Workstream B computes `expected_match.line`, `.text`, `.function`
@@ -253,7 +273,7 @@ for each specimen, every fragment will produce unique values — making the
 structured verification genuinely meaningful rather than verifying the same
 match point 8 times.
 
-## 9. Out of Scope
+## 10. Out of Scope
 
 - Adversarial specimen duplicates (ADV-* sharing fragments with rule specimens)
 - Realistic/enhanced fragments (different code patterns per taint level)
