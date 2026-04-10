@@ -2,11 +2,11 @@
 specimen_id: PY-WL-001-TN-MIXED_RAW
 description: PY-WL-001 true negative at MIXED_RAW
 rule: PY-WL-001
-fragment: "def process(data):\n    x = data.get(\"key\")\n"
+fragment: "def no_default_mixed_source(mixed_source):\n    x = mixed_source.get(\"key\")\n"
 taint_state: MIXED_RAW
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: e32a7a05619471256f0fd952576e21a72ff3f5952c687fc782626247ca798e19
+sha256: 326c2b39a331b61c831e7f368af66ad4854460e8010ce6bef3bf53f20e97d018
 verdict: true_negative

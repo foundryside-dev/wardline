@@ -2,7 +2,7 @@
 specimen_id: PY-WL-003-TP-UNKNOWN_RAW
 description: PY-WL-003 true_positive at UNKNOWN_RAW
 rule: PY-WL-003
-fragment: "def process(data):\n    if \"key\" in data:\n        pass\n"
+fragment: "def key_check_unknown_input(unknown_input):\n    if \"key\" in unknown_input:\n        pass\n"
 taint_state: UNKNOWN_RAW
 expected_rules:
 - PY-WL-003
@@ -10,8 +10,8 @@ expected_severity: SUPPRESS
 expected_exceptionability: TRANSPARENT
 expected_match:
   line: 2
-  text: 'if "key" in data:'
-  function: process
+  text: 'if "key" in unknown_input:'
+  function: key_check_unknown_input
 expected_match_source: ast-reimplemented
-sha256: 83658d70103eb68eea677c3b88ae80be30fda5fd76b89f1dba18e61b3409df44
+sha256: f299c2a7657b5ca2edd6bd2faa57ac9abcee880324e8fe8794ed839aa2e5fe7d
 verdict: true_positive

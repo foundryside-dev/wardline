@@ -2,11 +2,11 @@
 specimen_id: PY-WL-001-TN-UNKNOWN_RAW
 description: PY-WL-001 true negative at UNKNOWN_RAW
 rule: PY-WL-001
-fragment: "def process(data):\n    x = data.get(\"key\")\n"
+fragment: "def no_default_unknown_input(unknown_input):\n    x = unknown_input.get(\"key\")\n"
 taint_state: UNKNOWN_RAW
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: e32a7a05619471256f0fd952576e21a72ff3f5952c687fc782626247ca798e19
+sha256: cf8e95b72f0e607945d961ff535cff53d0e27d6ab477f06ecf9e0d4fe7233708
 verdict: true_negative

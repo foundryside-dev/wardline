@@ -1,2 +1,2 @@
-def process(data):
-    x = data.get("key")
+def no_default_request_param(request_param):
+    x = request_param.get("key")

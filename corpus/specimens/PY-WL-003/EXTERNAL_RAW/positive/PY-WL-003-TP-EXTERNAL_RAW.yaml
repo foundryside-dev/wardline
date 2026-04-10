@@ -2,7 +2,7 @@
 specimen_id: PY-WL-003-TP-EXTERNAL_RAW
 description: PY-WL-003 true_positive at EXTERNAL_RAW
 rule: PY-WL-003
-fragment: "def process(data):\n    if \"key\" in data:\n        pass\n"
+fragment: "def key_check_request_param(request_param):\n    if \"key\" in request_param:\n        pass\n"
 taint_state: EXTERNAL_RAW
 expected_rules:
 - PY-WL-003
@@ -10,8 +10,8 @@ expected_severity: SUPPRESS
 expected_exceptionability: TRANSPARENT
 expected_match:
   line: 2
-  text: 'if "key" in data:'
-  function: process
+  text: 'if "key" in request_param:'
+  function: key_check_request_param
 expected_match_source: ast-reimplemented
-sha256: 83658d70103eb68eea677c3b88ae80be30fda5fd76b89f1dba18e61b3409df44
+sha256: cee0aa16efe2e85578a53a1281ce8ce687accb28effab49df0524698b3775a30
 verdict: true_positive

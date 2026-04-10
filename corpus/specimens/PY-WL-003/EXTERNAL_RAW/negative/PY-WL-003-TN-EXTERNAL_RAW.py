@@ -1,2 +1,2 @@
-def process(data):
-    x = data["key"]
+def direct_access_request_param(request_param):
+    x = request_param["key"]

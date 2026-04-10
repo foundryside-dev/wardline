@@ -2,7 +2,7 @@
 specimen_id: PY-WL-003-TP-MIXED_RAW
 description: PY-WL-003 true_positive at MIXED_RAW
 rule: PY-WL-003
-fragment: "def process(data):\n    if \"key\" in data:\n        pass\n"
+fragment: "def key_check_mixed_source(mixed_source):\n    if \"key\" in mixed_source:\n        pass\n"
 taint_state: MIXED_RAW
 expected_rules:
 - PY-WL-003
@@ -10,8 +10,8 @@ expected_severity: SUPPRESS
 expected_exceptionability: TRANSPARENT
 expected_match:
   line: 2
-  text: 'if "key" in data:'
-  function: process
+  text: 'if "key" in mixed_source:'
+  function: key_check_mixed_source
 expected_match_source: ast-reimplemented
-sha256: 83658d70103eb68eea677c3b88ae80be30fda5fd76b89f1dba18e61b3409df44
+sha256: 214113c46b56d1b6a40be7616d4b073ae1e1befe8de29e117136033dea0f0689
 verdict: true_positive
