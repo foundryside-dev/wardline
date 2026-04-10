@@ -28,3 +28,9 @@ build/
 *.swp
 *.swo
 .hypothesis/
+
+# MkDocs build output
+site/
+
+# Superpowers brainstorming sessions
+.superpowers/
