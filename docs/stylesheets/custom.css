@@ -1,0 +1,64 @@
+/* Dark theme (default) — deep indigo with cyan accent */
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #1a1a2e;
+  --md-default-fg-color: #e0e7ff;
+  --md-default-fg-color--light: #8b9dc3;
+  --md-default-fg-color--lighter: #5a6b8a;
+  --md-default-fg-color--lightest: #3d4f6f;
+  --md-primary-fg-color: #06b6d4;
+  --md-primary-bg-color: #1a1a2e;
+  --md-accent-fg-color: #06b6d4;
+  --md-typeset-a-color: #06b6d4;
+  --md-code-bg-color: #2a2a4a;
+  --md-code-fg-color: #e0e7ff;
+  --md-footer-bg-color: #141428;
+  --md-footer-fg-color: #8b9dc3;
+}
+
+/* Light theme overrides */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #0891b2;
+  --md-accent-fg-color: #0891b2;
+  --md-typeset-a-color: #0891b2;
+}
+
+/* Header bar — match dark background */
+[data-md-color-scheme="slate"] .md-header {
+  background-color: #141428;
+}
+
+/* Navigation sidebar */
+[data-md-color-scheme="slate"] .md-sidebar {
+  background-color: #1a1a2e;
+}
+
+/* Buttons on landing page */
+.md-typeset .md-button--primary {
+  background-color: #06b6d4;
+  border-color: #06b6d4;
+  color: #1a1a2e;
+}
+
+.md-typeset .md-button--primary:hover {
+  background-color: #22d3ee;
+  border-color: #22d3ee;
+}
+
+.md-typeset .md-button {
+  border-color: #334155;
+  color: #8b9dc3;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .md-button:hover {
+  border-color: #06b6d4;
+  color: #06b6d4;
+}
+
+/* Table styling — tighter for reference tables */
+.md-typeset table:not([class]) {
+  font-size: 0.8rem;
+}
+
+.md-typeset table:not([class]) th {
+  white-space: nowrap;
+}
