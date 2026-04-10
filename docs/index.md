@@ -31,5 +31,5 @@ privileged code before it ships.
 ---
 
 [Getting Started](getting-started.md){ .md-button .md-button--primary }
-[GitHub](https://github.com/foundryside/wardline){ .md-button }
+[GitHub](https://github.com/tachyon-beep/wardline){ .md-button }
 [Specification (PDF)](assets/wardline-specification.pdf){ .md-button }

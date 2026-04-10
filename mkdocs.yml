@@ -1,8 +1,8 @@
 site_name: Wardline
 site_url: https://www.wardline.dev
 site_description: Semantic boundary enforcement for Python
-repo_url: https://github.com/foundryside/wardline
-repo_name: foundryside/wardline
+repo_url: https://github.com/tachyon-beep/wardline
+repo_name: tachyon-beep/wardline
 
 theme:
   name: material

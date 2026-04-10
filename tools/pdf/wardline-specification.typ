@@ -8,7 +8,7 @@
 
 #set document(
   title: "Wardline Framework Specification",
-  author: "Foundryside",
+  author: "The Wardline Project",
 )
 
 #set page(
@@ -120,7 +120,7 @@
       row-gutter: 6pt,
       [*Status:*], [DRAFT v0.3.0],
       [*Date:*], [9 April 2026],
-      [*Prepared by:*], [Foundryside],
+      [*Prepared by:*], [The Wardline Project],
     )
   ]
 ]

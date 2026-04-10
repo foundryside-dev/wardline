@@ -12,7 +12,7 @@ severity matrix, governance model, and conformance requirements.
 
 The specification source files are maintained in the repository:
 
-[View on GitHub](https://github.com/foundryside/wardline/tree/main/docs/spec){ .md-button }
+[View on GitHub](https://github.com/tachyon-beep/wardline/tree/main/docs/spec){ .md-button }
 
 ## Contents
 
