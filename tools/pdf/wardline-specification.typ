@@ -44,7 +44,7 @@
   leading: 0.65em,
 )
 
-#set heading(numbering: "1.1")
+// Headings use the spec's own numbering (§1, §5.1, etc.) — no auto-numbering
 
 #show heading.where(level: 1): it => {
   pagebreak(weak: true)
