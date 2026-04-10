@@ -202,7 +202,7 @@ class TestSelfHostingScan:
         assert len(files_with_findings) >= 10
 
     def test_self_hosting_passes_own_rules(self) -> None:
-        """Scanner passes the rules it implements on its own source (§10 property 2).
+        """Scanner passes the rules it implements on its own source (§11 property 2).
 
         Reads implementedRules from the SARIF output and asserts zero
         unexcepted findings for those rules. This is the real self-hosting

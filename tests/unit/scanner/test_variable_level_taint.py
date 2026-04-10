@@ -395,7 +395,7 @@ class TestTryExceptBranchMerge:
 
 
 class TestSerialisationShedding:
-    """§5.2 invariant 5: serialisation sheds direct authority."""
+    """§6.2 invariant 5: serialisation sheds direct authority."""
 
     def test_json_dumps_sheds_to_unknown_raw(self) -> None:
         func = _parse_func("""
@@ -467,7 +467,7 @@ class TestSerialisationShedding:
 
 
 class TestDependencyTaint:
-    """§5.5 dependency taint: dotted calls resolved via dep_dotted + dep_prefixes."""
+    """§6.5 dependency taint: dotted calls resolved via dep_dotted + dep_prefixes."""
 
     def test_dotted_call_resolved_via_taint_map(self) -> None:
         """pd.read_csv() with 'pd.read_csv' in dep_dotted -> declared taint."""

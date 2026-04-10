@@ -90,7 +90,7 @@ def test_associativity_spot_check() -> None:
         )
 
 
-# --- Specific join results from spec §5 ---
+# --- Specific join results from spec §6 ---
 
 
 @pytest.mark.parametrize(

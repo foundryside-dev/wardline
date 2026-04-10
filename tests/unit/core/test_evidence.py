@@ -1,4 +1,4 @@
-"""Tests for the §5.3 evidence-to-tier matrix.
+"""Tests for the §6.3 evidence-to-tier matrix.
 
 Expected values encoded directly from the spec — NOT imported from
 the implementation. Follows test_matrix.py independent-oracle discipline.

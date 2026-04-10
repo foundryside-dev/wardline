@@ -279,7 +279,7 @@ def _find_matching_finding(
                     return f
         # Same-line duplicates with no text match — return None so caller
         # counts this as a location mismatch rather than silently selecting
-        # the first finding (§6.11: single finding per specimen).
+        # the first finding (single finding per specimen).
         logger.warning(
             "Multiple findings for %s at line %d with no text match — "
             "returning None (expected text: %r)",

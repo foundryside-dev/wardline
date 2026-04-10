@@ -1,6 +1,6 @@
 """Unit tests for scan gate severity filtering.
 
-The three-tier signal model (spec §7.3–§7.5, corpus_cmds.py:755–787):
+The three-tier signal model (spec §8.3–§8.5, corpus_cmds.py:755–787):
 - SUPPRESS (SARIF "note"): expected pattern at this taint state — excluded from gate
 - WARNING (SARIF "warning"): suspicious, worth reviewing — excluded from gate
 - ERROR (SARIF "error"): violates tier integrity contract — blocks gate unless excepted
@@ -107,7 +107,7 @@ class TestSeverityBreakdown:
 class TestSuppressTransparentContract:
     """End-to-end contract for SUPPRESS+TRANSPARENT matrix cells.
 
-    Spec §7.3 / §7.5: cells where severity=SUPPRESS and
+    Spec §8.3 / §8.5: cells where severity=SUPPRESS and
     exceptionability=TRANSPARENT represent patterns that are *expected* at
     that taint level (e.g. PY-WL-001 at EXTERNAL_RAW).  Four invariants:
 

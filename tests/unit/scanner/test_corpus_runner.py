@@ -607,7 +607,7 @@ class TestCorpusVerifyJson:
         args = ["corpus", "verify", "--corpus-dir", str(FIXTURE_CORPUS), "--json"]
         r1 = runner.invoke(cli, args)
         r2 = runner.invoke(cli, args)
-        # Byte-identical — no timestamps in verify output (determinism per §10)
+        # Byte-identical — no timestamps in verify output (determinism per §11)
         assert r1.output == r2.output
 
     def test_json_overall_verdict(self) -> None:

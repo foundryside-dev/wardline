@@ -524,7 +524,7 @@ class TestNonMappingYaml:
             load_overlay(f)
 
 
-# ── Skip-Promotion Rejection (§13.1.2) ──────────────────────────
+# ── Skip-Promotion Rejection (§14.1.2) ──────────────────────────
 
 
 class TestSkipPromotionRejection:

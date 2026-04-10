@@ -57,7 +57,7 @@ WL-001 is SUPPRESS in EXTERNAL_RAW context. Tier 4 is the developer-freedom zone
 
 - **Required** — field absence is an error. WL-001 fires as ERROR/STANDARD (no change from current behaviour). A `.get()` with a fallback default on a required field remains a finding regardless of any declaration, because field presence is established by the structural guarantee, and its absence signals a data integrity problem.
 - **Optional with approved default** — field absence is expected by contract, and the default value is institutionally approved. WL-001 is SUPPRESS when three conditions are met simultaneously: (1) the field is declared as optional-by-contract in the wardline manifest or overlay boundary declaration, (2) the actual default in the code matches the declared approved default exactly, and (3) the access occurs within a declared validation or normalisation boundary — specifically, a shape-validation boundary (`@validates_shape`) or a combined validation boundary (`@validates_external`), since optional-field handling is a structural concern addressed during shape validation. Semantic-validation boundaries are excluded because optional-field handling is resolved during the T4→T3 or T4→T2 transition, not during the T3→T2 transition. Outside a declared boundary, the same access with the same default is still a WL-001 finding — the declaration is not a roaming licence to invent values wherever convenient.
-- **Optional, no default** — field may be absent, but the correct handling is explicit representation of absence (None/null/sentinel), not value substitution. WL-001 fires as ERROR/STANDARD if you default it. This covers the case analysed in GCBD §3.3 (the allergy-field example): a missing allergy field is expected to be represented as "unknown," not defaulted to an empty list.
+- **Optional, no default** — field may be absent, but the correct handling is explicit representation of absence (None/null/sentinel), not value substitution. WL-001 fires as ERROR/STANDARD if you default it. This covers the case analysed in GCBD §2.3 (the allergy-field example): a missing allergy field is expected to be represented as "unknown," not defaulted to an empty list.
 
 This is a **classification decision**, not an exception. An exception says "this violation is acceptable"; an optional-field declaration says "this isn't a violation because the field's absence is expected and the default is institutionally approved." The distinction matters for governance: exceptions accumulate in the exception register and require periodic re-review; structural-guarantee declarations are part of the trust topology and are reviewed as part of the manifest.
 
@@ -93,7 +93,7 @@ WL-007, WL-008, and WL-009 are structural verification rules (not pattern rules)
 
 #### 8.4 Worked examples
 
-*Subsections 7.4 and 7.5 are non-normative. They explain the reasoning behind the severity matrix but do not impose additional requirements on implementations.*
+*Subsections 8.4 and 8.5 are non-normative. They explain the reasoning behind the severity matrix but do not impose additional requirements on implementations.*
 
 Six pressure-point cells illustrate the matrix's reasoning:
 

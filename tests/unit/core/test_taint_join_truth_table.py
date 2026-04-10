@@ -1,4 +1,4 @@
-"""Complete 8x8 truth table for taint_join -- executable spec §5 reference."""
+"""Complete 8x8 truth table for taint_join -- executable spec §6 reference."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ TRUTH_TABLE: list[tuple[TaintState, TaintState, TaintState]] = [
 
 
 class TestTaintJoinTruthTable:
-    """Exhaustive truth table -- executable spec §5 reference."""
+    """Exhaustive truth table -- executable spec §6 reference."""
 
     @pytest.mark.parametrize(
         "left,right,expected",

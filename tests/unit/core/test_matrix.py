@@ -21,7 +21,7 @@ R = Exceptionability.RELAXED
 T = Exceptionability.TRANSPARENT
 
 # Independent fixture: (rule, taint, expected_severity, expected_exceptionability)
-# Encoded directly from spec §7.3 table, NOT copied from matrix.py
+# Encoded directly from spec §8.3 table, NOT copied from matrix.py
 # fmt: off
 EXPECTED: list[tuple[RuleId, TaintState, Severity, Exceptionability]] = [
     # PY-WL-001 (dict key access with fallback default) — inherits WL-001
@@ -225,8 +225,8 @@ def test_no_matrix_import_at_module_level() -> None:
             )
 
 
-# --- Split-rule deviation documentation (§7.1) ---
-# PY-WL-002 establishes its own matrix row per §7.1.
+# --- Split-rule deviation documentation (§8.1) ---
+# PY-WL-002 establishes its own matrix row per §8.1.
 # These cells intentionally differ from WL-001's framework matrix.
 # See ADR-003 for rationale.
 SPLIT_RULE_DEVIATIONS: list[tuple[RuleId, TaintState, Severity, Exceptionability, str]] = [

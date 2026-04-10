@@ -339,7 +339,7 @@ def _add_exception(
 
 @pytest.mark.integration
 class TestRecurrenceLifecycle:
-    """Spec §9.4: recurrence tracking on exception renewal."""
+    """Spec §10.4: recurrence tracking on exception renewal."""
 
     def test_add_code_change_refresh_no_increment(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -387,7 +387,7 @@ class TestRecurrenceLifecycle:
         """expire → add renewal DOES increment recurrence_count.
 
         When the same (rule, location) gets a new exception after the
-        prior one, recurrence_count must carry forward + 1 per spec §9.4.
+        prior one, recurrence_count must carry forward + 1 per spec §10.4.
         """
         _manifest, py_file = _make_project(tmp_path)
         monkeypatch.chdir(tmp_path)
