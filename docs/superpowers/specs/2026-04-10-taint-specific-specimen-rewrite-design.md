@@ -318,5 +318,4 @@ This deletes 6 additional specimens, bringing the total from 259 to 224
 ## 11. Out of Scope
 
 - Realistic/enhanced fragments (different code patterns per taint level)
-- PY-WL-001 KFN-get-default and schema-default duplicates (semantic, not taint-matrix)
 - SCN-021 and SUP-001 (no taint clones)
