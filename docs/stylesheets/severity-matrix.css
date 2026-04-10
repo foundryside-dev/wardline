@@ -1,0 +1,79 @@
+/* Severity matrix cell colouring — applied by severity-matrix.js */
+
+/* ERROR cells */
+.severity-error {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+  color: #ef4444 !important;
+  font-weight: 600;
+}
+
+[data-md-color-scheme="default"] .severity-error {
+  background-color: rgba(220, 38, 38, 0.1) !important;
+  color: #dc2626 !important;
+}
+
+/* WARNING cells */
+.severity-warning {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+  color: #f59e0b !important;
+  font-weight: 600;
+}
+
+[data-md-color-scheme="default"] .severity-warning {
+  background-color: rgba(217, 119, 6, 0.1) !important;
+  color: #b45309 !important;
+}
+
+/* SUPPRESS cells */
+.severity-suppress {
+  opacity: 0.5;
+}
+
+/* Hover tooltip container */
+.matrix-cell {
+  position: relative;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 3px;
+  transition: opacity 0.15s;
+  display: inline-block;
+}
+
+.matrix-cell:hover {
+  opacity: 0.85;
+}
+
+/* Tooltip */
+.matrix-cell[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 10;
+  margin-bottom: 4px;
+}
+
+[data-md-color-scheme="default"] .matrix-cell[data-tooltip]::after {
+  background: #334155;
+  color: #f1f5f9;
+}
+
+.matrix-cell:hover[data-tooltip]::after {
+  opacity: 1;
+}
+
+/* Clickable cell link styling */
+.matrix-cell a {
+  color: inherit !important;
+  text-decoration: none !important;
+}
