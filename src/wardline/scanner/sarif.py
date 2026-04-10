@@ -308,6 +308,10 @@ class SarifReport:
     retroactive_scan_range: str | None = None
     # GOV-005: Structured governance audit events (§9)
     governance_events: tuple[GovernanceEvent, ...] = ()
+    # R7: Data-path coverage metrics
+    data_paths_traced_ratio: float | None = None
+    low_resolution_function_count: int = 0
+    denominator_excluded_count: int = 0
 
     def _implemented_rules(self) -> list[str]:
         """Return sorted list of canonical rule ID values (excludes pseudo-IDs).
@@ -363,6 +367,10 @@ class SarifReport:
                 **({"wardline.controlLawDegradations": list(self.control_law_degradations)}
                    if self.control_law_degradations else {}),
                 "wardline.coverageRatio": round(self.coverage_ratio, 4) if self.coverage_ratio is not None else None,
+                "wardline.dataPathsTracedRatio": (
+                    round(self.data_paths_traced_ratio, 4) if self.data_paths_traced_ratio is not None else None
+                ),
+                "wardline.denominatorExcludedCount": self.denominator_excluded_count,
                 **({"wardline.retroactiveScan": True,
                     "wardline.retroactiveScanRange": self.retroactive_scan_range}
                    if self.retroactive_scan and self.retroactive_scan_range
@@ -371,12 +379,14 @@ class SarifReport:
                 "wardline.implementedRules": self._implemented_rules(),
                 "wardline.inputFiles": self.input_files,
                 "wardline.inputHash": self.input_hash,
+                "wardline.lowResolutionFunctionCount": self.low_resolution_function_count,
                 "wardline.manifestHash": self.manifest_hash,
                 "wardline.overlayHashes": list(self.overlay_hashes),
                 # Property bag versions:
                 # "0.4" — initial stable schema (17 run-level, 5 result-level mandatory)
                 # "0.5" — R1+R2: 19 run-level, 9 result-level mandatory (§10.1 complete)
-                "wardline.propertyBagVersion": "0.5",
+                # "0.6" — R7: data-path coverage (dataPathsTracedRatio, lowResolutionFunctionCount, denominatorExcludedCount)
+                "wardline.propertyBagVersion": "0.6",
                 **({"wardline.scanTimestamp": self.scan_timestamp}
                    if not self.verification_mode and self.scan_timestamp
                    else {}),

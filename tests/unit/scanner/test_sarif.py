@@ -491,7 +491,7 @@ class TestSarifPropertyBags:
     def test_property_bag_version(self) -> None:
         report = SarifReport(findings=[])
         props = report.to_dict()["runs"][0]["properties"]
-        assert props["wardline.propertyBagVersion"] == "0.5"
+        assert props["wardline.propertyBagVersion"] == "0.6"
 
     def test_input_hash_always_emitted(self) -> None:
         """wardline.inputHash is always present in run properties."""
@@ -1082,3 +1082,56 @@ class TestRegionSnippet:
         sarif = report.to_dict()
         region = sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"]
         assert "snippet" not in region
+
+
+# ---------------------------------------------------------------------------
+# TestSarifDataPathsTraced  (R7)
+# ---------------------------------------------------------------------------
+
+
+class TestSarifDataPathsTraced:
+    """R7: wardline.dataPathsTracedRatio, lowResolutionFunctionCount, denominatorExcludedCount."""
+
+    def test_data_paths_traced_in_sarif(self) -> None:
+        """dataPathsTracedRatio appears in run properties when set."""
+        report = SarifReport(findings=[], data_paths_traced_ratio=0.85123456)
+        props = report.to_dict()["runs"][0]["properties"]
+        assert "wardline.dataPathsTracedRatio" in props
+        assert props["wardline.dataPathsTracedRatio"] == 0.8512
+
+    def test_data_paths_traced_null_when_none(self) -> None:
+        """dataPathsTracedRatio is null when L3 didn't run."""
+        report = SarifReport(findings=[], data_paths_traced_ratio=None)
+        props = report.to_dict()["runs"][0]["properties"]
+        assert "wardline.dataPathsTracedRatio" in props
+        assert props["wardline.dataPathsTracedRatio"] is None
+
+    def test_low_resolution_function_count_in_sarif(self) -> None:
+        """lowResolutionFunctionCount appears in run properties."""
+        report = SarifReport(findings=[], low_resolution_function_count=5)
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.lowResolutionFunctionCount"] == 5
+
+    def test_low_resolution_function_count_default_zero(self) -> None:
+        """lowResolutionFunctionCount defaults to 0."""
+        report = SarifReport(findings=[])
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.lowResolutionFunctionCount"] == 0
+
+    def test_denominator_excluded_count_in_sarif(self) -> None:
+        """denominatorExcludedCount appears in run properties."""
+        report = SarifReport(findings=[], denominator_excluded_count=12)
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.denominatorExcludedCount"] == 12
+
+    def test_denominator_excluded_count_default_zero(self) -> None:
+        """denominatorExcludedCount defaults to 0."""
+        report = SarifReport(findings=[])
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.denominatorExcludedCount"] == 0
+
+    def test_property_bag_version_0_6(self) -> None:
+        """Property bag version is 0.6 after R7."""
+        report = SarifReport(findings=[])
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.propertyBagVersion"] == "0.6"

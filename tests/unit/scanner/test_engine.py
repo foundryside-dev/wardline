@@ -822,3 +822,82 @@ def yet_another():
 
         assert result.total_function_count == 2
         assert result.annotated_function_count == 0
+
+
+class TestDataPathsTracedRatio:
+    """call_edge_resolution_ratio and low_resolution_function_count from L3 taint."""
+
+    def test_data_paths_traced_ratio_from_l3_scan(self, tmp_path: Path) -> None:
+        """L3 scan with cross-function calls produces a non-null ratio."""
+        _write_py(
+            tmp_path / "calls.py",
+            """\
+def callee():
+    return 42
+
+def caller():
+    return callee()
+""",
+        )
+        engine = ScanEngine(target_paths=(tmp_path,), rules=(), analysis_level=3)
+        result = engine.scan()
+
+        # L3 ran, so ratio should be set (non-null)
+        assert result.call_edge_resolution_ratio is not None
+        assert isinstance(result.call_edge_resolution_ratio, float)
+        assert 0.0 <= result.call_edge_resolution_ratio <= 1.0
+
+    def test_data_paths_traced_ratio_null_at_l1(self, tmp_path: Path) -> None:
+        """L1 scan (no call-graph) leaves ratio as None."""
+        _write_py(tmp_path / "mod.py", "def foo(): pass\n")
+        engine = ScanEngine(target_paths=(tmp_path,), rules=(), analysis_level=1)
+        result = engine.scan()
+
+        assert result.call_edge_resolution_ratio is None
+
+    def test_data_paths_traced_ratio_null_at_l2(self, tmp_path: Path) -> None:
+        """L2 scan (no call-graph) leaves ratio as None."""
+        _write_py(tmp_path / "mod.py", "def foo(): pass\n")
+        engine = ScanEngine(target_paths=(tmp_path,), rules=(), analysis_level=2)
+        result = engine.scan()
+
+        assert result.call_edge_resolution_ratio is None
+
+    def test_data_paths_traced_ratio_zero_edges(self, tmp_path: Path) -> None:
+        """L3 scan with zero call edges produces None ratio."""
+        # A file with no cross-function calls → zero edges
+        _write_py(tmp_path / "isolated.py", "x = 1\n")
+        engine = ScanEngine(target_paths=(tmp_path,), rules=(), analysis_level=3)
+        result = engine.scan()
+
+        # No functions → no taint map → L3 doesn't run → None
+        assert result.call_edge_resolution_ratio is None
+
+
+class TestLambdaCount:
+    """Lambda expression counting for denominator_excluded_count."""
+
+    def test_lambda_count_populated(self, tmp_path: Path) -> None:
+        """Lambda expressions are counted during project indexing."""
+        _write_py(
+            tmp_path / "mod.py",
+            """\
+f = lambda x: x + 1
+g = lambda: None
+def foo():
+    h = lambda y: y * 2
+    return h(3)
+""",
+        )
+        engine = ScanEngine(target_paths=(tmp_path,), rules=())
+        result = engine.scan()
+
+        assert result.lambda_count == 3
+
+    def test_lambda_count_zero_when_none(self, tmp_path: Path) -> None:
+        """No lambdas → lambda_count is 0."""
+        _write_py(tmp_path / "mod.py", "def foo(): pass\n")
+        engine = ScanEngine(target_paths=(tmp_path,), rules=())
+        result = engine.scan()
+
+        assert result.lambda_count == 0

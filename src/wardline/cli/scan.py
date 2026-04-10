@@ -922,6 +922,9 @@ def scan(
         retroactive_scan=bool(retrospective),
         retroactive_scan_range=retrospective,
         governance_events=governance_events,
+        data_paths_traced_ratio=result.call_edge_resolution_ratio,
+        low_resolution_function_count=result.low_resolution_function_count,
+        denominator_excluded_count=result.lambda_count,
     )
 
     sarif_text = sarif_report.to_json_string() + "\n"
