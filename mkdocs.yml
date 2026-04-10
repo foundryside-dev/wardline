@@ -1,0 +1,76 @@
+site_name: Wardline
+site_url: https://www.wardline.dev
+site_description: Semantic boundary enforcement for Python
+repo_url: https://github.com/foundryside/wardline
+repo_name: foundryside/wardline
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: custom
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: custom
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  font:
+    code: JetBrains Mono
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - toc.follow
+
+extra_css:
+  - stylesheets/custom.css
+  - stylesheets/severity-matrix.css
+
+extra_javascript:
+  - javascripts/severity-matrix.js
+
+markdown_extensions:
+  - tables
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - attr_list
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Reference:
+    - reference/index.md
+    - Rules: reference/rules.md
+    - Severity Matrix: reference/severity-matrix.md
+    - Taint States: reference/taint-states.md
+    - Decorators: reference/decorators.md
+    - Supplementary Groups: reference/supplementary-groups.md
+    - CLI: reference/cli.md
+    - Manifest: reference/manifest.md
+    - SARIF Format: reference/sarif-format.md
+    - Error Messages: reference/error-messages.md
+    - Governance Retention: reference/governance-retention.md
+    - Glossary: reference/glossary.md
+  - Guides:
+    - Adopting Wardline: guides/adoption.md
+    - CI Integration: guides/ci-integration.md
+    - Governance: guides/governance.md
+    - Analysis Levels: guides/analysis-levels.md
+    - Profiles: guides/profiles.md
+  - Troubleshooting: guides/troubleshooting.md
+  - Specification: specification.md
