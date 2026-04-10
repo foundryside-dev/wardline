@@ -44,6 +44,91 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+def _yaml_quote_scalar(value: str) -> str:
+    """Double-quote a string value for safe inline YAML emission."""
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _build_expected_match_block(location: dict[str, object]) -> list[str]:
+    """Build YAML text lines for a structured expected_match block."""
+    lines = ["expected_match:"]
+    lines.append(f"  line: {location['line']}")
+
+    text_val = str(location["text"])
+    # Always quote text — it commonly contains colons, parens, quotes
+    lines.append(f"  text: {_yaml_quote_scalar(text_val)}")
+
+    func = location.get("function")
+    if func is not None:
+        lines.append(f"  function: {func}")
+
+    return lines
+
+
+def _text_level_patch(
+    original_text: str,
+    location: dict[str, object],
+) -> str:
+    """Patch expected_match using text-level manipulation.
+
+    NEVER re-serializes the full YAML. Only modifies the expected_match
+    line and adds/updates expected_match_source. Preserves all other
+    content byte-for-byte, including fragment block scalars.
+    """
+    import re
+
+    lines = original_text.splitlines(keepends=True)
+    result: list[str] = []
+    i = 0
+
+    while i < len(lines):
+        stripped = lines[i].rstrip("\n\r")
+
+        # Replace `expected_match: true` (or `True`)
+        if re.match(r"^expected_match:\s+[Tt]rue\s*$", stripped):
+            # Determine line ending from original
+            ending = lines[i][len(stripped):]
+            if not ending:
+                ending = "\n"
+            block = _build_expected_match_block(location)
+            for bl in block:
+                result.append(bl + ending)
+            i += 1
+            continue
+
+        # Remove existing expected_match_source (will re-add after block)
+        if re.match(r"^expected_match_source:", stripped):
+            i += 1
+            continue
+
+        result.append(lines[i])
+        i += 1
+
+    # Insert expected_match_source after the expected_match block
+    # Find the end of the expected_match block (last line starting with "  ")
+    final: list[str] = []
+    ending = "\n"
+    for j, line in enumerate(result):
+        final.append(line)
+        if line.rstrip("\n\r").startswith("expected_match:"):
+            # Consume indented children that are part of the block
+            k = j + 1
+            while k < len(result) and result[k].startswith("  "):
+                final.append(result[k])
+                k += 1
+            ending = line[len(line.rstrip("\n\r")):]
+            if not ending:
+                ending = "\n"
+            final.append(f"expected_match_source: ast-reimplemented{ending}")
+            # Append the rest
+            final.extend(result[k:])
+            return "".join(final)
+
+    # Fallback: expected_match block not found (shouldn't happen)
+    return "".join(result)
+
+
 def _find_enclosing_function(node: ast.AST, parent_map: dict[int, ast.AST]) -> str | None:
     """Walk up the parent map to find the enclosing function name."""
     current: ast.AST | None = parent_map.get(id(node))
@@ -251,31 +336,38 @@ def migrate_specimen(yaml_path: Path, *, dry_run: bool, verbose: bool) -> str:
     if dry_run:
         return "would_migrate"
 
-    # Apply migration
-    data["expected_match"] = location
-    data["expected_match_source"] = "ast-reimplemented"
+    # Record original fragment bytes and hash for integrity check
+    original_fragment = str(fragment)
+    original_hash = _sha256(original_fragment)
 
-    # Recompute sha256 after YAML round-trip
-    with open(yaml_path, "w", encoding="utf-8") as f:
-        yaml.dump(data, f, Dumper=yaml.SafeDumper, default_flow_style=False, sort_keys=False, explicit_start=True)
-
-    # Re-read to verify and fix sha256 if needed
+    # Text-level patch: modify only expected_match line, preserve everything else
     with open(yaml_path, encoding="utf-8") as f:
-        written_data = yaml.load(f, Loader=WardlineSafeLoader)  # noqa: S506
+        original_text = f.read()
 
-    actual_fragment = str(written_data.get("fragment", ""))
-    actual_hash = _sha256(actual_fragment)
-    stored_hash = written_data.get("sha256", "")
+    patched_text = _text_level_patch(original_text, location)
 
-    if actual_hash != stored_hash:
-        written_data["sha256"] = actual_hash
-        with open(yaml_path, "w", encoding="utf-8") as f:
-            yaml.dump(written_data, f, Dumper=yaml.SafeDumper, default_flow_style=False, sort_keys=False, explicit_start=True)
+    with open(yaml_path, "w", encoding="utf-8") as f:
+        f.write(patched_text)
 
-    # Validation: re-read and check structural integrity
+    # Verify fragment integrity — abort if fragment bytes changed
     with open(yaml_path, encoding="utf-8") as f:
         final = yaml.load(f, Loader=WardlineSafeLoader)  # noqa: S506
 
+    post_fragment = str(final.get("fragment", ""))
+    post_hash = _sha256(post_fragment)
+
+    if post_hash != original_hash:
+        # ABORT: restore original file — text-level patch corrupted the fragment
+        with open(yaml_path, "w", encoding="utf-8") as f:
+            f.write(original_text)
+        raise ValueError(
+            f"{yaml_path.name}: fragment integrity violation — "
+            f"text-level patch altered fragment bytes "
+            f"(original={original_hash[:12]}..., after={post_hash[:12]}...). "
+            f"File restored to original state."
+        )
+
+    # Validate structural integrity of the migrated expected_match
     em = final.get("expected_match")
     if not isinstance(em, dict):
         raise ValueError(f"{yaml_path.name}: expected_match not a dict after migration")

@@ -12,7 +12,7 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import click
 import yaml
@@ -26,6 +26,18 @@ if TYPE_CHECKING:
     from wardline.scanner.rules.base import RuleBase
 
 logger = logging.getLogger(__name__)
+
+
+class ExpectedLocation(TypedDict, total=False):
+    """Structured expected match for true_positive specimens.
+
+    All fields are optional — you can assert just line, just function,
+    or any combination. Missing fields are not checked.
+    """
+
+    line: int
+    text: str
+    function: str
 
 
 @dataclass
@@ -265,7 +277,15 @@ def _find_matching_finding(
             for f in exact:
                 if _normalize_snippet_text(f.source_snippet or "") == norm_expected:
                     return f
-        return exact[0]
+        # Same-line duplicates with no text match — return None so caller
+        # counts this as a location mismatch rather than silently selecting
+        # the first finding (§5.11: single finding per specimen).
+        logger.warning(
+            "Multiple findings for %s at line %d with no text match — "
+            "returning None (expected text: %r)",
+            rule_id, expected_line, expected_text,
+        )
+        return None
     return candidates[0]
 
 

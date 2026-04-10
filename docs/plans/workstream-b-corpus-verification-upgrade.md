@@ -615,7 +615,10 @@ def _find_matching_finding(
             for f in exact:
                 if _normalize_snippet_text(f.source_snippet or "") == norm_expected:
                     return f
-        return exact[0]  # fallback to first if no text match
+        # Same-line duplicates with no text match — warn and count as mismatch
+        # rather than silently selecting the first finding (§5.11 says
+        # single-finding-per-specimen, so this branch indicates a problem).
+        return None
     return candidates[0]
 
 
@@ -994,12 +997,19 @@ script should attempt it. If pattern 5 fails, fall through to "no match."
 
 **PY-WL-004 detailed patterns** (rule fires on 3 shapes):
 1. `ast.ExceptHandler` with `handler.type is None` — bare `except:`
-2. `ast.ExceptHandler` with broad exception type — `except Exception:`
-3. `ast.Call` matching `contextlib.suppress(BroadException)` — `suppress(Exception)`
+2. `ast.ExceptHandler` with broad exception type — the rule's
+   `_BROAD_NAMES = frozenset({"Exception", "BaseException"})` at
+   `py_wl_004.py:18` means BOTH `except Exception:` AND
+   `except BaseException:` trigger the rule. The migration script
+   must match both names.
+3. `ast.Call` matching `contextlib.suppress(BroadException)` —
+   `suppress(Exception)` or `suppress(BaseException)`
 
-The migration script must handle ALL THREE. The previous version of this
-plan incorrectly said "non-bare except" — the rule also fires on bare
-`except:` (confirmed: `py_wl_004.py:55-62`).
+The migration script must handle ALL THREE patterns, and pattern 2
+must check for both `Exception` and `BaseException` (not just
+`Exception`). The previous version of this plan incorrectly said
+"non-bare except" — the rule also fires on bare `except:`
+(confirmed: `py_wl_004.py:55-62`).
 
 **PY-WL-006, PY-WL-008, and PY-WL-009 are MANUAL ONLY.** These rules have
 complex triggering conditions that cannot be reliably replicated as simple
@@ -1050,11 +1060,16 @@ verify:
 - `expected_match` dict keys are all in `{"line", "text", "function"}` — no typos
 - Round-trip: `yaml.load(yaml.dump(data, Dumper=SafeDumper), Loader=WardlineSafeLoader)["expected_match"]`
   equals the written value
-- **Fragment integrity:** After write-back, verify `sha256` still matches
-  the `fragment` field. YAML re-serialization can alter block scalar style
-  (trailing newlines, chomping). If the hash breaks, either (a) recompute
-  and update `sha256`, or (b) use a text-level patch that only modifies the
-  `expected_match` line without re-serializing the full file
+- **Fragment integrity (MANDATORY: text-level patching only):** The
+  migration script MUST NOT deserialize and re-serialize the full YAML
+  file. Instead, it must use text-level patching that splices only the
+  `expected_match:` block without touching the `fragment:` block scalar.
+  This eliminates the YAML round-trip risk (trailing newlines, chomping
+  changes) that would silently alter `fragment` content and break SHA-256
+  hashes. If for any reason the `fragment` field's bytes differ before
+  and after the write, the script MUST abort that specimen and report an
+  error — never silently recompute `sha256`, as that launders integrity
+  violations in a security tool's oracle data
 
 #### 4.5.3 Specimens That Cannot Be Auto-Migrated
 
@@ -1388,8 +1403,11 @@ workstream. Create tracking issues:
 6. **Finding match by `(rule_id, line)` with exact match required.** If a
    rule fires multiple times on a specimen, match by exact line. If no exact
    match exists, return None (count as location mismatch). For same-line
-   duplicates, use normalized `expected_match.text` as a tiebreaker. No
-   nearest-line fallback — it masks location bugs.
+   duplicates, use normalized `expected_match.text` as a tiebreaker. If the
+   tiebreaker also fails (multiple findings on the same line, none matching
+   the expected text), return None and count as a location mismatch rather
+   than silently selecting the first finding. No nearest-line fallback — it
+   masks location bugs.
 
 11. **Single expected match per specimen.** Each true_positive specimen is
     expected to have exactly one triggering location per rule. Multi-finding

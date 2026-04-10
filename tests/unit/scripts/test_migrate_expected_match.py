@@ -2,13 +2,10 @@
 from __future__ import annotations
 
 import sys
-import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 import yaml
-
 from scripts.migrate_expected_match import compute_expected_location, migrate_specimen
 
 
@@ -52,6 +49,30 @@ class TestMigrationSafety:
 
         assert "exec" not in calls, "Migration logic called exec()"
         assert "eval" not in calls, "Migration logic called eval()"
+
+
+    def test_migration_script_uses_safe_loader(self) -> None:
+        """Migration script uses WardlineSafeLoader, not bare yaml.safe_load or yaml.load."""
+        import ast as ast_mod
+
+        script_path = Path(__file__).resolve().parents[3] / "scripts" / "migrate_expected_match.py"
+        source = script_path.read_text()
+        tree = ast_mod.parse(source)
+
+        unsafe_calls: list[str] = []
+        for node in ast_mod.walk(tree):
+            if not isinstance(node, ast_mod.Call) or not isinstance(node.func, ast_mod.Attribute):
+                continue
+            if node.func.attr == "safe_load":
+                unsafe_calls.append(f"line {node.lineno}: yaml.safe_load() — use WardlineSafeLoader")
+            elif node.func.attr == "load":
+                loader_args = [kw for kw in node.keywords if kw.arg == "Loader"]
+                if not loader_args:
+                    unsafe_calls.append(f"line {node.lineno}: yaml.load() without Loader=")
+
+        assert not unsafe_calls, (
+            "Migration script uses unsafe YAML loading:\n" + "\n".join(unsafe_calls)
+        )
 
 
 class TestComputeExpectedLocation:
