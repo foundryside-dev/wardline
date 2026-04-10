@@ -122,9 +122,10 @@ class TestComputeInputHash:
 
 
 class TestComputeDeferredFixRatio:
-    def test_zero_active_returns_none(self) -> None:
+    def test_zero_active_returns_zero(self) -> None:
+        """No active exceptions → 0.0 (not None — nothing to defer)."""
         from wardline.cli.scan import _compute_deferred_fix_ratio
-        assert _compute_deferred_fix_ratio(0, 0) is None
+        assert _compute_deferred_fix_ratio(0, 0) == 0.0
 
     def test_active_but_zero_deferred_returns_none(self) -> None:
         """Unclassified exceptions — none have elimination_path."""

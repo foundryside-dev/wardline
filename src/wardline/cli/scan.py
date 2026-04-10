@@ -57,12 +57,13 @@ def _compute_deferred_fix_ratio(
 ) -> float | None:
     """Compute deferredFixRatio from active exception counts.
 
-    Returns None when no active exceptions exist or when active
-    exceptions exist but none have elimination_path (unclassified).
-    Returns the ratio when at least one has elimination_path.
+    Returns 0.0 when no active exceptions exist (nothing to defer).
+    Returns None when active exceptions exist but none have
+    elimination_path (unclassified). Returns the ratio when at
+    least one has elimination_path.
     """
     if active_count == 0:
-        return None
+        return 0.0  # no exceptions at all → zero deferred fixes
     if deferred_count == 0:
         return None  # unclassified — distinct from 0.0
     return deferred_count / active_count
@@ -647,7 +648,7 @@ def scan(
     active_exception_count = 0
     stale_exception_count = 0
     expedited_exception_ratio = 0.0
-    deferred_fix_ratio: float | None = None
+    deferred_fix_ratio: float | None = 0.0  # no exceptions → 0.0; overwritten if exceptions exist
 
     if exceptions:
         # NOTE: taint_map is not passed here. ScanResult does not carry a
@@ -691,8 +692,7 @@ def scan(
         expedited_exception_ratio = (
             _expedited / _active if _active > 0 else 0.0
         )
-        # §10.1/§13.1.3: null = unclassified, 0.0 never emitted from scan
-        # path (0.0 only valid when no exceptions exist, handled by init).
+        # §10.1/§13.1.3: null = unclassified, 0.0 = no deferred fixes.
         if _active > 0:
             deferred_fix_ratio = _compute_deferred_fix_ratio(_active, _deferred)
 
