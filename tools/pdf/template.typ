@@ -95,13 +95,17 @@
       #h(1fr)
       // Right: status chip
       #box(
-        fill: if "$status$" == "DRAFT" { rgb("#FEF3C7") } else { rgb("#DCFCE7") },
+        fill: if "$status$" == "DRAFT" { rgb("#FEF3C7") }
+             else if "$status$" == "RELEASE CANDIDATE" { rgb("#DBEAFE") }
+             else { rgb("#DCFCE7") },
         inset: (x: 5pt, y: 2pt),
         radius: 2pt,
       )[
         #set text(
           6.5pt,
-          fill: if "$status$" == "DRAFT" { c-warning } else { rgb("#166534") },
+          fill: if "$status$" == "DRAFT" { c-warning }
+               else if "$status$" == "RELEASE CANDIDATE" { rgb("#1E40AF") }
+               else { rgb("#166534") },
           weight: "bold",
           tracking: 0.8pt,
           font: "TeX Gyre Heros",
@@ -221,7 +225,7 @@
 // - show table: wraps in a rect for a clean outer border
 // - show figure: removes pandoc's centering and lets table span full width
 
-// Global table defaults: alternating row fills, no internal borders
+// Global table defaults: alternating row fills, no internal borders, left-aligned cells
 #set table(
   stroke: (x, y) => (
     top: if y <= 1 { 0.5pt + c-rule } else { 0pt },
@@ -235,6 +239,7 @@
     else { white }                    // even rows: white
   },
   inset: (x: 9pt, y: 7pt),
+  align: left,                        // left-align all cells; headers override below
 )
 
 // Table cell typography:
@@ -254,7 +259,7 @@
     set par(justify: false)
     set text(
       font: ("TeX Gyre Heros", "Liberation Sans"),
-      size: 8.5pt,
+      size: 8pt,
       fill: rgb("#1A1A1A"),
     )
     it
@@ -353,7 +358,7 @@
 
   if level == 1 {
     // Chapter entries: bold, navy, generous top spacing
-    v(10pt, weak: true)
+    v(12pt, weak: true)
     box(width: 100%)[
       #text(
         font: "TeX Gyre Heros",
@@ -371,7 +376,7 @@
     ]
   } else if level == 2 {
     // Section entries: indented, dot leaders
-    v(4pt, weak: true)
+    v(5pt, weak: true)
     box(width: 100%)[
       #h(1.4em)
       #text(
@@ -391,7 +396,7 @@
     ]
   } else {
     // Deep entries: deeper indent, smaller, muted
-    v(3pt, weak: true)
+    v(4pt, weak: true)
     box(width: 100%)[
       #h(2.8em)
       #text(

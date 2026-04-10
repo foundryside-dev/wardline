@@ -5,7 +5,8 @@
 // Colours: deep steel blue #1E3A5F (primary), teal #0D7377 (accent), warm grey for rules
 //
 // Pandoc variables used:
-//   Wardline Framework Specification, Semantic Boundary Classification and Enforcement, , 9 April 2026, 0.3.0, DRAFT
+//   Wardline Framework Specification, Semantic Boundary Classification and Enforcement, , 9 April 2026, 0.3.0, RELEASE
+CANDIDATE
 
 // ─────────────────────────────────────────────────────────────
 // COLOUR PALETTE
@@ -69,7 +70,7 @@
       #set text(7.5pt, font: "TeX Gyre Heros", fill: c-muted, tracking: 0.5pt)
       #upper[Wardline Framework Specification]
       #h(1fr)
-      #upper[DRAFT v0.3.0]
+      #upper[RELEASE CANDIDATE v0.3.0]
     ]
   },
 
@@ -95,18 +96,22 @@
       #h(1fr)
       // Right: status chip
       #box(
-        fill: if "DRAFT" == "DRAFT" { rgb("#FEF3C7") } else { rgb("#DCFCE7") },
+        fill: if "RELEASE CANDIDATE" == "DRAFT" { rgb("#FEF3C7") }
+             else if "RELEASE CANDIDATE" == "RELEASE CANDIDATE" { rgb("#DBEAFE") }
+             else { rgb("#DCFCE7") },
         inset: (x: 5pt, y: 2pt),
         radius: 2pt,
       )[
         #set text(
           6.5pt,
-          fill: if "DRAFT" == "DRAFT" { c-warning } else { rgb("#166534") },
+          fill: if "RELEASE CANDIDATE" == "DRAFT" { c-warning }
+               else if "RELEASE CANDIDATE" == "RELEASE CANDIDATE" { rgb("#1E40AF") }
+               else { rgb("#166534") },
           weight: "bold",
           tracking: 0.8pt,
           font: "TeX Gyre Heros",
         )
-        #upper[DRAFT]
+        #upper[RELEASE CANDIDATE]
       ]
     ]
   },
@@ -221,7 +226,7 @@
 // - show table: wraps in a rect for a clean outer border
 // - show figure: removes pandoc's centering and lets table span full width
 
-// Global table defaults: alternating row fills, no internal borders
+// Global table defaults: alternating row fills, no internal borders, left-aligned cells
 #set table(
   stroke: (x, y) => (
     top: if y <= 1 { 0.5pt + c-rule } else { 0pt },
@@ -235,6 +240,7 @@
     else { white }                    // even rows: white
   },
   inset: (x: 9pt, y: 7pt),
+  align: left,                        // left-align all cells; headers override below
 )
 
 // Table cell typography:
@@ -254,7 +260,7 @@
     set par(justify: false)
     set text(
       font: ("TeX Gyre Heros", "Liberation Sans"),
-      size: 8.5pt,
+      size: 8pt,
       fill: rgb("#1A1A1A"),
     )
     it
@@ -353,7 +359,7 @@
 
   if level == 1 {
     // Chapter entries: bold, navy, generous top spacing
-    v(10pt, weak: true)
+    v(12pt, weak: true)
     box(width: 100%)[
       #text(
         font: "TeX Gyre Heros",
@@ -371,7 +377,7 @@
     ]
   } else if level == 2 {
     // Section entries: indented, dot leaders
-    v(4pt, weak: true)
+    v(5pt, weak: true)
     box(width: 100%)[
       #h(1.4em)
       #text(
@@ -391,7 +397,7 @@
     ]
   } else {
     // Deep entries: deeper indent, smaller, muted
-    v(3pt, weak: true)
+    v(4pt, weak: true)
     box(width: 100%)[
       #h(2.8em)
       #text(
@@ -520,7 +526,7 @@
   ],
   // Data rows — label + value
   [#text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted, weight: "bold")[Status]],
-  [#text(font: "TeX Gyre Heros", size: 9pt)[DRAFT v0.3.0]],
+  [#text(font: "TeX Gyre Heros", size: 9pt)[RELEASE CANDIDATE v0.3.0]],
   [#text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted, weight: "bold")[Date]],
   [#text(font: "TeX Gyre Heros", size: 9pt)[9 April 2026]],
   [#text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted, weight: "bold")[Document type]],
@@ -624,46 +630,6 @@ control law)
 Wardline Lite practical guide (`wardline-lite.md`, separate companion document): five review questions, worked code
 examples, hot-path identification. This guide is not part of the formal specification --- it translates the annotation
 vocabulary (§6) and pattern rules (§7) into questions a non-specialist can apply during code review.
-
-= 15. Document scope
-<document-scope>
-This document defines the language-agnostic wardline classification framework. Language-specific enforcement regimes
-(§14.4) --- which implement the framework's requirements using language-native mechanisms and existing tooling
-ecosystems --- are defined in separate companion documents. This document governs; companion documents implement. A
-companion document describes the enforcement regime for a language ecosystem: which tools implement which conformance
-profiles (§14.3), how they compose into a regime, and where structural gaps exist.
-
-Two language bindings are currently defined in Part II:
-
-- #emph[Python Language Binding Reference] (Part II-A) describes how Python's ecosystem --- type checkers (mypy,
-  pyright), linters (ruff, semgrep), AST analysis, and CI orchestration --- can compose a Wardline-Full regime.
-- #emph[Java Language Binding Reference] (Part II-B) describes how Java's ecosystem --- Error Prone, the Checker
-  Framework's pluggable type system, a reference scanner, and Java's records and module system --- can compose a
-  Wardline-Full regime. Java's annotation system provides richer enforcement layer coverage than Python's decorator
-  model, and the Checker Framework enables compile-time tier-flow enforcement that has no Python equivalent.
-
-Future companions for other languages will reference this specification as their normative basis and evaluate their
-language against the criteria in §11, with particular attention to which conformance profiles existing tools in that
-ecosystem can implement.
-
-#strong[Candidate language bindings.] The following languages are candidates for future bindings. C\# and Go are the
-next regimes under active consideration; C++ and Rust are listed for completeness based on prevalence across government
-enterprise and defence software estates: - #strong[C\#/.NET] --- widely used in Australian and UK government systems.
-C\# attributes, Roslyn analysers, and the .NET type system provide good coverage across all three enforcement layers. -
-#strong[Go] --- increasingly adopted for cloud-native government services. Go's structural typing, `go vet`, and
-`staticcheck` ecosystem provide static analysis coverage, though the minimal annotation system requires different
-declaration mechanisms. - #strong[C++] --- prevalent in defence, signals intelligence, and safety-critical systems
-(avionics, weapons systems, real-time platforms). C++ attributes (`[[nodiscard]]`, custom attributes via Clang),
-clang-tidy, and the ownership model provide enforcement leverage, though the absence of runtime reflection limits the
-runtime structural layer. C++ bindings are particularly relevant to Five Eyes defence programmes and AUKUS Pillar II
-software interoperability. - #strong[Rust] --- relevant for new safety-critical and cryptographic systems. Rust's
-ownership model, trait system, and `clippy` linting provide the strongest structural guarantees of any candidate
-language --- two pattern rules (WL-002, WL-006) may be structurally inapplicable because the type system already
-prevents the violations they detect.
-
-The binding roadmap is driven by community demand and contribution. Organisations whose software estates are
-concentrated in languages not yet covered should engage with the consultation process to signal priority --- see the
-project repository's issue tracker or the contact details in the front matter.
 
 = 1. What a Wardline is
 <what-a-wardline-is>
@@ -1159,7 +1125,7 @@ produce the same result regardless of operand order:
 
 #figure(
   align(center)[#table(
-    columns: (27.5%, 27.5%, 20%, 25%),
+    columns: (20%, 20%, 20%, 40%),
     table.header([Operand A], [Operand B], [Result], [Examples],),
     table.hline(),
     [Any state in {INTEGRAL, ASSURED, GUARDED, EXTERNAL\_RAW}], [Different state in {INTEGRAL, ASSURED, GUARDED,

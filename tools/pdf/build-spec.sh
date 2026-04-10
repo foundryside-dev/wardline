@@ -193,6 +193,11 @@ sed -i '/^    align: ([^)]*),$/d' "$OUTPUT_TYP"
 # Fix column widths for the four-tiers table (Tier/Classification/Meaning/Verification basis)
 sed -i 's/columns: (12.24%, 30.61%, 18.37%, 38.78%)/columns: (18%, 22%, 28%, 32%)/' "$OUTPUT_TYP"
 
+# Fix column widths for the taint join table (Operand A/Operand B/Result/Examples)
+# Operand A and B carry identical-length descriptive phrases; Result is always one short token;
+# Examples needs the most space for multi-line join() call sequences.
+sed -i 's/columns: (27.5%, 27.5%, 20%, 25%)/columns: (20%, 20%, 20%, 40%)/' "$OUTPUT_TYP"
+
 # Fix column widths for the cross-product table (Classification/Not Applicable/Raw/Shape/Sem/Rationale)
 sed -i 's/columns: (19.75%, 19.75%, 6.17%, 20.99%, 19.75%, 13.58%)/columns: (14%, 14%, 10%, 18%, 16%, 28%)/' "$OUTPUT_TYP"
 

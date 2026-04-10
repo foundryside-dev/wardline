@@ -1,4 +1,4 @@
-### 15. Document scope
+### Document scope
 
 This document defines the language-agnostic wardline classification framework. Language-specific enforcement regimes (§14.4) — which implement the framework's requirements using language-native mechanisms and existing tooling ecosystems — are defined in separate companion documents. This document governs; companion documents implement. A companion document describes the enforcement regime for a language ecosystem: which tools implement which conformance profiles (§14.3), how they compose into a regime, and where structural gaps exist.
 
