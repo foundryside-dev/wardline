@@ -80,4 +80,4 @@ weakens governance guarantees and should be treated as a deliberate decision.
 - [Manifest Reference](../reference/manifest.md#governance_profile) — configuration field
 - [Governance Walkthrough](governance.md) — exception management
 - [Adoption Guide](adoption.md) — incremental rollout strategy
-- [Spec §9: Governance Model](../spec/wardline-01-09-governance-model.md) — normative definition
+- [Spec §10: Governance Model](../spec/wardline-01-10-governance-model.md) — normative definition

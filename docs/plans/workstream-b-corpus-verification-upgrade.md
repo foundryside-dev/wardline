@@ -6,7 +6,7 @@
 
 **Branch:** `phase-4.4-test-quality-gates`
 **Conformance review:** `docs/requirements/spec-fitness/conformance-review-2026-04-09.md`
-**Spec authority:** `docs/spec/wardline-01-10-verification-properties.md`
+**Spec authority:** `docs/spec/wardline-01-11-verification-properties.md`
 **Review date:** 2026-04-09 R1, 2026-04-10 R2 (7-reviewer panel: SA, ST, PE, QE, SecArch, SA-Tool-Dev, IRAP)
 
 ---
@@ -29,7 +29,7 @@ false pattern rather than the actual violation.
 
 ---
 
-## 2. Normative Requirements (from §10)
+## 2. Normative Requirements (from §11)
 
 ### 2.1 Structured `expected_match`
 
@@ -47,7 +47,7 @@ For true_negative and known_false_negative specimens, `expected_match` remains
 
 ### 2.2 SARIF Snippet in Region
 
-The spec (§10.1) shows that SARIF results must include snippet text in the
+The spec (§11.1) shows that SARIF results must include snippet text in the
 region:
 
 ```json
@@ -64,7 +64,7 @@ in ALL rule Finding constructors — no rule currently populates it.
 
 ### 2.3 Verification Comparison
 
-The spec states (§10, line 44):
+The spec states (§11, line 44):
 
 > "Verification compares these fields against the SARIF result's
 > `locations[0].physicalLocation.region.startLine`,
@@ -497,7 +497,7 @@ def _make_region(finding: Finding) -> dict[str, Any]:
 
 **Keep** `wardline.sourceSnippet` in the properties bag at `sarif.py:231`
 too — the properties bag is wardline-specific metadata; the region snippet
-is SARIF-standard (§3.30.13). Both serve different consumers.
+is SARIF-standard (§4.30.13). Both serve different consumers.
 
 **Tests:** Add to `tests/unit/scanner/test_sarif.py`:
 - `test_region_includes_snippet_when_present` — Finding with
@@ -616,7 +616,7 @@ def _find_matching_finding(
                 if _normalize_snippet_text(f.source_snippet or "") == norm_expected:
                     return f
         # Same-line duplicates with no text match — warn and count as mismatch
-        # rather than silently selecting the first finding (§5.11 says
+        # rather than silently selecting the first finding (§6.11 says
         # single-finding-per-specimen, so this branch indicates a problem).
         return None
     return candidates[0]
@@ -912,7 +912,7 @@ It MAY import from:
 - `wardline.manifest.loader` (WardlineSafeLoader — for YAML safety)
 - Standard library (`ast`, `yaml`, `pathlib`, `hashlib`, `logging`)
 
-A test must enforce this import boundary (see §4.5.4).
+A test must enforce this import boundary (see §5.5.4).
 
 #### 4.5.2 Migration Script
 
@@ -1029,7 +1029,7 @@ implementations. They are AST pattern matchers derived from reading the
 spec's rule definitions, not from importing rule code. However, the
 patterns encode the same domain knowledge as the rules — this is
 "reimplementation independence," not true oracle independence. The human
-review gate (§10.1) provides the independent verification layer.
+review gate (§11.1) provides the independent verification layer.
 
 **Error handling:**
 - If fragment fails `ast.parse()`: log error, skip specimen, continue
@@ -1148,7 +1148,7 @@ Add `tests/unit/scripts/test_migrate_expected_match.py`:
 ### 4.6 Phase 4: Manifest, Generation, Coverage Gates, Boolean Sunset
 
 **Note:** The oracle test update (`test_expected_match_aligns_with_verdict`)
-was moved into Phase 3 (§4.5.4) to prevent inter-commit test breakage.
+was moved into Phase 3 (§5.5.4) to prevent inter-commit test breakage.
 
 #### 4.6.1 Add Independent Structural Integrity Test
 
@@ -1321,7 +1321,7 @@ Add:
 corpus/specimens/ @wardline-corpus-reviewers
 ```
 
-This is a spec §10 MUST — changes to corpus specimens require designated
+This is a spec §11 MUST — changes to corpus specimens require designated
 reviewer approval.
 
 #### 4.6.8 Tests
@@ -1334,7 +1334,7 @@ reviewer approval.
   script on a single TP fragment, verify output has structured `expected_match`
 
 **Note:** The oracle test update (`test_expected_match_aligns_with_verdict`)
-ships in Phase 3 (§4.5.4), not Phase 4.
+ships in Phase 3 (§5.5.4), not Phase 4.
 
 **Commit:** `fix(R3/phase-4): manifest, generation, coverage gates, CODEOWNERS, CI location gate`
 
@@ -1345,7 +1345,7 @@ ships in Phase 3 (§4.5.4), not Phase 4.
 These items were identified during review but are out of scope for this
 workstream. Create tracking issues:
 
-1. **SARIF `logicalLocations` emission.** The spec §10 references
+1. **SARIF `logicalLocations` emission.** The spec §11 references
    `logicalLocations` for verification comparison. The current SARIF output
    only places `qualname` in the properties bag (`wardline.qualname`), not in
    the standard SARIF `logicalLocations` array. Corpus verification works
@@ -1358,7 +1358,7 @@ workstream. Create tracking issues:
    that cannot be mechanically derived. Target: all specimens structured
    before v1.0.
 
-5. **Specimen `category` field.** The spec §10 specimen schema requires a
+5. **Specimen `category` field.** The spec §11 specimen schema requires a
    `category` field (`standard`, `adversarial_false_positive`,
    `adversarial_false_negative`, `taint_flow`, `suppression_interaction`).
    Existing specimens lack this field. Add `category: standard` to all
@@ -1422,7 +1422,7 @@ workstream. Create tracking issues:
     Unknown keys (e.g., typos like `lien`) are logged as warnings.
 
 7. **SARIF snippet.text in region.** The snippet field in the SARIF region is
-   SARIF-standard (§3.30.13, not wardline-specific). Keep
+   SARIF-standard (§4.30.13, not wardline-specific). Keep
    `wardline.sourceSnippet` in properties too — both serve different consumers.
 
 8. **Migration script is one-time but idempotent.** Can be run repeatedly
@@ -1547,7 +1547,7 @@ The Phase 3 migration commit modifies ~100+ specimen files. Before merging:
 **Review artifact and traceability:**
 - The review is documented as a **PR review comment** on the migration
   commit, listing each reviewed specimen and confirming correctness
-- The reviewer MUST NOT be the migration script author (spec §10 requires
+- The reviewer MUST NOT be the migration script author (spec §11 requires
   "at least one reviewer who is not a contributor to the enforcement
   tool's implementation")
 - After review approval, the reviewer (or a follow-up commit by the
@@ -1562,7 +1562,7 @@ After this migration, changes to `expected_match` values should require:
 1. A reference to the rule change that caused the location shift (if any)
 2. Confirmation that the new values are correct (not just "makes tests pass")
 
-**Add CODEOWNERS protection on `corpus/specimens/`.** The spec (§10) requires
+**Add CODEOWNERS protection on `corpus/specimens/`.** The spec (§11) requires
 this — it is a MUST, not a consideration. Add a CODEOWNERS entry as a
 deliverable in Phase 4.
 

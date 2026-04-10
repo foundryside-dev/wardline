@@ -8,7 +8,7 @@
 
 **Tech Stack:** Markdown (GitHub-flavored), compatible with MkDocs/GitHub Pages rendering.
 
-**Cross-linking convention:** Every Layer 1 doc links down to relevant Layer 2 guides and Layer 3 spec sections. Every Layer 2 doc links up to Layer 1 lookup tables. Use relative links throughout (`../reference/rules.md`, `../spec/wardline-01-07-pattern-rules.md`).
+**Cross-linking convention:** Every Layer 1 doc links down to relevant Layer 2 guides and Layer 3 spec sections. Every Layer 2 doc links up to Layer 1 lookup tables. Use relative links throughout (`../reference/rules.md`, `../spec/wardline-01-08-pattern-rules.md`).
 
 ---
 
@@ -111,7 +111,7 @@ zone. Patterns that are dangerous in high-trust code are expected at the boundar
 - [Rule Quick Reference](rules.md) — what each rule detects
 - [Taint State Reference](taint-states.md) — what each column means
 - [Governance Walkthrough](../guides/governance.md) — how exceptions work
-- [Spec §7.3: Severity Matrix](../spec/wardline-01-07-pattern-rules.md) — normative definition
+- [Spec §7.3: Severity Matrix](../spec/wardline-01-08-pattern-rules.md) — normative definition
 ```
 
 Write this content to `docs/reference/severity-matrix.md`.
@@ -220,7 +220,7 @@ configuration concerns. Emitted as informational findings in SARIF output.
 
 - [Severity Matrix](severity-matrix.md) — severity and exceptionability per rule per taint state
 - [Decorator Vocabulary](decorators.md) — the annotations rules enforce
-- [Spec §7: Pattern Rules](../spec/wardline-01-07-pattern-rules.md) — normative definitions
+- [Spec §7: Pattern Rules](../spec/wardline-01-08-pattern-rules.md) — normative definitions
 - [Semantic Equivalents](../spec/semantic-equivalents/) — evasion variant catalogs per rule
 ```
 
@@ -325,7 +325,7 @@ See [Analysis Levels Guide](../guides/analysis-levels.md) for choosing the right
 
 - [Severity Matrix](severity-matrix.md) — how taint state affects rule severity
 - [Decorator Vocabulary](decorators.md) — decorators that set or promote taint
-- [Spec §5: Authority Tier Model](../spec/wardline-01-04-authority-tier-model.md) — normative definitions
+- [Spec §5: Authority Tier Model](../spec/wardline-01-05-authority-tier-model.md) — normative definitions
 ```
 
 Write this content to `docs/reference/taint-states.md`.
@@ -1019,7 +1019,7 @@ Narrative walkthrough of the exception lifecycle.
 **Files:**
 - Create: `docs/guides/governance.md`
 
-**Source data:** `docs/reference/cli.md` (exception subcommands), `src/wardline/manifest/models.py` (ExceptionEntry), `docs/spec/wardline-01-09-governance-model.md`.
+**Source data:** `docs/reference/cli.md` (exception subcommands), `src/wardline/manifest/models.py` (ExceptionEntry), `docs/spec/wardline-01-10-governance-model.md`.
 
 - [ ] **Step 1: Create the governance walkthrough**
 
@@ -1149,7 +1149,7 @@ Run `wardline coherence` periodically to check for:
 - [CLI Reference](../reference/cli.md#wardline-exception) — exception command options
 - [Error Messages](../reference/error-messages.md) — governance error diagnostics
 - [Profiles Guide](profiles.md) — lite vs assurance
-- [Spec §9: Governance Model](../spec/wardline-01-09-governance-model.md) — normative definition
+- [Spec §9: Governance Model](../spec/wardline-01-10-governance-model.md) — normative definition
 ```
 
 Write this content to `docs/guides/governance.md`.
@@ -1388,7 +1388,7 @@ weakens governance guarantees and should be treated as a deliberate decision.
 - [Manifest Reference](../reference/manifest.md#governance_profile) — configuration field
 - [Governance Walkthrough](governance.md) — exception management
 - [Adoption Guide](adoption.md) — incremental rollout strategy
-- [Spec §9: Governance Model](../spec/wardline-01-09-governance-model.md) — normative definition
+- [Spec §9: Governance Model](../spec/wardline-01-10-governance-model.md) — normative definition
 ```
 
 Write this content to `docs/guides/profiles.md`.

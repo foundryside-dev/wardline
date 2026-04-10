@@ -615,39 +615,39 @@ Lines: 23-25, 28-29 (TaintState enum refs), 250, 294, 305, 338, 349 (string lite
 
 ## Layer 9: Spec Documents
 
-### docs/spec/wardline-01-05-authority-tier-enforcement-spec.md
+### docs/spec/wardline-01-06-authority-tier-enforcement-spec.md
 
 ~20 occurrences of AUDIT_TRAIL, PIPELINE, SHAPE_VALIDATED, UNKNOWN_SHAPE_VALIDATED, UNKNOWN_SEM_VALIDATED in spec prose.
 
-### docs/spec/wardline-01-06-annotation-vocabulary.md
+### docs/spec/wardline-01-07-annotation-vocabulary.md
 
 References to `audit_writer`, `authoritative_construction`, `tier1_read`, and taint state names.
 
-### docs/spec/wardline-01-07-pattern-rules.md
+### docs/spec/wardline-01-08-pattern-rules.md
 
 ~14 occurrences of taint state names in rule descriptions.
 
-### docs/spec/wardline-01-09-governance-model.md
+### docs/spec/wardline-01-10-governance-model.md
 
 ~2 occurrences (AUDIT_TRAIL, PIPELINE).
 
-### docs/spec/wardline-01-10-verification-properties.md
+### docs/spec/wardline-01-11-verification-properties.md
 
 ~20 occurrences of taint state names and `tier1_read` references.
 
-### docs/spec/wardline-01-11-language-evaluation-criteria.md
+### docs/spec/wardline-01-12-language-evaluation-criteria.md
 
 References to `tier1_read`.
 
-### docs/spec/wardline-01-12-residual-risks.md
+### docs/spec/wardline-01-13-residual-risks.md
 
 1 occurrence (SHAPE_VALIDATED).
 
-### docs/spec/wardline-01-13-portability-and-manifest-format.md
+### docs/spec/wardline-01-14-portability-and-manifest-format.md
 
 ~7 occurrences (SHAPE_VALIDATED, PIPELINE, `authoritative_construction`).
 
-### docs/spec/wardline-01-14-conformance.md
+### docs/spec/wardline-01-15-conformance.md
 
 ~17 occurrences of taint state names.
 

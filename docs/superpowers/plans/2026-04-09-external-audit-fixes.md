@@ -22,15 +22,15 @@
 3. The implementation (`matrix.py`) and test oracles stay as they are — the 3 cells are correct per the binding spec's documented matrix.
 
 **Files:**
-- Modify: `docs/spec/wardline-01-07-pattern-rules.md:19` (§7.1 WL-001 split paragraph)
-- Modify: `docs/spec/wardline-01-07-pattern-rules.md:88` (§7.3 binding-level deviations paragraph)
+- Modify: `docs/spec/wardline-01-08-pattern-rules.md:19` (§7.1 WL-001 split paragraph)
+- Modify: `docs/spec/wardline-01-08-pattern-rules.md:88` (§7.3 binding-level deviations paragraph)
 - Modify: `docs/spec/wardline-02-A-python-binding.md:273` (fix "narrowing" → correct terminology)
 - Verify: `src/wardline/core/matrix.py:103` (no code change needed — values are correct)
 - Verify: `tests/unit/core/test_matrix.py:41-45` (no change needed — oracle matches binding spec)
 
 - [ ] **Step 1: Amend §7.1 — split sub-rule matrix independence**
 
-In `docs/spec/wardline-01-07-pattern-rules.md`, find the WL-001 description at line 19. The current text ends with:
+In `docs/spec/wardline-01-08-pattern-rules.md`, find the WL-001 description at line 19. The current text ends with:
 
 ```
 When a binding splits WL-001, the sub-rules inherit WL-001's severity matrix entries and share its exceptionability class; the binding documents the mapping between its sub-rules and this framework rule.
@@ -44,7 +44,7 @@ When a binding splits WL-001, the sub-rules inherit WL-001's severity matrix ent
 
 - [ ] **Step 2: Amend §7.3 — clarify scope for split rules**
 
-In `docs/spec/wardline-01-07-pattern-rules.md`, find the "Binding-level matrix deviations" paragraph at line 88. After the existing text, add a new sentence:
+In `docs/spec/wardline-01-08-pattern-rules.md`, find the "Binding-level matrix deviations" paragraph at line 88. After the existing text, add a new sentence:
 
 ```
 When a binding splits a framework rule into sub-rules under §7.1, each sub-rule's documented matrix row is the baseline for §7.3 conformance — the narrowing constraint applies relative to the sub-rule's own matrix, not relative to the parent framework rule.
@@ -112,7 +112,7 @@ Expected: All PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add docs/spec/wardline-01-07-pattern-rules.md docs/spec/wardline-02-A-python-binding.md tests/unit/core/test_matrix.py
+git add docs/spec/wardline-01-08-pattern-rules.md docs/spec/wardline-02-A-python-binding.md tests/unit/core/test_matrix.py
 git commit -m "fix(SCAN-014): formalize split-rule matrix independence in §7.1
 
 Amend §7.1: split sub-rules MAY establish own matrix rows when

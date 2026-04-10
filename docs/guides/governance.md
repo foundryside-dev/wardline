@@ -123,4 +123,4 @@ Run `wardline coherence` periodically to check for:
 - [CLI Reference](../reference/cli.md#wardline-exception) — exception command options
 - [Error Messages](../reference/error-messages.md) — governance error diagnostics
 - [Profiles Guide](profiles.md) — lite vs assurance
-- [Spec §9: Governance Model](../spec/wardline-01-09-governance-model.md) — normative definition
+- [Spec §10: Governance Model](../spec/wardline-01-10-governance-model.md) — normative definition

@@ -132,7 +132,7 @@ requirements:
     normative_sources:
       - file: docs/spec/wardline-02-A-python-binding.md
         section: "A.3 Interface contract (Wardline-Core)"
-      - file: docs/spec/wardline-01-10-verification-properties.md
+      - file: docs/spec/wardline-01-11-verification-properties.md
         section: "10. Verification properties"
     verification:
       method: integration_tests
@@ -152,7 +152,7 @@ requirements:
     normative_sources:
       - file: docs/spec/wardline-02-A-python-binding.md
         section: "A.3 Interface contract (Wardline-Core)"
-      - file: docs/spec/wardline-01-10-verification-properties.md
+      - file: docs/spec/wardline-01-11-verification-properties.md
         section: "10.1 Findings interchange format"
     verification:
       method: rule_registry_and_sarif_review

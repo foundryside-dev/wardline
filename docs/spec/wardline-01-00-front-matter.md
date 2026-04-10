@@ -13,21 +13,21 @@
 This document comprises two parts: Part I (the framework specification) and Part II (language binding references for Python and Java). Not all readers need all sections. The paths below route to the most relevant content for each audience.
 
 **Tool implementers** (building a Wardline-Core scanner, linter plugin, or type checker plugin):
-→ Part I: §1–3 (concepts), §4 (tier model), §5 (enforcement specification), §6–7 (annotations, pattern rules), §8 (enforcement layers), §14 (conformance) → Part II: A.3/B.3 (interface contract — read first), then A.4/B.4 (annotation vocabulary)
+→ Part I: §2–4 (concepts), §5 (tier model), §6 (enforcement specification), §7–8 (annotations, pattern rules), §9 (enforcement layers), §15 (conformance) → Part II: A.3/B.3 (interface contract — read first), then A.4/B.4 (annotation vocabulary)
 
 **Security assessors** (IRAP or equivalent, evaluating a wardline deployment):
-→ Part I: §1–3 (scope), §4 (tier model), §10 (verification properties and golden corpus), §14 (conformance criteria and profiles)
+→ Part I: §2–4 (scope), §5 (tier model), §11 (verification properties and golden corpus), §15 (conformance criteria and profiles)
 → Part II: A.3/B.3 (interface contract), A.6/B.6 (regime composition), A.7/B.7 (residual risks)
 
 **Adopters** (deploying wardline on a project):
-→ Part I: §1–4 (what it is, why, tier model), §9 (governance model) → Part II: A.9/B.9 (adoption strategy), A.4/B.4 (annotation vocabulary)
+→ Part I: §2–5 (what it is, why, tier model), §10 (governance model) → Part II: A.9/B.9 (adoption strategy), A.4/B.4 (annotation vocabulary)
 
 **Governance leads** (managing wardline policy and exceptions):
-→ Part I: §9 (governance model), §13 (manifest and exception register), §14.1 (conformance model)
+→ Part I: §10 (governance model), §14 (manifest and exception register), §15.1 (conformance model)
 → Part II: A.7/B.7 (residual risks), A.10/B.10 (error handling and control law)
 
 **Citizen programmers** (reviewing or writing code in a wardline-annotated codebase, without developer tooling):
-→ Wardline Lite practical guide (`wardline-lite.md`, separate companion document): five review questions, worked code examples, hot-path identification. This guide is not part of the formal specification — it translates the annotation vocabulary (§6) and pattern rules (§7) into questions a non-specialist can apply during code review.
+→ Wardline Lite practical guide (`wardline-lite.md`, separate companion document): five review questions, worked code examples, hot-path identification. This guide is not part of the formal specification — it translates the annotation vocabulary (§7) and pattern rules (§8) into questions a non-specialist can apply during code review.
 
 ---
 
@@ -35,29 +35,29 @@ This document comprises two parts: Part I (the framework specification) and Part
 
 **Part I — Wardline Framework Specification** (this document)
 
-1. [What a Wardline is](#1-what-a-wardline-is)
-2. [The problem a Wardline solves](#2-the-problem-a-wardline-solves)
-3. [Non-goals](#3-non-goals)
-4. [Authority tier model](#4-authority-tier-model)
-    - 4.1 Four tiers
-5. [Authority tier model: enforcement specification](#5-authority-tier-model-enforcement-specification)
-    - 5.1 Trust classification and validation status — 5.2 Transition semantics — 5.3 Trusted restoration boundaries — 5.4 Cross-language taint propagation — 5.5 Third-party in-process dependency taint
-6. [Annotation vocabulary](#6-annotation-vocabulary)
-7. [Pattern rules](#7-pattern-rules)
-    - 7.1 The rules — 7.2 Structural verification — 7.2.1 Structural-guarantee defaults and WL-001 — 7.3 Severity matrix — 7.4 Worked examples — 7.5 Derivation principles — 7.6 Taint analysis scope
-8. [Enforcement layers](#8-enforcement-layers)
-    - 8.1 Static analysis — 8.2 Type system — 8.3 Runtime structural — 8.4 Orthogonality principle — 8.5 Pre-generation context projection (advisory)
-9. [Governance model](#9-governance-model)
-    - 9.1 Exceptionability classes — 9.2 Governance mechanisms — 9.3 Scope of governance — 9.3.1 Artefact classification: policy and enforcement — 9.3.2 Manifest threat model — 9.4 Governance capacity — 9.5 Enforcement availability (control law)
-10. [Verification properties](#10-verification-properties)
-    - 10.1 Findings interchange format — 10.2 Finding presentation guidance
-11. [Language evaluation criteria](#11-language-evaluation-criteria)
-12. [Residual risks](#12-residual-risks)
-13. [Portability and manifest format](#13-portability-and-manifest-format)
-    - 13.1 Wardline manifest format — 13.2 Scanner operational configuration (wardline.toml)
-14. [Conformance](#14-conformance)
-    - 14.1 Conformance model — 14.2 Conformance criteria — 14.3 Conformance profiles (14.3.1 Enforcement profiles, 14.3.2 Governance profiles, 14.3.3 Graduation) — 14.4 Enforcement regimes — 14.5 Supplementary group enforcement scope — 14.6 Assessment procedure (14.6.1 Worked example: Phase 3 deployment, 14.6.2 Worked example: Lite governance deployment) — 14.7 Partial conformance
-15. [Document scope](#15-document-scope)
+1. [Document scope](#1-document-scope)
+2. [What a Wardline is](#2-what-a-wardline-is)
+3. [The problem a Wardline solves](#3-the-problem-a-wardline-solves)
+4. [Non-goals](#4-non-goals)
+5. [Authority tier model](#5-authority-tier-model)
+    - 5.1 Four tiers
+6. [Authority tier model: enforcement specification](#6-authority-tier-model-enforcement-specification)
+    - 6.1 Trust classification and validation status — 6.2 Transition semantics — 6.3 Trusted restoration boundaries — 6.4 Cross-language taint propagation — 6.5 Third-party in-process dependency taint
+7. [Annotation vocabulary](#7-annotation-vocabulary)
+8. [Pattern rules](#8-pattern-rules)
+    - 8.1 The rules — 8.2 Structural verification — 8.2.1 Structural-guarantee defaults and WL-001 — 8.3 Severity matrix — 8.4 Worked examples — 8.5 Derivation principles — 8.6 Taint analysis scope
+9. [Enforcement layers](#9-enforcement-layers)
+    - 9.1 Static analysis — 9.2 Type system — 9.3 Runtime structural — 9.4 Orthogonality principle — 9.5 Pre-generation context projection (advisory)
+10. [Governance model](#10-governance-model)
+    - 10.1 Exceptionability classes — 10.2 Governance mechanisms — 10.3 Scope of governance — 10.3.1 Artefact classification: policy and enforcement — 10.3.2 Manifest threat model — 10.4 Governance capacity — 10.5 Enforcement availability (control law)
+11. [Verification properties](#11-verification-properties)
+    - 11.1 Findings interchange format — 11.2 Finding presentation guidance
+12. [Language evaluation criteria](#12-language-evaluation-criteria)
+13. [Residual risks](#13-residual-risks)
+14. [Portability and manifest format](#14-portability-and-manifest-format)
+    - 14.1 Wardline manifest format — 14.2 Scanner operational configuration (wardline.toml)
+15. [Conformance](#15-conformance)
+    - 15.1 Conformance model — 15.2 Conformance criteria — 15.3 Conformance profiles (15.3.1 Enforcement profiles, 15.3.2 Governance profiles, 15.3.3 Graduation) — 15.4 Enforcement regimes — 15.5 Supplementary group enforcement scope — 15.6 Assessment procedure (15.6.1 Worked example: Phase 3 deployment, 15.6.2 Worked example: Lite governance deployment) — 15.7 Partial conformance
 
 **Part II — Language Binding Reference**
 

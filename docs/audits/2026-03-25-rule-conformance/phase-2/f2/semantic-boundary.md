@@ -3,7 +3,7 @@
 **Assessor:** Semantic Boundary Agent
 **Date:** 2026-03-25
 **Scope:** Boundary contract names, implementation stability, refactor-safety
-**Spec reference:** wardline-01-13-portability-and-manifest-format.md, section 13.1.2
+**Spec reference:** wardline-01-14-portability-and-manifest-format.md, section 13.1.2
 
 ---
 

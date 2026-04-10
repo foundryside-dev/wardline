@@ -6,9 +6,9 @@ requirements:
       WL-006) within annotated function and method bodies using
       intraprocedural analysis. This is a framework invariant.
     normative_sources:
-      - file: docs/spec/wardline-01-08-enforcement-layers.md
+      - file: docs/spec/wardline-01-09-enforcement-layers.md
         section: "8.1 Static analysis"
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.2 Conformance criteria"
     verification:
       method: unit_tests_and_corpus
@@ -30,9 +30,9 @@ requirements:
       primarily intraprocedural; delegation through two-hop call-graph
       analysis satisfies the requirement.
     normative_sources:
-      - file: docs/spec/wardline-01-08-enforcement-layers.md
+      - file: docs/spec/wardline-01-09-enforcement-layers.md
         section: "8.1 Static analysis"
-      - file: docs/spec/wardline-01-07-pattern-rules.md
+      - file: docs/spec/wardline-01-08-pattern-rules.md
         section: "7.2 Structural verification"
     verification:
       method: unit_tests
@@ -54,9 +54,9 @@ requirements:
       declared shape-validation boundary. Combined validation boundaries
       (T4→T2) satisfy this requirement internally.
     normative_sources:
-      - file: docs/spec/wardline-01-08-enforcement-layers.md
+      - file: docs/spec/wardline-01-09-enforcement-layers.md
         section: "8.1 Static analysis"
-      - file: docs/spec/wardline-01-07-pattern-rules.md
+      - file: docs/spec/wardline-01-08-pattern-rules.md
         section: "7.2 Structural verification"
     verification:
       method: unit_tests
@@ -79,9 +79,9 @@ requirements:
       intermediaries. Functions outside the enforcement perimeter are governed
       by dependency_taint declarations, not by intermediary tracing.
     normative_sources:
-      - file: docs/spec/wardline-01-08-enforcement-layers.md
+      - file: docs/spec/wardline-01-09-enforcement-layers.md
         section: "8.1 Static analysis"
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.2 Conformance criteria"
     verification:
       method: unit_tests
@@ -102,9 +102,9 @@ requirements:
       Deterministic means byte-identical output from the same binary on
       identical input in verification mode.
     normative_sources:
-      - file: docs/spec/wardline-01-08-enforcement-layers.md
+      - file: docs/spec/wardline-01-09-enforcement-layers.md
         section: "8.1 Static analysis"
-      - file: docs/spec/wardline-01-10-verification-properties.md
+      - file: docs/spec/wardline-01-11-verification-properties.md
         section: "10. Verification properties"
     verification:
       method: integration_tests
@@ -126,7 +126,7 @@ requirements:
       Bindings that do not implement the distinction treat all cross-tier
       joins as join_fuse producing MIXED_RAW — the conservative fallback.
     normative_sources:
-      - file: docs/spec/wardline-01-05-authority-tier-enforcement-spec.md
+      - file: docs/spec/wardline-01-06-authority-tier-enforcement-spec.md
         section: "5.1 Trust classification and validation status"
     informative_sources:
       - file: docs/spec/wardline-02-A-python-binding.md
@@ -147,7 +147,7 @@ requirements:
       Implementations that do not implement taint tracking MUST NOT claim
       coverage of ACF-T1, ACF-E1, or ACF-E2.
     normative_sources:
-      - file: docs/spec/wardline-01-02-the-problem-a-wardline-solves.md
+      - file: docs/spec/wardline-01-03-the-problem-a-wardline-solves.md
         section: "2. The problem a Wardline solves"
     verification:
       method: documentation_review
@@ -166,7 +166,7 @@ requirements:
       boundaries using interprocedural analysis. This is a binding
       requirement, not a framework invariant.
     normative_sources:
-      - file: docs/spec/wardline-01-08-enforcement-layers.md
+      - file: docs/spec/wardline-01-09-enforcement-layers.md
         section: "8.1 Static analysis"
     verification:
       method: code_review_and_tests
@@ -187,7 +187,7 @@ requirements:
       changed files and transitive dependents — as this is critical for
       CI adoption at scale.
     normative_sources:
-      - file: docs/spec/wardline-01-08-enforcement-layers.md
+      - file: docs/spec/wardline-01-09-enforcement-layers.md
         section: "8.1 Static analysis"
     verification:
       method: code_review
@@ -209,9 +209,9 @@ requirements:
       Projection is advisory and does NOT replace post-generation
       enforcement.
     normative_sources:
-      - file: docs/spec/wardline-01-08-enforcement-layers.md
+      - file: docs/spec/wardline-01-09-enforcement-layers.md
         section: "8.5 Pre-generation context projection"
-      - file: docs/spec/wardline-01-08-enforcement-layers.md
+      - file: docs/spec/wardline-01-09-enforcement-layers.md
         section: "8.5.1 Projection content"
     verification:
       method: design_review
@@ -234,7 +234,7 @@ requirements:
       runtime structural enforcement MUST include restoration boundary
       verification.
     normative_sources:
-      - file: docs/spec/wardline-01-08-enforcement-layers.md
+      - file: docs/spec/wardline-01-09-enforcement-layers.md
         section: "8.3 Runtime structural"
     verification:
       method: code_review
@@ -254,7 +254,7 @@ requirements:
       where assured data is expected, SHOULD produce a type error or
       equivalent diagnostic. Type annotations SHOULD carry tier information.
     normative_sources:
-      - file: docs/spec/wardline-01-08-enforcement-layers.md
+      - file: docs/spec/wardline-01-09-enforcement-layers.md
         section: "8.2 Type system"
     verification:
       method: code_review
@@ -280,9 +280,9 @@ requirements:
       beyond what taint-flow tracing already provides. This is a framework
       invariant.
     normative_sources:
-      - file: docs/spec/wardline-01-08-enforcement-layers.md
+      - file: docs/spec/wardline-01-09-enforcement-layers.md
         section: "8.1 Static analysis"
-      - file: docs/spec/wardline-01-07-pattern-rules.md
+      - file: docs/spec/wardline-01-08-pattern-rules.md
         section: "7.2 Structural verification"
     verification:
       method: unit_tests_and_corpus
@@ -305,7 +305,7 @@ requirements:
       data structures whose declared immutability does not achieve deep
       immutability.
     informative_sources:
-      - file: docs/spec/wardline-01-08-enforcement-layers.md
+      - file: docs/spec/wardline-01-09-enforcement-layers.md
         section: "8 (non-normative note)"
       - file: docs/spec/wardline-02-A-python-binding.md
         section: "A.3 Interface contract (Wardline-Core)"

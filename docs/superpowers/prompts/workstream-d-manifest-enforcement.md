@@ -6,8 +6,8 @@
 
 **Branch:** `phase-4.4-test-quality-gates`
 **Conformance review:** `docs/requirements/spec-fitness/conformance-review-2026-04-09.md`
-**Spec authority:** `docs/spec/wardline-01-13-portability-and-manifest-format.md` (§13),
-`docs/spec/wardline-01-06-annotation-vocabulary.md` (§6),
+**Spec authority:** `docs/spec/wardline-01-14-portability-and-manifest-format.md` (§14),
+`docs/spec/wardline-01-07-annotation-vocabulary.md` (§7),
 `docs/spec/wardline-02-A-python-binding.md` (§A.4.2)
 
 ---
@@ -27,9 +27,9 @@ that allow invalid or under-specified configurations to pass without error.
 
 ## 2. Normative Requirements
 
-### 2.1 Validation Scope on Tier 2 Boundaries (§13.1.2)
+### 2.1 Validation Scope on Tier 2 Boundaries (§14.1.2)
 
-The spec (§13.1.2) states:
+The spec (§14.1.2) states:
 
 > "Every boundary that claims Tier 2 semantics — `semantic_validation`
 > boundaries, `combined_validation` boundaries, and restoration boundaries
@@ -52,7 +52,7 @@ The `validation_scope` object declares named boundary contracts with:
 - `restoration` with `semantic: true` in provenance — restoration boundaries
   claiming semantic validation
 
-### 2.2 Parameterised Trust Boundary (§6, §A.4.2)
+### 2.2 Parameterised Trust Boundary (§7, §A.4.2)
 
 The spec (§A.4.2) defines Group 16:
 
@@ -77,12 +77,12 @@ The parameterised form allows custom transitions not covered by Group 1,
 with the constraint: `to_tier=1` is only valid when `from_tier=2` (no skip
 promotion to T1).
 
-### 2.3 Delegation Authority at Merge (§13.1.3)
+### 2.3 Delegation Authority at Merge (§14.1.3)
 
-The spec (§13.1) states:
+The spec (§14.1) states:
 
 > "An overlay CANNOT grant exception classes it has not been delegated
-> authority for (§13.1.3)"
+> authority for (§14.1.3)"
 
 And:
 

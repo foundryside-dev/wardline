@@ -72,4 +72,4 @@ See [Analysis Levels Guide](../guides/analysis-levels.md) for choosing the right
 
 - [Severity Matrix](severity-matrix.md) — how taint state affects rule severity
 - [Decorator Vocabulary](decorators.md) — decorators that set or promote taint
-- [Spec §5: Authority Tier Model](../spec/wardline-01-04-authority-tier-model.md) — normative definitions
+- [Spec §6: Authority Tier Model](../spec/wardline-01-05-authority-tier-model.md) — normative definitions

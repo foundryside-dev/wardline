@@ -6,7 +6,7 @@
 **Target release:** v0.3.0
 **Dependencies:** None (ships independently of WP 2.1 L3 taint)
 **Governance profile target:** Lite-complete + Assurance hooks (SARIF metadata)
-**Spec references:** Wardline Framework Specification v0.2.0 — §9.2 (governance mechanisms), §9.3.1 (artefact classification), §14.3.2 (governance profiles). File: `docs/wardline/wardline-01-09-governance-model.md`
+**Spec references:** Wardline Framework Specification v0.2.0 — §9.2 (governance mechanisms), §9.3.1 (artefact classification), §14.3.2 (governance profiles). File: `docs/wardline/wardline-01-10-governance-model.md`
 
 ## Context
 

@@ -29,7 +29,7 @@ This guide teaches you to see those invisible mistakes, even without specialised
 
 These are the core ways AI-generated code goes invisibly wrong. Each follows the same structure: what the AI wrote, why it looks right, what is actually wrong, what you should write instead, and what it means if this goes wrong in a government system.
 
-### 2.1 The Friendly Default
+### 3.1 The Friendly Default
 
 The AI writes `.get(field, "OFFICIAL")` — if the security classification field is missing, use OFFICIAL as the default. This is standard defensive programming. Every tutorial teaches it.
 
@@ -43,7 +43,7 @@ classification = record.get("security_classification", "OFFICIAL")
 classification = record["security_classification"]
 # If the key is missing, this crashes — and crashing is safer
 # than silently processing PROTECTED documents as OFFICIAL.
-# (The full discussion paper §2.3 shows an even better version
+# (The full discussion paper §3.3 shows an even better version
 # that crashes with a diagnostic error message — but crashing
 # at all is the important part.)
 ```
@@ -54,7 +54,7 @@ In the discussion paper's taxonomy, this pattern is called *Competence Spoofing*
 
 > **Why This Matters:** This is how PROTECTED documents get processed at the wrong level. No error, no alert, no log entry. The system runs with a confident wrong answer.
 
-### 2.2 The Helpful Error Handler
+### 3.2 The Helpful Error Handler
 
 The AI wraps an audit-critical operation in `try/except` — if it fails, log the error and continue. This looks like robust error handling. Every coding tutorial teaches it.
 
@@ -80,7 +80,7 @@ In the taxonomy, this is *Audit Trail Destruction* — rated *High*. The code ap
 
 > **Why This Matters:** Under many compliance frameworks, a missing audit record is not a bug — it may be treated as evidence of tampering rather than a technical failure.
 
-### 2.3 The Invisible Promotion
+### 3.3 The Invisible Promotion
 
 The AI reads data from an external API and passes it directly to an internal function. The types match, the code runs, no errors. But the data just crossed from "untrusted external source" to "internal authoritative data" with no validation boundary.
 
@@ -148,7 +148,7 @@ Not all code is equally dangerous. A function that formats dates is not the same
 
 [^hot-paths]: The full discussion paper calls these *high-stakes code paths* — code where a wrong answer has consequences for security, compliance, or people. "Hot path" is the same concept in plainer language.
 
-### 5.1 What makes a path "hot"
+### 6.1 What makes a path "hot"
 
 A code path is hot if **a wrong answer has real-world consequences.** That means it touches classifications, PII, financial amounts, audit records, access decisions, or any data where corruption or silent mishandling affects people, compliance, or trust. Defaulting a missing location in a weather app is not a hot path — a wrong forecast inconveniences someone. Defaulting a missing security classification is a hot path — that decision downgrades documents and nobody is told.
 
@@ -161,7 +161,7 @@ Everything else — formatting, logging messages, building display strings, iter
 - **Boundary crossings.** Does data enter this path from outside — an external API, a user upload, a partner system — and get used without validation? Does the code distinguish between "ours" and "not ours"? (Q3)
 - **Implicit decisions.** Is the code making a policy decision without being explicit about it? A `.get()` with a default is a policy decision: "if this value is missing, use this one instead." A `try/except` that continues is a policy decision: "if this fails, carry on as if it did not." These decisions are fine in low-consequence code. In a hot path, they need to be deliberate and visible. (Q4, Q5)
 
-### 5.2 A walkthrough: finding the hot lines in a reporting script
+### 6.2 A walkthrough: finding the hot lines in a reporting script
 
 Here is a small reporting script that reads records from an external partner API, processes them, and writes summary rows to a local database. It is about 30 lines long. The comments mark which lines are hot and which question applies. Lines that are not hot paths — setup, formatting, cleanup — are marked "cold."
 
@@ -266,7 +266,7 @@ def generate_partner_report(api_url, db_path):
 
 The corrected version is about the same length. It does not add complexity — it removes silent failures and makes problems visible.
 
-### 5.3 SQL hot paths
+### 6.3 SQL hot paths
 
 If your scripts include SQL — queries, inserts, data transformations — the same three patterns apply. AI generates SQL with the same blind spots it has in Python.
 
@@ -338,7 +338,7 @@ VALUES (1042, 'APPROVED', 'jsmith', '2026-03-18');
 
 `ON CONFLICT ... DO UPDATE` is the SQL version of a `try/except` that silently continues. In an audit context, a conflict on a decision record means something has gone wrong — a case was decided twice, or a record was duplicated. Silently overwriting it destroys the evidence.
 
-### 5.4 When this guide stops being enough
+### 6.4 When this guide stops being enough
 
 This guide works for scripts up to a few thousand lines where you are the primary author and reviewer. If your project has grown beyond that — multiple contributors, dependencies on other systems, or code that other teams rely on — you need developer support.
 
@@ -550,7 +550,7 @@ As your project grows:
 
 **Audit trail:** A chronological record of who did what, when, and why. In government systems, gaps in the audit trail can have legal consequences — a missing record may be treated as evidence of tampering rather than as a technical failure.
 
-**Authority tier:** A way of classifying data by how much you should trust it. This guide uses three practical levels: *internal* (produced by your system — highest trust), *validated* (came from outside but passed through checks), and *external* (not yet checked — lowest trust). The discussion paper (§5) introduces the four-tier model; the Wardline specification (§4) formally defines it, adding a distinction between shape-validated and semantically validated data. The patterns in this guide are dangerous because AI does not distinguish between tiers — it treats all data the same.
+**Authority tier:** A way of classifying data by how much you should trust it. This guide uses three practical levels: *internal* (produced by your system — highest trust), *validated* (came from outside but passed through checks), and *external* (not yet checked — lowest trust). The discussion paper (§6) introduces the four-tier model; the Wardline specification (§5) formally defines it, adding a distinction between shape-validated and semantically validated data. The patterns in this guide are dangerous because AI does not distinguish between tiers — it treats all data the same.
 
 **CI pipeline (Continuous Integration):** An automated system that runs checks on code every time it is changed. If you do not have one, the five questions in this guide are your manual equivalent.
 
@@ -580,7 +580,7 @@ As your project grows:
 
 **PSPF (Protective Security Policy Framework):** The Australian Government's framework for protective security, including information classification. The Friendly Default pattern (Section 2.1) can silently violate PSPF classification requirements by defaulting to OFFICIAL when the real classification is unknown.
 
-**Semantic correctness:** Whether code does the right thing in its institutional context — not just running without errors, but producing correct results for the specific system it operates in. The five questions in this guide are all tests for semantic correctness. See the discussion paper (§1.3) for the formal definition.
+**Semantic correctness:** Whether code does the right thing in its institutional context — not just running without errors, but producing correct results for the specific system it operates in. The five questions in this guide are all tests for semantic correctness. See the discussion paper (§2.3) for the formal definition.
 
 **Semantic defect:** A bug where the code runs correctly but does the wrong thing. It does not crash, does not throw errors, and passes all tests — but produces an incorrect result. The patterns in this guide are all semantic defects.
 
@@ -594,4 +594,4 @@ As your project grows:
 
 ---
 
-[^rate-caveats]: Two caveats on this figure. (1) This rate occurs predominantly during unplanned work — bug fixing, ad-hoc refactoring, small feature additions — where the agent improvises from training data rather than following a reviewed specification. (2) The structural argument — that these patterns are embedded in training data and that agents lack persistent learning — remains valid regardless of the specific rate. The "one to two" framing reflects incomplete tool coverage and incidental discovery during non-development work. See the discussion paper §8.4 for the full case study.
+[^rate-caveats]: Two caveats on this figure. (1) This rate occurs predominantly during unplanned work — bug fixing, ad-hoc refactoring, small feature additions — where the agent improvises from training data rather than following a reviewed specification. (2) The structural argument — that these patterns are embedded in training data and that agents lack persistent learning — remains valid regardless of the specific rate. The "one to two" framing reflects incomplete tool coverage and incidental discovery during non-development work. See the discussion paper §9.4 for the full case study.

@@ -6,7 +6,7 @@
 
 **Branch:** `phase-4.4-test-quality-gates`
 **Conformance review:** `docs/requirements/spec-fitness/conformance-review-2026-04-09.md`
-**Spec authority:** `docs/spec/wardline-01-10-verification-properties.md`
+**Spec authority:** `docs/spec/wardline-01-11-verification-properties.md`
 
 ---
 
@@ -14,8 +14,8 @@
 
 The external conformance review (2026-04-09) identified 4 SARIF-related
 findings that block a v1.0 conformance claim. An assessor following the
-§14.6 procedure will fail the implementation at Step 4 because the SARIF
-output is missing mandatory properties defined in §10.1.
+§15.6 procedure will fail the implementation at Step 4 because the SARIF
+output is missing mandatory properties defined in §11.1.
 
 | Finding | Severity | Description |
 |---------|----------|-------------|
@@ -29,7 +29,7 @@ workstream — it touches corpus infrastructure, not SARIF emission.
 
 ---
 
-## 2. Normative Requirements (from §10.1)
+## 2. Normative Requirements (from §11.1)
 
 ### 2.1 Result-Level Properties (per finding)
 
@@ -59,7 +59,7 @@ Every SARIF `run` MUST carry these in its `properties` bag:
 | Property | Type | Spec Text |
 |----------|------|-----------|
 | `wardline.deterministic` | `bool` | "boolean self-report that the tool believes its output is deterministic. A declaration of intent, not verification evidence" |
-| `wardline.deferredFixRatio` | `float` | "the proportion of active exceptions that represent deferred architectural fixes rather than genuine domain variance (§13.1.3)" |
+| `wardline.deferredFixRatio` | `float` | "the proportion of active exceptions that represent deferred architectural fixes rather than genuine domain variance (§14.1.3)" |
 
 ### 2.3 Correctness Constraints
 
@@ -106,7 +106,7 @@ Every SARIF `run` MUST carry these in its `properties` bag:
    - At least one exception has `elimination_path` → emit the computed ratio.
 
    The `elimination_path` field does not yet exist on `ExceptionEntry` —
-   it must be added (see §13.1.3 in the spec). After adding the field,
+   it must be added (see §14.1.3 in the spec). After adding the field,
    `deferredFixRatio` will be `null` for the current exception register
    (78+ exceptions, zero classified) — which is the correct signal.
 
@@ -177,7 +177,7 @@ Factory for governance pseudo-rule findings. Sets `taint_state=None`,
 ### 3.3 `ExceptionEntry` (`models.py:22-46`)
 
 Does NOT have `elimination_path` or `elimination_cost` fields.
-The spec (§13.1.3) defines these as optional but recommended. They are
+The spec (§14.1.3) defines these as optional but recommended. They are
 required for computing `deferredFixRatio`.
 
 ### 3.4 Self-Hosting Exception Register
@@ -347,7 +347,7 @@ so all existing `Finding()` construction sites remain valid:
 class Finding:
     # ... existing fields ...
     retroactive_scan: bool = False
-    # R1: §10.1 result-level properties
+    # R1: §11.1 result-level properties
     annotation_groups: tuple[int, ...] = ()
     data_source: str | None = None  # Always None in v1.0 — requires taint provenance threading to populate
 ```
@@ -370,7 +370,7 @@ def _get_annotation_groups(self) -> tuple[int, ...]:
     """Get sorted, deduplicated annotation group numbers for the current function.
 
     Returns the Part I group numbers (1-17) of all wardline annotations
-    declared on the function. Used to populate the §10.1 SARIF
+    declared on the function. Used to populate the §11.1 SARIF
     property ``wardline.annotationGroups``.
 
     The result is sorted at creation time for convenience, but
@@ -631,7 +631,7 @@ MANDATORY_RESULT_PROPERTIES = {
 }
 
 def test_all_mandatory_result_properties_present(self) -> None:
-    """All 9 mandatory result-level properties present (§10.1)."""
+    """All 9 mandatory result-level properties present (§11.1)."""
     finding = _make_finding(taint_state=TaintState.INTEGRAL)
     result = _make_result(finding, base_path=None)
     props = set(result["properties"].keys())
@@ -651,7 +651,7 @@ annotation_groups: tuple[int, ...] = (),
 data_source: str | None = None,
 ```
 
-**Commit:** `fix(R1): add 4 missing result-level SARIF properties (§10.1)`
+**Commit:** `fix(R1): add 4 missing result-level SARIF properties (§11.1)`
 
 ---
 
@@ -670,7 +670,7 @@ elimination_cost: str | None = None
 ```
 
 These are optional fields with `None` default, so all existing exception
-loading continues to work. The spec (§13.1.3) defines them as "optional
+loading continues to work. The spec (§14.1.3) defines them as "optional
 but recommended."
 
 #### Step 2: Update the exception JSON schema
@@ -777,7 +777,7 @@ def test_deferred_fix_ratio_rounded(self) -> None:
     assert props["wardline.deferredFixRatio"] == 0.3333
 ```
 
-**Commit:** `fix(R2): add 2 missing run-level SARIF properties (§10.1)`
+**Commit:** `fix(R2): add 2 missing run-level SARIF properties (§11.1)`
 
 ---
 
@@ -801,7 +801,7 @@ Add a comment in `sarif.py` documenting what each version means:
 ```python
 # Property bag versions:
 # "0.4" — initial stable schema (17 run-level, 5 result-level mandatory)
-# "0.5" — R1+R2: 19 run-level, 9 result-level mandatory (§10.1 complete)
+# "0.5" — R1+R2: 19 run-level, 9 result-level mandatory (§11.1 complete)
 ```
 
 ---
@@ -913,8 +913,8 @@ After all 4 fixes:
 
 1. `fix(R18): emit null for taintState on pseudo-rule findings`
 2. `test(R14): verify overlay hash lexicographic ordering invariant`
-3. `fix(R1): add 4 missing result-level SARIF properties (§10.1)`
-4. `fix(R2): add 2 missing run-level SARIF properties (§10.1)`
+3. `fix(R1): add 4 missing result-level SARIF properties (§11.1)`
+4. `fix(R2): add 2 missing run-level SARIF properties (§11.1)`
 
 ---
 

@@ -10,7 +10,7 @@
 - `/home/john/wardline/src/wardline/scanner/engine.py`
 - `/home/john/wardline/src/wardline/core/registry.py`
 - `/home/john/wardline/docs/wardline/wardline-02-A-python-binding.md` (section A.4.3)
-- `/home/john/wardline/docs/wardline/wardline-01-12-residual-risks.md` (section 12, risks 9 and 12)
+- `/home/john/wardline/docs/wardline/wardline-01-13-residual-risks.md` (section 12, risks 9 and 12)
 - `/home/john/wardline/tests/unit/scanner/test_scn_021.py`
 
 ---

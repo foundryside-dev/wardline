@@ -6,7 +6,7 @@ requirements:
       not advertise pseudo-rule or governance-diagnostic IDs as normative rule
       coverage.
     normative_sources:
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.3.1 Enforcement profiles"
       - file: docs/spec/wardline-02-A-python-binding.md
         section: "A.3 Interface contract (Wardline-Core)"
@@ -27,7 +27,7 @@ requirements:
       rule-specific behavior it claims as authoritative, including delegated
       validation and validation-ordering behaviors where implemented.
     normative_sources:
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.2 Conformance criteria"
       - file: docs/spec/wardline-02-A-python-binding.md
         section: "A.3 Interface contract (Wardline-Core)"
@@ -48,7 +48,7 @@ requirements:
       MUST test direct flows, two-hop intermediary flows, and convergence
       behavior explicitly.
     normative_sources:
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.2 Conformance criteria"
     verification:
       method: unit_tests
@@ -67,7 +67,7 @@ requirements:
       SARIF output MUST be valid SARIF v2.1.0 and include the Wardline-specific
       result-level and run-level property bags required by the spec.
     normative_sources:
-      - file: docs/spec/wardline-01-10-verification-properties.md
+      - file: docs/spec/wardline-01-11-verification-properties.md
         section: "10.1 Findings interchange format"
       - file: docs/spec/wardline-02-A-python-binding.md
         section: "A.3 Interface contract (Wardline-Core)"
@@ -87,9 +87,9 @@ requirements:
       against the golden corpus per rule-by-taint-state cell for the rules it
       claims to implement.
     normative_sources:
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.2 Conformance criteria"
-      - file: docs/spec/wardline-01-10-verification-properties.md
+      - file: docs/spec/wardline-01-11-verification-properties.md
         section: "10. Verification properties"
     verification:
       method: corpus_cli_and_reporting_review
@@ -107,9 +107,9 @@ requirements:
       claims, including adversarial specimens where the spec requires them, and
       corpus verification MUST be runnable from the repo.
     normative_sources:
-      - file: docs/spec/wardline-01-10-verification-properties.md
+      - file: docs/spec/wardline-01-11-verification-properties.md
         section: "10. Verification properties"
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.2 Conformance criteria"
     verification:
       method: corpus_and_cli_tests
@@ -131,7 +131,7 @@ requirements:
       MUST verify that the scanner passes the rules it implements on its own
       source, not merely that self-hosting can be observed.
     normative_sources:
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.2 Conformance criteria"
     verification:
       method: cli_review_and_tests
@@ -150,9 +150,9 @@ requirements:
       provides directly, which depend on a companion governance tool, and any
       remaining conformance gaps or delegated validation responsibility.
     normative_sources:
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.2 Conformance criteria"
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.3.1 Enforcement profiles"
     verification:
       method: documentation_review
@@ -171,7 +171,7 @@ requirements:
       evasion variants are identified. The precision/recall corpus SHOULD
       include evasion-variant specimens alongside standard specimens.
     normative_sources:
-      - file: docs/spec/wardline-01-07-pattern-rules.md
+      - file: docs/spec/wardline-01-08-pattern-rules.md
         section: "7. Pattern rules"
     verification:
       method: documentation_and_corpus_review
@@ -194,7 +194,7 @@ requirements:
       indirection through undecorated helpers, and container-level taint
       contamination.
     normative_sources:
-      - file: docs/spec/wardline-01-10-verification-properties.md
+      - file: docs/spec/wardline-01-11-verification-properties.md
         section: "10. Verification properties"
     verification:
       method: unit_tests_and_corpus
@@ -217,7 +217,7 @@ requirements:
       version, integrity verification via specimen hash manifest, and
       reproducible evaluation via a corpus verify command.
     normative_sources:
-      - file: docs/spec/wardline-01-10-verification-properties.md
+      - file: docs/spec/wardline-01-11-verification-properties.md
         section: "10. Verification properties"
     verification:
       method: corpus_and_cli_review
@@ -240,7 +240,7 @@ requirements:
       paths. Statically unreachable rejection paths (constant-False guards)
       SHOULD be detected and treated as absent.
     normative_sources:
-      - file: docs/spec/wardline-01-07-pattern-rules.md
+      - file: docs/spec/wardline-01-08-pattern-rules.md
         section: "7.2 Structural verification"
     verification:
       method: unit_tests
@@ -263,7 +263,7 @@ requirements:
       boundary. A default that differs from the approved default produces
       ERROR/UNCONDITIONAL (stronger than the undeclared case).
     normative_sources:
-      - file: docs/spec/wardline-01-07-pattern-rules.md
+      - file: docs/spec/wardline-01-08-pattern-rules.md
         section: "7.2.1 Structural-guarantee defaults and WL-001"
     verification:
       method: unit_tests_and_corpus
@@ -285,7 +285,7 @@ requirements:
       Binding-level deviations MUST narrow severity or exceptionability
       relative to the framework matrix, not widen them.
     normative_sources:
-      - file: docs/spec/wardline-01-07-pattern-rules.md
+      - file: docs/spec/wardline-01-08-pattern-rules.md
         section: "7.3 Severity matrix"
     verification:
       method: static_review
@@ -310,7 +310,7 @@ requirements:
       calls. Interprocedural ordering through callbacks, dynamic dispatch, or
       higher-order functions is outside required scope.
     normative_sources:
-      - file: docs/spec/wardline-01-06-annotation-vocabulary.md
+      - file: docs/spec/wardline-01-07-annotation-vocabulary.md
         section: "6. Annotation vocabulary"
     verification:
       method: unit_tests
@@ -334,7 +334,7 @@ requirements:
       tier-classified flows MUST be treated as implicit optional-field
       declarations under the Assurance governance profile.
     normative_sources:
-      - file: docs/spec/wardline-01-06-annotation-vocabulary.md
+      - file: docs/spec/wardline-01-07-annotation-vocabulary.md
         section: "6. Annotation vocabulary"
     informative_sources:
       - file: docs/spec/wardline-02-A-python-binding.md
@@ -358,7 +358,7 @@ requirements:
       higher-order functions, dynamic dispatch, or reflection are outside
       required scope.
     normative_sources:
-      - file: docs/spec/wardline-01-06-annotation-vocabulary.md
+      - file: docs/spec/wardline-01-07-annotation-vocabulary.md
         section: "6. Annotation vocabulary"
     verification:
       method: unit_tests
@@ -379,7 +379,7 @@ requirements:
       Fragments MUST be syntactically valid compilation units including
       wardline decorator imports and MUST NOT depend on external state.
     normative_sources:
-      - file: docs/spec/wardline-01-10-verification-properties.md
+      - file: docs/spec/wardline-01-11-verification-properties.md
         section: "10. Verification properties"
     verification:
       method: corpus_and_schema_review
@@ -400,7 +400,7 @@ requirements:
       At least 3 suppression_interaction specimens MUST test WL-001
       optional-field suppression.
     normative_sources:
-      - file: docs/spec/wardline-01-10-verification-properties.md
+      - file: docs/spec/wardline-01-11-verification-properties.md
         section: "10. Verification properties"
     verification:
       method: corpus_review
@@ -421,7 +421,7 @@ requirements:
       (@thread_safe, @ordered_after, @not_reentrant). Tools MAY provide
       advisory-only checks beyond that scope.
     normative_sources:
-      - file: docs/spec/wardline-01-06-annotation-vocabulary.md
+      - file: docs/spec/wardline-01-07-annotation-vocabulary.md
         section: "6. Annotation vocabulary"
     verification:
       method: documentation_review
@@ -442,7 +442,7 @@ requirements:
       the human-readable message for rules whose violation semantics
       are independent of taint propagation.
     normative_sources:
-      - file: docs/spec/wardline-01-10-verification-properties.md
+      - file: docs/spec/wardline-01-11-verification-properties.md
         section: "10. Verification properties"
     verification:
       method: unit_tests_and_corpus

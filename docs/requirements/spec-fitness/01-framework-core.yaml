@@ -7,7 +7,7 @@ requirements:
       `UNKNOWN_RAW`, `UNKNOWN_GUARDED`, `UNKNOWN_ASSURED`,
       and `MIXED_RAW` consistently across code, schemas, and SARIF output.
     normative_sources:
-      - file: docs/spec/wardline-01-05-authority-tier-enforcement-spec.md
+      - file: docs/spec/wardline-01-06-authority-tier-enforcement-spec.md
         section: "5.1 Trust classification and validation status"
     verification:
       method: static_review_and_unit_tests
@@ -25,7 +25,7 @@ requirements:
       The taint join operation MUST be commutative, associative, idempotent, and
       treat `MIXED_RAW` as the absorbing element.
     normative_sources:
-      - file: docs/spec/wardline-01-05-authority-tier-enforcement-spec.md
+      - file: docs/spec/wardline-01-06-authority-tier-enforcement-spec.md
         section: "5.1 Trust classification and validation status"
     verification:
       method: unit_tests
@@ -41,7 +41,7 @@ requirements:
       Joining any known classified state with any UNKNOWN state MUST produce
       `MIXED_RAW`, not a known classified result.
     normative_sources:
-      - file: docs/spec/wardline-01-05-authority-tier-enforcement-spec.md
+      - file: docs/spec/wardline-01-06-authority-tier-enforcement-spec.md
         section: "5.1 Trust classification and validation status"
     verification:
       method: unit_tests
@@ -58,9 +58,9 @@ requirements:
       authority tiers to the corresponding effective taint states used by the
       scanner and severity logic.
     normative_sources:
-      - file: docs/spec/wardline-01-04-authority-tier-model.md
+      - file: docs/spec/wardline-01-05-authority-tier-model.md
         section: "4.1 Four tiers"
-      - file: docs/spec/wardline-01-05-authority-tier-enforcement-spec.md
+      - file: docs/spec/wardline-01-06-authority-tier-enforcement-spec.md
         section: "5.1 Trust classification and validation status"
     verification:
       method: static_review_and_unit_tests
@@ -77,9 +77,9 @@ requirements:
       The implementation MUST define severity and exceptionability outcomes for
       every taint-state cell it claims to enforce for the implemented rules.
     normative_sources:
-      - file: docs/spec/wardline-01-07-pattern-rules.md
+      - file: docs/spec/wardline-01-08-pattern-rules.md
         section: "7. Pattern rules"
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.2 Conformance criteria"
     verification:
       method: static_review_and_unit_tests
@@ -100,7 +100,7 @@ requirements:
       Any project configuration or boundary declaration that attempts a direct
       Tier 4 to Tier 1 or Tier 3 to Tier 1 promotion MUST be rejected.
     normative_sources:
-      - file: docs/spec/wardline-01-13-portability-and-manifest-format.md
+      - file: docs/spec/wardline-01-14-portability-and-manifest-format.md
         section: "13.1.2 Overlay schema"
     verification:
       method: schema_and_loader_tests
@@ -120,9 +120,9 @@ requirements:
       evidence declared for structural, semantic, integrity, and institutional
       provenance.
     normative_sources:
-      - file: docs/spec/wardline-01-05-authority-tier-enforcement-spec.md
+      - file: docs/spec/wardline-01-06-authority-tier-enforcement-spec.md
         section: "5.3 Trusted restoration boundaries"
-      - file: docs/spec/wardline-01-13-portability-and-manifest-format.md
+      - file: docs/spec/wardline-01-14-portability-and-manifest-format.md
         section: "Restoration boundaries"
     informative_sources:
       - file: docs/spec/wardline-02-A-python-binding.md
@@ -144,9 +144,9 @@ requirements:
       closed set. No additional states may be introduced outside the binding
       extension mechanism (MIXED_TRACKED).
     normative_sources:
-      - file: docs/spec/wardline-01-01-what-a-wardline-is.md
+      - file: docs/spec/wardline-01-02-what-a-wardline-is.md
         section: "1.1 Terms and definitions"
-      - file: docs/spec/wardline-01-05-authority-tier-enforcement-spec.md
+      - file: docs/spec/wardline-01-06-authority-tier-enforcement-spec.md
         section: "5.1 Trust classification and validation status"
     verification:
       method: static_review_and_unit_tests
@@ -165,9 +165,9 @@ requirements:
       the token name. INTEGRAL encompasses all Tier 1 authoritative data,
       not only audit trails.
     normative_sources:
-      - file: docs/spec/wardline-01-04-authority-tier-model.md
+      - file: docs/spec/wardline-01-05-authority-tier-model.md
         section: "4.1 Four tiers"
-      - file: docs/spec/wardline-01-05-authority-tier-enforcement-spec.md
+      - file: docs/spec/wardline-01-06-authority-tier-enforcement-spec.md
         section: "5.1 Trust classification and validation status"
     verification:
       method: documentation_and_code_review
@@ -185,7 +185,7 @@ requirements:
       computation (e.g., by assuming join(a, b) = b when a is below b in
       the trust ordering).
     normative_sources:
-      - file: docs/spec/wardline-01-05-authority-tier-enforcement-spec.md
+      - file: docs/spec/wardline-01-06-authority-tier-enforcement-spec.md
         section: "5.1 Trust classification and validation status"
     verification:
       method: unit_tests
@@ -205,7 +205,7 @@ requirements:
       dependency_taint entries, the implementation MUST fall back to
       UNKNOWN_RAW.
     normative_sources:
-      - file: docs/spec/wardline-01-05-authority-tier-enforcement-spec.md
+      - file: docs/spec/wardline-01-06-authority-tier-enforcement-spec.md
         section: "5.5 Third-party in-process dependency taint"
     verification:
       method: unit_tests
@@ -224,9 +224,9 @@ requirements:
       topology; supplementary contract groups (5–15) are REQUIRED for
       expressiveness conformance but need not have uniform enforcement depth.
     normative_sources:
-      - file: docs/spec/wardline-01-06-annotation-vocabulary.md
+      - file: docs/spec/wardline-01-07-annotation-vocabulary.md
         section: "6. Annotation vocabulary"
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.2 Conformance criteria"
     verification:
       method: decorator_inventory_and_review
@@ -247,7 +247,7 @@ requirements:
       until it passes through a declared restoration boundary with adequate
       evidence (§5.3).
     normative_sources:
-      - file: docs/spec/wardline-01-05-authority-tier-enforcement-spec.md
+      - file: docs/spec/wardline-01-06-authority-tier-enforcement-spec.md
         section: "5.2 Transition semantics"
     verification:
       method: unit_tests_and_design_review
@@ -268,7 +268,7 @@ requirements:
       callers. Each function's tier context is determined by its own
       annotations, not inherited from call-chain position.
     normative_sources:
-      - file: docs/spec/wardline-01-05-authority-tier-enforcement-spec.md
+      - file: docs/spec/wardline-01-06-authority-tier-enforcement-spec.md
         section: "5.2 Transition semantics"
     verification:
       method: design_review_and_unit_tests
@@ -289,7 +289,7 @@ requirements:
       the emitting binding's taint assertion. The verification mechanism
       MUST be declared in the wardline manifest.
     normative_sources:
-      - file: docs/spec/wardline-01-05-authority-tier-enforcement-spec.md
+      - file: docs/spec/wardline-01-06-authority-tier-enforcement-spec.md
         section: "5.4 Cross-language taint propagation"
     verification:
       method: design_review
@@ -311,9 +311,9 @@ requirements:
       assignment in both branches to the same target variable
       (implicit-flow evasion heuristic).
     normative_sources:
-      - file: docs/spec/wardline-01-07-pattern-rules.md
+      - file: docs/spec/wardline-01-08-pattern-rules.md
         section: "7.6 Taint analysis scope"
-      - file: docs/spec/wardline-01-07-pattern-rules.md
+      - file: docs/spec/wardline-01-08-pattern-rules.md
         section: "7.6.1 Implicit-flow evasion heuristic"
     verification:
       method: code_review_and_unit_tests
@@ -333,7 +333,7 @@ requirements:
       SHOULD validate dependency_taint entries against import resolution at
       scan time.
     normative_sources:
-      - file: docs/spec/wardline-01-05-authority-tier-enforcement-spec.md
+      - file: docs/spec/wardline-01-06-authority-tier-enforcement-spec.md
         section: "5.5 Third-party in-process dependency taint"
     verification:
       method: unit_tests
@@ -357,11 +357,11 @@ requirements:
       states (framework invariant). Functions whose Group 1 data source is not
       manifest-declared as a serialization boundary are not subject to WL-009.
     normative_sources:
-      - file: docs/spec/wardline-01-07-pattern-rules.md
+      - file: docs/spec/wardline-01-08-pattern-rules.md
         section: "7.1 The rules"
-      - file: docs/spec/wardline-01-07-pattern-rules.md
+      - file: docs/spec/wardline-01-08-pattern-rules.md
         section: "7.2 Structural verification"
-      - file: docs/spec/wardline-01-07-pattern-rules.md
+      - file: docs/spec/wardline-01-08-pattern-rules.md
         section: "7.3 Severity and exceptionability matrix"
     verification:
       method: unit_tests_and_design_review
@@ -394,9 +394,9 @@ requirements:
       The §7.3 narrowing constraint then applies to that sub-rule's own
       documented matrix row, not relative to the parent framework rule's row.
     normative_sources:
-      - file: docs/spec/wardline-01-07-pattern-rules.md
+      - file: docs/spec/wardline-01-08-pattern-rules.md
         section: "7.1 The rules"
-      - file: docs/spec/wardline-01-07-pattern-rules.md
+      - file: docs/spec/wardline-01-08-pattern-rules.md
         section: "7.3 Severity and exceptionability matrix"
     verification:
       method: static_review_and_unit_tests

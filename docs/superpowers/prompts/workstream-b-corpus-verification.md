@@ -6,7 +6,7 @@
 
 **Branch:** `phase-4.4-test-quality-gates`
 **Conformance review:** `docs/requirements/spec-fitness/conformance-review-2026-04-09.md`
-**Spec authority:** `docs/spec/wardline-01-10-verification-properties.md`
+**Spec authority:** `docs/spec/wardline-01-11-verification-properties.md`
 
 ---
 
@@ -28,7 +28,7 @@ false pattern rather than the actual violation.
 
 ---
 
-## 2. Normative Requirements (from §10)
+## 2. Normative Requirements (from §11)
 
 ### 2.1 Structured `expected_match`
 
@@ -46,7 +46,7 @@ For true_negative and known_false_negative specimens, `expected_match` remains
 
 ### 2.2 SARIF Snippet in Region
 
-The spec (§10.1) shows that SARIF results must include snippet text in the
+The spec (§11.1) shows that SARIF results must include snippet text in the
 region:
 
 ```json
@@ -64,7 +64,7 @@ region's `snippet.text` where the spec expects it.
 
 ### 2.3 Verification Comparison
 
-The spec states (§10, line 44):
+The spec states (§11, line 44):
 
 > "Verification compares these fields against the SARIF result's
 > `locations[0].physicalLocation.region.startLine`,

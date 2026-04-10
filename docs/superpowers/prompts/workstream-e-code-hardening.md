@@ -36,7 +36,7 @@ Both are exercised transitively through CLI tests but their individual behaviors
 
 ### 2.2 Explicit Assert Exclusion (R12)
 
-The spec §7.2 states:
+The spec §8.2 states:
 
 > "The following do NOT constitute rejection paths: An assertion statement
 > (`assert` in Python, Java `assert`) — assertions may be disabled at runtime
@@ -133,7 +133,7 @@ def _has_rejection_path(node: ...) -> bool:
         ...
 ```
 
-Docstring mentions spec §7.2 for unreachable branches but NOT for assert
+Docstring mentions spec §8.2 for unreachable branches but NOT for assert
 exclusion.
 
 **Existing test:** `tests/unit/scanner/test_py_wl_008.py:146-155` —
@@ -175,7 +175,7 @@ def _branch_has_rejection_terminator(stmts: list[ast.stmt]) -> bool:
 
     ``ast.Assert`` is deliberately excluded — assertions may be disabled
     at runtime (``python -O``) and do not provide a reliable rejection
-    mechanism in production (spec §7.2).
+    mechanism in production (spec §8.2).
     """
     for stmt in stmts:
         for node in walk_skip_nested_defs(stmt):
@@ -183,7 +183,7 @@ def _branch_has_rejection_terminator(stmts: list[ast.stmt]) -> bool:
                 return True
             if isinstance(node, ast.Return):
                 return True
-            # ast.Assert deliberately excluded — see docstring and spec §7.2.
+            # ast.Assert deliberately excluded — see docstring and spec §8.2.
     return False
 ```
 
@@ -195,11 +195,11 @@ def _has_rejection_path(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     """Return True when the boundary body contains a structural rejection path.
 
     A raise inside a trivially unreachable branch (``if False:``, ``if 0:``)
-    is not counted as a rejection path per spec §7.2.
+    is not counted as a rejection path per spec §8.2.
 
     ``ast.Assert`` is deliberately excluded — assertions may be disabled
     at runtime (``python -O``) and are not a reliable rejection mechanism
-    (spec §7.2).
+    (spec §8.2).
     """
 ```
 
@@ -209,7 +209,7 @@ existing test file for rejection paths):
 
 ```python
 def test_assert_not_counted_as_rejection_path() -> None:
-    """Assert statements are NOT rejection paths (spec §7.2).
+    """Assert statements are NOT rejection paths (spec §8.2).
 
     Assertions can be disabled with python -O, so they do not provide
     a reliable rejection mechanism in production.
@@ -251,7 +251,7 @@ def validate(data):
 tests this at the rule level. The new tests verify it at the rejection-path
 analysis level — defense in depth.
 
-**Commit:** `fix(R12): document assert exclusion in rejection path analysis (spec §7.2)`
+**Commit:** `fix(R12): document assert exclusion in rejection path analysis (spec §8.2)`
 
 ### 4.3 R11: Dedicated Tests for `resolve.py`
 
@@ -553,7 +553,7 @@ patterns already established.
 | `tests/unit/manifest/test_resolve.py` | Extend with 2 new test classes |
 | `tests/unit/manifest/test_regime.py` | Extend with edge case tests |
 | `tests/unit/scanner/test_py_wl_008.py:146-155` | Existing assert test (rule level) |
-| `docs/spec/wardline-01-07-pattern-rules.md:42-44` | Normative assert exclusion |
+| `docs/spec/wardline-01-08-pattern-rules.md:42-44` | Normative assert exclusion |
 
 ---
 
@@ -571,7 +571,7 @@ patterns already established.
 
 3 commits:
 
-1. `fix(R12): document assert exclusion in rejection path analysis (spec §7.2)`
+1. `fix(R12): document assert exclusion in rejection path analysis (spec §8.2)`
 2. `fix(R11): add dedicated tests for resolve_optional_fields and resolve_contract_bindings`
 3. `fix(R11): deepen regime.py unit tests — edge cases and error handling`
 

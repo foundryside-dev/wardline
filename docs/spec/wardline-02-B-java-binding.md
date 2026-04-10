@@ -1,6 +1,6 @@
 ### Part II-B: Java Language Binding Reference
 
-> **⚠ Binding version notice.** This binding was last updated against the framework specification v0.2.0. The framework specification v0.3.0 added WL-009 (restoration symmetry), updated the severity matrix from 8 to 9 framework rules, added a non-normative deep-immutability note to §8, and updated conformance criterion 3 to include WL-009. This binding does not yet reflect these changes. In particular:
+> **⚠ Binding version notice.** This binding was last updated against the framework specification v0.2.0. The framework specification v0.3.0 added WL-009 (restoration symmetry), updated the severity matrix from 8 to 9 framework rules, added a non-normative deep-immutability note to §9, and updated conformance criterion 3 to include WL-009. This binding does not yet reflect these changes. In particular:
 >
 > - WL-009 has no Java binding mapping (the Python binding maps it to PY-WL-010).
 > - The conformance criterion table (B.3/B.6) does not include WL-009 in the structural verification row.
@@ -9,7 +9,7 @@
 >
 > These updates will be applied in a future revision.
 
-This section defines the Java language binding for the Wardline classification framework. It maps the 17 abstract annotation groups (Part I §6) to concrete Java annotations, defines the interface contract for conformant scanners, and documents the residual risks specific to Java's language and ecosystem characteristics.
+This section defines the Java language binding for the Wardline classification framework. It maps the 17 abstract annotation groups (Part I §7) to concrete Java annotations, defines the interface contract for conformant scanners, and documents the residual risks specific to Java's language and ecosystem characteristics.
 
 **Normative status.** Section B.3 (interface contract) is normative. All other sections are non-normative — they provide design rationale, implementation guidance, and assessment material.
 
@@ -33,7 +33,7 @@ The Java binding is the second wardline language binding, developed after the Py
 
 #### B.2 Java language evaluation
 
-The parent specification (§11) defines language evaluation criteria for wardline bindings. This section assesses Java against those criteria, modelling how future binding authors should evaluate their target language.
+The parent specification (§12) defines language evaluation criteria for wardline bindings. This section assesses Java against those criteria, modelling how future binding authors should evaluate their target language.
 
 | Criterion | Assessment | Detail |
 |-----------|------------|--------|
@@ -90,7 +90,7 @@ Any tool that implements Wardline-Core rules for the Java regime MUST satisfy th
 
 3. **Schema default recognition.** The tool MUST recognise `SchemaDefault.of()` as a JV-WL-001 suppression marker. Calls wrapped in `SchemaDefault.of()` where the default value matches the overlay's declared approved default are governed by the overlay declaration, not by JV-WL-001.
 
-4. **SARIF output.** The tool MUST produce findings in SARIF v2.1.0 with the wardline-specific property bags defined in the parent specification (§10.1).
+4. **SARIF output.** The tool MUST produce findings in SARIF v2.1.0 with the wardline-specific property bags defined in the parent specification (§11.1).
 
 5. **Rule declaration.** The tool MUST declare which rules it implements and MUST maintain golden corpus specimens for those rules.
 
@@ -139,7 +139,7 @@ Meta-annotation composition is Java's native mechanism for annotation reuse and 
 
 ##### B.4.3 Annotation mapping table
 
-The following table maps each of the 17 abstract annotation groups (Part I §6) to their concrete Java annotations. In SARIF and other cross-binding interchange, annotation context is identified by Part I group numbers (`wardline.annotationGroups`), while Java annotation names remain binding-specific diagnostic detail.
+The following table maps each of the 17 abstract annotation groups (Part I §7) to their concrete Java annotations. In SARIF and other cross-binding interchange, annotation context is identified by Part I group numbers (`wardline.annotationGroups`), while Java annotation names remain binding-specific diagnostic detail.
 
 | Group | Abstract Name | Java Annotation(s) | Signature / Parameters | Brief Description |
 |---|---|---|---|---|
@@ -184,7 +184,7 @@ The following table maps each of the 17 abstract annotation groups (Part I §6) 
 | | | `@FeatureGated(flag)` | `@Target(METHOD)`, `String flag` | Tracks flag lifecycle and stale flag detection |
 | **16** | Generic trust boundary | `@TrustBoundary(fromTier, toTier)` | `@Target(METHOD)`, `int fromTier`, `int toTier` | Generic tier transition. Valid tiers 1–4. Skip-promotions to T1 are schema-invalid |
 | | | `@DataFlow(consumes, produces)` | `@Target(METHOD)`, `int consumes`, `int produces` | Descriptive only — no enforcement |
-| **17** | Restoration boundaries | `@RestorationBoundary(...)` | `@Target(METHOD)`, `int restoredTier`, `String institutionalProvenance`, `boolean structuralEvidence`, `boolean semanticEvidence`, `IntegrityMethod integrityEvidence` | Restores serialised internal data to declared tier. Evidence-to-tier mapping per §5.3 |
+| **17** | Restoration boundaries | `@RestorationBoundary(...)` | `@Target(METHOD)`, `int restoredTier`, `String institutionalProvenance`, `boolean structuralEvidence`, `boolean semanticEvidence`, `IntegrityMethod integrityEvidence` | Restores serialised internal data to declared tier. Evidence-to-tier mapping per §6.3 |
 
 ##### B.4.4 Non-obvious design rationale
 
@@ -298,7 +298,7 @@ In the Python regime, advisory feedback (ruff) requires a separate pre-commit st
 
 #### B.7 Residual risks
 
-The following residual risks are specific to the Java language binding. The parent specification (§12) documents binding-independent residual risks — particularly risk 12 (evasion surface trajectory), which applies to both bindings: as annotation coverage grows, coding-level risk falls but governance risk rises.
+The following residual risks are specific to the Java language binding. The parent specification (§13) documents binding-independent residual risks — particularly risk 12 (evasion surface trajectory), which applies to both bindings: as annotation coverage grows, coding-level risk falls but governance risk rises.
 
 **Scope clarification: tiers are not security classifications.** The wardline's four-tier authority model classifies data by provenance and validation status. It does NOT classify data by PSPF security classification. Assessors SHOULD NOT equate "Tier 1" with "SECRET" or "Tier 4" with "OFFICIAL" — the dimensions are orthogonal.
 
@@ -609,11 +609,11 @@ Each line is a tier transition. Each method has one annotation declaring one tra
 }
 ```
 
-The mandatory property bags (`wardline.rule`, `wardline.taintState`, `wardline.enclosingTier`, `wardline.severity`, `wardline.exceptionability`, `wardline.excepted`, `wardline.annotationGroups`) follow the parent specification's SARIF contract (Part I §10.1). The additional properties (`wardline.enclosingAnnotation`, `wardline.boundaryFunction`) are binding-specific extensions that provide Java-specific diagnostic context — they are not required by the interface contract but are recommended for implementers.
+The mandatory property bags (`wardline.rule`, `wardline.taintState`, `wardline.enclosingTier`, `wardline.severity`, `wardline.exceptionability`, `wardline.excepted`, `wardline.annotationGroups`) follow the parent specification's SARIF contract (Part I §11.1). The additional properties (`wardline.enclosingAnnotation`, `wardline.boundaryFunction`) are binding-specific extensions that provide Java-specific diagnostic context — they are not required by the interface contract but are recommended for implementers.
 
 **Agent guidance note.** For agents working in wardline-annotated Java codebases, the scanner finding-to-remediation mapping in the original §60.9 provides specific actions for each JV-WL rule. Key patterns: replace `.orElse(default)` with `.orElseThrow()` for JV-WL-001; narrow `catch (Exception e)` to specific types for JV-WL-003; add rejection paths for JV-WL-007; verify validation ordering for JV-WL-008. Multi-agent workflows are expected to treat wardline annotations and governance artefacts as requiring the same human review as single-agent output.
 
-**Annotation change impact preview.** Java binding implementations SHOULD support annotation change impact preview using the SARIF metadata defined in Part I §10.1. When a developer modifies a tier assignment or annotation — e.g., adding `@ValidatesExternal` to replace a `@ValidatesShape` + `@ValidatesSemantic` pair, or changing a module's tier declaration in the manifest — the tool shows the cascade: newly applicable pattern rules, resolved findings, severity changes, and affected modules. The primary span is the changed annotation; secondary spans (carried in SARIF `relatedLocations`) are code locations whose compliance status changes. Because Error Prone fires during `javac`, Phase 2 advisory implementations MAY surface a simplified cascade view at compile time; the full SARIF-based impact preview is a Phase 3 (Wardline-Core) capability.
+**Annotation change impact preview.** Java binding implementations SHOULD support annotation change impact preview using the SARIF metadata defined in Part I §11.1. When a developer modifies a tier assignment or annotation — e.g., adding `@ValidatesExternal` to replace a `@ValidatesShape` + `@ValidatesSemantic` pair, or changing a module's tier declaration in the manifest — the tool shows the cascade: newly applicable pattern rules, resolved findings, severity changes, and affected modules. The primary span is the changed annotation; secondary spans (carried in SARIF `relatedLocations`) are code locations whose compliance status changes. Because Error Prone fires during `javac`, Phase 2 advisory implementations MAY surface a simplified cascade view at compile time; the full SARIF-based impact preview is a Phase 3 (Wardline-Core) capability.
 
 ---
 

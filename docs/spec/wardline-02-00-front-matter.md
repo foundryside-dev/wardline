@@ -1,6 +1,6 @@
 ## Part II — Language Binding Reference
 
-This part provides compressed binding references for each language the Wardline framework currently targets. Each binding maps the framework's 17 abstract annotation groups (Part I §6) to concrete language mechanisms, defines the interface contract for conformant scanners, and documents language-specific residual risks.
+This part provides compressed binding references for each language the Wardline framework currently targets. Each binding maps the framework's 17 abstract annotation groups (Part I §7) to concrete language mechanisms, defines the interface contract for conformant scanners, and documents language-specific residual risks.
 
 **Normative status.** This part uses per-section normative markers. Interface contract sections (A.3, B.3) are normative — they define the boundary between the specification and any implementation. All other sections (mapping tables, regime matrices, worked examples, design rationale, residual risks) are non-normative — they provide implementation guidance and assessment material.
 
@@ -11,7 +11,7 @@ This part provides compressed binding references for each language the Wardline 
 - **A. Python** — targets Python 3.12+. Uses decorator-based annotation, `typing.Annotated` for type-system enforcement, and descriptors for runtime structural enforcement. *Updated to framework v0.3.0.*
 - **B. Java** — targets Java 17+. Uses annotation-based vocabulary with meta-annotation composition, Checker Framework pluggable types for type-system enforcement, and sealed classes with records for runtime structural enforcement. *Not yet updated to framework v0.3.0 — see binding version notice in B.1.*
 
-**Future bindings** (not yet specified): C#, Go, Rust. The candidate language list and per-language evaluation rationale are in Part I §15. The evaluation criteria in Part I §11 define how to assess a new target language.
+**Future bindings** (not yet specified): C#, Go, Rust. The candidate language list and per-language evaluation rationale are in Part I §1. The evaluation criteria in Part I §12 define how to assess a new target language.
 
 **Companion documents** (not part of this specification):
 

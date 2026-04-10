@@ -8,7 +8,7 @@ requirements:
       reviewer approval RECOMMENDED), and TRANSPARENT (corresponds to SUPPRESS
       cells — no governance required).
     normative_sources:
-      - file: docs/spec/wardline-01-09-governance-model.md
+      - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.1 Exceptionability classes"
     verification:
       method: model_and_scanner_tests
@@ -30,7 +30,7 @@ requirements:
       ensures that wardline findings are resolved before code enters the
       mainline.
     normative_sources:
-      - file: docs/spec/wardline-01-09-governance-model.md
+      - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.2 Governance mechanisms"
     verification:
       method: repository_configuration_review
@@ -49,7 +49,7 @@ requirements:
       tier assignments, and boundary declarations — not over the raw source
       text. The requirement for canonicalisation is a framework invariant.
     normative_sources:
-      - file: docs/spec/wardline-01-09-governance-model.md
+      - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.2 Governance mechanisms"
     verification:
       method: unit_tests
@@ -68,7 +68,7 @@ requirements:
       ratio of annotated functions to total functions, with specific
       enumeration of unannotated functions in Tier 1 modules.
     normative_sources:
-      - file: docs/spec/wardline-01-09-governance-model.md
+      - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.2 Governance mechanisms"
     verification:
       method: cli_and_unit_tests
@@ -91,7 +91,7 @@ requirements:
       modification, control-law transition, retrospective scan completed,
       and phase change.
     normative_sources:
-      - file: docs/spec/wardline-01-09-governance-model.md
+      - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.2.1 Governance audit logging"
     verification:
       method: sarif_and_cli_review
@@ -112,7 +112,7 @@ requirements:
       MUST be flagged as a recurrence event. A second or subsequent renewal
       MUST trigger automatic governance escalation.
     normative_sources:
-      - file: docs/spec/wardline-01-09-governance-model.md
+      - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.4 Governance capacity"
     verification:
       method: model_and_unit_tests
@@ -135,9 +135,9 @@ requirements:
       declare a threshold in the root manifest and produce a governance-level
       finding when exceeded. Under Lite, the ratio is RECOMMENDED.
     normative_sources:
-      - file: docs/spec/wardline-01-09-governance-model.md
+      - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.4 Governance capacity"
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.3.2 Governance profiles"
     verification:
       method: sarif_and_manifest_review
@@ -159,7 +159,7 @@ requirements:
       unavailable — governance incident). SARIF output MUST report the
       current control-law state.
     normative_sources:
-      - file: docs/spec/wardline-01-09-governance-model.md
+      - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.5 Enforcement availability (control law)"
     verification:
       method: cli_and_sarif_tests
@@ -182,7 +182,7 @@ requirements:
       the degraded window. SARIF output reports retrospective scans via
       wardline.retroactiveScan.
     normative_sources:
-      - file: docs/spec/wardline-01-09-governance-model.md
+      - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.5 Enforcement availability (control law)"
     verification:
       method: cli_and_sarif_review
@@ -201,7 +201,7 @@ requirements:
       modification to prevent policy changes occurring during enforcement
       unavailability.
     normative_sources:
-      - file: docs/spec/wardline-01-09-governance-model.md
+      - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.5 Enforcement availability (control law)"
     verification:
       method: process_and_configuration_review
@@ -226,7 +226,7 @@ requirements:
       new dependency taint above UNKNOWN_RAW, and dependency taint finding
       suppression.
     normative_sources:
-      - file: docs/spec/wardline-01-09-governance-model.md
+      - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.3.2 Manifest threat model"
     verification:
       method: scanner_and_sarif_review
@@ -248,7 +248,7 @@ requirements:
       does not occur within a defined grace period, the exception lapses
       and the underlying finding reverts to its default severity.
     normative_sources:
-      - file: docs/spec/wardline-01-09-governance-model.md
+      - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.4 Governance capacity"
     verification:
       method: model_and_unit_tests
@@ -272,7 +272,7 @@ requirements:
       thresholds, tool configuration) for governance purposes. Fingerprint
       baseline diffs SHOULD present these as distinct categories.
     normative_sources:
-      - file: docs/spec/wardline-01-09-governance-model.md
+      - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.3.1 Artefact classification: policy and enforcement"
     verification:
       method: design_review
@@ -294,7 +294,7 @@ requirements:
       supplementary findings as STANDARD by default, unless explicitly
       designating specific findings as UNCONDITIONAL.
     normative_sources:
-      - file: docs/spec/wardline-01-09-governance-model.md
+      - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.3 Scope of governance"
     verification:
       method: code_review
@@ -314,7 +314,7 @@ requirements:
       accreditation period. For ISM-assessed systems, this is typically
       3 years from the last IRAP assessment.
     normative_sources:
-      - file: docs/spec/wardline-01-09-governance-model.md
+      - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.2.1 Governance audit logging"
     verification:
       method: documentation_review
@@ -334,7 +334,7 @@ requirements:
       institutional authority for the escalation. "We trust this because we
       always have" is not sufficient rationale.
     normative_sources:
-      - file: docs/spec/wardline-01-09-governance-model.md
+      - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.2 Governance mechanisms"
     verification:
       method: manifest_and_model_review

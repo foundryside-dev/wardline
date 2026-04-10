@@ -11,7 +11,7 @@ requirements:
       (10) manifest system with schema validation. Criteria may be
       collectively satisfied by an enforcement regime of multiple tools.
     normative_sources:
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.2 Conformance criteria"
     verification:
       method: documentation_and_integration_review
@@ -35,7 +35,7 @@ requirements:
       Wardline-Governance, or Wardline-Full. A Wardline-Core tool's
       documentation MUST declare which rules it implements.
     normative_sources:
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.3.1 Enforcement profiles"
     verification:
       method: documentation_and_sarif_review
@@ -57,7 +57,7 @@ requirements:
       A Lite deployment is assessed against the Lite governance checklist;
       an Assurance deployment against the full §9 governance surface.
     normative_sources:
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.3.2 Governance profiles"
     verification:
       method: manifest_and_sarif_review
@@ -79,7 +79,7 @@ requirements:
       regime composition is documented in the language binding reference.
       The regime's corpus is the union of all constituent tools' corpora.
     normative_sources:
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.4 Enforcement regimes"
     verification:
       method: documentation_review
@@ -98,7 +98,7 @@ requirements:
       expressiveness-only. The overlay supplementary section provides the
       structured location for this documentation.
     normative_sources:
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.5 Supplementary group enforcement scope"
     verification:
       method: documentation_review
@@ -121,7 +121,7 @@ requirements:
       verification, (5) governance artefact review, and (6) self-hosting
       verification.
     normative_sources:
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.6 Assessment procedure"
     verification:
       method: integration_tests_and_cli_review
@@ -145,7 +145,7 @@ requirements:
       (4) expedited ratio threshold declared, and (5) retrospective review of
       Lite-era exceptions.
     normative_sources:
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.3.3 Governance profile graduation"
     verification:
       method: manifest_and_cli_review
@@ -169,9 +169,9 @@ requirements:
       Measurement and publication obligations are non-negotiable regardless
       of threshold.
     normative_sources:
-      - file: docs/spec/wardline-01-10-verification-properties.md
+      - file: docs/spec/wardline-01-11-verification-properties.md
         section: "10. Verification properties"
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.6 Assessment procedure"
     verification:
       method: corpus_and_cli_tests
@@ -196,7 +196,7 @@ requirements:
       SARIF aggregation (multi-run SARIF log), and per-tool self-hosting
       where applicable.
     normative_sources:
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.4 Enforcement regimes"
     verification:
       method: documentation_review
@@ -220,7 +220,7 @@ requirements:
       specimens correctly classified, (7) expedited exceptions documented
       with retrospective review.
     normative_sources:
-      - file: docs/spec/wardline-01-14-conformance.md
+      - file: docs/spec/wardline-01-15-conformance.md
         section: "14.3.2 Governance profiles"
     verification:
       method: repository_and_manifest_review

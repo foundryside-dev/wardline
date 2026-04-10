@@ -57,4 +57,4 @@ zone. Patterns that are dangerous in high-trust code are expected at the boundar
 - [Rule Quick Reference](rules.md) — what each rule detects
 - [Taint State Reference](taint-states.md) — what each column means
 - [Governance Walkthrough](../guides/governance.md) — how exceptions work
-- [Spec §7.3: Severity Matrix](../spec/wardline-01-07-pattern-rules.md) — normative definition
+- [Spec §8.3: Severity Matrix](../spec/wardline-01-08-pattern-rules.md) — normative definition
