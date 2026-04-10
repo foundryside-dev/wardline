@@ -2,12 +2,12 @@
 specimen_id: PY-WL-005-TN-MIXED_RAW
 description: PY-WL-005 true negative at MIXED_RAW
 rule: PY-WL-005
-fragment: "def process():\n    try:\n        pass\n    except ValueError:\n      \
-  \  pass\n"
+fragment: "def silent_specific_mixed_source():\n    try:\n        pass\n    except\
+  \ ValueError:\n        pass\n"
 taint_state: MIXED_RAW
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 2fc262ee2b3d7c221393e6d7cbb220b7a176122a5859e1fb37268fe92c11cd5c
+sha256: e100a82bd97f1f1df794a50514d876b33d42f4763d43046f362fab326c79008b
 verdict: true_negative

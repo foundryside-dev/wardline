@@ -2,12 +2,13 @@
 specimen_id: PY-WL-001-TP-UNKNOWN_GUARDED
 description: PY-WL-001 true_positive at UNKNOWN_GUARDED
 rule: PY-WL-001
-fragment: "def process(data):\n    x = data.get(\"key\", \"default\")\n"
+fragment: "def dict_default_cached_profile(cached_profile):\n    x = cached_profile.get(\"\
+  key\", \"default\")\n"
 taint_state: UNKNOWN_GUARDED
 expected_rules:
 - PY-WL-001
 expected_severity: WARNING
 expected_exceptionability: RELAXED
 expected_match: true
-sha256: fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5
+sha256: ec218f03c4bf40c1fe20ef6ce1b0f5049ea1ad591505e7178f6a3f7f85c773e4
 verdict: true_positive

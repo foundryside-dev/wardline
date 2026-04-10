@@ -2,12 +2,13 @@
 specimen_id: PY-WL-002-TP-UNKNOWN_ASSURED
 description: PY-WL-002 true_positive at UNKNOWN_ASSURED
 rule: PY-WL-002
-fragment: "def process(obj):\n    x = getattr(obj, \"name\", None)\n"
+fragment: "def getattr_default_claimed_token(claimed_token):\n    x = getattr(claimed_token,\
+  \ \"name\", None)\n"
 taint_state: UNKNOWN_ASSURED
 expected_rules:
 - PY-WL-002
 expected_severity: ERROR
 expected_exceptionability: STANDARD
 expected_match: true
-sha256: 81262cfdd145242d53158977787ca82583cf2df86bf100658db8414c1296cfda
+sha256: 99b265c60ef4a524d65915ddd4080cb7cb624b789cb32eb3beb22d26152b21c0
 verdict: true_positive

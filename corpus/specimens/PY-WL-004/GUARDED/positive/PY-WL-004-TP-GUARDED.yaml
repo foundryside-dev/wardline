@@ -2,13 +2,13 @@
 specimen_id: PY-WL-004-TP-GUARDED
 description: PY-WL-004 true_positive at GUARDED
 rule: PY-WL-004
-fragment: "def process():\n    try:\n        pass\n    except Exception:\n       \
-  \ handle()\n"
+fragment: "def broad_except_session_data():\n    try:\n        pass\n    except Exception:\n\
+  \        handle()\n"
 taint_state: GUARDED
 expected_rules:
 - PY-WL-004
 expected_severity: WARNING
 expected_exceptionability: STANDARD
 expected_match: true
-sha256: 61d84dbf8ccbbf76d1dc0de480c9b92a5ec4f521b8917dde80eda895db1ba2b2
+sha256: 4523a73f5cd86cf4c5a2226ecc5c870110411b6df3c73df6436fbaafa8994f79
 verdict: true_positive

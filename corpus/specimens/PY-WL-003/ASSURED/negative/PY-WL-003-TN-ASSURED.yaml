@@ -2,11 +2,12 @@
 specimen_id: PY-WL-003-TN-ASSURED
 description: PY-WL-003 true negative at ASSURED
 rule: PY-WL-003
-fragment: "def process(data):\n    x = data[\"key\"]\n"
+fragment: "def direct_access_verified_payload(verified_payload):\n    x = verified_payload[\"\
+  key\"]\n"
 taint_state: ASSURED
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: a1b2cd704802a9e44b5424b692522a07b85a5f78745f41b1af0af21881110b52
+sha256: 994e5b1503bfd50c3332219071ddf501f1155b3bf452ad2bd4c319147248b6d4
 verdict: true_negative

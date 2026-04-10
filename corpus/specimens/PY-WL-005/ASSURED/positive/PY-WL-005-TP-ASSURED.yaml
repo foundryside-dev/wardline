@@ -2,13 +2,13 @@
 specimen_id: PY-WL-005-TP-ASSURED
 description: PY-WL-005 true_positive at ASSURED
 rule: PY-WL-005
-fragment: "def process():\n    try:\n        pass\n    except Exception:\n       \
-  \ pass\n"
+fragment: "def silent_except_verified_payload():\n    try:\n        pass\n    except\
+  \ Exception:\n        pass\n"
 taint_state: ASSURED
 expected_rules:
 - PY-WL-005
 expected_severity: ERROR
 expected_exceptionability: STANDARD
 expected_match: true
-sha256: f45f081293981a52107c95479cbc55aee5b545b62f7fa64d173723e8427ff314
+sha256: 9b23ec4dca842403a4076434b6da694fe4d97bfa81ea372c0401a19b8fd6f828
 verdict: true_positive

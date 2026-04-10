@@ -1,4 +1,4 @@
-def process():
+def audit_specific_cached_profile():
     try:
         risky()
     except ValueError:

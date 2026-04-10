@@ -1,4 +1,4 @@
-def process():
+def audit_specific_system_config():
     try:
         risky()
     except ValueError:

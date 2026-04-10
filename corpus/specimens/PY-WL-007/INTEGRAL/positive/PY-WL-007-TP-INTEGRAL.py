@@ -1,3 +1,3 @@
-def process(data):
-    if isinstance(data, dict):
+def isinstance_check_system_config(sys_config):
+    if isinstance(sys_config, dict):
         pass

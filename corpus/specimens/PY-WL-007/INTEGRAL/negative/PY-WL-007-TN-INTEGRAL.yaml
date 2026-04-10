@@ -2,11 +2,11 @@
 specimen_id: PY-WL-007-TN-INTEGRAL
 description: PY-WL-007 true negative at INTEGRAL
 rule: PY-WL-007
-fragment: "def process(data):\n    x = len(data)\n"
+fragment: "def no_typecheck_system_config(sys_config):\n    x = len(sys_config)\n"
 taint_state: INTEGRAL
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: bfe3c42c6a2fe5b9291ae1b5b966708e45229eddb6376e10f7093e639ff63b7c
+sha256: 069e20703cec21eb8ec17c5c4ae0b8ee1afa06f24d62da63a38663d2fc682bcf
 verdict: true_negative

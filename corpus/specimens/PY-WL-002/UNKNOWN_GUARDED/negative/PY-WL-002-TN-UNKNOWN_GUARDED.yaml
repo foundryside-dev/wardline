@@ -2,11 +2,12 @@
 specimen_id: PY-WL-002-TN-UNKNOWN_GUARDED
 description: PY-WL-002 true negative at UNKNOWN_GUARDED
 rule: PY-WL-002
-fragment: "def process(obj):\n    x = getattr(obj, \"name\")\n"
+fragment: "def getattr_no_default_cached_profile(cached_profile):\n    x = getattr(cached_profile,\
+  \ \"name\")\n"
 taint_state: UNKNOWN_GUARDED
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 1970dc85fea70d8a183f420151271333aef99e01453c47c0ffa9ea39f2a4d738
+sha256: 0ffd2639dd529df9f300f5d670eab2b0c3cb82768a805dd48f698399a01a8810
 verdict: true_negative

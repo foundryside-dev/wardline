@@ -2,11 +2,12 @@
 specimen_id: PY-WL-003-TN-UNKNOWN_GUARDED
 description: PY-WL-003 true negative at UNKNOWN_GUARDED
 rule: PY-WL-003
-fragment: "def process(data):\n    x = data[\"key\"]\n"
+fragment: "def direct_access_cached_profile(cached_profile):\n    x = cached_profile[\"\
+  key\"]\n"
 taint_state: UNKNOWN_GUARDED
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: a1b2cd704802a9e44b5424b692522a07b85a5f78745f41b1af0af21881110b52
+sha256: 5cea5633a12b02db428c56644a1c6bde3c380ddfdd9c8896c1c04a71b8988eec
 verdict: true_negative

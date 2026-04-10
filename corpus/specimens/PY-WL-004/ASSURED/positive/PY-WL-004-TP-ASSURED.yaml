@@ -2,13 +2,13 @@
 specimen_id: PY-WL-004-TP-ASSURED
 description: PY-WL-004 true_positive at ASSURED
 rule: PY-WL-004
-fragment: "def process():\n    try:\n        pass\n    except Exception:\n       \
-  \ handle()\n"
+fragment: "def broad_except_verified_payload():\n    try:\n        pass\n    except\
+  \ Exception:\n        handle()\n"
 taint_state: ASSURED
 expected_rules:
 - PY-WL-004
 expected_severity: ERROR
 expected_exceptionability: STANDARD
 expected_match: true
-sha256: 61d84dbf8ccbbf76d1dc0de480c9b92a5ec4f521b8917dde80eda895db1ba2b2
+sha256: 0413abb327227a233a28f6cf585c801ed48a950c5b9ccb11d1da639581efc0ae
 verdict: true_positive

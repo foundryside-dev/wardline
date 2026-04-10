@@ -1,2 +1,2 @@
-def process(data):
-    x = data.get("key", "default")
+def dict_default_session_data(session_data):
+    x = session_data.get("key", "default")

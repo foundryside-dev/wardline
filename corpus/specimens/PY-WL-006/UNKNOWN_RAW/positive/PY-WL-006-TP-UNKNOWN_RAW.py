@@ -1,4 +1,4 @@
-def process():
+def audit_broad_unknown_input():
     try:
         risky()
     except Exception:

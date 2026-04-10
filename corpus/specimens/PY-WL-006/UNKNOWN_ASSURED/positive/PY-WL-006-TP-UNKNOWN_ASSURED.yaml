@@ -2,13 +2,13 @@
 specimen_id: PY-WL-006-TP-UNKNOWN_ASSURED
 description: PY-WL-006 true_positive at UNKNOWN_ASSURED
 rule: PY-WL-006
-fragment: "def process():\n    try:\n        risky()\n    except Exception:\n    \
-  \    logger.error(\"failed\")\n"
+fragment: "def audit_broad_claimed_token():\n    try:\n        risky()\n    except\
+  \ Exception:\n        logger.error(\"failed\")\n"
 taint_state: UNKNOWN_ASSURED
 expected_rules:
 - PY-WL-006
 expected_severity: ERROR
 expected_exceptionability: STANDARD
 expected_match: true
-sha256: c7eae2aef49a3d7b1b4dab451d1cd931556aabbae7fdf9aafb04b6c7bbe11f12
+sha256: a92098a466c6eb77bf4fb1f3b3b686508eb24f1b1282dc52bafc325af42818de
 verdict: true_positive

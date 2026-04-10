@@ -2,12 +2,12 @@
 specimen_id: PY-WL-005-TN-INTEGRAL
 description: PY-WL-005 true negative at INTEGRAL
 rule: PY-WL-005
-fragment: "def process():\n    try:\n        pass\n    except ValueError:\n      \
-  \  pass\n"
+fragment: "def silent_specific_system_config():\n    try:\n        pass\n    except\
+  \ ValueError:\n        pass\n"
 taint_state: INTEGRAL
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 2fc262ee2b3d7c221393e6d7cbb220b7a176122a5859e1fb37268fe92c11cd5c
+sha256: 88f964acf3327fe78753ce9e8170d6709e18d836f487dca3e6a8c8831a510cdb
 verdict: true_negative

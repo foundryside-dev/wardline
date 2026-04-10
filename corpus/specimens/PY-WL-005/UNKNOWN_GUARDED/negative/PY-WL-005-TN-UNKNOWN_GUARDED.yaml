@@ -2,12 +2,12 @@
 specimen_id: PY-WL-005-TN-UNKNOWN_GUARDED
 description: PY-WL-005 true negative at UNKNOWN_GUARDED
 rule: PY-WL-005
-fragment: "def process():\n    try:\n        pass\n    except ValueError:\n      \
-  \  pass\n"
+fragment: "def silent_specific_cached_profile():\n    try:\n        pass\n    except\
+  \ ValueError:\n        pass\n"
 taint_state: UNKNOWN_GUARDED
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 2fc262ee2b3d7c221393e6d7cbb220b7a176122a5859e1fb37268fe92c11cd5c
+sha256: 1f8c9675d22a223d461e22d1da423b783f2349bbaebed057b229d9a52769e154
 verdict: true_negative

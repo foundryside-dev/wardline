@@ -2,13 +2,13 @@
 specimen_id: PY-WL-005-TP-EXTERNAL_RAW
 description: PY-WL-005 true_positive at EXTERNAL_RAW
 rule: PY-WL-005
-fragment: "def process():\n    try:\n        pass\n    except Exception:\n       \
-  \ pass\n"
+fragment: "def silent_except_request_param():\n    try:\n        pass\n    except\
+  \ Exception:\n        pass\n"
 taint_state: EXTERNAL_RAW
 expected_rules:
 - PY-WL-005
 expected_severity: WARNING
 expected_exceptionability: RELAXED
 expected_match: true
-sha256: f45f081293981a52107c95479cbc55aee5b545b62f7fa64d173723e8427ff314
+sha256: fb4eb51cd255cf8214c47d6d4bf8e42b0b1ae003922424b6e3ce4cb3d8591e3e
 verdict: true_positive

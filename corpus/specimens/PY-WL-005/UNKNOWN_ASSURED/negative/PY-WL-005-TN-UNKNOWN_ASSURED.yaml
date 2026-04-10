@@ -2,12 +2,12 @@
 specimen_id: PY-WL-005-TN-UNKNOWN_ASSURED
 description: PY-WL-005 true negative at UNKNOWN_ASSURED
 rule: PY-WL-005
-fragment: "def process():\n    try:\n        pass\n    except ValueError:\n      \
-  \  pass\n"
+fragment: "def silent_specific_claimed_token():\n    try:\n        pass\n    except\
+  \ ValueError:\n        pass\n"
 taint_state: UNKNOWN_ASSURED
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 2fc262ee2b3d7c221393e6d7cbb220b7a176122a5859e1fb37268fe92c11cd5c
+sha256: 739a08c9df9de4158ac8f09f4b5caae100bf95d959057ef77584b48a7d668679
 verdict: true_negative

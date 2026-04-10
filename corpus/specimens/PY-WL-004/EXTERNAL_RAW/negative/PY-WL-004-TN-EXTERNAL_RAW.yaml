@@ -2,12 +2,12 @@
 specimen_id: PY-WL-004-TN-EXTERNAL_RAW
 description: PY-WL-004 true negative at EXTERNAL_RAW
 rule: PY-WL-004
-fragment: "def process():\n    try:\n        pass\n    except ValueError:\n      \
-  \  handle()\n"
+fragment: "def specific_except_request_param():\n    try:\n        pass\n    except\
+  \ ValueError:\n        handle()\n"
 taint_state: EXTERNAL_RAW
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 0e7f54f9f27c7a9a70b0d68bb0077043edbf1d86be9094ebfe3dceda5764f267
+sha256: 0611a40e4790e3beb95d38fced5c522903a536057279154edb106c0693e4214a
 verdict: true_negative

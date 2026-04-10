@@ -1,4 +1,4 @@
-def process():
+def audit_broad_system_config():
     try:
         risky()
     except Exception:

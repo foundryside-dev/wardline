@@ -2,11 +2,12 @@
 specimen_id: PY-WL-003-TP-ASSURED
 description: PY-WL-003 known_false_negative at ASSURED
 rule: PY-WL-003
-fragment: "def process(data):\n    if \"key\" in data:\n        pass\n"
+fragment: "def key_check_verified_payload(verified_payload):\n    if \"key\" in verified_payload:\n\
+  \        pass\n"
 taint_state: ASSURED
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 83658d70103eb68eea677c3b88ae80be30fda5fd76b89f1dba18e61b3409df44
+sha256: 1c23c978e85b86e7964e2437e0a54e5837bcc58be538443431292d08cebac4de
 verdict: known_false_negative

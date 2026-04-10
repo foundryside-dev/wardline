@@ -2,11 +2,12 @@
 specimen_id: PY-WL-003-TN-GUARDED
 description: PY-WL-003 true negative at GUARDED
 rule: PY-WL-003
-fragment: "def process(data):\n    x = data[\"key\"]\n"
+fragment: "def direct_access_session_data(session_data):\n    x = session_data[\"\
+  key\"]\n"
 taint_state: GUARDED
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: a1b2cd704802a9e44b5424b692522a07b85a5f78745f41b1af0af21881110b52
+sha256: 9cb6c45c5e7f0f827537ad2c193fa0b5684caa93419e8377d77aea7fbce6a0f1
 verdict: true_negative

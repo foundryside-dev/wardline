@@ -2,13 +2,13 @@
 specimen_id: PY-WL-006-TP-GUARDED
 description: PY-WL-006 true_positive at GUARDED
 rule: PY-WL-006
-fragment: "def process():\n    try:\n        risky()\n    except Exception:\n    \
-  \    logger.error(\"failed\")\n"
+fragment: "def audit_broad_session_data():\n    try:\n        risky()\n    except\
+  \ Exception:\n        logger.error(\"failed\")\n"
 taint_state: GUARDED
 expected_rules:
 - PY-WL-006
 expected_severity: ERROR
 expected_exceptionability: STANDARD
 expected_match: true
-sha256: c7eae2aef49a3d7b1b4dab451d1cd931556aabbae7fdf9aafb04b6c7bbe11f12
+sha256: d3747f278bb9903bf01c9a31a09331ccd35b1b34fd03f07ac752b58a78b440f2
 verdict: true_positive

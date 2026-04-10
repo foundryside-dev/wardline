@@ -2,13 +2,13 @@
 specimen_id: PY-WL-006-TP-MIXED_RAW
 description: PY-WL-006 true_positive at MIXED_RAW
 rule: PY-WL-006
-fragment: "def process():\n    try:\n        risky()\n    except Exception:\n    \
-  \    logger.error(\"failed\")\n"
+fragment: "def audit_broad_mixed_source():\n    try:\n        risky()\n    except\
+  \ Exception:\n        logger.error(\"failed\")\n"
 taint_state: MIXED_RAW
 expected_rules:
 - PY-WL-006
 expected_severity: ERROR
 expected_exceptionability: STANDARD
 expected_match: true
-sha256: c7eae2aef49a3d7b1b4dab451d1cd931556aabbae7fdf9aafb04b6c7bbe11f12
+sha256: 8cb66752c96d200fe113fe0a00e40258eaa5e5cb891673c464e58631a30df91a
 verdict: true_positive

@@ -1,12 +1,12 @@
 ---
-specimen_id: PY-WL-009-TN-UNKNOWN_RAW
-description: PY-WL-009 true negative at UNKNOWN_RAW
+specimen_id: PY-WL-009-TN-standard
+description: PY-WL-009 true negative at EXTERNAL_RAW
 rule: PY-WL-009
 fragment: "from wardline.decorators import validates_semantic\n\n@validates_semantic\n\
   def validate_order(data):\n    if not isinstance(data, dict):\n        raise TypeError(\"\
   expected dict\")\n    if data[\"amount\"] > 1000:\n        raise ValueError(\"amount\
   \ exceeds limit\")\n    return data\n"
-taint_state: UNKNOWN_RAW
+taint_state: EXTERNAL_RAW
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null

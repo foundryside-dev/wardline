@@ -2,11 +2,12 @@
 specimen_id: PY-WL-002-TN-MIXED_RAW
 description: PY-WL-002 true negative at MIXED_RAW
 rule: PY-WL-002
-fragment: "def process(obj):\n    x = getattr(obj, \"name\")\n"
+fragment: "def getattr_no_default_mixed_source(mixed_source):\n    x = getattr(mixed_source,\
+  \ \"name\")\n"
 taint_state: MIXED_RAW
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 1970dc85fea70d8a183f420151271333aef99e01453c47c0ffa9ea39f2a4d738
+sha256: b8783ddeb8e29b43671464b2328fc68d411e22a6dc4bc68a12d1d8d11ec96ed8
 verdict: true_negative

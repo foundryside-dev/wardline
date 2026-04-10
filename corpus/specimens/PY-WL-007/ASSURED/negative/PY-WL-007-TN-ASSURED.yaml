@@ -2,11 +2,11 @@
 specimen_id: PY-WL-007-TN-ASSURED
 description: PY-WL-007 true negative at ASSURED
 rule: PY-WL-007
-fragment: "def process(data):\n    x = len(data)\n"
+fragment: "def no_typecheck_verified_payload(verified_payload):\n    x = len(verified_payload)\n"
 taint_state: ASSURED
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: bfe3c42c6a2fe5b9291ae1b5b966708e45229eddb6376e10f7093e639ff63b7c
+sha256: ebd2ecc1f96ddec5e77a7a74e655bd2e6596b547f2326293e6e307c920bce2a9
 verdict: true_negative

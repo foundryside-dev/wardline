@@ -2,12 +2,12 @@
 specimen_id: PY-WL-004-TN-ASSURED
 description: PY-WL-004 true negative at ASSURED
 rule: PY-WL-004
-fragment: "def process():\n    try:\n        pass\n    except ValueError:\n      \
-  \  handle()\n"
+fragment: "def specific_except_verified_payload():\n    try:\n        pass\n    except\
+  \ ValueError:\n        handle()\n"
 taint_state: ASSURED
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 0e7f54f9f27c7a9a70b0d68bb0077043edbf1d86be9094ebfe3dceda5764f267
+sha256: 44f8186c24f4e95acdcae2ee0f81f6456b63e44dda1e3b028b0655a711bb6f40
 verdict: true_negative

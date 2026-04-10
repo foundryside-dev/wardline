@@ -2,11 +2,12 @@
 specimen_id: PY-WL-002-TN-GUARDED
 description: PY-WL-002 true negative at GUARDED
 rule: PY-WL-002
-fragment: "def process(obj):\n    x = getattr(obj, \"name\")\n"
+fragment: "def getattr_no_default_session_data(session_data):\n    x = getattr(session_data,\
+  \ \"name\")\n"
 taint_state: GUARDED
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 1970dc85fea70d8a183f420151271333aef99e01453c47c0ffa9ea39f2a4d738
+sha256: 825b04559844a43b7b189109cee337171f4a40030de7dd2c575e3097c3ed8127
 verdict: true_negative

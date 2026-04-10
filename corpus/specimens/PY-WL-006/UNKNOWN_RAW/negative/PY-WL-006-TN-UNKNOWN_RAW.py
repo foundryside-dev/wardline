@@ -1,4 +1,4 @@
-def process():
+def audit_specific_unknown_input():
     try:
         risky()
     except ValueError:

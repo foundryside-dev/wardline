@@ -2,13 +2,13 @@
 specimen_id: PY-WL-006-TP-ASSURED
 description: PY-WL-006 true_positive at ASSURED
 rule: PY-WL-006
-fragment: "def process():\n    try:\n        risky()\n    except Exception:\n    \
-  \    logger.error(\"failed\")\n"
+fragment: "def audit_broad_verified_payload():\n    try:\n        risky()\n    except\
+  \ Exception:\n        logger.error(\"failed\")\n"
 taint_state: ASSURED
 expected_rules:
 - PY-WL-006
 expected_severity: ERROR
 expected_exceptionability: UNCONDITIONAL
 expected_match: true
-sha256: c7eae2aef49a3d7b1b4dab451d1cd931556aabbae7fdf9aafb04b6c7bbe11f12
+sha256: 576f151b4b0fa7e03c2d317a6db284884d660a61dcbccf8c702c509697ee0cdd
 verdict: true_positive

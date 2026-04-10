@@ -2,11 +2,12 @@
 specimen_id: PY-WL-003-TP-GUARDED
 description: PY-WL-003 known_false_negative at GUARDED
 rule: PY-WL-003
-fragment: "def process(data):\n    if \"key\" in data:\n        pass\n"
+fragment: "def key_check_session_data(session_data):\n    if \"key\" in session_data:\n\
+  \        pass\n"
 taint_state: GUARDED
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 83658d70103eb68eea677c3b88ae80be30fda5fd76b89f1dba18e61b3409df44
+sha256: 74351f48fd5791e19742f6c12bbee7ebf666bb1003c692e6bda79a07752bd2a2
 verdict: known_false_negative

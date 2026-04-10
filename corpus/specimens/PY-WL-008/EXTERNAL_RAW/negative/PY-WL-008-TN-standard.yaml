@@ -1,5 +1,5 @@
 ---
-specimen_id: PY-WL-008-TN-EXTERNAL_RAW
+specimen_id: PY-WL-008-TN-standard
 description: PY-WL-008 true negative at EXTERNAL_RAW
 rule: PY-WL-008
 fragment: "def process(data):\n    result = validate(data)\n    if not result:\n \

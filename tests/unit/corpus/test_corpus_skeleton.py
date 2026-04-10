@@ -43,8 +43,10 @@ class TestCorpusSkeleton:
         # Check taint state subdirectories
         assert (rule_dir / "EXTERNAL_RAW" / "positive").is_dir()
         assert (rule_dir / "EXTERNAL_RAW" / "negative").is_dir()
-        assert (rule_dir / "UNKNOWN_RAW" / "positive").is_dir()
-        assert (rule_dir / "UNKNOWN_RAW" / "negative").is_dir()
+        # PY-WL-008/009 are taint-invariant — only EXTERNAL_RAW specimens exist
+        if rule not in {"PY-WL-008", "PY-WL-009"}:
+            assert (rule_dir / "UNKNOWN_RAW" / "positive").is_dir()
+            assert (rule_dir / "UNKNOWN_RAW" / "negative").is_dir()
 
     def test_specimen_validates_against_schema(self) -> None:
         jsonschema = pytest.importorskip("jsonschema")

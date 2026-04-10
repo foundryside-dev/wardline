@@ -2,12 +2,13 @@
 specimen_id: PY-WL-002-TP-ASSURED
 description: PY-WL-002 true_positive at ASSURED
 rule: PY-WL-002
-fragment: "def process(obj):\n    x = getattr(obj, \"name\", None)\n"
+fragment: "def getattr_default_verified_payload(verified_payload):\n    x = getattr(verified_payload,\
+  \ \"name\", None)\n"
 taint_state: ASSURED
 expected_rules:
 - PY-WL-002
 expected_severity: ERROR
 expected_exceptionability: STANDARD
 expected_match: true
-sha256: 81262cfdd145242d53158977787ca82583cf2df86bf100658db8414c1296cfda
+sha256: bf337ca4ff4f400de02243fdfb4b50b5b79f95580fd43ac6518527d422f2ad04
 verdict: true_positive

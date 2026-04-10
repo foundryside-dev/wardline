@@ -1,2 +1,2 @@
-def process(data):
-    x = data["key"]
+def direct_access_session_data(session_data):
+    x = session_data["key"]

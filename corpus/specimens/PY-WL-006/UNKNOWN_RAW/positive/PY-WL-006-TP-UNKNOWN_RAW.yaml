@@ -2,13 +2,13 @@
 specimen_id: PY-WL-006-TP-UNKNOWN_RAW
 description: PY-WL-006 true_positive at UNKNOWN_RAW
 rule: PY-WL-006
-fragment: "def process():\n    try:\n        risky()\n    except Exception:\n    \
-  \    logger.error(\"failed\")\n"
+fragment: "def audit_broad_unknown_input():\n    try:\n        risky()\n    except\
+  \ Exception:\n        logger.error(\"failed\")\n"
 taint_state: UNKNOWN_RAW
 expected_rules:
 - PY-WL-006
 expected_severity: ERROR
 expected_exceptionability: STANDARD
 expected_match: true
-sha256: c7eae2aef49a3d7b1b4dab451d1cd931556aabbae7fdf9aafb04b6c7bbe11f12
+sha256: 54a5763e511e20a16a9db6dd1e9497a3a13befaa8485b3af89fde0d49888a6e5
 verdict: true_positive

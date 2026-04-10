@@ -2,12 +2,13 @@
 specimen_id: PY-WL-002-TP-GUARDED
 description: PY-WL-002 true_positive at GUARDED
 rule: PY-WL-002
-fragment: "def process(obj):\n    x = getattr(obj, \"name\", None)\n"
+fragment: "def getattr_default_session_data(session_data):\n    x = getattr(session_data,\
+  \ \"name\", None)\n"
 taint_state: GUARDED
 expected_rules:
 - PY-WL-002
 expected_severity: WARNING
 expected_exceptionability: RELAXED
 expected_match: true
-sha256: 81262cfdd145242d53158977787ca82583cf2df86bf100658db8414c1296cfda
+sha256: f733b43ace071b7b6578163ea21aba3ee37b5dd04eb1b4ccd6e257208cbd2b3f
 verdict: true_positive

@@ -1,4 +1,4 @@
-def process():
+def audit_specific_mixed_source():
     try:
         risky()
     except ValueError:

@@ -2,12 +2,12 @@
 specimen_id: PY-WL-004-TN-GUARDED
 description: PY-WL-004 true negative at GUARDED
 rule: PY-WL-004
-fragment: "def process():\n    try:\n        pass\n    except ValueError:\n      \
-  \  handle()\n"
+fragment: "def specific_except_session_data():\n    try:\n        pass\n    except\
+  \ ValueError:\n        handle()\n"
 taint_state: GUARDED
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 0e7f54f9f27c7a9a70b0d68bb0077043edbf1d86be9094ebfe3dceda5764f267
+sha256: 9e1174b13f99b6af03393baf7c666ca41756a2a43f692d647988afddde430bff
 verdict: true_negative

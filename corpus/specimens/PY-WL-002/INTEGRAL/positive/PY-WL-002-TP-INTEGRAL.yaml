@@ -2,12 +2,13 @@
 specimen_id: PY-WL-002-TP-INTEGRAL
 description: PY-WL-002 true_positive at INTEGRAL
 rule: PY-WL-002
-fragment: "def process(obj):\n    x = getattr(obj, \"name\", None)\n"
+fragment: "def getattr_default_system_config(sys_config):\n    x = getattr(sys_config,\
+  \ \"name\", None)\n"
 taint_state: INTEGRAL
 expected_rules:
 - PY-WL-002
 expected_severity: ERROR
 expected_exceptionability: UNCONDITIONAL
 expected_match: true
-sha256: 81262cfdd145242d53158977787ca82583cf2df86bf100658db8414c1296cfda
+sha256: edabdff3412d92f070e96d2fa642b38c3939161a87087d59babc2b0e46a4b318
 verdict: true_positive

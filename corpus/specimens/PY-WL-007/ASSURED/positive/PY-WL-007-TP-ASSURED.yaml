@@ -2,12 +2,13 @@
 specimen_id: PY-WL-007-TP-ASSURED
 description: PY-WL-007 true_positive at ASSURED
 rule: PY-WL-007
-fragment: "def process(data):\n    if isinstance(data, dict):\n        pass\n"
+fragment: "def isinstance_check_verified_payload(verified_payload):\n    if isinstance(verified_payload,\
+  \ dict):\n        pass\n"
 taint_state: ASSURED
 expected_rules:
 - PY-WL-007
 expected_severity: WARNING
 expected_exceptionability: RELAXED
 expected_match: true
-sha256: 93c25bb124d137b5c69c9160596af8df53b94714b4ee6f176fddfb8dd5e867a0
+sha256: 5dc638f35997d3bc9b823e1e6adb9011b9b6ca2ed3dfeb3d1f768d116d0eed84
 verdict: true_positive

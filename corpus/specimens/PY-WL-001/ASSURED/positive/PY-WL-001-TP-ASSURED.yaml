@@ -2,12 +2,13 @@
 specimen_id: PY-WL-001-TP-ASSURED
 description: PY-WL-001 true_positive at ASSURED
 rule: PY-WL-001
-fragment: "def process(data):\n    x = data.get(\"key\", \"default\")\n"
+fragment: "def dict_default_verified_payload(verified_payload):\n    x = verified_payload.get(\"\
+  key\", \"default\")\n"
 taint_state: ASSURED
 expected_rules:
 - PY-WL-001
 expected_severity: ERROR
 expected_exceptionability: STANDARD
 expected_match: true
-sha256: fde5ab3dd8c9e06f9da8a26d1cfe64280ee6e33d25e69bfa541b06a4764517b5
+sha256: 5978b0e7faa0712cd55bc8a59ec5ec36c590a9dc752d099cd43c4d6be6013db0
 verdict: true_positive

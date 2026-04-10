@@ -2,11 +2,12 @@
 specimen_id: PY-WL-003-TP-UNKNOWN_ASSURED
 description: PY-WL-003 known_false_negative at UNKNOWN_ASSURED
 rule: PY-WL-003
-fragment: "def process(data):\n    if \"key\" in data:\n        pass\n"
+fragment: "def key_check_claimed_token(claimed_token):\n    if \"key\" in claimed_token:\n\
+  \        pass\n"
 taint_state: UNKNOWN_ASSURED
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 83658d70103eb68eea677c3b88ae80be30fda5fd76b89f1dba18e61b3409df44
+sha256: 402e18b24472bbdb01d2b739fbd907125d5653c72708d121077e767ee6a31a32
 verdict: known_false_negative

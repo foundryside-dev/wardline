@@ -2,11 +2,12 @@
 specimen_id: PY-WL-002-TN-EXTERNAL_RAW
 description: PY-WL-002 true negative at EXTERNAL_RAW
 rule: PY-WL-002
-fragment: "def process(obj):\n    x = getattr(obj, \"name\")\n"
+fragment: "def getattr_no_default_request_param(request_param):\n    x = getattr(request_param,\
+  \ \"name\")\n"
 taint_state: EXTERNAL_RAW
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 1970dc85fea70d8a183f420151271333aef99e01453c47c0ffa9ea39f2a4d738
+sha256: 6a0461df246ea7eb6f82efd5cfcdb51f710954965c967a214f5cfd62cd94a607
 verdict: true_negative

@@ -2,11 +2,11 @@
 specimen_id: PY-WL-007-TN-UNKNOWN_ASSURED
 description: PY-WL-007 true negative at UNKNOWN_ASSURED
 rule: PY-WL-007
-fragment: "def process(data):\n    x = len(data)\n"
+fragment: "def no_typecheck_claimed_token(claimed_token):\n    x = len(claimed_token)\n"
 taint_state: UNKNOWN_ASSURED
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: bfe3c42c6a2fe5b9291ae1b5b966708e45229eddb6376e10f7093e639ff63b7c
+sha256: d4466b93fd307f6111455f29eb4a283e6b993db75b119900d9a4ea090f64a1a0
 verdict: true_negative

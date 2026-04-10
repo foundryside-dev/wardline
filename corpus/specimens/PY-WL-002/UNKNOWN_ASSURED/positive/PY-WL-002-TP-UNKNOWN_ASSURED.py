@@ -1,2 +1,2 @@
-def process(obj):
-    x = getattr(obj, "name", None)
+def getattr_default_claimed_token(claimed_token):
+    x = getattr(claimed_token, "name", None)

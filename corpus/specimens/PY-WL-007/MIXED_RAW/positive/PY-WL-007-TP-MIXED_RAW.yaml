@@ -2,12 +2,13 @@
 specimen_id: PY-WL-007-TP-MIXED_RAW
 description: PY-WL-007 true_positive at MIXED_RAW
 rule: PY-WL-007
-fragment: "def process(data):\n    if isinstance(data, dict):\n        pass\n"
+fragment: "def isinstance_check_mixed_source(mixed_source):\n    if isinstance(mixed_source,\
+  \ dict):\n        pass\n"
 taint_state: MIXED_RAW
 expected_rules:
 - PY-WL-007
 expected_severity: WARNING
 expected_exceptionability: STANDARD
 expected_match: true
-sha256: 93c25bb124d137b5c69c9160596af8df53b94714b4ee6f176fddfb8dd5e867a0
+sha256: 90a8cd382f6af5e4ed51fcfd21f3a8f9b6b51408caee25592e8bdb87f2fefc15
 verdict: true_positive

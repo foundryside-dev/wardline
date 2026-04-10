@@ -2,12 +2,12 @@
 specimen_id: PY-WL-006-TN-GUARDED
 description: PY-WL-006 true negative at GUARDED
 rule: PY-WL-006
-fragment: "def process():\n    try:\n        risky()\n    except ValueError:\n   \
-  \     logger.error(\"failed\")\n"
+fragment: "def audit_specific_session_data():\n    try:\n        risky()\n    except\
+  \ ValueError:\n        logger.error(\"failed\")\n"
 taint_state: GUARDED
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: f4525b2aa89a12094a43ad5077616abf1a65e366e1b9d5e79e77d9c74a51d0df
+sha256: 41f129a6d9eea52c34a96d2862ab52150a3b6dd88e9791fe584764a701e4dcd8
 verdict: true_negative

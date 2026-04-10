@@ -2,12 +2,12 @@
 specimen_id: PY-WL-004-TN-UNKNOWN_GUARDED
 description: PY-WL-004 true negative at UNKNOWN_GUARDED
 rule: PY-WL-004
-fragment: "def process():\n    try:\n        pass\n    except ValueError:\n      \
-  \  handle()\n"
+fragment: "def specific_except_cached_profile():\n    try:\n        pass\n    except\
+  \ ValueError:\n        handle()\n"
 taint_state: UNKNOWN_GUARDED
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 0e7f54f9f27c7a9a70b0d68bb0077043edbf1d86be9094ebfe3dceda5764f267
+sha256: 91eb7387d2c3df72c4f5dde3bb1d0118e2359d74893cbb394656d7d50648b781
 verdict: true_negative

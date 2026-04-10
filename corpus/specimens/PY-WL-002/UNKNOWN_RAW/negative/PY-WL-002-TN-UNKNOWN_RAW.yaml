@@ -2,11 +2,12 @@
 specimen_id: PY-WL-002-TN-UNKNOWN_RAW
 description: PY-WL-002 true negative at UNKNOWN_RAW
 rule: PY-WL-002
-fragment: "def process(obj):\n    x = getattr(obj, \"name\")\n"
+fragment: "def getattr_no_default_unknown_input(unknown_input):\n    x = getattr(unknown_input,\
+  \ \"name\")\n"
 taint_state: UNKNOWN_RAW
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: 1970dc85fea70d8a183f420151271333aef99e01453c47c0ffa9ea39f2a4d738
+sha256: 67007901432cbc644b355a6c71ff927789101dc103fe76c04ccc9c2a52fb1b09
 verdict: true_negative

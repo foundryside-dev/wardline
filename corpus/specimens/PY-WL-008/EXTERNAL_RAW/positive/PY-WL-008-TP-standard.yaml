@@ -1,9 +1,9 @@
 ---
-specimen_id: PY-WL-008-TP-UNKNOWN_ASSURED
-description: PY-WL-008 true_positive at UNKNOWN_ASSURED
+specimen_id: PY-WL-008-TP-standard
+description: PY-WL-008 true_positive at EXTERNAL_RAW
 rule: PY-WL-008
 fragment: "def process(data):\n    result = validate(data)\n    return data\n"
-taint_state: UNKNOWN_ASSURED
+taint_state: EXTERNAL_RAW
 expected_rules:
 - PY-WL-008
 expected_severity: ERROR

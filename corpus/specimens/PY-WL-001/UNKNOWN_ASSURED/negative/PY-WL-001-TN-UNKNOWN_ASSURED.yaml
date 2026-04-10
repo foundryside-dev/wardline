@@ -2,11 +2,12 @@
 specimen_id: PY-WL-001-TN-UNKNOWN_ASSURED
 description: PY-WL-001 true negative at UNKNOWN_ASSURED
 rule: PY-WL-001
-fragment: "def process(data):\n    x = data.get(\"key\")\n"
+fragment: "def no_default_claimed_token(claimed_token):\n    x = claimed_token.get(\"\
+  key\")\n"
 taint_state: UNKNOWN_ASSURED
 expected_rules: []
 expected_severity: null
 expected_exceptionability: null
 expected_match: false
-sha256: e32a7a05619471256f0fd952576e21a72ff3f5952c687fc782626247ca798e19
+sha256: 2592b31a1b0a5a7d6fa533860a6060014530d9ca229d7b169bc174027daedc2d
 verdict: true_negative

@@ -1,9 +1,9 @@
 ---
-specimen_id: PY-WL-009-TP-ASSURED
-description: PY-WL-009 true_positive at ASSURED
+specimen_id: PY-WL-009-TP-standard
+description: PY-WL-009 true_positive at EXTERNAL_RAW
 rule: PY-WL-009
 fragment: "def process(data):\n    if data[\"status\"] == \"active\":\n        pass\n"
-taint_state: ASSURED
+taint_state: EXTERNAL_RAW
 expected_rules:
 - PY-WL-009
 expected_severity: ERROR
