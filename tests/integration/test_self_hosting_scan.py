@@ -201,6 +201,41 @@ class TestSelfHostingScan:
         }
         assert len(files_with_findings) >= 10
 
+    def test_sarif_run_properties_present(self) -> None:
+        """All governance SARIF properties from §11.1 and workstream C are present."""
+        import json
+
+        _, output = _run_scan()
+        sarif = json.loads(_extract_sarif_json(output))
+        props = sarif["runs"][0]["properties"]
+
+        # coverageRatio: always present (key exists), float or null
+        assert "wardline.coverageRatio" in props
+        assert props["wardline.coverageRatio"] is None or 0 <= props["wardline.coverageRatio"] <= 1
+
+        # dataPathsTracedRatio: present (null at L1, float at L3)
+        assert "wardline.dataPathsTracedRatio" in props
+
+        # lowResolutionFunctionCount: present (null at L1, int at L3)
+        assert "wardline.lowResolutionFunctionCount" in props
+
+        # denominatorExcludedCount: present, int
+        assert "wardline.denominatorExcludedCount" in props
+        assert isinstance(props["wardline.denominatorExcludedCount"], int)
+
+        # Precision/recall floor violations: present, int
+        assert "wardline.precisionFloorViolations" in props
+        assert isinstance(props["wardline.precisionFloorViolations"], int)
+        assert "wardline.recallFloorViolations" in props
+        assert isinstance(props["wardline.recallFloorViolations"], int)
+
+        # Initial setup flag: present, bool
+        assert "wardline.isInitialSetup" in props
+        assert isinstance(props["wardline.isInitialSetup"], bool)
+
+        # Property bag version
+        assert props["wardline.propertyBagVersion"] == "0.8"
+
     def test_self_hosting_passes_own_rules(self) -> None:
         """Scanner passes the rules it implements on its own source (§11 property 2).
 

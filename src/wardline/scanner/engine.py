@@ -81,7 +81,7 @@ class ScanResult:
     annotated_function_count: int = 0
     total_function_count: int = 0
     call_edge_resolution_ratio: float | None = None  # None when L3 didn't run
-    low_resolution_function_count: int = 0
+    low_resolution_function_count: int | None = None  # None when L3 didn't run
     # Accumulators for cross-file L3 edge resolution (used to compute ratio)
     total_resolved_edges: int = 0
     total_unresolved_edges: int = 0
@@ -542,6 +542,8 @@ class ScanEngine:
             )
             result.total_resolved_edges += file_resolved
             result.total_unresolved_edges += file_unresolved
+            if result.low_resolution_function_count is None:
+                result.low_resolution_function_count = 0
             result.low_resolution_function_count += low_res
 
         # Pass 1.75: Level 2 variable-level taint (when analysis_level >= 2)

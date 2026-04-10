@@ -942,7 +942,7 @@ class TestSarifRunLevelProperties:
         ])
         sarif = json.loads(result.stdout)
         props = sarif["runs"][0]["properties"]
-        assert props["wardline.propertyBagVersion"] == "0.7"
+        assert props["wardline.propertyBagVersion"] == "0.8"
 
     def test_sarif_run_level_properties_present(self, tmp_path: Path) -> None:
         """New run-level SARIF properties are present with valid types/ranges."""
@@ -963,12 +963,12 @@ class TestSarifRunLevelProperties:
         # Data paths traced ratio
         assert "wardline.dataPathsTracedRatio" in props
 
-        # Low resolution function count
+        # Low resolution function count (null at L1, int at L3)
         assert "wardline.lowResolutionFunctionCount" in props
-        assert isinstance(props["wardline.lowResolutionFunctionCount"], int)
+        assert props["wardline.lowResolutionFunctionCount"] is None or isinstance(props["wardline.lowResolutionFunctionCount"], int)
 
-        # Lambda count
-        assert "wardline.lambdaCount" in props
+        # Denominator excluded count (lambda expressions)
+        assert "wardline.denominatorExcludedCount" in props
 
         # Precision/recall floor violations
         assert "wardline.precisionFloorViolations" in props
@@ -981,7 +981,7 @@ class TestSarifRunLevelProperties:
         assert "wardline.dataPathsTracedScope" in props
 
         # Version check
-        assert props["wardline.propertyBagVersion"] == "0.7"
+        assert props["wardline.propertyBagVersion"] == "0.8"
 
     def test_input_hash_failure_exits_tool_error(self, tmp_path: Path) -> None:
         """inputHash OSError produces TOOL_ERROR finding AND exit code 1."""

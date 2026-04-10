@@ -491,7 +491,7 @@ class TestSarifPropertyBags:
     def test_property_bag_version(self) -> None:
         report = SarifReport(findings=[])
         props = report.to_dict()["runs"][0]["properties"]
-        assert props["wardline.propertyBagVersion"] == "0.7"
+        assert props["wardline.propertyBagVersion"] == "0.8"
 
     def test_input_hash_always_emitted(self) -> None:
         """wardline.inputHash is always present in run properties."""
@@ -1112,29 +1112,68 @@ class TestSarifDataPathsTraced:
         props = report.to_dict()["runs"][0]["properties"]
         assert props["wardline.lowResolutionFunctionCount"] == 5
 
-    def test_low_resolution_function_count_default_zero(self) -> None:
-        """lowResolutionFunctionCount defaults to 0."""
+    def test_low_resolution_function_count_null_when_l3_not_run(self) -> None:
+        """lowResolutionFunctionCount is null when L3 didn't run."""
         report = SarifReport(findings=[])
         props = report.to_dict()["runs"][0]["properties"]
-        assert props["wardline.lowResolutionFunctionCount"] == 0
+        assert props["wardline.lowResolutionFunctionCount"] is None
 
-    def test_lambda_count_in_sarif(self) -> None:
-        """lambdaCount appears in run properties."""
+    def test_denominator_excluded_count_in_sarif(self) -> None:
+        """denominatorExcludedCount appears in run properties."""
         report = SarifReport(findings=[], lambda_count=12)
         props = report.to_dict()["runs"][0]["properties"]
-        assert props["wardline.lambdaCount"] == 12
+        assert props["wardline.denominatorExcludedCount"] == 12
 
-    def test_lambda_count_default_zero(self) -> None:
-        """lambdaCount defaults to 0."""
+    def test_denominator_excluded_count_default_zero(self) -> None:
+        """denominatorExcludedCount defaults to 0."""
         report = SarifReport(findings=[])
         props = report.to_dict()["runs"][0]["properties"]
-        assert props["wardline.lambdaCount"] == 0
+        assert props["wardline.denominatorExcludedCount"] == 0
 
-    def test_property_bag_version_0_7(self) -> None:
-        """Property bag version is 0.7 after R4."""
+    def test_property_bag_version_0_8(self) -> None:
+        """Property bag version is 0.8 after panel review fixes."""
         report = SarifReport(findings=[])
         props = report.to_dict()["runs"][0]["properties"]
-        assert props["wardline.propertyBagVersion"] == "0.7"
+        assert props["wardline.propertyBagVersion"] == "0.8"
+
+    def test_degraded_commit_range_emitted_under_alternate_law(self) -> None:
+        """§10.5: degradedCommitRange present when control law is alternate."""
+        report = SarifReport(
+            findings=[],
+            control_law="alternate",
+            control_law_degradations=("precision_below_floor",),
+            degraded_commit_range="abc123",
+        )
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.degradedCommitRange"] == "abc123"
+
+    def test_degraded_commit_range_emitted_under_direct_law(self) -> None:
+        """§10.5: degradedCommitRange present when control law is direct."""
+        report = SarifReport(
+            findings=[],
+            control_law="direct",
+            control_law_degradations=("manifest_unavailable",),
+            degraded_commit_range="def456",
+        )
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.degradedCommitRange"] == "def456"
+
+    def test_degraded_commit_range_absent_under_normal_law(self) -> None:
+        """§10.5: degradedCommitRange NOT emitted when control law is normal."""
+        report = SarifReport(findings=[], control_law="normal")
+        props = report.to_dict()["runs"][0]["properties"]
+        assert "wardline.degradedCommitRange" not in props
+
+    def test_degraded_commit_range_absent_when_none(self) -> None:
+        """degradedCommitRange omitted when value is None (no git context)."""
+        report = SarifReport(
+            findings=[],
+            control_law="alternate",
+            control_law_degradations=("rules_disabled",),
+            degraded_commit_range=None,
+        )
+        props = report.to_dict()["runs"][0]["properties"]
+        assert "wardline.degradedCommitRange" not in props
 
 
 # ---------------------------------------------------------------------------
@@ -1253,6 +1292,14 @@ class TestControlLawFloorViolations:
         )
         assert law == "normal"
         assert degradations == ()
+
+    def test_conformance_mutual_exclusivity_guard(self) -> None:
+        """Both conformance_never_run and conformance_data_unavailable raises ValueError."""
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            compute_control_law(
+                conformance_data_unavailable=True,
+                conformance_never_run=True,
+            )
 
 
 # ---------------------------------------------------------------------------

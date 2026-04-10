@@ -107,16 +107,20 @@ When the scanner detects (via `--compare` baseline) that the previous scan
 operated under `"alternate"` or `"direct"` law and the current scan is
 `"normal"`, it emits a `retrospective_scan_recommended` governance event.
 
-**Enforcement status (v1.0):** This is advisory — the scanner emits a
-governance event but does not enforce the retrospective scan requirement.
-No qualifying CI gate currently exists in the Wardline project's own CI
-to enforce this automatically. The spec §10.5 MUST requirement for
-retrospective scans is therefore **unenforceable by tooling alone at v1.0**.
-This is a residual risk. Mitigation: operators must manually monitor
-`wardline.controlLaw` transitions in SARIF output and perform retrospective
-scans when control law improves from degraded to normal. CI pipelines
-SHOULD be configured to read governance events and gate merges when
-`retrospective_scan_recommended` is present.
+**Enforcement status (v1.0):** When a control law improvement is detected
+and `--retrospective` was NOT passed, the scanner emits both a
+`retrospective_scan_recommended` governance event AND a
+`GOVERNANCE-RETROSPECTIVE-REQUIRED` finding (WARNING severity). The finding
+persists on every subsequent normal-law run until the retrospective scan
+is performed (with `--retrospective <range>`) or the finding is excepted
+through the standard governance path (STANDARD exceptionability per §10.5
+step 4). CI pipelines SHOULD be configured to read governance events and
+gate merges when `GOVERNANCE-RETROSPECTIVE-REQUIRED` findings are present.
+
+**Degraded commit range (§10.5 step 1):** Every SARIF run under
+alternate or direct law records `wardline.degradedCommitRange` in run
+properties — the commit ref at scan time. Assessors reconstruct the full
+degraded window by examining all non-normal SARIF runs in sequence.
 
 ### Limitation: --compare Required
 
@@ -150,6 +154,22 @@ environment, not read it from the repository.
 `wardline.conformance.json` has no integrity protection. A fake file with
 `cells_below_precision_floor: 0` is indistinguishable from a legitimate
 one. The same CI-trusted-environment mitigation applies.
+
+### Direct-Law Artefact Exclusion (v1.0)
+
+The spec §10.5 requires that direct-law bypass MUST NOT cover changes to
+wardline policy artefacts (`wardline.yaml`, overlay files, exception
+registers, fingerprint baselines). The implementation provides an advisory
+check (`check_direct_law_exclusion()` in `coherence.py`) but NOT an
+enforcement gate. Enforcement is delegated to VCS branch protection rules
+that restrict modification of governance file paths independently of CI
+status.
+
+**Residual risk:** If VCS branch protection is not configured for
+governance file paths, direct-law bypass can be used to modify policy
+artefacts while enforcement is unavailable. The scanner will detect the
+modification on the next normal-law run (coherence checks compare manifest
+hash), but cannot prevent it during the direct-law window.
 
 ### Conformance Absence Heuristic (v1.0)
 

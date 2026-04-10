@@ -1005,16 +1005,35 @@ def scan(
             message="Baseline SARIF could not be parsed — retrospective detection skipped",
         ))
     elif prev_control_law in ("alternate", "direct") and control_law == "normal":
+        _retro_message = (
+            f"Control law improved from {prev_control_law} to normal. "
+            f"Code merged during {prev_control_law} law should be "
+            f"retrospectively scanned."
+        )
         _gov_events.append(GovernanceEvent(
             event_type="retrospective_scan_recommended",
-            message=(
-                f"Control law improved from {prev_control_law} to normal. "
-                f"Code merged during {prev_control_law} law should be "
-                f"retrospectively scanned."
-            ),
+            message=_retro_message,
         ))
+        # §10.5 step 3: If the normal-law run does NOT include the retrospective
+        # scan marker, emit a persistent governance FINDING (not just event).
+        if not retrospective:
+            all_findings.append(
+                _make_governance_finding(
+                    RuleId.GOVERNANCE_RETROSPECTIVE_REQUIRED,
+                    _retro_message,
+                    Severity.WARNING,
+                )
+            )
 
     governance_events = tuple(_gov_events)
+
+    _commit_ref = _git_head_ref()
+
+    # §10.5: Record the commit range affected when under degraded law.
+    # The current commit ref identifies which code was scanned under
+    # non-normal conditions. Assessors reconstruct the full degraded
+    # window by examining all non-normal SARIF runs in sequence.
+    _degraded_commit_range = _commit_ref if control_law != "normal" else None
 
     sarif_report = SarifReport(
         findings=all_findings,
@@ -1033,7 +1052,7 @@ def scan(
         analysis_level=analysis_level,
         manifest_hash=manifest_hash,
         scan_timestamp=_utc_timestamp(),
-        commit_ref=_git_head_ref(),
+        commit_ref=_commit_ref,
         input_hash=input_hash,
         input_files=input_files,
         overlay_hashes=overlay_hashes,
@@ -1051,6 +1070,7 @@ def scan(
         precision_floor_violations=precision_violations,
         recall_floor_violations=recall_violations,
         is_initial_setup=is_initial_setup,
+        degraded_commit_range=_degraded_commit_range,
     )
 
     sarif_text = sarif_report.to_json_string() + "\n"

@@ -124,9 +124,6 @@ class GovernanceEvent:
     timestamp: str | None = None  # ISO 8601, None in verification mode
 
 
-MAX_FINGERPRINT_AGE_CAP = 365
-
-
 def compute_control_law(
     *,
     manifest_unavailable: bool = False,
@@ -151,7 +148,12 @@ def compute_control_law(
     Direct law means no meaningful enforcement output: manifest unavailable
     or trust topology cannot be established. Alternate law means degraded
     but running. Normal law means full enforcement capability.
+
+    The fingerprint_max_age_days parameter is clamped to 365 inside this
+    function to prevent config manipulation from disabling staleness detection.
     """
+    MAX_FINGERPRINT_AGE_CAP = 365  # noqa: N806 — constant, named for clarity
+
     if conformance_data_unavailable and conformance_never_run:
         raise ValueError(
             "conformance_data_unavailable and conformance_never_run are mutually exclusive"
@@ -349,13 +351,15 @@ class SarifReport:
     governance_events: tuple[GovernanceEvent, ...] = ()
     # R7: Data-path coverage metrics
     data_paths_traced_ratio: float | None = None
-    low_resolution_function_count: int = 0
+    low_resolution_function_count: int | None = None  # None when L3 didn't run
     lambda_count: int = 0
     data_paths_traced_scope: str = "project"
     # R4: Precision/recall floor violations
     precision_floor_violations: int = 0
     recall_floor_violations: int = 0
     is_initial_setup: bool = False
+    # §10.5: Degraded commit range — recorded on every non-normal law run
+    degraded_commit_range: str | None = None
 
     def _implemented_rules(self) -> list[str]:
         """Return sorted list of canonical rule ID values (excludes pseudo-IDs).
@@ -410,12 +414,15 @@ class SarifReport:
                 "wardline.controlLaw": self.control_law,
                 **({"wardline.controlLawDegradations": list(self.control_law_degradations)}
                    if self.control_law_degradations else {}),
+                **({"wardline.degradedCommitRange": self.degraded_commit_range}
+                   if self.control_law != "normal" and self.degraded_commit_range
+                   else {}),
                 "wardline.coverageRatio": round(self.coverage_ratio, 4) if self.coverage_ratio is not None else None,
                 "wardline.dataPathsTracedRatio": (
                     round(self.data_paths_traced_ratio, 4) if self.data_paths_traced_ratio is not None else None
                 ),
                 "wardline.dataPathsTracedScope": self.data_paths_traced_scope,
-                "wardline.lambdaCount": self.lambda_count,
+                "wardline.denominatorExcludedCount": self.lambda_count,
                 **({"wardline.retroactiveScan": True,
                     "wardline.retroactiveScanRange": self.retroactive_scan_range}
                    if self.retroactive_scan and self.retroactive_scan_range
@@ -434,7 +441,8 @@ class SarifReport:
                 # "0.5" — R1+R2: 19 run-level, 9 result-level mandatory (§11.1 complete)
                 # "0.6" — R7: data-path coverage (dataPathsTracedRatio, lowResolutionFunctionCount, lambdaCount)
                 # "0.7" — R4: precision/recall floor violations, isInitialSetup
-                "wardline.propertyBagVersion": "0.7",
+                # "0.8" — panel review: denominatorExcludedCount, degradedCommitRange, retrospective finding
+                "wardline.propertyBagVersion": "0.8",
                 "wardline.recallFloorViolations": self.recall_floor_violations,
                 **({"wardline.scanTimestamp": self.scan_timestamp}
                    if not self.verification_mode and self.scan_timestamp

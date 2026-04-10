@@ -207,7 +207,7 @@ The following wardline-specific properties are required:
 - `wardline.deferredFixRatio` — the proportion of active exceptions that represent deferred architectural fixes rather than genuine domain variance (§14.1.3)
 - `wardline.coverageRatio` — annotation coverage from the fingerprint baseline (§10.2)
 - `wardline.controlLaw` — current enforcement state: `"normal"`, `"alternate"`, or `"direct"` (§10.5)
-- `wardline.controlLawDegradations` — when control law is alternate, lists the specific degradation conditions (e.g., `["manifest_ratification_overdue", "WL-003_precision_below_floor"]`)
+- `wardline.controlLawDegradations` — when control law is alternate, lists the specific degradation conditions (e.g., `["precision_below_floor", "ratification_overdue"]`)
 - `wardline.retroactiveScan` — boolean indicating whether this run includes retrospective findings from a prior direct-law or alternate-law window (§10.5)
 - `wardline.deterministic` — boolean self-report that the tool believes its output is deterministic. This property is a declaration of intent, not verification evidence. Assessors verify determinism independently by comparing outputs from identical inputs (property 5). The self-report allows SARIF consumers that do not perform independent verification to distinguish runs that claim determinism from runs that do not
 - `wardline.governanceProfile` — the declared governance profile: `"lite"` or `"assurance"` (§15.3.2). Recorded from the root manifest's `governance_profile` field
