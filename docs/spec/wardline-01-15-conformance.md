@@ -2,517 +2,472 @@
 
 #### 15.1 Conformance model
 
-The wardline classification framework is designed to be implemented by existing tooling ecosystems, not only by bespoke enforcement products. A single tool need not — and in most ecosystems will not — satisfy every conformance criterion. A type checker may enforce tier mismatches in signatures. A linter or pattern-matching tool may detect pattern rule violations. A CI orchestrator may handle manifest validation, governance reporting, and SARIF aggregation. The framework's value is realised when these tools collectively cover the enforcement surface, each contributing the slice that matches its capabilities.
+Wardline conformance is assessed through an **obligation catalog** and a
+**compliance ledger**. A tool or deployment does not become conformant because
+its authors believe the major pieces are present, or because a release checklist
+looks green. It becomes conformant only when the obligations in its claimed
+surface are cataloged, evidenced, reviewed, and current.
 
-To support this, the conformance model distinguishes between **tool-level conformance** (what a single tool implements) and **regime-level conformance** (what the combined tooling achieves for a given language ecosystem).
+An **obligation** is a single normative requirement drawn from Part I, Part II,
+or a declared governance profile. Each obligation record MUST carry:
+
+| Field | Required content |
+|---|---|
+| **Obligation ID** | Stable identifier for the requirement record |
+| **Source reference** | Exact clause, criterion, profile requirement, or binding contract being claimed |
+| **Requirement summary** | Plain-language summary of the obligation |
+| **Claim scope** | Tool, regime, binding, profile, or rule surface to which the obligation applies |
+| **Implementation surface** | Code, manifest artefact, workflow, or tool output that satisfies the claim |
+| **Evidence classes** | Assessor-runnable proof needed for the obligation |
+| **Compliance state** | One of the states defined in §15.6 |
+| **Freshness binding** | Commit, manifest hash, corpus hash, tool version, and any other evidence identity required to know whether the record is current |
+| **Reviewer metadata** | Reviewer identity, review date, and independence metadata when required |
+
+The obligation catalog is the source of truth. The following are **derived
+views**, not primary truth stores:
+
+- a human certification matrix
+- a release projection
+- a profile-specific compliance summary
+- a ship/no-ship gate
+
+This distinction is mandatory. A matrix is useful because humans read rows. A
+ledger is required because assessors, automation, and future reviewers need to
+see the complete compliance state, including obligations that are failed,
+waived, stale, or not yet assessed.
+
+Any derived view used to authorize a release MUST remain assessor-runnable. At
+minimum, a release-authorizing matrix or projection MUST expose:
+
+- the row or surface identifier
+- the claimed release scope for that row
+- the backing obligations
+- the current state or result
+- the current disposition or next action when the row is not green
+- reviewer or sign-off status
+- explicit `not_applicable` rows or states where a surface is intentionally out
+  of scope
+
+**Catalog completeness.** A regime MUST record whether its obligation catalog is
+complete for the claimed surface.
+
+- A catalog is **complete** when every obligation in the claimed Part I, Part II,
+  and governance-profile surface has a record.
+- A catalog is **partial** when some obligations are not yet enumerated.
+
+A regime with a partial catalog MAY make a limited, explicitly scoped claim, but
+it MUST NOT present that state as full compliance visibility.
+
+**Requirement ID scheme.** Obligation IDs are stable repo or regime identifiers,
+not line numbers. A conformant regime MUST define and publish its ID scheme. For
+example:
+
+- `P1-S6-TAINT-JOIN-ABSORBING`
+- `P2A-A3-L1-MINIMUM-CONFORMANCE`
+- `C-CRIT-7-SELF-HOSTING`
+- `G-LITE-EXCEPTION-REGISTER`
+- `R-REGIME-COVERAGE-COMPLETE`
+
+Changing evidence or implementation does not change the obligation ID. If a
+chapter is renumbered, the source reference changes; the obligation record does
+not disappear.
 
 #### 15.2 Conformance criteria
 
-Ten criteria define the full wardline conformance surface. They are grouped by what they certify: *expressiveness* (can the ecosystem represent the wardline?), *enforcement capability* (can tools detect violations?), and *governance infrastructure* (can exceptions be managed?).
+Ten criteria define the Wardline conformance surface. They are grouped as
+expressiveness, enforcement capability, and governance infrastructure.
 
-**Expressiveness** (non-negotiable):
+**Expressiveness**
 
-1. The ecosystem can express all 17 annotation groups at the function, class, or field level using language-native mechanisms (§7)
+1. The ecosystem can express all 17 annotation groups at the function, class,
+   field, or equivalent binding-defined location using language-native
+   mechanisms (§7).
 
-**Enforcement capability** (non-negotiable):
+**Enforcement capability**
 
-2. Pattern rule detection: the six active pattern rules (WL-001 through WL-006) are detected intraprocedurally within annotated bodies (§8, §9.1)
-3. Structural verification: WL-007 is enforced on all validation boundary functions (shape, semantic, combined, and restoration), WL-008 (validation ordering) is enforced on semantic-validation boundaries, and WL-009 (restoration symmetry) is enforced on `@integral_read` and `@integral_construction` functions whose data sources are manifest-declared serialization boundaries (§8.2, §9.1)
-4. Taint-flow tracking: explicit-flow taint between declared boundaries is traced for at minimum direct flows and two-hop unannotated intermediaries (§9.1). The two-hop scope also applies to WL-007 delegation — a validation function that delegates to a called validator satisfies WL-007 through two-hop call-graph analysis (§9.1)
-5. Precision and recall are measured, tracked, and published per cell (rule × taint state), per tool (§11)
-6. A golden corpus of labelled specimens exists and is maintained (§11), including evasion-variant specimens where a tool claims semantic-equivalent coverage for a rule
-7. Each enforcement tool passes its own rules where applicable (self-hosting gate) (§11)
-8. Enforcement output is deterministic SARIF v2.1.0 with the wardline-specific property bags defined in §11.1
+2. Pattern rule detection: the active pattern rules WL-001 through WL-006 are
+   detected intraprocedurally within annotated bodies (§8, §9.1).
+3. Structural verification: WL-007, WL-008, and WL-009 are enforced where
+   their preconditions apply. A binding MAY rename or split the rules, but the
+   framework-level obligation remains unchanged (§8.2, Part II).
+4. Taint-flow tracking: explicit-flow taint between declared boundaries is
+   traced for at minimum direct flows and two-hop unannotated intermediaries
+   (§6.2, §9.1).
+5. Precision and recall are measured, tracked, and published per measurement
+   cell for each tool that claims enforcement (§11).
+6. A golden corpus of labelled specimens exists and is maintained (§11),
+   including adversarial specimens for any claimed semantic-equivalent rule
+   coverage.
+7. Each enforcement tool passes its own rules where applicable (self-hosting
+   gate) (§11).
+8. Enforcement output is deterministic SARIF v2.1.0 with the Wardline-specific
+   property bags defined in §11.1.
 
-**Governance infrastructure** (necessary for assessable enforcement):
+**Governance infrastructure**
 
-9. The governance model supports at minimum: protected-file review, temporal separation, and annotation fingerprint baseline (§10)
-10. The wardline manifest system (§14) — root manifest, overlays, exception register, and fingerprint baseline — is consumed by the tools that depend on it, and JSON Schema validation is performed either by that tool or by a declared Wardline-Governance tool in the same regime. A tool that relies on manifest context but delegates full schema validation MUST document that delegation.
+9. The governance model supports, at minimum, protected-file review, temporal
+   separation, exception tracking, and annotation change tracking at the level
+   required by the declared governance profile (§10, §15.3.2).
+10. The Wardline manifest system (§14) is consumed by the tools that depend on
+    it, and JSON Schema validation is performed either by that tool or by a
+    declared Wardline-Governance tool in the same regime. A tool that relies on
+    delegated validation MUST document that delegation.
+
+Each criterion MUST map to one or more obligation records in the compliance
+ledger. Criteria are not a substitute for the finer-grained obligations they
+summarize.
 
 #### 15.3 Conformance profiles
 
-All-or-nothing conformance deters adoption. The conformance model therefore defines two orthogonal profile dimensions: **enforcement profiles** partition the ten criteria into implementable slices that match existing tool categories; **governance profiles** partition the governance burden into maturity-appropriate levels. A deployment declares both: an enforcement profile (or regime of profiles) and a governance profile. The enforcement profiles tell an assessor *what the tools can do*; the governance profiles tell an assessor *how rigorously the organisation governs the policy surface*.
+The criteria above describe the full surface. Conformance profiles partition
+that surface into implementable slices so that partial but honest claims are
+possible.
 
 ##### 15.3.1 Enforcement profiles
 
-An open-source type checker maintainer who sees a ten-criterion checklist spanning static analysis, taint tracking, governance registers, and SARIF output will correctly conclude that the specification expects a bespoke product, not a community contribution. Enforcement profiles partition the criteria into implementable slices that match the capabilities of existing tool categories.
+Four enforcement profiles are defined:
 
-Four enforcement profiles are defined. Each profile declares which of the ten criteria it requires. A tool declares which profile(s) it satisfies; an enforcement regime declares which profiles its constituent tools collectively cover.
+| Profile | Minimum criteria | Typical implementer |
+|---|---|---|
+| **Wardline-Core** | 2, 5, 6, 8, 10; and 3, 4, 7 when the tool claims structural verification, taint-aware enforcement, or self-hosting applicability | AST scanner, linter plugin, semantic rule pack |
+| **Wardline-Type** | 1 at the type layer for the core classification groups, plus 5 and 6 for the type-enforced surface | Type checker or checker plugin |
+| **Wardline-Governance** | 9 and 10 | CLI orchestrator, CI policy tool, governance runner |
+| **Wardline-Full** | All ten criteria | Complete regime, or a monolithic tool that truly covers the full surface |
 
-| Profile | What it covers | Criteria (minimum + conditional) | Typical implementer |
-|---------|---------------|-------------------|---------------------|
-| **Wardline-Core** | Manifest consumption, declared-schema-validation responsibility, wardline SARIF output, pattern rule detection for a declared rule subset | 2, 5, 6, 8, 10 (+ 3, 4, 7 conditionally) | Linter plugin (ruff, semgrep, CodeQL), custom AST scanner |
-| **Wardline-Type** | Tier metadata in the type system, tier mismatch diagnostics in signatures | 1 (core groups only), 5, 6 (+ 7 conditionally) | Type checker (mypy, pyright, mypy plugin) |
-| **Wardline-Governance** | Exception register, fingerprint baseline, control-law reporting, retrospective scan markers | 9, 10 | CI orchestrator, thin wardline runner |
-| **Wardline-Full** | The complete conformance surface | All ten criteria | An enforcement regime (§15.4 below), or a monolithic tool that covers everything |
+Profile rules:
 
-Conditional criteria are elaborated in the profile semantics below.
-
-**Profile semantics:**
-
-- **Wardline-Core** requires criteria 2 and 8, but a Wardline-Core tool MAY implement a *declared subset* of the pattern rules rather than all nine. The tool's documentation MUST declare which rules it implements. If the tool claims semantic-equivalent coverage beyond the base syntactic patterns for any rule, that claim MUST also be declared, and criteria 5 and 6 (precision/recall measurement and golden corpus) apply to those claimed equivalents as well as the base rule patterns. A ruff plugin implementing WL-001 and WL-003 maintains corpus specimens and measures precision for those two rules only; a tool claiming WL-001 plus schema-default evasion coverage must include specimens for both the base pattern and the claimed evasion variants. Criterion 3 (WL-007 structural verification, WL-008 validation ordering, and WL-009 restoration symmetry) and criterion 4 (taint-flow tracking) are included in Wardline-Core when the tool's declared rule set includes WL-007, WL-008, WL-009, or taint-dependent rules; they are not required for a tool that implements only pattern-matching rules (WL-001 through WL-006). Criterion 10 applies to Wardline-Core only to the extent needed to consume manifest context safely: a Wardline-Core tool MUST read the manifest fields it depends on and MUST either validate the relevant manifest structures itself or document delegated full-schema validation to a Wardline-Governance tool in the same regime. Criterion 7 (self-hosting) applies when the tool's own source code can meaningfully be checked against the rules it implements — a scanner written in the same language it analyses SHOULD pass its own rules on its own codebase. Tools whose source is not in the analysed language (e.g., a Rust-based scanner that analyses Python) are exempt.
-- **Wardline-Type** requires that the type-system layer (§9.2) makes tier mismatches visible at development time. It requires criterion 1 at the type layer for the core classification groups only — the type system can express Groups 1–4 and 16–17 to the extent that the type system can represent them — but does not require the full 17-group annotation vocabulary at the type layer. Full-vocabulary expressiveness remains a regime-level requirement under criterion 1. Criterion 5 applies: precision and recall for type-system enforcement are measured against type-system-specific corpus specimens.
-- **Wardline-Governance** covers the governance infrastructure that no analysis tool naturally provides: exception register management, fingerprint baseline tracking, manifest validation and ratification enforcement, control-law state reporting, retrospective scan verification for degraded windows, and the expedited governance ratio metric. A governance tool need not perform any code analysis.
-- **Wardline-Full** is not a separate profile — it is the assertion that all ten criteria are satisfied. A single tool MAY claim Wardline-Full. More commonly, Wardline-Full conformance is a property of an enforcement regime (§15.4).
+- A Wardline-Core tool MAY implement a declared subset of rules. Its
+  documentation MUST name the exact rules it covers.
+- A Wardline-Core tool that claims semantic-equivalent coverage beyond the base
+  syntax of a rule MUST carry matching corpus evidence for that extra claim.
+- Criterion 3 applies to a Wardline-Core tool when it claims WL-007, WL-008,
+  WL-009, or binding-defined equivalents.
+- Criterion 4 applies to a Wardline-Core tool when its severity or detection
+  depends on taint context.
+- Criterion 7 applies per tool, not once per regime.
+- Wardline-Full is normally a regime claim, not a marketing label for any tool
+  that covers "most of the interesting bits."
 
 ##### 15.3.2 Governance profiles
 
-Enforcement profiles partition what the tools implement. Governance profiles partition what the organisation commits to governing. The conformance criteria in §15.2 describe the full governance surface — but the full surface is calibrated for mature teams with dedicated security governance capacity. A five-person team adopting wardline for the first time faces a governance burden designed for a 50-person team with an established security accreditation programme. The conformance profiles partition enforcement but not governance — and governance is where adoption stalls.
+Every deployment MUST declare a governance profile in the root manifest, in SARIF
+run-level properties, and in its compliance ledger:
 
-Two governance profiles are defined. A deployment MUST declare which governance profile it operates under. The governance profile is recorded in the root wardline manifest (§14.1.1) and reported in SARIF output as `wardline.governanceProfile` with values `"lite"` or `"assurance"`.
+- `lite`
+- `assurance`
 
-**Wardline Lite.** The small-team and early-adopter governance profile. Wardline Lite provides a viable governance baseline for teams that lack the capacity for the full governance surface but need more than ungoverned enforcement. It requires the essential governance mechanisms and defers the governance mechanisms that depend on organisational maturity.
+**Wardline Lite** is the small-team and early-adopter governance profile. It
+requires a minimal but assessable governance surface. Lite does not relax
+criterion 8: run-level SARIF properties, including `wardline.governanceProfile`
+and `wardline.controlLaw`, remain mandatory under the general conformance
+criteria. The Lite-specific governance checklist is:
 
-Wardline Lite requirements:
+| # | Requirement | Lite status | Assessment expectation |
+|---|---|---|---|
+| 1 | Manifest validity and current ratification | MUST | Root manifest is schema-valid and ratification age is within the declared review interval |
+| 2 | Governance artefact protection | MUST | CODEOWNERS or equivalent protects `wardline.yaml`, overlays, the exception register, and any checked-in governance evidence used for sign-off |
+| 3 | Exception register integrity | MUST | Every active exception records reviewer identity, rationale, and expiry |
+| 4 | Temporal separation or documented alternative | MUST | Alternative is declared in the root manifest; same-actor approval is permitted only for enforcement-artefact changes and MUST carry retrospective review within the declared window; policy-artefact changes still require different-human-actor approval |
+| 5 | Annotation-change review in the assessment window | MUST | Recent annotation changes were visible to and reviewed by a designated reviewer through PR history, commit review, or equivalent evidence |
+| 6 | Bootstrap corpus correctness | MUST | The bootstrap corpus covers the highest-consequence claimed cells and the current tools classify those specimens correctly |
+| 7 | Expedited and degraded-governance closure | MUST | Expedited exceptions are documented and retrospective review occurred; any alternate-law or direct-law window is closed by the verifiable retrospective scan required by §10.5 before release sign-off |
 
-| Requirement | Status | Notes |
-|-------------|--------|-------|
-| Root wardline manifest (`wardline.yaml`) | MUST | Tier definitions, ratification authority, review interval — the policy surface exists and is declared |
-| SARIF output with wardline property bags | MUST | Enforcement output is structured and assessable |
-| CODEOWNERS protection for governance artefacts | MUST | Policy artefact changes require designated reviewer approval |
-| Exception tracking | MUST | Exception register with reviewer identity, rationale, and expiry. The register exists and is maintained — exceptions are not granted informally |
-| Temporal separation | SHOULD | Separate change, different actor, approved before dependent code merges. Teams that cannot sustain temporal separation MUST document their alternative: same-actor approval is permitted for *enforcement artefact* changes (§10.3.1) with mandatory retrospective review within a defined window (recommended: next sprint boundary or 10 business days, whichever is shorter). However, *policy artefact* changes (tier definitions, delegation policy, validation-scope declarations) MUST require different-actor approval even under the Lite profile — the governance risk of same-actor policy changes is categorically higher, since a poisoned policy artefact corrupts all downstream enforcement (§10.3.2). The documented alternative is recorded in the root manifest and is an assessable governance decision, not a silent omission |
-| Bootstrap golden corpus | SHOULD | A minimum of 20–30 specimens covering UNCONDITIONAL cells and Tier 1 taint states (INTEGRAL, ASSURED). The bootstrap corpus demonstrates that the enforcement tools detect the highest-consequence violations. The full 126+ specimen requirement (§11) is deferred to the Assurance governance profile |
-| Annotation change tracking | MUST | Changes to the annotation surface (annotations added, modified, or removed) are flagged for human review. This MAY be implemented through VCS diff review of annotation-bearing files rather than a full fingerprint baseline — the requirement is visibility of annotation changes, not a specific tracking mechanism |
-| Expedited governance ratio | RECOMMENDED | The ratio metric (§10.4) SHOULD be computed and reported. Projects that do not yet compute the ratio MUST instead document their expedited exception approval process and review it at each manifest ratification |
+Lite defers, but does not erase, the Assurance-level artefacts:
 
-Wardline Lite deferred items — these are not omitted, they are explicitly deferred with a graduation path (§15.3.3):
+- full fingerprint baseline with canonical hashing
+- full 126+ specimen corpus with the full adversarial surface
+- automated expedited-ratio threshold findings
 
-- **Full golden corpus** (126+ specimens with adversarial cases) — deferred until the team has sufficient enforcement experience to curate meaningful adversarial specimens
-- **Full fingerprint baseline** (structured data store with canonical hashing per §10.2) — deferred in favour of annotation change tracking through simpler mechanisms. The full baseline is required at Assurance level
-- **Expedited ratio threshold enforcement** — the metric is recommended at Lite level; the automated threshold and governance-level finding are required at Assurance level
+Projects that do not yet compute the expedited governance ratio MUST still
+document their expedited approval process and review it at each manifest
+ratification cycle.
 
-Wardline Lite is not "Wardline minus the unpleasant bits." It includes a governance checklist (below) that makes the governance posture assessable even without the full artefact set. An assessor evaluating a Lite deployment verifies the checklist, not a reduced version of the Assurance procedure. For the graduation path from Lite to Assurance — including triggers and a pre-graduation checklist — see §15.3.3.
+**Wardline Assurance** is the full governance profile. It strengthens Lite and
+adds the full governance surface:
 
-> **Policy-layer perspective.** The companion recommendations document (*Proposed Framework Changes and Recommendations*, §4.2) proposes policy-layer controls for manifest governance — semantic policy change authority, adequacy review, exception governance, and tool assurance — framed as outcome-stated controls sitting above this specification. Those controls address the same governance surface from the policy framework's perspective: where this section specifies *how* the governance mechanisms work, the policy-layer controls specify *what outcomes* the organisation MUST demonstrate to an assessor.
+| Requirement | Assurance status |
+|---|---|
+| Temporal separation | MUST, no alternatives |
+| Manifest coherence as a gate before code-level enforcement | MUST |
+| Full golden corpus with adversarial coverage | MUST |
+| Structured fingerprint baseline with canonical hashing | MUST |
+| Expedited governance ratio, declared threshold, and automated findings | MUST |
+| SIEM export of governance events | SHOULD; MUST for formally accredited systems |
 
-**Wardline Lite governance checklist.** An assessor evaluating a Lite deployment verifies the following:
-
-1. Root manifest exists, is schema-valid, and has a current ratification (ratification age < review interval)
-2. CODEOWNERS (or equivalent) protects `wardline.yaml`, overlay files, and the exception register
-3. Exception register entries have reviewer identity, documented rationale, and expiry date
-4. Temporal separation is either implemented or a documented alternative is recorded in the manifest
-5. Annotation changes in the most recent assessment window were reviewed (evidence: PR review history, commit review records, or equivalent). At minimum, the evidence MUST show that the PR or commit containing the annotation change was approved by a designated reviewer (for example, through CODEOWNERS or equivalent path protection). Evidence that the reviewer specifically examined the annotation change itself is RECOMMENDED but not required at Lite level.
-6. If a bootstrap corpus exists: enforcement tools detect the specimens correctly
-7. If expedited exceptions were granted: the process is documented and retrospective review occurred
-
-**Wardline Assurance.** The full governance profile as described in §10. Wardline Assurance requires all governance mechanisms defined in §10.2 without relaxation: full temporal separation (MUST; no documented alternatives permitted), full golden corpus (126+ specimens with adversarial cases per §11), full fingerprint baseline with canonical hashing and structured change detection, expedited governance ratio computation with declared threshold and automated governance-level findings when exceeded, and SIEM export for systems under formal security accreditation (SHOULD). Wardline Assurance is the governance profile expected for systems undergoing formal security accreditation, systems processing data at PROTECTED classification or above, or any deployment where the organisation's risk appetite requires the full governance surface.
-
-Wardline Assurance requirements add to or strengthen the Lite requirements:
-
-| Requirement | Status at Assurance | Change from Lite |
-|-------------|--------------------|------------------|
-| Temporal separation | MUST | No documented alternatives — separate change, different actor, full stop |
-| Golden corpus | MUST — full 126+ specimens | Expanded from bootstrap corpus of 20–30 specimens |
-| Fingerprint baseline | MUST — full structured baseline per §10.2 | Replaces annotation change tracking |
-| Manifest coherence checks | MUST — CI gate before code-level enforcement | New requirement |
-| Expedited governance ratio | MUST — computed, threshold declared, automated finding | Strengthened from RECOMMENDED |
-| SIEM export of governance events | SHOULD (MUST for systems under formal security accreditation) | New requirement |
-
-A deployment declares its governance profile in the root manifest. Assessors evaluate against the declared profile — a Lite deployment is not penalised for lacking Assurance-level artefacts, but it is penalised for lacking Lite-level artefacts. The governance profile is distinct from the enforcement profile: a Wardline-Full enforcement regime operating at the Lite governance level is a valid deployment (full tool coverage, graduated governance). Conversely, a Wardline-Core enforcement regime at the Assurance governance level is also valid (partial tool coverage, full governance) — though unusual, this might apply where a single scanner covers the required rules and the organisation's accreditation demands full governance.
+A deployment is assessed against the profile it declares. Lite is not
+"Assurance with paperwork removed." It is a narrower but still testable set of
+controls.
 
 ##### 15.3.3 Governance profile graduation
 
-Graduation from Lite to Assurance is tied to team maturity and accreditation requirements. It is not a calendar milestone — it occurs when the organisation's governance capacity and risk context warrant the full governance surface.
+Graduation from Lite to Assurance occurs when governance capacity and risk
+context justify the full surface.
 
-**Graduation triggers.** A deployment SHOULD graduate from Lite to Assurance when any of the following apply:
+Graduation triggers include:
 
-- The system is submitted for formal security accreditation
-- The system processes data at PROTECTED classification or above
-- The team size exceeds 15 active contributors (governance capacity is no longer the limiting factor)
-- The deployment has operated at Lite level for more than two manifest ratification cycles (the team has sufficient enforcement experience)
-- The organisation's risk appetite requires the full governance surface (a policy decision, not a technical one)
+- formal security accreditation
+- data at PROTECTED classification or above
+- sustained contributor growth beyond small-team governance assumptions
+- operation through multiple ratification cycles with a stable Wardline program
+- explicit organisational risk appetite for Assurance-level controls
 
-**Graduation checklist.** Before changing the governance profile declaration from Lite to Assurance, the following MUST be satisfied:
+Before changing the declared profile from `lite` to `assurance`, the following
+MUST be satisfied:
 
-1. **Golden corpus expansion.** The bootstrap corpus has been expanded to the full 126+ specimen requirement (§11), including at least one adversarial false positive and one adversarial false negative per rule
-2. **Fingerprint baseline established.** The full structured fingerprint baseline (§10.2) is in place with canonical hashing, and at least one baseline review cycle has been completed
-3. **Temporal separation operational.** Temporal separation is implemented without documented alternatives — all governance artefact changes are reviewed by a different actor before dependent code merges
-4. **Expedited ratio threshold declared.** The root manifest declares an expedited governance ratio threshold, and the enforcement tool computes and reports the ratio
-5. **Retrospective review.** All Lite-era exceptions have been reviewed under Assurance-level governance: reviewer identity confirmed, rationale validated against current context, expiry dates current
-
-The graduation is recorded as a manifest change — the `governance_profile` field changes from `"lite"` to `"assurance"` — and is itself a policy artefact change subject to ratification. The first Assurance-level enforcement run establishes the fingerprint baseline as the new governance reference point.
+1. The corpus has expanded from bootstrap coverage to the full rule and
+   adversarial surface.
+2. A structured fingerprint baseline is established and has completed at least
+   one review cycle.
+3. Temporal separation is operational without alternatives.
+4. The expedited governance ratio threshold is declared and enforced.
+5. Lite-era exceptions have been re-reviewed under Assurance expectations.
 
 #### 15.4 Enforcement regimes
 
-An **enforcement regime** is the set of tools that collectively enforce a wardline for a given language ecosystem. The regime is Wardline-Full conformant if and only if the union of its constituent tools' profiles covers all ten criteria with no gaps.
+An **enforcement regime** is the set of tools that collectively enforce a
+Wardline deployment for a language ecosystem.
 
-**Regime composition rules:**
+An enforcement regime is conformant only when all of the following hold:
 
-- **Coverage completeness.** Every criterion MUST be satisfied by at least one tool in the regime. A regime comprising a Wardline-Core tool (criteria 2, 5, 6, 8, 10) and a Wardline-Governance tool (criteria 9, 10) is missing criteria 1 (full annotation expressiveness), 3 (structural verification), and 4 (taint-flow). Criterion 7 (self-hosting) applies to the Wardline-Core tool conditionally on its implementation language. Adding a Wardline-Type tool and ensuring the Wardline-Core tool covers WL-007 and taint-flow closes the gap.
-- **Rule coverage completeness.** The union of all Wardline-Core tools in the regime MUST cover all nine rules — six pattern rules (WL-001 through WL-006) and three structural verification rules (WL-007, WL-008, and WL-009). If tool A implements WL-001 through WL-004 and tool B implements WL-005, WL-006, WL-007, WL-008, and WL-009, the regime's rule coverage is complete. Gaps in rule coverage MUST be documented.
-- **Corpus union.** Each tool maintains corpus specimens for the rules it implements. The regime's corpus is the union of all constituent tools' corpora. Regime-level corpus coverage MUST satisfy the minimum specimen counts defined in §11 across the full rule set.
-- **SARIF aggregation.** Each tool produces its own SARIF run. The regime's combined output is a multi-run SARIF log (§11.1). A regime orchestrator — which may be a Wardline-Governance tool — aggregates runs and computes regime-level metrics (coverage ratio, expedited ratio, control-law state).
-- **Self-hosting.** Criterion 7 (self-hosting gate) applies per tool: each enforcement tool in the regime MUST pass the wardline rules that it itself implements, applied to its own source code. A type checker plugin that enforces tier mismatches MUST pass tier-mismatch checks on its own source. A linter plugin that detects WL-001 MUST NOT violate WL-001 in its own code. Tools that perform no code analysis (e.g., a pure governance orchestrator) are exempt from self-hosting.
+- **Coverage completeness.** Every required criterion is mapped to at least one
+  tool and at least one obligation record.
+- **Rule coverage completeness.** The union of the regime's rule-implementing
+  tools covers the full claimed rule surface.
+- **Catalog completeness visibility.** The regime states whether its obligation
+  catalog is complete for the claimed surface.
+- **Corpus union.** The union of tool-specific corpora satisfies the minimum
+  measurement and coverage obligations for the claimed surface.
+- **SARIF aggregation.** Multi-tool regimes produce a SARIF log or equivalent
+  aggregated evidence set that preserves per-tool provenance.
+- **Per-tool self-hosting.** Every tool that analyses code in its own
+  implementation language passes the rules it claims.
 
-**Regime documentation.** A regime MUST be documented: which tools, which profiles, which rules each tool covers, and which criteria remain unmet (if any). This documentation is the artefact an assessor evaluates. The assessor does not need to understand each tool's internals — they need the regime composition table and the combined corpus. The regime composition is documented in the language binding reference — for example, Part II-A §A.6 provides the regime composition matrix for the Python ecosystem, and Part II-B §B.6 for Java. Assessors evaluating a regime consult the binding reference for the composition table and the combined corpus.
+The regime documentation MUST identify:
+
+- the tools in the regime
+- the profile claimed by each tool
+- the rules or enforcement surface each tool owns
+- the criteria each tool satisfies
+- the obligation ID ranges or obligation sets each tool owns
+- any remaining gaps, waived obligations, stale evidence, or compensating
+  controls
+
+The regime documentation is the assessor's map. It is not optional explanatory
+material.
 
 #### 15.5 Supplementary group enforcement scope
 
-Criterion 1 requires that the ecosystem can *express* all 17 annotation groups. Criteria 2–8 require *enforcement* only for the nine rules — six pattern rules (WL-001–WL-006) and three structural verification rules (WL-007–WL-009) — plus taint-flow tracking — all of which operate on core classification annotations (Groups 1–4, 16–17). The framework does not mandate standardised enforcement semantics for supplementary contract annotations (Groups 5–15). Tools define their own enforcement rules for supplementary groups, with their own severity and exceptionability (§10.3), declared in the overlay's supplementary section (§14.1.2). This means a regime can be Wardline-Full conformant while providing rich enforcement for some supplementary groups and minimal enforcement for others. An assessor evaluating a regime SHOULD document which supplementary groups have enforcement rules and which are expressiveness-only — the overlay supplementary section provides the structured location for this documentation, so that adopters understand the regime's actual coverage versus the full annotation vocabulary.
+Criterion 1 requires that the binding can express all 17 annotation groups.
+Criteria 2 through 8 do not require uniform enforcement depth for supplementary
+groups 5 through 15.
 
-This distinction governs incremental adoption as well. A deployment that begins with core classification annotations to establish trust topology, and adds supplementary annotations later, is not non-conformant for lacking uniform supplementary enforcement depth. What matters is that the binding can express the full vocabulary and that the regime documentation accurately declares which supplementary groups are enforced versus expressiveness-only at the current stage.
+This distinction is mandatory in the compliance ledger and in any derived
+matrix:
+
+- supplementary groups with active enforcement MUST appear as explicit
+  obligations or explicit rows
+- supplementary groups that are expressiveness-only MUST be marked as such
+- a regime MUST NOT imply enforcement coverage for supplementary groups it has
+  not actually specified and measured
+
+This keeps incremental adoption honest. A deployment may start by enforcing the
+core classification surface and later add supplementary-group checks. What it
+must not do is silently blur "expressible" into "enforced."
 
 #### 15.6 Assessment procedure
 
-This subsection defines a repeatable verification procedure for assessors evaluating a wardline deployment. The procedure is tool-agnostic — it applies to any conformant regime regardless of language binding.
+Assessment proceeds obligation by obligation. The assessor creates or refreshes
+the obligation catalog before evidence collection begins.
 
-**Step 1: Regime documentation review.**
-- Obtain the regime composition document (Part II-A §A.6 for Python, Part II-B §B.6 for Java)
-- Verify that the documented tools collectively cover all 10 conformance criteria
-- Identify any documented gaps and their compensating controls
+Compliance states:
 
-**Step 2: Manifest validation.**
-- Run `wardline manifest validate` against the project's `wardline.yaml` and all overlays
-- Verify exit code 0 (schema-valid)
-- Review manifest content: tier definitions, boundary declarations, delegation policy, ratification date and review interval
-- Check that ratification is not overdue (ratification age < review interval)
+| State | Meaning |
+|---|---|
+| `unassessed` | Assessment has not yet been completed |
+| `implemented_no_evidence` | Claimed implementation exists, but assessor-runnable evidence is missing |
+| `evidenced` | Evidence exists, but review or freshness checks are incomplete |
+| `verified` | Requirement, evidence, freshness binding, and reviewer checks all align |
+| `non_compliant` | Evidence contradicts the claim or the implementation does not satisfy the requirement |
+| `waived` | Requirement is not met, but an explicit waiver with scope, approver, rationale, and expiry exists |
+| `not_applicable` | Not required for the declared profile or claimed surface |
+| `stale` | Previously evidenced or verified, but drift invalidated the record |
 
-**Step 2.5: Manifest coherence verification.**
-- Run manifest coherence checks (§10.2) against the project's manifest, overlays, and code-level annotations
-- Verify that no orphaned annotations exist (code annotations without manifest declarations)
-- Verify that no undeclared boundaries exist (manifest boundary declarations without corresponding code annotations)
-- Verify that tier assignments are consistent with declared data-flow topology
-- Verify that contract declarations match code-level annotations at the declared locations
+Remediation planning is separate from compliance state. Local workflows MAY use
+labels such as `fix-code`, `fix-spec`, `narrow-claim`, or `seek-waiver`, but
+those labels MUST NOT be treated as compliance outcomes.
 
-*For deployments at the Assurance governance level (§15.3.2):* manifest coherence is a MUST gate. All five coherence conditions MUST pass before code-level enforcement findings (Steps 3–4) are considered valid. Coherence failures that are excepted through the standard governance path (STANDARD exceptionability) MUST have documented rationale explaining why the incoherence is acceptable.
+**Step 1: Catalog completeness review**
 
-*For deployments at the Lite governance level (§15.3.2):* manifest coherence checking is RECOMMENDED. Lite deployments that run coherence checks benefit from early detection of annotation surface drift. Lite deployments that do not yet run coherence checks SHOULD document their approach to maintaining manifest–code alignment (e.g., periodic manual review of annotation coverage against manifest declarations).
+- Build or refresh the obligation catalog for the claimed profile, binding, and
+  rule surface.
+- Verify that every claimed criterion maps to obligation records.
+- Record whether the catalog is complete or partial for the claimed surface.
 
-**Step 3: Golden corpus verification.**
-- Obtain the corpus artefact and verify integrity (specimen hashes against manifest)
-- Run `wardline corpus verify` with each tool in the regime against its specimen subset
-- Record pass/fail per specimen, per tool
-- Compute corpus precision and recall per cell. Verify precision meets the applicable floor: ≥ 80% generally, ≥ 65% permitted for MIXED_RAW cells; and recall meets the applicable floor: ≥ 70% for STANDARD/RELAXED cells and ≥ 90% for UNCONDITIONAL cells (§11 properties 3–4)
-- Check adversarial specimen coverage: ≥1 adversarial false positive and ≥1 adversarial false negative per rule
+**Step 2: Manifest validation**
 
-**Step 4: Enforcement execution.**
-- Run the full regime against the project codebase
-- Verify SARIF output contains required wardline property bags (§11.1)
-- Verify `wardline.controlLaw` reports "normal" for the declared adoption phase
-- Run the tool twice on the same codebase and verify byte-identical SARIF in verification mode (property 5)
-- Confirm `wardline.deterministic: true` is present in the SARIF output as the tool's self-report
+- Run manifest schema validation against `wardline.yaml` and all overlays.
+- Verify ratification age, governance profile declaration, and required
+  governance artefacts for the declared profile.
+- Mark manifest and governance obligations `verified` only when the manifest is
+  both valid and current.
 
-**Step 5: Governance artefact review.**
-- Inspect the exception register: verify entries have reviewer identity, rationale, expiry, and provenance
-- Check the expedited exception ratio (`wardline.expeditedExceptionRatio` in SARIF) against the project's declared threshold
-- Inspect the fingerprint baseline: verify VCS tracking, CODEOWNERS protection, and that baseline age is within the review interval
-- Check for direct-law or alternate-law SARIF runs in recent history; verify retrospective scans were performed for any degraded windows
+**Step 2.5: Manifest coherence verification**
 
-**Step 6: Self-hosting verification.**
-- For each tool in the regime that analyses code in its own implementation language: verify that the tool's own source passes the rules it implements
-- Tools exempt from self-hosting (different implementation language, governance-only tools): document the exemption
+- Run coherence checks against manifest declarations, overlays, and code
+  annotations.
+- Verify absence of orphaned annotations, undeclared boundaries, contradictory
+  contracts, and stale bindings.
+- Under the Assurance profile, manifest coherence is a blocking gate.
 
-**Pass/fail criteria:**
-| Criterion | Pass | Fail |
+**Step 3: Golden corpus verification**
+
+- Verify corpus integrity against the specimen hash manifest and the declared
+  specification or matrix revision.
+- Run `wardline corpus verify` or the binding-equivalent corpus verifier.
+- Record pass/fail per specimen and per tool.
+- Measure precision and recall per measurement cell. Precision MUST meet the
+  applicable minimum floor: `>= 0.80` generally and `>= 0.65` only for
+  `MIXED_RAW` cells. Recall MUST meet the applicable minimum floor: `>= 0.70`
+  for `STANDARD` and `RELAXED` cells and `>= 0.90` for `UNCONDITIONAL` cells.
+- Verify adversarial coverage: at least one `adversarial_false_positive` and at
+  least one `adversarial_false_negative` specimen per claimed framework rule or
+  binding-equivalent rule, plus any binding-defined
+  `suppression_interaction` minimums.
+- Mark corpus obligations only from assessor-runnable output, never from
+  informal spot checks.
+
+**Step 4: Enforcement execution**
+
+- Run the regime against the target codebase.
+- Verify required SARIF properties and any other mandated output metadata.
+- Verify that the release-signoff run reports `wardline.controlLaw: "normal"`.
+  Release sign-off MUST NOT be taken from alternate-law or direct-law output.
+- If any alternate-law or direct-law window occurred after the last accepted
+  normal-law run, verify that the first returning normal-law run carries
+  `wardline.retroactiveScan: true` and the matching retrospective-scan range.
+- Re-run the same inputs and verify deterministic output in verification mode.
+- Confirm that findings, declared gaps, claimed profile, and claimed release
+  surface match the compliance ledger.
+
+**Step 5: Governance artefact review**
+
+- Inspect CODEOWNERS or equivalent review protection.
+- Inspect exception registers, fingerprint baselines, retrospective reviews, and
+  expedited governance evidence.
+- Verify that governance artefacts match the declared profile, that any Lite
+  alternatives are documented, and that any degraded-window retrospective review
+  is closed before release sign-off.
+
+**Step 6: Self-hosting verification**
+
+- For each applicable tool, run the tool against its own source.
+- Record pass/fail by tool, not just once for the regime.
+- Define the self-hosting gate in explicit SARIF or equivalent output terms.
+- Document exemptions explicitly when a tool is implemented in a different
+  language or performs governance-only work.
+
+**Release-critical gate checks**
+
+| Gate | Pass condition | Fail condition |
 |---|---|---|
-| Regime covers all 10 criteria | All criteria mapped to a tool | Any criterion unmapped without documented compensating control |
-| Manifest schema-valid | Exit code 0 | Schema validation error |
-| Manifest coherence (Assurance) | No orphaned annotations, undeclared boundaries, tier–topology contradictions, unmatched contracts, or stale contract bindings | Any coherence failure without documented exception |
-| Corpus precision per cell | ≥ 80% generally, or ≥ 65% for MIXED_RAW cells (or stricter project-declared thresholds) | Below the applicable threshold |
-| Corpus recall per cell | ≥ 70% for STANDARD/RELAXED cells and ≥ 90% for UNCONDITIONAL cells (or stricter project-declared thresholds) | Below the applicable threshold |
-| SARIF property bags present | All required properties on results and runs | Missing properties |
-| Control law normal | Normal for declared phase | Alternate or direct without governance acknowledgement |
-| Deterministic output | Byte-identical SARIF from the same tool binary on repeated runs (verification mode) | Non-deterministic output |
-| Exception register well-formed | All entries have reviewer, rationale, expiry | Missing required fields |
-| Self-hosting passes | Tool passes own rules | Tool violates own rules |
+| Claimed release surface is explicit | Release projection names the claimed profiles, required rule surface, active binding-specific rows, and explicit out-of-scope rows | Claimed profile or scope is ambiguous |
+| Derived release projection is runnable | Release matrix exposes row identifier, scope, backing obligations, state, next action, reviewer status, and explicit `not_applicable` rows | Release matrix is only a catalogue or summary |
+| Corpus verification is current | Corpus integrity is verified, per-cell floors are met, and required adversarial/suppression-interaction minima are present | Integrity, floor, or minimum-coverage checks fail |
+| Control law is normal for sign-off | Release-signoff run reports `wardline.controlLaw: "normal"` | Sign-off relies on alternate-law or direct-law output |
+| Retrospective scan closure is verifiable | Any degraded window is closed by the first returning normal-law run with `wardline.retroactiveScan: true` and matching range | Required retrospective scan is missing or unbounded |
+| Lite or Assurance governance checklist passes | Every item in the declared governance-profile checklist is evidenced for the assessment window | Any checklist item is missing, undocumented, or stale |
 
-A deployment that fails any criterion is not conformant at the corresponding profile level. The assessor documents which criteria pass, which fail, and the overall conformance determination (Wardline-Full, partial, or non-conformant).
+**Freshness binding.** A `verified`, `waived`, or `stale` obligation MUST bind
+to the evidence identity required to know whether it is current. For code-scoped
+claims this normally includes:
 
-#### 15.6.1 Worked example: conformant Phase 3 deployment
+- commit reference
+- tool version
+- manifest hash
+- corpus hash, if corpus evidence is involved
+- input hash or equivalent run identity, if scan output is involved
+- evidence artefact identifiers or hashes
 
-This example shows the governance artefacts and CI configuration for a synthetic government Java project ("partner-landscape") at Phase 3 (Wardline-Core) conformance. It is not a real project — it demonstrates the minimum artefact set an assessor should expect.
+If the implementation surface or any bound evidence input changes without
+re-verification, the obligation becomes `stale`.
 
-**Project structure:**
+**Reviewer independence.** Every verified or waived obligation MUST record the
+reviewer identity and review date. For Assurance-profile claims, and for any
+formally accredited claim, the record MUST also identify whether the reviewer is
+independent of the implementation author for that obligation.
 
-```
-partner-landscape/
-├── wardline.yaml                    # Root manifest
-├── wardline.fingerprint.json        # Annotation fingerprint baseline
-├── wardline.exceptions.json         # Exception register
-├── wardline.toml                    # Scanner configuration
-├── CODEOWNERS                       # Protected-file reviewers
-├── .github/workflows/ci.yml         # CI pipeline
-├── adapters/
-│   ├── wardline.overlay.yaml        # Module overlay — shape validation boundaries
-│   └── src/main/java/...
-├── domain/
-│   ├── wardline.overlay.yaml        # Module overlay — semantic validation
-│   └── src/main/java/...
-├── audit/
-│   ├── wardline.overlay.yaml        # Module overlay — T1 construction + restoration
-│   └── src/main/java/...
-└── corpus/                          # Golden corpus
-    ├── WL-001/INTEGRAL/...
-    ├── WL-001/EXTERNAL_RAW/...
-    └── ...
-```
+**Derived views.** After the ledger is current, the regime MAY generate:
 
-**Root manifest (`wardline.yaml`):**
+- a certification matrix for human review
+- a release projection
+- a profile-specific compliance summary
+- a ship/no-ship gate
 
-```yaml
-metadata:
-  organisation: "Example Organisation"
-  ratified_by:
-    name: "Jane Smith"
-    role: "Chief Information Security Officer"
-  ratification_date: "2026-02-01"
-  review_interval_days: 180
+Those views MUST be reproducible from the ledger. They MUST NOT hide failed,
+waived, stale, or unassessed obligations.
 
-tiers:
-  - id: "partner-api"
-    tier: 4
-    description: "External partner data from Partner Gateway API"
-  - id: "internal-database"
-    tier: 1
-    description: "Authoritative audit records in PostgreSQL"
+Where a derived view is used for release authorization, it MUST also expose the
+row state, current disposition or next action, reviewer status, and explicit
+`not_applicable` rows or states for intentionally unclaimed surfaces.
 
-rules:
-  overrides: []
-  expedited_ratio_threshold: 0.10
+#### 15.6.1 Worked example: ledger excerpt
 
-delegation:
-  default_authority: "RELAXED"
-  grants:
-    - path: "audit/"
-      authority: "NONE"  # All audit exceptions require root-level approval
+The following excerpt shows the minimum shape of a useful compliance ledger:
 
-module_tiers:
-  - path: "adapters/"
-    default_taint: "EXTERNAL_RAW"
-  - path: "domain/"
-    default_taint: "ASSURED"
-  - path: "audit/"
-    default_taint: "INTEGRAL"
-```
+| Obligation ID | Source | Summary | State | Freshness binding |
+|---|---|---|---|---|
+| `C-CRIT-5-PER-CELL-MEASUREMENT` | `§15.2(5)` | Per-cell precision and recall are published | `non_compliant` | corpus hash + conformance report |
+| `P1-S6-TAINT-JOIN-ABSORBING` | `§6` | Taint propagation preserves the normative join algebra | `verified` | commit + taint-flow corpus evidence |
+| `C-CRIT-8-DETERMINISTIC-SARIF` | `§15.2(8)` | Verification-mode SARIF is deterministic | `stale` | prior input hash no longer matches current scan inputs |
+| `G-LITE-EXCEPTION-REGISTER` | `§15.3.2` | Lite exception register requirements are satisfied | `verified` | manifest hash + exception register review |
 
-**CI pipeline (relevant steps from `.github/workflows/ci.yml`):**
+This example is intentionally mixed-state. A useful ledger shows the full truth,
+not only the green entries.
 
-```yaml
-- name: Compile with Error Prone advisory
-  run: mvn compile  # Error Prone fires during javac (Phase 2 advisory)
+#### 15.6.2 Worked example: release projection
 
-- name: Wardline scanner (Phase 3 authoritative)
-  run: |
-    wardline-scanner \
-      --config wardline.toml \
-      --manifest wardline.yaml \
-      --output sarif/wardline-scanner.sarif
+A release projection is derived from obligation records:
 
-- name: Wardline governance
-  run: |
-    wardline manifest validate
-    wardline regime status --phase 3
-    wardline regime verify
+| Release row | Backing obligations | Result |
+|---|---|---|
+| Claimed surface and profile | `R-*` claim-surface obligations | green only if the claimed profiles, active rows, and out-of-scope rows are explicit |
+| Manifest and governance | `G-*`, `C-CRIT-9`, `C-CRIT-10` | green only if all applicable obligations are `verified` or `not_applicable` |
+| Pattern rules and corpus | `C-CRIT-5`, `C-CRIT-6`, rule-specific obligations | blocked if any obligation is `non_compliant`, `waived`, `stale`, or missing required adversarial minima |
+| SARIF and control law | `C-CRIT-8` and control-law obligations | blocked until determinism evidence is current and sign-off occurs under normal law |
+| Self-hosting | `C-CRIT-7` and tool-specific self-hosting obligations | blocked until the per-tool gate is explicitly defined and satisfied |
 
-- name: Gate on findings
-  run: |
-    # Exit code 0 = no ERROR findings; 1 = ERROR findings; 2 = config error
-    wardline-scanner --check sarif/wardline-scanner.sarif
-```
-
-**CODEOWNERS (governance artefact protection):**
-
-```
-wardline.yaml               @security-team
-wardline.exceptions.json     @security-team
-wardline.fingerprint.json    @security-team
-*/wardline.overlay.yaml      @security-team @domain-leads
-corpus/                      @security-team
-```
-
-**Exception register excerpt (`wardline.exceptions.json`):**
-
-```json
-[
-  {
-    "id": "EXC-2026-0003",
-    "rule": "WL-001",
-    "taint_state": "EXTERNAL_RAW",
-    "location": {
-      "file": "adapters/src/main/java/com/myorg/adapters/LegacyAdapter.java",
-      "function": "parseLegacyRecord",
-      "line": 47
-    },
-    "exceptionability": "STANDARD",
-    "severity_at_grant": "ERROR",
-    "exceptionability_at_grant": "STANDARD",
-    "rationale": "Legacy partner API v1 omits 'status' field on inactive partners. Default 'INACTIVE' approved by data owner (JIRA-4521).",
-    "reviewer": {
-      "identity": "jane.smith@myorg.example",
-      "role": "CISO",
-      "date": "2026-02-15"
-    },
-    "expires": "2026-08-15",
-    "provenance": {
-      "governance_path": "standard",
-      "agent_originated": false
-    },
-    "elimination_path": "Migrate to Partner API v2 which includes 'status' on all records",
-    "elimination_cost": "1 sprint — requires partner team coordination"
-  }
-]
-```
-
-**What the assessor verifies against this deployment** (mapped to §15.6 steps):
-
-1. `wardline manifest validate` → exit code 0 ✓
-2. Ratification date (2026-02-01) within review interval (180 days) ✓
-3. Scanner runs in CI and gates on exit code ✓
-4. `wardline regime status --phase 3` → "normal" ✓
-5. SARIF output contains wardline property bags (§11.1) ✓
-6. Exception register entries have reviewer, rationale, expiry ✓
-7. CODEOWNERS protects all governance artefacts ✓
-8. Golden corpus present with specimens covering non-SUPPRESS cells ✓
-
-This is a Phase 3 deployment at the Assurance governance level — the Checker Framework is not present, and `wardline regime status --phase 3` correctly reports "normal" because Phase 3 does not expect it (Part II-B §B.10; this worked example uses the Java binding — Python equivalent: Part II-A §A.10).
-
-**Phase-to-profile mapping.** Language bindings define numbered adoption phases that map to the framework's conformance profiles. The phase numbers differ between bindings because each language's tooling ecosystem has different entry points and capabilities. The mapping is:
-
-| Adoption Phase | Python Binding (Part II-A §A.9) | Java Binding (Part II-B §B.9) | Conformance Profile |
-|---|---|---|---|
-| **1** | Decorators + advisory ruff rules | Annotations only | None (documentation value only) |
-| **2** | Manifest + reference scanner | Advisory Error Prone checks | Python: Wardline-Core / Java: None (advisory) |
-| **3** | Type-system enforcement (mypy) | Authoritative scanner in CI | Python: Wardline-Type / Java: Wardline-Core |
-| **4** | Runtime structural enforcement | Type-system enforcement (Checker Framework) | Python: (structural complement) / Java: Wardline-Type |
-| **5** | Full regime governance | *(not applicable)* | Wardline-Governance |
-
-Python has five phases because its tooling ecosystem layers differently — the reference scanner (Phase 2) precedes type-system integration (Phase 3), and governance tooling is a distinct Phase 5. Java has four phases because the advisory Error Prone path (Phase 2) is integrated into compilation, and governance tooling ships alongside the authoritative scanner at Phase 3. Both bindings reach Wardline-Full conformance through a regime (§15.4) that combines all constituent tools, not through any single phase.
-
-#### 15.6.2 Worked example: Lite governance deployment
-
-This example shows a five-person team ("health-notifications") adopting wardline at the Lite governance level. The team builds a Python service that processes health notification records from an external API and stores summaries in an internal database. They have no dedicated security team — governance is handled by the tech lead and one senior developer.
-
-**Project structure:**
-
-```
-health-notifications/
-├── wardline.yaml                    # Root manifest (Lite governance)
-├── wardline.exceptions.json         # Exception register
-├── wardline.toml                    # Scanner configuration
-├── CODEOWNERS                       # Protected-file reviewers
-├── .github/workflows/ci.yml         # CI pipeline
-├── ingest/
-│   ├── wardline.overlay.yaml        # Module overlay — external API boundary
-│   └── src/...
-├── store/
-│   ├── wardline.overlay.yaml        # Module overlay — internal DB writes
-│   └── src/...
-└── corpus/                          # Bootstrap corpus (24 specimens)
-    ├── WL-001/INTEGRAL/...
-    ├── WL-001/EXTERNAL_RAW/...
-    ├── WL-003/INTEGRAL/...
-    └── ...
-```
-
-**Root manifest (`wardline.yaml`):**
-
-```yaml
-metadata:
-  organisation: "Health Notifications Program"
-  ratified_by:
-    name: "Alex Chen"
-    role: "Tech Lead"
-  ratification_date: "2026-03-01"
-  review_interval_days: 90
-  governance_profile: "lite"
-  temporal_separation:
-    alternative: "same-actor-with-retrospective"
-    retrospective_window_days: 10
-    rationale: >
-      Team of five — only two members have governance authority.
-      Same-actor approval permitted with mandatory retrospective review
-      within 10 business days. Retrospective reviews are tracked as
-      PR comments on the original governance change.
-
-tiers:
-  - id: "health-api"
-    tier: 4
-    description: "External health notification records from partner API"
-  - id: "notification-db"
-    tier: 1
-    description: "Authoritative notification summaries in PostgreSQL"
-
-rules:
-  overrides: []
-
-delegation:
-  default_authority: "RELAXED"
-  grants:
-    - path: "store/"
-      authority: "NONE"  # Tier 1 writes — all exceptions require tech lead approval
-```
-
-**CODEOWNERS:**
-
-```
-wardline.yaml               @alex-chen @sam-kumar
-wardline.exceptions.json     @alex-chen @sam-kumar
-*/wardline.overlay.yaml      @alex-chen @sam-kumar
-```
-
-**Bootstrap corpus (`corpus/`):**
-
-The team maintains 26 specimens covering UNCONDITIONAL cells and Tier 1 taint states:
-
-| Rule | Taint states covered | Specimen count |
-|------|---------------------|----------------|
-| WL-001 | INTEGRAL, EXTERNAL_RAW, ASSURED | 6 (2 per state: 1 true positive, 1 true negative) |
-| WL-002 | INTEGRAL, EXTERNAL_RAW | 4 |
-| WL-003 | INTEGRAL, ASSURED | 4 |
-| WL-004 | INTEGRAL, EXTERNAL_RAW | 4 |
-| WL-005 | INTEGRAL | 2 |
-| WL-006 | INTEGRAL, EXTERNAL_RAW | 4 |
-| WL-007 | INTEGRAL | 2 |
-| WL-008 | GUARDED | 2 |
-| WL-009 | INTEGRAL | 2 |
-
-The bootstrap corpus focuses on the cells where findings are UNCONDITIONAL or ERROR at Tier 1, and includes at least one structural-verification specimen for WL-007, WL-008, and WL-009 so the invariant rules are not absent from early assessment. Full coverage of all 126+ cells is deferred to governance graduation.
-
-**CI pipeline (relevant steps):**
-
-```yaml
-- name: Wardline scanner
-  run: |
-    wardline-scanner \
-      --config wardline.toml \
-      --manifest wardline.yaml \
-      --output sarif/wardline-scanner.sarif
-
-- name: Wardline manifest validation
-  run: wardline manifest validate
-
-- name: Gate on findings
-  run: wardline-scanner --check sarif/wardline-scanner.sarif
-```
-
-**What the assessor verifies against this deployment** (Lite governance checklist — §15.3.2):
-
-1. `wardline manifest validate` → exit code 0 ✓
-2. Ratification date (2026-03-01) within review interval (90 days) ✓
-3. CODEOWNERS protects `wardline.yaml`, overlays, and exception register ✓
-4. Exception register entries have reviewer identity, rationale, and expiry ✓
-5. Temporal separation alternative is documented in the manifest (`same-actor-with-retrospective`, 10-day window) ✓
-6. PR review history shows annotation changes were reviewed in the assessment window ✓
-7. Bootstrap corpus present: 24 specimens covering UNCONDITIONAL/Tier 1 cells; scanner detects all specimens correctly ✓
-
-**What the assessor does not verify at Lite level** (deferred to Assurance graduation):
-
-- Full 126+ specimen golden corpus with adversarial cases
-- Structured fingerprint baseline with canonical hashing
-- Expedited governance ratio threshold and automated findings
-- SIEM export of governance events
-
-**Graduation notes.** This team would graduate to Assurance when they submit for formal security accreditation, or when the service begins processing PROTECTED data. The 90-day ratification cycle means they would have completed at least two review cycles within 180 days — sufficient enforcement experience to expand the corpus and establish the full fingerprint baseline.
+The release view is therefore a query over the ledger, not a second system of
+truth.
 
 #### 15.6.3 Navigating to Part II
 
-Part I defines the framework; Part II translates it to language-specific enforcement. The Python binding (Part II-A) and Java binding (Part II-B) show how the tiers, patterns, and governance model are expressed in each language. They do not modify the framework — where a binding statement conflicts with Part I, Part I governs. Start with Part II-A if you are implementing or evaluating a Python regime; start with Part II-B for Java. Both bindings follow the same structure: design history, language evaluation, normative interface contract, non-normative annotation vocabulary and worked examples, regime composition matrix, and residual risks.
+Part I defines the framework-level contract. Part II maps that contract to each
+language ecosystem. The binding reference names the tools in the regime, defines
+binding-specific rule identifiers, and provides the regime composition material
+an assessor uses in Step 1.
+
+When a binding statement conflicts with this chapter, Part I governs. When a
+binding adds stricter obligations for its own rule surface, both the binding and
+this chapter apply.
 
 #### 15.7 Partial conformance
 
-Tool quality targets (MAY) are not conformance criteria — they represent maturity targets that improve enforcement quality.
+Partial conformance is expected during adoption, but it must be explicit.
 
-A tool that satisfies some but not all criteria for a profile is a partial implementation of that profile. A regime that covers some but not all ten criteria is a partial regime. In both cases, the assessor documents which criteria are met, which are unmet, and what compensating controls (if any) address the gaps. Partial conformance is expected during adoption — few ecosystems will achieve Wardline-Full on day one. The profiles exist precisely to make partial conformance legible: a project that deploys a Wardline-Core linter plugin and a Wardline-Governance orchestrator has assessable, documented coverage even without type-system enforcement.
+A tool or regime is **partially conformant** when one or more applicable
+obligations are `unassessed`, `implemented_no_evidence`, `evidenced`,
+`non_compliant`, `waived`, or `stale`, or when the catalog itself is partial for
+the claimed surface.
 
-The conformance profiles also serve an adoption function beyond assessment. By defining implementable slices that match existing tool categories, they answer the question that deters community participation: "how much of this do I have to build?" A mypy plugin author can target Wardline-Type without understanding exception registers. A ruff rule author can target Wardline-Core without understanding taint analysis. A CI platform can target Wardline-Governance without understanding AST pattern matching. The profiles make wardline something tools can implement, not something they must become.
+Partial conformance is legitimate only when the documentation clearly states:
+
+- which profiles are claimed
+- whether the obligation catalog is complete or partial for the claimed surface
+- which rules are implemented
+- which obligations remain unverified, non-compliant, waived, or stale
+- which compensating controls, if any, are in place
+
+What partial conformance does **not** permit is aspirational language. A tool
+that hopes to satisfy Wardline-Core after future work is not Wardline-Core
+today. A release projection that looks green while the obligation ledger is
+partial, stale, or non-compliant is not a conformant release.

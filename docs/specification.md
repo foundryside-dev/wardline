@@ -55,7 +55,7 @@ and conformance requirements that all language bindings must implement.
 
 <span class="wl-chapter-num">§ 14</span> <span class="wl-chapter-title">[Portability & Manifest Format](spec/wardline-01-14-portability-and-manifest-format.md) — wardline.yaml schema, overlays, and cross-platform format</span>
 
-<span class="wl-chapter-num">§ 15</span> <span class="wl-chapter-title">[Conformance](spec/wardline-01-15-conformance.md) — Profiles, adoption phases, and compliance requirements</span>
+<span class="wl-chapter-num">§ 15</span> <span class="wl-chapter-title">[Conformance](spec/wardline-01-15-conformance.md) — Obligation-ledger conformance, profiles, and release projections</span>
 
 </div>
 

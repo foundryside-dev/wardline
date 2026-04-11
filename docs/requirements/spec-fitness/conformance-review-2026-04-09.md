@@ -379,7 +379,7 @@ SARIF property gaps from §10 cascade to Criterion 8. `wardline.deterministic` m
 
 | # | Risk | Section | Impact | Remediation |
 |---|------|---------|--------|-------------|
-| R1 | 4 missing result-level SARIF properties | §10.1 | Assessor following §14.6 procedure fails Step 4 | Add `enclosingTier`, `annotationGroups`, `excepted`, `dataSource` to `sarif.py:198-219` |
+| R1 | 4 missing result-level SARIF properties | §10.1 | Assessor following §15.6 procedure fails Step 4 | Add `enclosingTier`, `annotationGroups`, `excepted`, `dataSource` to `sarif.py:198-219` |
 | R2 | 2 missing run-level SARIF properties | §10.1 | Same | Add `deterministic`, `deferredFixRatio` to `sarif.py:332-386` |
 | R3 | Corpus `expected_match` is boolean | §10.1 | Verification only confirms rule fires, not location accuracy | Upgrade to structured `{line, text, function}` with SARIF snippet comparison |
 
@@ -460,7 +460,7 @@ SARIF property gaps from §10 cascade to Criterion 8. `wardline.deterministic` m
 
 **Mandatory before release (R1-R3):**
 
-1. **Add 6 missing SARIF properties** — `enclosingTier`, `annotationGroups`, `excepted`, `dataSource` (result-level) + `deterministic`, `deferredFixRatio` (run-level). These are straightforward additions to `sarif.py` with data already available in the `Finding` and `ScanContext` objects. Without these, an assessor following the §14.6 procedure will fail the implementation at Step 4.
+1. **Add 6 missing SARIF properties** — `enclosingTier`, `annotationGroups`, `excepted`, `dataSource` (result-level) + `deterministic`, `deferredFixRatio` (run-level). These are straightforward additions to `sarif.py` with data already available in the `Finding` and `ScanContext` objects. Without these, an assessor following the §15.6 procedure will fail the implementation at Step 4.
 
 2. **Upgrade corpus `expected_match`** — Change from boolean to structured `{line, text, function}` and add SARIF snippet text comparison in `corpus_cmds.py`. This strengthens verification property 1 from "rule fires" to "rule fires at the correct location."
 

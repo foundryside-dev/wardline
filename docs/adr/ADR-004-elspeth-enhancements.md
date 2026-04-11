@@ -138,7 +138,7 @@ WL-009 is a structural verification rule. Like WL-007 and WL-008, its severity i
 
 #### 2.1.5 Conformance implications
 
-WL-009 is a structural verification rule. Under §14.2 criterion 3, conformant tools that implement structural verification MUST enforce WL-009 alongside WL-007 and WL-008. The Wardline-Core enforcement profile (§14.3.1) includes WL-009 when the tool's declared rule set includes structural verification rules.
+WL-009 is a structural verification rule. Under §15.2 criterion 3, conformant tools that implement structural verification MUST enforce WL-009 alongside WL-007 and WL-008. The Wardline-Core enforcement profile (§15.3.1) includes WL-009 when the tool's declared rule set includes structural verification rules.
 
 **Golden corpus requirement (§10):** WL-009 requires specimens in the INTEGRAL taint state at minimum:
 
@@ -277,7 +277,7 @@ Both rules share the same severity profile. The tier-sensitivity gradient reflec
 
 #### 2.3.4 Relationship to framework rules
 
-SUP-010 and SUP-011 are **not** sub-rules of any framework WL-* rule. They are Python-specific supplementary enforcement rules that implement the non-normative deep-immutability principle (§2.2). They have no framework-level counterpart and do not appear in the framework conformance criteria (§14.2). A conformant Wardline-Core tool is not required to implement them. The SUP-* prefix signals this status — consistent with the existing convention where SUP-001 (call-graph enforcement) is opt-in supplementary enforcement.
+SUP-010 and SUP-011 are **not** sub-rules of any framework WL-* rule. They are Python-specific supplementary enforcement rules that implement the non-normative deep-immutability principle (§2.2). They have no framework-level counterpart and do not appear in the framework conformance criteria (§15.2). A conformant Wardline-Core tool is not required to implement them. The SUP-* prefix signals this status — consistent with the existing convention where SUP-001 (call-graph enforcement) is opt-in supplementary enforcement.
 
 #### 2.3.5 Golden corpus specimens
 
@@ -390,7 +390,7 @@ Both rules are intraprocedural AST visitors scoped to `__post_init__` methods of
 | Rule count update | §7 (intro paragraph) | A.4 | Normative | "eight rules" → "nine rules"; "Two structural" → "Three structural" |
 | Deep immutability note | §8 | A.5 | Non-normative | Binding guidance paragraph |
 | WL-009 static analysis | §8.1 (requirements list) | A.6 | Normative | New bullet after WL-008 |
-| WL-009 conformance | §14.2 criterion 3 | A.7 | Normative | Add WL-009 to structural verification criterion |
+| WL-009 conformance | §15.2 criterion 3 | A.7 | Normative | Add WL-009 to structural verification criterion |
 | WL-009 manifest schema | §13 / overlay schema | A.8 | Normative (minimal) | `serialization_boundary` flag on `BoundaryEntry` |
 | WL-009 severity rationale | §7.5 (worked examples) | A.9 | Non-normative | Update WL-007/WL-008 paragraph to include WL-009 |
 | SARIF presentation | §10.1 | A.10 | Normative | Add WL-009 to taint-state omission guidance |
@@ -500,7 +500,7 @@ This appendix provides the exact text changes to each affected spec section. Ins
 
 ---
 
-### A.7 §14.2 — Conformance criterion 3: Update to include WL-009
+### A.7 §15.2 — Conformance criterion 3: Update to include WL-009
 
 **Current:**
 > 3. Structural verification: WL-007 is enforced on all validation boundary functions (shape, semantic, combined, and restoration) and WL-008 (validation ordering) is enforced on semantic-validation boundaries (§7.2, §8.1)

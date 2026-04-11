@@ -3,7 +3,7 @@ requirements:
     title: Ten conformance criteria are addressable
     statement: >
       The implementation MUST address all ten conformance criteria defined in
-      §14.2: (1) annotation expressiveness across 17 groups,
+      §15.2: (1) annotation expressiveness across 17 groups,
       (2) pattern rule detection WL-001–WL-006, (3) structural verification
       WL-007, WL-008, and WL-009, (4) taint-flow tracking, (5) measured precision and
       recall per cell, (6) golden corpus, (7) self-hosting gate,
@@ -12,7 +12,7 @@ requirements:
       collectively satisfied by an enforcement regime of multiple tools.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.2 Conformance criteria"
+        section: "15.2 Conformance criteria"
     verification:
       method: documentation_and_integration_review
       target_paths:
@@ -36,7 +36,7 @@ requirements:
       documentation MUST declare which rules it implements.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.3.1 Enforcement profiles"
+        section: "15.3.1 Enforcement profiles"
     verification:
       method: documentation_and_sarif_review
       target_paths:
@@ -58,7 +58,7 @@ requirements:
       an Assurance deployment against the full §9 governance surface.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.3.2 Governance profiles"
+        section: "15.3.2 Governance profiles"
     verification:
       method: manifest_and_sarif_review
       target_paths:
@@ -80,7 +80,7 @@ requirements:
       The regime's corpus is the union of all constituent tools' corpora.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.4 Enforcement regimes"
+        section: "15.4 Enforcement regimes"
     verification:
       method: documentation_review
       target_paths:
@@ -99,7 +99,7 @@ requirements:
       structured location for this documentation.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.5 Supplementary group enforcement scope"
+        section: "15.5 Supplementary group enforcement scope"
     verification:
       method: documentation_review
       target_paths:
@@ -115,14 +115,14 @@ requirements:
     title: Assessment procedure is supportable
     statement: >
       The implementation MUST support the seven-step assessment procedure
-      defined in §14.6: (1) regime documentation review, (2) manifest
+      defined in §15.6: (1) regime documentation review, (2) manifest
       validation, (2.5) manifest coherence verification, (3) golden corpus
       verification, (4) enforcement execution with SARIF property bag
       verification, (5) governance artefact review, and (6) self-hosting
       verification.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.6 Assessment procedure"
+        section: "15.6 Assessment procedure"
     verification:
       method: integration_tests_and_cli_review
       target_paths:
@@ -132,7 +132,7 @@ requirements:
     fitness_dimensions: [conformance, assessability]
     notes: >
       Verify that the CLI commands needed for each assessment step exist and
-      produce the expected output. The pass/fail criteria table in §14.6
+      produce the expected output. The pass/fail criteria table in §15.6
       defines the standard.
 
   - id: WL-FIT-CONF-007
@@ -146,7 +146,7 @@ requirements:
       Lite-era exceptions.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.3.3 Governance profile graduation"
+        section: "15.3.3 Governance profile graduation"
     verification:
       method: manifest_and_cli_review
       target_paths:
@@ -172,7 +172,7 @@ requirements:
       - file: docs/spec/wardline-01-11-verification-properties.md
         section: "10. Verification properties"
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.6 Assessment procedure"
+        section: "15.6 Assessment procedure"
     verification:
       method: corpus_and_cli_tests
       target_paths:
@@ -197,7 +197,7 @@ requirements:
       where applicable.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.4 Enforcement regimes"
+        section: "15.4 Enforcement regimes"
     verification:
       method: documentation_review
       target_paths:
@@ -221,7 +221,7 @@ requirements:
       with retrospective review.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.3.2 Governance profiles"
+        section: "15.3.2 Governance profiles"
     verification:
       method: repository_and_manifest_review
       target_paths:

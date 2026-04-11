@@ -8,7 +8,7 @@ requirements:
       - file: docs/spec/wardline-01-14-portability-and-manifest-format.md
         section: "13.1.1 Root manifest schema"
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.2 Conformance criteria"
+        section: "15.2 Conformance criteria"
     verification:
       method: schema_and_cli_tests
       target_paths:
@@ -143,7 +143,7 @@ requirements:
       same declared profile for assessors.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.3.2 Governance profiles"
+        section: "15.3.2 Governance profiles"
       - file: docs/spec/wardline-01-11-verification-properties.md
         section: "10.1 Findings interchange format"
     verification:
@@ -163,7 +163,7 @@ requirements:
       policy changes cannot merge without designated reviewer approval.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.3.2 Governance profiles"
+        section: "15.3.2 Governance profiles"
       - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.5 Enforcement availability (control law)"
     verification:
@@ -183,9 +183,9 @@ requirements:
       baseline and use it as a governance artefact.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.3.2 Governance profiles"
+        section: "15.3.2 Governance profiles"
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.2 Conformance criteria"
+        section: "15.2 Conformance criteria"
     verification:
       method: cli_and_repository_review
       target_paths:
@@ -204,7 +204,7 @@ requirements:
       alternative in the manifest so that an assessor can evaluate it.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.3.2 Governance profiles"
+        section: "15.3.2 Governance profiles"
     verification:
       method: manifest_and_docs_review
       target_paths:
@@ -227,7 +227,7 @@ requirements:
       - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.2 Governance mechanisms"
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.6 Assessment procedure"
+        section: "15.6 Assessment procedure"
     verification:
       method: cli_and_integration_tests
       target_paths:

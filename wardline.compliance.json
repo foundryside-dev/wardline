@@ -1,0 +1,375 @@
+{
+  "format_version": "0.1",
+  "generated_at": "2026-04-12T00:00:00Z",
+  "catalog_status": "partial",
+  "claim_scope": {
+    "binding": "Python",
+    "claimed_profiles": [
+      "Wardline-Core",
+      "Wardline-Governance"
+    ],
+    "not_claimed_profiles": [
+      "Wardline-Type"
+    ],
+    "governance_profile": "lite",
+    "release": "wardline-d72a66711c",
+    "required_framework_rule_surface": [
+      "PY-WL-001",
+      "PY-WL-002",
+      "PY-WL-003",
+      "PY-WL-004",
+      "PY-WL-005",
+      "PY-WL-006",
+      "PY-WL-007",
+      "PY-WL-008",
+      "PY-WL-009",
+      "PY-WL-010"
+    ],
+    "binding_specific_active_non_blocking": [
+      "SCN-021",
+      "SUP-001"
+    ],
+    "optional_supplementary_not_claimed": [
+      "SUP-010",
+      "SUP-011"
+    ],
+    "surface": "current Python Wardline-Core plus Wardline-Governance recertification, with Wardline-Type explicitly out of scope"
+  },
+  "id_schema": {
+    "P1-S<chapter>-<slug>": "Part I framework obligation",
+    "P2A-A<section>-<slug>": "Python binding obligation",
+    "C-CRIT-<n>-<slug>": "Conformance criterion obligation",
+    "G-LITE-<slug> / G-ASSURANCE-<slug>": "Governance profile obligation",
+    "R-<slug>": "Regime or release projection obligation"
+  },
+  "catalog_sources": [
+    "docs/requirements/spec-fitness/01-framework-core.yaml",
+    "docs/requirements/spec-fitness/02-manifest-governance.yaml",
+    "docs/requirements/spec-fitness/03-scanner-conformance.yaml",
+    "docs/requirements/spec-fitness/05-enforcement-layers.yaml",
+    "docs/requirements/spec-fitness/06-governance-operations.yaml",
+    "docs/requirements/spec-fitness/07-conformance-profiles.yaml"
+  ],
+  "evidence_binding": {
+    "repo_head": "de0d4a67d36526249659cca7bdc73e030b328692",
+    "conformance_artifact": "wardline.conformance.json",
+    "conformance_inputs": {
+      "commit_ref": "5bd9e55e30d9225ae4db6de5bedbd3ad7c47e52d-dirty",
+      "tool_version": "1.0.0",
+      "manifest_hash": "sha256:b7e6f1d15e8896601478df483fc8ff3e48366abba60e9c98c1405ca42c59a2a3",
+      "corpus_hash": "sha256:81e348e223a4c83f12b4e3b617e28855a964c30faa927a32f5780224d74b5950",
+      "self_hosting_input_hash": "sha256:d08705f2c6e967013eb54fbe07390b1717cc8f8a0162f0692ddac6397585167b"
+    }
+  },
+  "summary": {
+    "verified": 0,
+    "evidenced": 7,
+    "implemented_no_evidence": 3,
+    "stale": 0,
+    "non_compliant": 6,
+    "waived": 0,
+    "not_applicable": 0,
+    "unassessed": 0
+  },
+  "obligations": [
+    {
+      "id": "C-CRIT-5-PER-CELL-MEASUREMENT",
+      "source_refs": [
+        "docs/spec/wardline-01-15-conformance.md §15.2(5)",
+        "docs/spec/wardline-01-11-verification-properties.md property 3",
+        "docs/spec/wardline-01-11-verification-properties.md property 4"
+      ],
+      "summary": "Precision and recall are measured, tracked, and published per cell.",
+      "state": "non_compliant",
+      "evidence": [
+        "wardline.conformance.json"
+      ],
+      "tracker_ids": [
+        "wardline-735e7f15fe"
+      ],
+      "notes": "Live report records 17 failing cells and the floor semantics drift across prose and verifier behavior."
+    },
+    {
+      "id": "C-CRIT-6-GOLDEN-CORPUS",
+      "source_refs": [
+        "docs/spec/wardline-01-15-conformance.md §15.2(6)",
+        "docs/spec/wardline-01-11-verification-properties.md property 1"
+      ],
+      "summary": "Golden corpus exists with coherent specimen schema and adversarial coverage.",
+      "state": "non_compliant",
+      "evidence": [
+        "corpus/corpus_manifest.json",
+        "src/wardline/manifest/schemas/corpus-specimen.schema.json"
+      ],
+      "tracker_ids": [
+        "wardline-735e7f15fe"
+      ],
+      "notes": "Live schema, verdict vocabulary, and known_false_negative handling drift from §11."
+    },
+    {
+      "id": "C-CRIT-7-SELF-HOSTING",
+      "source_refs": [
+        "docs/spec/wardline-01-15-conformance.md §15.2(7)",
+        "docs/spec/wardline-01-11-verification-properties.md property 2"
+      ],
+      "summary": "Enforcement tools pass their own rules where applicable.",
+      "state": "non_compliant",
+      "evidence": [
+        "wardline.conformance.json",
+        "src/wardline/cli/corpus_cmds.py"
+      ],
+      "tracker_ids": [
+        "wardline-625c233fde"
+      ],
+      "notes": "Current gate only blocks on unexcepted error findings."
+    },
+    {
+      "id": "C-CRIT-8-DETERMINISTIC-SARIF",
+      "source_refs": [
+        "docs/spec/wardline-01-15-conformance.md §15.2(8)",
+        "docs/spec/wardline-01-11-verification-properties.md property 5"
+      ],
+      "summary": "Verification-mode SARIF is deterministic and assessor-runnable.",
+      "state": "evidenced",
+      "evidence": [
+        "src/wardline/scanner/sarif.py",
+        "src/wardline/scanner/engine.py"
+      ],
+            "tracker_ids": [
+                "wardline-29bd1003e7"
+            ],
+      "notes": "Result ordering is deterministic, but unsorted file discovery still needs end-to-end re-verification."
+    },
+    {
+      "id": "C-CRIT-9-GOVERNANCE-MINIMUMS",
+      "source_refs": [
+        "docs/spec/wardline-01-15-conformance.md §15.2(9)",
+        "docs/spec/wardline-01-10-governance-model.md",
+        "docs/spec/wardline-01-15-conformance.md §15.3.2"
+      ],
+      "summary": "Lite governance minimums are present and reviewable.",
+      "state": "evidenced",
+      "evidence": [
+        "wardline.yaml",
+        ".github/CODEOWNERS",
+        "wardline.exceptions.json"
+      ],
+            "tracker_ids": [
+                "wardline-29bd1003e7"
+            ],
+      "notes": "Infrastructure exists, but the refreshed seven-point Lite checklist still needs a bound assessment run."
+    },
+    {
+      "id": "C-CRIT-10-MANIFEST-CONSUMPTION",
+      "source_refs": [
+        "docs/spec/wardline-01-15-conformance.md §15.2(10)",
+        "docs/spec/wardline-01-14-portability-and-manifest-format.md"
+      ],
+      "summary": "Manifest validation and delegated validation claims are enforced.",
+      "state": "evidenced",
+      "evidence": [
+        "src/wardline/manifest/",
+        "src/wardline/cli"
+      ],
+            "tracker_ids": [
+                "wardline-8cd5d3fb73"
+            ],
+      "notes": "Implemented, but still needs reviewer-verified binding in the narrowed release claim."
+    },
+    {
+      "id": "P1-S6-TAINT-JOIN-ABSORBING",
+      "source_refs": [
+        "docs/spec/wardline-01-06-authority-tier-enforcement-spec.md §6",
+        "docs/spec/wardline-01-11-verification-properties.md property 6"
+      ],
+      "summary": "Taint propagation preserves the normative join algebra with MIXED_RAW absorbing.",
+      "state": "non_compliant",
+      "evidence": [
+        "src/wardline/core/taints.py",
+        "src/wardline/scanner/taint/callgraph.py",
+        "src/wardline/scanner/taint/callgraph_propagation.py"
+      ],
+      "tracker_ids": [
+        "wardline-cf49edcde8"
+      ],
+      "notes": "L3 callgraph propagation uses TRUST_RANK and max() instead of taint_join()."
+    },
+    {
+      "id": "P1-S11-CORPUS-INDEPENDENCE",
+      "source_refs": [
+        "docs/spec/wardline-01-11-verification-properties.md property 1",
+        "docs/requirements/spec-fitness/03-scanner-conformance.yaml WL-FIT-SCAN-011"
+      ],
+      "summary": "Corpus release, integrity, and review model support independent assessment.",
+      "state": "implemented_no_evidence",
+      "evidence": [
+        "corpus/corpus_manifest.json"
+      ],
+            "tracker_ids": [
+                "wardline-8cd5d3fb73"
+            ],
+      "notes": "Hash manifest exists, but separate publication and review-model evidence are incomplete."
+    },
+    {
+      "id": "P2A-A3-L1-MINIMUM-CONFORMANCE",
+      "source_refs": [
+        "docs/spec/wardline-02-A-python-binding.md §A.3",
+        "docs/spec/wardline-01-15-conformance.md §15.2(4)"
+      ],
+      "summary": "Analysis level 1 truthfully represents the minimum conformant scope.",
+      "state": "non_compliant",
+      "evidence": [
+        "src/wardline/scanner/engine.py",
+        "src/wardline/scanner/rules/py_wl_008.py"
+      ],
+      "tracker_ids": [
+        "wardline-dac6c4195a"
+      ],
+      "notes": "The binding promises required two-hop scope at level 1, but general callgraph taint propagation only runs at level 3."
+    },
+    {
+      "id": "G-LITE-CHECKLIST-VERIFIABLE",
+      "source_refs": [
+        "docs/spec/wardline-01-15-conformance.md §15.3.2",
+        "docs/requirements/spec-fitness/07-conformance-profiles.yaml WL-FIT-CONF-010"
+      ],
+      "summary": "The Lite governance checklist remains explicit and assessor-runnable.",
+      "state": "evidenced",
+      "evidence": [
+        "docs/spec/wardline-01-15-conformance.md",
+        "docs/verification/2026-04-12-v1-0-cell-certification-matrix.md"
+      ],
+            "tracker_ids": [
+                "wardline-75a774e144"
+            ],
+      "notes": "The seven-point checklist has been restored in §15, but the current repo still needs a bound review against it."
+    },
+    {
+      "id": "G-CONTROL-LAW-NORMAL-FOR-RELEASE",
+      "source_refs": [
+        "docs/spec/wardline-01-10-governance-model.md §10.5",
+        "docs/spec/wardline-01-15-conformance.md §15.6",
+        "docs/requirements/spec-fitness/06-governance-operations.yaml WL-FIT-GOV-008"
+      ],
+      "summary": "Release sign-off requires a normal-law SARIF run.",
+      "state": "implemented_no_evidence",
+      "evidence": [
+        "docs/spec/wardline-01-15-conformance.md",
+        "docs/verification/2026-04-12-v1-0-cell-certification-matrix.md",
+        "src/wardline/scanner/sarif.py"
+      ],
+      "tracker_ids": [
+        "wardline-fae28f1be3"
+      ],
+      "notes": "The rule is now explicit in §15 and the matrix, but no current sign-off run is bound to the ledger yet."
+    },
+    {
+      "id": "G-RETROSCAN-AFTER-DEGRADED-LAW",
+      "source_refs": [
+        "docs/spec/wardline-01-10-governance-model.md §10.5",
+        "docs/spec/wardline-01-15-conformance.md §15.6",
+        "docs/requirements/spec-fitness/06-governance-operations.yaml WL-FIT-GOV-009"
+      ],
+      "summary": "Any degraded window is closed by a verifiable retrospective scan before release sign-off.",
+      "state": "implemented_no_evidence",
+      "evidence": [
+        "docs/spec/wardline-01-15-conformance.md",
+        "docs/verification/2026-04-12-v1-0-cell-certification-matrix.md",
+        "src/wardline/scanner/sarif.py"
+      ],
+      "tracker_ids": [
+        "wardline-fae28f1be3"
+      ],
+      "notes": "Retrospective-scan semantics exist in SARIF, but the release evidence does not yet bind recent history to a confirmed closure check."
+    },
+    {
+      "id": "R-REGIME-COVERAGE-COMPLETE",
+      "source_refs": [
+        "docs/spec/wardline-01-15-conformance.md §15.4"
+      ],
+      "summary": "Regime documentation covers the narrowed claimed surface with no unexplained gaps.",
+      "state": "evidenced",
+      "evidence": [
+        "docs/verification/2026-04-12-v1-0-cell-certification-matrix.md",
+        "docs/verification/2026-04-12-v1-0-compliance-ledger.md"
+      ],
+      "tracker_ids": [
+        "wardline-fae28f1be3"
+      ],
+      "notes": "The release claim now explicitly names Wardline-Core plus Wardline-Governance, active binding-specific rows, and out-of-scope surfaces."
+    },
+    {
+      "id": "R-S15-WORKED-EXAMPLE-CREDIBLE",
+      "source_refs": [
+        "docs/spec/wardline-01-15-conformance.md §15.6.1",
+        "docs/spec/wardline-01-15-conformance.md §15.6.2"
+      ],
+      "summary": "Worked examples do not claim passing states contradicted by live evidence.",
+      "state": "evidenced",
+      "evidence": [
+        "docs/spec/wardline-01-15-conformance.md",
+        "wardline.conformance.json"
+      ],
+      "tracker_ids": [
+        "wardline-9243d037e7"
+      ],
+      "notes": "The generic mixed-state examples no longer present a false pass against the live failing corpus state."
+    },
+    {
+      "id": "R-CATALOG-COMPLETENESS",
+      "source_refs": [
+        "docs/spec/wardline-01-15-conformance.md §15.1",
+        "docs/verification/2026-04-12-v1-0-compliance-ledger.md"
+      ],
+      "summary": "The obligation catalog is complete for the claimed surface.",
+      "state": "non_compliant",
+      "evidence": [
+        "docs/verification/2026-04-12-v1-0-compliance-ledger.md"
+      ],
+      "tracker_ids": [
+        "wardline-fae28f1be3"
+      ],
+      "notes": "This is a seeded ledger, not yet a complete catalog of all Part I and Part II-A obligations."
+    },
+    {
+      "id": "R-RELEASE-PROJECTION-RUNNABLE",
+      "source_refs": [
+        "docs/spec/wardline-01-15-conformance.md §15.1",
+        "docs/spec/wardline-01-15-conformance.md §15.6",
+        "docs/verification/2026-04-12-v1-0-cell-certification-matrix.md"
+      ],
+      "summary": "The derived release projection is assessor-runnable and declares scope, state, next action, reviewer status, and explicit not_applicable rows.",
+      "state": "evidenced",
+      "evidence": [
+        "docs/verification/2026-04-12-v1-0-cell-certification-matrix.md"
+      ],
+      "tracker_ids": [
+        "wardline-fae28f1be3"
+      ],
+      "notes": "The projection now carries runnable release fields, but it still blocks until its backing obligations are green."
+    }
+  ],
+  "projections": {
+    "release_v1_0_0_recertification": {
+      "status": "blocked",
+      "blocking_obligations": [
+        "C-CRIT-5-PER-CELL-MEASUREMENT",
+        "C-CRIT-6-GOLDEN-CORPUS",
+        "C-CRIT-7-SELF-HOSTING",
+        "C-CRIT-8-DETERMINISTIC-SARIF",
+        "C-CRIT-9-GOVERNANCE-MINIMUMS",
+        "C-CRIT-10-MANIFEST-CONSUMPTION",
+        "P1-S6-TAINT-JOIN-ABSORBING",
+        "P1-S11-CORPUS-INDEPENDENCE",
+        "P2A-A3-L1-MINIMUM-CONFORMANCE",
+        "G-LITE-CHECKLIST-VERIFIABLE",
+        "G-CONTROL-LAW-NORMAL-FOR-RELEASE",
+        "G-RETROSCAN-AFTER-DEGRADED-LAW",
+        "R-REGIME-COVERAGE-COMPLETE",
+        "R-S15-WORKED-EXAMPLE-CREDIBLE",
+        "R-CATALOG-COMPLETENESS",
+        "R-RELEASE-PROJECTION-RUNNABLE"
+      ]
+    }
+  }
+}

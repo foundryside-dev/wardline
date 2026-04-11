@@ -7,7 +7,7 @@ requirements:
       coverage.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.3.1 Enforcement profiles"
+        section: "15.3.1 Enforcement profiles"
       - file: docs/spec/wardline-02-A-python-binding.md
         section: "A.3 Interface contract (Wardline-Core)"
     verification:
@@ -28,7 +28,7 @@ requirements:
       validation and validation-ordering behaviors where implemented.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.2 Conformance criteria"
+        section: "15.2 Conformance criteria"
       - file: docs/spec/wardline-02-A-python-binding.md
         section: "A.3 Interface contract (Wardline-Core)"
     verification:
@@ -49,7 +49,7 @@ requirements:
       behavior explicitly.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.2 Conformance criteria"
+        section: "15.2 Conformance criteria"
     verification:
       method: unit_tests
       target_paths:
@@ -88,7 +88,7 @@ requirements:
       claims to implement.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.2 Conformance criteria"
+        section: "15.2 Conformance criteria"
       - file: docs/spec/wardline-01-11-verification-properties.md
         section: "10. Verification properties"
     verification:
@@ -110,7 +110,7 @@ requirements:
       - file: docs/spec/wardline-01-11-verification-properties.md
         section: "10. Verification properties"
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.2 Conformance criteria"
+        section: "15.2 Conformance criteria"
     verification:
       method: corpus_and_cli_tests
       target_paths:
@@ -132,7 +132,7 @@ requirements:
       source, not merely that self-hosting can be observed.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.2 Conformance criteria"
+        section: "15.2 Conformance criteria"
     verification:
       method: cli_review_and_tests
       target_paths:
@@ -151,9 +151,9 @@ requirements:
       remaining conformance gaps or delegated validation responsibility.
     normative_sources:
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.2 Conformance criteria"
+        section: "15.2 Conformance criteria"
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.3.1 Enforcement profiles"
+        section: "15.3.1 Enforcement profiles"
     verification:
       method: documentation_review
       target_paths:

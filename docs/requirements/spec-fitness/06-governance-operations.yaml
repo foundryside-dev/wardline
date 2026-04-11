@@ -138,7 +138,7 @@ requirements:
       - file: docs/spec/wardline-01-10-governance-model.md
         section: "9.4 Governance capacity"
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.3.2 Governance profiles"
+        section: "15.3.2 Governance profiles"
     verification:
       method: sarif_and_manifest_review
       target_paths:

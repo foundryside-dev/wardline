@@ -2,7 +2,7 @@
 
 This document defines which supplementary decorator groups (5-17) are
 actively enforced versus expressiveness-only in the Python binding,
-per WL-FIT-CONF-005 and Wardline Framework Specification section 14.5.
+per WL-FIT-CONF-005 and Wardline Framework Specification section 15.5.
 
 ## Background
 

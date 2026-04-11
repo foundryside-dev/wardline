@@ -80,7 +80,7 @@ requirements:
       - file: docs/spec/wardline-01-08-pattern-rules.md
         section: "7. Pattern rules"
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.2 Conformance criteria"
+        section: "15.2 Conformance criteria"
     verification:
       method: static_review_and_unit_tests
       target_paths:
@@ -227,7 +227,7 @@ requirements:
       - file: docs/spec/wardline-01-07-annotation-vocabulary.md
         section: "6. Annotation vocabulary"
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.2 Conformance criteria"
+        section: "15.2 Conformance criteria"
     verification:
       method: decorator_inventory_and_review
       target_paths:

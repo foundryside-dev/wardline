@@ -9,7 +9,7 @@ requirements:
       - file: docs/spec/wardline-01-09-enforcement-layers.md
         section: "8.1 Static analysis"
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.2 Conformance criteria"
+        section: "15.2 Conformance criteria"
     verification:
       method: unit_tests_and_corpus
       target_paths:
@@ -82,7 +82,7 @@ requirements:
       - file: docs/spec/wardline-01-09-enforcement-layers.md
         section: "8.1 Static analysis"
       - file: docs/spec/wardline-01-15-conformance.md
-        section: "14.2 Conformance criteria"
+        section: "15.2 Conformance criteria"
     verification:
       method: unit_tests
       target_paths:
