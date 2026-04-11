@@ -91,6 +91,10 @@
             "format": "date",
             "description": "When the fingerprint was last refreshed (ISO 8601)."
           },
+          "refresh_agent_originated": {
+            "type": ["boolean", "null"],
+            "description": "Whether the most recent fingerprint refresh was performed by an AI agent. Null means provenance unknown."
+          },
           "analysis_level": {
             "type": "integer",
             "minimum": 1,

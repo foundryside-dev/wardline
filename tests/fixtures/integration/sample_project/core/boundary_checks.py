@@ -17,7 +17,13 @@ def check_format(data: object) -> bool:
 
 @validates_semantic
 def check_business_rules(data: dict) -> bool:
-    """PY-WL-009: subscript access without prior shape validation."""
-    if data["status"] == "active":
+    """PY-WL-009: subscript access without prior shape validation.
+
+    Intentionally uses if/return instead of the simplified `return expr` form:
+    PY-WL-009 detects semantic checks via ast.If/ast.Assert nodes with subscript
+    access. The simplified form contains no ast.If, so the rule doesn't fire and
+    the integration test that depends on this fixture breaks. Do not "simplify".
+    """
+    if data["status"] == "active":  # noqa: SIM103 — see docstring
         return True
     return False

@@ -1045,6 +1045,13 @@ def publish(
             c for c in corpus_report["cells"]
             if c["cell_verdict"] == "FAIL"
         ],
+        # Floor-violation counts consumed by the scanner's R4 degradation
+        # check in `compute_control_law()` via `_read_conformance_data`.
+        # These MUST be integers — missing or null values cause the scanner
+        # to set `conformance_data_unavailable=True` and degrade to alternate
+        # law, even when the rest of the conformance data is current.
+        "cells_below_precision_floor": corpus_report["summary"]["cells_below_precision_floor"],
+        "cells_below_recall_floor": corpus_report["summary"]["cells_below_recall_floor"],
         "self_hosting_unexcepted_errors": unexcepted_errors,
         "self_hosting_warning_findings": warning_findings,
         "self_hosting_suppressed_cell_findings": suppressed_cell_findings,

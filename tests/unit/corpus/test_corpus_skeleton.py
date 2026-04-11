@@ -9,13 +9,33 @@ from pathlib import Path
 import pytest
 import yaml
 
-from wardline.core.severity import RuleId
+from wardline.core.matrix import SEVERITY_MATRIX
+from wardline.core.severity import RuleId, Severity
+from wardline.core.taints import TaintState
 
 CORPUS_ROOT = Path(__file__).parent.parent.parent.parent / "corpus"
 
 # Rules where taint doesn't affect detection — only EXTERNAL_RAW specimens exist.
 # Matches TAINT_INVARIANT_RULES in scripts/generate_corpus.py.
 _TAINT_INVARIANT_RULES = {str(r) for r in (RuleId.PY_WL_008, RuleId.PY_WL_009)}
+
+
+def _cell_allows_true_positive(rule: str, taint_state: TaintState) -> bool:
+    """Return True if the rule × taint cell can produce a true-positive specimen.
+
+    A cell with severity SUPPRESS cannot have a true positive because the
+    rule deliberately does not fire there (boundary code legitimately uses
+    patterns the rule would otherwise catch at other tiers). Only cells
+    where the rule is expected to fire can have true-positive specimens.
+    """
+    try:
+        rule_id = RuleId(rule)
+    except ValueError:
+        return True  # Unknown rule — default to requiring positive/
+    cell = SEVERITY_MATRIX.get((rule_id, taint_state))
+    if cell is None:
+        return True  # No matrix entry — default to requiring positive/
+    return cell.severity is not Severity.SUPPRESS
 SCHEMA_PATH = (
     Path(__file__).parent.parent.parent.parent
     / "src"
@@ -46,12 +66,17 @@ class TestCorpusSkeleton:
     def test_rule_directory_exists(self, rule: str) -> None:
         rule_dir = CORPUS_ROOT / "specimens" / rule
         assert rule_dir.is_dir()
-        # Check taint state subdirectories
-        assert (rule_dir / "EXTERNAL_RAW" / "positive").is_dir()
+        # Check taint state subdirectories. The positive/ directory is
+        # required only for cells where the rule actually fires (non-SUPPRESS);
+        # a rule that is SUPPRESS at a cell cannot produce a true-positive
+        # specimen there by definition.
+        if _cell_allows_true_positive(rule, TaintState.EXTERNAL_RAW):
+            assert (rule_dir / "EXTERNAL_RAW" / "positive").is_dir()
         assert (rule_dir / "EXTERNAL_RAW" / "negative").is_dir()
         # Taint-invariant rules only have EXTERNAL_RAW specimens
         if rule not in _TAINT_INVARIANT_RULES:
-            assert (rule_dir / "UNKNOWN_RAW" / "positive").is_dir()
+            if _cell_allows_true_positive(rule, TaintState.UNKNOWN_RAW):
+                assert (rule_dir / "UNKNOWN_RAW" / "positive").is_dir()
             assert (rule_dir / "UNKNOWN_RAW" / "negative").is_dir()
 
     def test_specimen_validates_against_schema(self) -> None:

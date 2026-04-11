@@ -8,7 +8,7 @@ expected_rules:
 - PY-WL-003
 expected_match:
   line: 2
-  text: if hasattr(obj, "name"):
+  text: 'if hasattr(obj, "name"):'
   function: process
 verdict: true_positive
 tags:
