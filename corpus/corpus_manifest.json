@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "spec_version": "1.0",
-  "corpus_hash": "sha256:07ca41de1d37151157a25ccc5b7ea3cffb55cc0b9f0feb1c022e18aea4cb0eff",
+  "corpus_hash": "sha256:dd2a24705ce9ea9e445ccc4a7311c03b92d3d47fcd4ff59e7032aace599ee773",
   "generated": "2026-04-10",
   "specimen_count": 228,
   "specimens": [
@@ -2603,8 +2603,12 @@
       "py_exists": true,
       "rule": "PY-WL-003",
       "taint_state": "INTEGRAL",
-      "verdict": "true_negative",
-      "expected_match": false,
+      "verdict": "true_positive",
+      "expected_match": {
+        "line": 2,
+        "text": "if hasattr(obj, \"name\"):",
+        "function": "process"
+      },
       "sha256": "31648f94712fce43847df3533d076ab3de36907bd36fb90d05cdfe33e4f49d05"
     },
     {

@@ -1,0 +1,22 @@
+title: "Reviewing AI-Generated Code"
+subtitle: "A Practical Guide for the Only Reviewer"
+author: ""
+date: "9 April 2026"
+version: "1.0"
+status: "GUIDE"
+
+# Template variables
+running-title: "Wardline Practical Guide"
+doc-id: "WL"
+document-category: "Practical Guide"
+document-type: "Practical review guide"
+classification: "OFFICIAL"
+scope-blurb: >-
+  This companion guide translates the Wardline annotation vocabulary (§7) and
+  pattern rules (§8) into five review questions a non-specialist can apply
+  during code review. It is not part of the formal Wardline Framework
+  Specification — it is the interim human-enforcement layer that precedes
+  automated tooling.
+
+# part1-label intentionally absent — Lite is a single-part document,
+# so the title-page bottom grid is suppressed by the template.

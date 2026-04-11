@@ -32,6 +32,11 @@ build/
 # MkDocs build output
 site/
 
+# PDF pipeline: generated Typst intermediates (PDF output in docs/assets/ is tracked)
+tools/pdf/wardline-specification.typ
+tools/pdf/wardline-lite.typ
+tools/pdf/.mermaid-tmp/
+
 # Superpowers brainstorming sessions
 .superpowers/
 .cache/

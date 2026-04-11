@@ -21,7 +21,7 @@ This section defines the Java language binding for the Wardline classification f
 
 The Java binding is the second wardline language binding, developed after the Python binding (Part II-A) with the benefit of knowing which design decisions were framework-dictated versus Python-specific compensations.
 
-**Why Java second.** The case study that motivated the wardline concept is Python-based. Java is the second target because it is the dominant language in Australian government enterprise systems — the ISM's constituency. A specification that addresses only Python reaches the analyst and data-engineering community but misses the enterprise application layer where the bulk of government code lives.
+**Why Java second.** The case study that motivated the wardline concept is Python-based. Java is the second target because it is the dominant language in regulated enterprise and government systems. A specification that addresses only Python reaches the analyst and data-engineering community but misses the enterprise application layer where the bulk of regulated and government code lives.
 
 **What transferred.** The annotation vocabulary maps all 17 groups from the parent specification. The scanner uses the same two-pass analysis model (symbol collection, then rule evaluation). The severity matrix, governance model, manifest schema, SARIF output contract, and golden corpus specification are binding-independent.
 
@@ -300,7 +300,7 @@ In the Python regime, advisory feedback (ruff) requires a separate pre-commit st
 
 The following residual risks are specific to the Java language binding. The parent specification (§13) documents binding-independent residual risks — particularly risk 12 (evasion surface trajectory), which applies to both bindings: as annotation coverage grows, coding-level risk falls but governance risk rises.
 
-**Scope clarification: tiers are not security classifications.** The wardline's four-tier authority model classifies data by provenance and validation status. It does NOT classify data by PSPF security classification. Assessors SHOULD NOT equate "Tier 1" with "SECRET" or "Tier 4" with "OFFICIAL" — the dimensions are orthogonal.
+**Scope clarification: tiers are not security classifications.** The wardline's four-tier authority model classifies data by provenance and validation status. It does not classify data by any jurisdictional information classification policy. Assessors SHOULD NOT equate "Tier 1" with "SECRET" or "Tier 4" with "OFFICIAL" — the dimensions are orthogonal.
 
 ##### Framework proxy blind spots
 
@@ -381,7 +381,7 @@ Java's stronger type system narrows the false-negative surface compared to Pytho
 
 This example traces data through the full tier lifecycle — from raw external input to authoritative artefact — demonstrating annotations in context.
 
-**Scenario.** A government risk assessment system receives partner data from an external API, validates it, and produces an authoritative risk assessment record.
+**Scenario.** A risk assessment system receives partner data from an external API, validates it, and produces an authoritative risk assessment record.
 
 **Data flow:**
 
@@ -636,7 +636,7 @@ The Java regime supports four incremental adoption phases:
 
 **Java version requirement.** Java 17+ is a hard minimum. Records, sealed classes, and pattern matching are essential. Projects on earlier versions need to plan a Java 17 migration before adopting this binding. A Java 11 project receives more value from the Python binding on its Python services than from a degraded Java binding.
 
-**The adoption bottleneck is organisational, not technical.** Annotating code (Phase 1) is immediate. Phase 2 requires platform team approval for Error Prone. Phase 3 requires a new CI step. Phase 4 requires Checker Framework — a GPL-licensed dependency that government legal may flag. Each transition crosses an organisational boundary.
+**The adoption bottleneck is organisational, not technical.** Annotating code (Phase 1) is immediate. Phase 2 requires platform team approval for Error Prone. Phase 3 requires a new CI step. Phase 4 requires Checker Framework — a GPL-licensed dependency that legal/compliance teams may flag. Each transition crosses an organisational boundary.
 
 **Realistic timeline.** Plan for 6–12 months from initial interest to Phase 4 deployment when accounting for dependency approval, security assessment, platform team onboarding, and pilot validation. Phase 1 can proceed immediately while remaining dependencies are in the approval pipeline.
 

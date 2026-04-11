@@ -15,7 +15,7 @@ This document comprises two parts: Part I (the framework specification) and Part
 **Tool implementers** (building a Wardline-Core scanner, linter plugin, or type checker plugin):
 → Part I: §2–4 (concepts), §5 (tier model), §6 (enforcement specification), §7–8 (annotations, pattern rules), §9 (enforcement layers), §15 (conformance) → Part II: A.3/B.3 (interface contract — read first), then A.4/B.4 (annotation vocabulary)
 
-**Security assessors** (IRAP or equivalent, evaluating a wardline deployment):
+**Security assessors** (evaluating a wardline deployment):
 → Part I: §2–4 (scope), §5 (tier model), §11 (verification properties and golden corpus), §15 (conformance criteria and profiles)
 → Part II: A.3/B.3 (interface contract), A.6/B.6 (regime composition), A.7/B.7 (residual risks)
 
@@ -26,7 +26,7 @@ This document comprises two parts: Part I (the framework specification) and Part
 → Part I: §10 (governance model), §14 (manifest and exception register), §15.1 (conformance model)
 → Part II: A.7/B.7 (residual risks), A.10/B.10 (error handling and control law)
 
-**Citizen programmers** (reviewing or writing code in a wardline-annotated codebase, without developer tooling):
+**Citizen programmers** (reviewing or writing code in a wardline-annotated codebase without developer tooling):
 → Wardline Lite practical guide (`wardline-lite.md`, separate companion document): five review questions, worked code examples, hot-path identification. This guide is not part of the formal specification — it translates the annotation vocabulary (§7) and pattern rules (§8) into questions a non-specialist can apply during code review.
 
 ---
@@ -73,7 +73,7 @@ B. [Java Language Binding Reference](#part-ii-b-java-language-binding-reference)
 
 **Planned Companion Documents** (deferred to post-v1.0)
 
-- Implementer's Guide: Scanner Architecture — detailed guidance for building a Wardline-Core scanner. Content from prior specification drafts is available in version control history.
+- Implementer's Guide: Scanner Architecture — detailed guidance for building a Wardline-Core scanner. Prior-draft content is available in version control history.
 - Agent Guidance — constraints and patterns for AI agents working in wardline-annotated codebases. Evolved from prior agent guidance sections; publication deferred until reference implementation reaches production maturity.
 
 ---

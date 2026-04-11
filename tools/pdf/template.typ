@@ -66,7 +66,7 @@
       #line(length: 100%, stroke: 0.5pt + c-rule)
       #v(2pt)
       #set text(7.5pt, font: "TeX Gyre Heros", fill: c-muted, tracking: 0.5pt)
-      #upper[Wardline Framework Specification]
+      #upper[$running-title$]
       #h(1fr)
       #upper[$status$ v$version$]
     ]
@@ -80,7 +80,7 @@
       #v(3pt)
       #set text(7.5pt, font: "TeX Gyre Heros", fill: c-muted)
       // Left: document identifier
-      WFS-$version$
+      $doc-id$-$version$
       #h(1fr)
       // Centre: page number with decorative treatment
       #box(
@@ -488,7 +488,7 @@
       fill: rgb("#7FAFD4"),
       tracking: 2.5pt,
       weight: "bold",
-    )[#upper[Technical Specification]]
+    )[#upper[$document-category$]]
     #linebreak()
     #v(0.25em)
     #text(
@@ -544,11 +544,11 @@
   [#text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted, weight: "bold")[Date]],
   [#text(font: "TeX Gyre Heros", size: 9pt)[$date$]],
   [#text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted, weight: "bold")[Document type]],
-  [#text(font: "TeX Gyre Heros", size: 9pt)[Conformity assessment scheme]],
+  [#text(font: "TeX Gyre Heros", size: 9pt)[$document-type$]],
   [#text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted, weight: "bold")[Classification]],
-  [#text(font: "TeX Gyre Heros", size: 9pt)[OFFICIAL]],
+  [#text(font: "TeX Gyre Heros", size: 9pt)[$classification$]],
   [#text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted, weight: "bold")[Identifier]],
-  [#text(font: "TeX Gyre Heros", size: 9pt)[WFS-$version$]],
+  [#text(font: "TeX Gyre Heros", size: 9pt)[$doc-id$-$version$]],
 )
 
 #v(0.8cm)
@@ -562,27 +562,27 @@
   width: 100%,
 )[
   #set text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted)
-  This document comprises Part I (framework specification, §§1–15) and Part II (language binding references for Python and Java). It defines the Wardline trust hierarchy, enforcement semantics, annotation vocabulary, governance model, and conformance criteria.
+  $scope-blurb$
 ]
 
 #v(1fr)
 
-// ── Bottom metadata row ───────────────────────────────────────
+// ── Bottom metadata row (only shown when the document has parts) ──
+$if(part1-label)$
 #set text(font: "TeX Gyre Heros", size: 8.5pt, fill: c-muted)
 #grid(
   columns: (1fr, 1fr),
   gutter: 1.5em,
   [
-    *Part I — Framework Specification* \
-    §§1–15: trust model, enforcement rules, \
-    governance, conformance criteria
+    *$part1-label$* \
+    $part1-desc$
   ],
   [
-    *Part II — Language Binding Reference* \
-    Appendix A: Python binding \
-    Appendix B: Java binding
+    *$part2-label$* \
+    $part2-desc$
   ],
 )
+$endif$
 
 #pagebreak()
 

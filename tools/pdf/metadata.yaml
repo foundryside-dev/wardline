@@ -4,3 +4,21 @@ author: ""
 date: "9 April 2026"
 version: "0.3.0"
 status: "RELEASE CANDIDATE"
+
+# Template variables introduced for multi-document reuse
+running-title: "Wardline Framework Specification"
+doc-id: "WFS"
+document-category: "Technical Specification"
+document-type: "Conformity assessment scheme"
+classification: "OFFICIAL"
+scope-blurb: >-
+  This document comprises Part I (framework specification, §§1–15) and Part II
+  (language binding references for Python and Java). It defines the Wardline
+  trust hierarchy, enforcement semantics, annotation vocabulary, governance
+  model, and conformance criteria.
+
+# Optional "Part I / Part II" grid on the title page
+part1-label: "Part I — Framework Specification"
+part1-desc: "§§1–15: trust model, enforcement rules, governance, conformance criteria"
+part2-label: "Part II — Language Binding Reference"
+part2-desc: "Appendix A: Python binding, Appendix B: Java binding"

@@ -18,7 +18,7 @@ Iteration 3 used seven specialist agent perspectives to refine the design. Binar
 
 **Feasibility finding.** The deployed predecessor validates the approach at the pattern-matching level: automated detection of common agentic code failure modes is technically feasible for Python, compatible with existing development workflows, and buildable at modest cost relative to typical internal tooling.
 
-**Posture: reference implementation, not product.** The Python enforcement regime described in this document is not a single product. It is a composition of existing ecosystem tools — ruff for syntactic pattern detection, mypy for type-layer tier diagnostics — and a reference implementation that covers the analysis surface no existing tool addresses: tier-aware taint-flow tracking, structural verification, and governance orchestration. The specification is the durable artefact. The reference implementation proves the specification is implementable. But the specification is designed so that any tool author can implement a compatible Wardline-Core scanner, Wardline-Type plugin, or Wardline-Governance orchestrator independently. The regime matures when DTA owns the specification, not the code.
+**Posture: reference implementation, not product.** The Python enforcement regime described in this document is not a single product. It is a composition of existing ecosystem tools — ruff for syntactic pattern detection, mypy for type-layer tier diagnostics — and a reference implementation that covers the analysis surface no existing tool addresses: tier-aware taint-flow tracking, structural verification, and governance orchestration. The specification is the durable artefact. The reference implementation proves the specification is implementable. But the specification is designed so that any tool author can implement a compatible Wardline-Core scanner, Wardline-Type plugin, or Wardline-Governance orchestrator independently. The regime matures when the specification is owned and evolved independently of any single implementation.
 
 ---
 
@@ -363,7 +363,7 @@ The regime is temporally layered: ruff catches patterns while the developer type
 
 **Anti-recommendations.** Do not force tier-aware taint analysis into ruff (its architecture is per-file, per-rule). Do not make mypy own governance artefacts. Do not use Semgrep as the normative rule source unless it can consume the wardline manifest faithfully. Do not build a pyright plugin until the mypy plugin is proven.
 
-**Stable interoperability surfaces.** Third-party tools target: (1) manifest schema, (2) decorator metadata conventions, (3) rule identifiers and semantics, (4) golden corpus format, (5) SARIF property bags, (6) conformance profile vocabulary, (7) regime composition contract. If these interfaces are stable, any tool author can build wardline-compatible tooling without coordination with DTA.
+**Stable interoperability surfaces.** Third-party tools target: (1) manifest schema, (2) decorator metadata conventions, (3) rule identifiers and semantics, (4) golden corpus format, (5) SARIF property bags, (6) conformance profile vocabulary, (7) regime composition contract. If these interfaces are stable, any tool author can build wardline-compatible tooling without coordination with the specification owner.
 
 ---
 
@@ -417,7 +417,7 @@ Compensating controls: `dependency_taint` declarations with version pinning; the
 
 *This section is non-normative. It demonstrates decorators in context through the full tier lifecycle — from raw external input to authoritative artefact — proving implementability.*
 
-**Scenario.** A government risk assessment system receives partner data from an external API, validates it, and produces an authoritative risk assessment record for the audit trail.
+**Scenario.** A risk assessment system receives partner data from an external API, validates it, and produces an authoritative risk assessment record for the audit trail.
 
 **Data flow:**
 

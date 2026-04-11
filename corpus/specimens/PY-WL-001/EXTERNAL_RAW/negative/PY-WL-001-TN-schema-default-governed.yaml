@@ -10,8 +10,9 @@ fragment: |
       return schema_default(data.get("key", ""))
 taint_state: "EXTERNAL_RAW"
 boundaries:
-  - function: "process"
+  - function: "governed_schema_default"
     transition: "shape_validation"
+    overlay_scope: "<specimen>"
 optional_fields:
   - field: "key"
     approved_default: ""

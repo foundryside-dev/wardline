@@ -14,6 +14,7 @@ Manifest schemas identify boundaries, transitions, contracts, and supplementary-
 
 The manifest system is hierarchical, comprising four file types. The root manifest declares the trust topology; overlays narrow policy for specific modules; tool-generated files track exceptions and annotation state. Each file contains both policy artefacts and enforcement artefacts (§10.3.1) — the distinction is per-field, not per-file. The artefact class column in the table below identifies which governance regime applies to each file's contents.
 
+<!-- wl-pdf: size="width: 100%" -->
 ```mermaid
 graph TD
     ROOT["<b>wardline.yaml</b><br/><i>Root trust topology</i><br/>Human-authored · YAML"]
@@ -80,7 +81,7 @@ Module-tier mappings are a coarse baseline, not a substitute for explicit bounda
 ```yaml
 # wardline.yaml — root trust topology
 metadata:
-  organisation: "Department of Example"
+  organisation: "Example Organisation"
   ratified_by: { name: "J. Smith", role: "CISO" }
   ratification_date: "2026-01-15"
   review_interval_days: 180

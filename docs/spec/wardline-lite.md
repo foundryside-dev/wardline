@@ -1,4 +1,4 @@
-# Reviewing AI-Generated Code: A Practical Guide for Government Staff
+# Reviewing AI-Generated Code: A Practical Guide
 
 **What you need to know when you are the only reviewer — and there is no CI pipeline to catch what you miss.**
 
@@ -6,7 +6,7 @@
 
 ## 1. You Are Not Doing Anything Wrong
 
-You are not doing anything wrong. You are using AI to write code — to automate reports, process data, connect systems, do useful work. That is productive, increasingly normal, and supported by government policy. This guide is not here to tell you to stop.
+You are not doing anything wrong. You are using AI to write code — to automate reports, process data, connect systems, do useful work. That is productive, and increasingly part of how modern work gets done. This guide is not here to tell you to stop.
 
 It is here to help you spot the one thing AI consistently gets wrong: **code that looks right but makes the wrong decision about data that matters.**
 
@@ -16,24 +16,24 @@ Here is a concrete example. An AI writes a script to process incoming records. O
 classification = record.get("security_classification", "OFFICIAL")
 ```
 
-This says: if the security classification field is missing, use OFFICIAL as the default. In a weather app, that kind of defensive coding is fine. In a government system, a missing classification might mean the upstream system failed. That one line silently downgrades an unknown document to OFFICIAL — and nobody is told. No error, no alert, no log entry.
+This says: if the security classification field is missing, use OFFICIAL as the default. In a weather app, that kind of defensive coding is fine. In a high-stakes system, a missing classification might mean the upstream system failed. That one line silently downgrades an unknown document to OFFICIAL — and nobody is told. No error, no alert, no log entry.
 
 AI produces this pattern routinely. It looks like good practice because it *is* good practice — in most software. In systems where data integrity, auditability, or classification accuracy matter, the same pattern is quietly dangerous.
 
-This guide teaches you to see those invisible mistakes, even without specialised tools. It gives you five questions to ask about any AI-generated code that touches data you care about. The code examples use Python and SQL — the most common languages for government data processing scripts — but the same patterns exist in every language. The five questions work regardless of which language your code is in. These are interim — automated semantic enforcement tooling will eventually complement them. A companion specification — the Wardline Framework Specification (`docs/wardline/wardline-01-00-front-matter.md` through `wardline-01-15-document-scope.md`, with language bindings in `wardline-02-A-python-binding.md` and `wardline-02-B-java-binding.md`) — illustrates what that tooling could look like; the approach is buildable with standard language tooling, and several implementation paths are possible. Until that tooling arrives, these five questions are your enforcement layer.
+This guide teaches you to see those invisible mistakes, even without specialised tools. It gives you five questions to ask about any AI-generated code that touches data you care about. The code examples use Python and SQL — the most common languages for day-to-day data processing scripts — but the same patterns exist in every language. The five questions work regardless of which language your code is in. These are interim — automated semantic enforcement tooling will eventually complement them. A companion specification — the Wardline Framework Specification (`docs/spec/wardline-01-00-front-matter.md` through `wardline-01-15-conformance.md`, with language bindings in `wardline-02-A-python-binding.md` and `wardline-02-B-java-binding.md`) — illustrates what that tooling could look like; the approach is buildable with standard language tooling, and several implementation paths are possible. Until that tooling arrives, these five questions are your enforcement layer.
 
-> **Why This Matters for Government:** A script that silently defaults a security classification to OFFICIAL when the field is missing does not crash. It does not throw an error. It processes PROTECTED documents at the wrong level, and nobody finds out until an audit — or an incident. AI produces this pattern routinely.
+> **Why This Matters:** A script that silently defaults a security classification to OFFICIAL when the field is missing does not crash. It does not throw an error. It processes PROTECTED documents at the wrong level, and nobody finds out until an audit — or an incident. AI produces this pattern routinely.
 
 
 ## 2. Three Patterns That Will Fool You
 
-These are the core ways AI-generated code goes invisibly wrong. Each follows the same structure: what the AI wrote, why it looks right, what is actually wrong, what you should write instead, and what it means if this goes wrong in a government system.
+These are the core ways AI-generated code goes invisibly wrong. Each follows the same structure: what the AI wrote, why it looks right, what is actually wrong, what you should write instead, and what it means if this goes wrong in a high-stakes system.
 
-### 3.1 The Friendly Default
+### 2.1 The Friendly Default
 
 The AI writes `.get(field, "OFFICIAL")` — if the security classification field is missing, use OFFICIAL as the default. This is standard defensive programming. Every tutorial teaches it.
 
-In a government system, a missing classification field might mean the upstream system failed. The correct response is to *stop and investigate*, not to silently invent an answer. The AI just downgraded an unknown document to OFFICIAL and nobody was told.
+In a high-stakes system, a missing classification field might mean the upstream system failed. The correct response is to *stop and investigate*, not to silently invent an answer. The AI just downgraded an unknown document to OFFICIAL and nobody was told.
 
 ```python
 # WRONG — silently invents a classification
@@ -50,15 +50,15 @@ classification = record["security_classification"]
 
 **Q1 to ask:** "If this value is missing, is that *normal* or is that *evidence something is broken*?"
 
-In the discussion paper's taxonomy, this pattern is called *Competence Spoofing* — rated *High*. The AI presents a confident result based on fabricated input. The code does not know the classification — it invents one and carries on as if it always knew.
+In the discussion paper's taxonomy, this pattern is called *Competence Spoofing* (rated *High*). The AI presents a confident result based on fabricated input. The code does not know the classification — it invents one and carries on as if it always knew.
 
 > **Why This Matters:** This is how PROTECTED documents get processed at the wrong level. No error, no alert, no log entry. The system runs with a confident wrong answer.
 
-### 3.2 The Helpful Error Handler
+### 2.2 The Helpful Error Handler
 
 The AI wraps an audit-critical operation in `try/except` — if it fails, log the error and continue. This looks like robust error handling. Every coding tutorial teaches it.
 
-In a system with audit obligations, a swallowed exception means an auditable operation happened with no record. If someone asks "did this transaction complete?", the answer is "we don't know — the error was logged somewhere but the audit trail says nothing happened."
+In a system with audit obligations, a swallowed exception means an auditable operation completed with no record. If someone asks "did this transaction complete?", the answer is "we don't know — the error was logged somewhere but the audit trail says nothing happened."
 
 ```python
 # WRONG — swallows the audit trail
@@ -76,11 +76,11 @@ write_audit_record(transaction)
 
 **Q2 to ask:** "If this operation fails, does someone need to *know* it failed — not just that something was logged?"
 
-In the taxonomy, this is *Audit Trail Destruction* — rated *High*. The code appears to handle errors gracefully, but "graceful" is the wrong response when the audit trail is the legal record. A gap in the audit trail is not a logging failure — it is a compliance failure that may have legal consequences.
+In the taxonomy, this is *Audit Trail Destruction* (rated *High*). The code appears to handle errors gracefully, but "graceful" is the wrong response when the audit trail is the legal record. A gap in the audit trail is not a logging failure — it is a compliance failure that may have legal consequences.
 
 > **Why This Matters:** Under many compliance frameworks, a missing audit record is not a bug — it may be treated as evidence of tampering rather than a technical failure.
 
-### 3.3 The Invisible Promotion
+### 2.3 The Invisible Promotion
 
 The AI reads data from an external API and passes it directly to an internal function. The types match, the code runs, no errors. But the data just crossed from "untrusted external source" to "internal authoritative data" with no validation boundary.
 
@@ -103,7 +103,7 @@ In the taxonomy, this is *Authority Tier Conflation* — rated *Critical*, the h
 
 > **Why This Matters:** This is how a partner API's data quality problems become your reporting errors — and nothing in your system will distinguish their data from yours. If the API sends bad data, your reports are wrong, your dashboards are wrong, and every decision made from them is based on unvalidated external input that your system treated as authoritative.
 
-A closely related pattern: AI-generated code that accepts an external system's *assertion* and acts on it without question. A partner API says `"verified": true` and the code grants system access — without independent verification, without recording the basis for the decision, and without considering what happens if the partner system is compromised or simply changes its contract. External systems can stop sending fields, change their meaning, or start returning unexpected shapes — and AI-generated code typically handles all of these silently rather than surfacing them. If the API stops sending a `username` field tomorrow and the code `.get()`s a default instead of failing, you have users with no identity attached to their session. The question is the same: "Am I trusting an external system's shape, values, and claims as if we verified them ourselves?"
+A closely related pattern is AI-generated code that accepts an external system's *assertion* and acts on it without question. A partner API says `"verified": true` and the code grants system access — without independent verification, without recording the basis for the decision, and without considering what happens if the partner system is compromised or simply changes its contract. External systems can stop sending fields, change their meaning, or start returning unexpected shapes — and AI-generated code typically handles all of these silently rather than surfacing them. If the API stops sending a `username` field tomorrow and the code `.get()`s a default instead of failing, you have users with no identity attached to their session. The question is the same: "Am I trusting an external system's shape, values, and claims as if we verified them ourselves?"
 
 
 ## 3. The Five Questions
@@ -118,24 +118,24 @@ These five questions work against any AI-generated code that touches data you ca
 
 - **Q4. Did AI suggest this pattern? Do I understand why it chose this over another?** AI defaults to what is common, not what is correct for your context. The patterns in Section 2 are all standard good practice in general software — they are dangerous specifically because AI does not distinguish your context from a web tutorial. *In practice:* the AI generated `ON CONFLICT (case_id) DO UPDATE` for the audit table. You could have used `INSERT` without `ON CONFLICT` — which would fail on a duplicate, forcing investigation. The question is: did you make that choice, or did the AI make it for you? If you do not know why it chose one over the other, ask it.
 
-- **Q5. If this code is wrong, how would I find out?** If the answer is "I wouldn't," that is your highest-priority hot path. Silent failures are the hardest to detect and the most damaging in government systems. *In practice:* the reporting script produces a summary CSV. If it wrote "Unknown" for every department for three months, would your current process catch that? If the answer is "probably not until someone noticed the dashboard looked wrong," then the CSV output is a hot path — and you need an output check, not just a code check.
+- **Q5. If this code is wrong, how would I find out?** If the answer is "I wouldn't," that is your highest-priority hot path. Silent failures are the hardest to detect and the most damaging in high-stakes systems. *In practice:* the reporting script produces a summary CSV. If it wrote "Unknown" for every department for three months, would your current process catch that? If the answer is "probably not until someone noticed the dashboard looked wrong," then the CSV output is a hot path — and you need an output check, not just a code check.
 
 Print these. Pin them next to your monitor. Run through them every time you accept AI-generated code that touches classification, PII (personally identifiable information), financial data, or audit records.
 
 > **Questions to Ask Your IT Security Team:** "We use AI to generate scripts that touch [classification/PII/financial] data. Do we have any static analysis rules that would catch the patterns described in this guide? If not, what is the interim guidance for our team?"
 >
-> Your IT security team may not have encountered this specific risk class yet — it is new, and the existing frameworks do not cover it. That is normal. You are not reporting a failure; you are putting a new risk on their radar. Bring this guide and the companion document (*Understanding AI Code Risk in Government Systems*). Suggest a 30-minute meeting to walk through the three patterns together.
+> Your IT security team may not have encountered this specific risk class yet — it is new, and the existing frameworks do not cover it. That is normal. You are not reporting a failure; you are putting a new risk on their radar. Bring this guide and the companion document (*Understanding AI Code Risk*). Suggest a 30-minute meeting to walk through the three patterns together.
 
 
 ## 4. How This Connects to What You Already Know
 
-If you work in government IT, you are already familiar with several of the frameworks that this guide extends into new territory.
+If your organisation runs a security-conscious development process, you are already familiar with several of the frameworks that this guide extends into new territory.
 
 | If you know... | Then this maps to... |
 |---|---|
-| PSPF classification obligations | The friendly default (Section 2.1) — silent classification downgrade. Q1 catches the pattern where AI invents a classification instead of surfacing a missing one. |
-| ISM controls for software development | Q1–Q5 extend ISM review into *semantic* territory — not "is the code structured correctly?" but "does the code do the right thing in this institutional context?" |
-| Essential Eight patching and hardening | These patterns are not caught by Essential Eight — they sit in the gap between infrastructure-level security and application-level semantic correctness. E8 protects the platform; Q1–Q5 protect the logic running on it. |
+| Information classification obligations | The friendly default (Section 2.1) — silent classification downgrade. Q1 catches the pattern where AI invents a classification instead of surfacing a missing one. |
+| Secure software development controls in your organisation's security framework | Q1–Q5 extend those controls into *semantic* territory — not "is the code structured correctly?" but "does the code do the right thing in this institutional context?" |
+| Platform hardening and patching baselines | These patterns are not caught by platform-level controls — they sit in the gap between infrastructure security and application-level semantic correctness. Platform controls protect the platform; Q1–Q5 protect the logic running on it. |
 | Audit and accountability requirements | The helpful error handler (Section 2.2) — audit trail destruction. Q2 catches the pattern where AI swallows the exception that should have preserved the audit record. |
 | Data sovereignty and data handling | The invisible promotion (Section 2.3) — untrusted data entering authoritative paths. Q3 catches the pattern where AI treats external data as if it came from an internal, trusted source. |
 
@@ -148,7 +148,7 @@ Not all code is equally dangerous. A function that formats dates is not the same
 
 [^hot-paths]: The full discussion paper calls these *high-stakes code paths* — code where a wrong answer has consequences for security, compliance, or people. "Hot path" is the same concept in plainer language.
 
-### 6.1 What makes a path "hot"
+### 5.1 What makes a path "hot"
 
 A code path is hot if **a wrong answer has real-world consequences.** That means it touches classifications, PII, financial amounts, audit records, access decisions, or any data where corruption or silent mishandling affects people, compliance, or trust. Defaulting a missing location in a weather app is not a hot path — a wrong forecast inconveniences someone. Defaulting a missing security classification is a hot path — that decision downgrades documents and nobody is told.
 
@@ -161,7 +161,7 @@ Everything else — formatting, logging messages, building display strings, iter
 - **Boundary crossings.** Does data enter this path from outside — an external API, a user upload, a partner system — and get used without validation? Does the code distinguish between "ours" and "not ours"? (Q3)
 - **Implicit decisions.** Is the code making a policy decision without being explicit about it? A `.get()` with a default is a policy decision: "if this value is missing, use this one instead." A `try/except` that continues is a policy decision: "if this fails, carry on as if it did not." These decisions are fine in low-consequence code. In a hot path, they need to be deliberate and visible. (Q4, Q5)
 
-### 6.2 A walkthrough: finding the hot lines in a reporting script
+### 5.2 A walkthrough: finding the hot lines in a reporting script
 
 Here is a small reporting script that reads records from an external partner API, processes them, and writes summary rows to a local database. It is about 30 lines long. The comments mark which lines are hot and which question applies. Lines that are not hot paths — setup, formatting, cleanup — are marked "cold."
 
@@ -266,7 +266,7 @@ def generate_partner_report(api_url, db_path):
 
 The corrected version is about the same length. It does not add complexity — it removes silent failures and makes problems visible.
 
-### 6.3 SQL hot paths
+### 5.3 SQL hot paths
 
 If your scripts include SQL — queries, inserts, data transformations — the same three patterns apply. AI generates SQL with the same blind spots it has in Python.
 
@@ -444,7 +444,7 @@ This is not a security control — it is basic hygiene, and it makes every other
 
 ## 8. When You Need More Than This Guide
 
-This guide is interim — it works when you are the only reviewer and there is no automated tooling. It is a manual process by design, because most government staff using AI to write code do not have access to CI pipelines, static analysis tools, or pre-commit hooks.
+This guide is interim — it works when you are the only reviewer and there is no automated tooling. It is a manual process by design, because most people using AI to write code as part of their day job do not have access to CI pipelines, static analysis tools, or pre-commit hooks.
 
 Automated detection is being designed. Semantic enforcement tooling would encode the three pattern checks (Q1–Q3) as machine-enforceable rules that run automatically every time code is saved or submitted. A companion specification illustrates one way to build this; other approaches using existing static analysis tools (such as semgrep or CodeQL custom rules) could target the same patterns. The key insight is that Q1–Q3 are automatable regardless of which tooling implements them — the patterns are specific enough for machines to check. When that tooling arrives, those checks will run automatically so you do not have to hold them all in your head. The two judgement calls (Q4–Q5) remain with human reviewers.
 
@@ -458,7 +458,7 @@ As your project grows:
 - **Near-term:** Semantic enforcement tooling — as illustrated by the companion specification — could provide machine-checkable rules for the three pattern checks (Q1–Q3), integrated into the development workflow using existing static analysis tools.
 - **The key insight:** Everything in this guide maps to an automatable pattern check. You have been learning the intuition; the tools encode it so you do not have to hold it all in your head.
 
-**If your concern is governance rather than code** — the systemic risk, the framework gaps, the procurement implications — see *Understanding AI Code Risk in Government Systems* for the policy response. That document covers the "why" behind the "what" in this guide: why these defects are a systemic problem, what existing frameworks miss, and what government needs to do about it.
+**If your concern is governance rather than code** — the systemic risk, the framework gaps, the procurement implications — see *Understanding AI Code Risk* for the policy response. That document covers the "why" behind the "what" in this guide: why these defects are a systemic problem, what existing frameworks miss, and what organisations need to do about it.
 
 
 ## 9. One Page to Take to a Meeting
@@ -467,7 +467,7 @@ As your project grows:
 
 ---
 
-**Three patterns AI gets wrong in government code:**
+**Three patterns AI gets wrong in high-stakes code:**
 
 - **The Friendly Default** — AI invents a value (e.g., OFFICIAL) when data is missing, instead of raising an error
 - **The Helpful Error Handler** — AI catches and swallows audit-critical errors instead of letting them propagate
@@ -513,10 +513,10 @@ As your project grows:
 - Use the **AI review prompts** in Section 6 to check AI-generated code before accepting it
 - Put your scripts in **version control** (git) — even if you are the only person working on them
 
-**Where to go deeper** (all documents available from the Digital Transformation Agency):
+**Where to go deeper:**
 
 - This guide: practical review for people writing code
-- *Understanding AI Code Risk in Government Systems*: systemic risk for policy advisors
+- *Understanding AI Code Risk*: systemic risk for policy advisors
 - *When Good Code Becomes Dangerous* (discussion paper): full technical threat model and taxonomy
 - Companion specification (Wardline): one illustration of semantic enforcement tooling, for tool builders and assessors
 
@@ -548,9 +548,9 @@ As your project grows:
 
 ## Glossary
 
-**Audit trail:** A chronological record of who did what, when, and why. In government systems, gaps in the audit trail can have legal consequences — a missing record may be treated as evidence of tampering rather than as a technical failure.
+**Audit trail:** A chronological record of who did what, when, and why. In systems with audit obligations, gaps in the audit trail can have legal consequences — a missing record may be treated as evidence of tampering rather than as a technical failure.
 
-**Authority tier:** A way of classifying data by how much you should trust it. This guide uses three practical levels: *internal* (produced by your system — highest trust), *validated* (came from outside but passed through checks), and *external* (not yet checked — lowest trust). The discussion paper (§6) introduces the four-tier model; the Wardline specification (§5) formally defines it, adding a distinction between shape-validated and semantically validated data. The patterns in this guide are dangerous because AI does not distinguish between tiers — it treats all data the same.
+**Authority tier:** A way of classifying data by how much you should trust it. This guide uses three practical levels: *internal* (produced by your system — highest trust), *validated* (came from outside but passed through checks), and *external* (not yet checked — lowest trust). The discussion paper introduces the four-tier model; the Wardline specification (Part I, §5) formally defines it, adding a distinction between shape-validated and semantically validated data. The patterns in this guide are dangerous because AI does not distinguish between tiers — it treats all data the same.
 
 **CI pipeline (Continuous Integration):** An automated system that runs checks on code every time it is changed. If you do not have one, the five questions in this guide are your manual equivalent.
 
@@ -562,29 +562,23 @@ As your project grows:
 
 **Authority Tier Conflation:** The taxonomy name for the Invisible Promotion pattern (Section 2.3). Data from an untrusted external source is used in a trusted internal context without validation, silently elevating its authority. (Discussion paper reference: ACF-T1.)
 
-**Default value:** A value that code uses when the real value is missing. In general software, defaults are helpful. In government systems handling sensitive data, a default can silently fabricate an answer that should have been an error.
+**Default value:** A value that code uses when the real value is missing. In general software, defaults are helpful. In systems handling sensitive data, a default can silently fabricate an answer that should have been an error.
 
 **Defence-in-depth:** A security principle where multiple independent layers of protection are used so that no single layer's failure compromises the whole system. In the context of this guide: the combination of your own review (Q1–Q5), AI-assisted prompted review (Section 6), and eventually automated enforcement (Section 8) form three layers — each catches different things.
 
-**Exception handler:** Code that catches errors and decides what to do with them. The danger in government systems is handlers that catch errors and quietly continue, rather than surfacing the failure to someone who can act on it.
+**Exception handler:** Code that catches errors and decides what to do with them. The danger in audit-sensitive systems is handlers that catch errors and quietly continue, rather than surfacing the failure to someone who can act on it.
 
 **Hot path:** A section of code where the five questions matter most — where the code touches sensitive data, makes decisions about missing values, crosses trust boundaries, or handles errors from compliance-critical operations.
 
-**IRAP (Information Security Registered Assessors Program):** A programme administered by ASD/ACSC that accredits security assessors to evaluate government systems against the ISM. When this guide or the discussion paper refers to "IRAP assessment," it means an independent security evaluation conducted by an accredited assessor — the primary mechanism by which government agencies demonstrate that their systems meet security requirements.
-
-**ISM (Information Security Manual):** The Australian Government's cybersecurity framework, maintained by the Australian Signals Directorate (ASD) and its Australian Cyber Security Centre (ACSC). The patterns in this guide sit in a gap that the ISM was not designed to cover — semantic correctness of application logic.
-
-**PII (Personally Identifiable Information):** Data that can identify a specific person — names, tax file numbers, dates of birth, contact details. Government systems handling PII have legal obligations about how it is stored, logged, and transmitted.
+**PII (Personally Identifiable Information):** Data that can identify a specific person — names, national ID numbers, dates of birth, contact details. Systems handling PII have legal obligations about how it is stored, logged, and transmitted.
 
 **Pre-commit hook:** An automated check that runs on your code before it is saved to version control. If the check fails, the save is blocked. This guide's five questions are the manual equivalent of what a pre-commit hook does automatically.
-
-**PSPF (Protective Security Policy Framework):** The Australian Government's framework for protective security, including information classification. The Friendly Default pattern (Section 2.1) can silently violate PSPF classification requirements by defaulting to OFFICIAL when the real classification is unknown.
 
 **Semantic correctness:** Whether code does the right thing in its institutional context — not just running without errors, but producing correct results for the specific system it operates in. The five questions in this guide are all tests for semantic correctness. See the discussion paper (§2.3) for the formal definition.
 
 **Semantic defect:** A bug where the code runs correctly but does the wrong thing. It does not crash, does not throw errors, and passes all tests — but produces an incorrect result. The patterns in this guide are all semantic defects.
 
-**Silent failure:** When code fails without telling anyone. The opposite of crashing. In most software, silent failures are considered poor practice. In government systems, they can mean incorrect classifications, broken audit trails, or unvalidated data entering decision-making processes.
+**Silent failure:** When code fails without telling anyone. The opposite of crashing. In most software, silent failures are considered poor practice. In high-stakes systems, they can mean incorrect classifications, broken audit trails, or unvalidated data entering decision-making processes.
 
 **Static analysis:** Automated examination of code without running it — a tool reads the source text and flags patterns that match known problems. Linters, type checkers, and security scanners are all forms of static analysis.
 

@@ -57,7 +57,7 @@ Conditional criteria are elaborated in the profile semantics below.
 
 ##### 15.3.2 Governance profiles
 
-Enforcement profiles partition what the tools implement. Governance profiles partition what the organisation commits to governing. The conformance criteria in §15.2 describe the full governance surface — but the full surface is calibrated for mature teams with dedicated security governance capacity. A five-person team adopting wardline for the first time faces a governance burden designed for a 50-person team with an established IRAP assessment cycle. The conformance profiles partition enforcement but not governance — and governance is where adoption stalls.
+Enforcement profiles partition what the tools implement. Governance profiles partition what the organisation commits to governing. The conformance criteria in §15.2 describe the full governance surface — but the full surface is calibrated for mature teams with dedicated security governance capacity. A five-person team adopting wardline for the first time faces a governance burden designed for a 50-person team with an established security accreditation programme. The conformance profiles partition enforcement but not governance — and governance is where adoption stalls.
 
 Two governance profiles are defined. A deployment MUST declare which governance profile it operates under. The governance profile is recorded in the root wardline manifest (§14.1.1) and reported in SARIF output as `wardline.governanceProfile` with values `"lite"` or `"assurance"`.
 
@@ -84,7 +84,7 @@ Wardline Lite deferred items — these are not omitted, they are explicitly defe
 
 Wardline Lite is not "Wardline minus the unpleasant bits." It includes a governance checklist (below) that makes the governance posture assessable even without the full artefact set. An assessor evaluating a Lite deployment verifies the checklist, not a reduced version of the Assurance procedure. For the graduation path from Lite to Assurance — including triggers and a pre-graduation checklist — see §15.3.3.
 
-> **ISM-layer perspective.** The companion recommendations document (*Proposed Framework Changes and Recommendations*, §4.2) proposes ISM-style controls for manifest governance — semantic policy change authority, adequacy review, exception governance, and tool assurance — framed as outcome-stated controls sitting above this specification. Those controls address the same governance surface from the policy framework's perspective: where this section specifies *how* the governance mechanisms work, the ISM-layer controls specify *what outcomes* the organisation MUST demonstrate to an assessor.
+> **Policy-layer perspective.** The companion recommendations document (*Proposed Framework Changes and Recommendations*, §4.2) proposes policy-layer controls for manifest governance — semantic policy change authority, adequacy review, exception governance, and tool assurance — framed as outcome-stated controls sitting above this specification. Those controls address the same governance surface from the policy framework's perspective: where this section specifies *how* the governance mechanisms work, the policy-layer controls specify *what outcomes* the organisation MUST demonstrate to an assessor.
 
 **Wardline Lite governance checklist.** An assessor evaluating a Lite deployment verifies the following:
 
@@ -96,7 +96,7 @@ Wardline Lite is not "Wardline minus the unpleasant bits." It includes a governa
 6. If a bootstrap corpus exists: enforcement tools detect the specimens correctly
 7. If expedited exceptions were granted: the process is documented and retrospective review occurred
 
-**Wardline Assurance.** The full governance profile as described in §10. Wardline Assurance requires all governance mechanisms defined in §10.2 without relaxation: full temporal separation (MUST; no documented alternatives permitted), full golden corpus (126+ specimens with adversarial cases per §11), full fingerprint baseline with canonical hashing and structured change detection, expedited governance ratio computation with declared threshold and automated governance-level findings when exceeded, and SIEM export for ISM-assessed systems (SHOULD). Wardline Assurance is the governance profile expected for systems undergoing IRAP assessment, systems processing data at PROTECTED or above, or any deployment where the organisation's risk appetite requires the full governance surface.
+**Wardline Assurance.** The full governance profile as described in §10. Wardline Assurance requires all governance mechanisms defined in §10.2 without relaxation: full temporal separation (MUST; no documented alternatives permitted), full golden corpus (126+ specimens with adversarial cases per §11), full fingerprint baseline with canonical hashing and structured change detection, expedited governance ratio computation with declared threshold and automated governance-level findings when exceeded, and SIEM export for systems under formal security accreditation (SHOULD). Wardline Assurance is the governance profile expected for systems undergoing formal security accreditation, systems processing data at PROTECTED classification or above, or any deployment where the organisation's risk appetite requires the full governance surface.
 
 Wardline Assurance requirements add to or strengthen the Lite requirements:
 
@@ -107,7 +107,7 @@ Wardline Assurance requirements add to or strengthen the Lite requirements:
 | Fingerprint baseline | MUST — full structured baseline per §10.2 | Replaces annotation change tracking |
 | Manifest coherence checks | MUST — CI gate before code-level enforcement | New requirement |
 | Expedited governance ratio | MUST — computed, threshold declared, automated finding | Strengthened from RECOMMENDED |
-| SIEM export of governance events | SHOULD (MUST for ISM-assessed systems) | New requirement |
+| SIEM export of governance events | SHOULD (MUST for systems under formal security accreditation) | New requirement |
 
 A deployment declares its governance profile in the root manifest. Assessors evaluate against the declared profile — a Lite deployment is not penalised for lacking Assurance-level artefacts, but it is penalised for lacking Lite-level artefacts. The governance profile is distinct from the enforcement profile: a Wardline-Full enforcement regime operating at the Lite governance level is a valid deployment (full tool coverage, graduated governance). Conversely, a Wardline-Core enforcement regime at the Assurance governance level is also valid (partial tool coverage, full governance) — though unusual, this might apply where a single scanner covers the required rules and the organisation's accreditation demands full governance.
 
@@ -117,7 +117,7 @@ Graduation from Lite to Assurance is tied to team maturity and accreditation req
 
 **Graduation triggers.** A deployment SHOULD graduate from Lite to Assurance when any of the following apply:
 
-- The system is submitted for IRAP assessment or equivalent accreditation
+- The system is submitted for formal security accreditation
 - The system processes data at PROTECTED classification or above
 - The team size exceeds 15 active contributors (governance capacity is no longer the limiting factor)
 - The deployment has operated at Lite level for more than two manifest ratification cycles (the team has sufficient enforcement experience)
@@ -252,7 +252,7 @@ partner-landscape/
 
 ```yaml
 metadata:
-  organisation: "Department of Example"
+  organisation: "Example Organisation"
   ratified_by:
     name: "Jane Smith"
     role: "Chief Information Security Officer"
@@ -339,7 +339,7 @@ corpus/                      @security-team
     "exceptionability_at_grant": "STANDARD",
     "rationale": "Legacy partner API v1 omits 'status' field on inactive partners. Default 'INACTIVE' approved by data owner (JIRA-4521).",
     "reviewer": {
-      "identity": "jane.smith@myorg.gov.au",
+      "identity": "jane.smith@myorg.example",
       "role": "CISO",
       "date": "2026-02-15"
     },
@@ -503,7 +503,7 @@ The bootstrap corpus focuses on the cells where findings are UNCONDITIONAL or ER
 - Expedited governance ratio threshold and automated findings
 - SIEM export of governance events
 
-**Graduation notes.** This team would graduate to Assurance when they submit for IRAP assessment, or when the service begins processing PROTECTED data. The 90-day ratification cycle means they would have completed at least two review cycles within 180 days — sufficient enforcement experience to expand the corpus and establish the full fingerprint baseline.
+**Graduation notes.** This team would graduate to Assurance when they submit for formal security accreditation, or when the service begins processing PROTECTED data. The 90-day ratification cycle means they would have completed at least two review cycles within 180 days — sufficient enforcement experience to expand the corpus and establish the full fingerprint baseline.
 
 #### 15.6.3 Navigating to Part II
 

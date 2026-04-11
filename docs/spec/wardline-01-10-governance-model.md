@@ -35,7 +35,7 @@ A wardline without governance is an honour system. The governance model defines 
 | Governance artefact exclusion during direct law | MUST | MUST | VCS + Process | §10.5 |
 | Mandatory retrospective scan after alternate/direct law | MUST | MUST | Scanner + Process | §10.5 |
 | Governance audit logging | MUST | MUST | Scanner + VCS | §10.2.1 |
-| SIEM export of governance events | — | SHOULD (MUST for ISM-assessed) | Scanner / SIEM integration | §10.2.1 |
+| SIEM export of governance events | — | SHOULD (MUST for systems under formal security accreditation) | Scanner / SIEM integration | §10.2.1 |
 | Agent-authored governance change detection | MUST | MUST | Scanner + VCS | §10.3 |
 
 #### 10.1 Exceptionability classes
@@ -126,9 +126,9 @@ Governance events — exception grants, baseline changes, manifest modifications
 
 The exception register and fingerprint baseline are VCS-tracked files protected by CODEOWNERS. VCS history provides tamper-evident logging — each change is a commit with author identity, timestamp, and content hash. This is not append-only in the strict sense (VCS permits rewriting history), but branch protection rules that prevent force-push to the protected branch provide practical tamper resistance for most government environments.
 
-**For environments requiring stronger tamper evidence** (e.g., systems under ISM-1228 or equivalent audit logging controls), the wardline CLI SHOULD support exporting governance events to an external append-only log (syslog, SIEM, or dedicated audit database). The export format is SARIF — each governance event is a SARIF result with `ruleId: "GOVERNANCE"` and the event details in the property bag. This allows governance events to flow into the same audit infrastructure that handles other security events.
+**For environments requiring stronger tamper evidence** (e.g., systems subject to formal audit-logging controls), the wardline CLI SHOULD support exporting governance events to an external append-only log (syslog, SIEM, or dedicated audit database). The export format is SARIF — each governance event is a SARIF result with `ruleId: "GOVERNANCE"` and the event details in the property bag. This allows governance events to flow into the same audit infrastructure that handles other security events.
 
-**Retention.** Governance artefacts (exception register, fingerprint baseline, SARIF runs) SHOULD be retained for the duration of the system's accreditation period. For ISM-assessed systems, this is typically 3 years from the last IRAP assessment.
+**Retention.** Governance artefacts (exception register, fingerprint baseline, SARIF runs) SHOULD be retained for the duration of the system's accreditation period. In accredited environments this is typically three years from the last formal security accreditation; organisations MAY retain for longer where their retention policy requires it.
 
 #### 10.3 Scope of governance
 
@@ -168,7 +168,7 @@ Enforcement artefacts are governed under configuration management: version contr
 
 **The manifest contains both types.** The root `wardline.yaml` (§14.1.1) carries tier definitions (policy) alongside rule configuration (enforcement). The overlay (§14.1.2) carries boundary declarations (policy) alongside rule overrides (enforcement). The distinction is per-field, not per-file. Enforcement tools SHOULD present policy artefact changes and enforcement artefact changes as distinct categories in the fingerprint baseline diff, so that governance reviewers can prioritise policy changes and configuration managers can handle enforcement changes through standard processes.
 
-**Why this matters now.** The governance model (§10.2, §10.3) already implicitly distinguishes these categories — tier changes receive heavier governance scrutiny than tool configuration changes in practice. Making the distinction explicit serves three purposes: it gives the governance profile graduation (future work) its vocabulary — a "Wardline Lite" profile can require full governance for policy artefacts while relaxing governance for enforcement artefacts; it enables manifest-level threat modelling — governance-layer attack vectors (manifest poisoning, boundary manipulation) target policy artefacts specifically; and it aligns the wardline with established security governance practice — security classification guides are policy artefacts governed differently from the systems that enforce them.
+**Why this matters now.** The governance model (§10.2, §10.3) already implicitly distinguishes these categories — tier changes receive heavier governance scrutiny than tool configuration changes in practice. Making the distinction explicit serves three purposes: it gives the governance profile graduation its vocabulary — a "Wardline Lite" profile can require full governance for policy artefacts while relaxing governance for enforcement artefacts; it enables manifest-level threat modelling — governance-layer attack vectors (manifest poisoning, boundary manipulation) target policy artefacts specifically; and it aligns the wardline with established security governance practice — security classification guides are policy artefacts governed differently from the systems that enforce them.
 
 #### 10.3.2 Manifest threat model
 

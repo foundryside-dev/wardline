@@ -1,15 +1,19 @@
 ---
 specimen_id: ADV-014-hasattr-taint-gate
-description: hasattr in non-active taint state should not fire PY-WL-003
+description: hasattr at INTEGRAL fires PY-WL-003 (structural gating in trusted code)
 rule: PY-WL-003
 fragment: "def process(obj):\n    if hasattr(obj, \"name\"):\n        pass\n"
 taint_state: INTEGRAL
-expected_rules: []
-expected_match: false
-verdict: true_negative
+expected_rules:
+- PY-WL-003
+expected_match:
+  line: 2
+  text: if hasattr(obj, "name"):
+  function: process
+verdict: true_positive
 tags:
 - adversarial
 - taint-gate
 sha256: 31648f94712fce43847df3533d076ab3de36907bd36fb90d05cdfe33e4f49d05
-expected_severity: null
-expected_exceptionability: null
+expected_severity: ERROR
+expected_exceptionability: UNCONDITIONAL

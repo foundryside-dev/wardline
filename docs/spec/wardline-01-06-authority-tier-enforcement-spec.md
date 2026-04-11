@@ -137,6 +137,7 @@ All sixteen non-reachable combinations are accounted for by the Impossible or Co
 
 Tier transitions are directional and constrained:
 
+<!-- wl-pdf: size="height: 90%" -->
 ```mermaid
 graph LR
     T4["<b>Tier 4</b><br/>Raw Observation"]
