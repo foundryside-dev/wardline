@@ -6,14 +6,15 @@ site_description: >-
 site_author: Tachyon Beep
 repo_url: https://github.com/tachyon-beep/wardline
 repo_name: tachyon-beep/wardline
-edit_uri: edit/main/docs/
 copyright: >-
   Copyright &copy; 2026 Tachyon Beep —
   <a href="https://github.com/tachyon-beep/wardline/blob/main/LICENSE">MIT License</a>
 
+docs_dir: site-src
+
 theme:
   name: material
-  custom_dir: overrides
+  custom_dir: site-src/overrides
   favicon: assets/favicon.svg
   icon:
     logo: material/shield-check
