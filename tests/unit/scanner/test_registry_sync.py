@@ -28,11 +28,11 @@ from wardline.core.taints import TaintState
 # Import all decorator modules
 from wardline.decorators import (
     access,
-    integrity,
     authority,
     boundaries,
     concurrency,
     determinism,
+    integrity,
     lifecycle,
     operations,
     plugin,
@@ -44,10 +44,10 @@ from wardline.decorators import (
     sensitivity,
 )
 from wardline.decorators._base import get_wardline_attrs, wardline_decorator
+from wardline.decorators.authority import external_boundary
 
 # Direct imports used in test bodies
 from wardline.decorators.integrity import integrity_critical
-from wardline.decorators.authority import external_boundary
 
 # Build _LIBRARY_DECORATORS from all modules — every registered name
 # must map to its callable.

@@ -468,9 +468,9 @@ class TestMultiFindingPartition:
 
         from wardline.core.severity import Exceptionability, RuleId, Severity
         from wardline.core.taints import TaintState
+        from wardline.manifest.models import ExceptionEntry
         from wardline.scanner.context import Finding
         from wardline.scanner.exceptions import apply_exceptions
-        from wardline.manifest.models import ExceptionEntry
         from wardline.scanner.fingerprint import compute_ast_fingerprint
 
         # Create a file with two functions

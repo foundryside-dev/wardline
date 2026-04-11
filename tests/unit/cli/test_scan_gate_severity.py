@@ -119,7 +119,7 @@ class TestSuppressTransparentContract:
 
     def _make_suppress_transparent_finding(
         self,
-        rule_id: "RuleId" = RuleId.PY_WL_001,
+        rule_id: RuleId = RuleId.PY_WL_001,
         line: int = 1,
     ) -> Finding:
         """Construct a Finding that represents a SUPPRESS+TRANSPARENT matrix cell."""

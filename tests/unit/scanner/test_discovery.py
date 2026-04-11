@@ -8,9 +8,9 @@ import textwrap
 from typing import TYPE_CHECKING
 
 from wardline.scanner.discovery import (
-    _detect_dynamic_imports,
     _build_import_table,
     _collect_type_checking_lines,
+    _detect_dynamic_imports,
     _is_type_checking_test,
     _resolve_decorator,
     discover_annotations,

@@ -11,15 +11,15 @@ import pytest
 from wardline.core.taints import TaintState
 from wardline.decorators._base import get_wardline_attrs, wardline_decorator
 from wardline.decorators.authority import (
-    integral_writer,
+    external_boundary as eb_decorator,
+)
+from wardline.decorators.authority import (
     integral_construction,
     integral_read,
+    integral_writer,
     validates_external,
     validates_semantic,
     validates_shape,
-)
-from wardline.decorators.authority import (
-    external_boundary as eb_decorator,
 )
 
 # ---------------------------------------------------------------------------

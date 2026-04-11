@@ -11,11 +11,11 @@ import pytest
 from wardline.core.severity import Exceptionability, RuleId, Severity
 from wardline.core.taints import TaintState
 from wardline.manifest.models import (
-    DependencyTaintEntry,
     BoundaryEntry,
     ContractBinding,
     DelegationConfig,
     DelegationGrant,
+    DependencyTaintEntry,
     ExceptionEntry,
     FingerprintEntry,
     ManifestMetadata,

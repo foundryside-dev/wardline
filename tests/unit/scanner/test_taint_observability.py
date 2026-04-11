@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import ast
 import logging
-from pathlib import Path
-import pytest
+from typing import TYPE_CHECKING
 
 from wardline.core.severity import RuleId
 from wardline.core.taints import TaintState
@@ -21,6 +20,10 @@ from wardline.scanner.context import ScanContext
 from wardline.scanner.rules.base import RuleBase
 from wardline.scanner.rules.py_wl_003 import RulePyWl003
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 # ---------------------------------------------------------------------------
 # Stub rule for testing base class taint miss logging

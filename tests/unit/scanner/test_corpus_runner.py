@@ -687,6 +687,7 @@ class TestCorpusPublish:
                 "--output", str(tmp_path / "wardline.conformance.json"),
             ],
         )
+        assert result.exit_code == 0, f"Failed: {result.output}"
         conf = json.loads((tmp_path / "wardline.conformance.json").read_text())
         inputs = conf["inputs"]
         assert inputs["tool_version"] == "0.4.0"

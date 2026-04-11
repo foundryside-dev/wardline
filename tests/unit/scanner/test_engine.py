@@ -535,8 +535,8 @@ class TestScanResultFileTracking:
         py_file = tmp_path / "example.py"
         py_file.write_text("x = 1\n", encoding="utf-8")
 
-        from wardline.scanner.engine import ScanEngine, ScanResult
         from wardline.manifest.models import WardlineManifest
+        from wardline.scanner.engine import ScanEngine
 
         engine = ScanEngine(
             target_paths=(tmp_path,),
@@ -556,8 +556,8 @@ class TestScanResultFileTracking:
         bad_file = tmp_path / "bad.py"
         bad_file.write_text("def broken(\n", encoding="utf-8")
 
-        from wardline.scanner.engine import ScanEngine, ScanResult
         from wardline.manifest.models import WardlineManifest
+        from wardline.scanner.engine import ScanEngine
 
         engine = ScanEngine(
             target_paths=(tmp_path,),

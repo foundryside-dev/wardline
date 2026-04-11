@@ -11,7 +11,6 @@ producing correct per-variable taint assignments for:
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 from wardline.core.severity import RuleId
@@ -22,6 +21,7 @@ from wardline.scanner.rules.base import RuleBase
 
 if TYPE_CHECKING:
     import ast
+    from pathlib import Path
 
     from wardline.scanner.context import ScanContext
 

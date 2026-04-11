@@ -15,6 +15,7 @@ from wardline.manifest.coherence import (
     check_expired_exceptions,
     check_first_scan_perimeter,
     check_orphaned_annotations,
+    check_restoration_evidence,
     check_restoration_evidence_consistency,
     check_stale_contract_bindings,
     check_suppress_overrides,
@@ -25,7 +26,6 @@ from wardline.manifest.coherence import (
     check_undeclared_boundaries,
     check_unmatched_contracts,
     check_validation_scope_presence,
-    check_restoration_evidence,
     should_gate_on_profile,
 )
 from wardline.manifest.models import (

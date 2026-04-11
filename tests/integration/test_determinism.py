@@ -128,4 +128,4 @@ class TestDeterminism:
         # (e.g. "2024-01-01T00:00:00Z" or "2024-01-01T12:34:56+00:00")
         assert not re.search(
             r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", sarif_str
-        ), f"Found ISO-8601 timestamp in verification-mode output"
+        ), "Found ISO-8601 timestamp in verification-mode output"

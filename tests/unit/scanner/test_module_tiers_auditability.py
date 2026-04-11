@@ -8,11 +8,13 @@ Covers:
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from wardline.core.severity import RuleId
 from wardline.manifest.models import ModuleTierEntry, WardlineManifest
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # GOVERNANCE_MODULE_TIERS_BLANKET

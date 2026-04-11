@@ -48,7 +48,7 @@ class TestDecoratorPackageContract:
 
     def test_stacked_decorators_accumulate_groups(self) -> None:
         """Multiple decorators accumulate _wardline_groups."""
-        from wardline.decorators import integrity_critical, deterministic
+        from wardline.decorators import deterministic, integrity_critical
 
         @integrity_critical
         @deterministic
@@ -64,7 +64,6 @@ class TestDecoratorPackageContract:
 
         cli_before = {k for k in sys.modules if k.startswith("wardline.cli")}
 
-        import wardline.decorators  # noqa: F811
 
         cli_after = {k for k in sys.modules if k.startswith("wardline.cli")}
         new_cli = cli_after - cli_before

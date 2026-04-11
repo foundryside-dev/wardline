@@ -77,9 +77,8 @@ class TestCorpusIntegrity:
             if verdict == "true_positive":
                 if not (isinstance(expected, dict) or expected is True):
                     mismatches.append(f"{s['specimen_id']}: TP but expected_match={expected}")
-                if isinstance(expected, dict):
-                    if "line" not in expected or "text" not in expected:
-                        mismatches.append(f"{s['specimen_id']}: TP structured match missing line/text")
+                if isinstance(expected, dict) and ("line" not in expected or "text" not in expected):
+                    mismatches.append(f"{s['specimen_id']}: TP structured match missing line/text")
             elif verdict == "true_negative" and expected is not False:
                 mismatches.append(f"{s['specimen_id']}: TN but expected_match={expected}")
 

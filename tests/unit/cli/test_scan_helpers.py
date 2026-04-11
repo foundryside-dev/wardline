@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from wardline.scanner.context import Finding
 
 
 class TestComputeManifestHash:
@@ -616,7 +621,6 @@ class TestRetrospectiveFinding:
 
         from wardline.cli.scan import _make_governance_finding, _read_baseline_control_law
         from wardline.core.severity import RuleId, Severity
-        from wardline.scanner.context import Finding
         from wardline.scanner.sarif import GovernanceEvent
 
         sarif = tmp_path / "baseline.sarif"
@@ -645,7 +649,6 @@ class TestRetrospectiveFinding:
         import json
 
         from wardline.cli.scan import _read_baseline_control_law
-        from wardline.scanner.context import Finding
 
         sarif = tmp_path / "baseline.sarif"
         sarif.write_text(json.dumps({
@@ -656,9 +659,8 @@ class TestRetrospectiveFinding:
         retrospective = "abc123..def456"  # Performing retrospective
 
         findings: list[Finding] = []
-        if prev_law in ("alternate", "direct") and current_law == "normal":
-            if not retrospective:
-                findings.append(None)  # type: ignore[arg-type]
+        if prev_law in ("alternate", "direct") and current_law == "normal" and not retrospective:
+            findings.append(None)  # type: ignore[arg-type]
 
         assert len(findings) == 0
 
@@ -675,7 +677,6 @@ class TestRetrospectiveFinding:
 
         from wardline.cli.scan import _make_governance_finding, _read_baseline_control_law
         from wardline.core.severity import RuleId, Severity
-        from wardline.scanner.context import Finding
 
         sarif = tmp_path / "baseline.sarif"
         sarif.write_text(json.dumps({
@@ -814,7 +815,7 @@ class TestZeroFunctionsLogsDebug:
         """Debug log emitted when total_function_count == 0."""
         import logging
 
-        with caplog.at_level(logging.DEBUG):
+        with caplog.at_level(logging.DEBUG, logger="wardline.cli.scan"):
             # Directly replicate the production logic from scan.py:856-857
             total_function_count = 0
             logger = logging.getLogger("wardline.cli.scan")

@@ -5,7 +5,6 @@ from __future__ import annotations
 import ast
 import re
 from typing import TYPE_CHECKING
-from unittest.mock import patch
 
 from wardline.scanner.fingerprint import compute_ast_fingerprint
 

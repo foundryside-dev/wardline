@@ -6,6 +6,7 @@ the implementation. Follows test_matrix.py independent-oracle discipline.
 from __future__ import annotations
 
 import pytest
+
 from wardline.core.taints import TaintState
 
 EVIDENCE_MATRIX = [

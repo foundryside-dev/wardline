@@ -5,13 +5,13 @@ from __future__ import annotations
 
 class TestPublicAPI:
     def test_decorators_importable(self) -> None:
-        from wardline import external_boundary, validates_shape, integral_writer
+        from wardline import external_boundary, integral_writer, validates_shape
         assert callable(external_boundary)
         assert callable(validates_shape)
         assert callable(integral_writer)
 
     def test_core_types_importable(self) -> None:
-        from wardline import TaintState, AuthorityTier
+        from wardline import AuthorityTier, TaintState
         assert hasattr(TaintState, "INTEGRAL")
         assert hasattr(AuthorityTier, "TIER_1")
 
