@@ -1,4 +1,22 @@
-# Wardline.dev Site Restructure — Implementation Plan
+# Wardline.dev Site Restructure — Implementation Plan (Plan B — post-cert)
+
+> **⚠️ Split on 2026-04-12. This is Plan B.**
+>
+> **Phase 1 of this plan (the structural move) was extracted into a standalone plan:** `docs/superpowers/plans/2026-04-12-wardline-site-move.md` (Plan A). Run Plan A first, independently of v1.0 cert work.
+>
+> **This plan (Plan B) covers everything else:** deletions, new hub content, nav rewrite, cross-link protocol, spec chapter frontmatter, template override, and home page rewrite. It is **deferred until v1.0 recertification closes** because Phase 6 (spec chapter frontmatter) collides with seven P1 recertification tasks that edit the same files, and the content it creates depends on stable spec text.
+>
+> **Before running this plan, also address the review blockers from** `docs/superpowers/plans/2026-04-12-wardline-site-restructure.review.md`:
+>
+> - B1: §13 hub content is fabricated — re-derive from actual 17-risk chapter
+> - B2: hallucinated inline anchor fragments — enumerate real slugs from each referenced chapter
+> - B4: CLI quick reference errors (`wardline preview` is not a subcommand; `wardline project` is missing; `requirements/spec-fitness/` nav entry needs an `index.md`)
+> - B5: `overrides/main.html` template clobber — merge rather than replace, preserve `{% block announce %}`
+> - C2: `edit_uri` + symlinks — pick a deterministic strategy (template rewrite or `hide: [edit]`)
+>
+> **Phase 1 below is redundant with Plan A** and should be treated as already complete when this plan runs. Start at Phase 2.
+>
+> ---
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

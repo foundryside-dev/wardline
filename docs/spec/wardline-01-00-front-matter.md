@@ -69,7 +69,8 @@ B. [Java Language Binding Reference](#part-ii-b-java-language-binding-reference)
 **Companion Documents**
 
 - Wardline Lite practical guide (`wardline-lite.md`) — five review questions for non-specialist code reviewers
-- Implementation design: Wardline for Python (`../2026-03-21-wardline-python-design.md`) — reference implementation work packages and build order
+- Specification landing page (`../specification.md`) — chapter index and primary entry point for the maintained spec set
+- Python language binding reference (`wardline-02-A-python-binding.md`) — reference implementation contract, rule mapping, and enforcement regime guidance
 
 **Planned Companion Documents** (deferred to post-v1.0)
 

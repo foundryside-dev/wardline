@@ -144,10 +144,11 @@ boundaries — catching trust-boundary violations before they reach production.
 ### Spec Authority
 
 For spec interpretation, audit reconciliation, and fix-code vs fix-spec decisions,
-the authoritative source of truth is `docs/wardline/wardline-0x-*`. If an older
-design note, superpowers spec, implementation plan, or test fixture conflicts
-with a `wardline-0x` document, follow the `wardline-0x` document and treat the
-other artifact as stale unless the user explicitly says otherwise.
+the authoritative source of truth is `docs/spec/wardline-0x-*` together with
+`docs/specification.md`. If an older design note, implementation plan, audit
+artifact, or test fixture conflicts with a `wardline-0x` document, follow the
+`wardline-0x` document and treat the other artifact as stale unless the user
+explicitly says otherwise.
 
 ### Development Setup
 
@@ -263,7 +264,9 @@ A PR template exists at `.github/PULL_REQUEST_TEMPLATE.md`. PRs should include:
 
 ## Wardline Filing System
 
-This project uses filigree's full type system. Read `docs/2026-03-22-filigree-filing-system.md` for the complete design. Key points below.
+This project uses filigree's full type system. The live workflow is defined by
+the tracker state plus the guidance below; older bootstrap filing-system
+documents have been retired.
 
 ### Issue Hierarchy
 
@@ -286,7 +289,8 @@ Release: v0.1.0
 2. `get_issue <id>` — read acceptance criteria and description
 3. `claim_issue <id>` — claim the WP (multi-agent safe)
 4. `update_issue <id> --status=executing` — start work
-5. Read the linked execution sequence section: `docs/2026-03-22-execution-sequence.md § T-x.y`
+5. Read the issue description, comments, linked requirements, and any cited
+   normative docs under `docs/spec/` or `docs/requirements/spec-fitness/`
 6. Create Steps within the WP for your sub-tasks as needed
 7. Implement, test, commit
 8. `close_issue <id> --reason="summary"` — delivers the WP
@@ -312,7 +316,8 @@ Release: v0.1.0
 
 | Document | Purpose |
 |----------|---------|
-| `docs/2026-03-22-execution-sequence.md` | Authoritative task definitions (Produces, Done When, deps) |
-| `docs/2026-03-21-wardline-python-design.md` | Implementation design |
-| `docs/2026-03-22-filigree-filing-system.md` | Filing system design |
-| `docs/wardline/` | Framework specification |
+| `docs/specification.md` | Specification landing page and chapter index |
+| `docs/spec/` | Framework specification and language bindings |
+| `docs/adr/` | Durable architecture and governance decisions that still constrain implementation |
+| `docs/requirements/spec-fitness/` | Project-facing requirement baseline for assessing the Python implementation |
+| Filigree issue descriptions and comments | Current task definitions, delivery notes, and handoff context |
