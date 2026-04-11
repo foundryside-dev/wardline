@@ -40,3 +40,4 @@ tools/pdf/.mermaid-tmp/
 # Superpowers brainstorming sessions
 .superpowers/
 .cache/
+.codex
