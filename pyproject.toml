@@ -69,7 +69,7 @@ packages = ["src/wardline"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not integration and not network'"
+addopts = "-m 'not network'"
 markers = [
     "integration: marks tests as integration tests (deselected by default)",
     "network: marks tests requiring network access (deselected by default, run weekly)",
