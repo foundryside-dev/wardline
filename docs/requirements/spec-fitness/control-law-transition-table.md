@@ -18,8 +18,12 @@ the presence or absence of degradation conditions.
 
 ## Degradation Conditions
 
-Each condition is a fixed machine-readable string. Conditions are NOT
-mutually exclusive -- multiple may fire simultaneously.
+Each condition is a fixed machine-readable string. Conditions are generally
+NOT mutually exclusive — multiple may fire simultaneously. The sole exception
+is `conformance_never_run` vs `conformance_data_unavailable`, which are
+mutually exclusive by construction (a file either does not exist or exists
+but is malformed — never both). `compute_control_law()` raises `ValueError`
+if both are set, as a defense-in-depth check on caller correctness.
 
 ### Direct Law Conditions
 
@@ -33,6 +37,15 @@ No further conditions are evaluated.
 > This table is exhaustive. `manifest_unavailable` is the only condition
 > that produces direct law. All other conditions produce alternate law.
 > Normal law is returned when no conditions are active.
+>
+> **Reachability note:** The `wardline scan` CLI exits with
+> `EXIT_CONFIG_ERROR` (exit code 2) when the manifest is absent, before
+> `compute_control_law()` is invoked. Direct law is therefore unreachable
+> via `wardline scan` — it is computed and reported only by `wardline
+> regime` (exit code 3). Assessors examining SARIF output from `wardline
+> scan` will never see `"wardline.controlLaw": "direct"`. The fail-safe
+> behavior (no output rather than misleading output) is a conservative
+> interpretation of the spec requirement.
 
 ### Alternate Law Conditions
 
@@ -100,6 +113,24 @@ tooling to distinguish first-run degradation from ongoing quality problems.
 1. Run `wardline corpus publish` (clears `conformance_never_run`)
 2. Run `wardline fingerprint generate` (clears `fingerprint_age_unknown`)
 3. Re-scan
+
+## Coverage Metric Semantics (§13)
+
+Two coverage metrics are emitted in SARIF run properties. Both follow the
+same null vs. zero convention — assessors MUST understand the distinction.
+
+| Property | Meaning of `null` | Meaning of `0.0` |
+|----------|-------------------|------------------|
+| `wardline.coverageRatio` | No functions discovered in scan scope | Functions exist but none annotated |
+| `wardline.dataPathsTracedRatio` | L1 or L2 analysis (call-graph not run) | L3 ran but zero edges resolved |
+
+**Analysis level impact:** `wardline.dataPathsTracedRatio` is structurally
+`null` at analysis levels L1 and L2 because call-graph propagation does not
+run at those levels. This is NOT a missing metric — it is an accurate
+report that no data paths were traced because the engine did not attempt
+to trace them. Assessors evaluating L1/L2 deployments should read
+`wardline.analysisLevel` alongside this metric. A non-null value requires
+L3 analysis.
 
 ## Retrospective Scan Detection
 

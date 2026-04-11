@@ -662,6 +662,95 @@ class TestRetrospectiveFinding:
 
         assert len(findings) == 0
 
+    def test_retrospective_baseline_missing_control_law(self, tmp_path: Path) -> None:
+        """Baseline with no wardline.controlLaw property → no spurious finding.
+
+        End-to-end verification of the "unknown != clean" security property.
+        When _read_baseline_control_law returns None (key absent), the
+        downstream conditional MUST NOT emit the retrospective finding —
+        otherwise deleted controlLaw keys could be confused with a clean
+        baseline state.
+        """
+        import json
+
+        from wardline.cli.scan import _make_governance_finding, _read_baseline_control_law
+        from wardline.core.severity import RuleId, Severity
+        from wardline.scanner.context import Finding
+
+        sarif = tmp_path / "baseline.sarif"
+        sarif.write_text(json.dumps({
+            "runs": [{"properties": {"wardline.analysisLevel": 1}}],
+        }))
+        prev_law, failed = _read_baseline_control_law(str(sarif))
+        assert prev_law is None
+        assert failed is False
+
+        # Downstream: None is NOT in ("alternate", "direct"), so no emission
+        current_law = "normal"
+        findings: list[Finding] = []
+        if prev_law in ("alternate", "direct") and current_law == "normal":
+            findings.append(_make_governance_finding(
+                RuleId.GOVERNANCE_RETROSPECTIVE_REQUIRED, "spurious", Severity.WARNING,
+            ))
+        assert len(findings) == 0
+
+
+class TestRetrospectivePersistentState:
+    """H1 fix: GOVERNANCE_RETROSPECTIVE_REQUIRED persists across scan cycles."""
+
+    def test_state_absent_returns_none(self, tmp_path: Path) -> None:
+        """No marker file → read returns None."""
+        from wardline.cli.scan import _read_retrospective_state
+
+        assert _read_retrospective_state(tmp_path) is None
+
+    def test_write_then_read_roundtrip(self, tmp_path: Path) -> None:
+        """Write creates marker file; read returns the structured state."""
+        from wardline.cli.scan import _read_retrospective_state, _write_retrospective_state
+
+        _write_retrospective_state(tmp_path, "alternate", "abc123")
+        state = _read_retrospective_state(tmp_path)
+        assert state is not None
+        assert state["from_law"] == "alternate"
+        assert state["commit_ref"] == "abc123"
+        assert "detected_at" in state
+
+    def test_clear_removes_marker(self, tmp_path: Path) -> None:
+        """Clear removes the marker file → subsequent reads return None."""
+        from wardline.cli.scan import (
+            _clear_retrospective_state,
+            _read_retrospective_state,
+            _write_retrospective_state,
+        )
+
+        _write_retrospective_state(tmp_path, "direct", None)
+        assert _read_retrospective_state(tmp_path) is not None
+        _clear_retrospective_state(tmp_path)
+        assert _read_retrospective_state(tmp_path) is None
+
+    def test_commit_ref_none_stored_as_unknown(self, tmp_path: Path) -> None:
+        """None commit_ref is stored as the string 'unknown'."""
+        from wardline.cli.scan import _read_retrospective_state, _write_retrospective_state
+
+        _write_retrospective_state(tmp_path, "alternate", None)
+        state = _read_retrospective_state(tmp_path)
+        assert state is not None
+        assert state["commit_ref"] == "unknown"
+
+    def test_clear_on_missing_marker_is_noop(self, tmp_path: Path) -> None:
+        """Clearing when no marker exists does not raise."""
+        from wardline.cli.scan import _clear_retrospective_state
+
+        _clear_retrospective_state(tmp_path)  # should not raise
+
+    def test_read_ignores_malformed_state_file(self, tmp_path: Path) -> None:
+        """Corrupt marker file is ignored (returns None), not raised."""
+        from wardline.cli.scan import _read_retrospective_state
+
+        state_path = tmp_path / "wardline.retrospective-required.json"
+        state_path.write_text("not valid json {{{")
+        assert _read_retrospective_state(tmp_path) is None
+
 
 class TestIsInitialSetup:
     """Tests for is_initial_setup computation logic."""

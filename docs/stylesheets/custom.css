@@ -17,17 +17,23 @@
   --md-code-bg-color: #1e293b;
   --md-code-fg-color: #e2e8f0;
   --md-footer-bg-color: #0b1120;
+  --md-footer-bg-color--dark: #060c18;
   --md-footer-fg-color: #94a3b8;
 
   /* Wardline tokens */
   --wl-navy: #1e3a5f;
+  --wl-navy-deep: #0b1120;
   --wl-teal: #0a6e72;
   --wl-teal-light: #14b8a6;
+  --wl-teal-glow: rgba(20, 184, 166, 0.18);
   --wl-surface: #1e293b;
   --wl-surface-raised: #273548;
   --wl-border: #334155;
+  --wl-border-strong: #475569;
   --wl-text-hero: #f1f5f9;
   --wl-text-muted: #94a3b8;
+  --wl-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --wl-shadow-lifted: 0 4px 12px rgba(0, 0, 0, 0.35), 0 18px 48px rgba(0, 0, 0, 0.45);
 }
 
 /* ---- Light theme ---- */
@@ -40,190 +46,666 @@
 
   /* Wardline tokens */
   --wl-navy: #1e3a5f;
+  --wl-navy-deep: #0f172a;
   --wl-teal: #0a6e72;
   --wl-teal-light: #0d9488;
+  --wl-teal-glow: rgba(13, 148, 136, 0.12);
   --wl-surface: #ffffff;
   --wl-surface-raised: #f8fafc;
   --wl-border: #e2e8f0;
+  --wl-border-strong: #cbd5e1;
   --wl-text-hero: #0f172a;
   --wl-text-muted: #64748b;
+  --wl-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06);
+  --wl-shadow-lifted: 0 4px 12px rgba(15, 23, 42, 0.08), 0 18px 48px rgba(15, 23, 42, 0.12);
 }
 
-/* ---- Header bar ---- */
+/* ============================================================
+   Typography refinements
+   ============================================================ */
+.md-typeset {
+  font-feature-settings: "kern", "liga", "calt", "ss01";
+}
+
+.md-typeset h1 {
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--wl-text-hero);
+}
+
+.md-typeset h2 {
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  margin-top: 2.25em;
+}
+
+.md-typeset h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.md-typeset code {
+  font-feature-settings: "calt", "liga", "ss02";
+  font-size: 0.85em;
+}
+
+/* ============================================================
+   Header & announcement bar
+   ============================================================ */
 [data-md-color-scheme="slate"] .md-header {
-  background-color: #0b1120;
-  border-bottom: 1px solid #1e293b;
+  background-color: var(--wl-navy-deep);
+  border-bottom: 1px solid var(--wl-border);
 }
 
 [data-md-color-scheme="default"] .md-header {
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--wl-border);
+}
+
+.md-banner {
+  background: linear-gradient(90deg, var(--wl-navy-deep) 0%, var(--wl-navy) 50%, var(--wl-navy-deep) 100%);
+  color: var(--wl-text-hero);
+  border-bottom: 1px solid var(--wl-border);
+  font-size: 0.78rem;
+}
+
+.wl-announce {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.1rem 0;
+}
+
+.wl-announce__badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 9999px;
+  background: var(--wl-teal);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.wl-announce__text a {
+  color: var(--wl-teal-light);
+  font-weight: 500;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s;
+}
+
+.wl-announce__text a:hover {
+  border-bottom-color: var(--wl-teal-light);
 }
 
 /* ---- Navigation sidebar ---- */
 [data-md-color-scheme="slate"] .md-sidebar {
-  background-color: #0f172a;
+  background-color: var(--md-default-bg-color);
+}
+
+/* Tabs navigation bar */
+[data-md-color-scheme="slate"] .md-tabs {
+  background-color: var(--wl-navy-deep);
+  border-bottom: 1px solid var(--wl-border);
 }
 
 /* ============================================================
-   Hero Section
+   Hero section
    ============================================================ */
 .wl-hero {
-  text-align: center;
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 3rem;
+  align-items: center;
+  max-width: 62rem;
+  margin: 2rem auto 1rem;
   padding: 3rem 1rem 2rem;
-  max-width: 48rem;
-  margin: 0 auto;
 }
 
-.wl-hero h1 {
-  font-size: 3rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  margin-bottom: 0.25rem;
+@media (max-width: 960px) {
+  .wl-hero {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    text-align: center;
+    padding: 2rem 1rem 1rem;
+  }
+
+  .wl-hero__diagram {
+    max-width: 22rem;
+    margin: 0 auto;
+  }
+}
+
+.wl-hero__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.8rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--wl-border);
+  border-radius: 9999px;
+  background: var(--wl-surface);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wl-teal-light);
+}
+
+.wl-hero__eyebrow::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wl-teal-light);
+  box-shadow: 0 0 0 3px var(--wl-teal-glow);
+}
+
+.md-typeset .wl-hero h1 {
+  font-size: clamp(2.4rem, 5vw, 3.4rem);
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  margin: 0 0 0.75rem;
   color: var(--wl-text-hero);
 }
 
-.wl-hero h3 {
-  font-size: 1.35rem;
-  font-weight: 400;
-  color: var(--wl-teal-light);
-  margin-top: 0;
-  margin-bottom: 1rem;
-  letter-spacing: -0.01em;
+.md-typeset .wl-hero h1 .wl-hero__accent {
+  background: linear-gradient(135deg, var(--wl-teal-light), var(--wl-teal));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
-.wl-hero > p {
-  font-size: 1.05rem;
-  line-height: 1.65;
+.wl-hero__lede {
+  font-size: 1.1rem;
+  line-height: 1.6;
   color: var(--wl-text-muted);
-  max-width: 38rem;
-  margin: 0 auto 1.5rem;
+  max-width: 34rem;
+  margin: 0 0 1.5rem;
 }
 
-/* Install command block */
-.wl-install {
-  margin: 1.5rem auto;
-  max-width: 22rem;
+@media (max-width: 960px) {
+  .wl-hero__lede {
+    margin-left: auto;
+    margin-right: auto;
+  }
 }
 
-.wl-install .highlight {
-  border-radius: 8px;
+.wl-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 1.25rem 0 1rem;
+}
+
+@media (max-width: 960px) {
+  .wl-hero__actions {
+    justify-content: center;
+  }
+}
+
+/* Install tabs sit directly in the hero; trim Material's default chrome */
+.wl-hero__install {
+  margin: 1.25rem 0 0;
+  max-width: 30rem;
+}
+
+@media (max-width: 960px) {
+  .wl-hero__install {
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+.wl-hero__install .tabbed-set {
+  margin: 0;
+  border-radius: 10px;
   border: 1px solid var(--wl-border);
+  background: var(--wl-surface);
+  box-shadow: var(--wl-shadow);
+  overflow: hidden;
 }
 
-.wl-install pre {
-  text-align: left;
-  font-size: 1rem;
+.wl-hero__install .tabbed-labels {
+  background: var(--wl-surface-raised);
+  border-bottom: 1px solid var(--wl-border);
+  padding: 0 0.25rem;
+}
+
+.wl-hero__install .tabbed-labels > label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.wl-hero__install .highlight {
+  border-radius: 0;
+  border: none;
+  background: transparent;
+}
+
+.wl-hero__install pre {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.wl-hero__install pre > code {
+  padding: 0.9rem 1rem;
+}
+
+/* Hero diagram */
+.wl-hero__diagram {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wl-hero__diagram svg {
+  width: 100%;
+  height: auto;
+  max-width: 26rem;
+  filter: drop-shadow(0 8px 32px var(--wl-teal-glow));
+}
+
+/* ============================================================
+   Badges row
+   ============================================================ */
+.wl-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0 auto 2rem;
+  padding: 0 1rem;
+  max-width: 62rem;
+}
+
+.wl-badges a,
+.wl-badges img {
+  display: inline-block;
+  vertical-align: middle;
 }
 
 /* ============================================================
    Buttons
    ============================================================ */
+.md-typeset .md-button {
+  border-radius: 8px;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  transition: all 0.15s ease;
+}
+
 .md-typeset .md-button--primary {
-  background-color: var(--wl-teal);
+  background: linear-gradient(135deg, var(--wl-teal-light), var(--wl-teal));
   border-color: var(--wl-teal);
   color: #ffffff;
-  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
 }
 
 .md-typeset .md-button--primary:hover {
-  background-color: var(--wl-teal-light);
+  background: linear-gradient(135deg, var(--wl-teal-light), var(--wl-teal-light));
   border-color: var(--wl-teal-light);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--wl-teal-glow), 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 [data-md-color-scheme="slate"] .md-typeset .md-button:not(.md-button--primary) {
   border-color: var(--wl-border);
-  color: var(--wl-text-muted);
+  color: var(--wl-text-hero);
+  background: var(--wl-surface);
 }
 
 [data-md-color-scheme="slate"] .md-typeset .md-button:not(.md-button--primary):hover {
   border-color: var(--wl-teal-light);
   color: var(--wl-teal-light);
+  transform: translateY(-1px);
 }
 
 [data-md-color-scheme="default"] .md-typeset .md-button:not(.md-button--primary) {
-  border-color: #cbd5e1;
-  color: #475569;
+  border-color: var(--wl-border-strong);
+  color: var(--wl-navy);
+  background: var(--wl-surface);
 }
 
 [data-md-color-scheme="default"] .md-typeset .md-button:not(.md-button--primary):hover {
   border-color: var(--wl-teal);
   color: var(--wl-teal);
+  transform: translateY(-1px);
 }
 
 /* ============================================================
-   Feature Cards
+   Section headings on home page
    ============================================================ */
-.wl-features {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 1.5rem;
-  max-width: 52rem;
-  margin: 2rem auto;
+.wl-section {
+  max-width: 62rem;
+  margin: 4rem auto 2rem;
   padding: 0 1rem;
 }
 
-@media (max-width: 768px) {
+.wl-section__eyebrow {
+  display: block;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--wl-teal-light);
+  margin-bottom: 0.5rem;
+}
+
+/* Eyebrows wrap in <p> from markdown — zero that paragraph's margins */
+.md-typeset .wl-section > p:has(> .wl-section__eyebrow) {
+  margin: 0 auto;
+}
+
+/* Path card eyebrow wrapped in <p> likewise */
+.md-typeset .wl-path > p:has(> .wl-path__eyebrow) {
+  margin: 0 0 0.35rem;
+}
+
+/* Hero eyebrow wrapped in <p> */
+.md-typeset .wl-hero > div > p:has(> .wl-hero__eyebrow),
+.md-typeset .wl-hero__copy > p:has(> .wl-hero__eyebrow) {
+  margin: 0 0 1rem;
+}
+
+.md-typeset .wl-section h2 {
+  text-align: center;
+  font-size: 1.9rem;
+  margin: 0 auto 0.75rem;
+  max-width: 32rem;
+  letter-spacing: -0.02em;
+}
+
+.wl-section__intro {
+  text-align: center;
+  color: var(--wl-text-muted);
+  max-width: 36rem;
+  margin: 0 auto 2.5rem;
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+/* ============================================================
+   Feature cards — gradient border + hover glow
+   ============================================================ */
+.wl-features {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 720px) {
   .wl-features {
     grid-template-columns: 1fr;
   }
 }
 
 .wl-feature {
-  padding: 1.25rem 1.5rem;
+  position: relative;
+  padding: 1.5rem 1.5rem 1.4rem;
   border: 1px solid var(--wl-border);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--wl-surface);
-  transition: border-color 0.15s;
+  box-shadow: var(--wl-shadow);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  overflow: hidden;
+}
+
+.wl-feature::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, transparent, transparent 50%, var(--wl-teal-glow));
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
 
 .wl-feature:hover {
+  transform: translateY(-2px);
   border-color: var(--wl-teal-light);
+  box-shadow: var(--wl-shadow-lifted);
 }
 
-.wl-feature h3 {
-  margin-top: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--wl-teal-light);
+.wl-feature:hover::before {
+  opacity: 1;
+}
+
+.md-typeset .wl-feature h3 {
+  margin: 0.25rem 0 0.5rem;
+  font-size: 1.02rem;
+  font-weight: 650;
+  color: var(--wl-text-hero);
+  letter-spacing: -0.005em;
 }
 
 .wl-feature p {
-  font-size: 0.875rem;
+  font-size: 0.88rem;
   line-height: 1.6;
   color: var(--wl-text-muted);
-  margin-bottom: 0;
+  margin: 0;
+}
+
+.wl-feature__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 8px;
+  background: var(--wl-teal-glow);
+  color: var(--wl-teal-light);
+}
+
+.wl-feature__icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  fill: currentColor;
+}
+
+/* Zero the <p> wrapper markdown adds around the icon span */
+.md-typeset .wl-feature > p:has(> .wl-feature__icon) {
+  margin: 0 0 0.6rem;
 }
 
 /* ============================================================
-   Code Example Section
+   "Why Wardline" — side-by-side before/after
    ============================================================ */
-.wl-example {
-  max-width: 48rem;
-  margin: 2rem auto;
-  padding: 0 1rem;
+.wl-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin: 1.5rem 0;
 }
 
-.wl-example h2 {
-  text-align: center;
-  margin-bottom: 1rem;
+@media (max-width: 860px) {
+  .wl-compare {
+    grid-template-columns: 1fr;
+  }
+}
+
+.wl-compare__col {
+  border: 1px solid var(--wl-border);
+  border-radius: 10px;
+  background: var(--wl-surface);
+  overflow: hidden;
+  box-shadow: var(--wl-shadow);
+}
+
+.wl-compare__header {
+  padding: 0.6rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--wl-border);
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.wl-compare__header--bad {
+  background: rgba(220, 38, 38, 0.08);
+  color: #ef4444;
+}
+
+.wl-compare__header--good {
+  background: rgba(20, 184, 166, 0.1);
+  color: var(--wl-teal-light);
+}
+
+.wl-compare__col pre {
+  margin: 0;
+  border-radius: 0;
+  border: none;
+  font-size: 0.82rem;
+}
+
+.wl-compare__col .highlight {
+  margin: 0;
+  border-radius: 0;
+  border: none;
 }
 
 /* ============================================================
-   Quick Navigation Table
+   Audience paths — "I want to…" grid
    ============================================================ */
-.wl-quicknav {
-  max-width: 48rem;
-  margin: 2rem auto;
-  padding: 0 1rem;
+.wl-paths {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
 }
 
-.wl-quicknav h2 {
-  text-align: center;
-  margin-bottom: 1rem;
+@media (max-width: 860px) {
+  .wl-paths {
+    grid-template-columns: 1fr;
+  }
+}
+
+.wl-path {
+  padding: 1.25rem 1.25rem 1.1rem;
+  border: 1px solid var(--wl-border);
+  border-radius: 10px;
+  background: var(--wl-surface);
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.wl-path:hover {
+  border-color: var(--wl-teal-light);
+  transform: translateY(-1px);
+}
+
+.wl-path__eyebrow {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--wl-teal-light);
+  margin-bottom: 0.35rem;
+}
+
+.md-typeset .wl-path h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 650;
+  color: var(--wl-text-hero);
+}
+
+.wl-path ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.wl-path li {
+  padding: 0.3rem 0;
+  font-size: 0.85rem;
+  border-top: 1px solid var(--wl-border);
+}
+
+.wl-path li:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.wl-path li a {
+  color: var(--wl-text-hero);
+  text-decoration: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  transition: color 0.15s;
+}
+
+.wl-path li a::after {
+  content: "→";
+  color: var(--wl-text-muted);
+  font-size: 0.9rem;
+  transition: transform 0.15s, color 0.15s;
+}
+
+.wl-path li a:hover {
+  color: var(--wl-teal-light);
+}
+
+.wl-path li a:hover::after {
+  transform: translateX(2px);
+  color: var(--wl-teal-light);
 }
 
 /* ============================================================
-   Specification Page Enhancements
+   CTA callout band
+   ============================================================ */
+.wl-cta {
+  max-width: 62rem;
+  margin: 4rem auto 2rem;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  border: 1px solid var(--wl-border);
+  border-radius: 14px;
+  background:
+    radial-gradient(ellipse at top, var(--wl-teal-glow), transparent 60%),
+    var(--wl-surface);
+  box-shadow: var(--wl-shadow);
+}
+
+.md-typeset .wl-cta h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.6rem;
+  letter-spacing: -0.015em;
+}
+
+.wl-cta p {
+  color: var(--wl-text-muted);
+  margin: 0 auto 1.25rem;
+  max-width: 34rem;
+}
+
+.wl-cta__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+/* ============================================================
+   Specification page enhancements
    ============================================================ */
 .wl-spec-header {
   text-align: center;
@@ -231,7 +713,7 @@
   margin-bottom: 1.5rem;
 }
 
-.wl-spec-header h1 {
+.md-typeset .wl-spec-header h1 {
   font-size: 2.25rem;
   margin-bottom: 0.5rem;
 }
@@ -241,12 +723,12 @@
   gap: 1.5rem;
   flex-wrap: wrap;
   justify-content: center;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: var(--wl-text-muted);
   margin: 0.75rem 0 1.5rem;
-  padding: 0.75rem 1.5rem;
+  padding: 0.85rem 1.5rem;
   border: 1px solid var(--wl-border);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--wl-surface);
 }
 
@@ -257,7 +739,7 @@
 .wl-chapter-grid {
   display: grid;
   grid-template-columns: 3.5rem 1fr;
-  gap: 0.25rem 1rem;
+  gap: 0.35rem 1rem;
   font-size: 0.9rem;
   line-height: 1.5;
   margin: 1rem 0 1.5rem;
@@ -267,35 +749,69 @@
   text-align: right;
   color: var(--wl-text-muted);
   font-family: var(--md-code-font, monospace);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
+  padding-top: 0.1rem;
 }
 
 .wl-chapter-title a {
   text-decoration: none;
+  border-bottom: 1px dotted transparent;
+  transition: border-color 0.15s;
+}
+
+.wl-chapter-title a:hover {
+  border-bottom-color: var(--wl-teal-light);
 }
 
 /* ============================================================
-   General Table Styling — compact for reference tables
+   General table styling
    ============================================================ */
 .md-typeset table:not([class]) {
-  font-size: 0.8rem;
+  font-size: 0.82rem;
+  border: 1px solid var(--wl-border);
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 .md-typeset table:not([class]) th {
+  background: var(--wl-surface-raised);
   white-space: nowrap;
+  font-weight: 600;
 }
 
 /* ============================================================
-   Admonition refinements
+   Admonitions
    ============================================================ */
 .md-typeset .admonition,
 .md-typeset details {
-  border-radius: 6px;
+  border-radius: 8px;
+  border-width: 1px;
+  box-shadow: var(--wl-shadow);
+}
+
+/* ============================================================
+   Code blocks — refined panel
+   ============================================================ */
+.md-typeset .highlight {
+  border-radius: 8px;
+}
+
+.md-typeset pre > code {
+  border-radius: 8px;
 }
 
 /* ============================================================
    Footer
    ============================================================ */
 .md-footer-meta {
-  font-size: 0.8rem;
+  font-size: 0.82rem;
+}
+
+[data-md-color-scheme="slate"] .md-footer {
+  background: var(--wl-navy-deep);
+}
+
+[data-md-color-scheme="slate"] .md-footer-meta {
+  background: #060c18;
+  border-top: 1px solid var(--wl-border);
 }

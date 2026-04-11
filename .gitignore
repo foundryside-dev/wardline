@@ -34,3 +34,4 @@ site/
 
 # Superpowers brainstorming sessions
 .superpowers/
+.cache/

@@ -241,12 +241,12 @@ def _write_retrospective_state(
     is performed or the marker file is manually removed.
     """
     import json
-    from datetime import datetime, timezone
+    from datetime import UTC, datetime
 
     state_path = project_root / _RETROSPECTIVE_STATE_FILE
     payload = {
         "from_law": from_law,
-        "detected_at": datetime.now(tz=timezone.utc).isoformat(),
+        "detected_at": datetime.now(tz=UTC).isoformat(),
         "commit_ref": commit_ref or "unknown",
     }
     try:
@@ -921,8 +921,9 @@ def scan(
     conformance_never_run, conformance_data_unavailable, _conf_data = _read_conformance_data(manifest_path)
     if conformance_never_run:
         conformance_gaps: tuple[str, ...] = ("conformance status not generated — run 'wardline corpus publish'",)
-    elif conformance_data_unavailable and not _conf_data:
-        conformance_gaps = ("conformance status file unreadable",)
+    elif conformance_data_unavailable:
+        # File present but malformed or missing required keys (I1 panel review fix).
+        conformance_gaps = ("conformance status file unreadable or missing required keys",)
     else:
         conformance_gaps = _read_conformance_gaps(manifest_path, scan_path=scan_path, _preloaded_data=_conf_data)
 
@@ -1135,6 +1136,7 @@ def scan(
         findings=all_findings,
         tool_version=_wardline_pkg.__version__,
         verification_mode=verification_mode,
+        # §11.1: deterministic derived from verification_mode via __post_init__
         implemented_rule_ids=loaded_rule_ids,
         base_path=str(scan_path),
         unknown_raw_count=unknown_raw_count,
@@ -1161,7 +1163,7 @@ def scan(
         governance_events=governance_events,
         data_paths_traced_ratio=result.call_edge_resolution_ratio,
         low_resolution_function_count=result.low_resolution_function_count,
-        lambda_count=result.lambda_count,
+        denominator_excluded_count=result.lambda_count,
         data_paths_traced_scope="changed_files_only" if changed_only else "project",
         precision_floor_violations=precision_violations,
         recall_floor_violations=recall_violations,
@@ -1181,7 +1183,7 @@ def scan(
         click.echo(sarif_text, nl=False)
 
     # --- Summary to stderr ---
-    bd = severity_breakdown(result.findings)
+    bd = severity_breakdown(all_findings)
     click.echo(
         f"{result.files_scanned} file(s) scanned, "
         f"{len(result.findings)} finding(s) "

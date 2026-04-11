@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 360" role="img" aria-labelledby="tier-title tier-desc" class="wl-tier-diagram">
+  <title id="tier-title">Wardline four-tier trust hierarchy</title>
+  <desc id="tier-desc">Concentric rings showing Tier 1 INTEGRAL at the centre, then Tier 2 ASSURED, Tier 3 GUARDED, and Tier 4 EXTERNAL_RAW at the outside. Arrows indicate that data flows freely downward but requires validation to flow upward.</desc>
+
+  <defs>
+    <radialGradient id="wl-core-grad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="var(--wl-teal-light, #14b8a6)" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="var(--wl-teal-light, #14b8a6)" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="wl-up-grad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="var(--wl-teal-light, #14b8a6)"/>
+      <stop offset="100%" stop-color="var(--wl-teal-light, #14b8a6)" stop-opacity="0"/>
+    </linearGradient>
+    <marker id="wl-arrow" viewBox="0 0 10 10" refX="8" refY="5"
+            markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--wl-teal-light, #14b8a6)"/>
+    </marker>
+  </defs>
+
+  <!-- Outer halo -->
+  <circle cx="220" cy="180" r="170" fill="url(#wl-core-grad)" opacity="0.4"/>
+
+  <!-- Tier rings (outer → inner) -->
+  <g class="wl-tier-rings" fill="none" stroke-width="1.5">
+    <!-- Tier 4 EXTERNAL_RAW -->
+    <circle cx="220" cy="180" r="160"
+            stroke="var(--wl-border, #334155)"
+            stroke-dasharray="6 4"
+            fill="var(--wl-surface, #1e293b)" fill-opacity="0.35"/>
+    <!-- Tier 3 GUARDED -->
+    <circle cx="220" cy="180" r="120"
+            stroke="var(--wl-border, #334155)"
+            fill="var(--wl-surface-raised, #273548)" fill-opacity="0.55"/>
+    <!-- Tier 2 ASSURED -->
+    <circle cx="220" cy="180" r="80"
+            stroke="var(--wl-teal, #0a6e72)"
+            fill="var(--wl-surface-raised, #273548)" fill-opacity="0.8"/>
+    <!-- Tier 1 INTEGRAL (core) -->
+    <circle cx="220" cy="180" r="42"
+            stroke="var(--wl-teal-light, #14b8a6)"
+            stroke-width="2"
+            fill="var(--wl-navy, #1e3a5f)"/>
+  </g>
+
+  <!-- Core shield glyph -->
+  <g transform="translate(220,180)">
+    <path d="M 0 -18 L 14 -10 L 14 4 C 14 12 7 18 0 22 C -7 18 -14 12 -14 4 L -14 -10 Z"
+          fill="none"
+          stroke="var(--wl-teal-light, #14b8a6)"
+          stroke-width="1.8"
+          stroke-linejoin="round"/>
+    <path d="M -6 0 L -2 5 L 7 -6"
+          fill="none"
+          stroke="var(--wl-teal-light, #14b8a6)"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+  </g>
+
+  <!-- Ring labels -->
+  <g font-family="Inter, system-ui, sans-serif" text-anchor="middle">
+    <!-- T1 label above core -->
+    <text x="220" y="126" font-size="10" font-weight="600"
+          fill="var(--wl-teal-light, #14b8a6)" letter-spacing="0.12em">TIER 1</text>
+    <text x="220" y="140" font-size="9"
+          fill="var(--wl-text-muted, #94a3b8)" letter-spacing="0.08em">INTEGRAL</text>
+
+    <!-- T2 label -->
+    <text x="220" y="90" font-size="10" font-weight="600"
+          fill="var(--wl-text-hero, #f1f5f9)" letter-spacing="0.12em">TIER 2 · ASSURED</text>
+
+    <!-- T3 label -->
+    <text x="220" y="50" font-size="10" font-weight="600"
+          fill="var(--wl-text-hero, #f1f5f9)" letter-spacing="0.12em">TIER 3 · GUARDED</text>
+
+    <!-- T4 label -->
+    <text x="220" y="22" font-size="10" font-weight="600"
+          fill="var(--wl-text-muted, #94a3b8)" letter-spacing="0.12em">TIER 4 · EXTERNAL_RAW</text>
+  </g>
+
+  <!-- Flow arrows: down is free (left), up requires validation (right) -->
+  <g>
+    <!-- Down arrow: free flow -->
+    <line x1="70" y1="60" x2="70" y2="300"
+          stroke="var(--wl-text-muted, #94a3b8)"
+          stroke-width="1.2"
+          stroke-dasharray="3 3"
+          marker-end="url(#wl-arrow)" opacity="0.6"/>
+    <text x="70" y="50" font-family="Inter, system-ui, sans-serif"
+          font-size="9" font-weight="500"
+          text-anchor="middle"
+          fill="var(--wl-text-muted, #94a3b8)" letter-spacing="0.08em">FLOW DOWN</text>
+    <text x="70" y="320" font-family="Inter, system-ui, sans-serif"
+          font-size="8"
+          text-anchor="middle"
+          fill="var(--wl-text-muted, #94a3b8)">free</text>
+
+    <!-- Up arrow: validation required -->
+    <line x1="370" y1="300" x2="370" y2="60"
+          stroke="url(#wl-up-grad)"
+          stroke-width="2"
+          marker-end="url(#wl-arrow)"/>
+    <text x="370" y="50" font-family="Inter, system-ui, sans-serif"
+          font-size="9" font-weight="600"
+          text-anchor="middle"
+          fill="var(--wl-teal-light, #14b8a6)" letter-spacing="0.08em">FLOW UP</text>
+    <text x="370" y="320" font-family="Inter, system-ui, sans-serif"
+          font-size="8"
+          text-anchor="middle"
+          fill="var(--wl-teal-light, #14b8a6)">requires boundary</text>
+  </g>
+</svg>

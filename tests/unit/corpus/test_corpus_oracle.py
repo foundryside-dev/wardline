@@ -32,13 +32,18 @@ class TestCorpusOracle:
         # Parse JSON output even if exit code is non-zero, to give a useful message
         if result.stdout.strip():
             data = json.loads(result.stdout)
-            failures = [
-                entry for entry in data
-                if entry.get("status") not in ("pass", "skip")
+            # Schema: {cells: [...], overall_verdict: "PASS"|"FAIL", summary: {...}}
+            failing_cells = [
+                cell for cell in data.get("cells", [])
+                if cell.get("cell_verdict") == "FAIL"
             ]
             assert result.returncode == 0, (
-                f"corpus verify failed with {len(failures)} failure(s): "
-                + ", ".join(f["specimen_id"] for f in failures[:5])
+                f"corpus verify failed (overall_verdict={data.get('overall_verdict')}) "
+                f"with {len(failing_cells)} failing cell(s): "
+                + ", ".join(
+                    f"{c.get('rule')}@{c.get('taint_state')}"
+                    for c in failing_cells[:5]
+                )
             )
         else:
             assert result.returncode == 0, (

@@ -329,7 +329,10 @@ class SarifReport:
     active_exception_count: int = 0
     stale_exception_count: int = 0
     expedited_exception_ratio: float = 0.0
-    deterministic: bool = True
+    # §11.1: deterministic is True only in verification mode (no timestamps,
+    # no commit refs, no non-deterministic output). Sentinel `None` means
+    # "derive from verification_mode"; explicit bool overrides.
+    deterministic: bool | None = None
     deferred_fix_ratio: float | None = None
     governance_profile: str = "lite"
     # WP 2.4: Governance metadata
@@ -352,7 +355,7 @@ class SarifReport:
     # R7: Data-path coverage metrics
     data_paths_traced_ratio: float | None = None
     low_resolution_function_count: int | None = None  # None when L3 didn't run
-    lambda_count: int = 0
+    denominator_excluded_count: int = 0
     data_paths_traced_scope: str = "project"
     # R4: Precision/recall floor violations
     precision_floor_violations: int = 0
@@ -360,6 +363,11 @@ class SarifReport:
     is_initial_setup: bool = False
     # §10.5: Degraded commit range — recorded on every non-normal law run
     degraded_commit_range: str | None = None
+
+    def __post_init__(self) -> None:
+        """Derive `deterministic` from `verification_mode` if not explicitly set."""
+        if self.deterministic is None:
+            self.deterministic = self.verification_mode
 
     def _implemented_rules(self) -> list[str]:
         """Return sorted list of canonical rule ID values (excludes pseudo-IDs).
@@ -414,17 +422,22 @@ class SarifReport:
                 "wardline.controlLaw": self.control_law,
                 **({"wardline.controlLawDegradations": list(self.control_law_degradations)}
                    if self.control_law_degradations else {}),
-                **({"wardline.degradedCommitRange": self.degraded_commit_range}
-                   if self.control_law != "normal" and self.degraded_commit_range
+                # §10.5 step 1: Under non-normal law, MUST record the commit
+                # range affected. When git is unavailable, emit "unknown" — do
+                # not silently omit the key.
+                **({"wardline.degradedCommitRange": self.degraded_commit_range or "unknown"}
+                   if self.control_law != "normal"
                    else {}),
                 "wardline.coverageRatio": round(self.coverage_ratio, 4) if self.coverage_ratio is not None else None,
                 "wardline.dataPathsTracedRatio": (
                     round(self.data_paths_traced_ratio, 4) if self.data_paths_traced_ratio is not None else None
                 ),
                 "wardline.dataPathsTracedScope": self.data_paths_traced_scope,
-                "wardline.denominatorExcludedCount": self.lambda_count,
-                **({"wardline.retroactiveScan": True,
-                    "wardline.retroactiveScanRange": self.retroactive_scan_range}
+                "wardline.denominatorExcludedCount": self.denominator_excluded_count,
+                # §11.1: retroactiveScan is always present at run level as a
+                # boolean. retroactiveScanRange is present only when True.
+                "wardline.retroactiveScan": self.retroactive_scan,
+                **({"wardline.retroactiveScanRange": self.retroactive_scan_range}
                    if self.retroactive_scan and self.retroactive_scan_range
                    else {}),
                 "wardline.governanceProfile": self.governance_profile,

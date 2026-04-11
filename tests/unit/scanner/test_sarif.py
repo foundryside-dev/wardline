@@ -910,10 +910,12 @@ class TestRetrospectiveScan:
         assert props["wardline.retroactiveScan"] is True
         assert props["wardline.retroactiveScanRange"] == "abc123..def456"
 
-    def test_run_level_retroactive_omitted_when_false(self) -> None:
+    def test_run_level_retroactive_always_present_at_run_level(self) -> None:
+        """§11.1: retroactiveScan is a required run-level property."""
         report = SarifReport(findings=[])
         props = report.to_dict()["runs"][0]["properties"]
-        assert "wardline.retroactiveScan" not in props
+        assert props["wardline.retroactiveScan"] is False
+        # retroactiveScanRange is only present when retroactiveScan is True
         assert "wardline.retroactiveScanRange" not in props
 
     def test_result_level_retroactive_scan_emitted(self) -> None:
@@ -1015,9 +1017,21 @@ class TestGovernanceEvents:
 class TestSarifDeterministicAndDeferredFixRatio:
     """R2: wardline.deterministic and wardline.deferredFixRatio properties."""
 
-    def test_deterministic_always_true(self) -> None:
-        """wardline.deterministic is always True."""
+    def test_deterministic_false_outside_verification_mode(self) -> None:
+        """wardline.deterministic is False when not in verification mode."""
         report = SarifReport(findings=[])
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.deterministic"] is False
+
+    def test_deterministic_true_in_verification_mode(self) -> None:
+        """wardline.deterministic is True in verification mode (auto-derived)."""
+        report = SarifReport(findings=[], verification_mode=True)
+        props = report.to_dict()["runs"][0]["properties"]
+        assert props["wardline.deterministic"] is True
+
+    def test_deterministic_explicit_override(self) -> None:
+        """Explicit deterministic=True overrides the derivation."""
+        report = SarifReport(findings=[], deterministic=True)
         props = report.to_dict()["runs"][0]["properties"]
         assert props["wardline.deterministic"] is True
 
@@ -1120,7 +1134,7 @@ class TestSarifDataPathsTraced:
 
     def test_denominator_excluded_count_in_sarif(self) -> None:
         """denominatorExcludedCount appears in run properties."""
-        report = SarifReport(findings=[], lambda_count=12)
+        report = SarifReport(findings=[], denominator_excluded_count=12)
         props = report.to_dict()["runs"][0]["properties"]
         assert props["wardline.denominatorExcludedCount"] == 12
 
@@ -1164,8 +1178,8 @@ class TestSarifDataPathsTraced:
         props = report.to_dict()["runs"][0]["properties"]
         assert "wardline.degradedCommitRange" not in props
 
-    def test_degraded_commit_range_absent_when_none(self) -> None:
-        """degradedCommitRange omitted when value is None (no git context)."""
+    def test_degraded_commit_range_unknown_when_none(self) -> None:
+        """§10.5 step 1: degradedCommitRange is 'unknown' when git unavailable — MUST not be omitted."""
         report = SarifReport(
             findings=[],
             control_law="alternate",
@@ -1173,7 +1187,7 @@ class TestSarifDataPathsTraced:
             degraded_commit_range=None,
         )
         props = report.to_dict()["runs"][0]["properties"]
-        assert "wardline.degradedCommitRange" not in props
+        assert props["wardline.degradedCommitRange"] == "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -1245,6 +1259,28 @@ class TestControlLawFloorViolations:
     def test_control_law_conformance_data_unavailable(self) -> None:
         """conformance_data_unavailable=True triggers 'conformance_data_unavailable' alternate."""
         law, degradations = compute_control_law(conformance_data_unavailable=True)
+        assert law == "alternate"
+        assert "conformance_data_unavailable" in degradations
+
+    def test_control_law_conformance_missing_keys(self, tmp_path: Path) -> None:
+        """End-to-end: missing floor keys → _read_conformance_data → compute_control_law → alternate."""
+        from wardline.cli.scan import _read_conformance_data
+
+        # Conformance file exists but lacks both floor-violation keys
+        manifest_path = tmp_path / "wardline.yaml"
+        manifest_path.write_text("version: 1\n")
+        conf_path = tmp_path / "wardline.conformance.json"
+        conf_path.write_text(json.dumps({"some_other_key": "value"}))
+
+        never_run, data_unavailable, _data = _read_conformance_data(manifest_path)
+        assert never_run is False
+        assert data_unavailable is True
+
+        # Pass through to compute_control_law
+        law, degradations = compute_control_law(
+            conformance_data_unavailable=data_unavailable,
+            conformance_never_run=never_run,
+        )
         assert law == "alternate"
         assert "conformance_data_unavailable" in degradations
 

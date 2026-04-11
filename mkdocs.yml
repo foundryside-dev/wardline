@@ -6,38 +6,67 @@ site_description: >-
 site_author: Tachyon Beep
 repo_url: https://github.com/tachyon-beep/wardline
 repo_name: tachyon-beep/wardline
+edit_uri: edit/main/docs/
+copyright: >-
+  Copyright &copy; 2026 Tachyon Beep —
+  <a href="https://github.com/tachyon-beep/wardline/blob/main/LICENSE">MIT License</a>
 
 theme:
   name: material
+  custom_dir: overrides
   favicon: assets/favicon.svg
   icon:
     logo: material/shield-check
+    repo: fontawesome/brands/github
+    edit: material/pencil
+    view: material/eye
+    annotation: material/plus-circle
+    admonition:
+      note: material/pencil-circle
+      tip: material/lightbulb-on
+      warning: material/alert
+      danger: material/skull
   palette:
-    - scheme: slate
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
       primary: custom
       accent: custom
       toggle:
-        icon: material/brightness-4
+        icon: material/weather-sunny
         name: Switch to light mode
-    - scheme: default
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
       primary: custom
       accent: custom
       toggle:
-        icon: material/brightness-7
+        icon: material/weather-night
         name: Switch to dark mode
   font:
+    text: Inter
     code: JetBrains Mono
   features:
+    - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.sections
     - navigation.expand
     - navigation.indexes
     - navigation.top
     - navigation.footer
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.prune
     - search.highlight
     - search.suggest
+    - search.share
     - content.code.copy
     - content.code.annotate
+    - content.tabs.link
+    - content.tooltips
+    - content.action.edit
+    - content.action.view
     - toc.follow
+    - announce.dismiss
 
 extra_css:
   - stylesheets/custom.css
@@ -47,29 +76,90 @@ extra_javascript:
   - javascripts/severity-matrix.js
 
 extra:
+  generator: false
+  status:
+    new: Recently added
+    deprecated: Deprecated
+  version:
+    default: latest
+    provider: mike
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/tachyon-beep/wardline
-  generator: false
+      name: Wardline on GitHub
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/wardline/
+      name: Wardline on PyPI
+
+plugins:
+  - search:
+      separator: '[\s\-\.\_]+'
+  - tags
+  - social:
+      cards_layout_options:
+        background_color: "#0b1120"
+        color: "#f1f5f9"
+        font_family: Inter
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: iso_date
+      fallback_to_build_date: true
+  - minify:
+      minify_html: true
+      minify_js: true
+      minify_css: true
+      htmlmin_opts:
+        remove_comments: true
 
 markdown_extensions:
-  - tables
+  - abbr
   - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      permalink_title: Anchor link to this section
+      title: On this page
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem
+  - pymdownx.caret
+  - pymdownx.mark
+  - pymdownx.tilde
+  - pymdownx.keys
+  - pymdownx.critic
   - pymdownx.details
-  - pymdownx.superfences
   - pymdownx.highlight:
       anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
   - pymdownx.inlinehilite
+  - pymdownx.magiclink:
+      repo_url_shorthand: true
+      user: tachyon-beep
+      repo: wardline
+  - pymdownx.smartsymbols
+  - pymdownx.snippets:
+      check_paths: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
-  - attr_list
-  - md_in_html
-  - def_list
+      combine_header_slug: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - pymdownx.tasklist:
+      custom_checkbox: true
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
-  - toc:
-      permalink: true
 
 nav:
   - Home: index.md
@@ -94,4 +184,26 @@ nav:
       - Analysis Levels: guides/analysis-levels.md
       - Profiles: guides/profiles.md
       - Troubleshooting: guides/troubleshooting.md
-  - Specification: specification.md
+  - Specification:
+      - specification.md
+      - "Part I — Framework":
+          - "1. Document Scope": spec/wardline-01-01-document-scope.md
+          - "2. What a Wardline Is": spec/wardline-01-02-what-a-wardline-is.md
+          - "3. The Problem a Wardline Solves": spec/wardline-01-03-the-problem-a-wardline-solves.md
+          - "4. Non-Goals": spec/wardline-01-04-non-goals.md
+          - "5. Authority Tier Model": spec/wardline-01-05-authority-tier-model.md
+          - "6. Authority Tier Enforcement": spec/wardline-01-06-authority-tier-enforcement-spec.md
+          - "7. Annotation Vocabulary": spec/wardline-01-07-annotation-vocabulary.md
+          - "8. Pattern Rules": spec/wardline-01-08-pattern-rules.md
+          - "9. Enforcement Layers": spec/wardline-01-09-enforcement-layers.md
+          - "10. Governance Model": spec/wardline-01-10-governance-model.md
+          - "11. Verification Properties": spec/wardline-01-11-verification-properties.md
+          - "12. Language Evaluation Criteria": spec/wardline-01-12-language-evaluation-criteria.md
+          - "13. Residual Risks": spec/wardline-01-13-residual-risks.md
+          - "14. Portability & Manifest Format": spec/wardline-01-14-portability-and-manifest-format.md
+          - "15. Conformance": spec/wardline-01-15-conformance.md
+      - "Part II — Language Bindings":
+          - "A. Python Binding": spec/wardline-02-A-python-binding.md
+          - "B. Java Binding": spec/wardline-02-B-java-binding.md
+      - Companion:
+          - "Wardline Lite": spec/wardline-lite.md

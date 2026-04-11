@@ -17,7 +17,6 @@ import click
 
 from wardline.cli._helpers import COHERENCE_SEVERITY_MAP as _COHERENCE_SEVERITY_MAP
 from wardline.cli._helpers import cli_error
-from wardline.cli.scan import EXIT_CONFIG_ERROR
 
 # Exit code 3: direct law — regime cannot produce meaningful enforcement
 # output because no valid manifest exists (§A.10).
@@ -156,19 +155,18 @@ def status(
     output_json: bool,
 ) -> None:
     """Read-only governance health dashboard."""
-    from wardline.manifest.regime import (
-        collect_exception_metrics,
-        collect_fingerprint_metrics,
-        collect_manifest_metrics,
-        collect_rule_metrics,
-    )
-
     import yaml
 
     from wardline.manifest.loader import (
         ManifestLoadError,
         WardlineYAMLError,
         load_manifest,
+    )
+    from wardline.manifest.regime import (
+        collect_exception_metrics,
+        collect_fingerprint_metrics,
+        collect_manifest_metrics,
+        collect_rule_metrics,
     )
 
     manifest_path = Path(manifest_file)
