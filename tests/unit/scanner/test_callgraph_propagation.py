@@ -715,3 +715,141 @@ class TestReturnTaintMapSplit:
         #   max(5, 0) = 5 → EXTERNAL_RAW (WRONG — over-tainting)
         assert result["caller"] == TaintState.GUARDED
         assert prov["caller"].source == "callgraph"
+
+
+class TestCrossClassificationJoin:
+    """Cross-classification callee combinations must produce MIXED_RAW.
+
+    These tests exercise the §6 join algebra at the L3 propagation level.
+    When a function calls callees from different trust classifications
+    (e.g., ASSURED + GUARDED), the combined taint MUST be MIXED_RAW per
+    the spec's absorbing-element rule.
+    """
+
+    def test_assured_plus_guarded_produces_mixed_raw(self) -> None:
+        """Fallback(ASSURED) calling GUARDED + EXTERNAL_RAW -> MIXED_RAW."""
+        edges = {"A": {"B", "C"}, "B": set(), "C": set()}
+        taint_map = {
+            "A": TaintState.ASSURED,
+            "B": TaintState.GUARDED,
+            "C": TaintState.EXTERNAL_RAW,
+        }
+        taint_sources = {"A": "fallback", "B": "decorator", "C": "decorator"}
+        result, _, _diags = propagate_callgraph_taints(
+            edges, taint_map, taint_sources,
+            {"A": 2, "B": 0, "C": 0}, {"A": 0, "B": 0, "C": 0},
+            return_taint_map=taint_map,
+        )
+        # join(GUARDED, EXTERNAL_RAW) = MIXED_RAW (cross-classification)
+        # Floor clamp: max(TRUST_RANK[MIXED_RAW]=7, TRUST_RANK[ASSURED]=1) = 7
+        # Result: MIXED_RAW
+        assert result["A"] == TaintState.MIXED_RAW
+
+    def test_floor_clamp_dominates_when_already_mixed(self) -> None:
+        """Fallback(MIXED_RAW) calling ASSURED + GUARDED -> MIXED_RAW."""
+        edges = {"A": {"B", "C"}, "B": set(), "C": set()}
+        taint_map = {
+            "A": TaintState.MIXED_RAW,
+            "B": TaintState.ASSURED,
+            "C": TaintState.GUARDED,
+        }
+        taint_sources = {"A": "fallback", "B": "decorator", "C": "decorator"}
+        result, _, _diags = propagate_callgraph_taints(
+            edges, taint_map, taint_sources,
+            {"A": 2, "B": 0, "C": 0}, {"A": 0, "B": 0, "C": 0},
+            return_taint_map=taint_map,
+        )
+        # join(ASSURED, GUARDED) = MIXED_RAW
+        # Floor clamp: max(7, 7) = 7 -> MIXED_RAW (both paths agree)
+        assert result["A"] == TaintState.MIXED_RAW
+
+    def test_unknown_family_demotion_preserved(self) -> None:
+        """Fallback(INTEGRAL) calling UNKNOWN_RAW + UNKNOWN_ASSURED -> UNKNOWN_RAW."""
+        edges = {"A": {"B", "C"}, "B": set(), "C": set()}
+        taint_map = {
+            "A": TaintState.INTEGRAL,
+            "B": TaintState.UNKNOWN_RAW,
+            "C": TaintState.UNKNOWN_ASSURED,
+        }
+        taint_sources = {"A": "fallback", "B": "decorator", "C": "decorator"}
+        result, _, _diags = propagate_callgraph_taints(
+            edges, taint_map, taint_sources,
+            {"A": 2, "B": 0, "C": 0}, {"A": 0, "B": 0, "C": 0},
+            return_taint_map=taint_map,
+        )
+        # join(UNKNOWN_RAW, UNKNOWN_ASSURED) = UNKNOWN_RAW (within-family)
+        # Floor clamp: max(TRUST_RANK[UNKNOWN_RAW]=6, TRUST_RANK[INTEGRAL]=0) = 6
+        # Result: UNKNOWN_RAW
+        assert result["A"] == TaintState.UNKNOWN_RAW
+
+    def test_single_callee_no_join_divergence(self) -> None:
+        """Fallback(ASSURED) calling only GUARDED -> GUARDED (no cross-class join)."""
+        edges = {"A": {"B"}, "B": set()}
+        taint_map = {
+            "A": TaintState.ASSURED,
+            "B": TaintState.GUARDED,
+        }
+        taint_sources = {"A": "fallback", "B": "decorator"}
+        result, _, _diags = propagate_callgraph_taints(
+            edges, taint_map, taint_sources,
+            {"A": 1, "B": 0}, {"A": 0, "B": 0},
+            return_taint_map=taint_map,
+        )
+        # Single callee: no join needed. GUARDED rank=2 > ASSURED rank=1.
+        # Floor clamp: max(2, 1) = 2 -> GUARDED
+        assert result["A"] == TaintState.GUARDED
+
+    def test_mixed_raw_absorption_at_propagation_level(self) -> None:
+        """If any callee is MIXED_RAW, combined result is MIXED_RAW."""
+        edges = {"A": {"B", "C"}, "B": set(), "C": set()}
+        taint_map = {
+            "A": TaintState.ASSURED,
+            "B": TaintState.INTEGRAL,
+            "C": TaintState.MIXED_RAW,
+        }
+        taint_sources = {"A": "fallback", "B": "decorator", "C": "decorator"}
+        result, _, _diags = propagate_callgraph_taints(
+            edges, taint_map, taint_sources,
+            {"A": 2, "B": 0, "C": 0}, {"A": 0, "B": 0, "C": 0},
+            return_taint_map=taint_map,
+        )
+        # join(INTEGRAL, MIXED_RAW) = MIXED_RAW (absorbing)
+        assert result["A"] == TaintState.MIXED_RAW
+
+    def test_guarded_plus_external_raw_produces_mixed_raw(self) -> None:
+        """Fallback(GUARDED) calling GUARDED + EXTERNAL_RAW -> MIXED_RAW."""
+        edges = {"A": {"B", "C"}, "B": set(), "C": set()}
+        taint_map = {
+            "A": TaintState.GUARDED,
+            "B": TaintState.GUARDED,
+            "C": TaintState.EXTERNAL_RAW,
+        }
+        taint_sources = {"A": "fallback", "B": "decorator", "C": "decorator"}
+        result, _, _diags = propagate_callgraph_taints(
+            edges, taint_map, taint_sources,
+            {"A": 2, "B": 0, "C": 0}, {"A": 0, "B": 0, "C": 0},
+            return_taint_map=taint_map,
+        )
+        # join(GUARDED, EXTERNAL_RAW) = MIXED_RAW (cross-classification)
+        # Floor clamp: max(TRUST_RANK[MIXED_RAW]=7, TRUST_RANK[GUARDED]=2) = 7
+        # Result: MIXED_RAW
+        assert result["A"] == TaintState.MIXED_RAW
+
+    def test_module_default_cross_classification(self) -> None:
+        """Module_default(INTEGRAL) calling ASSURED + UNKNOWN_RAW -> MIXED_RAW."""
+        edges = {"A": {"B", "C"}, "B": set(), "C": set()}
+        taint_map = {
+            "A": TaintState.INTEGRAL,
+            "B": TaintState.ASSURED,
+            "C": TaintState.UNKNOWN_RAW,
+        }
+        taint_sources = {"A": "module_default", "B": "decorator", "C": "decorator"}
+        result, _, _diags = propagate_callgraph_taints(
+            edges, taint_map, taint_sources,
+            {"A": 2, "B": 0, "C": 0}, {"A": 0, "B": 0, "C": 0},
+            return_taint_map=taint_map,
+        )
+        # join(ASSURED, UNKNOWN_RAW) = MIXED_RAW (cross-classification)
+        # Floor clamp: max(TRUST_RANK[MIXED_RAW]=7, TRUST_RANK[INTEGRAL]=0) = 7
+        # Result: MIXED_RAW
+        assert result["A"] == TaintState.MIXED_RAW
