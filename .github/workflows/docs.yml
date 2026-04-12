@@ -59,7 +59,7 @@ jobs:
         run: bash tools/pdf/build-spec.sh --pdf
 
       - name: Upload PDF artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: wardline-specification
           path: docs/assets/wardline-specification.pdf

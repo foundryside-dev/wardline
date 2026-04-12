@@ -25,7 +25,7 @@ jobs:
         run: uv run wardline corpus verify --json > corpus-results.json
       - name: Upload corpus results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: corpus-results
           path: corpus-results.json
