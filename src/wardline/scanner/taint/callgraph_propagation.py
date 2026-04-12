@@ -7,6 +7,7 @@ that refines L1 function-level taints by analysing what each function calls.
 from __future__ import annotations
 
 import logging
+from functools import reduce
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -69,7 +70,7 @@ def propagate_callgraph_taints(
         Diagnostics is a list of ``(code, message)`` tuples for
         L3_CONVERGENCE_BOUND and L3_LOW_RESOLUTION conditions.
     """
-    from wardline.core.taints import TaintState
+    from wardline.core.taints import TaintState, taint_join
 
     if not taint_map:
         return {}, {}, []
@@ -121,9 +122,6 @@ def propagate_callgraph_taints(
     sccs = compute_sccs(scc_graph)
 
     # --- 5. Worklist iteration per SCC ----------------------------------------
-    # Pre-compute rank-to-state reverse map (static, built once)
-    rank_to_state = {r: s for s, r in TRUST_RANK.items()}
-
     for scc in sccs:
         # Skip all-anchored SCCs — they cannot change
         if scc <= anchored:
@@ -152,32 +150,33 @@ def propagate_callgraph_taints(
                 # This is correct because non-anchored functions always have
                 # body_taint == return_taint (enforced by _walk_and_assign in
                 # function_level.py), so current[c] serves as both.
-                ext_ranks: list[int] = []
+                # Combine callee taints using §6 join algebra
+                ext_taints: list[TaintState] = []
                 for c in ext_callees:
                     if c in anchored:
                         try:
                             c_return_taint = return_taint_map[c]
                         except KeyError:
                             c_return_taint = current[c]
-                        ext_ranks.append(TRUST_RANK[c_return_taint])
+                        ext_taints.append(c_return_taint)
                     else:
-                        ext_ranks.append(TRUST_RANK[current[c]])
-                ext_max = max(ext_ranks)
-                if f in floating_down:
+                        ext_taints.append(current[c])
+                ext_combined = reduce(taint_join, ext_taints)
+
+                # TRUST_RANK: ordering comparison, not taint combination (see §6)
+                ext_taint = ext_combined
+                if f in floating_down or f in floating_free:
                     l1_rank = TRUST_RANK[taint_map[f]]
-                    ext_max = max(ext_max, l1_rank)
-                elif f in floating_free:
-                    # Fix 1: floor clamp for floating_free in Phase 1
-                    l1_rank = TRUST_RANK[taint_map[f]]
-                    ext_max = max(ext_max, l1_rank)
-                # Fix 2: unresolved calls pessimistic floor in Phase 1
+                    if l1_rank > TRUST_RANK[ext_taint]:
+                        ext_taint = taint_map[f]
+                # Unresolved calls pessimistic floor (ordering, not combination)
                 try:
                     f_unresolved = unresolved_counts[f]
                 except KeyError:
                     f_unresolved = 0
                 if f_unresolved > 0:
-                    ext_max = max(ext_max, TRUST_RANK[taint_map[f]])
-                ext_taint = rank_to_state[ext_max]
+                    if TRUST_RANK[taint_map[f]] > TRUST_RANK[ext_taint]:
+                        ext_taint = taint_map[f]
                 if ext_taint != current[f]:
                     current[f] = ext_taint
                     refined.add(f)
@@ -230,43 +229,43 @@ def propagate_callgraph_taints(
                 # No resolved callees — stay at current taint
                 continue
 
-            # Compute max_rank (least trusted) among callees
-            callee_ranks: list[int] = []
+            # Combine callee taints using §6 join algebra
+            callee_taints: list[TaintState] = []
             for c in callee_set:
                 if c in anchored:
                     try:
                         c_return_taint = return_taint_map[c]
                     except KeyError:
                         c_return_taint = current[c]
-                    callee_ranks.append(TRUST_RANK[c_return_taint])
+                    callee_taints.append(c_return_taint)
                 else:
-                    callee_ranks.append(TRUST_RANK[current[c]])
-            max_callee_rank = max(callee_ranks, default=TRUST_RANK[TaintState.INTEGRAL])
+                    callee_taints.append(current[c])
 
-            # Floor clamp for module_default: result >= L1 rank
-            if func in floating_down:
+            if not callee_taints:
+                continue  # no resolved callees — stay at current taint
+
+            callee_combined = reduce(taint_join, callee_taints)
+
+            # TRUST_RANK: ordering comparison, not taint combination (see §6)
+            if func in floating_down or func in floating_free:
                 l1_rank = TRUST_RANK[taint_map[func]]
-                result_rank = max(max_callee_rank, l1_rank)
-            elif func in floating_free:
-                # Fix 1: floor clamp — L3 must never make a function MORE
-                # trusted than its L1 baseline.
-                l1_rank = TRUST_RANK[taint_map[func]]
-                result_rank = max(max_callee_rank, l1_rank)
+                combined_rank = TRUST_RANK[callee_combined]
+                if l1_rank > combined_rank:
+                    new_taint = taint_map[func]
+                else:
+                    new_taint = callee_combined
             else:
                 # anchored — skip (shouldn't reach here due to worklist filter)
                 continue
 
-            # Fix 2: unresolved calls pessimistic floor — if this function
-            # has unresolved calls, it cannot be more trusted than its L1
-            # baseline (unresolved calls could go anywhere).
+            # Unresolved calls pessimistic floor (ordering, not combination)
             try:
                 func_unresolved = unresolved_counts[func]
             except KeyError:
                 func_unresolved = 0
             if func_unresolved > 0:
-                result_rank = max(result_rank, TRUST_RANK[taint_map[func]])
-
-            new_taint = rank_to_state[result_rank]
+                if TRUST_RANK[taint_map[func]] > TRUST_RANK[new_taint]:
+                    new_taint = taint_map[func]
 
             if new_taint != current[func]:
                 current[func] = new_taint
