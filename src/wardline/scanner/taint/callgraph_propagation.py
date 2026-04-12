@@ -2,6 +2,10 @@
 
 Provides iterative Tarjan's SCC algorithm and the main propagation loop
 that refines L1 function-level taints by analysing what each function calls.
+
+Callee taint combination uses taint_join() from the §6 join algebra.
+TRUST_RANK is used only for ordering comparisons (floor clamps,
+post-assertions, provenance tiebreaks) — never for taint combination.
 """
 
 from __future__ import annotations
@@ -179,8 +183,8 @@ def propagate_callgraph_taints(
                 if ext_taint != current[f]:
                     current[f] = ext_taint
                     refined.add(f)
+                    # TRUST_RANK: diagnostic provenance tiebreak, not taint combination
                     # Record via_callee from external callees.
-                    # Use the same anchored/floating logic as rank computation.
                     best_callee: str | None = None
                     best_rank = -1
                     for c in sorted(ext_callees):
@@ -266,8 +270,8 @@ def propagate_callgraph_taints(
                 current[func] = new_taint
                 refined.add(func)
 
+                # TRUST_RANK: diagnostic provenance tiebreak, not taint combination
                 # Determine via_callee: the callee with highest rank (least trusted).
-                # Use the same anchored/floating logic as rank computation.
                 # Tie-break: alphabetically first qualname.
                 best_callee_wl: str | None = None
                 best_rank_wl = -1
@@ -308,6 +312,7 @@ def propagate_callgraph_taints(
                 taint_map, taint_sources, resolved_counts, unresolved_counts,
             ), diagnostics
 
+    # TRUST_RANK: ordering assertion, not taint combination (see §6)
     for func in floating_down:
         if TRUST_RANK[current[func]] < TRUST_RANK[taint_map[func]]:
             logger.error(
