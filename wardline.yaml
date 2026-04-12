@@ -14,6 +14,7 @@ metadata:
     role: "Project Lead"
   ratification_date: "2026-03-27"
   review_interval_days: 180
+  expedited_ratio_threshold: 0.15
   temporal_separation:
     alternative: "enforced"
 

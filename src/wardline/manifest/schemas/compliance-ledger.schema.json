@@ -14,7 +14,8 @@
     "evidence_binding",
     "summary",
     "obligations",
-    "projections"
+    "projections",
+    "bootstrap_reference_declaration"
   ],
   "additionalProperties": false,
   "properties": {
@@ -73,7 +74,8 @@
         "waived",
         "not_applicable",
         "unassessed",
-        "bootstrap_attested"
+        "bootstrap_attested",
+        "slip_count"
       ],
       "properties": {
         "verified": {"type": "integer", "minimum": 0},
@@ -106,54 +108,10 @@
     "projections": {"type": "object"},
     "bootstrap_reference_declaration": {"$ref": "#/$defs/bootstrap_reference_declaration"}
   },
-  "allOf": [
-    {
-      "description": "§15.3.4: bootstrap_reference_declaration is required iff at least one obligation uses reviewer independence 'bootstrap_attested'.",
-      "if": {
-        "type": "object",
-        "properties": {
-          "obligations": {
-            "type": "array",
-            "contains": {
-              "type": "object",
-              "properties": {
-                "reviewer_metadata": {
-                  "type": "object",
-                  "properties": {
-                    "independence": {"const": "bootstrap_attested"}
-                  },
-                  "required": ["independence"]
-                }
-              },
-              "required": ["reviewer_metadata"]
-            }
-          }
-        },
-        "required": ["obligations"]
-      },
-      "then": {
-        "required": ["bootstrap_reference_declaration"]
-      }
-    },
-    {
-      "description": "§15.3.4: when a bootstrap_reference_declaration is present, the summary MUST surface slip_count so an assessor can see at a glance whether the project is already on its final extension window. The coherence layer additionally enforces that summary.slip_count equals bootstrap_reference_declaration.slip_count; the schema only requires presence.",
-      "if": {
-        "type": "object",
-        "required": ["bootstrap_reference_declaration"]
-      },
-      "then": {
-        "properties": {
-          "summary": {
-            "required": ["slip_count"]
-          }
-        }
-      }
-    }
-  ],
   "$defs": {
     "bootstrap_reference_declaration": {
       "type": "object",
-      "description": "§15.3.4 Bootstrap Assurance Reference declaration. Required at the top level iff any obligation uses reviewer_metadata.independence == 'bootstrap_attested'. BAR is a named sub-profile of Assurance available only to reference implementations of this specification.",
+      "description": "§15.3.4 Bootstrap Assurance Reference declaration. Required at the top level for this reference-implementation Assurance/BAR ledger so assessors can see the sole maintainer, graduation target, graduation mechanism, plan reference, and slip counter even before any obligation is bootstrap_attested. BAR is a named sub-profile of Assurance available only to reference implementations of this specification.",
       "required": [
         "sole_maintainer",
         "declared_at",

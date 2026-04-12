@@ -67,6 +67,7 @@ def _write_minimal_manifest(tmp_path: Path) -> Path:
     manifest_yaml = tmp_path / "wardline.yaml"
     manifest_yaml.write_text(
         '$id: "https://wardline.dev/schemas/1.0/wardline"\n'
+        'governance_profile: "lite"\n'
         "metadata:\n"
         "  organisation: test\n"
         "  ratified_by:\n"
@@ -101,6 +102,7 @@ def _write_tier_downgrade_fixture(tmp_path: Path) -> Path:
     manifest_yaml = tmp_path / "wardline.yaml"
     manifest_yaml.write_text(
         '$id: "https://wardline.dev/schemas/1.0/wardline"\n'
+        'governance_profile: "lite"\n'
         "metadata:\n"
         "  organisation: test\n"
         "  ratified_by:\n"
@@ -133,6 +135,61 @@ def _write_tier_downgrade_fixture(tmp_path: Path) -> Path:
                 {"path": "src/", "default_taint": "ASSURED"},
             ],
         })
+    )
+    return manifest_yaml
+
+
+def _write_assurance_manifest(
+    tmp_path: Path,
+    *,
+    expedited_ratio_threshold: float | None,
+    include_bar: bool = True,
+) -> Path:
+    """Write an assurance manifest, optionally with BAR metadata."""
+    threshold_block = (
+        f"  expedited_ratio_threshold: {expedited_ratio_threshold}\n"
+        if expedited_ratio_threshold is not None
+        else ""
+    )
+    bar_block = ""
+    if include_bar:
+        bar_block = (
+            "bootstrap_assurance_reference:\n"
+            '  sole_maintainer: "johnm-dta"\n'
+            '  declared_at: "2026-04-12"\n'
+            '  graduation_target_date: "2026-06-12"\n'
+            '  graduation_mechanism: "external_audit"\n'
+            '  graduation_auditor: "dta-security"\n'
+            '  graduation_plan_ref: "docs/adr/ADR-005-bootstrap-assurance-reference.md"\n'
+            "  slip_count: 0\n"
+        )
+
+    manifest_yaml = tmp_path / "wardline.yaml"
+    manifest_yaml.write_text(
+        '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+        'governance_profile: "assurance"\n'
+        "metadata:\n"
+        "  organisation: test\n"
+        "  ratified_by:\n"
+        '    name: "reviewer"\n'
+        '    role: "lead"\n'
+        '  ratification_date: "2026-03-01"\n'
+        "  review_interval_days: 180\n"
+        f"{threshold_block}"
+        "  temporal_separation:\n"
+        '    alternative: "enforced"\n'
+        f"{bar_block}"
+        "tiers:\n"
+        '  - id: "ASSURED"\n'
+        "    tier: 1\n"
+        '    description: "strict"\n'
+        "module_tiers:\n"
+        '  - path: "src/"\n'
+        '    default_taint: "ASSURED"\n'
+        "delegation:\n"
+        '  default_authority: "RELAXED"\n'
+        "rules:\n"
+        "  overrides: []\n"
     )
     return manifest_yaml
 
@@ -418,6 +475,7 @@ class TestManifestMetricsFields:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
             '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "lite"\n'
             "metadata:\n"
             "  organisation: test\n"
             "tiers:\n"
@@ -434,6 +492,7 @@ class TestManifestMetricsFields:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
             '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "lite"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"
@@ -454,6 +513,7 @@ class TestManifestMetricsFields:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
             '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "lite"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"
@@ -472,6 +532,7 @@ class TestManifestMetricsFields:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
             '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "lite"\n'
             "metadata:\n"
             "  organisation: test\n"
             "tiers:\n"
@@ -481,6 +542,116 @@ class TestManifestMetricsFields:
         )
         m = collect_manifest_metrics(manifest)
         assert m.temporal_separation_posture is None
+
+    def test_collect_manifest_metrics_includes_expedited_ratio_threshold_and_bar(
+        self, tmp_path: Path
+    ) -> None:
+        from wardline.manifest.regime import collect_manifest_metrics
+
+        manifest = _write_assurance_manifest(
+            tmp_path,
+            expedited_ratio_threshold=0.15,
+            include_bar=True,
+        )
+        m = collect_manifest_metrics(manifest)
+        assert m.expedited_ratio_threshold == pytest.approx(0.15)
+        assert m.bootstrap_assurance_reference is not None
+        assert m.bootstrap_assurance_reference.sole_maintainer == "johnm-dta"
+
+
+class TestRegimeStatusBarFields:
+    def test_status_json_surfaces_bar_metadata(self, runner: CliRunner, tmp_path: Path) -> None:
+        manifest = _write_assurance_manifest(
+            tmp_path,
+            expedited_ratio_threshold=0.15,
+            include_bar=True,
+        )
+        src_dir = tmp_path / "src"
+        src_dir.mkdir(exist_ok=True)
+        (src_dir / "app.py").write_text("def plain(): ...\n")
+
+        result = _invoke_status(
+            runner,
+            "--json",
+            manifest=str(manifest),
+            path=str(src_dir),
+        )
+        data = json.loads(result.output)
+        assert data["expedited_ratio_threshold"] == pytest.approx(0.15)
+        assert data["bootstrap_assurance_reference"] is not None
+        assert data["bootstrap_assurance_reference"]["graduation_auditor"] == "dta-security"
+
+    def test_status_json_includes_bar_runner_readiness_fields(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        manifest = _write_assurance_manifest(
+            tmp_path,
+            expedited_ratio_threshold=0.15,
+            include_bar=True,
+        )
+        src_dir = tmp_path / "src"
+        src_dir.mkdir(exist_ok=True)
+        (src_dir / "app.py").write_text("def plain(): ...\n")
+
+        result = _invoke_status(
+            runner,
+            "--json",
+            manifest=str(manifest),
+            path=str(src_dir),
+        )
+        data = json.loads(result.output)
+        assert data["bar_runner_ready"] is True
+        assert data["bar_policy_version"] == "2026.04.12"
+        assert data["bar_runtime"] == {
+            "pipeline_name": "wardline-bar-panel",
+            "policy_version": "2026.04.12",
+            "policy_hash": "aba51a4ca81ccf4f31e1540db3fab28972607a6778bb1da33cba975e33c23287",
+            "skill_pack": {
+                "skill_pack_id": "wardline.bar.panel.core",
+                "skill_pack_version": "2026.04.12",
+                "assets": [
+                    "skill-pack/shared-discipline.md",
+                    "skill-pack/citation-contract.md",
+                ],
+            },
+            "model": {
+                "provider": "openrouter",
+                "model_id": "openrouter/anthropic/claude-opus-4.6",
+                "temperature": 0,
+                "top_p": 1,
+                "seed": None,
+                "max_output_tokens": 16384,
+            },
+            "guardrails": {
+                "timeout_seconds": 180,
+                "max_retries": 1,
+            },
+        }
+
+    def test_status_text_includes_bar_runtime_summary(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        manifest = _write_assurance_manifest(
+            tmp_path,
+            expedited_ratio_threshold=0.15,
+            include_bar=True,
+        )
+        src_dir = tmp_path / "src"
+        src_dir.mkdir(exist_ok=True)
+        (src_dir / "app.py").write_text("def plain(): ...\n")
+
+        result = _invoke_status(
+            runner,
+            manifest=str(manifest),
+            path=str(src_dir),
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "BAR runner:" in result.output
+        assert "Policy hash:         aba51a4ca81ccf4f31e1540db3fab28972607a6778bb1da33cba975e33c23287" in result.output
+        assert "Skill pack:          wardline.bar.panel.core @ 2026.04.12" in result.output
+        assert "Provider/model:      openrouter / openrouter/anthropic/claude-opus-4.6" in result.output
+        assert "Timeout / retries:   180s / 1" in result.output
 
 
 class TestVerifyLiteGovernanceChecks:
@@ -499,6 +670,7 @@ class TestVerifyLiteGovernanceChecks:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
             '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "lite"\n'
             "metadata:\n"
             "  organisation: test\n"
             '  ratification_date: "2026-03-01"\n'
@@ -520,6 +692,7 @@ class TestVerifyLiteGovernanceChecks:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
             '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "lite"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  ratified_by:\n"
@@ -542,6 +715,7 @@ class TestVerifyLiteGovernanceChecks:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
             '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "lite"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"
@@ -564,6 +738,7 @@ class TestVerifyLiteGovernanceChecks:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
             '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "lite"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"
@@ -584,6 +759,7 @@ class TestVerifyLiteGovernanceChecks:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
             '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "lite"\n'
             "metadata:\n"
             "  organisation: test\n"
             "tiers:\n"
@@ -615,6 +791,51 @@ class TestVerifyLiteGovernanceChecks:
         data = json.loads(result.output)
         check = next(c for c in data["checks"] if c["check"] == "annotation_change_tracking")
         assert check["passed"] is False
+
+
+class TestVerifyAssuranceThresholdChecks:
+    def test_assurance_requires_declared_expedited_ratio_threshold(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        manifest = _write_assurance_manifest(
+            tmp_path,
+            expedited_ratio_threshold=None,
+        )
+        result = _invoke_verify(
+            runner,
+            "--json",
+            manifest=str(manifest),
+            path=str(tmp_path),
+        )
+        data = json.loads(result.output)
+        check = next(
+            c for c in data["checks"] if c["check"] == "expedited_ratio_threshold_declared"
+        )
+        assert check["passed"] is False
+        assert "requires metadata.expedited_ratio_threshold" in check["evidence"]
+
+    def test_assurance_uses_declared_expedited_ratio_threshold(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        manifest = _write_assurance_manifest(
+            tmp_path,
+            expedited_ratio_threshold=0.05,
+        )
+        result = _invoke_verify(
+            runner,
+            "--json",
+            manifest=str(manifest),
+            path=str(tmp_path),
+        )
+        data = json.loads(result.output)
+        declared = next(
+            c for c in data["checks"] if c["check"] == "expedited_ratio_threshold_declared"
+        )
+        ratio = next(c for c in data["checks"] if c["check"] == "expedited_ratio")
+        assert declared["passed"] is True
+        assert "5.0%" in declared["evidence"]
+        assert ratio["passed"] is True
+        assert "5.0%" in ratio["evidence"]
 
 
 class TestRegimeDirectLaw:

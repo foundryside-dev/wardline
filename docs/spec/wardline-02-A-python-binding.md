@@ -802,7 +802,7 @@ The scanner checks that `provenance` is present for escalations but does not enf
 | 1 | Golden corpus expanded to 126+ specimens | `wardline corpus verify --json` → `total_specimens >= 126` |
 | 2 | Fingerprint baseline established with at least one review cycle | `wardline fingerprint diff` shows a prior baseline |
 | 3 | Temporal separation operational (different-actor review, no alternatives) | Remove `temporal_separation.alternative` from `wardline.yaml` |
-| 4 | Expedited ratio threshold declared | Add `expedited_ratio_threshold` to `wardline.yaml` metadata |
+| 4 | Expedited ratio threshold declared | Add `metadata.expedited_ratio_threshold` to `wardline.yaml` as a proportion in `[0,1]` (for example `0.15`) |
 | 5 | All Lite-era exceptions reviewed under Assurance governance | `wardline exception list --needs-review` returns empty |
 
 **Steps:**
@@ -810,7 +810,7 @@ The scanner checks that `provenance` is present for escalations but does not enf
 1. Expand the corpus to meet the 126-specimen floor, with per-rule AFP and AFN specimens.
 2. Run `wardline fingerprint update` to establish the baseline. Complete one full review cycle.
 3. Configure temporal separation: ensure all governance artefact changes are reviewed by a different actor. Remove the `same-actor-with-retrospective` alternative from the manifest.
-4. Add `expedited_ratio_threshold` to the manifest metadata section.
+4. Add `metadata.expedited_ratio_threshold` to the manifest metadata section as a ratio value in `[0,1]` (for example `0.15` for 15%).
 5. Review all existing exceptions: confirm reviewer identity, validate rationale against current context, update expiry dates.
 6. Change `governance_profile: "lite"` to `governance_profile: "assurance"` in `wardline.yaml`.
 7. Run `wardline coherence` to validate the new profile.

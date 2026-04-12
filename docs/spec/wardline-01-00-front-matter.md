@@ -26,9 +26,6 @@ This document comprises two parts: Part I (the framework specification) and Part
 → Part I: §10 (governance model), §14 (manifest and exception register), §15.1 (conformance model)
 → Part II: A.7/B.7 (residual risks), A.10/B.10 (error handling and control law)
 
-**Citizen programmers** (reviewing or writing code in a wardline-annotated codebase without developer tooling):
-→ Wardline Lite practical guide (`wardline-lite.md`, separate companion document): five review questions, worked code examples, hot-path identification. This guide is not part of the formal specification — it translates the annotation vocabulary (§7) and pattern rules (§8) into questions a non-specialist can apply during code review.
-
 ---
 
 ### Contents
@@ -68,7 +65,6 @@ B. [Java Language Binding Reference](#part-ii-b-java-language-binding-reference)
 
 **Companion Documents**
 
-- Wardline Lite practical guide (`wardline-lite.md`) — five review questions for non-specialist code reviewers
 - Specification landing page (`../specification.md`) — chapter index and primary entry point for the maintained spec set
 - Python language binding reference (`wardline-02-A-python-binding.md`) — reference implementation contract, rule mapping, and enforcement regime guidance
 

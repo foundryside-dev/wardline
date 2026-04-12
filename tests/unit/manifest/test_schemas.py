@@ -98,6 +98,7 @@ class TestWardlineSchema:
 
     def test_invalid_taint_rejected(self, schema: dict[str, object]) -> None:
         doc = {
+            "governance_profile": "lite",
             "module_tiers": [
                 {"path": "src/", "default_taint": "INVALID_TAINT"}
             ],
@@ -107,6 +108,7 @@ class TestWardlineSchema:
 
     def test_valid_rule_override_accepted(self, schema: dict[str, object]) -> None:
         doc = {
+            "governance_profile": "lite",
             "rules": {
                 "overrides": [
                     {"id": "PY-WL-001", "severity": "WARNING"}
@@ -119,6 +121,7 @@ class TestWardlineSchema:
         self, schema: dict[str, object]
     ) -> None:
         doc = {
+            "governance_profile": "lite",
             "rules": {
                 "overrides": [
                     {"id": "PY-WL-001", "severtiy": "WARNING"}
@@ -132,6 +135,70 @@ class TestWardlineSchema:
         self, schema: dict[str, object]
     ) -> None:
         doc = {"unknown_field": "value"}
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate(doc, schema)
+
+    def test_expedited_ratio_threshold_accepted(self, schema: dict[str, object]) -> None:
+        doc = {
+            "governance_profile": "lite",
+            "metadata": {
+                "organisation": "Test",
+                "expedited_ratio_threshold": 0.15,
+            },
+            "tiers": [{"id": "db", "tier": 1}],
+            "module_tiers": [
+                {"path": "src/", "default_taint": "EXTERNAL_RAW"}
+            ],
+        }
+        jsonschema.validate(doc, schema)
+
+    def test_external_audit_bootstrap_reference_requires_auditor(
+        self, schema: dict[str, object]
+    ) -> None:
+        doc = {
+            "governance_profile": "assurance",
+            "metadata": {
+                "organisation": "Test",
+                "expedited_ratio_threshold": 0.15,
+            },
+            "bootstrap_assurance_reference": {
+                "sole_maintainer": "johnm-dta",
+                "declared_at": "2026-04-12",
+                "graduation_target_date": "2026-06-12",
+                "graduation_mechanism": "external_audit",
+                "graduation_plan_ref": "docs/adr/ADR-005-bootstrap-assurance-reference.md",
+                "slip_count": 0,
+            },
+            "tiers": [{"id": "db", "tier": 1}],
+            "module_tiers": [
+                {"path": "src/", "default_taint": "EXTERNAL_RAW"}
+            ],
+        }
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate(doc, schema)
+
+    def test_bootstrap_reference_requires_assurance_profile(
+        self, schema: dict[str, object]
+    ) -> None:
+        doc = {
+            "governance_profile": "lite",
+            "metadata": {
+                "organisation": "Test",
+                "expedited_ratio_threshold": 0.15,
+            },
+            "bootstrap_assurance_reference": {
+                "sole_maintainer": "johnm-dta",
+                "declared_at": "2026-04-12",
+                "graduation_target_date": "2026-06-12",
+                "graduation_mechanism": "second_maintainer",
+                "graduation_plan_ref": "docs/adr/ADR-005-bootstrap-assurance-reference.md",
+                "slip_count": 0,
+            },
+            "tiers": [{"id": "db", "tier": 1}],
+            "module_tiers": [
+                {"path": "src/", "default_taint": "EXTERNAL_RAW"}
+            ],
+        }
         with pytest.raises(jsonschema.ValidationError):
             jsonschema.validate(doc, schema)
 

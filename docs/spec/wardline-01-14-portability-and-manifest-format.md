@@ -62,7 +62,9 @@ An enforcement tool that encounters a widening override in an overlay MUST rejec
 
 #### 14.1.1 Root manifest schema
 
-The root `wardline.yaml` contains five sections:
+The root `wardline.yaml` contains five core sections, plus an optional
+`bootstrap_assurance_reference` declaration when the deployment is operating
+under §15.3.4 Bootstrap Assurance Reference:
 
 **Tier definitions.** Named data sources and their authority tier assignment. Each entry declares a data source identifier, its tier (1, 2, 3, or 4), and a human-readable description. These declarations are the root of the trust topology — they define what the application considers authoritative (Tier 1), semantically validated (Tier 2), guarded (Tier 3), and raw external (Tier 4). Tier numbers use the framework's four-tier model exclusively — custom tiers are not permitted.
 
@@ -74,7 +76,14 @@ The root `wardline.yaml` contains five sections:
 
 Module-tier mappings are a coarse baseline, not a substitute for explicit boundary declarations or data-source classifications. They are most appropriate for modules with a strong dominant trust posture; mixed-trust modules SHOULD prefer finer-grained annotations and boundaries rather than relying on a single module default to carry semantic meaning.
 
-**Manifest metadata.** Organisation name, ratifying authority (name and role), ratification date, and review interval. The ratification fields support the governance model's requirement that the wardline is an organisationally endorsed policy, not a developer's personal configuration. In contracted development — the dominant delivery context in government — the manifest is typically authored by the acquiring organisation and supplied to the contractor as part of the security requirements, analogous to a security plan or classification guide. The ratifying authority remains the acquiring organisation's CISO or delegate, not the contractor's, since the manifest encodes the organisation's institutional knowledge about its own data semantics. The enforcement tool MUST compute the age of the ratification (current date minus ratification date) and compare it to the declared review interval. When the ratification age exceeds the review interval, the enforcement tool produces a governance-level finding (analogous to the expedited ratio finding in §10.4) indicating the manifest is overdue for review. Without this enforcement, the review interval is advisory documentation, not an enforceable control.
+**Manifest metadata.** Organisation name, ratifying authority (name and role), ratification date, review interval, and the project's expedited-governance ratio threshold. The threshold is declared as a proportion in `[0, 1]` under `metadata.expedited_ratio_threshold`; for example, `0.15` means "15% of active exceptions may be on the expedited path before a governance-level finding is produced." For Assurance deployments, this threshold is mandatory. The ratification fields support the governance model's requirement that the wardline is an organisationally endorsed policy, not a developer's personal configuration. In contracted development — the dominant delivery context in government — the manifest is typically authored by the acquiring organisation and supplied to the contractor as part of the security requirements, analogous to a security plan or classification guide. The ratifying authority remains the acquiring organisation's CISO or delegate, not the contractor's, since the manifest encodes the organisation's institutional knowledge about its own data semantics. The enforcement tool MUST compute the age of the ratification (current date minus ratification date) and compare it to the declared review interval. When the ratification age exceeds the review interval, the enforcement tool produces a governance-level finding (analogous to the expedited ratio finding in §10.4) indicating the manifest is overdue for review. Without this enforcement, the review interval is advisory documentation, not an enforceable control.
+
+**Bootstrap Assurance Reference declaration.** When a deployment declares BAR
+under §15.3.4, the root manifest additionally carries a top-level
+`bootstrap_assurance_reference` block naming the sole maintainer, declaration
+date, graduation target date, graduation mechanism, graduation-plan reference,
+and current slip counter. Runtime consumers MUST surface this block; it is not
+advisory documentation.
 
 **Root manifest example:**
 
@@ -85,6 +94,7 @@ metadata:
   ratified_by: { name: "J. Smith", role: "CISO" }
   ratification_date: "2026-01-15"
   review_interval_days: 180
+  expedited_ratio_threshold: 0.15
 
 tiers:
   - id: "internal_database"

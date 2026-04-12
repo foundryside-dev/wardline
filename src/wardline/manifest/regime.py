@@ -15,7 +15,7 @@ from wardline.core.matrix import SEVERITY_MATRIX
 from wardline.core.severity import Exceptionability, GovernancePath, RuleId
 from wardline.manifest.exceptions import load_exceptions
 from wardline.manifest.loader import ManifestLoadError, load_manifest
-from wardline.manifest.models import ScannerConfig
+from wardline.manifest.models import BootstrapAssuranceReference, ScannerConfig
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -64,6 +64,8 @@ class ManifestMetrics:
     ratification_overdue: bool = False
     ratified_by_present: bool = False
     temporal_separation_posture: str | None = None
+    expedited_ratio_threshold: float | None = None
+    bootstrap_assurance_reference: BootstrapAssuranceReference | None = None
 
 
 @dataclass(frozen=True)
@@ -223,6 +225,8 @@ def collect_manifest_metrics(manifest_path: Path) -> ManifestMetrics:
         ratification_overdue=ratification_overdue,
         ratified_by_present=ratified_by_present,
         temporal_separation_posture=temporal_separation_posture,
+        expedited_ratio_threshold=meta.expedited_ratio_threshold,
+        bootstrap_assurance_reference=manifest.bootstrap_assurance_reference,
     )
 
 

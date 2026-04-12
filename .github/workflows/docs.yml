@@ -1,0 +1,98 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site-src/**'
+      - 'mkdocs.yml'
+      - 'docs/**'
+      - 'tools/pdf/**'
+  pull_request:
+    paths:
+      - 'site-src/**'
+      - 'mkdocs.yml'
+      - 'docs/**'
+      - 'tools/pdf/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-deploy:
+    name: Build & Deploy Docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for git-revision-date-localized plugin
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra docs
+
+      - name: Set up Node.js (for mermaid-cli)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install mermaid-cli
+        run: npm install -g @mermaid-js/mermaid-cli
+
+      - name: Install Pandoc
+        run: |
+          wget -qO pandoc.deb https://github.com/jgm/pandoc/releases/download/3.6.4/pandoc-3.6.4-1-amd64.deb
+          sudo dpkg -i pandoc.deb
+          rm pandoc.deb
+          pandoc --version
+
+      - name: Install Typst
+        uses: typst-community/setup-typst@v4
+
+      - name: Build PDFs
+        run: bash tools/pdf/build-spec.sh --pdf
+
+      - name: Upload PDF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wardline-specification
+          path: docs/assets/wardline-specification.pdf
+          retention-days: 14
+
+      - name: Copy PDFs to site assets
+        run: |
+          mkdir -p site-src/assets
+          cp docs/assets/wardline-specification.pdf site-src/assets/
+
+      - name: Stamp build date on specification page
+        run: |
+          BUILD_DATE=$(date '+%-d %B %Y')
+          sed -i "s/\*\*Date:\*\* [^|]*/\*\*Date:\*\* ${BUILD_DATE} /" site-src/specification.md
+
+      - name: Build documentation (strict)
+        run: uv run mkdocs build --strict
+
+      - name: Deploy to server
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          # Set up SSH
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+          # Deploy via rsync
+          rsync -avz --delete \
+            --exclude='.git*' \
+            site/ \
+            "${SSH_USER}@${SSH_HOST}:/var/www/wardline.dev/"

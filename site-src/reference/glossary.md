@@ -55,4 +55,3 @@ Terms you will encounter in Wardline output, documentation, and configuration.
 ## Further Reading
 
 - [Getting Started](../getting-started.md) — 15-minute introduction
-- [Wardline Lite](../spec/wardline-lite.md) — 5-question practical overview

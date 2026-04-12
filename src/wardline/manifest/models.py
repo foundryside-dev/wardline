@@ -161,6 +161,19 @@ class TemporalSeparation:
 
 
 @dataclass(frozen=True)
+class BootstrapAssuranceReference:
+    """Bootstrap Assurance Reference declaration (§15.3.4)."""
+
+    sole_maintainer: str
+    declared_at: str
+    graduation_target_date: str
+    graduation_mechanism: str
+    graduation_plan_ref: str
+    slip_count: int
+    graduation_auditor: str | None = None
+
+
+@dataclass(frozen=True)
 class ManifestMetadata:
     """Manifest metadata — organisational and governance fields."""
 
@@ -169,11 +182,16 @@ class ManifestMetadata:
     ratification_date: str | None = None
     review_interval_days: int | None = None
     temporal_separation: TemporalSeparation | None = None
+    expedited_ratio_threshold: float | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.ratified_by, dict):
             object.__setattr__(
                 self, "ratified_by", MappingProxyType(self.ratified_by)
+            )
+        if self.expedited_ratio_threshold is not None:
+            object.__setattr__(
+                self, "expedited_ratio_threshold", float(self.expedited_ratio_threshold)
             )
 
 
@@ -232,6 +250,7 @@ class WardlineManifest:
     module_tiers: tuple[ModuleTierEntry, ...] = ()
     dependency_taint: tuple[DependencyTaintEntry, ...] = ()
     metadata: ManifestMetadata = field(default_factory=ManifestMetadata)
+    bootstrap_assurance_reference: BootstrapAssuranceReference | None = None
     exception_age_limits: MappingProxyType[str, int] = field(default_factory=lambda: MappingProxyType({}))
 
 

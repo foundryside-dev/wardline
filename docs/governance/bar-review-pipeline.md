@@ -46,9 +46,11 @@ that do not affect decision behaviour.
 
 **Model pin.** Every pipeline version MUST pin the exact LLM model identifier,
 temperature, top-p, and (where supported) seed used for all reviewer
-invocations. The model pin is part of the policy tree and contributes to the
-policy hash. A model version change MUST trigger a policy hash change and a
-pipeline version bump.
+invocations. Provider-call guardrails that affect assessor reproducibility
+(for example, per-call timeout and retry budget) are part of the same pinned
+configuration. The model pin is part of the policy tree and contributes to the
+policy hash. A model version change or provider-guardrail change MUST trigger
+a policy hash change and a pipeline version bump.
 
 ## 3. Inputs
 
@@ -59,13 +61,20 @@ inputs and no others:
 |---|---|---|
 | `obligation_id` | The obligation record under review | Routing; not part of the review content |
 | `obligation_record` | The §15.1 obligation record excluding its `reviewer_metadata` | The thing being reviewed |
-| `source_refs_content` | The file ranges referenced by `source_refs`, read at `commit_ref` | The normative text the obligation claims to satisfy |
+| `source_refs_content` | Deterministically extracted clause excerpts resolved from `source_refs`, read at `commit_ref` | The normative text the obligation claims to satisfy |
 | `implementation_surface_content` | The file contents referenced by `implementation_surface`, read at `commit_ref` | The code or artefact claimed to satisfy the obligation |
 | `evidence_class_outputs` | The outputs of running each `evidence_class` against the current commit | Runnable proof that the implementation satisfies the claim |
 | `commit_ref` | The git SHA being reviewed | Input identity |
 | `manifest_hash` | Hash of `wardline.yaml` at `commit_ref` | Input identity |
 | `corpus_hash` | Hash of the corpus at `commit_ref` | Input identity (when corpus evidence is involved) |
 | `policy_hash` | Hash of the active policy tree at review time | Pipeline identity |
+
+**Snapshot-bound freshness.** `manifest_hash` and `corpus_hash` are
+properties of the materialized reviewed inputs at `commit_ref`, not trusted
+ledger literals. A conformant BAR runner MUST materialize the reviewed
+snapshot, recompute those hashes from that snapshot, and refuse the review if
+the ledger's freshness binding disagrees with the recomputed value or omits a
+required `corpus_hash`.
 
 The pipeline MUST NOT receive any other input. In particular:
 
@@ -78,6 +87,15 @@ The pipeline MUST NOT receive any other input. In particular:
 
 This constraint exists to preserve the author-isolation property (§6) and the
 determinism property (§5).
+
+**Deterministic source extraction.** `source_refs_content` is not an
+implementation-defined line scrape. Each `source_refs` entry in the ledger
+MUST resolve to a deterministic clause selector at `commit_ref` (for example
+`§15.2(5)` in a spec chapter or a concrete `WL-FIT-*` identifier in a
+requirements file), and the pipeline input MUST include the corresponding
+excerpt for that selector. If a `source_refs` entry cannot be resolved
+deterministically, the pipeline input for that obligation is incomplete and
+the obligation MUST NOT produce a `pass` verdict.
 
 ## 4. Review policy
 
@@ -103,13 +121,19 @@ IRAP Assessor role is a material policy change and MUST be refused until a
 panel review of the change itself is completed.
 
 **Prompt contract.** Each reviewer role has an associated prompt template
-stored in the policy tree. Every prompt template MUST:
+stored in the policy tree. The shared reviewer discipline layered across all
+roles MUST also live in the policy tree as a versioned **skill pack**; it
+MUST NOT be injected as an untracked runtime string. Every reviewer prompt
+MUST therefore be composed from the shared preamble, the active skill pack,
+and the role-specific prompt template. Every prompt template MUST:
 
 - State the role's primary concern explicitly
 - Instruct the reviewer to cite specific file paths, line numbers, or
   evidence-class outputs when making findings
 - Require the reviewer to output a structured verdict in one of the four
   values defined below
+- Require the reviewer to emit an explicit `CITATIONS:` section containing
+  only allowed citation tokens from the supplied citation-token list
 - Forbid the reviewer from asking clarifying questions back to the caller
   (the pipeline is one-shot per reviewer; clarification loops break
   determinism)
@@ -143,7 +167,8 @@ computed as follows:
    `implemented_no_evidence` or `unassessed` as appropriate, not
    `bootstrap_attested`.
 4. If and only if all 7 reviewers output `pass`, the aggregate is `pass` and
-   the obligation MAY be recorded as `bootstrap_attested` — provided the
+   the obligation MAY be recorded in the ledger as `state: verified` with
+   `reviewer_metadata.independence: bootstrap_attested` — provided the
    determinism property (§5) is also satisfied.
 
 Unanimity is mandatory. Majority-pass is not a valid BAR outcome. The
@@ -210,6 +235,9 @@ Concretely:
   review time. Persona specs MUST NOT reference the reviewed commit, the
   sole maintainer's identity, or any project-specific context that could
   encode the implementation author's preferences.
+- The **skill-pack assets** MUST be loaded from the policy tree at review
+  time. A runtime-only prompt suffix or ad-hoc citation rule invalidates
+  the BAR attestation.
 - The **model pin** MUST be part of the policy tree. An ad-hoc model or
   temperature override at review time invalidates the BAR attestation.
 - The **aggregation rule** (§4 aggregation rule) MUST be enforced by code
@@ -235,12 +263,19 @@ that defines the pipeline's decision behaviour for a given version.
 2. `shared-preamble.md` — the common preamble injected before every
    reviewer's prompt, including the input scoping rules, the verdict
    vocabulary, and the clarification prohibition.
-3. `aggregation.py` (or equivalent) — the implementation of the §4
+3. `skill-pack.json` — the manifest naming the active reviewer skill-pack
+   identity and the ordered set of skill-pack assets injected into every
+   reviewer prompt.
+4. `skill-pack/` — versioned shared reviewer instructions, such as citation
+   discipline, that apply to all roles without being duplicated across the
+   persona specs.
+5. `aggregation.py` (or equivalent) — the implementation of the §4
    aggregation rule. This file is executable and its behaviour is the
    authoritative aggregation semantics.
-4. `model-pin.json` — the exact model identifier, temperature, top-p, and
-   seed configuration used for every reviewer invocation.
-5. `version.json` — the pipeline version string, activation date, and the
+6. `model-pin.json` — the exact model identifier, temperature, top-p, seed
+   configuration, and provider-call guardrails (such as timeout and retry
+   budget) used for every reviewer invocation.
+7. `version.json` — the pipeline version string, activation date, and the
    content hash of the rest of the policy tree.
 
 A policy tree MUST NOT contain:
@@ -313,8 +348,19 @@ Every BAR pipeline run MUST produce an evidence artefact captured in the
 verification directory. The artefact format is structured JSON.
 
 **Location.** Evidence artefacts live at
-`docs/verification/bar-pipeline-runs/<YYYY-MM-DD>/<OBLIGATION-ID>.json`,
-one file per reviewed obligation per run.
+`docs/verification/bar-pipeline-runs/<YYYY-MM-DD>/<OBLIGATION-ID>/`.
+Self-assessment runs write exactly three files:
+
+- `run-1.json`
+- `run-2.json`
+- `run-3.json`
+
+Assessor re-runs write:
+
+- `audit-rerun.json`
+
+The path shape is normative. A BAR implementation MUST NOT collapse multiple
+runs into a single mutable file.
 
 **Required fields.** An evidence artefact MUST contain:
 
@@ -326,7 +372,9 @@ one file per reviewed obligation per run.
 - `manifest_hash`
 - `corpus_hash` (null if corpus evidence is not involved)
 - `model_pin` (full pin details: model ID, temperature, top-p, seed if
-  supported)
+  supported, and any provider guardrails such as timeout/retry settings)
+- `skill_pack` (the active skill-pack identity: ID, skill-pack version, and
+  ordered asset list)
 - `reviewed_at` (ISO 8601 timestamp)
 - `stability_run_index` (1, 2, or 3 for stability-check runs; `audit`
   for assessor re-runs)
@@ -334,10 +382,40 @@ one file per reviewed obligation per run.
   a sub-object containing:
   - `verdict` (one of the four values)
   - `rationale` (the reviewer's full written rationale)
-  - `citations` (the file paths, line numbers, or evidence-class outputs
-    the reviewer referenced)
+  - `citations` (ordered array of strings naming the exact allowed citation
+    tokens the reviewer referenced; these MAY be file paths, clause
+    selectors, or evidence-class tokens, but MUST NOT be free-form prose)
+  - `citation_validation` — an object containing:
+    - `raw_citations` (ordered array of raw citation tokens supplied in the
+      reviewer's `CITATIONS:` section before normalization)
+    - `dropped_citations` (ordered array of tokens removed during
+      normalization because they were invalid, duplicate, or otherwise not
+      persisted)
 - `aggregate_verdict`
 - `pipeline_duration_seconds`
+
+`citations` MUST preserve reviewer order. A set-like or de-duplicated
+serialization is not permitted because it weakens rerunnability and can hide
+which evidence the reviewer actually relied on. A BAR runner MAY discard
+citations that are not present in the prompt's allowed citation token list,
+but it MUST NOT silently invent replacement citations.
+
+In the Wardline reference implementation, citation normalization happens
+immediately before artefact persistence. The runner builds an allowed token
+list from the deterministic source-ref selectors, implementation-surface
+paths, and evidence-class tokens supplied to the reviewer, and only those
+exact tokens listed in the reviewer's `CITATIONS:` section are persisted into
+the artefact's `citations` arrays. A `pass` or `fail` verdict whose
+`CITATIONS:` section yields no valid tokens after normalization MUST be
+downgraded to `insufficient_evidence`. The artefact MUST also retain the reviewer's raw
+citation tokens and the dropped-token list so a later assessor can see
+whether normalization removed substantial evidence references or only noise.
+
+Provider guardrails are fail-closed. In the Wardline reference
+implementation, each reviewer invocation is bounded by the timeout and retry
+budget declared in the policy tree. If the provider path exhausts that budget
+without producing a parseable reviewer response, the reviewer result MUST be
+`insufficient_evidence`, not a silent hang and not an implicit pass.
 
 **Retention.** Evidence artefacts MUST be retained for the lifetime of the
 BAR declaration plus the retention period required by the assessor's audit
@@ -345,9 +423,38 @@ process, whichever is longer. Artefacts MUST NOT be rewritten after
 capture; a re-run produces a new artefact, not a mutation of an old one.
 
 **Ledger binding.** The obligation's
-`reviewer_metadata.review_policy_hash` and `freshness_binding.commit_ref`
-in the compliance ledger MUST match the evidence artefact. A mismatch
-invalidates the BAR attestation.
+`reviewer_metadata.review_policy_hash` and
+`freshness_binding.commit_ref`/`manifest_hash`/`corpus_hash` (when corpus
+evidence is involved) in the compliance ledger MUST match the evidence
+artefact. A mismatch invalidates the BAR attestation.
+
+**Failure-to-input rule.** The BAR pipeline is not permitted to guess around
+missing evidence plumbing. If any required evidence class cannot be executed,
+or any `source_refs_content` excerpt cannot be resolved deterministically,
+the obligation MUST resolve to `insufficient_evidence` or `refer`, never
+`pass`.
+
+**Operational entry points.** In the reference implementation, the BAR
+pipeline is exposed through three commands:
+
+- `wardline bar status` resolves the active BAR policy tree and reports the
+  pipeline name, policy version, policy hash, skill-pack identity, pinned
+  provider/model, and timeout/retry guardrails.
+- `wardline bar review` executes the mandatory three-run self-assessment and
+  writes `run-1.json`, `run-2.json`, and `run-3.json`.
+- `wardline bar rerun` loads a prior evidence artefact, verifies the
+  ledger-to-artefact binding across captured input identity, executes the
+  single assessor re-run path against those captured inputs, compares the
+  re-run aggregate verdict to the captured aggregate verdict, and writes
+  `audit-rerun.json`.
+
+The status surface `wardline regime status --json` MUST expose
+`bar_runner_ready`, `bar_policy_version`, and a BAR runtime-identity object
+whenever BAR is declared so an assessor can distinguish a manifest that
+merely names BAR from a repository that can actually load and execute the
+active BAR policy tree. That runtime-identity object MUST include the active
+policy hash, skill-pack identity, pinned provider/model, and timeout/retry
+guardrails.
 
 ## 9. Lifecycle and versioning
 

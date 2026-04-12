@@ -1,15 +1,46 @@
--- fix-tables.lua — Pandoc Lua filter for the Wardline specification PDF pipeline.
+-- fix-tables.lua — Data-driven table column width overrides for Wardline PDF pipeline.
 --
--- Overrides pandoc-computed table column widths based on header cell content.
--- Replaces the fragile sed-based column-width fixups in build-spec.sh.
+-- Loads table profiles from table-profiles.json and applies column widths based on
+-- header text matching. This replaces the previous hard-coded profile approach.
 --
--- Each profile identifies a table by its header text and column count, then
--- applies hand-tuned column widths optimised for the A4 Typst layout.
+-- Profile matching:
+--   - col_N: exact match (lowercase, trimmed) against header cell N
+--   - col_N_contains: substring match against header cell N
+--   - cols: exact column count match (required)
 
+local script_dir = PANDOC_SCRIPT_FILE:match("(.*[/\\])")
+local profiles_path = script_dir .. "table-profiles.json"
+
+-- Load and parse the JSON profiles file
+local function load_profiles()
+  local file = io.open(profiles_path, "r")
+  if not file then
+    io.stderr:write("[warn] Could not open " .. profiles_path .. "\n")
+    return {}
+  end
+  local content = file:read("*a")
+  file:close()
+
+  local ok, data = pcall(function()
+    return pandoc.json.decode(content)
+  end)
+
+  if not ok or not data or not data.profiles then
+    io.stderr:write("[warn] Could not parse " .. profiles_path .. "\n")
+    return {}
+  end
+
+  return data.profiles
+end
+
+local PROFILES = load_profiles()
+
+-- Extract text from a table cell, lowercased and trimmed
 local function cell_text(cell)
   return pandoc.utils.stringify(cell.contents):lower():gsub("^%s+", ""):gsub("%s+$", "")
 end
 
+-- Get header texts from table's first header row
 local function header_texts(tbl)
   if #tbl.head.rows == 0 then return {} end
   local texts = {}
@@ -19,141 +50,89 @@ local function header_texts(tbl)
   return texts
 end
 
+-- Check if string starts with prefix
 local function starts(s, prefix)
   return s:sub(1, #prefix) == prefix
 end
 
+-- Check if string contains substring
 local function has(s, sub)
   return s:find(sub, 1, true) ~= nil
 end
 
--- Column-width profiles.  Order matters: first match wins.
--- widths are fractions of page content width (must sum to ~1.0).
-local profiles = {
-  -- §5.1  Four tiers (Tier | Classification | Meaning | Verification basis)
-  { match = function(h, n)
-      return n == 4 and starts(h[1], "tier") and has(h[2], "classification")
-    end,
-    widths = {0.20, 0.18, 0.34, 0.28} },
+-- Match a profile against header texts
+local function matches_profile(profile, headers, col_count)
+  -- Column count must match exactly
+  if profile.cols ~= col_count then
+    return false
+  end
 
-  -- §6.1  Taint join (Operand A | Operand B | Result | Examples)
-  { match = function(h, n)
-      return n == 4 and starts(h[1], "operand")
-    end,
-    widths = {0.25, 0.25, 0.22, 0.28} },
+  local match = profile.match
+  if not match then
+    return false
+  end
 
-  -- §6.1  Cross-product (Classification | Not Applicable | Raw | Shape | Sem | Rationale)
-  { match = function(h, n)
-      return n == 6 and starts(h[1], "classification") and has(h[2], "not applicable")
-    end,
-    widths = {0.15, 0.15, 0.11, 0.13, 0.13, 0.33} },
-
-  -- §6.3  Restoration evidence (Structural | Semantic | Integrity | Institutional | Restored Tier)
-  { match = function(h, n)
-      return n == 5 and starts(h[1], "structural") and has(h[5] or "", "restored")
-    end,
-    widths = {0.12, 0.12, 0.12, 0.14, 0.50} },
-
-  -- §7   Annotation vocabulary (# | Group | Institutional Knowledge | Key Declarations | Enforcement Consequences)
-  { match = function(h, n)
-      return n == 5 and h[1] == "#" and starts(h[2], "group") and has(h[3] or "", "institutional")
-    end,
-    widths = {0.03, 0.15, 0.21, 0.23, 0.38} },
-
-  -- §10.2  Governance mechanisms (Mechanism | Lite | Assurance | Enforcement | Reference)
-  { match = function(h, n)
-      return n == 5 and starts(h[1], "mechanism") and has(h[2], "lite")
-    end,
-    widths = {0.22, 0.17, 0.21, 0.24, 0.16} },
-
-  -- §11   Adversarial specimen categories (Category | Description | Minimum Count | Target)
-  { match = function(h, n)
-      return n == 4 and starts(h[1], "category") and has(h[3] or "", "minimum")
-    end,
-    widths = {0.28, 0.22, 0.12, 0.38} },
-
-  -- §13   Residual risks (# | Risk | Primary Compensating Control)
-  { match = function(h, n)
-      return n == 3 and h[1] == "#" and has(h[2], "risk") and has(h[3] or "", "compensating")
-    end,
-    widths = {0.05, 0.25, 0.70} },
-
-  -- §14.1  Manifest files (File | Format | Authored By | Purpose | Artefact class)
-  { match = function(h, n)
-      return n == 5 and starts(h[1], "file") and has(h[3] or "", "authored")
-    end,
-    widths = {0.28, 0.08, 0.09, 0.20, 0.35} },
-
-  -- §15.3.2  Governance profiles (Profile | What it covers | Criteria | Typical implementer)
-  { match = function(h, n)
-      return n == 4 and starts(h[1], "profile") and has(h[2], "what it covers")
-    end,
-    widths = {0.12, 0.22, 0.36, 0.30} },
-
-  -- §15.3.2  Governance requirements (Requirement | Status | Notes)
-  { match = function(h, n)
-      return n == 3 and starts(h[1], "requirement") and h[2] == "status" and h[3] == "notes"
-    end,
-    widths = {0.30, 0.18, 0.52} },
-
-  -- §14.2  wardline.toml configuration (Section | Key | Type | Default | Description)
-  { match = function(h, n)
-      return n == 5 and starts(h[1], "section") and starts(h[2], "key") and has(h[3] or "", "type")
-    end,
-    widths = {0.10, 0.21, 0.08, 0.20, 0.41} },
-
-  -- §15.3  Adoption phase (Adoption Phase | Python | Java | Conformance Profile)
-  { match = function(h, n)
-      return n == 4 and has(h[1], "adoption phase")
-    end,
-    widths = {0.10, 0.25, 0.35, 0.30} },
-
-  -- A.4.2  Decorator mapping — Python (# | Group | Python Decorator(s) | Signature | Scanner Checks)
-  { match = function(h, n)
-      return n == 5 and h[1] == "#" and starts(h[2], "group") and has(h[3] or "", "python")
-    end,
-    widths = {0.04, 0.14, 0.28, 0.28, 0.26} },
-
-  -- A.11  Conformance criteria mapping (# | Criterion | Implementation | Evidence)
-  { match = function(h, n)
-      return n == 4 and h[1] == "#" and has(h[2], "criterion")
-    end,
-    widths = {0.05, 0.25, 0.35, 0.35} },
-
-  -- B.2 / A.11 assessment tables (Criterion | Assessment | Detail)
-  { match = function(h, n)
-      return n == 3 and starts(h[1], "criterion") and has(h[2], "assessment")
-    end,
-    widths = {0.30, 0.35, 0.35} },
-
-  -- §8.3  Severity matrix (Rule | Pattern | Integral | Assured | Guarded | Ext.Raw | Unk.Raw | Unk.Guarded | Unk.Assured | Mixed Raw)
-  { match = function(h, n)
-      return n == 10 and starts(h[1], "rule") and starts(h[2], "pattern") and has(h[3] or "", "integral")
-    end,
-    widths = {0.10, 0.18, 0.08, 0.08, 0.09, 0.08, 0.08, 0.09, 0.09, 0.13} },
-
-  -- B.4.3  Annotation mapping — Java (Group | Abstract | Java Annotation | Signature | Description)
-  { match = function(h, n)
-      return n == 5 and starts(h[1], "group") and has(h[2], "abstract") and has(h[3] or "", "java")
-    end,
-    widths = {0.05, 0.15, 0.20, 0.25, 0.35} },
-}
-
-function Table(tbl)
-  local h = header_texts(tbl)
-  local n = #tbl.colspecs
-  if #h == 0 then return nil end
-
-  for _, p in ipairs(profiles) do
-    if p.match(h, n) then
-      for i, w in ipairs(p.widths) do
-        if i <= n then
-          tbl.colspecs[i] = {tbl.colspecs[i][1], w}
-        end
+  -- Check each match criterion
+  for key, value in pairs(match) do
+    -- Parse the key: col_N or col_N_contains
+    local col_num, match_type = key:match("^col_(%d+)(.*)$")
+    if col_num then
+      col_num = tonumber(col_num)
+      local header = headers[col_num]
+      if not header then
+        return false
       end
-      return tbl
+
+      if match_type == "" then
+        -- Exact match (starts with)
+        if not starts(header, value) then
+          return false
+        end
+      elseif match_type == "_contains" then
+        -- Substring match
+        if not has(header, value) then
+          return false
+        end
+      else
+        -- Unknown match type
+        return false
+      end
     end
   end
 
+  return true
+end
+
+-- Find matching profile for a table
+local function find_profile(headers, col_count)
+  for _, profile in ipairs(PROFILES) do
+    if matches_profile(profile, headers, col_count) then
+      return profile
+    end
+  end
   return nil
+end
+
+-- Main table filter function
+function Table(tbl)
+  local headers = header_texts(tbl)
+  local col_count = #tbl.colspecs
+
+  if #headers == 0 then
+    return nil
+  end
+
+  local profile = find_profile(headers, col_count)
+  if not profile then
+    return nil
+  end
+
+  -- Apply column widths from profile
+  for i, width in ipairs(profile.widths) do
+    if i <= col_count then
+      tbl.colspecs[i] = {tbl.colspecs[i][1], width}
+    end
+  end
+
+  return tbl
 end

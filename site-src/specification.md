@@ -10,7 +10,7 @@ hide:
 The normative reference for all wardline language bindings.
 
 <div class="wl-spec-meta" markdown>
-**Version:** 0.3.0 Release Candidate &nbsp;|&nbsp; **Date:** 9 April 2026 &nbsp;|&nbsp; **Status:** Release Candidate
+**Version:** 0.3.0 Release Candidate &nbsp;|&nbsp; **Date:** 12 April 2026 &nbsp;|&nbsp; **Status:** Release Candidate
 </div>
 
 [Download PDF](assets/wardline-specification.pdf){ .md-button .md-button--primary }
@@ -74,26 +74,3 @@ to concrete language constructs.
 
 </div>
 
----
-
-## Companion Documents
-
-<div class="wl-chapter-grid" markdown>
-
-<span class="wl-chapter-num"></span> <span class="wl-chapter-title">[Wardline Lite](spec/wardline-lite.md) — Five-question practical review guide for non-specialists</span>
-
-</div>
-
----
-
-## Building the PDF
-
-The specification PDF is built from the markdown source files using Pandoc and Typst:
-
-```bash
-tools/pdf/build-spec.sh --pdf
-```
-
-This concatenates the spec chapters, applies a Lua filter for table column widths,
-renders through the Typst template, and compiles to PDF. Requires Pandoc 3.0+ and
-Typst 0.14+.

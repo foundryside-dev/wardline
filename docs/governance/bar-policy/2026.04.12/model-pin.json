@@ -1,8 +1,10 @@
 {
-  "model_id": "claude-opus-4-6",
+  "model_id": "openrouter/anthropic/claude-opus-4.6",
   "temperature": 0,
   "top_p": 1,
   "seed": null,
   "max_output_tokens": 16384,
-  "notes": "Temperature 0 and top_p 1 minimize sampling variance. Anthropic's API does not currently expose a deterministic seed parameter; seed is null to document that fact rather than claim determinism the model does not offer. Per §5 of bar-review-pipeline.md, determinism is claimed at the verdict level via empirical stability checks across three independent runs, not at the text level."
+  "timeout_seconds": 180,
+  "max_retries": 1,
+  "notes": "Temperature 0 and top_p 1 minimize sampling variance. The current BAR reference implementation executes this model pin through LiteLLM's OpenRouter provider path (`openrouter/anthropic/claude-opus-4.6`). That path does not expose a deterministic seed parameter; seed is null to document that fact rather than claim determinism the model does not offer. Provider guardrails are policy-bound too: each reviewer call is limited to 180 seconds and retried at most once before the runner fails closed to `insufficient_evidence`. Per §5 of bar-review-pipeline.md, determinism is claimed at the verdict level via empirical stability checks across three independent runs, not at the text level."
 }

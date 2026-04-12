@@ -107,6 +107,8 @@ class TestCollectManifestMetrics:
         assert m.ratification_age_days == 23
         assert m.review_interval_days == 180
         assert m.ratification_overdue is False
+        assert m.expedited_ratio_threshold is None
+        assert m.bootstrap_assurance_reference is None
 
     def test_collect_ratification_overdue(self, tmp_path: Path) -> None:
         """Ratification overdue when age >= interval."""
@@ -141,6 +143,45 @@ rules:
         assert m.ratification_overdue is True
         assert m.ratification_age_days is not None
         assert m.ratification_age_days >= 90
+
+    def test_collect_manifest_metrics_surfaces_bar_fields(self, tmp_path: Path) -> None:
+        manifest_content = """\
+$id: "https://wardline.dev/schemas/1.0/wardline"
+metadata:
+  organisation: "test"
+  ratified_by:
+    name: "reviewer"
+    role: "lead"
+  ratification_date: "2026-03-01"
+  review_interval_days: 180
+  expedited_ratio_threshold: 0.15
+governance_profile: "assurance"
+bootstrap_assurance_reference:
+  sole_maintainer: "johnm-dta"
+  declared_at: "2026-04-12"
+  graduation_target_date: "2026-06-12"
+  graduation_mechanism: "external_audit"
+  graduation_auditor: "dta-security"
+  graduation_plan_ref: "docs/adr/ADR-005-bootstrap-assurance-reference.md"
+  slip_count: 0
+tiers:
+  - id: "tier1"
+    tier: 1
+    description: "test tier"
+module_tiers:
+  - path: "src/"
+    default_taint: "ASSURED"
+delegation:
+  default_authority: "RELAXED"
+rules:
+  overrides: []
+"""
+        manifest_path = tmp_path / "wardline.yaml"
+        manifest_path.write_text(manifest_content, encoding="utf-8")
+        m = collect_manifest_metrics(manifest_path)
+        assert m.expedited_ratio_threshold == pytest.approx(0.15)
+        assert m.bootstrap_assurance_reference is not None
+        assert m.bootstrap_assurance_reference.graduation_target_date == "2026-06-12"
 
 
 # ---------------------------------------------------------------------------

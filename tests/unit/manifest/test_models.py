@@ -11,6 +11,7 @@ import pytest
 from wardline.core.severity import Exceptionability, RuleId, Severity
 from wardline.core.taints import TaintState
 from wardline.manifest.models import (
+    BootstrapAssuranceReference,
     BoundaryEntry,
     ContractBinding,
     DelegationConfig,
@@ -194,6 +195,22 @@ class TestWardlineManifest:
         m = WardlineManifest()
         with pytest.raises(FrozenInstanceError):
             m.tiers = ()  # type: ignore[misc]
+
+    def test_construction_with_bootstrap_assurance_reference(self) -> None:
+        m = WardlineManifest(
+            governance_profile="assurance",
+            bootstrap_assurance_reference=BootstrapAssuranceReference(
+                sole_maintainer="johnm-dta",
+                declared_at="2026-04-12",
+                graduation_target_date="2026-06-12",
+                graduation_mechanism="external_audit",
+                graduation_plan_ref="docs/adr/ADR-005-bootstrap-assurance-reference.md",
+                slip_count=0,
+                graduation_auditor="dta-security",
+            ),
+        )
+        assert m.bootstrap_assurance_reference is not None
+        assert m.bootstrap_assurance_reference.sole_maintainer == "johnm-dta"
 
 
 # ── WardlineOverlay ───────────────────────────────────────────────
@@ -434,6 +451,39 @@ class TestTemporalSeparation:
         assert meta.temporal_separation.alternative == "same-actor-with-retrospective"
         assert meta.temporal_separation.retrospective_window_days == 15
         assert meta.temporal_separation.rationale == "small team"
+
+    def test_manifest_metadata_expedited_ratio_threshold_round_trip(self) -> None:
+        meta = ManifestMetadata(
+            organisation="test",
+            expedited_ratio_threshold=0.15,
+        )
+        assert meta.expedited_ratio_threshold == pytest.approx(0.15)
+
+
+class TestBootstrapAssuranceReference:
+    def test_construction(self) -> None:
+        bar = BootstrapAssuranceReference(
+            sole_maintainer="johnm-dta",
+            declared_at="2026-04-12",
+            graduation_target_date="2026-06-12",
+            graduation_mechanism="external_audit",
+            graduation_plan_ref="docs/adr/ADR-005-bootstrap-assurance-reference.md",
+            slip_count=0,
+            graduation_auditor="dta-security",
+        )
+        assert bar.graduation_auditor == "dta-security"
+
+    def test_frozen(self) -> None:
+        bar = BootstrapAssuranceReference(
+            sole_maintainer="johnm-dta",
+            declared_at="2026-04-12",
+            graduation_target_date="2026-06-12",
+            graduation_mechanism="external_audit",
+            graduation_plan_ref="docs/adr/ADR-005-bootstrap-assurance-reference.md",
+            slip_count=0,
+        )
+        with pytest.raises(FrozenInstanceError):
+            bar.sole_maintainer = "other"  # type: ignore[misc]
 
 
 # ── ExceptionEntry enum field coercion ────────────────────────────

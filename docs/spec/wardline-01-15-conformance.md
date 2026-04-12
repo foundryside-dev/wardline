@@ -296,6 +296,29 @@ author-isolation requirements, evidence artefact format, and lifecycle. A
 reference implementation declaring BAR MUST satisfy every MUST in that
 document in addition to the constraints summarized below.
 
+Where the BAR pipeline uses shared reviewer prompt-shaping assets, those
+assets MUST live in the versioned BAR policy tree as a named skill pack and
+be bound by the captured review-policy hash. Runtime-only prompt suffixes or
+undocumented reviewer overlays are not a conformant BAR mechanism.
+
+In the reference implementation, the BAR pipeline is surfaced operationally
+through `wardline bar status` (active runtime identity),
+`wardline bar review` (three-run self-assessment), and
+`wardline bar rerun` (single assessor re-run against captured inputs, with
+binding verification and verdict comparison against the captured artefact).
+The governance dashboard
+surface, `wardline regime status`, MUST distinguish a manifest that merely
+declares BAR from one whose runner is actually loadable by exposing BAR
+runner readiness, the active BAR policy version, and the active BAR
+runtime identity block (policy hash, skill-pack identity, pinned
+provider/model, and timeout/retry guardrails).
+
+A BAR self-assessment that satisfies that document's unanimity and stability
+requirements is represented in the compliance ledger as `state: verified`
+with `reviewer_metadata.independence: bootstrap_attested`. BAR therefore
+reuses the `verified` state while recording a different independence
+mechanism; it does not introduce a separate ledger state.
+
 **BAR pipeline constraints.** The BAR pipeline MUST satisfy all of:
 
 - **Named identity.** A stable tool name, tool version, and review-policy
@@ -307,14 +330,25 @@ document in addition to the constraints summarized below.
 - **Input provenance.** Every BAR-attested obligation record carries the
   full input identity in its `freshness_binding`: commit reference, tool
   version, manifest hash, corpus hash (when corpus evidence is involved),
-  and the review-policy hash.
+  and the review-policy hash. A conformant BAR runner recomputes the
+  manifest/corpus hashes from the reviewed commit snapshot rather than
+  trusting pre-filled ledger values.
 - **Author isolation.** The BAR pipeline MUST NOT depend on any artefact
   produced by the implementation author within the same commit being
   reviewed. In particular, the review policy is versioned separately from
   the implementation and its hash is captured at review time.
 - **Reviewable output.** The pipeline's verdict, rationale, and input
   provenance are captured as a retrievable evidence artefact. Oral or
-  transient review is not permitted.
+  transient review is not permitted. When the policy tree defines a shared
+  reviewer skill pack, the evidence artefact also captures that skill-pack
+  identity. In the reference implementation, persisted reviewer citations are
+  normalized against the allowed citation token list derived from the BAR
+  inputs rather than accepting free-form citation strings, and a `pass` or
+  `fail` verdict with no surviving valid citation tokens is treated as
+  `insufficient_evidence`. The evidence artefact also records the raw
+  submitted citation tokens and the dropped-token list for auditability. BAR
+  provider calls are also bounded by policy-declared timeout/retry guardrails
+  and fail closed to `insufficient_evidence` when those bounds are exhausted.
 
 **Graduation commitment.** The BAR graduation commitment MUST declare:
 
@@ -396,6 +430,8 @@ seeking formal accreditation MUST graduate out of BAR first.
   graduation plan reference, and the current slip counter.
 - Expose a distinct `bootstrap_attested` count in the ledger summary,
   separate from the `verified` count, alongside the current `slip_count`.
+  Summary `verified` counts default-independence human verifications only; it
+  MUST NOT fold BAR substitutions into the same count.
 - Record, on every BAR-attested obligation, the review pipeline name,
   pipeline version, review-policy hash, graduation target date, and
   graduation mechanism in `reviewer_metadata`.
@@ -404,6 +440,12 @@ seeking formal accreditation MUST graduate out of BAR first.
 - Reject (at schema validation time) any attempt to set
   `bootstrap_reference_declaration.slip_count` above 2, or to decrease the
   counter, or to omit it when BAR is declared.
+
+**Deterministic review inputs.** A BAR runner MUST resolve the obligation's
+`source_refs` to deterministic clause excerpts and MUST execute every required
+evidence class or fail closed to `insufficient_evidence`/`refer`. BAR does
+not permit ad-hoc source slicing, silent evidence skipping, or "best effort"
+passes.
 
 **What BAR is not.** BAR is not a "Lite plus" configuration. It is not a
 general escape hatch for projects that find default Assurance inconvenient.

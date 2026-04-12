@@ -2551,7 +2551,7 @@
       "expected_match": {
         "line": 4,
         "text": "except Exception:",
-        "function": "pr\u00f6cess"
+        "function": "pröcess"
       },
       "sha256": "fe070f6f2d44e6254611799398b048726a874aa4e35274d8efac0e54cab1ec30"
     },

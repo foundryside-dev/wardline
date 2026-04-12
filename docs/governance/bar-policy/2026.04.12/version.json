@@ -2,12 +2,12 @@
   "pipeline_name": "wardline-bar-panel",
   "pipeline_version": "2026.04.12",
   "activation_date": "2026-04-12",
-  "policy_hash": "dd8e722426680cb72256730aea6c35a5fc8faf24fa5a8841270fbb8416d3eec5",
+  "policy_hash": "aba51a4ca81ccf4f31e1540db3fab28972607a6778bb1da33cba975e33c23287",
   "policy_hash_algorithm": "sha256",
   "spec_reference": "docs/governance/bar-review-pipeline.md",
   "spec_version": "Proposed 2026-04-12",
   "supersedes": null,
   "superseded_by": null,
   "deprecated": false,
-  "notes": "BAR policy tree for the Wardline reference implementation. Seven reviewer roles, unanimous aggregation rule, claude-opus-4-6 model pin. Hash reflects all fixes: check_stability requires exactly 3 runs (\u00a75), per-reviewer vote comparison is only applied to pass aggregates (\u00a75 condition 2). policy_hash computed per docs/governance/bar-review-pipeline.md \u00a77."
+  "notes": "BAR policy tree for the Wardline reference implementation. Seven reviewer roles, unanimous aggregation rule, explicit OpenRouter-backed Claude Opus 4.6 model pin, and a versioned shared reviewer skill pack loaded from the policy tree. Hash reflects all fixes: check_stability requires exactly 3 runs (§5), per-reviewer vote comparison is only applied to pass aggregates (§5 condition 2), the published model pin names the LiteLLM/OpenRouter provider path directly, reviewer citation discipline lives in hash-bound skill-pack assets, reviewer outputs use an explicit CITATIONS section, strong verdicts require surviving normalized citation tokens, and provider timeout/retry guardrails are now policy-bound inputs. policy_hash computed per docs/governance/bar-review-pipeline.md §7."
 }

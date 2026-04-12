@@ -70,39 +70,10 @@ wl_stamp_date "$SCRIPT_DIR/metadata.yaml" "$STAMPED_METADATA"
 
 echo "Generating Typst intermediate..."
 wl_run_pandoc "$PROCESSED" "$OUTPUT_TYP" "$STAMPED_METADATA"
-echo "  -> $OUTPUT_TYP"
 
-# Rotate the severity matrix table to landscape — it has 10 columns and
-# needs the width.  This is a post-pandoc Typst patch because the AST filter
-# can't change the enclosing page orientation.
-python3 - "$OUTPUT_TYP" <<'PY'
-import sys
-path = sys.argv[1]
-with open(path) as f:
-    content = f.read()
-marker = 'table.header([Rule], [Pattern], [Integral], [Assured], [Guarded]'
-idx = content.find(marker)
-if idx > 0:
-    fig_start = content.rfind('#figure(', 0, idx)
-    depth = 0
-    fig_end = -1
-    for i in range(fig_start, len(content)):
-        ch = content[i]
-        if ch in '([':
-            depth += 1
-        elif ch in ')]':
-            depth -= 1
-            if depth == 0:
-                fig_end = i + 1
-                break
-    if fig_end > fig_start:
-        figure_text = content[fig_start:fig_end]
-        replacement = '#page(flipped: true)[\n' + figure_text + '\n]'
-        content = content[:fig_start] + replacement + content[fig_end:]
-        sys.stderr.write('  Rotated severity matrix to landscape\n')
-        with open(path, 'w') as f:
-            f.write(content)
-PY
+echo "Post-processing Typst output..."
+python3 "$SCRIPT_DIR/postprocess.py" "$OUTPUT_TYP" "$OUTPUT_TYP"
+echo "  -> $OUTPUT_TYP"
 
 if [[ "${1:-}" == "--pdf" ]]; then
     echo "Compiling PDF..."

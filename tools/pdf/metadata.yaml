@@ -1,6 +1,6 @@
 title: "Wardline Framework Specification"
 subtitle: "Semantic Boundary Classification and Enforcement"
-author: ""
+author: "John Morrissey, Foundryside"
 date: "9 April 2026"
 version: "0.3.0"
 status: "RELEASE CANDIDATE"
@@ -22,3 +22,19 @@ part1-label: "Part I — Framework Specification"
 part1-desc: "§§1–15: trust model, enforcement rules, governance, conformance criteria"
 part2-label: "Part II — Language Binding Reference"
 part2-desc: "Appendix A: Python binding, Appendix B: Java binding"
+
+# Organization branding (appears on cover page)
+org-name: "Foundryside"
+org-tagline: "Security Engineering"
+
+# Revision history (newest first)
+revisions:
+  - version: "0.3.0"
+    date: "9 April 2026"
+    changes: "Release candidate; Part II-A Python binding complete"
+  - version: "0.2.0"
+    date: "15 March 2026"
+    changes: "Added Part II-B Java binding reference"
+  - version: "0.1.0"
+    date: "1 February 2026"
+    changes: "Initial draft; Part I framework specification"

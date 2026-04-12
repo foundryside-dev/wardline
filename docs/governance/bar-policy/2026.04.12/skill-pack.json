@@ -1,0 +1,9 @@
+{
+  "skill_pack_id": "wardline.bar.panel.core",
+  "skill_pack_version": "2026.04.12",
+  "assets": [
+    "skill-pack/shared-discipline.md",
+    "skill-pack/citation-contract.md"
+  ],
+  "notes": "Versioned reviewer skill-pack injected into every BAR prompt. This pack tightens reviewer discipline and citation shape without changing the seven-role panel or verdict vocabulary."
+}

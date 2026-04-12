@@ -1,0 +1,38 @@
+{
+  "checked_at": "2026-04-12T00:00:00Z",
+  "source": "docs/spec/wardline-01-15-conformance.md",
+  "sections": [
+    "§15.6.1",
+    "§15.6.2"
+  ],
+  "checks": [
+    {
+      "name": "illustrative_framing_present",
+      "status": "pass",
+      "detail": "Both worked-example sections contain the phrase \"illustrative, non-factual\"."
+    },
+    {
+      "name": "reserved_namespace_only",
+      "status": "pass",
+      "detail": "Every obligation identifier used in the worked-example tables is drawn from the §15.1 reserved illustrative namespace.",
+      "worked_example_ids": [
+        "C-CRIT-0-EXAMPLE-MEASUREMENT",
+        "P1-S0-EXAMPLE-JOIN-ALGEBRA",
+        "C-CRIT-0-EXAMPLE-DETERMINISM",
+        "G-LITE-EXAMPLE-EXCEPTION-REGISTER",
+        "R-EXAMPLE-CLAIM-SURFACE",
+        "C-CRIT-0-EXAMPLE-GOVERNANCE-MINIMUMS",
+        "C-CRIT-0-EXAMPLE-CORPUS",
+        "G-CONTROL-EXAMPLE-LAW-NORMAL",
+        "C-CRIT-0-EXAMPLE-SELF-HOSTING",
+        "R-EXAMPLE-RELEASE-PROJECTION"
+      ]
+    },
+    {
+      "name": "no_placeholder_id_leakage_into_live_ledger",
+      "status": "pass",
+      "detail": "None of the worked-example placeholder IDs appear in the live compliance ledger.",
+      "intersection_with_live_ledger": []
+    }
+  ]
+}

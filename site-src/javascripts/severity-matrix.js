@@ -64,6 +64,9 @@ function enhanceMatrix() {
       var span = document.createElement("span");
       span.className = "matrix-cell " + sev.cls;
       span.setAttribute("data-tooltip", tooltip);
+      span.setAttribute("tabindex", "0"); // Keyboard accessible
+      span.setAttribute("role", "button");
+      span.setAttribute("aria-label", text + ": " + tooltip);
 
       // Make clickable if we have a rule link, otherwise plain text
       if (ruleHref) {
@@ -71,6 +74,14 @@ function enhanceMatrix() {
         a.href = ruleHref;
         a.textContent = text;
         span.appendChild(a);
+
+        // Allow Enter/Space to follow link when focused
+        span.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            a.click();
+          }
+        });
       } else {
         span.textContent = text;
       }

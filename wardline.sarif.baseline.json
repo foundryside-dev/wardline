@@ -34,7 +34,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -62,7 +62,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -90,7 +90,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -118,7 +118,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -146,7 +146,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -174,7 +174,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -202,7 +202,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -230,7 +230,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -258,7 +258,7 @@
             }
           ],
           "message": {
-            "text": "Broad exception handler \u2014 'except Exception' catches overly broad exception type"
+            "text": "Broad exception handler — 'except Exception' catches overly broad exception type"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -286,7 +286,7 @@
             }
           ],
           "message": {
-            "text": "Silent exception handler \u2014 'continue' swallows exception without logging or re-raising"
+            "text": "Silent exception handler — 'continue' swallows exception without logging or re-raising"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -314,7 +314,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -342,7 +342,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -370,7 +370,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -398,7 +398,7 @@
             }
           ],
           "message": {
-            "text": "Silent exception handler \u2014 'continue' swallows exception without logging or re-raising"
+            "text": "Silent exception handler — 'continue' swallows exception without logging or re-raising"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -426,7 +426,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -454,7 +454,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -482,7 +482,7 @@
             }
           ],
           "message": {
-            "text": "Silent exception handler \u2014 'pass' swallows exception without logging or re-raising"
+            "text": "Silent exception handler — 'pass' swallows exception without logging or re-raising"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -510,7 +510,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -538,7 +538,7 @@
             }
           ],
           "message": {
-            "text": "Attribute access with fallback default \u2014 getattr() with default silently fabricates value for missing attribute"
+            "text": "Attribute access with fallback default — getattr() with default silently fabricates value for missing attribute"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -566,7 +566,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -594,7 +594,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -622,7 +622,7 @@
             }
           ],
           "message": {
-            "text": "Broad exception handler \u2014 'except Exception' catches overly broad exception type"
+            "text": "Broad exception handler — 'except Exception' catches overly broad exception type"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -650,7 +650,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -678,7 +678,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -706,7 +706,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -734,7 +734,7 @@
             }
           ],
           "message": {
-            "text": "Attribute access with fallback default \u2014 getattr() with default silently fabricates value for missing attribute"
+            "text": "Attribute access with fallback default — getattr() with default silently fabricates value for missing attribute"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -762,7 +762,7 @@
             }
           ],
           "message": {
-            "text": "Attribute access with fallback default \u2014 getattr() with default silently fabricates value for missing attribute"
+            "text": "Attribute access with fallback default — getattr() with default silently fabricates value for missing attribute"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -790,7 +790,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -818,7 +818,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -846,7 +846,7 @@
             }
           ],
           "message": {
-            "text": "Attribute access with fallback default \u2014 getattr() with default silently fabricates value for missing attribute"
+            "text": "Attribute access with fallback default — getattr() with default silently fabricates value for missing attribute"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -874,7 +874,7 @@
             }
           ],
           "message": {
-            "text": "Attribute access with fallback default \u2014 getattr() with default silently fabricates value for missing attribute"
+            "text": "Attribute access with fallback default — getattr() with default silently fabricates value for missing attribute"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -902,7 +902,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -930,7 +930,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -958,7 +958,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -986,7 +986,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1014,7 +1014,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1042,7 +1042,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1070,7 +1070,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1098,7 +1098,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1126,7 +1126,7 @@
             }
           ],
           "message": {
-            "text": "Silent exception handler \u2014 'continue' swallows exception without logging or re-raising"
+            "text": "Silent exception handler — 'continue' swallows exception without logging or re-raising"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1154,7 +1154,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1182,7 +1182,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1210,7 +1210,7 @@
             }
           ],
           "message": {
-            "text": "Silent exception handler \u2014 'continue' swallows exception without logging or re-raising"
+            "text": "Silent exception handler — 'continue' swallows exception without logging or re-raising"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1238,7 +1238,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1266,7 +1266,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1294,7 +1294,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1322,7 +1322,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1350,7 +1350,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1378,7 +1378,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1406,7 +1406,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1434,7 +1434,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1462,7 +1462,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1490,7 +1490,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1518,7 +1518,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1546,7 +1546,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1574,7 +1574,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1602,7 +1602,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1630,7 +1630,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1658,7 +1658,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1686,7 +1686,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1714,7 +1714,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1742,7 +1742,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1770,7 +1770,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1798,7 +1798,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1826,7 +1826,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1854,7 +1854,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1882,7 +1882,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1910,7 +1910,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1938,7 +1938,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1966,7 +1966,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -1994,7 +1994,7 @@
             }
           ],
           "message": {
-            "text": "Attribute access with fallback default \u2014 getattr() with default silently fabricates value for missing attribute"
+            "text": "Attribute access with fallback default — getattr() with default silently fabricates value for missing attribute"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2022,7 +2022,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2050,7 +2050,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2078,7 +2078,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 hasattr() used for attribute presence check"
+            "text": "Existence check as structural gate — hasattr() used for attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2106,7 +2106,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2134,7 +2134,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2162,7 +2162,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2190,7 +2190,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2218,7 +2218,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2246,7 +2246,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2274,7 +2274,7 @@
             }
           ],
           "message": {
-            "text": "Silent exception handler \u2014 'continue' swallows exception without logging or re-raising"
+            "text": "Silent exception handler — 'continue' swallows exception without logging or re-raising"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2302,7 +2302,7 @@
             }
           ],
           "message": {
-            "text": "Broad exception handler \u2014 'except Exception' catches overly broad exception type"
+            "text": "Broad exception handler — 'except Exception' catches overly broad exception type"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2330,7 +2330,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2358,7 +2358,7 @@
             }
           ],
           "message": {
-            "text": "Attribute access with fallback default \u2014 getattr() with default silently fabricates value for missing attribute"
+            "text": "Attribute access with fallback default — getattr() with default silently fabricates value for missing attribute"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2386,7 +2386,7 @@
             }
           ],
           "message": {
-            "text": "Attribute access with fallback default \u2014 getattr() with default silently fabricates value for missing attribute"
+            "text": "Attribute access with fallback default — getattr() with default silently fabricates value for missing attribute"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2414,7 +2414,7 @@
             }
           ],
           "message": {
-            "text": "Attribute access with fallback default \u2014 getattr() with default silently fabricates value for missing attribute"
+            "text": "Attribute access with fallback default — getattr() with default silently fabricates value for missing attribute"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2442,7 +2442,7 @@
             }
           ],
           "message": {
-            "text": "Attribute access with fallback default \u2014 getattr() with default silently fabricates value for missing attribute"
+            "text": "Attribute access with fallback default — getattr() with default silently fabricates value for missing attribute"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2470,7 +2470,7 @@
             }
           ],
           "message": {
-            "text": "Attribute access with fallback default \u2014 getattr() with default silently fabricates value for missing attribute"
+            "text": "Attribute access with fallback default — getattr() with default silently fabricates value for missing attribute"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2498,7 +2498,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2526,7 +2526,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2554,7 +2554,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2582,7 +2582,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2610,7 +2610,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2638,7 +2638,7 @@
             }
           ],
           "message": {
-            "text": "Attribute access with fallback default \u2014 getattr() with default silently fabricates value for missing attribute"
+            "text": "Attribute access with fallback default — getattr() with default silently fabricates value for missing attribute"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2666,7 +2666,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2694,7 +2694,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2722,7 +2722,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2750,7 +2750,7 @@
             }
           ],
           "message": {
-            "text": "Dict key access with fallback default \u2014 value fabricated for missing key without validation"
+            "text": "Dict key access with fallback default — value fabricated for missing key without validation"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2778,7 +2778,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2806,7 +2806,7 @@
             }
           ],
           "message": {
-            "text": "Existence check as structural gate \u2014 'in' operator used for key/attribute presence check"
+            "text": "Existence check as structural gate — 'in' operator used for key/attribute presence check"
           },
           "properties": {
             "wardline.analysisLevel": 1,
@@ -2834,7 +2834,7 @@
             }
           ],
           "message": {
-            "text": "Silent exception handler \u2014 'continue' swallows exception without logging or re-raising"
+            "text": "Silent exception handler — 'continue' swallows exception without logging or re-raising"
           },
           "properties": {
             "wardline.analysisLevel": 1,

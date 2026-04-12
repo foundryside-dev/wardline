@@ -119,7 +119,7 @@ def convert_admonitions(text: str) -> str:
 # immediately preceding the fence.  HTML comments are invisible to
 # mkdocs and GitHub rendering, so the web view is unaffected:
 #
-#     <!-- wl-pdf: size="height: 90%" -->
+#     <!-- wl-pdf: size="height: 90%" alt="Authority tier model" -->
 #     ```mermaid
 #     ...
 #     ```
@@ -128,6 +128,7 @@ def convert_admonitions(text: str) -> str:
 #   size    — a Typst image sizing expression (default ``width: 75%``)
 #   orient  — ``vertical`` (default) pre-flips ``graph LR`` to ``graph TB``
 #             before rendering; ``preserve`` keeps horizontal orientation.
+#   alt     — alternative text for accessibility (PDF/UA compliance)
 #
 # The parser is a small key="value" matcher.
 _MERMAID_FENCE = re.compile(
@@ -142,6 +143,7 @@ _ATTR_PAIR = re.compile(r'(\w+)="([^"]*)"')
 class MermaidOptions:
     size: str = "width: 75%"
     orient: str = "vertical"
+    alt: str = ""
 
     @classmethod
     def parse(cls, raw: str) -> "MermaidOptions":
@@ -149,6 +151,7 @@ class MermaidOptions:
         return cls(
             size=attrs.get("size", "width: 75%"),
             orient=attrs.get("orient", "vertical"),
+            alt=attrs.get("alt", ""),
         )
 
 
@@ -157,10 +160,13 @@ def render_mermaid_blocks(
     mermaid_dir: Path,
     relative_base: Path,
 ) -> str:
-    """Render every ``mermaid`` fence to a PNG and replace with raw Typst.
+    """Render every ``mermaid`` fence to high-resolution PNG for Typst.
 
-    Diagrams are rendered through ``mmdc`` (mermaid-cli).  If the rendering
-    fails the fence is left in place so the build surfaces the problem.
+    Diagrams are rendered through ``mmdc`` (mermaid-cli) at 4× scale for
+    print-quality output (~300 DPI). While SVG would be ideal, Typst's SVG
+    renderer doesn't fully support mermaid's foreignObject text rendering.
+    If the rendering fails the fence is left in place so the build surfaces
+    the problem.
     """
     mermaid_dir.mkdir(parents=True, exist_ok=True)
     counter = 0
@@ -185,7 +191,7 @@ def render_mermaid_blocks(
                     "-o", str(png_file),
                     "-b", "white",
                     "-t", "neutral",
-                    "-s", "3",
+                    "-s", "4",  # 4× scale for ~300 DPI print quality
                 ],
                 check=True,
                 capture_output=True,
@@ -203,11 +209,14 @@ def render_mermaid_blocks(
 
         rel_path = os.path.relpath(png_file, relative_base)
         sys.stderr.write(f"  Rendered {rel_path} ({opts.size})\n")
-        # Emit a raw Typst passthrough block so the sizing is applied
-        # deterministically — no post-pandoc sed fixups required.
+        # Emit a raw Typst passthrough block wrapped in #figure(kind: image)
+        # for numbered figure support and List of Figures generation.
+        # The alt text becomes the figure caption.
+        alt_attr = f', alt: "{opts.alt}"' if opts.alt else ""
+        caption = f", caption: [{opts.alt}]" if opts.alt else ""
         return (
             "```{=typst}\n"
-            f'#align(center)[#image("{rel_path}", {opts.size})]\n'
+            f'#figure(kind: image{caption})[#image("{rel_path}", {opts.size}{alt_attr})]\n'
             "```\n"
         )
 

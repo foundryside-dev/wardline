@@ -365,7 +365,7 @@ class TestEmptyModule:
 
 
 class TestSafetyBound:
-    """Safety bound on worklist iterations."""
+    """Safety bound on SCC fixed-point iterations."""
 
     def test_safety_bound_emits_finding(self) -> None:
         """Monkeypatch bound to 0 -> convergence bound hit immediately, valid result returned."""
@@ -379,7 +379,7 @@ class TestSafetyBound:
         }
         taint_sources = {"A": "fallback", "B": "fallback"}
 
-        # Patch the bound factor to 0 so the worklist loop exits immediately
+        # Patch the bound factor to 0 so the SCC iteration exits immediately
         with patch.object(mod, "_CONVERGENCE_BOUND_FACTOR", 0):
             result, prov, diags = propagate_callgraph_taints(
                 edges, taint_map, taint_sources,
@@ -839,11 +839,12 @@ class TestCrossClassificationJoin:
 
     def test_scc_cross_classification_order_independent(self) -> None:
         """SCC with cross-classification L1 taints produces MIXED_RAW
-        regardless of which node is processed first by min(worklist).
+        regardless of deterministic node visitation order.
 
         In an SCC, every member can reach every other member. If members
-        have cross-classification L1 taints, the SCC L1 join pre-initialization
-        ensures all members start at MIXED_RAW before the worklist runs.
+        have cross-classification L1 taints and one member also performs
+        a local multi-source join, the SCC must still converge to the same
+        result regardless of how the members are named.
         """
         # Forward naming: A=ASSURED sorts first → A processed first
         edges_fwd = {"A": {"A", "B"}, "B": {"A"}}
@@ -875,6 +876,148 @@ class TestCrossClassificationJoin:
         # Both should be MIXED_RAW (cross-classification in SCC)
         assert r_fwd["A"] == TaintState.MIXED_RAW
         assert r_fwd["B"] == TaintState.MIXED_RAW
+
+    def test_three_node_scc_cross_classification_order_independent(self) -> None:
+        """Three-node SCC with one true cross-classification join is name-invariant.
+
+        C merges A(ASSURED) with B(UNKNOWN_GUARDED), so the SCC has a real local
+        cross-classification join. Renaming the nodes must not let that seed get
+        washed out during fixed-point propagation.
+        """
+        edges_fwd = {
+            "A": {"B", "C"},
+            "B": {"B", "C"},
+            "C": {"A", "B"},
+        }
+        tm_fwd = {
+            "A": TaintState.ASSURED,
+            "B": TaintState.UNKNOWN_GUARDED,
+            "C": TaintState.UNKNOWN_GUARDED,
+        }
+        src_fwd = {"A": "fallback", "B": "fallback", "C": "fallback"}
+        r_fwd, _, _ = propagate_callgraph_taints(
+            edges_fwd, tm_fwd, src_fwd,
+            {"A": 2, "B": 2, "C": 2}, {"A": 0, "B": 0, "C": 0},
+            return_taint_map=tm_fwd,
+        )
+
+        edges_rev = {
+            "C": {"A", "B"},
+            "B": {"A", "B"},
+            "A": {"C", "B"},
+        }
+        tm_rev = {
+            "C": TaintState.ASSURED,
+            "B": TaintState.UNKNOWN_GUARDED,
+            "A": TaintState.UNKNOWN_GUARDED,
+        }
+        src_rev = {"C": "fallback", "B": "fallback", "A": "fallback"}
+        r_rev, _, _ = propagate_callgraph_taints(
+            edges_rev, tm_rev, src_rev,
+            {"C": 2, "B": 2, "A": 2}, {"C": 0, "B": 0, "A": 0},
+            return_taint_map=tm_rev,
+        )
+
+        assert r_fwd["A"] == r_rev["C"]
+        assert r_fwd["B"] == r_rev["B"]
+        assert r_fwd["C"] == r_rev["A"]
+        assert r_fwd["A"] == TaintState.MIXED_RAW
+        assert r_fwd["B"] == TaintState.MIXED_RAW
+        assert r_fwd["C"] == TaintState.MIXED_RAW
+
+    def test_phase1b_uses_refined_external_scc_summary(self) -> None:
+        """Phase 1b must seed from refined outside-SCC summaries.
+
+        The X/Y SCC converges to UNKNOWN_RAW. A then performs a real local join
+        of X with B(GUARDED). That seed must use X's refined UNKNOWN_RAW summary,
+        not X's stale L1/return taint, or renamed graphs can under-taint A/B.
+        """
+        edges_fwd = {
+            "A": {"B", "X"},
+            "B": {"A"},
+            "X": {"Y"},
+            "Y": {"X"},
+        }
+        tm_fwd = {
+            "A": TaintState.UNKNOWN_GUARDED,
+            "B": TaintState.GUARDED,
+            "X": TaintState.GUARDED,
+            "Y": TaintState.UNKNOWN_RAW,
+        }
+        src_fwd = {
+            "A": "fallback",
+            "B": "fallback",
+            "X": "fallback",
+            "Y": "module_default",
+        }
+        r_fwd, _, _ = propagate_callgraph_taints(
+            edges_fwd, tm_fwd, src_fwd,
+            {"A": 2, "B": 1, "X": 1, "Y": 1},
+            {"A": 0, "B": 0, "X": 0, "Y": 0},
+            return_taint_map=tm_fwd,
+        )
+
+        perm = dict(zip(sorted(tm_fwd), reversed(sorted(tm_fwd)), strict=True))
+        rev = {v: k for k, v in perm.items()}
+        edges_rev = {perm[k]: {perm[v] for v in vs} for k, vs in edges_fwd.items()}
+        tm_rev = {perm[k]: v for k, v in tm_fwd.items()}
+        src_rev = {perm[k]: v for k, v in src_fwd.items()}
+        resolved_rev = {perm[k]: v for k, v in {"A": 2, "B": 1, "X": 1, "Y": 1}.items()}
+        unresolved_rev = {perm[k]: 0 for k in tm_fwd}
+        r_rev, _, _ = propagate_callgraph_taints(
+            edges_rev, tm_rev, src_rev,
+            resolved_rev, unresolved_rev,
+            return_taint_map=tm_rev,
+        )
+        r_rev = {rev[k]: v for k, v in r_rev.items()}
+
+        assert r_fwd == r_rev
+        assert r_fwd["A"] == TaintState.MIXED_RAW
+        assert r_fwd["B"] == TaintState.MIXED_RAW
+        assert r_fwd["X"] == TaintState.UNKNOWN_RAW
+        assert r_fwd["Y"] == TaintState.UNKNOWN_RAW
+
+    def test_external_seeded_scc_converges_without_partial_state(self) -> None:
+        """Phase 1 external seeding must not leave an SCC oscillating.
+
+        A gets refined only through B, while B locally joins A with an
+        external ASSURED callee. The solver must converge to a consistent
+        SCC summary and must not return one half of an oscillation after
+        tripping the convergence bound.
+        """
+        edges = {"A": {"B"}, "B": {"A", "C"}, "C": set()}
+        taint_map = {
+            "A": TaintState.INTEGRAL,
+            "B": TaintState.INTEGRAL,
+            "C": TaintState.ASSURED,
+        }
+        taint_sources = {"A": "module_default", "B": "fallback", "C": "decorator"}
+        result, _, diags = propagate_callgraph_taints(
+            edges, taint_map, taint_sources,
+            {"A": 1, "B": 2, "C": 0}, {"A": 0, "B": 0, "C": 0},
+            return_taint_map=taint_map,
+        )
+        assert all(code != "L3_CONVERGENCE_BOUND" for code, _msg in diags)
+        assert result["A"] == result["B"]
+        assert TRUST_RANK[result["B"]] >= TRUST_RANK[TaintState.ASSURED]
+
+    def test_two_node_heterogeneous_cycle_without_multi_source_join_stays_unmixed(self) -> None:
+        """A<->B with one callee each converges to ASSURED, not MIXED_RAW.
+
+        MIXED_RAW requires a merge at a program point. In a two-node cycle
+        where each function has exactly one callee, no multi-source join
+        occurs inside the SCC, so the result should not be over-tainted.
+        """
+        edges = {"A": {"B"}, "B": {"A"}}
+        taint_map = {"A": TaintState.ASSURED, "B": TaintState.INTEGRAL}
+        taint_sources = {"A": "module_default", "B": "module_default"}
+        result, _, _diags = propagate_callgraph_taints(
+            edges, taint_map, taint_sources,
+            {"A": 1, "B": 1}, {"A": 0, "B": 0},
+            return_taint_map=taint_map,
+        )
+        assert result["A"] == TaintState.ASSURED
+        assert result["B"] == TaintState.ASSURED
 
     def test_single_node_scc_not_over_tainted(self) -> None:
         """A(INTEGRAL) self-loop calling external B(ASSURED) -> A=ASSURED, not MIXED_RAW.

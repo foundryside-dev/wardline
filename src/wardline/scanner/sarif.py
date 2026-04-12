@@ -514,7 +514,7 @@ class SarifReport:
 
     def to_json_string(self) -> str:
         """Return the SARIF report as a JSON string."""
-        return json.dumps(self.to_dict(), indent=2, sort_keys=True)
+        return json.dumps(self.to_dict(), indent=2, sort_keys=True, ensure_ascii=False)
 
     def to_json(self, path: str | Path) -> None:
         """Write the SARIF report to a JSON file."""

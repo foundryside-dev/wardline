@@ -1,0 +1,23 @@
+$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"
+governance_profile: "lite"
+metadata:
+  organisation: "fixture"
+  ratified_by:
+    name: "fixture-reviewer"
+    role: "lead"
+  ratification_date: "2026-04-12"
+  review_interval_days: 180
+tiers:
+  - id: "ASSURED"
+    tier: 1
+    description: "strict"
+  - id: "EXTERNAL_RAW"
+    tier: 4
+    description: "lax"
+module_tiers:
+  - path: "src/"
+    default_taint: "ASSURED"
+delegation:
+  default_authority: "RELAXED"
+rules:
+  overrides: []

@@ -14,7 +14,7 @@
 
 ## Reading Order
 
-1. **New to Wardline?** Start with [spec/wardline-lite.md](spec/wardline-lite.md) for a 5-question overview, then [getting-started.md](getting-started.md) for a hands-on quickstart.
+1. **New to Wardline?** Start with [getting-started.md](getting-started.md) for a hands-on quickstart, then the [spec/](spec/) directory for the full specification.
 2. **Looking something up?** The [reference/](reference/) directory has quick-reference tables for rules, severity matrix, taint states, decorators, manifest fields, SARIF format, and error messages.
 3. **Adopting or integrating?** The [guides/](guides/) directory covers adoption, CI integration, governance, analysis levels, and troubleshooting.
 4. **Building or reviewing?** Start with [specification.md](specification.md), then use [spec/](spec/) for the full normative specification and language bindings.

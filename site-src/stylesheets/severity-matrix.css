@@ -12,7 +12,7 @@
   color: #dc2626 !important;
 }
 
-/* WARNING cells */
+/* WARNING cells — amber requires careful contrast handling */
 .severity-warning {
   background-color: rgba(245, 158, 11, 0.15) !important;
   color: #f59e0b !important;
@@ -20,8 +20,8 @@
 }
 
 [data-md-color-scheme="default"] .severity-warning {
-  background-color: rgba(217, 119, 6, 0.1) !important;
-  color: #b45309 !important;
+  background-color: rgba(146, 64, 14, 0.1) !important;
+  color: #92400e !important; /* AA-compliant: ~5.9:1 on white */
 }
 
 /* SUPPRESS cells */
@@ -29,21 +29,48 @@
   opacity: 0.5;
 }
 
-/* Hover tooltip container */
+/* Hover/focus tooltip container */
 .matrix-cell {
   position: relative;
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 3px;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, outline 0.15s;
   display: inline-block;
 }
 
-.matrix-cell:hover {
+.matrix-cell:hover,
+.matrix-cell:focus {
   opacity: 0.85;
 }
 
-/* Tooltip */
+/* Focus ring for keyboard navigation */
+.matrix-cell:focus {
+  outline: 2px solid var(--wl-teal-light, #14b8a6);
+  outline-offset: 2px;
+}
+
+.matrix-cell:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Tooltip bubble */
+.matrix-cell[data-tooltip]::before {
+  /* Arrow pointer */
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #1e293b;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 11;
+  margin-bottom: -1px;
+}
+
 .matrix-cell[data-tooltip]::after {
   content: attr(data-tooltip);
   position: absolute;
@@ -60,15 +87,25 @@
   pointer-events: none;
   transition: opacity 0.15s;
   z-index: 10;
-  margin-bottom: 4px;
+  margin-bottom: 9px;
+}
+
+/* Light mode tooltip: proper contrast with dark text on light background */
+[data-md-color-scheme="default"] .matrix-cell[data-tooltip]::before {
+  border-top-color: #f1f5f9;
 }
 
 [data-md-color-scheme="default"] .matrix-cell[data-tooltip]::after {
-  background: #334155;
-  color: #f1f5f9;
+  background: #f1f5f9;
+  color: #1e293b;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.15);
 }
 
-.matrix-cell:hover[data-tooltip]::after {
+/* Show tooltip on hover AND focus for keyboard accessibility */
+.matrix-cell:hover[data-tooltip]::before,
+.matrix-cell:hover[data-tooltip]::after,
+.matrix-cell:focus[data-tooltip]::before,
+.matrix-cell:focus[data-tooltip]::after {
   opacity: 1;
 }
 

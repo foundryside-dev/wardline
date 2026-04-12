@@ -1,0 +1,149 @@
+{
+  "_comment": "Table column width profiles for the Wardline PDF pipeline. Each profile matches tables by header text patterns and applies hand-tuned widths for A4 layout.",
+  "profiles": [
+    {
+      "id": "four-tiers",
+      "section": "§5.1",
+      "description": "Four tiers table",
+      "cols": 4,
+      "match": { "col_1": "tier", "col_2": "classification" },
+      "widths": [0.20, 0.18, 0.34, 0.28]
+    },
+    {
+      "id": "taint-join",
+      "section": "§6.1",
+      "description": "Taint join lattice",
+      "cols": 4,
+      "match": { "col_1": "operand" },
+      "widths": [0.25, 0.25, 0.22, 0.28]
+    },
+    {
+      "id": "cross-product",
+      "section": "§6.1",
+      "description": "Cross-product classification",
+      "cols": 6,
+      "match": { "col_1": "classification", "col_2_contains": "not applicable" },
+      "widths": [0.15, 0.15, 0.11, 0.13, 0.13, 0.33]
+    },
+    {
+      "id": "restoration-evidence",
+      "section": "§6.3",
+      "description": "Restoration evidence categories",
+      "cols": 5,
+      "match": { "col_1": "structural", "col_5_contains": "restored" },
+      "widths": [0.12, 0.12, 0.12, 0.14, 0.50]
+    },
+    {
+      "id": "annotation-vocabulary",
+      "section": "§7",
+      "description": "Annotation vocabulary groups",
+      "cols": 5,
+      "match": { "col_1": "#", "col_2": "group", "col_3_contains": "institutional" },
+      "widths": [0.03, 0.15, 0.21, 0.23, 0.38]
+    },
+    {
+      "id": "governance-mechanisms",
+      "section": "§10.2",
+      "description": "Governance mechanisms by profile",
+      "cols": 5,
+      "match": { "col_1": "mechanism", "col_2_contains": "lite" },
+      "widths": [0.22, 0.17, 0.21, 0.24, 0.16]
+    },
+    {
+      "id": "specimen-categories",
+      "section": "§11",
+      "description": "Adversarial specimen categories",
+      "cols": 4,
+      "match": { "col_1": "category", "col_3_contains": "minimum" },
+      "widths": [0.28, 0.22, 0.12, 0.38]
+    },
+    {
+      "id": "residual-risks",
+      "section": "§13",
+      "description": "Residual risks and compensating controls",
+      "cols": 3,
+      "match": { "col_1": "#", "col_2_contains": "risk", "col_3_contains": "compensating" },
+      "widths": [0.05, 0.25, 0.70]
+    },
+    {
+      "id": "manifest-files",
+      "section": "§14.1",
+      "description": "Wardline manifest files",
+      "cols": 5,
+      "match": { "col_1": "file", "col_3_contains": "authored" },
+      "widths": [0.28, 0.08, 0.09, 0.20, 0.35]
+    },
+    {
+      "id": "governance-profiles",
+      "section": "§15.3.2",
+      "description": "Governance profiles overview",
+      "cols": 4,
+      "match": { "col_1": "profile", "col_2_contains": "what it covers" },
+      "widths": [0.12, 0.22, 0.36, 0.30]
+    },
+    {
+      "id": "governance-requirements",
+      "section": "§15.3.2",
+      "description": "Governance requirements status",
+      "cols": 3,
+      "match": { "col_1": "requirement", "col_2": "status", "col_3": "notes" },
+      "widths": [0.30, 0.18, 0.52]
+    },
+    {
+      "id": "wardline-toml",
+      "section": "§14.2",
+      "description": "wardline.toml configuration keys",
+      "cols": 5,
+      "match": { "col_1": "section", "col_2": "key", "col_3_contains": "type" },
+      "widths": [0.10, 0.21, 0.08, 0.20, 0.41]
+    },
+    {
+      "id": "adoption-phase",
+      "section": "§15.3",
+      "description": "Adoption phase matrix",
+      "cols": 4,
+      "match": { "col_1_contains": "adoption phase" },
+      "widths": [0.10, 0.25, 0.35, 0.30]
+    },
+    {
+      "id": "python-decorators",
+      "section": "A.4.2",
+      "description": "Python decorator mapping table",
+      "cols": 5,
+      "match": { "col_1": "#", "col_2": "group", "col_3_contains": "python" },
+      "widths": [0.04, 0.14, 0.28, 0.28, 0.26]
+    },
+    {
+      "id": "conformance-criteria",
+      "section": "A.11",
+      "description": "Conformance criteria mapping",
+      "cols": 4,
+      "match": { "col_1": "#", "col_2_contains": "criterion" },
+      "widths": [0.05, 0.25, 0.35, 0.35]
+    },
+    {
+      "id": "assessment-tables",
+      "section": "A.11/B.2",
+      "description": "Assessment summary tables",
+      "cols": 3,
+      "match": { "col_1": "criterion", "col_2_contains": "assessment" },
+      "widths": [0.30, 0.35, 0.35]
+    },
+    {
+      "id": "severity-matrix",
+      "section": "§8.3",
+      "description": "Severity matrix (10-column landscape)",
+      "cols": 10,
+      "match": { "col_1": "rule", "col_2": "pattern", "col_3_contains": "integral" },
+      "widths": [0.10, 0.18, 0.08, 0.08, 0.09, 0.08, 0.08, 0.09, 0.09, 0.13]
+    },
+    {
+      "id": "java-annotations",
+      "section": "B.4.3",
+      "description": "Java annotation mapping table",
+      "cols": 5,
+      "match": { "col_1": "group", "col_2_contains": "abstract", "col_3_contains": "java" },
+      "widths": [0.05, 0.15, 0.20, 0.25, 0.35]
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+requirements:
+  - id: WL-FIT-CONF-010
+    title: Lite governance checklist is verifiable
+    statement: >
+      A Lite deployment MUST satisfy the seven-point governance checklist.
+    notes: Deterministic YAML block extraction is required for BAR review inputs.
+
+  - id: WL-FIT-CONF-011
+    title: Assurance checklist is verifiable
+    statement: >
+      An Assurance deployment MUST expose its reviewable governance checklist.

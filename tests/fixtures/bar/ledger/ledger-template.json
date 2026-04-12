@@ -1,0 +1,82 @@
+{
+  "format_version": "1.0",
+  "generated_at": "2026-04-12T00:00:00Z",
+  "catalog_status": "complete",
+  "claim_scope": {
+    "regime": "fixture",
+    "profiles": [
+      "wardline-full"
+    ],
+    "binding": "fixture",
+    "applies_to": "BAR bundle fixture"
+  },
+  "id_schema": {
+    "version": "1"
+  },
+  "catalog_sources": [],
+  "evidence_binding": {},
+  "summary": {
+    "verified": 0,
+    "bootstrap_attested": 0,
+    "slip_count": 0
+  },
+  "obligations": [
+    {
+      "id": "R-BAR-BUNDLE-EXAMPLE",
+      "source_refs": [
+        "docs/spec/example-conformance.md §15.2(5)",
+        "docs/spec/example-properties.md property 3",
+        "docs/requirements/spec-fitness/example.yaml WL-FIT-CONF-010"
+      ],
+      "summary": "Fixture obligation for BAR review-bundle assembly.",
+      "claim_scope": {
+        "regime": "fixture",
+        "profiles": [
+          "wardline-full"
+        ],
+        "binding": "fixture",
+        "applies_to": "BAR bundle fixture"
+      },
+      "implementation_surface": [
+        "src/example_impl.py"
+      ],
+      "evidence_classes": [
+        {
+          "class": "unit_tests",
+          "target": "tests/unit/test_example_impl.py"
+        },
+        {
+          "class": "static_code_review",
+          "target": "src/example_impl.py"
+        },
+        {
+          "class": "manifest_schema_validation",
+          "target": "wardline.yaml"
+        },
+        {
+          "class": "corpus_verify",
+          "target": "corpus/corpus_manifest.json"
+        },
+        {
+          "class": "conformance_report",
+          "target": "wardline.conformance.json"
+        }
+      ],
+      "state": "evidenced",
+      "freshness_binding": {
+        "commit_ref": "__COMMIT_REF__",
+        "tool_version": "1.0.0",
+        "manifest_hash": "__MANIFEST_HASH__",
+        "corpus_hash": "__CORPUS_HASH__"
+      },
+      "reviewer_metadata": {
+        "primary_reviewer": "fixture-reviewer",
+        "review_date": "2026-04-12",
+        "independence": "pending"
+      },
+      "tracker_ids": [],
+      "notes": "Fixture-only BAR bundle obligation."
+    }
+  ],
+  "projections": []
+}

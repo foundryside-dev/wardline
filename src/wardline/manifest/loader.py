@@ -12,13 +12,11 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from collections.abc import Iterable
-
 import jsonschema
 import yaml
 
 from wardline.manifest.models import (
+    BootstrapAssuranceReference,
     BoundaryEntry,
     ContractBinding,
     DelegationConfig,
@@ -33,6 +31,9 @@ from wardline.manifest.models import (
     WardlineManifest,
     WardlineOverlay,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 _SCHEMA_DIR = Path(__file__).parent / "schemas"
 
@@ -297,19 +298,34 @@ def _build_manifest(data: dict[str, Any]) -> WardlineManifest:
         ratification_date=raw_meta.get("ratification_date"),
         review_interval_days=raw_meta.get("review_interval_days"),
         temporal_separation=temporal_separation,
+        expedited_ratio_threshold=raw_meta.get("expedited_ratio_threshold"),
     )
+
+    raw_bar = data.get("bootstrap_assurance_reference")
+    bootstrap_assurance_reference = None
+    if raw_bar is not None:
+        bootstrap_assurance_reference = BootstrapAssuranceReference(
+            sole_maintainer=raw_bar["sole_maintainer"],
+            declared_at=raw_bar["declared_at"],
+            graduation_target_date=raw_bar["graduation_target_date"],
+            graduation_mechanism=raw_bar["graduation_mechanism"],
+            graduation_plan_ref=raw_bar["graduation_plan_ref"],
+            slip_count=raw_bar["slip_count"],
+            graduation_auditor=raw_bar.get("graduation_auditor"),
+        )
 
     raw_age_limits = data.get("exception_age_limits", {})
     exception_age_limits = MappingProxyType(raw_age_limits) if raw_age_limits else MappingProxyType({})
 
     return WardlineManifest(
-        governance_profile=data.get("governance_profile", "lite"),
+        governance_profile=data["governance_profile"],  # Required by schema; no silent default
         tiers=tiers,
         rules=rules,
         delegation=delegation,
         module_tiers=module_tiers,
         dependency_taint=dependency_taint,
         metadata=metadata,
+        bootstrap_assurance_reference=bootstrap_assurance_reference,
         exception_age_limits=exception_age_limits,
     )
 

@@ -3,7 +3,7 @@
     {
       "id": "INTEGRAL",
       "tier": 1,
-      "description": "Authoritative internal data \u2014 enums, registries, base classes"
+      "description": "Authoritative internal data — enums, registries, base classes"
     },
     {
       "id": "ASSURED",
@@ -13,12 +13,12 @@
     {
       "id": "GUARDED",
       "tier": 3,
-      "description": "Partially validated \u2014 shape-checked but not semantically verified"
+      "description": "Partially validated — shape-checked but not semantically verified"
     },
     {
       "id": "EXTERNAL_RAW",
       "tier": 4,
-      "description": "Untrusted external input \u2014 CLI args, YAML files, filesystem"
+      "description": "Untrusted external input — CLI args, YAML files, filesystem"
     }
   ],
   "module_tiers": [

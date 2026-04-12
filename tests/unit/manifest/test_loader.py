@@ -33,7 +33,7 @@ class TestLoadManifest:
     def test_valid_manifest_loads(self, tmp_path: Path) -> None:
         f = tmp_path / "wardline.yaml"
         f.write_text("""\
-governance_profile: "assurance"
+governance_profile: "lite"
 tiers:
   - id: "internal_db"
     tier: 1
@@ -52,7 +52,7 @@ metadata:
 """)
         manifest = load_manifest(f)
         assert isinstance(manifest, WardlineManifest)
-        assert manifest.governance_profile == "assurance"
+        assert manifest.governance_profile == "lite"
         assert len(manifest.tiers) == 2
         assert manifest.tiers[0].id == "internal_db"
         assert manifest.tiers[0].tier == 1
@@ -61,7 +61,7 @@ metadata:
 
     def test_minimal_manifest(self, tmp_path: Path) -> None:
         f = tmp_path / "wardline.yaml"
-        f.write_text("{}\n")
+        f.write_text('governance_profile: "lite"\n')
         manifest = load_manifest(f)
         assert manifest.governance_profile == "lite"
         assert manifest.tiers == ()
@@ -71,6 +71,7 @@ metadata:
         f = tmp_path / "wardline.yaml"
         f.write_text("""\
 "$id": "https://wardline.dev/schemas/1.0/wardline.schema.json"
+governance_profile: "lite"
 tiers: []
 """)
         manifest = load_manifest(f)
@@ -79,6 +80,7 @@ tiers: []
     def test_manifest_with_delegation(self, tmp_path: Path) -> None:
         f = tmp_path / "wardline.yaml"
         f.write_text("""\
+governance_profile: "lite"
 delegation:
   default_authority: "STANDARD"
   grants:
@@ -147,6 +149,7 @@ optional_fields:
     def test_conflicting_optional_fields_across_same_scope_rejected(self, tmp_path: Path) -> None:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text("""\
+governance_profile: "lite"
 module_tiers:
   - path: "src/"
     default_taint: "EXTERNAL_RAW"
@@ -178,6 +181,7 @@ optional_fields:
     def test_nested_optional_fields_scopes_are_both_resolved(self, tmp_path: Path) -> None:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text("""\
+governance_profile: "lite"
 module_tiers:
   - path: "src/"
     default_taint: "EXTERNAL_RAW"
@@ -210,6 +214,7 @@ optional_fields:
     def test_overlay_for_sibling_prefix_spoof_rejected_for_boundaries(self, tmp_path: Path) -> None:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text("""\
+governance_profile: "lite"
 module_tiers:
   - path: "src/"
     default_taint: "EXTERNAL_RAW"
@@ -233,6 +238,7 @@ boundaries:
     def test_overlay_for_sibling_prefix_spoof_rejected_for_optional_fields(self, tmp_path: Path) -> None:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text("""\
+governance_profile: "lite"
 module_tiers:
   - path: "src/"
     default_taint: "EXTERNAL_RAW"
@@ -326,6 +332,7 @@ class TestVersionCheck:
         f = tmp_path / "wardline.yaml"
         f.write_text("""\
 "$id": "https://wardline.dev/schemas/1.0/wardline.schema.json"
+governance_profile: "lite"
 tiers: []
 """)
         manifest = load_manifest(f)
@@ -342,7 +349,7 @@ tiers: []
 
     def test_no_id_accepted(self, tmp_path: Path) -> None:
         f = tmp_path / "wardline.yaml"
-        f.write_text("tiers: []\n")
+        f.write_text('governance_profile: "lite"\ntiers: []\n')
         manifest = load_manifest(f)
         assert manifest is not None
 
@@ -361,7 +368,7 @@ class TestFileSizeLimit:
     def test_file_at_limit_accepted(self, tmp_path: Path) -> None:
         f = tmp_path / "wardline.yaml"
         # Tiny valid YAML — well under limit
-        f.write_text("{}\n")
+        f.write_text('governance_profile: "lite"\n')
         manifest = load_manifest(f)
         assert manifest is not None
 
@@ -491,6 +498,7 @@ metadata:
         """Quoted values are preserved as strings."""
         f = tmp_path / "wardline.yaml"
         f.write_text("""\
+governance_profile: "lite"
 metadata:
   organisation: "NO"
 module_tiers:
@@ -638,6 +646,7 @@ class TestTemporalSeparationLoading:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
             '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "lite"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"
@@ -662,6 +671,7 @@ class TestTemporalSeparationLoading:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
             '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "lite"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"
@@ -682,6 +692,7 @@ class TestTemporalSeparationLoading:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
             '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "lite"\n'
             "metadata:\n"
             "  organisation: test\n"
             "tiers:\n"
@@ -699,6 +710,7 @@ class TestTemporalSeparationLoading:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
             '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "lite"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"
@@ -718,6 +730,7 @@ class TestTemporalSeparationLoading:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
             '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "lite"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"
@@ -737,6 +750,7 @@ class TestTemporalSeparationLoading:
         manifest = tmp_path / "wardline.yaml"
         manifest.write_text(
             '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "lite"\n'
             "metadata:\n"
             "  organisation: test\n"
             "  temporal_separation:\n"
@@ -751,6 +765,98 @@ class TestTemporalSeparationLoading:
             load_manifest(manifest)
 
 
+class TestBootstrapAssuranceReferenceLoading:
+    def test_load_manifest_with_expedited_ratio_threshold(self, tmp_path: Path) -> None:
+        manifest = tmp_path / "wardline.yaml"
+        manifest.write_text(
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "lite"\n'
+            "metadata:\n"
+            "  organisation: test\n"
+            "  expedited_ratio_threshold: 0.15\n"
+            "tiers:\n"
+            '  - id: "T1"\n'
+            "    tier: 1\n"
+            "module_tiers: []\n"
+        )
+        result = load_manifest(manifest)
+        assert result.metadata.expedited_ratio_threshold == pytest.approx(0.15)
+
+    def test_load_manifest_with_bootstrap_assurance_reference(self, tmp_path: Path) -> None:
+        manifest = tmp_path / "wardline.yaml"
+        manifest.write_text(
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "assurance"\n'
+            "metadata:\n"
+            "  organisation: test\n"
+            "  expedited_ratio_threshold: 0.15\n"
+            "bootstrap_assurance_reference:\n"
+            '  sole_maintainer: "johnm-dta"\n'
+            '  declared_at: "2026-04-12"\n'
+            '  graduation_target_date: "2026-06-12"\n'
+            '  graduation_mechanism: "external_audit"\n'
+            '  graduation_auditor: "dta-security"\n'
+            '  graduation_plan_ref: "docs/adr/ADR-005-bootstrap-assurance-reference.md"\n'
+            "  slip_count: 0\n"
+            "tiers:\n"
+            '  - id: "T1"\n'
+            "    tier: 1\n"
+            "module_tiers: []\n"
+        )
+        result = load_manifest(manifest)
+        assert result.bootstrap_assurance_reference is not None
+        assert result.bootstrap_assurance_reference.sole_maintainer == "johnm-dta"
+        assert result.bootstrap_assurance_reference.graduation_auditor == "dta-security"
+
+    def test_external_audit_requires_graduation_auditor(self, tmp_path: Path) -> None:
+        manifest = tmp_path / "wardline.yaml"
+        manifest.write_text(
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "assurance"\n'
+            "metadata:\n"
+            "  organisation: test\n"
+            "  expedited_ratio_threshold: 0.15\n"
+            "bootstrap_assurance_reference:\n"
+            '  sole_maintainer: "johnm-dta"\n'
+            '  declared_at: "2026-04-12"\n'
+            '  graduation_target_date: "2026-06-12"\n'
+            '  graduation_mechanism: "external_audit"\n'
+            '  graduation_plan_ref: "docs/adr/ADR-005-bootstrap-assurance-reference.md"\n'
+            "  slip_count: 0\n"
+            "tiers:\n"
+            '  - id: "T1"\n'
+            "    tier: 1\n"
+            "module_tiers: []\n"
+        )
+        with pytest.raises(ManifestLoadError, match="graduation_auditor"):
+            load_manifest(manifest)
+
+    def test_bootstrap_assurance_reference_requires_assurance_profile(
+        self, tmp_path: Path
+    ) -> None:
+        manifest = tmp_path / "wardline.yaml"
+        manifest.write_text(
+            '$id: "https://wardline.dev/schemas/1.0/wardline.schema.json"\n'
+            'governance_profile: "lite"\n'
+            "metadata:\n"
+            "  organisation: test\n"
+            "  expedited_ratio_threshold: 0.15\n"
+            "bootstrap_assurance_reference:\n"
+            '  sole_maintainer: "johnm-dta"\n'
+            '  declared_at: "2026-04-12"\n'
+            '  graduation_target_date: "2026-06-12"\n'
+            '  graduation_mechanism: "second_maintainer"\n'
+            '  graduation_plan_ref: "docs/adr/ADR-005-bootstrap-assurance-reference.md"\n'
+            "  slip_count: 0\n"
+            "tiers:\n"
+            '  - id: "T1"\n'
+            "    tier: 1\n"
+            "module_tiers: []\n"
+        )
+        with pytest.raises(ManifestLoadError, match="assurance"):
+            load_manifest(manifest)
+
+
 # ── Dependency Taint Loading ─────────────────────────────────────
 
 
@@ -759,6 +865,7 @@ class TestDependencyTaintLoading:
         """Manifest with dependency_taint entries loads all fields correctly."""
         f = tmp_path / "wardline.yaml"
         f.write_text("""\
+governance_profile: "lite"
 dependency_taint:
   - package: "requests>=2.28"
     function: "requests.get"
@@ -787,7 +894,7 @@ dependency_taint:
     def test_empty_dependency_taint(self, tmp_path: Path) -> None:
         """Manifest without dependency_taint section yields empty tuple."""
         f = tmp_path / "wardline.yaml"
-        f.write_text("{}\n")
+        f.write_text('governance_profile: "lite"\n')
         manifest = load_manifest(f)
         assert manifest.dependency_taint == ()
 

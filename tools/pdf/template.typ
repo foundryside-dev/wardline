@@ -22,7 +22,15 @@
 #set document(
   title: "$title$",
   author: "$author$",
+  keywords: ("wardline", "security", "static analysis", "trust model", "taint tracking"),
 )
+
+// ─────────────────────────────────────────────────────────────
+// PDF BOOKMARKS (outline navigation)
+// ─────────────────────────────────────────────────────────────
+// All headings appear in the PDF viewer's bookmark sidebar.
+// Depth 4 ensures minor headings are also navigable.
+#set heading(bookmarked: true)
 
 // ─────────────────────────────────────────────────────────────
 // TYPOGRAPHY — BASE
@@ -68,7 +76,25 @@
       #set text(7.5pt, font: "TeX Gyre Heros", fill: c-muted, tracking: 0.5pt)
       #upper[$running-title$]
       #h(1fr)
-      #upper[$status$ v$version$]
+      // Status chip (matches footer)
+      #box(
+        fill: if "$status$" == "DRAFT" { rgb("#FEF3C7") }
+             else if "$status$" == "RELEASE CANDIDATE" { rgb("#DBEAFE") }
+             else { rgb("#DCFCE7") },
+        inset: (x: 5pt, y: 2pt),
+        radius: 2pt,
+      )[
+        #set text(
+          6.5pt,
+          fill: if "$status$" == "DRAFT" { c-warning }
+               else if "$status$" == "RELEASE CANDIDATE" { rgb("#1E40AF") }
+               else { rgb("#166534") },
+          weight: "bold",
+          tracking: 0.8pt,
+          font: "TeX Gyre Heros",
+        )
+        #upper[$status$]
+      ]
     ]
   },
 
@@ -284,17 +310,56 @@
 #show table: set block(breakable: true)
 
 // ─────────────────────────────────────────────────────────────
-// FIGURES (wrapping tables from pandoc)
+// FIGURES (wrapping tables from pandoc) WITH NUMBERING
 // ─────────────────────────────────────────────────────────────
-// Allow figures (pandoc's table wrapper) to break across pages
+// Tables are wrapped in #figure() by pandoc. We add numbered captions
+// and track them for the List of Tables.
+//
+// Figures with kind: image are Mermaid diagrams (injected by preprocessing).
+
 #set figure(placement: none)
 #show figure: set block(breakable: true)
-#show figure: it => {
-  // Remove the default centering that pandoc wraps tables in — our table
-  // show rule handles width already.
+
+#show figure.where(kind: table): it => {
+  // Table figure: add "Table N" caption below
   set align(left)
-  it.body
+  block(width: 100%, breakable: true)[
+    #it.body
+    #v(4pt)
+    #context {
+      let num = counter(figure.where(kind: table)).display()
+      text(
+        font: "TeX Gyre Heros",
+        size: 8pt,
+        fill: c-muted,
+        weight: "bold",
+      )[Table #num#if it.caption != none [: #it.caption.body]]
+    }
+  ]
 }
+
+#show figure.where(kind: image): it => {
+  // Image figure (Mermaid diagrams): centered with "Figure N" caption
+  block(width: 100%)[
+    #align(center)[#it.body]
+    #v(4pt)
+    #context {
+      let num = counter(figure.where(kind: image)).display()
+      align(center)[
+        #text(
+          font: "TeX Gyre Heros",
+          size: 8pt,
+          fill: c-muted,
+          weight: "bold",
+        )[Figure #num#if it.caption != none [: #it.caption.body]]
+      ]
+    }
+  ]
+}
+
+// Note: No generic #show figure fallback here - it would chain after the
+// specific rules and strip our custom captions. Table/image kinds handle
+// their own rendering; uncategorized figures use Typst's default.
 
 // ─────────────────────────────────────────────────────────────
 // LISTS
@@ -317,6 +382,66 @@
 #show link: it => {
   set text(fill: c-teal)
   it
+}
+
+// ─────────────────────────────────────────────────────────────
+// RFC 2119 NORMATIVE KEYWORDS
+// ─────────────────────────────────────────────────────────────
+// Highlight SHALL, MUST, SHOULD, MAY etc. per RFC 2119 convention.
+// Bold sans-serif distinguishes normative language from body text.
+#show regex("\b(SHALL NOT|MUST NOT|SHOULD NOT|SHALL|MUST|SHOULD|MAY|REQUIRED|RECOMMENDED)\b"): it => {
+  text(weight: "bold", font: "TeX Gyre Heros", size: 0.92em, tracking: 0.2pt, it)
+}
+
+// ─────────────────────────────────────────────────────────────
+// RULE ID CHIPS
+// ─────────────────────────────────────────────────────────────
+// Style WL-001, PY-WL-001, SCN-021, SUP-001, GOVERNANCE-* etc.
+// as monospace text with subtle background chip for visual anchoring.
+#show regex("\b(WL-\d{3}|PY-WL-\d{3}|SCN-\d{3}|SUP-\d{3}|GOVERNANCE-\d{3})\b"): it => {
+  box(
+    fill: rgb("#E8EDF3"),
+    inset: (x: 2.5pt, y: 1pt),
+    radius: 2pt,
+    baseline: 1pt,
+    text(font: "Liberation Mono", size: 0.88em, weight: "bold", fill: c-navy, it)
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// SECTION REFERENCES (CLICKABLE)
+// ─────────────────────────────────────────────────────────────
+// Style §X.Y cross-references in teal and make them clickable links.
+// postprocess.py injects <section-X-Y> labels on headings.
+//
+// We use query() to check if the target label exists before linking.
+// This handles external document references (e.g., "GCBD §2.3") and
+// obsolete internal references gracefully — styled but not linked.
+#show regex("§(\d+(?:\.\d+)*)"): it => context {
+  let num = it.text.codepoints().slice(1).join()
+  let target = label("section-" + num.replace(".", "-"))
+  let found = query(target)
+  if found.len() > 0 {
+    link(target)[
+      #text(font: "TeX Gyre Heros", size: 0.95em, fill: c-teal, it.text)
+    ]
+  } else {
+    text(font: "TeX Gyre Heros", size: 0.95em, fill: c-teal, it.text)
+  }
+}
+
+// Appendix references: §A.1, §B.3.2, etc.
+#show regex("§([A-B](?:\.\d+)+)"): it => context {
+  let num = it.text.codepoints().slice(1).join()
+  let target = label("section-" + num.replace(".", "-"))
+  let found = query(target)
+  if found.len() > 0 {
+    link(target)[
+      #text(font: "TeX Gyre Heros", size: 0.95em, fill: c-teal, it.text)
+    ]
+  } else {
+    text(font: "TeX Gyre Heros", size: 0.95em, fill: c-teal, it.text)
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -373,7 +498,7 @@
 
   if level == 1 {
     // Chapter entries: bold, navy, generous top spacing
-    v(12pt, weak: true)
+    v(13.5pt, weak: true)
     box(width: 100%)[
       #text(
         font: "TeX Gyre Heros",
@@ -391,7 +516,7 @@
     ]
   } else if level == 2 {
     // Section entries: indented, dot leaders
-    v(5pt, weak: true)
+    v(6.5pt, weak: true)
     box(width: 100%)[
       #h(1.4em)
       #text(
@@ -411,7 +536,7 @@
     ]
   } else {
     // Deep entries: deeper indent, smaller, muted
-    v(4pt, weak: true)
+    v(5.5pt, weak: true)
     box(width: 100%)[
       #h(2.8em)
       #text(
@@ -472,6 +597,62 @@
     fill: c-teal,
   )
 )
+
+// ── Bottom navy band (organization branding) ──────────────────
+// Position from top. A4 = 29.7cm. Band height = 1.75cm.
+// Band top edge at: 29.7cm - 1.75cm = 27.95cm from physical top
+// From content area (top margin 2.6cm): 27.95cm - 2.6cm = 25.35cm
+$if(org-name)$
+// Teal accent stripe above bottom band
+#place(
+  top + left,
+  dx: -2.8cm,
+  dy: -2.6cm + 29.7cm - 1.75cm - 6pt,  // physical top + page height - band - stripe
+  rect(
+    width: 21cm,
+    height: 6pt,
+    fill: c-teal,
+  )
+)
+
+// Navy footer band
+#place(
+  top + left,
+  dx: -2.8cm,
+  dy: -2.6cm + 29.7cm - 1.75cm,  // physical top + page height - band height
+  rect(
+    width: 21cm,
+    height: 1.75cm,
+    fill: c-navy,
+  )
+)
+
+// Organization name left, tagline right
+#place(
+  top + left,
+  dx: -2.8cm,
+  dy: -2.6cm + 29.7cm - 1.0cm,  // centered in band
+  block(width: 21cm, height: auto)[
+    #pad(left: 2.8cm, right: 2.2cm)[
+      #set text(font: "TeX Gyre Heros")
+      #text(
+        size: 11pt,
+        fill: white,
+        weight: "bold",
+        tracking: 2pt,
+      )[#upper[$org-name$]]
+      #h(1fr)
+      $if(org-tagline)$
+      #text(
+        size: 8pt,
+        fill: rgb("#7FAFD4"),
+        tracking: 0.5pt,
+      )[$org-tagline$]
+      $endif$
+    ]
+  ]
+)
+$endif$
 
 // ── Title text over the navy band ─────────────────────────────
 // Placed absolutely over the navy band. Use a fixed-width block so
@@ -565,6 +746,35 @@
   $scope-blurb$
 ]
 
+// ── Revision history (if provided) ───────────────────────────
+$if(revisions)$
+#v(0.6cm)
+#text(
+  font: "TeX Gyre Heros",
+  size: 8pt,
+  fill: c-muted,
+  weight: "bold",
+  tracking: 1pt,
+)[#upper[Revision History]]
+#v(0.25cm)
+#table(
+  columns: (70pt, 85pt, 1fr),
+  stroke: none,
+  inset: (x: 8pt, y: 5pt),
+  fill: (col, row) => if row == 0 { c-navy } else if calc.odd(row) { c-shade } else { white },
+  // Header row
+  [#text(font: "TeX Gyre Heros", size: 7.5pt, fill: white, weight: "bold")[Version]],
+  [#text(font: "TeX Gyre Heros", size: 7.5pt, fill: white, weight: "bold")[Date]],
+  [#text(font: "TeX Gyre Heros", size: 7.5pt, fill: white, weight: "bold")[Changes]],
+  // Data rows
+  $for(revisions)$
+  [#text(font: "TeX Gyre Heros", size: 8pt)[$revisions.version$]],
+  [#text(font: "TeX Gyre Heros", size: 8pt)[$revisions.date$]],
+  [#text(font: "TeX Gyre Heros", size: 8pt)[$revisions.changes$]],
+  $endfor$
+)
+$endif$
+
 #v(1fr)
 
 // ── Bottom metadata row (only shown when the document has parts) ──
@@ -611,6 +821,90 @@ $endif$
   indent: 0pt,   // we control indent in the show outline.entry rule
   depth: 3,
 )
+
+#v(1cm)
+
+// ─────────────────────────────────────────────────────────────
+// LIST OF TABLES
+// ─────────────────────────────────────────────────────────────
+#block(width: 100%)[
+  #text(
+    font: "TeX Gyre Heros",
+    size: 12pt,
+    weight: "bold",
+    fill: c-navy,
+  )[List of Tables]
+  #v(2pt)
+  #line(length: 60pt, stroke: 2pt + c-teal)
+]
+
+#v(0.4cm)
+
+#context {
+  let tables = query(figure.where(kind: table))
+  if tables.len() > 0 {
+    for (i, fig) in tables.enumerate() {
+      let pg = counter(page).at(fig.location()).first()
+      let caption-text = if fig.caption != none { fig.caption.body } else { [] }
+      box(width: 100%)[
+        #text(font: "TeX Gyre Heros", size: 9pt)[
+          Table #(i + 1)#if caption-text != [] [: #caption-text]
+        ]
+        #box(width: 1fr)[
+          #set text(fill: rgb("#C8CDD3"), size: 9pt)
+          #repeat[.]
+        ]
+        #text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted)[#str(pg)]
+      ]
+      linebreak()
+      v(3pt, weak: true)
+    }
+  } else {
+    text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted, style: "italic")[No tables in this document.]
+  }
+}
+
+#v(0.8cm)
+
+// ─────────────────────────────────────────────────────────────
+// LIST OF FIGURES
+// ─────────────────────────────────────────────────────────────
+#block(width: 100%)[
+  #text(
+    font: "TeX Gyre Heros",
+    size: 12pt,
+    weight: "bold",
+    fill: c-navy,
+  )[List of Figures]
+  #v(2pt)
+  #line(length: 60pt, stroke: 2pt + c-teal)
+]
+
+#v(0.4cm)
+
+#context {
+  let figures = query(figure.where(kind: image))
+  if figures.len() > 0 {
+    for (i, fig) in figures.enumerate() {
+      let pg = counter(page).at(fig.location()).first()
+      let caption-text = if fig.caption != none { fig.caption.body } else { [] }
+      box(width: 100%)[
+        #text(font: "TeX Gyre Heros", size: 9pt)[
+          Figure #(i + 1)#if caption-text != [] [: #caption-text]
+        ]
+        #box(width: 1fr)[
+          #set text(fill: rgb("#C8CDD3"), size: 9pt)
+          #repeat[.]
+        ]
+        #text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted)[#str(pg)]
+      ]
+      linebreak()
+      v(3pt, weak: true)
+    }
+  } else {
+    text(font: "TeX Gyre Heros", size: 9pt, fill: c-muted, style: "italic")[No figures in this document.]
+  }
+}
 
 #pagebreak()
 

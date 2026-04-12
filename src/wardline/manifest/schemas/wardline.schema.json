@@ -37,6 +37,12 @@
           "type": "integer",
           "minimum": 1
         },
+        "expedited_ratio_threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Project-defined expedited governance ratio threshold as a proportion in [0, 1]. Required for Assurance deployments."
+        },
         "temporal_separation": {
           "type": "object",
           "description": "Temporal separation posture declaration (§15.3.2).",
@@ -251,8 +257,65 @@
           "description": "Number of graduation-date changes. §15.3.4 caps this at 2."
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "description": "§15.3.4: graduation_auditor is required when graduation_mechanism == 'external_audit'.",
+          "if": {
+            "properties": {
+              "graduation_mechanism": { "const": "external_audit" }
+            },
+            "required": ["graduation_mechanism"]
+          },
+          "then": {
+            "required": ["graduation_auditor"]
+          }
+        }
+      ]
     }
   },
-  "additionalProperties": false
+  "required": ["governance_profile"],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "description": "§15.3.4: BAR is a named sub-profile of Assurance, so bootstrap_assurance_reference MUST NOT appear under lite.",
+      "if": {
+        "required": ["bootstrap_assurance_reference"]
+      },
+      "then": {
+        "properties": {
+          "governance_profile": {
+            "const": "assurance",
+            "description": "BAR declarations are only valid when governance_profile is 'assurance'."
+          }
+        }
+      }
+    },
+    {
+      "description": "§15.3.4: When BAR is declared (assurance + bootstrap_assurance_reference), same-actor temporal-separation alternatives are forbidden. Only 'enforced' is permitted under BAR.",
+      "if": {
+        "properties": {
+          "governance_profile": { "const": "assurance" },
+          "bootstrap_assurance_reference": { "type": "object" }
+        },
+        "required": ["governance_profile", "bootstrap_assurance_reference"]
+      },
+      "then": {
+        "properties": {
+          "metadata": {
+            "properties": {
+              "temporal_separation": {
+                "properties": {
+                  "alternative": {
+                    "const": "enforced",
+                    "description": "Under Assurance/BAR, only 'enforced' temporal separation is permitted."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

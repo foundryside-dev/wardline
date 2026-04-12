@@ -188,14 +188,40 @@ def status(
     exception_m = collect_exception_metrics(manifest_dir)
     fingerprint_m = collect_fingerprint_metrics(manifest_dir)
     rule_m = collect_rule_metrics(manifest_path, config_path)
+    bar_runner_ready, bar_policy_version, bar_runtime = _bar_runner_status(manifest_m)
 
     if output_json:
-        _status_json(manifest_m, exception_m, fingerprint_m, rule_m)
+        _status_json(
+            manifest_m,
+            exception_m,
+            fingerprint_m,
+            rule_m,
+            bar_runner_ready=bar_runner_ready,
+            bar_policy_version=bar_policy_version,
+            bar_runtime=bar_runtime,
+        )
     else:
-        _status_text(manifest_m, exception_m, fingerprint_m, rule_m)
+        _status_text(
+            manifest_m,
+            exception_m,
+            fingerprint_m,
+            rule_m,
+            bar_runner_ready=bar_runner_ready,
+            bar_policy_version=bar_policy_version,
+            bar_runtime=bar_runtime,
+        )
 
 
-def _status_text(manifest_m: Any, exception_m: Any, fingerprint_m: Any, rule_m: Any) -> None:
+def _status_text(
+    manifest_m: Any,
+    exception_m: Any,
+    fingerprint_m: Any,
+    rule_m: Any,
+    *,
+    bar_runner_ready: bool,
+    bar_policy_version: str | None,
+    bar_runtime: dict[str, object] | None,
+) -> None:
     """Render human-readable status dashboard."""
     click.echo("Wardline Regime Status")
     click.echo("\u2500" * 22)
@@ -230,9 +256,14 @@ def _status_text(manifest_m: Any, exception_m: Any, fingerprint_m: Any, rule_m: 
         )
     else:
         click.echo(f"  Agent-originated:    {exception_m.agent_originated}")
+    threshold_str = (
+        f"{manifest_m.expedited_ratio_threshold * 100:.1f}%"
+        if manifest_m.expedited_ratio_threshold is not None
+        else "undeclared"
+    )
     click.echo(
         f"  Expedited ratio:     {exception_m.expedited_ratio * 100:.1f}% "
-        f"(threshold: 15.0%)"
+        f"(threshold: {threshold_str})"
     )
 
     # Governance paths
@@ -284,11 +315,58 @@ def _status_text(manifest_m: Any, exception_m: Any, fingerprint_m: Any, rule_m: 
     else:
         click.echo("  Last ratified:       not set")
 
+    bootstrap_ref = manifest_m.bootstrap_assurance_reference
+    if bootstrap_ref is not None:
+        click.echo()
+        click.echo("Bootstrap Assurance Reference:")
+        click.echo(f"  Sole maintainer:     {bootstrap_ref.sole_maintainer}")
+        click.echo(f"  Declared at:         {bootstrap_ref.declared_at}")
+        click.echo(f"  Graduation target:   {bootstrap_ref.graduation_target_date}")
+        click.echo(f"  Mechanism:           {bootstrap_ref.graduation_mechanism}")
+        if bootstrap_ref.graduation_auditor is not None:
+            click.echo(f"  Auditor:             {bootstrap_ref.graduation_auditor}")
+        click.echo(f"  Slip count:          {bootstrap_ref.slip_count}")
+
+    click.echo()
+    click.echo("BAR runner:")
+    click.echo(f"  Declared:            {'yes' if bootstrap_ref is not None else 'no'}")
+    click.echo(f"  Ready:               {'yes' if bar_runner_ready else 'no'}")
+    if bar_policy_version is not None:
+        click.echo(f"  Policy version:      {bar_policy_version}")
+    if bar_runtime is not None:
+        skill_pack = _bar_runtime_mapping(bar_runtime, "skill_pack")
+        model = _bar_runtime_mapping(bar_runtime, "model")
+        guardrails = _bar_runtime_mapping(bar_runtime, "guardrails")
+        provider = model.get("provider") or "unknown"
+        click.echo(f"  Pipeline:            {bar_runtime['pipeline_name']}")
+        click.echo(f"  Policy hash:         {bar_runtime['policy_hash']}")
+        click.echo(
+            "  Skill pack:          "
+            f"{skill_pack['skill_pack_id']} @ {skill_pack['skill_pack_version']}"
+        )
+        click.echo(
+            "  Provider/model:      "
+            f"{provider} / {model.get('model_id')}"
+        )
+        click.echo(
+            "  Timeout / retries:   "
+            f"{guardrails.get('timeout_seconds')}s / {guardrails.get('max_retries')}"
+        )
+
     click.echo()
     click.echo("To gate on governance health, use: wardline regime verify --gate")
 
 
-def _status_json(manifest_m: Any, exception_m: Any, fingerprint_m: Any, rule_m: Any) -> None:
+def _status_json(
+    manifest_m: Any,
+    exception_m: Any,
+    fingerprint_m: Any,
+    rule_m: Any,
+    *,
+    bar_runner_ready: bool,
+    bar_policy_version: str | None,
+    bar_runtime: dict[str, object] | None,
+) -> None:
     """Render JSON status output."""
     data = {
         "governance_profile": manifest_m.governance_profile,
@@ -308,6 +386,7 @@ def _status_json(manifest_m: Any, exception_m: Any, fingerprint_m: Any, rule_m: 
             "expedited": exception_m.expedited,
         },
         "expedited_ratio": exception_m.expedited_ratio,
+        "expedited_ratio_threshold": manifest_m.expedited_ratio_threshold,
         "fingerprint_coverage": {
             "present": fingerprint_m.present,
             "generated_at": fingerprint_m.generated_at,
@@ -320,8 +399,47 @@ def _status_json(manifest_m: Any, exception_m: Any, fingerprint_m: Any, rule_m: 
         "ratification_age_days": manifest_m.ratification_age_days,
         "review_interval_days": manifest_m.review_interval_days,
         "ratification_overdue": manifest_m.ratification_overdue,
+        "bootstrap_assurance_reference": (
+            {
+                "sole_maintainer": manifest_m.bootstrap_assurance_reference.sole_maintainer,
+                "declared_at": manifest_m.bootstrap_assurance_reference.declared_at,
+                "graduation_target_date": (
+                    manifest_m.bootstrap_assurance_reference.graduation_target_date
+                ),
+                "graduation_mechanism": manifest_m.bootstrap_assurance_reference.graduation_mechanism,
+                "graduation_auditor": manifest_m.bootstrap_assurance_reference.graduation_auditor,
+                "graduation_plan_ref": manifest_m.bootstrap_assurance_reference.graduation_plan_ref,
+                "slip_count": manifest_m.bootstrap_assurance_reference.slip_count,
+            }
+            if manifest_m.bootstrap_assurance_reference is not None
+            else None
+        ),
+        "bar_runner_ready": bar_runner_ready,
+        "bar_policy_version": bar_policy_version,
+        "bar_runtime": bar_runtime,
     }
     click.echo(json_mod.dumps(data, indent=2))
+
+
+def _bar_runner_status(manifest_m: Any) -> tuple[bool, str | None, dict[str, object] | None]:
+    bootstrap_ref = getattr(manifest_m, "bootstrap_assurance_reference", None)
+    if bootstrap_ref is None:
+        return (False, None, None)
+
+    try:
+        from wardline.bar.policy import BarPolicyError, describe_policy_runtime, load_policy_tree
+
+        policy = load_policy_tree()
+    except BarPolicyError:
+        return (False, None, None)
+    return (True, policy.version, describe_policy_runtime(policy))
+
+
+def _bar_runtime_mapping(data: dict[str, object], key: str) -> dict[str, object]:
+    value = data.get(key)
+    if not isinstance(value, dict):
+        raise ValueError(f"BAR runtime field {key!r} was not an object")
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -497,9 +615,54 @@ def verify(
     fingerprint_m = collect_fingerprint_metrics(manifest_dir)
     manifest_m = collect_manifest_metrics(manifest_path)
 
-    # Check 5: Expedited ratio below threshold (15%)
-    threshold = 0.15
-    if exception_m.expedited_ratio >= threshold:
+    # Check 5: Expedited ratio threshold declaration
+    threshold = manifest_m.expedited_ratio_threshold
+    if manifest_m.governance_profile == "assurance":
+        if threshold is None:
+            checks.append({
+                "check": "expedited_ratio_threshold_declared",
+                "passed": False,
+                "severity": "ERROR",
+                "evidence": (
+                    "Assurance profile requires metadata.expedited_ratio_threshold "
+                    "to be declared."
+                ),
+            })
+        else:
+            checks.append({
+                "check": "expedited_ratio_threshold_declared",
+                "passed": True,
+                "severity": "ERROR",
+                "evidence": (
+                    f"Expedited ratio threshold declared: {threshold * 100:.1f}%."
+                ),
+            })
+    else:
+        checks.append({
+            "check": "expedited_ratio_threshold_declared",
+            "passed": True,
+            "severity": "WARNING",
+            "evidence": (
+                (
+                    f"Expedited ratio threshold declared: {threshold * 100:.1f}%."
+                )
+                if threshold is not None
+                else "No expedited ratio threshold declared (allowed for Lite)."
+            ),
+        })
+
+    # Check 6: Expedited ratio below threshold
+    if threshold is None:
+        checks.append({
+            "check": "expedited_ratio",
+            "passed": manifest_m.governance_profile != "assurance",
+            "severity": "WARNING" if manifest_m.governance_profile == "lite" else "ERROR",
+            "evidence": (
+                f"Expedited ratio {exception_m.expedited_ratio * 100:.1f}% "
+                "cannot be evaluated against an undeclared threshold."
+            ),
+        })
+    elif exception_m.expedited_ratio >= threshold:
         checks.append({
             "check": "expedited_ratio",
             "passed": False,
@@ -520,7 +683,7 @@ def verify(
             ),
         })
 
-    # Check 6: Fingerprint baseline exists
+    # Check 7: Fingerprint baseline exists
     if fingerprint_m.present:
         checks.append({
             "check": "fingerprint_baseline_exists",
@@ -536,7 +699,7 @@ def verify(
             "evidence": "Fingerprint baseline not present.",
         })
 
-    # Check 7: Fingerprint baseline fresh (age < ratification interval)
+    # Check 8: Fingerprint baseline fresh (age < ratification interval)
     if fingerprint_m.present and manifest_m.review_interval_days is not None:
         if (
             fingerprint_m.age_days is not None
@@ -577,7 +740,7 @@ def verify(
             "evidence": "No review interval configured; freshness check skipped.",
         })
 
-    # Check 8: No expired exceptions
+    # Check 9: No expired exceptions
     if exception_m.expired > 0:
         checks.append({
             "check": "no_expired_exceptions",
@@ -593,7 +756,7 @@ def verify(
             "evidence": "No expired exceptions.",
         })
 
-    # Check 9: Manifest ratification current
+    # Check 10: Manifest ratification current
     if manifest_m.ratification_overdue:
         checks.append({
             "check": "ratification_current",
@@ -612,7 +775,7 @@ def verify(
             "evidence": "Manifest ratification current.",
         })
 
-    # Check 10: Ratification metadata present (MAN-007)
+    # Check 11: Ratification metadata present (MAN-007)
     has_ratification = (
         manifest_m.ratified_by_present
         and manifest_m.ratification_date is not None
@@ -640,7 +803,7 @@ def verify(
             "evidence": f"Missing ratification metadata: {', '.join(missing)}.",
         })
 
-    # Check 11: Temporal separation declared (MAN-011)
+    # Check 12: Temporal separation declared (MAN-011)
     ts = manifest_m.temporal_separation_posture
     governance_profile = manifest_m.governance_profile
     if governance_profile == "lite":
@@ -686,7 +849,7 @@ def verify(
                 ),
             })
 
-    # Check 12: Annotation change tracking (MAN-010)
+    # Check 13: Annotation change tracking (MAN-010)
     # This repo's chosen Lite evidence: fingerprint baseline exists + CODEOWNERS.
     fingerprint_path = manifest_dir / "wardline.fingerprint.json"
     if fingerprint_path.exists():

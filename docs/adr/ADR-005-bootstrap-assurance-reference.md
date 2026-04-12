@@ -1,6 +1,6 @@
 # ADR-005: Bootstrap Assurance Reference for single-maintainer reference implementations
 
-**Status**: Proposed
+**Status**: Accepted
 **Date**: 2026-04-12
 **Deciders**: Project Lead (pending panel review)
 **Context**: v1.0 reference-implementation recertification under §15.3.2 Assurance
@@ -100,12 +100,17 @@ of the following are true and declared in the root manifest:
 3. Independence for BAR obligations is provided by an **automated conformant
    review pipeline** with these required properties:
    - Named tool, tool version, and review-policy hash captured per obligation
+   - Versioned reviewer prompt assets (including any shared skill-pack
+     instructions) loaded from the policy tree and bound by that same
+     review-policy hash
    - Deterministic verdict: same inputs produce the same output, reproducible
      by a later assessor
    - No dependency on any artefact produced by the implementation author within
      the same commit being reviewed
    - Full input provenance bound into the ledger: commit ref, manifest hash,
-     corpus hash, review-policy hash, tool version
+     corpus hash, review-policy hash, tool version. A conformant BAR runner
+     recomputes those values from the reviewed snapshot and rejects
+     ledger/artefact mismatches rather than trusting stale literals
 4. A graduation commitment is declared with a named target date, by which
    either:
    - a second human maintainer is onboarded and re-reviews all BAR-attested
@@ -116,7 +121,19 @@ of the following are true and declared in the root manifest:
    ledger summary as a distinct count, not folded into `verified` and not
    buried in per-row notes.
 6. Every BAR-attested obligation names the review pipeline, policy version,
-   and graduation target date in its `reviewer_metadata`.
+   and graduation target date in its `reviewer_metadata`, and every BAR
+   evidence artefact captures the active reviewer skill-pack identity when
+   one is used. Where reviewer citations are persisted, they are normalized
+   to the deterministic citation-token set derived from the reviewed inputs,
+   not left as free-form prose. A BAR `pass` or `fail` that cannot supply
+   valid normalized citations is treated as insufficient evidence rather than
+   a successful attestation or a grounded negative finding, and the artefact
+   retains the raw submitted tokens
+   plus the dropped-token list so normalization is auditable rather than
+   opaque. The same fail-closed discipline applies to the live provider path:
+   timeout and retry bounds are policy-bound inputs, and exhausting them
+   yields insufficient evidence rather than an unbounded wait or an implicit
+   success.
 
 BAR does **not** relax any other §15.3.2 Assurance MUST:
 
@@ -130,6 +147,19 @@ BAR does **not** relax any other §15.3.2 Assurance MUST:
   time; the only constraint BAR relaxes is the actor-identity requirement,
   and it substitutes a stricter mechanism for the property that requirement
   was protecting
+
+Accordingly, any BAR-capable manifest model, status surface, or governance
+check MUST expose both the root `bootstrap_assurance_reference` declaration
+and the declared expedited-governance ratio threshold. Hiding either produces
+a false green governance presentation.
+
+The same truthfulness rule applies to BAR runner availability. A governance
+surface MUST distinguish "BAR declared in the manifest" from "BAR runner is
+actually loadable under the active policy tree". In the reference
+implementation this means `wardline regime status` surfaces BAR runner
+readiness, active policy version, and the active BAR runtime identity block,
+while BAR operational entry points are exposed as `wardline bar status`,
+`wardline bar review`, and `wardline bar rerun`.
 
 BAR obligations automatically transition to `stale` the day after the declared
 graduation target date passes without re-review. The ledger's freshness
@@ -320,7 +350,10 @@ separate work package.
 5. Extend the top-level `summary` object to count `bootstrap_attested`
    obligations separately from `verified`. The `slip_count` is surfaced in
    the summary alongside the BAR-attested count. Both MUST be exposed at the
-   top of any derived release projection
+   top of any derived release projection. `verified` remains the ledger state
+   for successful BAR rows, but the summary MUST reserve its `verified` count
+   for default-human `independent` reviews and report BAR substitutions only
+   via `bootstrap_attested`
 6. Define staleness propagation: `bootstrap_attested` obligations automatically
    transition to `stale` the day after `graduation_target_date` passes without
    re-review. The schema expresses the target date as part of the freshness
@@ -335,3 +368,13 @@ separate work package.
    - Each change requires an appended reason-for-slip entry in the document
      referenced by `graduation_plan_ref`; the coherence layer verifies the
      entry count matches `slip_count`
+8. Define the BAR evidence-artefact contract tightly enough that the runner is
+   assessor-runnable rather than implementation-defined:
+   - the three self-assessment runs are written as distinct immutable files,
+     not a single rewritten artefact
+   - successful BAR reviews land in ledger `state: verified` with
+     `reviewer_metadata.independence == "bootstrap_attested"`
+   - `source_refs` are resolved to deterministic clause excerpts, not ad-hoc
+     line ranges chosen at runtime
+   - missing evidence execution or unresolved source extraction fails closed
+     to `insufficient_evidence` or `refer`, never `pass`

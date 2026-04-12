@@ -236,11 +236,10 @@ def test_propagation_order_independent(
         dict[str, int],
     ],
 ) -> None:
-    """Propagation result is independent of worklist processing order.
+    """Propagation result is independent of SCC member visitation order.
 
-    The worklist picks min(worklist) at each step, so processing order
-    depends on node names. By permuting all node names (reversing the
-    sorted order), we force a different worklist pick sequence while
+    By permuting all node names (reversing the sorted order), we force
+    SCC members to be visited in a different deterministic order while
     preserving the graph structure. The results, after un-permuting,
     must match.
     """
@@ -251,13 +250,13 @@ def test_propagation_order_independent(
         return_taint_map=taint_map,
     )
 
-    # Permute node names to change min(worklist) pick order.
+    # Permute node names to change deterministic SCC visitation order.
     # Reversing the sorted name list swaps first↔last, second↔second-to-last, etc.
     names = sorted(taint_map.keys())
     if len(names) < 2:
         return  # single-node graph, nothing to permute
 
-    perm = dict(zip(names, reversed(names)))
+    perm = dict(zip(names, reversed(names), strict=True))
     rev_perm = {v: k for k, v in perm.items()}
 
     perm_edges = {perm[k]: {perm[v] for v in vs if v in perm} for k, vs in edges.items()}

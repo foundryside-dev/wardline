@@ -76,9 +76,8 @@ wl_run_pandoc() {
         --standalone \
         --columns=120 \
         -o "$output"
-    # Pandoc emits per-cell alignment on every table — the template's
-    # `set table(align: left)` already handles alignment uniformly.
-    sed -i '/^    align: ([^)]*),$/d' "$output"
+    # Note: per-cell alignment stripping and other post-processing is now
+    # handled by postprocess.py, called separately after this function.
 }
 
 # ─────────────────────────────────────────────────────────────

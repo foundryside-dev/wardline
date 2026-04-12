@@ -14,6 +14,7 @@ def cli() -> None:
 
 
 # --- Register subcommands ---
+from wardline.cli.bar_cmd import bar  # noqa: E402
 from wardline.cli.coherence_cmd import coherence  # noqa: E402
 from wardline.cli.corpus_cmds import corpus  # noqa: E402
 from wardline.cli.exception_cmds import exception  # noqa: E402
@@ -25,6 +26,7 @@ from wardline.cli.regime_cmd import regime  # noqa: E402
 from wardline.cli.resolve_cmd import resolve  # noqa: E402
 from wardline.cli.scan import scan  # noqa: E402
 
+cli.add_command(bar)
 cli.add_command(coherence)
 cli.add_command(corpus)
 cli.add_command(exception)

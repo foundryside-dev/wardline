@@ -25,8 +25,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Multiplier for the per-SCC convergence safety bound.  The worklist is
-# allowed at most ``_CONVERGENCE_BOUND_FACTOR * len(scc)`` iterations.
+# Multiplier for the per-SCC convergence safety bound. The worklist is allowed
+# at most ``_CONVERGENCE_BOUND_FACTOR * len(scc) * len(scc)`` transfer
+# evaluations before we emit a diagnostic and return the best conservative
+# approximation reached so far.
 _CONVERGENCE_BOUND_FACTOR: int = 8
 
 
@@ -110,7 +112,7 @@ def propagate_callgraph_taints(
             try:
                 reverse_edges[callee].add(caller)
             except KeyError:
-                _rev = None  # callee not in taint_map — external call, skip reverse edge
+                continue  # callee not in taint_map — external call, skip reverse edge
 
     # --- 4. SCC decomposition -------------------------------------------------
     # Only include nodes that are in taint_map
@@ -125,7 +127,7 @@ def propagate_callgraph_taints(
 
     sccs = compute_sccs(scc_graph)
 
-    # --- 5. Worklist iteration per SCC ----------------------------------------
+    # --- 5. Fixed-point propagation per SCC -----------------------------------
     for scc in sccs:
         # Skip all-anchored SCCs — they cannot change
         if scc <= anchored:
@@ -138,7 +140,6 @@ def propagate_callgraph_taints(
         # Only consider callees OUTSIDE the SCC (already at their final taint
         # since SCCs are processed in reverse-topo order).
         # Then initialize non-anchored SCC members to external-only estimate.
-        has_external_influence: set[str] = set()
         for f in scc:
             if f in anchored:
                 continue
@@ -148,7 +149,6 @@ def propagate_callgraph_taints(
                 f_edges = set()
             ext_callees = (f_edges & taint_keys) - scc
             if ext_callees:
-                has_external_influence.add(f)
                 # For anchored callees, use return_taint (their static output tier).
                 # For non-anchored callees, use current[] (L3-refined body taint).
                 # This is correct because non-anchored functions always have
@@ -201,28 +201,67 @@ def propagate_callgraph_taints(
                             best_callee = c
                     via_callee_map[f] = best_callee
 
-        # Phase 1b: SCC cross-classification pre-initialization.
-        # In an SCC, every member can reach every other member transitively.
-        # If non-anchored members have cross-classification L1 taints (e.g.,
-        # one ASSURED, one INTEGRAL), the join of their L1 taints is MIXED_RAW.
-        # Pre-set all non-anchored members to this join BEFORE the worklist
-        # runs, so the cross-classification is visible regardless of which
-        # member min(worklist) processes first.  Without this, early worklist
-        # processing can "wash" a callee from its L1 classification before
-        # other members see it, making the result order-dependent.
-        non_anchored_in_scc = scc - anchored
-        if len(non_anchored_in_scc) >= 2:
-            scc_l1_join = reduce(taint_join, [taint_map[f] for f in sorted(non_anchored_in_scc)])
-            scc_l1_rank = TRUST_RANK[scc_l1_join]
-            for f in sorted(non_anchored_in_scc):
-                if scc_l1_rank > TRUST_RANK[current[f]]:
-                    current[f] = scc_l1_join
-                    refined.add(f)
+        # Phase 1b: Seed only local multi-source joins within the SCC.
+        # This preserves order-independent cross-classification when a node
+        # merges multiple SCC-local inputs, without re-injecting stale L1 into
+        # plain cycles or self-loops that do not perform a true join.
+        for f in sorted(scc - anchored):
+            try:
+                f_edges = edges[f]
+            except KeyError:
+                f_edges = set()
 
-        # Phase 2: Worklist iteration within the SCC to propagate internal edges.
-        # Start with all non-anchored members that have callers with new values.
+            external_seed_taints: list[TaintState] = []
+            local_seed_taints: list[TaintState] = []
+            saw_other_local = False
+
+            for c in sorted(f_edges & taint_keys):
+                if c in anchored:
+                    try:
+                        c_taint = return_taint_map[c]
+                    except KeyError:
+                        c_taint = current[c]
+                    external_seed_taints.append(c_taint)
+                    continue
+
+                if c not in scc:
+                    # Outside-SCC non-anchored callees have already converged.
+                    # Seed from their refined summary, not stale L1 return data.
+                    external_seed_taints.append(current[c])
+                    continue
+
+                if c != f:
+                    saw_other_local = True
+                local_seed_taints.append(taint_map[c])
+
+            if len(external_seed_taints) + len(local_seed_taints) < 2:
+                continue
+
+            if not saw_other_local:
+                # Do not re-inject self-loop L1 classifications. Single-node
+                # SCCs should read their refined summary, not stale seed data.
+                local_seed_taints = []
+
+            seed_taints = external_seed_taints + local_seed_taints
+            if len(seed_taints) < 2:
+                continue
+
+            seed_join = reduce(taint_join, seed_taints)
+            if TRUST_RANK[seed_join] > TRUST_RANK[current[f]]:
+                current[f] = seed_join
+                refined.add(f)
+
+        # Freeze the post-seeding lower bound for this SCC.
+        # Any local multi-source join discovered in Phase 1b is a real program
+        # point in the SCC and must remain visible during Phase 2; otherwise a
+        # later update can "wash out" the seed and make the result depend on
+        # member visitation order.
+        phase2_floor = {f: current[f] for f in scc if f not in anchored}
+
+        # Phase 2: Deterministic worklist iteration within the SCC.
+        # We seed from Phase 1 external influence plus Phase 1b local joins,
+        # then propagate updates through callers until the SCC stabilises.
         worklist = {f for f in scc if f not in anchored}
-
         while worklist:
             if iterations >= safety_bound:
                 logger.warning(
@@ -236,84 +275,58 @@ def propagate_callgraph_taints(
                 ))
                 break
 
-            func = min(worklist)  # deterministic pick
+            func = min(worklist)
             worklist.discard(func)
             iterations += 1
 
-            # Gather ALL callee taints (both inside and outside SCC)
+            # Gather ALL callee taints (both inside and outside SCC).
             try:
                 func_edges = edges[func]
             except KeyError:
                 func_edges = set()
             callee_set = func_edges & taint_keys
             if not callee_set:
-                # No resolved callees — stay at current taint
                 continue
 
-            # Combine callee taints using §6 join algebra
             callee_taints: list[TaintState] = []
-            for c in callee_set:
+            best_callee_wl: str | None = None
+            best_rank_wl = -1
+            for c in sorted(callee_set):
                 if c in anchored:
                     try:
-                        c_return_taint = return_taint_map[c]
+                        c_taint = return_taint_map[c]
                     except KeyError:
-                        c_return_taint = current[c]
-                    callee_taints.append(c_return_taint)
+                        c_taint = current[c]
                 else:
-                    callee_taints.append(current[c])
-
-            if not callee_taints:
-                continue  # no resolved callees — stay at current taint
+                    c_taint = current[c]
+                callee_taints.append(c_taint)
+                c_rank = TRUST_RANK[c_taint]
+                if c_rank > best_rank_wl:
+                    best_rank_wl = c_rank
+                    best_callee_wl = c
 
             callee_combined = reduce(taint_join, callee_taints)
 
             # TRUST_RANK: ordering comparison, not taint combination (see §6)
-            if func in floating_down or func in floating_free:
-                l1_rank = TRUST_RANK[taint_map[func]]
-                combined_rank = TRUST_RANK[callee_combined]
-                new_taint = taint_map[func] if l1_rank > combined_rank else callee_combined
-            else:
-                # anchored — skip (shouldn't reach here due to worklist filter)
-                continue
+            floor_taint = phase2_floor[func]
+            floor_rank = TRUST_RANK[floor_taint]
+            combined_rank = TRUST_RANK[callee_combined]
+            new_taint = floor_taint if floor_rank > combined_rank else callee_combined
 
             # Unresolved calls pessimistic floor (ordering, not combination)
             try:
                 func_unresolved = unresolved_counts[func]
             except KeyError:
                 func_unresolved = 0
-            if func_unresolved > 0 and TRUST_RANK[taint_map[func]] > TRUST_RANK[new_taint]:
-                new_taint = taint_map[func]
+            if func_unresolved > 0 and floor_rank > TRUST_RANK[new_taint]:
+                new_taint = floor_taint
 
             if new_taint != current[func]:
                 current[func] = new_taint
                 refined.add(func)
-
-                # TRUST_RANK: diagnostic provenance tiebreak, not taint combination
-                # Determine via_callee: the callee with highest rank (least trusted).
-                # Tie-break: alphabetically first qualname.
-                best_callee_wl: str | None = None
-                best_rank_wl = -1
-                for c in sorted(callee_set):  # sorted for tie-breaking
-                    if c in anchored:
-                        try:
-                            c_return_taint = return_taint_map[c]
-                        except KeyError:
-                            c_return_taint = current[c]
-                        c_rank = TRUST_RANK[c_return_taint]
-                    else:
-                        c_rank = TRUST_RANK[current[c]]
-                    if c_rank > best_rank_wl:
-                        best_rank_wl = c_rank
-                        best_callee_wl = c
-
                 via_callee_map[func] = best_callee_wl
 
-                # Add callers within this SCC to worklist
-                try:
-                    func_callers = reverse_edges[func]
-                except KeyError:
-                    func_callers = set()
-                for caller in func_callers:
+                for caller in reverse_edges[func]:
                     if caller in scc and caller not in anchored:
                         worklist.add(caller)
 

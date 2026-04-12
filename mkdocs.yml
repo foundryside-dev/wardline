@@ -7,7 +7,7 @@ site_author: Tachyon Beep
 repo_url: https://github.com/tachyon-beep/wardline
 repo_name: tachyon-beep/wardline
 copyright: >-
-  Copyright &copy; 2026 Tachyon Beep —
+  Copyright &copy; 2026 John Morrissey —
   <a href="https://github.com/tachyon-beep/wardline/blob/main/LICENSE">MIT License</a>
 
 docs_dir: site-src
@@ -64,7 +64,6 @@ theme:
     - content.code.annotate
     - content.tabs.link
     - content.tooltips
-    - content.action.edit
     - content.action.view
     - toc.follow
     - announce.dismiss
@@ -102,8 +101,8 @@ plugins:
         color: "#f1f5f9"
         font_family: Inter
   - git-revision-date-localized:
-      enable_creation_date: true
-      type: iso_date
+      enable_creation_date: false
+      type: date
       fallback_to_build_date: true
   - minify:
       minify_html: true
@@ -181,10 +180,10 @@ nav:
   - Guides:
       - Adopting Wardline: guides/adoption.md
       - CI Integration: guides/ci-integration.md
+      - Troubleshooting: guides/troubleshooting.md
       - Governance: guides/governance.md
       - Analysis Levels: guides/analysis-levels.md
       - Profiles: guides/profiles.md
-      - Troubleshooting: guides/troubleshooting.md
   - Specification:
       - specification.md
       - "Part I — Framework":
@@ -206,5 +205,3 @@ nav:
       - "Part II — Language Bindings":
           - "A. Python Binding": spec/wardline-02-A-python-binding.md
           - "B. Java Binding": spec/wardline-02-B-java-binding.md
-      - Companion:
-          - "Wardline Lite": spec/wardline-lite.md

@@ -129,12 +129,12 @@ deterministic failure modes.
 <section class="wl-section" markdown>
 
 <span class="wl-section__eyebrow">Why Wardline</span>
-## One rule ships; one rule ships better
+## Catch boundary violations at scan time
 
 <p class="wl-section__intro">
-The scanner catches the same kind of violation Python code reviews miss every
-day: untrusted input reaching a function that trusts its arguments. Here's
-what that looks like in practice.
+The scanner catches violations Python code reviews miss every day: untrusted
+input reaching a function that trusts its arguments. Here's a PY-WL-003
+violation and its fix.
 </p>
 
 <div class="wl-compare" markdown>
@@ -145,12 +145,15 @@ what that looks like in practice.
 ```python
 @external_boundary
 def handle_webhook(payload: dict) -> None:
-    record_audit_event(payload)
+    record_audit_event(payload)  # (1)!
 
 @integrity_critical
 def record_audit_event(data: dict) -> None:
     db.write_audit(data)
 ```
+
+1. :material-alert: **Violation:** Raw external input (`payload`) flows directly to an integrity-critical function without validation. The scanner flags this as a tier-4 → tier-1 boundary crossing.
+
 </div>
 
 <div class="wl-compare__col" markdown>
@@ -159,11 +162,11 @@ def record_audit_event(data: dict) -> None:
 ```python
 @external_boundary
 def handle_webhook(payload: dict) -> None:
-    validated = parse_payload(payload)
+    validated = parse_payload(payload)  # (1)!
     record_audit_event(validated)
 
 @validates_shape
-def parse_payload(raw: dict) -> AuditRecord:
+def parse_payload(raw: dict) -> AuditRecord:  # (2)!
     if "action" not in raw:
         raise ValueError("missing action")
     return AuditRecord(action=raw["action"])
@@ -172,6 +175,10 @@ def parse_payload(raw: dict) -> AuditRecord:
 def record_audit_event(record: AuditRecord) -> None:
     db.write_audit(record)
 ```
+
+1. Input now passes through a validation boundary before reaching privileged code.
+2. :material-check: The `@validates_shape` decorator marks this function as a trust boundary. Data flowing out is promoted from tier-4 to tier-2.
+
 </div>
 
 </div>
@@ -215,20 +222,31 @@ def record_audit_event(record: AuditRecord) -> None:
 - [Manifest reference](reference/manifest.md)
 </div>
 
+<div class="wl-path" markdown>
+<span class="wl-path__eyebrow">For implementers</span>
+### Build a binding
+
+- [Download specification](assets/wardline-specification.pdf)
+- [Conformance requirements](spec/wardline-01-15-conformance.md)
+- [Python binding](spec/wardline-02-A-python-binding.md)
+- [Residual risks](spec/wardline-01-13-residual-risks.md)
+</div>
+
 </div>
 
 </section>
 
 <div class="wl-cta" markdown>
 
-## The specification is the source of truth
+## Need the spec offline or for compliance?
 
-Every binding maps to the same framework. Read the canonical PDF or browse the
-chapters online — both are built from the same Markdown source.
+The canonical PDF is a single-file reference — suitable for air-gapped
+environments, compliance artifact submissions, or reading on a plane.
+Same content as the online chapters, built from the same Markdown source.
 
 <div class="wl-cta__actions" markdown>
 [Download PDF](assets/wardline-specification.pdf){ .md-button .md-button--primary }
-[Browse chapters](specification.md){ .md-button }
+[Browse online](specification.md){ .md-button }
 </div>
 
 </div>
