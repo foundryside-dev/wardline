@@ -7,8 +7,8 @@ that refines L1 function-level taints by analysing what each function calls.
 from __future__ import annotations
 
 import logging
-from functools import reduce
 from dataclasses import dataclass
+from functools import reduce
 from typing import TYPE_CHECKING, Literal
 
 from wardline.scanner.taint.callgraph import L3_LOW_RESOLUTION_THRESHOLD, TRUST_RANK
@@ -70,7 +70,7 @@ def propagate_callgraph_taints(
         Diagnostics is a list of ``(code, message)`` tuples for
         L3_CONVERGENCE_BOUND and L3_LOW_RESOLUTION conditions.
     """
-    from wardline.core.taints import TaintState, taint_join
+    from wardline.core.taints import taint_join
 
     if not taint_map:
         return {}, {}, []
@@ -174,9 +174,8 @@ def propagate_callgraph_taints(
                     f_unresolved = unresolved_counts[f]
                 except KeyError:
                     f_unresolved = 0
-                if f_unresolved > 0:
-                    if TRUST_RANK[taint_map[f]] > TRUST_RANK[ext_taint]:
-                        ext_taint = taint_map[f]
+                if f_unresolved > 0 and TRUST_RANK[taint_map[f]] > TRUST_RANK[ext_taint]:
+                    ext_taint = taint_map[f]
                 if ext_taint != current[f]:
                     current[f] = ext_taint
                     refined.add(f)
@@ -250,10 +249,7 @@ def propagate_callgraph_taints(
             if func in floating_down or func in floating_free:
                 l1_rank = TRUST_RANK[taint_map[func]]
                 combined_rank = TRUST_RANK[callee_combined]
-                if l1_rank > combined_rank:
-                    new_taint = taint_map[func]
-                else:
-                    new_taint = callee_combined
+                new_taint = taint_map[func] if l1_rank > combined_rank else callee_combined
             else:
                 # anchored — skip (shouldn't reach here due to worklist filter)
                 continue
@@ -263,9 +259,8 @@ def propagate_callgraph_taints(
                 func_unresolved = unresolved_counts[func]
             except KeyError:
                 func_unresolved = 0
-            if func_unresolved > 0:
-                if TRUST_RANK[taint_map[func]] > TRUST_RANK[new_taint]:
-                    new_taint = taint_map[func]
+            if func_unresolved > 0 and TRUST_RANK[taint_map[func]] > TRUST_RANK[new_taint]:
+                new_taint = taint_map[func]
 
             if new_taint != current[func]:
                 current[func] = new_taint
