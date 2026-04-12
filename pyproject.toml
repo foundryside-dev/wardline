@@ -105,7 +105,7 @@ packages = ["wardline"]
 
 [dependency-groups]
 dev = [
-    "hypothesis>=6.151.9",
+    "hypothesis>=6.151.12",
     "types-jsonschema>=4.26.0.20260202",
     "types-pyyaml>=6.0.12.20250915",
 ]
