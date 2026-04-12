@@ -54,7 +54,7 @@ docs = [
     "pymdown-extensions>=10.7",
 ]
 bar = [
-    "litellm>=1.0",
+    "litellm>=1.83.4",
 ]
 
 [project.scripts]
