@@ -67,10 +67,10 @@
   },
   "summary": {
     "verified": 0,
-    "evidenced": 5,
-    "implemented_no_evidence": 7,
+    "evidenced": 3,
+    "implemented_no_evidence": 9,
     "stale": 0,
-    "non_compliant": 9,
+    "non_compliant": 11,
     "waived": 0,
     "not_applicable": 2,
     "unassessed": 0,
@@ -289,11 +289,17 @@
           "target": "wardline.exceptions.json"
         },
         {
-          "class": "ratification_record",
-          "target": ".github/CODEOWNERS"
+          "class": "commit_history_review",
+          "target": ".github/CODEOWNERS",
+          "note": "CODEOWNERS protects governance artefacts; a concrete ratification artifact is still missing."
+        },
+        {
+          "class": "temporal_separation_audit",
+          "target": "git history for wardline.yaml, .github/CODEOWNERS, and wardline.exceptions.json",
+          "note": "Temporal-separation audit should walk the git history for the governance artifacts wardline.yaml, .github/CODEOWNERS, and wardline.exceptions.json. The audit subject is now concrete, but a bound review artifact is still missing."
         }
       ],
-      "state": "evidenced",
+      "state": "implemented_no_evidence",
       "freshness_binding": {
         "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
         "tool_version": "1.0.0",
@@ -307,7 +313,7 @@
       "tracker_ids": [
         "wardline-29bd1003e7"
       ],
-      "notes": "Originally framed as Lite governance minimums; re-scoped to Assurance under the Assurance-only ledger schema. The governance minimums enumerated in \u00a715.2(9) \u2014 protected-file review, temporal separation, exception tracking, annotation change tracking \u2014 form the floor shared by Lite and Assurance, so the obligation remains well-formed under Assurance rather than being marked not_applicable. A bound assessment run against the refreshed Assurance checklist is still outstanding."
+      "notes": "Manifest, CODEOWNERS, and exception register exist; a bound assessment run covering protected-file review, temporal separation, exception integrity, and annotation-change review does not yet exist; therefore implemented_no_evidence is the honest state."
     },
     {
       "id": "C-CRIT-10-MANIFEST-CONSUMPTION",
@@ -332,14 +338,16 @@
       "evidence_classes": [
         {
           "class": "manifest_schema_validation",
-          "target": "src/wardline/manifest/schemas/"
+          "target": "wardline.yaml",
+          "note": "Schema validation is performed against the root manifest; evidence artifact not yet bound."
         },
         {
           "class": "coherence_check",
-          "target": "src/wardline/manifest/coherence.py"
+          "target": "wardline.yaml",
+          "note": "Coherence check runs against the manifest; implementation is in src/wardline/manifest/coherence.py but evidence artifact not yet bound."
         }
       ],
-      "state": "evidenced",
+      "state": "implemented_no_evidence",
       "freshness_binding": {
         "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
         "tool_version": "1.0.0",
@@ -353,7 +361,7 @@
       "tracker_ids": [
         "wardline-8cd5d3fb73"
       ],
-      "notes": "Implementation exists in src/wardline/manifest/ (loader, schemas, coherence) and is exercised by CLI subcommands. Source_ref for the portability/manifest file was upgraded from file-only to \u00a714.1.5 'Manifest validation' to satisfy the schema pattern. A bound reviewer verification against the narrowed release claim remains outstanding."
+      "notes": "Implementation exists in src/wardline/manifest/ (loader, schemas, coherence) and is exercised by CLI subcommands. Evidence targets now name the manifest being validated rather than the implementation modules. A bound validation-output artifact is missing; therefore implemented_no_evidence is the honest state."
     },
     {
       "id": "P1-S6-TAINT-JOIN-ABSORBING",
@@ -377,16 +385,21 @@
       ],
       "evidence_classes": [
         {
-          "class": "ast_inspection",
-          "target": "src/wardline/scanner/taint/callgraph_propagation.py",
-          "note": "L3 callgraph propagation uses TRUST_RANK and max() rather than taint_join(); the divergence from the \u00a76 join algebra is visible by static reading of this module."
+          "class": "unit_tests",
+          "target": "tests/unit/scanner/test_callgraph_propagation.py::TestCrossClassificationJoin",
+          "note": "Seven cross-classification combination tests verify taint_join() algebra at the L3 propagation level: cross-family merges produce MIXED_RAW, UNKNOWN-family demotion preserved, single-callee identity, MIXED_RAW absorption, GUARDED+EXTERNAL_RAW coverage."
+        },
+        {
+          "class": "unit_tests",
+          "target": "tests/unit/scanner/test_callgraph_properties.py::test_join_commutativity_at_propagation_level",
+          "note": "Hypothesis property test verifying propagation result is independent of callee iteration order (200 examples)."
         },
         {
           "class": "unit_tests",
           "target": "tests/unit/scanner/taint/"
         }
       ],
-      "state": "non_compliant",
+      "state": "evidenced",
       "freshness_binding": {
         "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
         "tool_version": "1.0.0",
@@ -400,7 +413,7 @@
       "tracker_ids": [
         "wardline-cf49edcde8"
       ],
-      "notes": "State preserved as non_compliant. L3 callgraph propagation uses TRUST_RANK and max() instead of taint_join(), violating the MIXED_RAW-absorbing join algebra defined in \u00a76. Implementation and call graph modules listed as the surface; unit tests under tests/unit/scanner/taint/ will cover the join invariant once the implementation is corrected."
+      "notes": "Fixed: L3 callgraph propagation now uses taint_join() for callee combination per \u00a76 join algebra. TRUST_RANK retained for floor clamps (ordering comparison, not taint combination). Cross-classification merges correctly produce MIXED_RAW. State evidenced pending BAR pipeline review."
     },
     {
       "id": "P1-S11-CORPUS-INDEPENDENCE",
@@ -662,8 +675,8 @@
       "evidence_classes": [
         {
           "class": "coherence_check",
-          "target": "docs/verification/2026-04-12-v1-0-compliance-ledger.md",
-          "note": "Cross-reference the regime documentation's declared surface against the obligation catalog in wardline.compliance.json. The top-level catalog_status is 'partial' and R-CATALOG-COMPLETENESS is non_compliant, so this check surfaces at least one known gap."
+          "target": "wardline.compliance.json",
+          "note": "Cross-reference the regime documentation's declared surface against the obligation catalog. The top-level catalog_status is 'partial' and R-CATALOG-COMPLETENESS is non_compliant, so this check surfaces at least one known gap. The machine ledger is the primary artifact; the human-readable doc is secondary."
         }
       ],
       "state": "non_compliant",
@@ -680,7 +693,7 @@
       "tracker_ids": [
         "wardline-fae28f1be3"
       ],
-      "notes": "State non_compliant: \u00a715.4 requires coverage completeness and the top-level catalog_status is 'partial'. The regime cannot honestly claim 'no unexplained gaps' while R-CATALOG-COMPLETENESS itself is non_compliant. Bound to R-CATALOG-COMPLETENESS for resolution."
+      "notes": "State non_compliant: §15.4 requires coverage completeness and the top-level catalog_status is 'partial'. The regime cannot honestly claim 'no unexplained gaps' while R-CATALOG-COMPLETENESS itself is non_compliant. Evidence now targets the machine ledger; the human-readable verification doc is secondary and currently drifted."
     },
     {
       "id": "R-S15-WORKED-EXAMPLE-CREDIBLE",
@@ -728,8 +741,8 @@
     {
       "id": "R-CATALOG-COMPLETENESS",
       "source_refs": [
-        "docs/spec/wardline-01-15-conformance.md \u00a715.1",
-        "docs/verification/2026-04-12-v1-0-compliance-ledger.md \u00a7Catalog-Completeness"
+        "docs/spec/wardline-01-15-conformance.md §15.1",
+        "docs/spec/wardline-01-15-conformance.md §15.6"
       ],
       "summary": "The obligation catalog is complete for the claimed surface.",
       "claim_scope": {
@@ -748,8 +761,8 @@
       "evidence_classes": [
         {
           "class": "coherence_check",
-          "target": "docs/verification/2026-04-12-v1-0-compliance-ledger.md",
-          "note": "Diff the required-surface enumeration in the verification document against the obligations array in wardline.compliance.json. A complete catalog has no gaps; catalog_status is currently 'partial', so this check surfaces the known gaps."
+          "target": "wardline.compliance.json",
+          "note": "Diff the required-surface enumeration in catalog_sources against the obligations array. A complete catalog has no gaps; catalog_status is currently 'partial', so this check surfaces the known gaps. The machine ledger is the primary artifact."
         }
       ],
       "state": "non_compliant",
@@ -766,14 +779,13 @@
       "tracker_ids": [
         "wardline-fae28f1be3"
       ],
-      "notes": "State remains non_compliant per the honest-evidence principle: the ledger is a seeded catalog of 23 obligations plus 7 G-ASSURANCE-* additions, but the full Part I and Part II-A obligation surface (every rule, every criterion, every governance MUST) is not yet fully enumerated. The top-level catalog_status is 'partial' reflecting this. Evidence class coherence_check diffs the required surface in the verification document against the obligations array; source_ref updated to cite the \u00a7Catalog-Completeness header exactly."
+      "notes": "State remains non_compliant per the honest-evidence principle: the ledger is a seeded catalog of 23 obligations plus 7 G-ASSURANCE-* additions, but the full Part I and Part II-A obligation surface (every rule, every criterion, every governance MUST) is not yet fully enumerated. The top-level catalog_status is 'partial' reflecting this. Evidence now targets the machine ledger and catalog_sources rather than the drifted human-readable doc."
     },
     {
       "id": "R-RELEASE-PROJECTION-RUNNABLE",
       "source_refs": [
-        "docs/spec/wardline-01-15-conformance.md \u00a715.1",
-        "docs/spec/wardline-01-15-conformance.md \u00a715.6",
-        "docs/verification/2026-04-12-v1-0-cell-certification-matrix.md \u00a7Release-Authorizing-Rows"
+        "docs/spec/wardline-01-15-conformance.md §15.1",
+        "docs/spec/wardline-01-15-conformance.md §15.6"
       ],
       "summary": "The derived release projection is assessor-runnable and declares scope, state, next action, reviewer status, and explicit not_applicable rows.",
       "claim_scope": {
@@ -795,7 +807,7 @@
           "note": "Cross-check certification matrix rows against the \u00a715.1 and \u00a715.6 release-gate column requirements: row identifier, claimed scope, backing obligations, current state, next action, reviewer status, and explicit not_applicable rows."
         }
       ],
-      "state": "evidenced",
+      "state": "non_compliant",
       "freshness_binding": {
         "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
         "tool_version": "1.0.0",
@@ -809,7 +821,50 @@
       "tracker_ids": [
         "wardline-fae28f1be3"
       ],
-      "notes": "State preserved as 'evidenced'. The certification matrix now carries the required runnable fields (row identifier, claimed scope, backing obligations, current state, next action, reviewer status, explicit not_applicable rows). Evidence class coherence_check cross-checks matrix rows against \u00a715.1 and \u00a715.6 release-gate column requirements. Source_ref updated to cite the \u00a7Release-Authorizing-Rows header exactly. Review pending the first BAR pipeline run."
+      "notes": "State non_compliant: the certification matrix is not assessor-runnable. Current defects: (1) rows C02, C03, and C08 use open-text scopes instead of explicit backing obligation IDs; (2) row C04 uses 'at risk' which is not derivable from the matrix's own working rules that non-verified/non-not_applicable backing obligations block release; (3) row language prevents assessor-runnable projection logic. The matrix is implementation_surface and evidence_classes only; the normative source refs are §15.1 and §15.6."
+    },
+    {
+      "id": "R-DERIVED-VIEWS-SYNCHRONIZED",
+      "source_refs": [
+        "docs/spec/wardline-01-15-conformance.md §15.1",
+        "docs/spec/wardline-01-15-conformance.md §15.6"
+      ],
+      "summary": "Derived views (human-readable certification matrix, compliance ledger doc) are synchronized with the machine-readable compliance ledger and do not illegally claim source-of-truth status.",
+      "claim_scope": {
+        "regime": "python-reference",
+        "profiles": [
+          "wardline-core",
+          "wardline-governance"
+        ],
+        "binding": "Python",
+        "applies_to": "derived view synchronization and source-of-truth discipline"
+      },
+      "implementation_surface": [
+        "docs/verification/2026-04-12-v1-0-compliance-ledger.md",
+        "docs/verification/2026-04-12-v1-0-cell-certification-matrix.md"
+      ],
+      "evidence_classes": [
+        {
+          "class": "coherence_check",
+          "target": "wardline.compliance.json",
+          "note": "Cross-check the human-readable docs against wardline.compliance.json. §15.1 defines the machine ledger as the source of truth; derived views must not claim primary status or contain stale data."
+        }
+      ],
+      "state": "non_compliant",
+      "freshness_binding": {
+        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "tool_version": "1.0.0",
+        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+      },
+      "reviewer_metadata": {
+        "primary_reviewer": null,
+        "review_date": null,
+        "independence": "pending"
+      },
+      "tracker_ids": [
+        "wardline-fae28f1be3"
+      ],
+      "notes": "State non_compliant: the human-readable compliance ledger and certification matrix are currently stale and illegally claim source-of-truth status. Per §15.1, these are derived views; wardline.compliance.json is the primary artifact. The docs must be regenerated or marked as secondary views before this obligation can be satisfied."
     },
     {
       "id": "G-ASSURANCE-CHECKLIST-VERIFIABLE",
@@ -1081,6 +1136,47 @@
         "independence": "pending"
       },
       "notes": "State changed from implemented_no_evidence to not_applicable. The SHOULD (non-binding) + BAR mutual-exclusion with accreditation together make this obligation out of scope for the current declared profile. When the project graduates out of BAR and seeks formal accreditation, this obligation will transition to non_compliant/implemented_no_evidence/evidenced as the SIEM export is wired and exercised. Until then, not_applicable is the honest state."
+    },
+    {
+      "id": "G-ASSURANCE-BAR-MANIFEST-SCHEMA-ENFORCED",
+      "source_refs": [
+        "docs/spec/wardline-01-15-conformance.md §15.3.4"
+      ],
+      "summary": "The manifest schema enforces BAR-specific conditional constraints, including requiring graduation_auditor for external_audit and forbidding same-actor temporal-separation alternatives under Assurance/BAR.",
+      "claim_scope": {
+        "regime": "python-reference",
+        "profiles": [
+          "wardline-governance"
+        ],
+        "binding": "Python",
+        "applies_to": "BAR manifest schema enforcement"
+      },
+      "implementation_surface": [
+        "src/wardline/manifest/schemas/wardline.schema.json",
+        "src/wardline/manifest/loader.py"
+      ],
+      "evidence_classes": [
+        {
+          "class": "static_code_review",
+          "target": "src/wardline/manifest/schemas/wardline.schema.json",
+          "note": "Static review and negative validation probes show the schema currently accepts two invalid BAR variants: (1) graduation_mechanism=external_audit without graduation_auditor; (2) assurance/BAR manifests that declare metadata.temporal_separation.alternative=same-actor-with-retrospective."
+        }
+      ],
+      "state": "non_compliant",
+      "freshness_binding": {
+        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "tool_version": "1.0.0",
+        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+      },
+      "reviewer_metadata": {
+        "primary_reviewer": null,
+        "review_date": null,
+        "independence": "pending"
+      },
+      "tracker_ids": [
+        "wardline-cd6686b7a4"
+      ],
+      "notes": "State non_compliant: the current wardline.schema.json is too weak for BAR. It does not conditionally require graduation_auditor when graduation_mechanism is external_audit, and it allows same-actor temporal-separation alternatives even under Assurance/BAR. Another agent is implementing the schema fix; this obligation tracks the compliance gap until the fix is merged and validated."
     }
   ],
   "projections": {
@@ -1090,7 +1186,10 @@
         "C-CRIT-5-PER-CELL-MEASUREMENT",
         "C-CRIT-6-GOLDEN-CORPUS",
         "C-CRIT-7-SELF-HOSTING",
+        "C-CRIT-9-GOVERNANCE-MINIMUMS",
+        "C-CRIT-10-MANIFEST-CONSUMPTION",
         "G-ASSURANCE-ADVERSARIAL-CORPUS-MINIMA",
+        "G-ASSURANCE-BAR-MANIFEST-SCHEMA-ENFORCED",
         "G-ASSURANCE-CHECKLIST-VERIFIABLE",
         "G-ASSURANCE-COHERENCE-GATE",
         "G-ASSURANCE-EXPEDITED-RATIO",
@@ -1101,7 +1200,9 @@
         "P1-S6-TAINT-JOIN-ABSORBING",
         "P2A-A3-L1-MINIMUM-CONFORMANCE",
         "R-CATALOG-COMPLETENESS",
+        "R-DERIVED-VIEWS-SYNCHRONIZED",
         "R-REGIME-COVERAGE-COMPLETE",
+        "R-RELEASE-PROJECTION-RUNNABLE",
         "R-S15-WORKED-EXAMPLE-CREDIBLE"
       ]
     }
