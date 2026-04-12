@@ -1,0 +1,8 @@
+{
+  "model_id": "claude-opus-4-6",
+  "temperature": 0,
+  "top_p": 1,
+  "seed": null,
+  "max_output_tokens": 16384,
+  "notes": "Temperature 0 and top_p 1 minimize sampling variance. Anthropic's API does not currently expose a deterministic seed parameter; seed is null to document that fact rather than claim determinism the model does not offer. Per §5 of bar-review-pipeline.md, determinism is claimed at the verdict level via empirical stability checks across three independent runs, not at the text level."
+}

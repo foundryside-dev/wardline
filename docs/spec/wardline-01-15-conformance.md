@@ -72,6 +72,35 @@ Changing evidence or implementation does not change the obligation ID. If a
 chapter is renumbered, the source reference changes; the obligation record does
 not disappear.
 
+**Reserved illustrative namespace.** The following identifier forms are
+reserved for illustrative use in this specification and its derivatives,
+and MUST NOT appear on any obligation in a live compliance ledger:
+
+1. Any identifier beginning with `P1-S0-` (chapter slot zero in the Part I
+   family).
+2. Any identifier beginning with `C-CRIT-0-` (criterion slot zero in the
+   conformance-criterion family).
+3. Any identifier whose first slug segment immediately after the family
+   prefix is the literal token `EXAMPLE`. For the current families this
+   means: `P1-S<n>-EXAMPLE-*`, `P2A-A<n>-EXAMPLE-*`, `C-CRIT-<n>-EXAMPLE-*`,
+   `G-LITE-EXAMPLE-*`, `G-ASSURANCE-EXAMPLE-*`, `G-CONTROL-EXAMPLE-*`,
+   `G-RETROSCAN-EXAMPLE-*`, and `R-EXAMPLE-*`.
+
+Natural-language uses of the word "EXAMPLE" deeper in a slug are
+permitted (for example, an obligation named `R-S15-WORKED-EXAMPLE-CREDIBLE`
+is a real obligation about worked-example credibility and is not a
+reserved placeholder). The reservation fires only when `EXAMPLE` is the
+first slug segment after the family prefix, which is the position a
+deliberate placeholder would occupy.
+
+The worked examples in §15.6.1 and §15.6.2 populate this reserved
+namespace so that illustrative IDs remain structurally valid under the
+published ID scheme while being unmistakably distinct from any live
+obligation. A conformant regime's ID scheme MUST either honour this
+reservation or declare an equivalent reserved illustrative namespace of
+its own, and its compliance-ledger schema MUST reject the reserved forms
+at validation time.
+
 #### 15.2 Conformance criteria
 
 Ten criteria define the Wardline conformance surface. They are grouped as
@@ -221,6 +250,174 @@ MUST be satisfied:
 3. Temporal separation is operational without alternatives.
 4. The expedited governance ratio threshold is declared and enforced.
 5. Lite-era exceptions have been re-reviewed under Assurance expectations.
+
+##### 15.3.4 Bootstrap Assurance Reference
+
+Bootstrap Assurance Reference (BAR) is a named sub-profile of Assurance, not a
+third governance profile and not a relaxation of Assurance. It exists solely
+to allow a **reference implementation of this specification** to make an
+honest Assurance-level claim while operating under a declared
+single-maintainer configuration.
+
+BAR rests on a property-vs-mechanism distinction the specification otherwise
+applies only implicitly. The §15.6 "Reviewer independence" requirement exists
+to enforce two underlying properties:
+
+1. **No vested interest.** The reviewer does not benefit from the claim
+   passing.
+2. **Reproducibility.** A later assessor can re-run the same review and
+   obtain the same verdict.
+
+The default mechanism — a second human reviewer separated in time — is the
+expected implementation of these two properties. BAR permits an alternative
+implementation with equal-or-stronger property guarantees under strictly
+defined conditions.
+
+**Applicability.** A deployment MAY declare Bootstrap Assurance Reference if,
+and only if, **all** of the following hold and are declared in the root
+manifest:
+
+1. The deployment is a reference implementation of the Wardline specification
+   itself, or of a binding of this specification.
+2. The project has a single declared human maintainer.
+3. Independence for BAR-attested obligations is provided by an **automated
+   conformant review pipeline** (the "BAR pipeline") satisfying the
+   constraints below.
+4. A graduation commitment is declared, with a named target date and a
+   named graduation mechanism.
+5. The compliance ledger surfaces the count of BAR-attested obligations as a
+   distinct summary count.
+
+**BAR pipeline specification.** The normative specification of the BAR
+review pipeline used by the Wardline reference implementation is
+`docs/governance/bar-review-pipeline.md`. That document defines the pipeline
+identity, inputs, review policy, determinism verification procedure,
+author-isolation requirements, evidence artefact format, and lifecycle. A
+reference implementation declaring BAR MUST satisfy every MUST in that
+document in addition to the constraints summarized below.
+
+**BAR pipeline constraints.** The BAR pipeline MUST satisfy all of:
+
+- **Named identity.** A stable tool name, tool version, and review-policy
+  hash, captured per obligation.
+- **Determinism.** Given the same inputs — commit reference, manifest hash,
+  corpus hash, review-policy hash, and tool version — the pipeline produces
+  the same verdict. A later assessor MUST be able to re-run the pipeline and
+  reproduce the recorded result.
+- **Input provenance.** Every BAR-attested obligation record carries the
+  full input identity in its `freshness_binding`: commit reference, tool
+  version, manifest hash, corpus hash (when corpus evidence is involved),
+  and the review-policy hash.
+- **Author isolation.** The BAR pipeline MUST NOT depend on any artefact
+  produced by the implementation author within the same commit being
+  reviewed. In particular, the review policy is versioned separately from
+  the implementation and its hash is captured at review time.
+- **Reviewable output.** The pipeline's verdict, rationale, and input
+  provenance are captured as a retrievable evidence artefact. Oral or
+  transient review is not permitted.
+
+**Graduation commitment.** The BAR graduation commitment MUST declare:
+
+- A target date by which BAR status terminates.
+- A graduation mechanism — either
+  (a) onboarding a second human maintainer who re-reviews every BAR-attested
+  obligation under the default §15.6 independence rules, or
+  (b) a named external auditor performing independent review under the
+  default §15.6 independence rules.
+- When the graduation mechanism is external audit, the declared auditor
+  identity. The identity MAY be an organisation name (e.g., an accredited
+  assessment body) until a specific individual is nominated, but the
+  organisation MUST be identified at declaration time. An `external_audit`
+  mechanism with no declared auditor is not a valid BAR declaration.
+- A graduation plan reference — a durable document, normally an ADR, stating
+  how graduation will be conducted and verified.
+
+A BAR-attested obligation whose graduation target date passes without
+re-review MUST automatically transition to `stale` in the compliance ledger.
+The coherence layer enforces this transition; the staleness is not a policy
+decision that can be deferred.
+
+**Graduation date changes.** A BAR graduation target date MAY be changed only
+through a manifest ratification event under the §15.3.2 row 1 process. Each
+change MUST:
+
+1. Be approved as a manifest ratification event with documented reviewer
+   identity and rationale, on the same terms as any other ratified manifest
+   field.
+2. Append a reason-for-slip entry to the graduation plan document referenced
+   from `bootstrap_reference_declaration.graduation_plan_ref`. The entry MUST
+   record the prior target date, the new target date, the rationale for the
+   slip, and the ratification event identifier.
+3. Increment a slip counter (`bootstrap_reference_declaration.slip_count`).
+   The counter is mandatory; the ledger schema MUST enforce monotonic
+   non-decrease.
+4. Satisfy a maximum slip cap. Over the lifetime of a single BAR declaration,
+   the graduation target date MAY be changed at most **two** times. A third
+   slip attempt MUST be refused by schema validation. When a project has
+   exhausted its slip budget, the next ratification cycle MUST either
+   complete graduation under the default §15.6 independence rules or
+   downgrade the declared governance profile to Lite. BAR MUST NOT continue
+   in a slip-exhausted state.
+
+The slip counter exists to make slip history visible to assessors at a
+glance. A BAR declaration's `slip_count` is exposed in the ledger summary
+alongside the `bootstrap_attested` count, and the graduation plan document
+records the rationale for each slip. A project with a `slip_count` of 2 is,
+by spec, on its final graduation window — this is not a recommendation but
+a structural property of the schema.
+
+The slip cap is per BAR declaration, not per project. A project that
+successfully graduates out of BAR and later declares a new BAR (for example,
+when a new binding begins its own reference implementation bootstrap) starts
+a fresh counter. Each BAR lifecycle is independent.
+
+**Unrelaxed Assurance MUSTs.** BAR does **not** relax any other §15.3.2
+Assurance requirement. A BAR deployment MUST still satisfy:
+
+- Manifest coherence as a blocking gate
+- Full golden corpus with adversarial coverage
+- Structured fingerprint baseline with canonical hashing
+- Expedited governance ratio threshold, declared and enforced
+- SIEM export (SHOULD in general; MUST for formally accredited systems)
+- Temporal separation across commits — satisfied trivially in a single-actor
+  workflow because commits are separated in time. The only constraint BAR
+  addresses is the actor-identity requirement, and it substitutes a stricter
+  reproducibility mechanism for the property that requirement protects.
+
+**Mutual exclusion with formal accreditation.** A deployment operating under
+BAR MUST NOT claim formal security accreditation (IRAP or equivalent). The
+two statuses are mutually exclusive until graduation completes. A deployment
+seeking formal accreditation MUST graduate out of BAR first.
+
+**Ledger representation.** A BAR deployment's compliance ledger MUST:
+
+- Carry a top-level `bootstrap_reference_declaration` block naming the sole
+  maintainer, declaration date, graduation target date, graduation mechanism,
+  graduation plan reference, and the current slip counter.
+- Expose a distinct `bootstrap_attested` count in the ledger summary,
+  separate from the `verified` count, alongside the current `slip_count`.
+- Record, on every BAR-attested obligation, the review pipeline name,
+  pipeline version, review-policy hash, graduation target date, and
+  graduation mechanism in `reviewer_metadata`.
+- Use the independence value `bootstrap_attested` on those obligations. No
+  other independence value MAY be used to represent BAR.
+- Reject (at schema validation time) any attempt to set
+  `bootstrap_reference_declaration.slip_count` above 2, or to decrease the
+  counter, or to omit it when BAR is declared.
+
+**What BAR is not.** BAR is not a "Lite plus" configuration. It is not a
+general escape hatch for projects that find default Assurance inconvenient.
+It is not available to production deployments that are not reference
+implementations. A deployment that does not satisfy clause 1 of the
+applicability list MUST NOT declare BAR; its options are Lite or default
+Assurance.
+
+The spec admits BAR because the alternative — requiring every reference
+implementation of this specification to fabricate a second maintainer or to
+undersell itself as Lite — is dishonest or self-defeating. Naming the
+compromise out loud, with stricter reproducibility constraints than the
+default allows and a hard graduation deadline, is the only intellectually
+defensible position.
 
 #### 15.4 Enforcement regimes
 
@@ -396,6 +593,16 @@ reviewer identity and review date. For Assurance-profile claims, and for any
 formally accredited claim, the record MUST also identify whether the reviewer is
 independent of the implementation author for that obligation.
 
+The default mechanism for satisfying independence is a second human reviewer
+separated in time. A deployment operating under §15.3.4 Bootstrap Assurance
+Reference MAY substitute an automated conformant review pipeline under the
+constraints declared in §15.3.4; the substitution is available only to
+reference implementations of this specification and only with a declared
+graduation commitment. A formally accredited deployment MUST NOT use the
+BAR substitution. The underlying property requirements — no vested interest
+in the claim passing, and reproducibility of the review by a later assessor
+— apply to both mechanisms.
+
 **Derived views.** After the ledger is current, the regime MAY generate:
 
 - a certification matrix for human review
@@ -412,32 +619,57 @@ row state, current disposition or next action, reviewer status, and explicit
 
 #### 15.6.1 Worked example: ledger excerpt
 
-The following excerpt shows the minimum shape of a useful compliance ledger:
+The following excerpt is an **illustrative, non-factual** example that shows
+the minimum shape of a useful compliance ledger. Every identifier in this
+table is a placeholder drawn from the §15.1 reserved illustrative namespace
+(`P1-S0-*`, `C-CRIT-0-*`, `*-EXAMPLE-*`) and does **not** refer to any real
+Wardline obligation. The states shown are chosen pedagogically — one per
+meaningful state value — so that a reader can see what each state looks like
+in context. This example is not evidence about any live ledger and makes no
+factual claim about the current compliance posture of the reference
+implementation or any other regime.
 
 | Obligation ID | Source | Summary | State | Freshness binding |
 |---|---|---|---|---|
-| `C-CRIT-5-PER-CELL-MEASUREMENT` | `§15.2(5)` | Per-cell precision and recall are published | `non_compliant` | corpus hash + conformance report |
-| `P1-S6-TAINT-JOIN-ABSORBING` | `§6` | Taint propagation preserves the normative join algebra | `verified` | commit + taint-flow corpus evidence |
-| `C-CRIT-8-DETERMINISTIC-SARIF` | `§15.2(8)` | Verification-mode SARIF is deterministic | `stale` | prior input hash no longer matches current scan inputs |
-| `G-LITE-EXCEPTION-REGISTER` | `§15.3.2` | Lite exception register requirements are satisfied | `verified` | manifest hash + exception register review |
+| `C-CRIT-0-EXAMPLE-MEASUREMENT` | illustrative §15.2 row | Per-cell precision and recall are published (illustrative) | `non_compliant` | corpus hash + conformance report |
+| `P1-S0-EXAMPLE-JOIN-ALGEBRA` | illustrative Part I clause | Taint propagation preserves the normative join algebra (illustrative) | `verified` | commit + taint-flow corpus evidence |
+| `C-CRIT-0-EXAMPLE-DETERMINISM` | illustrative §15.2 row | Verification-mode SARIF is deterministic (illustrative) | `stale` | prior input hash no longer matches current scan inputs |
+| `G-LITE-EXAMPLE-EXCEPTION-REGISTER` | illustrative §15.3.2 row | Lite exception register requirements are satisfied (illustrative) | `waived` | manifest hash + exception register review + waiver record |
 
-This example is intentionally mixed-state. A useful ledger shows the full truth,
-not only the green entries.
+This example is intentionally mixed-state. A useful ledger shows the full
+truth, not only the green entries — an assessor reading a real ledger should
+expect to see `verified`, `non_compliant`, `stale`, `waived`,
+`not_applicable`, `unassessed`, `evidenced`, and `implemented_no_evidence`
+entries side by side. The four rows above cover one `verified`, one
+`non_compliant`, one `stale`, and one `waived` entry so that the shape of
+each of the most commonly-confused states is visible; the remaining four
+states are defined in §15.6 and follow the same record structure.
 
 #### 15.6.2 Worked example: release projection
 
-A release projection is derived from obligation records:
+A release projection is derived from obligation records. The table below is
+an **illustrative, non-factual** example. Every obligation identifier and
+every row label is drawn from the §15.1 reserved illustrative namespace and
+does not refer to any real Wardline obligation or to any real release. The
+outcomes shown are chosen pedagogically so that a reader can see what a
+`green`, a `blocked`, and a `not_applicable` row look like when derived from
+backing obligations.
 
 | Release row | Backing obligations | Result |
 |---|---|---|
-| Claimed surface and profile | `R-*` claim-surface obligations | green only if the claimed profiles, active rows, and out-of-scope rows are explicit |
-| Manifest and governance | `G-*`, `C-CRIT-9`, `C-CRIT-10` | green only if all applicable obligations are `verified` or `not_applicable` |
-| Pattern rules and corpus | `C-CRIT-5`, `C-CRIT-6`, rule-specific obligations | blocked if any obligation is `non_compliant`, `waived`, `stale`, or missing required adversarial minima |
-| SARIF and control law | `C-CRIT-8` and control-law obligations | blocked until determinism evidence is current and sign-off occurs under normal law |
-| Self-hosting | `C-CRIT-7` and tool-specific self-hosting obligations | blocked until the per-tool gate is explicitly defined and satisfied |
+| Claimed surface and profile (illustrative) | `R-EXAMPLE-CLAIM-SURFACE` | `green` only if the claimed profiles, active rows, and out-of-scope rows are explicit |
+| Manifest and governance (illustrative) | `G-LITE-EXAMPLE-EXCEPTION-REGISTER`, `C-CRIT-0-EXAMPLE-GOVERNANCE-MINIMUMS` | `green` only if all applicable obligations are `verified` or `not_applicable` |
+| Pattern rules and corpus (illustrative) | `C-CRIT-0-EXAMPLE-MEASUREMENT`, `C-CRIT-0-EXAMPLE-CORPUS` | `blocked` if any obligation is `non_compliant`, `waived`, `stale`, or missing required adversarial minima |
+| SARIF and control law (illustrative) | `C-CRIT-0-EXAMPLE-DETERMINISM`, `G-CONTROL-EXAMPLE-LAW-NORMAL` | `blocked` until determinism evidence is current and sign-off occurs under normal law |
+| Self-hosting (illustrative) | `C-CRIT-0-EXAMPLE-SELF-HOSTING` | `blocked` until the per-tool gate is explicitly defined and satisfied |
+| Out-of-scope binding-specific row (illustrative) | `R-EXAMPLE-RELEASE-PROJECTION` | `not_applicable` when the release scope excludes the row and the exclusion is named explicitly |
 
 The release view is therefore a query over the ledger, not a second system of
-truth.
+truth. As in §15.6.1, these rows make no factual claim about any real
+release: they illustrate how a release-authorizing projection MUST map
+backing obligations onto `green`, `blocked`, and `not_applicable` outcomes
+while preserving the row identifier, backing-obligation list, and next-action
+columns required by §15.1.
 
 #### 15.6.3 Navigating to Part II
 

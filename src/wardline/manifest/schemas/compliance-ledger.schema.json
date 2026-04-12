@@ -1,0 +1,533 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wardline.dev/schemas/compliance-ledger.schema.json",
+  "title": "Wardline compliance ledger (reference implementation)",
+  "description": "Machine-readable compliance ledger for the Wardline reference implementation. Enforces the §15.1 obligation record contract: every obligation record MUST carry claim scope, implementation surface, evidence classes, freshness binding, and reviewer metadata. Derived views (matrix, release projection) MUST be reducible to this ledger. This schema is specialized for §15.3.2 Assurance with §15.3.4 Bootstrap Assurance Reference; Lite deployments MUST use a separate schema.",
+  "type": "object",
+  "required": [
+    "format_version",
+    "generated_at",
+    "catalog_status",
+    "claim_scope",
+    "id_schema",
+    "catalog_sources",
+    "evidence_binding",
+    "summary",
+    "obligations",
+    "projections"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "format_version": {"type": "string"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "catalog_status": {"enum": ["complete", "partial"]},
+    "claim_scope": {
+      "type": "object",
+      "required": ["binding", "claimed_profiles", "governance_profile", "release", "required_framework_rule_surface"],
+      "properties": {
+        "binding": {"type": "string"},
+        "claimed_profiles": {"type": "array", "items": {"type": "string"}},
+        "not_claimed_profiles": {"type": "array", "items": {"type": "string"}},
+        "governance_profile": {
+          "const": "assurance",
+          "description": "This schema is the reference-implementation ledger schema and only accepts 'assurance' (default §15.3.2 Assurance or §15.3.4 Bootstrap Assurance Reference). Lite deployments MUST use a separate schema."
+        },
+        "release": {"type": "string"},
+        "required_framework_rule_surface": {"type": "array", "items": {"type": "string"}},
+        "binding_specific_active_non_blocking": {"type": "array", "items": {"type": "string"}},
+        "optional_supplementary_not_claimed": {"type": "array", "items": {"type": "string"}},
+        "surface": {"type": "string"}
+      }
+    },
+    "id_schema": {"type": "object"},
+    "catalog_sources": {"type": "array", "items": {"type": "string"}},
+    "evidence_binding": {
+      "type": "object",
+      "description": "Snapshot-wide evidence binding. Per-record freshness_binding may override or extend this.",
+      "required": ["repo_head", "conformance_inputs"],
+      "properties": {
+        "repo_head": {"type": "string"},
+        "conformance_artifact": {"type": "string"},
+        "conformance_inputs": {
+          "type": "object",
+          "required": ["commit_ref", "tool_version", "manifest_hash", "corpus_hash", "self_hosting_input_hash"],
+          "properties": {
+            "commit_ref": {"type": "string"},
+            "tool_version": {"type": "string"},
+            "manifest_hash": {"type": "string"},
+            "corpus_hash": {"type": "string"},
+            "self_hosting_input_hash": {"type": "string"}
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "description": "State-count rollup across the obligations array. Under §15.3.4 BAR, 'bootstrap_attested' is surfaced alongside 'verified' and 'slip_count' mirrors the top-level bootstrap_reference_declaration.slip_count (equality is enforced by the coherence layer).",
+      "required": [
+        "verified",
+        "evidenced",
+        "implemented_no_evidence",
+        "stale",
+        "non_compliant",
+        "waived",
+        "not_applicable",
+        "unassessed",
+        "bootstrap_attested"
+      ],
+      "properties": {
+        "verified": {"type": "integer", "minimum": 0},
+        "evidenced": {"type": "integer", "minimum": 0},
+        "implemented_no_evidence": {"type": "integer", "minimum": 0},
+        "stale": {"type": "integer", "minimum": 0},
+        "non_compliant": {"type": "integer", "minimum": 0},
+        "waived": {"type": "integer", "minimum": 0},
+        "not_applicable": {"type": "integer", "minimum": 0},
+        "unassessed": {"type": "integer", "minimum": 0},
+        "bootstrap_attested": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of obligations whose reviewer_metadata.independence is 'bootstrap_attested' (§15.3.4). Reported separately from 'verified'."
+        },
+        "slip_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Current BAR graduation-date slip counter, mirrored from bootstrap_reference_declaration.slip_count. §15.3.4 caps this at 2."
+        }
+      },
+      "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "obligations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/obligation_record"}
+    },
+    "projections": {"type": "object"},
+    "bootstrap_reference_declaration": {"$ref": "#/$defs/bootstrap_reference_declaration"}
+  },
+  "allOf": [
+    {
+      "description": "§15.3.4: bootstrap_reference_declaration is required iff at least one obligation uses reviewer independence 'bootstrap_attested'.",
+      "if": {
+        "type": "object",
+        "properties": {
+          "obligations": {
+            "type": "array",
+            "contains": {
+              "type": "object",
+              "properties": {
+                "reviewer_metadata": {
+                  "type": "object",
+                  "properties": {
+                    "independence": {"const": "bootstrap_attested"}
+                  },
+                  "required": ["independence"]
+                }
+              },
+              "required": ["reviewer_metadata"]
+            }
+          }
+        },
+        "required": ["obligations"]
+      },
+      "then": {
+        "required": ["bootstrap_reference_declaration"]
+      }
+    },
+    {
+      "description": "§15.3.4: when a bootstrap_reference_declaration is present, the summary MUST surface slip_count so an assessor can see at a glance whether the project is already on its final extension window. The coherence layer additionally enforces that summary.slip_count equals bootstrap_reference_declaration.slip_count; the schema only requires presence.",
+      "if": {
+        "type": "object",
+        "required": ["bootstrap_reference_declaration"]
+      },
+      "then": {
+        "properties": {
+          "summary": {
+            "required": ["slip_count"]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "bootstrap_reference_declaration": {
+      "type": "object",
+      "description": "§15.3.4 Bootstrap Assurance Reference declaration. Required at the top level iff any obligation uses reviewer_metadata.independence == 'bootstrap_attested'. BAR is a named sub-profile of Assurance available only to reference implementations of this specification.",
+      "required": [
+        "sole_maintainer",
+        "declared_at",
+        "graduation_target_date",
+        "graduation_mechanism",
+        "graduation_plan_ref",
+        "slip_count"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sole_maintainer": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identity of the single declared human maintainer. §15.3.4 clause 2."
+        },
+        "declared_at": {
+          "type": "string",
+          "format": "date",
+          "description": "Date on which BAR was first declared for this project."
+        },
+        "graduation_target_date": {
+          "type": "string",
+          "format": "date",
+          "description": "Target date for graduation out of BAR. §15.3.4: BAR obligations automatically transition to 'stale' the day after this date passes without re-review."
+        },
+        "graduation_mechanism": {
+          "enum": ["second_maintainer", "external_audit"],
+          "description": "§15.3.4: graduation path — either onboard a second human maintainer or engage a named external auditor."
+        },
+        "graduation_auditor": {
+          "type": "string",
+          "minLength": 1,
+          "description": "§15.3.4: identity of the named external auditor or the target auditing body. Required when graduation_mechanism == 'external_audit'. May be an organisation name (e.g., 'dta-security') until a specific individual is nominated."
+        },
+        "graduation_plan_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Source reference to the written graduation plan, normally an ADR. The plan document MUST contain one reason-for-slip entry per slip_count increment (verified by the coherence layer)."
+        },
+        "slip_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Number of times the graduation target date has been changed under §15.3.4 'Graduation date changes'. The cap of 2 is absolute: the schema refuses values above 2. A third slip attempt forces graduation or a downgrade to Lite. Monotonic non-decrease across ledger snapshots is enforced by the coherence layer."
+        }
+      },
+      "allOf": [
+        {
+          "description": "§15.3.4: graduation_auditor is required when graduation_mechanism == 'external_audit'. It may be an organisation name until a specific individual is nominated.",
+          "if": {
+            "properties": {
+              "graduation_mechanism": {"const": "external_audit"}
+            },
+            "required": ["graduation_mechanism"]
+          },
+          "then": {
+            "required": ["graduation_auditor"]
+          }
+        }
+      ]
+    },
+    "obligation_record": {
+      "type": "object",
+      "description": "A §15.1 obligation record. All nine fields are required by the specification. Conditional constraints in 'allOf' enforce §15.6 state-dependent MUSTs (reviewer identity for verified/waived, waiver presence iff waived, BAR sibling fields when independence == 'bootstrap_attested').",
+      "required": [
+        "id",
+        "source_refs",
+        "summary",
+        "claim_scope",
+        "implementation_surface",
+        "evidence_classes",
+        "state",
+        "freshness_binding",
+        "reviewer_metadata"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "description": "§15.6: 'Every verified or waived obligation MUST record the reviewer identity and review date.' Reviewer identity fields are non-nullable in these states.",
+          "if": {
+            "type": "object",
+            "properties": {
+              "state": {"enum": ["verified", "waived"]}
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "reviewer_metadata": {
+                "type": "object",
+                "required": ["primary_reviewer", "review_date", "independence"],
+                "properties": {
+                  "primary_reviewer": {"type": "string", "minLength": 1},
+                  "review_date": {"type": "string", "format": "date"},
+                  "independence": {"enum": ["independent", "bootstrap_attested"]}
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "§15.6: waiver block is present iff state == 'waived'. The schema forbids waivers on non-waived states and requires them on waived states.",
+          "if": {
+            "type": "object",
+            "properties": {
+              "state": {"const": "waived"}
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "required": ["waiver"]
+          },
+          "else": {
+            "not": {"required": ["waiver"]}
+          }
+        },
+        {
+          "description": "§15.3.4: when independence == 'bootstrap_attested', reviewer_metadata MUST carry review_pipeline, review_pipeline_version, review_policy_hash, graduation_target_date, and graduation_mechanism.",
+          "if": {
+            "type": "object",
+            "properties": {
+              "reviewer_metadata": {
+                "type": "object",
+                "properties": {
+                  "independence": {"const": "bootstrap_attested"}
+                },
+                "required": ["independence"]
+              }
+            },
+            "required": ["reviewer_metadata"]
+          },
+          "then": {
+            "properties": {
+              "reviewer_metadata": {
+                "type": "object",
+                "required": [
+                  "primary_reviewer",
+                  "review_date",
+                  "independence",
+                  "review_pipeline",
+                  "review_pipeline_version",
+                  "review_policy_hash",
+                  "graduation_target_date",
+                  "graduation_mechanism"
+                ],
+                "properties": {
+                  "primary_reviewer": {"type": "string", "minLength": 1},
+                  "review_date": {"type": "string", "format": "date"}
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "§15.6 freshness binding: corpus_hash is required in freshness_binding when any evidence class involves corpus evidence (corpus_verify or adversarial_corpus_minima_check). Without it, an assessor cannot tie the obligation back to a specific corpus state, which defeats the reproducibility contract.",
+          "if": {
+            "type": "object",
+            "properties": {
+              "evidence_classes": {
+                "type": "array",
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "class": {"enum": ["corpus_verify", "adversarial_corpus_minima_check"]}
+                  },
+                  "required": ["class"]
+                }
+              }
+            },
+            "required": ["evidence_classes"]
+          },
+          "then": {
+            "properties": {
+              "freshness_binding": {
+                "type": "object",
+                "required": ["corpus_hash"],
+                "properties": {
+                  "corpus_hash": {"type": "string", "minLength": 1}
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "§15.6 freshness binding: self_hosting_input_hash is required in freshness_binding when any evidence class involves self-hosting evidence (self_hosting_sarif). Without it, an assessor cannot tie the obligation back to the specific scanner inputs that were analysed.",
+          "if": {
+            "type": "object",
+            "properties": {
+              "evidence_classes": {
+                "type": "array",
+                "contains": {
+                  "type": "object",
+                  "properties": {
+                    "class": {"const": "self_hosting_sarif"}
+                  },
+                  "required": ["class"]
+                }
+              }
+            },
+            "required": ["evidence_classes"]
+          },
+          "then": {
+            "properties": {
+              "freshness_binding": {
+                "type": "object",
+                "required": ["self_hosting_input_hash"],
+                "properties": {
+                  "self_hosting_input_hash": {"type": "string", "minLength": 1}
+                }
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable obligation identifier. Does not change when the source clause is renumbered or evidence is refreshed. The pattern rejects identifiers in the §15.1 reserved illustrative namespace: P1-S0-*, C-CRIT-0-*, and any identifier where EXAMPLE is the first slug segment after the family prefix (e.g. G-LITE-EXAMPLE-*, R-EXAMPLE-*). Those forms are for worked examples in §15.6.1 and §15.6.2 only and MUST NOT appear in a live compliance ledger. Natural-language uses of EXAMPLE deeper in the slug (e.g. R-S15-WORKED-EXAMPLE-CREDIBLE) are accepted.",
+          "pattern": "^(?!P1-S0-)(?!C-CRIT-0-)(?!P1-S[0-9A-Z]+-EXAMPLE-)(?!P2A-A[0-9]+-EXAMPLE-)(?!C-CRIT-[0-9]+-EXAMPLE-)(?!G-LITE-EXAMPLE-)(?!G-ASSURANCE-EXAMPLE-)(?!G-CONTROL-EXAMPLE-)(?!G-RETROSCAN-EXAMPLE-)(?!R-EXAMPLE-)(P1-S[0-9A-Z]+-|P2A-A[0-9]+-|C-CRIT-[0-9]+-|G-LITE-|G-ASSURANCE-|G-CONTROL-|G-RETROSCAN-|R-)[A-Z0-9][A-Z0-9-]*$"
+        },
+        "source_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "description": "Exact clause reference of form '<file> §<section>(<clause>)', '<file> property <n>', or '<file> WL-FIT-<requirement-id>'. File-only references are not permitted. Permitted roots: docs/spec/, docs/requirements/, docs/adr/, docs/governance/, docs/verification/, docs/audits/.",
+            "pattern": "^docs/(spec|requirements|adr|governance|verification|audits)/[^ ]+ (§[A-Za-z0-9][A-Za-z0-9._-]*(\\([0-9]+\\))?|property [0-9]+|WL-FIT-[A-Z0-9-]+)(.*)?$"
+          }
+        },
+        "summary": {"type": "string", "minLength": 1},
+        "claim_scope": {
+          "type": "object",
+          "description": "Which tool/regime/profile/rule surface this obligation applies to. A projection may not include an obligation in a row whose release scope differs from the obligation's claim_scope.",
+          "required": ["regime", "profiles", "binding", "applies_to"],
+          "properties": {
+            "regime": {"type": "string"},
+            "profiles": {"type": "array", "items": {"enum": ["wardline-core", "wardline-type", "wardline-governance", "wardline-full"]}},
+            "binding": {"type": "string"},
+            "rule": {"type": ["string", "null"]},
+            "applies_to": {
+              "type": "string",
+              "description": "Short English phrase describing the surface this obligation governs (e.g. 'L3 callgraph taint propagation', 'required framework rule surface', 'Lite governance checklist row 3')."
+            }
+          }
+        },
+        "implementation_surface": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Code, manifest artefact, workflow, or tool output that is claimed to satisfy this obligation. These paths are WHAT implements the claim, not WHAT proves it.",
+          "items": {"type": "string"}
+        },
+        "evidence_classes": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Assessor-runnable proof needed for this obligation. An evidence class is a category of runnable check (e.g. corpus_verify, self_hosting_sarif, unit_tests), NOT a file path.",
+          "items": {
+            "type": "object",
+            "required": ["class", "target"],
+            "additionalProperties": false,
+            "properties": {
+              "class": {
+                "enum": [
+                  "unit_tests",
+                  "integration_tests",
+                  "corpus_verify",
+                  "self_hosting_sarif",
+                  "sarif_rule_output",
+                  "manifest_schema_validation",
+                  "coherence_check",
+                  "conformance_report",
+                  "exception_register_audit",
+                  "static_code_review",
+                  "ast_inspection",
+                  "runtime_descriptor_check",
+                  "ratification_record",
+                  "commit_history_review",
+                  "ci_log_review",
+                  "reviewer_attestation",
+                  "fingerprint_baseline_review",
+                  "temporal_separation_audit",
+                  "expedited_governance_ratio_check",
+                  "adversarial_corpus_minima_check",
+                  "bar_pipeline_determinism_check"
+                ],
+                "description": "Assessor-runnable evidence category. The last five values are §15.3.2 Assurance MUSTs (fingerprint baseline, temporal separation, expedited-governance ratio, adversarial corpus minima) and the §15.3.4 BAR pipeline determinism check."
+              },
+              "target": {"type": "string"},
+              "note": {"type": "string"}
+            }
+          }
+        },
+        "state": {
+          "enum": [
+            "unassessed",
+            "implemented_no_evidence",
+            "evidenced",
+            "verified",
+            "non_compliant",
+            "waived",
+            "not_applicable",
+            "stale"
+          ]
+        },
+        "freshness_binding": {
+          "type": "object",
+          "description": "Evidence identity required to know whether this record is current. If any bound input changes without re-verification, the obligation becomes stale.",
+          "required": ["commit_ref", "tool_version", "manifest_hash"],
+          "properties": {
+            "commit_ref": {"type": "string"},
+            "tool_version": {"type": "string"},
+            "manifest_hash": {"type": "string"},
+            "corpus_hash": {"type": ["string", "null"]},
+            "self_hosting_input_hash": {"type": ["string", "null"]},
+            "evidence_artifact_hashes": {"type": "object"}
+          }
+        },
+        "reviewer_metadata": {
+          "type": "object",
+          "required": ["primary_reviewer", "review_date", "independence"],
+          "additionalProperties": false,
+          "properties": {
+            "primary_reviewer": {"type": ["string", "null"], "minLength": 1},
+            "review_date": {"type": ["string", "null"], "format": "date"},
+            "independent_reviewer": {"type": ["string", "null"], "minLength": 1},
+            "independent_review_date": {"type": ["string", "null"], "format": "date"},
+            "independence": {
+              "enum": [
+                "independent",
+                "bootstrap_attested",
+                "pending"
+              ],
+              "description": "Independence status under §15.6 and §15.3.4. 'independent' = human reviewer distinct from the implementation author (default Assurance). 'bootstrap_attested' = §15.3.4 Bootstrap Assurance Reference substitution, valid only under a declared bootstrap_reference_declaration and only for reference implementations. 'pending' = the independence check has not yet been performed or does not apply (valid for states 'unassessed', 'implemented_no_evidence', 'evidenced', 'non_compliant', and 'not_applicable'). For 'not_applicable' obligations there is no review to perform because the obligation is out of scope, and 'pending' is the correct value."
+            },
+            "independence_note": {"type": "string"},
+            "review_pipeline": {
+              "type": "string",
+              "minLength": 1,
+              "description": "§15.3.4: name of the BAR review pipeline. Required when independence == 'bootstrap_attested'."
+            },
+            "review_pipeline_version": {
+              "type": "string",
+              "minLength": 1,
+              "description": "§15.3.4: version of the BAR review pipeline at the time of review. Required when independence == 'bootstrap_attested'."
+            },
+            "review_policy_hash": {
+              "type": "string",
+              "minLength": 1,
+              "description": "§15.3.4: hash of the review-policy artefact used by the BAR pipeline. Required when independence == 'bootstrap_attested'."
+            },
+            "graduation_target_date": {
+              "type": "string",
+              "format": "date",
+              "description": "§15.3.4: per-obligation graduation target date. MUST match bootstrap_reference_declaration.graduation_target_date. Required when independence == 'bootstrap_attested'."
+            },
+            "graduation_mechanism": {
+              "enum": ["second_maintainer", "external_audit"],
+              "description": "§15.3.4: graduation mechanism for this obligation. MUST match bootstrap_reference_declaration.graduation_mechanism. Required when independence == 'bootstrap_attested'."
+            }
+          }
+        },
+        "tracker_ids": {"type": "array", "items": {"type": "string"}},
+        "notes": {"type": "string"},
+        "waiver": {
+          "type": "object",
+          "description": "Required when state == 'waived'. Absent otherwise.",
+          "required": ["approver", "rationale", "scope", "expiry"],
+          "properties": {
+            "approver": {"type": "string"},
+            "rationale": {"type": "string"},
+            "scope": {"type": "string"},
+            "expiry": {"type": "string", "format": "date"}
+          }
+        }
+      }
+    }
+  }
+}

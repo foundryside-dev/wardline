@@ -69,7 +69,7 @@ This recertification currently claims:
 
 - binding: `Python`
 - conformance profiles: `Wardline-Core`, `Wardline-Governance`
-- governance profile: `lite`
+- governance profile: `assurance` (§15.3.4 Bootstrap Assurance Reference)
 - required framework rule surface: `PY-WL-001` through `PY-WL-010`
 - active binding-specific, non-framework-blocking rows: `SCN-021`, `SUP-001`
 
@@ -131,7 +131,7 @@ Evidence binding for the current snapshot:
 | `P1-S6-TAINT-JOIN-ABSORBING` | `§6`, `§11 property 6` | Taint propagation preserves the normative join algebra with `MIXED_RAW` absorbing | `non_compliant` | L3 propagation currently uses `TRUST_RANK` and `max()` instead of `taint_join()` | `wardline-cf49edcde8` |
 | `P1-S11-CORPUS-INDEPENDENCE` | `§11`, `WL-FIT-SCAN-011` | Corpus release, integrity, and review model support independent assessment | `implemented_no_evidence` | Hash manifest exists, but separate publication and independent review requirements are not yet clearly satisfied at the regime level | `wardline-fae28f1be3` |
 | `P2A-A3-L1-MINIMUM-CONFORMANCE` | `A.3`, `§15.2(4)` | Analysis level 1 truthfully represents the minimum conformant scope | `non_compliant` | Binding says level 1 includes required two-hop scope, but general callgraph taint propagation only runs at level 3 | `wardline-dac6c4195a` |
-| `G-LITE-CHECKLIST-VERIFIABLE` | `§15.3.2`, `WL-FIT-CONF-010` | The Lite governance checklist remains explicit and assessor-runnable | `evidenced` | The seven-point checklist has been restored in §15, but the current repo still needs a bound review against it | `wardline-29bd1003e7` |
+| `G-LITE-CHECKLIST-VERIFIABLE` | `§15.3.2`, `WL-FIT-CONF-010` | The Lite governance checklist remains explicit and assessor-runnable | `not_applicable` | Out of scope under Assurance-only BAR ledger; Assurance-equivalent obligations are catalogued as `G-ASSURANCE-*` | `wardline-75a774e144` |
 | `G-CONTROL-LAW-NORMAL-FOR-RELEASE` | `§10.5`, `§15.6`, `WL-FIT-GOV-008` | Release sign-off requires a normal-law SARIF run | `implemented_no_evidence` | The rule is now explicit in §15 and the matrix, but no current sign-off run is bound to the ledger yet | `wardline-8cd5d3fb73` |
 | `G-RETROSCAN-AFTER-DEGRADED-LAW` | `§10.5`, `§15.6`, `WL-FIT-GOV-009` | Any degraded window is closed by a verifiable retrospective scan before release sign-off | `implemented_no_evidence` | Retrospective-scan semantics exist in SARIF, but the release evidence does not yet bind recent history to a confirmed closure check | `wardline-8cd5d3fb73` |
 | `R-REGIME-COVERAGE-COMPLETE` | `§15.4` | Regime documentation covers the narrowed claimed surface with no unexplained gaps | `evidenced` | The release claim now explicitly names `Wardline-Core + Wardline-Governance`, active binding-specific rows, and out-of-scope surfaces | `wardline-fae28f1be3` |
@@ -149,7 +149,7 @@ store.
 | `C01` Claimed regime map and profile claim | `R-REGIME-COVERAGE-COMPLETE`, `R-CATALOG-COMPLETENESS`, `R-RELEASE-PROJECTION-RUNNABLE` | blocked |
 | `C02` Core tier model and runtime constructs | `P1-S6-TAINT-JOIN-ABSORBING` plus pending core/runtime catalog expansion | blocked |
 | `C03` Decorator vocabulary and discovery | pending catalog population for decorator/discovery obligations | blocked |
-| `C04` Manifest, schema, and governance | `C-CRIT-9-GOVERNANCE-MINIMUMS`, `C-CRIT-10-MANIFEST-CONSUMPTION`, `G-LITE-CHECKLIST-VERIFIABLE`, `G-CONTROL-LAW-NORMAL-FOR-RELEASE`, `G-RETROSCAN-AFTER-DEGRADED-LAW` | at risk |
+| `C04` Manifest, schema, and governance | `C-CRIT-9-GOVERNANCE-MINIMUMS`, `C-CRIT-10-MANIFEST-CONSUMPTION`, `G-ASSURANCE-CHECKLIST-VERIFIABLE`, `G-CONTROL-LAW-NORMAL-FOR-RELEASE`, `G-RETROSCAN-AFTER-DEGRADED-LAW` | at risk |
 | `C05` Scanner engine and rule registration | `P1-S6-TAINT-JOIN-ABSORBING`, `P2A-A3-L1-MINIMUM-CONFORMANCE` | blocked |
 | `C06` CLI, SARIF, and explainability | `C-CRIT-8-DETERMINISTIC-SARIF`, `C-CRIT-7-SELF-HOSTING` | blocked |
 | `C07` Corpus integrity and measurement | `C-CRIT-5-PER-CELL-MEASUREMENT`, `C-CRIT-6-GOLDEN-CORPUS`, `P1-S11-CORPUS-INDEPENDENCE` | blocked |

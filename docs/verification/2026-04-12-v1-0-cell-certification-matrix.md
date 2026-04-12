@@ -16,7 +16,7 @@ recertification advance?
 - Binding: `Python`
 - Claimed conformance profiles for this recertification: `Wardline-Core`,
   `Wardline-Governance`
-- Declared governance profile: `lite`
+- Declared governance profile: `assurance` (§15.3.4 Bootstrap Assurance Reference)
 - Explicitly not claimed in this recertification: `Wardline-Type`
 - Required framework rule surface in scope: `PY-WL-001` through `PY-WL-010`
   mapped to framework `WL-001` through `WL-009`
@@ -46,7 +46,7 @@ recertification advance?
 | C01 | Claimed regime map and profile claim | `R-REGIME-COVERAGE-COMPLETE`, `R-CATALOG-COMPLETENESS`, `R-RELEASE-PROJECTION-RUNNABLE` | blocked | Finish the obligation catalog expansion and keep the projection aligned with the narrowed `Wardline-Core + Wardline-Governance` claim | review pending |
 | C02 | Core tier model and runtime constructs | `P1-S6-TAINT-JOIN-ABSORBING` plus remaining core/runtime obligations as the catalog expands | blocked | Fix L3 taint propagation to use the normative join algebra, then finish core/runtime obligation population | review pending |
 | C03 | Decorator vocabulary and discovery | pending catalog population for the declared Python regime | blocked | Add the remaining Part I and Part II-A decorator/discovery obligations to the ledger before sign-off | review pending |
-| C04 | Manifest, schema, and governance | `C-CRIT-9-GOVERNANCE-MINIMUMS`, `C-CRIT-10-MANIFEST-CONSUMPTION`, `G-LITE-CHECKLIST-VERIFIABLE`, `G-CONTROL-LAW-NORMAL-FOR-RELEASE`, `G-RETROSCAN-AFTER-DEGRADED-LAW` | at risk | Re-run governance evidence review, confirm the seven-point Lite checklist, and bind sign-off to a normal-law run plus any required retrospective-scan closure | review pending |
+| C04 | Manifest, schema, and governance | `C-CRIT-9-GOVERNANCE-MINIMUMS`, `C-CRIT-10-MANIFEST-CONSUMPTION`, `G-ASSURANCE-CHECKLIST-VERIFIABLE`, `G-CONTROL-LAW-NORMAL-FOR-RELEASE`, `G-RETROSCAN-AFTER-DEGRADED-LAW` | at risk | Re-run governance evidence review, confirm the Assurance governance checklist (§15.3.2), and bind sign-off to a normal-law run plus any required retrospective-scan closure | review pending |
 | C05 | Scanner engine and rule registration | `P1-S6-TAINT-JOIN-ABSORBING`, `P2A-A3-L1-MINIMUM-CONFORMANCE` | blocked | Fix the taint-join defect and reconcile the level-1 minimum-conformance claim with the actual analysis surface | review pending |
 | C06 | CLI, SARIF, explainability, and self-hosting gate | `C-CRIT-7-SELF-HOSTING`, `C-CRIT-8-DETERMINISTIC-SARIF` | blocked | Tighten self-hosting pass/fail semantics and re-verify deterministic SARIF end to end | review pending |
 | C07 | Corpus integrity and measurement pipeline | `C-CRIT-5-PER-CELL-MEASUREMENT`, `C-CRIT-6-GOLDEN-CORPUS`, `P1-S11-CORPUS-INDEPENDENCE` | blocked | Reconcile schema/floor drift, restore assessor-runnable corpus integrity checks, and close adversarial-coverage gaps | review pending |
@@ -91,7 +91,7 @@ These open tracker items still block the release projection:
 - `wardline-cf49edcde8` — taint propagation does not preserve normative `taint_join`
 - `wardline-dac6c4195a` — criterion 4 / analysis-level contract ambiguity
 - `wardline-625c233fde` — self-hosting semantics are underdefined
-- `wardline-29bd1003e7` — restored Lite governance checklist still needs a bound repo review
+- `wardline-29bd1003e7` — Assurance governance checklist review pending under BAR
 - `wardline-8cd5d3fb73` — release sign-off still needs normal-law SARIF and retrospective-scan closure evidence
 - `wardline-fae28f1be3` — obligation-ledger compliance model still in progress
 - `wardline-75a774e144` — full Part I and Part II-A obligation catalog not yet populated

@@ -201,6 +201,57 @@
         "TRANSPARENT": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": false
+    },
+    "bootstrap_assurance_reference": {
+      "type": "object",
+      "description": "§15.3.4 Bootstrap Assurance Reference declaration. Present when the deployment is a reference implementation operating under the BAR sub-profile of Assurance. Consumers of this manifest MUST surface these fields for governance enforcement. The compliance ledger's bootstrap_reference_declaration block echoes these values; the manifest is the primary declaration.",
+      "required": [
+        "sole_maintainer",
+        "declared_at",
+        "graduation_target_date",
+        "graduation_mechanism",
+        "graduation_plan_ref",
+        "slip_count"
+      ],
+      "properties": {
+        "sole_maintainer": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Identity of the single declared human maintainer."
+        },
+        "declared_at": {
+          "type": "string",
+          "format": "date",
+          "description": "Date on which BAR was first declared."
+        },
+        "graduation_target_date": {
+          "type": "string",
+          "format": "date",
+          "description": "Target date for graduation out of BAR."
+        },
+        "graduation_mechanism": {
+          "type": "string",
+          "enum": ["second_maintainer", "external_audit"],
+          "description": "Graduation path."
+        },
+        "graduation_auditor": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Named external auditor or auditing body. Required when graduation_mechanism is external_audit."
+        },
+        "graduation_plan_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Source reference to the written graduation plan (normally an ADR)."
+        },
+        "slip_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Number of graduation-date changes. §15.3.4 caps this at 2."
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

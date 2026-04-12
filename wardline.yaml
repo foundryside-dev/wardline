@@ -5,7 +5,7 @@
 
 $id: "https://wardline.dev/schemas/1.0/wardline.schema.json"
 
-governance_profile: "lite"
+governance_profile: "assurance"
 
 metadata:
   organisation: "wardline"
@@ -15,14 +15,21 @@ metadata:
   ratification_date: "2026-03-27"
   review_interval_days: 180
   temporal_separation:
-    alternative: "same-actor-with-retrospective"
-    retrospective_window_days: 10
-    rationale: >
-      Single-developer project. Same-actor approval permitted for
-      enforcement artefact changes with mandatory retrospective review
-      within 10 business days. Policy artefact changes (tier definitions,
-      boundary declarations, restoration provenance) require different-actor
-      review per §10.3.1.
+    alternative: "enforced"
+
+# ── §15.3.4 Bootstrap Assurance Reference declaration ────────
+# This block is machine-readable governance metadata consumed by
+# tooling. It mirrors the compliance ledger's
+# bootstrap_reference_declaration block; this manifest is the
+# primary declaration site.
+bootstrap_assurance_reference:
+  sole_maintainer: "johnm-dta"
+  declared_at: "2026-04-12"
+  graduation_target_date: "2026-06-12"
+  graduation_mechanism: "external_audit"
+  graduation_auditor: "dta-security"
+  graduation_plan_ref: "docs/adr/ADR-005-bootstrap-assurance-reference.md"
+  slip_count: 0
 
 # ── Tier definitions ──────────────────────────────────────────
 tiers:
