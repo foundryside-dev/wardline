@@ -241,6 +241,13 @@ def propagate_callgraph_taints(
                     except KeyError:
                         c_return_taint = current[c]
                     callee_taints.append(c_return_taint)
+                elif c in scc:
+                    # Preserve callee's L1 classification through SCC iterations.
+                    # Without this, early worklist processing can "wash" a callee
+                    # from its L1 classification (e.g., INTEGRAL→ASSURED), hiding
+                    # cross-classification from later SCC members and making the
+                    # result depend on min(worklist) processing order.
+                    callee_taints.append(taint_join(taint_map[c], current[c]))
                 else:
                     callee_taints.append(current[c])
 

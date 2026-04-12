@@ -227,7 +227,7 @@ def test_fallback_bounded_by_callees(
 
 @given(data=call_graphs())
 @settings(max_examples=200)
-def test_join_commutativity_at_propagation_level(
+def test_propagation_order_independent(
     data: tuple[
         dict[str, set[str]],
         dict[str, TaintState],
@@ -236,32 +236,47 @@ def test_join_commutativity_at_propagation_level(
         dict[str, int],
     ],
 ) -> None:
-    """Propagation result is independent of callee set iteration order.
+    """Propagation result is independent of worklist processing order.
 
-    Since taint_join is commutative and associative, the fold over callees
-    must produce the same result regardless of iteration order. This is
-    already enforced by sorted() in the worklist, but this test verifies
-    the algebraic property holds at the propagation output level.
+    The worklist picks min(worklist) at each step, so processing order
+    depends on node names. By permuting all node names (reversing the
+    sorted order), we force a different worklist pick sequence while
+    preserving the graph structure. The results, after un-permuting,
+    must match.
     """
     edges, taint_map, taint_sources, resolved_counts, unresolved_counts = data
-
-    # Run twice with identical inputs — idempotence already tested,
-    # but here we also verify that the result matches when we reverse
-    # all edge sets (which changes iteration order of callees).
-    reversed_edges = {k: set(sorted(v, reverse=True)) for k, v in edges.items()}
 
     result1, _, _ = propagate_callgraph_taints(
         edges, taint_map, taint_sources, resolved_counts, unresolved_counts,
         return_taint_map=taint_map,
     )
+
+    # Permute node names to change min(worklist) pick order.
+    # Reversing the sorted name list swaps first↔last, second↔second-to-last, etc.
+    names = sorted(taint_map.keys())
+    if len(names) < 2:
+        return  # single-node graph, nothing to permute
+
+    perm = dict(zip(names, reversed(names)))
+    rev_perm = {v: k for k, v in perm.items()}
+
+    perm_edges = {perm[k]: {perm[v] for v in vs if v in perm} for k, vs in edges.items()}
+    perm_taint_map = {perm[k]: v for k, v in taint_map.items()}
+    perm_sources = {perm[k]: v for k, v in taint_sources.items()}
+    perm_resolved = {perm[k]: v for k, v in resolved_counts.items()}
+    perm_unresolved = {perm[k]: v for k, v in unresolved_counts.items()}
+
     result2, _, _ = propagate_callgraph_taints(
-        reversed_edges, taint_map, taint_sources, resolved_counts, unresolved_counts,
-        return_taint_map=taint_map,
+        perm_edges, perm_taint_map, perm_sources, perm_resolved, perm_unresolved,
+        return_taint_map=perm_taint_map,
     )
 
-    assert result1 == result2, (
-        f"Propagation not commutative over callee order.\n"
-        f"Differences: {_diff_maps(result1, result2)}"
+    # Un-permute result2 and compare
+    result2_unperm = {rev_perm[k]: v for k, v in result2.items()}
+
+    assert result1 == result2_unperm, (
+        f"Propagation not order-independent.\n"
+        f"Differences: {_diff_maps(result1, result2_unperm)}"
     )
 
 

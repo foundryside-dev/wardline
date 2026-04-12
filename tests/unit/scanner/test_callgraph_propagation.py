@@ -837,6 +837,44 @@ class TestCrossClassificationJoin:
         # Result: MIXED_RAW
         assert result["A"] == TaintState.MIXED_RAW
 
+    def test_scc_cross_classification_order_independent(self) -> None:
+        """SCC with cross-classification L1 taints must produce the same result
+        regardless of which node is processed first by min(worklist).
+
+        Graph: ASSURED-role→{self, INTEGRAL-role}, INTEGRAL-role→{ASSURED-role}.
+        Both in one SCC. Correct answer: both MIXED_RAW.
+        """
+        # Forward naming: A=ASSURED sorts first → A processed first
+        edges_fwd = {"A": {"A", "B"}, "B": {"A"}}
+        tm_fwd = {"A": TaintState.ASSURED, "B": TaintState.INTEGRAL}
+        src_fwd = {"A": "module_default", "B": "module_default"}
+        r_fwd, _, _ = propagate_callgraph_taints(
+            edges_fwd, tm_fwd, src_fwd,
+            {"A": 2, "B": 1}, {"A": 0, "B": 0},
+            return_taint_map=tm_fwd,
+        )
+
+        # Reversed naming: A=INTEGRAL sorts first → INTEGRAL role processed first
+        edges_rev = {"B": {"B", "A"}, "A": {"B"}}
+        tm_rev = {"B": TaintState.ASSURED, "A": TaintState.INTEGRAL}
+        src_rev = {"B": "module_default", "A": "module_default"}
+        r_rev, _, _ = propagate_callgraph_taints(
+            edges_rev, tm_rev, src_rev,
+            {"B": 2, "A": 1}, {"B": 0, "A": 0},
+            return_taint_map=tm_rev,
+        )
+
+        # Both orderings must agree: ASSURED-role and INTEGRAL-role get same taint
+        assert r_fwd["A"] == r_rev["B"], (
+            f"ASSURED-role: {r_fwd['A']} (fwd) vs {r_rev['B']} (rev)"
+        )
+        assert r_fwd["B"] == r_rev["A"], (
+            f"INTEGRAL-role: {r_fwd['B']} (fwd) vs {r_rev['A']} (rev)"
+        )
+        # Both should be MIXED_RAW (cross-classification in SCC)
+        assert r_fwd["A"] == TaintState.MIXED_RAW
+        assert r_fwd["B"] == TaintState.MIXED_RAW
+
     def test_module_default_cross_classification(self) -> None:
         """Module_default(INTEGRAL) calling ASSURED + UNKNOWN_RAW -> MIXED_RAW."""
         edges = {"A": {"B", "C"}, "B": set(), "C": set()}
