@@ -304,7 +304,7 @@ class TestDiamondPattern:
     """Diamond call pattern."""
 
     def test_diamond_pattern(self) -> None:
-        """A calls B(ASSURED) and C(EXTERNAL_RAW) -> A stays UNKNOWN_RAW (floor clamp)."""
+        """A calls B(ASSURED) and C(EXTERNAL_RAW) -> MIXED_RAW (cross-classification join)."""
         edges = {"A": {"B", "C"}, "B": set(), "C": set()}
         taint_map = {
             "A": TaintState.UNKNOWN_RAW,
@@ -316,15 +316,16 @@ class TestDiamondPattern:
             edges, taint_map, taint_sources,
             {"A": 2, "B": 0, "C": 0}, {"A": 0, "B": 0, "C": 0}, return_taint_map=taint_map,
 )
-        # Floor clamp: max(EXTERNAL_RAW=5, UNKNOWN_RAW=6) = 6 = UNKNOWN_RAW
-        assert result["A"] == TaintState.UNKNOWN_RAW
+        # join(ASSURED, EXTERNAL_RAW) = MIXED_RAW (cross-classification, §6)
+        # MIXED_RAW rank=7 > L1 floor rank=6 -> result is MIXED_RAW
+        assert result["A"] == TaintState.MIXED_RAW
 
 
 class TestCycleConvergence:
     """Cycles must converge."""
 
     def test_cycle_converges(self) -> None:
-        """Mutual recursion terminates (floor clamp keeps UNKNOWN_RAW)."""
+        """Mutual recursion terminates (cross-classification produces MIXED_RAW)."""
         edges = {"A": {"B"}, "B": {"A", "C"}, "C": set()}
         taint_map = {
             "A": TaintState.UNKNOWN_RAW,
@@ -336,9 +337,10 @@ class TestCycleConvergence:
             edges, taint_map, taint_sources,
             {"A": 1, "B": 2, "C": 0}, {"A": 0, "B": 0, "C": 0}, return_taint_map=taint_map,
 )
-        # Floor clamp: UNKNOWN_RAW (rank 6) >= EXTERNAL_RAW (rank 5)
-        assert result["A"] == TaintState.UNKNOWN_RAW
-        assert result["B"] == TaintState.UNKNOWN_RAW
+        # join(UNKNOWN_RAW, EXTERNAL_RAW) = MIXED_RAW (cross-classification, §6)
+        # MIXED_RAW rank=7 > L1 floor rank=6 -> both converge to MIXED_RAW
+        assert result["A"] == TaintState.MIXED_RAW
+        assert result["B"] == TaintState.MIXED_RAW
 
     def test_self_recursive_converges(self) -> None:
         """Single function A->A, fallback source -> stable convergence."""
