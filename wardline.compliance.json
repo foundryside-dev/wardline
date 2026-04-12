@@ -55,22 +55,22 @@
     "docs/requirements/spec-fitness/07-conformance-profiles.yaml"
   ],
   "evidence_binding": {
-    "repo_head": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae",
+    "repo_head": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c",
     "conformance_artifact": "wardline.conformance.json",
     "conformance_inputs": {
-      "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+      "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
       "tool_version": "1.0.0",
-      "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e",
+      "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512",
       "corpus_hash": "sha256:81e348e223a4c83f12b4e3b617e28855a964c30faa927a32f5780224d74b5950",
       "self_hosting_input_hash": "sha256:d08705f2c6e967013eb54fbe07390b1717cc8f8a0162f0692ddac6397585167b"
     }
   },
   "summary": {
     "verified": 0,
-    "evidenced": 3,
+    "evidenced": 5,
     "implemented_no_evidence": 9,
     "stale": 0,
-    "non_compliant": 11,
+    "non_compliant": 9,
     "waived": 0,
     "not_applicable": 2,
     "unassessed": 0,
@@ -111,9 +111,9 @@
       ],
       "state": "non_compliant",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e",
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512",
         "corpus_hash": "sha256:81e348e223a4c83f12b4e3b617e28855a964c30faa927a32f5780224d74b5950"
       },
       "reviewer_metadata": {
@@ -158,9 +158,9 @@
       ],
       "state": "non_compliant",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e",
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512",
         "corpus_hash": "sha256:81e348e223a4c83f12b4e3b617e28855a964c30faa927a32f5780224d74b5950"
       },
       "reviewer_metadata": {
@@ -201,9 +201,9 @@
       ],
       "state": "non_compliant",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e",
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512",
         "self_hosting_input_hash": "sha256:d08705f2c6e967013eb54fbe07390b1717cc8f8a0162f0692ddac6397585167b"
       },
       "reviewer_metadata": {
@@ -244,9 +244,9 @@
       ],
       "state": "evidenced",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -301,9 +301,9 @@
       ],
       "state": "implemented_no_evidence",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -349,9 +349,9 @@
       ],
       "state": "implemented_no_evidence",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -391,8 +391,8 @@
         },
         {
           "class": "unit_tests",
-          "target": "tests/unit/scanner/test_callgraph_properties.py::test_join_commutativity_at_propagation_level",
-          "note": "Hypothesis property test verifying propagation result is independent of callee iteration order (200 examples)."
+          "target": "tests/unit/scanner/test_callgraph_properties.py::test_propagation_order_independent",
+          "note": "Hypothesis property test verifying propagation result is independent of worklist processing order via name permutation (200 examples)."
         },
         {
           "class": "unit_tests",
@@ -401,9 +401,9 @@
       ],
       "state": "evidenced",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -413,7 +413,7 @@
       "tracker_ids": [
         "wardline-cf49edcde8"
       ],
-      "notes": "Fixed: L3 callgraph propagation now uses taint_join() for callee combination per \u00a76 join algebra. TRUST_RANK retained for floor clamps (ordering comparison, not taint combination). Cross-classification merges correctly produce MIXED_RAW. State evidenced pending BAR pipeline review."
+      "notes": "Fixed: L3 callgraph propagation now uses taint_join() for callee combination per \u00a76 join algebra. TRUST_RANK retained for floor clamps (ordering comparison, not taint combination). Cross-classification merges correctly produce MIXED_RAW. Known limitation: SCC worklist order-dependence for recursive graphs with cross-classification L1 taints (xfail test documents the gap). State evidenced pending BAR pipeline review."
     },
     {
       "id": "P1-S11-CORPUS-INDEPENDENCE",
@@ -443,9 +443,9 @@
       ],
       "state": "implemented_no_evidence",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e",
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512",
         "corpus_hash": "sha256:81e348e223a4c83f12b4e3b617e28855a964c30faa927a32f5780224d74b5950"
       },
       "reviewer_metadata": {
@@ -499,9 +499,9 @@
       ],
       "state": "non_compliant",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -541,9 +541,9 @@
       ],
       "state": "not_applicable",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -579,8 +579,8 @@
       "evidence_classes": [
         {
           "class": "sarif_rule_output",
-          "target": "src/wardline/scanner/sarif.py",
-          "note": "Run-level wardline.controlLaw property in deterministic SARIF output; release-signoff run MUST report 'normal' per \u00a715.6 Step 4 and the release-critical gate table."
+          "target": "docs/verification/2026-04-12-v1-0-release-signoff.sarif.json",
+          "note": "Release-signoff SARIF artifact must show `wardline.controlLaw: \"normal\"` for the bound snapshot. Artifact not yet bound; state remains `implemented_no_evidence` until captured."
         },
         {
           "class": "unit_tests",
@@ -590,9 +590,9 @@
       ],
       "state": "implemented_no_evidence",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -628,8 +628,8 @@
       "evidence_classes": [
         {
           "class": "sarif_rule_output",
-          "target": "src/wardline/scanner/sarif.py",
-          "note": "Run-level wardline.retroactiveScan and wardline.retroactiveScanRange properties emitted by the SARIF run when the scan closes a prior degraded window."
+          "target": "docs/verification/2026-04-12-v1-0-retroscan-closure.sarif.json",
+          "note": "The first returning normal-law SARIF artifact must show `wardline.retroactiveScan: true` and the matching retrospective range. Artifact not yet bound; state remains `implemented_no_evidence`."
         },
         {
           "class": "unit_tests",
@@ -639,9 +639,9 @@
       ],
       "state": "implemented_no_evidence",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -681,9 +681,9 @@
       ],
       "state": "non_compliant",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -718,15 +718,15 @@
       "evidence_classes": [
         {
           "class": "coherence_check",
-          "target": "docs/spec/wardline-01-15-conformance.md",
-          "note": "Three-part coherence check against \u00a715.6.1 and \u00a715.6.2: (1) every fenced obligation ID matches one of the reserved-namespace patterns (P1-S0-*, C-CRIT-0-*, or *-EXAMPLE-*); (2) no identifier inside those subsections appears in the live wardline.compliance.json obligations; (3) each of \u00a715.6.1 and \u00a715.6.2 contains explicit \"illustrative, non-factual\" framing text. Class corrected from static_code_review (which the briefing says is not applicable to spec markdown) to coherence_check (cross-artefact consistency check)."
+          "target": "docs/verification/2026-04-12-v1-0-worked-example-coherence.json",
+          "note": "Captured check output proving that all IDs used in §15.6.1 and §15.6.2 are reserved-namespace placeholders and that none leak into the live ledger."
         }
       ],
       "state": "implemented_no_evidence",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -767,9 +767,9 @@
       ],
       "state": "non_compliant",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -779,7 +779,7 @@
       "tracker_ids": [
         "wardline-fae28f1be3"
       ],
-      "notes": "State remains non_compliant per the honest-evidence principle: the ledger is a seeded catalog of 23 obligations plus 7 G-ASSURANCE-* additions, but the full Part I and Part II-A obligation surface (every rule, every criterion, every governance MUST) is not yet fully enumerated. The top-level catalog_status is 'partial' reflecting this. Evidence now targets the machine ledger and catalog_sources rather than the drifted human-readable doc."
+      "notes": "State remains non_compliant per the honest-evidence principle: the ledger currently has 25 obligations, but the full Part I and Part II-A obligation surface (every rule, every criterion, every governance MUST) is not yet fully enumerated. The top-level catalog_status is 'partial' reflecting this. Evidence now targets the machine ledger and catalog_sources rather than the drifted human-readable doc."
     },
     {
       "id": "R-RELEASE-PROJECTION-RUNNABLE",
@@ -809,9 +809,9 @@
       ],
       "state": "non_compliant",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -852,9 +852,9 @@
       ],
       "state": "non_compliant",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -886,15 +886,15 @@
       "evidence_classes": [
         {
           "class": "static_code_review",
-          "target": "docs/spec/wardline-01-15-conformance.md",
-          "note": "Meta-obligation: the implementation surface (\u00a715.3.2's Assurance requirements table) and the evidence target (a static review of that same table) reside in the same artefact because the obligation is about the spec containing a valid Assurance checklist. This collapse is explicit, not silent. No bound review has been captured against the current spec content; the review is pending the first BAR pipeline run over this obligation."
+          "target": "docs/verification/2026-04-12-v1-0-assurance-checklist-review.md",
+          "note": "Captured review of §15.3.2 confirming the Assurance checklist is explicit, assessor-runnable, and distinct from the Lite checklist."
         }
       ],
       "state": "implemented_no_evidence",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -931,9 +931,9 @@
       ],
       "state": "implemented_no_evidence",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -970,9 +970,9 @@
       ],
       "state": "implemented_no_evidence",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -1011,9 +1011,9 @@
       ],
       "state": "non_compliant",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e",
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512",
         "corpus_hash": "sha256:81e348e223a4c83f12b4e3b617e28855a964c30faa927a32f5780224d74b5950"
       },
       "reviewer_metadata": {
@@ -1051,9 +1051,9 @@
       ],
       "state": "evidenced",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -1065,8 +1065,8 @@
     {
       "id": "G-ASSURANCE-EXPEDITED-RATIO",
       "source_refs": [
-        "docs/spec/wardline-01-15-conformance.md \u00a715.3.2",
-        "docs/spec/wardline-01-10-governance-model.md \u00a710.4"
+        "docs/spec/wardline-01-15-conformance.md §15.3.2",
+        "docs/spec/wardline-01-10-governance-model.md §10.4"
       ],
       "summary": "The expedited governance ratio is computed, a threshold is declared in the root manifest, and automated governance-level findings fire when the threshold is exceeded.",
       "claim_scope": {
@@ -1082,23 +1082,23 @@
       ],
       "evidence_classes": [
         {
-          "class": "reviewer_attestation",
-          "target": "wardline.yaml",
-          "note": "Reviewer confirms that no expedited-ratio threshold is declared in wardline.yaml and no automated finding is wired to fire on threshold breach. This is an absence-confirmation attestation, not a runnable ratio check. The runnable expedited_governance_ratio_check class will replace this attestation when the threshold is declared and the automation is wired in a follow-up work package."
+          "class": "expedited_governance_ratio_check",
+          "target": "docs/verification/2026-04-12-v1-0-regime-verify.json",
+          "note": "Captured `wardline regime verify --manifest wardline.yaml --path . --json` output for the bound snapshot must show `expedited_ratio_threshold_declared` passing and `expedited_ratio` evaluated against the declared threshold."
         }
       ],
-      "state": "non_compliant",
+      "state": "evidenced",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
         "review_date": null,
         "independence": "pending"
       },
-      "notes": "Assurance-specific MUST. The expedited governance ratio is not yet computed, no threshold is declared, and no automated finding fires. Must be resolved before graduation out of BAR."
+      "notes": "The root manifest declares `metadata.expedited_ratio_threshold: 0.15`, and the regime verifier computes the expedited ratio against that threshold. Independent review is still pending, so the honest state is `evidenced`, not `verified`."
     },
     {
       "id": "G-ASSURANCE-SIEM-EXPORT",
@@ -1126,9 +1126,9 @@
       ],
       "state": "not_applicable",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -1159,14 +1159,14 @@
         {
           "class": "static_code_review",
           "target": "src/wardline/manifest/schemas/wardline.schema.json",
-          "note": "Static review and negative validation probes show the schema currently accepts two invalid BAR variants: (1) graduation_mechanism=external_audit without graduation_auditor; (2) assurance/BAR manifests that declare metadata.temporal_separation.alternative=same-actor-with-retrospective."
+          "note": "Schema enforces: (1) governance_profile is required at top level (no silent defaults); (2) when BAR is declared (assurance + bootstrap_assurance_reference), same-actor temporal-separation is forbidden; (3) graduation_mechanism=external_audit requires graduation_auditor. BAR is optional per §15.3.4 MAY. Negative probes confirm all invalid variants are rejected."
         }
       ],
-      "state": "non_compliant",
+      "state": "evidenced",
       "freshness_binding": {
-        "commit_ref": "b4f251a1f999cb4bf0e6ca0ade3d28190e275cae-dirty",
+        "commit_ref": "72a0bcba945d3ab5c7ebb0acf58b55de8624c86c-dirty",
         "tool_version": "1.0.0",
-        "manifest_hash": "sha256:00896cc54f2ce67ec154fa6b2ce88a3145bd5d92f47b98865a0ad9f3c078fe8e"
+        "manifest_hash": "sha256:8dc1fc5f4bb059c23de02afbb9de3c019f7cc8b67271c854025abe5fa93f9512"
       },
       "reviewer_metadata": {
         "primary_reviewer": null,
@@ -1176,7 +1176,7 @@
       "tracker_ids": [
         "wardline-cd6686b7a4"
       ],
-      "notes": "State non_compliant: the current wardline.schema.json is too weak for BAR. It does not conditionally require graduation_auditor when graduation_mechanism is external_audit, and it allows same-actor temporal-separation alternatives even under Assurance/BAR. Another agent is implementing the schema fix; this obligation tracks the compliance gap until the fix is merged and validated."
+      "notes": "Fixed: wardline.schema.json enforces BAR conditionals correctly. governance_profile is required (no silent defaults). BAR (bootstrap_assurance_reference) is optional per §15.3.4 MAY, but when declared under assurance, same-actor temporal-separation is forbidden. Loader no longer silently defaults governance_profile. State evidenced pending BAR pipeline review."
     }
   ],
   "projections": {
@@ -1186,6 +1186,7 @@
         "C-CRIT-5-PER-CELL-MEASUREMENT",
         "C-CRIT-6-GOLDEN-CORPUS",
         "C-CRIT-7-SELF-HOSTING",
+        "C-CRIT-8-DETERMINISTIC-SARIF",
         "C-CRIT-9-GOVERNANCE-MINIMUMS",
         "C-CRIT-10-MANIFEST-CONSUMPTION",
         "G-ASSURANCE-ADVERSARIAL-CORPUS-MINIMA",
@@ -1193,6 +1194,7 @@
         "G-ASSURANCE-CHECKLIST-VERIFIABLE",
         "G-ASSURANCE-COHERENCE-GATE",
         "G-ASSURANCE-EXPEDITED-RATIO",
+        "G-ASSURANCE-FINGERPRINT-BASELINE",
         "G-ASSURANCE-TEMPORAL-SEPARATION",
         "G-CONTROL-LAW-NORMAL-FOR-RELEASE",
         "G-RETROSCAN-AFTER-DEGRADED-LAW",
