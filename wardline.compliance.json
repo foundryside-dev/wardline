@@ -413,7 +413,7 @@
       "tracker_ids": [
         "wardline-cf49edcde8"
       ],
-      "notes": "Fixed: L3 callgraph propagation now uses taint_join() for callee combination per \u00a76 join algebra. TRUST_RANK retained for floor clamps (ordering comparison, not taint combination). Cross-classification merges correctly produce MIXED_RAW. Known limitation: SCC worklist order-dependence for recursive graphs with cross-classification L1 taints (xfail test documents the gap). State evidenced pending BAR pipeline review."
+      "notes": "Fixed: L3 callgraph propagation now uses taint_join() for callee combination per \u00a76 join algebra. TRUST_RANK retained for floor clamps (ordering comparison, not taint combination). Cross-classification merges correctly produce MIXED_RAW. SCC pre-initialization ensures order-independent results for recursive graphs with cross-classification L1 taints. State evidenced pending BAR pipeline review."
     },
     {
       "id": "P1-S11-CORPUS-INDEPENDENCE",

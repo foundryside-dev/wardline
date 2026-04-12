@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
-
 from wardline.core.taints import TaintState
 from wardline.scanner.taint.callgraph import TRUST_RANK
 from wardline.scanner.taint.callgraph_propagation import (
@@ -839,22 +837,13 @@ class TestCrossClassificationJoin:
         # Result: MIXED_RAW
         assert result["A"] == TaintState.MIXED_RAW
 
-    @pytest.mark.xfail(
-        reason="SCC worklist order-dependence: cross-classification L1 taints "
-        "in recursive SCCs can produce different results depending on "
-        "min(worklist) processing order. The taint_join lattice has non-monotone "
-        "transfer functions that prevent a unique fixed point. Tracked for "
-        "resolution in a future pass.",
-        strict=False,
-    )
     def test_scc_cross_classification_order_independent(self) -> None:
-        """SCC with cross-classification L1 taints should produce the same result
+        """SCC with cross-classification L1 taints produces MIXED_RAW
         regardless of which node is processed first by min(worklist).
 
-        Known limitation: the worklist iteration with taint_join can converge
-        to different fixed points depending on processing order when SCC members
-        have cross-classification L1 taints. This test documents the desired
-        property; it currently fails on one ordering.
+        In an SCC, every member can reach every other member. If members
+        have cross-classification L1 taints, the SCC L1 join pre-initialization
+        ensures all members start at MIXED_RAW before the worklist runs.
         """
         # Forward naming: A=ASSURED sorts first → A processed first
         edges_fwd = {"A": {"A", "B"}, "B": {"A"}}
@@ -883,6 +872,29 @@ class TestCrossClassificationJoin:
         assert r_fwd["B"] == r_rev["A"], (
             f"INTEGRAL-role: {r_fwd['B']} (fwd) vs {r_rev['A']} (rev)"
         )
+        # Both should be MIXED_RAW (cross-classification in SCC)
+        assert r_fwd["A"] == TaintState.MIXED_RAW
+        assert r_fwd["B"] == TaintState.MIXED_RAW
+
+    def test_single_node_scc_not_over_tainted(self) -> None:
+        """A(INTEGRAL) self-loop calling external B(ASSURED) -> A=ASSURED, not MIXED_RAW.
+
+        Single-node SCCs should NOT have L1 re-injected. A's self-call
+        should see its refined summary (ASSURED), not its original L1
+        (INTEGRAL). The SCC pre-initialization only applies when ≥2
+        non-anchored members have cross-classification L1 taints.
+        """
+        edges = {"A": {"A", "B"}, "B": set()}
+        taint_map = {"A": TaintState.INTEGRAL, "B": TaintState.ASSURED}
+        taint_sources = {"A": "module_default", "B": "decorator"}
+        result, _, _diags = propagate_callgraph_taints(
+            edges, taint_map, taint_sources,
+            {"A": 2, "B": 0}, {"A": 0, "B": 0},
+            return_taint_map=taint_map,
+        )
+        # A's external callee B(ASSURED) refines A to ASSURED via Phase 1.
+        # A's self-loop reads current[A]=ASSURED. No cross-classification.
+        assert result["A"] == TaintState.ASSURED
 
     def test_module_default_cross_classification(self) -> None:
         """Module_default(INTEGRAL) calling ASSURED + UNKNOWN_RAW -> MIXED_RAW."""

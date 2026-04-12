@@ -201,6 +201,24 @@ def propagate_callgraph_taints(
                             best_callee = c
                     via_callee_map[f] = best_callee
 
+        # Phase 1b: SCC cross-classification pre-initialization.
+        # In an SCC, every member can reach every other member transitively.
+        # If non-anchored members have cross-classification L1 taints (e.g.,
+        # one ASSURED, one INTEGRAL), the join of their L1 taints is MIXED_RAW.
+        # Pre-set all non-anchored members to this join BEFORE the worklist
+        # runs, so the cross-classification is visible regardless of which
+        # member min(worklist) processes first.  Without this, early worklist
+        # processing can "wash" a callee from its L1 classification before
+        # other members see it, making the result order-dependent.
+        non_anchored_in_scc = scc - anchored
+        if len(non_anchored_in_scc) >= 2:
+            scc_l1_join = reduce(taint_join, [taint_map[f] for f in sorted(non_anchored_in_scc)])
+            scc_l1_rank = TRUST_RANK[scc_l1_join]
+            for f in sorted(non_anchored_in_scc):
+                if scc_l1_rank > TRUST_RANK[current[f]]:
+                    current[f] = scc_l1_join
+                    refined.add(f)
+
         # Phase 2: Worklist iteration within the SCC to propagate internal edges.
         # Start with all non-anchored members that have callers with new values.
         worklist = {f for f in scc if f not in anchored}
