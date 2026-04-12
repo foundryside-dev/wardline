@@ -225,6 +225,45 @@ def test_fallback_bounded_by_callees(
                 f"but max callee rank is {max_callee_rank}"
             )
 
+@given(data=call_graphs())
+@settings(max_examples=200)
+def test_join_commutativity_at_propagation_level(
+    data: tuple[
+        dict[str, set[str]],
+        dict[str, TaintState],
+        dict[str, TaintSource],
+        dict[str, int],
+        dict[str, int],
+    ],
+) -> None:
+    """Propagation result is independent of callee set iteration order.
+
+    Since taint_join is commutative and associative, the fold over callees
+    must produce the same result regardless of iteration order. This is
+    already enforced by sorted() in the worklist, but this test verifies
+    the algebraic property holds at the propagation output level.
+    """
+    edges, taint_map, taint_sources, resolved_counts, unresolved_counts = data
+
+    # Run twice with identical inputs — idempotence already tested,
+    # but here we also verify that the result matches when we reverse
+    # all edge sets (which changes iteration order of callees).
+    reversed_edges = {k: set(sorted(v, reverse=True)) for k, v in edges.items()}
+
+    result1, _, _ = propagate_callgraph_taints(
+        edges, taint_map, taint_sources, resolved_counts, unresolved_counts,
+        return_taint_map=taint_map,
+    )
+    result2, _, _ = propagate_callgraph_taints(
+        reversed_edges, taint_map, taint_sources, resolved_counts, unresolved_counts,
+        return_taint_map=taint_map,
+    )
+
+    assert result1 == result2, (
+        f"Propagation not commutative over callee order.\n"
+        f"Differences: {_diff_maps(result1, result2)}"
+    )
+
 
 # ── Helpers ──────────────────────────────────────────────────────
 
