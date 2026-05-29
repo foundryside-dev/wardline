@@ -88,3 +88,41 @@ def test_invalidate_missing_key_is_noop() -> None:
 
 def test_schema_version_property() -> None:
     assert SummaryCache().schema_version == SUMMARY_SCHEMA_VERSION
+
+
+def test_save_and_load_roundtrip(tmp_path) -> None:
+    c = SummaryCache(cache_dir=tmp_path)
+    summaries = (_summary("m.a"), _summary("m.b"))
+    c.put(_KEY, summaries)
+    c.save()
+    c2 = SummaryCache(cache_dir=tmp_path)
+    c2.load()
+    assert c2.get(_KEY) == summaries
+
+
+def test_load_drops_malformed_json(tmp_path) -> None:
+    (tmp_path / f"{_KEY}.json").write_text("{not json", encoding="utf-8")
+    c = SummaryCache(cache_dir=tmp_path)
+    c.load()  # must not raise
+    assert len(c) == 0
+
+
+def test_load_ignores_non_hex_stem_files(tmp_path) -> None:
+    (tmp_path / "notes.json").write_text("[]", encoding="utf-8")
+    c = SummaryCache(cache_dir=tmp_path)
+    c.load()
+    assert len(c) == 0
+
+
+def test_save_requires_cache_dir() -> None:
+    with pytest.raises(ValueError, match="cache_dir"):
+        SummaryCache().save()
+
+
+def test_load_requires_cache_dir() -> None:
+    with pytest.raises(ValueError, match="cache_dir"):
+        SummaryCache().load()
+
+
+def test_in_memory_cache_has_no_cache_dir() -> None:
+    assert SummaryCache().cache_dir is None
