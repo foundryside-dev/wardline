@@ -7,6 +7,7 @@ import click
 
 from wardline._version import __version__
 from wardline.cli.scan import scan
+from wardline.core.descriptor import descriptor_to_yaml
 
 
 @click.group()
@@ -16,6 +17,12 @@ def cli() -> None:
 
 
 cli.add_command(scan)
+
+
+@cli.command()
+def vocab() -> None:
+    """Emit the NG-25 trust-vocabulary descriptor as YAML (read-instead-of-import)."""
+    click.echo(descriptor_to_yaml(), nl=False)
 
 
 @cli.command()
