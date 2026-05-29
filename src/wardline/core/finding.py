@@ -81,15 +81,24 @@ class Finding:
         return json.dumps(payload, sort_keys=True, ensure_ascii=False)
 
 
-# --- SP0 PLACEHOLDER ---------------------------------------------------------
-# SP1 REPLACES this to fold in taint-path identity so two paths into one sink
-# (same file/rule/line, different path) get distinct fingerprints. Do not treat
-# this as the final scheme.
-def compute_placeholder_fingerprint(
-    rule_id: str, path: str, line_start: int | None, message: str
+# --- Finding fingerprint (SP2 §7) --------------------------------------------
+# Stable cross-run identity that folds in qualname + a taint-path signature so
+# two taint paths into one sink (same file/rule/line, different path) get
+# DISTINCT fingerprints (Filigree drift constraint). Discrimination is only as
+# fine as the supplied ``taint_path`` — callers derive it from ``taint_provenance``
+# (a single best-callee, not a full path), so two paths sharing best-callee AND
+# returned taint will still collide. That is the spec's accepted granularity.
+def compute_finding_fingerprint(
+    *,
+    rule_id: str,
+    path: str,
+    line_start: int | None,
+    qualname: str | None = None,
+    taint_path: str | None = None,
 ) -> str:
     digest = hashlib.sha256()
-    digest.update(f"{rule_id}\x00{path}\x00{line_start}\x00{message}".encode())
+    parts = (rule_id, path, str(line_start), qualname or "", taint_path or "")
+    digest.update("\x00".join(parts).encode())
     return digest.hexdigest()
 
 
