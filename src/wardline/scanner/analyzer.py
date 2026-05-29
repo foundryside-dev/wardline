@@ -27,13 +27,10 @@ from wardline.scanner.diagnostics import (
 )
 from wardline.scanner.index import discover_class_qualnames, discover_file_entities
 from wardline.scanner.taint.call_taint_map import build_call_taint_map
+from wardline.scanner.taint.decorator_provider import DecoratorTaintSourceProvider
 from wardline.scanner.taint.function_level import seed_function_taints
 from wardline.scanner.taint.project_resolver import ModuleInput, resolve_project_taints
-from wardline.scanner.taint.provider import (
-    DefaultTaintSourceProvider,
-    SeedContext,
-    TaintSourceProvider,
-)
+from wardline.scanner.taint.provider import SeedContext, TaintSourceProvider
 from wardline.scanner.taint.variable_level import compute_variable_taints
 
 if TYPE_CHECKING:
@@ -61,7 +58,7 @@ class WardlineAnalyzer:
         registry: RuleRegistry | None = None,
         summary_cache: SummaryCache | None = None,
     ) -> None:
-        self._provider: TaintSourceProvider = provider or DefaultTaintSourceProvider()
+        self._provider: TaintSourceProvider = provider or DecoratorTaintSourceProvider()
         self._registry = registry or RuleRegistry()
         self._cache = summary_cache
         self.last_context: AnalysisContext | None = None
@@ -96,7 +93,9 @@ class WardlineAnalyzer:
                 classes = frozenset(discover_class_qualnames(tree, module=module))
                 alias_map = build_import_alias_map(tree, module_path=module)
                 seeds = seed_function_taints(
-                    entities, ctx=SeedContext(module=module), provider=self._provider
+                    entities,
+                    ctx=SeedContext(module=module, alias_map=alias_map),
+                    provider=self._provider,
                 )
             except (SyntaxError, UnicodeDecodeError, OSError) as exc:
                 msg = getattr(exc, "msg", None) or str(exc)

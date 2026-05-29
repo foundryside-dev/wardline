@@ -109,6 +109,49 @@ def test_analyzer_l2_recursion_boundary_contains_per_function(monkeypatch) -> No
         assert "b" in ctx.function_var_taints["m.b"] or ctx.function_var_taints["m.b"] == {}
 
 
+def test_analyzer_default_provider_seeds_from_decorators(tmp_path) -> None:
+    # The DEFAULT provider (no provider= arg) now reads the trust vocabulary and
+    # seeds real, non-trivial taints in both directions.
+    _write(tmp_path, "io_layer.py",
+           "from wardline.decorators import external_boundary, trusted\n"
+           "@external_boundary\ndef read_raw(p):\n    return p\n"
+           "@trusted\ndef constant():\n    return 1\n")
+    # An undecorated caller of a single source: fetch's fail-closed floor is
+    # UNKNOWN_RAW (rank 6), which is ALREADY less-trusted than its EXTERNAL_RAW
+    # (rank 5) callee. The engine only moves non-anchored functions toward
+    # less-trusted, so fetch correctly stays UNKNOWN_RAW — EXTERNAL_RAW does not
+    # "flow up" into an already-more-tainted caller.
+    _write(tmp_path, "service.py",
+           "from io_layer import read_raw\ndef fetch(p):\n    return read_raw(p)\n")
+    files = [tmp_path / "io_layer.py", tmp_path / "service.py"]
+
+    analyzer = WardlineAnalyzer()  # default provider
+    analyzer.analyze(files, WardlineConfig(), root=tmp_path)
+    ctx = analyzer.last_context
+    assert ctx is not None
+    assert ctx.project_taints["io_layer.read_raw"] == T.EXTERNAL_RAW
+    assert ctx.project_taints["io_layer.constant"] == T.INTEGRAL
+    assert ctx.project_taints["service.fetch"] == T.UNKNOWN_RAW
+
+
+def test_analyzer_seeded_taints_drive_transitive_propagation(tmp_path) -> None:
+    # The real transitive demonstration: an undecorated function that joins two
+    # provenance-incompatible decorator-seeded sources (EXTERNAL_RAW + INTEGRAL)
+    # resolves to MIXED_RAW (rank 7), which DOES propagate up past the floor.
+    _write(tmp_path, "m.py",
+           "from wardline.decorators import external_boundary, trusted\n"
+           "@external_boundary\ndef ext(p):\n    return p\n"
+           "@trusted\ndef tru():\n    return 1\n"
+           "def mix(p):\n    a = ext(p)\n    b = tru()\n    return a if p else b\n")
+    analyzer = WardlineAnalyzer()
+    analyzer.analyze([tmp_path / "m.py"], WardlineConfig(), root=tmp_path)
+    ctx = analyzer.last_context
+    assert ctx is not None
+    assert ctx.project_taints["m.ext"] == T.EXTERNAL_RAW
+    assert ctx.project_taints["m.tru"] == T.INTEGRAL
+    assert ctx.project_taints["m.mix"] == T.MIXED_RAW  # transitive provenance clash
+
+
 def test_analyzer_skips_unparseable_file_with_fact(tmp_path) -> None:
     _write(tmp_path, "bad.py", "def f(:\n")  # syntax error
     _write(tmp_path, "good.py", "def g(): return 1\n")
