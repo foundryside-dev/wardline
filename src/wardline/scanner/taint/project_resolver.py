@@ -146,6 +146,18 @@ def resolve_project_taints(
         return_taint_map=return_taint_map,
     )
 
+    # Effective return taint: anchored functions surface their DECLARED return
+    # tier (L3 never refines anchored taints — see the post-fixed-point
+    # assertions); non-anchored functions have body == return, so the refined
+    # body taint is also their return. Callers building L2 call-resolution maps
+    # must read THIS, not the body ``refined`` map, or a @trust_boundary's
+    # validated output is mis-read as its raw body taint (an over-taint that
+    # false-positives PY-WL-101).
+    effective_return: dict[str, TaintState] = {
+        fqn: (return_taint_map[fqn] if taint_sources.get(fqn) == "anchored" else refined[fqn])
+        for fqn in refined
+    }
+
     scc_size_distribution = tuple(
         sorted(Counter(len(k) for k in scc_iteration_counts).items())
     )
@@ -167,6 +179,7 @@ def resolve_project_taints(
 
     return ResolverResult(
         taint_map=MappingProxyType(refined),
+        return_taint_map=MappingProxyType(effective_return),
         project_edges=MappingProxyType(
             {fqn: frozenset(callees) for fqn, callees in edges.items()}
         ),

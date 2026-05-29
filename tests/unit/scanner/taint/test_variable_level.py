@@ -143,3 +143,53 @@ def test_walrus_inside_lambda_does_not_leak_to_enclosing_scope() -> None:
     # routes through the walrus walker, which must skip the lambda subtree.
     out = _vt("def f(p):\n    return (lambda: (z := p))\n", function_taint=T.EXTERNAL_RAW)
     assert "z" not in out
+
+
+def test_compute_return_taint_all_shapes() -> None:
+    import ast
+    import textwrap
+
+    from wardline.core.taints import TaintState as T
+    from wardline.scanner.taint.variable_level import compute_return_taint, compute_variable_taints
+
+    tm = {"read_raw": T.EXTERNAL_RAW, "validate": T.ASSURED}
+
+    def rt(src: str) -> T | None:
+        node = ast.parse(textwrap.dedent(src)).body[0]
+        var_taints = compute_variable_taints(node, T.INTEGRAL, dict(tm))
+        return compute_return_taint(node, T.INTEGRAL, dict(tm), var_taints)
+
+    assert rt("def f(p):\n x = read_raw(p)\n return x\n") == T.EXTERNAL_RAW
+    assert rt("def f(p):\n return read_raw(p)\n") == T.EXTERNAL_RAW
+    assert rt("def f(p):\n return validate(read_raw(p))\n") == T.ASSURED
+    assert rt("def f():\n return 1\n") == T.INTEGRAL
+    # least-trusted across multiple return paths
+    assert rt("def f(p):\n if p:\n  return 1\n return read_raw(p)\n") == T.EXTERNAL_RAW
+    # no value-bearing return -> None (nothing to check)
+    assert rt("def f():\n return\n") is None
+    assert rt("def f():\n pass\n") is None
+    # a return inside a NESTED function must not count toward THIS function
+    assert rt("def f():\n def g():\n  return read_raw(1)\n return 1\n") == T.INTEGRAL
+
+
+def test_compute_return_taint_reaches_match_and_except_returns() -> None:
+    # Regression: returns reachable only through a match arm or an except handler
+    # must be collected (ast.match_case / ast.ExceptHandler are NOT ast.stmt, so a
+    # stmt-gated descent silently dropped them -> fail-open under-taint).
+    import ast
+    import textwrap
+
+    from wardline.core.taints import TaintState as T
+    from wardline.scanner.taint.variable_level import compute_return_taint, compute_variable_taints
+
+    tm = {"read_raw": T.EXTERNAL_RAW}
+
+    def rt(src: str) -> T | None:
+        node = ast.parse(textwrap.dedent(src)).body[0]
+        var_taints = compute_variable_taints(node, T.INTEGRAL, dict(tm))
+        return compute_return_taint(node, T.INTEGRAL, dict(tm), var_taints)
+
+    assert rt("def f(p):\n match p:\n  case 1:\n   return read_raw(p)\n  case _:\n   return 1\n") == T.EXTERNAL_RAW
+    assert rt("def f(p):\n try:\n  return 1\n except ValueError:\n  return read_raw(p)\n") == T.EXTERNAL_RAW
+    # a lambda body return-expr is a separate scope and must not be collected
+    assert rt("def f():\n g = lambda: read_raw(1)\n return 1\n") == T.INTEGRAL

@@ -30,17 +30,30 @@ class AnalysisContext:
     context is a genuinely read-only view — a consumer (or a retained reference
     to a source dict) cannot mutate engine output. ``function_var_taints``'s
     inner dicts are left as-is (cheap; rules treat them read-only by convention).
+
+    ``project_return_taints`` is the effective return tier per function (anchored:
+    declared; non-anchored: refined body). ``function_return_taints`` is the actual
+    least-trusted returned-value taint per function, computed from L2 variable
+    analysis — the precise input for PY-WL-101.
     """
 
     project_taints: Mapping[str, TaintState]
+    project_return_taints: Mapping[str, TaintState]
     function_var_taints: Mapping[str, Mapping[str, TaintState]]
+    function_return_taints: Mapping[str, TaintState]
     entities: Mapping[str, Entity]
     taint_provenance: Mapping[str, TaintProvenance]
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "project_taints", MappingProxyType(dict(self.project_taints)))
         object.__setattr__(
+            self, "project_return_taints", MappingProxyType(dict(self.project_return_taints))
+        )
+        object.__setattr__(
             self, "function_var_taints", MappingProxyType(dict(self.function_var_taints))
+        )
+        object.__setattr__(
+            self, "function_return_taints", MappingProxyType(dict(self.function_return_taints))
         )
         object.__setattr__(self, "entities", MappingProxyType(dict(self.entities)))
         object.__setattr__(
