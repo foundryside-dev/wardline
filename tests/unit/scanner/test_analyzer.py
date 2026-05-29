@@ -102,11 +102,17 @@ def test_analyzer_l2_recursion_boundary_contains_per_function(monkeypatch) -> No
         root = Path(d)
         _write(root, "m.py", "def a():\n    boom = 1\n    return boom\ndef b():\n    return 1\n")
         analyzer = WardlineAnalyzer()
-        analyzer.analyze([root / "m.py"], WardlineConfig(), root=root)
+        findings = analyzer.analyze([root / "m.py"], WardlineConfig(), root=root)
         ctx = analyzer.last_context
         assert ctx is not None
         assert ctx.function_var_taints["m.a"] == {}   # L2 contained
         assert "b" in ctx.function_var_taints["m.b"] or ctx.function_var_taints["m.b"] == {}
+        # The contained function is NOT silently dropped — a FACT records the skip
+        # so its absent return taint is observable, not an invisible under-taint.
+        skips = [f for f in findings if f.rule_id == "WLN-ENGINE-FUNCTION-SKIPPED"]
+        assert [f.qualname for f in skips] == ["m.a"]
+        assert all(f.kind == Kind.FACT for f in skips)
+        assert "m.a" not in ctx.function_return_taints
 
 
 def test_analyzer_default_provider_seeds_from_decorators(tmp_path) -> None:
@@ -162,3 +168,32 @@ def test_analyzer_skips_unparseable_file_with_fact(tmp_path) -> None:
     assert any(f.rule_id == "WLN-ENGINE-PARSE-ERROR" and f.kind == Kind.FACT for f in findings)
     assert analyzer.last_context is not None
     assert "good.g" in analyzer.last_context.project_taints
+
+
+def test_analyzer_exposes_return_taints_and_resolves_validators(tmp_path) -> None:
+    # @trust_boundary validator raises trust EXTERNAL_RAW(body) -> ASSURED(return).
+    # A @trusted(ASSURED) caller that returns the VALIDATED value must see ASSURED
+    # (the validator's RETURN), not EXTERNAL_RAW (its body) — proving the call
+    # bucket now resolves callee RETURN taints.
+    _write(tmp_path, "io_layer.py",
+           "from wardline.decorators import external_boundary, trust_boundary\n"
+           "@external_boundary\ndef read_raw(p):\n    return p\n"
+           "@trust_boundary(to_level='ASSURED')\n"
+           "def validate(p):\n    if not p:\n        raise ValueError\n    return p\n")
+    _write(tmp_path, "service.py",
+           "from wardline.decorators import trusted\n"
+           "from io_layer import read_raw, validate\n"
+           "@trusted(level='ASSURED')\n"
+           "def safe(p):\n    return validate(read_raw(p))\n"
+           "@trusted\ndef leaky(p):\n    return read_raw(p)\n")
+    files = [tmp_path / "io_layer.py", tmp_path / "service.py"]
+    analyzer = WardlineAnalyzer()
+    analyzer.analyze(files, WardlineConfig(), root=tmp_path)
+    ctx = analyzer.last_context
+    assert ctx is not None
+    # effective return taint of the validator is its declared return
+    assert ctx.project_return_taints["io_layer.validate"] == T.ASSURED
+    assert ctx.project_taints["io_layer.validate"] == T.EXTERNAL_RAW  # body unchanged
+    # actual returned-value taint per function
+    assert ctx.function_return_taints["service.safe"] == T.ASSURED     # validated -> clean
+    assert ctx.function_return_taints["service.leaky"] == T.EXTERNAL_RAW  # leaks raw
