@@ -6,6 +6,7 @@ import ast
 from wardline.scanner.ast_primitives import (
     build_import_alias_map,
     iter_calls_in_function_body,
+    resolve_call_fqn,
 )
 
 
@@ -124,3 +125,46 @@ def test_own_decorator_and_defaults_not_yielded() -> None:
     # yield it — only body calls. Pins the node.body-only walk against regression.
     src = "@reg(setup())\ndef f(x=default_call()):\n    a()\n"
     assert _call_names(src) == ["a"]
+
+
+def _call(src: str) -> ast.Call:
+    node = ast.parse(src, mode="eval").body
+    assert isinstance(node, ast.Call)
+    return node
+
+
+def test_resolve_bare_name_local_function() -> None:
+    fqn = resolve_call_fqn(
+        _call("foo()"), {}, frozenset({"pkg.mod.foo"}), "pkg.mod"
+    )
+    assert fqn == "pkg.mod.foo"
+
+
+def test_resolve_bare_name_via_import_alias() -> None:
+    fqn = resolve_call_fqn(
+        _call("check()"), {"check": "other.check"}, frozenset(), "pkg.mod"
+    )
+    assert fqn == "other.check"
+
+
+def test_local_takes_precedence_over_import() -> None:
+    fqn = resolve_call_fqn(
+        _call("foo()"), {"foo": "elsewhere.foo"}, frozenset({"pkg.mod.foo"}), "pkg.mod"
+    )
+    assert fqn == "pkg.mod.foo"
+
+
+def test_resolve_bare_name_unresolved() -> None:
+    assert resolve_call_fqn(_call("xyz()"), {}, frozenset(), "pkg.mod") is None
+
+
+def test_resolve_attribute_via_alias() -> None:
+    fqn = resolve_call_fqn(
+        _call("mod.func()"), {"mod": "pkg.mod"}, frozenset(), "caller.mod"
+    )
+    assert fqn == "pkg.mod.func"
+
+
+def test_resolve_attribute_unknown_receiver() -> None:
+    # self.m() — 'self' is not in the alias map → unresolved
+    assert resolve_call_fqn(_call("self.m()"), {}, frozenset(), "pkg.mod") is None
