@@ -1,0 +1,67 @@
+# src/wardline/scanner/taint/stdlib_taint.yaml
+# Curated stdlib taint fallback table.
+#
+# Each entry claims the taint of the value RETURNED by a stdlib call, so that
+# common unresolved cross-module calls do not inflate UNKNOWN_RAW rates. Applied
+# at call resolution (SP1c/SP1d), not in L1 function seeding. Documented here so
+# the rates stay explainable and the table is auditable.
+#
+# `version` is bumped when the shape/semantics change — folded into the SP1e
+# summary cache key so changes invalidate dependent summaries.
+
+version: 1
+
+entries:
+  # Filesystem / OS
+  - package: builtins
+    function: open
+    returns_taint: EXTERNAL_RAW
+    rationale: Opens an external file; contents are raw bytes from disk.
+
+  - package: pathlib
+    function: Path.read_text
+    returns_taint: EXTERNAL_RAW
+    rationale: External file contents; unvalidated.
+
+  - package: pathlib
+    function: Path.read_bytes
+    returns_taint: EXTERNAL_RAW
+    rationale: External file bytes; unvalidated.
+
+  - package: os
+    function: environ.get
+    returns_taint: EXTERNAL_RAW
+    rationale: Environment variable; externally controlled.
+
+  # Subprocess
+  - package: subprocess
+    function: check_output
+    returns_taint: EXTERNAL_RAW
+    rationale: Output of an external process.
+
+  - package: subprocess
+    function: run
+    returns_taint: EXTERNAL_RAW
+    rationale: CompletedProcess.stdout is external.
+
+  # Networking
+  - package: urllib.request
+    function: urlopen
+    returns_taint: EXTERNAL_RAW
+    rationale: Remote resource contents.
+
+  # Parsing (returns shape-validated container — GUARDED, not ASSURED)
+  - package: json
+    function: loads
+    returns_taint: GUARDED
+    rationale: Shape-validated by the parser but semantics unchecked.
+
+  - package: json
+    function: load
+    returns_taint: GUARDED
+    rationale: Same as json.loads from a file handle.
+
+  - package: ast
+    function: literal_eval
+    returns_taint: GUARDED
+    rationale: Safe literal parser; shape is validated, semantics are the literal.
