@@ -5,9 +5,11 @@
   top-level imports (resolving relative imports).
 - ``iter_calls_in_function_body`` — every ``ast.Call`` in a function body without
   descending into nested function/class/lambda scopes.
+- ``resolve_call_fqn`` — resolve a call node to a fully-qualified name using
+  local FQNs and import aliases (ported from ``.old`` SP1c).
 
-Both are exercised only by unit tests in SP1a; their first engine consumer is
-the SP1d callgraph. (The ``resolve_*`` call resolvers from ``.old`` land then.)
+``resolve_same_class_call_fqn`` and ``resolve_nested_call_fqn`` remain deferred
+to SP1d (the first consumer is the full callgraph).
 """
 
 from __future__ import annotations
@@ -130,3 +132,31 @@ def iter_calls_in_function_body(
 
     for stmt in node.body:
         yield from walk_node(stmt)
+
+
+def resolve_call_fqn(
+    call: ast.Call,
+    alias_map: dict[str, str],
+    local_fqns: frozenset[str],
+    module_prefix: str,
+) -> str | None:
+    """Resolve an ``ast.Call`` to a fully-qualified name, or None if unresolvable.
+
+    Resolution order:
+      1. A bare name matching a local function FQN (``{module_prefix}.{name}``).
+      2. A bare name or attribute receiver found in ``alias_map`` (an import).
+      3. Otherwise None.
+    """
+    if isinstance(call.func, ast.Name):
+        bare_name = call.func.id
+        local_candidate = f"{module_prefix}.{bare_name}" if module_prefix else bare_name
+        if local_candidate in local_fqns:
+            return local_candidate
+        return alias_map.get(bare_name)
+
+    if isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name):
+        prefix_fqn = alias_map.get(call.func.value.id)
+        if prefix_fqn is not None:
+            return f"{prefix_fqn}.{call.func.attr}"
+
+    return None
