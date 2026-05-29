@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ast
 
+import pytest
+
 from wardline.core.taints import TaintState as T
 from wardline.scanner.ast_primitives import build_import_alias_map
 from wardline.scanner.index import discover_class_qualnames, discover_file_entities
@@ -12,6 +14,7 @@ from wardline.scanner.taint.provider import (
     FunctionTaint,
     SeedContext,
 )
+from wardline.scanner.taint.summary_cache import SummaryCache
 
 
 class _RawLeafProvider:
@@ -98,3 +101,131 @@ def test_metadata_records_scc_distribution() -> None:
     assert result.metadata.scc_size_distribution == ((1, 3),)
     assert result.metadata.taint_source_counts["anchored"] == 1
     assert result.metadata.taint_source_counts["fallback"] == 3
+
+
+def _inputs(provider):
+    return [
+        _module_input("pkg.io_layer", _IO, provider),
+        _module_input("pkg.service", _SERVICE, provider),
+        _module_input("pkg.handler", _HANDLER, provider),
+    ]
+
+
+def test_cache_and_dirty_must_be_supplied_together() -> None:
+    provider = _RawLeafProvider()
+    inputs = _inputs(provider)
+    with pytest.raises(ValueError, match="together"):
+        resolve_project_taints(
+            modules=inputs, provider_fingerprint=provider.fingerprint(),
+            summary_cache=SummaryCache(),  # dirty_modules omitted
+        )
+    with pytest.raises(ValueError, match="together"):
+        resolve_project_taints(
+            modules=inputs, provider_fingerprint=provider.fingerprint(),
+            dirty_modules=frozenset(),  # summary_cache omitted
+        )
+
+
+def test_warm_run_equals_cold_run() -> None:
+    provider = _RawLeafProvider()
+    inputs = _inputs(provider)
+    fp = provider.fingerprint()
+
+    cold = resolve_project_taints(modules=inputs, provider_fingerprint=fp)
+
+    cache = SummaryCache()
+    run1 = resolve_project_taints(
+        modules=inputs, provider_fingerprint=fp,
+        summary_cache=cache, dirty_modules=frozenset(),
+    )
+    run2 = resolve_project_taints(
+        modules=inputs, provider_fingerprint=fp,
+        summary_cache=cache, dirty_modules=frozenset(),
+    )
+
+    # cached ≡ cold, byte-for-byte on taint and provenance
+    assert dict(run1.taint_map) == dict(cold.taint_map)
+    assert dict(run2.taint_map) == dict(cold.taint_map)
+    assert {k: v.source for k, v in run2.taint_provenance.items()} == {
+        k: v.source for k, v in cold.taint_provenance.items()
+    }
+    # run2 served entirely from cache
+    assert cache.hit_rate() > 0.0
+
+
+def test_dirty_frontier_recompute_still_equals_cold() -> None:
+    # Behavioural end-to-end check. NOTE: this passes regardless of whether
+    # transitive_callers is correct (cached summaries equal fresh, edges are
+    # always recomputed) — the closure itself is verified directly in
+    # test_reverse_edge_index.py. This guards the wiring, not the closure.
+    provider = _RawLeafProvider()
+    inputs = _inputs(provider)
+    fp = provider.fingerprint()
+    cold = resolve_project_taints(modules=inputs, provider_fingerprint=fp)
+
+    cache = SummaryCache()
+    resolve_project_taints(
+        modules=inputs, provider_fingerprint=fp,
+        summary_cache=cache, dirty_modules=frozenset({"pkg.io_layer"}),
+    )
+    # Mark the leaf's module dirty; its callers are in the frontier.
+    warm = resolve_project_taints(
+        modules=inputs, provider_fingerprint=fp,
+        summary_cache=cache, dirty_modules=frozenset({"pkg.io_layer"}),
+    )
+    assert dict(warm.taint_map) == dict(cold.taint_map)
+
+
+def test_identical_source_modules_do_not_collide_in_cache() -> None:
+    # Regression: two modules with byte-identical source must each keep their
+    # own functions through a warm run (no false cache hit dropping the second).
+    provider = DefaultTaintSourceProvider()
+    fp = provider.fingerprint()
+    same_src = "def f(p):\n    return p\n"
+    inputs = [
+        _module_input("pkg.a", same_src, provider),
+        _module_input("pkg.b", same_src, provider),
+    ]
+    cold = resolve_project_taints(modules=inputs, provider_fingerprint=fp)
+    cache = SummaryCache()
+    resolve_project_taints(
+        modules=inputs, provider_fingerprint=fp,
+        summary_cache=cache, dirty_modules=frozenset(),
+    )
+    warm = resolve_project_taints(
+        modules=inputs, provider_fingerprint=fp,
+        summary_cache=cache, dirty_modules=frozenset(),
+    )
+    assert set(cold.taint_map) == {"pkg.a.f", "pkg.b.f"}
+    assert dict(warm.taint_map) == dict(cold.taint_map)
+
+
+def test_cache_miss_on_changed_source_recomputes() -> None:
+    # A module whose source changes gets a different cache_key -> miss ->
+    # fresh summary, even if the caller forgets to mark it dirty.
+    provider = _RawLeafProvider()
+    fp = provider.fingerprint()
+    cache = SummaryCache()
+
+    inputs_v1 = _inputs(provider)
+    resolve_project_taints(
+        modules=inputs_v1, provider_fingerprint=fp,
+        summary_cache=cache, dirty_modules=frozenset(),
+    )
+    len_after_v1 = len(cache)
+
+    # Change pkg.service's source (add a comment) -> new cache_key.
+    service_v2 = "# changed\n" + _SERVICE
+    inputs_v2 = [
+        _module_input("pkg.io_layer", _IO, provider),
+        _module_input("pkg.service", service_v2, provider),
+        _module_input("pkg.handler", _HANDLER, provider),
+    ]
+    warm = resolve_project_taints(
+        modules=inputs_v2, provider_fingerprint=fp,
+        summary_cache=cache, dirty_modules=frozenset(),
+    )
+    cold_v2 = resolve_project_taints(modules=inputs_v2, provider_fingerprint=fp)
+    assert dict(warm.taint_map) == dict(cold_v2.taint_map)
+    # The changed module added a new key (old one is still present, unused).
+    assert len(cache) == len_after_v1 + 1
