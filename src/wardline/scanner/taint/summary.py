@@ -57,12 +57,22 @@ class FunctionSummary:
 
 def compute_cache_key(
     *,
+    module_path: str,
     source_bytes: bytes,
     schema_version: int,
     resolver_version: str,
     provider_fingerprint: str,
 ) -> str:
     """Content-addressed cache key for a module's summaries.
+
+    Binds ``module_path`` as well as content: the key is the *store* key for a
+    module's summary tuple, so it must carry module identity. Two distinct
+    modules with byte-identical source (boilerplate, re-export shims, generated
+    stubs) would otherwise collide on one key, and a cache lookup for the second
+    would serve the first's summaries — dropping the second module's functions
+    from the taint map (silent under-taint). Module identity, NOT call topology,
+    is what is added here: cross-module *dependency* changes are still handled by
+    always recomputing the call graph fresh, never by this key.
 
     Each component is length-prefixed before hashing so distinct inputs cannot
     collide (without it, ``(b"ab", "c")`` and ``(b"a", "bc")`` would hash alike).
@@ -72,6 +82,7 @@ def compute_cache_key(
     if source_bytes.find(b"\r\n") != -1:
         raise ValueError("CRLF bytes in source — normalise to LF before hashing")
     hasher = hashlib.sha256()
+    _write_len_prefixed(hasher, module_path.encode("utf-8"))
     _write_len_prefixed(hasher, source_bytes)
     _write_len_prefixed(hasher, str(schema_version).encode("ascii"))
     _write_len_prefixed(hasher, resolver_version.encode("utf-8"))
