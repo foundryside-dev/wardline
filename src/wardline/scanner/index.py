@@ -28,6 +28,33 @@ class Entity:
     location: Location
 
 
+def discover_class_qualnames(tree: ast.Module, *, module: str) -> set[str]:
+    """Discover the qualnames of every class in *tree*.
+
+    Mirrors :func:`discover_file_entities`' scope traversal so class qualnames
+    are produced by the SAME :func:`reconstruct_qualname` that produces method
+    qualnames. The callgraph builder relies on this identity: for a method
+    ``module.Class.method``, ``rsplit('.', 1)[0]`` equals ``module.Class`` and
+    is therefore a member of this set. Any divergence in qualname construction
+    would silently break ``self.method()`` resolution.
+    """
+    classes: set[str] = set()
+
+    def visit(node: ast.AST, scope: list[ast.AST]) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.ClassDef):
+                local = reconstruct_qualname(child.name, list(reversed(scope)))
+                classes.add(f"{module}.{local}")
+                visit(child, [*scope, child])
+            elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                visit(child, [*scope, child])
+            else:
+                visit(child, scope)
+
+    visit(tree, [])
+    return classes
+
+
 def discover_file_entities(
     tree: ast.Module, *, module: str, path: str
 ) -> list[Entity]:

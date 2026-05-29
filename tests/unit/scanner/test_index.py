@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import ast
 
-from wardline.scanner.index import Entity, discover_file_entities
+from wardline.scanner.index import Entity, discover_class_qualnames, discover_file_entities
 
 
 def _quals(src: str, module: str = "demo", path: str = "demo.py") -> list[tuple[str, str]]:
@@ -128,3 +128,33 @@ def test_returns_entity_instances() -> None:
     )
     assert all(isinstance(e, Entity) for e in entities)
     assert isinstance(entities[0].node, ast.FunctionDef)
+
+
+def test_discover_class_qualnames_top_level_and_nested() -> None:
+    src = (
+        "class Outer:\n"
+        "    def m(self): pass\n"
+        "    class Inner:\n"
+        "        def n(self): pass\n"
+        "def free(): pass\n"
+    )
+    tree = ast.parse(src)
+    classes = discover_class_qualnames(tree, module="pkg.mod")
+    assert classes == {"pkg.mod.Outer", "pkg.mod.Outer.Inner"}
+
+
+def test_class_qualname_is_rsplit_prefix_of_its_methods() -> None:
+    # The invariant the callgraph relies on: a method's enclosing class qualname
+    # equals method_qualname.rsplit('.', 1)[0], and is built by the SAME
+    # reconstruct_qualname as the methods.
+    src = (
+        "class Outer:\n"
+        "    class Inner:\n"
+        "        def n(self): pass\n"
+    )
+    tree = ast.parse(src)
+    entities = discover_file_entities(tree, module="pkg.mod", path="pkg/mod.py")
+    classes = discover_class_qualnames(tree, module="pkg.mod")
+    method = next(e for e in entities if e.qualname.endswith(".n"))
+    assert method.qualname == "pkg.mod.Outer.Inner.n"
+    assert method.qualname.rsplit(".", 1)[0] in classes

@@ -44,6 +44,17 @@ class TaintSourceProvider(Protocol):
 
     def taint_for(self, entity: Entity, ctx: SeedContext) -> FunctionTaint | None: ...
 
+    def fingerprint(self) -> str:
+        """A stable string identifying this provider's *declaration surface*.
+
+        Bound into the summary cache key so that a change in out-of-source
+        declarations (SP2's decorator vocabulary, config-declared taints) — which
+        a per-module source hash cannot observe — invalidates affected summaries.
+        Constant for the SP1 default provider; SP2's provider derives it from its
+        loaded vocabulary/config.
+        """
+        ...
+
 
 class DefaultTaintSourceProvider:
     """The trivial provider: declares nothing. With no decorator vocabulary in
@@ -51,3 +62,6 @@ class DefaultTaintSourceProvider:
 
     def taint_for(self, entity: Entity, ctx: SeedContext) -> FunctionTaint | None:
         return None
+
+    def fingerprint(self) -> str:
+        return "default-v1"

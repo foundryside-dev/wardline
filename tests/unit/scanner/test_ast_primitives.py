@@ -7,6 +7,7 @@ from wardline.scanner.ast_primitives import (
     build_import_alias_map,
     iter_calls_in_function_body,
     resolve_call_fqn,
+    resolve_self_method_fqn,
 )
 
 
@@ -168,3 +169,63 @@ def test_resolve_attribute_via_alias() -> None:
 def test_resolve_attribute_unknown_receiver() -> None:
     # self.m() — 'self' is not in the alias map → unresolved
     assert resolve_call_fqn(_call("self.m()"), {}, frozenset(), "pkg.mod") is None
+
+
+def _stmt_call(src: str) -> ast.Call:
+    # src is a single expression statement containing one call
+    node = ast.parse(src).body[0]
+    assert isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+    return node.value
+
+
+def test_self_method_resolves_to_class_method() -> None:
+    call = _stmt_call("self.helper()")
+    out = resolve_self_method_fqn(
+        call,
+        caller_class_fqn="pkg.mod.Cls",
+        project_fqns=frozenset({"pkg.mod.Cls.helper"}),
+    )
+    assert out == "pkg.mod.Cls.helper"
+
+
+def test_cls_method_resolves() -> None:
+    call = _stmt_call("cls.make()")
+    out = resolve_self_method_fqn(
+        call,
+        caller_class_fqn="pkg.mod.Cls",
+        project_fqns=frozenset({"pkg.mod.Cls.make"}),
+    )
+    assert out == "pkg.mod.Cls.make"
+
+
+def test_nested_class_self_method_resolves() -> None:
+    call = _stmt_call("self.n()")
+    out = resolve_self_method_fqn(
+        call,
+        caller_class_fqn="pkg.mod.Outer.Inner",
+        project_fqns=frozenset({"pkg.mod.Outer.Inner.n"}),
+    )
+    assert out == "pkg.mod.Outer.Inner.n"
+
+
+def test_self_method_not_in_project_is_none() -> None:
+    call = _stmt_call("self.absent()")
+    assert resolve_self_method_fqn(
+        call, caller_class_fqn="pkg.mod.Cls", project_fqns=frozenset()
+    ) is None
+
+
+def test_non_self_receiver_is_none() -> None:
+    call = _stmt_call("other.method()")
+    assert resolve_self_method_fqn(
+        call, caller_class_fqn="pkg.mod.Cls",
+        project_fqns=frozenset({"pkg.mod.Cls.method"}),
+    ) is None
+
+
+def test_no_caller_class_is_none() -> None:
+    call = _stmt_call("self.helper()")
+    assert resolve_self_method_fqn(
+        call, caller_class_fqn=None,
+        project_fqns=frozenset({"pkg.mod.Cls.helper"}),
+    ) is None
