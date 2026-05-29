@@ -399,15 +399,18 @@ Expected: PASS (17 tests).
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `tests/unit/scanner/test_analyzer.py` (the helpers `_write` and the imports already exist in that file):
+Add to `tests/unit/scanner/test_analyzer.py` (the helpers `_write` and the imports already exist in that file).
+
+**Engine-semantics note (verified at the REPL, 2026-05-30):** an undecorated caller's fail-closed floor is `UNKNOWN_RAW` (rank 6), which is *already less-trusted* than an `EXTERNAL_RAW` (rank 5) callee. The L3 fixed point only moves non-anchored functions toward *less*-trusted (monotone demotion), so a single more-trusted-than-floor callee never raises the caller — `EXTERNAL_RAW` does NOT "flow up" into an already-more-tainted caller. The visible transitive effect comes from a *provenance clash*: joining two incompatible seeded sources yields `MIXED_RAW` (rank 7), which DOES propagate past the floor. Both tests below pin this.
 
 ```python
 def test_analyzer_default_provider_seeds_from_decorators(tmp_path) -> None:
-    # The DEFAULT provider (no provider= arg) now reads the trust vocabulary:
-    # an @external_boundary source flows transitively into its caller.
+    # The DEFAULT provider (no provider= arg) now reads the trust vocabulary and
+    # seeds real, non-trivial taints in both directions.
     _write(tmp_path, "io_layer.py",
-           "from wardline.decorators import external_boundary\n"
-           "@external_boundary\ndef read_raw(p):\n    return p\n")
+           "from wardline.decorators import external_boundary, trusted\n"
+           "@external_boundary\ndef read_raw(p):\n    return p\n"
+           "@trusted\ndef constant():\n    return 1\n")
     _write(tmp_path, "service.py",
            "from io_layer import read_raw\ndef fetch(p):\n    return read_raw(p)\n")
     files = [tmp_path / "io_layer.py", tmp_path / "service.py"]
@@ -417,8 +420,26 @@ def test_analyzer_default_provider_seeds_from_decorators(tmp_path) -> None:
     ctx = analyzer.last_context
     assert ctx is not None
     assert ctx.project_taints["io_layer.read_raw"] == T.EXTERNAL_RAW
-    # transitive: fetch returns read_raw(p), so it inherits EXTERNAL_RAW
-    assert ctx.project_taints["service.fetch"] == T.EXTERNAL_RAW
+    assert ctx.project_taints["io_layer.constant"] == T.INTEGRAL
+    # fetch stays at its UNKNOWN_RAW floor (already more-tainted than its callee).
+    assert ctx.project_taints["service.fetch"] == T.UNKNOWN_RAW
+
+
+def test_analyzer_seeded_taints_drive_transitive_propagation(tmp_path) -> None:
+    # Joining two provenance-incompatible decorator-seeded sources -> MIXED_RAW,
+    # which DOES propagate up into the undecorated caller.
+    _write(tmp_path, "m.py",
+           "from wardline.decorators import external_boundary, trusted\n"
+           "@external_boundary\ndef ext(p):\n    return p\n"
+           "@trusted\ndef tru():\n    return 1\n"
+           "def mix(p):\n    a = ext(p)\n    b = tru()\n    return a if p else b\n")
+    analyzer = WardlineAnalyzer()
+    analyzer.analyze([tmp_path / "m.py"], WardlineConfig(), root=tmp_path)
+    ctx = analyzer.last_context
+    assert ctx is not None
+    assert ctx.project_taints["m.ext"] == T.EXTERNAL_RAW
+    assert ctx.project_taints["m.tru"] == T.INTEGRAL
+    assert ctx.project_taints["m.mix"] == T.MIXED_RAW
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
