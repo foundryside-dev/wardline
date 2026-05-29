@@ -15,7 +15,8 @@ a provider actually consumes them, not speculatively.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
 from wardline.core.taints import TaintState
@@ -24,9 +25,17 @@ from wardline.scanner.index import Entity
 
 @dataclass(frozen=True, slots=True)
 class SeedContext:
-    """Per-file context handed to a provider for each entity in that file."""
+    """Per-file context handed to a provider for each entity in that file.
+
+    ``alias_map`` is the file's ``{local_name: fully_qualified_name}`` import
+    map (from ``build_import_alias_map``); a provider uses it to resolve aliased
+    decorator names against the trust vocabulary. Defaults to empty so callers
+    that do not seed from decorators (e.g. the trivial default provider's tests)
+    need not supply it.
+    """
 
     module: str
+    alias_map: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
