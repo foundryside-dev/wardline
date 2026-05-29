@@ -219,6 +219,9 @@ def _process_stmt(
     elif isinstance(stmt, ast.Try):
         _handle_try(stmt, function_taint, taint_map, var_taints)
 
+    elif isinstance(stmt, ast.Match):
+        _handle_match(stmt, function_taint, taint_map, var_taints)
+
     elif isinstance(stmt, ast.Expr):
         # Expression statement — walk for side-effects (walrus operators).
         _resolve_expr(stmt.value, function_taint, taint_map, var_taints)
@@ -511,7 +514,90 @@ def _handle_try(
         _walk_body(stmt.finalbody, function_taint, taint_map, var_taints)
 
 
+def _handle_match(
+    stmt: ast.Match,
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    var_taints: dict[str, TaintState],
+) -> None:
+    """Handle ``match``/``case`` — snapshot, walk each arm on a copy seeded with
+    that arm's capture bindings, then join all arms with the no-match fall-through.
+
+    Each capture-pattern target is bound to the *subject's* taint (a conservative
+    whole-subject over-approximation — element-precise extraction is not modelled
+    at L2; this never under-taints). The pre-match state is included as an extra
+    branch to model the no-arm-matched path and variables assigned in only some
+    arms; including it is taint-safe (``taint_join`` only moves toward less-trusted)
+    and mirrors :func:`_handle_if`'s implicit-else treatment.
+    """
+    # Subject is evaluated once, before any arm — resolve it for walrus side
+    # effects and to obtain the taint that capture targets inherit.
+    subject_taint = _resolve_expr(stmt.subject, function_taint, taint_map, var_taints)
+
+    pre_match = dict(var_taints)
+    branches: list[dict[str, TaintState]] = []
+    for case in stmt.cases:
+        case_taints = dict(pre_match)
+        for name in _collect_pattern_targets(case.pattern):
+            case_taints[name] = subject_taint
+        if case.guard is not None:
+            # The guard is tested with the arm's captures in scope; resolve it for
+            # walrus side effects (binds into this arm's state).
+            _resolve_expr(case.guard, function_taint, taint_map, case_taints)
+        _walk_body(case.body, function_taint, taint_map, case_taints)
+        branches.append(case_taints)
+
+    # The implicit "no arm matched" path keeps the pre-match state.
+    branches.append(pre_match)
+
+    all_vars: set[str] = set()
+    for branch in branches:
+        all_vars.update(branch)
+    for var in all_vars:
+        vals = [branch[var] for branch in branches if var in branch]
+        merged = vals[0]
+        for v in vals[1:]:
+            merged = taint_join(merged, v)
+        var_taints[var] = merged
+
+
 # ── Helpers ──────────────────────────────────────────────────────
+
+
+def _collect_pattern_targets(pattern: ast.pattern) -> set[str]:
+    """Collect every name a ``match`` *pattern* binds (capture targets).
+
+    Recurses through all binding-bearing pattern nodes. ``MatchValue`` /
+    ``MatchSingleton`` bind nothing; ``MatchAs``/``MatchStar`` carry an optional
+    ``name`` (``None`` for ``_`` / ``*_``); the rest nest sub-patterns. Python
+    requires every ``MatchOr`` alternative to bind the same names, so the union is
+    well-defined.
+    """
+    names: set[str] = set()
+    if isinstance(pattern, ast.MatchAs):
+        if pattern.name is not None:
+            names.add(pattern.name)
+        if pattern.pattern is not None:
+            names |= _collect_pattern_targets(pattern.pattern)
+    elif isinstance(pattern, ast.MatchStar):
+        if pattern.name is not None:
+            names.add(pattern.name)
+    elif isinstance(pattern, ast.MatchSequence):
+        for sub in pattern.patterns:
+            names |= _collect_pattern_targets(sub)
+    elif isinstance(pattern, ast.MatchMapping):
+        for sub in pattern.patterns:
+            names |= _collect_pattern_targets(sub)
+        if pattern.rest is not None:
+            names.add(pattern.rest)
+    elif isinstance(pattern, ast.MatchClass):
+        for sub in (*pattern.patterns, *pattern.kwd_patterns):
+            names |= _collect_pattern_targets(sub)
+    elif isinstance(pattern, ast.MatchOr):
+        for sub in pattern.patterns:
+            names |= _collect_pattern_targets(sub)
+    # MatchValue / MatchSingleton: no bindings.
+    return names
 
 
 def _assign_target(

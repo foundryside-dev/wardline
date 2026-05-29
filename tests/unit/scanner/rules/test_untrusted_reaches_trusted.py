@@ -102,6 +102,23 @@ def test_trusted_leaking_raw_via_match_arm_fires(tmp_path) -> None:
     assert ("PY-WL-101", "svc.leaky") in {(f.rule_id, f.qualname) for f in _run(ctx)}
 
 
+def test_trusted_leaking_raw_via_match_arm_assignment_fires(tmp_path) -> None:
+    # The closed L2 gap: a @trusted function that assigns raw to a local inside a
+    # match arm and returns the var LATER (not a direct return in the arm). Before
+    # L2 match-handling this was a fail-open under-taint that PY-WL-101 missed.
+    ctx, _ = _analyze(tmp_path, {
+        "io.py": "from wardline.decorators import external_boundary\n"
+                 "@external_boundary\ndef read_raw(p):\n    return p\n",
+        "svc.py": "from wardline.decorators import trusted\nfrom io import read_raw\n"
+                  "@trusted\ndef leaky(p):\n    x = 1\n    match p:\n"
+                  "        case 1:\n            x = read_raw(p)\n"
+                  "        case _:\n            x = 2\n    return x\n",
+    })
+    findings = _run(ctx)
+    assert ("PY-WL-101", "svc.leaky") in {(f.rule_id, f.qualname) for f in findings}
+    assert all(f.kind == Kind.DEFECT for f in findings)
+
+
 def test_correct_trust_boundary_does_not_fire_101(tmp_path) -> None:
     # Regression pin for the @trust_boundary exemption: a CORRECT validator (raise
     # guard + return) seeds its params at the raw body taint and the engine cannot
