@@ -1,0 +1,107 @@
+{
+  "_doc": "Shared qualname conformance corpus (Wardline <-> Clarion). Both tools test against this. 'module_dotted_name' cases assert the path->module rule; 'entities' cases assert per-file function/method qualnames+kinds (classes are scope only and not emitted). Nesting-shape expectations were generated from CPython co_qualname. Seeded by Wardline (SP1a); Clarion vendors a copy. Nothing imports this file at runtime.",
+  "module_dotted_name": [
+    {"rel_path": "demo.py", "expected": "demo"},
+    {"rel_path": "src/demo.py", "expected": "demo"},
+    {"rel_path": "src.py", "expected": "src"},
+    {"rel_path": "pkg/__init__.py", "expected": "pkg"},
+    {"rel_path": "src/pkg/__init__.py", "expected": "pkg"},
+    {"rel_path": "pkg/sub/mod.py", "expected": "pkg.sub.mod"},
+    {"rel_path": "src/pkg/sub/mod.py", "expected": "pkg.sub.mod"},
+    {"rel_path": "src/src/pkg/mod.py", "expected": "src.pkg.mod"},
+    {"rel_path": "__init__.py", "expected": null}
+  ],
+  "entities": [
+    {
+      "name": "module_function_and_closure",
+      "rel_path": "demo.py",
+      "source": "def outer():\n    def inner():\n        pass\n",
+      "expected": [
+        {"qualname": "demo.outer", "kind": "function"},
+        {"qualname": "demo.outer.<locals>.inner", "kind": "function"}
+      ]
+    },
+    {
+      "name": "nested_classes_method",
+      "rel_path": "demo.py",
+      "source": "class Outer:\n    class Inner:\n        def method(self):\n            pass\n",
+      "expected": [
+        {"qualname": "demo.Outer.Inner.method", "kind": "method"}
+      ]
+    },
+    {
+      "name": "class_in_closure",
+      "rel_path": "demo.py",
+      "source": "class Foo:\n    def bar(self):\n        class Local:\n            def meth(self):\n                pass\n",
+      "expected": [
+        {"qualname": "demo.Foo.bar", "kind": "method"},
+        {"qualname": "demo.Foo.bar.<locals>.Local.meth", "kind": "method"}
+      ]
+    },
+    {
+      "name": "deep_closures",
+      "rel_path": "src/pkg/mod.py",
+      "source": "def a():\n    def b():\n        def c():\n            pass\n",
+      "expected": [
+        {"qualname": "pkg.mod.a", "kind": "function"},
+        {"qualname": "pkg.mod.a.<locals>.b", "kind": "function"},
+        {"qualname": "pkg.mod.a.<locals>.b.<locals>.c", "kind": "function"}
+      ]
+    },
+    {
+      "name": "async_equiv_def",
+      "rel_path": "demo.py",
+      "source": "async def afn():\n    async def inner():\n        pass\n",
+      "expected": [
+        {"qualname": "demo.afn", "kind": "function"},
+        {"qualname": "demo.afn.<locals>.inner", "kind": "function"}
+      ]
+    },
+    {
+      "name": "overload_dropped_before_first_wins",
+      "rel_path": "demo.py",
+      "source": "from typing import overload\n@overload\ndef f(x: int) -> int: ...\n@overload\ndef f(x: str) -> str: ...\ndef f(x):\n    return x\n",
+      "expected": [
+        {"qualname": "demo.f", "kind": "function"}
+      ]
+    },
+    {
+      "name": "typing_overload_form_dropped",
+      "rel_path": "demo.py",
+      "source": "import typing\n@typing.overload\ndef g(x: int) -> int: ...\ndef g(x):\n    return x\n",
+      "expected": [
+        {"qualname": "demo.g", "kind": "function"}
+      ]
+    },
+    {
+      "name": "aliased_overload_not_recognized",
+      "rel_path": "demo.py",
+      "source": "from typing import overload as o\n@o\ndef h(x):\n    return x\n",
+      "expected": [
+        {"qualname": "demo.h", "kind": "function"}
+      ]
+    },
+    {
+      "name": "property_setter_first_wins",
+      "rel_path": "demo.py",
+      "source": "class C:\n    @property\n    def x(self):\n        return 1\n    @x.setter\n    def x(self, v):\n        pass\n",
+      "expected": [
+        {"qualname": "demo.C.x", "kind": "method"}
+      ]
+    },
+    {
+      "name": "redefinition_first_wins",
+      "rel_path": "demo.py",
+      "source": "def dup():\n    return 1\ndef dup():\n    return 2\n",
+      "expected": [
+        {"qualname": "demo.dup", "kind": "function"}
+      ]
+    },
+    {
+      "name": "toplevel_init_emits_nothing",
+      "rel_path": "__init__.py",
+      "source": "def helper():\n    pass\n",
+      "expected": []
+    }
+  ]
+}
