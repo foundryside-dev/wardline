@@ -47,6 +47,9 @@ path = "src/wardline/_version.py"
 [tool.hatch.build.targets.wheel]
 packages = ["src/wardline"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/wardline/scanner/taint/stdlib_taint.yaml" = "wardline/scanner/taint/stdlib_taint.yaml"
+
 [tool.ruff]
 line-length = 120
 target-version = "py312"

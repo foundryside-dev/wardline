@@ -1,0 +1,44 @@
+# tests/unit/scanner/taint/test_provider.py
+from __future__ import annotations
+
+import ast
+import dataclasses
+
+import pytest
+
+from wardline.core.taints import TaintState
+from wardline.scanner.index import discover_file_entities
+from wardline.scanner.taint.provider import (
+    DefaultTaintSourceProvider,
+    FunctionTaint,
+    SeedContext,
+    TaintSourceProvider,
+)
+
+
+def _entity() -> object:
+    tree = ast.parse("def f():\n    pass\n")
+    return discover_file_entities(tree, module="demo", path="demo.py")[0]
+
+
+def test_default_provider_has_no_opinion() -> None:
+    provider = DefaultTaintSourceProvider()
+    assert provider.taint_for(_entity(), SeedContext(module="demo")) is None  # type: ignore[arg-type]
+
+
+def test_default_provider_satisfies_protocol() -> None:
+    assert isinstance(DefaultTaintSourceProvider(), TaintSourceProvider)
+
+
+def test_function_taint_is_frozen() -> None:
+    taint = FunctionTaint(
+        body_taint=TaintState.EXTERNAL_RAW, return_taint=TaintState.GUARDED
+    )
+    assert taint.body_taint == TaintState.EXTERNAL_RAW
+    assert taint.return_taint == TaintState.GUARDED
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        taint.body_taint = TaintState.INTEGRAL  # type: ignore[misc]
+
+
+def test_seed_context_carries_module() -> None:
+    assert SeedContext(module="pkg.sub").module == "pkg.sub"
