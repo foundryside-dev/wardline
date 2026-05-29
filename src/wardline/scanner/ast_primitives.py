@@ -134,6 +134,39 @@ def iter_calls_in_function_body(
         yield from walk_node(stmt)
 
 
+def resolve_self_method_fqn(
+    call: ast.Call,
+    *,
+    caller_class_fqn: str | None,
+    project_fqns: frozenset[str],
+) -> str | None:
+    """Resolve a ``self.method()`` / ``cls.method()`` call to a project FQN.
+
+    Returns the callee FQN when the call is ``self.<attr>(...)`` or
+    ``cls.<attr>(...)``, the caller is a method of a known class
+    (``caller_class_fqn`` is not None), and ``{caller_class_fqn}.{attr}`` is a
+    project function. Otherwise None.
+
+    Constructor calls (``ClassName()``) are intentionally NOT resolved here: an
+    unresolved call raises the caller's pessimistic floor (over-taint, the safe
+    direction). Closure-captured ``self`` (``self`` referenced inside a nested
+    def) is likewise not resolved — ``caller_class_fqn`` is None for a closure
+    qualname (it ends in ``.<locals>.<name>``), a documented under-taint limit.
+    """
+    if caller_class_fqn is None:
+        return None
+    func = call.func
+    if (
+        isinstance(func, ast.Attribute)
+        and isinstance(func.value, ast.Name)
+        and func.value.id in {"self", "cls"}
+    ):
+        candidate = f"{caller_class_fqn}.{func.attr}"
+        if candidate in project_fqns:
+            return candidate
+    return None
+
+
 def resolve_call_fqn(
     call: ast.Call,
     alias_map: dict[str, str],
