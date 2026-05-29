@@ -89,3 +89,36 @@ def compute_placeholder_fingerprint(
     digest = hashlib.sha256()
     digest.update(f"{rule_id}\x00{path}\x00{line_start}\x00{message}".encode())
     return digest.hexdigest()
+
+
+# --- Loom wire mapping (pure; SP4 uses these to build the scan-results body) -
+_SEVERITY_TO_FILIGREE: dict[Severity, str] = {
+    Severity.CRITICAL: "critical",
+    Severity.ERROR: "high",
+    Severity.WARN: "medium",
+    Severity.INFO: "low",
+    Severity.NONE: "info",
+}
+
+
+def severity_to_filigree(severity: Severity) -> str:
+    """Map Wardline's 4-level (+NONE) vocabulary to Filigree's 5-level set."""
+    return _SEVERITY_TO_FILIGREE[severity]
+
+
+def to_filigree_metadata(finding: Finding) -> dict[str, Any]:
+    """Build the ``metadata.wardline.*`` subtree (semantic JSON, not byte-stable)."""
+    wardline: dict[str, Any] = {
+        "fingerprint": finding.fingerprint,
+        "internal_severity": finding.severity.value,
+        "kind": finding.kind.value,
+    }
+    if finding.qualname is not None:
+        wardline["qualname"] = finding.qualname
+    if finding.confidence is not None:
+        wardline["confidence"] = finding.confidence
+    if finding.related_entities:
+        wardline["related_entities"] = list(finding.related_entities)
+    if finding.properties:
+        wardline["properties"] = dict(finding.properties)
+    return {"wardline": wardline}
