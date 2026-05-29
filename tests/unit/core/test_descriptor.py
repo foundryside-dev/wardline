@@ -28,6 +28,12 @@ def test_descriptor_entry_order_follows_registry() -> None:
     assert names == list(REGISTRY)
 
 
+def test_descriptor_envelope_carries_exactly_two_fields() -> None:
+    # Pin the top-level contract surface: a future stray key (e.g. a signature
+    # field) would silently expand the descriptor without this guard.
+    assert set(build_vocabulary_descriptor()) == {"version", "entries"}
+
+
 def test_descriptor_entries_carry_exactly_three_fields() -> None:
     for entry in build_vocabulary_descriptor()["entries"]:
         assert set(entry) == {"canonical_name", "group", "attrs"}
@@ -46,15 +52,20 @@ def test_descriptor_to_yaml_round_trips_through_safe_load() -> None:
 
 
 def test_committed_vocabulary_yaml_matches_registry() -> None:
-    # The committed, wheel-shipped vocabulary.yaml must equal the live descriptor.
-    # If this fails, REGISTRY changed and the file is stale — regenerate with:
+    # The committed, wheel-shipped vocabulary.yaml must be BYTE-identical to the
+    # serializer output — not merely parse-equal. Clarion consumes the file's
+    # bytes via the read-instead-of-import path, and the regen one-liner promises
+    # byte-reproducibility, so byte-identity (not just content) is the contract.
+    # If this fails, regenerate with:
     #   .venv/bin/wardline vocab > src/wardline/core/vocabulary.yaml
     from importlib.resources import files
 
-    loaded = yaml.safe_load(
-        files("wardline.core").joinpath("vocabulary.yaml").read_text(encoding="utf-8")
-    )
-    assert loaded == build_vocabulary_descriptor(), (
+    file_text = files("wardline.core").joinpath("vocabulary.yaml").read_text(encoding="utf-8")
+    regen_hint = (
         "vocabulary.yaml is stale; regenerate: "
         ".venv/bin/wardline vocab > src/wardline/core/vocabulary.yaml"
     )
+    # Content currency (catches a REGISTRY change the file didn't track)...
+    assert yaml.safe_load(file_text) == build_vocabulary_descriptor(), regen_hint
+    # ...and byte-identity (catches a reformat / emitter drift the parse misses).
+    assert file_text == descriptor_to_yaml(), regen_hint

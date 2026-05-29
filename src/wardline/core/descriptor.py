@@ -12,7 +12,12 @@ the descriptor round-trips REGISTRY, not the provider.
 
 No HMAC / signing / governance — a plain versioned export. The committed
 ``vocabulary.yaml`` (shipped in the wheel) is a derived snapshot of this function;
-a drift test keeps it current.
+a byte-identity drift test keeps it current.
+
+``attrs`` types are serialized by ``__name__`` (shape, not type identity): today
+every attr is ``TaintState``. If the vocabulary ever grows two attr types that
+share a ``__name__`` from different modules they would be silently conflated —
+revisit the serialization if that day comes.
 """
 
 from __future__ import annotations
