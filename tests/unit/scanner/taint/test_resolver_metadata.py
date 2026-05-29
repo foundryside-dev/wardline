@@ -39,6 +39,7 @@ def test_metadata_rejects_negative_max() -> None:
 def test_result_wraps_mappings_immutably() -> None:
     res = ResolverResult(
         taint_map={"m.f": T.UNKNOWN_RAW},
+        return_taint_map={"m.f": T.UNKNOWN_RAW},
         project_edges={"m.f": frozenset()},
         taint_provenance={"m.f": TaintProvenance(source="fallback")},
         diagnostics=(("L3_LOW_RESOLUTION", "m.f has 80% unresolved"),),

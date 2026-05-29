@@ -6,7 +6,7 @@ from wardline.core.finding import (
     Kind,
     Location,
     Severity,
-    compute_placeholder_fingerprint,
+    compute_finding_fingerprint,
 )
 
 
@@ -52,10 +52,24 @@ def test_to_jsonl_round_trips_collections() -> None:
     assert obj["properties"] == {"cwe": "CWE-200"}
 
 
-def test_placeholder_fingerprint_is_deterministic_and_path_sensitive() -> None:
-    a = compute_placeholder_fingerprint("WLN-001", "a.py", 1, "msg")
-    b = compute_placeholder_fingerprint("WLN-001", "a.py", 1, "msg")
-    c = compute_placeholder_fingerprint("WLN-001", "b.py", 1, "msg")
+def test_finding_fingerprint_is_deterministic_and_discriminating() -> None:
+    a = compute_finding_fingerprint(
+        rule_id="PY-WL-101", path="a.py", line_start=1, qualname="m.f", taint_path="EXTERNAL_RAW|g"
+    )
+    b = compute_finding_fingerprint(
+        rule_id="PY-WL-101", path="a.py", line_start=1, qualname="m.f", taint_path="EXTERNAL_RAW|g"
+    )
+    # same inputs -> stable
     assert a == b
-    assert a != c
     assert len(a) == 64
+    # path-sensitive
+    assert a != compute_finding_fingerprint(
+        rule_id="PY-WL-101", path="b.py", line_start=1, qualname="m.f", taint_path="EXTERNAL_RAW|g"
+    )
+    # TWO TAINT PATHS INTO ONE SINK: same (rule, file, line, qualname) but a
+    # different taint path -> DISTINCT fingerprint (Filigree constraint, §7).
+    assert a != compute_finding_fingerprint(
+        rule_id="PY-WL-101", path="a.py", line_start=1, qualname="m.f", taint_path="MIXED_RAW|h"
+    )
+    # optional fields default cleanly
+    assert len(compute_finding_fingerprint(rule_id="WLN-ENGINE-X", path="a.py", line_start=None)) == 64

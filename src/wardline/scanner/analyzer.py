@@ -26,12 +26,13 @@ from wardline.scanner.diagnostics import (
     build_unknown_import_findings,
 )
 from wardline.scanner.index import discover_class_qualnames, discover_file_entities
+from wardline.scanner.rules import build_default_registry
 from wardline.scanner.taint.call_taint_map import build_call_taint_map
 from wardline.scanner.taint.decorator_provider import DecoratorTaintSourceProvider
 from wardline.scanner.taint.function_level import seed_function_taints
 from wardline.scanner.taint.project_resolver import ModuleInput, resolve_project_taints
 from wardline.scanner.taint.provider import SeedContext, TaintSourceProvider
-from wardline.scanner.taint.variable_level import compute_variable_taints
+from wardline.scanner.taint.variable_level import compute_return_taint, compute_variable_taints
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -59,7 +60,7 @@ class WardlineAnalyzer:
         summary_cache: SummaryCache | None = None,
     ) -> None:
         self._provider: TaintSourceProvider = provider or DecoratorTaintSourceProvider()
-        self._registry = registry or RuleRegistry()
+        self._registry = registry  # None -> build the default set per-config in analyze()
         self._cache = summary_cache
         self.last_context: AnalysisContext | None = None
 
@@ -156,12 +157,12 @@ class WardlineAnalyzer:
 
         project_taints = dict(result.taint_map)
 
-        # Per-file L2 with a per-function RecursionError boundary.
-        # NOTE: project_taints is the refined *body* taint; equals return taint
-        # for all non-anchored functions (SP1 universe). # SP2: expose the
-        # return map for anchored callees with distinct return tiers.
-        # Pre-bucket project taints by module → {top_level_func_name: taint},
-        # once, so the per-file L2 builder is O(aliases) not O(project_funcs).
+        # Pre-bucket EFFECTIVE RETURN taints by module → {top_level_func_name:
+        # return_taint}, once, for O(aliases) call resolution. A caller observes a
+        # callee's RETURN taint, not its body — for anchored callees (e.g. a
+        # @trust_boundary validator) body != return, and using body here would
+        # mis-read validated output as raw (over-taint -> PY-WL-101 false positive).
+        project_return_taints = dict(result.return_taint_map)
         project_by_module: dict[str, dict[str, TaintState]] = {}
         for _relpath, module, _tree, entities, _alias_map in file_meta:
             prefix = module + "."
@@ -169,10 +170,12 @@ class WardlineAnalyzer:
             for ent in entities:
                 rest = ent.qualname[len(prefix):] if ent.qualname.startswith(prefix) else ent.qualname
                 if "." not in rest:  # top-level function (methods aren't bare-callable)
-                    bucket[rest] = project_taints.get(ent.qualname, TaintState.UNKNOWN_RAW)
+                    bucket[rest] = project_return_taints.get(ent.qualname, TaintState.UNKNOWN_RAW)
 
         function_var_taints: dict[str, dict[str, TaintState]] = {}
+        function_return_taints: dict[str, TaintState] = {}
         entity_index: dict[str, Entity] = {}
+        func_skip_findings: list[Finding] = []
         for _relpath, module, _tree, entities, alias_map in file_meta:
             call_tm = build_call_taint_map(
                 module_path=module, alias_map=alias_map, project_by_module=project_by_module
@@ -182,19 +185,42 @@ class WardlineAnalyzer:
                 seed = project_taints.get(ent.qualname, TaintState.UNKNOWN_RAW)
                 try:
                     var_taints = compute_variable_taints(ent.node, seed, dict(call_tm))
+                    ret_taint = compute_return_taint(ent.node, seed, dict(call_tm), var_taints)
                 except RecursionError:
-                    var_taints = {}  # fail-closed; absent vars read as the function taint
+                    # Fail-closed: absent vars read as the function taint, and the
+                    # return taint is unknown. Emit a FACT so the gap is observable
+                    # — a silently-absent function_return_taints entry would make
+                    # PY-WL-101 quietly skip this function (an invisible under-taint).
+                    var_taints = {}
+                    ret_taint = None
+                    func_skip_findings.append(
+                        Finding(
+                            rule_id="WLN-ENGINE-FUNCTION-SKIPPED",
+                            message=f"{ent.qualname}: skipped L2 — expression too deep to analyze safely",
+                            severity=Severity.NONE,
+                            kind=Kind.FACT,
+                            location=ent.location,
+                            fingerprint=_fp("WLN-ENGINE-FUNCTION-SKIPPED", ent.qualname),
+                            qualname=ent.qualname,
+                            properties={"reason": "recursion_limit"},
+                        )
+                    )
                 function_var_taints[ent.qualname] = var_taints
+                if ret_taint is not None:
+                    function_return_taints[ent.qualname] = ret_taint
 
         context = AnalysisContext(
             project_taints=project_taints,
+            project_return_taints=project_return_taints,
             function_var_taints=function_var_taints,
+            function_return_taints=function_return_taints,
             entities=entity_index,
             taint_provenance=dict(result.taint_provenance),
         )
         self.last_context = context
 
         findings: list[Finding] = list(parse_findings)
+        findings.extend(func_skip_findings)
         findings.append(build_metric_finding(result.metadata, cache_hit_rate=cache_hit_rate))
         findings.extend(build_diagnostic_findings(list(result.diagnostics)))
         findings.extend(
@@ -203,5 +229,6 @@ class WardlineAnalyzer:
                 project_modules=frozenset(mp for _rp, mp, _tr, _e, _a in file_meta),
             )
         )
-        findings.extend(self._registry.run(context))  # empty in SP1
+        registry = self._registry if self._registry is not None else build_default_registry(config)
+        findings.extend(registry.run(context))
         return findings

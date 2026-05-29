@@ -17,7 +17,9 @@ def _entity(q: str) -> Entity:
 def test_context_holds_engine_outputs() -> None:
     ctx = AnalysisContext(
         project_taints={"m.f": T.UNKNOWN_RAW},
+        project_return_taints={"m.f": T.UNKNOWN_RAW},
         function_var_taints={"m.f": {"x": T.INTEGRAL}},
+        function_return_taints={},
         entities={"m.f": _entity("m.f")},
         taint_provenance={},
     )
@@ -30,7 +32,8 @@ def test_empty_registry_runs_no_rules() -> None:
     reg = RuleRegistry()
     assert reg.rules == ()
     ctx = AnalysisContext(
-        project_taints={}, function_var_taints={}, entities={}, taint_provenance={}
+        project_taints={}, project_return_taints={}, function_var_taints={},
+        function_return_taints={}, entities={}, taint_provenance={}
     )
     assert reg.run(ctx) == []
 
@@ -50,7 +53,8 @@ def test_registry_runs_registered_rule() -> None:
     reg = RuleRegistry()
     reg.register(_Rule())
     ctx = AnalysisContext(
-        project_taints={}, function_var_taints={}, entities={}, taint_provenance={}
+        project_taints={}, project_return_taints={}, function_var_taints={},
+        function_return_taints={}, entities={}, taint_provenance={}
     )
     assert reg.run(ctx) == [finding]
     assert len(reg.rules) == 1

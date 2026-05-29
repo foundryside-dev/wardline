@@ -59,9 +59,19 @@ class ResolverRunMetadata:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ResolverResult:
-    """Project-scope resolution output."""
+    """Project-scope resolution output.
+
+    ``taint_map`` is the L3-refined *body* taint per function. ``return_taint_map``
+    is the *effective return* taint: for anchored functions, the provider's
+    declared return tier (never refined — anchored taints are fixed); for
+    non-anchored functions, the refined body taint (``body == return`` holds for
+    them). Callers building call-resolution maps want ``return_taint_map`` (a
+    caller observes a callee's *return*, not its body); rules wanting a function's
+    own operating tier want ``taint_map``.
+    """
 
     taint_map: Mapping[str, TaintState]
+    return_taint_map: Mapping[str, TaintState]
     project_edges: Mapping[str, frozenset[str]]
     taint_provenance: Mapping[str, TaintProvenance]
     diagnostics: tuple[tuple[str, str], ...]
@@ -69,6 +79,9 @@ class ResolverResult:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "taint_map", MappingProxyType(dict(self.taint_map)))
+        object.__setattr__(
+            self, "return_taint_map", MappingProxyType(dict(self.return_taint_map))
+        )
         object.__setattr__(self, "project_edges", MappingProxyType(dict(self.project_edges)))
         object.__setattr__(
             self, "taint_provenance", MappingProxyType(dict(self.taint_provenance))

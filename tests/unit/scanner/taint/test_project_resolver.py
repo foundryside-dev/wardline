@@ -200,6 +200,62 @@ def test_identical_source_modules_do_not_collide_in_cache() -> None:
     assert dict(warm.taint_map) == dict(cold.taint_map)
 
 
+def test_resolver_exposes_effective_return_taint_map() -> None:
+    # An anchored @trust_boundary-shaped function: body EXTERNAL_RAW, return ASSURED.
+    # Its effective return taint must be the DECLARED return (ASSURED), while its
+    # body taint (taint_map) stays EXTERNAL_RAW. A non-anchored function's effective
+    # return must equal its refined body taint.
+    import ast
+
+    from wardline.core.taints import TaintState as T
+    from wardline.scanner.ast_primitives import build_import_alias_map
+    from wardline.scanner.index import discover_class_qualnames, discover_file_entities
+    from wardline.scanner.taint.function_level import seed_function_taints
+    from wardline.scanner.taint.provider import FunctionTaint, SeedContext
+
+    src = (
+        "def validate(p):\n"
+        "    if not p:\n        raise ValueError\n"
+        "    return p\n"
+        "def plain(p):\n    return p\n"
+    )
+    tree = ast.parse(src)
+    module = "m"
+    entities = tuple(discover_file_entities(tree, module=module, path="m.py"))
+    classes = frozenset(discover_class_qualnames(tree, module=module))
+    alias_map = build_import_alias_map(tree, module_path=module)
+
+    class _Provider:
+        def taint_for(self, entity, ctx):  # noqa: ANN001, ANN201
+            if entity.qualname.endswith(".validate"):
+                return FunctionTaint(body_taint=T.EXTERNAL_RAW, return_taint=T.ASSURED)
+            return None
+
+        def fingerprint(self) -> str:
+            return "test-effret-v1"
+
+    provider = _Provider()
+    seeds = seed_function_taints(
+        entities, ctx=SeedContext(module=module, alias_map=alias_map), provider=provider
+    )
+    modules = [
+        ModuleInput(
+            module_path=module,
+            entities=entities,
+            class_qualnames=classes,
+            alias_map=alias_map,
+            seeds=seeds,
+            source_bytes=src.encode("utf-8"),
+        )
+    ]
+    result = resolve_project_taints(modules=modules, provider_fingerprint=provider.fingerprint())
+
+    assert result.taint_map["m.validate"] == T.EXTERNAL_RAW          # body unchanged
+    assert result.return_taint_map["m.validate"] == T.ASSURED         # declared return
+    # non-anchored: effective return == refined body taint
+    assert result.return_taint_map["m.plain"] == result.taint_map["m.plain"]
+
+
 def test_cache_miss_on_changed_source_recomputes() -> None:
     # A module whose source changes gets a different cache_key -> miss ->
     # fresh summary, even if the caller forgets to mark it dirty.

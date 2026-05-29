@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import ast
 
-from wardline.core.taints import TaintState, taint_join
+from wardline.core.taints import TaintState, least_trusted, taint_join
 
 # Serialisation sinks — calls that cross the representation boundary. Their
 # output sheds validation provenance (raw bytes/str), so → UNKNOWN_RAW. This is
@@ -527,3 +527,63 @@ def _assign_target(
             _assign_target(elt, taint, var_taints)
     elif isinstance(target, ast.Starred) and isinstance(target.value, ast.Name):
         var_taints[target.value.id] = taint
+
+
+def compute_return_taint(
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    var_taints: dict[str, TaintState],
+) -> TaintState | None:
+    """Compute the *actual* taint a function returns (least-trusted of all paths).
+
+    Resolves every value-bearing ``return`` statement in *func_node*'s own scope
+    (nested functions/lambdas excluded) against the already-computed ``var_taints``
+    and the call-resolution ``taint_map``, and joins them with :func:`least_trusted`
+    — the worst (least-trusted) value any path can return. Returns ``None`` when the
+    function has no value-bearing ``return`` (implicit ``None`` / bare ``return`` /
+    pure side-effect): there is no returned data to police.
+
+    This is the precise input PY-WL-101 needs — distinct from ``project_taints``
+    (the function's anchored *body* taint, pinned to its declaration).
+    """
+    returns: list[TaintState] = []
+    _collect_return_taints(
+        list(func_node.body), function_taint, taint_map, var_taints, returns
+    )
+    if not returns:
+        return None
+    result = returns[0]
+    for r in returns[1:]:
+        result = least_trusted(result, r)
+    return result
+
+
+def _collect_return_taints(
+    nodes: list[ast.AST],
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    var_taints: dict[str, TaintState],
+    out: list[TaintState],
+) -> None:
+    """Recurse the AST collecting value-bearing return taints, descending into ALL
+    children EXCEPT nested ``FunctionDef``/``AsyncFunctionDef``/``ClassDef``/
+    ``Lambda`` (separate scopes — their returns bind their own callable, not this
+    one).
+
+    Descent is unconditional because the constructs that hold returns are not all
+    ``ast.stmt``: ``match``/``case`` bodies live under ``ast.match_case`` and
+    ``except`` bodies under ``ast.ExceptHandler``, neither of which is an
+    ``ast.stmt``. Gating descent on ``isinstance(child, ast.stmt)`` therefore
+    silently dropped any ``return`` reachable only through a match arm or an
+    exception handler — a fail-open under-taint. The ``Return`` guard is
+    ``isinstance``-checked, so passing these non-statement nodes through is
+    harmless."""
+    for node in nodes:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue
+        if isinstance(node, ast.Return) and node.value is not None:
+            out.append(_resolve_expr(node.value, function_taint, taint_map, var_taints))
+        _collect_return_taints(
+            list(ast.iter_child_nodes(node)), function_taint, taint_map, var_taints, out
+        )
