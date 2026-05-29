@@ -1,0 +1,94 @@
+# src/wardline/scanner/taint/call_taint_map.py
+"""Build the per-file L2 call-taint-map consumed by ``compute_variable_taints``.
+
+Keyed by call-site name AS WRITTEN (bare ``foo`` / dotted ``mod.fn``), mapping to
+the call's return taint. Folds in two sources, alias-resolved against the file's
+import map:
+
+  * Project function returns — from the L3 ``ResolverResult.taint_map`` (refined
+    body taint; equals return taint for all non-anchored functions, SP1's whole
+    universe — see ``# SP2`` note in the analyzer). Supplied pre-bucketed as
+    ``project_by_module`` (``{module: {top_level_func_name: taint}}``) so this
+    builder is O(aliases) per file rather than rescanning the whole project.
+  * ``stdlib_taint`` — with the SERIALISATION-SINK OVERRIDE: any stdlib entry
+    whose ``(pkg, fn)`` is also a serialisation sink is inserted as
+    ``UNKNOWN_RAW``, never its stdlib taint. ``_resolve_call``'s sink check only
+    matches the *literal* written name, so without this override an aliased
+    ``import json as j; j.loads(p)`` would skip the sink check and read the
+    stdlib ``GUARDED`` — an under-taint. Inserting ``UNKNOWN_RAW`` makes literal
+    and aliased calls agree (conservative wins).
+
+Multi-component stdlib packages (e.g. ``urllib.request``) are handled for all
+three import forms: ``import urllib.request`` (alias map collapses to
+``{"urllib": "urllib"}``; the call is written ``urllib.request.urlopen``),
+``import urllib.request as ur``, and ``from urllib.request import urlopen``.
+
+Project entries take precedence over stdlib (``setdefault`` for stdlib).
+Residual known gap: an aliased serialisation sink NOT in the stdlib table (e.g.
+``import pickle as p`` when pickle is uncurated) has no taint_map entry and the
+literal sink check misses the alias, so it falls back to the function taint —
+pre-existing, not worsened here.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+
+from wardline.core.taints import TaintState
+from wardline.scanner.taint.stdlib_taint import load_stdlib_taint
+from wardline.scanner.taint.variable_level import _SERIALISATION_SINKS
+
+
+def build_call_taint_map(
+    *,
+    module_path: str,
+    alias_map: dict[str, str],
+    project_by_module: Mapping[str, Mapping[str, TaintState]] | None = None,
+) -> dict[str, TaintState]:
+    """Return ``{call-site-name: return-taint}`` for one file.
+
+    ``project_by_module`` maps each project module to its top-level functions'
+    refined taints (``{module: {func_name: taint}}``) — built once by the
+    analyzer over the whole project.
+    """
+    project_by_module = project_by_module or {}
+    tm: dict[str, TaintState] = {}
+
+    # (a) Local top-level functions — bare-callable in this module.
+    for name, taint in project_by_module.get(module_path, {}).items():
+        tm[name] = taint
+
+    # (b)+(c) Imported project symbols, via the file's alias map.
+    for local, target in alias_map.items():
+        bucket = project_by_module.get(target)
+        if bucket is not None:
+            # module import: dotted ``local.func`` calls
+            for func_name, taint in bucket.items():
+                tm[f"{local}.{func_name}"] = taint
+            continue
+        # from-import of a project function: target == "module.func_name"
+        mod, _, leaf = target.rpartition(".")
+        mod_bucket = project_by_module.get(mod)
+        if mod_bucket is not None and leaf in mod_bucket:
+            tm[local] = mod_bucket[leaf]
+
+    # (d) stdlib_taint with the serialisation-sink override.
+    stdlib = load_stdlib_taint()
+    for (pkg, fn), entry in stdlib.items():
+        value = (
+            TaintState.UNKNOWN_RAW
+            if f"{pkg}.{fn}" in _SERIALISATION_SINKS
+            else entry.taint
+        )
+        for local, target in alias_map.items():
+            if target == pkg:
+                tm.setdefault(f"{local}.{fn}", value)             # import pkg [as local]
+            elif target == f"{pkg}.{fn}":
+                tm.setdefault(local, value)                       # from pkg import fn [as local]
+            elif pkg.startswith(target + "."):
+                # ``import top.sub`` collapses the alias to ``top``; the call is
+                # written ``local.<rest-of-pkg>.fn`` (e.g. urllib.request.urlopen).
+                remainder = pkg[len(target) + 1:]
+                tm.setdefault(f"{local}.{remainder}.{fn}", value)
+
+    return tm

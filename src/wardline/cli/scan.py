@@ -1,5 +1,5 @@
 # src/wardline/cli/scan.py
-"""`wardline scan` — SP0 wires discovery → no-op analyzer → JSONL sink."""
+"""`wardline scan` — SP1 wires discovery → WardlineAnalyzer → JSONL sink."""
 
 from __future__ import annotations
 
@@ -11,7 +11,8 @@ from wardline.core import config as config_mod
 from wardline.core.discovery import discover
 from wardline.core.emit import JsonlSink
 from wardline.core.errors import WardlineError
-from wardline.scanner import NoOpAnalyzer
+from wardline.scanner.analyzer import WardlineAnalyzer
+from wardline.scanner.taint.summary_cache import SummaryCache
 
 
 @click.command()
@@ -23,16 +24,19 @@ from wardline.scanner import NoOpAnalyzer
 @click.option("--config", "config_path", type=click.Path(path_type=Path), default=None)
 @click.option("--format", "fmt", type=click.Choice(["jsonl", "sarif"]), default="jsonl")
 @click.option("--output", type=click.Path(path_type=Path), default=None)
-# reserved for SP3; inert in SP0
+# reserved for SP3; inert in SP0/SP1
 @click.option("--fail-on", type=click.Choice(["CRITICAL", "ERROR", "WARN", "INFO"]), default=None)
+@click.option("--cache-dir", type=click.Path(path_type=Path), default=None,
+              help="Persist L3 summary cache here for faster incremental scans.")
 def scan(
     path: Path,
     config_path: Path | None,
     fmt: str,
     output: Path | None,
     fail_on: str | None,
+    cache_dir: Path | None,
 ) -> None:
-    """Scan PATH for findings (SP0: discovery + no-op analyzer)."""
+    """Scan PATH for findings."""
     if fmt == "sarif":
         click.echo("SARIF output is not yet implemented (SP4).", err=True)
         raise SystemExit(2)
@@ -40,8 +44,14 @@ def scan(
     try:
         cfg_path = config_path or (path / "wardline.yaml")
         cfg = config_mod.load(cfg_path)
+        cache = None
+        if cache_dir is not None:
+            cache = SummaryCache(cache_dir=cache_dir)
+            cache.load()
         files = discover(path, cfg)
-        findings = NoOpAnalyzer().analyze(files, cfg, root=path)
+        findings = WardlineAnalyzer(summary_cache=cache).analyze(files, cfg, root=path)
+        if cache is not None:
+            cache.save()
         JsonlSink(output).write(findings)
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
