@@ -45,6 +45,13 @@ def test_to_jsonl_is_valid_json_with_expected_keys() -> None:
     assert "\n" not in line
 
 
+def test_to_jsonl_round_trips_collections() -> None:
+    line = _finding(related_entities=("e1", "e2"), properties={"cwe": "CWE-200"}).to_jsonl()
+    obj = json.loads(line)
+    assert obj["related_entities"] == ["e1", "e2"]
+    assert obj["properties"] == {"cwe": "CWE-200"}
+
+
 def test_placeholder_fingerprint_is_deterministic_and_path_sensitive() -> None:
     a = compute_placeholder_fingerprint("WLN-001", "a.py", 1, "msg")
     b = compute_placeholder_fingerprint("WLN-001", "a.py", 1, "msg")

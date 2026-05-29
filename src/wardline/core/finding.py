@@ -54,6 +54,8 @@ class Finding:
     qualname: str | None = None  # dotted module.qualified_name (Clarion reconciliation key)
     confidence: float | None = None
     related_entities: tuple[str, ...] = ()
+    # Immutability is shallow: the contained mapping is not deep-frozen and must
+    # be treated as read-only by convention. SP1 may enforce via MappingProxyType.
     properties: Mapping[str, Any] = field(default_factory=dict)
 
     def to_jsonl(self) -> str:
