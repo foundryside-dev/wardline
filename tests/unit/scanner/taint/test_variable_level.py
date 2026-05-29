@@ -172,6 +172,93 @@ def test_compute_return_taint_all_shapes() -> None:
     assert rt("def f():\n def g():\n  return read_raw(1)\n return 1\n") == T.INTEGRAL
 
 
+def test_match_arm_assignment_merges_across_arms() -> None:
+    # x assigned raw in one arm, integral in another; join + the no-match
+    # fall-through (pre-match x=INTEGRAL) -> MIXED_RAW (cross-family clash).
+    src = (
+        "def f(p):\n"
+        "    x = 1\n"
+        "    match p:\n"
+        "        case 1:\n"
+        "            x = tainted()\n"
+        "        case _:\n"
+        "            x = 2\n"
+    )
+    out = _vt(src, function_taint=T.INTEGRAL, taint_map={"tainted": T.EXTERNAL_RAW})
+    assert out["x"] == T.MIXED_RAW
+
+
+def test_match_capture_binds_subject_taint() -> None:
+    # `case y:` binds y to the subject's taint (conservative: whole-subject taint).
+    src = "def f(p):\n    match tainted():\n        case y:\n            z = y\n"
+    out = _vt(src, function_taint=T.INTEGRAL, taint_map={"tainted": T.EXTERNAL_RAW})
+    assert out["z"] == T.EXTERNAL_RAW
+
+
+def test_match_sequence_and_class_captures_bind_subject_taint() -> None:
+    seq = _vt(
+        "def f(p):\n    match tainted():\n        case [a, b]:\n            z = a\n",
+        function_taint=T.INTEGRAL, taint_map={"tainted": T.EXTERNAL_RAW},
+    )
+    assert seq["z"] == T.EXTERNAL_RAW
+    cls = _vt(
+        "def f(p):\n    match tainted():\n        case Point(x=px):\n            z = px\n",
+        function_taint=T.INTEGRAL, taint_map={"tainted": T.EXTERNAL_RAW},
+    )
+    assert cls["z"] == T.EXTERNAL_RAW
+
+
+def test_match_guard_walrus_is_captured() -> None:
+    # A walrus in a case guard binds the enclosing scope (evaluated when testing
+    # the arm). Pin it like the if/try walrus handling.
+    src = "def f(p):\n    match p:\n        case 1 if (w := tainted()):\n            z = w\n"
+    out = _vt(src, function_taint=T.INTEGRAL, taint_map={"tainted": T.EXTERNAL_RAW})
+    assert out["w"] == T.EXTERNAL_RAW
+
+
+def test_match_subject_walrus_is_captured() -> None:
+    src = "def f(p):\n    match (s := tainted()):\n        case _:\n            pass\n"
+    out = _vt(src, function_taint=T.INTEGRAL, taint_map={"tainted": T.EXTERNAL_RAW})
+    assert out["s"] == T.EXTERNAL_RAW
+
+
+def test_match_does_not_descend_into_nested_function() -> None:
+    src = (
+        "def f(p):\n"
+        "    match p:\n"
+        "        case 1:\n"
+        "            def inner():\n"
+        "                y = tainted()\n"
+        "            x = 1\n"
+    )
+    out = _vt(src, function_taint=T.INTEGRAL, taint_map={"tainted": T.EXTERNAL_RAW})
+    assert "x" in out
+    assert "y" not in out  # nested scope is its own entity
+
+
+def test_collect_pattern_targets_covers_all_binding_shapes() -> None:
+    import ast
+
+    from wardline.scanner.taint.variable_level import _collect_pattern_targets
+
+    def targets(pattern_src: str) -> set[str]:
+        # parse `match _:\n case <pattern>: pass` and pull the case pattern
+        m = ast.parse(f"match x:\n case {pattern_src}:\n  pass\n").body[0]
+        return _collect_pattern_targets(m.cases[0].pattern)  # type: ignore[attr-defined]
+
+    assert targets("1") == set()                      # MatchValue — no binding
+    assert targets("_") == set()                      # wildcard — no binding
+    assert targets("y") == {"y"}                      # MatchAs capture
+    assert targets("[a, b]") == {"a", "b"}            # MatchSequence
+    assert targets("[a, *rest]") == {"a", "rest"}     # MatchStar
+    assert targets("Point(x=px, y=py)") == {"px", "py"}    # MatchClass kwd patterns
+    assert targets("Point(px, py)") == {"px", "py"}        # MatchClass positional
+    assert targets("{'k': v, **others}") == {"v", "others"}  # MatchMapping + rest
+    assert targets("Point() as whole") == {"whole"}   # MatchAs with sub-pattern
+    assert targets("[a] | (b)") == {"a", "b"}         # MatchOr — union of alternatives
+    assert targets("1 | 2") == set()                  # MatchOr of values — no binding
+
+
 def test_compute_return_taint_reaches_match_and_except_returns() -> None:
     # Regression: returns reachable only through a match arm or an except handler
     # must be collected (ast.match_case / ast.ExceptHandler are NOT ast.stmt, so a
