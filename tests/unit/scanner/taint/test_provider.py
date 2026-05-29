@@ -42,3 +42,13 @@ def test_function_taint_is_frozen() -> None:
 
 def test_seed_context_carries_module() -> None:
     assert SeedContext(module="pkg.sub").module == "pkg.sub"
+
+
+def test_default_provider_fingerprint_is_stable() -> None:
+    p = DefaultTaintSourceProvider()
+    assert isinstance(p.fingerprint(), str)
+    assert p.fingerprint() == DefaultTaintSourceProvider().fingerprint()
+
+
+def test_provider_protocol_requires_fingerprint() -> None:
+    assert isinstance(DefaultTaintSourceProvider(), TaintSourceProvider)
