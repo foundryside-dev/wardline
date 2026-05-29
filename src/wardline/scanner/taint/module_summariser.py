@@ -30,6 +30,7 @@ _SEED_SOURCE_TO_CLASS: dict[str, TaintSourceClass] = {
 
 def summarise_module(
     *,
+    module_path: str,
     seeds: Mapping[str, FunctionSeed],
     unresolved_counts: Mapping[str, int],
     source_bytes: bytes,
@@ -38,6 +39,7 @@ def summarise_module(
 ) -> tuple[FunctionSummary, ...]:
     """Emit one FunctionSummary per seeded function in this module."""
     cache_key = compute_cache_key(
+        module_path=module_path,
         source_bytes=source_bytes,
         schema_version=SUMMARY_SCHEMA_VERSION,
         resolver_version=resolver_version,

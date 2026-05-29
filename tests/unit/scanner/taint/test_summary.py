@@ -12,6 +12,7 @@ from wardline.scanner.taint.summary import (
 
 def _key(**over) -> str:
     base = dict(
+        module_path="pkg.mod",
         source_bytes=b"def f(): pass\n",
         schema_version=SUMMARY_SCHEMA_VERSION,
         resolver_version="sp1d",
@@ -33,6 +34,12 @@ def test_cache_key_changes_with_each_input() -> None:
     assert _key(schema_version=SUMMARY_SCHEMA_VERSION + 1) != base
 
 
+def test_cache_key_includes_module_identity() -> None:
+    # Two modules with byte-identical source must NOT collide on one key —
+    # otherwise the second module's summaries are dropped on a false cache hit.
+    assert _key(module_path="pkg.a") != _key(module_path="pkg.b")
+
+
 def test_cache_key_rejects_crlf_source() -> None:
     with pytest.raises(ValueError, match="CRLF"):
         _key(source_bytes=b"def f():\r\n    pass\r\n")
@@ -41,10 +48,10 @@ def test_cache_key_rejects_crlf_source() -> None:
 def test_cache_key_length_prefixed_no_collision() -> None:
     # ("ab","c") vs ("a","bc") must not collide across adjacent fields.
     assert compute_cache_key(
-        source_bytes=b"ab", schema_version=1, resolver_version="c",
+        module_path="m", source_bytes=b"ab", schema_version=1, resolver_version="c",
         provider_fingerprint="x",
     ) != compute_cache_key(
-        source_bytes=b"a", schema_version=1, resolver_version="bc",
+        module_path="m", source_bytes=b"a", schema_version=1, resolver_version="bc",
         provider_fingerprint="x",
     )
 

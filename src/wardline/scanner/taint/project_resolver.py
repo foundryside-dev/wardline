@@ -1,12 +1,20 @@
 # src/wardline/scanner/taint/project_resolver.py
-"""Project-scope L3 resolver — cold path.
+"""Project-scope L3 resolver.
 
 Assembles per-module parsed data + L1 seeds into the inter-module call graph,
-runs the SCC fixed-point kernel, and returns a ``ResolverResult``. This is the
-cold path only: there is no summary cache (SP1e) and no ``Finding`` emission
-(SP1f) — kernel diagnostics ride on the result as ``(code, message)`` data.
-Star imports are not yet materialised for edge resolution (deferred); the
-multi-module graph resolves explicit imports + local + self/cls method calls.
+runs the SCC fixed-point kernel, and returns a ``ResolverResult``. Diagnostics
+ride on the result as ``(code, message)`` data (SP1f maps them to Findings);
+the resolver emits no ``Finding`` itself.
+
+An optional in-memory ``SummaryCache`` memoizes per-module summaries across
+calls. The call graph (edges + resolved/unresolved counts) is ALWAYS recomputed
+fresh and fed to the kernel; the cache stores only the source-determined taint
+contract (body/return/source), which ``cache_key`` fully captures. Therefore a
+warm run is byte-identical to a cold run — the ``cache_key`` is the correctness
+gate, and the reverse-edge dirty frontier is a performance over-approximation
+that only bounds which clean modules skip provider re-invocation (it cannot
+affect taint correctness). Star imports are not yet materialised for edge
+resolution (deferred).
 """
 
 from __future__ import annotations
@@ -20,7 +28,9 @@ from wardline.scanner.taint.callgraph import build_call_edges
 from wardline.scanner.taint.module_summariser import summarise_module
 from wardline.scanner.taint.propagation import propagate_callgraph_taints
 from wardline.scanner.taint.resolver_metadata import ResolverResult, ResolverRunMetadata
-from wardline.scanner.taint.summary import TaintSourceClass
+from wardline.scanner.taint.reverse_edge_index import ReverseModuleIndex
+from wardline.scanner.taint.summary import SUMMARY_SCHEMA_VERSION, TaintSourceClass, compute_cache_key
+from wardline.scanner.taint.summary_cache import SummaryCache
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -28,6 +38,7 @@ if TYPE_CHECKING:
     from wardline.core.taints import TaintState
     from wardline.scanner.index import Entity
     from wardline.scanner.taint.function_level import FunctionSeed
+    from wardline.scanner.taint.summary import FunctionSummary
 
 _RESOLVER_VERSION = "sp1d"
 
@@ -48,11 +59,24 @@ def resolve_project_taints(
     *,
     modules: Sequence[ModuleInput],
     provider_fingerprint: str,
+    summary_cache: SummaryCache | None = None,
+    dirty_modules: frozenset[str] | None = None,
 ) -> ResolverResult:
-    """Run whole-project transitive taint resolution over ``modules``."""
-    project_fqns = frozenset(
-        e.qualname for m in modules for e in m.entities
-    )
+    """Run whole-project transitive taint resolution over ``modules``.
+
+    When ``summary_cache`` is supplied, ``dirty_modules`` MUST also be supplied
+    (pass ``frozenset()`` for "nothing declared dirty"); the cache reuses
+    summaries for clean, cache-hit modules and recomputes the rest. The result
+    is identical to a cold run regardless — the cache only saves provider
+    re-invocation.
+    """
+    if (summary_cache is None) != (dirty_modules is None):
+        raise ValueError(
+            "summary_cache and dirty_modules must be supplied together; pass "
+            "dirty_modules=frozenset() explicitly if nothing has changed"
+        )
+
+    project_fqns = frozenset(e.qualname for m in modules for e in m.entities)
     all_classes = frozenset(c for m in modules for c in m.class_qualnames)
 
     edges: dict[str, frozenset[str]] = {}
@@ -70,18 +94,44 @@ def resolve_project_taints(
         resolved_counts.update(m_resolved)
         unresolved_counts.update(m_unresolved)
 
-    # Summaries (the cacheable unit + cold-path intermediate).
-    summaries = tuple(
-        s
-        for m in modules
-        for s in summarise_module(
+    # Transitive dirty frontier (performance over-approximation — bounds which
+    # clean modules skip provider re-invocation; NOT a correctness gate).
+    if summary_cache is not None and dirty_modules is not None:
+        fqn_to_module = {e.qualname: m.module_path for m in modules for e in m.entities}
+        frontier = ReverseModuleIndex.from_forward_edges(
+            {k: set(v) for k, v in edges.items()},
+            fqn_to_module=fqn_to_module,
+        ).transitive_callers(dirty_modules)
+    else:
+        frontier = frozenset()
+
+    # Per-module summaries: reuse cached for clean cache-hit modules, else fresh.
+    summaries: list[FunctionSummary] = []
+    for m in modules:
+        cache_key = compute_cache_key(
+            module_path=m.module_path,
+            source_bytes=m.source_bytes,
+            schema_version=SUMMARY_SCHEMA_VERSION,
+            resolver_version=_RESOLVER_VERSION,
+            provider_fingerprint=provider_fingerprint,
+        )
+        cached: tuple[FunctionSummary, ...] | None = None
+        if summary_cache is not None and m.module_path not in frontier:
+            cached = summary_cache.get(cache_key)
+        if cached is not None:
+            summaries.extend(cached)
+            continue
+        fresh = summarise_module(
+            module_path=m.module_path,
             seeds=m.seeds,
             unresolved_counts=unresolved_counts,
             source_bytes=m.source_bytes,
             resolver_version=_RESOLVER_VERSION,
             provider_fingerprint=provider_fingerprint,
         )
-    )
+        summaries.extend(fresh)
+        if summary_cache is not None:
+            summary_cache.put(cache_key, fresh)
 
     taint_map: dict[str, TaintState] = {s.fqn: s.body_taint for s in summaries}
     return_taint_map: dict[str, TaintState] = {s.fqn: s.return_taint for s in summaries}
