@@ -205,3 +205,49 @@ When ADR-015 Rev 2 lands (Clarion off transport, Wardline native emitter), Filig
 | Entity associations (ADR-029) | ⏸ deferred, not first-cut |
 
 **Open loops (non-blocking for SP0):** qualname corpus location (Clarion repo vs neutral); Clarion NG-25 plugin-reader timeline.
+
+---
+
+## Round 2 — sibling implementations shipped & verified (2026-05-29)
+
+Both siblings implemented their side; Wardline reviewed the code. Verified outcomes:
+
+### Filigree (branch `docs/2.1.0-release-prep`) — COMPLIANT, with naming/version notes
+
+- **Schema shipped as v19** (not v17 — two unrelated migrations landed between). SP4 must target schema **v19** (`db_schema.py:528`).
+- **Top-level `fingerprint`** column `TEXT NOT NULL DEFAULT ''` (`db_schema.py:160`), generic (any scanner).
+- **Dedup:** fingerprint non-empty → identity `(scan_source, fingerprint)`; empty → legacy `(file_id, scan_source, rule_id, coalesce(line_start,-1)) WHERE fingerprint=''` (`db_files.py:1063-1080`). Partial unique indexes per contract.
+- **`line_start` refresh fix** present (`db_files.py:1189-1211`); test covers line-move under stable fingerprint.
+- **`suggestion` truncated at 10 000 chars** with `"\n[truncated]"` (`db_files.py:1053-1061`).
+- Standalone `path`→`file_id` via local registry works (Clarion absent) ✓.
+
+**⚠️ SP4 wire gotchas (exact):**
+- Endpoint **`POST /api/loom/scan-results`**. Per-finding path key is **`path`**, NOT `file_path` (sending `file_path` → 400).
+- Per-finding keys: `path`(req), `rule_id`(req), `message`(req), `severity`(opt, 5-level lowercase), `line_start`/`line_end`(opt), `fingerprint`(opt top-level string; `null`≡omitted≡`""`), `suggestion`(opt), `metadata`(opt object), `language`(opt). Body also takes `scan_source`(req), `scan_run_id`, `mark_unseen`, `create_observations`, `complete_scan_run`.
+- `metadata` preserved as semantic JSON (no key-order/dupes). Line clamping: a `line_start` beyond the on-disk file length is cleared to `null`.
+
+### Clarion (Python plugin) — qualname PRODUCER contract fixed; CONSUMER not yet built
+
+**Reconciliation read-path is NOT yet implemented** (schema-reserved `wardline_json` column, all `None`; `wardline_probe.py` only proves the import/version handshake; full join is ADR-018 / WP3 scope). So Wardline emitting the correct qualname now is what makes future reconciliation work. **The producer format is fixed and is the SP1 contract:**
+
+**`module_dotted_name(rel_path)`** (`extractor.py:210-234`) — operate on the **project-relative POSIX path** (never absolute):
+1. Strip exactly **one** leading `src/` component.
+2. Drop the `.py` suffix; if the resulting stem is `__init__`, **remove that component** (collapse to parent).
+3. Join remaining components with `.`.
+- Examples: `demo.py`→`demo`; `src/demo.py`→`demo`; `pkg/__init__.py`→`pkg`; `src/pkg/sub/mod.py`→`pkg.sub.mod`; `src/src/pkg/mod.py`→`src.pkg.mod` (one level only).
+- Top-level `__init__.py` → empty module → **emit no entity** (do not emit empty qualname).
+
+**`reconstruct_qualname`** (`qualname.py:34-48`) — start with the symbol's bare name; walk ancestors innermost→outermost:
+- `FunctionDef`/`AsyncFunctionDef` parent → prepend `"{name}.<locals>."`
+- `ClassDef` parent → prepend `"{name}."`
+- all other nodes (Module/If/With/…) → skipped.
+- Final key: **`f"{dotted_module}.{qualname}"`**.
+- Examples: `demo.Foo.bar`; `demo.Outer.Inner.method`; `demo.outer.<locals>.inner`; nested-class-in-closure → `demo.Foo.bar.<locals>.Local.meth`. The literal `<locals>` (with angle brackets) is a verbatim component, never re-dotted.
+
+**Divergence gotchas SP1 must honor to keep reconciliation lossless:**
+- `<locals>` comes from the **function** ancestor only (a class nested in a function gets one `<locals>` from the function, not from itself).
+- `@overload` stubs (bare/`typing.overload`/`typing_extensions.overload`) are **dropped** before entity emission; aliased `overload as o` is not recognized.
+- Duplicate qualnames (redefinition, `singledispatch def _`) → **first-wins**.
+- `async def` ≡ `def` for qualname purposes.
+
+> **SP1 obligation:** implement `module_dotted_name` + `reconstruct_qualname` to match the above byte-for-byte, and stand up the shared qualname conformance corpus (seeded from these examples + the edge cases) so both tools test it in CI.
