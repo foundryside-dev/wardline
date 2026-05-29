@@ -138,3 +138,5 @@ Build order SP1a → SP1b → SP1c → SP1d → SP1e → SP1f. Each gets its own
 - **Qualname drift from Clarion.** Mitigation: the shared conformance corpus is a hard gate in SP1a and runs in CI on both sides.
 - **Engine size / context.** Mitigation: the six-stage split keeps each plan to ~600–900 LOC; subagent-driven execution with two-stage review per task.
 - **`Finding` impedance.** `.old`'s rich `Finding` → SP0's slimmer one. Mitigation: taint provenance → `properties`; engine diagnostics → `kind=fact/metric`; no governance fields.
+
+**SP1d forward note (from SP1a review):** `iter_calls_in_function_body` (SP1a `ast_primitives.py`) attributes a nested def's *header* calls (decorators, defaults) to the enclosing function, but a **top-level** function's own header calls (e.g. `@app.route(...)`, `@click.command()`) are attributed to no entity — there is no module-scope entity to catch them. SP1d's callgraph builder must make an explicit decision on where module-scope header/registration calls land (likely: a synthetic module entity, or attribute decorator calls to the decorated function). Don't lose this when wiring the callgraph.
