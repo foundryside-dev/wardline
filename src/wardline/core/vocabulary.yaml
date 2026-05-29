@@ -1,0 +1,13 @@
+version: wardline-generic-1
+entries:
+- canonical_name: external_boundary
+  group: 1
+  attrs: {}
+- canonical_name: trust_boundary
+  group: 1
+  attrs:
+    _wardline_to_level: TaintState
+- canonical_name: trusted
+  group: 1
+  attrs:
+    _wardline_level: TaintState

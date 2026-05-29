@@ -75,6 +75,17 @@ def test_scan_emits_engine_metrics(tmp_path) -> None:
     assert any(f["rule_id"] == "WLN-ENGINE-METRICS" for f in lines)
 
 
+def test_vocab_emits_descriptor_as_yaml() -> None:
+    import yaml as _yaml
+
+    from wardline.core.descriptor import build_vocabulary_descriptor
+
+    result = CliRunner().invoke(cli, ["vocab"])
+    assert result.exit_code == 0, result.output
+    parsed = _yaml.safe_load(result.output)
+    assert parsed == build_vocabulary_descriptor()
+
+
 def test_scan_cache_dir_persists_warm_taints_equal_cold(tmp_path) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
