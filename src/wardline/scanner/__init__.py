@@ -7,6 +7,7 @@ from pathlib import Path
 
 from wardline.core.config import WardlineConfig
 from wardline.core.finding import Finding
+from wardline.scanner.analyzer import WardlineAnalyzer
 
 
 class NoOpAnalyzer:
@@ -18,4 +19,4 @@ class NoOpAnalyzer:
         return []
 
 
-__all__ = ["NoOpAnalyzer"]
+__all__ = ["NoOpAnalyzer", "WardlineAnalyzer"]
