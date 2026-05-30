@@ -1420,6 +1420,7 @@ def test_fresh_fact_is_served_without_reanalysis(tmp_path, monkeypatch):
     assert exp.sink_qualname == "svc.leaky"
     assert exp.tier_in == "EXTERNAL_RAW"
     assert exp.immediate_tainted_callee == "read_raw"  # bare leaf of the resolved callee qualname
+    assert exp.path == "svc.py"     # caller's location preserved (NOT regressed to "")
     assert calls["n"] == 0          # served from the store: NO re-analysis
     assert client.batch_get_calls == 1
 
@@ -1540,7 +1541,16 @@ def explain_finding(
     if clarion is not None and sink_qualname is not None:
         views = clarion.batch_get([sink_qualname])
         if views and _is_fresh(views[0]):
-            return _explanation_from_blob(views[0])
+            # Serve from the store, but PRESERVE the caller's location/fingerprint:
+            # the store is entity-scoped and doesn't carry the finding's path, so a
+            # fresh hit must not regress the SP8 surface to an empty path.
+            served = _explanation_from_blob(views[0])
+            return dataclasses.replace(
+                served,
+                fingerprint=fingerprint or served.fingerprint,
+                path=path or served.path,
+                line=line if line is not None else served.line,
+            )
         # miss/stale/outage → fall through to the re-run
     return _explain_local(
         root, fingerprint=fingerprint, path=path, line=line,
@@ -1548,7 +1558,7 @@ def explain_finding(
     )
 ```
 
-`_explain_local` keeps the existing argument-validation (`requires either fingerprint or (path, line)`) so a re-run path without a fingerprint/location still raises as before. The standalone `test_no_client_is_identical_to_sp8` passes because `clarion=None` skips the fast path entirely and delegates straight to `_explain_local`.
+Add `import dataclasses` at the top of `core/explain.py`. `_explain_local` keeps the existing argument-validation (`requires either fingerprint or (path, line)`) so a re-run path without a fingerprint/location still raises as before. The standalone `test_no_client_is_identical_to_sp8` passes because `clarion=None` skips the fast path entirely and delegates straight to `_explain_local`.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -1594,14 +1604,31 @@ def _explain_taint(args, root, clarion=None, server_root=None):
     return result_dict
 ```
 
-Add `"sink_qualname": {"type": "string"}` to the `explain_taint` input schema properties (optional; lets a fresh store hit skip re-analysis). Task 9 inserts the `chain` block into `result_dict` immediately before `return result_dict`.
+Add `"sink_qualname": {"type": "string"}` to the `explain_taint` input schema properties (optional; lets a fresh store hit skip re-analysis). Also update the tool description to mention that passing the finding's `qualname` as `sink_qualname` queries the store instead of re-scanning. Task 9 inserts the `chain` block into `result_dict` immediately before `return result_dict`.
 
-- [ ] **Step 6: Run the full suite**
+- [ ] **Step 6: Teach the loop prompt to use the store (otherwise the cheap path never fires)**
+
+The fast path is gated on the caller passing `sink_qualname`. The `scan` tool already emits each finding's `qualname` (via `to_jsonl`), so the loop is viable — but only if the prompt instructs the agent to thread it through. Without this edit, SP9 ships correct-but-dead code (every `explain_taint` re-scans). Update `_LOOP_PROMPT` in `mcp/server.py` step 2:
+
+```python
+    _LOOP_PROMPT = (
+        "Wardline is whole-program and on-disk. The loop:\n"
+        "1. Call `scan` (whole project). Read `summary.active` and `gate.tripped`.\n"
+        "2. For each active defect, call `explain_taint` with the finding's `fingerprint`, "
+        "`path`+`line`, AND its `qualname` as `sink_qualname`. When a Clarion store is "
+        "configured this serves the explanation from the store (no re-scan) and lets you "
+        "pass `chain: true` to walk the full taint chain to the originating boundary.\n"
+        "3. Fix at the BOUNDARY, not the sink — add validation/rejection at the right hop.\n"
+        "4. Re-`scan`. Only baseline/waiver a finding you have judged a true non-issue, with a reason."
+    )
+```
+
+- [ ] **Step 7: Run the full suite**
 
 Run: `.venv/bin/pytest -q`
 Expected: PASS (all green; SP8 explain tests unchanged because `clarion` defaults to None).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/wardline/core/explain.py src/wardline/mcp/server.py tests/unit/core/test_explain_clarion.py
@@ -1936,9 +1963,9 @@ git commit -m "test(sp9): live clarion_e2e scan->write->explain round-trip (dese
 
 Create `docs/guides/clarion-taint-store.md` covering: what it does (persistent taint store, explain becomes a query, full chain), the opt-in (`pip install 'wardline[clarion]'`, `--clarion-url`, `WARDLINE_CLARION_TOKEN` from env/`.env`), the fail-soft guarantee (Clarion absent/disabled/stale → SP8 re-run; never load-bearing), the never-serve-stale freshness gate (blake3 whole-file compare), and the project guard. Keep it consistent with `docs/agents.md`'s MCP section. Do NOT document the HMAC internals (that is `clarion/_hmac.py`'s job); document the operator-facing config only.
 
-- [ ] **Step 2: Add the `chain` note to `docs/agents.md`**
+- [ ] **Step 2: Add the read-path + cost notes to `docs/agents.md`**
 
-In the MCP `explain_taint` description, add a sentence: a configured Clarion store turns `explain_taint` into a query and enables `chain: true` to walk the full taint chain to the originating boundary; without a store it returns the single-hop SP8 explanation.
+In the MCP `explain_taint` section, add: a configured Clarion store turns `explain_taint` into a query when you pass the finding's `qualname` as `sink_qualname` (a fresh fact is served without re-scanning) and enables `chain: true` to walk the full taint chain to the originating boundary; without a store, or without `sink_qualname`, it returns the single-hop SP8 explanation from a re-scan. Add one sentence of known cost: with a store configured, each `scan` additionally builds taint facts (a blake3 hash per file) and POSTs them to Clarion — fail-soft, but a real per-scan cost in the agent loop.
 
 - [ ] **Step 3: Add the guide to `mkdocs.yml` nav and a CHANGELOG entry**
 
