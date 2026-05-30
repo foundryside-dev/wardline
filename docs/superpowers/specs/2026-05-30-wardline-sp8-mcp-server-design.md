@@ -97,7 +97,12 @@ Thin handlers that marshal JSON args → core calls → JSON results. **Stateles
 no server-side session, no held findings list; every call is a pure function of
 (disk + config). The server is **rooted at its launch cwd** (overridable via an
 `initialize` root parameter); `path` arguments default to that root, and
-resources resolve their project against it.
+resources resolve their project against it. **Root-confinement guarantee:** the
+server confines all caller-supplied `path`/`config` args and the effective
+`source_roots` (including a poisoned in-root `wardline.yaml`) to the project
+root; an escape — an absolute path, a `..` traversal, a symlink out, or an
+out-of-root `source_root` — is refused (an `isError` result), so a tool can
+never read or write outside the root.
 
 Entry point: `wardline mcp` launches the stdio server.
 

@@ -54,15 +54,31 @@ def _finding_to_dict(f: Finding) -> dict[str, Any]:
     return parsed
 
 
+def _resolve_under_root(root: Path, arg: str) -> Path:
+    """Resolve a caller-supplied path/config arg against root, refusing any
+    escape (absolute path, .., or symlink out). The MCP server is rooted; a
+    tool arg must never read or write outside the project."""
+    candidate = (root / arg).resolve()
+    if not candidate.is_relative_to(root.resolve()):
+        raise ToolError(f"path must be within the project root: {arg!r}")
+    return candidate
+
+
 def _cfg(args: dict[str, Any], root: Path) -> Path | None:
-    return root / args["config"] if args.get("config") else None
+    return _resolve_under_root(root, args["config"]) if args.get("config") else None
 
 
 def _scan(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    path = root / args["path"] if args.get("path") else root
+    path = _resolve_under_root(root, args["path"]) if args.get("path") else root
     fail_on = args.get("fail_on")
-    result = run_scan(path, config_path=_cfg(args, root))
-    decision = gate_decision(result, Severity(fail_on) if fail_on else None)
+    try:
+        threshold = Severity(fail_on) if fail_on else None
+    except ValueError as exc:
+        # A bad enum value is agent-actionable — give it the valid set rather than
+        # letting it surface as an opaque generic JSON-RPC -32603.
+        raise ToolError("fail_on must be one of CRITICAL/ERROR/WARN/INFO") from exc
+    result = run_scan(path, config_path=_cfg(args, root), confine_to_root=True)
+    decision = gate_decision(result, threshold)
     return {
         "files_scanned": result.files_scanned,
         "findings": [_finding_to_dict(f) for f in result.findings],
@@ -80,13 +96,19 @@ def _scan(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 def _explain_taint(args: dict[str, Any], root: Path) -> dict[str, Any]:
     # path+line identify a source location of an existing finding (not a scan
-    # subdir): pass path through only when a line is also given.
+    # subdir): pass path through only when a line is also given. The path is a
+    # MATCH KEY (compared against a finding's relative posix location), not a file
+    # to open — so confine it for escape-rejection but pass the ORIGINAL string.
+    match_path = args.get("path") if args.get("line") is not None else None
+    if match_path is not None:
+        _resolve_under_root(root, match_path)  # reject escapes; result discarded
     exp = explain_finding(
         root,
         fingerprint=args.get("fingerprint"),
-        path=args.get("path") if args.get("line") is not None else None,
+        path=match_path,
         line=args.get("line"),
         config_path=_cfg(args, root),
+        confine_to_root=True,
     )
     if exp is None:
         raise ToolError(
@@ -127,6 +149,7 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
         model=args.get("model"),
         max_findings=args.get("max_findings"),
         write=bool(args.get("write", False)),
+        confine_to_root=True,
     )
     return {
         "verdicts": [
@@ -143,7 +166,9 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
 def _baseline_create(args: dict[str, Any], root: Path) -> dict[str, Any]:
     reason = _require(args, "reason")
     try:
-        count = generate_baseline(root, overwrite=False, config_path=_cfg(args, root))
+        count = generate_baseline(
+            root, overwrite=False, config_path=_cfg(args, root), confine_to_root=True
+        )
     except FileExistsError as exc:
         # No-clobber refuse path: agent-actionable — point at baseline_update.
         raise ToolError(
@@ -155,7 +180,9 @@ def _baseline_create(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 def _baseline_update(args: dict[str, Any], root: Path) -> dict[str, Any]:
     reason = _require(args, "reason")
-    count = generate_baseline(root, overwrite=True, config_path=_cfg(args, root))
+    count = generate_baseline(
+        root, overwrite=True, config_path=_cfg(args, root), confine_to_root=True
+    )
     return {"baselined_count": count, "path": str(root / ".wardline" / "baseline.yaml"),
             "reason": reason}
 

@@ -55,11 +55,16 @@ def run_scan(
     *,
     config_path: Path | None = None,
     cache_dir: Path | None = None,
+    confine_to_root: bool = False,
 ) -> ScanResult:
     """Discover → analyze → apply suppressions. Pure function of (disk + config).
 
     Raises ``WardlineError`` subclasses on bad config / unreadable paths; the
     caller (CLI or MCP server) maps those to its own error channel.
+
+    ``confine_to_root`` (default False, preserving CLI behaviour) makes
+    ``discover`` reject any ``source_root`` that resolves outside ``root`` — the
+    MCP server passes True so a poisoned config cannot read out-of-root source.
     """
     cfg_path = config_path or (root / "wardline.yaml")
     cfg = config_mod.load(cfg_path)
@@ -67,7 +72,7 @@ def run_scan(
     if cache_dir is not None:
         cache = SummaryCache(cache_dir=cache_dir)
         cache.load()
-    files = discover(root, cfg)
+    files = discover(root, cfg, confine_to_root=confine_to_root)
     analyzer = WardlineAnalyzer(summary_cache=cache)
     raw = list(analyzer.analyze(files, cfg, root=root))
     if cache is not None:

@@ -122,6 +122,7 @@ def run_judge(
     context_lines: int | None = None,
     max_findings: int | None = None,
     write: bool = False,
+    confine_to_root: bool = False,
     judge_caller: Callable[[JudgeRequest], JudgeResponse] | None = None,
 ) -> JudgeOutcome:
     """Analyze -> suppress -> triage -> (optional) persist. Returns structured verdicts.
@@ -148,7 +149,7 @@ def run_judge(
     else:
         caller = judge_caller
 
-    files = discover(root, cfg)
+    files = discover(root, cfg, confine_to_root=confine_to_root)
     findings = WardlineAnalyzer().analyze(files, cfg, root=root)
     baseline = load_baseline(root / ".wardline" / "baseline.yaml")
     waivers = WaiverSet(parse_waivers(cfg.waivers))

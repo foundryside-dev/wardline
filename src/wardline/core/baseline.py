@@ -68,7 +68,11 @@ def write_baseline(path: Path, findings: Iterable[Finding]) -> None:
 
 
 def collect_and_write_baseline(
-    root: Path, *, overwrite: bool, config_path: Path | None = None
+    root: Path,
+    *,
+    overwrite: bool,
+    config_path: Path | None = None,
+    confine_to_root: bool = False,
 ) -> list[Finding]:
     """Derive the baselineable findings for ``root`` and write them to
     ``.wardline/baseline.yaml``. Returns the findings that were baselined.
@@ -92,7 +96,7 @@ def collect_and_write_baseline(
     cfg = _config_mod.load(config_path or (root / "wardline.yaml"))
     waivers = WaiverSet(parse_waivers(cfg.waivers))
     today = date.today()
-    files = discover(root, cfg)
+    files = discover(root, cfg, confine_to_root=confine_to_root)
     findings = WardlineAnalyzer().analyze(files, cfg, root=root)
     to_baseline = [
         f
@@ -104,14 +108,23 @@ def collect_and_write_baseline(
 
 
 def generate_baseline(
-    root: Path, *, overwrite: bool, config_path: Path | None = None
+    root: Path,
+    *,
+    overwrite: bool,
+    config_path: Path | None = None,
+    confine_to_root: bool = False,
 ) -> int:
     """Derive a baseline from current findings and write it. Returns the number
     of fingerprints baselined. Raises ``FileExistsError`` if a baseline already
     exists and ``overwrite`` is False (shared by the CLI and the MCP
     ``baseline_create``/``baseline_update`` tools)."""
     return len(
-        collect_and_write_baseline(root, overwrite=overwrite, config_path=config_path)
+        collect_and_write_baseline(
+            root,
+            overwrite=overwrite,
+            config_path=config_path,
+            confine_to_root=confine_to_root,
+        )
     )
 
 

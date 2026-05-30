@@ -61,13 +61,14 @@ def explain_finding(
     path: str | None = None,
     line: int | None = None,
     config_path: Path | None = None,
+    confine_to_root: bool = False,
 ) -> TaintExplanation | None:
     """Return the taint explanation for one finding, or None if it is not in the
     current scan (the caller's code changed since the scan that produced the
     fingerprint — re-scan)."""
     if fingerprint is None and (path is None or line is None):
         raise ValueError("explain_finding requires either fingerprint or (path, line)")
-    result = run_scan(root, config_path=config_path)
+    result = run_scan(root, config_path=config_path, confine_to_root=confine_to_root)
     finding = _match(result.findings, fingerprint=fingerprint, path=path, line=line)
     if finding is None:
         return None

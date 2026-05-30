@@ -5,6 +5,21 @@ from wardline.mcp.server import WardlineMCPServer
 
 FIXTURE = Path("tests/fixtures/sample_project")
 
+# A @trusted boundary returning an @external_boundary-tainted value: PY-WL-101
+# ERROR defect. sample_project itself is clean, so we build a leaky tmp project.
+_LEAKY = (
+    "from wardline.decorators import external_boundary, trusted\n"
+    "@external_boundary\ndef read_raw(p):\n    return p\n"
+    "@trusted\ndef leaky(p):\n    return read_raw(p)\n"
+)
+
+
+def _leaky_project(tmp_path: Path) -> Path:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    return proj
+
 
 def _call(server, name, arguments):
     srv = server.rpc
@@ -26,12 +41,44 @@ def test_tools_list_advertises_scan_and_explain() -> None:
         assert "inputSchema" in t
 
 
-def test_scan_tool_returns_summary_and_gate() -> None:
-    server = WardlineMCPServer(root=FIXTURE)
+def test_scan_tool_returns_summary_and_gate(tmp_path: Path) -> None:
+    # Exercise the MCP _scan gate wiring + Finding.to_jsonl() serialization through
+    # the envelope on a project that actually trips the gate (the prior assertion,
+    # `tripped in (True, False)`, was tautologically true).
+    root = _leaky_project(tmp_path)
+    server = WardlineMCPServer(root=root)
     out = _call(server, "scan", {"fail_on": "ERROR"})
     assert "findings" in out and "summary" in out and "gate" in out
     assert out["summary"]["total"] == len(out["findings"])
-    assert out["gate"]["tripped"] in (True, False)
+    assert out["summary"]["active"] >= 1
+    assert out["gate"]["tripped"] is True
+    assert any(f["rule_id"] == "PY-WL-101" for f in out["findings"])
+
+
+def test_explain_taint_success_through_mcp(tmp_path: Path) -> None:
+    # scan to get a real PY-WL-101 fingerprint, then explain it through the MCP
+    # layer: NOT isError, and the projected provenance fields are populated.
+    root = _leaky_project(tmp_path)
+    server = WardlineMCPServer(root=root)
+    scan_out = _call(server, "scan", {})
+    leak = next(f for f in scan_out["findings"] if f["rule_id"] == "PY-WL-101")
+    fp = leak["fingerprint"]
+
+    resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                                "params": {"name": "explain_taint",
+                                           "arguments": {"fingerprint": fp}}})
+    assert "error" not in resp, resp
+    assert resp["result"].get("isError") is not True, resp["result"]
+    out = json.loads(resp["result"]["content"][0]["text"])
+    assert out["immediate_tainted_callee"] == "read_raw"
+    assert out["source_boundary_qualname"] == "svc.read_raw"
+    assert "tier_in" in out and "tier_out" in out
+
+    # path+line success case: the path is a MATCH KEY (relative posix), confined
+    # for escape-rejection but passed through unmodified to match the finding.
+    out2 = _call(server, "explain_taint",
+                 {"path": out["location"]["path"], "line": out["location"]["line"]})
+    assert out2["fingerprint"] == fp
 
 
 def test_explain_taint_unknown_fingerprint_is_an_iserror_result() -> None:
