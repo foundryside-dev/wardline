@@ -14,6 +14,7 @@ from datetime import date
 
 from wardline.core.baseline import Baseline
 from wardline.core.finding import Finding, Kind, Severity, SuppressionState
+from wardline.core.judged import JudgedSet
 from wardline.core.waivers import WaiverSet
 
 # Ascending trust-cost order for the --fail-on threshold. NONE is absent — facts
@@ -23,8 +24,14 @@ _RANK: dict[Severity, int] = {s: i for i, s in enumerate(SEVERITY_ORDER)}
 
 
 def apply_suppressions(
-    findings: Iterable[Finding], baseline: Baseline, waivers: WaiverSet, *, today: date
+    findings: Iterable[Finding],
+    baseline: Baseline,
+    waivers: WaiverSet,
+    *,
+    today: date,
+    judged: JudgedSet | None = None,
 ) -> list[Finding]:
+    judged = judged if judged is not None else JudgedSet([])
     out: list[Finding] = []
     for f in findings:
         if f.kind is not Kind.DEFECT:
@@ -38,9 +45,14 @@ def apply_suppressions(
             f"DEFECT {f.rule_id} entered suppression with line_start=None — "
             f"weak fingerprint identity (collision risk)"
         )
+        # Precedence: waiver (explicit human intent, carries expiry) > judged (LLM
+        # FP-verdict, carries the rationale) > baseline (silent).
         waiver = waivers.match(f.fingerprint, today)
+        judged_fp = judged.match(f.fingerprint)
         if waiver is not None:
             out.append(replace(f, suppressed=SuppressionState.WAIVED, suppression_reason=waiver.reason))
+        elif judged_fp is not None:
+            out.append(replace(f, suppressed=SuppressionState.JUDGED, suppression_reason=judged_fp.rationale))
         elif baseline.contains(f.fingerprint):
             out.append(replace(f, suppressed=SuppressionState.BASELINED))
         else:
