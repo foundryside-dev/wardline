@@ -118,8 +118,11 @@ def _scan(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, An
 def _explain_taint(
     args: dict[str, Any], root: Path, clarion: Any = None, server_root: Path | None = None
 ) -> dict[str, Any]:
-    # clarion/server_root are accepted for the Task-8 read path but DELIBERATELY
-    # UNUSED here: SP8 explain_taint behavior is unchanged in this task.
+    # The store-backed read path (Task 8): when a Clarion store is configured and the
+    # caller passes the finding's qualname as `sink_qualname`, explain_finding serves a
+    # FRESH fact straight from the store with no re-scan; otherwise it falls back to the
+    # SP8 re-run. clarion=None reproduces SP8 behavior exactly. (server_root remains a
+    # Task-9 placeholder — not yet consumed here.)
     # path+line identify a source location of an existing finding (not a scan
     # subdir): pass path through only when a line is also given. The path is a
     # MATCH KEY (compared against a finding's relative posix location), not a file
@@ -134,13 +137,15 @@ def _explain_taint(
         line=args.get("line"),
         config_path=_cfg(args, root),
         confine_to_root=True,
+        clarion=clarion,
+        sink_qualname=args.get("sink_qualname"),
     )
     if exp is None:
         raise ToolError(
             "fingerprint not in current scan; your code changed since the scan that "
             "produced it — re-scan.",
         )
-    return {
+    result_dict = {
         "fingerprint": exp.fingerprint,
         "rule_id": exp.rule_id,
         "sink_qualname": exp.sink_qualname,
@@ -152,6 +157,7 @@ def _explain_taint(
         "resolved_call_count": exp.resolved_call_count,
         "unresolved_call_count": exp.unresolved_call_count,
     }
+    return result_dict
 
 
 def _require(args: dict[str, Any], key: str) -> Any:
@@ -273,13 +279,17 @@ class WardlineMCPServer:
             name="explain_taint",
             description="Explain ONE finding's taint: the immediate tainted callee, the "
                         "originating boundary, and the trust tiers at the sink. Call right "
-                        "after scan and before editing — a stale fingerprint returns an error.",
+                        "after scan and before editing — a stale fingerprint returns an error. "
+                        "Pass the finding's `qualname` as `sink_qualname`: when a Clarion store "
+                        "is configured this serves the explanation from the store instead of "
+                        "re-scanning.",
             input_schema={
                 "type": "object",
                 "properties": {
                     "fingerprint": {"type": "string"},
                     "path": {"type": "string"},
                     "line": {"type": "integer"},
+                    "sink_qualname": {"type": "string"},
                     "config": {"type": "string"},
                 },
             },
@@ -416,8 +426,9 @@ class WardlineMCPServer:
     _LOOP_PROMPT = (
         "Wardline is whole-program and on-disk. The loop:\n"
         "1. Call `scan` (whole project). Read `summary.active` and `gate.tripped`.\n"
-        "2. For each active defect, call `explain_taint` to see the tainted callee and "
-        "originating boundary.\n"
+        "2. For each active defect, call `explain_taint` with the finding's `fingerprint`, "
+        "`path`+`line`, AND its `qualname` as `sink_qualname`. When a Clarion store is "
+        "configured this serves the explanation from the store (no re-scan).\n"
         "3. Fix at the BOUNDARY, not the sink — add validation/rejection at the right hop.\n"
         "4. Re-`scan`. Only baseline/waiver a finding you have judged a true non-issue, with a reason."
     )
