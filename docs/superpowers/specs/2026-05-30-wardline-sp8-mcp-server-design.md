@@ -207,10 +207,24 @@ discipline that keeps findings off the resource surface.
 
 ## Error handling & determinism
 
-- **Tool errors** (bad config, unreadable path) → JSON-RPC error responses (the
-  exit-2 equivalent). A **gate trip is data, not an error**: it is returned in
-  `scan`'s result as `gate.tripped`, never raised.
-- **`judge` with no API key** → a loud JSON-RPC error with remediation guidance,
+The error model splits along the MCP grain (decided 2026-05-30, correcting the
+earlier "all tool errors are JSON-RPC errors" draft after review found that real
+MCP clients frequently do **not** relay a JSON-RPC `error.message` to the model —
+they treat `-32603` as a transport fault — which would silently swallow the very
+guidance these errors exist to deliver):
+
+- **Tool-EXECUTION errors that the agent must read and act on** → returned in the
+  `tools/call` **result** as `{isError: true, content: [{type: "text", text: <guidance>}]}`,
+  the MCP-idiomatic shape the client reliably surfaces to the model. This covers
+  `explain_taint`'s stale-fingerprint "re-scan" instruction, `judge`'s missing-API-key
+  remediation, and a bad-config/unreadable-path (`WardlineError`) hit during a tool
+  call.
+- **PROTOCOL faults** (unknown tool, unknown method, malformed/missing arguments —
+  caller bugs, not agent-actionable outcomes) → JSON-RPC error responses
+  (`-32601`/`-32603`).
+- A **gate trip is data, not an error**: it is returned in `scan`'s result as
+  `gate.tripped`, never raised and never `isError`.
+- **`judge` with no API key** → an `isError` result with remediation guidance,
   never a guess. `judge` is the one tool that may touch the network and is
   flagged `network: true`.
 - **No code mutation** — the server never edits source. Fixing is the agent's

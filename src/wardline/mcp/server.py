@@ -19,6 +19,17 @@ from wardline.core.run import gate_decision, run_scan
 from wardline.mcp.protocol import JsonRpcServer, McpError
 
 
+class ToolError(Exception):
+    """Raised by a tool handler for a tool-EXECUTION error the agent must read
+    and act on. Returned as an ``isError`` result (content the client reliably
+    surfaces to the model), NOT a JSON-RPC error. Tasks 8/9 reuse it (e.g. the
+    judge tool's missing-API-key remediation)."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
 @dataclass(frozen=True, slots=True)
 class Tool:
     name: str
@@ -68,7 +79,7 @@ def _explain_taint(args: dict[str, Any], root: Path) -> dict[str, Any]:
         config_path=_cfg(args, root),
     )
     if exp is None:
-        raise McpError(
+        raise ToolError(
             "fingerprint not in current scan; your code changed since the scan that "
             "produced it — re-scan.",
         )
@@ -152,9 +163,19 @@ class WardlineMCPServer:
         arguments = params.get("arguments") or {}
         tool = self._tools.get(name) if name is not None else None
         if tool is None:
+            # Protocol fault (caller bug) → JSON-RPC error, not an agent-actionable
+            # tool-execution outcome.
             raise McpError(f"unknown tool: {name}")
         try:
             payload = tool.handler(arguments, self.root)
+        except ToolError as exc:
+            return self._is_error(exc.message)
         except WardlineError as exc:
-            raise McpError(str(exc)) from exc
+            # Bad config / unreadable path during a tool call: a tool-execution
+            # error the agent must read and act on → isError result.
+            return self._is_error(str(exc))
         return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}]}
+
+    @staticmethod
+    def _is_error(text: str) -> dict[str, Any]:
+        return {"content": [{"type": "text", "text": text}], "isError": True}

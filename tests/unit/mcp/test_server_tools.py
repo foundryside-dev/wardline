@@ -34,10 +34,25 @@ def test_scan_tool_returns_summary_and_gate() -> None:
     assert out["gate"]["tripped"] in (True, False)
 
 
-def test_explain_taint_unknown_fingerprint_is_a_tool_error() -> None:
+def test_explain_taint_unknown_fingerprint_is_an_iserror_result() -> None:
+    # A stale/unknown fingerprint is a tool-EXECUTION error the agent must act on:
+    # it returns as an isError RESULT (content the client reliably surfaces), NOT a
+    # JSON-RPC error that clients may swallow as a transport fault.
     server = WardlineMCPServer(root=FIXTURE)
     resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 9, "method": "tools/call",
                                 "params": {"name": "explain_taint",
                                            "arguments": {"fingerprint": "0" * 64}}})
+    assert "error" not in resp, resp
+    assert resp["result"]["isError"] is True
+    assert "re-scan" in resp["result"]["content"][0]["text"].lower()
+
+
+def test_unknown_tool_name_is_a_jsonrpc_error() -> None:
+    # A genuinely-unknown tool name is a PROTOCOL fault (caller bug), so it stays a
+    # JSON-RPC error — not an isError result.
+    server = WardlineMCPServer(root=FIXTURE)
+    resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 11, "method": "tools/call",
+                                "params": {"name": "does_not_exist", "arguments": {}}})
+    assert "result" not in resp, resp
     assert resp["error"]["code"] == -32603
-    assert "re-scan" in resp["error"]["message"].lower()
+    assert "does_not_exist" in resp["error"]["message"]
