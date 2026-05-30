@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- SP9: opt-in Clarion-backed persistent taint store (`wardline[clarion]` extra).
+  `wardline scan --clarion-url` persists per-entity taint facts; `explain_taint`
+  queries them with a never-serve-stale freshness gate and falls back to a local
+  re-scan; the MCP `explain_taint` tool gains `chain: true` for the full N-hop
+  taint chain. Base package stays zero-dependency; HMAC auth is stdlib.
+
 ### Removed
 
 - Dropped the unused `loom` optional-dependency extra (`httpx`). The Filigree
