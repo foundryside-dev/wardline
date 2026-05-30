@@ -149,8 +149,11 @@ class FiligreeEmitter:
             warnings.append(
                 f"Filigree returned {resp.status} with a non-JSON-object body; stats unavailable."
             )
-        stats = payload.get("stats", {}) or {}
-        warnings.extend(str(w) for w in (payload.get("warnings") or []))
+        raw_stats = payload.get("stats")
+        stats: dict[str, Any] = raw_stats if isinstance(raw_stats, dict) else {}
+        raw_warnings = payload.get("warnings")
+        if isinstance(raw_warnings, list):
+            warnings.extend(str(w) for w in raw_warnings)
         failed = payload.get("failed") or []
         return EmitResult(
             reachable=True,

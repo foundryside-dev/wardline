@@ -295,6 +295,23 @@ def test_baseline_create_excludes_active_waivers(tmp_path) -> None:
     assert fp_kept in fps        # non-waived defect still baselined
 
 
+def test_scan_relative_root_emits_relative_path_and_qualname(tmp_path) -> None:
+    # Regression: a RELATIVE scan-root arg must still yield repo-relative location.path
+    # and an uncorrupted qualname. discover() resolves to absolute paths; if the analyzer
+    # doesn't resolve root to the same base, is_relative_to fails and findings carry an
+    # absolute path -> Filigree 400 + a garbage dotted qualname (broken Clarion reconcile).
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        Path("proj").mkdir()
+        Path("proj/svc.py").write_text(_LEAKY, encoding="utf-8")
+        result = runner.invoke(scan, ["proj", "--output", "proj/f.jsonl"])  # RELATIVE root
+        assert result.exit_code == 0, result.output
+        findings = [_json.loads(ln) for ln in Path("proj/f.jsonl").read_text().splitlines() if ln.strip()]
+    leak = next(f for f in findings if f["rule_id"] == "PY-WL-101")
+    assert leak["location"]["path"] == "svc.py"  # relative, not /abs/.../svc.py
+    assert leak["qualname"] == "svc.leaky"        # clean module prefix, not '.tmp....svc.leaky'
+
+
 def test_scan_filigree_emit_success(tmp_path, monkeypatch) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
