@@ -97,3 +97,9 @@ def test_sink_writes_valid_json(tmp_path: Path) -> None:
     SarifSink(out).write([_f()])
     loaded = json.loads(out.read_text("utf-8"))
     assert loaded["version"] == "2.1.0"
+
+
+def test_judged_finding_emits_suppression() -> None:
+    res = build_sarif([_f(suppressed=SuppressionState.JUDGED, reason="over-taint floor")])["runs"][0]["results"][0]
+    assert res["suppressions"][0]["kind"] == "external"
+    assert res["suppressions"][0]["justification"] == "over-taint floor"

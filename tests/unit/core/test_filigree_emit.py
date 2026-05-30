@@ -182,3 +182,11 @@ def test_urllib_transport_rejects_non_http_scheme() -> None:
 
     with pytest.raises(FiligreeEmitError):
         UrllibTransport().post("file:///etc/passwd", b"{}", {})
+
+
+def test_judged_finding_carries_suppression_metadata() -> None:
+    wire = build_scan_results_body([
+        _f(suppressed=SuppressionState.JUDGED, suppression_reason="over-taint floor")
+    ])["findings"][0]
+    assert wire["metadata"]["wardline"]["suppressed"] == "judged"
+    assert wire["metadata"]["wardline"]["suppression_reason"] == "over-taint floor"
