@@ -8,17 +8,21 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 from wardline._version import __version__
 from wardline.core import config as config_mod
+from wardline.core.baseline import generate_baseline
 from wardline.core.config_schema import WARDLINE_SCHEMA
 from wardline.core.descriptor import descriptor_to_yaml
 from wardline.core.errors import WardlineError
 from wardline.core.explain import explain_finding
 from wardline.core.finding import Finding, Severity
+from wardline.core.judge_run import run_judge
 from wardline.core.run import gate_decision, run_scan
+from wardline.core.waivers import add_waiver
 from wardline.mcp.protocol import JsonRpcServer, McpError
 from wardline.scanner.rules import _ALL_RULE_CLASSES
 
@@ -101,6 +105,73 @@ def _explain_taint(args: dict[str, Any], root: Path) -> dict[str, Any]:
     }
 
 
+def _require(args: dict[str, Any], key: str) -> Any:
+    """Mandatory tool argument. A missing/blank value is agent-actionable ("you must
+    supply a reason/expiry") → ``ToolError`` → isError result, NOT a JSON-RPC fault."""
+    val = args.get(key)
+    if val is None or (isinstance(val, str) and not val.strip()):
+        raise ToolError(f"{key} is required")
+    return val
+
+
+def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    # No key/.env → run_judge's default caller raises JudgeConfigurationError (a
+    # WardlineError) naming WARDLINE_OPENROUTER_API_KEY; _tools_call turns that into
+    # an isError result the agent can read. The network is touched only here, only
+    # when a finding is actually triaged.
+    outcome = run_judge(
+        root,
+        config_path=_cfg(args, root),
+        model=args.get("model"),
+        max_findings=args.get("max_findings"),
+        write=bool(args.get("write", False)),
+    )
+    return {
+        "verdicts": [
+            {"fingerprint": v.fingerprint, "rule_id": v.rule_id, "path": v.path,
+             "line": v.line, "label": v.label, "confidence": v.confidence,
+             "rationale": v.rationale}
+            for v in outcome.verdicts
+        ],
+        "wrote": outcome.wrote,
+        "held_back": outcome.held_back,
+    }
+
+
+def _baseline_create(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    reason = _require(args, "reason")
+    try:
+        count = generate_baseline(root, overwrite=False, config_path=_cfg(args, root))
+    except FileExistsError as exc:
+        # No-clobber refuse path: agent-actionable — point at baseline_update.
+        raise ToolError(
+            "a baseline already exists; call baseline_update to overwrite it"
+        ) from exc
+    return {"baselined_count": count, "path": str(root / ".wardline" / "baseline.yaml"),
+            "reason": reason}
+
+
+def _baseline_update(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    reason = _require(args, "reason")
+    count = generate_baseline(root, overwrite=True, config_path=_cfg(args, root))
+    return {"baselined_count": count, "path": str(root / ".wardline" / "baseline.yaml"),
+            "reason": reason}
+
+
+def _waiver_add(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    fp = _require(args, "fingerprint")
+    reason = _require(args, "reason")
+    expires_str = _require(args, "expires")  # mandatory at the tool boundary
+    try:
+        expires = date.fromisoformat(expires_str)
+    except ValueError as exc:
+        # A malformed date is something the agent can fix and should see.
+        raise ToolError("expires must be an ISO date (YYYY-MM-DD)") from exc
+    waiver = add_waiver(root / "wardline.yaml", fingerprint=fp, reason=reason, expires=expires)
+    return {"fingerprint": waiver.fingerprint, "reason": waiver.reason,
+            "expires": waiver.expires.isoformat() if waiver.expires else None}
+
+
 # Gate thresholds are the four defect severities. Severity also defines NONE
 # (the "facts carry no defect severity" sentinel), deliberately excluded here:
 # fail_on=NONE is not a meaningful gate threshold.
@@ -146,6 +217,42 @@ class WardlineMCPServer:
                 },
             },
             handler=_explain_taint,
+        ))
+        self.add_tool(Tool(
+            name="judge", network=True,
+            description="NETWORK: opt-in LLM triage of active defects via OpenRouter "
+                        "(needs WARDLINE_OPENROUTER_API_KEY). Labels each TRUE/FALSE positive. "
+                        "Never run automatically; never folded into scan.",
+            input_schema={"type": "object", "properties": {
+                "config": {"type": "string"}, "model": {"type": "string"},
+                "max_findings": {"type": "integer"},
+                "write": {"type": "boolean", "description": "append above-floor FPs to judged.yaml"}}},
+            handler=_judge,
+        ))
+        self.add_tool(Tool(
+            name="baseline_create",
+            description="Snapshot current defects as the baseline so only NEW findings surface. "
+                        "Prefer FIXING a finding over baselining it. Requires a reason.",
+            input_schema={"type": "object", "required": ["reason"], "properties": {
+                "reason": {"type": "string"}, "config": {"type": "string"}}},
+            handler=_baseline_create,
+        ))
+        self.add_tool(Tool(
+            name="baseline_update",
+            description="Re-derive and OVERWRITE the baseline. Requires a reason.",
+            input_schema={"type": "object", "required": ["reason"], "properties": {
+                "reason": {"type": "string"}, "config": {"type": "string"}}},
+            handler=_baseline_update,
+        ))
+        self.add_tool(Tool(
+            name="waiver_add",
+            description="Waive ONE finding by fingerprint with a mandatory reason and expiry. "
+                        "Prefer fixing; a waiver is an audited, time-boxed exception.",
+            input_schema={"type": "object", "required": ["fingerprint", "reason", "expires"],
+                          "properties": {"fingerprint": {"type": "string"},
+                                         "reason": {"type": "string"},
+                                         "expires": {"type": "string", "description": "YYYY-MM-DD"}}},
+            handler=_waiver_add,
         ))
 
     def add_tool(self, tool: Tool) -> None:
@@ -200,6 +307,9 @@ class WardlineMCPServer:
         self.rpc.capabilities["resources"] = {"listChanged": False}
         self.rpc.register("resources/list", self._resources_list)
         self.rpc.register("resources/read", self._resources_read)
+        self.rpc.capabilities["prompts"] = {"listChanged": False}
+        self.rpc.register("prompts/list", self._prompts_list)
+        self.rpc.register("prompts/get", self._prompts_get)
 
     def _tools_list(self, params: dict[str, Any]) -> dict[str, Any]:
         return {"tools": [
@@ -235,6 +345,26 @@ class WardlineMCPServer:
         uri = params.get("uri")
         text, mime = self._read_resource(uri)
         return {"contents": [{"uri": uri, "mimeType": mime, "text": text}]}
+
+    _LOOP_PROMPT = (
+        "Wardline is whole-program and on-disk. The loop:\n"
+        "1. Call `scan` (whole project). Read `summary.active` and `gate.tripped`.\n"
+        "2. For each active defect, call `explain_taint` to see the tainted callee and "
+        "originating boundary.\n"
+        "3. Fix at the BOUNDARY, not the sink — add validation/rejection at the right hop.\n"
+        "4. Re-`scan`. Only baseline/waiver a finding you have judged a true non-issue, with a reason."
+    )
+
+    def _prompts_list(self, params: dict[str, Any]) -> dict[str, Any]:
+        return {"prompts": [{"name": "wardline:loop",
+                             "description": "The intended scan→explain→fix→rescan loop."}]}
+
+    def _prompts_get(self, params: dict[str, Any]) -> dict[str, Any]:
+        if params.get("name") != "wardline:loop":
+            raise McpError(f"unknown prompt: {params.get('name')}")
+        return {"description": "The intended scan→explain→fix→rescan loop.",
+                "messages": [{"role": "user",
+                              "content": {"type": "text", "text": self._LOOP_PROMPT}}]}
 
     @staticmethod
     def _is_error(text: str) -> dict[str, Any]:
