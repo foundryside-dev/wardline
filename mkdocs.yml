@@ -55,3 +55,7 @@ nav:
   - Reference:
       - CLI: reference/cli.md
       - Trust vocabulary: reference/vocabulary.md
+  - About:
+      - Changelog: https://github.com/foundryside-dev/wardline/blob/main/CHANGELOG.md
+      - Contributing: https://github.com/foundryside-dev/wardline/blob/main/CONTRIBUTING.md
+      - License: https://github.com/foundryside-dev/wardline/blob/main/LICENSE
