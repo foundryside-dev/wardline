@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from wardline.core.errors import ClarionError
 from wardline.core.run import run_scan
 
 if TYPE_CHECKING:
@@ -192,11 +193,11 @@ def explain_chain(
     sink_qualname: str,
     clarion: Any,
     max_hops: int = 20,
-    config_path: Path | None = None,
 ) -> TaintChain:
     """Walk contributing_callee_qualname from the sink to the boundary, batch_getting
     each hop's fresh fact. Truncate EXPLICITLY (never silently) on a stale/absent hop,
-    an unresolvable callee, or max_hops. Entirely client-side; Clarion never parses."""
+    a loud read error, an unresolvable callee, or max_hops. Entirely client-side;
+    Clarion never parses."""
     hops: list[ChainHop] = []
     current: str | None = sink_qualname
     seen: set[str] = set()
@@ -206,9 +207,12 @@ def explain_chain(
         if current in seen:  # cycle guard
             return TaintChain(hops=hops, truncated_at=current)
         seen.add(current)
-        views = clarion.batch_get([current])
+        try:
+            views = clarion.batch_get([current])
+        except ClarionError:
+            views = None  # loud read error (bad token/route-skew) → explicit truncation
         if not views:
-            return TaintChain(hops=hops, truncated_at=current)  # soft outage
+            return TaintChain(hops=hops, truncated_at=current)  # outage/read-error
         view = views[0]
         if view.qualname != current or not _is_fresh(view):
             # wrong-entity echo (contract violation) or stale/absent → explicit stop
@@ -244,7 +248,13 @@ def explain_finding(
     is served from the blob with NO re-analysis. On a miss/stale/outage, or when no
     ``sink_qualname`` is available, fall back to the SP8 re-run (``_explain_local``)."""
     if clarion is not None and sink_qualname is not None:
-        views = clarion.batch_get([sink_qualname])
+        try:
+            views = clarion.batch_get([sink_qualname])
+        except ClarionError:
+            # A loud read-side error (bad token → 401, 400, route-skew → 404) is NOT
+            # load-bearing for explain: degrade to the SP8 re-run, never raise. (The
+            # store read is optional enrichment; only the WRITE path surfaces a 4xx.)
+            views = None
         if views and views[0].qualname == sink_qualname and _is_fresh(views[0]):
             served = _explanation_from_blob(views[0])
             return dataclasses.replace(

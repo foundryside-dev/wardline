@@ -121,3 +121,22 @@ def test_malformed_blob_falls_back_to_reanalysis(tmp_path):
     assert exp is not None
     assert exp.sink_qualname == "svc.leaky"  # came from the real re-scan, not the bad blob
     assert exp.tier_in == "EXTERNAL_RAW"     # only the real re-scan produces this
+
+
+def test_raising_client_falls_back_to_reanalysis(tmp_path):
+    # A loud read error (bad token → 401, route-skew → 404) surfaces from the client
+    # as ClarionError. explain must NOT propagate it — it degrades to the SP8 re-run,
+    # so the agent still gets a correct explanation (never worse than no store).
+    from wardline.core.errors import ClarionError
+
+    proj = _proj(tmp_path)
+
+    class RaisingClient:
+        def batch_get(self, qualnames):
+            raise ClarionError("Clarion rejected batch-get (401; code=PERMISSION)")
+
+    exp = explain_finding(proj, path="svc.py", line=6, clarion=RaisingClient(),
+                          sink_qualname="svc.leaky")
+    assert exp is not None
+    assert exp.sink_qualname == "svc.leaky"  # from the real re-scan, not raised
+    assert exp.tier_in == "EXTERNAL_RAW"     # only the real re-scan produces this

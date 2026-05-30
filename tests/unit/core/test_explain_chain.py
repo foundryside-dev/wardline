@@ -76,3 +76,19 @@ def test_chain_respects_max_hops(tmp_path):
     chain = explain_chain(proj, sink_qualname="svc.leaky", clarion=client, max_hops=2)
     assert len(chain.hops) == 2
     assert chain.truncated_at == "svc.read_raw"  # the unwalked next hop
+
+
+def test_chain_truncates_on_loud_read_error(tmp_path):
+    # A loud read error (bad token / route-skew) mid-walk must truncate EXPLICITLY,
+    # never propagate, so a misconfigured store degrades to a partial chain.
+    from wardline.core.errors import ClarionError
+
+    proj = _proj(tmp_path)
+
+    class RaisingClient:
+        def batch_get(self, qualnames):
+            raise ClarionError("Clarion rejected batch-get (401; code=PERMISSION)")
+
+    chain = explain_chain(proj, sink_qualname="svc.leaky", clarion=RaisingClient(), max_hops=10)
+    assert chain.hops == []
+    assert chain.truncated_at == "svc.leaky"
