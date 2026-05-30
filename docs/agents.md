@@ -166,6 +166,19 @@ requires a reason). Resources expose the trust vocabulary, rule catalog, config,
 and config schema. The `wardline:loop` prompt documents the intended
 scan → explain → fix-at-the-boundary → rescan cycle.
 
+With an opt-in Clarion taint store configured (`wardline mcp --clarion-url
+<URL>`), `explain_taint` becomes a query when you pass the finding's `qualname`
+as `sink_qualname`: a fresh fact is served from the store without re-scanning
+the file. Pass `chain: true` (with an optional `max_hops`), again alongside
+`sink_qualname`, to walk the full N-hop taint chain back to the originating
+boundary. Without a store, or without
+`sink_qualname`, `explain_taint` returns the single-hop SP8 explanation from a
+local re-scan. Known cost: with a store configured, each `scan` additionally
+builds taint facts (a blake3 hash per file) and POSTs them to Clarion — this is
+fail-soft, but a real per-scan cost in the agent loop. See the
+[Clarion taint store guide](guides/clarion-taint-store.md) for the full
+opt-in, auth, and fail-soft details.
+
 The server is stateless — no session state is carried between calls; the
 read-only tools (`scan`, `explain_taint`) are pure functions of your code on disk
 and your config, and the analysis core stays zero-dependency. Only `judge`

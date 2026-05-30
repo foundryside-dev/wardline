@@ -20,7 +20,7 @@ from wardline.core.baseline import generate_baseline
 from wardline.core.config_schema import WARDLINE_SCHEMA
 from wardline.core.descriptor import descriptor_to_yaml
 from wardline.core.errors import WardlineError
-from wardline.core.explain import explain_finding
+from wardline.core.explain import explain_chain, explain_finding
 from wardline.core.finding import Finding, Severity
 from wardline.core.judge_run import run_judge
 from wardline.core.run import gate_decision, run_scan
@@ -68,7 +68,7 @@ def _cfg(args: dict[str, Any], root: Path) -> Path | None:
     return _resolve_under_root(root, args["config"]) if args.get("config") else None
 
 
-def _scan(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def _scan(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, Any]:
     path = _resolve_under_root(root, args["path"]) if args.get("path") else root
     fail_on = args.get("fail_on")
     try:
@@ -78,6 +78,26 @@ def _scan(args: dict[str, Any], root: Path) -> dict[str, Any]:
         # letting it surface as an opaque generic JSON-RPC -32603.
         raise ToolError("fail_on must be one of CRITICAL/ERROR/WARN/INFO") from exc
     result = run_scan(path, config_path=_cfg(args, root), confine_to_root=True)
+    # Fail-soft Clarion write: only when a client was injected (server has a URL).
+    # An outage/403 yields a not-reachable WriteResult; never raises here.
+    clarion_block: dict[str, Any] | None = None
+    if clarion is not None:
+        from wardline.clarion.client import WriteResult
+        from wardline.clarion.write import write_facts_to_clarion
+        from wardline.core.errors import ClarionError
+        try:
+            wr = write_facts_to_clarion(result, path, clarion)
+        except ClarionError as exc:
+            # Non-load-bearing enrichment: the MCP loop's scan payload must survive
+            # an optional-write failure (bad config / missing extra / 4xx). Report,
+            # don't discard the scan.
+            wr = WriteResult(reachable=False, disabled_reason=str(exc))
+        clarion_block = {
+            "reachable": wr.reachable,
+            "written": wr.written,
+            "unresolved_qualnames": list(wr.unresolved_qualnames),
+            "disabled_reason": wr.disabled_reason,
+        }
     decision = gate_decision(result, threshold)
     return {
         "files_scanned": result.files_scanned,
@@ -91,10 +111,18 @@ def _scan(args: dict[str, Any], root: Path) -> dict[str, Any]:
         },
         "gate": {"tripped": decision.tripped, "fail_on": decision.fail_on,
                  "exit_class": decision.exit_class},
+        "clarion": clarion_block,
     }
 
 
-def _explain_taint(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def _explain_taint(
+    args: dict[str, Any], root: Path, clarion: Any = None
+) -> dict[str, Any]:
+    # The store-backed read path: when a Clarion store is configured and the caller
+    # passes the finding's qualname as `sink_qualname`, explain_finding serves a FRESH
+    # fact straight from the store with no re-scan; otherwise it falls back to the SP8
+    # re-run. clarion=None reproduces SP8 behavior exactly. With chain=true it also walks
+    # the full taint chain to the originating boundary.
     # path+line identify a source location of an existing finding (not a scan
     # subdir): pass path through only when a line is also given. The path is a
     # MATCH KEY (compared against a finding's relative posix location), not a file
@@ -109,13 +137,15 @@ def _explain_taint(args: dict[str, Any], root: Path) -> dict[str, Any]:
         line=args.get("line"),
         config_path=_cfg(args, root),
         confine_to_root=True,
+        clarion=clarion,
+        sink_qualname=args.get("sink_qualname"),
     )
     if exp is None:
         raise ToolError(
             "fingerprint not in current scan; your code changed since the scan that "
             "produced it — re-scan.",
         )
-    return {
+    result_dict: dict[str, Any] = {
         "fingerprint": exp.fingerprint,
         "rule_id": exp.rule_id,
         "sink_qualname": exp.sink_qualname,
@@ -127,6 +157,16 @@ def _explain_taint(args: dict[str, Any], root: Path) -> dict[str, Any]:
         "resolved_call_count": exp.resolved_call_count,
         "unresolved_call_count": exp.unresolved_call_count,
     }
+    if args.get("chain") and clarion is not None and exp.sink_qualname:
+        ch = explain_chain(root, sink_qualname=exp.sink_qualname, clarion=clarion,
+                           max_hops=int(args.get("max_hops", 20)))
+        result_dict["chain"] = {
+            "hops": [{"qualname": h.qualname, "tier_in": h.tier_in, "tier_out": h.tier_out,
+                      "contributing_callee_qualname": h.contributing_callee_qualname}
+                     for h in ch.hops],
+            "truncated_at": ch.truncated_at,
+        }
+    return result_dict
 
 
 def _require(args: dict[str, Any], key: str) -> Any:
@@ -208,12 +248,25 @@ _SEVERITY_ENUM = ["CRITICAL", "ERROR", "WARN", "INFO"]
 
 
 class WardlineMCPServer:
-    def __init__(self, *, root: Path) -> None:
+    def __init__(self, *, root: Path, clarion_url: str | None = None) -> None:
         self.root = Path(root)
+        self.clarion_url = clarion_url
         self.rpc = JsonRpcServer(server_name="wardline", server_version=__version__)
         self._tools: dict[str, Tool] = {}
         self._register_tools()
         self._wire()
+
+    def _clarion_client(self) -> Any:
+        """Build a ClarionClient for this server's root, or None when no URL is set."""
+        if self.clarion_url is None:
+            return None
+        from wardline.clarion.client import ClarionClient
+        from wardline.clarion.config import load_clarion_token, resolve_project_name
+        return ClarionClient(
+            self.clarion_url,
+            secret=load_clarion_token(self.root),
+            project=resolve_project_name(self.root),
+        )
 
     def _register_tools(self) -> None:
         self.add_tool(Tool(
@@ -229,23 +282,31 @@ class WardlineMCPServer:
                     "config": {"type": "string"},
                 },
             },
-            handler=_scan,
+            handler=lambda args, root: _scan(args, root, self._clarion_client()),
         ))
         self.add_tool(Tool(
             name="explain_taint",
             description="Explain ONE finding's taint: the immediate tainted callee, the "
                         "originating boundary, and the trust tiers at the sink. Call right "
-                        "after scan and before editing — a stale fingerprint returns an error.",
+                        "after scan and before editing — a stale fingerprint returns an error. "
+                        "Pass the finding's `qualname` as `sink_qualname`: when a Clarion store "
+                        "is configured this serves the explanation from the store instead of "
+                        "re-scanning. Pass `chain: true` (needs a configured Clarion store) to "
+                        "also walk the full taint chain from the sink to the originating boundary; "
+                        "without a store it degrades to the single-hop explanation (no `chain` block).",
             input_schema={
                 "type": "object",
                 "properties": {
                     "fingerprint": {"type": "string"},
                     "path": {"type": "string"},
                     "line": {"type": "integer"},
+                    "sink_qualname": {"type": "string"},
+                    "chain": {"type": "boolean"},
+                    "max_hops": {"type": "integer"},
                     "config": {"type": "string"},
                 },
             },
-            handler=_explain_taint,
+            handler=lambda args, root: _explain_taint(args, root, self._clarion_client()),
         ))
         self.add_tool(Tool(
             name="judge", network=True,
@@ -378,8 +439,10 @@ class WardlineMCPServer:
     _LOOP_PROMPT = (
         "Wardline is whole-program and on-disk. The loop:\n"
         "1. Call `scan` (whole project). Read `summary.active` and `gate.tripped`.\n"
-        "2. For each active defect, call `explain_taint` to see the tainted callee and "
-        "originating boundary.\n"
+        "2. For each active defect, call `explain_taint` with the finding's `fingerprint`, "
+        "`path`+`line`, AND its `qualname` as `sink_qualname`. When a Clarion store is "
+        "configured this serves the explanation from the store (no re-scan), and you can pass "
+        "`chain: true` to walk the full taint chain to the originating boundary.\n"
         "3. Fix at the BOUNDARY, not the sink — add validation/rejection at the right hop.\n"
         "4. Re-`scan`. Only baseline/waiver a finding you have judged a true non-issue, with a reason."
     )

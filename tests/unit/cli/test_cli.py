@@ -386,6 +386,69 @@ def test_scan_filigree_absent_continues(tmp_path, monkeypatch) -> None:
     assert "could not reach" in result.output.lower()
 
 
+# --- SP9: wardline scan --clarion-url ---------------------------------------
+# scan.py imports write_facts_to_clarion lazily inside the `if clarion_url` block
+# (`from wardline.clarion.write import write_facts_to_clarion`), so the binding
+# that takes effect is the module-level one — patch wardline.clarion.write.*.
+
+
+def test_scan_clarion_write_success(tmp_path, monkeypatch) -> None:
+    from wardline.clarion.client import WriteResult
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    monkeypatch.setattr(
+        "wardline.clarion.write.write_facts_to_clarion",
+        lambda *a, **k: WriteResult(reachable=True, written=2),
+    )
+    out = tmp_path / "f.jsonl"
+    result = CliRunner().invoke(
+        scan, [str(proj), "--output", str(out), "--clarion-url", "http://x/api/taint"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "wrote 2 taint fact(s) to http://x/api/taint" in result.output
+
+
+def test_scan_clarion_soft_outage_does_not_change_exit(tmp_path, monkeypatch) -> None:
+    from wardline.clarion.client import WriteResult
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    monkeypatch.setattr(
+        "wardline.clarion.write.write_facts_to_clarion",
+        lambda *a, **k: WriteResult(reachable=False),
+    )
+    out = tmp_path / "f.jsonl"
+    # No --fail-on: a normal scan of _LEAKY exits 0. A soft outage must NOT bump it to 2.
+    result = CliRunner().invoke(
+        scan, [str(proj), "--output", str(out), "--clarion-url", "http://x/api/taint"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "Clarion taint store not written" in result.output
+    assert "scan unaffected" in result.output
+
+
+def test_scan_clarion_loud_error_exits_2(tmp_path, monkeypatch) -> None:
+    from wardline.core.errors import ClarionError
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+
+    def _raise(*a, **k):
+        raise ClarionError("Clarion rejected (400): bad request")
+
+    monkeypatch.setattr("wardline.clarion.write.write_facts_to_clarion", _raise)
+    out = tmp_path / "f.jsonl"
+    result = CliRunner().invoke(
+        scan, [str(proj), "--output", str(out), "--clarion-url", "http://x/api/taint"]
+    )
+    assert result.exit_code == 2, result.output
+    assert "bad request" in result.output
+
+
 def test_baseline_create_honors_custom_config_waivers(tmp_path) -> None:
     # Regression: `baseline create --config X` must read waivers from X (same as `scan`),
     # or the baseline is built from a different waiver set than scans consume.

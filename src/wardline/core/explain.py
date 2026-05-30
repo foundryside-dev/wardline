@@ -11,10 +11,12 @@ counts.
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from wardline.core.errors import ClarionError
 from wardline.core.run import run_scan
 
 if TYPE_CHECKING:
@@ -54,7 +56,7 @@ def _match(
     return None
 
 
-def explain_finding(
+def _explain_local(
     root: Path,
     *,
     fingerprint: str | None = None,
@@ -117,4 +119,152 @@ def explain_finding(
         source_boundary_qualname=source_boundary_qualname,
         resolved_call_count=prov.resolved_call_count if prov is not None else 0,
         unresolved_call_count=prov.unresolved_call_count if prov is not None else 0,
+    )
+
+
+def _is_fresh(view: Any) -> bool:
+    """Fresh iff: exists, a live current_content_hash is present, the blob is a
+    structurally sound dict (with a dict ``taint``), and the in-blob
+    content_hash_at_compute equals that live hash. Wardline decides freshness by
+    comparing the stamp IT wrote against the hash Clarion read live; Clarion never
+    asserts a verdict. Missing hash (file deleted/unreadable), exists:false, or a
+    malformed/skewed blob (wrong types after the HTTP round-trip) ⇒ stale, so the
+    caller falls through to the SP8 re-run rather than serving a broken fact."""
+    if not view.exists or view.current_content_hash is None:
+        return False
+    blob = view.wardline_json
+    if not isinstance(blob, dict) or not isinstance(blob.get("taint"), dict):
+        return False
+    stamped = blob.get("content_hash_at_compute")
+    return stamped is not None and stamped == view.current_content_hash
+
+
+def _callee_leaf(callee_qualname: str | None) -> str | None:
+    """The blob stores the resolved callee QUALNAME; SP8's immediate_tainted_callee is
+    the bare trailing name. Project back for surface parity with the SP8 shape."""
+    return None if callee_qualname is None else callee_qualname.rsplit(".", 1)[-1]
+
+
+def _explanation_from_blob(view: Any) -> TaintExplanation:
+    """Project a fresh stored blob into the SP8 TaintExplanation shape (no analysis).
+    The store is entity-scoped, so per-finding location comes from the blob's findings[]
+    when present (else blank/None — the entity is known, the specific finding is not)."""
+    blob = view.wardline_json if isinstance(view.wardline_json, dict) else {}
+    taint = blob.get("taint")
+    if not isinstance(taint, dict):
+        taint = {}
+    findings = blob.get("findings")
+    if not isinstance(findings, list):
+        findings = []
+    first = findings[0] if findings and isinstance(findings[0], dict) else {}
+    callee_q = taint.get("contributing_callee_qualname")
+    return TaintExplanation(
+        fingerprint=str(first.get("fingerprint", "")),
+        rule_id=str(first.get("rule_id", "")),
+        sink_qualname=blob.get("qualname"),
+        path="",
+        line=first.get("line_start"),
+        tier_in=taint.get("actual_return"),
+        tier_out=taint.get("declared_return"),
+        immediate_tainted_callee=_callee_leaf(callee_q),
+        source_boundary_qualname=callee_q,
+        resolved_call_count=int(taint.get("resolved_call_count", 0) or 0),
+        unresolved_call_count=int(taint.get("unresolved_call_count", 0) or 0),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ChainHop:
+    qualname: str
+    tier_in: str | None
+    tier_out: str | None
+    contributing_callee_qualname: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class TaintChain:
+    hops: list[ChainHop]
+    truncated_at: str | None  # the next qualname we could NOT walk (stale/absent/max_hops), or None
+
+
+def explain_chain(
+    root: Path,
+    *,
+    sink_qualname: str,
+    clarion: Any,
+    max_hops: int = 20,
+) -> TaintChain:
+    """Walk contributing_callee_qualname from the sink to the boundary, batch_getting
+    each hop's fresh fact. Truncate EXPLICITLY (never silently) on a stale/absent hop,
+    a loud read error, an unresolvable callee, or max_hops. Entirely client-side;
+    Clarion never parses."""
+    hops: list[ChainHop] = []
+    current: str | None = sink_qualname
+    seen: set[str] = set()
+    while current is not None:
+        if len(hops) >= max_hops:
+            return TaintChain(hops=hops, truncated_at=current)
+        if current in seen:  # cycle guard
+            return TaintChain(hops=hops, truncated_at=current)
+        seen.add(current)
+        try:
+            views = clarion.batch_get([current])
+        except ClarionError:
+            views = None  # loud read error (bad token/route-skew) → explicit truncation
+        if not views:
+            return TaintChain(hops=hops, truncated_at=current)  # outage/read-error
+        view = views[0]
+        if view.qualname != current or not _is_fresh(view):
+            # wrong-entity echo (contract violation) or stale/absent → explicit stop
+            return TaintChain(hops=hops, truncated_at=current)
+        blob = view.wardline_json or {}
+        taint = blob.get("taint", {})
+        next_q = taint.get("contributing_callee_qualname")
+        hops.append(ChainHop(
+            qualname=current,
+            tier_in=taint.get("actual_return"),
+            tier_out=taint.get("declared_return"),
+            contributing_callee_qualname=next_q,
+        ))
+        current = next_q  # None at the boundary leaf → clean finish
+    return TaintChain(hops=hops, truncated_at=None)
+
+
+def explain_finding(
+    root: Path,
+    *,
+    fingerprint: str | None = None,
+    path: str | None = None,
+    line: int | None = None,
+    config_path: Path | None = None,
+    confine_to_root: bool = False,
+    clarion: Any | None = None,
+    sink_qualname: str | None = None,
+) -> TaintExplanation | None:
+    """Explain ONE finding's taint. Standalone (clarion=None) ⇒ identical to SP8.
+
+    Fast path: when ``clarion`` and ``sink_qualname`` are both given (the MCP loop just
+    scanned, so it knows the sink's qualname), consult the store FIRST — a FRESH fact
+    is served from the blob with NO re-analysis. On a miss/stale/outage, or when no
+    ``sink_qualname`` is available, fall back to the SP8 re-run (``_explain_local``)."""
+    if clarion is not None and sink_qualname is not None:
+        try:
+            views = clarion.batch_get([sink_qualname])
+        except ClarionError:
+            # A loud read-side error (bad token → 401, 400, route-skew → 404) is NOT
+            # load-bearing for explain: degrade to the SP8 re-run, never raise. (The
+            # store read is optional enrichment; only the WRITE path surfaces a 4xx.)
+            views = None
+        if views and views[0].qualname == sink_qualname and _is_fresh(views[0]):
+            served = _explanation_from_blob(views[0])
+            return dataclasses.replace(
+                served,
+                fingerprint=fingerprint or served.fingerprint,
+                path=path or served.path,
+                line=line if line is not None else served.line,
+            )
+        # miss/stale/outage → fall through to the re-run
+    return _explain_local(
+        root, fingerprint=fingerprint, path=path, line=line,
+        config_path=config_path, confine_to_root=confine_to_root,
     )

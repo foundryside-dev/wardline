@@ -51,6 +51,7 @@ nav:
       - Suppressing findings: guides/suppression.md
       - LLM triage judge: guides/judge.md
       - Loom integration: guides/loom.md
+      - Clarion taint store: guides/clarion-taint-store.md
   - Using Wardline with your coding agent: agents.md
   - Reference:
       - CLI: reference/cli.md

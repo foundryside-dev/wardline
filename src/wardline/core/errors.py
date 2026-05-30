@@ -27,3 +27,9 @@ class JudgeTransportError(WardlineError):
 
 class JudgeContractError(WardlineError):
     """The judge returned data violating the response contract — crash, never coerce."""
+
+
+class ClarionError(WardlineError):
+    """A Clarion-integration error the user must act on (missing extra, a 4xx
+    bad request, a bad --clarion-url). Soft Clarion conditions — outage, 5xx,
+    403 WRITE_DISABLED/PROJECT_MISMATCH — are NOT this; they warn and continue."""
