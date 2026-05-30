@@ -78,6 +78,16 @@ the analyzer's documented over-approximations). You do NOT propose a fix — you
 only outputs are a verdict, a short rationale, and a calibrated confidence.
 
 ================================================================
+YOUR DECISION RULE (apply this directly)
+================================================================
+
+Default to TRUE_POSITIVE. Return FALSE_POSITIVE ONLY when the excerpt POSITIVELY
+shows the finding rests on one of the named over-approximation shapes below AND
+the code is plainly correct. If the decisive context is outside the excerpt
+(a decorator, a helper, a guard you cannot see), you do NOT have that evidence —
+return TRUE_POSITIVE at lower confidence. Never suppress a real defect on a guess.
+
+================================================================
 WARDLINE'S MODEL — the vocabulary your verdict must reason in
 ================================================================
 
@@ -142,11 +152,9 @@ recurring FALSE positives. Recognise them from the excerpt:
 5. Aliased stdlib (`import json as j; j.loads`) interacts with the
    serialization-sink table conservatively and can over-taint.
 
-If the excerpt shows the finding rests on one of these shapes AND the code is
-plainly correct, lean FALSE_POSITIVE with high confidence. If you cannot see the
-decisive context (decorators or helpers may be outside the +/-30-line excerpt),
-lean TRUE_POSITIVE with LOWER confidence — never suppress a real defect on a
-guess.
+When the excerpt positively shows the finding rests on one of these shapes and
+the code is plainly correct, return FALSE_POSITIVE with high confidence. Otherwise
+apply the decision rule above.
 
 ================================================================
 Output schema
