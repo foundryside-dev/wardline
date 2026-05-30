@@ -34,13 +34,18 @@ class AnalysisContext:
     ``project_return_taints`` is the effective return tier per function (anchored:
     declared; non-anchored: refined body). ``function_return_taints`` is the actual
     least-trusted returned-value taint per function, computed from L2 variable
-    analysis — the precise input for PY-WL-101.
+    analysis — the precise input for PY-WL-101. ``function_return_callee`` is the
+    callee that contributed each function's actual (least-trusted) return taint, or
+    ``None`` when that worst return path is not a direct call (``return p`` /
+    ``return some_var`` — chain resolution is deferred to SP9). This is the property
+    ``explain_finding`` reports as the immediate tainted callee.
     """
 
     project_taints: Mapping[str, TaintState]
     project_return_taints: Mapping[str, TaintState]
     function_var_taints: Mapping[str, Mapping[str, TaintState]]
     function_return_taints: Mapping[str, TaintState]
+    function_return_callee: Mapping[str, str | None]
     entities: Mapping[str, Entity]
     taint_provenance: Mapping[str, TaintProvenance]
 
@@ -54,6 +59,9 @@ class AnalysisContext:
         )
         object.__setattr__(
             self, "function_return_taints", MappingProxyType(dict(self.function_return_taints))
+        )
+        object.__setattr__(
+            self, "function_return_callee", MappingProxyType(dict(self.function_return_callee))
         )
         object.__setattr__(self, "entities", MappingProxyType(dict(self.entities)))
         object.__setattr__(

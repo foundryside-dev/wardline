@@ -3,9 +3,10 @@
 
 ``explain_finding`` re-runs the analysis (via run_scan, which retains the
 analysis context in-process) and projects the cheap provenance slice for one
-finding: the immediate tainted callee, the originating boundary (a bounded walk
-of the via_callee chain — NOT the full N-hop chain, which is deferred), the
-trust tiers at the sink, and the resolution counts.
+finding: the immediate tainted callee (the call that introduced the untrusted
+return), the originating boundary resolved one hop (NOT the full N-hop chain,
+which is deferred to SP9), the trust tiers at the sink, and the resolution
+counts.
 """
 
 from __future__ import annotations
@@ -17,10 +18,7 @@ from typing import TYPE_CHECKING
 from wardline.core.run import run_scan
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from wardline.core.finding import Finding
-    from wardline.scanner.taint.propagation import TaintProvenance
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,27 +54,6 @@ def _match(
     return None
 
 
-def _walk_to_origin(
-    provenance: Mapping[str, TaintProvenance], start: str | None
-) -> str | None:
-    """Follow via_callee from ``start`` to the anchored origin. Bounded by chain
-    length; guards against cycles. Returns the last qualname whose via_callee is
-    None (the source boundary), or None if no chain exists."""
-    seen: set[str] = set()
-    cur = start
-    origin = start
-    while cur is not None and cur not in seen:
-        seen.add(cur)
-        prov = provenance.get(cur)
-        if prov is None:
-            break
-        origin = cur
-        if prov.via_callee is None:
-            break
-        cur = prov.via_callee
-    return origin
-
-
 def explain_finding(
     root: Path,
     *,
@@ -94,24 +71,49 @@ def explain_finding(
     finding = _match(result.findings, fingerprint=fingerprint, path=path, line=line)
     if finding is None:
         return None
+    # A matched finding means analyze() ran to completion, which always sets
+    # last_context; ScanResult.context is typed Optional only for the empty-scan
+    # case that produces no findings to match here.
+    assert result.context is not None
+    context = result.context
 
-    provenance: Mapping[str, TaintProvenance] = {}
-    if result.context is not None:
-        provenance = getattr(result.context, "taint_provenance", {}) or {}
-    prov = provenance.get(finding.qualname) if finding.qualname is not None else None
-    immediate = prov.via_callee if prov is not None else None
-    origin = _walk_to_origin(provenance, finding.qualname) if finding.qualname else None
+    qualname = finding.qualname
+    immediate_tainted_callee = (
+        context.function_return_callee.get(qualname) if qualname is not None else None
+    )
+
+    # Resolve the source boundary ONE hop, honestly. If the immediate callee is a
+    # simple (non-dotted) name, form the same-module candidate qualname and report
+    # it ONLY when it is a known entity that is itself a leaf source (its own return
+    # callee is None — it does not get its taint from a further call). Never report a
+    # non-leaf intermediate, a dotted callee, or a cross-module/deep chain (SP9).
+    source_boundary_qualname: str | None = None
+    if (
+        immediate_tainted_callee is not None
+        and "." not in immediate_tainted_callee
+        and qualname is not None
+        and "." in qualname
+    ):
+        module = qualname.rsplit(".", 1)[0]
+        candidate = f"{module}.{immediate_tainted_callee}"
+        if (
+            candidate in context.entities
+            and context.function_return_callee.get(candidate) is None
+        ):
+            source_boundary_qualname = candidate
+
+    prov = context.taint_provenance.get(qualname) if qualname is not None else None
 
     return TaintExplanation(
         fingerprint=finding.fingerprint,
         rule_id=finding.rule_id,
-        sink_qualname=finding.qualname,
+        sink_qualname=qualname,
         path=finding.location.path,
         line=finding.location.line_start,
         tier_in=finding.properties.get("actual_return"),
         tier_out=finding.properties.get("declared_return"),
-        immediate_tainted_callee=immediate,
-        source_boundary_qualname=origin,
+        immediate_tainted_callee=immediate_tainted_callee,
+        source_boundary_qualname=source_boundary_qualname,
         resolved_call_count=prov.resolved_call_count if prov is not None else 0,
         unresolved_call_count=prov.unresolved_call_count if prov is not None else 0,
     )

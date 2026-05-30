@@ -633,29 +633,78 @@ def compute_return_taint(
     This is the precise input PY-WL-101 needs — distinct from ``project_taints``
     (the function's anchored *body* taint, pinned to its declaration).
     """
-    returns: list[TaintState] = []
-    _collect_return_taints(
+    returns: list[tuple[TaintState, str | None]] = []
+    _collect_return_paths(
         list(func_node.body), function_taint, taint_map, var_taints, returns
     )
     if not returns:
         return None
-    result = returns[0]
-    for r in returns[1:]:
-        result = least_trusted(result, r)
+    result = returns[0][0]
+    for taint, _callee in returns[1:]:
+        result = least_trusted(result, taint)
     return result
 
 
-def _collect_return_taints(
+def compute_return_callee(
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    var_taints: dict[str, TaintState],
+) -> str | None:
+    """Identify the callee that contributes a function's *actual* (least-trusted)
+    return taint — the property ``explain_finding`` reports for a PY-WL-101 sink.
+
+    Walks the same value-bearing ``return`` statements :func:`compute_return_taint`
+    walks (via the shared :func:`_collect_return_paths`), recording for each path
+    both its taint AND, when its top-level expression is a direct :class:`ast.Call`,
+    the callee NAME (simple ``ast.Name.id`` or dotted via :func:`_dotted_name`).
+
+    Computes the same least-trusted taint :func:`compute_return_taint` returns, then
+    returns the callee name of the **first source-order return path whose taint
+    equals that worst taint and which is a direct call**. Returns ``None`` when no
+    least-trusted path is a direct call (e.g. ``return p`` / ``return some_var`` —
+    indirection deferred to SP9), or when there is no value-bearing return.
+
+    Because :func:`least_trusted` always returns one of its inputs, the worst taint
+    always equals at least one collected path's taint, so the match is well-defined.
+    """
+    returns: list[tuple[TaintState, str | None]] = []
+    _collect_return_paths(
+        list(func_node.body), function_taint, taint_map, var_taints, returns
+    )
+    if not returns:
+        return None
+    worst = returns[0][0]
+    for taint, _callee in returns[1:]:
+        worst = least_trusted(worst, taint)
+    for taint, callee in returns:
+        if taint == worst and callee is not None:
+            return callee
+    return None
+
+
+def _return_callee(node: ast.expr) -> str | None:
+    """Callee name if *node* is a direct call to a simple/dotted name, else None."""
+    if isinstance(node, ast.Call):
+        if isinstance(node.func, ast.Name):
+            return node.func.id
+        if isinstance(node.func, ast.Attribute):
+            return _dotted_name(node.func)
+    return None
+
+
+def _collect_return_paths(
     nodes: list[ast.AST],
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
-    out: list[TaintState],
+    out: list[tuple[TaintState, str | None]],
 ) -> None:
-    """Recurse the AST collecting value-bearing return taints, descending into ALL
-    children EXCEPT nested ``FunctionDef``/``AsyncFunctionDef``/``ClassDef``/
-    ``Lambda`` (separate scopes — their returns bind their own callable, not this
-    one).
+    """Recurse the AST collecting ``(taint, callee_or_None)`` for each value-bearing
+    return, descending into ALL children EXCEPT nested ``FunctionDef``/
+    ``AsyncFunctionDef``/``ClassDef``/``Lambda`` (separate scopes — their returns
+    bind their own callable, not this one). The callee is the direct-call name of
+    the return's top-level expression (``None`` for non-call returns).
 
     Descent is unconditional because the constructs that hold returns are not all
     ``ast.stmt``: ``match``/``case`` bodies live under ``ast.match_case`` and
@@ -669,7 +718,8 @@ def _collect_return_taints(
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             continue
         if isinstance(node, ast.Return) and node.value is not None:
-            out.append(_resolve_expr(node.value, function_taint, taint_map, var_taints))
-        _collect_return_taints(
+            taint = _resolve_expr(node.value, function_taint, taint_map, var_taints)
+            out.append((taint, _return_callee(node.value)))
+        _collect_return_paths(
             list(ast.iter_child_nodes(node)), function_taint, taint_map, var_taints, out
         )

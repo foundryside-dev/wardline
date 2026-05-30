@@ -32,7 +32,11 @@ from wardline.scanner.taint.decorator_provider import DecoratorTaintSourceProvid
 from wardline.scanner.taint.function_level import seed_function_taints
 from wardline.scanner.taint.project_resolver import ModuleInput, resolve_project_taints
 from wardline.scanner.taint.provider import SeedContext, TaintSourceProvider
-from wardline.scanner.taint.variable_level import compute_return_taint, compute_variable_taints
+from wardline.scanner.taint.variable_level import (
+    compute_return_callee,
+    compute_return_taint,
+    compute_variable_taints,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -181,6 +185,7 @@ class WardlineAnalyzer:
 
         function_var_taints: dict[str, dict[str, TaintState]] = {}
         function_return_taints: dict[str, TaintState] = {}
+        function_return_callee: dict[str, str | None] = {}
         entity_index: dict[str, Entity] = {}
         func_skip_findings: list[Finding] = []
         for _relpath, module, _tree, entities, alias_map in file_meta:
@@ -193,6 +198,14 @@ class WardlineAnalyzer:
                 try:
                     var_taints = compute_variable_taints(ent.node, seed, dict(call_tm))
                     ret_taint = compute_return_taint(ent.node, seed, dict(call_tm), var_taints)
+                    # Pass a COPY of var_taints: _resolve_expr's walrus (NamedExpr)
+                    # branch mutates the dict it walks, and var_taints is stored into
+                    # function_var_taints. A forward-referencing walrus inside a return
+                    # would otherwise get a second, non-idempotent resolve pass that
+                    # perturbs the stored map. Same starting state ⇒ same ret_callee.
+                    ret_callee = compute_return_callee(
+                        ent.node, seed, dict(call_tm), dict(var_taints)
+                    )
                 except RecursionError:
                     # Fail-closed: absent vars read as the function taint, and the
                     # return taint is unknown. Emit a FACT so the gap is observable
@@ -200,6 +213,7 @@ class WardlineAnalyzer:
                     # PY-WL-101 quietly skip this function (an invisible under-taint).
                     var_taints = {}
                     ret_taint = None
+                    ret_callee = None
                     func_skip_findings.append(
                         Finding(
                             rule_id="WLN-ENGINE-FUNCTION-SKIPPED",
@@ -215,12 +229,14 @@ class WardlineAnalyzer:
                 function_var_taints[ent.qualname] = var_taints
                 if ret_taint is not None:
                     function_return_taints[ent.qualname] = ret_taint
+                function_return_callee[ent.qualname] = ret_callee
 
         context = AnalysisContext(
             project_taints=project_taints,
             project_return_taints=project_return_taints,
             function_var_taints=function_var_taints,
             function_return_taints=function_return_taints,
+            function_return_callee=function_return_callee,
             entities=entity_index,
             taint_provenance=dict(result.taint_provenance),
         )

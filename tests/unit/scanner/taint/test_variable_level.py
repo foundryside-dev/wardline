@@ -280,3 +280,45 @@ def test_compute_return_taint_reaches_match_and_except_returns() -> None:
     assert rt("def f(p):\n try:\n  return 1\n except ValueError:\n  return read_raw(p)\n") == T.EXTERNAL_RAW
     # a lambda body return-expr is a separate scope and must not be collected
     assert rt("def f():\n g = lambda: read_raw(1)\n return 1\n") == T.INTEGRAL
+
+
+def test_compute_return_callee_identifies_least_trusted_call() -> None:
+    import ast
+    import textwrap
+
+    from wardline.core.taints import TaintState as T
+    from wardline.scanner.taint.variable_level import (
+        compute_return_callee,
+        compute_variable_taints,
+    )
+
+    tm = {"read_raw": T.EXTERNAL_RAW, "validate": T.ASSURED, "svc.read_raw": T.EXTERNAL_RAW}
+
+    def rc(src: str) -> str | None:
+        node = ast.parse(textwrap.dedent(src)).body[0]
+        var_taints = compute_variable_taints(node, T.INTEGRAL, dict(tm))
+        return compute_return_callee(node, T.INTEGRAL, dict(tm), var_taints)
+
+    # direct-call return → the callee name
+    assert rc("def f(p):\n return read_raw(p)\n") == "read_raw"
+    # dotted direct-call return → the dotted callee name
+    assert rc("def f(p):\n return svc.read_raw(p)\n") == "svc.read_raw"
+    # worst return path is a bare variable, not a direct call → None (SP9 territory)
+    assert rc("def f(p):\n x = read_raw(p)\n return x\n") is None
+    assert rc("def f(p):\n return p\n") is None
+    # multiple returns: the least-trusted path is the call → that callee, even though
+    # the integral path comes first in source order.
+    assert rc("def f(p):\n if p:\n  return 1\n return read_raw(p)\n") == "read_raw"
+    # tie-break across the SAME worst tier: both `return x` (a bare name carrying the
+    # raw taint) and `return read_raw(p)` land at EXTERNAL_RAW, but the first is a
+    # non-call. The loop must skip the worst-tier non-call to reach the worst-tier
+    # direct call — so the callee is `read_raw`, not None.
+    assert (
+        rc("def f(p):\n x = read_raw(p)\n if p:\n  return x\n return read_raw(p)\n")
+        == "read_raw"
+    )
+    # the worst path is the validated (trusted) call, not the raw one it wraps; the
+    # top-level direct call of the least-trusted return is `validate`.
+    assert rc("def f(p):\n return validate(read_raw(p))\n") == "validate"
+    # no value-bearing return → None
+    assert rc("def f():\n return\n") is None
