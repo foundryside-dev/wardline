@@ -10,6 +10,7 @@ import click
 
 from wardline._version import __version__
 from wardline.cli.judge import judge as judge_command
+from wardline.cli.mcp import mcp
 from wardline.cli.scan import scan
 from wardline.core.baseline import collect_and_write_baseline
 from wardline.core.descriptor import descriptor_to_yaml
@@ -25,6 +26,7 @@ def cli() -> None:
 
 cli.add_command(scan)
 cli.add_command(judge_command)
+cli.add_command(mcp)
 
 
 @cli.command()
