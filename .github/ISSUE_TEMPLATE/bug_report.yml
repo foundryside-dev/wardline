@@ -1,0 +1,23 @@
+name: Bug report
+description: Report incorrect behaviour in Wardline
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you run, what did you expect, what did you get?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Wardline version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: A code snippet or config that triggers the issue.

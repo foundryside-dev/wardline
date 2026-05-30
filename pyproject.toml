@@ -7,6 +7,7 @@ name = "wardline"
 description = "Generic semantic-tainting static analyzer for Python"
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dynamic = ["version"]
 dependencies = []
@@ -14,6 +15,7 @@ authors = [{ name = "John Morrissey" }]
 keywords = ["static-analysis", "taint-analysis", "trust-boundaries", "security"]
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.12",
     "Typing :: Typed",
 ]
@@ -30,16 +32,17 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "types-PyYAML",
+    "types-jsonschema",
 ]
 
 [project.scripts]
 wardline = "wardline.cli.main:cli"
 
 [project.urls]
-Homepage = "https://github.com/foundryside/wardline"
-Repository = "https://github.com/foundryside/wardline"
-Issues = "https://github.com/foundryside/wardline/issues"
-Changelog = "https://github.com/foundryside/wardline/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/foundryside-dev/wardline"
+Repository = "https://github.com/foundryside-dev/wardline"
+Issues = "https://github.com/foundryside-dev/wardline/issues"
+Changelog = "https://github.com/foundryside-dev/wardline/blob/main/CHANGELOG.md"
 
 [tool.hatch.version]
 path = "src/wardline/_version.py"

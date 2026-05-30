@@ -13,3 +13,11 @@ build/
 # Wardline runtime output
 findings.jsonl
 .wardline-cache/
+
+# Filigree issue tracker
+.filigree/
+.env
+
+# Filigree-generated agent operator playbooks (local tooling, not project docs)
+CLAUDE.md
+AGENTS.md
