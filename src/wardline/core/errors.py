@@ -15,3 +15,15 @@ class DiscoveryError(WardlineError):
 
 class FiligreeEmitError(WardlineError):
     """Filigree rejected the scan-results payload (HTTP >= 400) — a Wardline bug."""
+
+
+class JudgeConfigurationError(WardlineError):
+    """The judge cannot run: missing API key or operator-actionable misconfig."""
+
+
+class JudgeTransportError(WardlineError):
+    """The judge transport failed after configuration succeeded (network / HTTP status)."""
+
+
+class JudgeContractError(WardlineError):
+    """The judge returned data violating the response contract — crash, never coerce."""
