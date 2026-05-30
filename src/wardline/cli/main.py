@@ -16,7 +16,7 @@ from wardline.core.baseline import write_baseline
 from wardline.core.descriptor import descriptor_to_yaml
 from wardline.core.discovery import discover
 from wardline.core.errors import WardlineError
-from wardline.core.finding import Kind
+from wardline.core.finding import Kind, Severity
 from wardline.core.waivers import WaiverSet, parse_waivers
 from wardline.scanner.analyzer import WardlineAnalyzer
 
@@ -36,7 +36,12 @@ def vocab() -> None:
     click.echo(descriptor_to_yaml(), nl=False)
 
 
-def _generate_baseline(path: Path, *, overwrite: bool) -> None:
+# Print the severity breakdown in declaration order (CRITICAL first), matching the
+# severity-sorted baseline file rather than alphabetical.
+_SEV_PRINT_ORDER: dict[str, int] = {s.value: i for i, s in enumerate(Severity)}
+
+
+def _generate_baseline(path: Path, *, overwrite: bool, config_path: Path | None) -> None:
     baseline_path = path / ".wardline" / "baseline.yaml"
     if baseline_path.exists() and not overwrite:
         click.echo(
@@ -44,7 +49,9 @@ def _generate_baseline(path: Path, *, overwrite: bool) -> None:
         )
         raise SystemExit(2)
     try:
-        cfg = config_mod.load(path / "wardline.yaml")
+        # Honor --config exactly as `scan` does, so the baseline is built from the same
+        # waiver set the scans will consume (else a silent waiver-set mismatch).
+        cfg = config_mod.load(config_path or (path / "wardline.yaml"))
         waivers = WaiverSet(parse_waivers(cfg.waivers))
         today = date.today()
         files = discover(path, cfg)
@@ -60,7 +67,9 @@ def _generate_baseline(path: Path, *, overwrite: bool) -> None:
     ]
     write_baseline(baseline_path, to_baseline)
     counts = Counter(f.severity.value for f in to_baseline)
-    breakdown = ", ".join(f"{n} {sev}" for sev, n in sorted(counts.items()))
+    breakdown = ", ".join(
+        f"{n} {sev}" for sev, n in sorted(counts.items(), key=lambda kv: _SEV_PRINT_ORDER[kv[0]])
+    )
     click.echo(f"baselined {len(to_baseline)} finding(s) -> {baseline_path}" + (f": {breakdown}" if breakdown else ""))
 
 
@@ -74,16 +83,18 @@ def baseline(ctx: click.Context) -> None:
 
 @baseline.command("create")
 @click.argument("path", type=click.Path(exists=True, file_okay=False, path_type=Path), default=".")
-def baseline_create(path: Path) -> None:
+@click.option("--config", "config_path", type=click.Path(path_type=Path), default=None)
+def baseline_create(path: Path, config_path: Path | None) -> None:
     """Write a new baseline from current findings (refuses if one exists)."""
-    _generate_baseline(path, overwrite=False)
+    _generate_baseline(path, overwrite=False, config_path=config_path)
 
 
 @baseline.command("update")
 @click.argument("path", type=click.Path(exists=True, file_okay=False, path_type=Path), default=".")
-def baseline_update(path: Path) -> None:
+@click.option("--config", "config_path", type=click.Path(path_type=Path), default=None)
+def baseline_update(path: Path, config_path: Path | None) -> None:
     """Re-derive and overwrite the baseline from current findings."""
-    _generate_baseline(path, overwrite=True)
+    _generate_baseline(path, overwrite=True, config_path=config_path)
 
 
 @cli.command()

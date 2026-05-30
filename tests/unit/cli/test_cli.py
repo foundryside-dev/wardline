@@ -238,23 +238,55 @@ def test_baseline_update_overwrites(tmp_path) -> None:
 
 
 def test_baseline_create_excludes_active_waivers(tmp_path) -> None:
+    # TWO distinct defects: waive one, leave the other. The baseline must EXCLUDE the
+    # waived fingerprint and KEEP the non-waived one (selective exclusion, not "empty").
+    two_leaks = (
+        "from wardline.decorators import external_boundary, trusted\n"
+        "@external_boundary\ndef read_raw(p):\n    return p\n"
+        "@trusted\ndef leaky(p):\n    return read_raw(p)\n"
+        "@trusted\ndef leaky2(p):\n    return read_raw(p)\n"
+    )
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(two_leaks, encoding="utf-8")
+    runner = CliRunner()
+    out = tmp_path / "f.jsonl"
+    runner.invoke(scan, [str(proj), "--output", str(out)])
+    leaks = {
+        _json.loads(ln)["qualname"]: _json.loads(ln)["fingerprint"]
+        for ln in out.read_text().splitlines()
+        if ln.strip() and _json.loads(ln)["rule_id"] == "PY-WL-101"
+    }
+    fp_waived, fp_kept = leaks["svc.leaky"], leaks["svc.leaky2"]
+    assert fp_waived != fp_kept  # genuinely distinct findings
+    (proj / "wardline.yaml").write_text(
+        "waivers:\n  - fingerprint: " + fp_waived + "\n    reason: handled\n", encoding="utf-8"
+    )
+    res = runner.invoke(_cli, ["baseline", "create", str(proj)])
+    assert res.exit_code == 0, res.output
+    doc = _yaml.safe_load((proj / ".wardline" / "baseline.yaml").read_text()) or {}
+    fps = {e["fingerprint"] for e in (doc.get("entries") or [])}
+    assert fp_waived not in fps  # active-waiver fingerprint excluded
+    assert fp_kept in fps        # non-waived defect still baselined
+
+
+def test_baseline_create_honors_custom_config_waivers(tmp_path) -> None:
+    # Regression: `baseline create --config X` must read waivers from X (same as `scan`),
+    # or the baseline is built from a different waiver set than scans consume.
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "svc.py").write_text(_LEAKY_FOR_BASELINE, encoding="utf-8")
     runner = CliRunner()
-    # Discover the fingerprint first.
     out = tmp_path / "f.jsonl"
     runner.invoke(scan, [str(proj), "--output", str(out)])
     fp = next(
         _json.loads(ln)["fingerprint"]
         for ln in out.read_text().splitlines() if ln.strip() and _json.loads(ln)["rule_id"] == "PY-WL-101"
     )
-    # Waive it, then create the baseline -> the waived fingerprint must be EXCLUDED.
-    (proj / "wardline.yaml").write_text(
-        "waivers:\n  - fingerprint: " + fp + "\n    reason: handled\n", encoding="utf-8"
-    )
-    res = runner.invoke(_cli, ["baseline", "create", str(proj)])
+    custom = tmp_path / "custom.yaml"  # NOT proj/wardline.yaml
+    custom.write_text("waivers:\n  - fingerprint: " + fp + "\n    reason: handled\n", encoding="utf-8")
+    res = runner.invoke(_cli, ["baseline", "create", str(proj), "--config", str(custom)])
     assert res.exit_code == 0, res.output
     doc = _yaml.safe_load((proj / ".wardline" / "baseline.yaml").read_text()) or {}
     fps = {e["fingerprint"] for e in (doc.get("entries") or [])}
-    assert fp not in fps  # active-waiver fingerprint excluded from the baseline
+    assert fp not in fps  # waiver from --config was honored, so the fp is excluded
