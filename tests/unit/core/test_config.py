@@ -1,6 +1,6 @@
 import pytest
 
-from wardline.core.config import WardlineConfig, load
+from wardline.core.config import load
 from wardline.core.errors import ConfigError
 
 
@@ -26,14 +26,6 @@ def test_load_parses_known_keys_and_reserved_blocks(tmp_path) -> None:
     assert cfg.rules_enable == ("WLN-001",)
     assert cfg.rules_severity == {"WLN-001": "WARN"}
     assert cfg.filigree == {"url": "http://x"}
-
-
-def test_unknown_key_warns_not_raises(tmp_path) -> None:
-    p = tmp_path / "wardline.yaml"
-    p.write_text("bogus: 1\n", encoding="utf-8")
-    with pytest.warns(UserWarning, match="unknown wardline.yaml key"):
-        cfg = load(p)
-    assert isinstance(cfg, WardlineConfig)
 
 
 def test_malformed_yaml_raises_config_error(tmp_path) -> None:
@@ -112,3 +104,63 @@ def test_judge_settings_rejects_out_of_range_floor() -> None:
     from wardline.core.errors import ConfigError
     with pytest.raises(ConfigError):
         parse_judge_settings({"write_confidence_floor": 1.5})
+
+
+def test_unknown_top_level_key_raises(tmp_path) -> None:
+    p = tmp_path / "wardline.yaml"
+    p.write_text("bogus: 1\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="invalid"):
+        load(p)
+
+
+def test_full_valid_config_passes(tmp_path) -> None:
+    p = tmp_path / "wardline.yaml"
+    p.write_text(
+        "source_roots: [src]\n"
+        "exclude: ['**/x/**']\n"
+        "rules:\n  enable: ['WLN-001']\n  severity: {WLN-001: WARN}\n"
+        "baseline: {path: .wardline/baseline.yaml}\n"
+        "waivers:\n  - fingerprint: " + ("a" * 64) + "\n    reason: ok\n"
+        "judge:\n  model: anthropic/claude-opus-4-8\n  context_lines: 10\n"
+        "  max_findings: 50\n  write_confidence_floor: 0.7\n"
+        "filigree: {url: http://x}\n"
+        "clarion: {db: .clarion/clarion.db}\n",
+        encoding="utf-8",
+    )
+    cfg = load(p)
+    assert cfg.source_roots == ("src",)
+    assert cfg.judge == {
+        "model": "anthropic/claude-opus-4-8", "context_lines": 10,
+        "max_findings": 50, "write_confidence_floor": 0.7,
+    }
+
+
+def test_bad_judge_context_lines_type_raises(tmp_path) -> None:
+    p = tmp_path / "wardline.yaml"
+    p.write_text("judge:\n  context_lines: lots\n", encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load(p)
+
+
+def test_yaml_bool_is_not_a_valid_integer(tmp_path) -> None:
+    # Regression guard: YAML `true` is a bool, not an int. The schema's
+    # {"type": "integer"} must reject it (jsonschema draft 2020-12 semantics),
+    # matching parse_judge_settings' explicit bool guard.
+    p = tmp_path / "wardline.yaml"
+    p.write_text("judge:\n  context_lines: true\n", encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load(p)
+
+
+def test_out_of_range_floor_raises(tmp_path) -> None:
+    p = tmp_path / "wardline.yaml"
+    p.write_text("judge:\n  write_confidence_floor: 2.0\n", encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load(p)
+
+
+def test_unknown_judge_key_raises(tmp_path) -> None:
+    p = tmp_path / "wardline.yaml"
+    p.write_text("judge:\n  bogus_setting: 1\n", encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load(p)

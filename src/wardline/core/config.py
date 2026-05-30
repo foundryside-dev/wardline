@@ -1,20 +1,17 @@
-"""wardline.yaml loader. Uses the `scanner` extra (pyyaml)."""
+"""wardline.yaml loader. Uses the `scanner` extra (pyyaml + jsonschema)."""
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import jsonschema
 import yaml
 
+from wardline.core.config_schema import WARDLINE_SCHEMA
 from wardline.core.errors import ConfigError
-
-_KNOWN_KEYS = frozenset(
-    {"source_roots", "exclude", "rules", "baseline", "waivers", "judge", "filigree", "clarion"}
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,9 +37,10 @@ def load(path: Path | None) -> WardlineConfig:
         raise ConfigError(f"malformed {path.name}: {exc}") from exc
     if not isinstance(raw, dict):
         raise ConfigError(f"{path.name} must be a mapping at top level")
-    for key in raw:
-        if key not in _KNOWN_KEYS:
-            warnings.warn(f"unknown wardline.yaml key: {key!r}", stacklevel=2)
+    try:
+        jsonschema.validate(raw, WARDLINE_SCHEMA)
+    except jsonschema.ValidationError as exc:
+        raise ConfigError(f"invalid {path.name}: {exc.message}") from exc
     rules = raw.get("rules") or {}
     return WardlineConfig(
         source_roots=tuple(raw.get("source_roots") or (".",)),
