@@ -1,7 +1,10 @@
 # Wardline SP9 — Clarion-backed taint store (design)
 
-**Status:** Approved (brainstorm) — 2026-05-31. **Implementation BLOCKED** until
-Clarion ships its side (ADR-036 + `/api/wardline/*` routes + `contracts.md`); see §2.
+**Status:** Approved (brainstorm) — 2026-05-31. **Implementation UNBLOCKED 2026-05-31:**
+Clarion shipped its side (ADR-036 + `/api/wardline/*` routes + pinned `contracts.md`);
+the spec has been reconciled against the delivered contract — see §2 and the
+reconciliation deltas folded into §4/§6/§7/§9. The HMAC canonicalization (formerly the
+§11 open item) is now pinned byte-exactly from Clarion source; §11 records it.
 **Author:** John (with Claude)
 
 ## 1. Goal
@@ -15,18 +18,40 @@ remains fully usable with no Clarion present — the integration is purely addit
 
 ## 2. Dependency & status
 
-This depends on Clarion-side capability that is **being built now** and is not yet
-shipped/verified:
+This depended on Clarion-side capability that has now **shipped** (Clarion
+release:1.1, landed 2026-05-31):
 
-- Clarion plan: `~/clarion/docs/superpowers/plans/2026-05-31-clarion-wardline-taint-store.md`
+- Clarion ADR: `~/clarion/docs/clarion/adr/ADR-036-wardline-taint-fact-store.md`
+- Pinned wire contract: `~/clarion/docs/federation/contracts.md` §"Wardline
+  taint-fact store (SP9)" + §"Authentication" (HMAC) + §"Wardline qualname
+  normalization".
 - The ask it answers: `docs/integration/2026-05-30-wardline-clarion-taint-store-requirements.md`
-- The wire contract will be pinned in Clarion's `docs/federation/contracts.md` (their W.5).
 
-**Wardline implementation (writing-plans → code) must not start until Clarion's
-routes land and `contracts.md` is published.** This spec is written against the
-contract as designed; the one detail still to confirm from Clarion before the
-client is built is the **exact HMAC canonicalization** (what string is signed) —
-see §11. The spec stands; only that signing detail is pending.
+The routes are live and verified by Clarion's W.1–W.4 tests. This spec has been
+**reconciled against the delivered contract**; the deltas from the as-designed
+draft are:
+
+1. **No capabilities flag for the taint store.** `GET /api/v1/_capabilities`
+   does **not** advertise the taint store or whether the write path is enabled.
+   A client discovers the write API is off by receiving `403 WRITE_DISABLED`
+   from the write route — *not* by probing. The client therefore has **no**
+   `capabilities()`/`wardline_taint_store` probe; the write path is
+   attempt-then-handle-403 (§4c).
+2. **HMAC canonicalization pinned byte-exactly** (was the §11 open item; now §11
+   records the resolved scheme, read from Clarion source).
+3. **Read never returns `content_hash_at_compute`.** Freshness is decided by
+   comparing the `content_hash_at_compute` Wardline stamped *inside* the opaque
+   blob against the live `current_content_hash` Clarion returns (§4d, §7).
+4. **`current_content_hash` can be field-absent even when `exists: true`** (the
+   containing file was deleted/unreadable at request time) → treated as stale →
+   re-run (§4d, §9).
+5. **Qualname composition is already conformant.** Wardline's existing
+   `core/qualname.py` (`module_dotted_name` + `reconstruct_qualname`) reproduces
+   every vector in Clarion's normative fixture
+   `wardline-qualname-normalization.json` — including the divergence traps. SP9
+   reuses it; it does not reimplement composition (§4b, §10).
+
+Implementation (writing-plans → code) may now proceed.
 
 ## 3. Non-negotiable character (the thesis, carried forward)
 
@@ -55,48 +80,101 @@ transport** (the SP4/SP5 pattern) so handlers are unit-tested against a fake res
 
 ```python
 class ClarionClient:
-    def __init__(self, base_url: str, *, token: str, transport: Transport | None = None,
-                 batch_max: int = 2000) -> None: ...
+    def __init__(self, base_url: str, *, secret: str | None, project: str,
+                 transport: Transport | None = None, batch_max: int = 2000) -> None: ...
     def resolve(self, qualnames: list[str]) -> ResolveResult: ...           # POST /api/wardline/resolve
     def write_taint_facts(self, facts: list[TaintFactWrite]) -> WriteResult: ...  # POST /api/wardline/taint-facts (chunked)
-    def get_taint_fact(self, qualname: str) -> TaintFactView | None: ...     # GET  /api/wardline/taint-facts?qualname=
+    def get_taint_fact(self, qualname: str) -> TaintFactView | None: ...     # GET  /api/wardline/taint-facts?project=&qualname=
     def batch_get(self, qualnames: list[str]) -> list[TaintFactView]: ...    # POST /api/wardline/taint-facts:batch-get (chunked)
-    def capabilities(self) -> Capabilities: ...                              # GET  /api/v1/_capabilities (probe wardline_taint_store)
 ```
 
-- **Auth:** every request carries the `X-Loom-Component: clarion:<hmac>` header
-  (ADR-034). HMAC is computed with the **standard library** (`hmac` + `hashlib`),
-  so auth adds no dependency. The canonicalization (what bytes are signed) matches
-  Clarion's `require_hmac_identity` — confirmed from `contracts.md`/ADR-034 (§11).
+There is **no** `capabilities()` method: the contract does not advertise the taint
+store, so the write path is **attempt-then-handle-403** (§4c), not probe-then-write.
+
+- **Auth (HMAC, stdlib, pinned byte-exactly — §11):** every request carries
+  `X-Loom-Component: clarion:<hmac>`, where `<hmac>` is lowercase-hex HMAC-SHA256
+  (RFC 2104, `hmac.new(secret, msg, hashlib.sha256).hexdigest()`) over the canonical
+  message — three lines joined by `\n` with **no trailing newline**:
+
+  ```text
+  <METHOD>\n<PATH_AND_QUERY>\n<SHA256_HEX_OF_REQUEST_BODY>
+  ```
+
+  - `<METHOD>` is the uppercase HTTP verb (`POST`, `GET`).
+  - `<PATH_AND_QUERY>` is the **raw** request-target string exactly as sent on the
+    wire (path, plus `?query` when present) — the client must sign the byte-identical
+    string it puts on the request line, including percent-encoding and param order.
+  - `<SHA256_HEX_OF_REQUEST_BODY>` is `hashlib.sha256(body).hexdigest()`; for a
+    bodyless GET this is `sha256(b"")` = `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+  - **Note the two different hashes:** the *body* hash inside the HMAC message is
+    **SHA-256**; the *freshness* `current_content_hash` (§4d) is **blake3**. They are
+    unrelated. Auth therefore needs no extra dependency — only the `clarion` extra's
+    blake3 is new.
+  - When the secret is unset, the client sends **no** auth header (works against a
+    loopback-unauth Clarion). A `401 UNAUTHENTICATED` then means the server requires
+    auth and the secret is missing/wrong → loud.
+- **Project guard:** every request sends `project` = the scanned project's root
+  directory name (Clarion's guard handle). Clarion accepts an empty `project` (no
+  assertion) but a non-empty mismatch returns `403 PROJECT_MISMATCH`; sending the name
+  catches "talking to the wrong Clarion" instead of silently writing to it.
 - **Chunking:** `write_taint_facts` and `batch_get` split inputs to ≤ `batch_max`
   (Clarion's `WARDLINE_TAINT_BATCH_MAX`, 2000) and respect the 4 MiB body cap, exactly
   as Wardline's Filigree emitter splits against `BATCH_MAX_QUERIES`.
-- **Status bands (reuse the SP4 Filigree discipline):** connection error / timeout /
-  **5xx** → soft failure (the caller degrades to re-run; `wardline scan` warns and
-  continues); **4xx** → loud `ClarionError` (Wardline sent a bad request — exit 2 on the
-  CLI write path); **403 `WRITE_DISABLED`/`PROJECT_MISMATCH`** → soft, surfaced as a
-  clear message (the write API is off, or wrong project) and the run continues without
-  Clarion. `2xx` bodies parsed defensively (malformed → soft).
+- **Status bands — switch on `code`, not status (reuse the SP4 Filigree discipline).**
+  Clarion's error envelope is `{"error", "code"}` with a closed `code` enum, and the
+  *same* `code` can carry different HTTP statuses by route, so the client routes on
+  `code`. Connection error / timeout / **5xx** (`STORAGE_ERROR`/`INTERNAL`) → soft
+  failure (caller degrades to re-run; `wardline scan` warns and continues). `403`
+  `WRITE_DISABLED`/`PROJECT_MISMATCH` → soft, surfaced as a clear message (write API
+  off, or wrong project) and the run continues without Clarion. Other `4xx`
+  (`INVALID_PATH`, `UNAUTHENTICATED`, and the **`413 BATCH_TOO_LARGE`** with a JSON
+  `code`, or a raw-body **`413` with no JSON `code`** meaning the client built a body
+  over 4 MiB) → loud `ClarionError` (a Wardline bug — the client already chunks to
+  2000, so a `413` signals a defect; exit 2 on the CLI write path). `2xx` bodies parsed
+  defensively (malformed → soft).
 
 ### (b) `clarion/facts.py` — build the per-entity taint facts
 
 Pure function `build_taint_facts(result: ScanResult, root: Path) -> list[TaintFactWrite]`
 that projects the engine's `AnalysisContext` into the `wardline-taint-1` blobs (§7),
-one per function entity. It stamps each fact's `content_hash_at_compute` =
-**blake3 of the entity's containing file** (raw bytes, hex — matching Clarion's
-`file_content_hash`), memoizing the hash per file across the scan. This is the only
-place `blake3` is used; it imports lazily so the base package never needs it.
+one per function entity.
+
+- **Qualname (reuse, do not reimplement).** Each fact's `qualname` is the
+  **pre-composed** dotted form `f"{module_dotted_name(rel_path)}.{__qualname__}"`,
+  built with Wardline's existing `core/qualname.py` (`module_dotted_name` +
+  `reconstruct_qualname`). That module is already documented as byte-for-byte with
+  Clarion's `extractor.module_dotted_name`, and it reproduces every vector in
+  Clarion's normative fixture `wardline-qualname-normalization.json` — including the
+  divergence traps (`src/` stripped only at position 0 → `a.src.b`; `lib/`/`app/` not
+  stripped; `<locals>` and nested-class chains verbatim; `__init__` collapse;
+  top-level `__init__.py` → `None`, for which Wardline emits **no** fact). Clarion's
+  `resolve`/write is **exact-only**, so a divergent spelling would land every fact in
+  `unresolved` and silently no-op the store — reusing the conformant function is what
+  prevents that.
+- **Freshness stamp.** It stamps each fact's `content_hash_at_compute` =
+  **blake3 of the entity's containing file**, computed over the **whole file, raw
+  bytes (binary read — no text-mode LF translation), lowercase hex** (blake3-256 →
+  64 hex chars). This must match Clarion's `current_content_hash`
+  (`clarion_storage::current_file_hash`): it is **not** SHA-256, **not** LF-normalized,
+  and **not** span-scoped to the entity's lines. The hash is memoized per file across
+  the scan. This is the only place `blake3` is used; it imports lazily so the base
+  package never needs it.
 
 ### (c) Write path — `wardline scan` (+ MCP `scan`) persists facts
 
-When a Clarion URL is configured **and** the write API is enabled (probed via
-`capabilities()` → `wardline_taint_store`), a successful scan additionally:
-`build_taint_facts` → `client.write_taint_facts` (chunked). Unresolved qualnames
-(Clarion hasn't indexed them) are reported in the summary, never an error — the store
-is allowed to be partial. The whole step is fail-soft (§3): a Clarion outage never
-fails the scan or changes the gate. CLI: `wardline scan --clarion-url <url>`;
-MCP: server config carries the URL/token so the `scan` tool writes as a side effect,
-warming the store for subsequent `explain_taint` queries.
+When a Clarion URL is configured, a successful scan additionally **attempts** the
+write — there is no capability to probe first (§2 delta 1): `build_taint_facts` →
+`client.write_taint_facts` (chunked). If the write API is disabled, Clarion returns
+`403 WRITE_DISABLED` **before parsing the body**; the client treats that as a soft
+"store not accepting writes" message and the scan continues unaffected. Unresolved
+qualnames (Clarion hasn't indexed them) come back in the write response's
+`unresolved_qualnames` and are reported in the summary, never an error — the store is
+allowed to be partial, and an exact-only write silently drops unresolved facts. The
+whole step is fail-soft (§3): a Clarion outage, `WRITE_DISABLED`, or
+`PROJECT_MISMATCH` never fails the scan or changes the gate. CLI:
+`wardline scan --clarion-url <url>`; MCP: server config carries the URL/secret so the
+`scan` tool writes as a side effect, warming the store for subsequent `explain_taint`
+queries.
 
 ### (d) Read path — `explain_taint` as a query, with re-run fallback
 
@@ -105,11 +183,15 @@ when a client is configured:
 
 1. Resolve the sink's qualname (or the fingerprint → qualname via the blob's
    `findings[]`) and `batch_get` the fact.
-2. **Freshness gate:** compare the fact's stamped `content_hash_at_compute` to the
-   `current_content_hash` Clarion returned. Match → serve the explanation straight from
-   the stored blob (no analysis). Mismatch, `exists: false`, or any soft Clarion failure
-   → **fall back to the SP8 re-run** (and, on the CLI write path, opportunistically
-   re-write the recomputed fact).
+2. **Freshness gate (Wardline decides; Clarion never asserts).** The read view never
+   echoes the write-time `content_hash_at_compute` column — Wardline reads its own
+   stamp from *inside* the returned opaque `wardline_json` blob (§7) and compares it to
+   the live `current_content_hash` Clarion returns. **Match → fresh:** serve the
+   explanation straight from the stored blob (no analysis). **Fall back to the SP8
+   re-run** (and, on the CLI write path, opportunistically re-write the recomputed
+   fact) on any of: hash **mismatch**; `exists: false`; `current_content_hash`
+   **field-absent** (which happens even when `exists: true` if the containing file was
+   deleted/unreadable when Clarion read it); or any soft Clarion failure.
 3. Standalone (no client configured) → SP8 re-run, exactly as today.
 
 The result shape is unchanged from SP8 (`TaintExplanation`), so the MCP surface and the
@@ -129,16 +211,23 @@ split error model are untouched; SP9 only changes *where the answer comes from*.
 - **Endpoint:** `--clarion-url` (CLI) / a `clarion.url` server-config field (MCP).
   Absent → the integration is simply off.
 - **HMAC secret:** from the **environment / `.env` only, never from `wardline.yaml`** —
-  the same discipline as the OpenRouter key. Proposed env var
-  `WARDLINE_CLARION_TOKEN` (final name aligned to Clarion's `contracts.md`); `.env`
-  fallback; env wins. The secret never appears in any output, finding, or stored blob.
+  the same discipline as the OpenRouter key. Env var `WARDLINE_CLARION_TOKEN`; `.env`
+  fallback; env wins. This holds the **shared secret string** the Clarion operator
+  configured in the server's `serve.http.identity_token_env` (default
+  `CLARION_LOOM_IDENTITY_SECRET`) — the two env-var *names* are independent; only the
+  secret *value* must match. Unset → the client sends no auth header (loopback-unauth
+  Clarion); a resulting `401` is loud. The secret never appears in any output, finding,
+  or stored blob.
 - **No config-borne secret, no key in the blob.** (Carried from SP5's hard rule.)
 
 ## 7. The `wardline_json` schema (Wardline-owned, opaque to Clarion)
 
-`wardline-taint-1`, per the requirements brief §5. Each written fact also carries
+`wardline-taint-1`, per the requirements brief §5. Each written fact carries
 `scan_id` and `content_hash_at_compute` as **top-level** fields (Clarion's queryable
-columns) in addition to the blob:
+columns) **and** repeats `content_hash_at_compute` **inside** the blob. This
+duplication is load-bearing: Clarion's read view **never returns** the top-level
+column, so the freshness gate (§4d) reads the stamp from the blob it gets back. The
+top-level copy is only for Clarion's own queryable storage.
 
 ```json
 {
@@ -184,14 +273,25 @@ whole re-analysis. The single-hop boundary SP8 already returns remains the defau
 | 4xx (bad request from Wardline) | Loud `ClarionError`; CLI write path exits 2 |
 | Fact `exists:false` / unresolved qualname | Treated as a miss → re-run for that entity |
 | `content_hash_at_compute ≠ current_content_hash` | **Stale** → re-run; never served |
+| `current_content_hash` field-absent (file deleted/unreadable, even if `exists:true`) | **Stale** → re-run; never served |
+| Write returns `unresolved_qualnames` | Reported in summary; those facts silently dropped (exact-only) — not an error |
 | `wardline[clarion]` not installed but `--clarion-url` given | Loud: "install `wardline[clarion]`" |
 
 ## 10. Testing
 
 - **Unit (no network):** injected fake transport for `resolve`/`write`/`get`/`batch_get`;
-  chunking against the 2000 cap; HMAC header construction (a fixed-vector test against
-  the confirmed canonicalization); status-band handling (conn/5xx soft, 4xx loud, 403
-  soft); defensive 2xx parsing.
+  chunking against the 2000 cap; HMAC header construction as a **fixed-vector test**
+  against the pinned canonicalization (§11) — including a bodyless-GET vector asserting
+  the `sha256(b"")` body hash — cross-checked against Clarion's `component_hmac_hex`
+  test vectors in `http_read.rs`; project-guard field set on every request; status-band
+  handling routed on `code` (conn/5xx soft, `403 WRITE_DISABLED`/`PROJECT_MISMATCH`
+  soft, other 4xx/`413` loud); defensive 2xx parsing (including `current_content_hash`
+  field-absent and `wardline_json` field-absent on `exists:false`).
+- **Qualname conformance:** assert Wardline's `f"{module_dotted_name}.{__qualname__}"`
+  composition reproduces **every** vector in Clarion's
+  `wardline-qualname-normalization.json` (vendored or referenced into
+  `tests/conformance/`), traps included — the oracle that the exact-only `resolve`
+  won't silently miss.
 - **Fact builder:** `build_taint_facts` over the `_LEAKY` fixture → a PY-WL-101 fact with
   the right `taint.*` and a real blake3 stamp; per-file hash memoization.
 - **Freshness:** fresh (match → served from store, analysis NOT invoked — assert via a
@@ -206,13 +306,40 @@ whole re-analysis. The single-hop boundary SP8 already returns remains the defau
   default like the judge `network` test). This is what catches a contract drift that
   hermetic fakes miss.
 
-## 11. Open item to confirm from Clarion before building the client
+## 11. HMAC canonicalization (resolved — pinned from Clarion source)
 
-The **exact HMAC canonicalization** — which bytes Clarion's `require_hmac_identity`
-signs (raw body only, or method+path+body, plus any timestamp/nonce). Wardline's client
-must reproduce it byte-for-byte. Source of truth: Clarion's `contracts.md` (their W.5) +
-ADR-034. This is the single blocker for the client unit tests' fixed-vector; everything
-else in this spec is pinned.
+The former open item is closed. Read from Clarion's `require_hmac_identity` /
+`component_hmac_hex` / `canonical_hmac_message` in
+`~/clarion/crates/clarion-cli/src/http_read.rs` and pinned in `contracts.md`
+§"Authentication":
+
+- **Header:** `X-Loom-Component: clarion:<hmac>` (value trimmed, `clarion:` prefix
+  stripped, non-empty signature required).
+- **`<hmac>`:** lowercase-hex **HMAC-SHA256** (RFC 2104) of the canonical message.
+  Reproduced exactly by Python stdlib
+  `hmac.new(secret_bytes, message_bytes, hashlib.sha256).hexdigest()` — including
+  Clarion's >64-byte key handling (`key = sha256(secret)`), which is the standard
+  HMAC block-key reduction stdlib already performs.
+- **Canonical message** — three parts joined by `\n`, **no trailing newline**:
+
+  ```text
+  <METHOD>\n<PATH_AND_QUERY>\n<SHA256_HEX_OF_REQUEST_BODY>
+  ```
+
+  - `<METHOD>`: uppercase HTTP verb as sent.
+  - `<PATH_AND_QUERY>`: the raw request-target (`uri.path_and_query()`) byte-identical
+    to the wire — path, plus `?query` only when present. The client signs the exact
+    string it sends (percent-encoding and param order included).
+  - `<SHA256_HEX_OF_REQUEST_BODY>`: `hashlib.sha256(body).hexdigest()`; bodyless GET →
+    `sha256(b"")` = `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+
+- **No timestamp, no nonce** in the signed message. This is *not* SHA-256-over-the-body
+  as the secret material; it is HMAC-SHA256 over a message that *contains* the body's
+  SHA-256. (Distinct again from the **blake3** freshness hash of §4d.)
+
+The client unit test's fixed vector is now fully derivable; the live `clarion_e2e`
+round-trip (§10) is the final proof that the byte-exact reproduction is correct against
+a running Clarion.
 
 ## 12. Non-goals (SP9 v1)
 
@@ -229,7 +356,7 @@ else in this spec is pinned.
 
 ## 13. Sequencing (shape of the eventual plan)
 
-Once Clarion lands (§2) and the HMAC scheme is confirmed (§11), the Wardline plan is a
+Clarion has landed (§2) and the HMAC scheme is pinned (§11), so the Wardline plan is a
 short, refactor-light sequence — the engine already computes every fact:
 
 1. `wardline[clarion]` extra + `clarion/client.py` (HMAC, transport, status bands, chunking).
