@@ -12,11 +12,15 @@ from pathlib import Path
 from typing import Any
 
 from wardline._version import __version__
+from wardline.core import config as config_mod
+from wardline.core.config_schema import WARDLINE_SCHEMA
+from wardline.core.descriptor import descriptor_to_yaml
 from wardline.core.errors import WardlineError
 from wardline.core.explain import explain_finding
 from wardline.core.finding import Finding, Severity
 from wardline.core.run import gate_decision, run_scan
 from wardline.mcp.protocol import JsonRpcServer, McpError
+from wardline.scanner.rules import _ALL_RULE_CLASSES
 
 
 class ToolError(Exception):
@@ -147,10 +151,55 @@ class WardlineMCPServer:
     def add_tool(self, tool: Tool) -> None:
         self._tools[tool.name] = tool
 
+    # Four STABLE resources: their content is a pure function of (vocab + rule
+    # catalog + effective config + schema), so it does NOT drift as the agent
+    # edits code. Findings are deliberately excluded — they go stale on every
+    # edit and come back only from a fresh `scan` tool call.
+    _RESOURCES = (
+        ("wardline://vocab", "Trust vocabulary descriptor", "text/yaml"),
+        ("wardline://rules", "Rule catalog", "application/json"),
+        ("wardline://config", "Effective project config", "application/json"),
+        ("wardline://config-schema", "Config JSON Schema", "application/json"),
+    )
+
+    def _read_resource(self, uri: str | None) -> tuple[str, str]:
+        """Return (text, mime_type) for a resource URI."""
+        if uri == "wardline://vocab":
+            return descriptor_to_yaml(), "text/yaml"
+        if uri == "wardline://config-schema":
+            return json.dumps(WARDLINE_SCHEMA, ensure_ascii=False), "application/json"
+        if uri == "wardline://rules":
+            # rule_id is a class attr; base_severity is set in __init__, so
+            # instantiate cls() (its default base_severity = METADATA.base_severity).
+            rules: list[dict[str, Any]] = []
+            for cls in _ALL_RULE_CLASSES:
+                inst = cls()
+                # The human-meaningful description lives on the rule's METADATA, not
+                # the class docstring (the rule classes carry module-level docstrings,
+                # so cls.__doc__ is None) — use the real metadata field.
+                rules.append({
+                    "rule_id": inst.rule_id,
+                    "base_severity": inst.base_severity.value,
+                    "description": cls.metadata.description,
+                })
+            return json.dumps({"rules": rules}, ensure_ascii=False), "application/json"
+        if uri == "wardline://config":
+            cfg = config_mod.load(self.root / "wardline.yaml")
+            return json.dumps({
+                "source_roots": list(cfg.source_roots),
+                "exclude": list(cfg.exclude),
+                "rules_enable": list(cfg.rules_enable),
+                "rules_severity": dict(cfg.rules_severity),
+            }, ensure_ascii=False), "application/json"
+        raise McpError(f"unknown resource: {uri}")
+
     def _wire(self) -> None:
         self.rpc.capabilities["tools"] = {"listChanged": False}
         self.rpc.register("tools/list", self._tools_list)
         self.rpc.register("tools/call", self._tools_call)
+        self.rpc.capabilities["resources"] = {"listChanged": False}
+        self.rpc.register("resources/list", self._resources_list)
+        self.rpc.register("resources/read", self._resources_read)
 
     def _tools_list(self, params: dict[str, Any]) -> dict[str, Any]:
         return {"tools": [
@@ -175,6 +224,17 @@ class WardlineMCPServer:
             # error the agent must read and act on → isError result.
             return self._is_error(str(exc))
         return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}]}
+
+    def _resources_list(self, params: dict[str, Any]) -> dict[str, Any]:
+        return {"resources": [
+            {"uri": uri, "name": name, "mimeType": mime}
+            for uri, name, mime in self._RESOURCES
+        ]}
+
+    def _resources_read(self, params: dict[str, Any]) -> dict[str, Any]:
+        uri = params.get("uri")
+        text, mime = self._read_resource(uri)
+        return {"contents": [{"uri": uri, "mimeType": mime, "text": text}]}
 
     @staticmethod
     def _is_error(text: str) -> dict[str, Any]:
