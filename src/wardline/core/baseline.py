@@ -11,13 +11,17 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from wardline.core import config as _config_mod
+from wardline.core.discovery import discover
 from wardline.core.errors import ConfigError
-from wardline.core.finding import Finding, Severity
+from wardline.core.finding import Finding, Kind, Severity
+from wardline.core.waivers import WaiverSet, parse_waivers
 
 BASELINE_VERSION: int = 1
 """Bumped on a format change; validated on load (mirrors STDLIB_TAINT_VERSION)."""
@@ -61,6 +65,54 @@ def write_baseline(path: Path, findings: Iterable[Finding]) -> None:
         build_baseline_document(findings), sort_keys=False, default_flow_style=False, allow_unicode=True
     )
     path.write_text(text, encoding="utf-8")
+
+
+def collect_and_write_baseline(
+    root: Path, *, overwrite: bool, config_path: Path | None = None
+) -> list[Finding]:
+    """Derive the baselineable findings for ``root`` and write them to
+    ``.wardline/baseline.yaml``. Returns the findings that were baselined.
+
+    Captures current DEFECTs, EXCLUDING any with an active waiver (else the
+    baseline swallows them and their expiry never resurfaces — spec §8).
+    Honors ``config_path`` exactly as ``scan`` does, so the baseline is built
+    from the same waiver set the scans will consume.
+
+    Raises ``FileExistsError`` (with the baseline path as its message) if a
+    baseline already exists and ``overwrite`` is False; the existence check
+    runs *before* config load so a stale-but-present baseline is reported as
+    such even when the config is broken.
+    """
+    # Lazy import to avoid an import cycle (analyzer imports core.finding/types).
+    from wardline.scanner.analyzer import WardlineAnalyzer
+
+    baseline_path = root / ".wardline" / "baseline.yaml"
+    if baseline_path.exists() and not overwrite:
+        raise FileExistsError(str(baseline_path))
+    cfg = _config_mod.load(config_path or (root / "wardline.yaml"))
+    waivers = WaiverSet(parse_waivers(cfg.waivers))
+    today = date.today()
+    files = discover(root, cfg)
+    findings = WardlineAnalyzer().analyze(files, cfg, root=root)
+    to_baseline = [
+        f
+        for f in findings
+        if f.kind is Kind.DEFECT and waivers.match(f.fingerprint, today) is None
+    ]
+    write_baseline(baseline_path, to_baseline)
+    return to_baseline
+
+
+def generate_baseline(
+    root: Path, *, overwrite: bool, config_path: Path | None = None
+) -> int:
+    """Derive a baseline from current findings and write it. Returns the number
+    of fingerprints baselined. Raises ``FileExistsError`` if a baseline already
+    exists and ``overwrite`` is False (shared by the CLI and the MCP
+    ``baseline_create``/``baseline_update`` tools)."""
+    return len(
+        collect_and_write_baseline(root, overwrite=overwrite, config_path=config_path)
+    )
 
 
 def load_baseline(path: Path) -> Baseline:

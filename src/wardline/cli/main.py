@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 from collections import Counter
-from datetime import date
 from pathlib import Path
 
 import click
@@ -12,14 +11,10 @@ import click
 from wardline._version import __version__
 from wardline.cli.judge import judge as judge_command
 from wardline.cli.scan import scan
-from wardline.core import config as config_mod
-from wardline.core.baseline import write_baseline
+from wardline.core.baseline import collect_and_write_baseline
 from wardline.core.descriptor import descriptor_to_yaml
-from wardline.core.discovery import discover
 from wardline.core.errors import WardlineError
-from wardline.core.finding import Kind, Severity
-from wardline.core.waivers import WaiverSet, parse_waivers
-from wardline.scanner.analyzer import WardlineAnalyzer
+from wardline.core.finding import Severity
 
 
 @click.group()
@@ -45,29 +40,18 @@ _SEV_PRINT_ORDER: dict[str, int] = {s.value: i for i, s in enumerate(Severity)}
 
 def _generate_baseline(path: Path, *, overwrite: bool, config_path: Path | None) -> None:
     baseline_path = path / ".wardline" / "baseline.yaml"
-    if baseline_path.exists() and not overwrite:
+    try:
+        to_baseline = collect_and_write_baseline(
+            path, overwrite=overwrite, config_path=config_path
+        )
+    except FileExistsError:
         click.echo(
             f"{baseline_path} already exists; use `wardline baseline update` to overwrite.", err=True
         )
-        raise SystemExit(2)
-    try:
-        # Honor --config exactly as `scan` does, so the baseline is built from the same
-        # waiver set the scans will consume (else a silent waiver-set mismatch).
-        cfg = config_mod.load(config_path or (path / "wardline.yaml"))
-        waivers = WaiverSet(parse_waivers(cfg.waivers))
-        today = date.today()
-        files = discover(path, cfg)
-        findings = WardlineAnalyzer().analyze(files, cfg, root=path)
+        raise SystemExit(2) from None
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
-    # Capture current DEFECTs, EXCLUDING any with an active waiver (else the
-    # baseline swallows them and their expiry never resurfaces — spec §8).
-    to_baseline = [
-        f for f in findings
-        if f.kind is Kind.DEFECT and waivers.match(f.fingerprint, today) is None
-    ]
-    write_baseline(baseline_path, to_baseline)
     counts = Counter(f.severity.value for f in to_baseline)
     breakdown = ", ".join(
         f"{n} {sev}" for sev, n in sorted(counts.items(), key=lambda kv: _SEV_PRINT_ORDER[kv[0]])
