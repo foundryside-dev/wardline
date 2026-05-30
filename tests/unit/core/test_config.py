@@ -62,3 +62,28 @@ def test_waivers_key_does_not_warn(recwarn, tmp_path) -> None:
     p.write_text("waivers: []\n", encoding="utf-8")
     config_mod.load(p)
     assert not [w for w in recwarn.list if "waivers" in str(w.message)]
+
+
+def test_judge_settings_defaults() -> None:
+    from wardline.core.config import parse_judge_settings
+    s = parse_judge_settings({})
+    assert s.model == "anthropic/claude-opus-4-8"
+    assert s.context_lines == 30
+    assert s.max_findings is None
+    assert s.policy_file is None
+
+
+def test_judge_settings_from_mapping() -> None:
+    from wardline.core.config import parse_judge_settings
+    s = parse_judge_settings({"model": "anthropic/claude-sonnet-4-6", "context_lines": 10,
+                              "max_findings": 50, "policy_file": "POLICY.md"})
+    assert s.model == "anthropic/claude-sonnet-4-6" and s.context_lines == 10
+    assert s.max_findings == 50 and s.policy_file == "POLICY.md"
+
+
+def test_judge_settings_bad_type_raises() -> None:
+    import pytest
+    from wardline.core.config import parse_judge_settings
+    from wardline.core.errors import ConfigError
+    with pytest.raises(ConfigError):
+        parse_judge_settings({"context_lines": "lots"})
