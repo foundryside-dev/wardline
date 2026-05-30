@@ -11,3 +11,7 @@ class ConfigError(WardlineError):
 
 class DiscoveryError(WardlineError):
     """Raised when source discovery cannot proceed."""
+
+
+class FiligreeEmitError(WardlineError):
+    """Filigree rejected the scan-results payload (HTTP >= 400) — a Wardline bug."""

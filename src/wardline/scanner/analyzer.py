@@ -72,6 +72,13 @@ class WardlineAnalyzer:
         file_meta: list[tuple[str, str, ast.Module, tuple[Entity, ...], dict[str, str]]] = []
         parse_findings: list[Finding] = []
 
+        # ``discover`` resolves the root to an absolute path, so the files it yields are
+        # absolute. Resolve ``root`` to the same base here, or ``is_relative_to`` fails and
+        # every finding carries an absolute, machine-specific path — which corrupts the
+        # qualname (module_dotted_name expects a repo-relative path) and is rejected by
+        # Filigree's project-relative-path validation.
+        root = root.resolve()
+
         for path in files:
             relpath = (
                 path.relative_to(root).as_posix()

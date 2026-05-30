@@ -27,9 +27,34 @@ def test_scan_writes_findings_and_exits_zero(tmp_path: Path) -> None:
     assert any(_json.loads(ln)["rule_id"] == "WLN-ENGINE-METRICS" for ln in lines)
 
 
-def test_scan_sarif_is_not_yet_implemented(tmp_path: Path) -> None:
-    result = CliRunner().invoke(cli, ["scan", str(FIXTURE), "--format", "sarif"])
-    assert result.exit_code == 2
+def test_scan_format_sarif_writes_sarif_file(tmp_path: Path) -> None:
+    out = tmp_path / "out.sarif"
+    result = CliRunner().invoke(cli, ["scan", str(FIXTURE), "--format", "sarif", "--output", str(out)])
+    assert result.exit_code == 0, result.output
+    log = _json.loads(out.read_text(encoding="utf-8"))
+    assert log["version"] == "2.1.0"
+    assert log["runs"][0]["tool"]["driver"]["name"] == "wardline"
+
+
+def test_scan_format_sarif_default_output_path(tmp_path: Path) -> None:
+    import shutil
+
+    project = tmp_path / "proj"
+    shutil.copytree(FIXTURE, project)
+    result = CliRunner().invoke(cli, ["scan", str(project), "--format", "sarif"])
+    assert result.exit_code == 0, result.output
+    assert (project / "findings.sarif").exists()
+
+
+def test_scan_format_sarif_still_gates(tmp_path: Path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)  # PY-WL-101 ERROR defect
+    result = CliRunner().invoke(
+        cli, ["scan", str(proj), "--format", "sarif", "--output", str(tmp_path / "o.sarif"),
+              "--fail-on", "ERROR"]
+    )
+    assert result.exit_code == 1, result.output
 
 
 def test_judge_stub_exits_2_and_baseline_is_a_group() -> None:
@@ -268,6 +293,91 @@ def test_baseline_create_excludes_active_waivers(tmp_path) -> None:
     fps = {e["fingerprint"] for e in (doc.get("entries") or [])}
     assert fp_waived not in fps  # active-waiver fingerprint excluded
     assert fp_kept in fps        # non-waived defect still baselined
+
+
+def test_scan_relative_root_emits_relative_path_and_qualname(tmp_path) -> None:
+    # Regression: a RELATIVE scan-root arg must still yield repo-relative location.path
+    # and an uncorrupted qualname. discover() resolves to absolute paths; if the analyzer
+    # doesn't resolve root to the same base, is_relative_to fails and findings carry an
+    # absolute path -> Filigree 400 + a garbage dotted qualname (broken Clarion reconcile).
+    runner = CliRunner()
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        Path("proj").mkdir()
+        Path("proj/svc.py").write_text(_LEAKY, encoding="utf-8")
+        result = runner.invoke(scan, ["proj", "--output", "proj/f.jsonl"])  # RELATIVE root
+        assert result.exit_code == 0, result.output
+        findings = [_json.loads(ln) for ln in Path("proj/f.jsonl").read_text().splitlines() if ln.strip()]
+    leak = next(f for f in findings if f["rule_id"] == "PY-WL-101")
+    assert leak["location"]["path"] == "svc.py"  # relative, not /abs/.../svc.py
+    assert leak["qualname"] == "svc.leaky"        # clean module prefix, not '.tmp....svc.leaky'
+
+
+def test_scan_filigree_emit_success(tmp_path, monkeypatch) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    captured: dict[str, object] = {}
+
+    class _StubEmitter:
+        def __init__(self, url, **kw):
+            captured["url"] = url
+
+        def emit(self, findings):
+            from wardline.core.filigree_emit import EmitResult
+
+            captured["n"] = len(findings)
+            return EmitResult(reachable=True, created=len(findings), warnings=("w1",))
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _StubEmitter)
+    out = tmp_path / "f.jsonl"
+    result = CliRunner().invoke(
+        scan, [str(proj), "--output", str(out), "--filigree-url", "http://x/api/loom/scan-results"]
+    )
+    assert result.exit_code == 0, result.output
+    assert captured["url"] == "http://x/api/loom/scan-results"
+    assert "emitted" in result.output and "w1" in result.output  # stats + warning surfaced
+
+
+def test_scan_filigree_protocol_error_exits_2(tmp_path, monkeypatch) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    from wardline.core.errors import FiligreeEmitError
+
+    class _BadEmitter:
+        def __init__(self, url, **kw):
+            pass
+
+        def emit(self, findings):
+            raise FiligreeEmitError("Filigree rejected (400): bad path")
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _BadEmitter)
+    out = tmp_path / "f.jsonl"
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--filigree-url", "http://x"])
+    assert result.exit_code == 2, result.output
+    assert "bad path" in result.output
+
+
+def test_scan_filigree_absent_continues(tmp_path, monkeypatch) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+
+    class _AbsentEmitter:
+        def __init__(self, url, **kw):
+            pass
+
+        def emit(self, findings):
+            from wardline.core.filigree_emit import EmitResult
+
+            return EmitResult(reachable=False)
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _AbsentEmitter)
+    out = tmp_path / "f.jsonl"
+    # absent sibling must NOT change the exit code; with no --fail-on, stays 0
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--filigree-url", "http://x"])
+    assert result.exit_code == 0, result.output
+    assert "could not reach" in result.output.lower()
 
 
 def test_baseline_create_honors_custom_config_waivers(tmp_path) -> None:
