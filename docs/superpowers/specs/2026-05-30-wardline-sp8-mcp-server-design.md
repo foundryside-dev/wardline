@@ -110,8 +110,8 @@ never the frictionless path out of a red gate.
 | Tool | Input | Output | Notes |
 |---|---|---|---|
 | `scan` | `{path?, fail_on?, config?}` | `{findings[], summary{total,active,baselined,waived,judged}, gate{tripped,fail_on,exit_class}}` | The spine. Whole-program, on-disk. `active` is the gate population. |
-| `explain_taint` | `{fingerprint}` **or** `{path, line}` | `{source_boundary_qualname, immediate_tainted_callee, tier_in, tier_out}` **or** a no-match error | Re-runs analysis, projects the otherwise-discarded `TaintProvenance`. See "explain_taint mechanism". |
-| `judge` | `{path?, confidence_floor?, write?}` | `[{fingerprint, label, confidence, rationale}]` | **`network: true`**, opt-in, never auto-invoked, never folded into `scan`. Requires `WARDLINE_OPENROUTER_API_KEY`; fails loud (JSON-RPC error) without it. `write` appends above-floor FALSE_POSITIVEs to `.wardline/judged.yaml`. |
+| `explain_taint` | `{fingerprint}` **or** `{path, line}` | `{source_boundary_qualname, immediate_tainted_callee, tier_in, tier_out}` **or** a no-match `isError` result | Re-runs analysis, projects the otherwise-discarded `TaintProvenance`. See "explain_taint mechanism" and the split error model under "Error handling". |
+| `judge` | `{path?, confidence_floor?, write?}` | `[{fingerprint, label, confidence, rationale}]` | **`network: true`**, opt-in, never auto-invoked, never folded into `scan`. Requires `WARDLINE_OPENROUTER_API_KEY`; fails loud (an `isError` result with remediation guidance) without it. `write` appends above-floor FALSE_POSITIVEs to `.wardline/judged.yaml`. |
 | `baseline_create` | `{path?, reason}` | `{baselined_count, path}` | **`reason` required.** Refuses if a baseline already exists (mirrors CLI). Description steers toward fixing. |
 | `baseline_update` | `{path?, reason}` | `{baselined_count, path}` | **`reason` required.** Re-derives and overwrites. |
 | `waiver_add` | `{fingerprint, reason, expires}` | `{waiver}` | **`reason` and `expires` both required.** No permanent silent waivers. |
