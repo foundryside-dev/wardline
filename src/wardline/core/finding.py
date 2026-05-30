@@ -33,6 +33,12 @@ class Kind(StrEnum):
     SUGGESTION = "suggestion"
 
 
+class SuppressionState(StrEnum):
+    ACTIVE = "active"        # not suppressed — the default
+    BASELINED = "baselined"  # matched a baseline fingerprint
+    WAIVED = "waived"        # matched an active waiver
+
+
 @dataclass(frozen=True, slots=True)
 class Location:
     path: str  # repo-relative POSIX path; Filigree's file_path anchor
@@ -57,6 +63,8 @@ class Finding:
     # Immutability is shallow: the contained mapping is not deep-frozen and must
     # be treated as read-only by convention. SP1 may enforce via MappingProxyType.
     properties: Mapping[str, Any] = field(default_factory=dict)
+    suppressed: SuppressionState = SuppressionState.ACTIVE
+    suppression_reason: str | None = None
 
     def to_jsonl(self) -> str:
         payload: dict[str, Any] = {
@@ -77,6 +85,8 @@ class Finding:
             "confidence": self.confidence,
             "related_entities": list(self.related_entities),
             "properties": dict(self.properties),
+            "suppressed": self.suppressed.value,
+            "suppression_reason": self.suppression_reason,
         }
         return json.dumps(payload, sort_keys=True, ensure_ascii=False)
 
@@ -132,4 +142,8 @@ def to_filigree_metadata(finding: Finding) -> dict[str, Any]:
         wardline["related_entities"] = list(finding.related_entities)
     if finding.properties:
         wardline["properties"] = dict(finding.properties)
+    if finding.suppressed is not SuppressionState.ACTIVE:
+        wardline["suppressed"] = finding.suppressed.value
+        if finding.suppression_reason is not None:
+            wardline["suppression_reason"] = finding.suppression_reason
     return {"wardline": wardline}

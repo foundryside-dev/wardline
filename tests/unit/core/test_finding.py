@@ -73,3 +73,48 @@ def test_finding_fingerprint_is_deterministic_and_discriminating() -> None:
     )
     # optional fields default cleanly
     assert len(compute_finding_fingerprint(rule_id="WLN-ENGINE-X", path="a.py", line_start=None)) == 64
+
+
+def test_finding_defaults_to_active_suppression() -> None:
+    from wardline.core.finding import SuppressionState
+
+    assert _finding().suppressed is SuppressionState.ACTIVE
+    assert _finding().suppression_reason is None
+
+
+def test_suppressed_serializes_in_jsonl() -> None:
+    from wardline.core.finding import SuppressionState
+
+    f = _finding(suppressed=SuppressionState.WAIVED, suppression_reason="reviewed")
+    obj = json.loads(f.to_jsonl())
+    assert obj["suppressed"] == "waived"
+    assert obj["suppression_reason"] == "reviewed"
+
+
+def test_active_suppression_serializes_too() -> None:
+    obj = json.loads(_finding().to_jsonl())
+    assert obj["suppressed"] == "active"
+    assert obj["suppression_reason"] is None
+
+
+def test_suppressed_not_in_fingerprint_inputs() -> None:
+    # suppression must never change identity.
+    from dataclasses import replace
+
+    from wardline.core.finding import SuppressionState
+
+    f = _finding()
+    g = replace(f, suppressed=SuppressionState.BASELINED)
+    assert f.fingerprint == g.fingerprint  # fingerprint is a stored field, unaffected
+
+
+def test_filigree_metadata_includes_suppression_only_when_suppressed() -> None:
+    from wardline.core.finding import SuppressionState, to_filigree_metadata
+
+    active = to_filigree_metadata(_finding())["wardline"]
+    assert "suppressed" not in active
+    waived = to_filigree_metadata(
+        _finding(suppressed=SuppressionState.WAIVED, suppression_reason="ok")
+    )["wardline"]
+    assert waived["suppressed"] == "waived"
+    assert waived["suppression_reason"] == "ok"
