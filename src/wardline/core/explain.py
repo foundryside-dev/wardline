@@ -172,6 +172,60 @@ def _explanation_from_blob(view: Any) -> TaintExplanation:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ChainHop:
+    qualname: str
+    tier_in: str | None
+    tier_out: str | None
+    contributing_callee_qualname: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class TaintChain:
+    hops: list[ChainHop]
+    truncated_at: str | None  # the next qualname we could NOT walk (stale/absent/max_hops), or None
+
+
+def explain_chain(
+    root: Path,
+    *,
+    sink_qualname: str,
+    clarion: Any,
+    max_hops: int = 20,
+    config_path: Path | None = None,
+) -> TaintChain:
+    """Walk contributing_callee_qualname from the sink to the boundary, batch_getting
+    each hop's fresh fact. Truncate EXPLICITLY (never silently) on a stale/absent hop,
+    an unresolvable callee, or max_hops. Entirely client-side; Clarion never parses."""
+    hops: list[ChainHop] = []
+    current: str | None = sink_qualname
+    seen: set[str] = set()
+    while current is not None:
+        if len(hops) >= max_hops:
+            return TaintChain(hops=hops, truncated_at=current)
+        if current in seen:  # cycle guard
+            return TaintChain(hops=hops, truncated_at=current)
+        seen.add(current)
+        views = clarion.batch_get([current])
+        if not views:
+            return TaintChain(hops=hops, truncated_at=current)  # soft outage
+        view = views[0]
+        if view.qualname != current or not _is_fresh(view):
+            # wrong-entity echo (contract violation) or stale/absent → explicit stop
+            return TaintChain(hops=hops, truncated_at=current)
+        blob = view.wardline_json or {}
+        taint = blob.get("taint", {})
+        next_q = taint.get("contributing_callee_qualname")
+        hops.append(ChainHop(
+            qualname=current,
+            tier_in=taint.get("actual_return"),
+            tier_out=taint.get("declared_return"),
+            contributing_callee_qualname=next_q,
+        ))
+        current = next_q  # None at the boundary leaf → clean finish
+    return TaintChain(hops=hops, truncated_at=None)
+
+
 def explain_finding(
     root: Path,
     *,
