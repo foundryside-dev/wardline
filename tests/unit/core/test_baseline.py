@@ -43,6 +43,12 @@ def test_build_document_dedups_and_sorts_severity_first() -> None:
     assert [e["fingerprint"] for e in entries] == [_FP_B, _FP_A]  # CRITICAL first; dup collapsed
 
 
+def test_build_document_is_order_independent() -> None:
+    # Git-stability: the committed file must not churn on finding order.
+    fs = [_finding(_FP_A, sev=Severity.WARN), _finding(_FP_B, sev=Severity.CRITICAL)]
+    assert build_baseline_document(fs) == build_baseline_document(list(reversed(fs)))
+
+
 def test_write_then_load_round_trips(tmp_path: Path) -> None:
     p = tmp_path / ".wardline" / "baseline.yaml"
     write_baseline(p, [_finding(_FP_A), _finding(_FP_B)])

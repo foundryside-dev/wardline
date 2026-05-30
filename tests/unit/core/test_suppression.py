@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 from wardline.core.baseline import Baseline
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.suppression import apply_suppressions, gate_trips
@@ -25,6 +27,16 @@ def _empty_baseline() -> Baseline:
 
 def _no_waivers() -> WaiverSet:
     return WaiverSet(())
+
+
+def test_defect_without_line_start_is_rejected() -> None:
+    # Spec §12 invariant: a DEFECT entering suppression must carry line_start.
+    bad = Finding(
+        rule_id="PY-WL-101", message="m", severity=Severity.ERROR, kind=Kind.DEFECT,
+        location=Location(path="src/m.py", line_start=None), fingerprint=_FP_A,
+    )
+    with pytest.raises(AssertionError):
+        apply_suppressions([bad], _empty_baseline(), _no_waivers(), today=_TODAY)
 
 
 def test_baselined_finding_is_annotated() -> None:

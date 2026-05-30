@@ -30,6 +30,14 @@ def apply_suppressions(
         if f.kind is not Kind.DEFECT:
             out.append(f)
             continue
+        # Engine invariant (spec §12): a DEFECT must carry a line, or its fingerprint's
+        # line discriminator collapses to "None" and collision risk rises under the
+        # strict match. Rule findings always set line_start; assert it to catch any
+        # future rule that emits a line-less DEFECT.
+        assert f.location.line_start is not None, (
+            f"DEFECT {f.rule_id} entered suppression with line_start=None — "
+            f"weak fingerprint identity (collision risk)"
+        )
         waiver = waivers.match(f.fingerprint, today)
         if waiver is not None:
             out.append(replace(f, suppressed=SuppressionState.WAIVED, suppression_reason=waiver.reason))

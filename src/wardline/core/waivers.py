@@ -55,7 +55,7 @@ def parse_waivers(raw: Sequence[Mapping[str, Any]]) -> tuple[Waiver, ...]:
             raise ConfigError(f"waivers[{idx}] must be a mapping")
         fp = item.get("fingerprint")
         if not isinstance(fp, str) or len(fp) != 64 or not set(fp) <= _HEX:
-            raise ConfigError(f"waivers[{idx}].fingerprint must be a 64-char hex string")
+            raise ConfigError(f"waivers[{idx}].fingerprint must be a 64-char lowercase hex string")
         if fp in seen:
             raise ConfigError(f"waivers[{idx}]: duplicate fingerprint {fp!r}")
         seen.add(fp)

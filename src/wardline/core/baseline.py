@@ -91,7 +91,7 @@ def _build_baseline(raw: Any, name: str = "baseline.yaml") -> Baseline:
             raise ConfigError(f"{name} entries[{idx}] must be a mapping")
         fp = entry.get("fingerprint")
         if not isinstance(fp, str) or len(fp) != 64 or not set(fp) <= _HEX:
-            raise ConfigError(f"{name} entries[{idx}].fingerprint must be a 64-char hex string")
+            raise ConfigError(f"{name} entries[{idx}].fingerprint must be a 64-char lowercase hex string")
         if fp in fingerprints:
             raise ConfigError(f"{name} entries[{idx}]: duplicate fingerprint {fp!r}")
         fingerprints.add(fp)
