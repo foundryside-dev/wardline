@@ -14,6 +14,7 @@ from wardline.core.discovery import discover
 from wardline.core.emit import JsonlSink
 from wardline.core.errors import WardlineError
 from wardline.core.finding import Kind, Severity, SuppressionState
+from wardline.core.sarif import SarifSink
 from wardline.core.suppression import apply_suppressions, gate_trips
 from wardline.core.waivers import WaiverSet, parse_waivers
 from wardline.scanner.analyzer import WardlineAnalyzer
@@ -42,10 +43,8 @@ def scan(
     cache_dir: Path | None,
 ) -> None:
     """Scan PATH for findings."""
-    if fmt == "sarif":
-        click.echo("SARIF output is not yet implemented (SP4).", err=True)
-        raise SystemExit(2)
-    output = output if output is not None else (path / "findings.jsonl")
+    default_name = "findings.sarif" if fmt == "sarif" else "findings.jsonl"
+    output = output if output is not None else (path / default_name)
     try:
         cfg_path = config_path or (path / "wardline.yaml")
         cfg = config_mod.load(cfg_path)
@@ -60,7 +59,8 @@ def scan(
         baseline = load_baseline(path / ".wardline" / "baseline.yaml")
         waivers = WaiverSet(parse_waivers(cfg.waivers))
         findings = apply_suppressions(findings, baseline, waivers, today=date.today())
-        JsonlSink(output).write(findings)
+        sink = SarifSink(output) if fmt == "sarif" else JsonlSink(output)
+        sink.write(findings)
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc

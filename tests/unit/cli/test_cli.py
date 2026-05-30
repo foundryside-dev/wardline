@@ -27,9 +27,34 @@ def test_scan_writes_findings_and_exits_zero(tmp_path: Path) -> None:
     assert any(_json.loads(ln)["rule_id"] == "WLN-ENGINE-METRICS" for ln in lines)
 
 
-def test_scan_sarif_is_not_yet_implemented(tmp_path: Path) -> None:
-    result = CliRunner().invoke(cli, ["scan", str(FIXTURE), "--format", "sarif"])
-    assert result.exit_code == 2
+def test_scan_format_sarif_writes_sarif_file(tmp_path: Path) -> None:
+    out = tmp_path / "out.sarif"
+    result = CliRunner().invoke(cli, ["scan", str(FIXTURE), "--format", "sarif", "--output", str(out)])
+    assert result.exit_code == 0, result.output
+    log = _json.loads(out.read_text(encoding="utf-8"))
+    assert log["version"] == "2.1.0"
+    assert log["runs"][0]["tool"]["driver"]["name"] == "wardline"
+
+
+def test_scan_format_sarif_default_output_path(tmp_path: Path) -> None:
+    import shutil
+
+    project = tmp_path / "proj"
+    shutil.copytree(FIXTURE, project)
+    result = CliRunner().invoke(cli, ["scan", str(project), "--format", "sarif"])
+    assert result.exit_code == 0, result.output
+    assert (project / "findings.sarif").exists()
+
+
+def test_scan_format_sarif_still_gates(tmp_path: Path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)  # PY-WL-101 ERROR defect
+    result = CliRunner().invoke(
+        cli, ["scan", str(proj), "--format", "sarif", "--output", str(tmp_path / "o.sarif"),
+              "--fail-on", "ERROR"]
+    )
+    assert result.exit_code == 1, result.output
 
 
 def test_judge_stub_exits_2_and_baseline_is_a_group() -> None:
