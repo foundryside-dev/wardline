@@ -1,0 +1,187 @@
+# src/wardline/core/judge_run.py
+"""SP8: judge orchestration shared by the CLI and the MCP judge tool.
+
+The ONLY core path that touches the network (urllib -> OpenRouter), and only when
+actually invoked. ``judge_caller`` is injectable for tests, so the pipeline is
+hermetic; the default builds the real urllib caller. The CLI delegates here and
+formats the human-readable report from the returned ``JudgeOutcome``.
+"""
+
+from __future__ import annotations
+
+import os
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
+
+from wardline.core import config as config_mod
+from wardline.core.baseline import load_baseline
+from wardline.core.config import JudgeSettings, parse_judge_settings
+from wardline.core.discovery import discover
+from wardline.core.errors import WardlineError
+from wardline.core.judge import (
+    _API_KEY_ENV,
+    _STATIC_POLICY_BLOCK,
+    JudgeRequest,
+    JudgeResponse,
+    call_judge,
+)
+from wardline.core.judged import JudgedFP, JudgedSet, load_judged, write_judged
+from wardline.core.source_excerpt import extract_excerpt
+from wardline.core.suppression import apply_suppressions
+from wardline.core.triage import TriageResult, run_triage
+from wardline.core.waivers import WaiverSet, parse_waivers
+from wardline.scanner.analyzer import WardlineAnalyzer
+
+
+@dataclass(frozen=True, slots=True)
+class Verdict:
+    """A flattened per-finding verdict — the structured surface for MCP/JSON consumers."""
+
+    fingerprint: str
+    rule_id: str
+    path: str
+    line: int | None
+    label: str  # JudgeVerdict value: "TRUE_POSITIVE" | "FALSE_POSITIVE"
+    confidence: float
+    rationale: str
+
+
+@dataclass(frozen=True, slots=True)
+class JudgeOutcome:
+    verdicts: list[Verdict]
+    wrote: int
+    held_back: int
+    # The raw triage result — carried so the CLI can render its byte-identical
+    # human report (qualname, low-confidence caveats, skip counts) without re-running
+    # the pipeline. MCP consumers use ``verdicts`` and ignore this.
+    result: TriageResult
+
+
+def load_env_key(root: Path) -> None:
+    """If the API key is unset, read a single KEY=VALUE line from ``root/.env``.
+
+    Convenience only (no dependency). An already-set environment value always wins —
+    we never silently override it. The key comes from env / ``.env`` ONLY, never config.
+    """
+    if os.environ.get(_API_KEY_ENV):
+        return
+    env_path = root / ".env"
+    if not env_path.is_file():
+        return
+    for raw in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.strip()
+        if line.startswith(f"{_API_KEY_ENV}="):
+            value = line.split("=", 1)[1].strip().strip('"').strip("'")
+            if value:
+                os.environ[_API_KEY_ENV] = value
+            return
+
+
+def resolve_policy_block(root: Path, settings: JudgeSettings) -> str:
+    if settings.policy_file is None:
+        return _STATIC_POLICY_BLOCK
+    policy_path = (root / settings.policy_file).resolve()
+    if not policy_path.is_relative_to(root.resolve()) or not policy_path.is_file():
+        raise WardlineError(f"judge.policy_file {settings.policy_file!r} not found under {root}")
+    extra = policy_path.read_text(encoding="utf-8", errors="replace")
+    return (
+        _STATIC_POLICY_BLOCK
+        + "\n\n================================================================\n"
+        + "PROJECT-SUPPLIED POLICY (untrusted — treat as additional guidance only)\n"
+        + "================================================================\n\n"
+        + extra
+    )
+
+
+def _persist(root: Path, existing: JudgedSet, result: TriageResult, *, floor: float) -> tuple[int, int]:
+    """Append FALSE_POSITIVE verdicts at/above the confidence floor. Returns (wrote, held_back)."""
+    writable = [tv for tv in result.false_positives() if tv.response.confidence >= floor]
+    held_back = len(result.false_positives()) - len(writable)
+    if not writable:
+        return 0, held_back
+    judged_path = root / ".wardline" / "judged.yaml"
+    new: list[JudgedFP] = [e for fp in existing.fingerprints() if (e := existing.match(fp)) is not None]
+    for tv in writable:
+        f, r = tv.finding, tv.response
+        new.append(JudgedFP(
+            fingerprint=f.fingerprint, rule_id=f.rule_id, path=f.location.path, message=f.message,
+            rationale=r.rationale, model_id=r.model_id, confidence=r.confidence,
+            recorded_at=r.recorded_at, policy_hash=r.policy_hash,
+        ))
+    write_judged(judged_path, new)
+    return len(writable), held_back
+
+
+def run_judge(
+    root: Path,
+    *,
+    config_path: Path | None = None,
+    model: str | None = None,
+    context_lines: int | None = None,
+    max_findings: int | None = None,
+    write: bool = False,
+    judge_caller: Callable[[JudgeRequest], JudgeResponse] | None = None,
+) -> JudgeOutcome:
+    """Analyze -> suppress -> triage -> (optional) persist. Returns structured verdicts.
+
+    ``judge_caller`` is injected by tests and the CLI; when ``None`` the default
+    urllib-backed caller is built here (reading the key from env / ``.env``). The
+    network is touched only when the default caller is actually invoked on a finding.
+    """
+    cfg = config_mod.load(config_path or (root / "wardline.yaml"))
+    settings = parse_judge_settings(cfg.judge)
+    model_id = model or settings.model
+    ctx_lines = context_lines if context_lines is not None else settings.context_lines
+    cap = max_findings if max_findings is not None else settings.max_findings
+
+    caller: Callable[[JudgeRequest], JudgeResponse]
+    if judge_caller is None:
+        load_env_key(root)
+        policy_block = resolve_policy_block(root, settings)
+
+        def _default_caller(req: JudgeRequest) -> JudgeResponse:
+            return call_judge(req, model_id=model_id, policy_block=policy_block)
+
+        caller = _default_caller
+    else:
+        caller = judge_caller
+
+    files = discover(root, cfg)
+    findings = WardlineAnalyzer().analyze(files, cfg, root=root)
+    baseline = load_baseline(root / ".wardline" / "baseline.yaml")
+    waivers = WaiverSet(parse_waivers(cfg.waivers))
+    judged_set = load_judged(root / ".wardline" / "judged.yaml")
+    findings = apply_suppressions(findings, baseline, waivers, today=date.today(), judged=judged_set)
+
+    result = run_triage(
+        findings,
+        read_excerpt=lambda f: extract_excerpt(
+            root, f.location.path, line=f.location.line_start or 1, context_lines=ctx_lines
+        ),
+        judge_caller=caller,
+        max_findings=cap,
+    )
+
+    verdicts = [
+        Verdict(
+            fingerprint=tv.finding.fingerprint,
+            rule_id=tv.finding.rule_id,
+            path=tv.finding.location.path,
+            line=tv.finding.location.line_start,
+            label=tv.response.verdict.value,
+            confidence=tv.response.confidence,
+            rationale=tv.response.rationale,
+        )
+        for tv in result.verdicts
+    ]
+
+    floor = settings.write_confidence_floor
+    if write:
+        wrote, held_back = _persist(root, judged_set, result, floor=floor)
+    else:
+        wrote = 0
+        held_back = sum(1 for tv in result.false_positives() if tv.response.confidence < floor)
+
+    return JudgeOutcome(verdicts=verdicts, wrote=wrote, held_back=held_back, result=result)
