@@ -30,6 +30,8 @@ from wardline.core.sarif import SarifSink
               help="Persist L3 summary cache here for faster incremental scans.")
 @click.option("--filigree-url", "filigree_url", default=None,
               help="POST findings to this Filigree Loom scan-results URL (opt-in).")
+@click.option("--clarion-url", "clarion_url", default=None,
+              help="Persist per-entity taint facts to this Clarion taint-store URL (opt-in, fail-soft).")
 def scan(
     path: Path,
     config_path: Path | None,
@@ -38,11 +40,13 @@ def scan(
     fail_on: str | None,
     cache_dir: Path | None,
     filigree_url: str | None,
+    clarion_url: str | None,
 ) -> None:
     """Scan PATH for findings."""
     default_name = "findings.sarif" if fmt == "sarif" else "findings.jsonl"
     output = output if output is not None else (path / default_name)
     emit_result: EmitResult | None = None
+    clarion_result = None
     try:
         result = run_scan(path, config_path=config_path, cache_dir=cache_dir)
         findings = result.findings
@@ -52,6 +56,20 @@ def scan(
         # payload bug -> caught below -> exit 2; an unreachable sibling warns + continues.
         if filigree_url is not None:
             emit_result = FiligreeEmitter(filigree_url).emit(findings)
+        # Clarion taint-store write is fail-soft: an outage/403 returns a not-reachable
+        # WriteResult (reported below); a ClarionError (missing extra, 4xx, bad scheme)
+        # is a WardlineError → caught here → exit 2, exactly as Filigree errors do.
+        if clarion_url is not None:
+            from wardline.clarion.client import ClarionClient
+            from wardline.clarion.config import load_clarion_token, resolve_project_name
+            from wardline.clarion.write import write_facts_to_clarion
+
+            client = ClarionClient(
+                clarion_url,
+                secret=load_clarion_token(path),
+                project=resolve_project_name(path),
+            )
+            clarion_result = write_facts_to_clarion(result, path, client)
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
@@ -71,6 +89,18 @@ def scan(
                 line += f" / {emit_result.failed} failed"
             if emit_result.warnings:
                 line += f"; {len(emit_result.warnings)} warning(s): " + "; ".join(emit_result.warnings)
+            click.echo(line)
+    if clarion_result is not None:
+        if not clarion_result.reachable:
+            reason = clarion_result.disabled_reason or "unreachable"
+            click.echo(
+                f"warning: Clarion taint store not written ({reason}); scan unaffected.",
+                err=True,
+            )
+        else:
+            line = f"wrote {clarion_result.written} taint fact(s) to {clarion_url}"
+            if clarion_result.unresolved_qualnames:
+                line += f"; {len(clarion_result.unresolved_qualnames)} qualname(s) unresolved (not indexed by Clarion)"
             click.echo(line)
     s = result.summary
     click.echo(

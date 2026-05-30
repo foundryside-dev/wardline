@@ -68,7 +68,7 @@ def _cfg(args: dict[str, Any], root: Path) -> Path | None:
     return _resolve_under_root(root, args["config"]) if args.get("config") else None
 
 
-def _scan(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def _scan(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, Any]:
     path = _resolve_under_root(root, args["path"]) if args.get("path") else root
     fail_on = args.get("fail_on")
     try:
@@ -78,6 +78,26 @@ def _scan(args: dict[str, Any], root: Path) -> dict[str, Any]:
         # letting it surface as an opaque generic JSON-RPC -32603.
         raise ToolError("fail_on must be one of CRITICAL/ERROR/WARN/INFO") from exc
     result = run_scan(path, config_path=_cfg(args, root), confine_to_root=True)
+    # Fail-soft Clarion write: only when a client was injected (server has a URL).
+    # An outage/403 yields a not-reachable WriteResult; never raises here.
+    clarion_block: dict[str, Any] | None = None
+    if clarion is not None:
+        from wardline.clarion.client import WriteResult
+        from wardline.clarion.write import write_facts_to_clarion
+        from wardline.core.errors import ClarionError
+        try:
+            wr = write_facts_to_clarion(result, path, clarion)
+        except ClarionError as exc:
+            # Non-load-bearing enrichment: the MCP loop's scan payload must survive
+            # an optional-write failure (bad config / missing extra / 4xx). Report,
+            # don't discard the scan.
+            wr = WriteResult(reachable=False, disabled_reason=str(exc))
+        clarion_block = {
+            "reachable": wr.reachable,
+            "written": wr.written,
+            "unresolved_qualnames": list(wr.unresolved_qualnames),
+            "disabled_reason": wr.disabled_reason,
+        }
     decision = gate_decision(result, threshold)
     return {
         "files_scanned": result.files_scanned,
@@ -91,10 +111,15 @@ def _scan(args: dict[str, Any], root: Path) -> dict[str, Any]:
         },
         "gate": {"tripped": decision.tripped, "fail_on": decision.fail_on,
                  "exit_class": decision.exit_class},
+        "clarion": clarion_block,
     }
 
 
-def _explain_taint(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def _explain_taint(
+    args: dict[str, Any], root: Path, clarion: Any = None, server_root: Path | None = None
+) -> dict[str, Any]:
+    # clarion/server_root are accepted for the Task-8 read path but DELIBERATELY
+    # UNUSED here: SP8 explain_taint behavior is unchanged in this task.
     # path+line identify a source location of an existing finding (not a scan
     # subdir): pass path through only when a line is also given. The path is a
     # MATCH KEY (compared against a finding's relative posix location), not a file
@@ -208,12 +233,25 @@ _SEVERITY_ENUM = ["CRITICAL", "ERROR", "WARN", "INFO"]
 
 
 class WardlineMCPServer:
-    def __init__(self, *, root: Path) -> None:
+    def __init__(self, *, root: Path, clarion_url: str | None = None) -> None:
         self.root = Path(root)
+        self.clarion_url = clarion_url
         self.rpc = JsonRpcServer(server_name="wardline", server_version=__version__)
         self._tools: dict[str, Tool] = {}
         self._register_tools()
         self._wire()
+
+    def _clarion_client(self) -> Any:
+        """Build a ClarionClient for this server's root, or None when no URL is set."""
+        if self.clarion_url is None:
+            return None
+        from wardline.clarion.client import ClarionClient
+        from wardline.clarion.config import load_clarion_token, resolve_project_name
+        return ClarionClient(
+            self.clarion_url,
+            secret=load_clarion_token(self.root),
+            project=resolve_project_name(self.root),
+        )
 
     def _register_tools(self) -> None:
         self.add_tool(Tool(
@@ -229,7 +267,7 @@ class WardlineMCPServer:
                     "config": {"type": "string"},
                 },
             },
-            handler=_scan,
+            handler=lambda args, root: _scan(args, root, self._clarion_client()),
         ))
         self.add_tool(Tool(
             name="explain_taint",
@@ -245,7 +283,7 @@ class WardlineMCPServer:
                     "config": {"type": "string"},
                 },
             },
-            handler=_explain_taint,
+            handler=lambda args, root: _explain_taint(args, root, self._clarion_client(), self.root),
         ))
         self.add_tool(Tool(
             name="judge", network=True,

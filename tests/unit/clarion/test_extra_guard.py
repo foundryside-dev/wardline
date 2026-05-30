@@ -1,6 +1,8 @@
 # tests/unit/clarion/test_extra_guard.py
 import builtins
+
 import pytest
+
 from wardline.clarion import require_blake3
 from wardline.core.errors import ClarionError, WardlineError
 
