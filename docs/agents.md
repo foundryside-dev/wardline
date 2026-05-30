@@ -149,6 +149,26 @@ the file is written, so the same command both publishes the report and blocks th
 agent's change. See the [Loom integration guide](guides/loom.md) for the full
 output matrix, including the native Filigree emitter.
 
-!!! tip "Coming: an MCP server"
-    A native `mcp__wardline__*` server is planned so an agent can call Wardline
-    as a tool directly, without shelling out to the CLI.
+## Call Wardline as MCP tools
+
+Wardline ships a native, dependency-free MCP server so an agent can call it as
+tools instead of shelling out. Launch it over stdio:
+
+```console
+$ wardline mcp --root .
+```
+
+Tools: `scan` (structured findings + suppression summary + gate), `explain_taint`
+(the tainted callee and originating boundary for one finding — call it right
+after a scan and before editing), `judge` (opt-in, network), and the loud
+suppression tools `baseline_create` / `baseline_update` / `waiver_add` (each
+requires a reason). Resources expose the trust vocabulary, rule catalog, config,
+and config schema. The `wardline:loop` prompt documents the intended
+scan → explain → fix-at-the-boundary → rescan cycle.
+
+The server is stateless — no session state is carried between calls; the
+read-only tools (`scan`, `explain_taint`) are pure functions of your code on disk
+and your config, and the analysis core stays zero-dependency. Only `judge`
+touches the network; the suppression tools (`baseline_create` / `baseline_update`
+/ `waiver_add`, and `judge` with `write`) write to your project files as
+requested.

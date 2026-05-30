@@ -1,7 +1,9 @@
 """SP8: the Wardline MCP server — tools/resources/prompts wired to core/.
 
-Stateless: every tool call is a pure function of (disk + config). Rooted at a
-project path (launch cwd by default)."""
+Stateless (no server-side session carried between calls). The read-only tools
+(scan, explain_taint) are pure functions of (disk + config); the suppression
+tools (baseline_create/baseline_update, waiver_add) and judge --write mutate
+project files on disk. Rooted at a project path (launch cwd by default)."""
 
 from __future__ import annotations
 
