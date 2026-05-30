@@ -85,6 +85,8 @@ def scan(
                 f"emitted {len(findings)} finding(s) to {filigree_url} — "
                 f"{emit_result.created} created / {emit_result.updated} updated"
             )
+            if emit_result.failed:
+                line += f" / {emit_result.failed} failed"
             if emit_result.warnings:
                 line += f"; {len(emit_result.warnings)} warning(s): " + "; ".join(emit_result.warnings)
             click.echo(line)

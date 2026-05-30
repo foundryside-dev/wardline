@@ -45,6 +45,13 @@ def test_function_qualified_name_composition(vec: dict[str, Any]) -> None:
     assert f"{module}.{vec['qualname']}" == vec["expected_qualified_name"]
 
 
+def test_qualified_name_vector_kinds_are_known() -> None:
+    # Guard against a resync introducing a new `kind` that the parametrized tests above
+    # would silently skip, leaving a contract vector unexercised.
+    kinds = {v["kind"] for v in _FIXTURE["qualified_name_vectors"]}
+    assert kinds <= {"function", "module"}, f"unhandled qualname vector kinds: {kinds - {'function', 'module'}}"
+
+
 def test_module_kind_vector_prefix_matches() -> None:
     # The single kind=="module" vector: Wardline emits no module ENTITY, but the
     # module dotted prefix it produces must equal the expected qualified_name.

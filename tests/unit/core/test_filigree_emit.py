@@ -61,7 +61,9 @@ def test_suggestion_capped_at_10k_and_omitted_when_none() -> None:
     assert "suggestion" not in none_wire
     long = "x" * 20000
     capped = build_scan_results_body([_f(suggestion=long)])["findings"][0]["suggestion"]
-    assert len(capped) <= 10000
+    assert len(capped) == 10000  # exact boundary, not just <=
+    exact = build_scan_results_body([_f(suggestion="y" * 10000)])["findings"][0]["suggestion"]
+    assert exact == "y" * 10000  # at-limit passes through untouched
 
 
 def test_all_kinds_emitted() -> None:
@@ -113,7 +115,37 @@ def test_http_400_raises_filigree_emit_error() -> None:
     t = _FakeTransport(response=Response(status=400, body='{"error":"bad path key"}'))
     with pytest.raises(FiligreeEmitError) as exc:
         FiligreeEmitter("http://x", transport=t).emit([_f()])
-    assert "bad path key" in str(exc.value)  # response body echoed
+    assert '{"error":"bad path key"}' in str(exc.value)  # verbatim response body echoed
+
+
+def test_http_5xx_is_sibling_degraded_not_loud() -> None:
+    # A server outage (503) is the sibling's fault, not a Wardline payload bug:
+    # warn + continue (reachable=False), never exit-2. (Charter: non-load-bearing.)
+    t = _FakeTransport(response=Response(status=503, body="upstream down"))
+    res = FiligreeEmitter("http://x", transport=t).emit([_f()])
+    assert res.reachable is False
+
+
+def test_2xx_with_unparseable_body_warns_not_crashes() -> None:
+    # POST accepted (2xx) but the body is not a JSON object -> surface a warning,
+    # reachable=True, zeroed stats; must NOT raise.
+    t = _FakeTransport(response=Response(status=200, body="<html>maintenance</html>"))
+    res = FiligreeEmitter("http://x", transport=t).emit([_f()])
+    assert res.reachable is True
+    assert res.created == 0 and res.updated == 0
+    assert res.warnings and "non-JSON-object" in res.warnings[0]
+
+
+def test_2xx_with_nonnumeric_stats_does_not_crash() -> None:
+    body = json.dumps({"stats": {"findings_created": None, "findings_updated": "x"}, "warnings": []})
+    res = FiligreeEmitter("http://x", transport=_FakeTransport(Response(200, body))).emit([_f()])
+    assert res.reachable is True and res.created == 0 and res.updated == 0
+
+
+def test_failed_list_surfaced_in_result() -> None:
+    body = json.dumps({"stats": {"findings_created": 1}, "failed": ["id9"], "warnings": []})
+    res = FiligreeEmitter("http://x", transport=_FakeTransport(Response(200, body))).emit([_f()])
+    assert res.failed == 1
 
 
 def test_connection_error_is_sibling_absent() -> None:
@@ -121,3 +153,32 @@ def test_connection_error_is_sibling_absent() -> None:
     res = FiligreeEmitter("http://x", transport=t).emit([_f()])
     assert res.reachable is False  # warns + continues; no raise
     assert isinstance(res, EmitResult)
+
+
+def test_urllib_transport_converts_httperror_to_response(monkeypatch) -> None:
+    # LYNCHPIN: the absent-vs-loud split depends on UrllibTransport catching HTTPError
+    # (a URLError subclass) and returning a Response with its status — NOT re-raising it
+    # (which emit() would then misclassify as sibling-absent). Pin it directly.
+    import io
+    import urllib.error
+    import urllib.request
+
+    from wardline.core.filigree_emit import UrllibTransport
+
+    def _raise_http_error(req, timeout=None):  # noqa: ARG001
+        raise urllib.error.HTTPError(
+            url="http://x/api/loom/scan-results", code=400, msg="Bad Request",
+            hdrs=None, fp=io.BytesIO(b'{"error":"path required"}'),
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", _raise_http_error)
+    resp = UrllibTransport().post("http://x/api/loom/scan-results", b"{}", {"Content-Type": "application/json"})
+    assert resp.status == 400
+    assert "path required" in resp.body
+
+
+def test_urllib_transport_rejects_non_http_scheme() -> None:
+    from wardline.core.filigree_emit import UrllibTransport
+
+    with pytest.raises(FiligreeEmitError):
+        UrllibTransport().post("file:///etc/passwd", b"{}", {})

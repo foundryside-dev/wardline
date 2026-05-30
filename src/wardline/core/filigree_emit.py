@@ -11,15 +11,24 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
-from collections.abc import Sequence
-from dataclasses import dataclass, field
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from wardline.core.errors import FiligreeEmitError
 from wardline.core.finding import Finding, severity_to_filigree, to_filigree_metadata
 
 _SUGGESTION_LIMIT = 10000
+_ALLOWED_SCHEMES = ("http", "https")
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _cap_suggestion(suggestion: str | None) -> str | None:
@@ -70,25 +79,36 @@ class EmitResult:
     reachable: bool
     created: int = 0
     updated: int = 0
-    warnings: tuple[str, ...] = field(default_factory=tuple)
+    failed: int = 0
+    warnings: tuple[str, ...] = ()
 
 
 class Transport(Protocol):
-    def post(self, url: str, body: bytes, headers: dict[str, str]) -> Response: ...
+    def post(self, url: str, body: bytes, headers: Mapping[str, str]) -> Response: ...
 
 
 class UrllibTransport:
     def __init__(self, timeout: float = 30.0) -> None:
         self._timeout = timeout
 
-    def post(self, url: str, body: bytes, headers: dict[str, str]) -> Response:
-        request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    def post(self, url: str, body: bytes, headers: Mapping[str, str]) -> Response:
+        # Restrict to http(s): a stray file://, ftp:// or data: URL is a user error, not
+        # an ingest target — turn it into a clean loud failure (and justify the S310 below).
+        scheme = urllib.parse.urlsplit(url).scheme.lower()
+        if scheme not in _ALLOWED_SCHEMES:
+            raise FiligreeEmitError(
+                f"--filigree-url must use http or https; got scheme {scheme!r} in {url!r}"
+            )
+        request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")
         try:
             with urllib.request.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
-                return Response(status=resp.status, body=resp.read().decode("utf-8"))
+                return Response(status=resp.status, body=resp.read().decode("utf-8", "replace"))
         except urllib.error.HTTPError as exc:
-            # An HTTP status reached us — protocol-level outcome, not an outage.
-            return Response(status=exc.code, body=exc.read().decode("utf-8", "replace"))
+            # An HTTP status reached us — a protocol-level outcome, not an outage. Convert it
+            # to a Response so emit() classifies by status (4xx loud / 5xx soft), and close
+            # the underlying socket.
+            with exc:
+                return Response(status=exc.code, body=exc.read().decode("utf-8", "replace"))
 
 
 class FiligreeEmitter:
@@ -107,15 +127,35 @@ class FiligreeEmitter:
             # Connection refused / DNS / timeout — sibling absent. Enrichment is
             # non-load-bearing: warn (at the CLI) and continue.
             return EmitResult(reachable=False)
-        if resp.status >= 400:
+        if resp.status >= 500:
+            # Server-side outage — the sibling is degraded, not a Wardline bug. Treat like
+            # absent (warn + continue) so a Filigree 503 never makes the gate load-bearing.
+            return EmitResult(reachable=False)
+        if not 200 <= resp.status < 300:
+            # 3xx (a redirect reached the client) or 4xx (request rejected): Wardline sent a
+            # request the server would not accept — bad payload / wrong endpoint / auth. Loud.
             raise FiligreeEmitError(
                 f"Filigree rejected scan-results ({resp.status}) at {self._url}: {resp.body}"
             )
-        payload = json.loads(resp.body) if resp.body else {}
+        # 2xx success. Parse defensively: a 2xx with an unreadable body means the POST was
+        # accepted but the report is unparseable — surface a warning, never crash (charter).
+        warnings: list[str] = []
+        try:
+            parsed = json.loads(resp.body) if resp.body else {}
+        except json.JSONDecodeError:
+            parsed = None
+        payload: dict[str, Any] = parsed if isinstance(parsed, dict) else {}
+        if not isinstance(parsed, dict):
+            warnings.append(
+                f"Filigree returned {resp.status} with a non-JSON-object body; stats unavailable."
+            )
         stats = payload.get("stats", {}) or {}
+        warnings.extend(str(w) for w in (payload.get("warnings") or []))
+        failed = payload.get("failed") or []
         return EmitResult(
             reachable=True,
-            created=int(stats.get("findings_created", 0)),
-            updated=int(stats.get("findings_updated", 0)),
-            warnings=tuple(payload.get("warnings", []) or ()),
+            created=_safe_int(stats.get("findings_created")),
+            updated=_safe_int(stats.get("findings_updated")),
+            failed=len(failed) if isinstance(failed, list) else 0,
+            warnings=tuple(warnings),
         )

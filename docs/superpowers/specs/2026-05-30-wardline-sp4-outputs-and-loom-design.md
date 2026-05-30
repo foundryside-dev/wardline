@@ -177,19 +177,36 @@ class Transport(Protocol):
 2. POST to the **full user-supplied URL** (no path assembly, no ethereal-vs-server
    mode assumption — the user passes e.g.
    `http://localhost:8377/api/loom/scan-results`).
-3. **Outcome split (load-bearing):**
-   - **Sibling absent** — connection refused, DNS failure, timeout (`URLError`
-     without an HTTP status): **warn and continue** (`EmitResult.reachable = False`).
-     `wardline scan` proceeds to the gate; exit code is unaffected. Enrichment is
-     non-load-bearing.
-   - **Protocol error** — any HTTP status ≥ 400 (`HTTPError`): **loud failure**. This
-     means Wardline built a bad payload — a Wardline bug, not a sibling outage. Echo
-     the response body to stderr and raise so the CLI exits **2** (tool-error lane),
-     *even if findings are otherwise clean*.
-   - **Success** (2xx): parse `ScanIngestResponseLoom`; **surface `warnings[]` and
-     `stats`** to the user (Filigree reports severity coercions and line clamps here —
-     silence would hide on-wire mangling). Print a one-line summary
-     (`emitted N finding(s) to <url> — C created / U updated[; W warning(s)]`).
+3. **Outcome split (load-bearing), by status band:**
+   - **Sibling absent / degraded** — connection refused, DNS failure, timeout
+     (`URLError` without an HTTP status) **or any 5xx** (server-side outage, the
+     sibling's fault not Wardline's): **warn and continue** (`EmitResult.reachable =
+     False`). `wardline scan` proceeds to the gate; exit code is unaffected. This is the
+     charter's non-load-bearing guarantee — a Filigree 503 must never make the gate
+     load-bearing.
+   - **Client/protocol error** — any **3xx** (a redirect that reached the client; urllib
+     follows the normal ones, so a 3xx surfacing means the endpoint is wrong) **or 4xx**
+     (request rejected — bad payload, wrong path, auth, validation): **loud failure**.
+     This means Wardline sent a request the server would not accept — a Wardline/config
+     bug. Echo the response body and raise so the CLI exits **2** (tool-error lane),
+     *even if findings are otherwise clean*. This preempting the `--fail-on` gate is
+     intentional: a payload bug invalidates the run.
+   - **Success** (2xx): parse `ScanIngestResponseLoom` **defensively** — a 2xx whose body
+     is not a JSON object means the POST was accepted but the report is unreadable;
+     surface a warning and continue (`reachable=True`, zeroed stats) rather than crash
+     (charter — a malformed-but-accepted response is not load-bearing). Numeric stats are
+     parsed via `_safe_int` (a non-numeric stat degrades to 0, never raises). **Surface
+     `warnings[]`, the created/updated `stats`, and any `failed[]` count** (Filigree
+     reports severity coercions / line clamps in `warnings`, and partial-ingest rejects
+     in `failed` — silence would hide on-wire mangling). One-line summary:
+     `emitted N finding(s) to <url> — C created / U updated[ / F failed][; W warning(s): …]`.
+
+   **Transport hardening:** `UrllibTransport.post` restricts the scheme to `http`/`https`
+   (a stray `file://`/`ftp://`/`data:` URL is a user error → clean `FiligreeEmitError`,
+   which also justifies the `# noqa: S310`), catches `HTTPError` (a `URLError` subclass
+   carrying a status) and converts it to a `Response` so `emit` classifies by band, and
+   closes the error socket (`with exc:`). The `HTTPError`-first catch is the lynchpin of
+   the absent-vs-loud split — pinned directly by a transport-level test.
 
 ### CLI wiring
 `--filigree-url` (default None) on `wardline scan`. When set, after writing local
@@ -237,6 +254,16 @@ already-made decision, not a fresh one: reopening fingerprint composition would 
 SP3 baselines and waivers. **Decision: no change; documented here.** The taint-path
 disambiguation (the actual Filigree ask-B constraint — two paths into one sink get
 distinct fingerprints) is preserved.
+
+**Intra-Wardline consequence (acknowledged).** Because the fingerprint includes
+`line_start` and both `Baseline.contains` and `WaiverSet.match` key on the raw
+fingerprint, a *cosmetic* edit that shifts a finding's line (adding an import, a
+docstring) re-keys it: a previously baselined/waived defect resurfaces as ACTIVE and
+the gate can fire on an edit unrelated to the defect. This is the accepted cost of the
+user's strict line-sensitive SP3 dial, not a new bug. **User workflow:** after a
+non-structural refactor that shifts lines, regenerate the baseline
+(`wardline baseline update`) and re-copy any affected waiver fingerprints. Loosening
+this would require reopening the SP3 dial (out of SP4 scope).
 
 ---
 
@@ -295,6 +322,12 @@ Full gate after every stage: `.venv/bin/python -m pytest -q`,
   reports it only in `warnings[]`. Mitigated by surfacing `warnings`/`stats` (§5).
 - **R3 — fixture drift.** Clarion's vendored fixture can fall out of sync. Mitigated
   by a provenance header recording the source path + the one-line resync, and the test
-  failing loudly on any divergence.
+  failing loudly on any divergence. **One-directional caveat:** the test guards
+  *Wardline-vs-vendored-fixture*, not *vendored-fixture-vs-Clarion-live*. If Clarion's
+  `module_dotted_name` rules change and the vendored copy is not resynced, Wardline's
+  tests stay green while reconciliation quality silently degrades (to
+  `resolution_confidence: heuristic|none` — no hard error). Acceptable while Clarion's
+  reconciliation consumer is unbuilt (1.0.0); when it ships, add a CI diff of the two
+  fixture files (both repos co-located) to close the second edge.
 - **R4 — SARIF region nulls.** Emitting `startLine: null` produces invalid SARIF.
   Mitigated by omitting null region keys (§4) and a no-line test.

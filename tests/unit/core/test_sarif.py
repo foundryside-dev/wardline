@@ -50,6 +50,8 @@ def test_partial_fingerprint_and_location() -> None:
     res = build_sarif([_f(line_start=42)])["runs"][0]["results"][0]
     assert res["partialFingerprints"] == {"wardlineFingerprint/v1": "a" * 64}
     region = res["locations"][0]["physicalLocation"]["region"]
+    # _f sets line_start == line_end and no columns -> exactly these two keys, no null cols
+    assert set(region) == {"startLine", "endLine"}
     assert region["startLine"] == 42
     assert res["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == "src/m.py"
 
