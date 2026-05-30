@@ -57,13 +57,19 @@ def test_scan_format_sarif_still_gates(tmp_path: Path) -> None:
     assert result.exit_code == 1, result.output
 
 
-def test_judge_stub_exits_2_and_baseline_is_a_group() -> None:
+def test_baseline_is_a_group() -> None:
     runner = CliRunner()
-    assert runner.invoke(cli, ["judge"]).exit_code == 2
-    # `baseline` is now a command group; invoking it with no subcommand shows help.
+    # `baseline` is a command group; invoking it with no subcommand shows help.
     res = runner.invoke(cli, ["baseline"])
     assert res.exit_code == 0
     assert "create" in res.output and "update" in res.output
+
+
+def test_judge_is_registered() -> None:
+    # The SP5 judge command replaced the SP0 stub; --help must describe it.
+    res = CliRunner().invoke(cli, ["judge", "--help"])
+    assert res.exit_code == 0
+    assert "--write" in res.output and "triage" in res.output.lower()
 
 
 def test_scan_fail_on_clean_fixture_exits_zero(tmp_path: Path) -> None:
@@ -400,3 +406,137 @@ def test_baseline_create_honors_custom_config_waivers(tmp_path) -> None:
     doc = _yaml.safe_load((proj / ".wardline" / "baseline.yaml").read_text()) or {}
     fps = {e["fingerprint"] for e in (doc.get("entries") or [])}
     assert fp not in fps  # waiver from --config was honored, so the fp is excluded
+
+
+# --- SP5: wardline judge -----------------------------------------------------
+
+_JUDGE_FIXTURE = (
+    "from wardline.decorators.trust import trust_boundary\n"
+    "from wardline.core.taints import TaintState\n"
+    "@trust_boundary(to_level=TaintState.GUARDED)\n"
+    "def validate(x):\n    return x\n"
+)
+
+
+def _make_judge_proj(tmp_path):  # type: ignore[no-untyped-def]
+    proj = tmp_path / "proj"
+    (proj / "svc").mkdir(parents=True)
+    (proj / "svc" / "__init__.py").write_text("")
+    (proj / "svc" / "v.py").write_text(_JUDGE_FIXTURE)
+    return proj
+
+
+def _fake_fp_response():  # type: ignore[no-untyped-def]
+    from datetime import UTC, datetime
+
+    from wardline.core.judge import JudgeResponse, JudgeVerdict
+    return JudgeResponse(
+        verdict=JudgeVerdict.FALSE_POSITIVE, rationale="over-taint", confidence=0.9,
+        model_id="m", recorded_at=datetime.now(UTC), prompt_tokens_total=1,
+        prompt_tokens_cached=None, policy_hash="sha256:x")
+
+
+def test_judge_dry_run_reports_without_writing(monkeypatch, tmp_path) -> None:
+    from click.testing import CliRunner
+
+    import wardline.cli.judge as judge_cli
+    from wardline.cli.main import cli
+    proj = _make_judge_proj(tmp_path)
+    monkeypatch.setattr(judge_cli, "call_judge", lambda req, **kw: _fake_fp_response())
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+    result = CliRunner().invoke(cli, ["judge", str(proj)])
+    assert result.exit_code == 0, result.output
+    # Pin the report contract: FP tag + confidence + the verbatim rationale + summary line.
+    assert "FP [0.90]" in result.output
+    assert "over-taint" in result.output  # the model's rationale is surfaced
+    assert "1 false" in result.output  # summary line present
+    assert not (proj / ".wardline" / "judged.yaml").exists()
+
+
+def test_judge_write_persists_false_positives(monkeypatch, tmp_path) -> None:
+    from click.testing import CliRunner
+
+    import wardline.cli.judge as judge_cli
+    from wardline.cli.main import cli
+    from wardline.core.judged import load_judged
+    proj = _make_judge_proj(tmp_path)
+    monkeypatch.setattr(judge_cli, "call_judge", lambda req, **kw: _fake_fp_response())
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+    result = CliRunner().invoke(cli, ["judge", str(proj), "--write"])
+    assert result.exit_code == 0, result.output
+    assert load_judged(proj / ".wardline" / "judged.yaml").fingerprints()
+
+
+def test_judge_missing_key_exits_2(monkeypatch, tmp_path) -> None:
+    from click.testing import CliRunner
+
+    from wardline.cli.main import cli
+    proj = _make_judge_proj(tmp_path)
+    monkeypatch.delenv("WARDLINE_OPENROUTER_API_KEY", raising=False)
+    result = CliRunner().invoke(cli, ["judge", str(proj)])
+    assert result.exit_code == 2
+
+
+def test_judge_reads_key_from_dotenv(monkeypatch, tmp_path) -> None:
+    import os
+
+    from wardline.cli.judge import _load_env_key
+    (tmp_path / ".env").write_text("WARDLINE_OPENROUTER_API_KEY=sk-or-fromdotenv\n")
+    monkeypatch.delenv("WARDLINE_OPENROUTER_API_KEY", raising=False)
+    _load_env_key(tmp_path)
+    assert os.environ["WARDLINE_OPENROUTER_API_KEY"] == "sk-or-fromdotenv"
+
+
+def test_dotenv_does_not_override_existing_env(monkeypatch, tmp_path) -> None:
+    import os
+
+    from wardline.cli.judge import _load_env_key
+    (tmp_path / ".env").write_text("WARDLINE_OPENROUTER_API_KEY=sk-or-fromdotenv\n")
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "sk-or-fromenv")
+    _load_env_key(tmp_path)
+    assert os.environ["WARDLINE_OPENROUTER_API_KEY"] == "sk-or-fromenv"
+
+
+def _fake_fp_response_conf(conf):  # type: ignore[no-untyped-def]
+    from datetime import UTC, datetime
+
+    from wardline.core.judge import JudgeResponse, JudgeVerdict
+    return JudgeResponse(
+        verdict=JudgeVerdict.FALSE_POSITIVE, rationale="over-taint", confidence=conf,
+        model_id="m", recorded_at=datetime.now(UTC), prompt_tokens_total=1,
+        prompt_tokens_cached=None, policy_hash="sha256:x")
+
+
+def test_judge_low_confidence_fp_held_back_from_write(monkeypatch, tmp_path) -> None:
+    import wardline.cli.judge as judge_cli
+    from wardline.cli.main import cli
+    proj = _make_judge_proj(tmp_path)
+    monkeypatch.setattr(judge_cli, "call_judge", lambda req, **kw: _fake_fp_response_conf(0.3))
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+    result = CliRunner().invoke(cli, ["judge", str(proj), "--write"])
+    assert result.exit_code == 0, result.output
+    assert "FP?" in result.output and "held back" in result.output
+    # below the 0.5 floor -> nothing persisted
+    assert not (proj / ".wardline" / "judged.yaml").exists()
+
+
+def test_judge_write_then_scan_gate_is_cleared(monkeypatch, tmp_path) -> None:
+    # The regression that pins the headline panel finding: a JUDGED FP written by
+    # `judge --write` must suppress the finding for `scan --fail-on` too.
+    import wardline.cli.judge as judge_cli
+    from wardline.cli.main import cli
+    proj = _make_judge_proj(tmp_path)
+    out = tmp_path / "f.jsonl"
+    # 1) before judging, the active defect trips the gate
+    before = CliRunner().invoke(cli, ["scan", str(proj), "--output", str(out), "--fail-on", "INFO"])
+    assert before.exit_code == 1, before.output
+    # 2) judge --write persists the FP (confidence 0.9 >= floor)
+    monkeypatch.setattr(judge_cli, "call_judge", lambda req, **kw: _fake_fp_response())
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+    jres = CliRunner().invoke(cli, ["judge", str(proj), "--write"])
+    assert jres.exit_code == 0, jres.output
+    assert (proj / ".wardline" / "judged.yaml").exists()
+    # 3) scan now sees the JUDGED suppression -> gate cleared, summary shows it
+    after = CliRunner().invoke(cli, ["scan", str(proj), "--output", str(out), "--fail-on", "INFO"])
+    assert after.exit_code == 0, after.output
+    assert "judged" in after.output

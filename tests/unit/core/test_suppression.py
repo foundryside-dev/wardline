@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 
 from wardline.core.baseline import Baseline
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
+from wardline.core.judged import JudgedFP, JudgedSet
 from wardline.core.suppression import apply_suppressions, gate_trips
 from wardline.core.waivers import WaiverSet, parse_waivers
 
@@ -65,6 +66,40 @@ def test_expired_waiver_falls_back_to_active_or_baseline() -> None:
     # expired, but baselined -> baseline still suppresses
     out2 = apply_suppressions([_defect(_FP_A)], Baseline(frozenset({_FP_A})), ws, today=_TODAY)
     assert out2[0].suppressed is SuppressionState.BASELINED
+
+
+def _judged(fp: str) -> JudgedFP:
+    return JudgedFP(
+        fingerprint=fp, rule_id="PY-WL-101", path="src/m.py", message="m",
+        rationale="over-taint floor", model_id="m", confidence=0.9,
+        recorded_at=datetime(2026, 5, 30, tzinfo=UTC), policy_hash="sha256:x",
+    )
+
+
+def test_judged_fp_is_suppressed_with_rationale() -> None:
+    out = apply_suppressions(
+        [_defect(_FP_A)], _empty_baseline(), _no_waivers(), today=_TODAY,
+        judged=JudgedSet([_judged(_FP_A)]),
+    )
+    assert out[0].suppressed is SuppressionState.JUDGED
+    assert out[0].suppression_reason == "over-taint floor"
+
+
+def test_waiver_wins_over_judged() -> None:
+    ws = WaiverSet(parse_waivers([{"fingerprint": _FP_A, "reason": "human waiver"}]))
+    out = apply_suppressions(
+        [_defect(_FP_A)], _empty_baseline(), ws, today=_TODAY,
+        judged=JudgedSet([_judged(_FP_A)]),
+    )
+    assert out[0].suppressed is SuppressionState.WAIVED
+
+
+def test_judged_wins_over_baseline() -> None:
+    out = apply_suppressions(
+        [_defect(_FP_A)], Baseline(frozenset({_FP_A})), _no_waivers(), today=_TODAY,
+        judged=JudgedSet([_judged(_FP_A)]),
+    )
+    assert out[0].suppressed is SuppressionState.JUDGED
 
 
 def test_non_defect_passes_through_active() -> None:

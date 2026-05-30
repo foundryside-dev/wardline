@@ -10,6 +10,7 @@ from pathlib import Path
 import click
 
 from wardline._version import __version__
+from wardline.cli.judge import judge as judge_command
 from wardline.cli.scan import scan
 from wardline.core import config as config_mod
 from wardline.core.baseline import write_baseline
@@ -28,6 +29,7 @@ def cli() -> None:
 
 
 cli.add_command(scan)
+cli.add_command(judge_command)
 
 
 @cli.command()
@@ -97,8 +99,3 @@ def baseline_update(path: Path, config_path: Path | None) -> None:
     _generate_baseline(path, overwrite=True, config_path=config_path)
 
 
-@cli.command()
-def judge() -> None:
-    """Run the opt-in LLM judge (not yet implemented — SP5)."""
-    click.echo("`wardline judge` is not yet implemented (SP5).", err=True)
-    raise SystemExit(2)

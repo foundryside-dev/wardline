@@ -15,6 +15,7 @@ from wardline.core.emit import JsonlSink
 from wardline.core.errors import WardlineError
 from wardline.core.filigree_emit import EmitResult, FiligreeEmitter
 from wardline.core.finding import Kind, Severity, SuppressionState
+from wardline.core.judged import load_judged
 from wardline.core.sarif import SarifSink
 from wardline.core.suppression import apply_suppressions, gate_trips
 from wardline.core.waivers import WaiverSet, parse_waivers
@@ -63,7 +64,8 @@ def scan(
             cache.save()
         baseline = load_baseline(path / ".wardline" / "baseline.yaml")
         waivers = WaiverSet(parse_waivers(cfg.waivers))
-        findings = apply_suppressions(findings, baseline, waivers, today=date.today())
+        judged = load_judged(path / ".wardline" / "judged.yaml")
+        findings = apply_suppressions(findings, baseline, waivers, today=date.today(), judged=judged)
         sink = SarifSink(output) if fmt == "sarif" else JsonlSink(output)
         sink.write(findings)
         # Loom emission is additive: a FiligreeEmitError (HTTP >= 400) is a Wardline
@@ -93,10 +95,12 @@ def scan(
     defects = [f for f in findings if f.kind is Kind.DEFECT]
     baselined = sum(1 for f in defects if f.suppressed is SuppressionState.BASELINED)
     waived = sum(1 for f in defects if f.suppressed is SuppressionState.WAIVED)
+    judged_n = sum(1 for f in defects if f.suppressed is SuppressionState.JUDGED)
     new = sum(1 for f in defects if f.suppressed is SuppressionState.ACTIVE)
     click.echo(
         f"scanned {len(files)} file(s); {len(findings)} finding(s) — "
-        f"{baselined + waived} suppressed ({baselined} baseline / {waived} waiver), {new} new -> {output}"
+        f"{baselined + waived + judged_n} suppressed "
+        f"({baselined} baseline / {waived} waiver / {judged_n} judged), {new} new -> {output}"
     )
     if fail_on is not None and gate_trips(findings, Severity(fail_on)):
         raise SystemExit(1)
