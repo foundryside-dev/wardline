@@ -10,6 +10,9 @@ dist/
 build/
 *.egg-info/
 
+# MkDocs build output
+site/
+
 # Wardline runtime output
 findings.jsonl
 .wardline-cache/
