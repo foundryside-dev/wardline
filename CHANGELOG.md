@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Dropped the unused `loom` optional-dependency extra (`httpx`). The Filigree
+  emitter and Clarion producer-conformance support ship in `scanner` and use
+  only the standard library (`urllib`), so the extra pulled in a dependency
+  nothing imported.
+
 ## [0.1.0] - 2026-05-30
 
 First public release. A generic, lightweight semantic-tainting static analyzer

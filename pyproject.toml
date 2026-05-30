@@ -22,7 +22,6 @@ classifiers = [
 
 [project.optional-dependencies]
 scanner = ["pyyaml>=6.0", "jsonschema>=4.0", "click>=8.0"]
-loom = ["httpx>=0.27"]
 docs = ["mkdocs>=1.6", "mkdocs-material>=9.5"]
 # The SP5 LLM triage judge is dependency-free (stdlib urllib -> OpenRouter); no extra needed.
 dev = [
