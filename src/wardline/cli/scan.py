@@ -13,6 +13,7 @@ from wardline.core.baseline import load_baseline
 from wardline.core.discovery import discover
 from wardline.core.emit import JsonlSink
 from wardline.core.errors import WardlineError
+from wardline.core.filigree_emit import EmitResult, FiligreeEmitter
 from wardline.core.finding import Kind, Severity, SuppressionState
 from wardline.core.sarif import SarifSink
 from wardline.core.suppression import apply_suppressions, gate_trips
@@ -34,6 +35,8 @@ from wardline.scanner.taint.summary_cache import SummaryCache
 @click.option("--fail-on", type=click.Choice(["CRITICAL", "ERROR", "WARN", "INFO"]), default=None)
 @click.option("--cache-dir", type=click.Path(path_type=Path), default=None,
               help="Persist L3 summary cache here for faster incremental scans.")
+@click.option("--filigree-url", "filigree_url", default=None,
+              help="POST findings to this Filigree Loom scan-results URL (opt-in).")
 def scan(
     path: Path,
     config_path: Path | None,
@@ -41,10 +44,12 @@ def scan(
     output: Path | None,
     fail_on: str | None,
     cache_dir: Path | None,
+    filigree_url: str | None,
 ) -> None:
     """Scan PATH for findings."""
     default_name = "findings.sarif" if fmt == "sarif" else "findings.jsonl"
     output = output if output is not None else (path / default_name)
+    emit_result: EmitResult | None = None
     try:
         cfg_path = config_path or (path / "wardline.yaml")
         cfg = config_mod.load(cfg_path)
@@ -61,9 +66,28 @@ def scan(
         findings = apply_suppressions(findings, baseline, waivers, today=date.today())
         sink = SarifSink(output) if fmt == "sarif" else JsonlSink(output)
         sink.write(findings)
+        # Loom emission is additive: a FiligreeEmitError (HTTP >= 400) is a Wardline
+        # payload bug -> caught below -> exit 2; an unreachable sibling warns + continues.
+        if filigree_url is not None:
+            emit_result = FiligreeEmitter(filigree_url).emit(findings)
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
+    if emit_result is not None:
+        if not emit_result.reachable:
+            click.echo(
+                f"warning: could not reach Filigree at {filigree_url}; "
+                f"findings written locally only.",
+                err=True,
+            )
+        else:
+            line = (
+                f"emitted {len(findings)} finding(s) to {filigree_url} — "
+                f"{emit_result.created} created / {emit_result.updated} updated"
+            )
+            if emit_result.warnings:
+                line += f"; {len(emit_result.warnings)} warning(s): " + "; ".join(emit_result.warnings)
+            click.echo(line)
     defects = [f for f in findings if f.kind is Kind.DEFECT]
     baselined = sum(1 for f in defects if f.suppressed is SuppressionState.BASELINED)
     waived = sum(1 for f in defects if f.suppressed is SuppressionState.WAIVED)

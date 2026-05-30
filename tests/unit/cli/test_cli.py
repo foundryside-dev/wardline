@@ -295,6 +295,74 @@ def test_baseline_create_excludes_active_waivers(tmp_path) -> None:
     assert fp_kept in fps        # non-waived defect still baselined
 
 
+def test_scan_filigree_emit_success(tmp_path, monkeypatch) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    captured: dict[str, object] = {}
+
+    class _StubEmitter:
+        def __init__(self, url, **kw):
+            captured["url"] = url
+
+        def emit(self, findings):
+            from wardline.core.filigree_emit import EmitResult
+
+            captured["n"] = len(findings)
+            return EmitResult(reachable=True, created=len(findings), warnings=("w1",))
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _StubEmitter)
+    out = tmp_path / "f.jsonl"
+    result = CliRunner().invoke(
+        scan, [str(proj), "--output", str(out), "--filigree-url", "http://x/api/loom/scan-results"]
+    )
+    assert result.exit_code == 0, result.output
+    assert captured["url"] == "http://x/api/loom/scan-results"
+    assert "emitted" in result.output and "w1" in result.output  # stats + warning surfaced
+
+
+def test_scan_filigree_protocol_error_exits_2(tmp_path, monkeypatch) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    from wardline.core.errors import FiligreeEmitError
+
+    class _BadEmitter:
+        def __init__(self, url, **kw):
+            pass
+
+        def emit(self, findings):
+            raise FiligreeEmitError("Filigree rejected (400): bad path")
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _BadEmitter)
+    out = tmp_path / "f.jsonl"
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--filigree-url", "http://x"])
+    assert result.exit_code == 2, result.output
+    assert "bad path" in result.output
+
+
+def test_scan_filigree_absent_continues(tmp_path, monkeypatch) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+
+    class _AbsentEmitter:
+        def __init__(self, url, **kw):
+            pass
+
+        def emit(self, findings):
+            from wardline.core.filigree_emit import EmitResult
+
+            return EmitResult(reachable=False)
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _AbsentEmitter)
+    out = tmp_path / "f.jsonl"
+    # absent sibling must NOT change the exit code; with no --fail-on, stays 0
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--filigree-url", "http://x"])
+    assert result.exit_code == 0, result.output
+    assert "could not reach" in result.output.lower()
+
+
 def test_baseline_create_honors_custom_config_waivers(tmp_path) -> None:
     # Regression: `baseline create --config X` must read waivers from X (same as `scan`),
     # or the baseline is built from a different waiver set than scans consume.
