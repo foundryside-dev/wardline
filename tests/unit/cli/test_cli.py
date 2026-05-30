@@ -1,9 +1,11 @@
 import json as _json
 from pathlib import Path
 
+import yaml as _yaml
 from click.testing import CliRunner
 
 from wardline.cli.main import cli
+from wardline.cli.main import cli as _cli
 from wardline.cli.scan import scan
 
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "sample_project"
@@ -30,13 +32,17 @@ def test_scan_sarif_is_not_yet_implemented(tmp_path: Path) -> None:
     assert result.exit_code == 2
 
 
-def test_baseline_and_judge_stubs_exit_2() -> None:
+def test_judge_stub_exits_2_and_baseline_is_a_group() -> None:
     runner = CliRunner()
-    assert runner.invoke(cli, ["baseline"]).exit_code == 2
     assert runner.invoke(cli, ["judge"]).exit_code == 2
+    # `baseline` is now a command group; invoking it with no subcommand shows help.
+    res = runner.invoke(cli, ["baseline"])
+    assert res.exit_code == 0
+    assert "create" in res.output and "update" in res.output
 
 
-def test_scan_fail_on_is_inert_in_sp0(tmp_path: Path) -> None:
+def test_scan_fail_on_clean_fixture_exits_zero(tmp_path: Path) -> None:
+    # The sample fixture has no active CRITICAL defect, so --fail-on CRITICAL is clean.
     out = tmp_path / "findings.jsonl"
     result = CliRunner().invoke(
         cli, ["scan", str(FIXTURE), "--output", str(out), "--fail-on", "CRITICAL"]
@@ -116,3 +122,171 @@ def test_scan_cache_dir_persists_warm_taints_equal_cold(tmp_path) -> None:
     # The cache metric meaningfully varies: cold all-miss, warm served from disk.
     assert _hit_rate(f1) == 0.0
     assert _hit_rate(f2) > 0.0
+
+
+def _write(project, name, src):
+    p = project / name
+    p.write_text(src, encoding="utf-8")
+    return p
+
+
+# A @trusted function returning raw data fires PY-WL-101 (a real DEFECT).
+_LEAKY = (
+    "from wardline.decorators import external_boundary, trusted\n"
+    "@external_boundary\ndef read_raw(p):\n    return p\n"
+    "@trusted\ndef leaky(p):\n    return read_raw(p)\n"
+)
+
+
+def test_scan_fail_on_trips_on_unsuppressed_defect(tmp_path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    out = tmp_path / "f.jsonl"
+    res = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--fail-on", "ERROR"])
+    assert res.exit_code == 1, res.output  # PY-WL-101 is ERROR, unsuppressed
+
+
+def test_scan_fail_on_inert_without_flag(tmp_path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    out = tmp_path / "f.jsonl"
+    res = CliRunner().invoke(scan, [str(proj), "--output", str(out)])
+    assert res.exit_code == 0, res.output  # no --fail-on -> never gates
+
+
+def test_scan_baseline_suppresses_and_clears_gate(tmp_path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    out = tmp_path / "f.jsonl"
+    # First scan: capture the PY-WL-101 fingerprint.
+    CliRunner().invoke(scan, [str(proj), "--output", str(out)])
+    findings = [_json.loads(ln) for ln in out.read_text().splitlines() if ln.strip()]
+    fp = next(f["fingerprint"] for f in findings if f["rule_id"] == "PY-WL-101")
+    # Write a baseline accepting it.
+    bl = proj / ".wardline" / "baseline.yaml"
+    bl.parent.mkdir(parents=True, exist_ok=True)
+    bl.write_text(
+        "version: 1\nentries:\n  - fingerprint: " + fp + "\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
+        encoding="utf-8",
+    )
+    # Second scan: the defect is baselined -> annotated + gate clears.
+    res = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--fail-on", "ERROR"])
+    assert res.exit_code == 0, res.output
+    findings2 = [_json.loads(ln) for ln in out.read_text().splitlines() if ln.strip()]
+    leak = next(f for f in findings2 if f["rule_id"] == "PY-WL-101")
+    assert leak["suppressed"] == "baselined"  # annotate-and-keep
+    assert "1 suppressed" in res.output
+
+
+def test_scan_malformed_baseline_exits_2(tmp_path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", "def f(p):\n    return p\n")
+    bl = proj / ".wardline" / "baseline.yaml"
+    bl.parent.mkdir(parents=True, exist_ok=True)
+    bl.write_text("version: 1\nentries: [1, 2\n", encoding="utf-8")  # malformed
+    res = CliRunner().invoke(scan, [str(proj), "--output", str(tmp_path / "f.jsonl")])
+    assert res.exit_code == 2  # never silently empty -> mass-unsuppress
+
+
+_LEAKY_FOR_BASELINE = (
+    "from wardline.decorators import external_boundary, trusted\n"
+    "@external_boundary\ndef read_raw(p):\n    return p\n"
+    "@trusted\ndef leaky(p):\n    return read_raw(p)\n"
+)
+
+
+def test_baseline_create_writes_file_and_suppresses_next_scan(tmp_path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(_LEAKY_FOR_BASELINE, encoding="utf-8")
+    runner = CliRunner()
+    res = runner.invoke(_cli, ["baseline", "create", str(proj)])
+    assert res.exit_code == 0, res.output
+    bl = proj / ".wardline" / "baseline.yaml"
+    assert bl.exists()
+    doc = _yaml.safe_load(bl.read_text())
+    assert doc["version"] == 1 and len(doc["entries"]) >= 1
+    assert "baselined" in res.output
+    # Next scan: the captured defect is now baselined, gate clears.
+    out = tmp_path / "f.jsonl"
+    res2 = runner.invoke(scan, [str(proj), "--output", str(out), "--fail-on", "ERROR"])
+    assert res2.exit_code == 0, res2.output
+
+
+def test_baseline_create_refuses_if_exists(tmp_path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(_LEAKY_FOR_BASELINE, encoding="utf-8")
+    runner = CliRunner()
+    runner.invoke(_cli, ["baseline", "create", str(proj)])
+    res = runner.invoke(_cli, ["baseline", "create", str(proj)])
+    assert res.exit_code == 2  # already exists -> use update
+
+
+def test_baseline_update_overwrites(tmp_path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(_LEAKY_FOR_BASELINE, encoding="utf-8")
+    runner = CliRunner()
+    runner.invoke(_cli, ["baseline", "create", str(proj)])
+    res = runner.invoke(_cli, ["baseline", "update", str(proj)])
+    assert res.exit_code == 0, res.output
+
+
+def test_baseline_create_excludes_active_waivers(tmp_path) -> None:
+    # TWO distinct defects: waive one, leave the other. The baseline must EXCLUDE the
+    # waived fingerprint and KEEP the non-waived one (selective exclusion, not "empty").
+    two_leaks = (
+        "from wardline.decorators import external_boundary, trusted\n"
+        "@external_boundary\ndef read_raw(p):\n    return p\n"
+        "@trusted\ndef leaky(p):\n    return read_raw(p)\n"
+        "@trusted\ndef leaky2(p):\n    return read_raw(p)\n"
+    )
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(two_leaks, encoding="utf-8")
+    runner = CliRunner()
+    out = tmp_path / "f.jsonl"
+    runner.invoke(scan, [str(proj), "--output", str(out)])
+    leaks = {
+        _json.loads(ln)["qualname"]: _json.loads(ln)["fingerprint"]
+        for ln in out.read_text().splitlines()
+        if ln.strip() and _json.loads(ln)["rule_id"] == "PY-WL-101"
+    }
+    fp_waived, fp_kept = leaks["svc.leaky"], leaks["svc.leaky2"]
+    assert fp_waived != fp_kept  # genuinely distinct findings
+    (proj / "wardline.yaml").write_text(
+        "waivers:\n  - fingerprint: " + fp_waived + "\n    reason: handled\n", encoding="utf-8"
+    )
+    res = runner.invoke(_cli, ["baseline", "create", str(proj)])
+    assert res.exit_code == 0, res.output
+    doc = _yaml.safe_load((proj / ".wardline" / "baseline.yaml").read_text()) or {}
+    fps = {e["fingerprint"] for e in (doc.get("entries") or [])}
+    assert fp_waived not in fps  # active-waiver fingerprint excluded
+    assert fp_kept in fps        # non-waived defect still baselined
+
+
+def test_baseline_create_honors_custom_config_waivers(tmp_path) -> None:
+    # Regression: `baseline create --config X` must read waivers from X (same as `scan`),
+    # or the baseline is built from a different waiver set than scans consume.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(_LEAKY_FOR_BASELINE, encoding="utf-8")
+    runner = CliRunner()
+    out = tmp_path / "f.jsonl"
+    runner.invoke(scan, [str(proj), "--output", str(out)])
+    fp = next(
+        _json.loads(ln)["fingerprint"]
+        for ln in out.read_text().splitlines() if ln.strip() and _json.loads(ln)["rule_id"] == "PY-WL-101"
+    )
+    custom = tmp_path / "custom.yaml"  # NOT proj/wardline.yaml
+    custom.write_text("waivers:\n  - fingerprint: " + fp + "\n    reason: handled\n", encoding="utf-8")
+    res = runner.invoke(_cli, ["baseline", "create", str(proj), "--config", str(custom)])
+    assert res.exit_code == 0, res.output
+    doc = _yaml.safe_load((proj / ".wardline" / "baseline.yaml").read_text()) or {}
+    fps = {e["fingerprint"] for e in (doc.get("entries") or [])}
+    assert fp not in fps  # waiver from --config was honored, so the fp is excluded
