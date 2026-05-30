@@ -151,15 +151,41 @@ narrating to itself and is omitted as overreach.
 
 ## explain_taint mechanism + staleness contract
 
-**Engine change.** `TaintProvenance` is currently computed during cross-file SCC
-propagation (`src/wardline/scanner/taint/propagation.py`) and then discarded —
-only a single best-callee string survives, folded into the finding fingerprint
-(`compute_finding_fingerprint`, `finding.py:102-113`). SP8 stops discarding it:
-the engine carries the cheap projection — `via_callee` (the immediate upstream
-tainted callee), the originating source-boundary qualname, and the trust tiers
-in/out at the sink — so a finding can be explained on demand. The **full ordered
-N-hop chain is out of scope** for v1 (the immediate hop + originating boundary
-is the value knee; see Non-goals).
+**Engine change (corrected mechanism, 2026-05-30).** The original draft proposed
+projecting `TaintProvenance.via_callee`. Investigation during implementation found
+that field is structurally *always `None`* for PY-WL-101 — the only rule that
+produces these findings — because PY-WL-101 fires solely on `anchored` provenance
+(`untrusted_reaches_trusted.py:63`) and anchored records never populate `via_callee`
+(`propagation.py:522,609`; the rule author already worked around this with
+`prov.via_callee or ''` at line 78). `via_callee` is the wrong field: the *property*
+we want is "the callee that contributed the function's actual (least-trusted) return
+taint," and that is computed and discarded inside `compute_return_taint`
+(`variable_level.py:618`), which joins return-path taints via `least_trusted` and
+keeps only the resulting `TaintState`.
+
+SP8 captures it at that source. A sibling `compute_return_callee` performs the same
+return-expression walk and returns the simple/dotted callee name of the
+least-trusted **direct-call** return path (or `None` when the worst return path is
+not a direct call — e.g. `return p`, `return some_var`; that indirection is
+chain/SP9 territory). The analyzer stores it in a new
+`function_return_callee: Mapping[str, str | None]` field on `AnalysisContext`
+alongside `function_return_taints`. `compute_return_taint`'s own signature is
+**unchanged**, so the 730-test oracle on taint *values* is untouched. The
+explanation then carries:
+
+- `immediate_tainted_callee` — `function_return_callee[qualname]` (the call that
+  introduced the untrusted return).
+- `source_boundary_qualname` — resolved **one hop** for v1: when the immediate
+  callee resolves to a same-module project entity that is itself a leaf source
+  (its own `function_return_callee` is `None`), that entity's qualname is the
+  boundary; otherwise `None`. Cross-module and deep-chain boundary resolution is
+  deferred to SP9 (Clarion-backed chain) — see Non-goals. The explanation never
+  reports a non-leaf intermediate *as if* it were the originating boundary.
+- `tier_in` / `tier_out` — the trust tiers at the sink (from the finding's
+  `actual_return` / `declared_return` properties).
+
+The **full ordered N-hop chain is out of scope** for v1; the immediate hop plus
+the 1-hop boundary is the value knee (see Non-goals).
 
 **Statelessness.** With no server state, `explain_taint(fingerprint)` re-runs
 the (incremental, cached, deterministic) analysis against current disk and looks
