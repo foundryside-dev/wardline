@@ -148,9 +148,17 @@ on every persisted judged-FP record so a re-run under a changed policy is a
 visible audit signal.
 
 **Optional project policy append** (`judge.policy_file` in config): appended to the
-static block *after* the Wardline-owned sections, under a clearly-fenced
-"PROJECT-SUPPLIED POLICY (untrusted)" header. Appending changes the `policy_hash`
-(correct — it is a different policy). Absent by default.
+static block *after* the Wardline-owned sections. Appending changes the
+`policy_hash` (correct — it is a different policy). Absent by default.
+
+**Trust tiers (panel resolution — SecArch J-01).** `wardline.yaml` (including
+`judge.policy_file`) is **trusted operator input**, the same tier as `rules.enable`
+(an empty enable list already disables every rule, so config can already neuter the
+analyzer). Scanned **source code** is the untrusted tier and is the thing wrapped in
+the user-role untrusted-data envelope. The project policy therefore legitimately
+rides in the system block — it grants no capability beyond what config already
+grants. Running `wardline judge` inside an untrusted third-party clone is out of
+scope (as is running any tool against an untrusted config).
 
 ### 4.4 Untrusted-data boundary
 
