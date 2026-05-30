@@ -3,24 +3,16 @@
 
 from __future__ import annotations
 
-from datetime import date
 from pathlib import Path
 
 import click
 
-from wardline.core import config as config_mod
-from wardline.core.baseline import load_baseline
-from wardline.core.discovery import discover
 from wardline.core.emit import JsonlSink
 from wardline.core.errors import WardlineError
 from wardline.core.filigree_emit import EmitResult, FiligreeEmitter
-from wardline.core.finding import Kind, Severity, SuppressionState
-from wardline.core.judged import load_judged
+from wardline.core.finding import Severity
+from wardline.core.run import gate_decision, run_scan
 from wardline.core.sarif import SarifSink
-from wardline.core.suppression import apply_suppressions, gate_trips
-from wardline.core.waivers import WaiverSet, parse_waivers
-from wardline.scanner.analyzer import WardlineAnalyzer
-from wardline.scanner.taint.summary_cache import SummaryCache
 
 
 @click.command()
@@ -52,20 +44,8 @@ def scan(
     output = output if output is not None else (path / default_name)
     emit_result: EmitResult | None = None
     try:
-        cfg_path = config_path or (path / "wardline.yaml")
-        cfg = config_mod.load(cfg_path)
-        cache = None
-        if cache_dir is not None:
-            cache = SummaryCache(cache_dir=cache_dir)
-            cache.load()
-        files = discover(path, cfg)
-        findings = WardlineAnalyzer(summary_cache=cache).analyze(files, cfg, root=path)
-        if cache is not None:
-            cache.save()
-        baseline = load_baseline(path / ".wardline" / "baseline.yaml")
-        waivers = WaiverSet(parse_waivers(cfg.waivers))
-        judged = load_judged(path / ".wardline" / "judged.yaml")
-        findings = apply_suppressions(findings, baseline, waivers, today=date.today(), judged=judged)
+        result = run_scan(path, config_path=config_path, cache_dir=cache_dir)
+        findings = result.findings
         sink = SarifSink(output) if fmt == "sarif" else JsonlSink(output)
         sink.write(findings)
         # Loom emission is additive: a FiligreeEmitError (HTTP >= 400) is a Wardline
@@ -92,15 +72,11 @@ def scan(
             if emit_result.warnings:
                 line += f"; {len(emit_result.warnings)} warning(s): " + "; ".join(emit_result.warnings)
             click.echo(line)
-    defects = [f for f in findings if f.kind is Kind.DEFECT]
-    baselined = sum(1 for f in defects if f.suppressed is SuppressionState.BASELINED)
-    waived = sum(1 for f in defects if f.suppressed is SuppressionState.WAIVED)
-    judged_n = sum(1 for f in defects if f.suppressed is SuppressionState.JUDGED)
-    new = sum(1 for f in defects if f.suppressed is SuppressionState.ACTIVE)
+    s = result.summary
     click.echo(
-        f"scanned {len(files)} file(s); {len(findings)} finding(s) — "
-        f"{baselined + waived + judged_n} suppressed "
-        f"({baselined} baseline / {waived} waiver / {judged_n} judged), {new} new -> {output}"
+        f"scanned {result.files_scanned} file(s); {s.total} finding(s) — "
+        f"{s.baselined + s.waived + s.judged} suppressed "
+        f"({s.baselined} baseline / {s.waived} waiver / {s.judged} judged), {s.active} new -> {output}"
     )
-    if fail_on is not None and gate_trips(findings, Severity(fail_on)):
+    if fail_on is not None and gate_decision(result, Severity(fail_on)).tripped:
         raise SystemExit(1)
