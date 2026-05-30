@@ -12,7 +12,10 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
+
+import yaml
 
 from wardline.core.errors import ConfigError
 
@@ -64,6 +67,49 @@ def parse_waivers(raw: Sequence[Mapping[str, Any]]) -> tuple[Waiver, ...]:
             raise ConfigError(f"waivers[{idx}].reason is required (non-empty string)")
         waivers.append(Waiver(fingerprint=fp, reason=reason, expires=_parse_expiry(item.get("expires"), idx)))
     return tuple(waivers)
+
+
+def add_waiver(
+    config_path: Path, *, fingerprint: str, reason: str, expires: date | None
+) -> Waiver:
+    """Append a waiver to ``config_path``'s ``waivers:`` list (creating the file if
+    absent). Validates via the SAME rules as :func:`parse_waivers`, so a bad
+    fingerprint or empty reason raises :class:`ConfigError` BEFORE any write.
+
+    ``expires`` is stored as an ISO string (``YYYY-MM-DD``) — the human-authored
+    canonical form; both the in-line validation parse and a later
+    ``load`` → ``parse_waivers`` round-trip accept it.
+    """
+    entry: dict[str, object] = {"fingerprint": fingerprint, "reason": reason}
+    if expires is not None:
+        entry["expires"] = expires.isoformat()
+    # Validate by parsing the single entry — reuses the canonical rules. Raises
+    # ConfigError on a bad fingerprint/reason/expiry BEFORE the file is touched.
+    waiver = parse_waivers((entry,))[0]
+
+    raw: dict[str, Any] = {}
+    if config_path.exists():
+        try:
+            loaded = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as exc:
+            raise ConfigError(f"malformed {config_path.name}: {exc}") from exc
+        if not isinstance(loaded, dict):
+            raise ConfigError(f"{config_path.name} is not a mapping")
+        raw = loaded
+    existing = raw.get("waivers")
+    if existing is not None and not isinstance(existing, list):
+        raise ConfigError(f"malformed {config_path.name}: 'waivers' must be a list")
+    waivers = list(existing or [])
+    if any(isinstance(w, Mapping) and w.get("fingerprint") == fingerprint for w in waivers):
+        raise ConfigError(f"waiver for {fingerprint} already exists")
+    waivers.append(entry)
+    raw["waivers"] = waivers
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        yaml.safe_dump(raw, sort_keys=False, default_flow_style=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    return waiver
 
 
 class WaiverSet:
