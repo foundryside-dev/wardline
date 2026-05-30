@@ -13,7 +13,7 @@ import yaml
 from wardline.core.errors import ConfigError
 
 _KNOWN_KEYS = frozenset(
-    {"source_roots", "exclude", "rules", "baseline", "judge", "filigree", "clarion"}
+    {"source_roots", "exclude", "rules", "baseline", "waivers", "judge", "filigree", "clarion"}
 )
 
 
@@ -25,6 +25,7 @@ class WardlineConfig:
     rules_severity: Mapping[str, str] = field(default_factory=dict)
     # reserved (declared so the shape is visible; inert in SP0)
     baseline: Mapping[str, Any] = field(default_factory=dict)
+    waivers: tuple[Mapping[str, Any], ...] = ()
     judge: Mapping[str, Any] = field(default_factory=dict)
     filigree: Mapping[str, Any] = field(default_factory=dict)
     clarion: Mapping[str, Any] = field(default_factory=dict)
@@ -49,6 +50,7 @@ def load(path: Path | None) -> WardlineConfig:
         rules_enable=tuple(rules.get("enable") or ("*",)),
         rules_severity=dict(rules.get("severity") or {}),
         baseline=dict(raw.get("baseline") or {}),
+        waivers=tuple(raw.get("waivers") or ()),
         judge=dict(raw.get("judge") or {}),
         filigree=dict(raw.get("filigree") or {}),
         clarion=dict(raw.get("clarion") or {}),
