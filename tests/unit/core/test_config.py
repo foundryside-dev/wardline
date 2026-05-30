@@ -83,7 +83,32 @@ def test_judge_settings_from_mapping() -> None:
 
 def test_judge_settings_bad_type_raises() -> None:
     import pytest
+
     from wardline.core.config import parse_judge_settings
     from wardline.core.errors import ConfigError
     with pytest.raises(ConfigError):
         parse_judge_settings({"context_lines": "lots"})
+
+
+def test_judge_settings_rejects_nonpositive_max_findings() -> None:
+    import pytest
+
+    from wardline.core.config import parse_judge_settings
+    from wardline.core.errors import ConfigError
+    with pytest.raises(ConfigError):
+        parse_judge_settings({"max_findings": 0})
+
+
+def test_judge_settings_write_confidence_floor() -> None:
+    from wardline.core.config import parse_judge_settings
+    assert parse_judge_settings({}).write_confidence_floor == 0.5
+    assert parse_judge_settings({"write_confidence_floor": 0.0}).write_confidence_floor == 0.0
+
+
+def test_judge_settings_rejects_out_of_range_floor() -> None:
+    import pytest
+
+    from wardline.core.config import parse_judge_settings
+    from wardline.core.errors import ConfigError
+    with pytest.raises(ConfigError):
+        parse_judge_settings({"write_confidence_floor": 1.5})

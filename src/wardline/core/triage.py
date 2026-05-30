@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
-from wardline.core.errors import JudgeTransportError
+from wardline.core.errors import DiscoveryError, JudgeTransportError
 from wardline.core.finding import Finding, Kind, SuppressionState
 from wardline.core.judge import JudgeRequest, JudgeResponse, JudgeVerdict
 
@@ -29,6 +29,7 @@ class TriageResult:
     verdicts: list[TriageVerdict] = field(default_factory=list)
     n_skipped_cap: int = 0
     n_skipped_transport: int = 0
+    n_skipped_excerpt: int = 0
 
     @property
     def n_true(self) -> int:
@@ -65,19 +66,35 @@ def run_triage(
     judge_caller: Callable[[JudgeRequest], JudgeResponse],
     max_findings: int | None = None,
 ) -> TriageResult:
+    if max_findings is not None and max_findings <= 0:
+        raise ValueError(f"max_findings must be positive, got {max_findings}")
     active = [f for f in findings if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE]
     verdicts: list[TriageVerdict] = []
     n_cap = 0
     n_transport = 0
+    n_excerpt = 0
     for i, finding in enumerate(active):
         if max_findings is not None and i >= max_findings:
             n_cap = len(active) - max_findings
             break
-        request = finding_to_request(finding, excerpt=read_excerpt(finding))
+        # A per-finding excerpt failure (file moved/unreadable, path escape) is
+        # recoverable: skip-and-count, mirroring the transport band. It must NOT abort
+        # the whole run (which would discard verdicts already computed). A malformed
+        # MODEL verdict still propagates (JudgeContractError uncaught) — that is the
+        # audit primitive and must surface.
+        try:
+            excerpt = read_excerpt(finding)
+        except DiscoveryError:
+            n_excerpt += 1
+            continue
+        request = finding_to_request(finding, excerpt=excerpt)
         try:
             response = judge_caller(request)
         except JudgeTransportError:
             n_transport += 1
             continue
         verdicts.append(TriageVerdict(finding=finding, response=response))
-    return TriageResult(verdicts=verdicts, n_skipped_cap=n_cap, n_skipped_transport=n_transport)
+    return TriageResult(
+        verdicts=verdicts, n_skipped_cap=n_cap,
+        n_skipped_transport=n_transport, n_skipped_excerpt=n_excerpt,
+    )

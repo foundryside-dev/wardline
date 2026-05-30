@@ -446,7 +446,10 @@ def test_judge_dry_run_reports_without_writing(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
     result = CliRunner().invoke(cli, ["judge", str(proj)])
     assert result.exit_code == 0, result.output
-    assert "FP" in result.output
+    # Pin the report contract: FP tag + confidence + the verbatim rationale + summary line.
+    assert "FP [0.90]" in result.output
+    assert "over-taint" in result.output  # the model's rationale is surfaced
+    assert "1 false" in result.output  # summary line present
     assert not (proj / ".wardline" / "judged.yaml").exists()
 
 
@@ -492,3 +495,48 @@ def test_dotenv_does_not_override_existing_env(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "sk-or-fromenv")
     _load_env_key(tmp_path)
     assert os.environ["WARDLINE_OPENROUTER_API_KEY"] == "sk-or-fromenv"
+
+
+def _fake_fp_response_conf(conf):  # type: ignore[no-untyped-def]
+    from datetime import UTC, datetime
+
+    from wardline.core.judge import JudgeResponse, JudgeVerdict
+    return JudgeResponse(
+        verdict=JudgeVerdict.FALSE_POSITIVE, rationale="over-taint", confidence=conf,
+        model_id="m", recorded_at=datetime.now(UTC), prompt_tokens_total=1,
+        prompt_tokens_cached=None, policy_hash="sha256:x")
+
+
+def test_judge_low_confidence_fp_held_back_from_write(monkeypatch, tmp_path) -> None:
+    import wardline.cli.judge as judge_cli
+    from wardline.cli.main import cli
+    proj = _make_judge_proj(tmp_path)
+    monkeypatch.setattr(judge_cli, "call_judge", lambda req, **kw: _fake_fp_response_conf(0.3))
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+    result = CliRunner().invoke(cli, ["judge", str(proj), "--write"])
+    assert result.exit_code == 0, result.output
+    assert "FP?" in result.output and "held back" in result.output
+    # below the 0.5 floor -> nothing persisted
+    assert not (proj / ".wardline" / "judged.yaml").exists()
+
+
+def test_judge_write_then_scan_gate_is_cleared(monkeypatch, tmp_path) -> None:
+    # The regression that pins the headline panel finding: a JUDGED FP written by
+    # `judge --write` must suppress the finding for `scan --fail-on` too.
+    import wardline.cli.judge as judge_cli
+    from wardline.cli.main import cli
+    proj = _make_judge_proj(tmp_path)
+    out = tmp_path / "f.jsonl"
+    # 1) before judging, the active defect trips the gate
+    before = CliRunner().invoke(cli, ["scan", str(proj), "--output", str(out), "--fail-on", "INFO"])
+    assert before.exit_code == 1, before.output
+    # 2) judge --write persists the FP (confidence 0.9 >= floor)
+    monkeypatch.setattr(judge_cli, "call_judge", lambda req, **kw: _fake_fp_response())
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+    jres = CliRunner().invoke(cli, ["judge", str(proj), "--write"])
+    assert jres.exit_code == 0, jres.output
+    assert (proj / ".wardline" / "judged.yaml").exists()
+    # 3) scan now sees the JUDGED suppression -> gate cleared, summary shows it
+    after = CliRunner().invoke(cli, ["scan", str(proj), "--output", str(out), "--fail-on", "INFO"])
+    assert after.exit_code == 0, after.output
+    assert "judged" in after.output

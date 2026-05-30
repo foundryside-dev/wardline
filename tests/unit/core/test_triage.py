@@ -71,3 +71,32 @@ def test_run_triage_counts_transport_skips() -> None:
 
     result = run_triage([_defect("a" * 64)], read_excerpt=lambda f: "c", judge_caller=caller)
     assert result.n_skipped_transport == 1 and result.verdicts == []
+
+
+def test_run_triage_contract_error_propagates() -> None:
+    from wardline.core.errors import JudgeContractError
+
+    def caller(req: JudgeRequest) -> JudgeResponse:
+        raise JudgeContractError("model returned garbage")
+
+    import pytest
+    with pytest.raises(JudgeContractError):
+        run_triage([_defect("a" * 64)], read_excerpt=lambda f: "c", judge_caller=caller)
+
+
+def test_run_triage_excerpt_error_skips_and_counts() -> None:
+    from wardline.core.errors import DiscoveryError
+
+    def bad_excerpt(f):  # type: ignore[no-untyped-def]
+        raise DiscoveryError("unreadable")
+
+    result = run_triage([_defect("a" * 64)], read_excerpt=bad_excerpt,
+                        judge_caller=lambda req: _resp(JudgeVerdict.TRUE_POSITIVE))
+    assert result.n_skipped_excerpt == 1 and result.verdicts == []
+
+
+def test_run_triage_rejects_nonpositive_max_findings() -> None:
+    import pytest
+    with pytest.raises(ValueError):
+        run_triage([_defect("a" * 64)], read_excerpt=lambda f: "c",
+                   judge_caller=lambda req: _resp(JudgeVerdict.TRUE_POSITIVE), max_findings=0)

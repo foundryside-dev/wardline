@@ -94,17 +94,31 @@ Trust vocabulary (three decorators a project applies to declare boundaries):
   @trusted(level=L)            -> the function is asserted to operate at level L.
 
 The four rules you will see:
-  PY-WL-101 untrusted-reaches-trusted: an anchored function whose ACTUAL returned
-      taint is strictly less-trusted than its DECLARED return level. TRUE positive:
-      a validator that declares GUARDED but can return raw input unchanged. FALSE
-      positive: the engine could not narrow taint through a guard it cannot model.
-  PY-WL-102 boundary-without-rejection: a trust-raising boundary that lacks any
-      raise / falsy-return rejection path. TRUE: a validator that never rejects.
+  PY-WL-101 untrusted-reaches-trusted: a @trusted(level=L) PRODUCER whose ACTUAL
+      returned taint is strictly less-trusted than its declared level L. Note:
+      trust-RAISING validators (@trust_boundary, where the body is less-trusted
+      than the declared return) are EXEMPT from 101 and handled by 102 instead —
+      so 101 fires on @trusted/@external producers, NOT on @trust_boundary
+      validators. TRUE positive: a @trusted(level=ASSURED) function that actually
+      returns raw / MIXED_RAW data. FALSE positive: the engine could not narrow
+      taint through a guard or helper it cannot model, so the body looks raw though
+      it is in fact validated.
+  PY-WL-102 boundary-without-rejection: a trust-raising @trust_boundary that lacks
+      any raise / falsy-return rejection path. TRUE: a validator that declares it
+      raises input to GUARDED but never rejects (returns raw input unchanged).
       FALSE: rejection happens via a helper the engine did not resolve.
   PY-WL-103 broad-except: a broad `except Exception` / bare except at a trusted
       tier. TRUE: swallowing errors at a trust boundary. FALSE: re-raised or
       handled deliberately in a way the tier modulation over-weighted.
-  PY-WL-104 silent-except: an except body that suppresses the error silently.
+  PY-WL-104 silent-except: an except handler that suppresses the error with no
+      re-raise / log / handling — tier-modulated like 103. TRUE: swallowing an
+      error at a trusted tier hides a real failure. FALSE: a deliberate, documented
+      swallow the tier modulation over-weighted.
+
+Why undecorated code is silent: 101/102 fire ONLY on explicitly anchored /
+declared functions (the @trusted / @trust_boundary / @external decorators);
+103/104 are silenced on undecorated code by tier modulation in the UNKNOWN_RAW
+freedom zone. So a finding only exists where a trust boundary was declared.
 
 ================================================================
 KNOWN OVER-APPROXIMATION FALSE-POSITIVE SHAPES (load-bearing)
@@ -305,6 +319,10 @@ def call_judge(
     raw_text = _extract_text(completion)
     parsed = _parse_verdict_payload(raw_text)
     total, cached = _extract_usage(completion)
+    # Record the SERVED model (OpenRouter may route to a fallback), falling back to
+    # the requested slug ONLY when the transport omitted the field. Spec §4.2 / elspeth
+    # C1-1: don't fabricate a served id, but don't discard a valid verdict over missing
+    # metadata either. This fallback is deliberate — do not "harden" it into a crash.
     served = completion.get("model")
     return JudgeResponse(
         verdict=JudgeVerdict(parsed["verdict"]),
@@ -381,18 +399,26 @@ def _parse_verdict_payload(raw_text: str) -> dict[str, Any]:
 
 
 def _extract_usage(completion: dict[str, Any]) -> tuple[int, int | None]:
+    """Best-effort token accounting. TELEMETRY, not the audit primitive.
+
+    The verdict/rationale/model/confidence are already parsed strictly before this
+    runs; token counts are not persisted in JudgedFP nor shown in the write path. A
+    proxy/gateway may omit or reshape ``usage`` — so a missing/malformed usage block
+    DEGRADES to ``(0, None)`` rather than aborting the whole batch via a propagating
+    JudgeContractError. Do NOT restore strictness here: that would discard valid
+    verdicts (run_triage returns only at loop end) over absent telemetry. The
+    None-vs-int cached distinction is preserved when the field IS present and valid.
+    """
     usage = completion.get("usage")
     if not isinstance(usage, dict):
-        raise JudgeContractError("judge response missing usage object")
+        return 0, None
     total = usage.get("prompt_tokens")
-    if not isinstance(total, int):
-        raise JudgeContractError(f"usage.prompt_tokens must be int; got {type(total).__name__}")
+    if not isinstance(total, int) or isinstance(total, bool):
+        return 0, None
     details = usage.get("prompt_tokens_details")
     if not isinstance(details, dict):
         return total, None
     cached = details.get("cached_tokens")
-    if cached is None:
-        return total, None
-    if not isinstance(cached, int):
-        raise JudgeContractError(f"usage.prompt_tokens_details.cached_tokens must be int or null; got {cached!r}")
+    if not isinstance(cached, int) or isinstance(cached, bool):
+        return total, None  # absent / null / malformed -> unknown (None), not fabricated 0
     return total, cached

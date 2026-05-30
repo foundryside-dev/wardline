@@ -13,12 +13,13 @@ from wardline.core import config as config_mod
 from wardline.core.baseline import load_baseline
 from wardline.core.config import JudgeSettings, parse_judge_settings
 from wardline.core.discovery import discover
-from wardline.core.errors import WardlineError
+from wardline.core.errors import JudgeContractError, WardlineError
 from wardline.core.judge import (
     _API_KEY_ENV,
     _STATIC_POLICY_BLOCK,
     JudgeRequest,
     JudgeResponse,
+    JudgeVerdict,
     call_judge,
 )
 from wardline.core.judged import JudgedFP, JudgedSet, load_judged, write_judged
@@ -109,20 +110,33 @@ def judge(
             judge_caller=_caller,
             max_findings=cap,
         )
-        wrote = 0
-        if do_write and result.false_positives():
-            wrote = _persist(path, judged_set, result)
+        wrote, held_back = 0, 0
+        if do_write:
+            wrote, held_back = _persist(path, judged_set, result, floor=settings.write_confidence_floor)
+        else:
+            held_back = sum(1 for tv in result.false_positives()
+                            if tv.response.confidence < settings.write_confidence_floor)
+    except JudgeContractError as exc:
+        # The model violated the response contract — the audit primitive is corrupt.
+        # Distinct from a missing key / malformed config (both also exit 2).
+        click.echo(f"judge contract violation (model returned an unusable response): {exc}", err=True)
+        raise SystemExit(2) from exc
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
 
-    _report(result, wrote=wrote, do_write=do_write)
+    _report(result, wrote=wrote, held_back=held_back, floor=settings.write_confidence_floor, do_write=do_write)
 
 
-def _persist(path: Path, existing: JudgedSet, result: TriageResult) -> int:
+def _persist(path: Path, existing: JudgedSet, result: TriageResult, *, floor: float) -> tuple[int, int]:
+    """Append FALSE_POSITIVE verdicts at/above the confidence floor. Returns (wrote, held_back)."""
+    writable = [tv for tv in result.false_positives() if tv.response.confidence >= floor]
+    held_back = len(result.false_positives()) - len(writable)
+    if not writable:
+        return 0, held_back
     judged_path = path / ".wardline" / "judged.yaml"
     new: list[JudgedFP] = [e for fp in existing.fingerprints() if (e := existing.match(fp)) is not None]
-    for tv in result.false_positives():
+    for tv in writable:
         f, r = tv.finding, tv.response
         new.append(JudgedFP(
             fingerprint=f.fingerprint, rule_id=f.rule_id, path=f.location.path, message=f.message,
@@ -130,23 +144,32 @@ def _persist(path: Path, existing: JudgedSet, result: TriageResult) -> int:
             recorded_at=r.recorded_at, policy_hash=r.policy_hash,
         ))
     write_judged(judged_path, new)
-    return len(result.false_positives())
+    return len(writable), held_back
 
 
-def _report(result: TriageResult, *, wrote: int, do_write: bool) -> None:
+def _report(result: TriageResult, *, wrote: int, held_back: int, floor: float, do_write: bool) -> None:
     for tv in result.verdicts:
         f, r = tv.finding, tv.response
-        tag = "TP" if r.verdict.value == "TRUE_POSITIVE" else "FP"
-        if tag == "FP" and r.confidence < 0.5:
-            tag = "FP?"
+        is_fp = r.verdict is JudgeVerdict.FALSE_POSITIVE
+        low = is_fp and r.confidence < floor
+        tag = "FP?" if low else ("FP" if is_fp else "TP")
         loc = f"{f.location.path}:{f.location.line_start}"
-        note = "  (low confidence — review before --write)" if tag == "FP?" and not do_write else ""
+        # Surface the low-confidence caveat in BOTH modes — especially under --write,
+        # where a low-confidence FP would otherwise be silently held back.
+        note = "  (low confidence — held back from --write)" if low else ""
         click.echo(f"{tag} [{r.confidence:.2f}] {f.rule_id} {loc} {f.qualname or ''}\n    {r.rationale}{note}")
     summary = f"triaged {len(result.verdicts)} defect(s): {result.n_true} true / {result.n_false} false"
     if do_write:
-        summary += f" ({wrote} wrote)"
+        summary += f" ({wrote} wrote"
+        if held_back:
+            summary += f", {held_back} held back: low confidence"
+        summary += ")"
+    elif held_back:
+        summary += f" ({held_back} would be held back: low confidence)"
     if result.n_skipped_cap:
         summary += f" / {result.n_skipped_cap} skipped: cap"
     if result.n_skipped_transport:
         summary += f" / {result.n_skipped_transport} skipped: transport"
+    if result.n_skipped_excerpt:
+        summary += f" / {result.n_skipped_excerpt} skipped: excerpt unreadable"
     click.echo(summary)

@@ -53,3 +53,33 @@ def test_bad_fingerprint_raises(tmp_path: Path) -> None:
     path.write_text("version: 1\nfindings:\n  - fingerprint: short\n    rationale: x\n")
     with pytest.raises(ConfigError):
         load_judged(path)
+
+
+def test_rejudge_updates_existing_record(tmp_path: Path) -> None:
+    path = tmp_path / "judged.yaml"
+    write_judged(path, [_fp(rationale="first")])
+    write_judged(path, [_fp(rationale="second")])  # same fingerprint, new verdict
+    match = load_judged(path).match("a" * 64)
+    assert match is not None and match.rationale == "second"
+
+
+def test_missing_provenance_raises(tmp_path: Path) -> None:
+    # model_id / policy_hash / confidence are the audit primitive — never defaulted.
+    path = tmp_path / "judged.yaml"
+    path.write_text(
+        "version: 1\nfindings:\n"
+        f"  - fingerprint: {'a' * 64}\n    rationale: x\n", encoding="utf-8"
+    )
+    with pytest.raises(ConfigError):
+        load_judged(path)
+
+
+def test_out_of_range_confidence_raises(tmp_path: Path) -> None:
+    path = tmp_path / "judged.yaml"
+    path.write_text(
+        "version: 1\nfindings:\n"
+        f"  - fingerprint: {'a' * 64}\n    rationale: x\n    model_id: m\n"
+        "    policy_hash: sha256:x\n    confidence: 1.5\n", encoding="utf-8"
+    )
+    with pytest.raises(ConfigError):
+        load_judged(path)

@@ -231,3 +231,58 @@ def test_call_judge_truncated_output_crashes(monkeypatch) -> None:
     t = _FakeTransport(Response(200, _completion(_good_verdict(), finish="length")))
     with pytest.raises(JudgeContractError):
         call_judge(_req(), transport=t)
+
+
+def test_call_judge_records_served_model_distinct_from_requested(monkeypatch) -> None:
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+    t = _FakeTransport(Response(200, _completion(_good_verdict(), model="anthropic/claude-opus-4-8:fallback")))
+    resp = call_judge(_req(), transport=t, model_id="anthropic/claude-opus-4-8")
+    assert resp.model_id == "anthropic/claude-opus-4-8:fallback"  # SERVED, not requested
+
+
+def test_call_judge_falls_back_to_requested_when_served_absent(monkeypatch) -> None:
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+    body = json.dumps({
+        "choices": [{"finish_reason": "stop", "message": {"content": _good_verdict()}}],
+        "usage": {"prompt_tokens": 10},
+    })  # no "model" key
+    resp = call_judge(_req(), transport=_FakeTransport(Response(200, body)), model_id="req/model")
+    assert resp.model_id == "req/model"
+
+
+def test_call_judge_cached_zero_preserved(monkeypatch) -> None:
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+    t = _FakeTransport(Response(200, _completion(_good_verdict(), cached=0)))
+    assert call_judge(_req(), transport=t).prompt_tokens_cached == 0  # 0 != None
+
+
+def test_call_judge_outer_body_non_json_crashes(monkeypatch) -> None:
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+    with pytest.raises(JudgeContractError):
+        call_judge(_req(), transport=_FakeTransport(Response(200, "<html>maintenance</html>")))
+
+
+def test_call_judge_missing_usage_degrades_not_crashes(monkeypatch) -> None:
+    # telemetry is NOT the audit primitive: absent usage -> (0, None), verdict still returns.
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+    body = json.dumps({
+        "model": "m", "choices": [{"finish_reason": "stop", "message": {"content": _good_verdict()}}],
+    })  # no usage
+    resp = call_judge(_req(), transport=_FakeTransport(Response(200, body)))
+    assert resp.verdict is JudgeVerdict.FALSE_POSITIVE
+    assert resp.prompt_tokens_total == 0 and resp.prompt_tokens_cached is None
+
+
+def test_build_messages_truncation_preserves_head_and_tail() -> None:
+    head, tail = "HEAD" * 50, "TAIL" * 50
+    code = head + ("x" * 30_000) + tail
+    req = JudgeRequest(
+        rule_id="PY-WL-101", message="m", severity="ERROR", file_path="src/m.py", line=1,
+        qualname=None, fingerprint="a" * 64, taint_summary="t", surrounding_code=code,
+    )
+    text = next(
+        json.loads(b["text"])["surrounding_code"]["text"]
+        for b in build_messages(req, policy_block=_STATIC_POLICY_BLOCK)[1]["content"]
+        if b["text"].lstrip().startswith("{")
+    )
+    assert text.startswith("HEAD") and text.endswith("TAIL")  # both ends survive truncation
