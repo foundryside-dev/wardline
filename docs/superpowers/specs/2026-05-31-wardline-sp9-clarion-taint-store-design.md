@@ -238,7 +238,6 @@ top-level copy is only for Clarion's own queryable storage.
   "taint": {
     "declared_return": "INTEGRAL",
     "actual_return": "EXTERNAL_RAW",
-    "body_taint": "EXTERNAL_RAW",
     "source": "anchored",
     "contributing_callee_qualname": "auth.tokens.read_raw",
     "resolved_call_count": 3,
