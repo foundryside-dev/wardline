@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`wardline install`** — one-command agent enablement. Injects a hash-fenced
+  instruction block into `CLAUDE.md`/`AGENTS.md`, installs the `wardline-gate`
+  skill into `.claude/`/`.agents/`, merges a `wardline` entry into `.mcp.json`,
+  and detects Clarion/Filigree to record bindings in `wardline.yaml`.
+  `clarion.url`/`filigree.url` are now runtime-read config fields (precedence:
+  CLI flag > env var > `wardline.yaml`). Opt-out flags `--no-claude-md`,
+  `--no-agents-md`, `--no-skill`, `--no-mcp`, `--no-bindings`; no SessionStart
+  hook (re-run to refresh).
+
 ## [0.2.1] - 2026-05-31
 
 ### Added

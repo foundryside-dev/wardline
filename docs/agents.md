@@ -23,6 +23,39 @@ asks you to look.
 If you have not installed Wardline yet, start with
 [Getting Started](getting-started.md).
 
+## One-command setup: `wardline install`
+
+`wardline install` wires wardline into a project's agent context in one step:
+
+- injects a small, hash-fenced block into `CLAUDE.md` and `AGENTS.md` pointing
+  the agent at the gate and the loop;
+- installs the `wardline-gate` skill into `.claude/skills/` and `.agents/skills/`;
+- merges a `wardline` entry into `.mcp.json` (preserving any existing servers);
+- detects a Clarion taint store (`clarion` on `PATH` or `WARDLINE_CLARION_URL`)
+  and a Filigree project (`.filigree.conf`), recording a `clarion:`/`filigree:`
+  binding in `wardline.yaml` — live when a URL env var is set, otherwise a
+  commented stanza for you to fill.
+
+```console
+$ wardline install
+wardline install:
+  CLAUDE.md: created
+  AGENTS.md: created
+  skill .claude/skills/wardline-gate: created
+  skill .agents/skills/wardline-gate: created
+  .mcp.json (wardline entry): created
+  clarion: detected (commented)
+  filigree: detected (commented)
+```
+
+It is idempotent (re-run to refresh after upgrading wardline) and non-interactive
+(safe in CI). Opt out of any piece with `--no-claude-md`, `--no-agents-md`,
+`--no-skill`, `--no-mcp`, or `--no-bindings`. There is no SessionStart hook —
+freshness is enforced only when you re-run `wardline install`.
+
+Once installed, the MCP server resolves the Clarion URL from `wardline.yaml`, so
+the `.mcp.json` entry stays a bare `wardline mcp --root .` with no URL in its args.
+
 ## Gate the agent's work with `wardline scan`
 
 Wardline marks trust boundaries with two decorators from `wardline.decorators`:
