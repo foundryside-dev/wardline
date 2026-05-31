@@ -38,7 +38,15 @@ WARDLINE_SCHEMA: dict[str, Any] = {
                 "write_confidence_floor": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             },
         },
-        "filigree": {"type": "object"},
-        "clarion": {"type": "object"},
+        "filigree": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"url": {"type": "string"}},
+        },
+        "clarion": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"url": {"type": "string"}},
+        },
     },
 }
