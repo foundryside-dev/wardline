@@ -826,8 +826,9 @@ def test_join_via_local_var_does_not_demote_validated_data() -> None:
     # element, which it never is. least_trusted(INTEGRAL, ASSURED) = ASSURED — the
     # benign separator does not manufacture a MIXED_RAW provenance clash, so a
     # validated producer stays CLEAN (no false positive). The BinOp/List/Dict/IfExp/
-    # BoolOp/.get combiners use the SAME least_trusted rule (see PART F); only
-    # control-flow MERGES (if/else, loops, match arms) keep taint_join.
+    # BoolOp/.get combiners use the SAME least_trusted rule (see PART F); and
+    # control-flow MERGES (if/else, loops, match arms) ALSO use least_trusted
+    # (migration wardline-4d9f840c24) — no combiner uses taint_join.
     out = _vt(
         "def f(p):\n    v = validate(p)\n    x = ','.join([v])\n",
         function_taint=T.ASSURED, taint_map={"validate": T.ASSURED},
@@ -839,8 +840,8 @@ def test_join_via_local_var_does_not_demote_validated_data() -> None:
 # NOT the provenance-clash taint_join — so a benign literal/clean operand does not
 # manufacture a MIXED_RAW false positive on validated data, while raw still
 # propagates at its precise rank. Mirrors the f-string/.format/.join precedent.
-# Control-flow MERGES (if/else, loop back-edge, match arms) deliberately keep
-# taint_join and are covered by the merge tests above. ──
+# Control-flow MERGES (if/else, loop back-edge, match arms) ALSO use least_trusted
+# (migration wardline-4d9f840c24) and are covered by the merge tests above. ──
 
 _VALIDATE_TM = {"validate": T.ASSURED}
 

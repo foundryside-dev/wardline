@@ -132,7 +132,6 @@ def _compute_scc_round(
     taint_keys: set[str],
     current: dict[str, TaintState],
     return_taint_map: dict[str, TaintState],
-    unresolved_counts: dict[str, int],
     phase2_floor: dict[str, TaintState],
 ) -> tuple[dict[str, TaintState], dict[str, str | None]]:
     """Compute one synchronous SCC refinement round from a stable snapshot."""
@@ -169,13 +168,14 @@ def _compute_scc_round(
         # false positive); a raw callee still propagates at its precise rank.
         combined = reduce(least_trusted, callee_taints)
         floor = phase2_floor[func]
+        # The line-above floor pins TRUST_RANK[new_taint] >= TRUST_RANK[floor]
+        # unconditionally, so the former inner unresolved-clamp guard
+        # (rank[floor] > rank[new_taint]) was never true — dead code removed
+        # (taint-combination audit, F2; minimum_scope.py:158-161 makes the same
+        # point in prose). The unresolved floor is already applied at seed time
+        # (phase2_floor incorporates the unresolved pessimistic floor from the
+        # Phase-1 external-influence pass).
         new_taint = floor if TRUST_RANK[floor] > TRUST_RANK[combined] else combined
-        if (
-            unresolved_counts.__contains__(func)
-            and unresolved_counts[func] > 0
-            and TRUST_RANK[floor] > TRUST_RANK[new_taint]
-        ):
-            new_taint = floor
 
         updates[func] = new_taint
         via_callee[func] = best_callee
@@ -439,7 +439,6 @@ def propagate_callgraph_taints(
                 taint_keys=taint_keys,
                 current=current,
                 return_taint_map=return_taint_map,
-                unresolved_counts=unresolved_counts,
                 phase2_floor=phase2_floor,
             )
 

@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Taint algebra concepts page + lattice-retention ADR** — a new
+  `docs/concepts/taint-algebra.md` consolidates the taint-combination
+  rationale (which operator runs where and why, the reachable-state set and its
+  invariants, the per-rule consumption map, and the accepted "wrong-predicate
+  validator" boundary) into one authoritative spec, and
+  `docs/decisions/2026-05-31-wardline-taint-lattice-retain.md` records the
+  decision to retain the 8-state lattice and the `taint_join` operator as the
+  documented contrast operator (no production call site). Resolves the
+  taint-combination audit findings F1, F3, F4, and F5.
+
+### Changed
+
+- **Reachable-state invariant now enforced at the taint parsers** — the two
+  dynamic `TaintState` construction sites that previously accepted any canonical
+  state are now constrained to their legal subsets: the bundled stdlib taint
+  table accepts only `{ASSURED, GUARDED, EXTERNAL_RAW, UNKNOWN_RAW}`, and the
+  disk-persistent summary cache's deserialiser accepts the full reachable set
+  `{INTEGRAL, ASSURED, GUARDED, EXTERNAL_RAW, UNKNOWN_RAW}`. Both reject the
+  never-produced trio (`MIXED_RAW`, `UNKNOWN_GUARDED`, `UNKNOWN_ASSURED`), so a
+  corrupt/tampered cache file or a future stdlib-table entry carrying one is
+  rejected (the cache file is dropped as cold-cache fallback) rather than
+  silently injecting an otherwise-unreachable state. No behaviour change for
+  valid inputs. Resolves audit finding F5.
+- **Removed dead code in the L3 propagation kernel** — the unreachable inner
+  unresolved-clamp in the per-SCC refinement round (subsumed by the preceding
+  floor) was deleted, along with the now-orphaned `unresolved_counts` parameter
+  of the internal `_compute_scc_round` helper. Behaviour-preserving. Resolves
+  audit finding F2.
+- **Corrected stale taint-combiner comments in the test suite** — the
+  `test_variable_level.py` comments claiming control-flow merges "keep
+  `taint_join`" predated the merge migration and misdescribed current behaviour;
+  they now state those merges use `least_trusted` (wardline-4d9f840c24). Test
+  comments only. Resolves audit finding F6.
+
 ### Fixed
 
 - **Control-flow merge over-tainting (false positives)** — the statement-level

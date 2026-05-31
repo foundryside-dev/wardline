@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
+
+import wardline.scanner.taint.propagation as propagation
 from wardline.core.taints import TaintState as T
 from wardline.scanner.taint.propagation import (
     DIAG_CONVERGENCE_BOUND,
-    DIAG_MONOTONICITY_VIOLATION,  # noqa: F401
+    DIAG_MONOTONICITY_VIOLATION,
+    _check_monotonicity_violation,
     compute_sccs,
     propagate_callgraph_taints,
 )
@@ -185,3 +189,91 @@ def test_empty_taint_map_returns_empty() -> None:
         resolved_counts={}, unresolved_counts={}, return_taint_map={},
     )
     assert refined == {} and prov == {} and diags == [] and it == {}
+
+
+# ── Fault-injection: the two defensive arms that sound inputs never trigger.
+# With the transfer functions correct the engine stays monotone and anchored
+# entries never change, so these branches are unreachable by any natural corpus
+# (audit "could-not-drive"). We reach them by crafting a transfer-function bug:
+# the monotonicity comparison is exercised directly through its isolated helper,
+# and both kernel arms via a monkeypatched _compute_scc_round seam. ──
+
+
+def test_check_monotonicity_violation_helper_detects_trust_increase() -> None:
+    # The isolated comparison: a strict move toward MORE trust (lower rank) is a
+    # violation; equal or less-trusted is not.
+    assert _check_monotonicity_violation(old_taint=T.UNKNOWN_RAW, new_taint=T.INTEGRAL) is True
+    assert _check_monotonicity_violation(old_taint=T.ASSURED, new_taint=T.EXTERNAL_RAW) is False
+    assert _check_monotonicity_violation(old_taint=T.GUARDED, new_taint=T.GUARDED) is False
+
+
+def test_monotonicity_violation_pins_and_diagnoses(monkeypatch) -> None:
+    # A buggy transfer round proposes moving a NON-anchored function toward MORE
+    # trust. The kernel must emit L3_MONOTONICITY_VIOLATION and pin the function
+    # at its old (safer, less-trusted) value rather than commit the upgrade.
+    calls = {"n": 0}
+
+    def buggy_round(**_kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # A is non-anchored at UNKNOWN_RAW; propose INTEGRAL (more trusted).
+            return ({"A": T.INTEGRAL}, {"A": "B"})
+        return ({}, {})
+
+    monkeypatch.setattr(propagation, "_compute_scc_round", buggy_round)
+    edges = {"A": {"B"}, "B": set()}
+    tm = {"A": T.UNKNOWN_RAW, "B": T.GUARDED}
+    src = {"A": "fallback", "B": "anchored"}
+    refined, _prov, diags, _it = propagate_callgraph_taints(
+        edges=edges, taint_map=tm, taint_sources=src,
+        resolved_counts={"A": 1, "B": 0}, unresolved_counts={"A": 0, "B": 0},
+        return_taint_map={"A": T.UNKNOWN_RAW, "B": T.GUARDED},
+    )
+    assert any(code == DIAG_MONOTONICITY_VIOLATION for code, _ in diags)
+    assert refined["A"] == T.UNKNOWN_RAW  # pinned to the old safer value, NOT INTEGRAL
+
+
+def test_post_assertion_anchored_drift_bails_to_unrefined(monkeypatch, caplog) -> None:
+    # A buggy round mutates an ANCHORED function's taint in-place. The
+    # post-fixed-point assertion must detect the drift and bail to the unrefined
+    # map with seed-only provenance (NO diagnostic — this arm only logs ERROR).
+    def buggy_round(**kwargs):
+        kwargs["current"]["B"] = T.MIXED_RAW  # corrupt anchored B
+        return ({}, {})
+
+    monkeypatch.setattr(propagation, "_compute_scc_round", buggy_round)
+    edges = {"A": {"B"}, "B": set()}
+    tm = {"A": T.UNKNOWN_RAW, "B": T.GUARDED}
+    src = {"A": "fallback", "B": "anchored"}
+    with caplog.at_level(logging.ERROR, logger=propagation.__name__):
+        refined, prov, _diags, _it = propagate_callgraph_taints(
+            edges=edges, taint_map=tm, taint_sources=src,
+            resolved_counts={"A": 1, "B": 0}, unresolved_counts={"A": 0, "B": 0},
+            return_taint_map={"A": T.UNKNOWN_RAW, "B": T.GUARDED},
+        )
+    assert refined == tm  # bailed to the unrefined L1 map
+    assert prov["A"].source == "fallback"  # seed-only provenance
+    assert any("post-assertion FAILED" in r.message for r in caplog.records)
+
+
+def test_post_assertion_module_default_upgrade_bails(monkeypatch, caplog) -> None:
+    # A buggy round upgrades a MODULE_DEFAULT function toward MORE trust by direct
+    # mutation (bypassing the monotonicity commit guard). The module_default
+    # post-assertion must detect the upgrade and bail to the unrefined map.
+    def buggy_round(**kwargs):
+        kwargs["current"]["A"] = T.INTEGRAL  # A is module_default, started UNKNOWN_RAW
+        return ({}, {})
+
+    monkeypatch.setattr(propagation, "_compute_scc_round", buggy_round)
+    edges = {"A": {"B"}, "B": set()}
+    tm = {"A": T.UNKNOWN_RAW, "B": T.GUARDED}
+    src = {"A": "module_default", "B": "anchored"}
+    with caplog.at_level(logging.ERROR, logger=propagation.__name__):
+        refined, prov, _diags, _it = propagate_callgraph_taints(
+            edges=edges, taint_map=tm, taint_sources=src,
+            resolved_counts={"A": 1, "B": 0}, unresolved_counts={"A": 0, "B": 0},
+            return_taint_map={"A": T.UNKNOWN_RAW, "B": T.GUARDED},
+        )
+    assert refined == tm  # bailed to the unrefined L1 map
+    assert prov["A"].source == "module_default"  # seed-only provenance
+    assert any("post-assertion FAILED" in r.message for r in caplog.records)

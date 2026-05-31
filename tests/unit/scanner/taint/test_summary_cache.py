@@ -4,7 +4,11 @@ import pytest
 
 from wardline.core.taints import TaintState as T
 from wardline.scanner.taint.summary import SUMMARY_SCHEMA_VERSION, FunctionSummary
-from wardline.scanner.taint.summary_cache import SummaryCache
+from wardline.scanner.taint.summary_cache import (
+    SummaryCache,
+    _deserialise_summary,
+    _serialise_summary,
+)
 
 _KEY = "a" * 64
 _KEY2 = "b" * 64
@@ -126,3 +130,77 @@ def test_load_requires_cache_dir() -> None:
 
 def test_in_memory_cache_has_no_cache_dir() -> None:
     assert SummaryCache().cache_dir is None
+
+
+# ── F5: the disk-persistent cache deserialiser rejects the unreachable trio
+# {MIXED_RAW, UNKNOWN_GUARDED, UNKNOWN_ASSURED} — valid TaintState strings that
+# the malformed-file drop guard would otherwise let through — but STILL accepts
+# the full reachable set INCLUDING INTEGRAL (a @trusted function caches INTEGRAL).
+# Taint-combination audit F5. ──
+
+
+def _summary_dict(body: str, ret: str) -> dict[str, object]:
+    return {
+        "fqn": "m.f",
+        "body_taint": body,
+        "return_taint": ret,
+        "taint_source": "anchored",
+        "unresolved_calls": 0,
+        "schema_version": SUMMARY_SCHEMA_VERSION,
+        "cache_key": _KEY,
+    }
+
+
+@pytest.mark.parametrize("state", ["MIXED_RAW", "UNKNOWN_GUARDED", "UNKNOWN_ASSURED"])
+def test_deserialise_rejects_unreachable_body_taint(state: str) -> None:
+    with pytest.raises(ValueError, match="unreachable taint state"):
+        _deserialise_summary(_summary_dict(state, "INTEGRAL"))
+
+
+@pytest.mark.parametrize("state", ["MIXED_RAW", "UNKNOWN_GUARDED", "UNKNOWN_ASSURED"])
+def test_deserialise_rejects_unreachable_return_taint(state: str) -> None:
+    with pytest.raises(ValueError, match="unreachable taint state"):
+        _deserialise_summary(_summary_dict("INTEGRAL", state))
+
+
+def test_deserialise_integral_roundtrips() -> None:
+    # MANDATORY regression guard: a @trusted function produces INTEGRAL, so the
+    # cache MUST round-trip INTEGRAL body/return taint. Rejecting it here would
+    # silently break caching of trusted functions.
+    s = FunctionSummary(
+        fqn="m.f", body_taint=T.INTEGRAL, return_taint=T.INTEGRAL,
+        taint_source="anchored", unresolved_calls=0,
+        schema_version=SUMMARY_SCHEMA_VERSION, cache_key=_KEY,
+    )
+    out = _deserialise_summary(_serialise_summary(s))
+    assert out == s
+    assert out.body_taint == T.INTEGRAL and out.return_taint == T.INTEGRAL
+
+
+def test_integral_survives_full_save_load_cycle(tmp_path) -> None:
+    # End-to-end: a poisoned-but-valid trio state would be dropped by load(),
+    # but a legitimate INTEGRAL summary must survive the disk round-trip.
+    c = SummaryCache(cache_dir=tmp_path)
+    s = FunctionSummary(
+        fqn="m.f", body_taint=T.INTEGRAL, return_taint=T.INTEGRAL,
+        taint_source="anchored", unresolved_calls=0,
+        schema_version=SUMMARY_SCHEMA_VERSION, cache_key=_KEY,
+    )
+    c.put(_KEY, (s,))
+    c.save()
+    c2 = SummaryCache(cache_dir=tmp_path)
+    c2.load()
+    assert c2.get(_KEY) == (s,)
+
+
+def test_load_drops_poisoned_trio_cache_file(tmp_path, caplog) -> None:
+    # A hand-edited/corrupted cache file holding a valid-but-unreachable state is
+    # dropped (cold-cache fallback), not injected — load() catches the ValueError.
+    import json
+
+    (tmp_path / f"{_KEY}.json").write_text(
+        json.dumps([_summary_dict("MIXED_RAW", "MIXED_RAW")]), encoding="utf-8"
+    )
+    c = SummaryCache(cache_dir=tmp_path)
+    c.load()  # must not raise
+    assert len(c) == 0

@@ -75,6 +75,19 @@ def taint_join(a: TaintState, b: TaintState) -> TaintState:
     every other cross-family pair (e.g. ``taint_join(INTEGRAL, ASSURED)`` is
     ``MIXED_RAW`` whereas ``least_trusted(INTEGRAL, ASSURED)`` is ``ASSURED``).
     Do not "simplify" one into the other.
+
+    RETAINED, NO PRODUCTION CALL SITE. After the three least_trusted migrations
+    (wardline-4d94577013 L2 expression combiners, wardline-4d9f840c24 L2
+    control-flow merges, wardline-17b9ce2c70 L3 callee combinations) nothing in
+    the live pipeline calls ``taint_join`` — every combination/merge/aggregation/
+    alternative site uses :func:`least_trusted`. It is kept DELIBERATELY as the
+    documented contrast operator: its 8 unit tests pin the provenance-clash
+    semantics (``taint_join(INTEGRAL, ASSURED) == MIXED_RAW``) that ~18
+    regression-guard comments across the test suite cite by name as the "why we
+    did NOT use this" record, and the F5 parser guards keep ``MIXED_RAW`` and the
+    ``UNKNOWN_*`` family unreachable rather than relying on deletion. See
+    docs/decisions/2026-05-31-wardline-taint-lattice-retain.md (ADR) and
+    docs/concepts/taint-algebra.md.
     """
     if a == b:
         return a

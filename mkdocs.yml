@@ -45,6 +45,7 @@ nav:
   - Getting Started: getting-started.md
   - Concepts:
       - Taint & trust model: concepts/model.md
+      - Taint algebra: concepts/taint-algebra.md
       - Rules: concepts/rules.md
   - Guides:
       - Configuration: guides/configuration.md
