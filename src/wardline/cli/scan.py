@@ -26,6 +26,12 @@ from wardline.core.sarif import SarifSink
 @click.option("--output", type=click.Path(path_type=Path), default=None)
 # exit 1 if any non-suppressed DEFECT has severity >= this threshold (SP3b)
 @click.option("--fail-on", type=click.Choice(["CRITICAL", "ERROR", "WARN", "INFO"]), default=None)
+# Opt-in CI enforcement: exit 1 when any file was discovered but not analysed
+# (parse error / too-deep / missing source root — NOT benign no-module skips).
+# Default FALSE preserves the released exit-code behaviour; the count is ALWAYS
+# surfaced.
+@click.option("--fail-on-unanalyzed/--no-fail-on-unanalyzed", default=False,
+              help="Exit 1 if any file was discovered but could not be analyzed.")
 @click.option("--cache-dir", type=click.Path(path_type=Path), default=None,
               help="Persist L3 summary cache here for faster incremental scans.")
 @click.option("--filigree-url", "filigree_url", default=None,
@@ -38,6 +44,7 @@ def scan(
     fmt: str,
     output: Path | None,
     fail_on: str | None,
+    fail_on_unanalyzed: bool,
     cache_dir: Path | None,
     filigree_url: str | None,
     clarion_url: str | None,
@@ -103,10 +110,23 @@ def scan(
                 line += f"; {len(clarion_result.unresolved_qualnames)} qualname(s) unresolved (not indexed by Clarion)"
             click.echo(line)
     s = result.summary
+    unanalyzed_segment = (
+        f"; {s.unanalyzed} file(s) could not be analyzed" if s.unanalyzed else ""
+    )
     click.echo(
         f"scanned {result.files_scanned} file(s); {s.total} finding(s) — "
         f"{s.baselined + s.waived + s.judged} suppressed "
-        f"({s.baselined} baseline / {s.waived} waiver / {s.judged} judged), {s.active} new -> {output}"
+        f"({s.baselined} baseline / {s.waived} waiver / {s.judged} judged), {s.active} new"
+        f"{unanalyzed_segment} -> {output}"
     )
-    if fail_on is not None and gate_decision(result, Severity(fail_on)).tripped:
+    # A discovered-but-not-analysed file is a silent under-scan; never hide it.
+    if s.unanalyzed:
+        click.echo(
+            f"warning: {s.unanalyzed} file(s) were discovered but could not be analyzed "
+            f"(see WLN-ENGINE-* facts in {output}).",
+            err=True,
+        )
+    gate_tripped = fail_on is not None and gate_decision(result, Severity(fail_on)).tripped
+    # Independent of the severity gate: opt-in enforcement of "everything analysed".
+    if gate_tripped or (fail_on_unanalyzed and s.unanalyzed):
         raise SystemExit(1)

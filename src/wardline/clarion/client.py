@@ -6,8 +6,9 @@ test touches the network), and status bands where a sibling-absent/5xx outage is
 SOFT (the caller degrades to the SP8 re-run) while a 4xx is a LOUD ClarionError
 (Wardline sent a bad request). The split adds: 403 WRITE_DISABLED/PROJECT_MISMATCH
 are soft (the store is off / wrong project — not a Wardline bug). The client routes
-on the envelope `code`, not the HTTP status (the same code can carry different
-statuses by route).
+on the HTTP status band (``>= 500`` and ``403`` are soft; other non-2xx are a loud
+ClarionError); the envelope `code` is surfaced only as a label (``disabled_reason``)
+and in error-message text, never as the soft-vs-loud decision.
 """
 
 from __future__ import annotations

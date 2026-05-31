@@ -119,6 +119,61 @@ def test_trusted_leaking_raw_via_match_arm_assignment_fires(tmp_path) -> None:
     assert all(f.kind == Kind.DEFECT for f in findings)
 
 
+def test_trusted_method_leaking_raw_via_self_method_fires(tmp_path) -> None:
+    # PART C: a @trusted method that returns the result of a self.raw_method() call,
+    # where self.raw_method is @external_boundary. The L2 call-taint map omitted
+    # self.* / cls.* method call sites (only top-level functions were keyed), so
+    # the call resolved to function_taint — a fail-open launder. L3 builds these
+    # edges via resolve_self_method_fqn; L2 now has parity.
+    ctx, _ = _analyze(tmp_path, {
+        "svc.py": "from wardline.decorators import trusted, external_boundary\n"
+                  "class S:\n"
+                  "    @external_boundary\n"
+                  "    def raw(self, p):\n"
+                  "        return p\n"
+                  "    @trusted\n"
+                  "    def m(self, p):\n"
+                  "        return self.raw(p)\n",
+    })
+    ids = {(f.rule_id, f.qualname) for f in _run(ctx)}
+    assert ("PY-WL-101", "svc.S.m") in ids
+
+
+def test_trusted_method_leaking_raw_via_cls_method_fires(tmp_path) -> None:
+    # PART C: same, but the call goes through ``cls.<method>``.
+    ctx, _ = _analyze(tmp_path, {
+        "svc.py": "from wardline.decorators import trusted, external_boundary\n"
+                  "class S:\n"
+                  "    @external_boundary\n"
+                  "    def raw(cls, p):\n"
+                  "        return p\n"
+                  "    @trusted\n"
+                  "    def m(cls, p):\n"
+                  "        return cls.raw(p)\n",
+    })
+    ids = {(f.rule_id, f.qualname) for f in _run(ctx)}
+    assert ("PY-WL-101", "svc.S.m") in ids
+
+
+def test_trusted_method_calling_validating_self_method_is_clean(tmp_path) -> None:
+    # PART C clean counterpart: the self-method is a @trust_boundary validator
+    # returning ASSURED; the @trusted(ASSURED) caller returns its result == declared.
+    # Must NOT fire PY-WL-101 (no false positive from the new self.* edge).
+    ctx, _ = _analyze(tmp_path, {
+        "svc.py": "from wardline.decorators import trusted, trust_boundary\n"
+                  "class S:\n"
+                  "    @trust_boundary(to_level='ASSURED')\n"
+                  "    def validate(self, p):\n"
+                  "        if not p:\n"
+                  "            raise ValueError\n"
+                  "        return p\n"
+                  "    @trusted(level='ASSURED')\n"
+                  "    def m(self, p):\n"
+                  "        return self.validate(p)\n",
+    })
+    assert ("PY-WL-101", "svc.S.m") not in {(f.rule_id, f.qualname) for f in _run(ctx)}
+
+
 def test_correct_trust_boundary_does_not_fire_101(tmp_path) -> None:
     # Regression pin for the @trust_boundary exemption: a CORRECT validator (raise
     # guard + return) seeds its params at the raw body taint and the engine cannot

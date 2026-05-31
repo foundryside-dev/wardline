@@ -27,22 +27,26 @@ def test_parameters_inherit_function_taint() -> None:
     assert out["a"] == out["b"] == out["c"] == out["d"] == T.EXTERNAL_RAW
 
 
-def test_binop_joins_operands() -> None:
-    # a=INTEGRAL, p=function_taint(UNKNOWN_RAW); INTEGRAL ⋈ UNKNOWN_RAW = MIXED_RAW
+def test_binop_combines_operands_via_least_trusted() -> None:
+    # a=INTEGRAL, p=function_taint(UNKNOWN_RAW); value-building combines via the
+    # rank-meet least_trusted (weakest-link) = UNKNOWN_RAW — raw propagates at its
+    # precise rank, NOT a MIXED_RAW provenance clash.
     out = _vt("def f(p):\n    a = 42\n    b = a + p\n", function_taint=T.UNKNOWN_RAW)
     assert out["a"] == T.INTEGRAL
-    assert out["b"] == T.MIXED_RAW
+    assert out["b"] == T.UNKNOWN_RAW
 
 
-def test_collection_joins_elements_and_empty_is_integral() -> None:
+def test_collection_combines_elements_and_empty_is_integral() -> None:
+    # [42, p] — container summary = least_trusted(INTEGRAL, EXTERNAL_RAW) = EXTERNAL_RAW.
     out = _vt("def f(p):\n    x = [42, p]\n    y = []\n", function_taint=T.EXTERNAL_RAW)
-    assert out["x"] == T.MIXED_RAW  # INTEGRAL ⋈ EXTERNAL_RAW
+    assert out["x"] == T.EXTERNAL_RAW
     assert out["y"] == T.INTEGRAL
 
 
-def test_ternary_joins_branches() -> None:
+def test_ternary_combines_branches_via_least_trusted() -> None:
+    # 42 if cond else p — either/or = least_trusted(INTEGRAL, EXTERNAL_RAW) = EXTERNAL_RAW.
     out = _vt("def f(p):\n    x = 42 if cond else p\n", function_taint=T.EXTERNAL_RAW)
-    assert out["x"] == T.MIXED_RAW
+    assert out["x"] == T.EXTERNAL_RAW
 
 
 def test_if_else_merges_branches() -> None:
@@ -89,9 +93,10 @@ def test_tuple_unpack_elementwise() -> None:
     assert out["b"] == T.EXTERNAL_RAW
 
 
-def test_aug_assign_joins_existing() -> None:
+def test_aug_assign_combines_existing_via_least_trusted() -> None:
+    # x=INTEGRAL; x += p (UNKNOWN_RAW) is value-building → least_trusted = UNKNOWN_RAW.
     out = _vt("def f(p):\n    x = 42\n    x += p\n", function_taint=T.UNKNOWN_RAW)
-    assert out["x"] == T.MIXED_RAW
+    assert out["x"] == T.UNKNOWN_RAW
 
 
 def test_call_bare_name_resolved_via_taint_map() -> None:
@@ -322,3 +327,537 @@ def test_compute_return_callee_identifies_least_trusted_call() -> None:
     assert rc("def f(p):\n return validate(read_raw(p))\n") == "validate"
     # no value-bearing return → None
     assert rc("def f():\n return\n") is None
+
+
+# ── PART A: expression-coverage soundness (fail-open laundering closed) ──────
+#
+# Every test seeds ``function_taint=INTEGRAL`` (a TRUSTED tier) so the bug is
+# visible: the line-134 fallback used to ``return function_taint`` — for an
+# anchored @trusted producer that resets laundered raw data back to INTEGRAL.
+# We assert each shape carries the contributing taint (UNKNOWN_RAW — the precise
+# rank-meet least_trusted result, raw propagating), never the trusted seed.
+
+_RAW_TM = {"read_raw": T.UNKNOWN_RAW}
+
+
+def test_fstring_carries_interpolated_taint() -> None:
+    # f"{read_raw(p)}" — pure interpolation, no literal text → UNKNOWN_RAW.
+    out = _vt("def f(p):\n    x = f'{read_raw(p)}'\n", function_taint=T.INTEGRAL, taint_map=_RAW_TM)
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_fstring_with_literal_text_combines_via_least_trusted() -> None:
+    # f"x={read_raw(p)}" — string-building uses the rank-meet least_trusted (NOT
+    # taint_join): least_trusted(INTEGRAL literal, UNKNOWN_RAW) = UNKNOWN_RAW. The
+    # literal text is benign and must not manufacture a MIXED_RAW provenance clash.
+    out = _vt("def f(p):\n    x = f'x={read_raw(p)}'\n", function_taint=T.INTEGRAL, taint_map=_RAW_TM)
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_fstring_with_literal_text_and_validated_stays_clean() -> None:
+    # f"x={validate(p)}" inside an ASSURED producer: least_trusted(INTEGRAL, ASSURED)
+    # = ASSURED — the benign literal does NOT demote validated data. (No false
+    # positive; taint_join would wrongly yield MIXED_RAW here.)
+    out = _vt(
+        "def f(p):\n    x = f'x={validate(p)}'\n",
+        function_taint=T.ASSURED, taint_map={"validate": T.ASSURED},
+    )
+    assert out["x"] == T.ASSURED
+
+
+def test_fstring_empty_is_integral() -> None:
+    out = _vt("def f():\n    x = f''\n", function_taint=T.INTEGRAL)
+    assert out["x"] == T.INTEGRAL
+
+
+def test_str_and_format_call_fall_through_to_arg_walrus_but_carry_function_taint() -> None:
+    # str()/"{}".format() are unmodelled Calls absent from the taint_map; they fall
+    # back to function_taint. That is SOUND when function_taint is the raw seed
+    # (over-approx). The laundering bug is the f-string / subscript / etc. shapes,
+    # not str() — but we still assert the arg walrus is resolved for side effects.
+    out = _vt(
+        "def f(p):\n    x = str(y := read_raw(p))\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["y"] == T.UNKNOWN_RAW  # walrus side-effect captured
+
+
+def test_subscript_carries_container_taint() -> None:
+    # [read_raw(p)][0] — list is UNKNOWN_RAW, subscript carries it.
+    out = _vt("def f(p):\n    x = [read_raw(p)][0]\n", function_taint=T.INTEGRAL, taint_map=_RAW_TM)
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_subscript_dict_literal_carries_value_taint() -> None:
+    out = _vt("def f(p):\n    x = {'k': read_raw(p)}['k']\n", function_taint=T.INTEGRAL, taint_map=_RAW_TM)
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_subscript_resolves_slice_for_walrus() -> None:
+    # d[(i := read_raw(p))] — the slice walrus must bind.
+    out = _vt(
+        "def f(p, d):\n    x = d[(i := read_raw(p))]\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["i"] == T.UNKNOWN_RAW
+
+
+def test_attribute_read_carries_object_taint() -> None:
+    # o is UNKNOWN_RAW; o.x carries the object's taint.
+    out = _vt(
+        "def f(p):\n    o = read_raw(p)\n    x = o.attr\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_await_unwraps_inner_call() -> None:
+    out = _vt(
+        "async def f(p):\n    r = await read_raw(p)\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["r"] == T.UNKNOWN_RAW
+
+
+def test_boolop_combines_all_values_via_least_trusted() -> None:
+    # read_raw(p) or 'x' — either/or = least_trusted(UNKNOWN_RAW, INTEGRAL) = UNKNOWN_RAW.
+    out = _vt("def f(p):\n    x = read_raw(p) or 'x'\n", function_taint=T.INTEGRAL, taint_map=_RAW_TM)
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_boolop_and_with_raw_value() -> None:
+    # p and read_raw(p) — p is INTEGRAL; least_trusted(INTEGRAL, UNKNOWN_RAW) = UNKNOWN_RAW.
+    out = _vt("def f(p):\n    x = p and read_raw(p)\n", function_taint=T.INTEGRAL, taint_map=_RAW_TM)
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_boolop_all_raw_stays_raw() -> None:
+    out = _vt(
+        "def f(p):\n    x = read_raw(p) or read_raw(p)\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_listcomp_carries_element_taint() -> None:
+    # [x for x in [read_raw(p)]] — iter is UNKNOWN_RAW, x binds UNKNOWN_RAW, elt is x.
+    out = _vt(
+        "def f(p):\n    x = [y for y in [read_raw(p)]]\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_setcomp_carries_element_taint() -> None:
+    out = _vt(
+        "def f(p):\n    x = {y for y in [read_raw(p)]}\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_genexp_carries_element_taint() -> None:
+    out = _vt(
+        "def f(p):\n    x = (y for y in [read_raw(p)])\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_dictcomp_combines_key_and_value_taint() -> None:
+    # {k: read_raw(p) for k in range(1)} — least_trusted(INTEGRAL key, UNKNOWN_RAW value)
+    # = UNKNOWN_RAW (raw value propagates at its precise rank).
+    out = _vt(
+        "def f(p):\n    x = {k: read_raw(p) for k in range(1)}\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_multi_generator_comprehension_chains_taint() -> None:
+    # Flatten pattern: the SECOND generator's iterable references the FIRST
+    # generator's target. The target must be visible in the comprehension's local
+    # scope, or gen2's iter resolves to function_taint (trusted seed) → launder.
+    out = _vt(
+        "def f(p):\n    x = [y for row in [read_raw(p)] for y in row]\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_comprehension_walrus_leaks_to_enclosing_scope() -> None:
+    # PEP 572: a walrus inside a comprehension binds the ENCLOSING scope.
+    out = _vt(
+        "def f(p):\n    x = [(w := read_raw(p)) for _ in range(1)]\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["w"] == T.UNKNOWN_RAW
+
+
+# ── PART B: container-write taint (subscript / attribute assignment targets) ──
+
+
+def test_subscript_write_taints_base_container() -> None:
+    # d[k] = read_raw(p); then read d back — d must carry the contaminated taint.
+    out = _vt(
+        "def f(p):\n    d = {}\n    d['k'] = read_raw(p)\n    x = d\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    # d was INTEGRAL ({}); least_trusted(INTEGRAL, UNKNOWN_RAW) = UNKNOWN_RAW — raw
+    # write still contaminates (fires), at its precise rank rather than MIXED_RAW.
+    assert out["d"] == T.UNKNOWN_RAW
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_attribute_write_taints_base_object() -> None:
+    # o.x = read_raw(p); return o.x — the object's tracked taint absorbs the write.
+    out = _vt(
+        "def f(p, o):\n    o.attr = read_raw(p)\n    x = o.attr\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    # o is INTEGRAL (param at function_taint); least_trusted(INTEGRAL, UNKNOWN_RAW)
+    # = UNKNOWN_RAW; o.attr read carries o's taint.
+    assert out["o"] == T.UNKNOWN_RAW
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_nested_subscript_write_taints_root_name() -> None:
+    # d[a][b] = read_raw(p) — the ROOT Name d absorbs the taint.
+    out = _vt(
+        "def f(p, d):\n    d[a][b] = read_raw(p)\n    x = d\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["d"] == T.UNKNOWN_RAW
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_augassign_subscript_target_taints_base() -> None:
+    # d[k] += read_raw(p) — the base d absorbs the RHS taint via least_trusted.
+    out = _vt(
+        "def f(p, d):\n    d[k] += read_raw(p)\n    x = d\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["d"] == T.UNKNOWN_RAW
+
+
+def test_annassign_attribute_target_taints_base() -> None:
+    # self.x: str = read_raw(p) — an ANNOTATED container write. Same fail-open
+    # shape as the plain-assign Part B fix: the base must absorb the RHS taint,
+    # else a later read of self.x reads it back at the creation taint.
+    out = _vt(
+        "def f(p, o):\n    o.x: str = read_raw(p)\n    y = o.x\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["o"] == T.UNKNOWN_RAW
+    assert out["y"] == T.UNKNOWN_RAW
+
+
+def test_annassign_subscript_target_taints_base() -> None:
+    # d['k']: str = read_raw(p) — annotated subscript write contaminates the base.
+    out = _vt(
+        "def f(p, d):\n    d['k']: str = read_raw(p)\n    x = d\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["d"] == T.UNKNOWN_RAW
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+# ── PART E: curated taint-PROPAGATING operations (closed fail-open launders) ──
+#
+# A small explicit table (mirroring _SERIALISATION_SINKS) of builtin conversions
+# and propagating methods. UNKNOWN calls STILL fall back to function_taint — only
+# these curated names propagate, so len(raw)/int(raw)/validate(raw) stay
+# unaffected (no FP explosion). Seed INTEGRAL to expose the launder.
+
+
+def test_str_builtin_propagates_arg_taint() -> None:
+    out = _vt("def f(p):\n    x = str(read_raw(p))\n", function_taint=T.INTEGRAL, taint_map=_RAW_TM)
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_repr_builtin_propagates_arg_taint() -> None:
+    out = _vt("def f(p):\n    x = repr(read_raw(p))\n", function_taint=T.INTEGRAL, taint_map=_RAW_TM)
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_bytes_builtin_propagates_arg_taint() -> None:
+    out = _vt("def f(p):\n    x = bytes(read_raw(p))\n", function_taint=T.INTEGRAL, taint_map=_RAW_TM)
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_str_builtin_no_args_is_integral() -> None:
+    out = _vt("def f():\n    x = str()\n", function_taint=T.INTEGRAL, taint_map=_RAW_TM)
+    assert out["x"] == T.INTEGRAL
+
+
+def test_str_builtin_constant_arg_stays_integral() -> None:
+    # Clean counterpart: str("constant") in any context stays INTEGRAL (no FP).
+    out = _vt("def f():\n    x = str('constant')\n", function_taint=T.INTEGRAL, taint_map=_RAW_TM)
+    assert out["x"] == T.INTEGRAL
+
+
+def test_format_builtin_joins_args() -> None:
+    out = _vt(
+        "def f(p):\n    x = format(read_raw(p))\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_next_builtin_propagates_iterator_taint() -> None:
+    # next(genexp) — the iterator arg's taint propagates through.
+    out = _vt(
+        "def f(p):\n    x = next(y for y in [read_raw(p)])\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_format_method_combines_receiver_and_args_via_least_trusted() -> None:
+    # "{}".format(read_raw(p)) — string-building combines via least_trusted:
+    # least_trusted(INTEGRAL receiver, UNKNOWN_RAW) = UNKNOWN_RAW (still fires).
+    out = _vt(
+        "def f(p):\n    x = '{}'.format(read_raw(p))\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_format_method_validated_arg_stays_clean() -> None:
+    # "{}".format(validate(p)) in an ASSURED producer: least_trusted(INTEGRAL,
+    # ASSURED) = ASSURED — no false positive. (taint_join would give MIXED_RAW.)
+    out = _vt(
+        "def f(p):\n    x = '{}'.format(validate(p))\n",
+        function_taint=T.ASSURED, taint_map={"validate": T.ASSURED},
+    )
+    assert out["x"] == T.ASSURED
+
+
+def test_join_method_combines_receiver_and_args_via_least_trusted() -> None:
+    # ",".join([read_raw(p)]) — least_trusted(INTEGRAL receiver, UNKNOWN_RAW list)
+    # = UNKNOWN_RAW (still fires).
+    out = _vt(
+        "def f(p):\n    x = ','.join([read_raw(p)])\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_join_method_validated_arg_stays_clean() -> None:
+    # ",".join([validate(p)]) in an ASSURED producer: the INTEGRAL separator does
+    # NOT demote the ASSURED element — least_trusted(INTEGRAL, ASSURED) = ASSURED.
+    out = _vt(
+        "def f(p):\n    x = ','.join([validate(p)])\n",
+        function_taint=T.ASSURED, taint_map={"validate": T.ASSURED},
+    )
+    assert out["x"] == T.ASSURED
+
+
+def test_dict_get_carries_receiver_taint() -> None:
+    out = _vt(
+        "def f(p):\n    d = {'k': read_raw(p)}\n    x = d.get('k')\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_dict_pop_carries_receiver_taint() -> None:
+    out = _vt(
+        "def f(p):\n    d = {'k': read_raw(p)}\n    x = d.pop('k')\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_dict_setdefault_carries_receiver_taint() -> None:
+    out = _vt(
+        "def f(p):\n    d = {'k': read_raw(p)}\n    x = d.setdefault('k')\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_dict_get_joins_tainted_default_arg() -> None:
+    # d.get('k', read_raw(p)) — the DEFAULT is a possible return value, so its
+    # taint must propagate even from an INTEGRAL container. The lookup KEY (first
+    # positional) is not a return value and is not joined. Joining a tainted
+    # default propagates an existing taint (not a new SOURCE).
+    out = _vt(
+        "def f(p):\n    d = {}\n    x = d.get('k', read_raw(p))\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    # receiver d is INTEGRAL ({}), default is UNKNOWN_RAW → least_trusted = UNKNOWN_RAW
+    # (raw default propagates and fires PY-WL-101; NOT the laundered INTEGRAL).
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_dict_get_clean_constant_default_stays_integral() -> None:
+    # Clean counterpart: an INTEGRAL container + constant default stays INTEGRAL.
+    out = _vt(
+        "def f(p):\n    d = {}\n    x = d.get('k', 'fallback')\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["x"] == T.INTEGRAL
+
+
+def test_dict_pop_joins_tainted_default_arg() -> None:
+    out = _vt(
+        "def f(p):\n    d = {}\n    x = d.pop('k', read_raw(p))\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    # receiver INTEGRAL, default UNKNOWN_RAW → least_trusted = UNKNOWN_RAW (raw zone, fires).
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_unknown_builtin_call_still_falls_back_to_function_taint() -> None:
+    # HARD BOUNDARY: len()/int()/validate() are NOT curated — they must STILL fall
+    # back to function_taint, or we explode in false positives.
+    assert _vt(
+        "def f(p):\n    x = len(read_raw(p))\n", function_taint=T.GUARDED, taint_map=_RAW_TM
+    )["x"] == T.GUARDED
+    assert _vt(
+        "def f(p):\n    x = int(read_raw(p))\n", function_taint=T.GUARDED, taint_map=_RAW_TM
+    )["x"] == T.GUARDED
+    assert _vt(
+        "def f(p):\n    x = validate(read_raw(p))\n", function_taint=T.GUARDED, taint_map=_RAW_TM
+    )["x"] == T.GUARDED
+
+
+def test_serialisation_sink_still_wins_over_generic_method() -> None:
+    # json.dumps is a sink (UNKNOWN_RAW) and must keep precedence over the generic
+    # .format/.join/.get method handling — sink check stays AHEAD.
+    out = _vt(
+        "def f(p):\n    x = json.dumps(p)\n", function_taint=T.INTEGRAL, taint_map=_RAW_TM
+    )
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_mapped_method_still_wins_over_generic_get() -> None:
+    # A taint_map hit for a dotted method (e.g. self.get resolved to a project
+    # method) must win over the generic .get receiver-propagation.
+    out = _vt(
+        "def f(p):\n    x = self.get(p)\n",
+        function_taint=T.INTEGRAL, taint_map={"self.get": T.ASSURED},
+    )
+    assert out["x"] == T.ASSURED
+
+
+def test_join_via_local_var_does_not_demote_validated_data() -> None:
+    # String-building uses the rank-meet least_trusted, NOT taint_join: the INTEGRAL
+    # separator is the weakest-link winner only when it is LESS trusted than the
+    # element, which it never is. least_trusted(INTEGRAL, ASSURED) = ASSURED — the
+    # benign separator does not manufacture a MIXED_RAW provenance clash, so a
+    # validated producer stays CLEAN (no false positive). The BinOp/List/Dict/IfExp/
+    # BoolOp/.get combiners use the SAME least_trusted rule (see PART F); only
+    # control-flow MERGES (if/else, loops, match arms) keep taint_join.
+    out = _vt(
+        "def f(p):\n    v = validate(p)\n    x = ','.join([v])\n",
+        function_taint=T.ASSURED, taint_map={"validate": T.ASSURED},
+    )
+    assert out["x"] == T.ASSURED
+
+
+# ── PART F: expression combiners use the rank-meet least_trusted (weakest-link),
+# NOT the provenance-clash taint_join — so a benign literal/clean operand does not
+# manufacture a MIXED_RAW false positive on validated data, while raw still
+# propagates at its precise rank. Mirrors the f-string/.format/.join precedent.
+# Control-flow MERGES (if/else, loop back-edge, match arms) deliberately keep
+# taint_join and are covered by the merge tests above. ──
+
+_VALIDATE_TM = {"validate": T.ASSURED}
+
+
+def test_binop_validated_operand_stays_clean() -> None:
+    # '' + validate(p): least_trusted(INTEGRAL, ASSURED) = ASSURED (clean). taint_join
+    # would wrongly yield MIXED_RAW — a false positive on validated data.
+    out = _vt(
+        "def f(p):\n    v = validate(p)\n    x = '' + v\n",
+        function_taint=T.INTEGRAL, taint_map=_VALIDATE_TM,
+    )
+    assert out["x"] == T.ASSURED
+
+
+def test_binop_raw_operand_propagates_precise_rank() -> None:
+    # '' + read_raw(p): least_trusted(INTEGRAL, UNKNOWN_RAW) = UNKNOWN_RAW — raw still
+    # propagates (and fires), just at its precise rank rather than MIXED_RAW.
+    out = _vt(
+        "def f(p):\n    x = '' + read_raw(p)\n",
+        function_taint=T.INTEGRAL, taint_map=_RAW_TM,
+    )
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_ifexp_validated_branches_stay_clean() -> None:
+    # validate(p) if c else 'fallback': least_trusted(ASSURED, INTEGRAL) = ASSURED.
+    out = _vt(
+        "def f(p):\n    v = validate(p)\n    x = v if p else 'fallback'\n",
+        function_taint=T.INTEGRAL, taint_map=_VALIDATE_TM,
+    )
+    assert out["x"] == T.ASSURED
+
+
+def test_boolop_validated_operand_stays_clean() -> None:
+    # validate(p) or 'fallback': least_trusted(ASSURED, INTEGRAL) = ASSURED.
+    out = _vt(
+        "def f(p):\n    v = validate(p)\n    x = v or 'fallback'\n",
+        function_taint=T.INTEGRAL, taint_map=_VALIDATE_TM,
+    )
+    assert out["x"] == T.ASSURED
+
+
+def test_list_validated_element_stays_clean() -> None:
+    # ['lit', validate(p)]: least_trusted(INTEGRAL, ASSURED) = ASSURED.
+    out = _vt(
+        "def f(p):\n    v = validate(p)\n    x = ['lit', v]\n",
+        function_taint=T.INTEGRAL, taint_map=_VALIDATE_TM,
+    )
+    assert out["x"] == T.ASSURED
+
+
+def test_dict_literal_validated_value_stays_clean() -> None:
+    # {'k': validate(p), 'j': 'lit'}: least_trusted(ASSURED, INTEGRAL) = ASSURED.
+    out = _vt(
+        "def f(p):\n    v = validate(p)\n    x = {'k': v, 'j': 'lit'}\n",
+        function_taint=T.INTEGRAL, taint_map=_VALIDATE_TM,
+    )
+    assert out["x"] == T.ASSURED
+
+
+def test_dictcomp_validated_value_stays_clean() -> None:
+    # {k: validate(p) for k in range(1)}: least_trusted(INTEGRAL key, ASSURED) = ASSURED.
+    out = _vt(
+        "def f(p):\n    v = validate(p)\n    x = {k: v for k in range(1)}\n",
+        function_taint=T.INTEGRAL, taint_map=_VALIDATE_TM,
+    )
+    assert out["x"] == T.ASSURED
+
+
+def test_dict_get_validated_default_stays_clean() -> None:
+    # d.get('k', validate(p)) from a trusted container: least_trusted(INTEGRAL, ASSURED)
+    # = ASSURED — no MIXED_RAW clash. (A RAW default still propagates: see
+    # test_dict_get_joins_tainted_default_arg.)
+    out = _vt(
+        "def f(p):\n    v = validate(p)\n    d = {}\n    x = d.get('k', v)\n",
+        function_taint=T.INTEGRAL, taint_map=_VALIDATE_TM,
+    )
+    assert out["x"] == T.ASSURED
+
+
+def test_augassign_validated_operand_stays_clean() -> None:
+    # s = ''; s += validate(p): least_trusted(INTEGRAL, ASSURED) = ASSURED.
+    out = _vt(
+        "def f(p):\n    v = validate(p)\n    s = ''\n    s += v\n",
+        function_taint=T.INTEGRAL, taint_map=_VALIDATE_TM,
+    )
+    assert out["s"] == T.ASSURED
+
+
+def test_container_write_validated_value_stays_clean() -> None:
+    # d = {}; d['k'] = validate(p): the base absorbs least_trusted(INTEGRAL, ASSURED)
+    # = ASSURED — clean. A RAW write still contaminates (see Part B tests).
+    out = _vt(
+        "def f(p):\n    v = validate(p)\n    d = {}\n    d['k'] = v\n    x = d\n",
+        function_taint=T.INTEGRAL, taint_map=_VALIDATE_TM,
+    )
+    assert out["d"] == T.ASSURED
+    assert out["x"] == T.ASSURED

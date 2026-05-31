@@ -16,6 +16,37 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+# Sentinel ``Location.path`` for whole-run engine diagnostics not tied to any
+# source file (``WLN-L3-*`` and the unknown-kernel-code ``WLN-ENGINE-DIAGNOSTIC``
+# fallback). NOTE: the per-file engine FACTs (PARSE-ERROR / FILE-SKIPPED /
+# NO-MODULE / SOURCE-ROOT-MISSING) carry their real relpath, NOT this sentinel.
+# Sentinel findings are not tied to a source line; their fingerprint is built
+# from identifying fields, so the line-based fingerprint invariant does not
+# apply to them. Lives in core so both the emitter (scanner.diagnostics) and
+# the suppression guard (core.suppression) reference one constant.
+ENGINE_PATH = "<engine>"
+
+# Rule ids for files where analysis was ATTEMPTED OR EXPECTED but FAILED / never
+# happened — a genuine under-scan: parse/read failures, files too deep to walk
+# (recursion), and missing source roots. These are Severity.NONE FACTs that never
+# trip the severity gate, so callers count them separately (ScanSummary.unanalyzed)
+# to surface the silent under-scan and (opt-in) gate on it.
+#
+# WLN-ENGINE-NO-MODULE is DELIBERATELY EXCLUDED: a file that maps to no module
+# (e.g. a top-level / src/__init__.py) is a benign layout artifact with nothing to
+# analyze, not a failure. It is still emitted as an observable FACT, but folding it
+# in here would make a normal src-layout repo report "could not be analyzed" on
+# every scan — diluting the signal and hiding real failures in habitual noise.
+#
+# Single source of truth shared by the analyzer (emitter), discovery, and run.
+UNANALYZED_RULE_IDS = frozenset(
+    {
+        "WLN-ENGINE-PARSE-ERROR",
+        "WLN-ENGINE-FILE-SKIPPED",
+        "WLN-ENGINE-SOURCE-ROOT-MISSING",
+    }
+)
+
 
 class Severity(StrEnum):
     CRITICAL = "CRITICAL"

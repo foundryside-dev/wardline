@@ -127,3 +127,45 @@ def test_l2_urllib_plain_import_carries_external_raw_end_to_end() -> None:
     tm = build_call_taint_map(module_path="m", alias_map=aliases)
     out = compute_variable_taints(func, T.INTEGRAL, dict(tm))
     assert out["x"] == T.EXTERNAL_RAW  # the curated network-source taint, not dropped
+
+
+# ── PART D: aliased serialisation sinks NOT in stdlib_taint resolve to UNKNOWN_RAW ──
+#
+# json.dumps/json.dump are in _SERIALISATION_SINKS but ABSENT from stdlib_taint
+# (only json.load/loads are curated). The literal sink check in _resolve_call
+# only matches the written name, so an aliased `import json as j; j.dumps(x)`
+# was not injected into the taint map and fell back to function_taint — a
+# fail-open launder for a @trusted producer. A second override pass injects
+# UNKNOWN_RAW for aliases of EVERY name in _SERIALISATION_SINKS.
+
+
+def test_aliased_json_dumps_resolves_unknown_raw() -> None:
+    aliases = _aliases("import json as j\n", "m")
+    tm = build_call_taint_map(module_path="m", alias_map=aliases)
+    assert tm["j.dumps"] == T.UNKNOWN_RAW
+    assert tm["j.dump"] == T.UNKNOWN_RAW
+
+
+def test_aliased_json_dumps_end_to_end_not_laundered() -> None:
+    # @trusted-style seed INTEGRAL; j.dumps(read_raw(p)) must NOT launder to trusted.
+    src = "import json as j\ndef f(p):\n    x = j.dumps(p)\n"
+    func = ast.parse(src).body[1]
+    assert isinstance(func, ast.FunctionDef)
+    aliases = build_import_alias_map(ast.parse(src), module_path="m")
+    tm = build_call_taint_map(module_path="m", alias_map=aliases)
+    out = compute_variable_taints(func, T.INTEGRAL, dict(tm))
+    assert out["x"] == T.UNKNOWN_RAW  # NOT INTEGRAL
+
+
+def test_aliased_pickle_sink_resolves_unknown_raw() -> None:
+    # pickle.dumps is a _SERIALISATION_SINK but uncurated in stdlib_taint — the
+    # documented residual gap. The second override pass closes it.
+    aliases = _aliases("import pickle as pk\n", "m")
+    tm = build_call_taint_map(module_path="m", alias_map=aliases)
+    assert tm["pk.dumps"] == T.UNKNOWN_RAW
+
+
+def test_from_import_aliased_dumps_resolves_unknown_raw() -> None:
+    aliases = _aliases("from json import dumps as d\n", "m")
+    tm = build_call_taint_map(module_path="m", alias_map=aliases)
+    assert tm["d"] == T.UNKNOWN_RAW

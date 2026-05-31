@@ -170,6 +170,33 @@ def test_analyzer_skips_unparseable_file_with_fact(tmp_path) -> None:
     assert "good.g" in analyzer.last_context.project_taints
 
 
+def test_analyzer_emits_no_module_fact(tmp_path) -> None:
+    # A top-level __init__.py maps to no module (module_dotted_name -> None) and
+    # used to be silently dropped with ZERO findings. The skip must now be
+    # OBSERVABLE as a WLN-ENGINE-NO-MODULE FACT. This is its OWN rule_id, distinct
+    # from WLN-ENGINE-FILE-SKIPPED — a benign layout artifact (nothing to analyze),
+    # NOT a "tried and failed" signal, so it must NOT count as unanalyzed.
+    _write(tmp_path, "__init__.py", "VERSION = 1\n")
+    _write(tmp_path, "mod.py", "def g(): return 1\n")
+    analyzer = WardlineAnalyzer()
+    findings = analyzer.analyze(
+        [tmp_path / "__init__.py", tmp_path / "mod.py"], WardlineConfig(), root=tmp_path
+    )
+    skip = [
+        f
+        for f in findings
+        if f.rule_id == "WLN-ENGINE-NO-MODULE" and f.location.path == "__init__.py"
+    ]
+    assert len(skip) == 1
+    assert skip[0].kind == Kind.FACT
+    assert skip[0].properties.get("reason") == "no_module_mapping"
+    # It is NOT a FILE-SKIPPED (reserved for genuine analysis failures).
+    assert not any(f.rule_id == "WLN-ENGINE-FILE-SKIPPED" for f in findings)
+    # The clean sibling is still analysed.
+    assert analyzer.last_context is not None
+    assert "mod.g" in analyzer.last_context.project_taints
+
+
 def test_analyzer_exposes_return_taints_and_resolves_validators(tmp_path) -> None:
     # @trust_boundary validator raises trust EXTERNAL_RAW(body) -> ASSURED(return).
     # A @trusted(ASSURED) caller that returns the VALIDATED value must see ASSURED
