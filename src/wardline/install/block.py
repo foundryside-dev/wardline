@@ -36,19 +36,27 @@ def render_block() -> str:
 
 
 def inject_block(file_path: Path) -> str:
-    """Create / append / replace the block. Returns created|updated|unchanged."""
+    """Create / append / replace the block, collapsing to one canonical block.
+
+    Returns created|updated|unchanged.
+    """
     block = render_block()
     if not file_path.exists():
         file_path.write_text(block + "\n", encoding="utf-8")
         return "created"
     text = file_path.read_text(encoding="utf-8")
-    match = _FENCE_RE.search(text)
-    if match is None:
+    matches = list(_FENCE_RE.finditer(text))
+    if not matches:
         sep = "" if text.endswith("\n") else "\n"
         file_path.write_text(f"{text}{sep}\n{block}\n", encoding="utf-8")
         return "updated"
-    if match.group(0) == block:
+    # Canonicalise to a single block at the position of the first existing one;
+    # drop any additional blocks (e.g. from a botched prior write) so repeated
+    # calls converge.
+    prefix = text[: matches[0].start()]
+    suffix = _FENCE_RE.sub("", text[matches[0].end() :])
+    candidate = prefix + block + suffix
+    if candidate == text:
         return "unchanged"
-    new = text[: match.start()] + block + text[match.end() :]
-    file_path.write_text(new, encoding="utf-8")
+    file_path.write_text(candidate, encoding="utf-8")
     return "updated"

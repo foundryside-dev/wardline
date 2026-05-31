@@ -46,3 +46,31 @@ def test_inject_replaces_a_stale_fenced_block(tmp_path: Path) -> None:
     assert "OLD BODY" not in text
     assert "intro" in text and "outro" in text
     assert text.count("wardline:instructions:v") == 1
+
+
+def test_inject_appends_when_file_has_no_trailing_newline(tmp_path: Path) -> None:
+    f = tmp_path / "CLAUDE.md"
+    f.write_text("no trailing newline", encoding="utf-8")  # no final \n
+    assert inject_block(f) == "updated"
+    text = f.read_text(encoding="utf-8")
+    assert text.startswith("no trailing newline\n")
+    assert text.count("wardline:instructions:v") == 1
+
+
+def test_inject_collapses_multiple_existing_blocks(tmp_path: Path) -> None:
+    block = render_block()
+    f = tmp_path / "CLAUDE.md"
+    # Two current blocks already present (e.g. a botched prior write).
+    f.write_text(f"head\n\n{block}\n\nmid\n\n{block}\n\ntail\n", encoding="utf-8")
+    assert inject_block(f) == "updated"
+    text = f.read_text(encoding="utf-8")
+    assert text.count("wardline:instructions:v") == 1
+    assert "head" in text and "tail" in text
+
+
+def test_inject_is_idempotent_after_collapse(tmp_path: Path) -> None:
+    block = render_block()
+    f = tmp_path / "CLAUDE.md"
+    f.write_text(f"{block}\n\n{block}\n", encoding="utf-8")
+    inject_block(f)  # collapses to one
+    assert inject_block(f) == "unchanged"  # now converged
