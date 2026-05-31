@@ -4,7 +4,10 @@
 Given a function AST node and its Level 1 (function-level) taint, walks the body
 tracking taint per variable through assignments, control-flow joins, and call
 sites. Pure (returns a new dict); conservative (unknown expressions inherit the
-function's L1 taint); join-based (branches merge via ``taint_join``).
+function's L1 taint). Expression/value combiners (BinOp, IfExp, BoolOp,
+containers, ``.get`` defaults, ``+=``, container writes) use the rank-meet
+``least_trusted`` (weakest-link); control-flow MERGES (if/else, loop back-edges,
+match arms) use ``taint_join`` (provenance join).
 
 Ported from ``wardline.old`` minus the manifest ``dependency_taint`` overlay
 (SP1 §4.5): the ``dependency_dotted_map`` / ``dependency_local_prefixes`` params
@@ -116,17 +119,26 @@ def _resolve_expr(
     if isinstance(node, ast.Call):
         return _resolve_call(node, function_taint, taint_map, var_taints)
     if isinstance(node, ast.BinOp):
+        # Concatenation/arithmetic is a value-BUILDING flow — combine via the
+        # rank-meet least_trusted (weakest-link), NOT taint_join: a benign INTEGRAL
+        # literal must not manufacture a MIXED_RAW provenance clash with validated
+        # data (``least_trusted(INTEGRAL, ASSURED) = ASSURED``, clean). Raw still
+        # propagates (``least_trusted(INTEGRAL, UNKNOWN_RAW) = UNKNOWN_RAW``).
+        # Consistent with the f-string/.format/.join combiners.
         left = _resolve_expr(node.left, function_taint, taint_map, var_taints)
         right = _resolve_expr(node.right, function_taint, taint_map, var_taints)
-        return taint_join(left, right)
+        return least_trusted(left, right)
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        # Container summary = weakest-link of its elements (least_trusted), so a
+        # clean literal element does not clash validated data to MIXED_RAW.
         if not node.elts:
             return TaintState.INTEGRAL
         result = _resolve_expr(node.elts[0], function_taint, taint_map, var_taints)
         for elt in node.elts[1:]:
-            result = taint_join(result, _resolve_expr(elt, function_taint, taint_map, var_taints))
+            result = least_trusted(result, _resolve_expr(elt, function_taint, taint_map, var_taints))
         return result
     if isinstance(node, ast.Dict):
+        # Container summary = weakest-link of its values (least_trusted).
         parts = [
             _resolve_expr(v, function_taint, taint_map, var_taints)
             for v in node.values
@@ -136,7 +148,7 @@ def _resolve_expr(
             return TaintState.INTEGRAL
         result = parts[0]
         for p in parts[1:]:
-            result = taint_join(result, p)
+            result = least_trusted(result, p)
         return result
     if isinstance(node, ast.NamedExpr):
         taint = _resolve_expr(node.value, function_taint, taint_map, var_taints)
@@ -144,9 +156,12 @@ def _resolve_expr(
             var_taints[node.target.id] = taint
         return taint
     if isinstance(node, ast.IfExp):
+        # ``a if c else b`` evaluates to ONE of its arms — combine via the rank-meet
+        # least_trusted (weakest-link), so two clean arms stay clean (no MIXED_RAW
+        # clash) while a raw arm still propagates.
         true_t = _resolve_expr(node.body, function_taint, taint_map, var_taints)
         false_t = _resolve_expr(node.orelse, function_taint, taint_map, var_taints)
-        return taint_join(true_t, false_t)
+        return least_trusted(true_t, false_t)
     if isinstance(node, ast.UnaryOp):
         return _resolve_expr(node.operand, function_taint, taint_map, var_taints)
     if isinstance(node, ast.Subscript):
@@ -162,9 +177,12 @@ def _resolve_expr(
         # Unwrap — the inner expression (typically a Call) is already handled.
         return _resolve_expr(node.value, function_taint, taint_map, var_taints)
     if isinstance(node, ast.BoolOp):
+        # ``a and b`` / ``a or b`` short-circuits to ONE of its values — combine via
+        # the rank-meet least_trusted (weakest-link), like IfExp: clean values stay
+        # clean, a raw value still propagates.
         result = _resolve_expr(node.values[0], function_taint, taint_map, var_taints)
         for value in node.values[1:]:
-            result = taint_join(
+            result = least_trusted(
                 result, _resolve_expr(value, function_taint, taint_map, var_taints)
             )
         return result
@@ -243,9 +261,11 @@ def _resolve_comprehension(
             # leaked back below).
             _resolve_expr(cond, function_taint, taint_map, local)
     if isinstance(node, ast.DictComp):
+        # Container summary = weakest-link of key and value (least_trusted), so a
+        # clean key does not clash a validated value to MIXED_RAW.
         key_t = _resolve_expr(node.key, function_taint, taint_map, local)
         val_t = _resolve_expr(node.value, function_taint, taint_map, local)
-        result = taint_join(key_t, val_t)
+        result = least_trusted(key_t, val_t)
     else:
         result = _resolve_expr(node.elt, function_taint, taint_map, local)
     # Walrus targets bound by the element (PEP 572) leak to the enclosing scope.
@@ -313,21 +333,22 @@ def _resolve_call(
                 result = least_trusted(result, at)
             return result
         if attr in _PROPAGATING_METHODS_RECEIVER:
-            # ``.get``/``.pop``/``.setdefault`` carry the RECEIVER's taint, joined
-            # with any DEFAULT value's taint — the default is a possible return
-            # value, so a tainted default (``d.get('k', read_raw(p))``) must
-            # propagate even from a trusted container (else fail-open). The first
-            # positional arg is the LOOKUP KEY, not a return value, so it is
-            # excluded; positional args from index 1 onward + keyword values are
-            # the defaults. (Joining an existing taint, not adding a new source.)
+            # ``.get``/``.pop``/``.setdefault`` evaluate to ONE of the receiver's
+            # value or a DEFAULT — an either/or, so combine via the rank-meet
+            # least_trusted (weakest-link), NOT taint_join. A tainted default
+            # (``d.get('k', read_raw(p))``) still propagates even from a trusted
+            # container (least_trusted keeps the raw rank — no fail-open), while a
+            # validated default does not clash to MIXED_RAW. The first positional
+            # arg is the LOOKUP KEY, not a return value, so it is excluded;
+            # positional args from index 1 onward + keyword values are the defaults.
             result = _resolve_expr(node.func.value, function_taint, taint_map, var_taints)
             # arg_taints = [positional...] + [keyword values...]. Skip the first
-            # positional (the lookup key); join the rest (positional defaults +
+            # positional (the lookup key); combine the rest (positional defaults +
             # keyword defaults like ``default=``). With no positional args there is
             # no key to skip, so every keyword value is a candidate default.
             skip = 1 if node.args else 0
             for default_taint in arg_taints[skip:]:
-                result = taint_join(result, default_taint)
+                result = least_trusted(result, default_taint)
             return result
     if isinstance(node.func, ast.Name):
         try:
@@ -520,13 +541,19 @@ def _handle_augassign(
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
 ) -> None:
-    """Handle ``x += expr`` — join existing taint with new value."""
+    """Handle ``x += expr`` — combine existing taint with the new value.
+
+    ``x += expr`` is value-building (``x = x <op> expr``), so it combines via the
+    rank-meet least_trusted (weakest-link), consistent with the BinOp combiner: a
+    clean accumuland does not clash validated data to MIXED_RAW, while raw still
+    propagates.
+    """
     rhs_taint = _resolve_expr(
         stmt.value, function_taint, taint_map, var_taints,
     )
     if isinstance(stmt.target, ast.Name):
         existing = var_taints.get(stmt.target.id, function_taint)
-        var_taints[stmt.target.id] = taint_join(existing, rhs_taint)
+        var_taints[stmt.target.id] = least_trusted(existing, rhs_taint)
     elif isinstance(stmt.target, (ast.Subscript, ast.Attribute)):
         # d[k] += expr / obj.x += expr — contaminate the base container.
         _taint_container_base(stmt.target, rhs_taint, function_taint, var_taints)
@@ -551,10 +578,17 @@ def _taint_container_base(
     function_taint: TaintState,
     var_taints: dict[str, TaintState],
 ) -> None:
-    """Join *rhs* into the tracked taint of the container-write target's root Name."""
+    """Contaminate the container-write target's root Name with *rhs*.
+
+    A container write (``d[k] = v``/``obj.x = v``/``d[k] += v``) makes the base hold
+    *v*, so the base's summary taint becomes the weakest-link of its prior taint and
+    the written value (least_trusted) — consistent with container literals. A raw
+    write still contaminates (least_trusted keeps the raw rank — no fail-open); a
+    clean write does not clash to MIXED_RAW.
+    """
     base = _container_base_name(target)
     if base is not None:
-        var_taints[base] = taint_join(var_taints.get(base, function_taint), rhs)
+        var_taints[base] = least_trusted(var_taints.get(base, function_taint), rhs)
 
 
 # ── Control flow handlers ────────────────────────────────────────
