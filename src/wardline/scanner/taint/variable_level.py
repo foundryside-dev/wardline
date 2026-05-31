@@ -4,10 +4,14 @@
 Given a function AST node and its Level 1 (function-level) taint, walks the body
 tracking taint per variable through assignments, control-flow joins, and call
 sites. Pure (returns a new dict); conservative (unknown expressions inherit the
-function's L1 taint). Expression/value combiners (BinOp, IfExp, BoolOp,
-containers, ``.get`` defaults, ``+=``, container writes) use the rank-meet
-``least_trusted`` (weakest-link); control-flow MERGES (if/else, loop back-edges,
-match arms) use ``taint_join`` (provenance join).
+function's L1 taint). Both expression/value combiners (BinOp, IfExp, BoolOp,
+containers, ``.get`` defaults, ``+=``, container writes) AND control-flow MERGES
+(if/else, loop back-edges, match arms, try/except handlers) use the rank-meet
+``least_trusted`` (weakest-link): at a merge a variable holds the value of ONE
+branch (an alternative), not a mixture, so ``taint_join``'s provenance-clash
+``MIXED_RAW`` is the wrong label — ``least_trusted`` keeps any raw branch's rank
+(sound: a raw branch still propagates and fires) without the spurious jump to
+``MIXED_RAW`` (rank 7) on two clean-but-different-family branches.
 
 Ported from ``wardline.old`` minus the manifest ``dependency_taint`` overlay
 (SP1 §4.5): the ``dependency_dotted_map`` / ``dependency_local_prefixes`` params
@@ -19,7 +23,7 @@ from __future__ import annotations
 
 import ast
 
-from wardline.core.taints import TaintState, least_trusted, taint_join
+from wardline.core.taints import TaintState, least_trusted
 
 # Serialisation sinks — calls that cross the representation boundary. Their
 # output sheds validation provenance (raw bytes/str), so → UNKNOWN_RAW. This is
@@ -619,7 +623,11 @@ def _handle_if(
         # No else — the "else" branch is the pre-if state.
         else_taints = pre_if
 
-    # Merge: for each variable, join the two branch values.
+    # Merge: for each variable, combine the two branch values. The var holds ONE
+    # branch's value (an alternative), so combine via the rank-meet least_trusted
+    # (weakest-link), NOT taint_join: two clean-but-different-family branches must
+    # not clash to MIXED_RAW; a raw branch still propagates (least_trusted keeps
+    # its rank).
     all_vars = set(if_taints) | set(else_taints)
     for var in all_vars:
         try:
@@ -631,7 +639,7 @@ def _handle_if(
         except KeyError:
             else_val = None
         if if_val is not None and else_val is not None:
-            var_taints[var] = taint_join(if_val, else_val)
+            var_taints[var] = least_trusted(if_val, else_val)
         elif if_val is not None:
             var_taints[var] = if_val
         else:
@@ -658,15 +666,18 @@ def _handle_for(
     # Walk body.
     _walk_body(stmt.body, function_taint, taint_map, var_taints)
 
-    # Merge body state with pre-loop (loop may not execute, or
-    # body assignments may differ across iterations).
+    # Merge body state with pre-loop (loop may not execute, or body assignments
+    # may differ across iterations) — the var holds the body OR the pre-loop
+    # value, so combine via the rank-meet least_trusted (weakest-link), NOT
+    # taint_join: a clean-accumulate body must not clash to MIXED_RAW at the
+    # back-edge, while a raw body still propagates (least_trusted keeps its rank).
     for var in set(var_taints) | set(pre_loop):
         try:
             current = var_taints[var]
             prior = pre_loop[var]
-            var_taints[var] = taint_join(current, prior)
+            var_taints[var] = least_trusted(current, prior)
         except KeyError:
-            _taint_val = None  # var only in one side of merge — no join needed
+            _taint_val = None  # var only in one side of merge — no combine needed
 
     # Walk orelse (runs after normal loop completion).
     if stmt.orelse:
@@ -686,14 +697,17 @@ def _handle_while(
 
     _walk_body(stmt.body, function_taint, taint_map, var_taints)
 
-    # Merge body state with pre-loop.
+    # Merge body state with pre-loop — the var holds the body OR the pre-loop
+    # value, so combine via the rank-meet least_trusted (weakest-link), NOT
+    # taint_join (see _handle_for): no MIXED_RAW clash on a clean body; a raw body
+    # still propagates.
     for var in set(var_taints) | set(pre_loop):
         try:
             current = var_taints[var]
             prior = pre_loop[var]
-            var_taints[var] = taint_join(current, prior)
+            var_taints[var] = least_trusted(current, prior)
         except KeyError:
-            _taint_val = None  # var only in one side of merge — no join needed
+            _taint_val = None  # var only in one side of merge — no combine needed
 
     if stmt.orelse:
         _walk_body(stmt.orelse, function_taint, taint_map, var_taints)
@@ -748,21 +762,25 @@ def _handle_try(
         all_vars.update(branch.keys())
 
     for var in all_vars:
-        taints_to_join: list[TaintState] = []
+        # try-success and each handler are mutually-exclusive branches — the var
+        # holds ONE branch's value, so combine via the rank-meet least_trusted
+        # (weakest-link), NOT taint_join: clean-but-different-family branches must
+        # not clash to MIXED_RAW; a raw branch still propagates.
+        branch_taints: list[TaintState] = []
         for b in handler_branches:
             try:
-                taints_to_join.append(b[var])
+                branch_taints.append(b[var])
             except KeyError:
                 _taint_val = None  # var absent from this handler branch — skip
-        if taints_to_join:
-            var_taints[var] = taints_to_join[0]
-            for t in taints_to_join[1:]:
-                var_taints[var] = taint_join(var_taints[var], t)
+        if branch_taints:
+            var_taints[var] = branch_taints[0]
+            for t in branch_taints[1:]:
+                var_taints[var] = least_trusted(var_taints[var], t)
         else:
             # Unreachable: ``all_vars`` is drawn solely from ``handler_branches``
             # (the try-success branch + each handler), every branch starts as a
             # copy of pre_try, so each var is present in >=1 branch and
-            # ``taints_to_join`` is never empty. Kept for structural parity.
+            # ``branch_taints`` is never empty. Kept for structural parity.
             try:
                 var_taints[var] = pre_try[var]
             except KeyError:
@@ -786,8 +804,8 @@ def _handle_match(
     whole-subject over-approximation — element-precise extraction is not modelled
     at L2; this never under-taints). The pre-match state is included as an extra
     branch to model the no-arm-matched path and variables assigned in only some
-    arms; including it is taint-safe (``taint_join`` only moves toward less-trusted)
-    and mirrors :func:`_handle_if`'s implicit-else treatment.
+    arms; including it is taint-safe (``least_trusted`` only moves toward
+    less-trusted) and mirrors :func:`_handle_if`'s implicit-else treatment.
     """
     # Subject is evaluated once, before any arm — resolve it for walrus side
     # effects and to obtain the taint that capture targets inherit.
@@ -813,10 +831,14 @@ def _handle_match(
     for branch in branches:
         all_vars.update(branch)
     for var in all_vars:
+        # Each arm + the no-match fall-through are mutually-exclusive branches —
+        # the var holds ONE arm's value, so combine via the rank-meet least_trusted
+        # (weakest-link), NOT taint_join: two clean arms must not clash to
+        # MIXED_RAW; a raw arm still propagates.
         vals = [branch[var] for branch in branches if var in branch]
         merged = vals[0]
         for v in vals[1:]:
-            merged = taint_join(merged, v)
+            merged = least_trusted(merged, v)
         var_taints[var] = merged
 
 
