@@ -20,6 +20,22 @@ import yaml
 
 from wardline.core.taints import TaintState
 
+# Legal return tiers for a stdlib call. A stdlib function returns data the
+# project did not produce, so INTEGRAL (your own fully-trusted data) is
+# nonsensical here, and the unreachable trio {MIXED_RAW, UNKNOWN_GUARDED,
+# UNKNOWN_ASSURED} must never enter the pipeline (see the reachable-set
+# invariant in docs/concepts/taint-algebra.md and the taint-combination audit,
+# F5). Constraining the parser to this set makes that invariant ENFORCED at the
+# entry point rather than incidental.
+_STDLIB_LEGAL_RETURN: frozenset[TaintState] = frozenset(
+    {
+        TaintState.ASSURED,
+        TaintState.GUARDED,
+        TaintState.EXTERNAL_RAW,
+        TaintState.UNKNOWN_RAW,
+    }
+)
+
 STDLIB_TAINT_VERSION: int = 1
 """Bumped when the table's shape or entries change materially; folded into the
 SP1e summary cache key so changes invalidate dependent summaries."""
@@ -72,6 +88,18 @@ def _build_table(raw: Any) -> StdlibTaintTable:
                 f"stdlib_taint.yaml entries[{idx}].returns_taint={returns_taint_raw!r} "
                 f"is not a canonical TaintState"
             ) from exc
+        # Reject any state outside the stdlib-legal return set — both the
+        # unreachable trio AND INTEGRAL (a stdlib call cannot produce your own
+        # fully-trusted data). This keeps the reachable-set invariant enforced;
+        # see docs/concepts/taint-algebra.md and the taint-combination audit (F5).
+        if taint not in _STDLIB_LEGAL_RETURN:
+            raise ValueError(
+                f"stdlib_taint.yaml entries[{idx}].returns_taint={returns_taint_raw!r} "
+                f"is not a legal stdlib return tier (allowed: "
+                f"{sorted(s.value for s in _STDLIB_LEGAL_RETURN)}); states outside "
+                f"this set would inject an otherwise-unreachable taint and break the "
+                f"reachable-set invariant (see docs/concepts/taint-algebra.md, audit F5)"
+            )
         # Every curated entry must justify itself — the table is meant to keep
         # UNKNOWN_RAW rates auditable, so a silent missing/empty rationale is a
         # curation defect, not a default.

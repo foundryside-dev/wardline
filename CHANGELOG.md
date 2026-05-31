@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-31
+
+### Added
+
+- **Taint algebra concepts page + lattice-retention ADR** — a new
+  `docs/concepts/taint-algebra.md` consolidates the taint-combination
+  rationale (which operator runs where and why, the reachable-state set and its
+  invariants, the per-rule consumption map, and the accepted "wrong-predicate
+  validator" boundary) into one authoritative spec, and
+  `docs/decisions/2026-05-31-wardline-taint-lattice-retain.md` records the
+  decision to retain the 8-state lattice and the `taint_join` operator as the
+  documented contrast operator (no production call site). Resolves the
+  taint-combination audit findings F1, F3, F4, and F5.
+
+### Changed
+
+- **Reachable-state invariant now enforced at the taint parsers** — the two
+  dynamic `TaintState` construction sites that previously accepted any canonical
+  state are now constrained to their legal subsets: the bundled stdlib taint
+  table accepts only `{ASSURED, GUARDED, EXTERNAL_RAW, UNKNOWN_RAW}`, and the
+  disk-persistent summary cache's deserialiser accepts the full reachable set
+  `{INTEGRAL, ASSURED, GUARDED, EXTERNAL_RAW, UNKNOWN_RAW}`. Both reject the
+  never-produced trio (`MIXED_RAW`, `UNKNOWN_GUARDED`, `UNKNOWN_ASSURED`), so a
+  corrupt/tampered cache file or a future stdlib-table entry carrying one is
+  rejected (the cache file is dropped as cold-cache fallback) rather than
+  silently injecting an otherwise-unreachable state. No behaviour change for
+  valid inputs. Resolves audit finding F5.
+- **Removed dead code in the L3 propagation kernel** — the unreachable inner
+  unresolved-clamp in the per-SCC refinement round (subsumed by the preceding
+  floor) was deleted, along with the now-orphaned `unresolved_counts` parameter
+  of the internal `_compute_scc_round` helper. Behaviour-preserving. Resolves
+  audit finding F2.
+- **Corrected stale taint-combiner comments in the test suite** — the
+  `test_variable_level.py` comments claiming control-flow merges "keep
+  `taint_join`" predated the merge migration and misdescribed current behaviour;
+  they now state those merges use `least_trusted` (wardline-4d9f840c24). Test
+  comments only. Resolves audit finding F6.
+
 ### Fixed
 
 - **Control-flow merge over-tainting (false positives)** — the statement-level
@@ -18,7 +56,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exactly one branch, so they now combine via the rank-meet weakest-link
   (`least_trusted`), matching the expression combiners; a raw branch still
   propagates and fires. This completes the `taint_join` → `least_trusted`
-  migration for the either-or paths (the callee-combination joins are unchanged).
+  migration for the L2 either-or paths.
+- **L3 callee-combination over-tainting (false positives)** — the four
+  callee-combination joins in the call-graph propagation engine
+  (`minimum_scope.py`, plus `propagation.py`'s external-influence, Phase 1b
+  seed-join, and per-round SCC refinement) combined the taints of a function's
+  *set* of callees via the provenance-clash join. That is a function-summary
+  aggregation of callee influence, not a single value built by merging two
+  provenances, so a non-anchored function calling two clean-but-different-family
+  callees (e.g. an `ASSURED` validator and an `INTEGRAL` helper) spuriously
+  became `MIXED_RAW` (rank 7, in the firing raw zone) — an over-taint that,
+  propagated up, fired `PY-WL-101` on clean data. All four sites now aggregate
+  via the rank-meet weakest-link (`least_trusted`); a raw callee still
+  propagates at its precise rank and fires. Completes the `taint_join` →
+  `least_trusted` migration; the `taint_join` operator itself remains in
+  `core/taints.py`.
 
 ## [0.2.0] - 2026-05-31
 
@@ -115,6 +167,7 @@ for Python — enterprise-class trust-boundary analysis at small-team weight.
 - **Packaging** — MIT-licensed; optional extras `scanner` (config + CLI) and
   `loom` (HTTP integrations).
 
-[Unreleased]: https://github.com/foundryside-dev/wardline/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/foundryside-dev/wardline/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/foundryside-dev/wardline/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/foundryside-dev/wardline/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/foundryside-dev/wardline/releases/tag/v0.1.0

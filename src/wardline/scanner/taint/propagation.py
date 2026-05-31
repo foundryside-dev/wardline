@@ -7,10 +7,18 @@ from ``RuleId``/``Severity``/``Finding``. Diagnostics are plain
 Provides iterative Tarjan's SCC algorithm and the main propagation loop
 that refines L1 function-level taints by analysing what each function calls.
 
-Callee taint combination uses taint_join() from the §6 join algebra.
-TRUST_RANK is used only for ordering comparisons (floor clamps,
-post-assertions, provenance tiebreaks) — never for taint combination.
-The two operators are distinct and must never be collapsed.
+Callee taint combination uses the rank-meet least_trusted() (weakest-link).
+Every callee-combination site here AGGREGATES the influence of a *set* of
+callees into one function-summary taint — it never models a single value built
+by merging two provenances — so taint_join()'s provenance-clash MIXED_RAW is the
+wrong label (two clean-but-different-family callees would clash a clean caller to
+MIXED_RAW, rank 7 in the firing RAW_ZONE, a PY-WL-101 false positive). The
+migration to least_trusted here mirrors the L2 expression/control-flow combiners
+(wardline-4d94577013, wardline-4d9f840c24). taint_join() itself still lives in
+core/taints.py; the two operators remain distinct and must never be collapsed at
+the operator level — this module simply uses the aggregation-correct one.
+TRUST_RANK additionally backs ordering comparisons (floor clamps,
+post-assertions, provenance tiebreaks).
 """
 
 from __future__ import annotations
@@ -124,11 +132,10 @@ def _compute_scc_round(
     taint_keys: set[str],
     current: dict[str, TaintState],
     return_taint_map: dict[str, TaintState],
-    unresolved_counts: dict[str, int],
     phase2_floor: dict[str, TaintState],
 ) -> tuple[dict[str, TaintState], dict[str, str | None]]:
     """Compute one synchronous SCC refinement round from a stable snapshot."""
-    from wardline.core.taints import taint_join
+    from wardline.core.taints import least_trusted
 
     updates: dict[str, TaintState] = {}
     via_callee: dict[str, str | None] = {}
@@ -155,15 +162,20 @@ def _compute_scc_round(
                 best_rank = rank
                 best_callee = callee
 
-        combined = reduce(taint_join, callee_taints)
+        # Aggregate this function's callee SET into one summary taint via the
+        # rank-meet least_trusted (weakest-link), NOT taint_join: clean callees of
+        # different families must not clash the caller to MIXED_RAW (a RAW_ZONE
+        # false positive); a raw callee still propagates at its precise rank.
+        combined = reduce(least_trusted, callee_taints)
         floor = phase2_floor[func]
+        # The line-above floor pins TRUST_RANK[new_taint] >= TRUST_RANK[floor]
+        # unconditionally, so the former inner unresolved-clamp guard
+        # (rank[floor] > rank[new_taint]) was never true — dead code removed
+        # (taint-combination audit, F2; minimum_scope.py:158-161 makes the same
+        # point in prose). The unresolved floor is already applied at seed time
+        # (phase2_floor incorporates the unresolved pessimistic floor from the
+        # Phase-1 external-influence pass).
         new_taint = floor if TRUST_RANK[floor] > TRUST_RANK[combined] else combined
-        if (
-            unresolved_counts.__contains__(func)
-            and unresolved_counts[func] > 0
-            and TRUST_RANK[floor] > TRUST_RANK[new_taint]
-        ):
-            new_taint = floor
 
         updates[func] = new_taint
         via_callee[func] = best_callee
@@ -212,7 +224,7 @@ def propagate_callgraph_taints(
         The Phase 3a resolver aggregates this dict into
         ``ResolverRunMetadata.convergence_iterations_{max,histogram}``.
     """
-    from wardline.core.taints import taint_join
+    from wardline.core.taints import least_trusted
 
     scc_iteration_counts: dict[frozenset[str], int] = {}
 
@@ -283,7 +295,12 @@ def propagate_callgraph_taints(
                 # This is correct because non-anchored functions always have
                 # body_taint == return_taint (enforced by _walk_and_assign in
                 # function_level.py), so current[c] serves as both.
-                # Combine callee taints using §6 join algebra
+                # Aggregate the external-callee SET into one summary taint via the
+                # rank-meet least_trusted (weakest-link), NOT taint_join: this is a
+                # function-summary aggregation of a set of callees, not a single
+                # merged value, so clean-but-different-family externals must not
+                # clash f to MIXED_RAW (a RAW_ZONE false positive); a raw external
+                # still propagates at its precise rank.
                 ext_taints: list[TaintState] = []
                 for c in ext_callees:
                     if c in anchored:
@@ -294,7 +311,7 @@ def propagate_callgraph_taints(
                         ext_taints.append(c_return_taint)
                     else:
                         ext_taints.append(current[c])
-                ext_combined = reduce(taint_join, ext_taints)
+                ext_combined = reduce(least_trusted, ext_taints)
 
                 # TRUST_RANK: ordering comparison, not taint combination (see §6)
                 ext_taint = ext_combined
@@ -375,7 +392,16 @@ def propagate_callgraph_taints(
             if len(seed_taints) < 2:
                 continue
 
-            seed_join = reduce(taint_join, seed_taints)
+            # Aggregate the multi-source seed SET into one summary taint via the
+            # rank-meet least_trusted (weakest-link), NOT taint_join: a node that
+            # draws on several SCC-local + external callees aggregates their
+            # influence — it does not build one value by merging provenances — so
+            # clean-but-different-family seeds must not clash f to MIXED_RAW (a
+            # RAW_ZONE false positive); a raw seed still propagates at its rank.
+            # least_trusted is order-independent (commutative, associative,
+            # idempotent), preserving the order-independence this seed pass exists
+            # to guarantee.
+            seed_join = reduce(least_trusted, seed_taints)
             if TRUST_RANK[seed_join] > TRUST_RANK[current[f]]:
                 current[f] = seed_join
                 refined.add(f)
@@ -413,7 +439,6 @@ def propagate_callgraph_taints(
                 taint_keys=taint_keys,
                 current=current,
                 return_taint_map=return_taint_map,
-                unresolved_counts=unresolved_counts,
                 phase2_floor=phase2_floor,
             )
 

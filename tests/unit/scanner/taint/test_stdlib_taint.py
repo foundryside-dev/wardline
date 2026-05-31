@@ -105,3 +105,46 @@ def test_missing_or_empty_rationale_raises(rationale: str | None) -> None:
 def test_empty_entries_is_valid_empty_table() -> None:
     # A degenerate-but-valid table: no curated fallbacks, contributes nothing.
     assert dict(_build_table({"version": STDLIB_TAINT_VERSION, "entries": []})) == {}
+
+
+# ── F5: the stdlib parser rejects states outside the legal stdlib return set.
+# A stdlib call cannot produce INTEGRAL (your own fully-trusted data), and the
+# unreachable trio {MIXED_RAW, UNKNOWN_GUARDED, UNKNOWN_ASSURED} must never enter
+# the pipeline (reachable-set invariant; taint-combination audit F5). ──
+
+
+@pytest.mark.parametrize(
+    "state", ["MIXED_RAW", "UNKNOWN_GUARDED", "UNKNOWN_ASSURED", "INTEGRAL"]
+)
+def test_illegal_stdlib_return_tier_raises(state: str) -> None:
+    # MIXED_RAW etc. ARE canonical TaintState strings, so they pass TaintState(),
+    # but they are not legal stdlib return tiers — the guard must reject them.
+    with pytest.raises(ValueError, match="legal stdlib return tier"):
+        _build_table(
+            {
+                "version": STDLIB_TAINT_VERSION,
+                "entries": [
+                    {"package": "p", "function": "f", "returns_taint": state, "rationale": "x"}
+                ],
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    "state", ["ASSURED", "GUARDED", "EXTERNAL_RAW", "UNKNOWN_RAW"]
+)
+def test_legal_stdlib_return_tiers_accepted(state: str) -> None:
+    table = _build_table(
+        {
+            "version": STDLIB_TAINT_VERSION,
+            "entries": [
+                {"package": "p", "function": "f", "returns_taint": state, "rationale": "x"}
+            ],
+        }
+    )
+    assert table[("p", "f")].taint == TaintState(state)
+
+
+def test_shipped_stdlib_table_still_loads() -> None:
+    # The shipped yaml uses only legal tiers; the F5 guard must not break it.
+    assert len(load_stdlib_taint()) > 0

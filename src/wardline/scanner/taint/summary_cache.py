@@ -41,6 +41,44 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
+# The full reachable taint set for an analyzed function's cached body/return
+# taint. Unlike the stdlib table, a cached summary CAN be INTEGRAL (a @trusted
+# function produces INTEGRAL), so INTEGRAL is legal here. What must never be
+# rehydrated is the unreachable trio {MIXED_RAW, UNKNOWN_GUARDED,
+# UNKNOWN_ASSURED}: those are valid TaintState strings, so the "malformed file
+# silently dropped" guard in load() does NOT catch them, yet they are never
+# produced by any sound analysis. A hand-edited or corrupted on-disk cache file
+# carrying one would inject an otherwise-unreachable state into the pipeline.
+# See docs/concepts/taint-algebra.md and the taint-combination audit (F5).
+_CACHE_LEGAL_TAINT: frozenset[TaintState] = frozenset(
+    {
+        TaintState.INTEGRAL,
+        TaintState.ASSURED,
+        TaintState.GUARDED,
+        TaintState.EXTERNAL_RAW,
+        TaintState.UNKNOWN_RAW,
+    }
+)
+
+
+def _parse_cache_taint(raw: str, field: str) -> TaintState:
+    """Parse a cached taint string, rejecting the unreachable trio.
+
+    Raises ValueError on a valid-but-unreachable state (MIXED_RAW /
+    UNKNOWN_GUARDED / UNKNOWN_ASSURED). load() catches ValueError and drops the
+    poisoned file with a warning (cold-cache fallback), so an enforced invariant
+    here cannot crash a scan.
+    """
+    state = TaintState(raw)  # may raise ValueError on a non-canonical string
+    if state not in _CACHE_LEGAL_TAINT:
+        raise ValueError(
+            f"cached {field}={raw!r} is the unreachable taint state {raw!r}; no "
+            f"sound analysis produces {{MIXED_RAW, UNKNOWN_GUARDED, "
+            f"UNKNOWN_ASSURED}}, so a cache file holding one is corrupt or "
+            f"tampered (see docs/concepts/taint-algebra.md, audit F5)"
+        )
+    return state
+
 
 class SummaryCache:
     """Process-local, default-empty cache keyed on FunctionSummary.cache_key."""
@@ -196,8 +234,8 @@ def _deserialise_summary(d: dict[str, object]) -> FunctionSummary:
         raise ValueError(f"invalid taint_source: {taint_source!r}")
     return FunctionSummary(
         fqn=str(d["fqn"]),
-        body_taint=TaintState(cast("str", d["body_taint"])),
-        return_taint=TaintState(cast("str", d["return_taint"])),
+        body_taint=_parse_cache_taint(cast("str", d["body_taint"]), "body_taint"),
+        return_taint=_parse_cache_taint(cast("str", d["return_taint"]), "return_taint"),
         taint_source=taint_source,
         unresolved_calls=int(cast("int", d["unresolved_calls"])),
         schema_version=int(cast("int", d["schema_version"])),

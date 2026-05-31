@@ -19,6 +19,21 @@ _PARTIAL: frozenset[TaintState] = frozenset(
     {TaintState.GUARDED, TaintState.UNKNOWN_ASSURED, TaintState.UNKNOWN_GUARDED}
 )
 # _FREEDOM = {EXTERNAL_RAW, UNKNOWN_RAW, MIXED_RAW} — the implicit else branch.
+# INVARIANT (taint-combination audit, F1): MIXED_RAW is CURRENTLY UNREACHABLE; no
+# sound analysis path produces it (least_trusted is closed over the reachable set
+# {INTEGRAL, ASSURED, GUARDED, EXTERNAL_RAW, UNKNOWN_RAW}; F5's parser guards keep
+# the trio out of the stdlib table and the disk cache). If it ever became
+# reachable, this rule family and PY-WL-101 would DISAGREE: modulate's else branch
+# below treats MIXED_RAW as freedom-zone and SUPPRESSES (returns NONE), whereas
+# PY-WL-101 would FIRE on it as the ACTUAL return of a @trusted producer
+# (body==declared, passing 101's :86-87 trust-raising gate), because at rank 7 it
+# is strictly less trusted than any clean declared tier — a rank comparison, NOT
+# _RAW_ZONE membership, which gates only the *declared* tier. The 101 firing is
+# not unconditional: a MIXED_RAW *body* (the realistic route to a MIXED_RAW actual
+# return) trips 101's :86-87 gate and delegates to PY-WL-102 instead. F5's guards
+# are what keep that asymmetry latent. See
+# docs/decisions/2026-05-31-wardline-taint-lattice-retain.md and
+# docs/concepts/taint-algebra.md.
 
 _DOWNGRADE: dict[Severity, Severity] = {
     Severity.CRITICAL: Severity.ERROR,
