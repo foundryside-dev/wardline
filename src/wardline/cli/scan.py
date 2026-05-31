@@ -7,6 +7,7 @@ from pathlib import Path
 
 import click
 
+from wardline.core.config import resolve_clarion_url, resolve_filigree_url
 from wardline.core.emit import JsonlSink
 from wardline.core.errors import WardlineError
 from wardline.core.filigree_emit import EmitResult, FiligreeEmitter
@@ -55,6 +56,8 @@ def scan(
     emit_result: EmitResult | None = None
     clarion_result = None
     try:
+        filigree_url = resolve_filigree_url(filigree_url, path, config_path)
+        clarion_url = resolve_clarion_url(clarion_url, path, config_path)
         result = run_scan(path, config_path=config_path, cache_dir=cache_dir)
         findings = result.findings
         sink = SarifSink(output) if fmt == "sarif" else JsonlSink(output)

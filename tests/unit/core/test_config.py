@@ -1,6 +1,13 @@
+from pathlib import Path
+
 import pytest
 
-from wardline.core.config import load
+from wardline.core.config import (
+    WardlineConfig,
+    load,
+    resolve_clarion_url,
+    resolve_filigree_url,
+)
 from wardline.core.errors import ConfigError
 
 
@@ -124,7 +131,7 @@ def test_full_valid_config_passes(tmp_path) -> None:
         "judge:\n  model: anthropic/claude-opus-4-8\n  context_lines: 10\n"
         "  max_findings: 50\n  write_confidence_floor: 0.7\n"
         "filigree: {url: http://x}\n"
-        "clarion: {db: .clarion/clarion.db}\n",
+        "clarion: {url: http://clarion.local:9100}\n",
         encoding="utf-8",
     )
     cfg = load(p)
@@ -164,3 +171,49 @@ def test_unknown_judge_key_raises(tmp_path) -> None:
     p.write_text("judge:\n  bogus_setting: 1\n", encoding="utf-8")
     with pytest.raises(ConfigError):
         load(p)
+
+
+def test_clarion_and_filigree_url_read_from_config(tmp_path: Path) -> None:
+    (tmp_path / "wardline.yaml").write_text(
+        'clarion:\n  url: "http://clarion.local:9100"\n'
+        'filigree:\n  url: "http://filigree.local/api/loom/scan-results"\n',
+        encoding="utf-8",
+    )
+    cfg = load(tmp_path / "wardline.yaml")
+    assert cfg.clarion_url == "http://clarion.local:9100"
+    assert cfg.filigree_url == "http://filigree.local/api/loom/scan-results"
+
+
+def test_urls_default_to_none() -> None:
+    cfg = WardlineConfig()
+    assert cfg.clarion_url is None
+    assert cfg.filigree_url is None
+
+
+def test_unknown_clarion_key_is_rejected(tmp_path: Path) -> None:
+    (tmp_path / "wardline.yaml").write_text(
+        "clarion:\n  bogus: 1\n", encoding="utf-8"
+    )
+    with pytest.raises(ConfigError):
+        load(tmp_path / "wardline.yaml")
+
+
+def test_resolve_precedence_flag_beats_env_beats_config(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "wardline.yaml").write_text(
+        'clarion:\n  url: "http://from-config"\n', encoding="utf-8"
+    )
+    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    assert resolve_clarion_url(None, tmp_path, None) == "http://from-config"
+    monkeypatch.setenv("WARDLINE_CLARION_URL", "http://from-env")
+    assert resolve_clarion_url(None, tmp_path, None) == "http://from-env"
+    assert resolve_clarion_url("http://from-flag", tmp_path, None) == "http://from-flag"
+
+
+def test_resolve_filigree_env(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("WARDLINE_FILIGREE_URL", "http://fil-env")
+    assert resolve_filigree_url(None, tmp_path, None) == "http://fil-env"
+
+
+def test_resolve_filigree_flag_beats_env(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("WARDLINE_FILIGREE_URL", "http://fil-env")
+    assert resolve_filigree_url("http://fil-flag", tmp_path, None) == "http://fil-flag"

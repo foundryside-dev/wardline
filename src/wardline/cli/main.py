@@ -9,6 +9,7 @@ from pathlib import Path
 import click
 
 from wardline._version import __version__
+from wardline.cli.install import install
 from wardline.cli.judge import judge as judge_command
 from wardline.cli.mcp import mcp
 from wardline.cli.scan import scan
@@ -27,6 +28,7 @@ def cli() -> None:
 cli.add_command(scan)
 cli.add_command(judge_command)
 cli.add_command(mcp)
+cli.add_command(install)
 
 
 @cli.command()

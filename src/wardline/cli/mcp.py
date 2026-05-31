@@ -17,4 +17,7 @@ from wardline.mcp.server import WardlineMCPServer
               help="Clarion taint-store URL: `scan` writes facts; `explain_taint` queries it.")
 def mcp(root: Path, clarion_url: str | None) -> None:
     """Run the Wardline MCP server over stdio (JSON-RPC 2.0)."""
+    from wardline.core.config import resolve_clarion_url
+
+    clarion_url = resolve_clarion_url(clarion_url, root, None)
     WardlineMCPServer(root=root, clarion_url=clarion_url).rpc.run_stdio()

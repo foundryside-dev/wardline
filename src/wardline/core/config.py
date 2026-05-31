@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +27,16 @@ class WardlineConfig:
     judge: Mapping[str, Any] = field(default_factory=dict)
     filigree: Mapping[str, Any] = field(default_factory=dict)
     clarion: Mapping[str, Any] = field(default_factory=dict)
+
+    @property
+    def clarion_url(self) -> str | None:
+        value = self.clarion.get("url")
+        return value if isinstance(value, str) else None
+
+    @property
+    def filigree_url(self) -> str | None:
+        value = self.filigree.get("url")
+        return value if isinstance(value, str) else None
 
 
 def load(path: Path | None) -> WardlineConfig:
@@ -53,6 +64,38 @@ def load(path: Path | None) -> WardlineConfig:
         filigree=dict(raw.get("filigree") or {}),
         clarion=dict(raw.get("clarion") or {}),
     )
+
+
+_CLARION_URL_ENV = "WARDLINE_CLARION_URL"
+_FILIGREE_URL_ENV = "WARDLINE_FILIGREE_URL"
+
+
+def _config_for(root: Path, config_path: Path | None) -> WardlineConfig:
+    return load(config_path if config_path is not None else root / "wardline.yaml")
+
+
+def resolve_clarion_url(
+    flag: str | None, root: Path, config_path: Path | None = None
+) -> str | None:
+    """Clarion URL by precedence: explicit flag > env var > wardline.yaml."""
+    if flag is not None:
+        return flag
+    env = os.environ.get(_CLARION_URL_ENV)
+    if env:
+        return env
+    return _config_for(root, config_path).clarion_url
+
+
+def resolve_filigree_url(
+    flag: str | None, root: Path, config_path: Path | None = None
+) -> str | None:
+    """Filigree Loom URL by precedence: explicit flag > env var > wardline.yaml."""
+    if flag is not None:
+        return flag
+    env = os.environ.get(_FILIGREE_URL_ENV)
+    if env:
+        return env
+    return _config_for(root, config_path).filigree_url
 
 
 @dataclass(frozen=True, slots=True)
