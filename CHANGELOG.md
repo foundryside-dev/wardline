@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-31
+
 ### Added
 
 - **`wardline install`** — one-command agent enablement. Injects a hash-fenced
@@ -178,7 +180,8 @@ for Python — enterprise-class trust-boundary analysis at small-team weight.
 - **Packaging** — MIT-licensed; optional extras `scanner` (config + CLI) and
   `loom` (HTTP integrations).
 
-[Unreleased]: https://github.com/foundryside-dev/wardline/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/foundryside-dev/wardline/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/foundryside-dev/wardline/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/foundryside-dev/wardline/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/foundryside-dev/wardline/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/foundryside-dev/wardline/releases/tag/v0.1.0
