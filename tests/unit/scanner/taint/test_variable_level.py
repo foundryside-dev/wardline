@@ -50,15 +50,19 @@ def test_ternary_combines_branches_via_least_trusted() -> None:
 
 
 def test_if_else_merges_branches() -> None:
+    # x holds ONE branch's value (an alternative), so the merge is the rank-meet
+    # least_trusted (weakest-link): least_trusted(INTEGRAL, EXTERNAL_RAW) =
+    # EXTERNAL_RAW — raw propagates at its precise rank, NOT a MIXED_RAW clash.
     src = "def f(p):\n    if c:\n        x = 42\n    else:\n        x = p\n"
-    assert _vt(src, function_taint=T.EXTERNAL_RAW)["x"] == T.MIXED_RAW
+    assert _vt(src, function_taint=T.EXTERNAL_RAW)["x"] == T.EXTERNAL_RAW
 
 
 def test_if_without_else_merges_with_pre_state() -> None:
     # x assigned only in the if-branch; the implicit else is the pre-if value.
     src = "def f():\n    x = 42\n    if c:\n        x = unknown\n"
-    # if-branch: x=unknown→function_taint=GUARDED; else(pre)=INTEGRAL → join
-    assert _vt(src, function_taint=T.GUARDED)["x"] == T.MIXED_RAW
+    # if-branch: x=unknown→function_taint=GUARDED; else(pre)=INTEGRAL →
+    # least_trusted(GUARDED, INTEGRAL) = GUARDED (no MIXED_RAW clash).
+    assert _vt(src, function_taint=T.GUARDED)["x"] == T.GUARDED
 
 
 def test_try_except_merges_branches() -> None:
@@ -75,11 +79,83 @@ def test_try_except_merges_branches() -> None:
 
 
 def test_for_loop_merges_body_with_pre_loop() -> None:
-    # loop may not execute: body assignment joins with pre-loop state
+    # loop may not execute: body assignment merges with pre-loop state via the
+    # rank-meet least_trusted (weakest-link).
     src = "def f(p):\n    x = 42\n    for i in p:\n        x = i\n"
     out = _vt(src, function_taint=T.UNKNOWN_RAW)
-    # i gets iterable(p=UNKNOWN_RAW) taint; x = join(INTEGRAL pre, UNKNOWN_RAW body)
-    assert out["x"] == T.MIXED_RAW
+    # i gets iterable(p=UNKNOWN_RAW) taint; x = least_trusted(INTEGRAL pre,
+    # UNKNOWN_RAW body) = UNKNOWN_RAW — raw at its precise rank, no MIXED_RAW clash.
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+# ── Clean-direction merge tests (wardline-4d9f840c24) ──────────────────────
+# Control-flow merges combine via the rank-meet least_trusted (weakest-link), NOT
+# the provenance-clash taint_join: two clean-but-different-family branches must
+# NOT manufacture a MIXED_RAW false positive, while a raw branch still propagates
+# at its precise rank (and fires). taint_join would yield MIXED_RAW (rank 7) for
+# every case below — the false positives this fix removes.
+
+
+def test_if_else_two_clean_families_stays_clean() -> None:
+    # if c: x = validate(p) else: x = guard(p) — two clean families.
+    # least_trusted(ASSURED, GUARDED) = GUARDED (clean). taint_join → MIXED_RAW (FP).
+    src = "def f(p):\n    if c:\n        x = validate(p)\n    else:\n        x = guard(p)\n"
+    out = _vt(src, function_taint=T.INTEGRAL, taint_map={"validate": T.ASSURED, "guard": T.GUARDED})
+    assert out["x"] == T.GUARDED
+
+
+def test_for_loop_clean_accumulate_stays_clean() -> None:
+    # s = ''; for v in data: s += conv(v) — the back-edge merge of a clean
+    # accumuland must not clash to MIXED_RAW. least_trusted(ASSURED, INTEGRAL '')
+    # = ASSURED (clean). taint_join would re-clash at the back-edge (FP).
+    src = "def f():\n    s = ''\n    for v in data:\n        s += conv(v)\n"
+    out = _vt(src, function_taint=T.INTEGRAL, taint_map={"conv": T.ASSURED})
+    assert out["s"] == T.ASSURED
+
+
+def test_while_loop_merges_body_with_pre_loop() -> None:
+    # while has no prior merge test — a raw body still propagates at its rank.
+    # least_trusted(EXTERNAL_RAW body, INTEGRAL pre) = EXTERNAL_RAW.
+    src = "def f(p):\n    x = 1\n    while c:\n        x = p\n"
+    assert _vt(src, function_taint=T.EXTERNAL_RAW)["x"] == T.EXTERNAL_RAW
+
+
+def test_while_loop_clean_body_stays_clean() -> None:
+    # least_trusted(GUARDED body, ASSURED pre) = GUARDED (clean). taint_join → MIXED_RAW (FP).
+    src = "def f():\n    x = ok()\n    while c:\n        x = ok2()\n"
+    out = _vt(src, function_taint=T.INTEGRAL, taint_map={"ok": T.ASSURED, "ok2": T.GUARDED})
+    assert out["x"] == T.GUARDED
+
+
+def test_try_except_clean_families_stays_clean() -> None:
+    # try → ASSURED, handler → GUARDED. least_trusted = GUARDED (clean).
+    # taint_join → MIXED_RAW (FP).
+    src = "def f():\n    try:\n        x = a()\n    except Exception:\n        x = b()\n"
+    out = _vt(src, function_taint=T.INTEGRAL, taint_map={"a": T.ASSURED, "b": T.GUARDED})
+    assert out["x"] == T.GUARDED
+
+
+def test_try_except_raw_handler_still_propagates() -> None:
+    # try → ASSURED, handler → p (EXTERNAL_RAW). least_trusted keeps the raw rank.
+    src = "def f(p):\n    try:\n        x = safe()\n    except Exception:\n        x = p\n"
+    out = _vt(src, function_taint=T.EXTERNAL_RAW, taint_map={"safe": T.ASSURED})
+    assert out["x"] == T.EXTERNAL_RAW
+
+
+def test_match_two_clean_families_stays_clean() -> None:
+    # arms ASSURED / GUARDED + INTEGRAL fall-through. least_trusted = GUARDED (clean).
+    # taint_join → MIXED_RAW (FP).
+    src = (
+        "def f(p):\n"
+        "    x = 1\n"
+        "    match p:\n"
+        "        case 1:\n"
+        "            x = a()\n"
+        "        case _:\n"
+        "            x = b()\n"
+    )
+    out = _vt(src, function_taint=T.INTEGRAL, taint_map={"a": T.ASSURED, "b": T.GUARDED})
+    assert out["x"] == T.GUARDED
 
 
 def test_walrus_assigns_target() -> None:
@@ -178,8 +254,10 @@ def test_compute_return_taint_all_shapes() -> None:
 
 
 def test_match_arm_assignment_merges_across_arms() -> None:
-    # x assigned raw in one arm, integral in another; join + the no-match
-    # fall-through (pre-match x=INTEGRAL) -> MIXED_RAW (cross-family clash).
+    # x assigned raw in one arm, integral in another; arms + the no-match
+    # fall-through (pre-match x=INTEGRAL) merge via the rank-meet least_trusted
+    # (weakest-link): least_trusted(EXTERNAL_RAW, INTEGRAL, INTEGRAL) =
+    # EXTERNAL_RAW — the raw arm propagates at its rank, NOT a MIXED_RAW clash.
     src = (
         "def f(p):\n"
         "    x = 1\n"
@@ -190,7 +268,7 @@ def test_match_arm_assignment_merges_across_arms() -> None:
         "            x = 2\n"
     )
     out = _vt(src, function_taint=T.INTEGRAL, taint_map={"tainted": T.EXTERNAL_RAW})
-    assert out["x"] == T.MIXED_RAW
+    assert out["x"] == T.EXTERNAL_RAW
 
 
 def test_match_capture_binds_subject_taint() -> None:
