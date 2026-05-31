@@ -45,3 +45,49 @@ def test_mcp_resolves_clarion_url_from_config(tmp_path: Path, monkeypatch) -> No
     result = CliRunner().invoke(cli, ["mcp", "--root", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert captured["clarion_url"] == "http://configured-clarion"
+
+
+def test_install_writes_all_artifacts(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    result = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "CLAUDE.md").is_file()
+    assert (tmp_path / "AGENTS.md").is_file()
+    assert (tmp_path / ".claude" / "skills" / "wardline-gate" / "SKILL.md").is_file()
+    assert (tmp_path / ".agents" / "skills" / "wardline-gate" / "SKILL.md").is_file()
+    assert (tmp_path / ".mcp.json").is_file()
+    assert "CLAUDE.md" in result.output
+
+
+def test_install_is_idempotent(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
+    result = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "unchanged" in result.output
+
+
+def test_install_opt_outs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    result = CliRunner().invoke(
+        cli,
+        ["install", "--root", str(tmp_path), "--no-agents-md", "--no-skill",
+         "--no-mcp", "--no-bindings"],
+    )
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "CLAUDE.md").is_file()
+    assert not (tmp_path / "AGENTS.md").exists()
+    assert not (tmp_path / ".claude").exists()
+    assert not (tmp_path / ".mcp.json").exists()
+
+
+def test_install_fails_2_on_malformed_mcp_json(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    (tmp_path / ".mcp.json").write_text("{bad", encoding="utf-8")
+    result = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
+    assert result.exit_code == 2
+    assert "malformed .mcp.json" in result.output
