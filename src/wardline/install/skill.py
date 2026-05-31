@@ -20,7 +20,7 @@ def install_skill(root: Path) -> dict[str, str]:
     results: dict[str, str] = {}
     for base in (".claude", ".agents"):
         dest = root / base / "skills" / "wardline-gate"
-        existed = dest.exists()
+        existed = dest.exists() or dest.is_symlink()
         if existed:
             shutil.rmtree(dest)
         dest.parent.mkdir(parents=True, exist_ok=True)

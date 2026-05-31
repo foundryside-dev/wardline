@@ -18,4 +18,5 @@ def test_reinstall_overwrites(tmp_path: Path) -> None:
     stale.write_text("STALE", encoding="utf-8")
     results = install_skill(tmp_path)
     assert results[".claude"] == "overwritten"
+    assert results[".agents"] == "overwritten"
     assert "name: wardline-gate" in stale.read_text(encoding="utf-8")
