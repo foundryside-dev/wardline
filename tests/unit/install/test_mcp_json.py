@@ -55,3 +55,13 @@ def test_mcpservers_null_is_treated_as_absent(tmp_path: Path) -> None:
     data = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
     assert data["mcpServers"]["wardline"] == _WARDLINE_ENTRY
     assert data["other"] == 1  # unrelated top-level keys preserved
+
+
+def test_replaces_stale_wardline_entry(tmp_path: Path) -> None:
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"wardline": {"type": "stdio", "command": "OLD", "args": []}}}),
+        encoding="utf-8",
+    )
+    assert merge_mcp_entry(tmp_path) == "updated"
+    data = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
+    assert data["mcpServers"]["wardline"] == _WARDLINE_ENTRY  # stale entry replaced
