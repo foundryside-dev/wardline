@@ -76,6 +76,39 @@ def test_two_hop_through_undecorated_intermediary() -> None:
     assert refined["m.handler"] == T.EXTERNAL_RAW
 
 
+def test_clean_different_family_callees_stay_clean() -> None:
+    # Clean-direction (wardline-17b9ce2c70): handler (INTEGRAL) calls two
+    # clean-but-DIFFERENT-family provider callees — validate (ASSURED) and lit
+    # (INTEGRAL). The callee-set aggregation is the rank-meet least_trusted
+    # (weakest-link), NOT taint_join: least_trusted(ASSURED, INTEGRAL) = ASSURED
+    # (clean), so the handler stays clean. taint_join would clash them to
+    # MIXED_RAW (rank 7, in the firing RAW_ZONE) — a PY-WL-101 false positive.
+    refined, _prov = refine_minimum_scope_taints(
+        target_functions=["m.handler"],
+        edges={"m.handler": frozenset({"m.validate", "m.lit"})},
+        seed_taints={"m.handler": T.INTEGRAL, "m.validate": T.ASSURED, "m.lit": T.INTEGRAL},
+        seed_sources={"m.handler": "default", "m.validate": "provider", "m.lit": "provider"},
+        return_taints={"m.validate": T.ASSURED, "m.lit": T.INTEGRAL},
+        unresolved_counts={},
+    )
+    assert refined["m.handler"] == T.ASSURED  # clean, NOT MIXED_RAW
+
+
+def test_one_raw_callee_among_clean_still_propagates() -> None:
+    # Soundness companion: swap the INTEGRAL helper for a raw EXTERNAL_RAW
+    # provider. least_trusted keeps the raw rank, so the handler is still raw
+    # (would still fire) — the migration introduces no false negative.
+    refined, _prov = refine_minimum_scope_taints(
+        target_functions=["m.handler"],
+        edges={"m.handler": frozenset({"m.validate", "m.raw"})},
+        seed_taints={"m.handler": T.INTEGRAL, "m.validate": T.ASSURED, "m.raw": T.EXTERNAL_RAW},
+        seed_sources={"m.handler": "default", "m.validate": "provider", "m.raw": "provider"},
+        return_taints={"m.validate": T.ASSURED, "m.raw": T.EXTERNAL_RAW},
+        unresolved_counts={},
+    )
+    assert refined["m.handler"] == T.EXTERNAL_RAW  # raw still propagates
+
+
 def test_three_hop_is_bounded_out() -> None:
     # handler → hop1 → hop2 → raw : one intermediary max, so handler stays ASSURED
     refined, prov = refine_minimum_scope_taints(

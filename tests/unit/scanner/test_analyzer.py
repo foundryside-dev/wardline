@@ -141,9 +141,14 @@ def test_analyzer_default_provider_seeds_from_decorators(tmp_path) -> None:
 
 
 def test_analyzer_seeded_taints_drive_transitive_propagation(tmp_path) -> None:
-    # The real transitive demonstration: an undecorated function that joins two
-    # provenance-incompatible decorator-seeded sources (EXTERNAL_RAW + INTEGRAL)
-    # resolves to MIXED_RAW (rank 7), which DOES propagate up past the floor.
+    # The real transitive demonstration: an undecorated function reaching a raw
+    # external boundary (EXTERNAL_RAW) alongside a trusted constant (INTEGRAL).
+    # The L3 callee-set aggregation is the rank-meet least_trusted (weakest-link),
+    # NOT taint_join (wardline-17b9ce2c70): least_trusted(EXTERNAL_RAW, INTEGRAL)
+    # = EXTERNAL_RAW, then floored to mix's own UNKNOWN_RAW seed (rank 6) — a
+    # genuinely-raw result at its PRECISE rank. taint_join would have spiked it to
+    # MIXED_RAW (rank 7), the spurious provenance-clash over-label this migration
+    # removes. The raw still propagates (UNKNOWN_RAW is in the firing RAW_ZONE).
     _write(tmp_path, "m.py",
            "from wardline.decorators import external_boundary, trusted\n"
            "@external_boundary\ndef ext(p):\n    return p\n"
@@ -155,7 +160,7 @@ def test_analyzer_seeded_taints_drive_transitive_propagation(tmp_path) -> None:
     assert ctx is not None
     assert ctx.project_taints["m.ext"] == T.EXTERNAL_RAW
     assert ctx.project_taints["m.tru"] == T.INTEGRAL
-    assert ctx.project_taints["m.mix"] == T.MIXED_RAW  # transitive provenance clash
+    assert ctx.project_taints["m.mix"] == T.UNKNOWN_RAW  # raw, floored — NOT MIXED_RAW
 
 
 def test_analyzer_skips_unparseable_file_with_fact(tmp_path) -> None:

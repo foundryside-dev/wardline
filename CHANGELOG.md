@@ -18,7 +18,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exactly one branch, so they now combine via the rank-meet weakest-link
   (`least_trusted`), matching the expression combiners; a raw branch still
   propagates and fires. This completes the `taint_join` → `least_trusted`
-  migration for the either-or paths (the callee-combination joins are unchanged).
+  migration for the L2 either-or paths.
+- **L3 callee-combination over-tainting (false positives)** — the four
+  callee-combination joins in the call-graph propagation engine
+  (`minimum_scope.py`, plus `propagation.py`'s external-influence, Phase 1b
+  seed-join, and per-round SCC refinement) combined the taints of a function's
+  *set* of callees via the provenance-clash join. That is a function-summary
+  aggregation of callee influence, not a single value built by merging two
+  provenances, so a non-anchored function calling two clean-but-different-family
+  callees (e.g. an `ASSURED` validator and an `INTEGRAL` helper) spuriously
+  became `MIXED_RAW` (rank 7, in the firing raw zone) — an over-taint that,
+  propagated up, fired `PY-WL-101` on clean data. All four sites now aggregate
+  via the rank-meet weakest-link (`least_trusted`); a raw callee still
+  propagates at its precise rank and fires. Completes the `taint_join` →
+  `least_trusted` migration; the `taint_join` operator itself remains in
+  `core/taints.py`.
 
 ## [0.2.0] - 2026-05-31
 

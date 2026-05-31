@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from functools import reduce
 from typing import NamedTuple
 
-from wardline.core.taints import TRUST_RANK, TaintState, taint_join
+from wardline.core.taints import TRUST_RANK, TaintState, least_trusted
 from wardline.scanner.ast_primitives import iter_calls_in_function_body, resolve_call_fqn
 from wardline.scanner.index import Entity
 
@@ -88,12 +88,19 @@ def refine_minimum_scope_taints(
 
     A callee whose source is ``"provider"`` is *anchored*: its declared return
     taint is used directly (no recursion). Other callees are refined one hop
-    deeper. Callee taints are combined with ``taint_join`` (not ``least_trusted``):
-    a caller reaching callees of differing provenance becomes ``MIXED_RAW`` by
-    design — over-tainting on a provenance clash, the conservative direction.
-    The combined result is then floored so refinement never makes a function MORE
-    trusted than its own seed. Provenance is recorded only for functions whose
-    taint actually changed.
+    deeper. Callee taints are combined with the rank-meet ``least_trusted``
+    (weakest-link), NOT ``taint_join``: this is a function-summary AGGREGATION of
+    the influence of a *set* of callees, not a single value built by merging two
+    provenances, so ``taint_join``'s provenance-clash ``MIXED_RAW`` is the wrong
+    label — two clean-but-different-family callees (e.g. an ``ASSURED`` validator
+    and an ``INTEGRAL`` literal helper) must not clash a clean caller to
+    ``MIXED_RAW`` (rank 7, in the firing RAW_ZONE) and manufacture a PY-WL-101
+    false positive. ``least_trusted`` keeps any raw callee's rank (sound: a raw
+    callee still propagates and fires), without the spurious jump. Consistent
+    with the L2 expression/control-flow combiners (wardline-4d94577013,
+    wardline-4d9f840c24). The combined result is then floored so refinement never
+    makes a function MORE trusted than its own seed. Provenance is recorded only
+    for functions whose taint actually changed.
     """
 
     def _seed(func: str) -> TaintState:
@@ -140,7 +147,12 @@ def refine_minimum_scope_taints(
             )
             influenced.append((callee, callee_taint))
 
-        combined = reduce(taint_join, (taint for _, taint in influenced))
+        # Aggregate the influence of this function's callee SET into one summary
+        # taint via the rank-meet least_trusted (weakest-link), NOT taint_join:
+        # a clean caller of two clean-but-different-family callees must stay clean,
+        # not clash to MIXED_RAW (see this function's docstring). A raw callee
+        # still propagates at its precise rank.
+        combined = reduce(least_trusted, (taint for _, taint in influenced))
         # Floor: refinement only ever demotes (toward less-trusted), never
         # promotes. This single clamp also covers the unresolved-call case —
         # after it, TRUST_RANK[combined] >= TRUST_RANK[seed] unconditionally, so
