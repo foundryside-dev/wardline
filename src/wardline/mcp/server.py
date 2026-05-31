@@ -108,6 +108,10 @@ def _scan(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, An
             "baselined": result.summary.baselined,
             "waived": result.summary.waived,
             "judged": result.summary.judged,
+            # Files discovered but NOT analysed (parse error / too-deep / missing
+            # source root — benign no-module skips are excluded). Surfaced so the
+            # silent under-scan reaches the agent, not just the human-facing stderr.
+            "unanalyzed": result.summary.unanalyzed,
         },
         "gate": {"tripped": decision.tripped, "fail_on": decision.fail_on,
                  "exit_class": decision.exit_class},
@@ -423,6 +427,16 @@ class WardlineMCPServer:
             # Bad config / unreadable path during a tool call: a tool-execution
             # error the agent must read and act on → isError result.
             return self._is_error(str(exc))
+        except McpError:
+            # A handler may DELIBERATELY raise McpError to signal a protocol fault;
+            # that stays a JSON-RPC error (dispatch maps it), so let it propagate.
+            raise
+        except Exception as exc:  # noqa: BLE001
+            # An UNEXPECTED crash deep in a handler (e.g. a KeyError/RecursionError from
+            # the taint engine mid-scan) is a tool-EXECUTION error, not a protocol fault.
+            # Surface it as an isError RESULT so the detail lands in the channel MCP
+            # clients reliably relay, rather than a -32603 whose message they may drop.
+            return self._is_error(f"wardline internal error: {exc}")
         return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}]}
 
     def _resources_list(self, params: dict[str, Any]) -> dict[str, Any]:

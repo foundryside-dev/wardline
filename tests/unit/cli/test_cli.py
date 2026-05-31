@@ -212,6 +212,76 @@ def test_scan_baseline_suppresses_and_clears_gate(tmp_path) -> None:
     assert "1 suppressed" in res.output
 
 
+_UNPARSEABLE = "def f(:\n"  # syntax error -> WLN-ENGINE-PARSE-ERROR FACT
+
+
+def test_scan_surfaces_unanalyzed_count_in_summary(tmp_path) -> None:
+    # (b) A file that can't be parsed is discovered-but-not-analysed; the console
+    # summary must visibly report the count so a human reading it is not misled.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "bad.py", _UNPARSEABLE)
+    _write(proj, "good.py", "def g(): return 1\n")
+    res = CliRunner().invoke(scan, [str(proj), "--output", str(tmp_path / "f.jsonl")])
+    assert res.exit_code == 0, res.output  # default: no enforcement
+    assert "could not be analyzed" in res.output
+
+
+def test_scan_fail_on_unanalyzed_exits_one(tmp_path) -> None:
+    # (b) --fail-on-unanalyzed makes a discovered-but-not-analysed file exit 1,
+    # independently of the severity gate.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "bad.py", _UNPARSEABLE)
+    res = CliRunner().invoke(
+        scan, [str(proj), "--output", str(tmp_path / "f.jsonl"), "--fail-on-unanalyzed"]
+    )
+    assert res.exit_code == 1, res.output
+
+
+def test_scan_unanalyzed_default_does_not_gate(tmp_path) -> None:
+    # (b) Without the flag, an unparseable file does NOT change the exit code
+    # (preserving released behaviour).
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "bad.py", _UNPARSEABLE)
+    res = CliRunner().invoke(scan, [str(proj), "--output", str(tmp_path / "f.jsonl")])
+    assert res.exit_code == 0, res.output
+
+
+def test_scan_benign_no_module_is_quiet(tmp_path) -> None:
+    # (b refinement) A benign top-level __init__.py (no module mapping, nothing to
+    # analyze) must NOT print the "could not be analyzed" line nor a stderr warning
+    # — that would train operators to ignore a signal reserved for real failures.
+    # The WLN-ENGINE-NO-MODULE FACT must still land in the findings output.
+    import json as _j
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "__init__.py", "VERSION = 1\n")
+    _write(proj, "mod.py", "def g(): return 1\n")
+    out = tmp_path / "f.jsonl"
+    res = CliRunner().invoke(scan, [str(proj), "--output", str(out)])
+    assert res.exit_code == 0, res.output
+    assert "could not be analyzed" not in res.output
+    assert "warning:" not in res.output
+    findings = [_j.loads(ln) for ln in out.read_text().splitlines() if ln.strip()]
+    assert any(f["rule_id"] == "WLN-ENGINE-NO-MODULE" for f in findings)
+
+
+def test_scan_explicit_missing_config_exits_2(tmp_path) -> None:
+    # (d) An explicit --config that doesn't exist must error (exit 2), not silently
+    # run with default policy.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "m.py", "def f(): return 1\n")
+    res = CliRunner().invoke(
+        scan,
+        [str(proj), "--output", str(tmp_path / "f.jsonl"), "--config", str(proj / "nope.yaml")],
+    )
+    assert res.exit_code == 2, res.output
+
+
 def test_scan_malformed_baseline_exits_2(tmp_path) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()

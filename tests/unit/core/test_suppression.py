@@ -40,6 +40,20 @@ def test_defect_without_line_start_is_rejected() -> None:
         apply_suppressions([bad], _empty_baseline(), _no_waivers(), today=_TODAY)
 
 
+def test_engine_diagnostic_defect_without_line_start_surfaces() -> None:
+    # Engine-diagnostic DEFECTs (<engine> path) build a line-independent
+    # fingerprint; the line invariant must NOT apply, and they must surface.
+    eng = Finding(
+        rule_id="WLN-L3-MONOTONICITY-VIOLATION", message="monotone invariant broke",
+        severity=Severity.ERROR, kind=Kind.DEFECT,
+        location=Location(path="<engine>", line_start=None), fingerprint=_FP_A,
+    )
+    out = apply_suppressions([eng], _empty_baseline(), _no_waivers(), today=_TODAY)
+    assert len(out) == 1
+    assert out[0].rule_id == "WLN-L3-MONOTONICITY-VIOLATION"
+    assert out[0].suppressed is SuppressionState.ACTIVE  # surfaces, not dropped
+
+
 def test_baselined_finding_is_annotated() -> None:
     out = apply_suppressions([_defect(_FP_A)], Baseline(frozenset({_FP_A})), _no_waivers(), today=_TODAY)
     assert out[0].suppressed is SuppressionState.BASELINED

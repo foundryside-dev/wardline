@@ -72,8 +72,10 @@ class WardlineAnalyzer:
         self, files: Sequence[Path], config: WardlineConfig, *, root: Path
     ) -> Sequence[Finding]:
         modules: list[ModuleInput] = []
-        # (relpath, module_path, tree, entities, alias_map)
-        file_meta: list[tuple[str, str, ast.Module, tuple[Entity, ...], dict[str, str]]] = []
+        # (relpath, module_path, tree, entities, alias_map, class_qualnames)
+        file_meta: list[
+            tuple[str, str, ast.Module, tuple[Entity, ...], dict[str, str], frozenset[str]]
+        ] = []
         parse_findings: list[Finding] = []
 
         # ``discover`` resolves the root to an absolute path, so the files it yields are
@@ -91,6 +93,24 @@ class WardlineAnalyzer:
             )
             module = module_dotted_name(relpath)
             if module is None:
+                # The file was discovered but maps to no module (e.g. a top-level
+                # __init__.py). Emit a FACT making the skip OBSERVABLE — a silent
+                # ``continue`` here was a false-green (the file counted as scanned yet
+                # produced zero findings). This is its OWN rule_id, distinct from
+                # WLN-ENGINE-FILE-SKIPPED: a benign layout artifact (nothing to
+                # analyze), NOT a "tried and failed" signal — so it is deliberately
+                # NOT in UNANALYZED_RULE_IDS and must not dilute the unanalyzed count.
+                parse_findings.append(
+                    Finding(
+                        rule_id="WLN-ENGINE-NO-MODULE",
+                        message=f"{relpath}: maps to no module (nothing to analyze)",
+                        severity=Severity.NONE,
+                        kind=Kind.FACT,
+                        location=Location(path=relpath),
+                        fingerprint=_fp("WLN-ENGINE-NO-MODULE", relpath),
+                        properties={"reason": "no_module_mapping"},
+                    )
+                )
                 continue
             # File-level fail-closed boundary. A read/decode error, a SyntaxError
             # (unparseable), or a RecursionError (pathological depth — a generated
@@ -147,7 +167,7 @@ class WardlineAnalyzer:
                     source_bytes=source.encode("utf-8"),
                 )
             )
-            file_meta.append((relpath, module, tree, entities, alias_map))
+            file_meta.append((relpath, module, tree, entities, alias_map, classes))
 
         if self._cache is not None:
             result = resolve_project_taints(
@@ -175,7 +195,7 @@ class WardlineAnalyzer:
         # mis-read validated output as raw (over-taint -> PY-WL-101 false positive).
         project_return_taints = dict(result.return_taint_map)
         project_by_module: dict[str, dict[str, TaintState]] = {}
-        for _relpath, module, _tree, entities, _alias_map in file_meta:
+        for _relpath, module, _tree, entities, _alias_map, _classes in file_meta:
             prefix = module + "."
             bucket = project_by_module.setdefault(module, {})
             for ent in entities:
@@ -188,23 +208,47 @@ class WardlineAnalyzer:
         function_return_callee: dict[str, str | None] = {}
         entity_index: dict[str, Entity] = {}
         func_skip_findings: list[Finding] = []
-        for _relpath, module, _tree, entities, alias_map in file_meta:
+        for _relpath, module, _tree, entities, alias_map, classes in file_meta:
             call_tm = build_call_taint_map(
                 module_path=module, alias_map=alias_map, project_by_module=project_by_module
             )
             for ent in entities:
                 entity_index[ent.qualname] = ent
                 seed = project_taints.get(ent.qualname, TaintState.UNKNOWN_RAW)
+                # PART C — self/cls method-call parity with L3. The module-scoped
+                # call_tm keys top-level functions only; a method's ``self.<sib>``
+                # / ``cls.<sib>`` call sites are absent, so they used to fall back
+                # to the function seed (fail-open launder for a @trusted method).
+                # For a method entity whose enclosing class is known, inject the
+                # sibling methods' RETURN taints under ``self.<name>``/``cls.<name>``
+                # — mirroring resolve_self_method_fqn's class-membership gate.
+                # Per-entity (not in call_tm) because ``self`` is class-relative:
+                # baking it into the shared module map would collide across classes.
+                method_tm = dict(call_tm)
+                enclosing_class = ent.qualname.rsplit(".", 1)[0]
+                if enclosing_class in classes:
+                    sib_prefix = enclosing_class + "."
+                    for sib in entities:
+                        if (
+                            sib.qualname.startswith(sib_prefix)
+                            and "." not in sib.qualname[len(sib_prefix):]
+                        ):
+                            sib_name = sib.qualname[len(sib_prefix):]
+                            sib_taint = project_return_taints.get(
+                                sib.qualname, TaintState.UNKNOWN_RAW
+                            )
+                            method_tm[f"self.{sib_name}"] = sib_taint
+                            method_tm[f"cls.{sib_name}"] = sib_taint
                 try:
-                    var_taints = compute_variable_taints(ent.node, seed, dict(call_tm))
-                    ret_taint = compute_return_taint(ent.node, seed, dict(call_tm), var_taints)
+                    var_taints = compute_variable_taints(ent.node, seed, dict(method_tm))
+                    ret_taint = compute_return_taint(ent.node, seed, dict(method_tm), var_taints)
                     # Pass a COPY of var_taints: _resolve_expr's walrus (NamedExpr)
                     # branch mutates the dict it walks, and var_taints is stored into
                     # function_var_taints. A forward-referencing walrus inside a return
                     # would otherwise get a second, non-idempotent resolve pass that
                     # perturbs the stored map. Same starting state ⇒ same ret_callee.
                     ret_callee = compute_return_callee(
-                        ent.node, seed, dict(call_tm), dict(var_taints)
+                        ent.node, seed, dict(method_tm), dict(var_taints)
                     )
                 except RecursionError:
                     # Fail-closed: absent vars read as the function taint, and the
@@ -248,8 +292,8 @@ class WardlineAnalyzer:
         findings.extend(build_diagnostic_findings(list(result.diagnostics)))
         findings.extend(
             build_unknown_import_findings(
-                [(rp, mp, tr) for rp, mp, tr, _e, _a in file_meta],
-                project_modules=frozenset(mp for _rp, mp, _tr, _e, _a in file_meta),
+                [(rp, mp, tr) for rp, mp, tr, _e, _a, _c in file_meta],
+                project_modules=frozenset(mp for _rp, mp, _tr, _e, _a, _c in file_meta),
             )
         )
         registry = self._registry if self._registry is not None else build_default_registry(config)

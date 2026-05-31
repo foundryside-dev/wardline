@@ -34,6 +34,24 @@ _SERIALISATION_SINKS: frozenset[str] = frozenset(
     }
 )
 
+# Curated taint-PROPAGATING builtins. A small explicit table (NOT a general rule
+# — unknown calls still fall back to function_taint, so len/int/validate stay
+# unaffected and there is no false-positive explosion). These return the join of
+# their argument taints: a string conversion / iterator advance carries whatever
+# taint went in. ``next`` closes the ``next(genexp)`` shape (the iterator arg).
+_PROPAGATING_BUILTINS: frozenset[str] = frozenset(
+    {"str", "repr", "ascii", "bytes", "bytearray", "format", "next"}
+)
+
+# Curated taint-PROPAGATING methods, keyed by attribute name. ``.format``/``.join``
+# combine the receiver with the arguments (``"sep".join(parts)`` carries both);
+# ``.get``/``.pop``/``.setdefault`` carry the RECEIVER's taint — a container access
+# is the same shape as the ``Subscript`` read handler (``d['k']`` propagating while
+# ``d.get('k')`` did not was an inconsistency, not a feature). These do NOT add a
+# new SOURCE: ``.get`` returns the container's existing taint, nothing more.
+_PROPAGATING_METHODS_WITH_ARGS: frozenset[str] = frozenset({"format", "join"})
+_PROPAGATING_METHODS_RECEIVER: frozenset[str] = frozenset({"get", "pop", "setdefault"})
+
 
 def compute_variable_taints(
     func_node: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -131,8 +149,127 @@ def _resolve_expr(
         return taint_join(true_t, false_t)
     if isinstance(node, ast.UnaryOp):
         return _resolve_expr(node.operand, function_taint, taint_map, var_taints)
-    # Fallback: attribute access, subscript, comprehensions, etc.
+    if isinstance(node, ast.Subscript):
+        # Resolve the slice for walrus side-effects (discarded); the subscript
+        # result carries its container's taint.
+        _resolve_expr(node.slice, function_taint, taint_map, var_taints)
+        return _resolve_expr(node.value, function_taint, taint_map, var_taints)
+    if isinstance(node, ast.Attribute):
+        # Attribute access carries the object's taint (the value path; the
+        # call-receiver path is handled in _resolve_call via _dotted_name).
+        return _resolve_expr(node.value, function_taint, taint_map, var_taints)
+    if isinstance(node, ast.Await):
+        # Unwrap — the inner expression (typically a Call) is already handled.
+        return _resolve_expr(node.value, function_taint, taint_map, var_taints)
+    if isinstance(node, ast.BoolOp):
+        result = _resolve_expr(node.values[0], function_taint, taint_map, var_taints)
+        for value in node.values[1:]:
+            result = taint_join(
+                result, _resolve_expr(value, function_taint, taint_map, var_taints)
+            )
+        return result
+    if isinstance(node, ast.JoinedStr):
+        return _resolve_joined_str(node, function_taint, taint_map, var_taints)
+    if isinstance(node, ast.FormattedValue):
+        # A standalone interpolation field — resolve its value expression.
+        return _resolve_expr(node.value, function_taint, taint_map, var_taints)
+    if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
+        return _resolve_comprehension(node, function_taint, taint_map, var_taints)
+    # Fallback: unmodelled Call shapes (str()/format()/.get()), lambdas, etc.
     return function_taint
+
+
+def _resolve_joined_str(
+    node: ast.JoinedStr,
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    var_taints: dict[str, TaintState],
+) -> TaintState:
+    """Combine the taint of every part of an f-string. Empty → INTEGRAL.
+
+    Literal segments are ``ast.Constant`` (INTEGRAL); interpolations are
+    ``ast.FormattedValue`` whose ``.value`` is the embedded expression.
+
+    Combines via the rank-meet :func:`least_trusted` (weakest-link), NOT
+    :func:`taint_join`: f-string building is a value flow, and a benign INTEGRAL
+    literal must not manufacture a MIXED_RAW provenance clash with validated data
+    (``least_trusted(INTEGRAL, ASSURED) = ASSURED``, clean — whereas
+    ``taint_join`` would yield MIXED_RAW, a false positive). Raw data still
+    propagates: ``least_trusted(INTEGRAL, UNKNOWN_RAW) = UNKNOWN_RAW``.
+    """
+    parts: list[TaintState] = []
+    for part in node.values:
+        if isinstance(part, ast.FormattedValue):
+            parts.append(_resolve_expr(part.value, function_taint, taint_map, var_taints))
+        else:
+            parts.append(_resolve_expr(part, function_taint, taint_map, var_taints))
+    if not parts:
+        return TaintState.INTEGRAL
+    result = parts[0]
+    for p in parts[1:]:
+        result = least_trusted(result, p)
+    return result
+
+
+def _resolve_comprehension(
+    node: ast.ListComp | ast.SetComp | ast.GeneratorExp | ast.DictComp,
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    var_taints: dict[str, TaintState],
+) -> TaintState:
+    """Resolve a comprehension's element taint, mirroring :func:`_handle_for`.
+
+    Binds each generator's target to its iterable taint in a LOCAL scope copy
+    (so loop-internal names don't leak into ``var_taints``), then resolves the
+    element in that scope. PEP 572: a walrus inside a comprehension binds the
+    ENCLOSING scope, so NamedExpr captures resolved here are also written back
+    into ``var_taints`` (the local copy is seeded from it and NamedExpr handling
+    in ``_resolve_expr`` mutates the dict it walks — we pass ``var_taints`` for
+    the iterable/if/element so the walrus leaks correctly while loop targets stay
+    local).
+    """
+    # Local scope seeded from the enclosing scope. Loop targets bind here only
+    # (they must not leak), but a later generator's iterable can reference an
+    # earlier generator's target — so iterables/conditions resolve against
+    # ``local``, not ``var_taints`` (resolving against the latter would launder a
+    # chained ``[y for row in [raw] for y in row]`` because ``row`` would be
+    # absent from ``var_taints`` and fall back to the trusted seed).
+    local = dict(var_taints)
+    for gen in node.generators:
+        iter_t = _resolve_expr(gen.iter, function_taint, taint_map, local)
+        _assign_target(gen.target, iter_t, local)
+        for cond in gen.ifs:
+            # Resolve conditions for walrus side-effects (PEP 572 → enclosing scope,
+            # leaked back below).
+            _resolve_expr(cond, function_taint, taint_map, local)
+    if isinstance(node, ast.DictComp):
+        key_t = _resolve_expr(node.key, function_taint, taint_map, local)
+        val_t = _resolve_expr(node.value, function_taint, taint_map, local)
+        result = taint_join(key_t, val_t)
+    else:
+        result = _resolve_expr(node.elt, function_taint, taint_map, local)
+    # Walrus targets bound by the element (PEP 572) leak to the enclosing scope.
+    for name, taint in local.items():
+        if name not in var_taints and _name_bound_by_walrus(node, name):
+            var_taints[name] = taint
+    return result
+
+
+def _name_bound_by_walrus(node: ast.AST, name: str) -> bool:
+    """True if *name* is the target of a NamedExpr anywhere in *node* (not inside
+    a nested Lambda — those bind the lambda's scope)."""
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.Lambda):
+            continue
+        if (
+            isinstance(child, ast.NamedExpr)
+            and isinstance(child.target, ast.Name)
+            and child.target.id == name
+        ):
+            return True
+        if _name_bound_by_walrus(child, name):
+            return True
+    return False
 
 
 def _resolve_call(
@@ -141,27 +278,73 @@ def _resolve_call(
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
 ) -> TaintState:
-    # Resolve argument expressions for their walrus side-effects — e.g.
-    # ``foo(x := bar())`` must bind ``x`` even though the call's own taint comes
-    # from ``node.func``. The returned arg taints are discarded; only any
-    # ``NamedExpr`` capture into ``var_taints`` matters here.
-    for arg in node.args:
-        _resolve_expr(arg, function_taint, taint_map, var_taints)
-    for keyword in node.keywords:
+    # Resolve argument expressions. This binds any walrus side-effects — e.g.
+    # ``foo(x := bar())`` must bind ``x`` even when the call's own taint comes
+    # from ``node.func`` — AND captures the arg taints for the curated
+    # taint-PROPAGATING ops below (str(raw), "{}".format(raw), etc.).
+    arg_taints = [
+        _resolve_expr(arg, function_taint, taint_map, var_taints) for arg in node.args
+    ]
+    arg_taints += [
         _resolve_expr(keyword.value, function_taint, taint_map, var_taints)
+        for keyword in node.keywords
+    ]
     if isinstance(node.func, ast.Attribute):
         dotted = _dotted_name(node.func)
         if dotted is not None:
+            # Sink check and the mapped-method lookup stay AHEAD of the generic
+            # propagating-method handling, so a serialisation sink or a resolved
+            # ``self.method``/import alias still wins.
             if dotted in _SERIALISATION_SINKS:
                 return TaintState.UNKNOWN_RAW
             taint_hit = taint_map.get(dotted)
             if taint_hit is not None:
                 return taint_hit
+        attr = node.func.attr
+        if attr in _PROPAGATING_METHODS_WITH_ARGS:
+            # ``.format``/``.join`` are string-BUILDING value flows: combine the
+            # receiver with the args via the rank-meet least_trusted (weakest-link),
+            # NOT taint_join. A benign INTEGRAL separator/template must not clash
+            # validated data to MIXED_RAW (false positive); raw data still
+            # propagates (least_trusted(INTEGRAL, UNKNOWN_RAW) = UNKNOWN_RAW).
+            receiver = _resolve_expr(node.func.value, function_taint, taint_map, var_taints)
+            result = receiver
+            for at in arg_taints:
+                result = least_trusted(result, at)
+            return result
+        if attr in _PROPAGATING_METHODS_RECEIVER:
+            # ``.get``/``.pop``/``.setdefault`` carry the RECEIVER's taint, joined
+            # with any DEFAULT value's taint — the default is a possible return
+            # value, so a tainted default (``d.get('k', read_raw(p))``) must
+            # propagate even from a trusted container (else fail-open). The first
+            # positional arg is the LOOKUP KEY, not a return value, so it is
+            # excluded; positional args from index 1 onward + keyword values are
+            # the defaults. (Joining an existing taint, not adding a new source.)
+            result = _resolve_expr(node.func.value, function_taint, taint_map, var_taints)
+            # arg_taints = [positional...] + [keyword values...]. Skip the first
+            # positional (the lookup key); join the rest (positional defaults +
+            # keyword defaults like ``default=``). With no positional args there is
+            # no key to skip, so every keyword value is a candidate default.
+            skip = 1 if node.args else 0
+            for default_taint in arg_taints[skip:]:
+                result = taint_join(result, default_taint)
+            return result
     if isinstance(node.func, ast.Name):
         try:
             return taint_map[node.func.id]
         except KeyError:
             pass
+        if node.func.id in _PROPAGATING_BUILTINS:
+            # Curated conversion/iterator builtins (str/repr/.../next): combine all
+            # arg taints via the rank-meet least_trusted (these are value-building
+            # flows, consistent with the f-string/.format/.join combiner). No args
+            # → INTEGRAL (e.g. ``str()``).
+            if not arg_taints:
+                return TaintState.INTEGRAL
+            result = arg_taints[0]
+            for at in arg_taints[1:]:
+                result = least_trusted(result, at)
+            return result
     return function_taint
 
 
@@ -201,6 +384,12 @@ def _process_stmt(
         if isinstance(stmt.target, ast.Name):
             taint = _resolve_expr(value, function_taint, taint_map, var_taints)
             var_taints[stmt.target.id] = taint
+        elif isinstance(stmt.target, (ast.Subscript, ast.Attribute)):
+            # Annotated container/attribute write (``self.x: str = expr``,
+            # ``d['k']: T = expr``) — same fail-open shape as the plain-Assign Part
+            # B case: contaminate the base variable so a later read sees it.
+            rhs = _resolve_expr(value, function_taint, taint_map, var_taints)
+            _taint_container_base(stmt.target, rhs, function_taint, var_taints)
         else:
             _resolve_expr(value, function_taint, taint_map, var_taints)
 
@@ -280,7 +469,15 @@ def _handle_assign(
             _handle_unpack(
                 target, stmt.value, function_taint, taint_map, var_taints,
             )
-        # Ignore attribute/subscript targets (obj.x = ..., d[k] = ...)
+
+        elif isinstance(target, (ast.Subscript, ast.Attribute)):
+            # Container/attribute write: d[k] = expr, obj.x = expr. Join the RHS
+            # taint into the base variable's tracked taint, so a later READ of the
+            # container (handled by the Subscript/Attribute branches of
+            # _resolve_expr) sees the contamination. Without this the container is
+            # read back at its creation taint — a fail-open under-taint.
+            rhs = _resolve_expr(stmt.value, function_taint, taint_map, var_taints)
+            _taint_container_base(target, rhs, function_taint, var_taints)
 
 
 def _handle_unpack(
@@ -330,6 +527,34 @@ def _handle_augassign(
     if isinstance(stmt.target, ast.Name):
         existing = var_taints.get(stmt.target.id, function_taint)
         var_taints[stmt.target.id] = taint_join(existing, rhs_taint)
+    elif isinstance(stmt.target, (ast.Subscript, ast.Attribute)):
+        # d[k] += expr / obj.x += expr — contaminate the base container.
+        _taint_container_base(stmt.target, rhs_taint, function_taint, var_taints)
+
+
+def _container_base_name(target: ast.expr) -> str | None:
+    """Walk a Subscript/Attribute target chain to its root ``ast.Name`` id.
+
+    ``d[a][b]`` → ``"d"``; ``obj.x.y`` → ``"obj"``; ``self.cache[k]`` → ``"self"``.
+    Returns None when the chain does not bottom out at a plain Name (e.g.
+    ``foo()[k]``), in which case there is no tracked variable to contaminate.
+    """
+    cursor: ast.expr = target
+    while isinstance(cursor, (ast.Subscript, ast.Attribute)):
+        cursor = cursor.value
+    return cursor.id if isinstance(cursor, ast.Name) else None
+
+
+def _taint_container_base(
+    target: ast.expr,
+    rhs: TaintState,
+    function_taint: TaintState,
+    var_taints: dict[str, TaintState],
+) -> None:
+    """Join *rhs* into the tracked taint of the container-write target's root Name."""
+    base = _container_base_name(target)
+    if base is not None:
+        var_taints[base] = taint_join(var_taints.get(base, function_taint), rhs)
 
 
 # ── Control flow handlers ────────────────────────────────────────

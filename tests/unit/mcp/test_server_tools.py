@@ -1,7 +1,9 @@
 import json
 from pathlib import Path
+from typing import Any
 
-from wardline.mcp.server import WardlineMCPServer
+from wardline.mcp.protocol import McpError
+from wardline.mcp.server import Tool, WardlineMCPServer
 
 FIXTURE = Path("tests/fixtures/sample_project")
 
@@ -55,6 +57,18 @@ def test_scan_tool_returns_summary_and_gate(tmp_path: Path) -> None:
     assert any(f["rule_id"] == "PY-WL-101" for f in out["findings"])
 
 
+def test_scan_tool_summary_includes_unanalyzed(tmp_path: Path) -> None:
+    # (b) The MCP scan result must expose the unanalyzed count so a silently-skipped
+    # file reaches the agent, not just stderr. An unparseable file makes it >= 1.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "bad.py").write_text("def f(:\n", encoding="utf-8")
+    server = WardlineMCPServer(root=proj)
+    out = _call(server, "scan", {})
+    assert "unanalyzed" in out["summary"]
+    assert out["summary"]["unanalyzed"] >= 1
+
+
 def test_explain_taint_success_through_mcp(tmp_path: Path) -> None:
     # scan to get a real PY-WL-101 fingerprint, then explain it through the MCP
     # layer: NOT isError, and the projected provenance fields are populated.
@@ -92,6 +106,45 @@ def test_explain_taint_unknown_fingerprint_is_an_iserror_result() -> None:
     assert "error" not in resp, resp
     assert resp["result"]["isError"] is True
     assert "re-scan" in resp["result"]["content"][0]["text"].lower()
+
+
+def test_unexpected_handler_exception_is_an_iserror_result() -> None:
+    # An UNEXPECTED exception raised deep in a tool handler (e.g. a KeyError/ValueError
+    # from the taint engine mid-scan) is a tool-EXECUTION crash. It must surface as an
+    # isError RESULT — carrying the actionable detail in content the client reliably
+    # relays — NOT as a top-level JSON-RPC -32603 error whose message clients may drop.
+    server = WardlineMCPServer(root=FIXTURE)
+
+    def boom(args: dict[str, Any], root: Path) -> Any:
+        raise ValueError("taint engine exploded")
+
+    server.add_tool(Tool(name="boom", description="", input_schema={"type": "object"},
+                         handler=boom))
+    resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 13, "method": "tools/call",
+                                "params": {"name": "boom", "arguments": {}}})
+    assert "error" not in resp, resp
+    assert resp["result"]["isError"] is True
+    text = resp["result"]["content"][0]["text"]
+    assert "taint engine exploded" in text
+    assert "wardline internal error" in text
+
+
+def test_handler_raising_mcperror_stays_a_jsonrpc_error() -> None:
+    # A handler that DELIBERATELY raises McpError is signalling a protocol fault from
+    # within the tool — that must still propagate as a JSON-RPC error, NOT be swallowed
+    # into an isError result by the broad crash-fallback.
+    server = WardlineMCPServer(root=FIXTURE)
+
+    def proto_fault(args: dict[str, Any], root: Path) -> Any:
+        raise McpError("deliberate protocol fault")
+
+    server.add_tool(Tool(name="pf", description="", input_schema={"type": "object"},
+                         handler=proto_fault))
+    resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 14, "method": "tools/call",
+                                "params": {"name": "pf", "arguments": {}}})
+    assert "result" not in resp, resp
+    assert resp["error"]["code"] == -32603
+    assert "deliberate protocol fault" in resp["error"]["message"]
 
 
 def test_unknown_tool_name_is_a_jsonrpc_error() -> None:

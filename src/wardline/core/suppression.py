@@ -13,7 +13,7 @@ from dataclasses import replace
 from datetime import date
 
 from wardline.core.baseline import Baseline
-from wardline.core.finding import Finding, Kind, Severity, SuppressionState
+from wardline.core.finding import ENGINE_PATH, Finding, Kind, Severity, SuppressionState
 from wardline.core.judged import JudgedSet
 from wardline.core.waivers import WaiverSet
 
@@ -37,11 +37,16 @@ def apply_suppressions(
         if f.kind is not Kind.DEFECT:
             out.append(f)
             continue
-        # Engine invariant (spec §12): a DEFECT must carry a line, or its fingerprint's
-        # line discriminator collapses to "None" and collision risk rises under the
-        # strict match. Rule findings always set line_start; assert it to catch any
-        # future rule that emits a line-less DEFECT.
-        assert f.location.line_start is not None, (
+        # Engine invariant (spec §12): a *rule* DEFECT (PY-WL-*) must carry a line,
+        # or its line-based fingerprint's line discriminator collapses to "None" and
+        # collision risk rises under the strict match. Rule findings always set
+        # line_start; assert it to catch any future rule that emits a line-less DEFECT.
+        # Engine-diagnostic DEFECTs (<engine> path, e.g. WLN-L3-MONOTONICITY-VIOLATION,
+        # WLN-ENGINE-DIAGNOSTIC) are exempt: they are not tied to a source line and build
+        # a line-independent fingerprint from identifying fields, so the invariant does
+        # not apply — and they MUST surface (the "fail loud-but-survivable" safety net),
+        # not abort the run.
+        assert f.location.path == ENGINE_PATH or f.location.line_start is not None, (
             f"DEFECT {f.rule_id} entered suppression with line_start=None — "
             f"weak fingerprint identity (collision risk)"
         )

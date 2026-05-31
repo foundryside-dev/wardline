@@ -91,4 +91,26 @@ def build_call_taint_map(
                 remainder = pkg[len(target) + 1:]
                 tm.setdefault(f"{local}.{remainder}.{fn}", value)
 
+    # (e) Serialisation-sink alias closure. The override in (d) only fires for
+    # sinks that are ALSO present in stdlib_taint (just json.load/loads). Sinks
+    # absent from the curated table — json.dump/dumps, pickle.*, yaml.*,
+    # marshal.*, tomli_w.* — would otherwise have NO map entry, and
+    # ``_resolve_call``'s literal sink check misses the aliased written name
+    # (``j.dumps`` ≠ ``json.dumps``), so an aliased sink fell back to the
+    # function taint — a fail-open launder for a @trusted producer. Inject
+    # UNKNOWN_RAW for every alias form of every serialisation sink so literal and
+    # aliased calls agree. ``setdefault`` keeps any project/stdlib precedence.
+    for sink in _SERIALISATION_SINKS:
+        pkg, _, fn = sink.rpartition(".")
+        if not pkg:
+            continue
+        for local, target in alias_map.items():
+            if target == pkg:
+                tm.setdefault(f"{local}.{fn}", TaintState.UNKNOWN_RAW)   # import pkg [as local]
+            elif target == sink:
+                tm.setdefault(local, TaintState.UNKNOWN_RAW)             # from pkg import fn [as local]
+            elif pkg.startswith(target + "."):
+                remainder = pkg[len(target) + 1:]
+                tm.setdefault(f"{local}.{remainder}.{fn}", TaintState.UNKNOWN_RAW)
+
     return tm

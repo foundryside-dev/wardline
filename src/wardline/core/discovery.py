@@ -35,6 +35,12 @@ def discover(
         for path in sorted(base.rglob("*.py")):
             if any(part in _ALWAYS_SKIP for part in path.parts):
                 continue
+            if confine_to_root and not path.resolve().is_relative_to(root):
+                # A *.py symlink inside a legitimate source_root can point at an
+                # out-of-root target (rglob does not descend directory symlinks,
+                # so only file symlinks leak). Refuse to read out-of-root content
+                # by skipping it — the MCP confinement guarantee (THREAT-001).
+                continue
             relposix = (
                 path.relative_to(root).as_posix()
                 if path.is_relative_to(root)
@@ -44,6 +50,28 @@ def discover(
                 continue
             found.append(path)
     return found
+
+
+def missing_source_roots(
+    root: Path, config: WardlineConfig, *, confine_to_root: bool = False
+) -> list[str]:
+    """Return the configured ``source_roots`` that do not exist on disk.
+
+    ``discover`` skips a non-existent root with a ``warnings.warn`` (invisible to a
+    structured consumer like the MCP agent). ``run_scan`` calls this sibling to turn
+    each missing root into a finding so the silent under-scan is surfaced. An
+    ESCAPING root (under ``confine_to_root``) is excluded here — that is ``discover``'s
+    loud ``ConfigError``, a different case.
+    """
+    root = root.resolve()
+    missing: list[str] = []
+    for src in config.source_roots:
+        base = (root / src).resolve()
+        if confine_to_root and not base.is_relative_to(root):
+            continue  # escape is discover()'s ConfigError, not a missing root
+        if not base.exists():
+            missing.append(src)
+    return missing
 
 
 def _excluded(relposix: str, patterns: Iterable[str]) -> bool:

@@ -15,13 +15,12 @@ import hashlib
 import sys
 from typing import TYPE_CHECKING
 
+from wardline.core.finding import ENGINE_PATH as _ENGINE_PATH
 from wardline.core.finding import Finding, Kind, Location, Severity
 from wardline.scanner.taint.stdlib_taint import stdlib_taint_keys
 
 if TYPE_CHECKING:
     from wardline.scanner.taint.resolver_metadata import ResolverRunMetadata
-
-_ENGINE_PATH = "<engine>"
 
 # code -> (rule_id, severity, kind)
 _DIAG_MAP: dict[str, tuple[str, Severity, Kind]] = {
