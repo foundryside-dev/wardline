@@ -8,6 +8,7 @@ by a key/sentinel check, so re-running never duplicates or clobbers.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -27,7 +28,9 @@ def _detect_filigree(root: Path) -> tuple[bool, str | None]:
 
 
 def _live_stanza(key: str, url: str) -> str:
-    return f'{key}:\n  url: "{url}"  # wardline-install:{key} (from env at install time)\n'
+    # json.dumps yields a YAML-valid, properly escaped double-quoted scalar
+    # (so a URL containing a quote/backslash can't corrupt wardline.yaml).
+    return f"{key}:\n  url: {json.dumps(url)}  # wardline-install:{key} (from env at install time)\n"
 
 
 _COMMENTED = {
