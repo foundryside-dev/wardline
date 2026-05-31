@@ -30,7 +30,12 @@ def install(
     no_mcp: bool,
     no_bindings: bool,
 ) -> None:
-    """Install wardline's agent-facing guidance and sibling bindings into ROOT."""
+    """Install wardline's agent-facing guidance and sibling bindings into ROOT.
+
+    Idempotent; re-running is safe (and refreshes stale artifacts). If a step
+    fails (e.g. a malformed .mcp.json), earlier artifacts may already be written
+    — fix the cause and re-run.
+    """
     lines: list[str] = []
     try:
         if not no_claude_md:

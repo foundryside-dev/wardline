@@ -68,7 +68,8 @@ def test_install_is_idempotent(tmp_path: Path, monkeypatch) -> None:
     CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
     result = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
     assert result.exit_code == 0, result.output
-    assert "unchanged" in result.output
+    assert "CLAUDE.md: unchanged" in result.output
+    assert ".mcp.json (wardline entry): unchanged" in result.output
 
 
 def test_install_opt_outs(tmp_path: Path, monkeypatch) -> None:
@@ -83,6 +84,28 @@ def test_install_opt_outs(tmp_path: Path, monkeypatch) -> None:
     assert not (tmp_path / "AGENTS.md").exists()
     assert not (tmp_path / ".claude").exists()
     assert not (tmp_path / ".mcp.json").exists()
+
+
+def test_install_no_claude_md_still_writes_agents(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    result = CliRunner().invoke(
+        cli, ["install", "--root", str(tmp_path), "--no-claude-md"]
+    )
+    assert result.exit_code == 0, result.output
+    assert not (tmp_path / "CLAUDE.md").exists()
+    assert (tmp_path / "AGENTS.md").is_file()
+
+
+def test_install_summary_includes_binding_lines(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    result = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "clarion:" in result.output
+    assert "filigree:" in result.output
 
 
 def test_install_fails_2_on_malformed_mcp_json(tmp_path: Path, monkeypatch) -> None:
