@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Control-flow merge over-tainting (false positives)** — the statement-level
+  control-flow merges (`if`/`else`, `for`/`while` back-edges, `try`/`except`
+  handlers, `match` arms) combined per-variable taint via the provenance-clash
+  join, so two clean-but-different-family branches (e.g.
+  `if c: x = validate(p) else: x = guard(p)`) spuriously became `MIXED_RAW` and
+  fired `PY-WL-101` on validated data. At a merge a variable holds the value of
+  exactly one branch, so they now combine via the rank-meet weakest-link
+  (`least_trusted`), matching the expression combiners; a raw branch still
+  propagates and fires. This completes the `taint_join` → `least_trusted`
+  migration for the either-or paths (the callee-combination joins are unchanged).
+
 ## [0.2.0] - 2026-05-31
 
 Adds a first-class MCP server and an opt-in persistent taint store, ships a
