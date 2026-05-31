@@ -212,3 +212,8 @@ def test_resolve_precedence_flag_beats_env_beats_config(tmp_path: Path, monkeypa
 def test_resolve_filigree_env(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("WARDLINE_FILIGREE_URL", "http://fil-env")
     assert resolve_filigree_url(None, tmp_path, None) == "http://fil-env"
+
+
+def test_resolve_filigree_flag_beats_env(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("WARDLINE_FILIGREE_URL", "http://fil-env")
+    assert resolve_filigree_url("http://fil-flag", tmp_path, None) == "http://fil-flag"
