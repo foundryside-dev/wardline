@@ -119,7 +119,8 @@ New units, each one responsibility:
 - `filigree/dossier_client.py` — **new**, small, dep-free; reads entity
   associations. (Wardline's Filigree integration is read-only here; it does not
   pull in any Filigree package.)
-- `core/git_history.py` — **new**; a thin, fail-soft `git log -L` wrapper.
+- `core/history.py` — **new**; a `HistoryProvider` seam plus the v1
+  `GitLogHistoryProvider` (a thin, fail-soft `git log -L` wrapper). See §5.3.
 - `cli/main.py` — a `dossier` command; `mcp/server.py` — a `dossier` tool and a
   `traverse` tool.
 
@@ -170,6 +171,29 @@ expands a named section (`"chain"` adds the N-hop taint chain; `"history"` adds
 more commits; `"linkages"` adds full lists). The envelope is **elision-honest**:
 when it truncates a list it reports the total and the count shown, so the agent
 knows something was dropped. (See §10 for the budget-aware North Star form.)
+
+### 5.3 The `history` source is a seam, not a hardwired git shell
+
+The `history` section is read through a `HistoryProvider` interface, the same way
+L1 seeding reads through `TaintSourceProvider` and the Clarion client reads
+through `Transport`:
+
+```python
+class HistoryProvider(Protocol):
+    def history(self, entity: EntityRef, *, limit: int) -> HistorySection | None: ...
+```
+
+v1 ships exactly one implementation, `GitLogHistoryProvider` (shells `git log -L`,
+fail-soft to `unavailable`). The seam exists because history is the natural plug
+point for the planned **opt-in governance plugin** (the fourth Loom tool): an
+audit-grade `GovernanceHistoryProvider` could later supply sign-offs, control
+mappings, freshness binding, and rename-following history **without re-opening
+this spec**. This also makes the §10 "rich history / temporal posture-diff"
+North Star a matter of supplying a richer provider, not reworking the dossier.
+
+Defining the seam now costs ~nothing (it is the codebase's standard provider
+pattern); committing to *build* a second provider is explicitly out of scope
+(§12).
 
 ---
 
@@ -265,9 +289,11 @@ from two surfaces.
 
 ## 9. Contracts required from Clarion and Filigree
 
-This spec is buildable from the Wardline repo, but two sections depend on read
-contracts from the sibling tools. Where a contract is missing, that section
-simply degrades to `unavailable` (§8.1) until the sibling ships it.
+All three tools share one author, so these are **internal, cross-repo roadmap
+items we sequence ourselves** — not third-party dependencies we wait on. The
+fail-soft degradation (§8.1) is the safety net for *ordering* (a section is
+`unavailable` until its contract lands), not a permanent gap; the Loom roadmap
+should land the Clarion-side read in step so `linkages` is not dark on day one.
 
 - **Filigree (exists):** `GET /api/entity-associations?entity_id=…` (ADR-029)
   returns bound issues; association rows carry `content_hash_at_attach` for the
@@ -278,8 +304,9 @@ simply degrades to `unavailable` (§8.1) until the sibling ships it.
   this design needs from Clarion. Until it lands, `linkages` is `unavailable`
   and the rest of the dossier is unaffected.
 
-The implementation plan must record the Clarion-linkages contract as an external
-dependency, not a Wardline task.
+The implementation plan must record the Clarion-linkages contract as a
+cross-repo Loom item (Clarion-side work, sequenced alongside this), not silently
+assume it.
 
 ---
 
@@ -293,7 +320,7 @@ tradeoff.
 |---|---|---|---|
 | Read envelope | full `dossier` | ✅ full | — |
 | Pivot | unbounded, budget-aware typed graph walk | ✅ bounded `traverse` | unbounded walking is a query-planning problem |
-| History | Clarion **rename-following** history + **temporal posture-diff** ("trust flipped clean→PY-WL-101 at `abc123` when the `@trust_boundary` was deleted") | `git log -L` last-N | posture-diff needs derived facts at past commits (expensive) or Clarion fact-history |
+| History | audit-grade `HistoryProvider` (governance plugin): rename-following, **temporal posture-diff** ("trust flipped clean→PY-WL-101 at `abc123` when the `@trust_boundary` was deleted"), sign-offs, control mappings | `GitLogHistoryProvider` (last-N via `git log -L`) | a provider swap behind the §5.3 seam, not a dossier rework; the richer provider is the governance plugin's job |
 | Worklists | `find(predicate)` across all three tools ("every `@trusted` producer with an open P1 and a non-FRESH taint fact and churn in the last 5 commits") | ✗ | needs a cross-tool predicate/query planner — its own spec |
 | Write-back | entity-keyed `bind_ticket` / `waive` / `annotate`, so an agent's work leaves a durable typed trace the next dossier reflects | ✗ (read-only) | closing the loop is separable from reading it |
 | Token discipline | `drill` becomes a **budget contract** — the agent states a token budget; the envelope ranks sections and fills to budget | ✅ drill + elision honesty | budget-ranking is an optimisation over the honest-elision base |
@@ -334,7 +361,9 @@ one ships the read substrate they will build on.
 
 - `find(predicate)` worklists (North Star §10 — own spec)
 - write-back verbs (North Star §10 — own spec)
-- temporal posture-diff and rename-following history (North Star §10)
+- any `HistoryProvider` beyond `GitLogHistoryProvider` — the seam is defined
+  (§5.3) but the audit-grade provider is the governance plugin's scope, not this
+  spec's (North Star §10)
 - any change to the taint engine, lattice, rules, or trust vocabulary
 - making Clarion or Filigree a hard dependency of Wardline (both stay opt-in)
 
