@@ -178,4 +178,8 @@ class DecoratorTaintSourceProvider:
         # Unreachable: REGISTRY holds exactly {external_boundary, trust_boundary,
         # trusted}, all handled above, and ``canonical not in REGISTRY`` already
         # returned None — so a REGISTRY decorator always matches one of the three.
-        return None  # pragma: no cover
+        # Fail CLOSED-LOUD on drift: if REGISTRY gains a decorator without a dispatch
+        # branch here, raise rather than silently return no-opinion (a silent under-taint).
+        raise AssertionError(  # pragma: no cover
+            f"REGISTRY decorator {canonical!r} has no dispatch branch in _match — add one"
+        )

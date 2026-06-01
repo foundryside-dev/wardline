@@ -1,5 +1,7 @@
-"""T1.4 waiver discipline: every waiver carries a reason; waiver count does not
-outgrow rule count. Without this, the FP-rate gate is gameable by waiving findings."""
+"""T1.4 waiver discipline: every waiver carries a reason, and waiver count does not
+outgrow rule count. This guards the repo's own (dogfood) scan config — not the corpus
+FP gate (which scans tests/corpus/fixtures with no config) — so suppression cannot
+quietly accumulate faster than the rule set that justifies it (an FP-economics smell)."""
 
 from __future__ import annotations
 

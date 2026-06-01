@@ -27,7 +27,7 @@ def silent_handler():  # TP: PY-WL-104 silently swallowed
 
 
 @trusted(level="INTEGRAL")
-def narrow_logged():  # CLEAN: narrow + re-raised
+def narrow_logged():  # 103/104 CLEAN (narrow + re-raised); fires 101 (work() is UNKNOWN_RAW < INTEGRAL)
     try:
         return work()
     except ValueError as e:

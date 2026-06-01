@@ -1017,7 +1017,15 @@ def _assignment_callee(
     indirect ``return <name>``. Scope-respecting (does not descend into nested
     def/class/lambda, whose assignments bind a different scope). Returns ``None`` when
     ``name`` is not set by a direct call to the worst taint (a parameter, a literal, or
-    a deeper var-to-var chain) — honest, never invented."""
+    a deeper var-to-var chain) — honest, never invented.
+
+    This is best-effort PROVENANCE, not a fire/no-fire input: it is branch-unaware
+    (source-order last write wins, no reachability model), so in branchy bodies it may
+    name a worst-taint assignment from a different branch than the one that produced the
+    returned value. Harmless — the taint VALUE is already decided by
+    :func:`compute_return_taint`; this only labels the explain surface. NOTE: re-resolves
+    RHS expressions via :func:`_resolve_expr`, which mutates ``var_taints`` on walrus
+    targets — callers that must not mutate their map pass a copy (the analyzer does)."""
     result: str | None = None
     for node in nodes:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
@@ -1055,11 +1063,13 @@ def _collect_return_paths(
     var_taints: dict[str, TaintState],
     out: list[tuple[TaintState, str | None, ast.expr]],
 ) -> None:
-    """Recurse the AST collecting ``(taint, callee_or_None)`` for each value-bearing
-    return, descending into ALL children EXCEPT nested ``FunctionDef``/
+    """Recurse the AST collecting ``(taint, callee_or_None, value_node)`` for each
+    value-bearing return, descending into ALL children EXCEPT nested ``FunctionDef``/
     ``AsyncFunctionDef``/``ClassDef``/``Lambda`` (separate scopes — their returns
     bind their own callable, not this one). The callee is the direct-call name of
-    the return's top-level expression (``None`` for non-call returns).
+    the return's top-level expression (``None`` for non-call returns); ``value_node``
+    is that raw ``ast.expr``, used by :func:`compute_return_callee` to resolve
+    single-hop indirection on an indirect ``return <name>``.
 
     Descent is unconditional because the constructs that hold returns are not all
     ``ast.stmt``: ``match``/``case`` bodies live under ``ast.match_case`` and

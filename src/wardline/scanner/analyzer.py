@@ -76,6 +76,9 @@ class WardlineAnalyzer:
         # (relpath, module_path, tree, entities, alias_map, class_qualnames)
         file_meta: list[tuple[str, str, ast.Module, tuple[Entity, ...], dict[str, str], frozenset[str]]] = []
         parse_findings: list[Finding] = []
+        # Statically-known star-import exports (the trust vocabulary, T1.2). A REGISTRY-
+        # derived constant for the whole scan — compute once and reuse at both seam points.
+        star_exports = vocabulary_star_exports()
 
         # ``discover`` resolves the root to an absolute path, so the files it yields are
         # absolute. Resolve ``root`` to the same base here, or ``is_relative_to`` fails and
@@ -118,7 +121,7 @@ class WardlineAnalyzer:
                 tree = ast.parse(source)
                 entities = tuple(discover_file_entities(tree, module=module, path=relpath))
                 classes = frozenset(discover_class_qualnames(tree, module=module))
-                alias_map = build_import_alias_map(tree, module_path=module, star_exports=vocabulary_star_exports())
+                alias_map = build_import_alias_map(tree, module_path=module, star_exports=star_exports)
                 seeds = seed_function_taints(
                     entities,
                     ctx=SeedContext(module=module, alias_map=alias_map),
@@ -278,7 +281,7 @@ class WardlineAnalyzer:
             build_unknown_import_findings(
                 [(rp, mp, tr) for rp, mp, tr, _e, _a, _c in file_meta],
                 project_modules=frozenset(mp for _rp, mp, _tr, _e, _a, _c in file_meta),
-                resolvable_star_modules=frozenset(vocabulary_star_exports()),
+                resolvable_star_modules=frozenset(star_exports.keys()),
             )
         )
         registry = self._registry if self._registry is not None else build_default_registry(config)
