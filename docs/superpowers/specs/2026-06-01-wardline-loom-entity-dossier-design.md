@@ -53,7 +53,7 @@ Wardline can already do most of the plumbing:
    and per-entity fact read/write already exist.
 2. The SP9 **never-serve-stale** blake3 freshness gate already exists for taint
    facts; this design generalises it to every section of the dossier
-   (`docs/superpowers/specs/2026-05-31-wardline-sp9-clarion-taint-store-design.md`).
+   (`docs/superpowers/specs/archive/2026-05-31-wardline-sp9-clarion-taint-store-design.md`).
 3. The MCP `explain_taint` tool already re-derives a fresh trust verdict and
    walks the N-hop taint chain via `core` functions; the dossier reuses that
    machinery rather than duplicating it.
