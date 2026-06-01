@@ -109,7 +109,9 @@ BUILTIN_BOUNDARY_TYPES: tuple[BoundaryType, ...] = (
 # two views (REGISTRY = declaration contract; grammar = + seed semantics) cannot drift.
 for _bt in BUILTIN_BOUNDARY_TYPES:
     _entry = REGISTRY.get(_bt.canonical_name)
-    if _entry is None or _entry.group != _bt.group:
+    if _entry is None or _entry.group != _bt.group:  # pragma: no cover
+        # Load-time tripwire: unreachable unless a future edit desyncs the builtin
+        # boundary types from the frozen REGISTRY. Fail CLOSED-LOUD at import.
         raise ValueError(f"builtin BoundaryType {_bt.canonical_name!r} drifted from REGISTRY")
 del _bt, _entry
 
