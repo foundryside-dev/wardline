@@ -158,6 +158,23 @@ in it.
 
 ---
 
+## 0.5 Pre-lock requirements intake (running log)
+
+Harmonisation is underway. This logs each subsystem's reported requirements
+against the proposed baseline; lock (§0.3) waits until all four have reported and
+the §8 oracle encodes the resolutions. Requirements already resolved into the
+baseline are reflected inline (cross-referenced below) and stay open to contest
+with a concrete counter-requirement until lock.
+
+| Subsystem | Status | Recorded requirements |
+|---|---|---|
+| **Filigree** | **Reported** — `filigree/docs/superpowers/specs/2026-06-01-filigree-roadmap-to-first-class.md` App. A | **REQ-F-01** (no mixed-format feed during backfill) → folded into §7.1 as the atomic-cutover baseline. **REQ-F-02** (`resolve` rejects non-locator inputs for idempotent backfill) → folded into §4 + §7.1. Both are proposed-baseline; **REQ-F-02's enforcement is Clarion's to confirm** (it owns `resolve`). |
+| **Clarion** | Pending | — (the authority; carries the heaviest obligations — the §3 matcher, §3.1 prior-index retention, and confirming the §4 / §7.1 contracts above) |
+| **legis** | Pending | — (design-ready repo at `/home/john/legis`; SEI-consumer posture already aligned per its `docs/federation/sei-conformance.md`) |
+| **Wardline** | Partially reported | the `wardline-roadmap-to-first-class.md` §2.2 SEI-client position, plus the **content-axis hash-granularity** harmonisation flagged in §2 (entity-body vs whole-file). Formal intake still to be recorded here. |
+
+---
+
 ## 1. Fixed design decisions (proposed baseline — see §0.3)
 
 Settled during brainstorming; not re-opened here:
@@ -269,6 +286,12 @@ Identity resolution, exposed over the HTTP read API (consumers are HTTP clients)
 - `_capabilities` advertises `sei: { supported: true, version: N }` so a consumer
   can detect a pre-SEI or non-conformant Clarion and **degrade** rather than
   guess.
+- **Input validation (fail-closed) — [REQ-F-01/02].** `resolve(locator)` **MUST
+  reject** a non-locator input — including an already-migrated, SEI-shaped string —
+  with a documented "not a valid locator" error, **never** a silent
+  mis-resolution. Consumers cannot distinguish a locator from an SEI by inspection
+  (opacity is the discipline), so safe, idempotent, resumable backfill (§7.1)
+  depends entirely on this rejection contract.
 
 SEI is opaque on the wire. Batch variants mirror the existing
 `…:batch-get` shape. (Linkage exposure — callers/callees over HTTP — is a
@@ -316,6 +339,33 @@ its stored locator to the corresponding SEI and re-keys it. Locators that no
 longer resolve (already-orphaned by a past rename) are **flagged ORPHAN for human
 review — never silently dropped**, consistent with the suite's no-false-green
 ethos.
+
+### 7.1 Migration protocol — live feeds, atomicity, idempotency
+
+The backfill is **not** purely an at-rest re-key. Subsystems expose **live
+federation feeds** that carry entity-id strings — e.g. Filigree's `issue_deleted`
+record surfaces an `affected_entities` array on `GET /api/loom/changes` (schema
+v21), which Clarion and Wardline consume to reconcile mirrored bindings on
+deletion. Because every consumer treats the id as **opaque**, a feed that emits a
+**mix** of locators and SEIs during the migration window is uninterpretable — a
+consumer cannot tell which normalisation to apply. The following resolves that;
+it is **proposed baseline**, open to Clarion + consumer ratification at lock.
+
+- **No mixed-format feed [REQ-F-01].** A federation feed emits SEIs **only after**
+  its producer's backfill has completed for the rows that feed can surface — never
+  a mixed locator/SEI feed mid-migration. **Atomic cutover is preferred** because
+  it imposes *no* obligation on consumers. A producer that cannot stage a given
+  feed atomically MUST instead **declare a migration window** in which consumers
+  re-`resolve` every id (tolerating the §4 rejection for ids that are already
+  SEIs); the windowed mode is the explicit fallback, not the default.
+- **Idempotent, resumable backfill [REQ-F-02].** The backfill rewrites ids in
+  place; the producer owns its **own** progress cursor (a rowid or migration-state
+  side table — no Clarion generation marker required). Re-running or resuming MUST
+  be safe — which is exactly why `resolve(locator)` rejects an already-migrated SEI
+  (§4) instead of mis-resolving it. Without that rejection, a partially-run
+  backfill cannot be safely resumed and must be treated as permanently incomplete.
+- **Orphans surfaced, never dropped** (as above): locators that no longer resolve
+  are flagged ORPHAN for human review, never silently dropped.
 
 ---
 
