@@ -19,11 +19,16 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from wardline.core.registry import REGISTRY
 from wardline.core.taints import TaintState
-from wardline.scanner.context import _RuleClass  # rule-class Protocol (rule_id + ctor)
 from wardline.scanner.taint.provider import FunctionTaint
+
+if TYPE_CHECKING:
+    # Annotation-only (lazy under `from __future__ import annotations`); kept out of
+    # the runtime import surface so the zero-dep contract above stays literally true.
+    from wardline.scanner.context import _RuleClass
 
 _VOCAB_PREFIX = "wardline.decorators"
 _BOUNDARY_LEVELS = frozenset({TaintState.GUARDED, TaintState.ASSURED})
@@ -60,6 +65,10 @@ class BoundaryType:
     The engine recognizes a custom marker purely by AST shape (prefix + name +
     readable kwargs); it never imports or executes the scanned target — a
     ``BoundaryType`` is *data describing how to read a marker*, not target code.
+
+    ``group`` mirrors the released ``REGISTRY`` shape for the builtins (and enters the
+    grammar cache fingerprint); it is otherwise inert for matching/seeding. A custom
+    type may use any stable integer (the fixtures use ``1``).
     """
 
     canonical_name: str

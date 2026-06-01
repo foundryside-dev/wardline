@@ -46,6 +46,21 @@ def test_unprovable_custom_emits_fact_and_unknown_seed(tmp_path) -> None:
     assert analyzer.last_context.project_taints["m.g"] == TaintState.UNKNOWN_RAW
 
 
+def test_stacked_provable_plus_unprovable_is_fail_closed_and_observable(tmp_path) -> None:
+    # End-to-end Finding-1 guard: @trusted(ASSURED) + unprovable @sanitized must NOT
+    # resolve trusted — the seed is dragged to UNKNOWN_RAW and a FACT fires.
+    f = tmp_path / "m.py"
+    f.write_text(
+        "from wardline.decorators import trusted\nimport myproj.trust\n"
+        "@trusted(level='ASSURED')\n@myproj.trust.sanitized(to_level=CFG)\ndef g(p):\n    return p\n"
+    )
+    analyzer = build_analyzer(grammar=default_grammar().extend(boundary_types=(_CUSTOM,)))
+    findings = analyzer.analyze([f], WardlineConfig(), root=tmp_path)
+    assert len([x for x in findings if x.rule_id == _RULE_ID]) == 1
+    assert analyzer.last_context is not None
+    assert analyzer.last_context.project_taints["m.g"] == TaintState.UNKNOWN_RAW  # NOT ASSURED
+
+
 def test_provable_custom_emits_no_fact(tmp_path) -> None:
     f = tmp_path / "m.py"
     f.write_text("import myproj.trust\n@myproj.trust.sanitized(to_level='GUARDED')\ndef g(p):\n    return p\n")

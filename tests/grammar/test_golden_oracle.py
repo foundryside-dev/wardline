@@ -1,7 +1,8 @@
 """The byte-identity oracle (Track 2, Task 0 / design spec §5).
 
-Freezes today's full builtin-grammar findings stream over the dogfood tree + the
-T1.4 corpus. Every Track 2 task must keep this green: the grammar refactor
+Freezes today's full builtin-grammar findings stream over the T1.4 labeled corpus
+(``tests/corpus/fixtures`` — see ``golden_harness`` for why corpus, not dogfood).
+Every Track 2 task must keep this green: the grammar refactor
 re-expresses the 4 builtin rules + 3 decorators on the open grammar and must
 reproduce this stream BYTE-FOR-BYTE. The only sanctioned new finding is the
 custom-only ``WLN-ENGINE-UNPROVABLE-BOUNDARY`` FACT, which never fires on the

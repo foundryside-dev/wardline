@@ -53,15 +53,20 @@ class SeedResult:
     """A provider's per-entity result (Track 2 T2.4).
 
     ``taint`` is the declared seed (or ``None`` for 'no opinion', preserving the
-    fail-closed ``UNKNOWN_RAW`` L1 fallback). ``unprovable_boundary`` is the
-    ``canonical_name`` of a matched-but-UNPROVABLE *custom* boundary type, if any —
-    the analyzer turns it into an observable ``WLN-ENGINE-UNPROVABLE-BOUNDARY`` FACT.
-    Builtin boundary types NEVER set it (they stay silently fail-closed), preserving
-    the byte-identity oracle (design spec §4).
+    fail-closed ``UNKNOWN_RAW`` L1 fallback). ``unprovable_boundaries`` is the
+    ``canonical_name``\\ s of every matched-but-UNPROVABLE *custom* boundary type on
+    the function — the analyzer turns each into an observable
+    ``WLN-ENGINE-UNPROVABLE-BOUNDARY`` FACT. Builtin boundary types NEVER appear here
+    (they stay silently fail-closed), preserving the byte-identity oracle (spec §4).
+
+    Invariant (no false-green): when an unprovable custom boundary co-occurs with a
+    PROVABLE decorator, ``taint`` is dragged to the fail-closed ``UNKNOWN_RAW`` meet
+    (the provider must not let the provable one silently over-trust the function) and
+    the unprovable names are still reported here.
     """
 
     taint: FunctionTaint | None
-    unprovable_boundary: str | None = None
+    unprovable_boundaries: tuple[str, ...] = ()
 
 
 @runtime_checkable

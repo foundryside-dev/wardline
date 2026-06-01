@@ -163,27 +163,33 @@ class DecoratorTaintSourceProvider:
 
     def taint_for(self, entity: Entity, ctx: SeedContext) -> SeedResult:
         candidates: list[FunctionTaint] = []
-        unprovable: str | None = None
+        unprovable: list[str] = []
         for deco in entity.node.decorator_list:
             ft, unprov = self._match(deco, ctx.alias_map)
             if ft is not None:
                 candidates.append(ft)
-            elif unprov is not None and unprovable is None:
-                unprovable = unprov
+            elif unprov is not None:
+                unprovable.append(unprov)
         if not candidates:
-            # No proven seed. If a CUSTOM boundary matched but was unreadable, surface
-            # it (T2.4); otherwise plain 'no opinion'. (Builtins never set ``unprov``.)
-            return SeedResult(taint=None, unprovable_boundary=unprovable)
-        # Multiple trust decorators on one function is an authoring conflict; take
-        # the LEAST-trusted value PER FIELD independently (highest TRUST_RANK) so
-        # contradictory annotations can never over-trust either the body or the
-        # return. Order-independent (the per-field max does not depend on candidate
-        # order, even on a return-rank tie). A proven seed wins: the function IS
-        # anchored, so an also-present unprovable annotation changed no resolved seed
-        # — there is no under-seed to report, and no FACT fires.
+            # No proven seed. Any matched-but-unreadable CUSTOM boundaries are surfaced
+            # (T2.4) and the L1 fallback seeds UNKNOWN_RAW (source="default", not
+            # anchored — there is no usable declaration). Builtins never set ``unprov``.
+            return SeedResult(taint=None, unprovable_boundaries=tuple(unprovable))
+        # A proven seed exists. If an unprovable CUSTOM boundary ALSO matched, it must
+        # not be silently over-trusted by the provable one (a false-green): add an
+        # UNKNOWN_RAW contribution so the least-trusted-per-field meet below drags the
+        # seed to the fail-closed value, AND report the unprovable names (a FACT fires).
+        # This is consistent with the multi-decorator conflict rule: contradictory
+        # annotations take the weakest, and an unreadable annotation is the weakest of
+        # all. (Builtins never reach here with an unprovable, so the oracle is unmoved.)
+        if unprovable:
+            candidates.append(FunctionTaint(TaintState.UNKNOWN_RAW, TaintState.UNKNOWN_RAW))
+        # Multiple trust decorators on one function is an authoring conflict; take the
+        # LEAST-trusted value PER FIELD independently (highest TRUST_RANK). Order-
+        # independent (the per-field max does not depend on candidate order).
         body = max((ft.body_taint for ft in candidates), key=lambda t: TRUST_RANK[t])
         ret = max((ft.return_taint for ft in candidates), key=lambda t: TRUST_RANK[t])
-        return SeedResult(taint=FunctionTaint(body, ret), unprovable_boundary=None)
+        return SeedResult(taint=FunctionTaint(body, ret), unprovable_boundaries=tuple(unprovable))
 
     def fingerprint(self) -> str:
         # Builtin-only grammar keeps TODAY's EXACT string (cache/baseline stability —

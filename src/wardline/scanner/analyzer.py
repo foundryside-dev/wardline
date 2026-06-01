@@ -183,23 +183,26 @@ class WardlineAnalyzer:
             # unreadable (an honest under-seed, not a file/function under-scan).
             for ent in entities:
                 fn_seed = seeds.get(ent.qualname)
-                if fn_seed is None or fn_seed.unprovable_boundary is None:
+                if fn_seed is None:
                     continue
-                parse_findings.append(
-                    Finding(
-                        rule_id="WLN-ENGINE-UNPROVABLE-BOUNDARY",
-                        message=(
-                            f"{ent.qualname}: custom boundary @{fn_seed.unprovable_boundary} could not be "
-                            f"proven (argument unreadable) — seeded UNKNOWN_RAW"
-                        ),
-                        severity=Severity.NONE,
-                        kind=Kind.FACT,
-                        location=ent.location,
-                        fingerprint=_fp("WLN-ENGINE-UNPROVABLE-BOUNDARY", ent.qualname),
-                        qualname=ent.qualname,
-                        properties={"boundary": fn_seed.unprovable_boundary, "reason": "arg_unreadable"},
+                for boundary in fn_seed.unprovable_boundaries:
+                    parse_findings.append(
+                        Finding(
+                            rule_id="WLN-ENGINE-UNPROVABLE-BOUNDARY",
+                            message=(
+                                f"{ent.qualname}: custom boundary @{boundary} could not be "
+                                f"proven (argument unreadable) — seeded UNKNOWN_RAW"
+                            ),
+                            severity=Severity.NONE,
+                            kind=Kind.FACT,
+                            location=ent.location,
+                            # Keyed on (qualname, boundary) so two unprovable customs on
+                            # one function produce two distinct FACTs (no collision).
+                            fingerprint=_fp("WLN-ENGINE-UNPROVABLE-BOUNDARY", ent.qualname, boundary),
+                            qualname=ent.qualname,
+                            properties={"boundary": boundary, "reason": "arg_unreadable"},
+                        )
                     )
-                )
 
         if self._cache is not None:
             result = resolve_project_taints(

@@ -27,7 +27,7 @@ def test_default_provider_has_no_opinion() -> None:
     res = provider.taint_for(_entity(), SeedContext(module="demo"))  # type: ignore[arg-type]
     assert isinstance(res, SeedResult)
     assert res.taint is None
-    assert res.unprovable_boundary is None  # builtins never signal (oracle-preserving)
+    assert res.unprovable_boundaries == ()  # builtins never signal (oracle-preserving)
 
 
 def test_default_provider_satisfies_protocol() -> None:

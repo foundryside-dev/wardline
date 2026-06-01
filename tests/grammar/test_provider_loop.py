@@ -42,7 +42,7 @@ def test_custom_boundary_type_seeds_via_loop() -> None:
     ent = _entity("@myproj.trust.sanitized(to_level='GUARDED')\ndef f(p):\n    return p\n")
     res = provider.taint_for(ent, _ctx())
     assert res.taint == FunctionTaint(TaintState.EXTERNAL_RAW, TaintState.GUARDED)
-    assert res.unprovable_boundary is None
+    assert res.unprovable_boundaries == ()
 
 
 def test_unprovable_custom_boundary_signals() -> None:
@@ -51,7 +51,43 @@ def test_unprovable_custom_boundary_signals() -> None:
     ent = _entity("@myproj.trust.sanitized(to_level=CFG)\ndef f(p):\n    return p\n")
     res = provider.taint_for(ent, _ctx())
     assert res.taint is None
-    assert res.unprovable_boundary == "sanitized"
+    assert res.unprovable_boundaries == ("sanitized",)
+
+
+def test_provable_decorator_does_not_silently_override_unprovable_custom() -> None:
+    # Finding 1 (review): a function stacking a PROVABLE builtin + an unprovable
+    # custom must NOT be silently over-trusted by the provable one. The meet is
+    # dragged to the fail-closed UNKNOWN_RAW AND the unprovable name is reported.
+    provider = DecoratorTaintSourceProvider(boundary_types=default_grammar().boundary_types + (_CUSTOM,))
+    ent = _entity(
+        "from wardline.decorators import trusted\nimport myproj.trust\n"
+        "@trusted(level='ASSURED')\n@myproj.trust.sanitized(to_level=CFG)\ndef g(p):\n    return p\n"
+    )
+    alias_map = {"trusted": "wardline.decorators.trusted", "myproj": "myproj"}
+    res = provider.taint_for(ent, SeedContext(module="m", alias_map=alias_map))
+    assert res.taint == FunctionTaint(TaintState.UNKNOWN_RAW, TaintState.UNKNOWN_RAW)  # NOT ASSURED
+    assert res.unprovable_boundaries == ("sanitized",)
+
+
+def test_multiple_unprovable_customs_all_reported() -> None:
+    # Finding 2 (review): two distinct unprovable customs on one function are BOTH
+    # named (no silent truncation of the second).
+    second = BoundaryType(
+        "scrubbed",
+        "myproj.trust",
+        1,
+        (LevelArg("to_level", frozenset({TaintState.GUARDED}), None),),
+        lambda lv: FunctionTaint(TaintState.EXTERNAL_RAW, lv["to_level"]),
+        builtin=False,
+    )
+    provider = DecoratorTaintSourceProvider(boundary_types=default_grammar().boundary_types + (_CUSTOM, second))
+    ent = _entity(
+        "import myproj.trust\n@myproj.trust.sanitized(to_level=A)\n"
+        "@myproj.trust.scrubbed(to_level=B)\ndef g(p):\n    return p\n"
+    )
+    res = provider.taint_for(ent, SeedContext(module="m", alias_map={"myproj": "myproj"}))
+    assert res.taint is None
+    assert set(res.unprovable_boundaries) == {"sanitized", "scrubbed"}
 
 
 def test_builtin_matches_submodule_import_path() -> None:
@@ -81,7 +117,7 @@ def test_unprovable_builtin_does_not_signal() -> None:
     alias_map = {"trust_boundary": "wardline.decorators.trust_boundary"}
     res = provider.taint_for(ent, SeedContext(module="m", alias_map=alias_map))
     assert res.taint is None
-    assert res.unprovable_boundary is None
+    assert res.unprovable_boundaries == ()
 
 
 def test_fingerprint_builtin_is_legacy_string() -> None:
