@@ -13,10 +13,12 @@ unchanged fail-closed ``UNKNOWN_RAW`` L1 precedence.
 from __future__ import annotations
 
 import ast
+import hashlib
 from typing import TYPE_CHECKING
 
 from wardline.core.registry import REGISTRY, REGISTRY_VERSION
 from wardline.core.taints import TRUST_RANK, TaintState
+from wardline.scanner.grammar import BUILTIN_BOUNDARY_TYPES, BoundaryType
 from wardline.scanner.taint.provider import FunctionTaint, SeedResult
 
 if TYPE_CHECKING:
@@ -27,8 +29,6 @@ if TYPE_CHECKING:
 
 _VOCAB_PREFIX = "wardline.decorators"
 _TAINTSTATE_FQN = "wardline.core.taints.TaintState"
-_BOUNDARY_LEVELS = frozenset({TaintState.GUARDED, TaintState.ASSURED})
-_TRUSTED_LEVELS = frozenset({TaintState.INTEGRAL, TaintState.ASSURED})
 
 
 def vocabulary_star_exports() -> dict[str, dict[str, str]]:
@@ -127,59 +127,103 @@ def _read_level(
     return default
 
 
+def _grammar_digest(boundary_types: tuple[BoundaryType, ...]) -> str:
+    """A stable digest over a grammar's boundary types — its declaration identity.
+
+    Bound into the provider fingerprint so two DIFFERENT loaded grammars cannot
+    share cached module summaries (a false-green correctness bug — design spec §6).
+    Order-sensitive. Seed identity is the seed callable's ``__qualname__``: two
+    grammars differing only in a seed function's *body* but sharing a qualname is an
+    accepted, vanishingly-rare collision (same caveat as descriptor.py's ``__name__``
+    note); name/prefix/group/level-arg-schema changes always change the digest.
+    """
+    h = hashlib.sha256()
+    for bt in boundary_types:
+        parts = [bt.canonical_name, bt.module_prefix, str(bt.group), getattr(bt.seed, "__qualname__", "?")]
+        for la in bt.level_args:
+            allowed = ",".join(sorted(t.value for t in la.allowed))
+            default = la.default.value if la.default is not None else ""
+            parts.append(f"{la.arg_name}:{allowed}:{default}")
+        h.update(("\x00".join(parts) + "\x01").encode("utf-8"))
+    return h.hexdigest()[:16]
+
+
 class DecoratorTaintSourceProvider:
-    """Seeds taints from the generic trust-decorator vocabulary (SP2)."""
+    """Seeds taints from a trust grammar's boundary types (Track 2).
+
+    ``boundary_types`` defaults to the builtin vocabulary, so existing
+    constructions (``DecoratorTaintSourceProvider()``) are behavior-identical. An
+    extended grammar (builtins + agent-defined types) makes the provider recognize
+    custom markers via the same generic loop the builtins ride."""
+
+    def __init__(self, *, boundary_types: tuple[BoundaryType, ...] | None = None) -> None:
+        self._boundary_types: tuple[BoundaryType, ...] = (
+            boundary_types if boundary_types is not None else BUILTIN_BOUNDARY_TYPES
+        )
 
     def taint_for(self, entity: Entity, ctx: SeedContext) -> SeedResult:
         candidates: list[FunctionTaint] = []
+        unprovable: str | None = None
         for deco in entity.node.decorator_list:
-            ft = self._match(deco, ctx.alias_map)
+            ft, unprov = self._match(deco, ctx.alias_map)
             if ft is not None:
                 candidates.append(ft)
+            elif unprov is not None and unprovable is None:
+                unprovable = unprov
         if not candidates:
-            return SeedResult(taint=None)
+            # No proven seed. If a CUSTOM boundary matched but was unreadable, surface
+            # it (T2.4); otherwise plain 'no opinion'. (Builtins never set ``unprov``.)
+            return SeedResult(taint=None, unprovable_boundary=unprovable)
         # Multiple trust decorators on one function is an authoring conflict; take
         # the LEAST-trusted value PER FIELD independently (highest TRUST_RANK) so
         # contradictory annotations can never over-trust either the body or the
-        # return. Order-independent (the per-field max does not depend on
-        # candidate order, even on a return-rank tie).
+        # return. Order-independent (the per-field max does not depend on candidate
+        # order, even on a return-rank tie). A proven seed wins: the function IS
+        # anchored, so an also-present unprovable annotation changed no resolved seed
+        # — there is no under-seed to report, and no FACT fires.
         body = max((ft.body_taint for ft in candidates), key=lambda t: TRUST_RANK[t])
         ret = max((ft.return_taint for ft in candidates), key=lambda t: TRUST_RANK[t])
-        return SeedResult(taint=FunctionTaint(body, ret))
+        return SeedResult(taint=FunctionTaint(body, ret), unprovable_boundary=None)
 
     def fingerprint(self) -> str:
-        return f"decorator-vocab:{REGISTRY_VERSION}"
+        # Builtin-only grammar keeps TODAY's EXACT string (cache/baseline stability —
+        # design spec §6). A custom grammar appends a stable digest so cached
+        # summaries from a different loaded grammar cannot cross-contaminate.
+        if self._boundary_types == BUILTIN_BOUNDARY_TYPES:
+            return f"decorator-vocab:{REGISTRY_VERSION}"
+        return f"decorator-vocab:{REGISTRY_VERSION}+grammar:{_grammar_digest(self._boundary_types)}"
 
-    def _match(self, deco: ast.expr, alias_map: Mapping[str, str]) -> FunctionTaint | None:
+    def _match(self, deco: ast.expr, alias_map: Mapping[str, str]) -> tuple[FunctionTaint | None, str | None]:
+        """Match one decorator against the loaded boundary types. Returns:
+
+        ``(seed, None)``   — a boundary type matched and its levels proved;
+        ``(None, name)``   — a CUSTOM type matched but a required level was unreadable
+                             (fail-closed; surfaced as a FACT). Builtins return
+                             ``(None, None)`` here to stay silent (oracle-preserving);
+        ``(None, None)``   — no boundary type matched (not vocabulary — 'no opinion').
+        """
         fqn = _resolve_decorator_fqn(deco, alias_map)
-        if fqn is None or not fqn.startswith(_VOCAB_PREFIX + "."):
-            return None
-        canonical = fqn.rsplit(".", 1)[-1]
-        if canonical not in REGISTRY:
-            return None
-        if canonical == "external_boundary":
-            return FunctionTaint(TaintState.EXTERNAL_RAW, TaintState.EXTERNAL_RAW)
-        if canonical == "trust_boundary":
-            to_level = _read_level(deco, "to_level", allowed=_BOUNDARY_LEVELS, default=None, alias_map=alias_map)
-            if to_level is None:
-                return None
-            return FunctionTaint(TaintState.EXTERNAL_RAW, to_level)
-        if canonical == "trusted":
-            level = _read_level(
-                deco,
-                "level",
-                allowed=_TRUSTED_LEVELS,
-                default=TaintState.INTEGRAL,
-                alias_map=alias_map,
-            )
-            if level is None:
-                return None
-            return FunctionTaint(level, level)
-        # Unreachable: REGISTRY holds exactly {external_boundary, trust_boundary,
-        # trusted}, all handled above, and ``canonical not in REGISTRY`` already
-        # returned None — so a REGISTRY decorator always matches one of the three.
-        # Fail CLOSED-LOUD on drift: if REGISTRY gains a decorator without a dispatch
-        # branch here, raise rather than silently return no-opinion (a silent under-taint).
-        raise AssertionError(  # pragma: no cover
-            f"REGISTRY decorator {canonical!r} has no dispatch branch in _match — add one"
-        )
+        if fqn is None:
+            return None, None
+        # A decorator matches a boundary type when its FQN is UNDER the type's module
+        # prefix and its final segment is the canonical name. This accepts BOTH the
+        # package re-export (``wardline.decorators.trusted``) and the submodule path
+        # (``wardline.decorators.trust.trusted``) — preserving the pre-Track-2 matcher
+        # exactly (it used the same prefix + last-segment rule), and generalizing it
+        # consistently for custom types.
+        last = fqn.rsplit(".", 1)[-1]
+        for bt in self._boundary_types:
+            if last != bt.canonical_name or not fqn.startswith(bt.module_prefix + "."):
+                continue
+            levels: dict[str, TaintState] = {}
+            unreadable = False
+            for la in bt.level_args:
+                lvl = _read_level(deco, la.arg_name, allowed=la.allowed, default=la.default, alias_map=alias_map)
+                if lvl is None:
+                    unreadable = True
+                    break
+                levels[la.arg_name] = lvl
+            if unreadable:
+                return None, (None if bt.builtin else bt.canonical_name)
+            return bt.seed(levels), None
+        return None, None
