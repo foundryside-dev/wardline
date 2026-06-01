@@ -7,6 +7,11 @@ Wardline, Filigree, and the planned `legis` subsystem are **consumers** that
 conform. This document lives in the Wardline specs tree for now; propagate the
 normative sections into `clarion/docs/federation/` and `filigree/docs/federation/`.
 
+**SEI is the gold standard for the suite.** All four subsystems **must** conform
+to it — **no matter how close any of them feels to it today.** Conformance is
+**demonstrated** via the §8 oracle, never **assumed** from apparent
+compatibility, and no subsystem is grandfathered (see §0.1).
+
 **Scope:** Give Loom a **refactor-stable entity identity** so that a function's
 cross-tool bindings (Wardline taint facts, Filigree issue associations, `legis`
 governance attestations) survive renames and moves instead of being silently
@@ -37,6 +42,24 @@ Verified against `clarion`/`filigree` source on 2026-06-01:
 The bug, precisely: Loom **conflates identity with address**. The qualname is a
 fine *address* and a terrible *identity*, because the operations developers do
 most — rename, move — change it. This standard separates the two.
+
+## 0.1 Conformance is proven, not assumed (no grandfathering)
+
+SEI is the suite's gold standard, and every subsystem is held to it **on the same
+proven bar** — including ones that feel done (Filigree), the authority itself
+(Clarion), and ones not yet built (`legis`). Two rules follow:
+
+- **Demonstrated, not asserted.** A subsystem is conformant only when it **passes
+  the §8 conformance oracle**, not because it "looks compatible."
+- **Structural compatibility is necessary, not sufficient.** The clearest trap is
+  Filigree: it stores an *opaque* id, so it needs no code change (§5) — but that
+  makes it *able* to conform, not *conformant*. It is conformant only once it
+  actually stores SEIs, the one-time locator→SEI backfill (§7) has run, and it
+  passes the oracle. "Already stores an opaque string" is the start of the work,
+  not the end of it.
+
+Treat any binding still keyed on a locator as legacy to migrate, regardless of
+which subsystem produced it.
 
 ---
 
@@ -164,7 +187,7 @@ SEI is opaque on the wire. Batch variants mirror the existing
 |---|---|
 | **Clarion** (authority) | mint + persist SEI; retain prior-index state (§3.1); run the deterministic matcher; fail-closed mint+lineage on ambiguity; serve `resolve` / `resolve_sei` / `lineage`; advertise the `sei` capability + version |
 | **Wardline** | key taint facts (and dossier reads) on **SEI**, resolving locator→SEI via Clarion; treat SEI opaque; degrade gracefully when the `sei` capability is absent |
-| **Filigree** (frozen) | **no code change** — it already stores an opaque `clarion_entity_id`; the standard only makes that stored value an SEI going forward. Its `content_hash_at_attach` drift check is unchanged and now cleanly means the **content axis** (STALE); the identity axis (ORPHAN) lives in Clarion's `resolve_sei` |
+| **Filigree** (frozen) | **no code change, but not auto-conformant** (§0.1) — it already stores an opaque `clarion_entity_id`, so the standard only makes that stored value an SEI going forward, but conformance still requires the locator→SEI backfill (§7) to have run and the §8 oracle to pass. Its `content_hash_at_attach` drift check is unchanged and now cleanly means the **content axis** (STALE); the identity axis (ORPHAN) lives in Clarion's `resolve_sei` |
 | **`legis`** (planned 4th subsystem) | governance attestations keyed on **SEI**; consume `lineage` as the audit trail; as the suite's git-interface owner, may *supply* the git-rename signal the matcher consumes (§6) |
 
 The headline result: **Filigree conforms without being unfrozen.** Treating the
