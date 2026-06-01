@@ -61,17 +61,18 @@ def test_explain_by_fingerprint_projects_provenance(tmp_path: Path) -> None:
     assert exp.unresolved_call_count == 0
 
 
-def test_explain_non_call_return_has_no_immediate_callee(tmp_path: Path) -> None:
-    # The worst return path is ``return x`` (a bare Name, not a direct call), so the
-    # immediate tainted callee is unresolvable — and the boundary with it. That
-    # indirection is deferred to SP9; explain must NOT guess.
+def test_explain_indirect_return_names_single_hop_callee(tmp_path: Path) -> None:
+    # The worst return path is ``return x`` (a bare Name), where ``x = read_raw(p)``.
+    # T1.3 resolves a single hop: explain now names the contributing callee
+    # (``read_raw``) and the boundary it resolves to (``svc.read_raw``, a leaf
+    # @external_boundary). Provenance only — the verdict (PY-WL-101) is unchanged.
     root = _leaky_var_project(tmp_path)
     f = _first_active_taint_finding(root)
     assert f.qualname == "svc.leaky_var"
     exp = explain_finding(root, fingerprint=f.fingerprint)
     assert exp is not None
-    assert exp.immediate_tainted_callee is None
-    assert exp.source_boundary_qualname is None
+    assert exp.immediate_tainted_callee == "read_raw"
+    assert exp.source_boundary_qualname == "svc.read_raw"
 
 
 def test_explain_unknown_fingerprint_returns_none(tmp_path: Path) -> None:

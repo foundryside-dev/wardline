@@ -381,8 +381,10 @@ def test_compute_return_callee_identifies_least_trusted_call() -> None:
     assert rc("def f(p):\n return read_raw(p)\n") == "read_raw"
     # dotted direct-call return → the dotted callee name
     assert rc("def f(p):\n return svc.read_raw(p)\n") == "svc.read_raw"
-    # worst return path is a bare variable, not a direct call → None (SP9 territory)
-    assert rc("def f(p):\n x = read_raw(p)\n return x\n") is None
+    # worst return path is an indirect `return <var>` set by a direct call → the
+    # contributing callee is now resolved single-hop (T1.3, was SP9-deferred None).
+    assert rc("def f(p):\n x = read_raw(p)\n return x\n") == "read_raw"
+    # `return <param>` has no contributing call → still None (honest, not invented).
     assert rc("def f(p):\n return p\n") is None
     # multiple returns: the least-trusted path is the call → that callee, even though
     # the integral path comes first in source order.
@@ -968,3 +970,51 @@ def test_container_write_validated_value_stays_clean() -> None:
     )
     assert out["d"] == T.ASSURED
     assert out["x"] == T.ASSURED
+
+
+def test_compute_return_callee_resolves_single_hop_indirection() -> None:
+    # T1.3: `x = read_raw(p); return x` — the worst return path is a bare Name whose
+    # value came from a direct call. Name THAT callee (was None — SP9-deferred).
+    import ast
+    import textwrap
+
+    from wardline.core.taints import TaintState as T
+    from wardline.scanner.taint.variable_level import (
+        compute_return_callee,
+        compute_variable_taints,
+    )
+
+    tm = {"read_raw": T.EXTERNAL_RAW, "validate": T.ASSURED}
+
+    def rc(src: str) -> str | None:
+        node = ast.parse(textwrap.dedent(src)).body[0]
+        var_taints = compute_variable_taints(node, T.INTEGRAL, dict(tm))
+        return compute_return_callee(node, T.INTEGRAL, dict(tm), var_taints)
+
+    # single-hop indirection through a local var → the contributing callee
+    assert rc("def f(p):\n x = read_raw(p)\n return x\n") == "read_raw"
+    # last source-order worst-taint assignment wins when reassigned
+    assert rc("def f(p):\n x = validate(p)\n x = read_raw(p)\n return x\n") == "read_raw"
+    # `return p` (a parameter, no call assignment) stays None — honest, not invented
+    assert rc("def f(p):\n return p\n") is None
+    # deeper/aliased chains beyond one hop stay None (deferred to the N-hop store path)
+    assert rc("def f(p):\n x = read_raw(p)\n y = x\n return y\n") is None
+
+
+def test_compute_return_taint_value_unchanged_for_indirection() -> None:
+    # T1.3 is explain-surface ONLY: the taint VALUE compute_return_taint returns must
+    # be identical for an indirect return (pin the invariant the audit fixed).
+    import ast
+    import textwrap
+
+    from wardline.core.taints import TaintState as T
+    from wardline.scanner.taint.variable_level import (
+        compute_return_taint,
+        compute_variable_taints,
+    )
+
+    tm = {"read_raw": T.EXTERNAL_RAW}
+    src = "def f(p):\n x = read_raw(p)\n return x\n"
+    node = ast.parse(textwrap.dedent(src)).body[0]
+    var_taints = compute_variable_taints(node, T.INTEGRAL, dict(tm))
+    assert compute_return_taint(node, T.INTEGRAL, dict(tm), var_taints) == T.EXTERNAL_RAW

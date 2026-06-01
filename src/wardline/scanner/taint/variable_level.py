@@ -932,12 +932,12 @@ def compute_return_taint(
     This is the precise input PY-WL-101 needs — distinct from ``project_taints``
     (the function's anchored *body* taint, pinned to its declaration).
     """
-    returns: list[tuple[TaintState, str | None]] = []
+    returns: list[tuple[TaintState, str | None, ast.expr]] = []
     _collect_return_paths(list(func_node.body), function_taint, taint_map, var_taints, returns)
     if not returns:
         return None
     result = returns[0][0]
-    for taint, _callee in returns[1:]:
+    for taint, _callee, _node in returns[1:]:
         result = least_trusted(result, taint)
     return result
 
@@ -964,18 +964,66 @@ def compute_return_callee(
 
     Because :func:`least_trusted` always returns one of its inputs, the worst taint
     always equals at least one collected path's taint, so the match is well-defined.
+
+    When the worst path is an INDIRECT ``return <var>`` (T1.3), resolve a single hop:
+    name the callee of the assignment that gave ``<var>`` its worst-taint value. This
+    is provenance/explainability only and never changes a fire/no-fire decision — the
+    taint VALUE (:func:`compute_return_taint`) is unaffected. Deeper / aliased chains
+    beyond one hop stay ``None`` (the N-hop walk lives in the Clarion stored-fact path).
     """
-    returns: list[tuple[TaintState, str | None]] = []
+    returns: list[tuple[TaintState, str | None, ast.expr]] = []
     _collect_return_paths(list(func_node.body), function_taint, taint_map, var_taints, returns)
     if not returns:
         return None
     worst = returns[0][0]
-    for taint, _callee in returns[1:]:
+    for taint, _callee, _node in returns[1:]:
         worst = least_trusted(worst, taint)
-    for taint, callee in returns:
+    # 1) a worst-taint path that is itself a direct call → its callee (unchanged).
+    for taint, callee, _node in returns:
         if taint == worst and callee is not None:
             return callee
+    # 2) single-hop indirection: a worst-taint ``return <Name>`` whose Name was set by
+    #    a direct call. Provenance only — never changes a fire/no-fire decision.
+    for taint, callee, node in returns:
+        if taint == worst and callee is None and isinstance(node, ast.Name):
+            indirect = _assignment_callee(list(func_node.body), node.id, worst, function_taint, taint_map, var_taints)
+            if indirect is not None:
+                return indirect
     return None
+
+
+def _assignment_callee(
+    nodes: list[ast.AST],
+    name: str,
+    worst: TaintState,
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    var_taints: dict[str, TaintState],
+) -> str | None:
+    """The callee of the LAST (source-order) direct-call assignment to ``name`` whose
+    RHS resolves to ``worst`` taint — the single-hop contributing call behind an
+    indirect ``return <name>``. Scope-respecting (does not descend into nested
+    def/class/lambda, whose assignments bind a different scope). Returns ``None`` when
+    ``name`` is not set by a direct call to the worst taint (a parameter, a literal, or
+    a deeper var-to-var chain) — honest, never invented."""
+    result: str | None = None
+    for node in nodes:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue
+        if isinstance(node, ast.Assign):
+            callee = _return_callee(node.value)
+            if (
+                callee is not None
+                and any(isinstance(t, ast.Name) and t.id == name for t in node.targets)
+                and _resolve_expr(node.value, function_taint, taint_map, var_taints) == worst
+            ):
+                result = callee
+        nested = _assignment_callee(
+            list(ast.iter_child_nodes(node)), name, worst, function_taint, taint_map, var_taints
+        )
+        if nested is not None:
+            result = nested
+    return result
 
 
 def _return_callee(node: ast.expr) -> str | None:
@@ -993,7 +1041,7 @@ def _collect_return_paths(
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
-    out: list[tuple[TaintState, str | None]],
+    out: list[tuple[TaintState, str | None, ast.expr]],
 ) -> None:
     """Recurse the AST collecting ``(taint, callee_or_None)`` for each value-bearing
     return, descending into ALL children EXCEPT nested ``FunctionDef``/
@@ -1014,5 +1062,5 @@ def _collect_return_paths(
             continue
         if isinstance(node, ast.Return) and node.value is not None:
             taint = _resolve_expr(node.value, function_taint, taint_map, var_taints)
-            out.append((taint, _return_callee(node.value)))
+            out.append((taint, _return_callee(node.value), node.value))
         _collect_return_paths(list(ast.iter_child_nodes(node)), function_taint, taint_map, var_taints, out)
