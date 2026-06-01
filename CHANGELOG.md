@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Track 2 — extensible trust grammar.** The three trust decorators and four
+  rules are no longer hardcoded: a project can declare custom **boundary types**
+  (a trust transition + its L1 seed) and **rules** and register them via
+  `wardline.scanner.grammar` — `default_grammar().extend(boundary_types=…, rules=…)`,
+  run through `build_analyzer(grammar=…)`. The builtins are preloaded defaults and
+  produce **byte-identical** findings to before (a corpus-wide golden enforces it);
+  the released `wardline.core.registry` import surface is unchanged. The extension
+  plane is a zero-dependency *code* seam (the same shape as `TaintSourceProvider`),
+  not a config DSL.
+- **`WLN-ENGINE-UNPROVABLE-BOUNDARY` FACT** — a *custom* boundary type the engine
+  cannot prove statically (an unreadable required level) seeds the fail-closed
+  `UNKNOWN_RAW` **and** emits this observable FACT, so the extension plane inherits
+  Wardline's no-false-green guarantee. Builtins stay silently fail-closed (oracle-
+  preserving). A custom boundary stacked on a provable decorator is dragged to the
+  fail-closed meet rather than silently over-trusted.
+
 - **Track 1 — engine-quality floor.** A labeled false-positive corpus
   (`tests/corpus/`) with a manifest-driven FP-rate gate (≤5%; currently 0% over 21
   true-positive fixtures spanning control-flow joins, match arms, validators,

@@ -19,19 +19,26 @@ columns as work lands.
 
 ## Current position (update this line)
 
-**As of 2026-06-02:** **Track 2 (extensible trust grammar) IN PROGRESS** on branch
-`loom-step-up` (Track 1 merged here). Design spec + implementation plan written and
-reviewed (advisor-pressure-tested): the grammar is a *code* seam (`scanner/grammar.py`:
-`BoundaryType`/`TrustGrammar`/`default_grammar()`), the same shape as `TaintSourceProvider`
-— NOT a DSL. Builtins re-expressed on the seam must stay byte-identical (a Task 0
-full-stream golden over the T1.4 corpus is the oracle — dogfood-clean guarded
-separately by self-hosting, since the refactor grows the source tree); the released `core.registry`
-contract (Clarion-consumed) stays frozen; the unprovable-boundary FACT is custom-only
-(builtins never emit it). Spec:
-`2026-06-02-wardline-track2-extensible-trust-grammar-design.md`; plan:
-`docs/superpowers/plans/2026-06-02-wardline-track2-extensible-trust-grammar.md`.
-Next: execute the plan (Task 0 golden → T2.1 model → T2.2 seam → T2.4 plumbing+FACT →
-acceptance fixture → close-out panel). **Track 1 remains complete** (below).
+**As of 2026-06-02:** **Track 2 (extensible trust grammar) COMPLETE** on branch
+`loom-step-up` (Track 1 merged here). The grammar is a *code* seam
+(`src/wardline/scanner/grammar.py`: `BoundaryType`/`LevelArg`/`TrustGrammar`/`default_grammar()`),
+the same shape as `TaintSourceProvider` — NOT a DSL. All DoD gates green: an agent
+defines a new boundary type + rule end-to-end and it fires (`tests/grammar/test_acceptance_custom_grammar.py`,
+**litmus held** — zero edits to `_match`/`_ALL_RULE_CLASSES`/`_ENTRIES` for the fixture);
+unprovable **custom** boundary → `UNKNOWN_*` + `WLN-ENGINE-UNPROVABLE-BOUNDARY` FACT
+(builtins never emit it); the 4 builtins + 3 decorators re-expressed on the seam are
+**byte-identical** (Task 0 corpus golden held through every task). Released
+`core.registry` contract frozen + Clarion probe verified; `vocabulary.yaml`/descriptor
+unchanged; summary-cache fingerprint carries grammar identity (builtin = legacy string).
+Suite **1087 passing**; coverage 95.74% global / `scanner/taint/` + `grammar.py` 100%;
+ruff/format/mypy clean. Default code-review panel run (silent-failure + Python-quality):
+found + fixed a HIGH fail-closed hole (stacked provable + unprovable-custom decorators
+were silently over-trusted — now dragged to `UNKNOWN_RAW` + FACT) and a plural-reporting
+completeness gap. Spec: `2026-06-02-wardline-track2-extensible-trust-grammar-design.md`;
+plan: `docs/superpowers/plans/2026-06-02-wardline-track2-extensible-trust-grammar.md`.
+**Next:** the autonomous path continues to **T1.5 (rule-set breadth, 4 → ≥10, authored
+ON the grammar)**; parallel autonomous groundwork T3.1–T3.3 / T4.1–T4.2 is available.
+**Track 1 remains complete** (below).
 
 **Track 1 recap —** **Track 1 (engine-quality floor) COMPLETE**, merged onto
 `loom-step-up` (was branch `feat/track1-engine-floor`; plan:
@@ -65,15 +72,15 @@ spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 **DoD gates:** FP ≤5% on labeled corpus · coverage 90% global / 95% on `taint/` · warm/cold byte-identical green · dogfood finding-clean · every closed hole has a RED-first regression test.
 **Deferred out of Track 1:** T1.5 rule-set breadth (4 → ≥10) → after Track 2.
 
-### Track 2 — Extensible trust grammar  ·  gate: none (autonomous; sequence after T1)  ·  **◐ in progress (spec+plan written; executing)**
+### Track 2 — Extensible trust grammar  ·  gate: none (autonomous; sequence after T1)  ·  **☑ done (branch `loom-step-up`)**
 
 | Unit | Work | Status |
 |---|---|---|
 | T0 | Byte-identity golden over the T1.4 corpus (oracle, RED-first; dogfood via self-hosting) | ☑ |
 | T2.1 | Define the grammar (`scanner/grammar.py`: `BoundaryType`/`LevelArg`/`TrustGrammar`/`default_grammar`) | ☑ |
-| T2.2 | Boundary-type loop replaces `_match` if-ladder; rules from grammar; `build_analyzer` (builtins as defaults) | ◐ |
-| T2.3 | Re-express the 4 builtins + 3 decorators on the grammar (golden held byte-for-byte) | ◐ |
-| T2.4 | Soundness inheritance (unprovable **custom** boundary → `UNKNOWN_*` + `WLN-ENGINE-UNPROVABLE-BOUNDARY` FACT; builtins never) | ◐ |
+| T2.2 | Boundary-type loop replaces `_match` if-ladder; rules from grammar; `build_analyzer` (builtins as defaults) | ☑ |
+| T2.3 | Re-express the 4 builtins + 3 decorators on the grammar (golden held byte-for-byte) | ☑ |
+| T2.4 | Soundness inheritance (unprovable **custom** boundary → `UNKNOWN_*` + `WLN-ENGINE-UNPROVABLE-BOUNDARY` FACT; builtins never) | ☑ |
 
 **DoD:** agent defines a new boundary+rule end-to-end (acceptance fixture, litmus = zero edits to `_match`/`_ALL_RULE_CLASSES`/`_ENTRIES`) · unprovable→UNKNOWN+FACT test · the 4 builtins re-expressed produce **byte-identical findings** to today (oracle held).
 **Note:** the hinge between "best analyzer" and "Loom citizen". Design spec: `2026-06-02-wardline-track2-extensible-trust-grammar-design.md`; plan: `…/plans/2026-06-02-wardline-track2-extensible-trust-grammar.md`. T1.5 (rule breadth) lands here, on the grammar. **Blockers baked into the plan:** released `core.registry` contract frozen (Clarion-consumed); summary-cache fingerprint must carry grammar identity (builtin = legacy string); `vocabulary.yaml`/`descriptor.py` unchanged (REGISTRY frozen).
