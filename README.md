@@ -8,6 +8,7 @@ Generic, lightweight semantic-tainting static analyzer for Python — track untr
 [![License: MIT](https://img.shields.io/pypi/l/wardline)](https://github.com/foundryside-dev/wardline/blob/main/LICENSE)
 
 ```python
+# demo.py
 from wardline.decorators import trusted, external_boundary
 
 @external_boundary
@@ -21,13 +22,20 @@ def build_record(req):
 
 ```console
 $ wardline scan . --fail-on ERROR
-demo.build_record declares return trust ASSURED but actually returns
-EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer  [PY-WL-101]
-  demo.py:7
-gate: tripped (1 active defect >= ERROR)
+scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 new -> findings.jsonl
 $ echo $?
 1
 ```
+
+The gate trips (exit 1) and the findings land in `findings.jsonl` (JSON Lines;
+`--format sarif` for GitHub code scanning). Wardline is agent-first — you don't
+read that file by hand. Your coding agent does: ask it *"why did the scan fail?"*
+and it surfaces the one active defect (the other two findings are `NONE`-severity
+engine facts):
+
+> **`demo.build_record`** declares return trust `ASSURED` but actually returns
+> `EXTERNAL_RAW` (less trusted) — untrusted data reaches a trusted producer.
+> &nbsp;&nbsp;`demo.py:8` · `PY-WL-101`
 
 ## What is Wardline?
 
@@ -37,9 +45,10 @@ with as trusted as it claims?** It tracks a *taint* (a trust level) for every
 value and propagates it across the whole project, flagging the places where
 untrusted data reaches a trusted producer with no validation in between.
 
-Wardline is part of the **Loom** suite alongside **Clarion** (code intelligence)
-and **Filigree** (issue tracking). It is built for small teams who want capable
-analysis tooling without enterprise weight.
+Wardline is part of **Loom** — an agent-first suite of small, local-first
+developer tools (Wardline analysis, **Clarion** code intelligence, **Filigree**
+issue tracking). Every tool is built to be driven by a coding agent as much as a
+person, giving small teams capable tooling without enterprise weight.
 
 **Opt-in by design.** Wardline is silent until you opt in. Undecorated code sits
 in the developer-freedom zone — unknown-trust, no findings. You declare trust on
@@ -68,7 +77,7 @@ lets it scan a large untouched codebase (including its own) with zero noise.
 ## Quick Start
 
 ```bash
-pip install wardline[scanner]
+pip install 'wardline[scanner]'   # quote the extras for zsh
 ```
 
 ```python
@@ -93,8 +102,8 @@ Fix findings at the **boundary** (validate before returning), not at the sink.
 ## Installation
 
 ```bash
-pip install wardline            # zero-dependency base (library + decorators)
-pip install wardline[scanner]   # the scan/judge/baseline CLI + MCP server
+pip install wardline              # zero-dependency base (library + decorators)
+pip install 'wardline[scanner]'   # the scan/judge/baseline CLI + MCP server (quote for zsh)
 ```
 
 | Extra | Pulls | Enables |
@@ -175,8 +184,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow and
 
 ## Acknowledgements
 
-Wardline is one of the **Loom** tools (with Clarion and Filigree) — small,
-local-first, agent-native developer tooling.
+Wardline is one of the **Loom** tools (with Clarion and Filigree) — an
+agent-first, local-first developer tooling suite for small teams.
 
 ## License
 

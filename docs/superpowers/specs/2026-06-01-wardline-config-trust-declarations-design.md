@@ -1,10 +1,35 @@
 # Wardline — config-backed trust declarations (design)
 
 **Date:** 2026-06-01  
-**Status:** Approved design (brainstormed; ready for implementation planning)  
+**Status:** Revised design (aligned with the explicit-`@trusted` spec; ready for implementation planning)  
 **Scope:** Extend Wardline's existing trust-declaration capability so agentic coding
 agents can mark code as trust-relevant **without editing source**, using
 `wardline.yaml`.
+
+> **Depends on the foundational spec.** The trust vocabulary this surface
+> declares is defined by
+> [explicit body/return `@trusted` declarations](2026-06-01-wardline-explicit-trusted-body-return-design.md).
+> That spec **lands first**; this one reuses its `@trusted` shape and its shared
+> validator rather than defining a parallel one (see §0 and §5.2).
+
+---
+
+## 0. Revision note (2026-06-01)
+
+Aligned with the explicit-`@trusted` spec so the two declaration surfaces stay a
+single vocabulary, not two that happen to look alike:
+
+1. **`trusted` gains the asymmetric form here too.** A config `declare: trusted`
+   accepts either `level:` (symmetric shorthand) or `body:` + `returns:`
+   (explicit), exactly mirroring the decorator. See §4.1 and §6.1.
+2. **One shared validator.** The `trust:` parser calls the foundational spec's
+   `TRUSTED_DECLARABLE_LEVELS` / `is_trusted_order` helpers (`core/taints.py`,
+   §5.0 there). It does **not** re-implement the allowed-levels set or the
+   `body` ≤ `returns` ordering rule. A config-declared trusted producer must
+   yield the byte-identical `FunctionTaint` to its decorator equivalent.
+3. **Trust-raising is rejected here too.** A config `trusted` with `body` less
+   trusted than `returns` is a hard `ConfigError` — raising trust stays the job
+   of `trust_boundary`. See §8.1.
 
 ---
 
@@ -17,8 +42,9 @@ parts of the codebase as:
 - `trust_boundary(to_level=...)`
 - `trusted(level=...)`
 
-and have those declarations change Wardline's normal analysis and gating
-behavior exactly the way in-source decorators do today.
+(with `trusted` taking either `level:` or `body:`/`returns:`, mirroring the
+decorator) and have those declarations change Wardline's normal analysis and
+gating behavior exactly the way in-source decorators do.
 
 This is a **Wardline-first** feature. It does not depend on Clarion, Filigree,
 or any remote store. It must preserve Wardline's standalone, fail-loud config
@@ -82,9 +108,12 @@ decorator shapes:
 | `external_boundary` | `@external_boundary` | `(EXTERNAL_RAW, EXTERNAL_RAW)` |
 | `trust_boundary` + `to_level` | `@trust_boundary(to_level=...)` | `(EXTERNAL_RAW, <to_level>)` |
 | `trusted` + `level` | `@trusted(level=...)` | `(<level>, <level>)` |
+| `trusted` + `body` + `returns` | `@trusted(body=..., returns=...)` | `(<body>, <returns>)` |
 
 This keeps the explainability story intact: the source of the declaration
-changes, but the engine's meaning does not.
+changes, but the engine's meaning does not. The `trusted` rows reuse the exact
+shape and constraints from the foundational spec — including `body` at least as
+trusted as `returns` — via the shared validator (§5.2).
 
 ### 4.2 Small, explicit scope model
 
@@ -160,8 +189,16 @@ class TrustConfig:
     entities: Mapping[str, EntityTrustDeclaration]
 ```
 
-This module owns the typed parse and validation rules. `config.load()` remains a
-shape loader, following the existing pattern used for judge settings and waivers.
+This module owns the typed parse and the *config-shape* validation rules (which
+keys are required, duplicate-qualname detection, etc.). It does **not** own the
+trust *semantics*: when it builds a `trusted` declaration's `FunctionTaint`, it
+calls the shared `core/taints.py` helpers from the foundational spec
+(`TRUSTED_DECLARABLE_LEVELS` for the per-field allow-check, `is_trusted_order`
+for the `body` ≤ `returns` rule). A config `trusted(body=..., returns=...)` must
+construct the same `FunctionTaint` a decorator would — there is exactly one
+definition of "what a legal `@trusted` is," consumed by both surfaces.
+`config.load()` remains a shape loader, following the existing pattern used for
+judge settings and waivers.
 
 ### 5.3 `scanner/taint/config_provider.py`
 
@@ -234,6 +271,12 @@ trust:
       declare: trusted
       level: INTEGRAL
       reason: "Trusted commit point"
+
+    - qualname: "app.normalize.canonical_email"
+      declare: trusted
+      body: INTEGRAL
+      returns: ASSURED
+      reason: "Operates on pristine data; only promises ASSURED on output"
 ```
 
 ### 6.1 Entry rules
@@ -252,9 +295,17 @@ For `trust.entities`:
 
 Parameter rules:
 
-- `declare: external_boundary` — forbids `level` and `to_level`
-- `declare: trust_boundary` — requires `to_level ∈ {GUARDED, ASSURED}`
-- `declare: trusted` — requires `level ∈ {INTEGRAL, ASSURED}`
+- `declare: external_boundary` — forbids `level`, `to_level`, `body`, `returns`
+- `declare: trust_boundary` — requires `to_level ∈ {GUARDED, ASSURED}`;
+  forbids `level`, `body`, `returns`
+- `declare: trusted` — exactly one of:
+  - `level ∈ {INTEGRAL, ASSURED}` (symmetric), or
+  - `body` **and** `returns`, each `∈ {INTEGRAL, ASSURED}` with `body` at least
+    as trusted as `returns`.
+
+  Supplying `level` together with `body`/`returns`, or only one of
+  `body`/`returns`, is an error (§8.1). The level-membership and ordering checks
+  are the shared `core/taints.py` helpers, not a config-local copy.
 
 ### 6.2 Matching rules
 
@@ -308,8 +359,19 @@ The following are hard `ConfigError`s and exit `2`:
 - wrong top-level types
 - invalid `declare` values
 - invalid `level` / `to_level` combinations
+- a `trusted` entry that supplies `level` together with `body`/`returns`, or
+  only one of `body`/`returns`
+- a `trusted` entry whose `body` is less trusted than its `returns`
+  (trust-raising; the error should point at `trust_boundary`)
+- a `level` / `body` / `returns` value outside `{INTEGRAL, ASSURED}`
 - missing required fields
 - duplicate `entities.qualname` entries
+
+Unlike the static decorator read (which is conservative — *no opinion* on a
+malformed shape), `wardline.yaml` is fail-loud: a malformed `trust:` entry is a
+hard error, not a silently-dropped declaration. That matches the existing config
+posture and is safe because config parse happens before analysis, not while
+reading arbitrary source.
 
 ### 8.2 Non-fatal visibility for unmatched exact qualnames
 
@@ -341,10 +403,21 @@ is inert and not an error.
 
 ### 9.1 Config parse tests
 
-- valid examples for all three trust declaration kinds
+- valid examples for every trust declaration kind, including both `trusted`
+  forms (`level:` and `body:`/`returns:`)
 - reject invalid `declare`/`level`/`to_level` combinations
+- reject `trusted` with `level` + `body`/`returns`, or only one of
+  `body`/`returns`
+- reject trust-raising `trusted` (`body` less trusted than `returns`)
 - reject missing required fields
 - reject duplicate exact qualnames
+
+### 9.1a Cross-surface parity test
+
+A `trusted(body=B, returns=R)` declared in `wardline.yaml` and the decorator
+`@trusted(body=B, returns=R)` must produce the **identical** `FunctionTaint`.
+This is the test that proves the two surfaces share one definition (it would fail
+if the config parser grew its own allow-set or ordering copy).
 
 ### 9.2 Matching tests
 
