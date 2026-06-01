@@ -7,6 +7,18 @@ Clarion (code intelligence), Filigree (issue tracking), and the planned `legis`
 (governance + git interface) — and the design reasoning that produced it. Both a
 north star to converge on and a case study of the decisions behind it.
 
+> **Guiding stance: build the best, most powerful, most general version of the
+> idea.** The goal state is always the *fullest* form of each idea — identity,
+> dossier, governance, the custody axiom — at maximum generality (any entity, any
+> language, any artifact, any fact-producer), not a constrained first cut. Scope
+> decisions (a deterministic v1 matcher, deferred verbs) are **sequencing toward
+> that**, never the ceiling. "Minimal" applies only to *dead apparatus and
+> accidental complexity* — never to the ambition, power, or generality of the
+> idea. Under-reach is a failure mode too: a well-crafted system no one reaches
+> for is not being used. This composes with the product thesis, not against it —
+> the most powerful capability, delivered as **opt-in layers**, so the base stays
+> weightless for anyone who doesn't switch it on.
+
 ---
 
 ## 1. What Loom is converging on (the goal state)
@@ -30,10 +42,13 @@ a single durable identity, all freshness-honest, all consumable in one call.
 
 At goal state:
 
-- **Identity is stable across refactors.** A function keeps its identity through
-  rename/move/edit (**SEI** — Stable Entity Identity), so every cross-tool binding
-  survives the operations developers actually perform instead of silently
-  orphaning. Clarion mints and carries it; everyone else keys on it.
+- **Identity is stable across refactors.** Any entity — function, class, module,
+  and onward to any addressable artifact in any language a plugin can describe —
+  keeps its identity through rename/move/edit (**SEI** — Stable Entity Identity),
+  so every cross-tool binding survives the operations developers actually perform
+  instead of silently orphaning. Clarion mints and carries it; everyone else keys
+  on it. (The general form: identity is a property of the *authored thing*, not of
+  any one language's qualname — §2.)
 - **Every fact is freshness-honest.** Two orthogonal axes — *is this the same
   entity?* (SEI alive/orphan) and *has its code changed?* (content hash
   fresh/stale) — are always explicit. Nothing stale is served unlabelled
@@ -53,6 +68,15 @@ At goal state:
 The test of "done": a coding agent can ask *"what is true of this function, and
 what should I do about it?"* and get a complete, current, cited answer — and that
 answer stays correct when the function is renamed tomorrow.
+
+> **On elspeth.** `/home/john/elspeth` is a **standalone** project — the *initial
+> version* of these trust ideas, which Loom builds on. It is **not** a Loom
+> federation member and **not** a conformer to Loom's standards (the four
+> subsystems are Wardline, Clarion, Filigree, `legis`). Loom and `legis` borrow
+> elspeth's **concepts and effects**, re-expressed in Loom's own vocabulary
+> (§4, principle 8) — not its naming, and not its scope. References to elspeth in
+> this document are to a design ancestor, never to a peer in the suite. (We are
+> still figuring the suite out; elspeth is the proven prior art, not a fifth tool.)
 
 ---
 
@@ -141,9 +165,12 @@ These are the transferable takeaways, independent of Loom:
    aspiration and implementation had diverged on every load-bearing point.
 2. **Separate the concerns that drift.** Identity / address / freshness were one
    thing; splitting them dissolved the bug. (So too trust / type / value.)
-3. **Minimal salvage beats grand rebuild.** The abandoned standard was right about
-   *what* (stable identity) and wrong about *how much* (registry, URIs). Take the
-   kernel, drop the apparatus.
+3. **Maximal idea, minimal apparatus.** The abandoned standard was right about
+   *what* (stable identity — keep this at maximum generality) and wrong about its
+   *mechanism* (registry, URIs, multi-fetch — dead apparatus). Keep the fullest
+   form of the kernel; drop only the dead transport. Minimality is about
+   mechanism and accidental complexity, **never** about the power or generality
+   of the idea (guiding stance, top of doc).
 4. **Opt-in layering, not tax.** Heavy capability (governance, judging) is a layer
    you add, never weight in the base — the only way one tool serves both the
    vibe-coder and the regulated team.
