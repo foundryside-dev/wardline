@@ -84,69 +84,151 @@ branch's value survived the merge without replaying it.
 
 ## 3. Design — threaded `var_callee` provenance map
 
-Build a `var_callee: dict[str, str | None]` **parallel to `var_taints`**,
-maintained in lockstep at every site that writes `var_taints`. It records, per
-variable name, the callee NAME that contributed that variable's *current*
-(least-trusted-so-far) taint, or `None` when the contributing expression is not
-a resolvable direct call.
+### Internal state object
 
-### The merge rule (the subtle part)
+Introduce a private `_L2State` dataclass that bundles the two maps:
 
-`least_trusted` keeps the **worst (least-trusted)** input. So at a merge the
-surviving callee is the callee of **the branch that produced the surviving
-least-trusted taint** — i.e. **min-by-rank**, source-order tie-break. This
-mirrors `compute_return_callee`'s existing "first source-order least-trusted
-path" rule. It is the **opposite** of `minimum_scope.py:164`'s
-`max(..., key=TRUST_RANK)` (which selects the most-trusted callee for a
-different, L3-aggregation purpose) — do not copy that direction.
+```python
+@dataclass
+class _L2State:
+    taints: dict[str, TaintState]
+    callees: dict[str, str | None]
+```
 
-When the surviving branch's value is itself not a direct call (e.g. a parameter,
-a literal, a merge of two non-call values), `var_callee[x]` is `None` — exactly
-today's behavior for that variable. Graceful degradation is preserved at the leaf.
+All internal walker functions (`_seed_parameters`, `_handle_assign`, …,
+`_handle_match`) take `_L2State` instead of two separate dicts. This eliminates
+parallel-dict drift: a future write-site addition that forgets `callees` will
+produce a type error, not a silent wrong result.
+
+`compute_variable_taints` returns `_L2State`. Its callers in `analyzer.py`
+extract `.taints` and `.callees` to pass separately to
+`compute_return_callee(var_taints, var_callee, …)`. The public type of
+`function_return_callee` (downstream of `compute_return_callee`) is unchanged.
+
+`var_callee` records, per variable name, **the callee name that contributed that
+variable's current (least-trusted-so-far) taint**, or `None` when no resolvable
+callee is in scope.
+
+### Callee attribution rule for assignments
+
+For any assignment `target = <expr>` (applies at every write site):
+
+| RHS shape | `state.callees[target]` |
+|---|---|
+| `ast.Call` with resolvable name | callee name via `_return_callee(expr)` |
+| `ast.Name` (alias: `y = x`) | `state.callees.get(rhs.id)` — propagate provenance |
+| anything else (literal, subscript, attr, …) | `None` |
+
+Name-copy propagation (`y = x`) is the **zero-extra-hop alias** case. `y`'s
+taint IS `x`'s taint, so `y`'s provenance is `x`'s provenance. This is not
+multi-hop resolution; the "single-hop" boundary refers to `compute_return_callee`
+not walking further than one `var_callee` lookup, not to the number of alias
+copies tracked.
+
+### The merge rule
+
+`least_trusted` keeps the worst (least-trusted) taint. At a merge the surviving
+callee is: **the first source-order worst-rank branch that has a non-`None`
+callee; or `None` if every worst-rank branch has a `None` callee.**
+
+This matches `compute_return_callee`'s existing consumer logic exactly (the loop
+already skips `None` callees and picks the first non-`None` worst-rank entry).
+It is the **opposite** of `minimum_scope.py:164`'s `max(..., key=TRUST_RANK)`
+(which selects the most-trusted callee for L3 aggregation) — do not copy that
+direction.
+
+When every branch has a non-call RHS (parameter, literal, merged non-call
+values), `var_callee[x]` is `None`. Graceful degradation is preserved.
 
 ### Resolution in `compute_return_callee`
 
 `_collect_return_paths` already records `(taint, direct_callee_or_None)` per
-return. Extend it (or post-process in `compute_return_callee`) so that when the
-chosen least-trusted path is `return <Name>` and its direct callee is `None`,
-fall back to `var_callee[<Name>]`. `return d[k]` / subscript / attribute returns
-are **out of single-hop scope** (not a `Name` lookup) — they stay `None`; state
-this explicitly. The least-trusted-path-selection and tie-break logic is
-unchanged; only the callee-naming gains the var_callee fallback.
+return. Extend it so that when the chosen least-trusted path is `return <Name>`
+and its direct callee is `None`, fall back to `state.callees[<Name>]`. Subscript,
+attribute, and other non-`Name` returns are **out of single-hop scope** — they
+stay `None`; state this in the docstring. The least-trusted-path-selection logic
+is unchanged; only the callee-naming gains the `var_callee` fallback.
 
 ---
 
 ## 4. Touch points (file:line)
 
-**Write the new map (all sites that mutate `var_taints` must also set `var_callee`):**
+**Allocate and return state:**
 
-- `variable_level.py:63-86` `compute_variable_taints` — allocate `var_callee`,
-  thread it through the body walk (parameters seed to `None`).
-- `:490` `_handle_assign` — `x = expr`: set callee = `_return_callee(expr)`.
-- `:525` `_handle_unpack` — tuple/list targets.
-- `:560` `_handle_augassign` — `x += expr` (merge old+new; least-trusted rule).
-- `:157-161` `_resolve_expr` NamedExpr — walrus `x := expr`.
-- `:642` `_handle_if`, `:678` `_handle_for`, `:708` `_handle_while`,
-  `:778` `_handle_try`, `:842` `_handle_match` — the **5 merge sites**:
-  apply the min-by-rank surviving-callee rule alongside each `least_trusted`
-  branch combine.
+- `variable_level.py:63-86` `compute_variable_taints` — allocate `_L2State`,
+  call `_seed_parameters` to seed `taints` and `callees` (`None` per param),
+  thread `state` through the body walk. Return type changes to `_L2State`;
+  `analyzer.py` callers extract `.taints` and `.callees`.
+
+**Write sites — complete list. Every line that sets `state.taints[x]` must also
+set `state.callees[x]` using the attribution rule (§3):**
+
+- `:89-100` `_seed_parameters` — `state.callees[name] = None` for every param;
+  parameter bindings carry no direct-call provenance.
+- `:490` `_handle_assign` — `x = expr`: attribution rule (§3); for `ast.Name`
+  RHS propagate `state.callees.get(rhs.id)`.
+- `_process_stmt` `AnnAssign` branch — annotated `x: T = expr` uses the same
+  attribution rule; bare `x: T` (no value) writes neither map.
+- `_assign_target` (called by `for` loop target binding, `match` capture, and
+  starred/nested unpack) — callee is context-dependent; see table below.
+- `:525` `_handle_unpack` — element-wise when arity matches a tuple/list literal:
+  `state.callees[target_i]` from the attribution rule applied to `elements[i]`.
+  Whole-RHS rule when arity doesn't match or RHS is not a literal: attribution
+  rule on the whole RHS expression for each target. `Starred` targets: `None`.
+- `:560` `_handle_augassign` — `x += expr`: new callee is the attribution-rule
+  callee of the worse-rank side. On equal rank keep the **existing** callee
+  (left-wins). If the winning side has no callee: `None`.
+- `:157-161` `_resolve_expr` `NamedExpr` — walrus `x := expr`: attribution rule.
+  `_resolve_expr` must receive `state` so the walrus side-effect writes the
+  correct scope's `callees`.
+- `_walk_exprs_for_walrus` / `_resolve_comprehension` — comprehension walrus
+  expressions that leak into the enclosing scope must propagate via the enclosing
+  `state.callees`. Confirm all callers of these helpers pass `state`.
+- `_handle_with` — `with expr as x:` binding: attribution rule on the context
+  manager expression.
+- `_taint_container_base` (`:579-596`) — `d[k] = expr` updates the container
+  base's taint; update `state.callees[base_name]` with the attribution-rule
+  callee of the RHS.
+- `except … as e` — exception-handler binding: `state.callees[e] = None`
+  (exception object is not the result of a direct call in the catch handler).
+
+**`_assign_target`-mediated callee rules:**
+
+| Binding context | `state.callees` rule |
+|---|---|
+| `for x in iterable:` | `None` (loop-iteration target; element is not a direct call) |
+| `match subject: case x:` | `state.callees.get(subject.id)` if subject is `ast.Name`; `_return_callee(subject)` if `ast.Call`; else `None` |
+| Nested / starred unpack via `_assign_target` | inherit from matched element (same element-wise rule as `_handle_unpack`) |
+
+**Merge sites — apply the merge rule (§3) alongside each `least_trusted` combine:**
+
+- `:642` `_handle_if`
+- `:678` `_handle_for` — includes back-edge merge at loop exit (pre-loop state
+  vs loop-body state); apply merge rule in the back-edge as well.
+- `:708` `_handle_while` — same back-edge merge.
+- `:778` `_handle_try`
+- `:842` `_handle_match`
 
 **Consume the map:**
 
-- `:977-1006` `_collect_return_paths` / `:929` `compute_return_callee` — add the
-  `var_callee` fallback for `return <Name>` least-trusted paths. `var_callee`
-  must be passed in alongside `var_taints`.
+- `:977-1006` `_collect_return_paths` / `:929` `compute_return_callee` — add
+  `var_callee` fallback for `return <Name>` least-trusted paths. Signature:
+  `compute_return_callee(var_taints, var_callee, …)`.
 
-**Downstream — no code change, but verify the ripple:**
+**Downstream — verify the ripple; no code change except where noted:**
 
+- `analyzer.py:250` — **walrus isolation (code change required)**: copy
+  `state.callees` before passing to `compute_return_callee`, mirroring the
+  existing `var_taints` copy (walrus expressions must not mutate the post-walk
+  state during return-path resolution).
 - `analyzer.py:250` builds `function_return_callee` from `compute_return_callee`
   → flows unchanged through `context.py:48` → `core/explain.py:84`.
-- `core/explain.py:88-106` `source_boundary_qualname` **auto-extends** the
-  moment `compute_return_callee` starts returning callees for indirect returns
-  (it one-hops the immediate callee to a same-module leaf source). Desirable;
-  needs a test.
+- `core/explain.py:88-106` `source_boundary_qualname` — **user-visible API
+  change**: every `explain_taint` call on a previously-`None` indirect return
+  will now return a `source_boundary_qualname`. Desirable; requires both a
+  positive and a negative test (see §5 tests 7 and 8).
 - `clarion/facts.py:80` `contributing_callee` now populated for indirect returns
-  → `explain_chain` gets a real hop-0 for previously-`None` cases. No code change.
+  → `explain_chain` gets a real hop-0. No code change.
 
 ---
 
@@ -166,15 +248,72 @@ inversion is the concrete acceptance signal:
 
 New tests to add:
 
-1. **Merge precision** (the chosen-strategy proof): `if c: x = read_raw(p);
-   else: x = svc.get(p); return x` → names the least-trusted branch's callee;
-   plus a try/except and a match-arm variant.
-2. **Subscript out-of-scope**: `return d[k]` → stays `None` (documents the boundary).
-3. **`source_boundary_qualname` ripple**: an indirect return whose callee is a
+1. **Merge precision** — `if c: x = read_raw(p); else: x = svc.get(p); return x`
+   → names the least-trusted branch's callee. Variants: try/except, match arm.
+2. **Loop back-edge merge** — for-loop and while-loop: a call inside the loop
+   sets the least-trusted taint; the loop-exit merge must survive:
+   ```python
+   x = safe_val
+   for _ in items:
+       x = read_raw(p)
+   return x   # expected: "read_raw"
+   ```
+3. **Equal-rank tie-break** — two branches of equal rank; first source-order
+   non-`None` callee wins:
+   ```python
+   if c:
+       x = read_a(p)
+   else:
+       x = read_b(p)
+   return x   # expected: "read_a"
+   ```
+4. **Mixed direct-return + indirect-return paths** — indirect path must compete
+   correctly with direct-return paths:
+   ```python
+   if c:
+       return validate(p)   # direct, worst rank
+   x = read_raw(p)
+   return x                 # indirect — expected: "read_raw"
+   ```
+5. **Name-copy (alias) propagation** — provenance follows the value:
+   ```python
+   x = read_raw(p)
+   y = x
+   return y   # expected: "read_raw"
+   ```
+6. **Subscript / attribute out-of-scope** — `return d[k]` and `return obj.attr`
+   both stay `None` (graceful degradation boundary).
+7. **`source_boundary_qualname` positive** — indirect return whose callee is a
    same-module leaf source now reports the boundary qualname (was `None`).
-4. **No fire/no-fire drift**: assert `compute_return_taint` values and the
-   PY-WL-101 fire set are byte-identical before/after on a small corpus — the
-   guarantee that this is explain-only.
+8. **`source_boundary_qualname` negative** — callee is NOT a same-module leaf
+   source; boundary must stay `None`:
+   ```python
+   x = helper(p)   # helper calls read_raw internally — not a leaf source
+   return x        # expected: source_boundary_qualname = None
+   ```
+9. **`_handle_unpack` element-wise callee**:
+   ```python
+   a, b = safe_call(), read_raw(p)
+   return b   # expected: "read_raw"
+   ```
+10. **`_handle_augassign` callee update** — RHS wins on worse rank:
+    ```python
+    x = safe_call()
+    x += read_raw(p)
+    return x   # expected: "read_raw"
+    ```
+11. **Walrus callee attribution**:
+    ```python
+    if (x := read_raw(p)):
+        return x   # expected: "read_raw"
+    ```
+12. **Fire-set invariance** (precise corpus definition): assert
+    `compute_return_taint` values and the PY-WL-101 fire set are byte-identical
+    before/after on: (a) oracle battery fixture module(s); (b) `src/wardline`
+    self-host. Comparison keys: sorted `(rule_id, fingerprint, path, line,
+    qualname, declared_return, actual_return)` — byte-identical. Explanation
+    fields (`via_callee`, `immediate_tainted_callee`) are expected to change and
+    are excluded from this comparison.
 
 **Gates** (project standard, matches how the 9 sibling children shipped): full
 `pytest` green, `ruff`/`mypy` clean, `mkdocs build --strict`, oracle battery
@@ -192,28 +331,40 @@ New tests to add:
 - **Update** `compute_return_callee` + `context.py:37` docstrings and CHANGELOG
   `[Unreleased]` (the "indirection deferred to SP9" notes are now partially
   resolved — reword, don't delete the multi-hop caveat).
+- **`source_boundary_qualname` is a user-visible contract change**, not an
+  internal ripple. Every `explain_taint` call on a previously-`None` indirect
+  return will now return a value. Callers that previously pattern-matched on
+  `source_boundary_qualname is None` to detect "no boundary" must still work
+  correctly (the negative case — non-leaf-source callee — still returns `None`).
+  State this explicitly in the PR description and the `source_boundary_qualname`
+  docstring.
+- **`analyzer.py` walrus isolation** — the existing copy of `var_taints` before
+  `compute_return_callee` must be extended to also copy `var_callee`. Both copies
+  together prevent walrus side-effects from leaking into return-path resolution.
 
 ---
 
 ## 7. Effort
 
-Small–medium. One file carries the real work (`variable_level.py` — threading
-one dict through ~9 sites + 5 merge rules); the rest is consume-side fallback,
-docstring/CHANGELOG edits, and tests. The risk is concentrated in the 5 merge
-sites sitting **inside the fire/no-fire-critical L2 transfer functions** — test 4
-(fire-set invariance) is the guard that the provenance threading didn't perturb
-taint values. Recommend the project's standard subagent-execute +
+Medium. The structural work is larger than the original "small-medium" estimate:
+`variable_level.py` requires `_L2State` introduction + a return-type change to
+`compute_variable_taints` + ~14 write sites + 5 merge-site callee rules + 2
+walrus threading paths. The consume-side fallback in `compute_return_callee` is
+small. Downstream is ripple-only except the `analyzer.py` walrus isolation copy.
+Tests: 12 new cases (2 inversions + 10 new). The risk is concentrated in the
+merge sites inside the fire/no-fire-critical L2 transfer functions — test 12
+(fire-set invariance) is the guard. Recommend subagent-execute +
 adversarial-review pattern given that proximity.
 
 ---
 
 ## 8. Pre-implementation blockers (panel review 2026-06-01)
 
-**Status: DO NOT BEGIN CODING until every item in §8.1 is resolved in this
-document.**  Items in §8.2 must be resolved before merge. §8.3 adds required
-tests beyond the original verification plan. Raised by a five-panel review
+**Status: RESOLVED** — all items below have been incorporated into §§3–6 above.
+The section is retained as the audit trail of panel findings. No further spec
+changes are required before implementation. Raised by a five-panel review
 (Architecture Critic, Systems Thinker, Python Engineer, Static Analysis
-Engineer, Quality Engineer).
+Engineer, Quality Engineer) on 2026-06-01; resolved same day.
 
 ---
 
