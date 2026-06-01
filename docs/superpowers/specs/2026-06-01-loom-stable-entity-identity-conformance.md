@@ -125,6 +125,39 @@ specific SEI shape.
 
 ---
 
+## 0.4 What SEI unlocks — interoperability across the suite
+
+§0 states the problem negatively (bindings orphan). The positive case is what
+motivates the whole standard: **SEI is the connective tissue of Loom's
+interoperability.** Loom's value is the *matrix* of its tools' combinations — not
+their sum — and **every cell in that matrix is a cross-tool binding** that needs a
+shared, durable identity to bind on:
+
+| Combination | The binding it depends on | Without SEI |
+|---|---|---|
+| **Wardline + Clarion** (taint over a mapped codebase — the dossier) | taint facts keyed to the entity | facts orphan on rename/move |
+| **Wardline + Filigree** (findings become tracked work) | issue ↔ entity association | association orphans |
+| **Clarion + Filigree** (issues bound to live code) | association keyed to the entity | **orphans today** |
+| **Wardline + legis** (agent-defined policy enforced at CI) | policy + attestation keyed to the entity | attestation orphans |
+| **Clarion + legis** (attestations bound to code) | attestation ↔ entity | attestation orphans |
+| **Filigree + legis** (governed issue lifecycle) | governed association | orphans |
+
+The headline: **a combination is only as strong as its weakest binding.** A single
+tool keying on a fragile (rename-mutable) locator silently orphans *every*
+combination it participates in. SEI makes every binding survive the refactors
+developers actually perform, so the matrix **composes** instead of quietly
+decaying. This is also why conformance is neither optional nor grandfathered
+(§0.1): one non-conformant binding is enough to break a combination for every tool
+in it.
+
+> The full operating-model context — agent-first "humans on the loop, not in the
+> loop," zero-*human*-config, the agent-programmable extension plane, and `legis`'s
+> graded enforcement — lives in `2026-06-01-loom-goal-state-case-study.md` §1.5.
+> This section is that model viewed through the **identity** lens: interoperability
+> is the payoff; SEI is the primitive that delivers it.
+
+---
+
 ## 1. Fixed design decisions (proposed baseline — see §0.3)
 
 Settled during brainstorming; not re-opened here:

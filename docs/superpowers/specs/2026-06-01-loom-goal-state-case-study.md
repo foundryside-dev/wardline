@@ -87,6 +87,70 @@ answer stays correct when the function is renamed tomorrow.
 
 ---
 
+## 1.5 The operating model & the combination matrix
+
+One root invariant generates the entire stack:
+
+> **Agent-first: humans on the loop, not in the loop.** The agent *operates and
+> extends* the environment; the human *supervises, approves, and governs* from
+> outside the operating cycle.
+
+Everything else is a consequence of it:
+
+- **Zero *human* config.** Each tool stands itself up (`filigree init`,
+  `wardline install`) preloaded with **agent-calibrated instructions** — the
+  instruction layer *is* the configuration mechanism. If a human had to configure
+  a step to operate the tool, the human would be *in* the loop. (Enterprise
+  *feature set*, plug-and-play *setup*.)
+- **Agent-programmable extension.** The agent does not merely toggle presets; it
+  can **define new boundary types and the rules enforced at them**, expressed in a
+  shared grammar with the builtins as preloaded defaults. Zero *human* config ≠
+  zero config — the config surface is agent-facing and **generative**. (One
+  grammar, open instance set — the same seam shape as `TaintSourceProvider`,
+  Clarion `Transport`, the dossier `HistoryProvider`, and elspeth's plugin
+  architecture.) Extensions still inherit the soundness invariants: a boundary the
+  engine can't prove emits an honest `UNKNOWN_*`, never a false-green.
+- **legis graded enforcement.** When a policy fires, its *mode* decides who
+  answers and how: **block + escalate** (the human operator signs off — *in* the
+  loop by exception) or **surface + override** (the agent must **recordably
+  override** — self-honesty; the human reviews the trail asynchronously). The
+  recorded override — an attributable audit event — is what makes "humans *not in*
+  the loop" safe: it is the §2 custody axiom applied to agent *behaviour* (a broken
+  seal handled honestly, never silently passed). The human sets the dial while on
+  the loop; the agent operates under it.
+
+**The combination matrix.** Loom's value is the *matrix* of its tools'
+combinations, not their sum. Each pair is an opt-in layer that lights up a
+capability neither tool has alone:
+
+| Combination | Capability it unlocks | Status |
+|---|---|---|
+| **Wardline + Clarion** | Understand the codebase *and* how taint flows through it — structure + trust posture in one view (this is the **dossier**) | **Live** — `scan --clarion-url` writes per-entity taint facts; Clarion serves them |
+| **Wardline + legis** | Agent-*defined* policy, *enforced* at the CI/git boundary — analysis becomes a governed gate | **Future** — Wardline has the gate (`--fail-on`, exit codes); legis adds the governed policy + git interface |
+| **Wardline + Filigree** | Findings become tracked work — a taint finding files/links an issue | **Live** — native Filigree emitter + entity-associations |
+| **Clarion + Filigree** | Issues bound to the live code entity, surviving refactors | **Partial** — bindings exist but *orphan* on rename/move (the SEI gap) |
+| **Clarion + legis** | Governance attestations keyed to stable code identity — custody/lineage of the code itself | **Future** |
+| **Filigree + legis** | Governed issue lifecycle — sign-offs, RTM, verification states on tracked work | **Future** — Filigree has the verification state machine; legis governs it |
+
+Higher-order combos are where it becomes the operating model rather than a feature:
+
+- **W + C + F** — the mastery read: *"what's true of this function (taint +
+  structure), and what work is open on it,"* in one call. The dossier, complete.
+- **All four** — the closed "humans on the loop" loop: the agent *understands* the
+  code (C) and its *trust* (W), legis *governs* what it may do and *records* the
+  overrides (L), and every decision and unit of work is *tracked against stable
+  identity* (F + C).
+
+**SEI is the connective tissue of the whole matrix.** Every cell is a cross-tool
+**binding**, and a binding needs a shared, durable identity to bind *on*. That is
+why three pairs ship today, one (C+F) is only *partial* — it orphans on refactor —
+and the governance row waits on legis. **A combination is only as strong as its
+weakest binding**: one tool keying on a fragile id silently orphans every combo it
+participates in. The combination matrix is therefore the business case for SEI,
+and the reason no subsystem is grandfathered (SEI spec §0.1, §0.4).
+
+---
+
 ## 2. The unifying axiom
 
 One principle underlies every standard in this suite. It is worth stating once,
