@@ -18,6 +18,13 @@ north star to converge on and a case study of the decisions behind it.
 > for is not being used. This composes with the product thesis, not against it —
 > the most powerful capability, delivered as **opt-in layers**, so the base stays
 > weightless for anyone who doesn't switch it on.
+>
+> **We design from a position of strength, not scarcity.** Loom is a **real
+> product now** — a robust shipped baseline (Wardline on PyPI, Clarion 1.x,
+> Filigree 2.3.0), not a pile of ideas to be salvaged. "Salvage" was the posture
+> of building from nothing; we are past it. We build the fullest version *forward*
+> on that foundation, with product-maturity confidence — keeping what ships,
+> shedding dead apparatus, and reaching for the most general form.
 
 ---
 
@@ -132,11 +139,14 @@ source of all three tools. Findings that changed the design:
 address and a terrible identity, because rename/move change it.
 
 **The decision.** Introduce **SEI**: a durable, opaque surrogate identity, with the
-qualname demoted to a resolvable *locator*. This is the **minimal salvage** of the
-abandoned Loom-URI effort — keep the stable identity it was reaching for, drop the
-registry/multi-fetch apparatus that made it too heavy to ship. Crucially, because
-Filigree treats the id as opaque, **the standard is adoptable across a frozen
-member with zero code change** (only the stored *value* changes).
+qualname demoted to a resolvable *locator*. The abandoned Loom-URI effort is
+**prior art we learned from, not scrap we salvaged** — it was right about *what*
+(stable identity) and over-built in its *mechanism* (registry, multi-fetch, URIs),
+which is why it never shipped. SEI is the deliberate, product-grade design for a
+mature suite: the stable-identity idea at full generality, on the robust baseline
+we already have, without the dead apparatus. Crucially, because Filigree treats
+the id as opaque, **the standard is adoptable across a frozen member with zero
+code change** (only the stored *value* changes).
 
 **The governance choices.** Fail-closed re-binding (never silently carry an
 identity across an unproven match — essential for a substrate governance will
@@ -165,12 +175,14 @@ These are the transferable takeaways, independent of Loom:
    aspiration and implementation had diverged on every load-bearing point.
 2. **Separate the concerns that drift.** Identity / address / freshness were one
    thing; splitting them dissolved the bug. (So too trust / type / value.)
-3. **Maximal idea, minimal apparatus.** The abandoned standard was right about
-   *what* (stable identity — keep this at maximum generality) and wrong about its
-   *mechanism* (registry, URIs, multi-fetch — dead apparatus). Keep the fullest
-   form of the kernel; drop only the dead transport. Minimality is about
-   mechanism and accidental complexity, **never** about the power or generality
-   of the idea (guiding stance, top of doc).
+3. **Build forward on the baseline; maximal idea, minimal apparatus.** We are a
+   real product, not salvaging from nothing — design with that confidence. Prior
+   efforts (the abandoned Loom-URI) are *lessons*, not scrap: it was right about
+   *what* (stable identity — keep this at maximum generality) and over-built in
+   its *mechanism* (registry, URIs, multi-fetch), which is why it never shipped.
+   Keep the fullest form of the idea on the shipped foundation; drop only dead
+   apparatus. Minimality is about mechanism and accidental complexity, **never**
+   about the power or generality of the idea (guiding stance, top of doc).
 4. **Opt-in layering, not tax.** Heavy capability (governance, judging) is a layer
    you add, never weight in the base — the only way one tool serves both the
    vibe-coder and the regulated team.

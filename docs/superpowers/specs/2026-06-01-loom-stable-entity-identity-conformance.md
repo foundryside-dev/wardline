@@ -39,9 +39,11 @@ Verified against `clarion`/`filigree` source on 2026-06-01:
 - The suite once specified a richer cross-tool standard, the **Loom URI** scheme
   (`loom://…` + a registry + `/api/loom/multi-fetch`); it was **never implemented**
   and was superseded by the simpler ADR-029 entity-associations. Its registry /
-  multi-fetch apparatus was over-built and rightly dropped — but the **stable
-  identity** it reached for is exactly what is still missing. This standard is
-  that minimal salvage, and nothing more.
+  multi-fetch apparatus was over-built and never shipped — but the **stable
+  identity** it reached for is exactly what is still missing. SEI is the
+  deliberate, product-grade form of that idea, built forward on the suite's
+  current robust baseline — learning from the Loom-URI's failure, not salvaging
+  it.
 
 The bug, precisely: Loom **conflates identity with address**. The qualname is a
 fine *address* and a terrible *identity*, because the operations developers do
@@ -78,8 +80,8 @@ model, **this supersedes it**, regardless of what was previously agreed.
   string is now the **locator** (address), never the identity.
 - ADR-018's qualname-reconciliation heuristics *as an identity mechanism* —
   subsumed by the §3 matcher + lineage.
-- The abandoned **Loom-URI** addressing scheme — formally closed; SEI is its
-  minimal salvage.
+- The abandoned **Loom-URI** addressing scheme — formally closed; SEI is the
+  product-grade successor to the idea it reached for (not a revival of it).
 - Any per-tool federation-contract clause that keys a cross-tool binding on a
   locator.
 
