@@ -174,6 +174,32 @@ class WardlineAnalyzer:
                 )
             )
             file_meta.append((relpath, module, tree, entities, alias_map, classes))
+            # T2.4 soundness inheritance: a CUSTOM boundary type that matched but
+            # could not be proven (a required level unreadable) seeded the fail-closed
+            # UNKNOWN_RAW. Surface it as an observable FACT so the extension plane
+            # cannot silently false-green. Builtins never set this (the provider keeps
+            # them silent), so the byte-identity oracle holds. NOT in
+            # UNANALYZED_RULE_IDS: the function WAS scanned — only its annotation was
+            # unreadable (an honest under-seed, not a file/function under-scan).
+            for ent in entities:
+                fn_seed = seeds.get(ent.qualname)
+                if fn_seed is None or fn_seed.unprovable_boundary is None:
+                    continue
+                parse_findings.append(
+                    Finding(
+                        rule_id="WLN-ENGINE-UNPROVABLE-BOUNDARY",
+                        message=(
+                            f"{ent.qualname}: custom boundary @{fn_seed.unprovable_boundary} could not be "
+                            f"proven (argument unreadable) — seeded UNKNOWN_RAW"
+                        ),
+                        severity=Severity.NONE,
+                        kind=Kind.FACT,
+                        location=ent.location,
+                        fingerprint=_fp("WLN-ENGINE-UNPROVABLE-BOUNDARY", ent.qualname),
+                        qualname=ent.qualname,
+                        properties={"boundary": fn_seed.unprovable_boundary, "reason": "arg_unreadable"},
+                    )
+                )
 
         if self._cache is not None:
             result = resolve_project_taints(
@@ -295,9 +321,7 @@ class WardlineAnalyzer:
         registry = (
             self._registry
             if self._registry is not None
-            else build_default_registry(
-                config, rules=(self._grammar.rules if self._grammar is not None else None)
-            )
+            else build_default_registry(config, rules=(self._grammar.rules if self._grammar is not None else None))
         )
         findings.extend(registry.run(context))
         return findings
