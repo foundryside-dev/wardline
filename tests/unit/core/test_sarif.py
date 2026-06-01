@@ -107,7 +107,22 @@ def test_sink_writes_valid_json(tmp_path: Path) -> None:
     assert loaded["version"] == "2.1.0"
 
 
-def test_judged_finding_emits_suppression() -> None:
+def test_metric_findings_excluded_from_sarif() -> None:
+    """Kind.METRIC findings (engine telemetry) must not appear in SARIF output."""
+    metric = _f(rule_id="WLN-L3-LOW-RESOLUTION", sev=Severity.INFO, kind=Kind.METRIC)
+    defect = _f(rule_id="PY-WL-101", sev=Severity.ERROR, kind=Kind.DEFECT)
+    fact = _f(rule_id="WLN-ENGINE-UNKNOWN-IMPORT", sev=Severity.NONE, kind=Kind.FACT)
+
+    log = build_sarif([metric, defect, fact])
+    results = log["runs"][0]["results"]
+    rule_ids = {r["ruleId"] for r in results}
+
+    assert "WLN-L3-LOW-RESOLUTION" not in rule_ids, "METRIC finding leaked into SARIF"
+    assert "PY-WL-101" in rule_ids
+    assert "WLN-ENGINE-UNKNOWN-IMPORT" in rule_ids
+
+
+
     res = build_sarif([_f(suppressed=SuppressionState.JUDGED, reason="over-taint floor")])["runs"][0]["results"][0]
     assert res["suppressions"][0]["kind"] == "external"
     assert res["suppressions"][0]["justification"] == "over-taint floor"
