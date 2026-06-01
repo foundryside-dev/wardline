@@ -61,6 +61,34 @@ proven bar** — including ones that feel done (Filigree), the authority itself
 Treat any binding still keyed on a locator as legacy to migrate, regardless of
 which subsystem produced it.
 
+## 0.2 Canonical status — this supersedes prior federation identity agreements
+
+The subsystems are currently running on **divergent versions of "the federation
+spec."** This document ends that on the identity question. SEI is the **single,
+canonical, non-negotiable federation identity interface.** Where any prior
+agreement — pairwise or documented — defines or assumes a different entity-identity
+model, **this supersedes it**, regardless of what was previously agreed.
+
+**Superseded (on identity only):**
+- ADR-003's "the derived `{plugin}:{kind}:{qualname}` *is* the identity" — that
+  string is now the **locator** (address), never the identity.
+- ADR-018's qualname-reconciliation heuristics *as an identity mechanism* —
+  subsumed by the §3 matcher + lineage.
+- The abandoned **Loom-URI** addressing scheme — formally closed; SEI is its
+  minimal salvage.
+- Any per-tool federation-contract clause that keys a cross-tool binding on a
+  locator.
+
+**Not superseded (these stand, but now carry an SEI):** the entity-association
+API shape (ADR-029), the Wardline taint-fact store routes, and Filigree's frozen
+surface keep their transports and payloads unchanged — only the **identity value**
+they carry becomes an SEI.
+
+**What is closed vs open:** the *interface* is closed to negotiation — whether to
+adopt SEI, and what SEI is, are settled. What remains open is each subsystem's
+*implementation sequencing*. "We already agreed something different" is not a
+conformance exemption (§0.1).
+
 ---
 
 ## 1. Fixed design decisions
