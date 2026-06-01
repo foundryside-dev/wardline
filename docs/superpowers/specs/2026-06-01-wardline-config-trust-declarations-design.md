@@ -242,7 +242,10 @@ would otherwise leave cached summaries stale.
 Therefore the effective provider fingerprint must include a stable digest of the
 parsed `trust:` config. A good scheme is:
 
-- normalize parsed trust declarations to deterministic JSON/YAML order;
+- build a canonical payload from **behavior-affecting** trust fields only;
+- normalize mapping keys to deterministic order;
+- preserve source order for any order-significant list, especially
+  `trust.defaults`, because **last matching entry wins**;
 - hash that payload;
 - fold it into the provider fingerprint string.
 
@@ -322,7 +325,7 @@ trust shifts auditable in git and keeps the config aligned with Wardline's
 existing "required reason" posture for waivers.
 
 `reason` is explanatory metadata only; it does not affect matching or the cache
-fingerprint beyond being part of the normalized config document.
+fingerprint. Editing only `reason` should not invalidate summary-cache reuse.
 
 ---
 
@@ -449,8 +452,9 @@ At least three fixtures:
 
 ### 9.5 Cache invalidation tests
 
-Changing only the parsed `trust:` config must change the provider fingerprint
-and invalidate summary-cache reuse.
+Changing behavior-affecting `trust:` config must change the provider fingerprint
+and invalidate summary-cache reuse. Editing explanatory-only fields such as
+`reason` must not.
 
 ### 9.6 Config fact visibility tests
 
