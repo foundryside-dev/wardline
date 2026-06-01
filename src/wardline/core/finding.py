@@ -65,10 +65,10 @@ class Kind(StrEnum):
 
 
 class SuppressionState(StrEnum):
-    ACTIVE = "active"        # not suppressed — the default
+    ACTIVE = "active"  # not suppressed — the default
     BASELINED = "baselined"  # matched a baseline fingerprint
-    WAIVED = "waived"        # matched an active waiver
-    JUDGED = "judged"        # LLM triage judged it a FALSE_POSITIVE (SP5)
+    WAIVED = "waived"  # matched an active waiver
+    JUDGED = "judged"  # LLM triage judged it a FALSE_POSITIVE (SP5)
 
 
 @dataclass(frozen=True, slots=True)

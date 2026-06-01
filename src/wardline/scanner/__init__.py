@@ -13,9 +13,7 @@ from wardline.scanner.analyzer import WardlineAnalyzer
 class NoOpAnalyzer:
     """Placeholder analyzer that performs no analysis (SP0)."""
 
-    def analyze(
-        self, files: Sequence[Path], config: WardlineConfig, *, root: Path
-    ) -> Sequence[Finding]:
+    def analyze(self, files: Sequence[Path], config: WardlineConfig, *, root: Path) -> Sequence[Finding]:
         return []
 
 

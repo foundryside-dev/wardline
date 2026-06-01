@@ -32,12 +32,29 @@ from wardline.core.taints import TaintState, least_trusted
 # wins.)
 _SERIALISATION_SINKS: frozenset[str] = frozenset(
     {
-        "json.dumps", "json.dump", "json.loads", "json.load",
-        "pickle.dumps", "pickle.dump", "pickle.loads", "pickle.load",
-        "yaml.dump", "yaml.safe_dump", "yaml.dump_all",
-        "yaml.safe_load", "yaml.load", "yaml.safe_load_all", "yaml.load_all",
-        "marshal.dumps", "marshal.dump", "marshal.loads", "marshal.load",
-        "tomllib.loads", "tomllib.load", "tomli_w.dumps", "tomli_w.dump",
+        "json.dumps",
+        "json.dump",
+        "json.loads",
+        "json.load",
+        "pickle.dumps",
+        "pickle.dump",
+        "pickle.loads",
+        "pickle.load",
+        "yaml.dump",
+        "yaml.safe_dump",
+        "yaml.dump_all",
+        "yaml.safe_load",
+        "yaml.load",
+        "yaml.safe_load_all",
+        "yaml.load_all",
+        "marshal.dumps",
+        "marshal.dump",
+        "marshal.loads",
+        "marshal.load",
+        "tomllib.loads",
+        "tomllib.load",
+        "tomli_w.dumps",
+        "tomli_w.dump",
     }
 )
 
@@ -46,9 +63,7 @@ _SERIALISATION_SINKS: frozenset[str] = frozenset(
 # unaffected and there is no false-positive explosion). These return the join of
 # their argument taints: a string conversion / iterator advance carries whatever
 # taint went in. ``next`` closes the ``next(genexp)`` shape (the iterator arg).
-_PROPAGATING_BUILTINS: frozenset[str] = frozenset(
-    {"str", "repr", "ascii", "bytes", "bytearray", "format", "next"}
-)
+_PROPAGATING_BUILTINS: frozenset[str] = frozenset({"str", "repr", "ascii", "bytes", "bytearray", "format", "next"})
 
 # Curated taint-PROPAGATING methods, keyed by attribute name. ``.format``/``.join``
 # combine the receiver with the arguments (``"sep".join(parts)`` carries both);
@@ -143,11 +158,7 @@ def _resolve_expr(
         return result
     if isinstance(node, ast.Dict):
         # Container summary = weakest-link of its values (least_trusted).
-        parts = [
-            _resolve_expr(v, function_taint, taint_map, var_taints)
-            for v in node.values
-            if v is not None
-        ]
+        parts = [_resolve_expr(v, function_taint, taint_map, var_taints) for v in node.values if v is not None]
         if not parts:
             return TaintState.INTEGRAL
         result = parts[0]
@@ -186,9 +197,7 @@ def _resolve_expr(
         # clean, a raw value still propagates.
         result = _resolve_expr(node.values[0], function_taint, taint_map, var_taints)
         for value in node.values[1:]:
-            result = least_trusted(
-                result, _resolve_expr(value, function_taint, taint_map, var_taints)
-            )
+            result = least_trusted(result, _resolve_expr(value, function_taint, taint_map, var_taints))
         return result
     if isinstance(node, ast.JoinedStr):
         return _resolve_joined_str(node, function_taint, taint_map, var_taints)
@@ -285,11 +294,7 @@ def _name_bound_by_walrus(node: ast.AST, name: str) -> bool:
     for child in ast.iter_child_nodes(node):
         if isinstance(child, ast.Lambda):
             continue
-        if (
-            isinstance(child, ast.NamedExpr)
-            and isinstance(child.target, ast.Name)
-            and child.target.id == name
-        ):
+        if isinstance(child, ast.NamedExpr) and isinstance(child.target, ast.Name) and child.target.id == name:
             return True
         if _name_bound_by_walrus(child, name):
             return True
@@ -306,13 +311,8 @@ def _resolve_call(
     # ``foo(x := bar())`` must bind ``x`` even when the call's own taint comes
     # from ``node.func`` — AND captures the arg taints for the curated
     # taint-PROPAGATING ops below (str(raw), "{}".format(raw), etc.).
-    arg_taints = [
-        _resolve_expr(arg, function_taint, taint_map, var_taints) for arg in node.args
-    ]
-    arg_taints += [
-        _resolve_expr(keyword.value, function_taint, taint_map, var_taints)
-        for keyword in node.keywords
-    ]
+    arg_taints = [_resolve_expr(arg, function_taint, taint_map, var_taints) for arg in node.args]
+    arg_taints += [_resolve_expr(keyword.value, function_taint, taint_map, var_taints) for keyword in node.keywords]
     if isinstance(node.func, ast.Attribute):
         dotted = _dotted_name(node.func)
         if dotted is not None:
@@ -485,14 +485,21 @@ def _handle_assign(
         if isinstance(target, ast.Name):
             # Simple: x = expr
             taint = _resolve_expr(
-                stmt.value, function_taint, taint_map, var_taints,
+                stmt.value,
+                function_taint,
+                taint_map,
+                var_taints,
             )
             var_taints[target.id] = taint
 
         elif isinstance(target, (ast.Tuple, ast.List)):
             # Tuple unpacking: a, b = ...
             _handle_unpack(
-                target, stmt.value, function_taint, taint_map, var_taints,
+                target,
+                stmt.value,
+                function_taint,
+                taint_map,
+                var_taints,
             )
 
         elif isinstance(target, (ast.Subscript, ast.Attribute)):
@@ -514,13 +521,14 @@ def _handle_unpack(
 ) -> None:
     """Handle tuple/list unpacking assignment."""
     # If value is a Tuple/List with matching length, do element-wise.
-    if isinstance(value, (ast.Tuple, ast.List)) and len(value.elts) == len(
-        target.elts
-    ):
+    if isinstance(value, (ast.Tuple, ast.List)) and len(value.elts) == len(target.elts):
         for tgt, val in zip(target.elts, value.elts, strict=False):
             if isinstance(tgt, ast.Name):
                 taint = _resolve_expr(
-                    val, function_taint, taint_map, var_taints,
+                    val,
+                    function_taint,
+                    taint_map,
+                    var_taints,
                 )
                 var_taints[tgt.id] = taint
             elif isinstance(tgt, (ast.Tuple, ast.List)):
@@ -528,14 +536,15 @@ def _handle_unpack(
     else:
         # RHS is not a matching literal tuple — all targets get RHS taint.
         rhs_taint = _resolve_expr(
-            value, function_taint, taint_map, var_taints,
+            value,
+            function_taint,
+            taint_map,
+            var_taints,
         )
         for tgt in target.elts:
             if isinstance(tgt, ast.Name):
                 var_taints[tgt.id] = rhs_taint
-            elif isinstance(tgt, ast.Starred) and isinstance(
-                tgt.value, ast.Name
-            ):
+            elif isinstance(tgt, ast.Starred) and isinstance(tgt.value, ast.Name):
                 var_taints[tgt.value.id] = rhs_taint
 
 
@@ -553,7 +562,10 @@ def _handle_augassign(
     propagates.
     """
     rhs_taint = _resolve_expr(
-        stmt.value, function_taint, taint_map, var_taints,
+        stmt.value,
+        function_taint,
+        taint_map,
+        var_taints,
     )
     if isinstance(stmt.target, ast.Name):
         existing = var_taints.get(stmt.target.id, function_taint)
@@ -654,7 +666,10 @@ def _handle_for(
 ) -> None:
     """Handle for loops — target gets iterable taint, body merges."""
     iter_taint = _resolve_expr(
-        stmt.iter, function_taint, taint_map, var_taints,
+        stmt.iter,
+        function_taint,
+        taint_map,
+        var_taints,
     )
 
     # Assign the loop variable.
@@ -722,7 +737,10 @@ def _handle_with(
     """Handle with/async-with statements."""
     for item in stmt.items:
         expr_taint = _resolve_expr(
-            item.context_expr, function_taint, taint_map, var_taints,
+            item.context_expr,
+            function_taint,
+            taint_map,
+            var_taints,
         )
         if item.optional_vars is not None:
             _assign_target(item.optional_vars, expr_taint, var_taints)
@@ -915,9 +933,7 @@ def compute_return_taint(
     (the function's anchored *body* taint, pinned to its declaration).
     """
     returns: list[tuple[TaintState, str | None]] = []
-    _collect_return_paths(
-        list(func_node.body), function_taint, taint_map, var_taints, returns
-    )
+    _collect_return_paths(list(func_node.body), function_taint, taint_map, var_taints, returns)
     if not returns:
         return None
     result = returns[0][0]
@@ -950,9 +966,7 @@ def compute_return_callee(
     always equals at least one collected path's taint, so the match is well-defined.
     """
     returns: list[tuple[TaintState, str | None]] = []
-    _collect_return_paths(
-        list(func_node.body), function_taint, taint_map, var_taints, returns
-    )
+    _collect_return_paths(list(func_node.body), function_taint, taint_map, var_taints, returns)
     if not returns:
         return None
     worst = returns[0][0]
@@ -1001,6 +1015,4 @@ def _collect_return_paths(
         if isinstance(node, ast.Return) and node.value is not None:
             taint = _resolve_expr(node.value, function_taint, taint_map, var_taints)
             out.append((taint, _return_callee(node.value)))
-        _collect_return_paths(
-            list(ast.iter_child_nodes(node)), function_taint, taint_map, var_taints, out
-        )
+        _collect_return_paths(list(ast.iter_child_nodes(node)), function_taint, taint_map, var_taints, out)

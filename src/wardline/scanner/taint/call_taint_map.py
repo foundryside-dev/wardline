@@ -75,20 +75,16 @@ def build_call_taint_map(
     # (d) stdlib_taint with the serialisation-sink override.
     stdlib = load_stdlib_taint()
     for (pkg, fn), entry in stdlib.items():
-        value = (
-            TaintState.UNKNOWN_RAW
-            if f"{pkg}.{fn}" in _SERIALISATION_SINKS
-            else entry.taint
-        )
+        value = TaintState.UNKNOWN_RAW if f"{pkg}.{fn}" in _SERIALISATION_SINKS else entry.taint
         for local, target in alias_map.items():
             if target == pkg:
-                tm.setdefault(f"{local}.{fn}", value)             # import pkg [as local]
+                tm.setdefault(f"{local}.{fn}", value)  # import pkg [as local]
             elif target == f"{pkg}.{fn}":
-                tm.setdefault(local, value)                       # from pkg import fn [as local]
+                tm.setdefault(local, value)  # from pkg import fn [as local]
             elif pkg.startswith(target + "."):
                 # ``import top.sub`` collapses the alias to ``top``; the call is
                 # written ``local.<rest-of-pkg>.fn`` (e.g. urllib.request.urlopen).
-                remainder = pkg[len(target) + 1:]
+                remainder = pkg[len(target) + 1 :]
                 tm.setdefault(f"{local}.{remainder}.{fn}", value)
 
     # (e) Serialisation-sink alias closure. The override in (d) only fires for
@@ -106,11 +102,11 @@ def build_call_taint_map(
             continue
         for local, target in alias_map.items():
             if target == pkg:
-                tm.setdefault(f"{local}.{fn}", TaintState.UNKNOWN_RAW)   # import pkg [as local]
+                tm.setdefault(f"{local}.{fn}", TaintState.UNKNOWN_RAW)  # import pkg [as local]
             elif target == sink:
-                tm.setdefault(local, TaintState.UNKNOWN_RAW)             # from pkg import fn [as local]
+                tm.setdefault(local, TaintState.UNKNOWN_RAW)  # from pkg import fn [as local]
             elif pkg.startswith(target + "."):
-                remainder = pkg[len(target) + 1:]
+                remainder = pkg[len(target) + 1 :]
                 tm.setdefault(f"{local}.{remainder}.{fn}", TaintState.UNKNOWN_RAW)
 
     return tm

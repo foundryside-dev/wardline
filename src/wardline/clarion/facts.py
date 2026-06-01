@@ -35,9 +35,7 @@ def _read_bytes(path: Path) -> bytes:
     return path.read_bytes()
 
 
-def _resolve_callee_qualname(
-    context: AnalysisContext, qualname: str, callee: str | None
-) -> str | None:
+def _resolve_callee_qualname(context: AnalysisContext, qualname: str, callee: str | None) -> str | None:
     """Resolve the bare contributing-callee name to a same-module entity qualname for
     the chain walk, mirroring explain_finding's honest 1-hop rule: only when the callee
     is a simple (non-dotted) name AND `<module>.<callee>` is a known entity. Otherwise
@@ -63,8 +61,7 @@ def build_taint_facts(result: ScanResult, root: Path) -> list[dict[str, Any]]:
         if f.qualname is None:
             continue
         findings_by_qualname.setdefault(f.qualname, []).append(
-            {"rule_id": f.rule_id, "fingerprint": f.fingerprint,
-             "line_start": f.location.line_start}
+            {"rule_id": f.rule_id, "fingerprint": f.fingerprint, "line_start": f.location.line_start}
         )
 
     facts: list[dict[str, Any]] = []
@@ -93,9 +90,11 @@ def build_taint_facts(result: ScanResult, root: Path) -> list[dict[str, Any]]:
             },
             "findings": findings_by_qualname.get(qualname, []),
         }
-        facts.append({
-            "qualname": qualname,
-            "wardline_json": blob,
-            "content_hash_at_compute": content_hash,
-        })
+        facts.append(
+            {
+                "qualname": qualname,
+                "wardline_json": blob,
+                "content_hash_at_compute": content_hash,
+            }
+        )
     return facts

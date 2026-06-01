@@ -25,8 +25,9 @@ def _leaky_project(tmp_path: Path) -> Path:
 
 def _call(server, name, arguments):
     srv = server.rpc
-    resp = srv.dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                         "params": {"name": name, "arguments": arguments}})
+    resp = srv.dispatch(
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": arguments}}
+    )
     assert "error" not in resp, resp
     # MCP wraps tool output as content[0].text holding JSON
     text = resp["result"]["content"][0]["text"]
@@ -78,9 +79,14 @@ def test_explain_taint_success_through_mcp(tmp_path: Path) -> None:
     leak = next(f for f in scan_out["findings"] if f["rule_id"] == "PY-WL-101")
     fp = leak["fingerprint"]
 
-    resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 5, "method": "tools/call",
-                                "params": {"name": "explain_taint",
-                                           "arguments": {"fingerprint": fp}}})
+    resp = server.rpc.dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "tools/call",
+            "params": {"name": "explain_taint", "arguments": {"fingerprint": fp}},
+        }
+    )
     assert "error" not in resp, resp
     assert resp["result"].get("isError") is not True, resp["result"]
     out = json.loads(resp["result"]["content"][0]["text"])
@@ -90,8 +96,7 @@ def test_explain_taint_success_through_mcp(tmp_path: Path) -> None:
 
     # path+line success case: the path is a MATCH KEY (relative posix), confined
     # for escape-rejection but passed through unmodified to match the finding.
-    out2 = _call(server, "explain_taint",
-                 {"path": out["location"]["path"], "line": out["location"]["line"]})
+    out2 = _call(server, "explain_taint", {"path": out["location"]["path"], "line": out["location"]["line"]})
     assert out2["fingerprint"] == fp
 
 
@@ -100,9 +105,14 @@ def test_explain_taint_unknown_fingerprint_is_an_iserror_result() -> None:
     # it returns as an isError RESULT (content the client reliably surfaces), NOT a
     # JSON-RPC error that clients may swallow as a transport fault.
     server = WardlineMCPServer(root=FIXTURE)
-    resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 9, "method": "tools/call",
-                                "params": {"name": "explain_taint",
-                                           "arguments": {"fingerprint": "0" * 64}}})
+    resp = server.rpc.dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "tools/call",
+            "params": {"name": "explain_taint", "arguments": {"fingerprint": "0" * 64}},
+        }
+    )
     assert "error" not in resp, resp
     assert resp["result"]["isError"] is True
     assert "re-scan" in resp["result"]["content"][0]["text"].lower()
@@ -118,10 +128,10 @@ def test_unexpected_handler_exception_is_an_iserror_result() -> None:
     def boom(args: dict[str, Any], root: Path) -> Any:
         raise ValueError("taint engine exploded")
 
-    server.add_tool(Tool(name="boom", description="", input_schema={"type": "object"},
-                         handler=boom))
-    resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 13, "method": "tools/call",
-                                "params": {"name": "boom", "arguments": {}}})
+    server.add_tool(Tool(name="boom", description="", input_schema={"type": "object"}, handler=boom))
+    resp = server.rpc.dispatch(
+        {"jsonrpc": "2.0", "id": 13, "method": "tools/call", "params": {"name": "boom", "arguments": {}}}
+    )
     assert "error" not in resp, resp
     assert resp["result"]["isError"] is True
     text = resp["result"]["content"][0]["text"]
@@ -138,10 +148,10 @@ def test_handler_raising_mcperror_stays_a_jsonrpc_error() -> None:
     def proto_fault(args: dict[str, Any], root: Path) -> Any:
         raise McpError("deliberate protocol fault")
 
-    server.add_tool(Tool(name="pf", description="", input_schema={"type": "object"},
-                         handler=proto_fault))
-    resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 14, "method": "tools/call",
-                                "params": {"name": "pf", "arguments": {}}})
+    server.add_tool(Tool(name="pf", description="", input_schema={"type": "object"}, handler=proto_fault))
+    resp = server.rpc.dispatch(
+        {"jsonrpc": "2.0", "id": 14, "method": "tools/call", "params": {"name": "pf", "arguments": {}}}
+    )
     assert "result" not in resp, resp
     assert resp["error"]["code"] == -32603
     assert "deliberate protocol fault" in resp["error"]["message"]
@@ -151,8 +161,9 @@ def test_unknown_tool_name_is_a_jsonrpc_error() -> None:
     # A genuinely-unknown tool name is a PROTOCOL fault (caller bug), so it stays a
     # JSON-RPC error — not an isError result.
     server = WardlineMCPServer(root=FIXTURE)
-    resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 11, "method": "tools/call",
-                                "params": {"name": "does_not_exist", "arguments": {}}})
+    resp = server.rpc.dispatch(
+        {"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "does_not_exist", "arguments": {}}}
+    )
     assert "result" not in resp, resp
     assert resp["error"]["code"] == -32603
     assert "does_not_exist" in resp["error"]["message"]

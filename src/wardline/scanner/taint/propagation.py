@@ -235,8 +235,8 @@ def propagate_callgraph_taints(
 
     # --- 1. Classify functions ------------------------------------------------
     anchored: set[str] = set()
-    floating_down: set[str] = set()   # module_default
-    floating_free: set[str] = set()   # fallback
+    floating_down: set[str] = set()  # module_default
+    floating_free: set[str] = set()  # fallback
 
     for func, src in taint_sources.items():
         if src == "anchored":
@@ -426,10 +426,12 @@ def propagate_callgraph_taints(
                     len(scc),
                     iterations,
                 )
-                diagnostics.append((
-                    DIAG_CONVERGENCE_BOUND,
-                    f"SCC of size {len(scc)} hit iteration bound after {iterations} iterations",
-                ))
+                diagnostics.append(
+                    (
+                        DIAG_CONVERGENCE_BOUND,
+                        f"SCC of size {len(scc)} hit iteration bound after {iterations} iterations",
+                    )
+                )
                 break
 
             updates, via_candidates = _compute_scc_round(
@@ -457,13 +459,15 @@ def propagate_callgraph_taints(
                     old_taint=current[func],
                     new_taint=new_taint,
                 ):
-                    diagnostics.append((
-                        DIAG_MONOTONICITY_VIOLATION,
-                        f"function {func!r} moved from {current[func].value} "
-                        f"(rank {TRUST_RANK[current[func]]}) to {new_taint.value} "
-                        f"(rank {TRUST_RANK[new_taint]}) "
-                        f"without anchor — violates monotone fixed point",
-                    ))
+                    diagnostics.append(
+                        (
+                            DIAG_MONOTONICITY_VIOLATION,
+                            f"function {func!r} moved from {current[func].value} "
+                            f"(rank {TRUST_RANK[current[func]]}) to {new_taint.value} "
+                            f"(rank {TRUST_RANK[new_taint]}) "
+                            f"without anchor — violates monotone fixed point",
+                        )
+                    )
                     # Pin to the old (less-trusted) value; skip the commit.
                     continue
                 current[func] = new_taint
@@ -492,9 +496,17 @@ def propagate_callgraph_taints(
                 taint_map[func],
                 current[func],
             )
-            return dict(taint_map), _seed_provenance_only(
-                taint_map, taint_sources, resolved_counts, unresolved_counts,
-            ), diagnostics, scc_iteration_counts
+            return (
+                dict(taint_map),
+                _seed_provenance_only(
+                    taint_map,
+                    taint_sources,
+                    resolved_counts,
+                    unresolved_counts,
+                ),
+                diagnostics,
+                scc_iteration_counts,
+            )
 
     # TRUST_RANK: ordering assertion, not taint combination (see §6)
     for func in floating_down:
@@ -505,9 +517,17 @@ def propagate_callgraph_taints(
                 taint_map[func],
                 current[func],
             )
-            return dict(taint_map), _seed_provenance_only(
-                taint_map, taint_sources, resolved_counts, unresolved_counts,
-            ), diagnostics, scc_iteration_counts
+            return (
+                dict(taint_map),
+                _seed_provenance_only(
+                    taint_map,
+                    taint_sources,
+                    resolved_counts,
+                    unresolved_counts,
+                ),
+                diagnostics,
+                scc_iteration_counts,
+            )
 
     # --- 6b. L3_LOW_RESOLUTION detection --------------------------------------
     for func in taint_map:
@@ -524,11 +544,12 @@ def propagate_callgraph_taints(
             unresolved_ratio = unres / total_calls
             if unresolved_ratio > L3_LOW_RESOLUTION_THRESHOLD:
                 pct = int(unresolved_ratio * 100)
-                diagnostics.append((
-                    DIAG_LOW_RESOLUTION,
-                    f"Function {func} has {pct}% unresolved calls "
-                    f"({unres}/{total_calls})",
-                ))
+                diagnostics.append(
+                    (
+                        DIAG_LOW_RESOLUTION,
+                        f"Function {func} has {pct}% unresolved calls ({unres}/{total_calls})",
+                    )
+                )
 
     # --- 7. Build provenance records ------------------------------------------
     provenance: dict[str, TaintProvenance] = {}

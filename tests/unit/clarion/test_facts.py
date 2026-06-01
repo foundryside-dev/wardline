@@ -41,6 +41,7 @@ def test_leaky_fact_carries_the_taint_projection(tmp_path):
 def test_content_hash_is_blake3_whole_file_and_top_level_and_in_blob(tmp_path):
     proj, result = _scan_leaky(tmp_path)
     import blake3
+
     expected = blake3.blake3((proj / "svc.py").read_bytes()).hexdigest()
     fact = next(f for f in build_taint_facts(result, proj) if f["qualname"] == "svc.leaky")
     assert fact["content_hash_at_compute"] == expected
@@ -51,6 +52,7 @@ def test_content_hash_is_blake3_whole_file_and_top_level_and_in_blob(tmp_path):
 def test_per_file_hash_is_memoized(tmp_path, monkeypatch):
     proj, result = _scan_leaky(tmp_path)
     import wardline.clarion.facts as facts_mod
+
     calls = {"n": 0}
     real = facts_mod._read_bytes
 

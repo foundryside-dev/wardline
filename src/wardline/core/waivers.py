@@ -69,9 +69,7 @@ def parse_waivers(raw: Sequence[Mapping[str, Any]]) -> tuple[Waiver, ...]:
     return tuple(waivers)
 
 
-def add_waiver(
-    config_path: Path, *, fingerprint: str, reason: str, expires: date | None
-) -> Waiver:
+def add_waiver(config_path: Path, *, fingerprint: str, reason: str, expires: date | None) -> Waiver:
     """Append a waiver to ``config_path``'s ``waivers:`` list (creating the file if
     absent). Validates via the SAME rules as :func:`parse_waivers`, so a bad
     fingerprint or empty reason raises :class:`ConfigError` BEFORE any write.

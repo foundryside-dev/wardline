@@ -68,14 +68,10 @@ class WardlineAnalyzer:
         self._cache = summary_cache
         self.last_context: AnalysisContext | None = None
 
-    def analyze(
-        self, files: Sequence[Path], config: WardlineConfig, *, root: Path
-    ) -> Sequence[Finding]:
+    def analyze(self, files: Sequence[Path], config: WardlineConfig, *, root: Path) -> Sequence[Finding]:
         modules: list[ModuleInput] = []
         # (relpath, module_path, tree, entities, alias_map, class_qualnames)
-        file_meta: list[
-            tuple[str, str, ast.Module, tuple[Entity, ...], dict[str, str], frozenset[str]]
-        ] = []
+        file_meta: list[tuple[str, str, ast.Module, tuple[Entity, ...], dict[str, str], frozenset[str]]] = []
         parse_findings: list[Finding] = []
 
         # ``discover`` resolves the root to an absolute path, so the files it yields are
@@ -86,11 +82,7 @@ class WardlineAnalyzer:
         root = root.resolve()
 
         for path in files:
-            relpath = (
-                path.relative_to(root).as_posix()
-                if path.is_relative_to(root)
-                else path.as_posix()
-            )
+            relpath = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
             module = module_dotted_name(relpath)
             if module is None:
                 # The file was discovered but maps to no module (e.g. a top-level
@@ -177,9 +169,7 @@ class WardlineAnalyzer:
                 dirty_modules=frozenset(),
             )
         else:
-            result = resolve_project_taints(
-                modules=modules, provider_fingerprint=self._provider.fingerprint()
-            )
+            result = resolve_project_taints(modules=modules, provider_fingerprint=self._provider.fingerprint())
 
         # Measured AFTER resolve so it reflects THIS run's cache effectiveness
         # (0.0 cold, →1.0 warm). It is a genuinely run-varying METRIC; the
@@ -199,7 +189,7 @@ class WardlineAnalyzer:
             prefix = module + "."
             bucket = project_by_module.setdefault(module, {})
             for ent in entities:
-                rest = ent.qualname[len(prefix):] if ent.qualname.startswith(prefix) else ent.qualname
+                rest = ent.qualname[len(prefix) :] if ent.qualname.startswith(prefix) else ent.qualname
                 if "." not in rest:  # top-level function (methods aren't bare-callable)
                     bucket[rest] = project_return_taints.get(ent.qualname, TaintState.UNKNOWN_RAW)
 
@@ -209,9 +199,7 @@ class WardlineAnalyzer:
         entity_index: dict[str, Entity] = {}
         func_skip_findings: list[Finding] = []
         for _relpath, module, _tree, entities, alias_map, classes in file_meta:
-            call_tm = build_call_taint_map(
-                module_path=module, alias_map=alias_map, project_by_module=project_by_module
-            )
+            call_tm = build_call_taint_map(module_path=module, alias_map=alias_map, project_by_module=project_by_module)
             for ent in entities:
                 entity_index[ent.qualname] = ent
                 seed = project_taints.get(ent.qualname, TaintState.UNKNOWN_RAW)
@@ -229,14 +217,9 @@ class WardlineAnalyzer:
                 if enclosing_class in classes:
                     sib_prefix = enclosing_class + "."
                     for sib in entities:
-                        if (
-                            sib.qualname.startswith(sib_prefix)
-                            and "." not in sib.qualname[len(sib_prefix):]
-                        ):
-                            sib_name = sib.qualname[len(sib_prefix):]
-                            sib_taint = project_return_taints.get(
-                                sib.qualname, TaintState.UNKNOWN_RAW
-                            )
+                        if sib.qualname.startswith(sib_prefix) and "." not in sib.qualname[len(sib_prefix) :]:
+                            sib_name = sib.qualname[len(sib_prefix) :]
+                            sib_taint = project_return_taints.get(sib.qualname, TaintState.UNKNOWN_RAW)
                             method_tm[f"self.{sib_name}"] = sib_taint
                             method_tm[f"cls.{sib_name}"] = sib_taint
                 try:
@@ -247,9 +230,7 @@ class WardlineAnalyzer:
                     # function_var_taints. A forward-referencing walrus inside a return
                     # would otherwise get a second, non-idempotent resolve pass that
                     # perturbs the stored map. Same starting state ⇒ same ret_callee.
-                    ret_callee = compute_return_callee(
-                        ent.node, seed, dict(method_tm), dict(var_taints)
-                    )
+                    ret_callee = compute_return_callee(ent.node, seed, dict(method_tm), dict(var_taints))
                 except RecursionError:
                     # Fail-closed: absent vars read as the function taint, and the
                     # return taint is unknown. Emit a FACT so the gap is observable

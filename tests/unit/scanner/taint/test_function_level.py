@@ -19,9 +19,7 @@ def _entities(src: str) -> list[Entity]:
 
 def test_default_provider_seeds_all_unknown_raw() -> None:
     entities = _entities("def a():\n    pass\ndef b():\n    pass\n")
-    seeds = seed_function_taints(
-        entities, ctx=SeedContext(module="demo"), provider=DefaultTaintSourceProvider()
-    )
+    seeds = seed_function_taints(entities, ctx=SeedContext(module="demo"), provider=DefaultTaintSourceProvider())
     assert set(seeds) == {"demo.a", "demo.b"}
     for seed in seeds.values():
         assert seed.body_taint == TaintState.UNKNOWN_RAW
@@ -34,17 +32,13 @@ class _StubProvider:
 
     def taint_for(self, entity: Entity, ctx: SeedContext) -> FunctionTaint | None:
         if entity.qualname == "demo.a":
-            return FunctionTaint(
-                body_taint=TaintState.EXTERNAL_RAW, return_taint=TaintState.GUARDED
-            )
+            return FunctionTaint(body_taint=TaintState.EXTERNAL_RAW, return_taint=TaintState.GUARDED)
         return None
 
 
 def test_provider_opinion_used_else_fallback() -> None:
     entities = _entities("def a():\n    pass\ndef b():\n    pass\n")
-    seeds = seed_function_taints(
-        entities, ctx=SeedContext(module="demo"), provider=_StubProvider()
-    )
+    seeds = seed_function_taints(entities, ctx=SeedContext(module="demo"), provider=_StubProvider())
     assert seeds["demo.a"] == FunctionSeed(
         qualname="demo.a",
         body_taint=TaintState.EXTERNAL_RAW,
@@ -56,16 +50,12 @@ def test_provider_opinion_used_else_fallback() -> None:
 
 
 def test_empty_entity_list() -> None:
-    seeds = seed_function_taints(
-        [], ctx=SeedContext(module="demo"), provider=DefaultTaintSourceProvider()
-    )
+    seeds = seed_function_taints([], ctx=SeedContext(module="demo"), provider=DefaultTaintSourceProvider())
     assert seeds == {}
 
 
 def test_methods_and_closures_all_seeded() -> None:
     src = "class C:\n    def m(self):\n        def inner():\n            pass\n"
     entities = _entities(src)
-    seeds = seed_function_taints(
-        entities, ctx=SeedContext(module="demo"), provider=DefaultTaintSourceProvider()
-    )
+    seeds = seed_function_taints(entities, ctx=SeedContext(module="demo"), provider=DefaultTaintSourceProvider())
     assert set(seeds) == {"demo.C.m", "demo.C.m.<locals>.inner"}

@@ -15,7 +15,8 @@ def _aliases(src: str, module: str) -> dict[str, str]:
 def test_local_function_keyed_bare() -> None:
     aliases = _aliases("def a(): pass\ndef b(): pass\n", "m")
     tm = build_call_taint_map(
-        module_path="m", alias_map=aliases,
+        module_path="m",
+        alias_map=aliases,
         project_by_module={"m": {"a": T.MIXED_RAW, "b": T.UNKNOWN_RAW}},
     )
     assert tm["a"] == T.MIXED_RAW
@@ -25,7 +26,8 @@ def test_local_function_keyed_bare() -> None:
 def test_from_import_project_function_keyed_bare() -> None:
     aliases = _aliases("from other import helper\n", "m")
     tm = build_call_taint_map(
-        module_path="m", alias_map=aliases,
+        module_path="m",
+        alias_map=aliases,
         project_by_module={"other": {"helper": T.EXTERNAL_RAW}},
     )
     assert tm["helper"] == T.EXTERNAL_RAW
@@ -34,7 +36,8 @@ def test_from_import_project_function_keyed_bare() -> None:
 def test_dotted_module_project_call_keyed_dotted() -> None:
     aliases = _aliases("import other\n", "m")
     tm = build_call_taint_map(
-        module_path="m", alias_map=aliases,
+        module_path="m",
+        alias_map=aliases,
         project_by_module={"other": {"fn": T.MIXED_RAW}},
     )
     assert tm["other.fn"] == T.MIXED_RAW
@@ -93,7 +96,8 @@ def test_project_function_takes_precedence_over_stdlib() -> None:
     # A project function shadowing a stdlib name keeps its refined taint.
     aliases = _aliases("import subprocess as sp\n", "m")
     tm = build_call_taint_map(
-        module_path="m", alias_map=aliases,
+        module_path="m",
+        alias_map=aliases,
         project_by_module={"m": {"sp": T.INTEGRAL}},  # local 'sp' bare function
     )
     assert tm["sp"] == T.INTEGRAL  # local bare entry untouched by stdlib dotted

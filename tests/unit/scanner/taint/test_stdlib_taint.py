@@ -54,9 +54,7 @@ def test_non_canonical_taint_token_raises() -> None:
         _build_table(
             {
                 "version": STDLIB_TAINT_VERSION,
-                "entries": [
-                    {"package": "p", "function": "f", "returns_taint": "BOGUS"}
-                ],
+                "entries": [{"package": "p", "function": "f", "returns_taint": "BOGUS"}],
             }
         )
 
@@ -113,9 +111,7 @@ def test_empty_entries_is_valid_empty_table() -> None:
 # the pipeline (reachable-set invariant; taint-combination audit F5). ──
 
 
-@pytest.mark.parametrize(
-    "state", ["MIXED_RAW", "UNKNOWN_GUARDED", "UNKNOWN_ASSURED", "INTEGRAL"]
-)
+@pytest.mark.parametrize("state", ["MIXED_RAW", "UNKNOWN_GUARDED", "UNKNOWN_ASSURED", "INTEGRAL"])
 def test_illegal_stdlib_return_tier_raises(state: str) -> None:
     # MIXED_RAW etc. ARE canonical TaintState strings, so they pass TaintState(),
     # but they are not legal stdlib return tiers — the guard must reject them.
@@ -123,23 +119,17 @@ def test_illegal_stdlib_return_tier_raises(state: str) -> None:
         _build_table(
             {
                 "version": STDLIB_TAINT_VERSION,
-                "entries": [
-                    {"package": "p", "function": "f", "returns_taint": state, "rationale": "x"}
-                ],
+                "entries": [{"package": "p", "function": "f", "returns_taint": state, "rationale": "x"}],
             }
         )
 
 
-@pytest.mark.parametrize(
-    "state", ["ASSURED", "GUARDED", "EXTERNAL_RAW", "UNKNOWN_RAW"]
-)
+@pytest.mark.parametrize("state", ["ASSURED", "GUARDED", "EXTERNAL_RAW", "UNKNOWN_RAW"])
 def test_legal_stdlib_return_tiers_accepted(state: str) -> None:
     table = _build_table(
         {
             "version": STDLIB_TAINT_VERSION,
-            "entries": [
-                {"package": "p", "function": "f", "returns_taint": state, "rationale": "x"}
-            ],
+            "entries": [{"package": "p", "function": "f", "returns_taint": state, "rationale": "x"}],
         }
     )
     assert table[("p", "f")].taint == TaintState(state)

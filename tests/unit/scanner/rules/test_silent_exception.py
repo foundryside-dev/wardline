@@ -27,33 +27,45 @@ def _run(ctx):
 
 
 def test_silent_handler_in_trusted_fires(tmp_path) -> None:
-    ctx, _ = _analyze(tmp_path, {
-        "m.py": "from wardline.decorators import trusted\n"
-                "@trusted\ndef f():\n    try:\n        g()\n    except ValueError:\n        pass\n",
-    })
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": "from wardline.decorators import trusted\n"
+            "@trusted\ndef f():\n    try:\n        g()\n    except ValueError:\n        pass\n",
+        },
+    )
     findings = _run(ctx)
     assert [(f.rule_id, f.qualname) for f in findings] == [("PY-WL-104", "m.f")]
     assert findings[0].severity == Severity.WARN  # base, trusted tier unchanged
 
 
 def test_silent_handler_in_undecorated_is_suppressed(tmp_path) -> None:
-    ctx, _ = _analyze(tmp_path, {
-        "m.py": "def f():\n    try:\n        g()\n    except ValueError:\n        pass\n",
-    })
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": "def f():\n    try:\n        g()\n    except ValueError:\n        pass\n",
+        },
+    )
     assert _run(ctx) == []
 
 
 def test_handled_exception_is_clean(tmp_path) -> None:
-    ctx, _ = _analyze(tmp_path, {
-        "m.py": "from wardline.decorators import trusted\n"
-                "@trusted\ndef f():\n    try:\n        g()\n    except ValueError:\n        log()\n",
-    })
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": "from wardline.decorators import trusted\n"
+            "@trusted\ndef f():\n    try:\n        g()\n    except ValueError:\n        log()\n",
+        },
+    )
     assert _run(ctx) == []
 
 
 def test_reraise_is_clean(tmp_path) -> None:
-    ctx, _ = _analyze(tmp_path, {
-        "m.py": "from wardline.decorators import trusted\n"
-                "@trusted\ndef f():\n    try:\n        g()\n    except ValueError:\n        raise\n",
-    })
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": "from wardline.decorators import trusted\n"
+            "@trusted\ndef f():\n    try:\n        g()\n    except ValueError:\n        raise\n",
+        },
+    )
     assert _run(ctx) == []

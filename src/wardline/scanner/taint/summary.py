@@ -50,9 +50,7 @@ class FunctionSummary:
                 f"SUMMARY_SCHEMA_VERSION={SUMMARY_SCHEMA_VERSION} — purge cache or upgrade"
             )
         if self.unresolved_calls < 0:
-            raise ValueError(
-                f"unresolved_calls must be non-negative, got {self.unresolved_calls}"
-            )
+            raise ValueError(f"unresolved_calls must be non-negative, got {self.unresolved_calls}")
 
 
 def compute_cache_key(

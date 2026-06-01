@@ -12,9 +12,7 @@ from wardline.core.finding import Finding
 
 
 class Analyzer(Protocol):
-    def analyze(
-        self, files: Sequence[Path], config: WardlineConfig, *, root: Path
-    ) -> Sequence[Finding]: ...
+    def analyze(self, files: Sequence[Path], config: WardlineConfig, *, root: Path) -> Sequence[Finding]: ...
 
 
 class Rule(Protocol):

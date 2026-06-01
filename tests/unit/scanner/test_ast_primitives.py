@@ -46,28 +46,20 @@ def test_nested_import_ignored() -> None:
 
 def test_relative_import_in_module() -> None:
     # module pkg.sub.mod ; `from . import x` -> pkg.sub.x
-    assert _alias_map(
-        "from . import x\n", module_path="pkg.sub.mod"
-    ) == {"x": "pkg.sub.x"}
+    assert _alias_map("from . import x\n", module_path="pkg.sub.mod") == {"x": "pkg.sub.x"}
 
 
 def test_relative_import_with_submodule() -> None:
-    assert _alias_map(
-        "from .helpers import check\n", module_path="pkg.sub.mod"
-    ) == {"check": "pkg.sub.helpers.check"}
+    assert _alias_map("from .helpers import check\n", module_path="pkg.sub.mod") == {"check": "pkg.sub.helpers.check"}
 
 
 def test_relative_import_in_package_init() -> None:
     # pkg/__init__.py : current package is `pkg`, not `pkg`'s parent.
-    assert _alias_map(
-        "from . import x\n", module_path="pkg", is_package=True
-    ) == {"x": "pkg.x"}
+    assert _alias_map("from . import x\n", module_path="pkg", is_package=True) == {"x": "pkg.x"}
 
 
 def test_double_relative_import() -> None:
-    assert _alias_map(
-        "from ..other import y\n", module_path="pkg.sub.mod"
-    ) == {"y": "pkg.other.y"}
+    assert _alias_map("from ..other import y\n", module_path="pkg.sub.mod") == {"y": "pkg.other.y"}
 
 
 def _func(src: str) -> ast.FunctionDef:
@@ -135,23 +127,17 @@ def _call(src: str) -> ast.Call:
 
 
 def test_resolve_bare_name_local_function() -> None:
-    fqn = resolve_call_fqn(
-        _call("foo()"), {}, frozenset({"pkg.mod.foo"}), "pkg.mod"
-    )
+    fqn = resolve_call_fqn(_call("foo()"), {}, frozenset({"pkg.mod.foo"}), "pkg.mod")
     assert fqn == "pkg.mod.foo"
 
 
 def test_resolve_bare_name_via_import_alias() -> None:
-    fqn = resolve_call_fqn(
-        _call("check()"), {"check": "other.check"}, frozenset(), "pkg.mod"
-    )
+    fqn = resolve_call_fqn(_call("check()"), {"check": "other.check"}, frozenset(), "pkg.mod")
     assert fqn == "other.check"
 
 
 def test_local_takes_precedence_over_import() -> None:
-    fqn = resolve_call_fqn(
-        _call("foo()"), {"foo": "elsewhere.foo"}, frozenset({"pkg.mod.foo"}), "pkg.mod"
-    )
+    fqn = resolve_call_fqn(_call("foo()"), {"foo": "elsewhere.foo"}, frozenset({"pkg.mod.foo"}), "pkg.mod")
     assert fqn == "pkg.mod.foo"
 
 
@@ -160,9 +146,7 @@ def test_resolve_bare_name_unresolved() -> None:
 
 
 def test_resolve_attribute_via_alias() -> None:
-    fqn = resolve_call_fqn(
-        _call("mod.func()"), {"mod": "pkg.mod"}, frozenset(), "caller.mod"
-    )
+    fqn = resolve_call_fqn(_call("mod.func()"), {"mod": "pkg.mod"}, frozenset(), "caller.mod")
     assert fqn == "pkg.mod.func"
 
 
@@ -210,22 +194,28 @@ def test_nested_class_self_method_resolves() -> None:
 
 def test_self_method_not_in_project_is_none() -> None:
     call = _stmt_call("self.absent()")
-    assert resolve_self_method_fqn(
-        call, caller_class_fqn="pkg.mod.Cls", project_fqns=frozenset()
-    ) is None
+    assert resolve_self_method_fqn(call, caller_class_fqn="pkg.mod.Cls", project_fqns=frozenset()) is None
 
 
 def test_non_self_receiver_is_none() -> None:
     call = _stmt_call("other.method()")
-    assert resolve_self_method_fqn(
-        call, caller_class_fqn="pkg.mod.Cls",
-        project_fqns=frozenset({"pkg.mod.Cls.method"}),
-    ) is None
+    assert (
+        resolve_self_method_fqn(
+            call,
+            caller_class_fqn="pkg.mod.Cls",
+            project_fqns=frozenset({"pkg.mod.Cls.method"}),
+        )
+        is None
+    )
 
 
 def test_no_caller_class_is_none() -> None:
     call = _stmt_call("self.helper()")
-    assert resolve_self_method_fqn(
-        call, caller_class_fqn=None,
-        project_fqns=frozenset({"pkg.mod.Cls.helper"}),
-    ) is None
+    assert (
+        resolve_self_method_fqn(
+            call,
+            caller_class_fqn=None,
+            project_fqns=frozenset({"pkg.mod.Cls.helper"}),
+        )
+        is None
+    )

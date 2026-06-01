@@ -40,7 +40,9 @@ def trust_boundary(*, to_level: TaintState | str) -> Callable[[Any], Any]:
 
     def decorate(fn: Any) -> Any:
         return apply_marker(
-            fn, name="trust_boundary", group=_GROUP,
+            fn,
+            name="trust_boundary",
+            group=_GROUP,
             attrs={"_wardline_to_level": level},
         )
 
@@ -63,7 +65,9 @@ def trusted[F: Callable[..., Any]](
         return cast(
             F,
             apply_marker(
-                target, name="trusted", group=_GROUP,
+                target,
+                name="trusted",
+                group=_GROUP,
                 attrs={"_wardline_level": coerced},
             ),
         )

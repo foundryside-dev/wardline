@@ -139,8 +139,7 @@ class SummaryCache:
         """
         if not self._CACHE_KEY_PATTERN.fullmatch(cache_key):
             raise ValueError(
-                f"SummaryCache.put rejected cache_key={cache_key!r} — expected "
-                f"64-char lowercase hex sha256 digest"
+                f"SummaryCache.put rejected cache_key={cache_key!r} — expected 64-char lowercase hex sha256 digest"
             )
         for s in summaries:
             if s.schema_version != SUMMARY_SCHEMA_VERSION:
@@ -178,7 +177,11 @@ class SummaryCache:
             # Opened outside a `with` so temp_path is known for cleanup-on-failure;
             # the `with tf:` below is the actual context manager. (SIM115)
             tf = tempfile.NamedTemporaryFile(  # noqa: SIM115
-                mode="w", encoding="utf-8", dir=self._cache_dir, delete=False, suffix=".tmp",
+                mode="w",
+                encoding="utf-8",
+                dir=self._cache_dir,
+                delete=False,
+                suffix=".tmp",
             )
             temp_path = Path(tf.name)
             try:

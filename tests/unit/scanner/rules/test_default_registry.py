@@ -36,20 +36,21 @@ def test_rules_enable_filters() -> None:
 
 
 def test_rules_severity_overrides_base() -> None:
-    reg = build_default_registry(
-        WardlineConfig(rules_severity={"PY-WL-103": "CRITICAL"})
-    )
+    reg = build_default_registry(WardlineConfig(rules_severity={"PY-WL-103": "CRITICAL"}))
     rule = next(r for r in reg.rules if r.rule_id == "PY-WL-103")
     assert rule.base_severity == Severity.CRITICAL
 
 
 def test_analyzer_runs_default_rules_end_to_end(tmp_path) -> None:
     # A @trusted function that leaks raw -> the analyzer (default registry) emits PY-WL-101.
-    _, findings = _analyze(tmp_path, {
-        "io.py": "from wardline.decorators import external_boundary\n"
-                 "@external_boundary\ndef read_raw(p):\n    return p\n",
-        "svc.py": "from wardline.decorators import trusted\nfrom io import read_raw\n"
-                  "@trusted\ndef leaky(p):\n    return read_raw(p)\n",
-    })
+    _, findings = _analyze(
+        tmp_path,
+        {
+            "io.py": "from wardline.decorators import external_boundary\n"
+            "@external_boundary\ndef read_raw(p):\n    return p\n",
+            "svc.py": "from wardline.decorators import trusted\nfrom io import read_raw\n"
+            "@trusted\ndef leaky(p):\n    return read_raw(p)\n",
+        },
+    )
     defects = [f for f in findings if f.kind == Kind.DEFECT]
     assert any(f.rule_id == "PY-WL-101" and f.qualname == "svc.leaky" for f in defects)

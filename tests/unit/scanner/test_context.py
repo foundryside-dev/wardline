@@ -33,16 +33,25 @@ def test_empty_registry_runs_no_rules() -> None:
     reg = RuleRegistry()
     assert reg.rules == ()
     ctx = AnalysisContext(
-        project_taints={}, project_return_taints={}, function_var_taints={},
-        function_return_taints={}, function_return_callee={}, entities={}, taint_provenance={}
+        project_taints={},
+        project_return_taints={},
+        function_var_taints={},
+        function_return_taints={},
+        function_return_callee={},
+        entities={},
+        taint_provenance={},
     )
     assert reg.run(ctx) == []
 
 
 def test_registry_runs_registered_rule() -> None:
     finding = Finding(
-        rule_id="X", message="m", severity=Severity.INFO, kind=Kind.FACT,
-        location=Location(path="m.py"), fingerprint="fp",
+        rule_id="X",
+        message="m",
+        severity=Severity.INFO,
+        kind=Kind.FACT,
+        location=Location(path="m.py"),
+        fingerprint="fp",
     )
 
     class _Rule:
@@ -54,8 +63,13 @@ def test_registry_runs_registered_rule() -> None:
     reg = RuleRegistry()
     reg.register(_Rule())
     ctx = AnalysisContext(
-        project_taints={}, project_return_taints={}, function_var_taints={},
-        function_return_taints={}, function_return_callee={}, entities={}, taint_provenance={}
+        project_taints={},
+        project_return_taints={},
+        function_var_taints={},
+        function_return_taints={},
+        function_return_callee={},
+        entities={},
+        taint_provenance={},
     )
     assert reg.run(ctx) == [finding]
     assert len(reg.rules) == 1

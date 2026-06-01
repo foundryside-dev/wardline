@@ -20,9 +20,7 @@ from wardline.scanner.index import discover_file_entities
 _CORPUS = json.loads((Path(__file__).parent / "qualnames.json").read_text("utf-8"))
 
 
-@pytest.mark.parametrize(
-    "case", _CORPUS["module_dotted_name"], ids=lambda c: c["rel_path"]
-)
+@pytest.mark.parametrize("case", _CORPUS["module_dotted_name"], ids=lambda c: c["rel_path"])
 def test_module_dotted_name(case: dict[str, Any]) -> None:
     assert module_dotted_name(case["rel_path"]) == case["expected"]
 

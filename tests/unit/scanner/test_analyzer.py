@@ -21,13 +21,13 @@ def _write(root: Path, rel: str, src: str) -> Path:
 def test_analyzer_emits_metrics_and_computes_transitive_taint(tmp_path) -> None:
     # io_layer.read_raw is anchored MIXED_RAW via a provider; flows up.
     _write(tmp_path, "pkg/io_layer.py", "def read_raw(p):\n    return p\n")
-    _write(tmp_path, "pkg/service.py",
-           "from pkg.io_layer import read_raw\ndef fetch(p):\n    return read_raw(p)\n")
+    _write(tmp_path, "pkg/service.py", "from pkg.io_layer import read_raw\ndef fetch(p):\n    return read_raw(p)\n")
     files = [tmp_path / "pkg/io_layer.py", tmp_path / "pkg/service.py"]
 
     class _Provider:
         def taint_for(self, entity, ctx):  # noqa: ANN001, ANN201
             from wardline.scanner.taint.provider import FunctionTaint
+
             if entity.qualname.endswith(".read_raw"):
                 return FunctionTaint(body_taint=T.MIXED_RAW, return_taint=T.MIXED_RAW)
             return None
@@ -51,9 +51,7 @@ def test_analyzer_emits_unknown_import_fact(tmp_path) -> None:
     _write(tmp_path, "app.py", "from some_external_lib import thing\ndef f(): return thing()\n")
     analyzer = WardlineAnalyzer()
     findings = analyzer.analyze([tmp_path / "app.py"], WardlineConfig(), root=tmp_path)
-    assert any(
-        f.rule_id == "WLN-ENGINE-UNKNOWN-IMPORT" and f.kind == Kind.FACT for f in findings
-    )
+    assert any(f.rule_id == "WLN-ENGINE-UNKNOWN-IMPORT" and f.kind == Kind.FACT for f in findings)
 
 
 def test_analyzer_default_provider_all_unknown_raw(tmp_path) -> None:
@@ -72,15 +70,13 @@ def test_analyzer_pathological_deep_expression_skips_file_not_scan(tmp_path) -> 
     _write(tmp_path, "deep.py", f"def deep(p):\n    x = {expr}\n    return x\n")
     _write(tmp_path, "ok.py", "def ok():\n    return 1\n")
     analyzer = WardlineAnalyzer()
-    findings = analyzer.analyze(
-        [tmp_path / "deep.py", tmp_path / "ok.py"], WardlineConfig(), root=tmp_path
-    )
+    findings = analyzer.analyze([tmp_path / "deep.py", tmp_path / "ok.py"], WardlineConfig(), root=tmp_path)
     assert any(f.rule_id == "WLN-ENGINE-FILE-SKIPPED" for f in findings)
     assert any(f.rule_id == "WLN-ENGINE-METRICS" for f in findings)
     ctx = analyzer.last_context
     assert ctx is not None
-    assert "ok.ok" in ctx.project_taints          # clean file analysed
-    assert "deep.deep" not in ctx.project_taints   # pathological file skipped
+    assert "ok.ok" in ctx.project_taints  # clean file analysed
+    assert "deep.deep" not in ctx.project_taints  # pathological file skipped
 
 
 def test_analyzer_l2_recursion_boundary_contains_per_function(monkeypatch) -> None:
@@ -105,7 +101,7 @@ def test_analyzer_l2_recursion_boundary_contains_per_function(monkeypatch) -> No
         findings = analyzer.analyze([root / "m.py"], WardlineConfig(), root=root)
         ctx = analyzer.last_context
         assert ctx is not None
-        assert ctx.function_var_taints["m.a"] == {}   # L2 contained
+        assert ctx.function_var_taints["m.a"] == {}  # L2 contained
         assert "b" in ctx.function_var_taints["m.b"] or ctx.function_var_taints["m.b"] == {}
         # The contained function is NOT silently dropped — a FACT records the skip
         # so its absent return taint is observable, not an invisible under-taint.
@@ -118,17 +114,19 @@ def test_analyzer_l2_recursion_boundary_contains_per_function(monkeypatch) -> No
 def test_analyzer_default_provider_seeds_from_decorators(tmp_path) -> None:
     # The DEFAULT provider (no provider= arg) now reads the trust vocabulary and
     # seeds real, non-trivial taints in both directions.
-    _write(tmp_path, "io_layer.py",
-           "from wardline.decorators import external_boundary, trusted\n"
-           "@external_boundary\ndef read_raw(p):\n    return p\n"
-           "@trusted\ndef constant():\n    return 1\n")
+    _write(
+        tmp_path,
+        "io_layer.py",
+        "from wardline.decorators import external_boundary, trusted\n"
+        "@external_boundary\ndef read_raw(p):\n    return p\n"
+        "@trusted\ndef constant():\n    return 1\n",
+    )
     # An undecorated caller of a single source: fetch's fail-closed floor is
     # UNKNOWN_RAW (rank 6), which is ALREADY less-trusted than its EXTERNAL_RAW
     # (rank 5) callee. The engine only moves non-anchored functions toward
     # less-trusted, so fetch correctly stays UNKNOWN_RAW — EXTERNAL_RAW does not
     # "flow up" into an already-more-tainted caller.
-    _write(tmp_path, "service.py",
-           "from io_layer import read_raw\ndef fetch(p):\n    return read_raw(p)\n")
+    _write(tmp_path, "service.py", "from io_layer import read_raw\ndef fetch(p):\n    return read_raw(p)\n")
     files = [tmp_path / "io_layer.py", tmp_path / "service.py"]
 
     analyzer = WardlineAnalyzer()  # default provider
@@ -149,11 +147,14 @@ def test_analyzer_seeded_taints_drive_transitive_propagation(tmp_path) -> None:
     # genuinely-raw result at its PRECISE rank. taint_join would have spiked it to
     # MIXED_RAW (rank 7), the spurious provenance-clash over-label this migration
     # removes. The raw still propagates (UNKNOWN_RAW is in the firing RAW_ZONE).
-    _write(tmp_path, "m.py",
-           "from wardline.decorators import external_boundary, trusted\n"
-           "@external_boundary\ndef ext(p):\n    return p\n"
-           "@trusted\ndef tru():\n    return 1\n"
-           "def mix(p):\n    a = ext(p)\n    b = tru()\n    return a if p else b\n")
+    _write(
+        tmp_path,
+        "m.py",
+        "from wardline.decorators import external_boundary, trusted\n"
+        "@external_boundary\ndef ext(p):\n    return p\n"
+        "@trusted\ndef tru():\n    return 1\n"
+        "def mix(p):\n    a = ext(p)\n    b = tru()\n    return a if p else b\n",
+    )
     analyzer = WardlineAnalyzer()
     analyzer.analyze([tmp_path / "m.py"], WardlineConfig(), root=tmp_path)
     ctx = analyzer.last_context
@@ -167,9 +168,7 @@ def test_analyzer_skips_unparseable_file_with_fact(tmp_path) -> None:
     _write(tmp_path, "bad.py", "def f(:\n")  # syntax error
     _write(tmp_path, "good.py", "def g(): return 1\n")
     analyzer = WardlineAnalyzer()
-    findings = analyzer.analyze(
-        [tmp_path / "bad.py", tmp_path / "good.py"], WardlineConfig(), root=tmp_path
-    )
+    findings = analyzer.analyze([tmp_path / "bad.py", tmp_path / "good.py"], WardlineConfig(), root=tmp_path)
     assert any(f.rule_id == "WLN-ENGINE-PARSE-ERROR" and f.kind == Kind.FACT for f in findings)
     assert analyzer.last_context is not None
     assert "good.g" in analyzer.last_context.project_taints
@@ -184,14 +183,8 @@ def test_analyzer_emits_no_module_fact(tmp_path) -> None:
     _write(tmp_path, "__init__.py", "VERSION = 1\n")
     _write(tmp_path, "mod.py", "def g(): return 1\n")
     analyzer = WardlineAnalyzer()
-    findings = analyzer.analyze(
-        [tmp_path / "__init__.py", tmp_path / "mod.py"], WardlineConfig(), root=tmp_path
-    )
-    skip = [
-        f
-        for f in findings
-        if f.rule_id == "WLN-ENGINE-NO-MODULE" and f.location.path == "__init__.py"
-    ]
+    findings = analyzer.analyze([tmp_path / "__init__.py", tmp_path / "mod.py"], WardlineConfig(), root=tmp_path)
+    skip = [f for f in findings if f.rule_id == "WLN-ENGINE-NO-MODULE" and f.location.path == "__init__.py"]
     assert len(skip) == 1
     assert skip[0].kind == Kind.FACT
     assert skip[0].properties.get("reason") == "no_module_mapping"
@@ -207,17 +200,23 @@ def test_analyzer_exposes_return_taints_and_resolves_validators(tmp_path) -> Non
     # A @trusted(ASSURED) caller that returns the VALIDATED value must see ASSURED
     # (the validator's RETURN), not EXTERNAL_RAW (its body) — proving the call
     # bucket now resolves callee RETURN taints.
-    _write(tmp_path, "io_layer.py",
-           "from wardline.decorators import external_boundary, trust_boundary\n"
-           "@external_boundary\ndef read_raw(p):\n    return p\n"
-           "@trust_boundary(to_level='ASSURED')\n"
-           "def validate(p):\n    if not p:\n        raise ValueError\n    return p\n")
-    _write(tmp_path, "service.py",
-           "from wardline.decorators import trusted\n"
-           "from io_layer import read_raw, validate\n"
-           "@trusted(level='ASSURED')\n"
-           "def safe(p):\n    return validate(read_raw(p))\n"
-           "@trusted\ndef leaky(p):\n    return read_raw(p)\n")
+    _write(
+        tmp_path,
+        "io_layer.py",
+        "from wardline.decorators import external_boundary, trust_boundary\n"
+        "@external_boundary\ndef read_raw(p):\n    return p\n"
+        "@trust_boundary(to_level='ASSURED')\n"
+        "def validate(p):\n    if not p:\n        raise ValueError\n    return p\n",
+    )
+    _write(
+        tmp_path,
+        "service.py",
+        "from wardline.decorators import trusted\n"
+        "from io_layer import read_raw, validate\n"
+        "@trusted(level='ASSURED')\n"
+        "def safe(p):\n    return validate(read_raw(p))\n"
+        "@trusted\ndef leaky(p):\n    return read_raw(p)\n",
+    )
     files = [tmp_path / "io_layer.py", tmp_path / "service.py"]
     analyzer = WardlineAnalyzer()
     analyzer.analyze(files, WardlineConfig(), root=tmp_path)
@@ -227,5 +226,5 @@ def test_analyzer_exposes_return_taints_and_resolves_validators(tmp_path) -> Non
     assert ctx.project_return_taints["io_layer.validate"] == T.ASSURED
     assert ctx.project_taints["io_layer.validate"] == T.EXTERNAL_RAW  # body unchanged
     # actual returned-value taint per function
-    assert ctx.function_return_taints["service.safe"] == T.ASSURED     # validated -> clean
+    assert ctx.function_return_taints["service.safe"] == T.ASSURED  # validated -> clean
     assert ctx.function_return_taints["service.leaky"] == T.EXTERNAL_RAW  # leaks raw

@@ -39,11 +39,7 @@ def _leaky_var_project(tmp_path: Path) -> Path:
 def _first_active_taint_finding(root: Path):
     result = run_scan(root)
     for f in result.findings:
-        if (
-            f.kind is Kind.DEFECT
-            and f.suppressed is SuppressionState.ACTIVE
-            and "actual_return" in f.properties
-        ):
+        if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE and "actual_return" in f.properties:
             return f
     raise AssertionError("leaky project has no active untrusted-reaches-trusted defect")
 

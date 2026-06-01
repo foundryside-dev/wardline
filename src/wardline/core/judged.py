@@ -75,9 +75,7 @@ def build_judged_document(entries: Iterable[JudgedFP]) -> dict[str, Any]:
 
 def write_judged(path: Path, entries: Iterable[JudgedFP]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    text = yaml.safe_dump(
-        build_judged_document(entries), sort_keys=False, default_flow_style=False, allow_unicode=True
-    )
+    text = yaml.safe_dump(build_judged_document(entries), sort_keys=False, default_flow_style=False, allow_unicode=True)
     path.write_text(text, encoding="utf-8")
 
 
@@ -115,12 +113,19 @@ def load_judged(path: Path) -> JudgedSet:
         policy_hash = _require_str(e, "policy_hash", idx, path.name)
         confidence = _require_confidence(e, idx, path.name)
         recorded_at = _parse_dt(e.get("recorded_at"), idx, path.name)
-        entries.append(JudgedFP(
-            fingerprint=fp, rule_id=str(e.get("rule_id", "")), path=str(e.get("path", "")),
-            message=str(e.get("message", "")), rationale=rationale,
-            model_id=model_id, confidence=confidence,
-            recorded_at=recorded_at, policy_hash=policy_hash,
-        ))
+        entries.append(
+            JudgedFP(
+                fingerprint=fp,
+                rule_id=str(e.get("rule_id", "")),
+                path=str(e.get("path", "")),
+                message=str(e.get("message", "")),
+                rationale=rationale,
+                model_id=model_id,
+                confidence=confidence,
+                recorded_at=recorded_at,
+                policy_hash=policy_hash,
+            )
+        )
     return JudgedSet(entries)
 
 

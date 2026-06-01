@@ -17,9 +17,7 @@ from wardline.core.registry import REGISTRY
 from wardline.core.taints import TaintState
 
 
-def coerce_level(
-    value: TaintState | str, *, allowed: frozenset[TaintState], arg: str
-) -> TaintState:
+def coerce_level(value: TaintState | str, *, allowed: frozenset[TaintState], arg: str) -> TaintState:
     """Normalise a level argument to a ``TaintState`` and check it is allowed.
 
     Accepts a ``TaintState`` or its exact name (e.g. ``"ASSURED"``). Raises
@@ -38,9 +36,7 @@ def coerce_level(
     return level
 
 
-def apply_marker(
-    fn: Any, *, name: str, group: int, attrs: dict[str, Any]
-) -> Any:
+def apply_marker(fn: Any, *, name: str, group: int, attrs: dict[str, Any]) -> Any:
     """Validate against ``REGISTRY`` and stamp marker attributes onto ``fn``.
 
     Returns ``fn`` unchanged (identity preserved). For ``staticmethod`` /
@@ -52,22 +48,13 @@ def apply_marker(
         raise ValueError(f"Unknown decorator {name!r} — not in wardline registry")
     entry = REGISTRY[name]
     if group != entry.group:
-        raise ValueError(
-            f"Group mismatch for {name!r}: passed {group}, "
-            f"registry expects {entry.group}"
-        )
+        raise ValueError(f"Group mismatch for {name!r}: passed {group}, registry expects {entry.group}")
     for attr_key in attrs:
         if attr_key not in entry.attrs:
-            raise ValueError(
-                f"Unknown attribute {attr_key!r} for {name!r}; "
-                f"allowed: {sorted(entry.attrs)}"
-            )
+            raise ValueError(f"Unknown attribute {attr_key!r} for {name!r}; allowed: {sorted(entry.attrs)}")
 
     if not callable(fn) and not isinstance(fn, (staticmethod, classmethod)):
-        raise TypeError(
-            f"wardline decorator {name!r} requires a callable, "
-            f"got {type(fn).__name__!r}"
-        )
+        raise TypeError(f"wardline decorator {name!r} requires a callable, got {type(fn).__name__!r}")
     target: Any = fn.__func__ if isinstance(fn, (staticmethod, classmethod)) else fn
     existing: frozenset[int] = getattr(target, "_wardline_groups", frozenset())
     target._wardline_groups = existing | {group}

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from wardline import __version__
-from wardline.core.finding import Finding, Severity, SuppressionState
+from wardline.core.finding import Finding, Kind, Severity, SuppressionState
 
 _SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
 _INFO_URI = "https://github.com/foundryside/wardline"
@@ -79,13 +79,21 @@ def _result(finding: Finding, rule_index: int) -> dict[str, Any]:
 
 
 def build_sarif(findings: Sequence[Finding]) -> dict[str, Any]:
-    """Build a SARIF 2.1.0 log with a single run from *findings* (pure)."""
+    """Build a SARIF 2.1.0 log with a single run from *findings* (pure).
+
+    ``Kind.METRIC`` findings (engine telemetry such as WLN-L3-LOW-RESOLUTION
+    and WLN-ENGINE-METRICS) are excluded from the SARIF output. They carry
+    diagnostic statistics about the scan run itself — not actionable code
+    issues — and pollute GitHub Code Scanning with noise alerts. The full
+    picture (including METRIC findings) is always available in the JSONL sink.
+    """
+    included = [f for f in findings if f.kind is not Kind.METRIC]
     rule_index: dict[str, int] = {}
-    for finding in findings:
+    for finding in included:
         if finding.rule_id not in rule_index:
             rule_index[finding.rule_id] = len(rule_index)
     rules = [{"id": rid} for rid in rule_index]
-    results = [_result(f, rule_index[f.rule_id]) for f in findings]
+    results = [_result(f, rule_index[f.rule_id]) for f in included]
     return {
         "version": "2.1.0",
         "$schema": _SCHEMA,
@@ -111,6 +119,4 @@ class SarifSink:
 
     def write(self, findings: Sequence[Finding]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(
-            json.dumps(build_sarif(findings), indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        self._path.write_text(json.dumps(build_sarif(findings), indent=2, ensure_ascii=False), encoding="utf-8")

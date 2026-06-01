@@ -16,8 +16,13 @@ _KEY2 = "b" * 64
 
 def _summary(fqn: str, *, schema: int = SUMMARY_SCHEMA_VERSION, key: str = _KEY) -> FunctionSummary:
     return FunctionSummary(
-        fqn=fqn, body_taint=T.UNKNOWN_RAW, return_taint=T.UNKNOWN_RAW,
-        taint_source="fallback", unresolved_calls=0, schema_version=schema, cache_key=key,
+        fqn=fqn,
+        body_taint=T.UNKNOWN_RAW,
+        return_taint=T.UNKNOWN_RAW,
+        taint_source="fallback",
+        unresolved_calls=0,
+        schema_version=schema,
+        cache_key=key,
     )
 
 
@@ -42,8 +47,8 @@ def test_hit_rate_zero_when_no_activity() -> None:
 def test_hit_rate_fraction() -> None:
     c = SummaryCache()
     c.put(_KEY, (_summary("m.a"),))
-    c.get(_KEY)        # hit
-    c.get(_KEY2)       # miss
+    c.get(_KEY)  # hit
+    c.get(_KEY2)  # miss
     assert c.hit_rate() == 0.5
 
 
@@ -168,9 +173,13 @@ def test_deserialise_integral_roundtrips() -> None:
     # cache MUST round-trip INTEGRAL body/return taint. Rejecting it here would
     # silently break caching of trusted functions.
     s = FunctionSummary(
-        fqn="m.f", body_taint=T.INTEGRAL, return_taint=T.INTEGRAL,
-        taint_source="anchored", unresolved_calls=0,
-        schema_version=SUMMARY_SCHEMA_VERSION, cache_key=_KEY,
+        fqn="m.f",
+        body_taint=T.INTEGRAL,
+        return_taint=T.INTEGRAL,
+        taint_source="anchored",
+        unresolved_calls=0,
+        schema_version=SUMMARY_SCHEMA_VERSION,
+        cache_key=_KEY,
     )
     out = _deserialise_summary(_serialise_summary(s))
     assert out == s
@@ -182,9 +191,13 @@ def test_integral_survives_full_save_load_cycle(tmp_path) -> None:
     # but a legitimate INTEGRAL summary must survive the disk round-trip.
     c = SummaryCache(cache_dir=tmp_path)
     s = FunctionSummary(
-        fqn="m.f", body_taint=T.INTEGRAL, return_taint=T.INTEGRAL,
-        taint_source="anchored", unresolved_calls=0,
-        schema_version=SUMMARY_SCHEMA_VERSION, cache_key=_KEY,
+        fqn="m.f",
+        body_taint=T.INTEGRAL,
+        return_taint=T.INTEGRAL,
+        taint_source="anchored",
+        unresolved_calls=0,
+        schema_version=SUMMARY_SCHEMA_VERSION,
+        cache_key=_KEY,
     )
     c.put(_KEY, (s,))
     c.save()
@@ -198,9 +211,7 @@ def test_load_drops_poisoned_trio_cache_file(tmp_path, caplog) -> None:
     # dropped (cold-cache fallback), not injected — load() catches the ValueError.
     import json
 
-    (tmp_path / f"{_KEY}.json").write_text(
-        json.dumps([_summary_dict("MIXED_RAW", "MIXED_RAW")]), encoding="utf-8"
-    )
+    (tmp_path / f"{_KEY}.json").write_text(json.dumps([_summary_dict("MIXED_RAW", "MIXED_RAW")]), encoding="utf-8")
     c = SummaryCache(cache_dir=tmp_path)
     c.load()  # must not raise
     assert len(c) == 0

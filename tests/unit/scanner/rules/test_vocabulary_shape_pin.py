@@ -23,12 +23,15 @@ def _analyze(tmp_path: Path, files: dict[str, str]):
 
 
 def test_decorator_taint_shapes_are_distinct_and_stable(tmp_path) -> None:
-    ctx, _ = _analyze(tmp_path, {
-        "m.py": "from wardline.decorators import external_boundary, trust_boundary, trusted\n"
-                "@external_boundary\ndef eb(p):\n    return p\n"
-                "@trust_boundary(to_level='ASSURED')\ndef tb(p):\n    return p\n"
-                "@trusted(level='ASSURED')\ndef tr(p):\n    return p\n",
-    })
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": "from wardline.decorators import external_boundary, trust_boundary, trusted\n"
+            "@external_boundary\ndef eb(p):\n    return p\n"
+            "@trust_boundary(to_level='ASSURED')\ndef tb(p):\n    return p\n"
+            "@trusted(level='ASSURED')\ndef tr(p):\n    return p\n",
+        },
+    )
     body = ctx.project_taints
     ret = ctx.project_return_taints
     # @external_boundary: body == return == EXTERNAL_RAW (raw-zone return -> PY-WL-101 gated)

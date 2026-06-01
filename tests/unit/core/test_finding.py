@@ -113,8 +113,6 @@ def test_filigree_metadata_includes_suppression_only_when_suppressed() -> None:
 
     active = to_filigree_metadata(_finding())["wardline"]
     assert "suppressed" not in active
-    waived = to_filigree_metadata(
-        _finding(suppressed=SuppressionState.WAIVED, suppression_reason="ok")
-    )["wardline"]
+    waived = to_filigree_metadata(_finding(suppressed=SuppressionState.WAIVED, suppression_reason="ok"))["wardline"]
     assert waived["suppressed"] == "waived"
     assert waived["suppression_reason"] == "ok"

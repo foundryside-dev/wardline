@@ -116,12 +116,14 @@ def test_cache_and_dirty_must_be_supplied_together() -> None:
     inputs = _inputs(provider)
     with pytest.raises(ValueError, match="together"):
         resolve_project_taints(
-            modules=inputs, provider_fingerprint=provider.fingerprint(),
+            modules=inputs,
+            provider_fingerprint=provider.fingerprint(),
             summary_cache=SummaryCache(),  # dirty_modules omitted
         )
     with pytest.raises(ValueError, match="together"):
         resolve_project_taints(
-            modules=inputs, provider_fingerprint=provider.fingerprint(),
+            modules=inputs,
+            provider_fingerprint=provider.fingerprint(),
             dirty_modules=frozenset(),  # summary_cache omitted
         )
 
@@ -135,12 +137,16 @@ def test_warm_run_equals_cold_run() -> None:
 
     cache = SummaryCache()
     run1 = resolve_project_taints(
-        modules=inputs, provider_fingerprint=fp,
-        summary_cache=cache, dirty_modules=frozenset(),
+        modules=inputs,
+        provider_fingerprint=fp,
+        summary_cache=cache,
+        dirty_modules=frozenset(),
     )
     run2 = resolve_project_taints(
-        modules=inputs, provider_fingerprint=fp,
-        summary_cache=cache, dirty_modules=frozenset(),
+        modules=inputs,
+        provider_fingerprint=fp,
+        summary_cache=cache,
+        dirty_modules=frozenset(),
     )
 
     # cached ≡ cold, byte-for-byte on taint and provenance
@@ -165,13 +171,17 @@ def test_dirty_frontier_recompute_still_equals_cold() -> None:
 
     cache = SummaryCache()
     resolve_project_taints(
-        modules=inputs, provider_fingerprint=fp,
-        summary_cache=cache, dirty_modules=frozenset({"pkg.io_layer"}),
+        modules=inputs,
+        provider_fingerprint=fp,
+        summary_cache=cache,
+        dirty_modules=frozenset({"pkg.io_layer"}),
     )
     # Mark the leaf's module dirty; its callers are in the frontier.
     warm = resolve_project_taints(
-        modules=inputs, provider_fingerprint=fp,
-        summary_cache=cache, dirty_modules=frozenset({"pkg.io_layer"}),
+        modules=inputs,
+        provider_fingerprint=fp,
+        summary_cache=cache,
+        dirty_modules=frozenset({"pkg.io_layer"}),
     )
     assert dict(warm.taint_map) == dict(cold.taint_map)
 
@@ -189,12 +199,16 @@ def test_identical_source_modules_do_not_collide_in_cache() -> None:
     cold = resolve_project_taints(modules=inputs, provider_fingerprint=fp)
     cache = SummaryCache()
     resolve_project_taints(
-        modules=inputs, provider_fingerprint=fp,
-        summary_cache=cache, dirty_modules=frozenset(),
+        modules=inputs,
+        provider_fingerprint=fp,
+        summary_cache=cache,
+        dirty_modules=frozenset(),
     )
     warm = resolve_project_taints(
-        modules=inputs, provider_fingerprint=fp,
-        summary_cache=cache, dirty_modules=frozenset(),
+        modules=inputs,
+        provider_fingerprint=fp,
+        summary_cache=cache,
+        dirty_modules=frozenset(),
     )
     assert set(cold.taint_map) == {"pkg.a.f", "pkg.b.f"}
     assert dict(warm.taint_map) == dict(cold.taint_map)
@@ -213,12 +227,7 @@ def test_resolver_exposes_effective_return_taint_map() -> None:
     from wardline.scanner.taint.function_level import seed_function_taints
     from wardline.scanner.taint.provider import FunctionTaint, SeedContext
 
-    src = (
-        "def validate(p):\n"
-        "    if not p:\n        raise ValueError\n"
-        "    return p\n"
-        "def plain(p):\n    return p\n"
-    )
+    src = "def validate(p):\n    if not p:\n        raise ValueError\n    return p\ndef plain(p):\n    return p\n"
     tree = ast.parse(src)
     module = "m"
     entities = tuple(discover_file_entities(tree, module=module, path="m.py"))
@@ -235,9 +244,7 @@ def test_resolver_exposes_effective_return_taint_map() -> None:
             return "test-effret-v1"
 
     provider = _Provider()
-    seeds = seed_function_taints(
-        entities, ctx=SeedContext(module=module, alias_map=alias_map), provider=provider
-    )
+    seeds = seed_function_taints(entities, ctx=SeedContext(module=module, alias_map=alias_map), provider=provider)
     modules = [
         ModuleInput(
             module_path=module,
@@ -250,8 +257,8 @@ def test_resolver_exposes_effective_return_taint_map() -> None:
     ]
     result = resolve_project_taints(modules=modules, provider_fingerprint=provider.fingerprint())
 
-    assert result.taint_map["m.validate"] == T.EXTERNAL_RAW          # body unchanged
-    assert result.return_taint_map["m.validate"] == T.ASSURED         # declared return
+    assert result.taint_map["m.validate"] == T.EXTERNAL_RAW  # body unchanged
+    assert result.return_taint_map["m.validate"] == T.ASSURED  # declared return
     # non-anchored: effective return == refined body taint
     assert result.return_taint_map["m.plain"] == result.taint_map["m.plain"]
 
@@ -265,8 +272,10 @@ def test_cache_miss_on_changed_source_recomputes() -> None:
 
     inputs_v1 = _inputs(provider)
     resolve_project_taints(
-        modules=inputs_v1, provider_fingerprint=fp,
-        summary_cache=cache, dirty_modules=frozenset(),
+        modules=inputs_v1,
+        provider_fingerprint=fp,
+        summary_cache=cache,
+        dirty_modules=frozenset(),
     )
     len_after_v1 = len(cache)
 
@@ -278,8 +287,10 @@ def test_cache_miss_on_changed_source_recomputes() -> None:
         _module_input("pkg.handler", _HANDLER, provider),
     ]
     warm = resolve_project_taints(
-        modules=inputs_v2, provider_fingerprint=fp,
-        summary_cache=cache, dirty_modules=frozenset(),
+        modules=inputs_v2,
+        provider_fingerprint=fp,
+        summary_cache=cache,
+        dirty_modules=frozenset(),
     )
     cold_v2 = resolve_project_taints(modules=inputs_v2, provider_fingerprint=fp)
     assert dict(warm.taint_map) == dict(cold_v2.taint_map)

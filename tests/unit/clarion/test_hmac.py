@@ -15,9 +15,7 @@ def test_canonical_message_is_three_lines_no_trailing_newline():
 def test_empty_body_hashes_the_empty_string():
     # bodyless GET: sha256(b"") = e3b0c4…b855
     msg = canonical_message("GET", "/api/wardline/taint-facts?qualname=x", b"")
-    assert msg.endswith(
-        "\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    )
+    assert msg.endswith("\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
 
 
 def test_sign_request_matches_a_reference_hmac():

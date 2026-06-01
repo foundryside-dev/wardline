@@ -51,8 +51,7 @@ def test_scan_format_sarif_still_gates(tmp_path: Path) -> None:
     proj.mkdir()
     _write(proj, "svc.py", _LEAKY)  # PY-WL-101 ERROR defect
     result = CliRunner().invoke(
-        cli, ["scan", str(proj), "--format", "sarif", "--output", str(tmp_path / "o.sarif"),
-              "--fail-on", "ERROR"]
+        cli, ["scan", str(proj), "--format", "sarif", "--output", str(tmp_path / "o.sarif"), "--fail-on", "ERROR"]
     )
     assert result.exit_code == 1, result.output
 
@@ -75,9 +74,7 @@ def test_judge_is_registered() -> None:
 def test_scan_fail_on_clean_fixture_exits_zero(tmp_path: Path) -> None:
     # The sample fixture has no active CRITICAL defect, so --fail-on CRITICAL is clean.
     out = tmp_path / "findings.jsonl"
-    result = CliRunner().invoke(
-        cli, ["scan", str(FIXTURE), "--output", str(out), "--fail-on", "CRITICAL"]
-    )
+    result = CliRunner().invoke(cli, ["scan", str(FIXTURE), "--output", str(out), "--fail-on", "CRITICAL"])
     assert result.exit_code == 0, result.output
 
 
@@ -233,9 +230,7 @@ def test_scan_fail_on_unanalyzed_exits_one(tmp_path) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
     _write(proj, "bad.py", _UNPARSEABLE)
-    res = CliRunner().invoke(
-        scan, [str(proj), "--output", str(tmp_path / "f.jsonl"), "--fail-on-unanalyzed"]
-    )
+    res = CliRunner().invoke(scan, [str(proj), "--output", str(tmp_path / "f.jsonl"), "--fail-on-unanalyzed"])
     assert res.exit_code == 1, res.output
 
 
@@ -368,7 +363,7 @@ def test_baseline_create_excludes_active_waivers(tmp_path) -> None:
     doc = _yaml.safe_load((proj / ".wardline" / "baseline.yaml").read_text()) or {}
     fps = {e["fingerprint"] for e in (doc.get("entries") or [])}
     assert fp_waived not in fps  # active-waiver fingerprint excluded
-    assert fp_kept in fps        # non-waived defect still baselined
+    assert fp_kept in fps  # non-waived defect still baselined
 
 
 def test_scan_relative_root_emits_relative_path_and_qualname(tmp_path) -> None:
@@ -385,7 +380,7 @@ def test_scan_relative_root_emits_relative_path_and_qualname(tmp_path) -> None:
         findings = [_json.loads(ln) for ln in Path("proj/f.jsonl").read_text().splitlines() if ln.strip()]
     leak = next(f for f in findings if f["rule_id"] == "PY-WL-101")
     assert leak["location"]["path"] == "svc.py"  # relative, not /abs/.../svc.py
-    assert leak["qualname"] == "svc.leaky"        # clean module prefix, not '.tmp....svc.leaky'
+    assert leak["qualname"] == "svc.leaky"  # clean module prefix, not '.tmp....svc.leaky'
 
 
 def test_scan_filigree_emit_success(tmp_path, monkeypatch) -> None:
@@ -473,9 +468,7 @@ def test_scan_clarion_write_success(tmp_path, monkeypatch) -> None:
         lambda *a, **k: WriteResult(reachable=True, written=2),
     )
     out = tmp_path / "f.jsonl"
-    result = CliRunner().invoke(
-        scan, [str(proj), "--output", str(out), "--clarion-url", "http://x/api/taint"]
-    )
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--clarion-url", "http://x/api/taint"])
     assert result.exit_code == 0, result.output
     assert "wrote 2 taint fact(s) to http://x/api/taint" in result.output
 
@@ -492,9 +485,7 @@ def test_scan_clarion_soft_outage_does_not_change_exit(tmp_path, monkeypatch) ->
     )
     out = tmp_path / "f.jsonl"
     # No --fail-on: a normal scan of _LEAKY exits 0. A soft outage must NOT bump it to 2.
-    result = CliRunner().invoke(
-        scan, [str(proj), "--output", str(out), "--clarion-url", "http://x/api/taint"]
-    )
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--clarion-url", "http://x/api/taint"])
     assert result.exit_code == 0, result.output
     assert "Clarion taint store not written" in result.output
     assert "scan unaffected" in result.output
@@ -512,9 +503,7 @@ def test_scan_clarion_loud_error_exits_2(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr("wardline.clarion.write.write_facts_to_clarion", _raise)
     out = tmp_path / "f.jsonl"
-    result = CliRunner().invoke(
-        scan, [str(proj), "--output", str(out), "--clarion-url", "http://x/api/taint"]
-    )
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--clarion-url", "http://x/api/taint"])
     assert result.exit_code == 2, result.output
     assert "bad request" in result.output
 
@@ -530,7 +519,8 @@ def test_baseline_create_honors_custom_config_waivers(tmp_path) -> None:
     runner.invoke(scan, [str(proj), "--output", str(out)])
     fp = next(
         _json.loads(ln)["fingerprint"]
-        for ln in out.read_text().splitlines() if ln.strip() and _json.loads(ln)["rule_id"] == "PY-WL-101"
+        for ln in out.read_text().splitlines()
+        if ln.strip() and _json.loads(ln)["rule_id"] == "PY-WL-101"
     )
     custom = tmp_path / "custom.yaml"  # NOT proj/wardline.yaml
     custom.write_text("waivers:\n  - fingerprint: " + fp + "\n    reason: handled\n", encoding="utf-8")
@@ -563,10 +553,17 @@ def _fake_fp_response():  # type: ignore[no-untyped-def]
     from datetime import UTC, datetime
 
     from wardline.core.judge import JudgeResponse, JudgeVerdict
+
     return JudgeResponse(
-        verdict=JudgeVerdict.FALSE_POSITIVE, rationale="over-taint", confidence=0.9,
-        model_id="m", recorded_at=datetime.now(UTC), prompt_tokens_total=1,
-        prompt_tokens_cached=None, policy_hash="sha256:x")
+        verdict=JudgeVerdict.FALSE_POSITIVE,
+        rationale="over-taint",
+        confidence=0.9,
+        model_id="m",
+        recorded_at=datetime.now(UTC),
+        prompt_tokens_total=1,
+        prompt_tokens_cached=None,
+        policy_hash="sha256:x",
+    )
 
 
 def test_judge_dry_run_reports_without_writing(monkeypatch, tmp_path) -> None:
@@ -574,6 +571,7 @@ def test_judge_dry_run_reports_without_writing(monkeypatch, tmp_path) -> None:
 
     import wardline.cli.judge as judge_cli
     from wardline.cli.main import cli
+
     proj = _make_judge_proj(tmp_path)
     monkeypatch.setattr(judge_cli, "call_judge", lambda req, **kw: _fake_fp_response())
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
@@ -592,6 +590,7 @@ def test_judge_write_persists_false_positives(monkeypatch, tmp_path) -> None:
     import wardline.cli.judge as judge_cli
     from wardline.cli.main import cli
     from wardline.core.judged import load_judged
+
     proj = _make_judge_proj(tmp_path)
     monkeypatch.setattr(judge_cli, "call_judge", lambda req, **kw: _fake_fp_response())
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
@@ -604,6 +603,7 @@ def test_judge_missing_key_exits_2(monkeypatch, tmp_path) -> None:
     from click.testing import CliRunner
 
     from wardline.cli.main import cli
+
     proj = _make_judge_proj(tmp_path)
     monkeypatch.delenv("WARDLINE_OPENROUTER_API_KEY", raising=False)
     result = CliRunner().invoke(cli, ["judge", str(proj)])
@@ -614,6 +614,7 @@ def test_judge_reads_key_from_dotenv(monkeypatch, tmp_path) -> None:
     import os
 
     from wardline.cli.judge import _load_env_key
+
     (tmp_path / ".env").write_text("WARDLINE_OPENROUTER_API_KEY=sk-or-fromdotenv\n")
     monkeypatch.delenv("WARDLINE_OPENROUTER_API_KEY", raising=False)
     _load_env_key(tmp_path)
@@ -624,6 +625,7 @@ def test_dotenv_does_not_override_existing_env(monkeypatch, tmp_path) -> None:
     import os
 
     from wardline.cli.judge import _load_env_key
+
     (tmp_path / ".env").write_text("WARDLINE_OPENROUTER_API_KEY=sk-or-fromdotenv\n")
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "sk-or-fromenv")
     _load_env_key(tmp_path)
@@ -634,15 +636,23 @@ def _fake_fp_response_conf(conf):  # type: ignore[no-untyped-def]
     from datetime import UTC, datetime
 
     from wardline.core.judge import JudgeResponse, JudgeVerdict
+
     return JudgeResponse(
-        verdict=JudgeVerdict.FALSE_POSITIVE, rationale="over-taint", confidence=conf,
-        model_id="m", recorded_at=datetime.now(UTC), prompt_tokens_total=1,
-        prompt_tokens_cached=None, policy_hash="sha256:x")
+        verdict=JudgeVerdict.FALSE_POSITIVE,
+        rationale="over-taint",
+        confidence=conf,
+        model_id="m",
+        recorded_at=datetime.now(UTC),
+        prompt_tokens_total=1,
+        prompt_tokens_cached=None,
+        policy_hash="sha256:x",
+    )
 
 
 def test_judge_low_confidence_fp_held_back_from_write(monkeypatch, tmp_path) -> None:
     import wardline.cli.judge as judge_cli
     from wardline.cli.main import cli
+
     proj = _make_judge_proj(tmp_path)
     monkeypatch.setattr(judge_cli, "call_judge", lambda req, **kw: _fake_fp_response_conf(0.3))
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
@@ -658,6 +668,7 @@ def test_judge_write_then_scan_gate_is_cleared(monkeypatch, tmp_path) -> None:
     # `judge --write` must suppress the finding for `scan --fail-on` too.
     import wardline.cli.judge as judge_cli
     from wardline.cli.main import cli
+
     proj = _make_judge_proj(tmp_path)
     out = tmp_path / "f.jsonl"
     # 1) before judging, the active defect trips the gate

@@ -43,12 +43,8 @@ def build_import_alias_map(
     for node in ast.iter_child_nodes(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                local_name = (
-                    alias.asname if alias.asname else alias.name.split(".")[0]
-                )
-                alias_map[local_name] = (
-                    alias.name if alias.asname else alias.name.split(".")[0]
-                )
+                local_name = alias.asname if alias.asname else alias.name.split(".")[0]
+                alias_map[local_name] = alias.name if alias.asname else alias.name.split(".")[0]
             continue
         if isinstance(node, ast.ImportFrom):
             if node.module is None and (node.level or 0) == 0:
@@ -72,11 +68,7 @@ def build_import_alias_map(
                         base_parts = []
                     base = ".".join(base_parts)
                     if node.module:
-                        fqn = (
-                            f"{base}.{node.module}.{alias.name}"
-                            if base
-                            else f"{node.module}.{alias.name}"
-                        )
+                        fqn = f"{base}.{node.module}.{alias.name}" if base else f"{node.module}.{alias.name}"
                     else:
                         fqn = f"{base}.{alias.name}" if base else alias.name
                 elif node.module is not None:
@@ -156,11 +148,7 @@ def resolve_self_method_fqn(
     if caller_class_fqn is None:
         return None
     func = call.func
-    if (
-        isinstance(func, ast.Attribute)
-        and isinstance(func.value, ast.Name)
-        and func.value.id in {"self", "cls"}
-    ):
+    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name) and func.value.id in {"self", "cls"}:
         candidate = f"{caller_class_fqn}.{func.attr}"
         if candidate in project_fqns:
             return candidate

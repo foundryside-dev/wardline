@@ -154,16 +154,11 @@ def resolve_project_taints(
     # validated output is mis-read as its raw body taint (an over-taint that
     # false-positives PY-WL-101).
     effective_return: dict[str, TaintState] = {
-        fqn: (return_taint_map[fqn] if taint_sources.get(fqn) == "anchored" else refined[fqn])
-        for fqn in refined
+        fqn: (return_taint_map[fqn] if taint_sources.get(fqn) == "anchored" else refined[fqn]) for fqn in refined
     }
 
-    scc_size_distribution = tuple(
-        sorted(Counter(len(k) for k in scc_iteration_counts).items())
-    )
-    convergence_iterations_histogram = tuple(
-        sorted(Counter(scc_iteration_counts.values()).items())
-    )
+    scc_size_distribution = tuple(sorted(Counter(len(k) for k in scc_iteration_counts).items()))
+    convergence_iterations_histogram = tuple(sorted(Counter(scc_iteration_counts.values()).items()))
     convergence_iterations_max = max(scc_iteration_counts.values(), default=0)
     taint_source_counts = Counter(taint_sources.values())
     metadata = ResolverRunMetadata(
@@ -180,9 +175,7 @@ def resolve_project_taints(
     return ResolverResult(
         taint_map=MappingProxyType(refined),
         return_taint_map=MappingProxyType(effective_return),
-        project_edges=MappingProxyType(
-            {fqn: frozenset(callees) for fqn, callees in edges.items()}
-        ),
+        project_edges=MappingProxyType({fqn: frozenset(callees) for fqn, callees in edges.items()}),
         taint_provenance=MappingProxyType(dict(provenance)),
         diagnostics=tuple(diagnostics),
         metadata=metadata,

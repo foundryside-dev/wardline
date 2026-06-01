@@ -40,9 +40,7 @@ class ResolverRunMetadata:
 
     def __post_init__(self) -> None:
         if self.convergence_iterations_max < 0:
-            raise ValueError(
-                f"convergence_iterations_max must be >= 0, got {self.convergence_iterations_max}"
-            )
+            raise ValueError(f"convergence_iterations_max must be >= 0, got {self.convergence_iterations_max}")
         for name, hist in (
             ("scc_size_distribution", self.scc_size_distribution),
             ("convergence_iterations_histogram", self.convergence_iterations_histogram),
@@ -52,9 +50,7 @@ class ResolverRunMetadata:
             for _bucket, count in hist:
                 if count < 1:
                     raise ValueError(f"{name} counts must be >= 1; got {count}")
-        object.__setattr__(
-            self, "taint_source_counts", MappingProxyType(dict(self.taint_source_counts))
-        )
+        object.__setattr__(self, "taint_source_counts", MappingProxyType(dict(self.taint_source_counts)))
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -79,10 +75,6 @@ class ResolverResult:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "taint_map", MappingProxyType(dict(self.taint_map)))
-        object.__setattr__(
-            self, "return_taint_map", MappingProxyType(dict(self.return_taint_map))
-        )
+        object.__setattr__(self, "return_taint_map", MappingProxyType(dict(self.return_taint_map)))
         object.__setattr__(self, "project_edges", MappingProxyType(dict(self.project_edges)))
-        object.__setattr__(
-            self, "taint_provenance", MappingProxyType(dict(self.taint_provenance))
-        )
+        object.__setattr__(self, "taint_provenance", MappingProxyType(dict(self.taint_provenance)))

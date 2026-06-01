@@ -13,12 +13,9 @@ def test_descriptor_carries_registry_version() -> None:
 
 def test_descriptor_round_trips_registry() -> None:
     descriptor = build_vocabulary_descriptor()
-    reconstructed = {
-        e["canonical_name"]: (e["group"], e["attrs"]) for e in descriptor["entries"]
-    }
+    reconstructed = {e["canonical_name"]: (e["group"], e["attrs"]) for e in descriptor["entries"]}
     expected = {
-        name: (entry.group, {k: v.__name__ for k, v in entry.attrs.items()})
-        for name, entry in REGISTRY.items()
+        name: (entry.group, {k: v.__name__ for k, v in entry.attrs.items()}) for name, entry in REGISTRY.items()
     }
     assert reconstructed == expected
 
@@ -61,10 +58,7 @@ def test_committed_vocabulary_yaml_matches_registry() -> None:
     from importlib.resources import files
 
     file_text = files("wardline.core").joinpath("vocabulary.yaml").read_text(encoding="utf-8")
-    regen_hint = (
-        "vocabulary.yaml is stale; regenerate: "
-        ".venv/bin/wardline vocab > src/wardline/core/vocabulary.yaml"
-    )
+    regen_hint = "vocabulary.yaml is stale; regenerate: .venv/bin/wardline vocab > src/wardline/core/vocabulary.yaml"
     # Content currency (catches a REGISTRY change the file didn't track)...
     assert yaml.safe_load(file_text) == build_vocabulary_descriptor(), regen_hint
     # ...and byte-identity (catches a reformat / emitter drift the parse misses).

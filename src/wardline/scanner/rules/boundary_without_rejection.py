@@ -32,8 +32,7 @@ METADATA = RuleMetadata(
     ),
     examples_violation=("@trust_boundary(to_level='ASSURED')\ndef v(p):\n    return p",),
     examples_clean=(
-        "@trust_boundary(to_level='ASSURED')\n"
-        "def v(p):\n    if not p:\n        raise ValueError\n    return p",
+        "@trust_boundary(to_level='ASSURED')\ndef v(p):\n    if not p:\n        raise ValueError\n    return p",
     ),
 )
 

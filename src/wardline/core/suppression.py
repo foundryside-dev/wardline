@@ -47,8 +47,7 @@ def apply_suppressions(
         # not apply — and they MUST surface (the "fail loud-but-survivable" safety net),
         # not abort the run.
         assert f.location.path == ENGINE_PATH or f.location.line_start is not None, (
-            f"DEFECT {f.rule_id} entered suppression with line_start=None — "
-            f"weak fingerprint identity (collision risk)"
+            f"DEFECT {f.rule_id} entered suppression with line_start=None — weak fingerprint identity (collision risk)"
         )
         # Precedence: waiver (explicit human intent, carries expiry) > judged (LLM
         # FP-verdict, carries the rationale) > baseline (silent).

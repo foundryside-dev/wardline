@@ -13,8 +13,13 @@ pytestmark = pytest.mark.network
 def test_live_triage_round_trip() -> None:
     """One real OpenRouter call returns a schema-valid verdict; a second call hits cache."""
     req = JudgeRequest(
-        rule_id="PY-WL-101", message="untrusted reaches trusted", severity="ERROR",
-        file_path="svc/v.py", line=4, qualname="svc.v.validate", fingerprint="a" * 64,
+        rule_id="PY-WL-101",
+        message="untrusted reaches trusted",
+        severity="ERROR",
+        file_path="svc/v.py",
+        line=4,
+        qualname="svc.v.validate",
+        fingerprint="a" * 64,
         taint_summary="declared_return=GUARDED, actual_return=MIXED_RAW",
         surrounding_code=(
             "1: @trust_boundary(to_level=TaintState.GUARDED)\n"

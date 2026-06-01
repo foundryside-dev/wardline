@@ -85,6 +85,7 @@ def _scan(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, An
         from wardline.clarion.client import WriteResult
         from wardline.clarion.write import write_facts_to_clarion
         from wardline.core.errors import ClarionError
+
         try:
             wr = write_facts_to_clarion(result, path, clarion)
         except ClarionError as exc:
@@ -113,15 +114,12 @@ def _scan(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, An
             # silent under-scan reaches the agent, not just the human-facing stderr.
             "unanalyzed": result.summary.unanalyzed,
         },
-        "gate": {"tripped": decision.tripped, "fail_on": decision.fail_on,
-                 "exit_class": decision.exit_class},
+        "gate": {"tripped": decision.tripped, "fail_on": decision.fail_on, "exit_class": decision.exit_class},
         "clarion": clarion_block,
     }
 
 
-def _explain_taint(
-    args: dict[str, Any], root: Path, clarion: Any = None
-) -> dict[str, Any]:
+def _explain_taint(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, Any]:
     # The store-backed read path: when a Clarion store is configured and the caller
     # passes the finding's qualname as `sink_qualname`, explain_finding serves a FRESH
     # fact straight from the store with no re-scan; otherwise it falls back to the SP8
@@ -146,8 +144,7 @@ def _explain_taint(
     )
     if exp is None:
         raise ToolError(
-            "fingerprint not in current scan; your code changed since the scan that "
-            "produced it — re-scan.",
+            "fingerprint not in current scan; your code changed since the scan that produced it — re-scan.",
         )
     result_dict: dict[str, Any] = {
         "fingerprint": exp.fingerprint,
@@ -162,12 +159,19 @@ def _explain_taint(
         "unresolved_call_count": exp.unresolved_call_count,
     }
     if args.get("chain") and clarion is not None and exp.sink_qualname:
-        ch = explain_chain(root, sink_qualname=exp.sink_qualname, clarion=clarion,
-                           max_hops=int(args.get("max_hops", 20)))
+        ch = explain_chain(
+            root, sink_qualname=exp.sink_qualname, clarion=clarion, max_hops=int(args.get("max_hops", 20))
+        )
         result_dict["chain"] = {
-            "hops": [{"qualname": h.qualname, "tier_in": h.tier_in, "tier_out": h.tier_out,
-                      "contributing_callee_qualname": h.contributing_callee_qualname}
-                     for h in ch.hops],
+            "hops": [
+                {
+                    "qualname": h.qualname,
+                    "tier_in": h.tier_in,
+                    "tier_out": h.tier_out,
+                    "contributing_callee_qualname": h.contributing_callee_qualname,
+                }
+                for h in ch.hops
+            ],
             "truncated_at": ch.truncated_at,
         }
     return result_dict
@@ -197,9 +201,15 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
     )
     return {
         "verdicts": [
-            {"fingerprint": v.fingerprint, "rule_id": v.rule_id, "path": v.path,
-             "line": v.line, "label": v.label, "confidence": v.confidence,
-             "rationale": v.rationale}
+            {
+                "fingerprint": v.fingerprint,
+                "rule_id": v.rule_id,
+                "path": v.path,
+                "line": v.line,
+                "label": v.label,
+                "confidence": v.confidence,
+                "rationale": v.rationale,
+            }
             for v in outcome.verdicts
         ],
         "wrote": outcome.wrote,
@@ -210,25 +220,17 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
 def _baseline_create(args: dict[str, Any], root: Path) -> dict[str, Any]:
     reason = _require(args, "reason")
     try:
-        count = generate_baseline(
-            root, overwrite=False, config_path=_cfg(args, root), confine_to_root=True
-        )
+        count = generate_baseline(root, overwrite=False, config_path=_cfg(args, root), confine_to_root=True)
     except FileExistsError as exc:
         # No-clobber refuse path: agent-actionable — point at baseline_update.
-        raise ToolError(
-            "a baseline already exists; call baseline_update to overwrite it"
-        ) from exc
-    return {"baselined_count": count, "path": str(root / ".wardline" / "baseline.yaml"),
-            "reason": reason}
+        raise ToolError("a baseline already exists; call baseline_update to overwrite it") from exc
+    return {"baselined_count": count, "path": str(root / ".wardline" / "baseline.yaml"), "reason": reason}
 
 
 def _baseline_update(args: dict[str, Any], root: Path) -> dict[str, Any]:
     reason = _require(args, "reason")
-    count = generate_baseline(
-        root, overwrite=True, config_path=_cfg(args, root), confine_to_root=True
-    )
-    return {"baselined_count": count, "path": str(root / ".wardline" / "baseline.yaml"),
-            "reason": reason}
+    count = generate_baseline(root, overwrite=True, config_path=_cfg(args, root), confine_to_root=True)
+    return {"baselined_count": count, "path": str(root / ".wardline" / "baseline.yaml"), "reason": reason}
 
 
 def _waiver_add(args: dict[str, Any], root: Path) -> dict[str, Any]:
@@ -241,8 +243,11 @@ def _waiver_add(args: dict[str, Any], root: Path) -> dict[str, Any]:
         # A malformed date is something the agent can fix and should see.
         raise ToolError("expires must be an ISO date (YYYY-MM-DD)") from exc
     waiver = add_waiver(root / "wardline.yaml", fingerprint=fp, reason=reason, expires=expires)
-    return {"fingerprint": waiver.fingerprint, "reason": waiver.reason,
-            "expires": waiver.expires.isoformat() if waiver.expires else None}
+    return {
+        "fingerprint": waiver.fingerprint,
+        "reason": waiver.reason,
+        "expires": waiver.expires.isoformat() if waiver.expires else None,
+    }
 
 
 # Gate thresholds are the four defect severities. Severity also defines NONE
@@ -266,6 +271,7 @@ class WardlineMCPServer:
             return None
         from wardline.clarion.client import ClarionClient
         from wardline.clarion.config import load_clarion_token, resolve_project_name
+
         return ClarionClient(
             self.clarion_url,
             secret=load_clarion_token(self.root),
@@ -273,81 +279,110 @@ class WardlineMCPServer:
         )
 
     def _register_tools(self) -> None:
-        self.add_tool(Tool(
-            name="scan",
-            description="Whole-program taint scan of the project. Returns structured "
-                        "findings, the suppression summary (active = the gate population), "
-                        "and the gate verdict.",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "subdir relative to project root"},
-                    "fail_on": {"type": "string", "enum": _SEVERITY_ENUM},
-                    "config": {"type": "string"},
+        self.add_tool(
+            Tool(
+                name="scan",
+                description="Whole-program taint scan of the project. Returns structured "
+                "findings, the suppression summary (active = the gate population), "
+                "and the gate verdict.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "subdir relative to project root"},
+                        "fail_on": {"type": "string", "enum": _SEVERITY_ENUM},
+                        "config": {"type": "string"},
+                    },
                 },
-            },
-            handler=lambda args, root: _scan(args, root, self._clarion_client()),
-        ))
-        self.add_tool(Tool(
-            name="explain_taint",
-            description="Explain ONE finding's taint: the immediate tainted callee, the "
-                        "originating boundary, and the trust tiers at the sink. Call right "
-                        "after scan and before editing — a stale fingerprint returns an error. "
-                        "Pass the finding's `qualname` as `sink_qualname`: when a Clarion store "
-                        "is configured this serves the explanation from the store instead of "
-                        "re-scanning. Pass `chain: true` (needs a configured Clarion store) to "
-                        "also walk the full taint chain from the sink to the originating boundary; "
-                        "without a store it degrades to the single-hop explanation (no `chain` block).",
-            input_schema={
-                "type": "object",
-                "properties": {
-                    "fingerprint": {"type": "string"},
-                    "path": {"type": "string"},
-                    "line": {"type": "integer"},
-                    "sink_qualname": {"type": "string"},
-                    "chain": {"type": "boolean"},
-                    "max_hops": {"type": "integer"},
-                    "config": {"type": "string"},
+                handler=lambda args, root: _scan(args, root, self._clarion_client()),
+            )
+        )
+        self.add_tool(
+            Tool(
+                name="explain_taint",
+                description="Explain ONE finding's taint: the immediate tainted callee, the "
+                "originating boundary, and the trust tiers at the sink. Call right "
+                "after scan and before editing — a stale fingerprint returns an error. "
+                "Pass the finding's `qualname` as `sink_qualname`: when a Clarion store "
+                "is configured this serves the explanation from the store instead of "
+                "re-scanning. Pass `chain: true` (needs a configured Clarion store) to "
+                "also walk the full taint chain from the sink to the originating boundary; "
+                "without a store it degrades to the single-hop explanation (no `chain` block).",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "fingerprint": {"type": "string"},
+                        "path": {"type": "string"},
+                        "line": {"type": "integer"},
+                        "sink_qualname": {"type": "string"},
+                        "chain": {"type": "boolean"},
+                        "max_hops": {"type": "integer"},
+                        "config": {"type": "string"},
+                    },
                 },
-            },
-            handler=lambda args, root: _explain_taint(args, root, self._clarion_client()),
-        ))
-        self.add_tool(Tool(
-            name="judge", network=True,
-            description="NETWORK: opt-in LLM triage of active defects via OpenRouter "
-                        "(needs WARDLINE_OPENROUTER_API_KEY). Labels each TRUE/FALSE positive. "
-                        "Never run automatically; never folded into scan.",
-            input_schema={"type": "object", "properties": {
-                "config": {"type": "string"}, "model": {"type": "string"},
-                "max_findings": {"type": "integer"},
-                "write": {"type": "boolean", "description": "append above-floor FPs to judged.yaml"}}},
-            handler=_judge,
-        ))
-        self.add_tool(Tool(
-            name="baseline_create",
-            description="Snapshot current defects as the baseline so only NEW findings surface. "
-                        "Prefer FIXING a finding over baselining it. Requires a reason.",
-            input_schema={"type": "object", "required": ["reason"], "properties": {
-                "reason": {"type": "string"}, "config": {"type": "string"}}},
-            handler=_baseline_create,
-        ))
-        self.add_tool(Tool(
-            name="baseline_update",
-            description="Re-derive and OVERWRITE the baseline. Requires a reason.",
-            input_schema={"type": "object", "required": ["reason"], "properties": {
-                "reason": {"type": "string"}, "config": {"type": "string"}}},
-            handler=_baseline_update,
-        ))
-        self.add_tool(Tool(
-            name="waiver_add",
-            description="Waive ONE finding by fingerprint with a mandatory reason and expiry. "
-                        "Prefer fixing; a waiver is an audited, time-boxed exception.",
-            input_schema={"type": "object", "required": ["fingerprint", "reason", "expires"],
-                          "properties": {"fingerprint": {"type": "string"},
-                                         "reason": {"type": "string"},
-                                         "expires": {"type": "string", "description": "YYYY-MM-DD"}}},
-            handler=_waiver_add,
-        ))
+                handler=lambda args, root: _explain_taint(args, root, self._clarion_client()),
+            )
+        )
+        self.add_tool(
+            Tool(
+                name="judge",
+                network=True,
+                description="NETWORK: opt-in LLM triage of active defects via OpenRouter "
+                "(needs WARDLINE_OPENROUTER_API_KEY). Labels each TRUE/FALSE positive. "
+                "Never run automatically; never folded into scan.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "config": {"type": "string"},
+                        "model": {"type": "string"},
+                        "max_findings": {"type": "integer"},
+                        "write": {"type": "boolean", "description": "append above-floor FPs to judged.yaml"},
+                    },
+                },
+                handler=_judge,
+            )
+        )
+        self.add_tool(
+            Tool(
+                name="baseline_create",
+                description="Snapshot current defects as the baseline so only NEW findings surface. "
+                "Prefer FIXING a finding over baselining it. Requires a reason.",
+                input_schema={
+                    "type": "object",
+                    "required": ["reason"],
+                    "properties": {"reason": {"type": "string"}, "config": {"type": "string"}},
+                },
+                handler=_baseline_create,
+            )
+        )
+        self.add_tool(
+            Tool(
+                name="baseline_update",
+                description="Re-derive and OVERWRITE the baseline. Requires a reason.",
+                input_schema={
+                    "type": "object",
+                    "required": ["reason"],
+                    "properties": {"reason": {"type": "string"}, "config": {"type": "string"}},
+                },
+                handler=_baseline_update,
+            )
+        )
+        self.add_tool(
+            Tool(
+                name="waiver_add",
+                description="Waive ONE finding by fingerprint with a mandatory reason and expiry. "
+                "Prefer fixing; a waiver is an audited, time-boxed exception.",
+                input_schema={
+                    "type": "object",
+                    "required": ["fingerprint", "reason", "expires"],
+                    "properties": {
+                        "fingerprint": {"type": "string"},
+                        "reason": {"type": "string"},
+                        "expires": {"type": "string", "description": "YYYY-MM-DD"},
+                    },
+                },
+                handler=_waiver_add,
+            )
+        )
 
     def add_tool(self, tool: Tool) -> None:
         self._tools[tool.name] = tool
@@ -378,20 +413,25 @@ class WardlineMCPServer:
                 # The human-meaningful description lives on the rule's METADATA, not
                 # the class docstring (the rule classes carry module-level docstrings,
                 # so cls.__doc__ is None) — use the real metadata field.
-                rules.append({
-                    "rule_id": inst.rule_id,
-                    "base_severity": inst.base_severity.value,
-                    "description": cls.metadata.description,
-                })
+                rules.append(
+                    {
+                        "rule_id": inst.rule_id,
+                        "base_severity": inst.base_severity.value,
+                        "description": cls.metadata.description,
+                    }
+                )
             return json.dumps({"rules": rules}, ensure_ascii=False), "application/json"
         if uri == "wardline://config":
             cfg = config_mod.load(self.root / "wardline.yaml")
-            return json.dumps({
-                "source_roots": list(cfg.source_roots),
-                "exclude": list(cfg.exclude),
-                "rules_enable": list(cfg.rules_enable),
-                "rules_severity": dict(cfg.rules_severity),
-            }, ensure_ascii=False), "application/json"
+            return json.dumps(
+                {
+                    "source_roots": list(cfg.source_roots),
+                    "exclude": list(cfg.exclude),
+                    "rules_enable": list(cfg.rules_enable),
+                    "rules_severity": dict(cfg.rules_severity),
+                },
+                ensure_ascii=False,
+            ), "application/json"
         raise McpError(f"unknown resource: {uri}")
 
     def _wire(self) -> None:
@@ -406,10 +446,12 @@ class WardlineMCPServer:
         self.rpc.register("prompts/get", self._prompts_get)
 
     def _tools_list(self, params: dict[str, Any]) -> dict[str, Any]:
-        return {"tools": [
-            {"name": t.name, "description": t.description, "inputSchema": t.input_schema}
-            for t in self._tools.values()
-        ]}
+        return {
+            "tools": [
+                {"name": t.name, "description": t.description, "inputSchema": t.input_schema}
+                for t in self._tools.values()
+            ]
+        }
 
     def _tools_call(self, params: dict[str, Any]) -> dict[str, Any]:
         name = params.get("name")
@@ -440,10 +482,7 @@ class WardlineMCPServer:
         return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}]}
 
     def _resources_list(self, params: dict[str, Any]) -> dict[str, Any]:
-        return {"resources": [
-            {"uri": uri, "name": name, "mimeType": mime}
-            for uri, name, mime in self._RESOURCES
-        ]}
+        return {"resources": [{"uri": uri, "name": name, "mimeType": mime} for uri, name, mime in self._RESOURCES]}
 
     def _resources_read(self, params: dict[str, Any]) -> dict[str, Any]:
         uri = params.get("uri")
@@ -462,15 +501,15 @@ class WardlineMCPServer:
     )
 
     def _prompts_list(self, params: dict[str, Any]) -> dict[str, Any]:
-        return {"prompts": [{"name": "wardline:loop",
-                             "description": "The intended scan→explain→fix→rescan loop."}]}
+        return {"prompts": [{"name": "wardline:loop", "description": "The intended scan→explain→fix→rescan loop."}]}
 
     def _prompts_get(self, params: dict[str, Any]) -> dict[str, Any]:
         if params.get("name") != "wardline:loop":
             raise McpError(f"unknown prompt: {params.get('name')}")
-        return {"description": "The intended scan→explain→fix→rescan loop.",
-                "messages": [{"role": "user",
-                              "content": {"type": "text", "text": self._LOOP_PROMPT}}]}
+        return {
+            "description": "The intended scan→explain→fix→rescan loop.",
+            "messages": [{"role": "user", "content": {"type": "text", "text": self._LOOP_PROMPT}}],
+        }
 
     @staticmethod
     def _is_error(text: str) -> dict[str, Any]:

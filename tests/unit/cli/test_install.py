@@ -6,9 +6,7 @@ from wardline.cli.main import cli
 
 
 def test_scan_reads_filigree_url_from_config(tmp_path: Path, monkeypatch) -> None:
-    (tmp_path / "wardline.yaml").write_text(
-        'filigree:\n  url: "http://configured-filigree"\n', encoding="utf-8"
-    )
+    (tmp_path / "wardline.yaml").write_text('filigree:\n  url: "http://configured-filigree"\n', encoding="utf-8")
     (tmp_path / "m.py").write_text("x = 1\n", encoding="utf-8")
     captured: dict[str, object] = {}
 
@@ -28,9 +26,7 @@ def test_scan_reads_filigree_url_from_config(tmp_path: Path, monkeypatch) -> Non
 
 
 def test_mcp_resolves_clarion_url_from_config(tmp_path: Path, monkeypatch) -> None:
-    (tmp_path / "wardline.yaml").write_text(
-        'clarion:\n  url: "http://configured-clarion"\n', encoding="utf-8"
-    )
+    (tmp_path / "wardline.yaml").write_text('clarion:\n  url: "http://configured-clarion"\n', encoding="utf-8")
     captured: dict[str, object] = {}
 
     class _FakeServer:
@@ -76,8 +72,7 @@ def test_install_opt_outs(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
     result = CliRunner().invoke(
         cli,
-        ["install", "--root", str(tmp_path), "--no-agents-md", "--no-skill",
-         "--no-mcp", "--no-bindings"],
+        ["install", "--root", str(tmp_path), "--no-agents-md", "--no-skill", "--no-mcp", "--no-bindings"],
     )
     assert result.exit_code == 0, result.output
     assert (tmp_path / "CLAUDE.md").is_file()
@@ -90,9 +85,7 @@ def test_install_no_claude_md_still_writes_agents(tmp_path: Path, monkeypatch) -
     monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
-    result = CliRunner().invoke(
-        cli, ["install", "--root", str(tmp_path), "--no-claude-md"]
-    )
+    result = CliRunner().invoke(cli, ["install", "--root", str(tmp_path), "--no-claude-md"])
     assert result.exit_code == 0, result.output
     assert not (tmp_path / "CLAUDE.md").exists()
     assert (tmp_path / "AGENTS.md").is_file()

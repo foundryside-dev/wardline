@@ -52,9 +52,7 @@ if TYPE_CHECKING:
 # are what preserve the invariant that this asymmetry stays latent. See
 # docs/decisions/2026-05-31-wardline-taint-lattice-retain.md and
 # docs/concepts/taint-algebra.md.
-_RAW_ZONE: frozenset[TaintState] = frozenset(
-    {TaintState.EXTERNAL_RAW, TaintState.UNKNOWN_RAW, TaintState.MIXED_RAW}
-)
+_RAW_ZONE: frozenset[TaintState] = frozenset({TaintState.EXTERNAL_RAW, TaintState.UNKNOWN_RAW, TaintState.MIXED_RAW})
 
 METADATA = RuleMetadata(
     rule_id="PY-WL-101",

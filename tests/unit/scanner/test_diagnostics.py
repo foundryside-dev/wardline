@@ -60,8 +60,10 @@ def test_unknown_diagnostic_code_is_error_not_silent() -> None:
 def test_diagnose_unknown_imports_flags_external_named_import() -> None:
     tree = ast.parse("from external_pkg import thing\n")
     out = diagnose_unknown_imports(
-        tree=tree, module_path="m",
-        project_modules=frozenset({"m"}), stdlib_keys=frozenset(),
+        tree=tree,
+        module_path="m",
+        project_modules=frozenset({"m"}),
+        stdlib_keys=frozenset(),
     )
     assert len(out) == 1
     assert out[0][0] == "m"
@@ -72,12 +74,14 @@ def test_diagnose_unknown_imports_skips_stdlib_and_project_and_relative() -> Non
     tree = ast.parse(
         "import os\n"
         "from typing import TYPE_CHECKING\n"
-        "from m import sibling\n"   # project module
-        "from . import rel\n"        # relative
+        "from m import sibling\n"  # project module
+        "from . import rel\n"  # relative
     )
     out = diagnose_unknown_imports(
-        tree=tree, module_path="m.sub",
-        project_modules=frozenset({"m", "m.sub"}), stdlib_keys=frozenset(),
+        tree=tree,
+        module_path="m.sub",
+        project_modules=frozenset({"m", "m.sub"}),
+        stdlib_keys=frozenset(),
     )
     assert out == []
 
@@ -92,7 +96,5 @@ def test_unknown_import_findings_are_facts() -> None:
     assert findings[0].kind == Kind.FACT
     assert findings[0].rule_id == "WLN-ENGINE-UNKNOWN-IMPORT"
     # Fingerprint stable from (module, package) — not message text.
-    again = build_unknown_import_findings(
-        [("pkg/mod.py", "pkg.mod", tree)], project_modules=frozenset({"pkg.mod"})
-    )
+    again = build_unknown_import_findings([("pkg/mod.py", "pkg.mod", tree)], project_modules=frozenset({"pkg.mod"}))
     assert findings[0].fingerprint == again[0].fingerprint

@@ -45,21 +45,15 @@ _SEV_PRINT_ORDER: dict[str, int] = {s.value: i for i, s in enumerate(Severity)}
 def _generate_baseline(path: Path, *, overwrite: bool, config_path: Path | None) -> None:
     baseline_path = path / ".wardline" / "baseline.yaml"
     try:
-        to_baseline = collect_and_write_baseline(
-            path, overwrite=overwrite, config_path=config_path
-        )
+        to_baseline = collect_and_write_baseline(path, overwrite=overwrite, config_path=config_path)
     except FileExistsError:
-        click.echo(
-            f"{baseline_path} already exists; use `wardline baseline update` to overwrite.", err=True
-        )
+        click.echo(f"{baseline_path} already exists; use `wardline baseline update` to overwrite.", err=True)
         raise SystemExit(2) from None
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
     counts = Counter(f.severity.value for f in to_baseline)
-    breakdown = ", ".join(
-        f"{n} {sev}" for sev, n in sorted(counts.items(), key=lambda kv: _SEV_PRINT_ORDER[kv[0]])
-    )
+    breakdown = ", ".join(f"{n} {sev}" for sev, n in sorted(counts.items(), key=lambda kv: _SEV_PRINT_ORDER[kv[0]]))
     click.echo(f"baselined {len(to_baseline)} finding(s) -> {baseline_path}" + (f": {breakdown}" if breakdown else ""))
 
 
@@ -85,5 +79,3 @@ def baseline_create(path: Path, config_path: Path | None) -> None:
 def baseline_update(path: Path, config_path: Path | None) -> None:
     """Re-derive and overwrite the baseline from current findings."""
     _generate_baseline(path, overwrite=True, config_path=config_path)
-
-

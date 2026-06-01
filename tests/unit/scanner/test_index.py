@@ -8,10 +8,7 @@ from wardline.scanner.index import Entity, discover_class_qualnames, discover_fi
 
 def _quals(src: str, module: str = "demo", path: str = "demo.py") -> list[tuple[str, str]]:
     tree = ast.parse(src)
-    return [
-        (e.qualname, e.kind)
-        for e in discover_file_entities(tree, module=module, path=path)
-    ]
+    return [(e.qualname, e.kind) for e in discover_file_entities(tree, module=module, path=path)]
 
 
 def test_module_function_and_closure() -> None:
@@ -23,13 +20,7 @@ def test_module_function_and_closure() -> None:
 
 
 def test_methods_and_nested_class_in_closure() -> None:
-    src = (
-        "class Foo:\n"
-        "    def bar(self):\n"
-        "        class Local:\n"
-        "            def meth(self):\n"
-        "                pass\n"
-    )
+    src = "class Foo:\n    def bar(self):\n        class Local:\n            def meth(self):\n                pass\n"
     assert _quals(src) == [
         ("demo.Foo.bar", "method"),
         ("demo.Foo.bar.<locals>.Local.meth", "method"),
@@ -85,9 +76,7 @@ def test_property_setter_collapses_first_wins() -> None:
     # Prove the GETTER survived (not last-wins): its node carries @property and
     # returns 1; the dropped setter has the @x.setter decorator and a bare pass.
     surviving = entities[0].node
-    assert [d.id for d in surviving.decorator_list if isinstance(d, ast.Name)] == [
-        "property"
-    ]
+    assert [d.id for d in surviving.decorator_list if isinstance(d, ast.Name)] == ["property"]
     ret = surviving.body[0]
     assert isinstance(ret, ast.Return)
     assert isinstance(ret.value, ast.Constant)
@@ -123,21 +112,13 @@ def test_location_anchors_on_def_line() -> None:
 
 
 def test_returns_entity_instances() -> None:
-    entities = discover_file_entities(
-        ast.parse("def f():\n    pass\n"), module="demo", path="demo.py"
-    )
+    entities = discover_file_entities(ast.parse("def f():\n    pass\n"), module="demo", path="demo.py")
     assert all(isinstance(e, Entity) for e in entities)
     assert isinstance(entities[0].node, ast.FunctionDef)
 
 
 def test_discover_class_qualnames_top_level_and_nested() -> None:
-    src = (
-        "class Outer:\n"
-        "    def m(self): pass\n"
-        "    class Inner:\n"
-        "        def n(self): pass\n"
-        "def free(): pass\n"
-    )
+    src = "class Outer:\n    def m(self): pass\n    class Inner:\n        def n(self): pass\ndef free(): pass\n"
     tree = ast.parse(src)
     classes = discover_class_qualnames(tree, module="pkg.mod")
     assert classes == {"pkg.mod.Outer", "pkg.mod.Outer.Inner"}
@@ -147,11 +128,7 @@ def test_class_qualname_is_rsplit_prefix_of_its_methods() -> None:
     # The invariant the callgraph relies on: a method's enclosing class qualname
     # equals method_qualname.rsplit('.', 1)[0], and is built by the SAME
     # reconstruct_qualname as the methods.
-    src = (
-        "class Outer:\n"
-        "    class Inner:\n"
-        "        def n(self): pass\n"
-    )
+    src = "class Outer:\n    class Inner:\n        def n(self): pass\n"
     tree = ast.parse(src)
     entities = discover_file_entities(tree, module="pkg.mod", path="pkg/mod.py")
     classes = discover_class_qualnames(tree, module="pkg.mod")

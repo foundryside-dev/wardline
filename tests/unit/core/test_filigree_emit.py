@@ -16,7 +16,10 @@ from wardline.core.finding import Finding, Kind, Location, Severity, Suppression
 
 def _f(**kw: object) -> Finding:
     base: dict[str, object] = dict(
-        rule_id="PY-WL-101", message="m", severity=Severity.ERROR, kind=Kind.DEFECT,
+        rule_id="PY-WL-101",
+        message="m",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
         location=Location(path="src/m.py", line_start=5, line_end=6),
         fingerprint="a" * 64,
     )
@@ -48,9 +51,7 @@ def test_fingerprint_is_top_level_and_severity_lowercased() -> None:
 
 
 def test_metadata_namespaced_and_carries_suppression() -> None:
-    wire = build_scan_results_body([
-        _f(suppressed=SuppressionState.WAIVED, suppression_reason="fp")
-    ])["findings"][0]
+    wire = build_scan_results_body([_f(suppressed=SuppressionState.WAIVED, suppression_reason="fp")])["findings"][0]
     assert set(wire["metadata"]) == {"wardline"}
     assert wire["metadata"]["wardline"]["suppressed"] == "waived"
     assert wire["metadata"]["wardline"]["suppression_reason"] == "fp"
@@ -67,10 +68,7 @@ def test_suggestion_capped_at_10k_and_omitted_when_none() -> None:
 
 
 def test_all_kinds_emitted() -> None:
-    findings = [
-        _f(kind=k, severity=Severity.NONE if k is not Kind.DEFECT else Severity.ERROR)
-        for k in Kind
-    ]
+    findings = [_f(kind=k, severity=Severity.NONE if k is not Kind.DEFECT else Severity.ERROR) for k in Kind]
     body = build_scan_results_body(findings)
     assert len(body["findings"]) == len(list(Kind))
     fact = next(w for w, f in zip(body["findings"], findings, strict=True) if f.kind is Kind.FACT)
@@ -94,11 +92,14 @@ class _FakeTransport:
 
 
 def _ok_body() -> str:
-    return json.dumps({
-        "succeeded": ["id1"], "failed": [],
-        "stats": {"findings_created": 1, "findings_updated": 0},
-        "warnings": ["severity coerced"],
-    })
+    return json.dumps(
+        {
+            "succeeded": ["id1"],
+            "failed": [],
+            "stats": {"findings_created": 1, "findings_updated": 0},
+            "warnings": ["severity coerced"],
+        }
+    )
 
 
 def test_success_surfaces_stats_and_warnings() -> None:
@@ -167,8 +168,11 @@ def test_urllib_transport_converts_httperror_to_response(monkeypatch) -> None:
 
     def _raise_http_error(req, timeout=None):  # noqa: ARG001
         raise urllib.error.HTTPError(
-            url="http://x/api/loom/scan-results", code=400, msg="Bad Request",
-            hdrs=None, fp=io.BytesIO(b'{"error":"path required"}'),
+            url="http://x/api/loom/scan-results",
+            code=400,
+            msg="Bad Request",
+            hdrs=None,
+            fp=io.BytesIO(b'{"error":"path required"}'),
         )
 
     monkeypatch.setattr(urllib.request, "urlopen", _raise_http_error)
@@ -185,8 +189,8 @@ def test_urllib_transport_rejects_non_http_scheme() -> None:
 
 
 def test_judged_finding_carries_suppression_metadata() -> None:
-    wire = build_scan_results_body([
-        _f(suppressed=SuppressionState.JUDGED, suppression_reason="over-taint floor")
-    ])["findings"][0]
+    wire = build_scan_results_body([_f(suppressed=SuppressionState.JUDGED, suppression_reason="over-taint floor")])[
+        "findings"
+    ][0]
     assert wire["metadata"]["wardline"]["suppressed"] == "judged"
     assert wire["metadata"]["wardline"]["suppression_reason"] == "over-taint floor"

@@ -28,41 +28,53 @@ def _run(ctx):
 
 def test_boundary_without_rejection_fires(tmp_path) -> None:
     # @trust_boundary that just returns its input — cannot reject -> DEFECT.
-    ctx, _ = _analyze(tmp_path, {
-        "m.py": "from wardline.decorators import trust_boundary\n"
-                "@trust_boundary(to_level='ASSURED')\ndef v(p):\n    return p\n",
-    })
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": "from wardline.decorators import trust_boundary\n"
+            "@trust_boundary(to_level='ASSURED')\ndef v(p):\n    return p\n",
+        },
+    )
     findings = _run(ctx)
     assert [(f.rule_id, f.qualname) for f in findings] == [("PY-WL-102", "m.v")]
     assert findings[0].kind == Kind.DEFECT
 
 
 def test_boundary_with_raise_is_clean(tmp_path) -> None:
-    ctx, _ = _analyze(tmp_path, {
-        "m.py": "from wardline.decorators import trust_boundary\n"
-                "@trust_boundary(to_level='ASSURED')\n"
-                "def v(p):\n    if not p:\n        raise ValueError\n    return p\n",
-    })
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": "from wardline.decorators import trust_boundary\n"
+            "@trust_boundary(to_level='ASSURED')\n"
+            "def v(p):\n    if not p:\n        raise ValueError\n    return p\n",
+        },
+    )
     assert _run(ctx) == []
 
 
 def test_boundary_with_falsy_return_is_clean(tmp_path) -> None:
-    ctx, _ = _analyze(tmp_path, {
-        "m.py": "from wardline.decorators import trust_boundary\n"
-                "@trust_boundary(to_level='GUARDED')\n"
-                "def v(p):\n    if not p:\n        return None\n    return p\n",
-    })
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": "from wardline.decorators import trust_boundary\n"
+            "@trust_boundary(to_level='GUARDED')\n"
+            "def v(p):\n    if not p:\n        return None\n    return p\n",
+        },
+    )
     assert _run(ctx) == []
 
 
 def test_non_boundary_decorators_are_ignored(tmp_path) -> None:
     # @trusted (body == return, not a trust-raising transition) and @external_boundary
     # are NOT trust boundaries -> never flagged by PY-WL-102.
-    ctx, _ = _analyze(tmp_path, {
-        "m.py": "from wardline.decorators import trusted, external_boundary\n"
-                "@trusted\ndef a():\n    return 1\n"
-                "@external_boundary\ndef b(p):\n    return p\n",
-    })
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": "from wardline.decorators import trusted, external_boundary\n"
+            "@trusted\ndef a():\n    return 1\n"
+            "@external_boundary\ndef b(p):\n    return p\n",
+        },
+    )
     assert _run(ctx) == []
 
 
