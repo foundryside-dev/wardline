@@ -160,18 +160,20 @@ in it.
 
 ## 0.5 Pre-lock requirements intake (running log)
 
-Harmonisation is underway. This logs each subsystem's reported requirements
-against the proposed baseline; lock (§0.3) waits until all four have reported and
-the §8 oracle encodes the resolutions. Requirements already resolved into the
-baseline are reflected inline (cross-referenced below) and stay open to contest
-with a concrete counter-requirement until lock.
+**All four subsystems have now reported** (as of 2026-06-02). The four roadmaps
+are mutually consistent — the one cross-subsystem seam (git-rename) is *agreement*
+from both sides (§6), not a conflict. Most requirements were resolved by the
+suite's own principles and folded inline (cross-referenced below); two remain
+**OPEN, owned by Clarion**, which explicitly requested resolution before lock.
+Remaining before lock (§0.3): resolve REQ-C-01 / REQ-C-02 and encode all
+resolutions in the §8 oracle.
 
 | Subsystem | Status | Recorded requirements |
 |---|---|---|
-| **Filigree** | **Reported** — `filigree/docs/superpowers/specs/2026-06-01-filigree-roadmap-to-first-class.md` App. A | **REQ-F-01** (no mixed-format feed during backfill) → **DECIDED: single hard cutover** (§7.1; owner decision — we control all four release cycles, so no migration-window machinery). **REQ-F-02** (`resolve` rejects non-locator inputs for resumable backfill) → folded into §4 + §7.1; **enforcement is Clarion's to implement** (it owns `resolve`). |
-| **Clarion** | Pending | — (the authority; carries the heaviest obligations — the §3 matcher, §3.1 prior-index retention, and confirming the §4 / §7.1 contracts above) |
-| **legis** | Pending | — (design-ready repo at `/home/john/legis`; SEI-consumer posture already aligned per its `docs/federation/sei-conformance.md`) |
-| **Wardline** | Partially reported | the `wardline-roadmap-to-first-class.md` §2.2 SEI-client position, plus the **content-axis hash-granularity** harmonisation flagged in §2 (entity-body vs whole-file). Formal intake still to be recorded here. |
+| **Filigree** | **Reported** — `filigree/…/2026-06-01-filigree-roadmap-to-first-class.md` App. A | **REQ-F-01** → **DECIDED: single hard cutover** (§7.1; owner controls all four release cycles → no migration-window machinery). **REQ-F-02** (`resolve` rejects non-locator inputs) → §4 + §7.1; **Clarion implements**. |
+| **Clarion** | **Reported** — `clarion/…/2026-06-01-clarion-roadmap-to-first-class.md` App. A. §5 obligations accepted. | **Decided & folded:** REQ-C-03 (lightweight side table, not a snapshot → §3.1); REQ-C-04 (no locator binding on **any** surface, HTTP **and** MCP → §4 / §5); REQ-C-05 (typed `git-rename signal` interface → §6). **OPEN — owner=Clarion, resolve before lock:** **REQ-C-01** (formal versioned *signature* schema — property recorded in §3; schema is Clarion + plugin's); **REQ-C-02** (token scheme — property: opaque + stable + collision-free-under-locator-reuse + preserves Clarion's determinism guarantee. *Finding:* locator-only content-addressing **collides on locator reuse** and does **not** survive cold rebuild after a rename, so side-table durability (REQ-C-03) — not the token scheme — is the orphan protection; §8 stays token-format-agnostic). |
+| **legis** | **Reported** — `legis/…/2026-06-01-legis-roadmap-to-first-class.md` App. A. §5 obligations confirmed. | **Decided & folded:** REQ-L-01 (lineage tamper-evidence → consumer re-establishes integrity at its own boundary; §2.2 + §9); git-rename **provider seam claimed** → §6 (shared with REQ-C-05); A.5 (pull-only v1, push is vN) → §9. Relies on existing §4 `resolve_sei` orphan behaviour (App. A.2 — reliance, not a new ask). |
+| **Wardline** | **Reported** — `wardline-roadmap-to-first-class.md` §2.2. SEI-client position confirmed: carry SEI as the explain/dossier handle, **zero engine change**, graceful degrade when the `sei` capability is absent. | **Requirements:** (1) **content-axis hash-granularity** harmonisation (entity-body vs whole-file, §2 note) — adjacent work, flagged not to be silently inherited; (2) supports REQ-C-02's determinism constraint — Wardline's warm/cold byte-identical-findings test must survive whatever token scheme Clarion picks, i.e. the SEI **must not leak into Wardline fact fingerprints** (it is a binding key, not a fingerprint input). |
 
 ---
 
@@ -205,7 +207,9 @@ Settled during brainstorming; not re-opened here:
 | **content_hash** | the per-entity content hash Clarion already computes (`entities.content_hash`, the entity body) | changes on edit | the **freshness** signal — unchanged role |
 
 SEI is **opaque**: consumers MUST NOT parse it (same discipline as today's
-entity id). Its internal form is Clarion's business; `<ulid>` is a suggestion.
+entity id). Its internal form is Clarion's business; `<ulid>` is a suggestion —
+the concrete token scheme (and its determinism / collision properties) is an
+**open pre-lock requirement owned by Clarion** (REQ-C-02, §0.5).
 
 > **Hash-granularity note (a pre-existing inconsistency, not introduced here):**
 > Filigree's `content_hash_at_attach` snapshots `entities.content_hash` (the
@@ -239,6 +243,15 @@ Clarion keeps an **append-only lineage log** of SEI events: `born`,
 distinguish ORPHAN from STALE, lets a human reconcile an orphaned binding, and
 gives `legis` a ready-made, tamper-evidence-able audit trail for free.
 
+**Tamper-evidence, concretely (v1) — [REQ-L-01].** In v1 Clarion serves `lineage`
+from an **append-only store with no backfill path** and does **not** attach a
+hash-chain or signature over the event log. A consumer that needs integrity
+(legis's protected mode) **re-establishes it at its own governance boundary** —
+e.g. snapshot-hashing the lineage at each decision and detecting divergence on
+re-read — per the §2 custody axiom (re-reading persisted data is a fresh
+boundary; re-verify, don't assume). A Clarion-side signed / hash-chained lineage
+is North Star (§9), not v1. legis accepted this disposition (its App. A.4).
+
 ---
 
 ## 3. The re-binding matcher (Clarion, on re-index)
@@ -253,7 +266,9 @@ Deterministic and fail-closed. For each entity in a new scan, decide its SEI:
    - a git-detected rename of the file/symbol **and** a byte-identical body hash
      → carry the SEI (`locator_changed`);
    - **identical body hash and identical signature** at a new module/locator
-     → carry the SEI (`moved`).
+     → carry the SEI (`moved`). *(The formal **signature** — a versioned,
+     plugin-supplied discrete field — is an open pre-lock requirement owned by
+     Clarion; the term is under-specified until then: REQ-C-01, §0.5.)*
 3. **No confident match** → **fail closed**: mint a new SEI for the new entity
    (`born`), and mark the vanished prior entity `orphaned`. Bindings on the old
    SEI now read ORPHAN; they are never silently re-pointed.
@@ -271,6 +286,14 @@ The signals the matcher needs already exist on the entity row (`content_hash`,
 `source_byte_start/end`, `name`/`short_name`, `first_seen_commit`,
 `properties`); v1 adds the retained prior map and the git-rename signal (which
 may later be sourced from `legis` — see §6).
+
+**Storage shape — [REQ-C-03].** This is a **lightweight keyed side table**
+(SEI ↔ locator + body-hash + signature), **not** a full DB snapshot or a retained
+prior `clarion.db`, cleared only on an explicit `--force` reinit. Its
+**durability is the real protection against cold-rebuild orphaning** — more so
+than the token scheme: a `--force` that loses this table re-mints every SEI from
+current state regardless of how the token is constructed. Clarion reuses the same
+side table to unblock file-level incremental analysis.
 
 ---
 
@@ -292,6 +315,15 @@ Identity resolution, exposed over the HTTP read API (consumers are HTTP clients)
   mis-resolution. Consumers cannot distinguish a locator from an SEI by inspection
   (opacity is the discipline), so safe, idempotent, resumable backfill (§7.1)
   depends entirely on this rejection contract.
+- **No binding keyed on a locator, on any surface — [REQ-C-04].** The invariant
+  is a *property*, not an endpoint list: **no cross-tool binding may be keyed on a
+  locator.** Every Clarion surface that returns an entity identity for use as a
+  binding key — the HTTP read API **and** the MCP tool surface (`find_entity`,
+  `entity_at`, `callers_of`, `neighborhood`, …) — MUST carry the **SEI**; a
+  locator may also appear, but only explicitly labelled as the (mutable) address.
+  Documenting an "MCP locator exception" is **rejected** — it would sanction an
+  unstable binding key, a false-green. Framing it as a property auto-covers any
+  future surface.
 
 SEI is opaque on the wire. Batch variants mirror the existing
 `…:batch-get` shape. (Linkage exposure — callers/callees over HTTP — is a
@@ -303,7 +335,7 @@ SEI is opaque on the wire. Batch variants mirror the existing
 
 | Tool | Obligation |
 |---|---|
-| **Clarion** (authority) | mint + persist SEI; retain prior-index state (§3.1); run the deterministic matcher; fail-closed mint+lineage on ambiguity; serve `resolve` / `resolve_sei` / `lineage`; advertise the `sei` capability + version |
+| **Clarion** (authority) | mint + persist SEI; retain prior-index state (§3.1); run the deterministic matcher; fail-closed mint+lineage on ambiguity; serve `resolve` / `resolve_sei` / `lineage`; advertise the `sei` capability + version; carry SEI (never a bare locator as a binding key) on **every** identity-bearing surface — HTTP **and** MCP alike (§4, REQ-C-04) |
 | **Wardline** | key taint facts (and dossier reads) on **SEI**, resolving locator→SEI via Clarion; treat SEI opaque; degrade gracefully when the `sei` capability is absent |
 | **Filigree** (frozen) | **no code change, but not auto-conformant** (§0.1) — it already stores an opaque `clarion_entity_id`, so the standard only makes that stored value an SEI going forward, but conformance still requires the locator→SEI backfill (§7) to have run and the §8 oracle to pass. Its `content_hash_at_attach` drift check is unchanged and now cleanly means the **content axis** (STALE); the identity axis (ORPHAN) lives in Clarion's `resolve_sei` |
 | **`legis`** (planned 4th subsystem) | governance attestations keyed on **SEI**; consume `lineage` as the audit trail; as the suite's git-interface owner, may *supply* the git-rename signal the matcher consumes (§6) |
@@ -321,9 +353,14 @@ surrogate approach is safe to set across a suite with a frozen member.
   the `/home/john/elspeth` plugin/governance architecture) is both an SEI
   *consumer* (attestations key on SEI; lineage is its audit spine) and a
   potential *provider* of the git-rename/history signal the §3 matcher needs.
-  v1 sources git-rename detection inside Clarion (shell/libgit2); if/when `legis`
-  ships a git interface, that signal can move behind it with no change to the SEI
-  model — the matcher consumes "a git-rename signal," not "Clarion's git code."
+  v1 sources git-rename detection inside Clarion (shell/libgit2), but **behind a
+  typed `git-rename signal` interface defined in v1** so it does not calcify as
+  Clarion-internal — the matcher consumes "a git-rename signal"
+  (`{old_locator, new_locator, commit, …}`), not "Clarion's git code" [REQ-C-05].
+  **legis formally claims this provider seam** (its App. A.3): once its git
+  interface ships it becomes the first external supplier, with no change to the
+  SEI model and no move of identity authority out of Clarion. Shape the seam now
+  with legis as the planned first implementer.
 - **The dossier** (`2026-06-01-wardline-loom-entity-dossier-design.md`) should be
   updated, once this lands, to key its sections on SEI and to replace its §6.1
   ad-hoc ORPHAN handling with the §2.1 two-axis model. Until then the dossier's
@@ -402,7 +439,9 @@ federation §5 audit — that every tool runs against a reference Clarion:
 | Matcher | deterministic (locator / git-rename+identical-body / identical-body+sig move) | **edit-tolerant fuzzy** matching (carry SEI across rename *with* body edits) above a high similarity threshold, still fail-closed below it |
 | Re-bind posture | fail-closed (mint + orphan on ambiguity) | — (posture is permanent) |
 | Lineage | `born`/`locator_changed`/`moved`/`orphaned`/`superseded` | richer **split/merge** lineage (one entity → two; two → one) with provenance |
-| Git signal | sourced in Clarion | sourced via `legis`'s git interface |
+| Git signal | sourced in Clarion (behind a typed interface) | sourced via `legis`'s git interface |
+| Lineage integrity | append-only store; consumer re-establishes integrity at its own boundary (REQ-L-01) | Clarion-side **signed / hash-chained** lineage |
+| Lineage delivery | **pull-only** polling on `lineage(sei)` (legis A.5) | push / event surface (rejected for v1 as Loom-URI-class apparatus) |
 
 Explicitly **not** in scope, ever, as part of this standard: the Loom-URI scheme,
 a federation registry, `/api/loom/multi-fetch`, or cross-language identity
