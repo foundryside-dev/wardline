@@ -97,7 +97,7 @@ using the dispatch prompt; it is fully autonomous (no sibling gate).
 
 | Gate | Current state (2026-06-02) | Owner |
 |---|---|---|
-| **SEI lock** | REQ-C-01/C-02 **RESOLVED** (Clarion ADR-037); all four subsystems reported. Lock waits ONLY on the §8 conformance oracle (+ ADR-037 authored). | suite (Clarion authority) |
+| **SEI lock** | REQ-C-01/C-02 **RESOLVED** (Clarion ADR-038); all four subsystems reported. Lock waits ONLY on the §8 conformance oracle (+ ADR-038 authored). | suite (Clarion authority) |
 | **Clarion HTTP linkages** | ☐ not shipped — Clarion P0, autonomous (their roadmap M4) | Clarion |
 | **Clarion prior-index retention** | ☐ not shipped — Clarion P0, autonomous (M3); prerequisite for SEI matcher + incremental | Clarion |
 | **Clarion SEI authority** | ⛔ gated on SEI lock; then minting/matcher/lineage/wire (M5) | Clarion |

@@ -162,16 +162,16 @@ in it.
 
 **All four subsystems have now reported** (as of 2026-06-02), and the two items
 that were OPEN — Clarion's REQ-C-01 / REQ-C-02 — are now **RESOLVED by Clarion in
-ADR-037**. The four roadmaps are mutually consistent (the one cross-subsystem seam,
+ADR-038**. The four roadmaps are mutually consistent (the one cross-subsystem seam,
 git-rename, is *agreement* from both sides, §6). **Remaining before lock (§0.3):
-the §8 conformance oracle encodes the resolutions** — and ADR-037 itself is authored
+the §8 conformance oracle encodes the resolutions** — and ADR-038 itself is authored
 (Clarion records it as a plan task, not yet a written file, so the citation is a
 near-term forward reference).
 
 | Subsystem | Status | Recorded requirements |
 |---|---|---|
 | **Filigree** | **Reported** — `filigree/…/2026-06-01-filigree-roadmap-to-first-class.md` App. A | **REQ-F-01** → **DECIDED: single hard cutover** (§7.1; owner controls all four release cycles → no migration-window machinery). **REQ-F-02** (`resolve` rejects non-locator inputs) → §4 + §7.1; **Clarion implements**. |
-| **Clarion** | **Reported** — `clarion/…/2026-06-01-clarion-roadmap-to-first-class.md` App. A. §5 obligations accepted. | **Decided & folded:** REQ-C-03 (lightweight side table, not a snapshot → §3.1); REQ-C-04 (no locator binding on **any** surface, HTTP **and** MCP → §4 / §5); REQ-C-05 (typed `git-rename signal` interface → §6). **RESOLVED in ADR-037 (2026-06-02):** **REQ-C-01** — signature is a plugin-declared, versioned JSON object stored verbatim and compared by string equality (near-redundant for the v1 deterministic move case since a byte-identical body implies it; carried for conformance + as the load-bearing input to the North-Star fuzzy matcher → §3). **REQ-C-02** — token is `clarion:eid:<blake3(locator ++ 0x00 ++ mint_run_id)[:32 hex]>` (collision-free under locator reuse; **no** time/RNG component). Clarion accepted the peer finding that `blake3(locator-at-birth)` was wrong (`first_seen_commit` is never populated → degenerates to the collision-prone `blake3(locator)`) and reframed identity as **stateful**: the SEI *value* is reproduced from the persisted `sei_bindings` table, not re-derived; the byte-identical-run guarantee covers entity/edge/finding **state**, not identity values. **Ground truth surfaced:** `entities` is cumulative/never-pruned, so identity lives in a dedicated `sei_bindings` table (orphaning = a status flip, not a row deletion) — a Clarion-internal storage choice, consistent with this spec's contract. |
+| **Clarion** | **Reported** — `clarion/…/2026-06-01-clarion-roadmap-to-first-class.md` App. A. §5 obligations accepted. | **Decided & folded:** REQ-C-03 (lightweight side table, not a snapshot → §3.1); REQ-C-04 (no locator binding on **any** surface, HTTP **and** MCP → §4 / §5); REQ-C-05 (typed `git-rename signal` interface → §6). **RESOLVED in ADR-038 (2026-06-02):** **REQ-C-01** — signature is a plugin-declared, versioned JSON object stored verbatim and compared by string equality (near-redundant for the v1 deterministic move case since a byte-identical body implies it; carried for conformance + as the load-bearing input to the North-Star fuzzy matcher → §3). **REQ-C-02** — token is `clarion:eid:<blake3(locator ++ 0x00 ++ mint_run_id)[:32 hex]>` (collision-free under locator reuse; **no** time/RNG component). Clarion accepted the peer finding that `blake3(locator-at-birth)` was wrong (`first_seen_commit` is never populated → degenerates to the collision-prone `blake3(locator)`) and reframed identity as **stateful**: the SEI *value* is reproduced from the persisted `sei_bindings` table, not re-derived; the byte-identical-run guarantee covers entity/edge/finding **state**, not identity values. **Ground truth surfaced:** `entities` is cumulative/never-pruned, so identity lives in a dedicated `sei_bindings` table (orphaning = a status flip, not a row deletion) — a Clarion-internal storage choice, consistent with this spec's contract. |
 | **legis** | **Reported** — `legis/…/2026-06-01-legis-roadmap-to-first-class.md` App. A. §5 obligations confirmed. | **Decided & folded:** REQ-L-01 (lineage tamper-evidence → consumer re-establishes integrity at its own boundary; §2.2 + §9); git-rename **provider seam claimed** → §6 (shared with REQ-C-05); A.5 (pull-only v1, push is vN) → §9. Relies on existing §4 `resolve_sei` orphan behaviour (App. A.2 — reliance, not a new ask). |
 | **Wardline** | **Reported** — `wardline-roadmap-to-first-class.md` §2.2. SEI-client position confirmed: carry SEI as the explain/dossier handle, **zero engine change**, graceful degrade when the `sei` capability is absent. | **Requirements:** (1) **content-axis hash-granularity** harmonisation (entity-body vs whole-file, §2 note) — adjacent work, flagged not to be silently inherited; (2) supports REQ-C-02's determinism constraint — Wardline's warm/cold byte-identical-findings test must survive whatever token scheme Clarion picks, i.e. the SEI **must not leak into Wardline fact fingerprints** (it is a binding key, not a fingerprint input). |
 
@@ -208,7 +208,7 @@ Settled during brainstorming; not re-opened here:
 
 SEI is **opaque**: consumers MUST NOT parse it (same discipline as today's
 entity id). Its internal form is Clarion's business. The `<ulid>` suggestion is
-**superseded** by Clarion's resolved scheme (REQ-C-02, ADR-037, §0.5):
+**superseded** by Clarion's resolved scheme (REQ-C-02, ADR-038, §0.5):
 `clarion:eid:<blake3(locator ++ 0x00 ++ mint_run_id)>` — opaque to all consumers,
 collision-free under locator reuse, with no time/RNG component. The SEI *value* is
 reproduced from Clarion's persisted binding store, not re-derived; consumers never
@@ -269,7 +269,7 @@ Deterministic and fail-closed. For each entity in a new scan, decide its SEI:
    - a git-detected rename of the file/symbol **and** a byte-identical body hash
      → carry the SEI (`locator_changed`);
    - **identical body hash and identical signature** at a new module/locator
-     → carry the SEI (`moved`). *(**signature** is resolved per REQ-C-01 / ADR-037:
+     → carry the SEI (`moved`). *(**signature** is resolved per REQ-C-01 / ADR-038:
      a plugin-declared, versioned JSON object compared by string equality. In the
      v1 deterministic move case it is near-redundant — a byte-identical body
      already implies it — but it is carried for conformance and is the load-bearing
@@ -319,7 +319,7 @@ Identity resolution, exposed over the HTTP read API (consumers are HTTP clients)
   with a documented "not a valid locator" error, **never** a silent
   mis-resolution. Consumers cannot distinguish a locator from an SEI by inspection
   (opacity is the discipline), so safe, idempotent, resumable backfill (§7.1)
-  depends entirely on this rejection contract. *Mechanism (Clarion, ADR-037):* the
+  depends entirely on this rejection contract. *Mechanism (Clarion, ADR-038):* the
   SEI prefix `clarion:eid:` is a **reserved prefix** a locator can never take, and
   `resolve` rejects it explicitly — a structural colon-count check is **insufficient**
   (an SEI carries the same two colons as a `{plugin}:{kind}:{qualname}` locator).
