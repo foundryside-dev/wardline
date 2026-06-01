@@ -1018,3 +1018,198 @@ def test_compute_return_taint_value_unchanged_for_indirection() -> None:
     node = ast.parse(textwrap.dedent(src)).body[0]
     var_taints = compute_variable_taints(node, T.INTEGRAL, dict(tm))
     assert compute_return_taint(node, T.INTEGRAL, dict(tm), var_taints) == T.EXTERNAL_RAW
+
+
+# ── Coverage: control-flow / target shapes that the existing corpus does not reach.
+# Each drives a specific structural arm AND asserts the resulting variable taint. ──
+
+
+def test_standalone_formattedvalue_resolves_inner_value() -> None:
+    # A bare FormattedValue node (the interpolation field, no surrounding JoinedStr)
+    # must carry its inner expression's taint. Resolved directly via _resolve_expr.
+    import ast
+
+    from wardline.scanner.taint.variable_level import _resolve_expr
+
+    node = ast.parse("f'{p}'").body[0].value  # JoinedStr
+    field = node.values[0]
+    assert isinstance(field, ast.FormattedValue)
+    out = _resolve_expr(field, T.UNKNOWN_RAW, {}, {"p": T.EXTERNAL_RAW})
+    assert out == T.EXTERNAL_RAW
+
+
+def test_nested_walrus_in_comprehension_element_binds_outer_scope() -> None:
+    # _name_bound_by_walrus recurses through nested children: a walrus buried BELOW
+    # the comprehension's direct element (inside a call wrapping it) is found by the
+    # recursive descent, so PEP 572's enclosing-scope binding leaks back and the
+    # bound name reads the assigned (raw) taint, not the literal default.
+    src = "def f(p):\n    z = [g((x := read_raw(p))) for _ in r]\n    y = x\n"
+    out = _vt(src, function_taint=T.INTEGRAL, taint_map={"read_raw": T.EXTERNAL_RAW})
+    assert out["y"] == T.EXTERNAL_RAW
+
+
+def test_propagating_builtin_multi_arg_combines_via_least_trusted() -> None:
+    # format(value, spec) is a curated propagating builtin: it combines ALL arg taints
+    # via least_trusted (the loop over arg_taints[1:]), so a raw arg taints the result
+    # even alongside a clean one. least_trusted(INTEGRAL, EXTERNAL_RAW) = EXTERNAL_RAW.
+    out = _vt(
+        "def f(p):\n    spec = ''\n    x = format(p, spec)\n",
+        function_taint=T.EXTERNAL_RAW,
+    )
+    assert out["x"] == T.EXTERNAL_RAW
+
+
+def test_multi_target_assign_with_container_write_walks_every_target() -> None:
+    # ``d[0] = y = p`` has two targets: a Subscript FIRST then a Name. After the
+    # Subscript-write branch the for-loop must continue to the next (Name) target —
+    # tainting the plain Name y AND contaminating the container base d.
+    src = "def f(p):\n    d = {}\n    d[0] = y = p\n    z = d\n"
+    out = _vt(src, function_taint=T.EXTERNAL_RAW)
+    assert out["y"] == T.EXTERNAL_RAW  # the plain-Name target, reached after the subscript
+    assert out["z"] == T.EXTERNAL_RAW  # container base contaminated by the subscript write
+
+
+def test_nested_tuple_unpack_elementwise() -> None:
+    # ``((b, c), d) = ((2, p), 9)`` — element-wise unpack: the FIRST pair is a nested
+    # tuple target, so after recursing into it the loop must continue to the trailing
+    # Name pair (d, 9). p is function_taint(EXTERNAL_RAW); the nested c must receive it.
+    src = "def f(p):\n    ((b, c), d) = ((2, p), 9)\n"
+    out = _vt(src, function_taint=T.EXTERNAL_RAW)
+    assert out["b"] == T.INTEGRAL
+    assert out["c"] == T.EXTERNAL_RAW
+    assert out["d"] == T.INTEGRAL
+
+
+def test_matching_unpack_with_starred_middle_element() -> None:
+    # ``(a, *b, c) = (1, 2, p)`` — element-wise matching unpack. The middle target is
+    # a Starred (neither Name nor Tuple/List), so the loop must skip it and continue
+    # to the trailing Name c. c gets p's taint; a and b are clean literals.
+    src = "def f(p):\n    (a, *b, c) = (1, 2, p)\n"
+    out = _vt(src, function_taint=T.EXTERNAL_RAW)
+    assert out["a"] == T.INTEGRAL
+    assert out["c"] == T.EXTERNAL_RAW  # the literal p element
+
+
+def test_nonmatching_unpack_with_nested_list_target_skipped() -> None:
+    # ``[x, [y], z] = p`` — RHS is not a matching literal tuple, so every Name target
+    # gets the RHS taint. The middle target is a nested List (neither Name nor
+    # Starred), so the loop must skip it and continue to the trailing Name z.
+    src = "def f(p):\n    [x, [y], z] = p\n"
+    out = _vt(src, function_taint=T.EXTERNAL_RAW)
+    assert out["x"] == T.EXTERNAL_RAW
+    assert out["z"] == T.EXTERNAL_RAW  # reached after the skipped nested-list target
+
+
+def test_starred_target_in_nonmatching_unpack_gets_rhs_taint() -> None:
+    # ``*rest, a = p`` — RHS is not a matching literal tuple, so every target gets the
+    # RHS taint. The Starred target comes FIRST, so after its branch the loop must
+    # continue to the trailing Name target a.
+    src = "def f(p):\n    *rest, a = p\n"
+    out = _vt(src, function_taint=T.EXTERNAL_RAW)
+    assert out["rest"] == T.EXTERNAL_RAW
+    assert out["a"] == T.EXTERNAL_RAW
+
+
+def test_container_write_through_call_base_is_noop() -> None:
+    # ``foo()[k] = p`` — the write target's chain bottoms out at a Call, not a Name,
+    # so _container_base_name returns None and _taint_container_base does nothing
+    # (the 606->exit arm). No variable is tracked, but the walk must not crash and any
+    # genuinely tracked var is untouched.
+    src = "def f(p):\n    z = 42\n    foo()[0] = p\n"
+    out = _vt(src, function_taint=T.EXTERNAL_RAW)
+    assert out["z"] == T.INTEGRAL  # unaffected — the call-base write tracked nothing
+
+
+def test_for_else_body_is_walked() -> None:
+    # ``for ... else`` — the orelse body runs after normal completion and must be
+    # walked so its assignments are tracked.
+    src = "def f(p):\n    for i in p:\n        pass\n    else:\n        x = p\n"
+    out = _vt(src, function_taint=T.EXTERNAL_RAW)
+    assert out["x"] == T.EXTERNAL_RAW
+
+
+def test_while_else_body_is_walked() -> None:
+    # ``while ... else`` — the orelse body must be walked.
+    src = "def f(p):\n    while c:\n        pass\n    else:\n        x = p\n"
+    out = _vt(src, function_taint=T.EXTERNAL_RAW)
+    assert out["x"] == T.EXTERNAL_RAW
+
+
+def test_try_finally_body_is_walked() -> None:
+    # ``try/finally`` — the finalbody runs unconditionally after merge and must be
+    # walked so its assignments are tracked.
+    src = "def f(p):\n    try:\n        pass\n    finally:\n        x = p\n"
+    out = _vt(src, function_taint=T.EXTERNAL_RAW)
+    assert out["x"] == T.EXTERNAL_RAW
+
+
+def test_match_mapping_rest_and_norest_capture_targets() -> None:
+    # _collect_pattern_targets over a MatchMapping: WITH a ``**rest`` capture (rest is
+    # not None → bound) and WITHOUT (rest is None → the 890->899 fall-through). Both
+    # captured names inherit the subject taint; a no-rest mapping binds only its value
+    # sub-patterns.
+    src_rest = "def f(p):\n    match p:\n        case {'k': v, **rest}:\n            a = rest\n            b = v\n"
+    out = _vt(src_rest, function_taint=T.EXTERNAL_RAW)
+    assert out["a"] == T.EXTERNAL_RAW  # **rest captured the subject
+    assert out["b"] == T.EXTERNAL_RAW  # value sub-pattern captured the subject
+
+    src_norest = "def f(p):\n    match p:\n        case {'k': v}:\n            b = v\n"
+    out2 = _vt(src_norest, function_taint=T.EXTERNAL_RAW)
+    assert out2["b"] == T.EXTERNAL_RAW  # value sub-pattern captured; no rest binding
+
+
+def test_match_sequence_named_and_anonymous_star() -> None:
+    # MatchStar: a NAMED ``*rest`` binds (name is not None), while a bare ``*_`` binds
+    # nothing (name is None → the 891->908 fall-through). The named star captures the
+    # subject taint; the head capture does too.
+    src = (
+        "def f(p):\n"
+        "    match p:\n"
+        "        case [head, *rest]:\n"
+        "            a = head\n"
+        "            b = rest\n"
+        "        case [first, *_]:\n"
+        "            c = first\n"
+    )
+    out = _vt(src, function_taint=T.EXTERNAL_RAW)
+    assert out["a"] == T.EXTERNAL_RAW  # head capture
+    assert out["b"] == T.EXTERNAL_RAW  # *rest named-star capture
+    assert out["c"] == T.EXTERNAL_RAW  # first capture (the *_ binds nothing — no crash)
+
+
+def test_for_subscript_target_assigns_nothing_tracked() -> None:
+    # ``for d[k] in p`` — the loop target is a Subscript, which _assign_target does not
+    # bind (no Name/Tuple/List/Starred match → the 922->exit fall-through). The walk
+    # must not crash and leaves no spurious tracked variable; a genuinely tracked var
+    # is untouched.
+    src = "def f(p):\n    d = {}\n    z = 42\n    for d[0] in p:\n        pass\n"
+    out = _vt(src, function_taint=T.EXTERNAL_RAW)
+    assert out["z"] == T.INTEGRAL  # untouched
+
+
+def test_for_target_nested_starred_assigns_taint() -> None:
+    # ``for (a, *rest) in p`` — _assign_target recurses into the Tuple target and hits
+    # the Starred arm (913-914), binding both a and rest to the iterable element taint.
+    src = "def f(p):\n    for (a, *rest) in p:\n        pass\n"
+    out = _vt(src, function_taint=T.EXTERNAL_RAW)
+    assert out["a"] == T.EXTERNAL_RAW
+    assert out["rest"] == T.EXTERNAL_RAW
+
+
+def test_return_callee_indirect_call_func_is_none() -> None:
+    # ``return foo[0]()`` — the return value IS a Call but its func is a Subscript
+    # (neither Name nor Attribute), so _return_callee returns None: there is no
+    # direct callee name to surface (the 1034->1036 fall-through). The taint is still
+    # computed (function_taint fallback for the unmodelled call shape).
+    import ast
+    import textwrap
+
+    from wardline.scanner.taint.variable_level import (
+        compute_return_callee,
+        compute_variable_taints,
+    )
+
+    src = "def f(p):\n return foo[0]()\n"
+    node = ast.parse(textwrap.dedent(src)).body[0]
+    vt = compute_variable_taints(node, T.EXTERNAL_RAW, {})
+    assert compute_return_callee(node, T.EXTERNAL_RAW, {}, vt) is None

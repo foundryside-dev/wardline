@@ -175,3 +175,35 @@ def test_floor_clamp_never_increases_trust() -> None:
         unresolved_counts={},
     )
     assert refined["m.handler"] == T.EXTERNAL_RAW
+
+
+def test_provider_callee_without_return_taint_falls_back_to_seed() -> None:
+    # A provider-anchored callee MISSING from return_taints: _anchor_or_seed must fall
+    # back to the callee's seed taint (not KeyError). handler (INTEGRAL) calls fetch
+    # (provider, seed EXTERNAL_RAW, absent from return_taints) -> handler demotes to
+    # the seed EXTERNAL_RAW (weakest-link), never raising.
+    refined, _prov = refine_minimum_scope_taints(
+        target_functions=["m.handler"],
+        edges={"m.handler": frozenset({"m.fetch"})},
+        seed_taints={"m.handler": T.INTEGRAL, "m.fetch": T.EXTERNAL_RAW},
+        seed_sources={"m.handler": "default", "m.fetch": "provider"},
+        return_taints={},  # fetch absent -> _anchor_or_seed uses fetch's seed
+        unresolved_counts={},
+    )
+    assert refined["m.handler"] == T.EXTERNAL_RAW
+
+
+def test_target_function_without_seed_is_skipped() -> None:
+    # A target function absent from seed_taints has no taint to refine: the loop must
+    # skip it (no entry in the refined map), never raising.
+    refined, prov = refine_minimum_scope_taints(
+        target_functions=["m.present", "m.absent"],
+        edges={"m.present": frozenset()},
+        seed_taints={"m.present": T.GUARDED},  # m.absent has no seed
+        seed_sources={"m.present": "default"},
+        return_taints={},
+        unresolved_counts={},
+    )
+    assert refined == {"m.present": T.GUARDED}
+    assert "m.absent" not in refined
+    assert "m.absent" not in prov

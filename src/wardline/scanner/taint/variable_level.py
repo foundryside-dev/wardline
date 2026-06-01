@@ -167,7 +167,9 @@ def _resolve_expr(
         return result
     if isinstance(node, ast.NamedExpr):
         taint = _resolve_expr(node.value, function_taint, taint_map, var_taints)
-        if isinstance(node.target, ast.Name):
+        # A NamedExpr (walrus) target is always an ast.Name by the Python grammar
+        # (``(x := ...)``), so the False branch is unreachable by any parseable source.
+        if isinstance(node.target, ast.Name):  # pragma: no branch
             var_taints[node.target.id] = taint
         return taint
     if isinstance(node, ast.IfExp):
@@ -415,7 +417,10 @@ def _process_stmt(
             # B case: contaminate the base variable so a later read sees it.
             rhs = _resolve_expr(value, function_taint, taint_map, var_taints)
             _taint_container_base(stmt.target, rhs, function_taint, var_taints)
-        else:
+        else:  # pragma: no cover
+            # Unreachable: an AnnAssign target is always Name/Attribute/Subscript by
+            # the Python grammar, so the two branches above are exhaustive. Kept as a
+            # defensive fall-through (resolve for walrus side-effects).
             _resolve_expr(value, function_taint, taint_map, var_taints)
 
     elif isinstance(stmt, ast.For):
@@ -466,7 +471,9 @@ def _walk_exprs_for_walrus(
             continue  # separate scope — its walruses don't bind here
         if isinstance(child, ast.NamedExpr):
             taint = _resolve_expr(child.value, function_taint, taint_map, var_taints)
-            if isinstance(child.target, ast.Name):
+            # A walrus target is always an ast.Name by the Python grammar, so the
+            # False branch is unreachable by any parseable source.
+            if isinstance(child.target, ast.Name):  # pragma: no branch
                 var_taints[child.target.id] = taint
         _walk_exprs_for_walrus(child, function_taint, taint_map, var_taints)
 
@@ -502,7 +509,10 @@ def _handle_assign(
                 var_taints,
             )
 
-        elif isinstance(target, (ast.Subscript, ast.Attribute)):
+        # An Assign target is always Name/Tuple/List/Subscript/Attribute by the
+        # grammar, so these branches are exhaustive — the implicit "no branch matched,
+        # continue loop" arc out of this last elif is unreachable.
+        elif isinstance(target, (ast.Subscript, ast.Attribute)):  # pragma: no branch
             # Container/attribute write: d[k] = expr, obj.x = expr. Join the RHS
             # taint into the base variable's tracked taint, so a later READ of the
             # container (handled by the Subscript/Attribute branches of
@@ -570,7 +580,9 @@ def _handle_augassign(
     if isinstance(stmt.target, ast.Name):
         existing = var_taints.get(stmt.target.id, function_taint)
         var_taints[stmt.target.id] = least_trusted(existing, rhs_taint)
-    elif isinstance(stmt.target, (ast.Subscript, ast.Attribute)):
+    # An AugAssign target is always Name/Attribute/Subscript by the Python grammar,
+    # so these branches are exhaustive — the implicit fall-through is unreachable.
+    elif isinstance(stmt.target, (ast.Subscript, ast.Attribute)):  # pragma: no branch
         # d[k] += expr / obj.x += expr — contaminate the base container.
         _taint_container_base(stmt.target, rhs_taint, function_taint, var_taints)
 
@@ -794,7 +806,7 @@ def _handle_try(
             var_taints[var] = branch_taints[0]
             for t in branch_taints[1:]:
                 var_taints[var] = least_trusted(var_taints[var], t)
-        else:
+        else:  # pragma: no cover
             # Unreachable: ``all_vars`` is drawn solely from ``handler_branches``
             # (the try-success branch + each handler), every branch starts as a
             # copy of pre_try, so each var is present in >=1 branch and

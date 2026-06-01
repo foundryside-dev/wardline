@@ -196,3 +196,38 @@ def test_star_imported_trust_boundary_fires_end_to_end(tmp_path) -> None:
     result = run_scan(pkg)
     active = {f.rule_id for f in result.findings if f.suppressed.value == "active"}
     assert "PY-WL-102" in active, "star-imported @trust_boundary was not seeded"
+
+
+# ── Coverage: fail-closed arms reached only by unusual / malformed decorator
+# shapes. Each asserts the no-opinion (None) outcome the engine relies on. ──
+
+
+def test_subscript_decorator_is_no_opinion() -> None:
+    # ``@registry['x']`` — the decorator node is a Subscript, not a Name/Attribute
+    # chain, so _dotted_name returns None and the decorator resolves to no opinion.
+    out = _seed("registry = {}\n@registry['x']\ndef f():\n    return 1\n")
+    assert out["m.f"] is None
+
+
+def test_non_matching_keyword_is_skipped_before_level_arg() -> None:
+    # A decorator with an UNRELATED keyword before to_level: the kw loop must skip the
+    # non-matching keyword (118->117) and still read to_level correctly.
+    out = _seed(
+        "from wardline.decorators import trust_boundary\n"
+        "@trust_boundary(other=1, to_level='ASSURED')\ndef v(x):\n    return x\n"
+    )
+    assert out["m.v"] == FunctionTaint(T.EXTERNAL_RAW, T.ASSURED)
+
+
+def test_invalid_taintstate_token_is_no_opinion() -> None:
+    # A string token that is NOT a canonical TaintState (TaintState(token) raises) ->
+    # fail-closed (None), never a silent mis-read.
+    out = _seed("from wardline.decorators import trusted\n@trusted(level='NOPE')\ndef f():\n    return 1\n")
+    assert out["m.f"] is None
+
+
+def test_wardline_prefixed_but_unknown_decorator_is_no_opinion() -> None:
+    # A name under the wardline.decorators prefix that is NOT a REGISTRY decorator
+    # (``wardline.decorators.bogus``) — canonical not in REGISTRY -> no opinion.
+    out = _seed("import wardline.decorators\n@wardline.decorators.bogus\ndef f():\n    return 1\n")
+    assert out["m.f"] is None

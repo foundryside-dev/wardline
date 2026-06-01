@@ -175,4 +175,7 @@ class DecoratorTaintSourceProvider:
             if level is None:
                 return None
             return FunctionTaint(level, level)
-        return None
+        # Unreachable: REGISTRY holds exactly {external_boundary, trust_boundary,
+        # trusted}, all handled above, and ``canonical not in REGISTRY`` already
+        # returned None — so a REGISTRY decorator always matches one of the three.
+        return None  # pragma: no cover

@@ -315,7 +315,10 @@ def propagate_callgraph_taints(
 
                 # TRUST_RANK: ordering comparison, not taint combination (see §6)
                 ext_taint = ext_combined
-                if f in floating_down or f in floating_free:
+                # Every non-anchored function is in floating_down or floating_free (the
+                # §1 classification has no fourth non-anchored bucket), so the False
+                # arm of this guard is never taken for an f that reached here.
+                if f in floating_down or f in floating_free:  # pragma: no branch
                     l1_rank = TRUST_RANK[taint_map[f]]
                     if l1_rank > TRUST_RANK[ext_taint]:
                         ext_taint = taint_map[f]
@@ -325,7 +328,12 @@ def propagate_callgraph_taints(
                 except KeyError:
                     f_unresolved = 0
                 if f_unresolved > 0 and TRUST_RANK[taint_map[f]] > TRUST_RANK[ext_taint]:
-                    ext_taint = taint_map[f]
+                    # Unreachable: the floating floor above already pinned
+                    # ext_taint == taint_map[f] whenever rank[L1] > rank[ext] (the
+                    # same predicate), and every non-anchored f is floating — so by
+                    # this point rank[taint_map[f]] <= rank[ext_taint] always holds.
+                    # Redundant clamp kept for parity (taint-combination audit, F2).
+                    ext_taint = taint_map[f]  # pragma: no cover
                 if ext_taint != current[f]:
                     current[f] = ext_taint
                     refined.add(f)
@@ -420,7 +428,15 @@ def propagate_callgraph_taints(
         scc_key = frozenset(scc)
         converged = False
         while True:
-            if iterations >= safety_bound:
+            if iterations >= safety_bound:  # pragma: no cover
+                # Unreachable by sound inputs. The bound is ``8 * |SCC| + 8`` — strictly
+                # above the lattice height (8). The §2b.2 monotonicity commit guard pins
+                # every non-anchored move toward strictly-less trust, so a member's taint
+                # can change at most ``height`` (8) times before saturating at MIXED_RAW,
+                # after which ``new == current`` halts change and the SCC converges. No
+                # input respecting the transfer-function guards can exceed the bound; this
+                # is the divergence safety net the bound's docstring describes as
+                # deliberately loose relative to the reachable maximum.
                 logger.warning(
                     "L3 convergence bound hit for SCC of size %d after %d iterations",
                     len(scc),
@@ -580,7 +596,10 @@ def propagate_callgraph_taints(
                 func_unresolved = 0
             try:
                 func_via_callee = via_callee_map[func]
-            except KeyError:
+            except KeyError:  # pragma: no cover
+                # Unreachable: via_callee_map is initialised with an entry for every
+                # taint_map key (``{f: None for f in taint_map}``), and ``refined`` is a
+                # subset of taint_map, so a refined func always has a via_callee entry.
                 func_via_callee = None
             provenance[func] = TaintProvenance(
                 source="callgraph",
@@ -688,7 +707,9 @@ def compute_sccs(graph: dict[str, set[str]]) -> list[set[str]]:
         # Push initial frame
         try:
             start_neighbors = graph[start_node]
-        except KeyError:
+        except KeyError:  # pragma: no cover
+            # Unreachable: start_node is drawn from ``sorted(graph)``, so it is always a
+            # graph key. Defensive default kept for parity with the neighbor lookup.
             start_neighbors = set()
         work_stack.append((start_node, iter(sorted(start_neighbors)), True))
 
@@ -723,7 +744,11 @@ def compute_sccs(graph: dict[str, set[str]]) -> list[set[str]]:
                     # Visited neighbor — update lowlink if on stack
                     try:
                         neighbor_on_stack = on_stack[neighbor]
-                    except KeyError:
+                    except KeyError:  # pragma: no cover
+                        # Unreachable: on_stack[node] is set at every node's first visit
+                        # (and toggled False on SCC pop), so any *visited* neighbor (this
+                        # branch only runs when ``indices[neighbor]`` exists) always has an
+                        # on_stack entry. Defensive default kept for parity.
                         neighbor_on_stack = False
                     if neighbor_on_stack:
                         lowlinks[node] = min(lowlinks[node], indices[neighbor])

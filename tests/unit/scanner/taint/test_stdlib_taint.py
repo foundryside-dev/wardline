@@ -138,3 +138,44 @@ def test_legal_stdlib_return_tiers_accepted(state: str) -> None:
 def test_shipped_stdlib_table_still_loads() -> None:
     # The shipped yaml uses only legal tiers; the F5 guard must not break it.
     assert len(load_stdlib_taint()) > 0
+
+
+# ── Coverage: the per-entry shape validators (a bad entry must raise, not slip
+# through into the table). Each drives one isinstance guard in _build_table. ──
+
+
+def test_entry_not_a_mapping_raises() -> None:
+    with pytest.raises(ValueError, match=r"entries\[0\] must be a mapping"):
+        _build_table({"version": STDLIB_TAINT_VERSION, "entries": ["not-a-dict"]})
+
+
+@pytest.mark.parametrize("package", [None, "", 123])
+def test_package_must_be_nonempty_string(package: object) -> None:
+    with pytest.raises(ValueError, match="package must be a non-empty string"):
+        _build_table(
+            {
+                "version": STDLIB_TAINT_VERSION,
+                "entries": [{"package": package, "function": "f", "returns_taint": "GUARDED", "rationale": "x"}],
+            }
+        )
+
+
+@pytest.mark.parametrize("function", [None, "", 123])
+def test_function_must_be_nonempty_string(function: object) -> None:
+    with pytest.raises(ValueError, match="function must be a non-empty string"):
+        _build_table(
+            {
+                "version": STDLIB_TAINT_VERSION,
+                "entries": [{"package": "p", "function": function, "returns_taint": "GUARDED", "rationale": "x"}],
+            }
+        )
+
+
+def test_returns_taint_must_be_a_string() -> None:
+    with pytest.raises(ValueError, match="returns_taint must be a string"):
+        _build_table(
+            {
+                "version": STDLIB_TAINT_VERSION,
+                "entries": [{"package": "p", "function": "f", "returns_taint": 5, "rationale": "x"}],
+            }
+        )

@@ -214,7 +214,12 @@ class SummaryCache:
             except (json.JSONDecodeError, ValueError, KeyError, TypeError) as exc:
                 _logger.warning("SummaryCache.load: dropping malformed entry %s: %s", path, exc)
                 continue
-            if any(s.schema_version != SUMMARY_SCHEMA_VERSION for s in summaries):
+            # Defensive second schema gate. Unreachable in practice: FunctionSummary's
+            # __post_init__ raises when schema_version != SUMMARY_SCHEMA_VERSION, so a
+            # stale-schema file is already rejected by _deserialise_summary above and
+            # dropped via the malformed-entry handler — every summary reaching here has
+            # the current schema. Kept as an explicit invariant for structural parity.
+            if any(s.schema_version != SUMMARY_SCHEMA_VERSION for s in summaries):  # pragma: no cover
                 continue
             self._entries[cache_key] = summaries
 
