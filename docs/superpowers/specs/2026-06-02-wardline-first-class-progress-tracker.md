@@ -19,8 +19,22 @@ columns as work lands.
 
 ## Current position (update this line)
 
-**As of 2026-06-02:** **Track 1 (engine-quality floor) COMPLETE** on branch
-`feat/track1-engine-floor` (plan: `docs/superpowers/plans/2026-06-02-wardline-track1-engine-floor.md`).
+**As of 2026-06-02:** **Track 2 (extensible trust grammar) IN PROGRESS** on branch
+`loom-step-up` (Track 1 merged here). Design spec + implementation plan written and
+reviewed (advisor-pressure-tested): the grammar is a *code* seam (`scanner/grammar.py`:
+`BoundaryType`/`TrustGrammar`/`default_grammar()`), the same shape as `TaintSourceProvider`
+— NOT a DSL. Builtins re-expressed on the seam must stay byte-identical (a Task 0
+full-stream golden over dogfood+corpus is the oracle); the released `core.registry`
+contract (Clarion-consumed) stays frozen; the unprovable-boundary FACT is custom-only
+(builtins never emit it). Spec:
+`2026-06-02-wardline-track2-extensible-trust-grammar-design.md`; plan:
+`docs/superpowers/plans/2026-06-02-wardline-track2-extensible-trust-grammar.md`.
+Next: execute the plan (Task 0 golden → T2.1 model → T2.2 seam → T2.4 plumbing+FACT →
+acceptance fixture → close-out panel). **Track 1 remains complete** (below).
+
+**Track 1 recap —** **Track 1 (engine-quality floor) COMPLETE**, merged onto
+`loom-step-up` (was branch `feat/track1-engine-floor`; plan:
+`docs/superpowers/plans/2026-06-02-wardline-track1-engine-floor.md`).
 All four units done with every DoD gate green: T1.4 labeled FP corpus + FP-rate gate
 (0% ≤ 5%, 21 TRUE_POSITIVE active DEFECTs across the FP-prone shapes) + waiver
 discipline; T1.2 star-import resolution (`from wardline.decorators import *` seeded
@@ -50,17 +64,18 @@ spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 **DoD gates:** FP ≤5% on labeled corpus · coverage 90% global / 95% on `taint/` · warm/cold byte-identical green · dogfood finding-clean · every closed hole has a RED-first regression test.
 **Deferred out of Track 1:** T1.5 rule-set breadth (4 → ≥10) → after Track 2.
 
-### Track 2 — Extensible trust grammar  ·  gate: none (autonomous; sequence after T1)  ·  **☐ not started (next to spec)**
+### Track 2 — Extensible trust grammar  ·  gate: none (autonomous; sequence after T1)  ·  **◐ in progress (spec+plan written; executing)**
 
 | Unit | Work | Status |
 |---|---|---|
-| T2.1 | Define the grammar (boundary-type meta-model; lattice + rank-meet; fail-closed) | ☐ |
-| T2.2 | Boundary-type + rule registry / provider seam (builtins as defaults) | ☐ |
-| T2.3 | Re-express the 4 builtins + 3 decorators on the grammar | ☐ |
-| T2.4 | Soundness inheritance (unprovable custom boundary → `UNKNOWN_*` + FACT) | ☐ |
+| T0 | Byte-identity golden over dogfood+corpus (oracle, RED-first) | ◐ |
+| T2.1 | Define the grammar (`scanner/grammar.py`: `BoundaryType`/`LevelArg`/`TrustGrammar`/`default_grammar`) | ◐ |
+| T2.2 | Boundary-type loop replaces `_match` if-ladder; rules from grammar; `build_analyzer` (builtins as defaults) | ◐ |
+| T2.3 | Re-express the 4 builtins + 3 decorators on the grammar (golden held byte-for-byte) | ◐ |
+| T2.4 | Soundness inheritance (unprovable **custom** boundary → `UNKNOWN_*` + `WLN-ENGINE-UNPROVABLE-BOUNDARY` FACT; builtins never) | ◐ |
 
-**DoD:** agent defines a new boundary+rule end-to-end (acceptance fixture) · unprovable→UNKNOWN test · the 4 builtins re-expressed produce **byte-identical findings** to today (oracle held).
-**Note:** the hinge between "best analyzer" and "Loom citizen"; needs its own design spec (next brainstorm after T1). T1.5 (rule breadth) lands here, on the grammar.
+**DoD:** agent defines a new boundary+rule end-to-end (acceptance fixture, litmus = zero edits to `_match`/`_ALL_RULE_CLASSES`/`_ENTRIES`) · unprovable→UNKNOWN+FACT test · the 4 builtins re-expressed produce **byte-identical findings** to today (oracle held).
+**Note:** the hinge between "best analyzer" and "Loom citizen". Design spec: `2026-06-02-wardline-track2-extensible-trust-grammar-design.md`; plan: `…/plans/2026-06-02-wardline-track2-extensible-trust-grammar.md`. T1.5 (rule breadth) lands here, on the grammar. **Blockers baked into the plan:** released `core.registry` contract frozen (Clarion-consumed); summary-cache fingerprint must carry grammar identity (builtin = legacy string); `vocabulary.yaml`/`descriptor.py` unchanged (REGISTRY frozen).
 
 ### Track 3 — SEI-client  ·  groundwork: none · wiring: ⛔ Clarion SEI  ·  **☐ not started**
 
