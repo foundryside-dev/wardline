@@ -19,23 +19,33 @@ columns as work lands.
 
 ## Current position (update this line)
 
-**As of 2026-06-02:** Program + Track 1 specs written and committed. Track 1
-dispatch prompt produced (in conversation; persist on request). **No engine code
-written yet.** Next action: dispatch an agent on **Track 1 (engine-quality floor)**
-using the dispatch prompt; it is fully autonomous (no sibling gate).
+**As of 2026-06-02:** **Track 1 (engine-quality floor) COMPLETE** on branch
+`feat/track1-engine-floor` (plan: `docs/superpowers/plans/2026-06-02-wardline-track1-engine-floor.md`).
+All four units done with every DoD gate green: T1.4 labeled FP corpus + FP-rate gate
+(0% ≤ 5%, 21 TRUE_POSITIVE active DEFECTs across the FP-prone shapes) + waiver
+discipline; T1.2 star-import resolution (`from wardline.decorators import *` seeded
+statically, fail-closed for all else); T1.3 single-hop return-indirection in
+`compute_return_callee` (explain-only, taint values pinned unchanged); T1.1
+verify-and-close of the hardening epic (audit findings F1–F6 confirmed
+enforced/dispositioned). Suite 1063 passing; `scanner/taint/` coverage 100% (≥95%
+gate); warm/cold byte-identical green; dogfood clean; mypy/ruff clean. Default
+code-review panel run (static-analysis/Python/test/security) → SHIP / SHIP-WITH-FIXES,
+convergent must-fixes applied. **Branch not yet merged — awaiting merge-target
+decision.** Next action: **Track 2 (extensible trust grammar)** — the next thing to
+spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 
 ---
 
 ## The end-to-end plan (all five tracks)
 
-### Track 1 — Engine-quality floor  ·  gate: none (autonomous)  ·  **◐ spec'd, ready to dispatch**
+### Track 1 — Engine-quality floor  ·  gate: none (autonomous)  ·  **☑ done (branch `feat/track1-engine-floor`, unmerged)**
 
 | Unit | Work | Filigree | Status |
 |---|---|---|---|
-| T1.1 | Taint-combination engine hardening (2026-05-31 audit) | `wardline-2b138b3662` (epic, P2) | ☐ |
-| T1.2 | Star-import FN resolution | `wardline-2b427a9579` (P3) | ☐ |
-| T1.3 | Return-indirection in `compute_return_callee` | `wardline-82f49ec3c3` (P3) | ☐ |
-| T1.4 | FP economics: labeled corpus + FP-rate ≤5% + waiver discipline | (not yet filed) | ☐ |
+| T1.1 | Taint-combination engine hardening (2026-05-31 audit) | `wardline-2b138b3662` (epic, P2) | ☑ |
+| T1.2 | Star-import FN resolution | `wardline-2b427a9579` (P3) | ☑ |
+| T1.3 | Return-indirection in `compute_return_callee` | `wardline-82f49ec3c3` (P3) | ☑ |
+| T1.4 | FP economics: labeled corpus + FP-rate ≤5% + waiver discipline | `wardline-41f4a42a43` (P2) | ☑ |
 
 **DoD gates:** FP ≤5% on labeled corpus · coverage 90% global / 95% on `taint/` · warm/cold byte-identical green · dogfood finding-clean · every closed hole has a RED-first regression test.
 **Deferred out of Track 1:** T1.5 rule-set breadth (4 → ≥10) → after Track 2.

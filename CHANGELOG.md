@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Track 1 — engine-quality floor.** A labeled false-positive corpus
+  (`tests/corpus/`) with a manifest-driven FP-rate gate (≤5%; currently 0% over 21
+  true-positive fixtures spanning control-flow joins, match arms, validators,
+  broad/silent exceptions, aliased-stdlib sinks, and return indirection) plus
+  waiver discipline (every waiver carries a reason; waiver count ≤ rule count).
+
+### Fixed
+
+- **Star-import false-negative** — `from wardline.decorators import *` now resolves
+  the trust decorators statically (materialised from the in-process registry, never
+  by importing/executing the target), so a `@trust_boundary`/`@trusted`/
+  `@external_boundary` reached via star-import is seeded. Every other star import
+  stays unresolved and keeps emitting the honest `WLN-ENGINE-UNKNOWN-IMPORT` FACT.
+- **Explain provenance** — `compute_return_callee` resolves single-hop return
+  indirection (`x = read_raw(p); return x`), so `explain`/PY-WL-101 names the
+  contributing callee instead of `None`. Provenance only — taint values unchanged.
+
 ## [0.3.0] - 2026-05-31
 
 ### Added
