@@ -1,7 +1,11 @@
 # Loom — Stable Entity Identity (SEI) conformance standard (design)
 
 **Date:** 2026-06-01  
-**Status:** Approved design (brainstormed; ready for implementation planning)  
+**Status:** Canonical direction, **DRAFT — not yet locked.** SEI is the agreed
+single track every subsystem converges on; its precise shape is **open for
+per-subsystem requirements until lock** (see §0.3). Implementation that commits a
+subsystem to a specific SEI shape waits for lock; shape-independent groundwork
+(e.g. Clarion prior-index retention, §3.1) may start now.  
 **Authority:** Suite-wide standard. Clarion is the identity **authority/implementer**;
 Wardline, Filigree, and the planned `legis` subsystem are **consumers** that
 conform. This document lives in the Wardline specs tree for now; propagate the
@@ -84,14 +88,42 @@ API shape (ADR-029), the Wardline taint-fact store routes, and Filigree's frozen
 surface keep their transports and payloads unchanged — only the **identity value**
 they carry becomes an SEI.
 
-**What is closed vs open:** the *interface* is closed to negotiation — whether to
-adopt SEI, and what SEI is, are settled. What remains open is each subsystem's
-*implementation sequencing*. "We already agreed something different" is not a
-conformance exemption (§0.1).
+**What is closed vs open:** the *track* is closed — that there is one canonical
+identity interface, that it is SEI, and that it supersedes the divergent prior
+specs above. The *precise shape* of SEI is **open until lock** (§0.3). "We already
+agreed something different" is not grounds to stay on a divergent track; it *is*
+legitimate input if it reflects a real, emerging requirement raised before lock.
+
+## 0.3 Status: canonical direction, not yet locked
+
+SEI is the agreed single track — every subsystem abandons its divergent
+federation-identity version and converges here. But its **precise shape is not
+yet locked.** Each of the four subsystems gets to influence it before lock,
+because their requirements are **still emerging** — e.g. `legis`'s
+governance/audit needs, Clarion's matcher constraints, Filigree's frozen-surface
+limits, Wardline's dossier needs.
+
+**Settled now (not in the input window):**
+- that there is **one** canonical identity interface and it is **SEI** (the §0.2
+  supersession holds today);
+- the **conformance regime that takes effect at lock** — oracle-gated, no
+  grandfathering (§0.1).
+
+**Open until lock:** the interface details. The §1 decisions and the
+wire/lineage/matcher specifics are the **proposed baseline**; a subsystem may
+contest a detail by bringing a **concrete emerging requirement** — not by
+re-litigating a settled trade-off or to stay on its old spec.
+
+**Lock gate:** SEI locks when each of the four subsystems has signed off or
+recorded its requirements against this spec, and the §8 conformance oracle
+encodes them. After lock, §0.1 and §0.2 apply in full and changes need a
+versioned revision. Until then, build only what is **true regardless of the final
+shape** (Clarion prior-index retention, §3.1); defer anything that pins a
+specific SEI shape.
 
 ---
 
-## 1. Fixed design decisions
+## 1. Fixed design decisions (proposed baseline — see §0.3)
 
 Settled during brainstorming; not re-opened here:
 
