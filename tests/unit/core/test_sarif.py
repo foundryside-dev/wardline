@@ -121,8 +121,6 @@ def test_metric_findings_excluded_from_sarif() -> None:
     assert "PY-WL-101" in rule_ids
     assert "WLN-ENGINE-UNKNOWN-IMPORT" in rule_ids
 
-
-
     res = build_sarif([_f(suppressed=SuppressionState.JUDGED, reason="over-taint floor")])["runs"][0]["results"][0]
     assert res["suppressions"][0]["kind"] == "external"
     assert res["suppressions"][0]["justification"] == "over-taint floor"
