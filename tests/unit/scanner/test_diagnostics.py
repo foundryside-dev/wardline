@@ -98,3 +98,30 @@ def test_unknown_import_findings_are_facts() -> None:
     # Fingerprint stable from (module, package) — not message text.
     again = build_unknown_import_findings([("pkg/mod.py", "pkg.mod", tree)], project_modules=frozenset({"pkg.mod"}))
     assert findings[0].fingerprint == again[0].fingerprint
+
+
+def test_diagnose_resolved_star_module_emits_no_fact() -> None:
+    # A statically-resolvable star module (the trust vocabulary, T1.2) is NOT a
+    # coverage gap once materialised — it must not produce an UNKNOWN-IMPORT FACT.
+    tree = ast.parse("from wardline.decorators import *\n")
+    out = diagnose_unknown_imports(
+        tree=tree,
+        module_path="proj.m",
+        project_modules=frozenset(),
+        stdlib_keys=frozenset(),
+        resolvable_star_modules=frozenset({"wardline.decorators"}),
+    )
+    assert out == []
+
+
+def test_diagnose_unresolved_star_module_still_emits_fact() -> None:
+    # Fail-closed preserved: any star import we cannot materialise stays an honest FACT.
+    tree = ast.parse("from somethirdparty.plugins import *\n")
+    out = diagnose_unknown_imports(
+        tree=tree,
+        module_path="proj.m",
+        project_modules=frozenset(),
+        stdlib_keys=frozenset(),
+        resolvable_star_modules=frozenset({"wardline.decorators"}),
+    )
+    assert any("somethirdparty.plugins" in d[2] for d in out)

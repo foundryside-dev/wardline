@@ -164,3 +164,35 @@ def test_fingerprint_is_version_derived_and_stable() -> None:
     p = DecoratorTaintSourceProvider()
     assert p.fingerprint() == f"decorator-vocab:{REGISTRY_VERSION}"
     assert p.fingerprint() == p.fingerprint()
+
+
+def test_star_import_materialises_vocabulary_decorators() -> None:
+    # `from wardline.decorators import *` brings the trust decorators in by name.
+    # The provider resolves them only if build_import_alias_map materialised the
+    # statically-known vocabulary exports (T1.2) — without executing the target.
+    from wardline.scanner.taint.decorator_provider import vocabulary_star_exports
+
+    tree = ast.parse(
+        "from wardline.decorators import *\n@trust_boundary(to_level='ASSURED')\ndef v(p):\n    return p\n"
+    )
+    alias_map = build_import_alias_map(tree, module_path="m", star_exports=vocabulary_star_exports())
+    entities = discover_file_entities(tree, module="m", path="m.py")
+    ctx = SeedContext(module="m", alias_map=alias_map)
+    provider = DecoratorTaintSourceProvider()
+    out = {e.qualname: provider.taint_for(e, ctx) for e in entities}
+    assert out["m.v"] == FunctionTaint(T.EXTERNAL_RAW, T.ASSURED)
+
+
+def test_star_imported_trust_boundary_fires_end_to_end(tmp_path) -> None:
+    # End-to-end: a no-rejection @trust_boundary reached via star-import must fire
+    # PY-WL-102 (was a silent FN — the star import was dropped on the floor).
+    from wardline.core.run import run_scan
+
+    pkg = tmp_path / "proj"
+    pkg.mkdir()
+    (pkg / "m.py").write_text(
+        "from wardline.decorators import *\n@trust_boundary(to_level='ASSURED')\ndef v(p):\n    return p\n"
+    )
+    result = run_scan(pkg)
+    active = {f.rule_id for f in result.findings if f.suppressed.value == "active"}
+    assert "PY-WL-102" in active, "star-imported @trust_boundary was not seeded"

@@ -28,7 +28,10 @@ from wardline.scanner.diagnostics import (
 from wardline.scanner.index import discover_class_qualnames, discover_file_entities
 from wardline.scanner.rules import build_default_registry
 from wardline.scanner.taint.call_taint_map import build_call_taint_map
-from wardline.scanner.taint.decorator_provider import DecoratorTaintSourceProvider
+from wardline.scanner.taint.decorator_provider import (
+    DecoratorTaintSourceProvider,
+    vocabulary_star_exports,
+)
 from wardline.scanner.taint.function_level import seed_function_taints
 from wardline.scanner.taint.project_resolver import ModuleInput, resolve_project_taints
 from wardline.scanner.taint.provider import SeedContext, TaintSourceProvider
@@ -115,7 +118,7 @@ class WardlineAnalyzer:
                 tree = ast.parse(source)
                 entities = tuple(discover_file_entities(tree, module=module, path=relpath))
                 classes = frozenset(discover_class_qualnames(tree, module=module))
-                alias_map = build_import_alias_map(tree, module_path=module)
+                alias_map = build_import_alias_map(tree, module_path=module, star_exports=vocabulary_star_exports())
                 seeds = seed_function_taints(
                     entities,
                     ctx=SeedContext(module=module, alias_map=alias_map),
@@ -275,6 +278,7 @@ class WardlineAnalyzer:
             build_unknown_import_findings(
                 [(rp, mp, tr) for rp, mp, tr, _e, _a, _c in file_meta],
                 project_modules=frozenset(mp for _rp, mp, _tr, _e, _a, _c in file_meta),
+                resolvable_star_modules=frozenset(vocabulary_star_exports()),
             )
         )
         registry = self._registry if self._registry is not None else build_default_registry(config)

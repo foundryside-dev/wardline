@@ -31,6 +31,21 @@ _BOUNDARY_LEVELS = frozenset({TaintState.GUARDED, TaintState.ASSURED})
 _TRUSTED_LEVELS = frozenset({TaintState.INTEGRAL, TaintState.ASSURED})
 
 
+def vocabulary_star_exports() -> dict[str, dict[str, str]]:
+    """Statically-known star-export map for the trust-decorator module.
+
+    ``from wardline.decorators import *`` brings the :data:`REGISTRY` decorator names
+    into the importing module's namespace. Wardline knows these names a priori (they
+    are the REGISTRY keys), so it can materialise them WITHOUT importing or executing
+    the target module — the static-analyzer boundary is preserved. Returned as
+    ``{source_module_fqn: {local_name: target_fqn}}`` for
+    :func:`wardline.scanner.ast_primitives.build_import_alias_map`. Only this one
+    module resolves; every other star import stays unresolved and surfaces as an
+    honest ``WLN-ENGINE-UNKNOWN-IMPORT`` FACT (fail-closed preserved).
+    """
+    return {_VOCAB_PREFIX: {name: f"{_VOCAB_PREFIX}.{name}" for name in REGISTRY}}
+
+
 def _dotted_name(node: ast.expr) -> str | None:
     """Reconstruct a dotted name (``a.b.c``) from a Name/Attribute chain."""
     if isinstance(node, ast.Name):
