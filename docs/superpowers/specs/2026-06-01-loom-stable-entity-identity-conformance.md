@@ -168,7 +168,7 @@ with a concrete counter-requirement until lock.
 
 | Subsystem | Status | Recorded requirements |
 |---|---|---|
-| **Filigree** | **Reported** — `filigree/docs/superpowers/specs/2026-06-01-filigree-roadmap-to-first-class.md` App. A | **REQ-F-01** (no mixed-format feed during backfill) → folded into §7.1 as the atomic-cutover baseline. **REQ-F-02** (`resolve` rejects non-locator inputs for idempotent backfill) → folded into §4 + §7.1. Both are proposed-baseline; **REQ-F-02's enforcement is Clarion's to confirm** (it owns `resolve`). |
+| **Filigree** | **Reported** — `filigree/docs/superpowers/specs/2026-06-01-filigree-roadmap-to-first-class.md` App. A | **REQ-F-01** (no mixed-format feed during backfill) → **DECIDED: single hard cutover** (§7.1; owner decision — we control all four release cycles, so no migration-window machinery). **REQ-F-02** (`resolve` rejects non-locator inputs for resumable backfill) → folded into §4 + §7.1; **enforcement is Clarion's to implement** (it owns `resolve`). |
 | **Clarion** | Pending | — (the authority; carries the heaviest obligations — the §3 matcher, §3.1 prior-index retention, and confirming the §4 / §7.1 contracts above) |
 | **legis** | Pending | — (design-ready repo at `/home/john/legis`; SEI-consumer posture already aligned per its `docs/federation/sei-conformance.md`) |
 | **Wardline** | Partially reported | the `wardline-roadmap-to-first-class.md` §2.2 SEI-client position, plus the **content-axis hash-granularity** harmonisation flagged in §2 (entity-body vs whole-file). Formal intake still to be recorded here. |
@@ -340,32 +340,36 @@ longer resolve (already-orphaned by a past rename) are **flagged ORPHAN for huma
 review — never silently dropped**, consistent with the suite's no-false-green
 ethos.
 
-### 7.1 Migration protocol — live feeds, atomicity, idempotency
+### 7.1 Migration protocol — a single hard cutover
 
 The backfill is **not** purely an at-rest re-key. Subsystems expose **live
 federation feeds** that carry entity-id strings — e.g. Filigree's `issue_deleted`
 record surfaces an `affected_entities` array on `GET /api/loom/changes` (schema
 v21), which Clarion and Wardline consume to reconcile mirrored bindings on
-deletion. Because every consumer treats the id as **opaque**, a feed that emits a
-**mix** of locators and SEIs during the migration window is uninterpretable — a
-consumer cannot tell which normalisation to apply. The following resolves that;
-it is **proposed baseline**, open to Clarion + consumer ratification at lock.
+deletion. Because every consumer treats the id as **opaque**, a feed that emitted
+a **mix** of locators and SEIs would be uninterpretable.
 
-- **No mixed-format feed [REQ-F-01].** A federation feed emits SEIs **only after**
-  its producer's backfill has completed for the rows that feed can surface — never
-  a mixed locator/SEI feed mid-migration. **Atomic cutover is preferred** because
-  it imposes *no* obligation on consumers. A producer that cannot stage a given
-  feed atomically MUST instead **declare a migration window** in which consumers
-  re-`resolve` every id (tolerating the §4 rejection for ids that are already
-  SEIs); the windowed mode is the explicit fallback, not the default.
-- **Idempotent, resumable backfill [REQ-F-02].** The backfill rewrites ids in
-  place; the producer owns its **own** progress cursor (a rowid or migration-state
-  side table — no Clarion generation marker required). Re-running or resuming MUST
-  be safe — which is exactly why `resolve(locator)` rejects an already-migrated SEI
-  (§4) instead of mis-resolving it. Without that rejection, a partially-run
-  backfill cannot be safely resumed and must be treated as permanently incomplete.
-- **Orphans surfaced, never dropped** (as above): locators that no longer resolve
-  are flagged ORPHAN for human review, never silently dropped.
+**Resolution — a single hard cutover [REQ-F-01, decided].** One author controls
+the release cycle of all four subsystems, so the migration is a **coordinated
+release**, not a long-lived migration window. There is deliberately **no**
+mixed-format tolerance and **no** declared migration window — that machinery would
+be self-inflicted complexity for a problem we can simply schedule away.
+
+- **Hard cutover.** Clarion mints SEIs and the per-producer backfills run as one
+  coordinated release step. Every federation feed emits **only locators before the
+  cutover and only SEIs after it** — never a mix. No consumer carries a
+  migration-window obligation; no producer declares one.
+- **Idempotent, resumable backfill [REQ-F-02].** The backfill still rewrites ids
+  in place and may be re-run if it fails partway, so `resolve(locator)` MUST reject
+  an already-migrated SEI (§4) rather than mis-resolve it; each producer owns its
+  **own** progress cursor (a rowid or migration-state side table — no Clarion
+  generation marker required). This keeps a partially-run backfill safe to resume.
+- **Orphans surfaced, never dropped:** locators that no longer resolve are flagged
+  ORPHAN for human review, never silently dropped.
+
+This is the minimal-apparatus choice: single-owner release control turns a hard
+cross-tool migration into a scheduling problem, so we build none of the
+cross-version tolerance a multi-vendor suite would need.
 
 ---
 
