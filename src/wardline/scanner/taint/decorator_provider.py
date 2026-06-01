@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from wardline.core.registry import REGISTRY, REGISTRY_VERSION
 from wardline.core.taints import TRUST_RANK, TaintState
-from wardline.scanner.taint.provider import FunctionTaint
+from wardline.scanner.taint.provider import FunctionTaint, SeedResult
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -130,14 +130,14 @@ def _read_level(
 class DecoratorTaintSourceProvider:
     """Seeds taints from the generic trust-decorator vocabulary (SP2)."""
 
-    def taint_for(self, entity: Entity, ctx: SeedContext) -> FunctionTaint | None:
+    def taint_for(self, entity: Entity, ctx: SeedContext) -> SeedResult:
         candidates: list[FunctionTaint] = []
         for deco in entity.node.decorator_list:
             ft = self._match(deco, ctx.alias_map)
             if ft is not None:
                 candidates.append(ft)
         if not candidates:
-            return None
+            return SeedResult(taint=None)
         # Multiple trust decorators on one function is an authoring conflict; take
         # the LEAST-trusted value PER FIELD independently (highest TRUST_RANK) so
         # contradictory annotations can never over-trust either the body or the
@@ -145,7 +145,7 @@ class DecoratorTaintSourceProvider:
         # candidate order, even on a return-rank tie).
         body = max((ft.body_taint for ft in candidates), key=lambda t: TRUST_RANK[t])
         ret = max((ft.return_taint for ft in candidates), key=lambda t: TRUST_RANK[t])
-        return FunctionTaint(body, ret)
+        return SeedResult(taint=FunctionTaint(body, ret))
 
     def fingerprint(self) -> str:
         return f"decorator-vocab:{REGISTRY_VERSION}"

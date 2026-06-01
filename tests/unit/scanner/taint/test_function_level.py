@@ -10,6 +10,7 @@ from wardline.scanner.taint.provider import (
     DefaultTaintSourceProvider,
     FunctionTaint,
     SeedContext,
+    SeedResult,
 )
 
 
@@ -30,10 +31,10 @@ def test_default_provider_seeds_all_unknown_raw() -> None:
 class _StubProvider:
     """Opines on demo.a only; silent (None) on everything else."""
 
-    def taint_for(self, entity: Entity, ctx: SeedContext) -> FunctionTaint | None:
+    def taint_for(self, entity: Entity, ctx: SeedContext) -> SeedResult:
         if entity.qualname == "demo.a":
-            return FunctionTaint(body_taint=TaintState.EXTERNAL_RAW, return_taint=TaintState.GUARDED)
-        return None
+            return SeedResult(taint=FunctionTaint(body_taint=TaintState.EXTERNAL_RAW, return_taint=TaintState.GUARDED))
+        return SeedResult(taint=None)
 
 
 def test_provider_opinion_used_else_fallback() -> None:

@@ -26,11 +26,11 @@ def test_analyzer_emits_metrics_and_computes_transitive_taint(tmp_path) -> None:
 
     class _Provider:
         def taint_for(self, entity, ctx):  # noqa: ANN001, ANN201
-            from wardline.scanner.taint.provider import FunctionTaint
+            from wardline.scanner.taint.provider import FunctionTaint, SeedResult
 
             if entity.qualname.endswith(".read_raw"):
-                return FunctionTaint(body_taint=T.MIXED_RAW, return_taint=T.MIXED_RAW)
-            return None
+                return SeedResult(taint=FunctionTaint(body_taint=T.MIXED_RAW, return_taint=T.MIXED_RAW))
+            return SeedResult(taint=None)
 
         def fingerprint(self) -> str:
             return "test-v1"

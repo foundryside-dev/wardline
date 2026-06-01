@@ -12,6 +12,7 @@ from wardline.scanner.taint.provider import (
     DefaultTaintSourceProvider,
     FunctionTaint,
     SeedContext,
+    SeedResult,
     TaintSourceProvider,
 )
 
@@ -23,7 +24,10 @@ def _entity() -> object:
 
 def test_default_provider_has_no_opinion() -> None:
     provider = DefaultTaintSourceProvider()
-    assert provider.taint_for(_entity(), SeedContext(module="demo")) is None  # type: ignore[arg-type]
+    res = provider.taint_for(_entity(), SeedContext(module="demo"))  # type: ignore[arg-type]
+    assert isinstance(res, SeedResult)
+    assert res.taint is None
+    assert res.unprovable_boundary is None  # builtins never signal (oracle-preserving)
 
 
 def test_default_provider_satisfies_protocol() -> None:

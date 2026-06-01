@@ -18,7 +18,9 @@ def _seed(src: str, *, module: str = "m") -> dict[str, FunctionTaint | None]:
     entities = discover_file_entities(tree, module=module, path="m.py")
     ctx = SeedContext(module=module, alias_map=alias_map)
     provider = DecoratorTaintSourceProvider()
-    return {e.qualname: provider.taint_for(e, ctx) for e in entities}
+    # .taint: assertions here compare the declared FunctionTaint; the unprovable-
+    # boundary signal (Track 2 T2.4) is exercised separately in tests/grammar/.
+    return {e.qualname: provider.taint_for(e, ctx).taint for e in entities}
 
 
 def test_external_boundary_from_import() -> None:
@@ -179,7 +181,7 @@ def test_star_import_materialises_vocabulary_decorators() -> None:
     entities = discover_file_entities(tree, module="m", path="m.py")
     ctx = SeedContext(module="m", alias_map=alias_map)
     provider = DecoratorTaintSourceProvider()
-    out = {e.qualname: provider.taint_for(e, ctx) for e in entities}
+    out = {e.qualname: provider.taint_for(e, ctx).taint for e in entities}
     assert out["m.v"] == FunctionTaint(T.EXTERNAL_RAW, T.ASSURED)
 
 
