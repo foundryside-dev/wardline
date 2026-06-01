@@ -227,6 +227,30 @@ Given the entity's current whole-file content hash:
 **Invariant (tested):** no section is ever returned with stale data and a
 missing-or-FRESH verdict. Staleness is always explicit.
 
+### 6.1 ORPHAN — the failure mode content-hashing cannot catch
+
+Freshness above assumes the entity's **identity is stable** and only its
+*content* changed. But Clarion's `entity_id` (`{plugin_id}:{kind}:{qualname}`)
+is **not refactor-stable**: renaming or moving a function changes its ID. When
+that happens, Wardline facts and Filigree associations keyed on the *old* ID are
+not stale — they are **orphaned**: the old ID has facts but no live entity, and
+the new entity has no facts. A content-hash check never fires, because the new
+entity was never hashed against anything.
+
+v1 cannot *fix* this (the fix is a stable identity in Clarion — §10, and it is
+the single highest-leverage Loom investment). v1 must, however, be **honest about
+it** rather than silently returning an empty `work`/facts section as if the
+entity were clean:
+
+- when `resolve(qualname)` yields an `entity_id` that has **no** stored facts and
+  **no** associations, the dossier marks those sections `UNKNOWN` (not `FRESH`,
+  not "clean") — "no facts found; this may be a fresh entity or an orphaned
+  rename," consistent with the project's fail-closed, no-false-green ethos;
+- `provenance` records the resolved ID so a caller (or a later stable-identity
+  layer) can reconcile.
+
+ORPHAN is called out here as a known, bounded limitation, not silently inherited.
+
 ---
 
 ## 7. Verbs
@@ -295,18 +319,29 @@ fail-soft degradation (§8.1) is the safety net for *ordering* (a section is
 `unavailable` until its contract lands), not a permanent gap; the Loom roadmap
 should land the Clarion-side read in step so `linkages` is not dark on day one.
 
-- **Filigree (exists):** `GET /api/entity-associations?entity_id=…` (ADR-029)
-  returns bound issues; association rows carry `content_hash_at_attach` for the
-  DRIFT check. No Filigree change required for v1.
-- **Clarion (partial):** entity resolution and stored-fact reads exist. The
-  **linkages** read (callers/callees/SCC peers for an `entity_id`, with the
-  index's current content hash for the freshness check) is the one new contract
-  this design needs from Clarion. Until it lands, `linkages` is `unavailable`
-  and the rest of the dossier is unaffected.
+- **Filigree (exists, frozen):** `GET /api/entity-associations?entity_id=…`
+  (ADR-029) returns bound-issue rows `{issue_id, clarion_entity_id,
+  content_hash_at_attach, attached_at, attached_by}`. Filigree is **done/frozen**
+  (v2.3.0; contract changes need an ADR + 12-month deprecation) and
+  **deliberately computes no drift** — the consumer does. So the dossier
+  assembler **is** that consumer: it reads the row as-is and compares
+  `content_hash_at_attach` against the current entity hash to set the `work`
+  section's DRIFT verdict. No Filigree change required, and none is possible
+  on this timescale — consume it exactly as served.
+- **Clarion (the real gap — bigger than first written):** entity resolution
+  (`resolve`) and stored taint-fact reads exist over HTTP. **Linkages do not.**
+  Callers/callees/neighborhood exist in Clarion **only over MCP**
+  (`callers_of` / `neighborhood` / `orientation_pack`); the HTTP read API
+  (`http_read.rs`) serves only file-resolve, Wardline taint facts, and
+  `_capabilities`. Wardline's `ClarionClient` is HTTP-only, so the dossier's
+  `linkages` section is `unavailable` until **either** Clarion exposes
+  linkages over HTTP **or** the assembler grows a Clarion-MCP client path. This
+  is a real cross-repo build item, not a thin read.
 
-The implementation plan must record the Clarion-linkages contract as a
-cross-repo Loom item (Clarion-side work, sequenced alongside this), not silently
-assume it.
+The implementation plan must record the Clarion-linkages exposure as a cross-repo
+Loom item (decide HTTP-route-vs-MCP-client up front), not silently assume it.
+`linkages` (and `synthesis`'s call-graph locus) degrade to `unavailable` until it
+lands; everything else ships without it.
 
 ---
 
@@ -324,7 +359,8 @@ tradeoff.
 | Worklists | `find(predicate)` across all three tools ("every `@trusted` producer with an open P1 and a non-FRESH taint fact and churn in the last 5 commits") | ✗ | needs a cross-tool predicate/query planner — its own spec |
 | Write-back | entity-keyed `bind_ticket` / `waive` / `annotate`, so an agent's work leaves a durable typed trace the next dossier reflects | ✗ (read-only) | closing the loop is separable from reading it |
 | Token discipline | `drill` becomes a **budget contract** — the agent states a token budget; the envelope ranks sections and fills to budget | ✅ drill + elision honesty | budget-ranking is an optimisation over the honest-elision base |
-| Freshness | re-derive cheap, flag dear | ✅ full | — |
+| Freshness | re-derive cheap, flag dear | ✅ full (STALE/DRIFT) | ORPHAN labelled, not fixed (§6.1) |
+| Entity identity | **refactor-stable** Clarion identity that survives rename/move, so facts/associations are never orphaned | qualname + whole-file hash (today's Clarion reality) | the keystone; its own Clarion work (§10.2) |
 
 ### 10.1 The North Star in one sentence
 
@@ -335,6 +371,31 @@ tradeoff.
 
 The two North Star verbs (`find`, write-back) each warrant their own spec; this
 one ships the read substrate they will build on.
+
+### 10.2 The keystone: a refactor-stable entity identity (and the salvage)
+
+Every cross-tool binding in Loom hangs off entity identity — Wardline facts,
+Filigree associations (ADR-029), and tomorrow's governance attestations. Today
+that identity is **not refactor-stable** (Clarion derives it from name + module
+path), so a rename silently orphans every binding (§6.1). This is the single
+highest-leverage investment in the suite, and the dossier's ORPHAN handling is a
+symptom-level mitigation, not the cure.
+
+There is prior art to salvage, not reinvent. The suite once specified a richer
+cross-tool standard — the **Loom URI** scheme (`loom://component/kind/id` +
+`/api/loom/multi-fetch` + a federation registry) — which was **never implemented**
+and was superseded by the simpler, shipped **ADR-029 entity-associations**. The
+lesson is precise: the *registry / multi-fetch / URI-grammar apparatus* was
+over-built and rightly dropped, but the **stable, content-addressed identity**
+it was reaching for is exactly what is still missing. The right next step is the
+*minimal* salvage — a refactor-stable identity primitive in Clarion (structural
+fingerprint + rename tracking) plus the thin shared "fact envelope" all
+producers already approximate — **not** a revival of the full URI/registry
+machinery that killed the original effort by being too heavy to ship.
+
+This is Clarion-side work and its own design; the dossier is specified to be
+honest while it is missing (ORPHAN/UNKNOWN), and to get strictly better the day
+it lands — with no change to this spec.
 
 ---
 
