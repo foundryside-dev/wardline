@@ -25,6 +25,7 @@ from wardline.scanner.diagnostics import (
     build_metric_finding,
     build_unknown_import_findings,
 )
+from wardline.scanner.grammar import TrustGrammar, default_grammar
 from wardline.scanner.index import discover_class_qualnames, discover_file_entities
 from wardline.scanner.rules import build_default_registry
 from wardline.scanner.taint.call_taint_map import build_call_taint_map
@@ -65,7 +66,14 @@ class WardlineAnalyzer:
         provider: TaintSourceProvider | None = None,
         registry: RuleRegistry | None = None,
         summary_cache: SummaryCache | None = None,
+        grammar: TrustGrammar | None = None,
     ) -> None:
+        # A grammar (Track 2) supplies boundary types -> provider and rules -> the
+        # per-config registry. An explicit provider/registry still wins (test seams).
+        # grammar=None keeps the no-arg path behavior-identical to pre-Track-2.
+        self._grammar = grammar
+        if provider is None and grammar is not None:
+            provider = DecoratorTaintSourceProvider(boundary_types=grammar.boundary_types)
         self._provider: TaintSourceProvider = provider or DecoratorTaintSourceProvider()
         self._registry = registry  # None -> build the default set per-config in analyze()
         self._cache = summary_cache
@@ -284,6 +292,27 @@ class WardlineAnalyzer:
                 resolvable_star_modules=frozenset(star_exports.keys()),
             )
         )
-        registry = self._registry if self._registry is not None else build_default_registry(config)
+        registry = (
+            self._registry
+            if self._registry is not None
+            else build_default_registry(
+                config, rules=(self._grammar.rules if self._grammar is not None else None)
+            )
+        )
         findings.extend(registry.run(context))
         return findings
+
+
+def build_analyzer(
+    *, grammar: TrustGrammar | None = None, summary_cache: SummaryCache | None = None
+) -> WardlineAnalyzer:
+    """Construct an analyzer from a :class:`TrustGrammar` (default = the builtins).
+
+    The grammar's boundary types feed the L1 provider; its rules feed the per-config
+    rule registry. ``build_analyzer()`` with no grammar is behavior-identical to a
+    bare ``WardlineAnalyzer()`` — this is the agent-facing entry point for running a
+    scan under an extended grammar (``default_grammar().extend(...)``)."""
+    return WardlineAnalyzer(
+        grammar=grammar if grammar is not None else default_grammar(),
+        summary_cache=summary_cache,
+    )

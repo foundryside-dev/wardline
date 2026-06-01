@@ -22,7 +22,7 @@ from dataclasses import dataclass
 
 from wardline.core.registry import REGISTRY
 from wardline.core.taints import TaintState
-from wardline.scanner.context import _Rule  # the rule Protocol (rule_id + check)
+from wardline.scanner.context import _RuleClass  # rule-class Protocol (rule_id + ctor)
 from wardline.scanner.taint.provider import FunctionTaint
 
 _VOCAB_PREFIX = "wardline.decorators"
@@ -123,13 +123,13 @@ class TrustGrammar:
     """
 
     boundary_types: tuple[BoundaryType, ...]
-    rules: tuple[type[_Rule], ...]
+    rules: tuple[_RuleClass, ...]
 
     def extend(
         self,
         *,
         boundary_types: tuple[BoundaryType, ...] = (),
-        rules: tuple[type[_Rule], ...] = (),
+        rules: tuple[_RuleClass, ...] = (),
     ) -> TrustGrammar:
         """Append agent-defined types/rules to the defaults (append, never replace).
 

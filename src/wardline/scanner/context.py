@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from wardline.core.finding import Finding
+    from wardline.core.finding import Finding, Severity
     from wardline.core.taints import TaintState
     from wardline.scanner.index import Entity
     from wardline.scanner.taint.propagation import TaintProvenance
@@ -63,6 +63,17 @@ class _Rule(Protocol):
     rule_id: str
 
     def check(self, context: AnalysisContext) -> list[Finding]: ...
+
+
+class _RuleClass(Protocol):
+    """A rule *class*: a ``rule_id`` classvar plus a ``base_severity``-taking
+    constructor that yields a :class:`_Rule`. This is what a ``TrustGrammar``
+    registers (Track 2) — the registry instantiates it per-config so
+    ``wardline.yaml`` severity overrides apply."""
+
+    rule_id: str
+
+    def __call__(self, base_severity: Severity | None = ...) -> _Rule: ...
 
 
 class RuleRegistry:

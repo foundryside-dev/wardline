@@ -16,6 +16,7 @@ from wardline.scanner.rules.untrusted_reaches_trusted import UntrustedReachesTru
 
 if TYPE_CHECKING:
     from wardline.core.config import WardlineConfig
+    from wardline.scanner.context import _RuleClass
 
 # Registration order = emission order (deterministic findings stream).
 _ALL_RULE_CLASSES = (
@@ -36,13 +37,18 @@ def _enabled(rule_id: str, patterns: tuple[str, ...]) -> bool:
     return any(p == "*" or fnmatch.fnmatch(rule_id, p) for p in patterns)
 
 
-def build_default_registry(config: WardlineConfig) -> RuleRegistry:
-    """Build the SP2 rule set, honoring ``config.rules_enable`` (fnmatch include
-    list; ``*`` = all) and ``config.rules_severity`` (per-rule base-severity
-    override, applied BEFORE tier modulation). An unknown severity string raises
-    ``ValueError`` (a config error surfaced eagerly)."""
+def build_default_registry(config: WardlineConfig, *, rules: tuple[_RuleClass, ...] | None = None) -> RuleRegistry:
+    """Build the rule set, honoring ``config.rules_enable`` (fnmatch include list;
+    ``*`` = all) and ``config.rules_severity`` (per-rule base-severity override,
+    applied BEFORE tier modulation). An unknown severity string raises ``ValueError``
+    (a config error surfaced eagerly).
+
+    ``rules`` are the rule CLASSES to register, in order; ``None`` uses the builtin
+    set (Track 2: a grammar passes ``grammar.rules`` so agent-defined rules register
+    on the same config-gated path as the builtins)."""
+    rule_classes = rules if rules is not None else BUILTIN_RULE_CLASSES
     registry = RuleRegistry()
-    for cls in _ALL_RULE_CLASSES:
+    for cls in rule_classes:
         rule_id = cls.rule_id
         if not _enabled(rule_id, config.rules_enable):
             continue
