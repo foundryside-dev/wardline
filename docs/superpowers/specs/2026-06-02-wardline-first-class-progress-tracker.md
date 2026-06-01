@@ -24,7 +24,8 @@ columns as work lands.
 reviewed (advisor-pressure-tested): the grammar is a *code* seam (`scanner/grammar.py`:
 `BoundaryType`/`TrustGrammar`/`default_grammar()`), the same shape as `TaintSourceProvider`
 — NOT a DSL. Builtins re-expressed on the seam must stay byte-identical (a Task 0
-full-stream golden over dogfood+corpus is the oracle); the released `core.registry`
+full-stream golden over the T1.4 corpus is the oracle — dogfood-clean guarded
+separately by self-hosting, since the refactor grows the source tree); the released `core.registry`
 contract (Clarion-consumed) stays frozen; the unprovable-boundary FACT is custom-only
 (builtins never emit it). Spec:
 `2026-06-02-wardline-track2-extensible-trust-grammar-design.md`; plan:
@@ -68,8 +69,8 @@ spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 
 | Unit | Work | Status |
 |---|---|---|
-| T0 | Byte-identity golden over dogfood+corpus (oracle, RED-first) | ◐ |
-| T2.1 | Define the grammar (`scanner/grammar.py`: `BoundaryType`/`LevelArg`/`TrustGrammar`/`default_grammar`) | ◐ |
+| T0 | Byte-identity golden over the T1.4 corpus (oracle, RED-first; dogfood via self-hosting) | ☑ |
+| T2.1 | Define the grammar (`scanner/grammar.py`: `BoundaryType`/`LevelArg`/`TrustGrammar`/`default_grammar`) | ☑ |
 | T2.2 | Boundary-type loop replaces `_match` if-ladder; rules from grammar; `build_analyzer` (builtins as defaults) | ◐ |
 | T2.3 | Re-express the 4 builtins + 3 decorators on the grammar (golden held byte-for-byte) | ◐ |
 | T2.4 | Soundness inheritance (unprovable **custom** boundary → `UNKNOWN_*` + `WLN-ENGINE-UNPROVABLE-BOUNDARY` FACT; builtins never) | ◐ |

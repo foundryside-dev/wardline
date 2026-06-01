@@ -301,12 +301,25 @@ refactor = **snapshot first**. No full findings-stream golden exists today (only
 the T1.4 corpus FP-rate — none is a full-stream before/after oracle).
 
 **Task 0 (lands before any grammar code):** capture today's **complete** findings
-stream — over **both** the dogfood tree (`src/wardline`) **and** the T1.4 corpus
-(`tests/corpus/fixtures`) — including `FACT`s and **emission order**, serialized
-canonically (the existing emitter's JSONL, fingerprints included), as a committed
-golden. A test asserts the *current* engine reproduces it (proving the golden is
-faithful before the refactor begins). After T2.3, the re-expressed builtin grammar
-must reproduce the **same golden byte-for-byte**.
+stream over the **T1.4 corpus** (`tests/corpus/fixtures`) — including `FACT`s,
+`METRIC`s, and **emission order**, serialized canonically (`Finding.to_jsonl()`,
+fingerprints included), as a committed golden. A test asserts the *current* engine
+reproduces it (proving the golden is faithful before the refactor begins). After
+T2.3, the re-expressed builtin grammar must reproduce the **same golden
+byte-for-byte**.
+
+> **Corpus, not dogfood — an empirical refinement made in Task 0.** The original
+> intent was "dogfood + corpus." Building it revealed the dogfood tree is *not* a
+> stable byte-identity substrate: the refactor necessarily **adds** source files
+> (`scanner/grammar.py`) and edits others, which legitimately changes the dogfood
+> scan's `METRIC` findings (`taint_source_counts`, `scc_size_distribution`) without
+> changing any rule semantics — the corpus portion stayed byte-identical, only the
+> dogfood metrics moved. The corpus is FIXED test data where all four builtin rules
+> fire (21 DEFECTs over 101/102/103/104), immune to source growth. So the
+> byte-for-byte oracle pins the **corpus**; the dogfood byte-identity *intent* —
+> "the tree stays finding-clean" — is the correct DoD gate and is guarded by
+> `tests/test_self_hosting.py` (zero DEFECT, which tolerates growth). Together they
+> cover the program-spec DoD.
 
 This golden is the gate on every subsequent task: any task that changes a single
 byte of it (other than the intentionally-scoped new custom-only FACT, which never
@@ -359,7 +372,7 @@ auto-discovery. *(Flagged, not silent.)*
 
 | Unit | Deliverable | DoD gate |
 |---|---|---|
-| **T0** (new) | Full-stream byte-identity golden over dogfood + corpus | golden committed; current engine reproduces it (RED-first baseline) |
+| **T0** (new) | Full-stream byte-identity golden over the T1.4 corpus (dogfood guarded by self-hosting zero-DEFECT) | golden committed; current engine reproduces it (RED-first baseline) |
 | **T2.1** | `grammar.py`: `LevelArg` / `BoundaryType` / `FunctionTaint` / `TrustGrammar` / `default_grammar()` | meta-model defined; builtin types ≡ `REGISTRY` (consistency test) |
 | **T2.2** | Provider `_match` → generic boundary-type loop; `build_default_registry(rules=)`; `build_analyzer(grammar=)` | seam wired; `_ALL_RULE_CLASSES` + `_match` if-ladder deleted; existing constructions unchanged |
 | **T2.3** | 3 decorators + 4 rules re-expressed on `default_grammar()` | **golden reproduced byte-for-byte**; warm/cold byte-identical still green; dogfood clean; `vocabulary.yaml`/descriptor drift test green; Clarion import-surface intact |

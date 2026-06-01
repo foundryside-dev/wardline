@@ -25,6 +25,11 @@ _ALL_RULE_CLASSES = (
     SilentException,
 )
 
+# Public alias: the builtin rule set the default grammar (Track 2) preloads.
+# Kept as the single source of truth — `default_grammar()` references this so the
+# grammar's builtin rules cannot drift from the legacy registry construction.
+BUILTIN_RULE_CLASSES = _ALL_RULE_CLASSES
+
 
 def _enabled(rule_id: str, patterns: tuple[str, ...]) -> bool:
     """A rule is enabled if any pattern is ``*`` or fnmatch-matches its id."""

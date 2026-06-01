@@ -36,7 +36,7 @@
 - Create: `tests/grammar/test_golden_oracle.py`
 - Create: `tests/grammar/golden/builtin_findings.jsonl` (generated, then committed)
 
-The oracle must be captured **before** any grammar code so the refactor diffs against a frozen golden (design spec §5). It covers the dogfood tree **and** the T1.4 corpus, including FACTs and emission order, serialized via the existing JSONL emitter.
+The oracle must be captured **before** any grammar code so the refactor diffs against a frozen golden (design spec §5). **It covers the T1.4 corpus** (fixed input where all 4 builtin rules fire), including FACTs/METRICs and emission order, serialized via `Finding.to_jsonl()`. **Not the dogfood tree** — the refactor adds source files (`scanner/grammar.py`), which legitimately moves the dogfood scan's METRIC counts; dogfood-clean is guarded by `tests/test_self_hosting.py` (zero DEFECT, tolerates growth). *(This corpus-only scoping was confirmed empirically while building Task 0 — the corpus portion stayed byte-identical when a new src file was added; only dogfood metrics drifted. The harness in the repo reflects this; the two-root sketch below is superseded.)*
 
 - [ ] **Step 1: Write the harness that produces the canonical stream**
 
