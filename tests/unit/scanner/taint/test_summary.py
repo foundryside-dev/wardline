@@ -48,10 +48,16 @@ def test_cache_key_rejects_crlf_source() -> None:
 def test_cache_key_length_prefixed_no_collision() -> None:
     # ("ab","c") vs ("a","bc") must not collide across adjacent fields.
     assert compute_cache_key(
-        module_path="m", source_bytes=b"ab", schema_version=1, resolver_version="c",
+        module_path="m",
+        source_bytes=b"ab",
+        schema_version=1,
+        resolver_version="c",
         provider_fingerprint="x",
     ) != compute_cache_key(
-        module_path="m", source_bytes=b"a", schema_version=1, resolver_version="bc",
+        module_path="m",
+        source_bytes=b"a",
+        schema_version=1,
+        resolver_version="bc",
         provider_fingerprint="x",
     )
 
@@ -59,26 +65,38 @@ def test_cache_key_length_prefixed_no_collision() -> None:
 def test_summary_rejects_wrong_schema_version() -> None:
     with pytest.raises(ValueError, match="schema_version"):
         FunctionSummary(
-            fqn="m.f", body_taint=T.UNKNOWN_RAW, return_taint=T.UNKNOWN_RAW,
-            taint_source="fallback", unresolved_calls=0,
-            schema_version=SUMMARY_SCHEMA_VERSION + 99, cache_key="x",
+            fqn="m.f",
+            body_taint=T.UNKNOWN_RAW,
+            return_taint=T.UNKNOWN_RAW,
+            taint_source="fallback",
+            unresolved_calls=0,
+            schema_version=SUMMARY_SCHEMA_VERSION + 99,
+            cache_key="x",
         )
 
 
 def test_summary_rejects_negative_unresolved() -> None:
     with pytest.raises(ValueError, match="unresolved_calls"):
         FunctionSummary(
-            fqn="m.f", body_taint=T.UNKNOWN_RAW, return_taint=T.UNKNOWN_RAW,
-            taint_source="fallback", unresolved_calls=-1,
-            schema_version=SUMMARY_SCHEMA_VERSION, cache_key="x",
+            fqn="m.f",
+            body_taint=T.UNKNOWN_RAW,
+            return_taint=T.UNKNOWN_RAW,
+            taint_source="fallback",
+            unresolved_calls=-1,
+            schema_version=SUMMARY_SCHEMA_VERSION,
+            cache_key="x",
         )
 
 
 def test_summary_is_frozen() -> None:
     s = FunctionSummary(
-        fqn="m.f", body_taint=T.UNKNOWN_RAW, return_taint=T.UNKNOWN_RAW,
-        taint_source="fallback", unresolved_calls=0,
-        schema_version=SUMMARY_SCHEMA_VERSION, cache_key="x",
+        fqn="m.f",
+        body_taint=T.UNKNOWN_RAW,
+        return_taint=T.UNKNOWN_RAW,
+        taint_source="fallback",
+        unresolved_calls=0,
+        schema_version=SUMMARY_SCHEMA_VERSION,
+        cache_key="x",
     )
     with pytest.raises((AttributeError, TypeError)):
         s.fqn = "m.g"  # type: ignore[misc]

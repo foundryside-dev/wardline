@@ -40,18 +40,14 @@ def _ancestors(src: str, target: str) -> tuple[str, list[ast.AST]]:
 
     def walk(node: ast.AST, scope: list[ast.AST]) -> None:
         for child in ast.iter_child_nodes(node):
-            if isinstance(
-                child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-            ):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 found.append((child, list(scope)))
                 walk(child, [child, *scope])  # prepend -> innermost first
             else:
                 walk(child, scope)
 
     walk(tree, [])
-    node, ancestors = next(
-        (n, a) for n, a in found if getattr(n, "name", None) == target
-    )
+    node, ancestors = next((n, a) for n, a in found if getattr(n, "name", None) == target)
     return node.name, ancestors  # type: ignore[attr-defined]
 
 

@@ -28,9 +28,15 @@ from wardline.core.judge import (
 
 def _req(**kw: object) -> JudgeRequest:
     base: dict[str, object] = dict(
-        rule_id="PY-WL-101", message="m", severity="ERROR",
-        file_path="src/m.py", line=5, qualname="m.f", fingerprint="a" * 64,
-        taint_summary="actual_return=MIXED_RAW", surrounding_code="def f(): ...",
+        rule_id="PY-WL-101",
+        message="m",
+        severity="ERROR",
+        file_path="src/m.py",
+        line=5,
+        qualname="m.f",
+        fingerprint="a" * 64,
+        taint_summary="actual_return=MIXED_RAW",
+        surrounding_code="def f(): ...",
     )
     base.update(kw)
     return JudgeRequest(**base)  # type: ignore[arg-type]
@@ -56,10 +62,14 @@ def test_request_is_frozen() -> None:
 
 def test_response_holds_audit_fields() -> None:
     resp = JudgeResponse(
-        verdict=JudgeVerdict.FALSE_POSITIVE, rationale="over-taint floor",
-        confidence=0.9, model_id="anthropic/claude-opus-4-8",
-        recorded_at=datetime.now(UTC), prompt_tokens_total=100,
-        prompt_tokens_cached=None, policy_hash="sha256:abc",
+        verdict=JudgeVerdict.FALSE_POSITIVE,
+        rationale="over-taint floor",
+        confidence=0.9,
+        model_id="anthropic/claude-opus-4-8",
+        recorded_at=datetime.now(UTC),
+        prompt_tokens_total=100,
+        prompt_tokens_cached=None,
+        policy_hash="sha256:abc",
     )
     assert resp.verdict is JudgeVerdict.FALSE_POSITIVE
     assert resp.prompt_tokens_cached is None  # None != 0
@@ -80,14 +90,20 @@ def test_policy_block_teaches_wardline_model() -> None:
 
 def test_policy_hash_is_sha256_of_block() -> None:
     import hashlib
+
     expect = "sha256:" + hashlib.sha256(_STATIC_POLICY_BLOCK.encode("utf-8")).hexdigest()
     assert expect == JUDGE_POLICY_HASH
 
 
 def test_build_messages_caches_static_block_and_wraps_untrusted_data() -> None:
     req = JudgeRequest(
-        rule_id="PY-WL-101", message="untrusted reaches trusted", severity="ERROR",
-        file_path="src/m.py", line=5, qualname="m.f", fingerprint="a" * 64,
+        rule_id="PY-WL-101",
+        message="untrusted reaches trusted",
+        severity="ERROR",
+        file_path="src/m.py",
+        line=5,
+        qualname="m.f",
+        fingerprint="a" * 64,
         taint_summary="actual_return=MIXED_RAW, declared_return=GUARDED",
         surrounding_code="def f():\n    return user_input",
     )
@@ -104,14 +120,18 @@ def test_build_messages_caches_static_block_and_wraps_untrusted_data() -> None:
 
 def test_build_messages_truncates_long_excerpt() -> None:
     req = JudgeRequest(
-        rule_id="PY-WL-103", message="m", severity="WARN", file_path="src/m.py",
-        line=1, qualname=None, fingerprint="b" * 64, taint_summary="tier=UNKNOWN_RAW",
+        rule_id="PY-WL-103",
+        message="m",
+        severity="WARN",
+        file_path="src/m.py",
+        line=1,
+        qualname=None,
+        fingerprint="b" * 64,
+        taint_summary="tier=UNKNOWN_RAW",
         surrounding_code="x" * 50_000,
     )
     messages = build_messages(req, policy_block=_STATIC_POLICY_BLOCK)
-    payload = next(
-        json.loads(b["text"]) for b in messages[1]["content"] if b["text"].lstrip().startswith("{")
-    )
+    payload = next(json.loads(b["text"]) for b in messages[1]["content"] if b["text"].lstrip().startswith("{"))
     assert payload["surrounding_code"]["truncated"] is True
     assert len(payload["surrounding_code"]["text"]) <= 12_000
 
@@ -122,9 +142,13 @@ def test_build_messages_truncates_long_excerpt() -> None:
 def test_urllib_transport_converts_httperror_to_response(monkeypatch) -> None:
     def _raise(req, timeout=None):  # noqa: ARG001
         raise urllib.error.HTTPError(
-            url=_url(), code=401, msg="Unauthorized", hdrs=None,
+            url=_url(),
+            code=401,
+            msg="Unauthorized",
+            hdrs=None,
             fp=io.BytesIO(b'{"error":"bad key"}'),
         )
+
     monkeypatch.setattr(urllib.request, "urlopen", _raise)
     resp = UrllibTransport().post(_url(), b"{}", {"Content-Type": "application/json"})
     assert resp.status == 401 and "bad key" in resp.body
@@ -151,16 +175,24 @@ class _FakeTransport:
         return self._response
 
 
-def _completion(content: str, *, cached: int | None = 7, total: int = 120,
-                model: str = "anthropic/claude-opus-4-8", finish: str = "stop") -> str:
+def _completion(
+    content: str,
+    *,
+    cached: int | None = 7,
+    total: int = 120,
+    model: str = "anthropic/claude-opus-4-8",
+    finish: str = "stop",
+) -> str:
     usage: dict[str, object] = {"prompt_tokens": total}
     if cached is not None:
         usage["prompt_tokens_details"] = {"cached_tokens": cached}
-    return json.dumps({
-        "model": model,
-        "choices": [{"finish_reason": finish, "message": {"content": content}}],
-        "usage": usage,
-    })
+    return json.dumps(
+        {
+            "model": model,
+            "choices": [{"finish_reason": finish, "message": {"content": content}}],
+            "usage": usage,
+        }
+    )
 
 
 def _good_verdict() -> str:
@@ -213,13 +245,16 @@ def test_call_judge_connection_error_is_transport_error(monkeypatch) -> None:
         call_judge(_req(), transport=_FakeTransport(exc=ConnectionRefusedError("no")))
 
 
-@pytest.mark.parametrize("content", [
-    "not json at all",
-    json.dumps({"verdict": "MAYBE", "rationale": "x", "confidence": 0.5}),
-    json.dumps({"verdict": "TRUE_POSITIVE", "confidence": 0.5}),
-    json.dumps({"verdict": "TRUE_POSITIVE", "rationale": "x", "confidence": 2}),
-    json.dumps({"verdict": "TRUE_POSITIVE", "rationale": "x", "confidence": 0.5, "extra": 1}),
-])
+@pytest.mark.parametrize(
+    "content",
+    [
+        "not json at all",
+        json.dumps({"verdict": "MAYBE", "rationale": "x", "confidence": 0.5}),
+        json.dumps({"verdict": "TRUE_POSITIVE", "confidence": 0.5}),
+        json.dumps({"verdict": "TRUE_POSITIVE", "rationale": "x", "confidence": 2}),
+        json.dumps({"verdict": "TRUE_POSITIVE", "rationale": "x", "confidence": 0.5, "extra": 1}),
+    ],
+)
 def test_call_judge_malformed_2xx_crashes(monkeypatch, content: str) -> None:
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
     with pytest.raises(JudgeContractError):
@@ -242,10 +277,12 @@ def test_call_judge_records_served_model_distinct_from_requested(monkeypatch) ->
 
 def test_call_judge_falls_back_to_requested_when_served_absent(monkeypatch) -> None:
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
-    body = json.dumps({
-        "choices": [{"finish_reason": "stop", "message": {"content": _good_verdict()}}],
-        "usage": {"prompt_tokens": 10},
-    })  # no "model" key
+    body = json.dumps(
+        {
+            "choices": [{"finish_reason": "stop", "message": {"content": _good_verdict()}}],
+            "usage": {"prompt_tokens": 10},
+        }
+    )  # no "model" key
     resp = call_judge(_req(), transport=_FakeTransport(Response(200, body)), model_id="req/model")
     assert resp.model_id == "req/model"
 
@@ -265,9 +302,12 @@ def test_call_judge_outer_body_non_json_crashes(monkeypatch) -> None:
 def test_call_judge_missing_usage_degrades_not_crashes(monkeypatch) -> None:
     # telemetry is NOT the audit primitive: absent usage -> (0, None), verdict still returns.
     monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
-    body = json.dumps({
-        "model": "m", "choices": [{"finish_reason": "stop", "message": {"content": _good_verdict()}}],
-    })  # no usage
+    body = json.dumps(
+        {
+            "model": "m",
+            "choices": [{"finish_reason": "stop", "message": {"content": _good_verdict()}}],
+        }
+    )  # no usage
     resp = call_judge(_req(), transport=_FakeTransport(Response(200, body)))
     assert resp.verdict is JudgeVerdict.FALSE_POSITIVE
     assert resp.prompt_tokens_total == 0 and resp.prompt_tokens_cached is None
@@ -277,8 +317,15 @@ def test_build_messages_truncation_preserves_head_and_tail() -> None:
     head, tail = "HEAD" * 50, "TAIL" * 50
     code = head + ("x" * 30_000) + tail
     req = JudgeRequest(
-        rule_id="PY-WL-101", message="m", severity="ERROR", file_path="src/m.py", line=1,
-        qualname=None, fingerprint="a" * 64, taint_summary="t", surrounding_code=code,
+        rule_id="PY-WL-101",
+        message="m",
+        severity="ERROR",
+        file_path="src/m.py",
+        line=1,
+        qualname=None,
+        fingerprint="a" * 64,
+        taint_summary="t",
+        surrounding_code=code,
     )
     text = next(
         json.loads(b["text"])["surrounding_code"]["text"]

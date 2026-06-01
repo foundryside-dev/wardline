@@ -12,8 +12,14 @@ def _server() -> JsonRpcServer:
 
 def test_initialize_returns_capabilities_and_protocol_version() -> None:
     srv = _server()
-    resp = srv.dispatch({"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                         "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {}}})
+    resp = srv.dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {}},
+        }
+    )
     assert resp["jsonrpc"] == "2.0"
     assert resp["id"] == 1
     assert resp["result"]["protocolVersion"] == PROTOCOL_VERSION
@@ -51,7 +57,7 @@ def test_run_stdio_loop_frames_and_skips_notifications() -> None:
     srv = _server()
     stdin = io.StringIO(
         "this is not json\n"  # -> parse error, one response
-        '\n'  # blank line, skipped entirely
+        "\n"  # blank line, skipped entirely
         '{"jsonrpc": "2.0", "method": "notifications/initialized"}\n'  # notification, no response
         '{"jsonrpc": "2.0", "id": 7, "method": "ping", "params": {"n": 1}}\n'  # -> ping result
     )

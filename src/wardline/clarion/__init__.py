@@ -23,7 +23,6 @@ def require_blake3() -> ModuleType:
         import blake3
     except ModuleNotFoundError as exc:
         raise ClarionError(
-            "the Clarion integration needs blake3 — install it with: "
-            "pip install 'wardline[clarion]'"
+            "the Clarion integration needs blake3 — install it with: pip install 'wardline[clarion]'"
         ) from exc
     return blake3

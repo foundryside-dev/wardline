@@ -28,11 +28,7 @@ def _body_hash() -> str:
 
 
 def render_block() -> str:
-    return (
-        f"<!-- wardline:instructions:v{_BLOCK_VERSION}:{_body_hash()} -->\n"
-        f"{_BODY}\n"
-        "<!-- /wardline:instructions -->"
-    )
+    return f"<!-- wardline:instructions:v{_BLOCK_VERSION}:{_body_hash()} -->\n{_BODY}\n<!-- /wardline:instructions -->"
 
 
 def inject_block(file_path: Path) -> str:

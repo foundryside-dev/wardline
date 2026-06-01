@@ -34,23 +34,17 @@ class Response:
 
 
 class Transport(Protocol):
-    def request(
-        self, method: str, url: str, body: bytes, headers: Mapping[str, str]
-    ) -> Response: ...
+    def request(self, method: str, url: str, body: bytes, headers: Mapping[str, str]) -> Response: ...
 
 
 class UrllibTransport:
     def __init__(self, timeout: float = 30.0) -> None:
         self._timeout = timeout
 
-    def request(
-        self, method: str, url: str, body: bytes, headers: Mapping[str, str]
-    ) -> Response:
+    def request(self, method: str, url: str, body: bytes, headers: Mapping[str, str]) -> Response:
         scheme = urllib.parse.urlsplit(url).scheme.lower()
         if scheme not in _ALLOWED_SCHEMES:
-            raise ClarionError(
-                f"--clarion-url must use http or https; got scheme {scheme!r} in {url!r}"
-            )
+            raise ClarionError(f"--clarion-url must use http or https; got scheme {scheme!r} in {url!r}")
         data = body if body else None
         req = urllib.request.Request(url, data=data, headers=dict(headers), method=method)
         try:
@@ -87,7 +81,7 @@ class TaintFactView:
         return cls(
             qualname=str(obj.get("qualname", "")),
             exists=bool(obj.get("exists", False)),
-            wardline_json=obj.get("wardline_json"),       # field-absent → None
+            wardline_json=obj.get("wardline_json"),  # field-absent → None
             current_content_hash=obj.get("current_content_hash"),  # field-absent → None
         )
 
@@ -142,9 +136,7 @@ class ClarionClient:
     def _require_ok(self, resp: Response, path: str) -> dict[str, Any]:
         """For routes with no soft 4xx: 2xx → parsed dict; anything else → loud."""
         if not 200 <= resp.status < 300:
-            raise ClarionError(
-                f"Clarion rejected {path} ({resp.status}; code={_error_code(resp.body)}): {resp.body}"
-            )
+            raise ClarionError(f"Clarion rejected {path} ({resp.status}; code={_error_code(resp.body)}): {resp.body}")
         try:
             parsed = json.loads(resp.body) if resp.body else {}
         except json.JSONDecodeError:
@@ -218,8 +210,6 @@ class ClarionClient:
             except json.JSONDecodeError:
                 parsed = []
             if not 200 <= resp.status < 300 or not isinstance(parsed, list):
-                raise ClarionError(
-                    f"Clarion rejected batch-get ({resp.status}; code={_error_code(resp.body)})"
-                )
+                raise ClarionError(f"Clarion rejected batch-get ({resp.status}; code={_error_code(resp.body)})")
             views.extend(TaintFactView.from_wire(o) for o in parsed if isinstance(o, dict))
         return views

@@ -31,14 +31,29 @@ from wardline.core.sarif import SarifSink
 # (parse error / too-deep / missing source root — NOT benign no-module skips).
 # Default FALSE preserves the released exit-code behaviour; the count is ALWAYS
 # surfaced.
-@click.option("--fail-on-unanalyzed/--no-fail-on-unanalyzed", default=False,
-              help="Exit 1 if any file was discovered but could not be analyzed.")
-@click.option("--cache-dir", type=click.Path(path_type=Path), default=None,
-              help="Persist L3 summary cache here for faster incremental scans.")
-@click.option("--filigree-url", "filigree_url", default=None,
-              help="POST findings to this Filigree Loom scan-results URL (opt-in).")
-@click.option("--clarion-url", "clarion_url", default=None,
-              help="Persist per-entity taint facts to this Clarion taint-store URL (opt-in, fail-soft).")
+@click.option(
+    "--fail-on-unanalyzed/--no-fail-on-unanalyzed",
+    default=False,
+    help="Exit 1 if any file was discovered but could not be analyzed.",
+)
+@click.option(
+    "--cache-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Persist L3 summary cache here for faster incremental scans.",
+)
+@click.option(
+    "--filigree-url",
+    "filigree_url",
+    default=None,
+    help="POST findings to this Filigree Loom scan-results URL (opt-in).",
+)
+@click.option(
+    "--clarion-url",
+    "clarion_url",
+    default=None,
+    help="Persist per-entity taint facts to this Clarion taint-store URL (opt-in, fail-soft).",
+)
 def scan(
     path: Path,
     config_path: Path | None,
@@ -86,8 +101,7 @@ def scan(
     if emit_result is not None:
         if not emit_result.reachable:
             click.echo(
-                f"warning: could not reach Filigree at {filigree_url}; "
-                f"findings written locally only.",
+                f"warning: could not reach Filigree at {filigree_url}; findings written locally only.",
                 err=True,
             )
         else:
@@ -113,9 +127,7 @@ def scan(
                 line += f"; {len(clarion_result.unresolved_qualnames)} qualname(s) unresolved (not indexed by Clarion)"
             click.echo(line)
     s = result.summary
-    unanalyzed_segment = (
-        f"; {s.unanalyzed} file(s) could not be analyzed" if s.unanalyzed else ""
-    )
+    unanalyzed_segment = f"; {s.unanalyzed} file(s) could not be analyzed" if s.unanalyzed else ""
     click.echo(
         f"scanned {result.files_scanned} file(s); {s.total} finding(s) — "
         f"{s.baselined + s.waived + s.judged} suppressed "

@@ -14,17 +14,13 @@ def test_env_var_wins_over_dotenv(tmp_path, monkeypatch):
 
 def test_dotenv_used_when_env_unset(tmp_path, monkeypatch):
     monkeypatch.delenv(WARDLINE_CLARION_TOKEN_ENV, raising=False)
-    (tmp_path / ".env").write_text(
-        f'{WARDLINE_CLARION_TOKEN_ENV}="quoted-secret"\n', encoding="utf-8"
-    )
+    (tmp_path / ".env").write_text(f'{WARDLINE_CLARION_TOKEN_ENV}="quoted-secret"\n', encoding="utf-8")
     assert load_clarion_token(tmp_path) == "quoted-secret"
 
 
 def test_dotenv_single_quoted_value_is_unquoted(tmp_path, monkeypatch):
     monkeypatch.delenv(WARDLINE_CLARION_TOKEN_ENV, raising=False)
-    (tmp_path / ".env").write_text(
-        f"{WARDLINE_CLARION_TOKEN_ENV}='single-secret'\n", encoding="utf-8"
-    )
+    (tmp_path / ".env").write_text(f"{WARDLINE_CLARION_TOKEN_ENV}='single-secret'\n", encoding="utf-8")
     assert load_clarion_token(tmp_path) == "single-secret"
 
 

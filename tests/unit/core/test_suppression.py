@@ -17,8 +17,12 @@ _TODAY = date(2026, 5, 30)
 
 def _defect(fp: str, *, sev: Severity = Severity.ERROR, kind: Kind = Kind.DEFECT) -> Finding:
     return Finding(
-        rule_id="PY-WL-101", message="m", severity=sev, kind=kind,
-        location=Location(path="src/m.py", line_start=1), fingerprint=fp,
+        rule_id="PY-WL-101",
+        message="m",
+        severity=sev,
+        kind=kind,
+        location=Location(path="src/m.py", line_start=1),
+        fingerprint=fp,
     )
 
 
@@ -33,8 +37,12 @@ def _no_waivers() -> WaiverSet:
 def test_defect_without_line_start_is_rejected() -> None:
     # Spec §12 invariant: a DEFECT entering suppression must carry line_start.
     bad = Finding(
-        rule_id="PY-WL-101", message="m", severity=Severity.ERROR, kind=Kind.DEFECT,
-        location=Location(path="src/m.py", line_start=None), fingerprint=_FP_A,
+        rule_id="PY-WL-101",
+        message="m",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path="src/m.py", line_start=None),
+        fingerprint=_FP_A,
     )
     with pytest.raises(AssertionError):
         apply_suppressions([bad], _empty_baseline(), _no_waivers(), today=_TODAY)
@@ -44,9 +52,12 @@ def test_engine_diagnostic_defect_without_line_start_surfaces() -> None:
     # Engine-diagnostic DEFECTs (<engine> path) build a line-independent
     # fingerprint; the line invariant must NOT apply, and they must surface.
     eng = Finding(
-        rule_id="WLN-L3-MONOTONICITY-VIOLATION", message="monotone invariant broke",
-        severity=Severity.ERROR, kind=Kind.DEFECT,
-        location=Location(path="<engine>", line_start=None), fingerprint=_FP_A,
+        rule_id="WLN-L3-MONOTONICITY-VIOLATION",
+        message="monotone invariant broke",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path="<engine>", line_start=None),
+        fingerprint=_FP_A,
     )
     out = apply_suppressions([eng], _empty_baseline(), _no_waivers(), today=_TODAY)
     assert len(out) == 1
@@ -84,15 +95,24 @@ def test_expired_waiver_falls_back_to_active_or_baseline() -> None:
 
 def _judged(fp: str) -> JudgedFP:
     return JudgedFP(
-        fingerprint=fp, rule_id="PY-WL-101", path="src/m.py", message="m",
-        rationale="over-taint floor", model_id="m", confidence=0.9,
-        recorded_at=datetime(2026, 5, 30, tzinfo=UTC), policy_hash="sha256:x",
+        fingerprint=fp,
+        rule_id="PY-WL-101",
+        path="src/m.py",
+        message="m",
+        rationale="over-taint floor",
+        model_id="m",
+        confidence=0.9,
+        recorded_at=datetime(2026, 5, 30, tzinfo=UTC),
+        policy_hash="sha256:x",
     )
 
 
 def test_judged_fp_is_suppressed_with_rationale() -> None:
     out = apply_suppressions(
-        [_defect(_FP_A)], _empty_baseline(), _no_waivers(), today=_TODAY,
+        [_defect(_FP_A)],
+        _empty_baseline(),
+        _no_waivers(),
+        today=_TODAY,
         judged=JudgedSet([_judged(_FP_A)]),
     )
     assert out[0].suppressed is SuppressionState.JUDGED
@@ -102,7 +122,10 @@ def test_judged_fp_is_suppressed_with_rationale() -> None:
 def test_waiver_wins_over_judged() -> None:
     ws = WaiverSet(parse_waivers([{"fingerprint": _FP_A, "reason": "human waiver"}]))
     out = apply_suppressions(
-        [_defect(_FP_A)], _empty_baseline(), ws, today=_TODAY,
+        [_defect(_FP_A)],
+        _empty_baseline(),
+        ws,
+        today=_TODAY,
         judged=JudgedSet([_judged(_FP_A)]),
     )
     assert out[0].suppressed is SuppressionState.WAIVED
@@ -110,7 +133,10 @@ def test_waiver_wins_over_judged() -> None:
 
 def test_judged_wins_over_baseline() -> None:
     out = apply_suppressions(
-        [_defect(_FP_A)], Baseline(frozenset({_FP_A})), _no_waivers(), today=_TODAY,
+        [_defect(_FP_A)],
+        Baseline(frozenset({_FP_A})),
+        _no_waivers(),
+        today=_TODAY,
         judged=JudgedSet([_judged(_FP_A)]),
     )
     assert out[0].suppressed is SuppressionState.JUDGED
@@ -134,6 +160,6 @@ def test_gate_trips_only_on_active_defect_at_or_above_threshold() -> None:
 
 def test_gate_ignores_suppressed_and_nondefect_and_none() -> None:
     baselined = apply_suppressions([_defect(_FP_A)], Baseline(frozenset({_FP_A})), _no_waivers(), today=_TODAY)
-    assert gate_trips(baselined, Severity.ERROR) is False           # suppressed ignored
+    assert gate_trips(baselined, Severity.ERROR) is False  # suppressed ignored
     assert gate_trips([_defect(_FP_A, kind=Kind.FACT)], Severity.INFO) is False  # non-defect ignored
     assert gate_trips([_defect(_FP_A, sev=Severity.NONE)], Severity.INFO) is False  # NONE never gates

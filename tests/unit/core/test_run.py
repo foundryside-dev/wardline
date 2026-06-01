@@ -29,10 +29,7 @@ def test_run_scan_returns_findings_summary_and_context() -> None:
     # hold for any fixture regardless of finding count.
     assert result.summary.total == len(result.findings)
     # active is the count of non-suppressed DEFECTs (the gate population)
-    active = sum(
-        1 for f in result.findings
-        if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE
-    )
+    active = sum(1 for f in result.findings if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE)
     assert result.summary.active == active
     # context is carried for explain_finding to reuse
     assert result.context is not None
@@ -125,9 +122,7 @@ def test_run_scan_missing_source_root_yields_finding(tmp_path: Path) -> None:
     # both the CLI summary and the MCP result) and count toward unanalyzed.
     proj = tmp_path / "proj"
     proj.mkdir()
-    (proj / "wardline.yaml").write_text(
-        "source_roots:\n  - does_not_exist\n", encoding="utf-8"
-    )
+    (proj / "wardline.yaml").write_text("source_roots:\n  - does_not_exist\n", encoding="utf-8")
     # discover still warns on a missing root (by design — the CLI keeps the stderr
     # signal); the NEW contract is that it ALSO becomes a structured finding.
     with pytest.warns(UserWarning, match="source root does not exist"):

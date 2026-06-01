@@ -41,9 +41,7 @@ def _has_wardline_routes(binary: str) -> bool:
     release on PATH predates these routes (it 404s them before auth); the 1.0.1
     build does mount them. Discriminate by the route string baked into the binary."""
     try:
-        out = subprocess.run(
-            ["strings", binary], capture_output=True, text=True, timeout=30
-        ).stdout
+        out = subprocess.run(["strings", binary], capture_output=True, text=True, timeout=30).stdout
     except (OSError, subprocess.SubprocessError):
         return False
     return "/api/wardline/taint-facts" in out
@@ -119,14 +117,18 @@ def clarion_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> object:
     #    entities to .clarion/clarion.db. Both take a positional/--path of the project.
     install = subprocess.run(
         [clarion_bin, "install", "--path", str(proj)],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     if install.returncode != 0:
         pytest.skip(f"clarion install failed: {install.stderr.strip() or install.stdout.strip()}")
 
     analyze = subprocess.run(
         [clarion_bin, "analyze", str(proj)],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     out = f"{analyze.stdout}\n{analyze.stderr}"
     if analyze.returncode != 0:

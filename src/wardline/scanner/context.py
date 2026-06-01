@@ -51,22 +51,12 @@ class AnalysisContext:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "project_taints", MappingProxyType(dict(self.project_taints)))
-        object.__setattr__(
-            self, "project_return_taints", MappingProxyType(dict(self.project_return_taints))
-        )
-        object.__setattr__(
-            self, "function_var_taints", MappingProxyType(dict(self.function_var_taints))
-        )
-        object.__setattr__(
-            self, "function_return_taints", MappingProxyType(dict(self.function_return_taints))
-        )
-        object.__setattr__(
-            self, "function_return_callee", MappingProxyType(dict(self.function_return_callee))
-        )
+        object.__setattr__(self, "project_return_taints", MappingProxyType(dict(self.project_return_taints)))
+        object.__setattr__(self, "function_var_taints", MappingProxyType(dict(self.function_var_taints)))
+        object.__setattr__(self, "function_return_taints", MappingProxyType(dict(self.function_return_taints)))
+        object.__setattr__(self, "function_return_callee", MappingProxyType(dict(self.function_return_callee)))
         object.__setattr__(self, "entities", MappingProxyType(dict(self.entities)))
-        object.__setattr__(
-            self, "taint_provenance", MappingProxyType(dict(self.taint_provenance))
-        )
+        object.__setattr__(self, "taint_provenance", MappingProxyType(dict(self.taint_provenance)))
 
 
 class _Rule(Protocol):

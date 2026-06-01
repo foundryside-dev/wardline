@@ -25,8 +25,7 @@ METADATA = RuleMetadata(
     rule_id="PY-WL-103",
     base_severity=Severity.WARN,
     kind=Kind.DEFECT,
-    description="A broad exception handler (bare except / Exception / BaseException) "
-    "in a trusted-tier function.",
+    description="A broad exception handler (bare except / Exception / BaseException) in a trusted-tier function.",
     examples_violation=("@trusted\ndef f():\n    try:\n        g()\n    except Exception:\n        h()",),
     examples_clean=("@trusted\ndef f():\n    try:\n        g()\n    except ValueError:\n        h()",),
 )

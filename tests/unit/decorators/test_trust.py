@@ -39,6 +39,7 @@ def test_trusted_with_assured_name_and_enum() -> None:
 
 def test_trusted_rejects_disallowed_level() -> None:
     with pytest.raises(ValueError, match="must be one of"):
+
         @trusted(level="GUARDED")  # not a trusted-producer level
         def f() -> None: ...
 
@@ -63,6 +64,7 @@ def test_trust_boundary_accepts_guarded() -> None:
 
 def test_trust_boundary_rejects_integral() -> None:
     with pytest.raises(ValueError, match="must be one of"):
+
         @trust_boundary(to_level="INTEGRAL")  # boundaries raise to GUARDED/ASSURED only
         def f(x: object) -> object:
             return x
@@ -71,4 +73,5 @@ def test_trust_boundary_rejects_integral() -> None:
 def test_decorators_preserve_qualname() -> None:
     @trusted
     def named() -> None: ...
+
     assert named.__name__ == "named"

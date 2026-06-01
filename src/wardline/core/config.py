@@ -74,9 +74,7 @@ def _config_for(root: Path, config_path: Path | None) -> WardlineConfig:
     return load(config_path if config_path is not None else root / "wardline.yaml")
 
 
-def resolve_clarion_url(
-    flag: str | None, root: Path, config_path: Path | None = None
-) -> str | None:
+def resolve_clarion_url(flag: str | None, root: Path, config_path: Path | None = None) -> str | None:
     """Clarion URL by precedence: explicit flag > env var > wardline.yaml."""
     if flag is not None:
         return flag
@@ -86,9 +84,7 @@ def resolve_clarion_url(
     return _config_for(root, config_path).clarion_url
 
 
-def resolve_filigree_url(
-    flag: str | None, root: Path, config_path: Path | None = None
-) -> str | None:
+def resolve_filigree_url(flag: str | None, root: Path, config_path: Path | None = None) -> str | None:
     """Filigree Loom URL by precedence: explicit flag > env var > wardline.yaml."""
     if flag is not None:
         return flag

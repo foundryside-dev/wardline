@@ -65,6 +65,7 @@ def test_waivers_key_does_not_warn(recwarn, tmp_path) -> None:
 
 def test_judge_settings_defaults() -> None:
     from wardline.core.config import parse_judge_settings
+
     s = parse_judge_settings({})
     assert s.model == "anthropic/claude-opus-4-8"
     assert s.context_lines == 30
@@ -74,8 +75,10 @@ def test_judge_settings_defaults() -> None:
 
 def test_judge_settings_from_mapping() -> None:
     from wardline.core.config import parse_judge_settings
-    s = parse_judge_settings({"model": "anthropic/claude-sonnet-4-6", "context_lines": 10,
-                              "max_findings": 50, "policy_file": "POLICY.md"})
+
+    s = parse_judge_settings(
+        {"model": "anthropic/claude-sonnet-4-6", "context_lines": 10, "max_findings": 50, "policy_file": "POLICY.md"}
+    )
     assert s.model == "anthropic/claude-sonnet-4-6" and s.context_lines == 10
     assert s.max_findings == 50 and s.policy_file == "POLICY.md"
 
@@ -85,6 +88,7 @@ def test_judge_settings_bad_type_raises() -> None:
 
     from wardline.core.config import parse_judge_settings
     from wardline.core.errors import ConfigError
+
     with pytest.raises(ConfigError):
         parse_judge_settings({"context_lines": "lots"})
 
@@ -94,12 +98,14 @@ def test_judge_settings_rejects_nonpositive_max_findings() -> None:
 
     from wardline.core.config import parse_judge_settings
     from wardline.core.errors import ConfigError
+
     with pytest.raises(ConfigError):
         parse_judge_settings({"max_findings": 0})
 
 
 def test_judge_settings_write_confidence_floor() -> None:
     from wardline.core.config import parse_judge_settings
+
     assert parse_judge_settings({}).write_confidence_floor == 0.5
     assert parse_judge_settings({"write_confidence_floor": 0.0}).write_confidence_floor == 0.0
 
@@ -109,6 +115,7 @@ def test_judge_settings_rejects_out_of_range_floor() -> None:
 
     from wardline.core.config import parse_judge_settings
     from wardline.core.errors import ConfigError
+
     with pytest.raises(ConfigError):
         parse_judge_settings({"write_confidence_floor": 1.5})
 
@@ -137,8 +144,10 @@ def test_full_valid_config_passes(tmp_path) -> None:
     cfg = load(p)
     assert cfg.source_roots == ("src",)
     assert cfg.judge == {
-        "model": "anthropic/claude-opus-4-8", "context_lines": 10,
-        "max_findings": 50, "write_confidence_floor": 0.7,
+        "model": "anthropic/claude-opus-4-8",
+        "context_lines": 10,
+        "max_findings": 50,
+        "write_confidence_floor": 0.7,
     }
 
 
@@ -191,17 +200,13 @@ def test_urls_default_to_none() -> None:
 
 
 def test_unknown_clarion_key_is_rejected(tmp_path: Path) -> None:
-    (tmp_path / "wardline.yaml").write_text(
-        "clarion:\n  bogus: 1\n", encoding="utf-8"
-    )
+    (tmp_path / "wardline.yaml").write_text("clarion:\n  bogus: 1\n", encoding="utf-8")
     with pytest.raises(ConfigError):
         load(tmp_path / "wardline.yaml")
 
 
 def test_resolve_precedence_flag_beats_env_beats_config(tmp_path: Path, monkeypatch) -> None:
-    (tmp_path / "wardline.yaml").write_text(
-        'clarion:\n  url: "http://from-config"\n', encoding="utf-8"
-    )
+    (tmp_path / "wardline.yaml").write_text('clarion:\n  url: "http://from-config"\n', encoding="utf-8")
     monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
     assert resolve_clarion_url(None, tmp_path, None) == "http://from-config"
     monkeypatch.setenv("WARDLINE_CLARION_URL", "http://from-env")

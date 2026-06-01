@@ -35,9 +35,14 @@ def _fresh_blob(proj, qualname):
         "schema_version": "wardline-taint-1",
         "qualname": qualname,
         "content_hash_at_compute": h,
-        "taint": {"declared_return": "INTEGRAL", "actual_return": "EXTERNAL_RAW",
-                  "source": "anchored", "contributing_callee_qualname": "svc.read_raw",
-                  "resolved_call_count": 1, "unresolved_call_count": 0},
+        "taint": {
+            "declared_return": "INTEGRAL",
+            "actual_return": "EXTERNAL_RAW",
+            "source": "anchored",
+            "contributing_callee_qualname": "svc.read_raw",
+            "resolved_call_count": 1,
+            "unresolved_call_count": 0,
+        },
         "findings": [{"rule_id": "PY-WL-101", "fingerprint": "fp-leaky-1", "line_start": 6}],
     }, h
 
@@ -45,11 +50,11 @@ def _fresh_blob(proj, qualname):
 def test_fresh_fact_is_served_without_reanalysis(tmp_path, monkeypatch):
     proj = _proj(tmp_path)
     blob, h = _fresh_blob(proj, "svc.leaky")
-    view = TaintFactView(qualname="svc.leaky", exists=True, wardline_json=blob,
-                         current_content_hash=h)
+    view = TaintFactView(qualname="svc.leaky", exists=True, wardline_json=blob, current_content_hash=h)
     client = SpyClient([view])
 
     import wardline.core.explain as explain_mod
+
     calls = {"n": 0}
     real = explain_mod.run_scan
 
@@ -66,7 +71,7 @@ def test_fresh_fact_is_served_without_reanalysis(tmp_path, monkeypatch):
     assert exp.immediate_tainted_callee == "read_raw"
     assert exp.path == "svc.py"
     assert exp.rule_id == "PY-WL-101"
-    assert exp.fingerprint == "fp-leaky-1"   # served from the blob (no fingerprint passed by caller)
+    assert exp.fingerprint == "fp-leaky-1"  # served from the blob (no fingerprint passed by caller)
     assert calls["n"] == 0
     assert client.batch_get_calls == 1
 
@@ -75,10 +80,8 @@ def test_stale_hash_falls_back_to_reanalysis(tmp_path):
     proj = _proj(tmp_path)
     blob, h = _fresh_blob(proj, "svc.leaky")
     blob["content_hash_at_compute"] = "0" * 64
-    view = TaintFactView(qualname="svc.leaky", exists=True, wardline_json=blob,
-                         current_content_hash=h)
-    exp = explain_finding(proj, path="svc.py", line=6, clarion=SpyClient([view]),
-                          sink_qualname="svc.leaky")
+    view = TaintFactView(qualname="svc.leaky", exists=True, wardline_json=blob, current_content_hash=h)
+    exp = explain_finding(proj, path="svc.py", line=6, clarion=SpyClient([view]), sink_qualname="svc.leaky")
     assert exp is not None
     assert exp.sink_qualname == "svc.leaky"
 
@@ -86,18 +89,15 @@ def test_stale_hash_falls_back_to_reanalysis(tmp_path):
 def test_missing_current_hash_is_stale(tmp_path):
     proj = _proj(tmp_path)
     blob, h = _fresh_blob(proj, "svc.leaky")
-    view = TaintFactView(qualname="svc.leaky", exists=True, wardline_json=blob,
-                         current_content_hash=None)
-    exp = explain_finding(proj, path="svc.py", line=6, clarion=SpyClient([view]),
-                          sink_qualname="svc.leaky")
+    view = TaintFactView(qualname="svc.leaky", exists=True, wardline_json=blob, current_content_hash=None)
+    exp = explain_finding(proj, path="svc.py", line=6, clarion=SpyClient([view]), sink_qualname="svc.leaky")
     assert exp is not None
 
 
 def test_exists_false_falls_back(tmp_path):
     proj = _proj(tmp_path)
     view = TaintFactView(qualname="svc.leaky", exists=False)
-    exp = explain_finding(proj, path="svc.py", line=6, clarion=SpyClient([view]),
-                          sink_qualname="svc.leaky")
+    exp = explain_finding(proj, path="svc.py", line=6, clarion=SpyClient([view]), sink_qualname="svc.leaky")
     assert exp is not None
 
 
@@ -112,15 +112,18 @@ def test_malformed_blob_falls_back_to_reanalysis(tmp_path):
     proj = _proj(tmp_path)
     h = blake3.blake3((proj / "svc.py").read_bytes()).hexdigest()
     # fresh hash but a structurally broken blob (taint is not a dict, findings not a list)
-    bad = {"schema_version": "wardline-taint-1", "qualname": "svc.leaky",
-           "content_hash_at_compute": h, "taint": "oops", "findings": "nope"}
-    view = TaintFactView(qualname="svc.leaky", exists=True, wardline_json=bad,
-                         current_content_hash=h)
-    exp = explain_finding(proj, path="svc.py", line=6, clarion=SpyClient([view]),
-                          sink_qualname="svc.leaky")
+    bad = {
+        "schema_version": "wardline-taint-1",
+        "qualname": "svc.leaky",
+        "content_hash_at_compute": h,
+        "taint": "oops",
+        "findings": "nope",
+    }
+    view = TaintFactView(qualname="svc.leaky", exists=True, wardline_json=bad, current_content_hash=h)
+    exp = explain_finding(proj, path="svc.py", line=6, clarion=SpyClient([view]), sink_qualname="svc.leaky")
     assert exp is not None
     assert exp.sink_qualname == "svc.leaky"  # came from the real re-scan, not the bad blob
-    assert exp.tier_in == "EXTERNAL_RAW"     # only the real re-scan produces this
+    assert exp.tier_in == "EXTERNAL_RAW"  # only the real re-scan produces this
 
 
 def test_raising_client_falls_back_to_reanalysis(tmp_path):
@@ -135,8 +138,7 @@ def test_raising_client_falls_back_to_reanalysis(tmp_path):
         def batch_get(self, qualnames):
             raise ClarionError("Clarion rejected batch-get (401; code=PERMISSION)")
 
-    exp = explain_finding(proj, path="svc.py", line=6, clarion=RaisingClient(),
-                          sink_qualname="svc.leaky")
+    exp = explain_finding(proj, path="svc.py", line=6, clarion=RaisingClient(), sink_qualname="svc.leaky")
     assert exp is not None
     assert exp.sink_qualname == "svc.leaky"  # from the real re-scan, not raised
-    assert exp.tier_in == "EXTERNAL_RAW"     # only the real re-scan produces this
+    assert exp.tier_in == "EXTERNAL_RAW"  # only the real re-scan produces this

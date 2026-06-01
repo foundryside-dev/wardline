@@ -105,11 +105,19 @@ def _persist(root: Path, existing: JudgedSet, result: TriageResult, *, floor: fl
     new: list[JudgedFP] = [e for fp in existing.fingerprints() if (e := existing.match(fp)) is not None]
     for tv in writable:
         f, r = tv.finding, tv.response
-        new.append(JudgedFP(
-            fingerprint=f.fingerprint, rule_id=f.rule_id, path=f.location.path, message=f.message,
-            rationale=r.rationale, model_id=r.model_id, confidence=r.confidence,
-            recorded_at=r.recorded_at, policy_hash=r.policy_hash,
-        ))
+        new.append(
+            JudgedFP(
+                fingerprint=f.fingerprint,
+                rule_id=f.rule_id,
+                path=f.location.path,
+                message=f.message,
+                rationale=r.rationale,
+                model_id=r.model_id,
+                confidence=r.confidence,
+                recorded_at=r.recorded_at,
+                policy_hash=r.policy_hash,
+            )
+        )
     write_judged(judged_path, new)
     return len(writable), held_back
 

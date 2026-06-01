@@ -39,9 +39,7 @@ class RegistryEntry:
 
 
 _ENTRIES: dict[str, RegistryEntry] = {
-    "external_boundary": RegistryEntry(
-        canonical_name="external_boundary", group=1, attrs={}
-    ),
+    "external_boundary": RegistryEntry(canonical_name="external_boundary", group=1, attrs={}),
     "trust_boundary": RegistryEntry(
         canonical_name="trust_boundary",
         group=1,
@@ -57,9 +55,7 @@ _ENTRIES: dict[str, RegistryEntry] = {
 # Consistency invariant: every key equals its entry's canonical_name.
 for _name, _entry in _ENTRIES.items():
     if _name != _entry.canonical_name:
-        raise ValueError(
-            f"REGISTRY key {_name!r} != canonical_name {_entry.canonical_name!r}"
-        )
+        raise ValueError(f"REGISTRY key {_name!r} != canonical_name {_entry.canonical_name!r}")
 del _name, _entry
 
 REGISTRY: MappingProxyType[str, RegistryEntry] = MappingProxyType(_ENTRIES)

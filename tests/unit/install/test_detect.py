@@ -38,9 +38,7 @@ def test_existing_key_left_untouched(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("WARDLINE_CLARION_URL", "http://new")
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
-    (tmp_path / "wardline.yaml").write_text(
-        'clarion:\n  url: "http://existing"\n', encoding="utf-8"
-    )
+    (tmp_path / "wardline.yaml").write_text('clarion:\n  url: "http://existing"\n', encoding="utf-8")
     results = record_bindings(tmp_path)
     assert results["clarion"] == "present (left untouched)"
     text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")

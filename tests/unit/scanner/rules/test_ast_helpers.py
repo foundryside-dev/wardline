@@ -43,7 +43,7 @@ def test_is_broad_except() -> None:
         fn = _fn("def f():\n try:\n  a()\n" + src)
         return next(own_except_handlers(fn))
 
-    assert is_broad_except(handler(" except:\n  pass\n"))             # bare
+    assert is_broad_except(handler(" except:\n  pass\n"))  # bare
     assert is_broad_except(handler(" except Exception:\n  pass\n"))
     assert is_broad_except(handler(" except BaseException:\n  pass\n"))
     assert not is_broad_except(handler(" except ValueError:\n  pass\n"))

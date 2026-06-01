@@ -40,17 +40,13 @@ def test_malformed_json_raises_without_clobbering(tmp_path: Path) -> None:
 
 
 def test_mcpservers_non_dict_raises(tmp_path: Path) -> None:
-    (tmp_path / ".mcp.json").write_text(
-        json.dumps({"mcpServers": []}), encoding="utf-8"
-    )
+    (tmp_path / ".mcp.json").write_text(json.dumps({"mcpServers": []}), encoding="utf-8")
     with pytest.raises(WardlineError):
         merge_mcp_entry(tmp_path)
 
 
 def test_mcpservers_null_is_treated_as_absent(tmp_path: Path) -> None:
-    (tmp_path / ".mcp.json").write_text(
-        json.dumps({"mcpServers": None, "other": 1}), encoding="utf-8"
-    )
+    (tmp_path / ".mcp.json").write_text(json.dumps({"mcpServers": None, "other": 1}), encoding="utf-8")
     assert merge_mcp_entry(tmp_path) == "updated"
     data = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))
     assert data["mcpServers"]["wardline"] == _WARDLINE_ENTRY

@@ -20,8 +20,12 @@ _FP_B = "b" * 64
 
 def _finding(fp: str, *, rule: str = "PY-WL-101", sev: Severity = Severity.ERROR, path: str = "src/m.py") -> Finding:
     return Finding(
-        rule_id=rule, message=f"msg {fp[:4]}", severity=sev, kind=Kind.DEFECT,
-        location=Location(path=path, line_start=1), fingerprint=fp,
+        rule_id=rule,
+        message=f"msg {fp[:4]}",
+        severity=sev,
+        kind=Kind.DEFECT,
+        location=Location(path=path, line_start=1),
+        fingerprint=fp,
     )
 
 

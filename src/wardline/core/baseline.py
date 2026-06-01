@@ -28,7 +28,11 @@ BASELINE_VERSION: int = 1
 
 # CRITICAL sorts first so high-severity entries sit at the top of the git diff.
 _SEVERITY_SORT: dict[Severity, int] = {
-    Severity.CRITICAL: 0, Severity.ERROR: 1, Severity.WARN: 2, Severity.INFO: 3, Severity.NONE: 4,
+    Severity.CRITICAL: 0,
+    Severity.ERROR: 1,
+    Severity.WARN: 2,
+    Severity.INFO: 3,
+    Severity.NONE: 4,
 }
 _HEX = frozenset("0123456789abcdef")
 
@@ -98,11 +102,7 @@ def collect_and_write_baseline(
     today = date.today()
     files = discover(root, cfg, confine_to_root=confine_to_root)
     findings = WardlineAnalyzer().analyze(files, cfg, root=root)
-    to_baseline = [
-        f
-        for f in findings
-        if f.kind is Kind.DEFECT and waivers.match(f.fingerprint, today) is None
-    ]
+    to_baseline = [f for f in findings if f.kind is Kind.DEFECT and waivers.match(f.fingerprint, today) is None]
     write_baseline(baseline_path, to_baseline)
     return to_baseline
 

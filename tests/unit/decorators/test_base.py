@@ -29,9 +29,7 @@ def test_apply_marker_stamps_group_and_attrs_and_returns_same_object() -> None:
     def f() -> int:
         return 1
 
-    out = apply_marker(
-        f, name="trusted", group=1, attrs={"_wardline_level": TaintState.INTEGRAL}
-    )
+    out = apply_marker(f, name="trusted", group=1, attrs={"_wardline_level": TaintState.INTEGRAL})
     assert out is f  # unchanged identity — no wrapper
     assert f._wardline_groups == frozenset({1})  # type: ignore[attr-defined]
     assert f._wardline_level is TaintState.INTEGRAL  # type: ignore[attr-defined]
@@ -60,6 +58,7 @@ def test_apply_marker_rejects_non_callable() -> None:
 
 def test_apply_marker_accumulates_groups() -> None:
     def f() -> None: ...
+
     apply_marker(f, name="external_boundary", group=1, attrs={})
     apply_marker(f, name="trusted", group=1, attrs={"_wardline_level": TaintState.INTEGRAL})
     assert f._wardline_groups == frozenset({1})  # type: ignore[attr-defined]
@@ -70,10 +69,9 @@ def test_apply_marker_double_decoration_preserves_distinct_attrs() -> None:
     # (Cross-group accumulation is untestable until a group-2 registry entry
     # exists; only group 1 is defined in SP2a.)
     def f() -> None: ...
+
     apply_marker(f, name="trusted", group=1, attrs={"_wardline_level": TaintState.ASSURED})
-    apply_marker(
-        f, name="trust_boundary", group=1, attrs={"_wardline_to_level": TaintState.GUARDED}
-    )
+    apply_marker(f, name="trust_boundary", group=1, attrs={"_wardline_to_level": TaintState.GUARDED})
     assert f._wardline_level is TaintState.ASSURED  # type: ignore[attr-defined]
     assert f._wardline_to_level is TaintState.GUARDED  # type: ignore[attr-defined]
 
@@ -90,9 +88,7 @@ def test_apply_marker_stamps_underlying_classmethod() -> None:
         return 1
 
     cm = classmethod(_impl)
-    out = apply_marker(
-        cm, name="trusted", group=1, attrs={"_wardline_level": TaintState.INTEGRAL}
-    )
+    out = apply_marker(cm, name="trusted", group=1, attrs={"_wardline_level": TaintState.INTEGRAL})
     assert out is cm
     assert cm.__func__._wardline_level is TaintState.INTEGRAL  # type: ignore[attr-defined]
 

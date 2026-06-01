@@ -7,10 +7,19 @@ from wardline.mcp.server import WardlineMCPServer
 def test_stdio_loop_handles_initialize_then_tools_list(tmp_path) -> None:
     server = WardlineMCPServer(root=tmp_path)
     stdin = io.StringIO(
-        json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                    "params": {"protocolVersion": "2024-11-05", "capabilities": {}}}) + "\n"
-        + json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n"
-        + json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}) + "\n"
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": "2024-11-05", "capabilities": {}},
+            }
+        )
+        + "\n"
+        + json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        + "\n"
+        + json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+        + "\n"
     )
     stdout = io.StringIO()
     server.rpc.run_stdio(stdin=stdin, stdout=stdout)
@@ -40,9 +49,17 @@ def test_mcp_command_runs_stdio_end_to_end(tmp_path) -> None:
     from wardline.cli.main import cli
 
     stdin = (
-        json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                    "params": {"protocolVersion": "2024-11-05", "capabilities": {}}}) + "\n"
-        + json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}) + "\n"
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": "2024-11-05", "capabilities": {}},
+            }
+        )
+        + "\n"
+        + json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+        + "\n"
     )
     result = CliRunner().invoke(cli, ["mcp", "--root", str(tmp_path)], input=stdin)
     assert result.exit_code == 0, result.output

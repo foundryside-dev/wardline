@@ -145,16 +145,17 @@ class DecoratorTaintSourceProvider:
         if canonical == "external_boundary":
             return FunctionTaint(TaintState.EXTERNAL_RAW, TaintState.EXTERNAL_RAW)
         if canonical == "trust_boundary":
-            to_level = _read_level(
-                deco, "to_level", allowed=_BOUNDARY_LEVELS, default=None, alias_map=alias_map
-            )
+            to_level = _read_level(deco, "to_level", allowed=_BOUNDARY_LEVELS, default=None, alias_map=alias_map)
             if to_level is None:
                 return None
             return FunctionTaint(TaintState.EXTERNAL_RAW, to_level)
         if canonical == "trusted":
             level = _read_level(
-                deco, "level", allowed=_TRUSTED_LEVELS,
-                default=TaintState.INTEGRAL, alias_map=alias_map,
+                deco,
+                "level",
+                allowed=_TRUSTED_LEVELS,
+                default=TaintState.INTEGRAL,
+                alias_map=alias_map,
             )
             if level is None:
                 return None

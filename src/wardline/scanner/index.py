@@ -55,9 +55,7 @@ def discover_class_qualnames(tree: ast.Module, *, module: str) -> set[str]:
     return classes
 
 
-def discover_file_entities(
-    tree: ast.Module, *, module: str, path: str
-) -> list[Entity]:
+def discover_file_entities(tree: ast.Module, *, module: str, path: str) -> list[Entity]:
     """Discover function/method entities in *tree*, in source order.
 
     Args:

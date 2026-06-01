@@ -18,8 +18,11 @@ def _run(edges, taint_map, sources, *, return_map=None, unresolved=None):
     unresolved = unresolved or {k: 0 for k in taint_map}
     return_map = return_map if return_map is not None else dict(taint_map)
     return propagate_callgraph_taints(
-        edges=edges, taint_map=taint_map, taint_sources=sources,
-        resolved_counts=resolved, unresolved_counts=unresolved,
+        edges=edges,
+        taint_map=taint_map,
+        taint_sources=sources,
+        resolved_counts=resolved,
+        unresolved_counts=unresolved,
         return_taint_map=return_map,
     )
 
@@ -29,7 +32,10 @@ def test_compute_sccs_reverse_topo_order() -> None:
     sccs = compute_sccs(g)
     # leaves first; the cycle {D,E} is one component
     assert {frozenset(s) for s in sccs} == {
-        frozenset({"C"}), frozenset({"B"}), frozenset({"A"}), frozenset({"D", "E"}),
+        frozenset({"C"}),
+        frozenset({"B"}),
+        frozenset({"A"}),
+        frozenset({"D", "E"}),
     }
     assert sccs.index({"C"}) < sccs.index({"B"}) < sccs.index({"A"})
 
@@ -165,7 +171,7 @@ def test_fallback_caller_clean_callees_floor_holds_not_mixed() -> None:
 
 def test_long_chain_converges_without_bound_diagnostic() -> None:
     n = 20
-    edges = {f"f{i}": {f"f{i+1}"} for i in range(n)}
+    edges = {f"f{i}": {f"f{i + 1}"} for i in range(n)}
     edges[f"f{n}"] = set()
     tm = {f"f{i}": (T.MIXED_RAW if i == n else T.INTEGRAL) for i in range(n + 1)}
     src = {f"f{i}": ("anchored" if i == n else "module_default") for i in range(n + 1)}
@@ -185,8 +191,12 @@ def test_anchored_function_provenance_source() -> None:
 
 def test_empty_taint_map_returns_empty() -> None:
     refined, prov, diags, it = propagate_callgraph_taints(
-        edges={}, taint_map={}, taint_sources={},
-        resolved_counts={}, unresolved_counts={}, return_taint_map={},
+        edges={},
+        taint_map={},
+        taint_sources={},
+        resolved_counts={},
+        unresolved_counts={},
+        return_taint_map={},
     )
     assert refined == {} and prov == {} and diags == [] and it == {}
 
@@ -225,8 +235,11 @@ def test_monotonicity_violation_pins_and_diagnoses(monkeypatch) -> None:
     tm = {"A": T.UNKNOWN_RAW, "B": T.GUARDED}
     src = {"A": "fallback", "B": "anchored"}
     refined, _prov, diags, _it = propagate_callgraph_taints(
-        edges=edges, taint_map=tm, taint_sources=src,
-        resolved_counts={"A": 1, "B": 0}, unresolved_counts={"A": 0, "B": 0},
+        edges=edges,
+        taint_map=tm,
+        taint_sources=src,
+        resolved_counts={"A": 1, "B": 0},
+        unresolved_counts={"A": 0, "B": 0},
         return_taint_map={"A": T.UNKNOWN_RAW, "B": T.GUARDED},
     )
     assert any(code == DIAG_MONOTONICITY_VIOLATION for code, _ in diags)
@@ -247,8 +260,11 @@ def test_post_assertion_anchored_drift_bails_to_unrefined(monkeypatch, caplog) -
     src = {"A": "fallback", "B": "anchored"}
     with caplog.at_level(logging.ERROR, logger=propagation.__name__):
         refined, prov, _diags, _it = propagate_callgraph_taints(
-            edges=edges, taint_map=tm, taint_sources=src,
-            resolved_counts={"A": 1, "B": 0}, unresolved_counts={"A": 0, "B": 0},
+            edges=edges,
+            taint_map=tm,
+            taint_sources=src,
+            resolved_counts={"A": 1, "B": 0},
+            unresolved_counts={"A": 0, "B": 0},
             return_taint_map={"A": T.UNKNOWN_RAW, "B": T.GUARDED},
         )
     assert refined == tm  # bailed to the unrefined L1 map
@@ -270,8 +286,11 @@ def test_post_assertion_module_default_upgrade_bails(monkeypatch, caplog) -> Non
     src = {"A": "module_default", "B": "anchored"}
     with caplog.at_level(logging.ERROR, logger=propagation.__name__):
         refined, prov, _diags, _it = propagate_callgraph_taints(
-            edges=edges, taint_map=tm, taint_sources=src,
-            resolved_counts={"A": 1, "B": 0}, unresolved_counts={"A": 0, "B": 0},
+            edges=edges,
+            taint_map=tm,
+            taint_sources=src,
+            resolved_counts={"A": 1, "B": 0},
+            unresolved_counts={"A": 0, "B": 0},
             return_taint_map={"A": T.UNKNOWN_RAW, "B": T.GUARDED},
         )
     assert refined == tm  # bailed to the unrefined L1 map

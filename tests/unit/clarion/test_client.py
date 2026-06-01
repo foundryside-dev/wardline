@@ -23,8 +23,11 @@ class FakeTransport:
 
 def _client(transport, **kw):
     return ClarionClient(
-        "http://clarion.example", secret="s3cr3t", project="proj",
-        transport=transport, **kw,
+        "http://clarion.example",
+        secret="s3cr3t",
+        project="proj",
+        transport=transport,
+        **kw,
     )
 
 
@@ -58,8 +61,7 @@ def test_write_chunks_against_batch_max():
 
 def test_batch_get_chunks_and_preserves_input_order():
     r1 = json.dumps([{"qualname": "a", "exists": False}, {"qualname": "b", "exists": False}])
-    r2 = json.dumps([{"qualname": "c", "exists": True, "wardline_json": {"x": 1},
-                      "current_content_hash": "deadbeef"}])
+    r2 = json.dumps([{"qualname": "c", "exists": True, "wardline_json": {"x": 1}, "current_content_hash": "deadbeef"}])
     t = FakeTransport([Response(status=200, body=r1), Response(status=200, body=r2)])
     views = _client(t, batch_max=2).batch_get(["a", "b", "c"])
     assert [v.qualname for v in views] == ["a", "b", "c"]

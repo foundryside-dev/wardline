@@ -11,8 +11,7 @@ def test_resources_list_has_the_four_stable_resources() -> None:
     resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 1, "method": "resources/list", "params": {}})
     resources = resp["result"]["resources"]
     uris = {r["uri"] for r in resources}
-    assert uris == {"wardline://vocab", "wardline://rules",
-                    "wardline://config", "wardline://config-schema"}
+    assert uris == {"wardline://vocab", "wardline://rules", "wardline://config", "wardline://config-schema"}
     for r in resources:
         assert r["name"].strip()
         assert r["mimeType"].strip()
@@ -27,8 +26,9 @@ def test_findings_are_not_a_resource() -> None:
 
 def test_read_config_schema_returns_json_schema() -> None:
     server = WardlineMCPServer(root=FIXTURE)
-    resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 2, "method": "resources/read",
-                                "params": {"uri": "wardline://config-schema"}})
+    resp = server.rpc.dispatch(
+        {"jsonrpc": "2.0", "id": 2, "method": "resources/read", "params": {"uri": "wardline://config-schema"}}
+    )
     contents = resp["result"]["contents"][0]
     schema = json.loads(contents["text"])
     assert schema["$schema"].startswith("https://json-schema.org/")
@@ -36,8 +36,9 @@ def test_read_config_schema_returns_json_schema() -> None:
 
 def test_read_rules_lists_rule_ids() -> None:
     server = WardlineMCPServer(root=FIXTURE)
-    resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 3, "method": "resources/read",
-                                "params": {"uri": "wardline://rules"}})
+    resp = server.rpc.dispatch(
+        {"jsonrpc": "2.0", "id": 3, "method": "resources/read", "params": {"uri": "wardline://rules"}}
+    )
     payload = json.loads(resp["result"]["contents"][0]["text"])
     assert isinstance(payload["rules"], list) and payload["rules"]
     for r in payload["rules"]:
@@ -54,8 +55,9 @@ def test_read_rules_lists_rule_ids() -> None:
 
 def test_read_config_returns_effective_fields() -> None:
     server = WardlineMCPServer(root=FIXTURE)
-    resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 5, "method": "resources/read",
-                                "params": {"uri": "wardline://config"}})
+    resp = server.rpc.dispatch(
+        {"jsonrpc": "2.0", "id": 5, "method": "resources/read", "params": {"uri": "wardline://config"}}
+    )
     payload = json.loads(resp["result"]["contents"][0]["text"])
     for key in ("source_roots", "exclude", "rules_enable", "rules_severity"):
         assert key in payload
@@ -64,6 +66,7 @@ def test_read_config_returns_effective_fields() -> None:
 
 def test_read_unknown_uri_errors() -> None:
     server = WardlineMCPServer(root=FIXTURE)
-    resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 4, "method": "resources/read",
-                                "params": {"uri": "wardline://nope"}})
+    resp = server.rpc.dispatch(
+        {"jsonrpc": "2.0", "id": 4, "method": "resources/read", "params": {"uri": "wardline://nope"}}
+    )
     assert "error" in resp

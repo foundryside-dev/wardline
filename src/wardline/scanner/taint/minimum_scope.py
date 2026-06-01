@@ -61,9 +61,7 @@ def build_minimum_scope_edges(
             resolved: set[str] = set()
             unresolved = 0
             for call in iter_calls_in_function_body(entity.node):
-                callee_fqn = resolve_call_fqn(
-                    call, fd.import_aliases, local_fqns, fd.module_path
-                )
+                callee_fqn = resolve_call_fqn(call, fd.import_aliases, local_fqns, fd.module_path)
                 if callee_fqn is not None and callee_fqn in global_fqns:
                     resolved.add(callee_fqn)
                 else:
@@ -120,9 +118,7 @@ def refine_minimum_scope_taints(
             return return_taints.get(func, _seed(func))
         return _seed(func)
 
-    def _refine(
-        func: str, *, remaining_intermediaries: int, stack: frozenset[str]
-    ) -> tuple[TaintState, str | None]:
+    def _refine(func: str, *, remaining_intermediaries: int, stack: frozenset[str]) -> tuple[TaintState, str | None]:
         seed = _seed(func)
         if remaining_intermediaries < 0:
             return seed, None
@@ -171,9 +167,7 @@ def refine_minimum_scope_taints(
         seed = _opt_seed(func)
         if seed is None:
             continue
-        refined_taint, via_callee = _refine(
-            func, remaining_intermediaries=1, stack=frozenset({func})
-        )
+        refined_taint, via_callee = _refine(func, remaining_intermediaries=1, stack=frozenset({func}))
         refined[func] = refined_taint
         if refined_taint != seed:
             provenance[func] = MinimumScopeProvenance(

@@ -31,9 +31,7 @@ def test_default_provider_satisfies_protocol() -> None:
 
 
 def test_function_taint_is_frozen() -> None:
-    taint = FunctionTaint(
-        body_taint=TaintState.EXTERNAL_RAW, return_taint=TaintState.GUARDED
-    )
+    taint = FunctionTaint(body_taint=TaintState.EXTERNAL_RAW, return_taint=TaintState.GUARDED)
     assert taint.body_taint == TaintState.EXTERNAL_RAW
     assert taint.return_taint == TaintState.GUARDED
     with pytest.raises(dataclasses.FrozenInstanceError):

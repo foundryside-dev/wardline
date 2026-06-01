@@ -14,9 +14,7 @@ from wardline.core.errors import ConfigError
 _ALWAYS_SKIP = frozenset({"__pycache__", ".venv", "venv", ".git", ".mypy_cache"})
 
 
-def discover(
-    root: Path, config: WardlineConfig, *, confine_to_root: bool = False
-) -> list[Path]:
+def discover(root: Path, config: WardlineConfig, *, confine_to_root: bool = False) -> list[Path]:
     root = root.resolve()
     found: list[Path] = []
     for src in config.source_roots:
@@ -26,8 +24,7 @@ def discover(
             # would otherwise read out-of-root source. Reject (do NOT silently
             # skip — a silent skip under-scans and gives a false all-clear).
             raise ConfigError(
-                f"source_root {src!r} resolves outside the project root; "
-                "refusing to scan outside the root"
+                f"source_root {src!r} resolves outside the project root; refusing to scan outside the root"
             )
         if not base.exists():
             warnings.warn(f"source root does not exist: {base}", stacklevel=2)
@@ -41,20 +38,14 @@ def discover(
                 # so only file symlinks leak). Refuse to read out-of-root content
                 # by skipping it — the MCP confinement guarantee (THREAT-001).
                 continue
-            relposix = (
-                path.relative_to(root).as_posix()
-                if path.is_relative_to(root)
-                else path.as_posix()
-            )
+            relposix = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
             if _excluded(relposix, config.exclude):
                 continue
             found.append(path)
     return found
 
 
-def missing_source_roots(
-    root: Path, config: WardlineConfig, *, confine_to_root: bool = False
-) -> list[str]:
+def missing_source_roots(root: Path, config: WardlineConfig, *, confine_to_root: bool = False) -> list[str]:
     """Return the configured ``source_roots`` that do not exist on disk.
 
     ``discover`` skips a non-existent root with a ``warnings.warn`` (invisible to a

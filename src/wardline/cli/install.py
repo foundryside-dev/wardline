@@ -15,8 +15,12 @@ from wardline.install.skill import install_skill
 
 
 @click.command()
-@click.option("--root", type=click.Path(exists=True, file_okay=False, path_type=Path),
-              default=".", help="Project root to install into (default: cwd).")
+@click.option(
+    "--root",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=".",
+    help="Project root to install into (default: cwd).",
+)
 @click.option("--no-claude-md", is_flag=True, help="Skip the CLAUDE.md instruction block.")
 @click.option("--no-agents-md", is_flag=True, help="Skip the AGENTS.md instruction block.")
 @click.option("--no-skill", is_flag=True, help="Skip the wardline-gate skill.")

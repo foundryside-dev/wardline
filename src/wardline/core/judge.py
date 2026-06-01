@@ -38,7 +38,7 @@ _ALLOWED_SCHEMES = ("http", "https")
 
 
 class JudgeVerdict(StrEnum):
-    TRUE_POSITIVE = "TRUE_POSITIVE"    # a real defect; leave it active
+    TRUE_POSITIVE = "TRUE_POSITIVE"  # a real defect; leave it active
     FALSE_POSITIVE = "FALSE_POSITIVE"  # analyzer over-approximation; suppressible
 
 
@@ -265,9 +265,7 @@ class UrllibTransport:
     def post(self, url: str, body: bytes, headers: Mapping[str, str]) -> Response:
         scheme = urllib.parse.urlsplit(url).scheme.lower()
         if scheme not in _ALLOWED_SCHEMES:
-            raise JudgeConfigurationError(
-                f"judge URL must use http or https; got scheme {scheme!r} in {url!r}"
-            )
+            raise JudgeConfigurationError(f"judge URL must use http or https; got scheme {scheme!r} in {url!r}")
         request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")
         try:
             with urllib.request.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
@@ -307,12 +305,14 @@ def call_judge(
         raise ValueError(f"max_tokens must be positive, got {max_tokens}")
 
     transport = transport if transport is not None else UrllibTransport()
-    body = json.dumps({
-        "model": model_id,
-        "max_tokens": max_tokens,
-        "temperature": 0,
-        "messages": build_messages(request, policy_block=policy_block),
-    }).encode("utf-8")
+    body = json.dumps(
+        {
+            "model": model_id,
+            "max_tokens": max_tokens,
+            "temperature": 0,
+            "messages": build_messages(request, policy_block=policy_block),
+        }
+    ).encode("utf-8")
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
     try:
         resp = transport.post(_OPENROUTER_URL, body, headers)

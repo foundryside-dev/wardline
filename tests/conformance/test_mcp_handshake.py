@@ -21,21 +21,32 @@ def _drive(messages: list[dict], root: Path = FIXTURE) -> list[dict]:
 
 
 def test_full_client_handshake_and_every_surface() -> None:
-    responses = _drive([
-        {"jsonrpc": "2.0", "id": 1, "method": "initialize",
-         "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {},
-                    "clientInfo": {"name": "test-client", "version": "1.0"}}},
-        {"jsonrpc": "2.0", "method": "notifications/initialized"},
-        {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
-        {"jsonrpc": "2.0", "id": 3, "method": "resources/list", "params": {}},
-        {"jsonrpc": "2.0", "id": 4, "method": "prompts/list", "params": {}},
-        {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
-         "params": {"name": "scan", "arguments": {"fail_on": "ERROR"}}},
-        {"jsonrpc": "2.0", "id": 6, "method": "resources/read",
-         "params": {"uri": "wardline://vocab"}},
-        {"jsonrpc": "2.0", "id": 7, "method": "prompts/get",
-         "params": {"name": "wardline:loop"}},
-    ])
+    responses = _drive(
+        [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": PROTOCOL_VERSION,
+                    "capabilities": {},
+                    "clientInfo": {"name": "test-client", "version": "1.0"},
+                },
+            },
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            {"jsonrpc": "2.0", "id": 3, "method": "resources/list", "params": {}},
+            {"jsonrpc": "2.0", "id": 4, "method": "prompts/list", "params": {}},
+            {
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "tools/call",
+                "params": {"name": "scan", "arguments": {"fail_on": "ERROR"}},
+            },
+            {"jsonrpc": "2.0", "id": 6, "method": "resources/read", "params": {"uri": "wardline://vocab"}},
+            {"jsonrpc": "2.0", "id": 7, "method": "prompts/get", "params": {"name": "wardline:loop"}},
+        ]
+    )
     by_id = {r["id"]: r for r in responses}
     # initialize: protocolVersion echoed, serverInfo present, capabilities advertise all three
     init = by_id[1]["result"]
@@ -44,12 +55,10 @@ def test_full_client_handshake_and_every_surface() -> None:
     assert {"tools", "resources", "prompts"} <= set(init["capabilities"])
     # tools/list: the six documented tools, no more no less
     tool_names = {t["name"] for t in by_id[2]["result"]["tools"]}
-    assert tool_names == {"scan", "explain_taint", "judge",
-                          "baseline_create", "baseline_update", "waiver_add"}
+    assert tool_names == {"scan", "explain_taint", "judge", "baseline_create", "baseline_update", "waiver_add"}
     # resources/list: the four stable URIs
     resource_uris = {r["uri"] for r in by_id[3]["result"]["resources"]}
-    assert resource_uris == {"wardline://vocab", "wardline://rules",
-                             "wardline://config", "wardline://config-schema"}
+    assert resource_uris == {"wardline://vocab", "wardline://rules", "wardline://config", "wardline://config-schema"}
     # prompts/list: the one loop prompt
     prompt_names = {p["name"] for p in by_id[4]["result"]["prompts"]}
     assert prompt_names == {"wardline:loop"}
@@ -72,11 +81,17 @@ def test_full_client_handshake_and_every_surface() -> None:
 
 
 def test_capabilities_match_actually_registered_methods() -> None:
-    responses = _drive([
-        {"jsonrpc": "2.0", "id": 1, "method": "initialize",
-         "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {}}},
-        {"jsonrpc": "2.0", "id": 2, "method": "resources/list", "params": {}},
-    ])
+    responses = _drive(
+        [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {}},
+            },
+            {"jsonrpc": "2.0", "id": 2, "method": "resources/list", "params": {}},
+        ]
+    )
     # advertising resources capability obliges resources/list to work
     assert "error" not in responses[1]
 
@@ -85,25 +100,41 @@ def test_tool_execution_error_is_iserror_result_not_jsonrpc_error() -> None:
     # A stale/unknown fingerprint is a tool-EXECUTION error: it must come back as a
     # result with isError:true (so an MCP client relays the guidance to the model),
     # NOT as a JSON-RPC error (which clients often swallow).
-    responses = _drive([
-        {"jsonrpc": "2.0", "id": 1, "method": "initialize",
-         "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {}}},
-        {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-         "params": {"name": "explain_taint", "arguments": {"fingerprint": "0" * 64}}},
-    ])
+    responses = _drive(
+        [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {}},
+            },
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "explain_taint", "arguments": {"fingerprint": "0" * 64}},
+            },
+        ]
+    )
     by_id = {r["id"]: r for r in responses}
     resp = by_id[2]
-    assert "error" not in resp                          # NOT a JSON-RPC error
-    assert resp["result"]["isError"] is True            # IS an isError result
+    assert "error" not in resp  # NOT a JSON-RPC error
+    assert resp["result"]["isError"] is True  # IS an isError result
     assert "re-scan" in resp["result"]["content"][0]["text"].lower()
 
 
 def test_unknown_method_is_a_jsonrpc_error() -> None:
     # A protocol fault (unknown method) IS a JSON-RPC error — the other half of the split.
-    responses = _drive([
-        {"jsonrpc": "2.0", "id": 1, "method": "initialize",
-         "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {}}},
-        {"jsonrpc": "2.0", "id": 2, "method": "no/such/method", "params": {}},
-    ])
+    responses = _drive(
+        [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {}},
+            },
+            {"jsonrpc": "2.0", "id": 2, "method": "no/such/method", "params": {}},
+        ]
+    )
     by_id = {r["id"]: r for r in responses}
     assert by_id[2]["error"]["code"] == -32601

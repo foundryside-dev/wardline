@@ -36,9 +36,7 @@ def _fingerprint(*parts: str) -> str:
     return digest.hexdigest()
 
 
-def build_metric_finding(
-    metadata: ResolverRunMetadata, *, cache_hit_rate: float
-) -> Finding:
+def build_metric_finding(metadata: ResolverRunMetadata, *, cache_hit_rate: float) -> Finding:
     """One METRIC finding carrying the L3 run metrics. Fingerprint is keyed on
     metric IDENTITY (fixed), since the values drift run to run."""
     return Finding(
@@ -51,9 +49,7 @@ def build_metric_finding(
         properties={
             "scc_size_distribution": [list(p) for p in metadata.scc_size_distribution],
             "convergence_iterations_max": metadata.convergence_iterations_max,
-            "convergence_iterations_histogram": [
-                list(p) for p in metadata.convergence_iterations_histogram
-            ],
+            "convergence_iterations_histogram": [list(p) for p in metadata.convergence_iterations_histogram],
             "taint_source_counts": dict(metadata.taint_source_counts),
             "cache_hit_rate": cache_hit_rate,
         },
@@ -98,8 +94,10 @@ def build_unknown_import_findings(
     stdlib_keys = stdlib_taint_keys()  # suppress curated stdlib entries (forward-correct)
     for relpath, module_path, tree in file_trees:
         for _mp, detail, reason in diagnose_unknown_imports(
-            tree=tree, module_path=module_path,
-            project_modules=project_modules, stdlib_keys=stdlib_keys,
+            tree=tree,
+            module_path=module_path,
+            project_modules=project_modules,
+            stdlib_keys=stdlib_keys,
         ):
             package = detail.split()[1] if detail.startswith("from ") else detail
             findings.append(
@@ -134,14 +132,11 @@ def _is_type_checking_guarded(node: ast.AST, tree: ast.Module) -> bool:
         if not isinstance(top, ast.If):
             continue
         test = top.test
-        is_tc = (
-            (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING")
-            or (
-                isinstance(test, ast.Attribute)
-                and isinstance(test.value, ast.Name)
-                and test.value.id == "typing"
-                and test.attr == "TYPE_CHECKING"
-            )
+        is_tc = (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING") or (
+            isinstance(test, ast.Attribute)
+            and isinstance(test.value, ast.Name)
+            and test.value.id == "typing"
+            and test.attr == "TYPE_CHECKING"
         )
         if not is_tc:
             continue
@@ -235,11 +230,13 @@ def diagnose_unknown_imports(
                 key = (module_path, mod)
                 if key not in seen:
                     seen.add(key)
-                    findings.append((
-                        module_path,
-                        f"from {mod} import *",
-                        f"star import from external package {mod!r} cannot be materialised",
-                    ))
+                    findings.append(
+                        (
+                            module_path,
+                            f"from {mod} import *",
+                            f"star import from external package {mod!r} cannot be materialised",
+                        )
+                    )
             continue
 
         # Named-import branch — dedupe by (module_path, mod).
@@ -255,10 +252,11 @@ def diagnose_unknown_imports(
                 alias_preview = ", ".join(unresolved_aliases[:3])
                 if len(unresolved_aliases) > 3:
                     alias_preview += f", ... ({len(unresolved_aliases)} total)"
-                findings.append((
-                    module_path,
-                    f"from {mod} import {alias_preview}",
-                    f"external import from {mod!r} cannot be resolved "
-                    f"(aliases: {alias_preview})",
-                ))
+                findings.append(
+                    (
+                        module_path,
+                        f"from {mod} import {alias_preview}",
+                        f"external import from {mod!r} cannot be resolved (aliases: {alias_preview})",
+                    )
+                )
     return findings

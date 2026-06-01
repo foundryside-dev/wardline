@@ -41,8 +41,8 @@ def _fp(*parts: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class ScanSummary:
-    total: int        # every finding (defects + facts/metrics)
-    active: int       # non-suppressed DEFECTs — the gate population
+    total: int  # every finding (defects + facts/metrics)
+    active: int  # non-suppressed DEFECTs — the gate population
     baselined: int
     waived: int
     judged: int
@@ -68,7 +68,7 @@ class ScanResult:
 class GateDecision:
     tripped: bool
     fail_on: str | None
-    exit_class: int   # 0 clean, 1 gate tripped, 2 reserved for tool errors (CLI layer)
+    exit_class: int  # 0 clean, 1 gate tripped, 2 reserved for tool errors (CLI layer)
 
 
 def run_scan(

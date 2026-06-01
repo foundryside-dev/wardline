@@ -111,6 +111,4 @@ class SarifSink:
 
     def write(self, findings: Sequence[Finding]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(
-            json.dumps(build_sarif(findings), indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        self._path.write_text(json.dumps(build_sarif(findings), indent=2, ensure_ascii=False), encoding="utf-8")

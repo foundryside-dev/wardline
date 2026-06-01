@@ -55,5 +55,5 @@ def test_match_active_when_no_expiry() -> None:
 
 def test_expiry_boundary_inclusive_then_expires() -> None:
     ws = WaiverSet(parse_waivers([{"fingerprint": _FP, "reason": "r", "expires": "2026-05-30"}]))
-    assert ws.match(_FP, date(2026, 5, 30)) is not None   # valid THROUGH expiry day
-    assert ws.match(_FP, date(2026, 5, 31)) is None        # expired the day after
+    assert ws.match(_FP, date(2026, 5, 30)) is not None  # valid THROUGH expiry day
+    assert ws.match(_FP, date(2026, 5, 31)) is None  # expired the day after

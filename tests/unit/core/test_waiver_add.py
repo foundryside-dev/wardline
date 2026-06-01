@@ -12,8 +12,7 @@ FP = "a" * 64
 
 def test_add_waiver_creates_config_and_roundtrips(tmp_path: Path) -> None:
     cfg_path = tmp_path / "wardline.yaml"
-    w = add_waiver(cfg_path, fingerprint=FP, reason="false positive: validated upstream",
-                   expires=date(2026, 12, 31))
+    w = add_waiver(cfg_path, fingerprint=FP, reason="false positive: validated upstream", expires=date(2026, 12, 31))
     assert w.fingerprint == FP
     waivers = parse_waivers(load(cfg_path).waivers)
     assert any(x.fingerprint == FP and x.expires == date(2026, 12, 31) for x in waivers)

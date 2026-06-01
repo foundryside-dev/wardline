@@ -60,9 +60,7 @@ def _build_table(raw: Any) -> StdlibTaintTable:
     """
     if not isinstance(raw, dict) or raw.get("version") != STDLIB_TAINT_VERSION:
         got = raw.get("version") if isinstance(raw, dict) else raw
-        raise ValueError(
-            f"stdlib_taint.yaml version mismatch: expected {STDLIB_TAINT_VERSION}, got {got!r}"
-        )
+        raise ValueError(f"stdlib_taint.yaml version mismatch: expected {STDLIB_TAINT_VERSION}, got {got!r}")
     entries = raw.get("entries")
     if not isinstance(entries, list):
         raise ValueError("stdlib_taint.yaml: 'entries' must be a list")
@@ -85,8 +83,7 @@ def _build_table(raw: Any) -> StdlibTaintTable:
             taint = TaintState(returns_taint_raw)
         except ValueError as exc:
             raise ValueError(
-                f"stdlib_taint.yaml entries[{idx}].returns_taint={returns_taint_raw!r} "
-                f"is not a canonical TaintState"
+                f"stdlib_taint.yaml entries[{idx}].returns_taint={returns_taint_raw!r} is not a canonical TaintState"
             ) from exc
         # Reject any state outside the stdlib-legal return set — both the
         # unreachable trio AND INTEGRAL (a stdlib call cannot produce your own

@@ -95,6 +95,8 @@ def run_triage(
             continue
         verdicts.append(TriageVerdict(finding=finding, response=response))
     return TriageResult(
-        verdicts=verdicts, n_skipped_cap=n_cap,
-        n_skipped_transport=n_transport, n_skipped_excerpt=n_excerpt,
+        verdicts=verdicts,
+        n_skipped_cap=n_cap,
+        n_skipped_transport=n_transport,
+        n_skipped_excerpt=n_excerpt,
     )

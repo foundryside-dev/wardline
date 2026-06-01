@@ -30,8 +30,8 @@ class TaintExplanation:
     sink_qualname: str | None
     path: str
     line: int | None
-    tier_in: str | None              # actual (untrusted) tier arriving at the sink
-    tier_out: str | None             # tier the sink declares it returns
+    tier_in: str | None  # actual (untrusted) tier arriving at the sink
+    tier_out: str | None  # tier the sink declares it returns
     immediate_tainted_callee: str | None
     source_boundary_qualname: str | None
     resolved_call_count: int
@@ -81,9 +81,7 @@ def _explain_local(
     context = result.context
 
     qualname = finding.qualname
-    immediate_tainted_callee = (
-        context.function_return_callee.get(qualname) if qualname is not None else None
-    )
+    immediate_tainted_callee = context.function_return_callee.get(qualname) if qualname is not None else None
 
     # Resolve the source boundary ONE hop, honestly. If the immediate callee is a
     # simple (non-dotted) name, form the same-module candidate qualname and report
@@ -99,10 +97,7 @@ def _explain_local(
     ):
         module = qualname.rsplit(".", 1)[0]
         candidate = f"{module}.{immediate_tainted_callee}"
-        if (
-            candidate in context.entities
-            and context.function_return_callee.get(candidate) is None
-        ):
+        if candidate in context.entities and context.function_return_callee.get(candidate) is None:
             source_boundary_qualname = candidate
 
     prov = context.taint_provenance.get(qualname) if qualname is not None else None
@@ -220,12 +215,14 @@ def explain_chain(
         blob = view.wardline_json or {}
         taint = blob.get("taint", {})
         next_q = taint.get("contributing_callee_qualname")
-        hops.append(ChainHop(
-            qualname=current,
-            tier_in=taint.get("actual_return"),
-            tier_out=taint.get("declared_return"),
-            contributing_callee_qualname=next_q,
-        ))
+        hops.append(
+            ChainHop(
+                qualname=current,
+                tier_in=taint.get("actual_return"),
+                tier_out=taint.get("declared_return"),
+                contributing_callee_qualname=next_q,
+            )
+        )
         current = next_q  # None at the boundary leaf → clean finish
     return TaintChain(hops=hops, truncated_at=None)
 
@@ -265,6 +262,10 @@ def explain_finding(
             )
         # miss/stale/outage → fall through to the re-run
     return _explain_local(
-        root, fingerprint=fingerprint, path=path, line=line,
-        config_path=config_path, confine_to_root=confine_to_root,
+        root,
+        fingerprint=fingerprint,
+        path=path,
+        line=line,
+        config_path=config_path,
+        confine_to_root=confine_to_root,
     )

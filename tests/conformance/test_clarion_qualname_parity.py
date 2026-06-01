@@ -17,14 +17,10 @@ import pytest
 
 from wardline.core.qualname import module_dotted_name
 
-_FIXTURE = json.loads(
-    (Path(__file__).parent / "clarion_qualname_parity.json").read_text("utf-8")
-)
+_FIXTURE = json.loads((Path(__file__).parent / "clarion_qualname_parity.json").read_text("utf-8"))
 
 
-@pytest.mark.parametrize(
-    "vec", _FIXTURE["module_normalization_vectors"], ids=lambda v: v["file_path"]
-)
+@pytest.mark.parametrize("vec", _FIXTURE["module_normalization_vectors"], ids=lambda v: v["file_path"])
 def test_module_normalization(vec: dict[str, Any]) -> None:
     got = module_dotted_name(vec["file_path"])
     expected = vec["expected_module"]

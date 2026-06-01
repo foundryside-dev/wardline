@@ -37,8 +37,7 @@ def test_reinject_same_version_is_unchanged(tmp_path: Path) -> None:
 def test_inject_replaces_a_stale_fenced_block(tmp_path: Path) -> None:
     f = tmp_path / "CLAUDE.md"
     f.write_text(
-        "intro\n\n<!-- wardline:instructions:v0:deadbeef -->\nOLD BODY\n"
-        "<!-- /wardline:instructions -->\n\noutro\n",
+        "intro\n\n<!-- wardline:instructions:v0:deadbeef -->\nOLD BODY\n<!-- /wardline:instructions -->\n\noutro\n",
         encoding="utf-8",
     )
     assert inject_block(f) == "updated"

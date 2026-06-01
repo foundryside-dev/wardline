@@ -55,9 +55,7 @@ def _finding_to_wire(finding: Finding) -> dict[str, Any]:
     return wire
 
 
-def build_scan_results_body(
-    findings: Sequence[Finding], *, scan_source: str = "wardline"
-) -> dict[str, Any]:
+def build_scan_results_body(findings: Sequence[Finding], *, scan_source: str = "wardline") -> dict[str, Any]:
     """Build the ``POST /api/loom/scan-results`` request body. Emits ALL finding kinds."""
     return {
         "scan_source": scan_source,
@@ -96,9 +94,7 @@ class UrllibTransport:
         # an ingest target — turn it into a clean loud failure (and justify the S310 below).
         scheme = urllib.parse.urlsplit(url).scheme.lower()
         if scheme not in _ALLOWED_SCHEMES:
-            raise FiligreeEmitError(
-                f"--filigree-url must use http or https; got scheme {scheme!r} in {url!r}"
-            )
+            raise FiligreeEmitError(f"--filigree-url must use http or https; got scheme {scheme!r} in {url!r}")
         request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")
         try:
             with urllib.request.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
@@ -134,9 +130,7 @@ class FiligreeEmitter:
         if not 200 <= resp.status < 300:
             # 3xx (a redirect reached the client) or 4xx (request rejected): Wardline sent a
             # request the server would not accept — bad payload / wrong endpoint / auth. Loud.
-            raise FiligreeEmitError(
-                f"Filigree rejected scan-results ({resp.status}) at {self._url}: {resp.body}"
-            )
+            raise FiligreeEmitError(f"Filigree rejected scan-results ({resp.status}) at {self._url}: {resp.body}")
         # 2xx success. Parse defensively: a 2xx with an unreadable body means the POST was
         # accepted but the report is unparseable — surface a warning, never crash (charter).
         warnings: list[str] = []
@@ -146,9 +140,7 @@ class FiligreeEmitter:
             parsed = None
         payload: dict[str, Any] = parsed if isinstance(parsed, dict) else {}
         if not isinstance(parsed, dict):
-            warnings.append(
-                f"Filigree returned {resp.status} with a non-JSON-object body; stats unavailable."
-            )
+            warnings.append(f"Filigree returned {resp.status} with a non-JSON-object body; stats unavailable.")
         raw_stats = payload.get("stats")
         stats: dict[str, Any] = raw_stats if isinstance(raw_stats, dict) else {}
         raw_warnings = payload.get("warnings")

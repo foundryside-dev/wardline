@@ -34,8 +34,13 @@ from wardline.core.triage import TriageResult
 @click.option("--model", default=None, help="OpenRouter model slug (overrides config).")
 @click.option("--context-lines", type=int, default=None, help="Excerpt radius (default 30).")
 @click.option("--max-findings", type=int, default=None, help="Cap findings triaged this run.")
-@click.option("--write", "do_write", is_flag=True, default=False,
-              help="Append FALSE_POSITIVE verdicts to .wardline/judged.yaml (default: dry-run).")
+@click.option(
+    "--write",
+    "do_write",
+    is_flag=True,
+    default=False,
+    help="Append FALSE_POSITIVE verdicts to .wardline/judged.yaml (default: dry-run).",
+)
 def judge(
     path: Path,
     config_path: Path | None,

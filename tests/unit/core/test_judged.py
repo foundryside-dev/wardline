@@ -12,9 +12,15 @@ from wardline.core.judged import JudgedFP, load_judged, write_judged
 
 def _fp(**kw: object) -> JudgedFP:
     base: dict[str, object] = dict(
-        fingerprint="a" * 64, rule_id="PY-WL-101", path="src/m.py", message="m",
-        rationale="constructor over-taint floor", model_id="anthropic/claude-opus-4-8",
-        confidence=0.9, recorded_at=datetime(2026, 5, 30, tzinfo=UTC), policy_hash="sha256:abc",
+        fingerprint="a" * 64,
+        rule_id="PY-WL-101",
+        path="src/m.py",
+        message="m",
+        rationale="constructor over-taint floor",
+        model_id="anthropic/claude-opus-4-8",
+        confidence=0.9,
+        recorded_at=datetime(2026, 5, 30, tzinfo=UTC),
+        policy_hash="sha256:abc",
     )
     base.update(kw)
     return JudgedFP(**base)  # type: ignore[arg-type]
@@ -66,10 +72,7 @@ def test_rejudge_updates_existing_record(tmp_path: Path) -> None:
 def test_missing_provenance_raises(tmp_path: Path) -> None:
     # model_id / policy_hash / confidence are the audit primitive — never defaulted.
     path = tmp_path / "judged.yaml"
-    path.write_text(
-        "version: 1\nfindings:\n"
-        f"  - fingerprint: {'a' * 64}\n    rationale: x\n", encoding="utf-8"
-    )
+    path.write_text(f"version: 1\nfindings:\n  - fingerprint: {'a' * 64}\n    rationale: x\n", encoding="utf-8")
     with pytest.raises(ConfigError):
         load_judged(path)
 
@@ -79,7 +82,8 @@ def test_out_of_range_confidence_raises(tmp_path: Path) -> None:
     path.write_text(
         "version: 1\nfindings:\n"
         f"  - fingerprint: {'a' * 64}\n    rationale: x\n    model_id: m\n"
-        "    policy_hash: sha256:x\n    confidence: 1.5\n", encoding="utf-8"
+        "    policy_hash: sha256:x\n    confidence: 1.5\n",
+        encoding="utf-8",
     )
     with pytest.raises(ConfigError):
         load_judged(path)

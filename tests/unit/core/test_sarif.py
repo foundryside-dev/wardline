@@ -20,9 +20,15 @@ def _f(
     qualname: str | None = None,
 ) -> Finding:
     return Finding(
-        rule_id=rule_id, message="msg", severity=sev, kind=kind,
+        rule_id=rule_id,
+        message="msg",
+        severity=sev,
+        kind=kind,
         location=Location(path=path, line_start=line_start, line_end=line_start),
-        fingerprint=fp, suppressed=suppressed, suppression_reason=reason, qualname=qualname,
+        fingerprint=fp,
+        suppressed=suppressed,
+        suppression_reason=reason,
+        qualname=qualname,
     )
 
 
@@ -37,13 +43,17 @@ def test_log_shape_and_version() -> None:
 def test_severity_maps_to_level() -> None:
     levels = {
         f["properties"]["internalSeverity"]: f["level"]
-        for f in build_sarif([
-            _f(sev=Severity.CRITICAL), _f(sev=Severity.ERROR),
-            _f(sev=Severity.WARN), _f(sev=Severity.INFO), _f(sev=Severity.NONE),
-        ])["runs"][0]["results"]
+        for f in build_sarif(
+            [
+                _f(sev=Severity.CRITICAL),
+                _f(sev=Severity.ERROR),
+                _f(sev=Severity.WARN),
+                _f(sev=Severity.INFO),
+                _f(sev=Severity.NONE),
+            ]
+        )["runs"][0]["results"]
     }
-    assert levels == {"CRITICAL": "error", "ERROR": "error", "WARN": "warning",
-                      "INFO": "note", "NONE": "none"}
+    assert levels == {"CRITICAL": "error", "ERROR": "error", "WARN": "warning", "INFO": "note", "NONE": "none"}
 
 
 def test_partial_fingerprint_and_location() -> None:
@@ -75,9 +85,7 @@ def test_rules_array_is_first_seen_unique() -> None:
 def test_suppressed_finding_emits_suppressions() -> None:
     baselined = build_sarif([_f(suppressed=SuppressionState.BASELINED)])["runs"][0]["results"][0]
     assert baselined["suppressions"] == [{"kind": "external", "status": "accepted"}]
-    waived = build_sarif([
-        _f(suppressed=SuppressionState.WAIVED, reason="false positive")
-    ])["runs"][0]["results"][0]
+    waived = build_sarif([_f(suppressed=SuppressionState.WAIVED, reason="false positive")])["runs"][0]["results"][0]
     assert waived["suppressions"][0]["justification"] == "false positive"
 
 
