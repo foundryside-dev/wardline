@@ -1,37 +1,89 @@
 {% extends "main.html" %}
 
 {#
-  Wardline product landing page.
+  Wardline product landing page — "technical & confident."
   Applied only to docs/index.md via front-matter `template: home.html`.
-  The hero, feature cards, and Loom-suite grid are defined here; the existing
-  markdown body of index.md (install table, 30-second example, real PY-WL-101
-  finding) is rendered via {{ page.content }} so Material's syntax highlighting
-  and content.code.copy buttons keep working on the real fenced code blocks.
+
+  The hero is built around the REAL PY-WL-101 finding from index.md
+  (qualname service.current_user, declared INTEGRAL, actually EXTERNAL_RAW).
+  The hero code panel is hand-marked-up (NOT Material-highlighted) so the flow
+  motif and verdict can be styled; the REAL JSON finding stays in the markdown
+  body below via {{ page.content }} so Material's syntax highlighting and
+  content.code.copy buttons keep working on the genuine artifact.
+  Everything is pure HTML/CSS/SVG — no JS, so navigation.instant is unaffected.
 #}
 
 {% block content %}
 <div class="wl-landing">
 
   <section class="wl-hero">
-    <h1 class="wl-hero__title">Wardline</h1>
-    <p class="wl-hero__tagline">
-      Semantic-tainting static analysis for Python. Wardline tracks untrusted
-      data across your codebase and flags trust-boundary violations &mdash;
-      statically, with zero runtime dependencies.
-    </p>
-    <div class="wl-hero__cta">
-      <a class="wl-btn wl-btn--primary" href="{{ 'getting-started/' | url }}">
-        Get Started
-      </a>
-      <a class="wl-btn wl-btn--secondary" href="{{ config.repo_url }}"
-         rel="noopener" target="_blank">
-        View on GitHub
-      </a>
+    <div class="wl-hero__lede">
+      <span class="wl-hero__eyebrow">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"
+                stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        </svg>
+        Static analysis · zero runtime deps
+      </span>
+      <h1 class="wl-hero__title">See untrusted data<br>cross a trust boundary.</h1>
+      <p class="wl-hero__tagline">
+        Wardline is a <strong>semantic-tainting static analyzer for Python</strong>.
+        It reads your source &mdash; never runs it &mdash; and checks every
+        trust-annotated function against one question: <strong>is the data this
+        function works with as trusted as it claims?</strong>
+      </p>
+      <div class="wl-hero__cta">
+        <a class="wl-btn wl-btn--primary" href="{{ 'getting-started/' | url }}">
+          Get Started
+        </a>
+        <a class="wl-btn wl-btn--secondary" href="{{ config.repo_url }}"
+           rel="noopener" target="_blank">
+          View on GitHub
+        </a>
+      </div>
     </div>
+
+    {# Hero finding panel — the real PY-WL-101 leak, made visible. #}
+    <figure class="wl-finding" role="img"
+            aria-label="Wardline flagging PY-WL-101: service.current_user is
+            annotated as a trusted producer returning INTEGRAL, but actually
+            returns EXTERNAL_RAW — untrusted data reaching a trusted producer.">
+      <div class="wl-finding__bar" aria-hidden="true">
+        <span class="wl-finding__dot"></span>
+        <span class="wl-finding__dot"></span>
+        <span class="wl-finding__dot"></span>
+        <span class="wl-finding__file">service.py</span>
+      </div>
+      <pre class="wl-code" aria-hidden="true"><code><span class="ln">5</span><span class="wl-tok-dec">@trusted</span>(level=<span class="wl-tok-str">"INTEGRAL"</span>)
+<span class="ln">6</span><span class="wl-tok-kw">def</span> <span class="wl-tok-fn">current_user</span>(request):
+<span class="ln">7</span>    <span class="wl-tok-cmt"># claims trusted output…</span>
+<span class="ln">8</span>    <span class="wl-tok-kw">return</span> request.<span class="wl-tok-raw">headers</span>[<span class="wl-tok-str">"X-User"</span>]  <span class="wl-tok-cmt"># …returns EXTERNAL_RAW</span></code></pre>
+
+      <div class="wl-flow" aria-hidden="true">
+        <span class="wl-flow__node wl-flow__node--raw">EXTERNAL_RAW</span>
+        <span class="wl-flow__arrow">&rarr;&rarr;&rarr;</span>
+        <span class="wl-flow__node wl-flow__node--claim">@trusted INTEGRAL</span>
+        <span class="wl-flow__arrow">&times;</span>
+      </div>
+
+      <figcaption class="wl-verdict">
+        <span class="wl-verdict__mark" aria-hidden="true">&#10007;</span>
+        <span class="wl-verdict__body">
+          <span class="wl-verdict__rule">PY-WL-101</span>&nbsp; service.current_user
+          declares return trust <span class="wl-tier-good">INTEGRAL</span> but
+          actually returns <span class="wl-tier-bad">EXTERNAL_RAW</span> &mdash;
+          untrusted data reaches a trusted producer.
+        </span>
+      </figcaption>
+    </figure>
   </section>
 
   <section class="wl-features" aria-label="What Wardline does">
     <div class="wl-feature-card">
+      <svg class="wl-feature-card__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M7 8l-4 4 4 4M17 8l4 4-4 4M14 4l-4 16"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
       <h3>Three trust decorators</h3>
       <p>
         Declare trust at the source with <code>@external_boundary</code>,
@@ -40,6 +92,10 @@
       </p>
     </div>
     <div class="wl-feature-card">
+      <svg class="wl-feature-card__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M9 11l3 3 8-8M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
       <h3>Eleven policy rules</h3>
       <p>
         <code>PY-WL-101</code> through <code>PY-WL-111</code> catch trust-boundary
@@ -48,13 +104,20 @@
       </p>
     </div>
     <div class="wl-feature-card">
-      <h3>SARIF and JSONL output</h3>
+      <svg class="wl-feature-card__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M4 7h16M4 12h16M4 17h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <h3>SARIF &amp; JSONL output</h3>
       <p>
         Emit findings as SARIF for code-scanning dashboards or JSONL for tooling.
         Gate CI with <code>wardline scan --fail-on ERROR</code>.
       </p>
     </div>
     <div class="wl-feature-card">
+      <svg class="wl-feature-card__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 2a4 4 0 014 4v2a4 4 0 01-8 0V6a4 4 0 014-4zM5 21a7 7 0 0114 0"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
       <h3>Agent-ready: MCP &amp; LLM triage</h3>
       <p>
         A built-in MCP server lets coding agents scan and explain taint. An
@@ -63,15 +126,68 @@
     </div>
   </section>
 
-  {# The existing index.md markdown body: install layers, 30-second example,
-     and the real PY-WL-101 finding. Rendered as Material markdown so code
-     blocks keep highlighting + copy buttons. #}
+  {# The trust model — the distinctive visual section: three decorators feed
+     an eight-state lattice, most → least trusted. #}
+  <section class="wl-model" aria-labelledby="wl-model-heading">
+    <p class="wl-section-eyebrow">The trust model</p>
+    <h2 id="wl-model-heading">Eight ordered states. Four you declare.</h2>
+    <p class="wl-model__intro">
+      You annotate code with three decorators. Wardline propagates trust across
+      the call graph and grades every value on an eight-state lattice &mdash; a
+      function is only as trusted as the least-trusted value it returns. A leak
+      is the moment a less-trusted state reaches a producer that claims more.
+    </p>
+
+    <div class="wl-decorators">
+      <div class="wl-decorator">
+        <code class="wl-decorator__name">@external_boundary</code>
+        <p>Marks a source of raw, untrusted input &mdash; data starts at
+           <strong>EXTERNAL_RAW</strong>.</p>
+      </div>
+      <div class="wl-decorator">
+        <code class="wl-decorator__name">@trust_boundary</code>
+        <p>A validator that <em>raises</em> trust &mdash; and must have a path
+           that can say &ldquo;no.&rdquo;</p>
+      </div>
+      <div class="wl-decorator">
+        <code class="wl-decorator__name">@trusted</code>
+        <p>A producer that <em>claims</em> a trust level. Wardline checks the
+           claim against what it actually returns.</p>
+      </div>
+    </div>
+
+    <div class="wl-lattice" role="img"
+         aria-label="The eight-state trust lattice, most trusted to least
+         trusted: INTEGRAL, ASSURED, GUARDED (developer-declared), then
+         UNKNOWN_ASSURED, UNKNOWN_GUARDED (engine-inferred), then EXTERNAL_RAW
+         (developer-declared), then UNKNOWN_RAW and MIXED_RAW (engine-inferred).">
+      <div class="wl-lattice__caption" aria-hidden="true">
+        <span>&#9650; Most trusted</span>
+        <span>Least trusted &#9660;</span>
+      </div>
+      <div class="wl-lattice__track" aria-hidden="true">
+        <div class="wl-tier"><span class="wl-tier__swatch wl-sw-1"></span><span class="wl-tier__name">INTEGRAL</span><span class="wl-tier__tag wl-tier__tag--decl">declared</span><span class="wl-tier__note">trusted producer output</span></div>
+        <div class="wl-tier"><span class="wl-tier__swatch wl-sw-2"></span><span class="wl-tier__name">ASSURED</span><span class="wl-tier__tag wl-tier__tag--decl">declared</span><span class="wl-tier__note">validated, high trust</span></div>
+        <div class="wl-tier"><span class="wl-tier__swatch wl-sw-3"></span><span class="wl-tier__name">GUARDED</span><span class="wl-tier__tag wl-tier__tag--decl">declared</span><span class="wl-tier__note">checked, scoped trust</span></div>
+        <div class="wl-tier"><span class="wl-tier__swatch wl-sw-4"></span><span class="wl-tier__name">UNKNOWN_ASSURED</span><span class="wl-tier__tag wl-tier__tag--inf">inferred</span><span class="wl-tier__note">can&rsquo;t prove the claim</span></div>
+        <div class="wl-tier"><span class="wl-tier__swatch wl-sw-5"></span><span class="wl-tier__name">UNKNOWN_GUARDED</span><span class="wl-tier__tag wl-tier__tag--inf">inferred</span><span class="wl-tier__note">can&rsquo;t prove the claim</span></div>
+        <div class="wl-tier"><span class="wl-tier__swatch wl-sw-6"></span><span class="wl-tier__name">EXTERNAL_RAW</span><span class="wl-tier__tag wl-tier__tag--decl">declared</span><span class="wl-tier__note">raw external input</span></div>
+        <div class="wl-tier"><span class="wl-tier__swatch wl-sw-7"></span><span class="wl-tier__name">UNKNOWN_RAW</span><span class="wl-tier__tag wl-tier__tag--inf">inferred</span><span class="wl-tier__note">untracked &rarr; fail-closed</span></div>
+        <div class="wl-tier"><span class="wl-tier__swatch wl-sw-8"></span><span class="wl-tier__name">MIXED_RAW</span><span class="wl-tier__tag wl-tier__tag--inf">inferred</span><span class="wl-tier__note">clashing provenance</span></div>
+      </div>
+    </div>
+  </section>
+
+  {# The real index.md markdown body: install layers, 30-second example, and
+     the REAL PY-WL-101 finding (matching the hero qualname). Rendered as
+     Material markdown so code blocks keep highlighting + copy buttons. #}
   <section class="wl-body" aria-label="Install and quick example">
     {{ page.content }}
   </section>
 
   <section class="wl-suite" aria-labelledby="wl-suite-heading">
-    <h2 id="wl-suite-heading">The Loom suite</h2>
+    <p class="wl-section-eyebrow">Part of Loom</p>
+    <h2 id="wl-suite-heading">Four citizens, one suite</h2>
     <p class="wl-suite__intro">
       Wardline is one of four Loom citizens &mdash; agent-first tooling built on
       &ldquo;humans on the loop, not in the loop.&rdquo; Each is zero-config and
