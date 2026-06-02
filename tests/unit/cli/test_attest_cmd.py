@@ -138,3 +138,20 @@ def test_verify_mode_valid_and_tampered(tmp_path: Path, monkeypatch: pytest.Monk
     bad = runner.invoke(cli, ["attest", str(tmp_path), "--verify", str(bundle_path)])
     assert bad.exit_code == 1
     assert json.loads(bad.output)["signature_valid"] is False
+
+
+def test_verify_malformed_bundle_exits_2_no_traceback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``--verify`` on a file that is not a valid attestation bundle exits 2 with an
+    ``error:`` line and NO traceback — consistent with every other CLI error path."""
+    monkeypatch.delenv("WARDLINE_ATTEST_KEY", raising=False)
+    _make_clean_repo(tmp_path)
+
+    bad_path = tmp_path / "garbage.json"
+    bad_path.write_text("not json", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["attest", str(tmp_path), "--verify", str(bad_path)])
+    assert result.exit_code == 2
+    assert "error:" in result.stderr
+    # A clean exit-2, not a crashed traceback.
+    assert result.exception is None or isinstance(result.exception, SystemExit)

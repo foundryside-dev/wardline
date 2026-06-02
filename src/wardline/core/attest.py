@@ -21,10 +21,13 @@ the payload is sorted on a stable key (boundaries by qualname; the posture sorts
 lists) so the suite's ``pytest-randomly`` ordering cannot perturb the bytes.
 
 Zero-dependency: stdlib ``hmac`` / ``hashlib`` / ``subprocess`` / ``json`` only. This
-module never imports ``wardline.clarion`` (an optional extra) at module level; SEI
-enrichment of the ``boundaries`` entries is opt-in via a ``clarion_client`` and happens
-behind a LAZY import inside :func:`_enrich_seis`. Without a client every ``sei`` stays
-None and ``sei_source`` is ``"unavailable"``.
+module never imports a third-party EXTRA package (e.g. ``blake3``) at module level —
+``import wardline.core.attest`` pulls in no extra dependency. (It DOES reach
+``wardline.clarion.identity`` transitively via ``core.dossier``, but that module is
+stdlib-only, so the zero-dependency base holds.) The live Clarion CLIENT used for SEI
+enrichment of the ``boundaries`` entries is opt-in via a ``clarion_client`` and is
+LAZY-imported inside :func:`_enrich_seis`. Without a client every ``sei`` stays None and
+``sei_source`` is ``"unavailable"``.
 
 SEI values live in the SIGNED payload, so reproducibility threads the same
 ``clarion_client`` through BOTH build and verify: re-verifying a SEI-keyed bundle WITH
@@ -210,6 +213,7 @@ def _build_payload(
 
     return {
         "wardline_version": __version__,
+        "attested_at": today.isoformat(),
         "commit": commit,
         "dirty": dirty,
         "ruleset_hash": ruleset_hash(config),
@@ -265,6 +269,7 @@ def verify_attestation(
     *,
     root: Path | None = None,
     reproduce: bool = False,
+    config_path: Path | None = None,
     clarion_client: Any = None,
 ) -> dict[str, Any]:
     """Verify a bundle's signature (always, offline) and optionally its reproducibility.
@@ -279,6 +284,11 @@ def verify_attestation(
     ``reproduced=True``, otherwise ``mismatches`` lists the differing top-level payload
     keys. ``reproduced`` is None when ``reproduce=False``. NOTE: reproducibility holds
     against the RECORDED commit — a mismatch may mean the tree moved on, not tamper.
+
+    The re-derivation uses the bundle's own recorded ``attested_at`` as ``today`` (so a
+    tree with active waiver-debt reproduces on a later day — the bundle states its own
+    date) and the supplied ``config_path`` (so a bundle built with a custom ``--config``
+    re-derives under that same config rather than silently defaulting to ``None``).
 
     Since SEI values are part of the signed payload, reproducing a SEI-keyed bundle
     requires the SAME ``clarion_client`` used to build it: pass it here so the
@@ -300,11 +310,12 @@ def verify_attestation(
             "note": note,
         }
 
+    today = date.fromisoformat(recorded_payload["attested_at"]) if recorded_payload.get("attested_at") else date.today()
     rederived = _build_payload(
         root,
-        config_path=None,
+        config_path=config_path,
         confine_to_root=False,
-        today=date.today(),
+        today=today,
         clarion_client=clarion_client,
     )
     if _canonical_bytes(rederived) == _canonical_bytes(recorded_payload):

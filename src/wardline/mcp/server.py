@@ -308,12 +308,21 @@ def _verify_attestation(args: dict[str, Any], root: Path, clarion: Any = None) -
     optionally re-derive it at the current tree (`reproduce=true`). Identical to the CLI
     `attest --verify` by construction."""
     bundle = _require(args, "bundle")
+    if not isinstance(bundle, dict) or "payload" not in bundle or "signature" not in bundle:
+        raise ToolError("bundle must contain 'payload' and 'signature'")
     resolved_root = _resolve_under_root(root, args["path"]) if args.get("path") else root
     key = load_attest_key(resolved_root)
     if key is None:
         raise ToolError("no attest key — run `wardline install` to mint one (or set WARDLINE_ATTEST_KEY)")
     reproduce = bool(args.get("reproduce", False))
-    return verify_attestation(bundle, key, root=resolved_root, reproduce=reproduce, clarion_client=clarion)
+    return verify_attestation(
+        bundle,
+        key,
+        root=resolved_root,
+        reproduce=reproduce,
+        config_path=_cfg(args, root),
+        clarion_client=clarion,
+    )
 
 
 def _require(args: dict[str, Any], key: str) -> Any:

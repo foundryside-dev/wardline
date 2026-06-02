@@ -232,6 +232,62 @@ def test_reproduce_detects_a_moved_tree(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# 4b. attested_at recorded + date-stable / config-correct reproduce
+# --------------------------------------------------------------------------- #
+def test_attested_at_records_the_build_date(tmp_path: Path) -> None:
+    """The bundle states its own build date in the SIGNED payload (an evidence primitive
+    must be self-describing). It equals the ``today`` passed in, as an ISO string."""
+    tree = _annotated_tree(tmp_path)
+    bundle = build_attestation(tree, _KEY, today=_PINNED)
+    assert bundle["payload"]["attested_at"] == _PINNED.isoformat()
+
+
+def _waiver_tree(tmp_path: Path) -> Path:
+    """A clean annotated tree WITH an active waiver (``expires`` set) → the payload's
+    posture carries a date-sensitive ``days_left``, so re-derivation on a different day
+    diverges UNLESS verify reads the recorded ``attested_at``."""
+    (tmp_path / "m.py").write_text(_MODULE, encoding="utf-8")
+    (tmp_path / "wardline.yaml").write_text(
+        f'waivers:\n  - fingerprint: "{"a" * 64}"\n    reason: "third-party shim"\n    expires: "2026-12-31"\n',
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def test_reproduce_is_date_stable_for_a_waiver_tree(tmp_path: Path) -> None:
+    """A waiver tree built on a PAST date (distinct from the real clock) reproduces True:
+    verify reads the recorded ``attested_at`` instead of ``date.today()``, so the
+    date-sensitive ``days_left`` re-derives identically. (Before this fix, verify used the
+    real today and ``reproduced`` would be False the day after the build.)"""
+    tree = _waiver_tree(tmp_path)
+    built = date(2025, 1, 1)  # deliberately NOT the real date.today()
+    bundle = build_attestation(tree, _KEY, today=built)
+
+    verified = verify_attestation(bundle, _KEY, root=tree, reproduce=True)
+    assert verified["signature_valid"] is True
+    assert verified["reproduced"] is True, verified["mismatches"]
+    assert verified["mismatches"] == []
+
+
+def test_reproduce_threads_config_path(tmp_path: Path) -> None:
+    """A bundle built with a NON-default ``config_path`` (living outside ``root`` and with
+    a non-default severity → distinct ``ruleset_hash``) reproduces True only when the SAME
+    ``config_path`` is threaded into verify. (Before this fix verify hardcoded
+    ``config_path=None`` → it rediscovered the default config → ``ruleset_hash`` mismatch.)"""
+    tree = _annotated_tree(tmp_path)
+    cfg = tmp_path / "custom" / "wardline.yaml"
+    cfg.parent.mkdir()
+    _write_config(cfg, severity="WARN")  # non-default severity → distinct ruleset_hash
+
+    bundle = build_attestation(tree, _KEY, config_path=cfg, today=_PINNED)
+
+    verified = verify_attestation(bundle, _KEY, root=tree, reproduce=True, config_path=cfg)
+    assert verified["signature_valid"] is True
+    assert verified["reproduced"] is True, verified["mismatches"]
+    assert verified["mismatches"] == []
+
+
+# --------------------------------------------------------------------------- #
 # 5. Dirty refusal
 # --------------------------------------------------------------------------- #
 def test_dirty_tree_refusal(tmp_path: Path) -> None:

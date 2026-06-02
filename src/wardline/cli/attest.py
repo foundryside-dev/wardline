@@ -85,8 +85,19 @@ def attest(
     if verify_path is not None:
         from wardline.core.attest import verify_attestation
 
-        bundle = json.loads(verify_path.read_text(encoding="utf-8"))
-        result = verify_attestation(bundle, key, root=path, reproduce=reproduce, clarion_client=clarion_client)
+        try:
+            bundle = json.loads(verify_path.read_text(encoding="utf-8"))
+            result = verify_attestation(
+                bundle,
+                key,
+                root=path,
+                reproduce=reproduce,
+                config_path=config_path,
+                clarion_client=clarion_client,
+            )
+        except (json.JSONDecodeError, KeyError, ValueError, WardlineError) as exc:
+            click.echo(f"error: invalid attestation bundle: {exc}", err=True)
+            raise SystemExit(2) from exc
         click.echo(json.dumps(result))
         raise SystemExit(0 if result["signature_valid"] else 1)
 

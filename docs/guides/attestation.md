@@ -46,6 +46,7 @@ A bundle is a JSON object with schema `"wardline-attest-1"`:
   "schema": "wardline-attest-1",
   "payload": {
     "wardline_version": "1.0.0",
+    "attested_at": "2026-06-03",
     "commit": "a1b2c3d4e5f6...",
     "dirty": false,
     "ruleset_hash": "sha256:deadbeef...",
@@ -73,6 +74,7 @@ A bundle is a JSON object with schema `"wardline-attest-1"`:
 | Field | Type | Meaning |
 |---|---|---|
 | `wardline_version` | string | Wardline version that produced the bundle |
+| `attested_at` | string | ISO date (`YYYY-MM-DD`) the bundle was built — the bundle states its own date so `--reproduce` re-derives the date-sensitive posture (waiver `days_left`) against the *recorded* date, not the day verify happens to run |
 | `commit` | string \| null | `git rev-parse HEAD` at scan time; `null` if not in a git repo or git is absent |
 | `dirty` | bool | `true` if `git status --porcelain` was non-empty at scan time |
 | `ruleset_hash` | string | `"sha256:<hex>"` over the enabled rules, severity overrides, and Wardline version — pinning the policy that produced the bundle |

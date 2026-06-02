@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import date
 from pathlib import Path
 
 from wardline.core.attest import _canonical_bytes, build_attestation
@@ -73,11 +74,27 @@ def test_mcp_advertises_both_attest_tools(monkeypatch) -> None:
     assert {"attest", "verify_attestation"} <= names
 
 
+class _FixedDate(date):
+    """A ``date`` whose ``today()`` is pinned but ``fromisoformat`` still delegates.
+
+    The MCP `attest` handler takes no ``today`` and defaults to ``date.today()``, as does
+    the core ``build_attestation`` comparison call below. With the new ``attested_at``
+    field, two independent ``date.today()`` reads that straddle midnight would record
+    different dates and break byte-equality. Freezing the symbol both builds observe makes
+    the parity deterministic. ``verify_attestation`` reads the recorded date via
+    ``fromisoformat``, which a ``date`` subclass inherits unchanged."""
+
+    @classmethod
+    def today(cls) -> date:
+        return date(2026, 6, 3)
+
+
 def test_mcp_attest_payload_equals_core(monkeypatch, tmp_path: Path) -> None:
     # Parity: MCP `attest`'s canonical payload bytes == core build_attestation for the
-    # same tree+key. Both default today=date.today() the same day; the waiver-free fixture
-    # has no days_left field, so it is date-independent across a midnight boundary.
+    # same tree+key. Both default today=date.today(); freezing that symbol for the duration
+    # of both builds makes the new `attested_at` field deterministic across midnight.
     monkeypatch.delenv(WARDLINE_ATTEST_KEY_ENV, raising=False)
+    monkeypatch.setattr("wardline.core.attest.date", _FixedDate)
     proj = _annotated_tree(tmp_path)
     key, _ = mint_attest_key(proj)  # minted into proj/.env (env unset → .env is the source)
 
@@ -122,6 +139,21 @@ def test_mcp_verify_no_key_is_iserror(monkeypatch, tmp_path: Path) -> None:
     result = _call(WardlineMCPServer(root=proj), "verify_attestation", {"bundle": {"payload": {}, "signature": {}}})
     assert result.get("isError") is True
     assert "attest key" in result["content"][0]["text"].lower()
+
+
+def test_mcp_verify_malformed_bundle_is_iserror(monkeypatch, tmp_path: Path) -> None:
+    """A bundle missing ``payload``/``signature`` is agent-actionable: the handler rejects
+    it as a tool-EXECUTION isError naming the missing keys — NOT a raw KeyError surfaced as
+    an internal error."""
+    monkeypatch.delenv(WARDLINE_ATTEST_KEY_ENV, raising=False)
+    proj = _annotated_tree(tmp_path)
+    mint_attest_key(proj)
+
+    result = _call(WardlineMCPServer(root=proj), "verify_attestation", {"bundle": {"foo": 1}})
+    assert result.get("isError") is True
+    text = result["content"][0]["text"].lower()
+    assert "payload" in text and "signature" in text
+    assert "internal" not in text
 
 
 def _git(args: list[str], cwd: Path) -> None:
