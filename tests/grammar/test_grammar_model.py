@@ -48,9 +48,7 @@ def test_builtin_boundary_types_align_with_registry() -> None:
 
 def test_seed_semantics_round_trip() -> None:
     by_name = {bt.canonical_name: bt for bt in BUILTIN_BOUNDARY_TYPES}
-    assert by_name["external_boundary"].seed({}) == FunctionTaint(
-        TaintState.EXTERNAL_RAW, TaintState.EXTERNAL_RAW
-    )
+    assert by_name["external_boundary"].seed({}) == FunctionTaint(TaintState.EXTERNAL_RAW, TaintState.EXTERNAL_RAW)
     assert by_name["trust_boundary"].seed({"to_level": TaintState.ASSURED}) == FunctionTaint(
         TaintState.EXTERNAL_RAW, TaintState.ASSURED
     )
