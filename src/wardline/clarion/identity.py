@@ -109,3 +109,64 @@ def content_status(stored_hash: str | None, current_hash: str | None) -> Content
     if stored_hash is None or current_hash is None:
         return ContentStatus.UNKNOWN
     return ContentStatus.FRESH if stored_hash == current_hash else ContentStatus.STALE
+
+
+class SeiResolver:
+    """Resolves locators → :class:`EntityBinding` via a ClarionClient, honoring
+    capability detection and degrading gracefully. The SEI is treated strictly opaque.
+
+    DEFERRED (no T3.1–T3.3 consumer): ``lineage(sei)`` — Clarion serves it (SEI std §4)
+    but no Wardline groundwork path consumes the event log yet (it is a Track 4 dossier
+    / legis-audit concern). ``resolve_sei`` IS implemented because the ORPHANED identity
+    status is part of this track's two-axis model. This split is intentional, not an
+    omission."""
+
+    def __init__(self, client: Any, capability: SeiCapability) -> None:
+        self._client = client
+        self._capability = capability
+
+    @property
+    def capability(self) -> SeiCapability:
+        return self._capability
+
+    @classmethod
+    def detect(cls, client: Any) -> SeiResolver:
+        """Probe ``_capabilities`` once and bind the resolver to the result. A probe
+        that fails for ANY reason (outage / a pre-SEI Clarion's 404 / malformed body →
+        ``client.capabilities()`` returns None) yields an unsupported capability, so the
+        resolver degrades."""
+        return cls(client, SeiCapability.from_capabilities(client.capabilities()))
+
+    def resolve_locator(self, locator: str) -> EntityBinding:
+        """Resolve a locator to its binding. When SEI is unsupported, return an
+        UNAVAILABLE binding WITHOUT touching the wire. When supported: ``alive:true``
+        with a usable opaque SEI → ALIVE (SEI carried verbatim, ``current_locator``
+        adopted); ``alive:false`` / soft outage / malformed → UNAVAILABLE (no live
+        identity for this locator — honest, never a guess)."""
+        if not self._capability.supported:
+            return EntityBinding(locator=locator)
+        data = self._client.resolve_identity(locator)
+        if not isinstance(data, dict) or data.get("alive") is not True:
+            return EntityBinding(locator=locator)
+        sei = data.get("sei")
+        if not isinstance(sei, str) or not sei:
+            return EntityBinding(locator=locator)
+        current = data.get("current_locator")
+        chash = data.get("content_hash")
+        return EntityBinding(
+            locator=current if isinstance(current, str) and current else locator,
+            sei=sei,  # opaque — carried verbatim, never parsed
+            identity=IdentityStatus.ALIVE,
+            content_hash=chash if isinstance(chash, str) else None,
+        )
+
+    def is_orphaned(self, sei: str) -> IdentityStatus:
+        """The identity axis for a held SEI, via resolve_sei. ALIVE / ORPHANED, or
+        UNAVAILABLE when the capability is absent or the read soft-fails (never guess).
+        ``sei`` is opaque — passed verbatim to the client, never parsed."""
+        if not self._capability.supported:
+            return IdentityStatus.UNAVAILABLE
+        data = self._client.resolve_sei(sei)
+        if not isinstance(data, dict):
+            return IdentityStatus.UNAVAILABLE
+        return IdentityStatus.ALIVE if data.get("alive") is True else IdentityStatus.ORPHANED
