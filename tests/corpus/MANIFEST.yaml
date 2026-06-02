@@ -9,6 +9,8 @@
 fixtures:
   contradictory.py:
     - {rule_id: PY-WL-110, qualname: "contradictory.conflicting", label: TRUE_POSITIVE, note: "@trusted + @external_boundary — two distinct trust markers"}
+  none_leak.py:
+    - {rule_id: PY-WL-109, qualname: "none_leak.maybe_none", label: TRUE_POSITIVE, note: "value path + bare return — None leaks from a trusted producer"}
   aliased_stdlib.py:
     - {rule_id: PY-WL-101, qualname: "aliased_stdlib.aliased_sink", label: TRUE_POSITIVE, note: "aliased json.loads returns GUARDED < declared ASSURED"}
     - {rule_id: PY-WL-101, qualname: "aliased_stdlib.indirect_return", label: TRUE_POSITIVE, note: "raw flows through a local var (single-hop indirection)"}
@@ -26,6 +28,8 @@ fixtures:
     - {rule_id: PY-WL-101, qualname: "exceptions.narrow_logged", label: TRUE_POSITIVE, note: "returns undecorated work() while declaring INTEGRAL (103/104 correctly silent)"}
     - {rule_id: PY-WL-103, qualname: "exceptions.broad_handler", label: TRUE_POSITIVE, note: "broad except Exception in a trusted-tier function"}
     - {rule_id: PY-WL-104, qualname: "exceptions.silent_handler", label: TRUE_POSITIVE, note: "silently swallowed exception in a trusted-tier function"}
+    - {rule_id: PY-WL-109, qualname: "exceptions.broad_handler", label: TRUE_POSITIVE, note: "value path (work()) + except returns None — None leaks from an INTEGRAL producer"}
+    - {rule_id: PY-WL-109, qualname: "exceptions.silent_handler", label: TRUE_POSITIVE, note: "value path (work()) + trailing return None — None leaks from an INTEGRAL producer"}
   more_shapes.py:
     - {rule_id: PY-WL-101, qualname: "more_shapes.direct_raw", label: TRUE_POSITIVE, note: "canonical raw return"}
     - {rule_id: PY-WL-101, qualname: "more_shapes.dict_of_raw", label: TRUE_POSITIVE, note: "dict value aggregation carries the weakest element"}

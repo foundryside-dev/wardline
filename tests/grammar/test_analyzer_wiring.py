@@ -12,7 +12,7 @@ from wardline.scanner.analyzer import WardlineAnalyzer, build_analyzer
 from wardline.scanner.grammar import default_grammar
 from wardline.scanner.rules import build_default_registry
 
-_BUILTIN_IDS = ["PY-WL-101", "PY-WL-102", "PY-WL-103", "PY-WL-104", "PY-WL-110"]
+_BUILTIN_IDS = ["PY-WL-101", "PY-WL-102", "PY-WL-103", "PY-WL-104", "PY-WL-110", "PY-WL-109"]
 
 
 def test_build_default_registry_default_is_builtin_rules() -> None:
