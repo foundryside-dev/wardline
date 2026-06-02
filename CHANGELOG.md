@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   engine reached a definite verdict on vs. how many are honestly unknown (`unknown` list),
   plus a `waiver_debt` rollup (days-to-expiry per configured waiver, lapsed entries
   surfaced not dropped). Zero-config — reads what every scan already computes.
+- `wardline attest` CLI and MCP `attest` / `verify_attestation` tools: signed, reproducible
+  evidence bundle (`schema: wardline-attest-1`) capturing commit, ruleset hash, the full
+  assurance posture, and per-boundary verdicts. HMAC-SHA256 signed with an install-minted
+  project key (`wardline install` appends `WARDLINE_ATTEST_KEY` to `.env`). The CLI and MCP
+  default to refusing a dirty working tree (`--allow-dirty` / `allow_dirty: true` to
+  override, records `dirty: true` honestly). `verify_attestation` checks signature (offline)
+  and optionally re-derives the payload at the current tree (`--reproduce` / `reproduce:
+  true`). SEI-keyed boundaries opt-in via `--clarion-url` (fail-soft).
 - `file_finding` (MCP tool + `wardline file-finding` CLI): file ONE finding by fingerprint
   into a tracked Filigree issue, returning its id (idempotent, fail-soft). Scan emission now
   sets `mark_unseen=True` (non-empty scans) so a fixed finding enters Filigree's
