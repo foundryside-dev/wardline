@@ -19,7 +19,25 @@ columns as work lands.
 
 ## Current position (update this line)
 
-**As of 2026-06-02 (latest):** **TRACK 3 NOW COMPLETE — T3.4 (rename-stable taint read-by-SEI) done & panel-reviewed**,
+**As of 2026-06-02 (latest):** **TRACK 5 COMPLETE — ALL FIVE WARDLINE TRACKS DONE.** T5.1–T5.3 landed
+on `feat/track3-sei-client` (nothing pushed), panel-reviewed. Wardline-repo-only; legis is the sole
+integration (fixed contract), **elspeth is inspiration only (no linkage)**. The convergence was
+**already substantially true** — legis carries Wardline's 8 tiers verbatim and Wardline's emitted
+finding shape already matches legis's `from_wire` — so Track 5 is **proof + documentation that locks it
+in**, not new machinery (no engine/decorator/store change). T5.1: keep/adopt/drop gap-check doc
+(`docs/concepts/trust-vocabulary-convergence.md`) — all elspeth effects Covered, `tier=` alias + a
+duplicate example Dropped (cites the existing T2 fixture `custom_grammar.py`). T5.2: hermetic always-on
+contract test (`tests/conformance/test_legis_intake_contract.py`) + opt-in live `legis_e2e` oracle
+(`tests/e2e/test_legis_live.py`, `WARDLINE_LEGIS_URL`-driven, auto-skips) — "one judge" proven (legis
+reproduces Wardline's `summary.active` from the wire). T5.3: ADR
+(`docs/decisions/2026-06-02-wardline-hash-granularity-two-model.md`) formalizing whole-file-vs-entity-body
+granularity + discipline tests (`tests/conformance/test_hash_granularity.py`). **`make ci` green** (1241
+tests, ruff/format/mypy clean, docs `--strict` exit 0, dogfood exit 0). Filigree `wardline-927cb4cf2e`/
+`wardline-680861ec57`/`wardline-d4198c2b44`. **Remaining for full program-exit: nothing in Wardline's
+lane** — the dossier "survives a rename" dogfood proof is met on the Clarion axis; the Filigree axis
+pends **Filigree's own** SEI conformance (backfill + §8 oracle), which is Filigree's lane.
+
+**Prior position (retained for context):** **TRACK 3 NOW COMPLETE — T3.4 (rename-stable taint read-by-SEI) done & panel-reviewed**,
 on branch `feat/track3-sei-client` (nothing pushed). Clarion landed the enabling change **additively** (its
 commit `caa2665`, migration 0006: nullable `sei` column on `wardline_taint_facts` + `POST
 /api/wardline/taint-facts/by-sei` route + discrete `taint_store.read_by_sei` capability) — so the original
@@ -228,13 +246,35 @@ spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 
 **DoD:** envelope ≤2k tokens · freshness both axes · SEI-keyed · honest partial when sources absent · (post-wiring) one-call dossier on a real dogfood entity.
 
-### Track 5 — Trust-vocab convergence + legis CI  ·  gate: **legis OPEN** (implemented through Sprint 6) + T2 done ✓  ·  **☐ not started — now a LIVE integration (legis exists with a `/wardline/scan-results` intake)**
+### Track 5 — Trust-vocab convergence + legis CI  ·  gate: **legis OPEN** ✓ + T2 done ✓  ·  **☑ done (T5.1–T5.3, branch `feat/track3-sei-client`)**
 
 | Unit | Work | Status |
 |---|---|---|
-| T5.1 | Converge suite trust vocabulary (Wardline grammar delivers elspeth effects; builtins unchanged) | ☐ |
-| T5.2 | legis intake surface (findings/gate as inputs; one judge, not two) | ☐ |
-| T5.3 | Hash-granularity harmonisation (entity-body vs whole-file) | ☐ |
+| T5.1 | Converge suite trust vocabulary — keep/adopt/drop gap-check vs elspeth effects; builtins unchanged | ☑ |
+| T5.2 | legis intake conformance — hermetic contract test (always-on) + opt-in live `legis_e2e` oracle; one judge | ☑ |
+| T5.3 | Hash-granularity harmonisation — ADR (whole-file vs entity-body) + discipline tests; no new hashing | ☑ |
+
+> **Track 5 done (2026-06-02).** Wardline-repo-only; legis is the sole integration
+> (fixed contract), **elspeth is inspiration only — no import, no linkage.** The
+> defining finding: the convergence was **already substantially true** (legis carries
+> Wardline's 8 tiers verbatim; Wardline's emitted finding shape already matches legis's
+> `from_wire`, values and all), so this track is **proof + documentation that locks it
+> in**, not new machinery — no engine/decorator/store change. T5.1: a keep/adopt/drop
+> sweep doc (`docs/concepts/trust-vocabulary-convergence.md`) — all elspeth effects
+> Covered, a `tier=` alias + a duplicate worked example Dropped (the T2 fixture
+> `custom_grammar.py` already shows an elspeth-style tiered boundary). T5.2: a hermetic
+> always-on contract test + an opt-in `legis_e2e` live oracle; the "one judge" property
+> is proven (legis reproduces Wardline's `summary.active` gate population from the wire,
+> never re-derives). T5.3: an ADR formalizing the two-granularity model (whole-file
+> taint freshness vs entity-body identity drift) + discipline tests (false-STALE-never +
+> a content_status call-site guard). Panel-reviewed (silent-failure-hunter + QA): fixed
+> the qualname round-trip gap, the `/health` probe path, placeholder doc links.
+> Filigree `wardline-927cb4cf2e` (T5.2), `wardline-680861ec57` (T5.1), `wardline-d4198c2b44` (T5.3).
+>
+> **ALL FIVE TRACKS NOW DONE.** Program-exit "dogfood proof" (one-call dossier surviving
+> a rename) is fully met on the Clarion axis; the Filigree axis of that proof remains
+> pending **Filigree's own** SEI conformance (its locator→SEI backfill + §8 oracle pass —
+> out of Wardline's lane; see the sibling-gate table).
 
 ---
 

@@ -47,6 +47,7 @@ nav:
       - Taint & trust model: concepts/model.md
       - Taint algebra: concepts/taint-algebra.md
       - Rules: concepts/rules.md
+      - Trust-vocabulary convergence: concepts/trust-vocabulary-convergence.md
   - Guides:
       - Configuration: guides/configuration.md
       - Suppressing findings: guides/suppression.md

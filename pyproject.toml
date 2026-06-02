@@ -74,10 +74,11 @@ files = ["src/wardline"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not network and not clarion_e2e'"
+addopts = "-m 'not network and not clarion_e2e and not legis_e2e'"
 markers = [
     "network: tests that need network (live OpenRouter judge e2e — SP5)",
     "clarion_e2e: tests that need a real `clarion serve` binary (SP9 round-trip)",
+    "legis_e2e: tests that need a real `legis` server (Track 5 intake round-trip)",
 ]
 
 [tool.coverage.run]

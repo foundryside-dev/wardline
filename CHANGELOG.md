@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Track 5 — trust-vocabulary convergence + legis CI (T5.1–T5.3).** The final
+  Wardline track: one trust vocabulary, one judge, proven against legis. All
+  Wardline-repo-only (legis is a fixed external contract; elspeth is inspiration
+  only — no import, no linkage). The convergence was found to be *already
+  substantially true*, so this track is proof + documentation that locks it in.
+  - **T5.1 — vocabulary convergence (gap-check):** `docs/concepts/trust-vocabulary-convergence.md`
+    records a keep/adopt/drop sweep of the trust effects elspeth pioneered against
+    the Loom mechanisms that already deliver them — fabrication test ≈ PY-WL-102,
+    custody ≈ the lattice + `taint_provenance`, fail-closed ≈ `UNKNOWN_*` +
+    `WLN-ENGINE-*` FACTs (incl. `WLN-ENGINE-UNPROVABLE-BOUNDARY`), tiered boundary ≈
+    `@trust_boundary(to_level=…)`, one-judge ≈ legis carrying Wardline's 8 tiers
+    verbatim. All Covered; a `tier=` alias and a duplicate worked example are
+    explicitly Dropped (the T2 extension-plane fixture `custom_grammar.py` already
+    demonstrates an elspeth-style tiered boundary). No engine/decorator change.
+  - **T5.2 — legis intake conformance:** Wardline's emitted findings/gate already
+    match legis's `from_wire` ingest contract (verified: `severity` name, `kind`,
+    `suppressed` values all align). A hermetic always-on contract test
+    (`tests/conformance/test_legis_intake_contract.py`) vendors legis's contract and
+    proves a real scan ingests cleanly and that legis's active-defect selection
+    reproduces Wardline's own `summary.active` gate population (one judge: legis
+    reads the verdict, never re-derives it). A new opt-in `legis_e2e` marker drives a
+    live round-trip oracle (`tests/e2e/test_legis_live.py`) against a running legis's
+    `POST /wardline/scan-results`, auto-skipping when absent.
+  - **T5.3 — hash-granularity harmonisation:** an ADR
+    (`docs/decisions/2026-06-02-wardline-hash-granularity-two-model.md`) formalizes
+    the two-granularity model — whole-file (taint-store freshness,
+    `content_hash_at_compute` ↔ Clarion `current_file_hash`) vs entity-body
+    (identity/association drift, Clarion resolve `content_hash` ↔ Filigree
+    `content_hash_at_attach`) — and the never-cross-compare rule. Discipline tests
+    (`tests/conformance/test_hash_granularity.py`) lock the false-STALE-never
+    property and guard that `content_status` is only called from the entity-body
+    surface. No new hashing, no store change.
 - **Track 4 — the Loom entity dossier (assembler + live wiring, T4.1–T4.3).** One
   freshness-honest call returns everything an agent needs to reason about a function
   without reading its source. Wardline is the **assembler** (composes each tool's
