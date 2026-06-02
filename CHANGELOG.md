@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parity with the CLI (a `filigree` block in the scan result; fail-soft — an unreachable
   sibling or rejected payload is reported, never fails the scan). Closes the CLI/MCP
   finding-emission asymmetry. (WS-A1)
+- MCP `scan` gains a server-side `where` filter (rule_id/qualname/severity/suppression/kind/
+  path_glob/sink/tier) and an `explain: true` mode that inlines each active defect's taint
+  provenance — killing the scan-then-N-explains round-trips. New read-only `wardline findings`
+  CLI verb shares the same filter core. (WS-B1, WS-B2)
 
 ## [1.0.0rc1] - 2026-06-02
 

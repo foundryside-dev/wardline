@@ -21,6 +21,7 @@ from wardline.core.run import run_scan
 
 if TYPE_CHECKING:
     from wardline.core.finding import Finding
+    from wardline.scanner.context import AnalysisContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +37,41 @@ class TaintExplanation:
     source_boundary_qualname: str | None
     resolved_call_count: int
     unresolved_call_count: int
+
+
+def explanation_from_context(finding: Finding, context: AnalysisContext) -> TaintExplanation:
+    """Project the cheap provenance slice for one finding from an ALREADY-COMPUTED
+    analysis context (no re-analysis). Shared by `_explain_local` (single-finding
+    re-run) and the MCP `scan(explain=true)` inliner, so both produce identical
+    provenance. Resolves the source boundary ONE hop only (full N-hop chain is the
+    Clarion-backed `explain_chain`)."""
+    qualname = finding.qualname
+    immediate_tainted_callee = context.function_return_callee.get(qualname) if qualname is not None else None
+    source_boundary_qualname: str | None = None
+    if (
+        immediate_tainted_callee is not None
+        and "." not in immediate_tainted_callee
+        and qualname is not None
+        and "." in qualname
+    ):
+        module = qualname.rsplit(".", 1)[0]
+        candidate = f"{module}.{immediate_tainted_callee}"
+        if candidate in context.entities and context.function_return_callee.get(candidate) is None:
+            source_boundary_qualname = candidate
+    prov = context.taint_provenance.get(qualname) if qualname is not None else None
+    return TaintExplanation(
+        fingerprint=finding.fingerprint,
+        rule_id=finding.rule_id,
+        sink_qualname=qualname,
+        path=finding.location.path,
+        line=finding.location.line_start,
+        tier_in=finding.properties.get("actual_return"),
+        tier_out=finding.properties.get("declared_return"),
+        immediate_tainted_callee=immediate_tainted_callee,
+        source_boundary_qualname=source_boundary_qualname,
+        resolved_call_count=prov.resolved_call_count if prov is not None else 0,
+        unresolved_call_count=prov.unresolved_call_count if prov is not None else 0,
+    )
 
 
 def _match(
@@ -78,43 +114,7 @@ def _explain_local(
     # last_context; ScanResult.context is typed Optional only for the empty-scan
     # case that produces no findings to match here.
     assert result.context is not None
-    context = result.context
-
-    qualname = finding.qualname
-    immediate_tainted_callee = context.function_return_callee.get(qualname) if qualname is not None else None
-
-    # Resolve the source boundary ONE hop, honestly. If the immediate callee is a
-    # simple (non-dotted) name, form the same-module candidate qualname and report
-    # it ONLY when it is a known entity that is itself a leaf source (its own return
-    # callee is None — it does not get its taint from a further call). Never report a
-    # non-leaf intermediate, a dotted callee, or a cross-module/deep chain (SP9).
-    source_boundary_qualname: str | None = None
-    if (
-        immediate_tainted_callee is not None
-        and "." not in immediate_tainted_callee
-        and qualname is not None
-        and "." in qualname
-    ):
-        module = qualname.rsplit(".", 1)[0]
-        candidate = f"{module}.{immediate_tainted_callee}"
-        if candidate in context.entities and context.function_return_callee.get(candidate) is None:
-            source_boundary_qualname = candidate
-
-    prov = context.taint_provenance.get(qualname) if qualname is not None else None
-
-    return TaintExplanation(
-        fingerprint=finding.fingerprint,
-        rule_id=finding.rule_id,
-        sink_qualname=qualname,
-        path=finding.location.path,
-        line=finding.location.line_start,
-        tier_in=finding.properties.get("actual_return"),
-        tier_out=finding.properties.get("declared_return"),
-        immediate_tainted_callee=immediate_tainted_callee,
-        source_boundary_qualname=source_boundary_qualname,
-        resolved_call_count=prov.resolved_call_count if prov is not None else 0,
-        unresolved_call_count=prov.unresolved_call_count if prov is not None else 0,
-    )
+    return explanation_from_context(finding, result.context)
 
 
 def _is_fresh(view: Any) -> bool:

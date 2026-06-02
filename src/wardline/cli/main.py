@@ -10,6 +10,7 @@ import click
 
 from wardline._version import __version__
 from wardline.cli.dossier import dossier
+from wardline.cli.findings import findings
 from wardline.cli.install import install
 from wardline.cli.judge import judge as judge_command
 from wardline.cli.mcp import mcp
@@ -31,6 +32,7 @@ cli.add_command(judge_command)
 cli.add_command(mcp)
 cli.add_command(install)
 cli.add_command(dossier)
+cli.add_command(findings)
 
 
 @cli.command()

@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from wardline._version import __version__
 from wardline.core import config as config_mod
@@ -20,14 +20,18 @@ from wardline.core.baseline import generate_baseline
 from wardline.core.config_schema import WARDLINE_SCHEMA
 from wardline.core.descriptor import descriptor_to_yaml
 from wardline.core.errors import FiligreeEmitError, WardlineError
-from wardline.core.explain import explain_chain, explain_finding
+from wardline.core.explain import explain_chain, explain_finding, explanation_from_context
 from wardline.core.filigree_emit import EmitResult, FiligreeEmitter
-from wardline.core.finding import Finding, Severity
+from wardline.core.finding import Finding, Kind, Severity, SuppressionState
+from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
 from wardline.core.run import gate_decision, run_scan
 from wardline.core.waivers import add_waiver
 from wardline.mcp.protocol import JsonRpcServer, McpError
 from wardline.scanner.rules import _ALL_RULE_CLASSES
+
+if TYPE_CHECKING:
+    from wardline.core.explain import TaintExplanation
 
 
 class ToolError(Exception):
@@ -53,6 +57,19 @@ class Tool:
 def _finding_to_dict(f: Finding) -> dict[str, Any]:
     parsed: dict[str, Any] = json.loads(f.to_jsonl())
     return parsed
+
+
+def _explanation_to_dict(exp: TaintExplanation) -> dict[str, Any]:
+    """The 6-key provenance projection shared by `scan(explain=true)`'s inliner and
+    `explain_taint`'s return dict — identical BY CONSTRUCTION, not by test."""
+    return {
+        "tier_in": exp.tier_in,
+        "tier_out": exp.tier_out,
+        "immediate_tainted_callee": exp.immediate_tainted_callee,
+        "source_boundary_qualname": exp.source_boundary_qualname,
+        "resolved_call_count": exp.resolved_call_count,
+        "unresolved_call_count": exp.unresolved_call_count,
+    }
 
 
 def _resolve_under_root(root: Path, arg: str) -> Path:
@@ -123,9 +140,28 @@ def _scan(args: dict[str, Any], root: Path, clarion: Any = None, filigree: Any =
         }
     decision = gate_decision(result, threshold)
     filigree_block = _emit_filigree(result.findings, filigree)
+    try:
+        selected = filter_findings(result.findings, args.get("where"))
+    except ValueError as exc:
+        # An unknown filter key is agent-actionable -> isError result, not a crash.
+        raise ToolError(str(exc)) from exc
+    explain = bool(args.get("explain"))
+    findings_out: list[dict[str, Any]] = []
+    for f in selected:
+        d = _finding_to_dict(f)
+        if (
+            explain
+            and f.kind is Kind.DEFECT
+            and f.suppressed is SuppressionState.ACTIVE
+            and f.qualname is not None
+            and result.context is not None
+        ):
+            exp = explanation_from_context(f, result.context)
+            d["explanation"] = _explanation_to_dict(exp)
+        findings_out.append(d)
     return {
         "files_scanned": result.files_scanned,
-        "findings": [_finding_to_dict(f) for f in result.findings],
+        "findings": findings_out,
         "summary": {
             "total": result.summary.total,
             "active": result.summary.active,
@@ -175,12 +211,7 @@ def _explain_taint(args: dict[str, Any], root: Path, clarion: Any = None) -> dic
         "rule_id": exp.rule_id,
         "sink_qualname": exp.sink_qualname,
         "location": {"path": exp.path, "line": exp.line},
-        "tier_in": exp.tier_in,
-        "tier_out": exp.tier_out,
-        "immediate_tainted_callee": exp.immediate_tainted_callee,
-        "source_boundary_qualname": exp.source_boundary_qualname,
-        "resolved_call_count": exp.resolved_call_count,
-        "unresolved_call_count": exp.unresolved_call_count,
+        **_explanation_to_dict(exp),
     }
     if args.get("chain") and clarion is not None and exp.sink_qualname:
         ch = explain_chain(
@@ -335,7 +366,10 @@ class WardlineMCPServer:
                 name="scan",
                 description="Whole-program taint scan of the project. Returns structured "
                 "findings, the suppression summary (active = the gate population), "
-                "and the gate verdict. When a Filigree URL is configured, also POSTs the "
+                "and the gate verdict. Pass `where` to filter the returned findings "
+                "(conjunctive; summary/gate stay whole-project) and `explain: true` to inline "
+                "each active defect's taint provenance — one call, no per-finding explain_taint. "
+                "When a Filigree URL is configured, also POSTs the "
                 "findings to Filigree (fail-soft: an unreachable sibling or rejected payload "
                 "is reported in the `filigree` block, never fails the scan).",
                 input_schema={
@@ -344,6 +378,31 @@ class WardlineMCPServer:
                         "path": {"type": "string", "description": "subdir relative to project root"},
                         "fail_on": {"type": "string", "enum": _SEVERITY_ENUM},
                         "config": {"type": "string"},
+                        "where": {
+                            "type": "object",
+                            "description": "Filter the returned findings (conjunctive). Keys: "
+                            "rule_id, qualname, severity, suppression, kind, path_glob, sink, tier. "
+                            "summary/gate still describe the whole project.",
+                            "properties": {
+                                "rule_id": {"type": "string"},
+                                "qualname": {"type": "string"},
+                                "severity": {"type": "string", "enum": _SEVERITY_ENUM},
+                                "suppression": {"type": "string", "enum": ["active", "baselined", "waived", "judged"]},
+                                "kind": {
+                                    "type": "string",
+                                    "enum": ["defect", "fact", "classification", "metric", "suggestion"],
+                                },
+                                "path_glob": {"type": "string"},
+                                "sink": {"type": "string"},
+                                "tier": {"type": "string"},
+                            },
+                        },
+                        "explain": {
+                            "type": "boolean",
+                            "description": "Inline each active defect's taint provenance "
+                            "(immediate tainted callee, source boundary, trust tiers, resolution "
+                            "counts) — one call instead of an explain_taint per finding.",
+                        },
                     },
                 },
                 handler=lambda args, root: _scan(args, root, self._clarion_client(), self._filigree_emitter()),
@@ -565,11 +624,12 @@ class WardlineMCPServer:
 
     _LOOP_PROMPT = (
         "Wardline is whole-program and on-disk. The loop:\n"
-        "1. Call `scan` (whole project). Read `summary.active` and `gate.tripped`.\n"
-        "2. For each active defect, call `explain_taint` with the finding's `fingerprint`, "
-        "`path`+`line`, AND its `qualname` as `sink_qualname`. When a Clarion store is "
-        "configured this serves the explanation from the store (no re-scan), and you can pass "
-        "`chain: true` to walk the full taint chain to the originating boundary.\n"
+        "1. Call `scan` with `explain: true` (whole project). Each active defect carries an "
+        "inline `explanation` (immediate tainted callee, source boundary, trust tiers) — no "
+        "per-finding round-trip. Read `summary.active` and `gate.tripped`.\n"
+        "2. For the FULL N-hop chain to the originating boundary (needs a configured Clarion "
+        "store), call `explain_taint` with the finding's `qualname` as `sink_qualname` and "
+        "`chain: true`.\n"
         "3. Fix at the BOUNDARY, not the sink — add validation/rejection at the right hop.\n"
         "4. Re-`scan`. Only baseline/waiver a finding you have judged a true non-issue, with a reason."
     )

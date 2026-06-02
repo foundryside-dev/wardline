@@ -86,3 +86,13 @@ def test_explain_by_path_line_matches(tmp_path: Path) -> None:
     exp = explain_finding(root, path=f.location.path, line=f.location.line_start)
     assert exp is not None
     assert exp.fingerprint == f.fingerprint
+
+
+def test_explain_finding_still_projects_provenance(tmp_path: Path) -> None:
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    finding = next(f for f in run_scan(tmp_path).findings if f.rule_id == "PY-WL-101")
+    exp = explain_finding(tmp_path, fingerprint=finding.fingerprint)
+    assert exp is not None
+    assert exp.sink_qualname == "svc.leaky"
+    assert exp.immediate_tainted_callee == "read_raw"
+    assert exp.source_boundary_qualname == "svc.read_raw"
