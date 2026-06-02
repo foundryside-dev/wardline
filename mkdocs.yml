@@ -56,7 +56,7 @@ nav:
       - LLM triage judge: guides/judge.md
       - Loom integration: guides/loom.md
       - Clarion taint store: guides/clarion-taint-store.md
-  - Using Wardline with your coding agent: agents.md
+      - Using Wardline with your coding agent: guides/agents.md
   - Reference:
       - CLI: reference/cli.md
       - Trust vocabulary: reference/vocabulary.md

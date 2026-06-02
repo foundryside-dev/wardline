@@ -160,7 +160,7 @@ Full documentation lives at **<https://foundryside-dev.github.io/wardline/>**.
 | [Clarion Taint Store](https://foundryside-dev.github.io/wardline/guides/clarion-taint-store/) | Persisting taint facts |
 | [CLI Reference](https://foundryside-dev.github.io/wardline/reference/cli/) | Every command and flag |
 | [Trust Vocabulary](https://foundryside-dev.github.io/wardline/reference/vocabulary/) | The decorators and their arguments |
-| [Agent Integration](https://foundryside-dev.github.io/wardline/agents/) | Using Wardline from a coding agent |
+| [Agent Integration](https://foundryside-dev.github.io/wardline/guides/agents/) | Using Wardline from a coding agent |
 
 ## Development
 

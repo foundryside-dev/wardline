@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0rc1] - 2026-06-02
+
 ### Changed
 
 - **Cross-method class-attribute taint (soundness closure A).** Raw assigned to
@@ -17,8 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   data surfaced via instance state. This does NOT over-fire on the common OO shapes
   (validated setter + trusted getter, lazy-init): a `@trust_boundary`-validated write
   is trusted, so the summary stays trusted — measured FP=0 on hand-built patterns and
-  on the dogfood + corpus trees. A deep `self.y = self.x` attribute-to-attribute chain
-  may under-resolve (a bounded residual FN, never an over-fire).
+  on the dogfood + corpus trees. Two bounded residual FNs (never over-fires): a deep
+  `self.y = self.x` attribute-to-attribute chain may under-resolve, and the attribute
+  summary does not feed back into the L3 fixed point (attr-derived taint surfaced
+  through a non-anchored method's return won't propagate to that method's callers).
 - **Flow-sensitive sink-arg taint (soundness closure E).** The sink rules
   (`PY-WL-106`/`107`/`108`) and `PY-WL-105` now resolve a call argument's taint AT
   the sink statement, not from the function's final per-variable map. This closes a

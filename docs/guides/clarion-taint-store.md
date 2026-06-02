@@ -100,7 +100,7 @@ that into your loop design.
 
 ## See also
 
-- [Using Wardline with your coding agent](../agents.md) — the MCP tool
+- [Using Wardline with your coding agent](agents.md) — the MCP tool
   surface, including `explain_taint`.
 - [Loom integration](loom.md) — the other Loom output paths (SARIF, native
   Filigree emitter, Clarion producer conformance).
