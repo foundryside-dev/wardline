@@ -1,0 +1,48 @@
+# Ground-truth expectations for the labeled FP corpus (T1.4).
+# Key = (path relative to tests/corpus/fixtures, rule_id, qualname).
+# label: TRUE_POSITIVE (engine correctly fires) | FALSE_POSITIVE (engine wrongly fires).
+# FP rate = FALSE_POSITIVE / total active DEFECTs, gated <= 5%.
+# Every active DEFECT the engine produces over the fixtures MUST have an entry here
+# (an unaccounted finding fails the gate — that is how clean-shape regressions surface).
+# Per the 2026-05-31 taint-combination audit the engine has 0 live FP, so every entry
+# below is TRUE_POSITIVE today; the FALSE_POSITIVE label exists to capture a regression.
+fixtures:
+  contradictory.py:
+    - {rule_id: PY-WL-110, qualname: "contradictory.conflicting", label: TRUE_POSITIVE, note: "@trusted + @external_boundary — two distinct trust markers"}
+  none_leak.py:
+    - {rule_id: PY-WL-109, qualname: "none_leak.maybe_none", label: TRUE_POSITIVE, note: "value path + bare return — None leaks from a trusted producer"}
+  deser_sink.py:
+    - {rule_id: PY-WL-106, qualname: "deser_sink.loads_untrusted", label: TRUE_POSITIVE, note: "EXTERNAL_RAW reaches pickle.loads in a trusted-tier fn"}
+  exec_sink.py:
+    - {rule_id: PY-WL-107, qualname: "exec_sink.evals_untrusted", label: TRUE_POSITIVE, note: "EXTERNAL_RAW reaches eval() in a trusted-tier fn"}
+  command_sink.py:
+    - {rule_id: PY-WL-108, qualname: "command_sink.runs_untrusted", label: TRUE_POSITIVE, note: "EXTERNAL_RAW reaches os.system in a trusted-tier fn"}
+  trusted_callee.py:
+    - {rule_id: PY-WL-105, qualname: "trusted_callee.handler", label: TRUE_POSITIVE, note: "EXTERNAL_RAW passed to the trusted callee store()"}
+  aliased_stdlib.py:
+    - {rule_id: PY-WL-101, qualname: "aliased_stdlib.aliased_sink", label: TRUE_POSITIVE, note: "aliased json.loads returns GUARDED < declared ASSURED"}
+    - {rule_id: PY-WL-101, qualname: "aliased_stdlib.indirect_return", label: TRUE_POSITIVE, note: "raw flows through a local var (single-hop indirection)"}
+  cf_joins.py:
+    - {rule_id: PY-WL-101, qualname: "cf_joins.if_branch_leaks", label: TRUE_POSITIVE, note: "else branch returns raw (if/else join)"}
+    - {rule_id: PY-WL-101, qualname: "cf_joins.try_branch_leaks", label: TRUE_POSITIVE, note: "except branch returns raw (try/except join)"}
+  match_arms.py:
+    - {rule_id: PY-WL-101, qualname: "match_arms.match_arm_leaks", label: TRUE_POSITIVE, note: "one match arm binds raw, then returned"}
+  validators.py:
+    - {rule_id: PY-WL-102, qualname: "validators.no_rejection", label: TRUE_POSITIVE, note: "trust_boundary(ASSURED) with no rejection path"}
+    - {rule_id: PY-WL-102, qualname: "validators.no_rejection_guarded", label: TRUE_POSITIVE, note: "trust_boundary(GUARDED) with no rejection path"}
+  exceptions.py:
+    - {rule_id: PY-WL-101, qualname: "exceptions.broad_handler", label: TRUE_POSITIVE, note: "returns undecorated work() (UNKNOWN_RAW) while declaring INTEGRAL"}
+    - {rule_id: PY-WL-101, qualname: "exceptions.silent_handler", label: TRUE_POSITIVE, note: "returns undecorated work()/None while declaring INTEGRAL"}
+    - {rule_id: PY-WL-101, qualname: "exceptions.narrow_logged", label: TRUE_POSITIVE, note: "returns undecorated work() while declaring INTEGRAL (103/104 correctly silent)"}
+    - {rule_id: PY-WL-103, qualname: "exceptions.broad_handler", label: TRUE_POSITIVE, note: "broad except Exception in a trusted-tier function"}
+    - {rule_id: PY-WL-104, qualname: "exceptions.silent_handler", label: TRUE_POSITIVE, note: "silently swallowed exception in a trusted-tier function"}
+  more_shapes.py:
+    - {rule_id: PY-WL-101, qualname: "more_shapes.direct_raw", label: TRUE_POSITIVE, note: "canonical raw return"}
+    - {rule_id: PY-WL-101, qualname: "more_shapes.dict_of_raw", label: TRUE_POSITIVE, note: "dict value aggregation carries the weakest element"}
+    - {rule_id: PY-WL-101, qualname: "more_shapes.str_wrapped_raw", label: TRUE_POSITIVE, note: "propagating builtin str() preserves raw"}
+    - {rule_id: PY-WL-101, qualname: "more_shapes.chained_indirection", label: TRUE_POSITIVE, note: "two-hop var chain still returns raw"}
+    - {rule_id: PY-WL-101, qualname: "more_shapes.fstring_raw", label: TRUE_POSITIVE, note: "f-string interpolating raw stays raw"}
+    - {rule_id: PY-WL-101, qualname: "more_shapes.list_of_raw", label: TRUE_POSITIVE, note: "list aggregation carries the weakest element"}
+    - {rule_id: PY-WL-101, qualname: "more_shapes.augassign_raw", label: TRUE_POSITIVE, note: "augmented assignment merges raw in"}
+    - {rule_id: PY-WL-101, qualname: "more_shapes.launders_through_broken_boundary", label: TRUE_POSITIVE, note: "declared ASSURED but body re-derives raw"}
+    - {rule_id: PY-WL-102, qualname: "more_shapes.passthrough_no_check", label: TRUE_POSITIVE, note: "boundary that cannot reject"}

@@ -116,7 +116,10 @@ def refine_minimum_scope_taints(
     def _anchor_or_seed(func: str) -> TaintState:
         if seed_sources.get(func) == "provider":
             return return_taints.get(func, _seed(func))
-        return _seed(func)
+        # Unreachable: _anchor_or_seed is only invoked from _refine under the
+        # ``seed_sources.get(callee) == "provider"`` guard, so the non-provider
+        # fall-through is never taken. Kept as a defensive default.
+        return _seed(func)  # pragma: no cover
 
     def _refine(func: str, *, remaining_intermediaries: int, stack: frozenset[str]) -> tuple[TaintState, str | None]:
         seed = _seed(func)

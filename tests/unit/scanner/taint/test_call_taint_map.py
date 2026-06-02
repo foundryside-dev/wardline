@@ -173,3 +173,31 @@ def test_from_import_aliased_dumps_resolves_unknown_raw() -> None:
     aliases = _aliases("from json import dumps as d\n", "m")
     tm = build_call_taint_map(module_path="m", alias_map=aliases)
     assert tm["d"] == T.UNKNOWN_RAW
+
+
+# ── Coverage: the serialisation-sink alias-closure arms that the SHIPPED sink set
+# (all single-component-package dotted names) does not exercise. These defensive
+# arms guard FUTURE sink shapes; we drive them by injecting such sinks. ──
+
+
+def test_bare_name_sink_is_skipped(monkeypatch) -> None:
+    # A sink with NO package (a bare name) has no alias form to close over, so the
+    # closure loop must skip it (the `if not pkg: continue` guard) and produce no entry.
+    import wardline.scanner.taint.call_taint_map as ctm
+
+    monkeypatch.setattr(ctm, "_SERIALISATION_SINKS", frozenset({"baresink"}))
+    aliases = _aliases("import baresink\n", "m")
+    tm = build_call_taint_map(module_path="m", alias_map=aliases)
+    assert "baresink" not in tm  # bare-name sink contributes nothing via the closure
+
+
+def test_multicomponent_package_sink_keyed_under_collapsed_alias(monkeypatch) -> None:
+    # A sink whose package is multi-component (``pkg.sub``): under ``import pkg.sub``
+    # the alias collapses to ``pkg``, and the call is written ``pkg.sub.fn``. The
+    # `pkg.startswith(target + ".")` arm must key the full written name to UNKNOWN_RAW.
+    import wardline.scanner.taint.call_taint_map as ctm
+
+    monkeypatch.setattr(ctm, "_SERIALISATION_SINKS", frozenset({"deep.pkg.dump"}))
+    aliases = _aliases("import deep.pkg\n", "m")
+    tm = build_call_taint_map(module_path="m", alias_map=aliases)
+    assert tm["deep.pkg.dump"] == T.UNKNOWN_RAW

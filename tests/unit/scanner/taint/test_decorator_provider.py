@@ -18,7 +18,9 @@ def _seed(src: str, *, module: str = "m") -> dict[str, FunctionTaint | None]:
     entities = discover_file_entities(tree, module=module, path="m.py")
     ctx = SeedContext(module=module, alias_map=alias_map)
     provider = DecoratorTaintSourceProvider()
-    return {e.qualname: provider.taint_for(e, ctx) for e in entities}
+    # .taint: assertions here compare the declared FunctionTaint; the unprovable-
+    # boundary signal (Track 2 T2.4) is exercised separately in tests/grammar/.
+    return {e.qualname: provider.taint_for(e, ctx).taint for e in entities}
 
 
 def test_external_boundary_from_import() -> None:
@@ -164,3 +166,70 @@ def test_fingerprint_is_version_derived_and_stable() -> None:
     p = DecoratorTaintSourceProvider()
     assert p.fingerprint() == f"decorator-vocab:{REGISTRY_VERSION}"
     assert p.fingerprint() == p.fingerprint()
+
+
+def test_star_import_materialises_vocabulary_decorators() -> None:
+    # `from wardline.decorators import *` brings the trust decorators in by name.
+    # The provider resolves them only if build_import_alias_map materialised the
+    # statically-known vocabulary exports (T1.2) — without executing the target.
+    from wardline.scanner.taint.decorator_provider import vocabulary_star_exports
+
+    tree = ast.parse(
+        "from wardline.decorators import *\n@trust_boundary(to_level='ASSURED')\ndef v(p):\n    return p\n"
+    )
+    alias_map = build_import_alias_map(tree, module_path="m", star_exports=vocabulary_star_exports())
+    entities = discover_file_entities(tree, module="m", path="m.py")
+    ctx = SeedContext(module="m", alias_map=alias_map)
+    provider = DecoratorTaintSourceProvider()
+    out = {e.qualname: provider.taint_for(e, ctx).taint for e in entities}
+    assert out["m.v"] == FunctionTaint(T.EXTERNAL_RAW, T.ASSURED)
+
+
+def test_star_imported_trust_boundary_fires_end_to_end(tmp_path) -> None:
+    # End-to-end: a no-rejection @trust_boundary reached via star-import must fire
+    # PY-WL-102 (was a silent FN — the star import was dropped on the floor).
+    from wardline.core.run import run_scan
+
+    pkg = tmp_path / "proj"
+    pkg.mkdir()
+    (pkg / "m.py").write_text(
+        "from wardline.decorators import *\n@trust_boundary(to_level='ASSURED')\ndef v(p):\n    return p\n"
+    )
+    result = run_scan(pkg)
+    active = {f.rule_id for f in result.findings if f.suppressed.value == "active"}
+    assert "PY-WL-102" in active, "star-imported @trust_boundary was not seeded"
+
+
+# ── Coverage: fail-closed arms reached only by unusual / malformed decorator
+# shapes. Each asserts the no-opinion (None) outcome the engine relies on. ──
+
+
+def test_subscript_decorator_is_no_opinion() -> None:
+    # ``@registry['x']`` — the decorator node is a Subscript, not a Name/Attribute
+    # chain, so _dotted_name returns None and the decorator resolves to no opinion.
+    out = _seed("registry = {}\n@registry['x']\ndef f():\n    return 1\n")
+    assert out["m.f"] is None
+
+
+def test_non_matching_keyword_is_skipped_before_level_arg() -> None:
+    # A decorator with an UNRELATED keyword before to_level: the kw loop must skip the
+    # non-matching keyword (118->117) and still read to_level correctly.
+    out = _seed(
+        "from wardline.decorators import trust_boundary\n"
+        "@trust_boundary(other=1, to_level='ASSURED')\ndef v(x):\n    return x\n"
+    )
+    assert out["m.v"] == FunctionTaint(T.EXTERNAL_RAW, T.ASSURED)
+
+
+def test_invalid_taintstate_token_is_no_opinion() -> None:
+    # A string token that is NOT a canonical TaintState (TaintState(token) raises) ->
+    # fail-closed (None), never a silent mis-read.
+    out = _seed("from wardline.decorators import trusted\n@trusted(level='NOPE')\ndef f():\n    return 1\n")
+    assert out["m.f"] is None
+
+
+def test_wardline_prefixed_but_unknown_decorator_is_no_opinion() -> None:
+    # A name under the wardline.decorators prefix that is NOT a REGISTRY decorator
+    # (``wardline.decorators.bogus``) — canonical not in REGISTRY -> no opinion.
+    out = _seed("import wardline.decorators\n@wardline.decorators.bogus\ndef f():\n    return 1\n")
+    assert out["m.f"] is None

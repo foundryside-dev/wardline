@@ -30,8 +30,9 @@ def test_mcp_resolves_clarion_url_from_config(tmp_path: Path, monkeypatch) -> No
     captured: dict[str, object] = {}
 
     class _FakeServer:
-        def __init__(self, *, root: Path, clarion_url: str | None = None) -> None:
+        def __init__(self, *, root: Path, clarion_url: str | None = None, filigree_url: str | None = None) -> None:
             captured["clarion_url"] = clarion_url
+            captured["filigree_url"] = filigree_url
             self.rpc = self
 
         def run_stdio(self) -> None:

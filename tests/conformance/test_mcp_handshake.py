@@ -53,9 +53,17 @@ def test_full_client_handshake_and_every_surface() -> None:
     assert init["protocolVersion"] == PROTOCOL_VERSION
     assert init["serverInfo"]["name"] == "wardline"
     assert {"tools", "resources", "prompts"} <= set(init["capabilities"])
-    # tools/list: the six documented tools, no more no less
+    # tools/list: the seven documented tools, no more no less
     tool_names = {t["name"] for t in by_id[2]["result"]["tools"]}
-    assert tool_names == {"scan", "explain_taint", "judge", "baseline_create", "baseline_update", "waiver_add"}
+    assert tool_names == {
+        "scan",
+        "explain_taint",
+        "dossier",
+        "judge",
+        "baseline_create",
+        "baseline_update",
+        "waiver_add",
+    }
     # resources/list: the four stable URIs
     resource_uris = {r["uri"] for r in by_id[3]["result"]["resources"]}
     assert resource_uris == {"wardline://vocab", "wardline://rules", "wardline://config", "wardline://config-schema"}

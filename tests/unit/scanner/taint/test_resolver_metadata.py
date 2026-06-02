@@ -36,6 +36,13 @@ def test_metadata_rejects_negative_max() -> None:
         _meta(convergence_iterations_max=-1)
 
 
+def test_metadata_rejects_nonpositive_histogram_count() -> None:
+    # A histogram bucket count must be >= 1 (a bucket with zero entries is meaningless
+    # — it should simply be absent). A count of 0 must raise.
+    with pytest.raises(ValueError, match="counts must be >= 1"):
+        _meta(convergence_iterations_histogram=((1, 0),))
+
+
 def test_result_wraps_mappings_immutably() -> None:
     res = ResolverResult(
         taint_map={"m.f": T.UNKNOWN_RAW},

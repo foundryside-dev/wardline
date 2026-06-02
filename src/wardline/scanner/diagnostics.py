@@ -84,11 +84,14 @@ def build_unknown_import_findings(
     file_trees: list[tuple[str, str, ast.Module]],
     *,
     project_modules: frozenset[str],
+    resolvable_star_modules: frozenset[str] = frozenset(),
 ) -> list[Finding]:
     """FACT findings for unresolved external imports across all files.
 
     ``file_trees`` is ``[(relpath, module_path, tree), ...]``. Fingerprint is
-    stable from ``(module_path, package)``.
+    stable from ``(module_path, package)``. ``resolvable_star_modules`` names the
+    star-import modules the engine materialises statically (T1.2), so they are NOT
+    reported as unresolved.
     """
     findings: list[Finding] = []
     stdlib_keys = stdlib_taint_keys()  # suppress curated stdlib entries (forward-correct)
@@ -98,6 +101,7 @@ def build_unknown_import_findings(
             module_path=module_path,
             project_modules=project_modules,
             stdlib_keys=stdlib_keys,
+            resolvable_star_modules=resolvable_star_modules,
         ):
             package = detail.split()[1] if detail.startswith("from ") else detail
             findings.append(
@@ -175,6 +179,7 @@ def diagnose_unknown_imports(
     module_path: str,
     project_modules: frozenset[str],
     stdlib_keys: frozenset[tuple[str, str]],
+    resolvable_star_modules: frozenset[str] = frozenset(),
 ) -> list[tuple[str, str, str]]:
     """Return ``(module_path, detail, reason)`` tuples for each unresolvable
     import, de-duplicated by ``(source_module, target_package)``.
@@ -226,6 +231,10 @@ def diagnose_unknown_imports(
 
         # Star-import branch.
         if any(alias.name == "*" for alias in node.names):
+            # A statically-materialised star module (the trust vocabulary, T1.2) is
+            # resolved, not a coverage gap — no FACT.
+            if mod in resolvable_star_modules:
+                continue
             if not any(key[0] == mod for key in stdlib_keys):
                 key = (module_path, mod)
                 if key not in seen:

@@ -15,7 +15,7 @@ to SP1d (the first consumer is the full callgraph).
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 
 
 def build_import_alias_map(
@@ -23,12 +23,16 @@ def build_import_alias_map(
     module_path: str = "",
     *,
     is_package: bool = False,
+    star_exports: Mapping[str, Mapping[str, str]] | None = None,
 ) -> dict[str, str]:
     """Build ``{local_name: fully_qualified_name}`` from module-level imports.
 
-    Only top-level statements are processed (not imports inside functions). Star
-    imports (``from X import *``) are ignored — they cannot be resolved without
-    executing the import.
+    Only top-level statements are processed (not imports inside functions). Absolute
+    star imports (``from X import *``) are resolved ONLY when ``X`` is in
+    ``star_exports`` — a statically-known export set (e.g. Wardline's own trust
+    vocabulary), never read from the target's source and never by executing it. Every
+    other star import (relative, or an unknown module) is ignored, leaving the engine
+    to surface the coverage gap as a ``WLN-ENGINE-UNKNOWN-IMPORT`` FACT (fail-closed).
 
     Args:
         tree: parsed AST module.
@@ -37,6 +41,8 @@ def build_import_alias_map(
         is_package: whether ``module_path`` names a package initializer
             (``pkg/__init__.py`` -> ``module_path="pkg"``, ``is_package=True``)
             so ``from . import y`` resolves against the current package.
+        star_exports: ``{source_module_fqn: {local_name: target_fqn}}`` of the
+            statically-known exports to materialise for an absolute ``from X import *``.
     """
     alias_map: dict[str, str] = {}
 
@@ -48,6 +54,13 @@ def build_import_alias_map(
             continue
         if isinstance(node, ast.ImportFrom):
             if node.module is None and (node.level or 0) == 0:
+                continue
+            # Absolute star import of a statically-known module: materialise its
+            # known exports (no execution, no target-source read). Relative star
+            # imports and unknown modules fall through and stay unresolved.
+            if (node.level or 0) == 0 and node.module is not None and any(a.name == "*" for a in node.names):
+                for local_name, fqn in (star_exports or {}).get(node.module, {}).items():
+                    alias_map[local_name] = fqn
                 continue
             for alias in node.names:
                 if alias.name == "*":

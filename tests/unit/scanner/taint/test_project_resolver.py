@@ -13,6 +13,7 @@ from wardline.scanner.taint.provider import (
     DefaultTaintSourceProvider,
     FunctionTaint,
     SeedContext,
+    SeedResult,
 )
 from wardline.scanner.taint.summary_cache import SummaryCache
 
@@ -23,8 +24,8 @@ class _RawLeafProvider:
 
     def taint_for(self, entity, ctx):  # noqa: ANN001, ANN201
         if entity.qualname.endswith(".read_raw"):
-            return FunctionTaint(body_taint=T.MIXED_RAW, return_taint=T.MIXED_RAW)
-        return None
+            return SeedResult(taint=FunctionTaint(body_taint=T.MIXED_RAW, return_taint=T.MIXED_RAW))
+        return SeedResult(taint=None)
 
     def fingerprint(self) -> str:
         return "rawleaf-v1"
@@ -225,7 +226,7 @@ def test_resolver_exposes_effective_return_taint_map() -> None:
     from wardline.scanner.ast_primitives import build_import_alias_map
     from wardline.scanner.index import discover_class_qualnames, discover_file_entities
     from wardline.scanner.taint.function_level import seed_function_taints
-    from wardline.scanner.taint.provider import FunctionTaint, SeedContext
+    from wardline.scanner.taint.provider import FunctionTaint, SeedContext, SeedResult
 
     src = "def validate(p):\n    if not p:\n        raise ValueError\n    return p\ndef plain(p):\n    return p\n"
     tree = ast.parse(src)
@@ -237,8 +238,8 @@ def test_resolver_exposes_effective_return_taint_map() -> None:
     class _Provider:
         def taint_for(self, entity, ctx):  # noqa: ANN001, ANN201
             if entity.qualname.endswith(".validate"):
-                return FunctionTaint(body_taint=T.EXTERNAL_RAW, return_taint=T.ASSURED)
-            return None
+                return SeedResult(taint=FunctionTaint(body_taint=T.EXTERNAL_RAW, return_taint=T.ASSURED))
+            return SeedResult(taint=None)
 
         def fingerprint(self) -> str:
             return "test-effret-v1"

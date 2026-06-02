@@ -296,3 +296,221 @@ def test_post_assertion_module_default_upgrade_bails(monkeypatch, caplog) -> Non
     assert refined == tm  # bailed to the unrefined L1 map
     assert prov["A"].source == "module_default"  # seed-only provenance
     assert any("post-assertion FAILED" in r.message for r in caplog.records)
+
+
+# ── Coverage: graceful degradation when the per-function side maps (edges /
+# resolved_counts / unresolved_counts / return_taint_map) are PARTIAL — a func is
+# present in taint_map but absent from a side map. The real resolver populates all
+# maps in lockstep (build_call_edges emits a row per entity), but the kernel guards
+# every lookup so a partial map degrades to a 0/empty default rather than raising.
+# Driven directly through the public kernel (its own test surface). ──
+
+
+def test_fallback_func_absent_from_all_count_maps_defaults_zero() -> None:
+    refined, prov, diags, _it = propagate_callgraph_taints(
+        edges={},
+        taint_map={"A": T.UNKNOWN_RAW},
+        taint_sources={"A": "fallback"},
+        resolved_counts={},  # A absent everywhere
+        unresolved_counts={},
+        return_taint_map={},
+    )
+    assert refined == {"A": T.UNKNOWN_RAW}
+    assert prov["A"].source == "fallback"
+    assert prov["A"].resolved_call_count == 0
+    assert prov["A"].unresolved_call_count == 0
+    assert diags == []
+
+
+def test_anchored_func_absent_from_count_maps_defaults_zero() -> None:
+    _refined, prov, _diags, _it = propagate_callgraph_taints(
+        edges={},
+        taint_map={"A": T.GUARDED},
+        taint_sources={"A": "anchored"},
+        resolved_counts={},
+        unresolved_counts={},
+        return_taint_map={},
+    )
+    assert prov["A"].source == "anchored"
+    assert prov["A"].resolved_call_count == 0
+    assert prov["A"].unresolved_call_count == 0
+
+
+def test_module_default_func_absent_from_count_maps_defaults_zero() -> None:
+    _refined, prov, _diags, _it = propagate_callgraph_taints(
+        edges={},
+        taint_map={"A": T.UNKNOWN_RAW},
+        taint_sources={"A": "module_default"},
+        resolved_counts={},
+        unresolved_counts={},
+        return_taint_map={},
+    )
+    assert prov["A"].source == "module_default"
+    assert prov["A"].resolved_call_count == 0
+
+
+def test_refined_func_absent_from_count_maps_defaults_zero() -> None:
+    # A is refined by raw callee B; neither is in the count maps, so the refined-branch
+    # provenance defaults its counts to 0 while still recording the via_callee.
+    refined, prov, _diags, _it = propagate_callgraph_taints(
+        edges={"A": {"B"}, "B": set()},
+        taint_map={"A": T.INTEGRAL, "B": T.UNKNOWN_RAW},
+        taint_sources={"A": "fallback", "B": "fallback"},
+        resolved_counts={},  # A and B absent
+        unresolved_counts={},
+        return_taint_map={"A": T.INTEGRAL, "B": T.UNKNOWN_RAW},
+    )
+    assert refined["A"] == T.UNKNOWN_RAW
+    assert prov["A"].source == "callgraph"
+    assert prov["A"].via_callee == "B"
+    assert prov["A"].resolved_call_count == 0
+    assert prov["A"].unresolved_call_count == 0
+
+
+def test_cyclic_scc_with_missing_edges_and_anchored_return() -> None:
+    # A<->B cycle; B also calls anchored C. C is ABSENT from both edges (no outgoing)
+    # and return_taint_map, so the kernel falls back to current[C] for C's anchored
+    # contribution and to an empty edge set for C — raw still propagates into the cycle.
+    refined, _prov, diags, _it = propagate_callgraph_taints(
+        edges={"A": {"B"}, "B": {"A", "C"}},  # C has no edges entry
+        taint_map={"A": T.INTEGRAL, "B": T.INTEGRAL, "C": T.EXTERNAL_RAW},
+        taint_sources={"A": "fallback", "B": "fallback", "C": "anchored"},
+        resolved_counts={},
+        unresolved_counts={},
+        return_taint_map={},  # C absent -> uses current[C]
+    )
+    assert refined["A"] == T.EXTERNAL_RAW
+    assert refined["B"] == T.EXTERNAL_RAW
+    assert refined["C"] == T.EXTERNAL_RAW
+    assert not any(code == DIAG_CONVERGENCE_BOUND for code, _ in diags)
+
+
+def test_low_resolution_diagnostic_emitted_above_threshold() -> None:
+    # >70% unresolved calls must emit L3_LOW_RESOLUTION with the percentage.
+    from wardline.scanner.taint.propagation import DIAG_LOW_RESOLUTION
+
+    _refined, _prov, diags, _it = propagate_callgraph_taints(
+        edges={"A": set()},
+        taint_map={"A": T.UNKNOWN_RAW},
+        taint_sources={"A": "fallback"},
+        resolved_counts={"A": 1},
+        unresolved_counts={"A": 9},  # 9/10 = 90% unresolved
+        return_taint_map={"A": T.UNKNOWN_RAW},
+    )
+    lowres = [msg for code, msg in diags if code == DIAG_LOW_RESOLUTION]
+    assert len(lowres) == 1
+    assert "90%" in lowres[0]
+
+
+def test_low_resolution_func_absent_from_count_maps_no_diagnostic() -> None:
+    # A func absent from both count maps has total_calls == 0, so no ratio is computed
+    # and no L3_LOW_RESOLUTION fires (the resolved/unresolved KeyError->0 defaults).
+    from wardline.scanner.taint.propagation import DIAG_LOW_RESOLUTION
+
+    _refined, _prov, diags, _it = propagate_callgraph_taints(
+        edges={"A": set()},
+        taint_map={"A": T.UNKNOWN_RAW},
+        taint_sources={"A": "fallback"},
+        resolved_counts={},
+        unresolved_counts={},
+        return_taint_map={"A": T.UNKNOWN_RAW},
+    )
+    assert not any(code == DIAG_LOW_RESOLUTION for code, _ in diags)
+
+
+def test_seed_provenance_only_handles_missing_source_and_counts() -> None:
+    # The post-assertion-bail path builds provenance via _seed_provenance_only. Drive it
+    # through a monkeypatched buggy round that corrupts an anchored entry, with a func
+    # ABSENT from taint_sources (defaults to fallback) and from the count maps (0).
+    def buggy_round(**kwargs):
+        kwargs["current"]["B"] = T.MIXED_RAW  # corrupt anchored B
+        return ({}, {})
+
+    import wardline.scanner.taint.propagation as prop_mod
+
+    orig = prop_mod._compute_scc_round
+    try:
+        prop_mod._compute_scc_round = buggy_round
+        refined, prov, _diags, _it = propagate_callgraph_taints(
+            edges={"A": {"B"}, "B": set()},
+            taint_map={"A": T.UNKNOWN_RAW, "B": T.GUARDED},
+            taint_sources={"B": "anchored"},  # A absent from sources -> fallback in seed-only
+            resolved_counts={},  # both absent -> 0
+            unresolved_counts={},
+            return_taint_map={"A": T.UNKNOWN_RAW, "B": T.GUARDED},
+        )
+    finally:
+        prop_mod._compute_scc_round = orig
+    assert refined == {"A": T.UNKNOWN_RAW, "B": T.GUARDED}  # bailed to unrefined
+    assert prov["A"].source == "fallback"  # A absent from sources -> fallback
+    assert prov["A"].resolved_call_count == 0
+    assert prov["B"].source == "anchored"
+
+
+def test_mixed_scc_skips_anchored_member_in_phase1() -> None:
+    # A<->B cycle where A is ANCHORED and B is non-anchored. The SCC is not all-anchored
+    # (so it is processed), and Phase 1 must SKIP the anchored member A (continue) while
+    # refining B from the cycle. A stays at its declared taint; B demotes to it.
+    refined, _prov, diags, _it = propagate_callgraph_taints(
+        edges={"A": {"B"}, "B": {"A"}},
+        taint_map={"A": T.GUARDED, "B": T.INTEGRAL},
+        taint_sources={"A": "anchored", "B": "fallback"},
+        resolved_counts={"A": 1, "B": 1},
+        unresolved_counts={"A": 0, "B": 0},
+        return_taint_map={"A": T.GUARDED, "B": T.INTEGRAL},
+    )
+    assert refined["A"] == T.GUARDED  # anchored, unchanged
+    assert refined["B"] == T.GUARDED  # demoted toward the anchored cycle member
+    assert not any(code == DIAG_CONVERGENCE_BOUND for code, _ in diags)
+
+
+def test_scc_phase1b_seed_join_commits_when_less_trusted() -> None:
+    # A<->B cycle; B also calls external anchored C (EXTERNAL_RAW) and D (GUARDED). B
+    # draws on >=2 sources, so the Phase-1b seed-join aggregates them via least_trusted
+    # and, being LESS trusted than B's current state, commits — propagating raw into the
+    # cycle. Asserts the multi-source seed path raises (demotes) the cycle correctly.
+    refined, _prov, diags, _it = propagate_callgraph_taints(
+        edges={"A": {"B"}, "B": {"A", "C", "D"}, "C": set(), "D": set()},
+        taint_map={"A": T.INTEGRAL, "B": T.INTEGRAL, "C": T.EXTERNAL_RAW, "D": T.GUARDED},
+        taint_sources={
+            "A": "module_default",
+            "B": "module_default",
+            "C": "anchored",
+            "D": "anchored",
+        },
+        resolved_counts={"A": 1, "B": 3, "C": 0, "D": 0},
+        unresolved_counts={"A": 0, "B": 0, "C": 0, "D": 0},
+        return_taint_map={"A": T.INTEGRAL, "B": T.INTEGRAL, "C": T.EXTERNAL_RAW, "D": T.GUARDED},
+    )
+    assert refined["B"] == T.EXTERNAL_RAW  # weakest-link of its external+local seed set
+    assert refined["A"] == T.EXTERNAL_RAW  # raw propagated around the cycle
+    assert not any(code == DIAG_CONVERGENCE_BOUND for code, _ in diags)
+
+
+def test_scc_phase1b_seed_join_demotes_via_local_sibling() -> None:
+    # Phase 1 only sees callees OUTSIDE the SCC, so it cannot demote B from an SCC-LOCAL
+    # sibling. Phase 1b includes the local sibling: A<->B cycle, A seeded raw (UNKNOWN_RAW
+    # module_default), B clean (INTEGRAL) with a clean EXTERNAL callee D. B's Phase-1b
+    # seed set = {D(GUARDED), A(UNKNOWN_RAW local)} (>=2 sources); the seed-join is
+    # UNKNOWN_RAW — strictly LESS trusted than B's current INTEGRAL — so the commit fires
+    # and the raw local sibling propagates into B. This is the seed-join's whole purpose:
+    # a local multi-source join Phase 1 missed.
+    refined, _prov, diags, _it = propagate_callgraph_taints(
+        edges={"A": {"B"}, "B": {"A", "D"}, "D": set()},
+        taint_map={"A": T.UNKNOWN_RAW, "B": T.INTEGRAL, "D": T.GUARDED},
+        taint_sources={"A": "module_default", "B": "module_default", "D": "anchored"},
+        resolved_counts={"A": 1, "B": 2, "D": 0},
+        unresolved_counts={"A": 0, "B": 0, "D": 0},
+        return_taint_map={"A": T.UNKNOWN_RAW, "B": T.INTEGRAL, "D": T.GUARDED},
+    )
+    assert refined["B"] == T.UNKNOWN_RAW  # demoted by the raw local sibling A via the seed-join
+    assert refined["A"] == T.UNKNOWN_RAW
+    assert not any(code == DIAG_CONVERGENCE_BOUND for code, _ in diags)
+
+
+def test_compute_sccs_skips_neighbor_absent_from_graph() -> None:
+    # A references B, but B is NOT a key in the graph dict (an edge to a node the graph
+    # does not describe). compute_sccs must skip the dangling neighbor (graph[neighbor]
+    # KeyError -> skip) and still produce A as its own component, never raising.
+    sccs = compute_sccs({"A": {"B"}})
+    assert {frozenset(s) for s in sccs} == {frozenset({"A"})}

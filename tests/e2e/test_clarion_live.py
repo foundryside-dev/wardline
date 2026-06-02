@@ -238,3 +238,144 @@ def test_scan_write_then_explain_query_round_trip(clarion_server: tuple[Path, st
     assert exp is not None
     assert exp.sink_qualname == "svc.leaky"
     assert exp.tier_in == "EXTERNAL_RAW"
+
+
+def test_sei_client_against_live_clarion(clarion_server: tuple[Path, str]) -> None:
+    """Exercise the SEI client against whatever a real `clarion serve` actually
+    advertises — adaptive, so it is a true oracle either way (the SEI conformance
+    oracle's two consumer-side scenarios):
+      - capability ABSENT  -> honest degrade (UNAVAILABLE, no crash, works on locator)
+      - capability PRESENT -> resolve a real locator; opacity holds on any SEI returned
+    The consumer must NEVER crash and must NEVER parse the SEI."""
+    proj, url = clarion_server
+    from wardline.clarion.client import ClarionClient
+    from wardline.clarion.config import load_clarion_token, resolve_project_name
+    from wardline.clarion.identity import IdentityStatus, SeiResolver
+
+    client = ClarionClient(url, secret=load_clarion_token(proj), project=resolve_project_name(proj))
+    resolver = SeiResolver.detect(client)
+
+    # Discover svc.leaky's real locator via the SP9 qualname->locator resolve; fall back
+    # to the canonical locator form if that route is unavailable.
+    rr = client.resolve(["svc.leaky"])
+    locator = (rr.resolved.get("svc.leaky") if rr is not None else None) or "python:function:svc.leaky"
+
+    binding = resolver.resolve_locator(locator)  # must never crash
+    assert binding.binding_key  # coherent, non-empty, either branch
+
+    if not resolver.capability.supported:
+        # Degrade path: no `sei` capability -> honest unavailable, no guessing.
+        assert binding.identity is IdentityStatus.UNAVAILABLE
+        assert binding.sei is None
+        assert binding.keyed_on_sei is False
+        assert binding.binding_key == locator
+        return
+
+    # SEI-present path: resolution is coherent; any SEI returned is OPAQUE + verbatim.
+    assert binding.identity in (IdentityStatus.ALIVE, IdentityStatus.UNAVAILABLE)
+    if binding.identity is IdentityStatus.ALIVE:
+        assert isinstance(binding.sei, str) and binding.sei
+        assert binding.keyed_on_sei is True
+        assert binding.binding_key == binding.sei
+        # Opacity (oracle identity_round_trip_and_opacity): reserved prefix, not the locator.
+        assert binding.sei.startswith("clarion:eid:")
+        assert binding.sei != locator
+        # The opaque token round-trips through resolve_sei without the client parsing it.
+        assert resolver.resolve_identity_status(binding.sei) is IdentityStatus.ALIVE
+
+
+def test_loom_dossier_against_live_clarion(clarion_server: tuple[Path, str]) -> None:
+    """T4.3 oracle: assemble a one-call dossier against a real `clarion serve`.
+
+    Adaptive (a true oracle either way): the self/trust posture is always real; the
+    Clarion-sourced sections fill iff the live build advertises the SEI + HTTP-linkage
+    capabilities, and degrade to honest `unavailable` otherwise. Never crashes, never
+    parses the SEI, never exceeds the token budget."""
+    proj, url = clarion_server
+    from wardline.clarion.client import ClarionClient
+    from wardline.clarion.config import load_clarion_token, resolve_project_name
+    from wardline.clarion.identity import ContentStatus, IdentityStatus
+    from wardline.loom_dossier import build_loom_dossier
+
+    client = ClarionClient(url, secret=load_clarion_token(proj), project=resolve_project_name(proj))
+    caps = client.capabilities() or {}
+    sei_up = isinstance(caps.get("sei"), dict) and caps["sei"].get("supported") is True
+    linkages_up = isinstance(caps.get("linkages"), dict) and caps["linkages"].get("http") is True
+
+    d = build_loom_dossier("svc.leaky", root=proj, clarion_client=client)
+
+    # self/trust is always real — svc.leaky leaks an external-boundary value
+    assert d.identity.qualname == "svc.leaky"
+    assert d.trust.gate_verdict == "defect"
+    assert any(f.rule_id == "PY-WL-101" for f in d.trust.active_findings)
+    # token budget holds on a real envelope
+    assert d.estimated_tokens() <= 2000
+
+    if sei_up:
+        # SEI resolved live → opaque key, alive identity (never parsed)
+        assert isinstance(d.identity.sei, str) and d.identity.sei.startswith("clarion:eid:")
+        assert d.identity.keyed_on_sei is True
+        assert d.identity.identity_status is IdentityStatus.ALIVE
+    else:
+        assert d.identity.sei is None
+        assert d.identity.identity_status is IdentityStatus.UNAVAILABLE
+
+    if linkages_up:
+        # leaky -> read_raw, so callees must include read_raw's locator; content FRESH (live)
+        assert d.linkages.available is True
+        assert d.linkages.content_status is ContentStatus.FRESH
+        assert any("read_raw" in n for n in d.linkages.callees)
+    else:
+        assert d.linkages.available is False
+
+
+def test_taint_read_by_sei_against_live_clarion(clarion_server: tuple[Path, str]) -> None:
+    """T3.4 oracle (live wire half): the rename-stable read-by-SEI route round-trips.
+
+    Adaptive — a true oracle either way:
+      - ``taint_store.read_by_sei`` ABSENT -> the capability degrades honestly (an older
+        SEI Clarion); nothing to assert beyond detection.
+      - PRESENT -> write facts (Clarion stamps each fact's SEI server-side from its alive
+        sei_binding), resolve svc.leaky's SEI, then read it back BY SEI: the fact exists
+        and is fresh; a bogus opaque SEI returns exists:false. The SEI is never parsed.
+
+    The flipped-binding rename leg lives in Clarion's own oracle + the hermetic unit
+    test (``test_client_by_sei.test_fact_survives_a_rename_via_sei``) — Wardline cannot
+    flip Clarion's sei_bindings from the client, so that split is honest, not a gap."""
+    proj, url = clarion_server
+    from wardline.clarion.client import ClarionClient
+    from wardline.clarion.config import load_clarion_token, resolve_project_name
+    from wardline.clarion.identity import SeiResolver, TaintStoreCapability
+    from wardline.clarion.write import write_facts_to_clarion
+    from wardline.core.run import run_scan
+
+    client = ClarionClient(url, secret=load_clarion_token(proj), project=resolve_project_name(proj))
+    caps = client.capabilities()
+    if not TaintStoreCapability.from_capabilities(caps).read_by_sei:
+        pytest.skip("live clarion does not advertise taint_store.read_by_sei (pre-0006 build)")
+
+    # scan -> write (Clarion stamps the SEI server-side from the alive sei_binding)
+    wr = write_facts_to_clarion(run_scan(proj), proj, client)
+    assert wr.reachable is True and wr.written >= 2
+
+    # resolve svc.leaky -> locator -> stable SEI
+    resolver = SeiResolver.detect(client)
+    rr = client.resolve(["svc.leaky"])
+    locator = (rr.resolved.get("svc.leaky") if rr is not None else None) or "python:function:svc.leaky"
+    binding = resolver.resolve_locator(locator)
+    assert binding.keyed_on_sei is True and isinstance(binding.sei, str)
+
+    # read the fact back BY ITS STABLE SEI — the rename-stable retrieval surface
+    views = client.batch_get_by_sei([binding.sei])
+    assert views is not None and len(views) == 1
+    v = views[0]
+    assert v.sei == binding.sei  # opaque, echoed verbatim
+    assert v.exists is True
+    assert isinstance(v.wardline_json, dict)
+    assert v.wardline_json["content_hash_at_compute"] == v.current_content_hash  # live fresh
+    assert v.wardline_json["taint"]["actual_return"] == "EXTERNAL_RAW"
+
+    # a bogus opaque SEI -> exists:false (honest miss, never a crash)
+    bogus = client.batch_get_by_sei(["clarion:eid:0000000000000000000000000000dead"])
+    assert bogus is not None and len(bogus) == 1
+    assert bogus[0].exists is False

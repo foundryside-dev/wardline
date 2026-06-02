@@ -68,7 +68,7 @@ Wardline already has the right extension seam:
    (`src/wardline/core/config.py`, `src/wardline/core/config_schema.py`).
 4. SP2 already deferred a `module_default`-style out-of-source declaration
    concept; this design picks up that thread instead of inventing a parallel
-   subsystem (`docs/superpowers/specs/2026-05-30-wardline-sp2-rules-and-vocabulary-design.md`).
+   subsystem (`docs/superpowers/specs/archive/2026-05-30-wardline-sp2-rules-and-vocabulary-design.md`).
 
 So the design is not "teach Wardline a new concept." It is "add a new
 declaration surface to an existing concept."

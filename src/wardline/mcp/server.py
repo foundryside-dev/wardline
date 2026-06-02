@@ -177,6 +177,24 @@ def _explain_taint(args: dict[str, Any], root: Path, clarion: Any = None) -> dic
     return result_dict
 
 
+def _dossier(args: dict[str, Any], root: Path, clarion: Any = None, filigree_url: str | None = None) -> dict[str, Any]:
+    """Assemble the one-call entity dossier. The SEI-keyed, freshness-honest read:
+    Wardline's own trust posture (always real) + Clarion linkages + Filigree open work,
+    each section degrading to an honest `unavailable` when its source is absent."""
+    from wardline.loom_dossier import build_loom_dossier
+
+    entity = _require(args, "entity")
+    dossier = build_loom_dossier(
+        entity,
+        root=root,
+        clarion_client=clarion,
+        filigree_url=filigree_url,
+        config_path=_cfg(args, root),
+        confine_to_root=True,
+    )
+    return dossier.to_dict()
+
+
 def _require(args: dict[str, Any], key: str) -> Any:
     """Mandatory tool argument. A missing/blank value is agent-actionable ("you must
     supply a reason/expiry") → ``ToolError`` → isError result, NOT a JSON-RPC fault."""
@@ -257,9 +275,10 @@ _SEVERITY_ENUM = ["CRITICAL", "ERROR", "WARN", "INFO"]
 
 
 class WardlineMCPServer:
-    def __init__(self, *, root: Path, clarion_url: str | None = None) -> None:
+    def __init__(self, *, root: Path, clarion_url: str | None = None, filigree_url: str | None = None) -> None:
         self.root = Path(root)
         self.clarion_url = clarion_url
+        self.filigree_url = filigree_url
         self.rpc = JsonRpcServer(server_name="wardline", server_version=__version__)
         self._tools: dict[str, Tool] = {}
         self._register_tools()
@@ -320,6 +339,27 @@ class WardlineMCPServer:
                     },
                 },
                 handler=lambda args, root: _explain_taint(args, root, self._clarion_client()),
+            )
+        )
+        self.add_tool(
+            Tool(
+                name="dossier",
+                description="One-call entity dossier for a function `entity` (a qualname): its "
+                "trust posture (declared vs actual taint, gate verdict, active findings — always "
+                "computed fresh), plus Clarion call-graph linkages and Filigree open work joined on "
+                "the entity's opaque SEI. Every cross-tool section is freshness-stamped on BOTH axes "
+                "(identity alive/orphaned/unavailable + content fresh/stale/unknown) and degrades to "
+                "an honest `unavailable` when its source is absent. Token-bounded (~2k) with an "
+                "explicit truncation marker. Read the whole context without opening the source.",
+                input_schema={
+                    "type": "object",
+                    "required": ["entity"],
+                    "properties": {
+                        "entity": {"type": "string", "description": "the function qualname, e.g. pkg.mod.func"},
+                        "config": {"type": "string"},
+                    },
+                },
+                handler=lambda args, root: _dossier(args, root, self._clarion_client(), self.filigree_url),
             )
         )
         self.add_tool(

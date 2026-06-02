@@ -215,3 +215,64 @@ def test_load_drops_poisoned_trio_cache_file(tmp_path, caplog) -> None:
     c = SummaryCache(cache_dir=tmp_path)
     c.load()  # must not raise
     assert len(c) == 0
+
+
+# ── Coverage: load/save edge arms and the deserialiser's taint_source guard. ──
+
+
+def test_save_cleans_up_temp_file_when_replace_fails(tmp_path, monkeypatch) -> None:
+    # If os.replace fails mid-save, the temp file must be unlinked (no .tmp litter)
+    # and the error re-raised — the except cleanup arm.
+    import os
+
+    c = SummaryCache(cache_dir=tmp_path)
+    c.put(_KEY, (_summary("m.a"),))
+
+    def boom(_src, _dst):
+        raise OSError("simulated replace failure")
+
+    monkeypatch.setattr(os, "replace", boom)
+    with pytest.raises(OSError, match="simulated replace failure"):
+        c.save()
+    # No orphan temp files left behind.
+    assert [p.name for p in tmp_path.iterdir() if p.suffix == ".tmp"] == []
+
+
+def test_load_skips_non_json_files(tmp_path) -> None:
+    # A non-.json file in the cache dir must be skipped (the suffix guard), not parsed.
+    (tmp_path / f"{_KEY}.txt").write_text("garbage", encoding="utf-8")
+    c = SummaryCache(cache_dir=tmp_path)
+    c.load()  # must not raise
+    assert len(c) == 0
+
+
+def test_load_drops_stale_schema_entry_from_disk(tmp_path) -> None:
+    # A JSON file whose summary carries a DIFFERENT schema_version must NOT be
+    # rehydrated. _deserialise_summary reconstructs a FunctionSummary, whose
+    # __post_init__ rejects the foreign schema (ValueError) — so the file is dropped
+    # via the malformed-entry handler. The end-state contract: nothing loaded.
+    import json
+
+    stale = _summary("m.a")
+    object.__setattr__(stale, "schema_version", SUMMARY_SCHEMA_VERSION + 1)
+    payload = [_serialise_summary(stale)]
+    (tmp_path / f"{_KEY}.json").write_text(json.dumps(payload), encoding="utf-8")
+    c = SummaryCache(cache_dir=tmp_path)
+    c.load()
+    assert len(c) == 0  # stale-schema file dropped (not rehydrated)
+
+
+def test_deserialise_rejects_invalid_taint_source() -> None:
+    # A taint_source outside the legal set must raise (the disk artifact is corrupt /
+    # schema-foreign), never rehydrate into the pipeline.
+    bad = {
+        "fqn": "m.f",
+        "body_taint": "INTEGRAL",
+        "return_taint": "INTEGRAL",
+        "taint_source": "not-a-source",
+        "unresolved_calls": 0,
+        "schema_version": SUMMARY_SCHEMA_VERSION,
+        "cache_key": _KEY,
+    }
+    with pytest.raises(ValueError, match="invalid taint_source"):
+        _deserialise_summary(bad)

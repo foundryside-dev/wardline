@@ -11,11 +11,18 @@ from wardline.core.finding import Severity
 from wardline.scanner.context import RuleRegistry
 from wardline.scanner.rules.boundary_without_rejection import BoundaryWithoutRejection
 from wardline.scanner.rules.broad_exception import BroadException
+from wardline.scanner.rules.contradictory_trust import ContradictoryTrust
+from wardline.scanner.rules.none_leak import NoneLeak
 from wardline.scanner.rules.silent_exception import SilentException
 from wardline.scanner.rules.untrusted_reaches_trusted import UntrustedReachesTrusted
+from wardline.scanner.rules.untrusted_to_command import UntrustedToCommand
+from wardline.scanner.rules.untrusted_to_deserialization import UntrustedToDeserialization
+from wardline.scanner.rules.untrusted_to_exec import UntrustedToExec
+from wardline.scanner.rules.untrusted_to_trusted_callee import UntrustedReachesTrustedCallee
 
 if TYPE_CHECKING:
     from wardline.core.config import WardlineConfig
+    from wardline.scanner.context import _RuleClass
 
 # Registration order = emission order (deterministic findings stream).
 _ALL_RULE_CLASSES = (
@@ -23,7 +30,18 @@ _ALL_RULE_CLASSES = (
     BoundaryWithoutRejection,
     BroadException,
     SilentException,
+    ContradictoryTrust,
+    NoneLeak,
+    UntrustedReachesTrustedCallee,
+    UntrustedToDeserialization,
+    UntrustedToExec,
+    UntrustedToCommand,
 )
+
+# Public alias: the builtin rule set the default grammar (Track 2) preloads.
+# Kept as the single source of truth — `default_grammar()` references this so the
+# grammar's builtin rules cannot drift from the legacy registry construction.
+BUILTIN_RULE_CLASSES = _ALL_RULE_CLASSES
 
 
 def _enabled(rule_id: str, patterns: tuple[str, ...]) -> bool:
@@ -31,13 +49,18 @@ def _enabled(rule_id: str, patterns: tuple[str, ...]) -> bool:
     return any(p == "*" or fnmatch.fnmatch(rule_id, p) for p in patterns)
 
 
-def build_default_registry(config: WardlineConfig) -> RuleRegistry:
-    """Build the SP2 rule set, honoring ``config.rules_enable`` (fnmatch include
-    list; ``*`` = all) and ``config.rules_severity`` (per-rule base-severity
-    override, applied BEFORE tier modulation). An unknown severity string raises
-    ``ValueError`` (a config error surfaced eagerly)."""
+def build_default_registry(config: WardlineConfig, *, rules: tuple[_RuleClass, ...] | None = None) -> RuleRegistry:
+    """Build the rule set, honoring ``config.rules_enable`` (fnmatch include list;
+    ``*`` = all) and ``config.rules_severity`` (per-rule base-severity override,
+    applied BEFORE tier modulation). An unknown severity string raises ``ValueError``
+    (a config error surfaced eagerly).
+
+    ``rules`` are the rule CLASSES to register, in order; ``None`` uses the builtin
+    set (Track 2: a grammar passes ``grammar.rules`` so agent-defined rules register
+    on the same config-gated path as the builtins)."""
+    rule_classes = rules if rules is not None else BUILTIN_RULE_CLASSES
     registry = RuleRegistry()
-    for cls in _ALL_RULE_CLASSES:
+    for cls in rule_classes:
         rule_id = cls.rule_id
         if not _enabled(rule_id, config.rules_enable):
             continue

@@ -27,12 +27,18 @@ _FALLBACK = TaintState.UNKNOWN_RAW
 class FunctionSeed:
     """The L1 result for one function: its seeded body/return taint and the
     origin of that taint (``"provider"`` when declared, ``"default"`` when the
-    provider was silent and the fail-closed fallback applied)."""
+    provider was silent and the fail-closed fallback applied).
+
+    ``unprovable_boundaries`` carries the ``canonical_name``\\ s of every matched-but-
+    unprovable *custom* boundary type (Track 2 T2.4), which the analyzer turns into a
+    ``WLN-ENGINE-UNPROVABLE-BOUNDARY`` FACT each. Empty for builtins and for any
+    function with no such match (the common case)."""
 
     qualname: str
     body_taint: TaintState
     return_taint: TaintState
     source: Literal["provider", "default"]
+    unprovable_boundaries: tuple[str, ...] = ()
 
 
 def seed_function_taints(
@@ -49,13 +55,15 @@ def seed_function_taints(
     """
     seeds: dict[str, FunctionSeed] = {}
     for entity in entities:
-        declared = provider.taint_for(entity, ctx)
+        res = provider.taint_for(entity, ctx)
+        declared = res.taint
         if declared is None:
             seeds[entity.qualname] = FunctionSeed(
                 qualname=entity.qualname,
                 body_taint=_FALLBACK,
                 return_taint=_FALLBACK,
                 source="default",
+                unprovable_boundaries=res.unprovable_boundaries,
             )
         else:
             seeds[entity.qualname] = FunctionSeed(
@@ -63,5 +71,6 @@ def seed_function_taints(
                 body_taint=declared.body_taint,
                 return_taint=declared.return_taint,
                 source="provider",
+                unprovable_boundaries=res.unprovable_boundaries,
             )
     return seeds

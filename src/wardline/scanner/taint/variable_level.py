@@ -167,7 +167,9 @@ def _resolve_expr(
         return result
     if isinstance(node, ast.NamedExpr):
         taint = _resolve_expr(node.value, function_taint, taint_map, var_taints)
-        if isinstance(node.target, ast.Name):
+        # A NamedExpr (walrus) target is always an ast.Name by the Python grammar
+        # (``(x := ...)``), so the False branch is unreachable by any parseable source.
+        if isinstance(node.target, ast.Name):  # pragma: no branch
             var_taints[node.target.id] = taint
         return taint
     if isinstance(node, ast.IfExp):
@@ -415,7 +417,10 @@ def _process_stmt(
             # B case: contaminate the base variable so a later read sees it.
             rhs = _resolve_expr(value, function_taint, taint_map, var_taints)
             _taint_container_base(stmt.target, rhs, function_taint, var_taints)
-        else:
+        else:  # pragma: no cover
+            # Unreachable: an AnnAssign target is always Name/Attribute/Subscript by
+            # the Python grammar, so the two branches above are exhaustive. Kept as a
+            # defensive fall-through (resolve for walrus side-effects).
             _resolve_expr(value, function_taint, taint_map, var_taints)
 
     elif isinstance(stmt, ast.For):
@@ -466,7 +471,9 @@ def _walk_exprs_for_walrus(
             continue  # separate scope — its walruses don't bind here
         if isinstance(child, ast.NamedExpr):
             taint = _resolve_expr(child.value, function_taint, taint_map, var_taints)
-            if isinstance(child.target, ast.Name):
+            # A walrus target is always an ast.Name by the Python grammar, so the
+            # False branch is unreachable by any parseable source.
+            if isinstance(child.target, ast.Name):  # pragma: no branch
                 var_taints[child.target.id] = taint
         _walk_exprs_for_walrus(child, function_taint, taint_map, var_taints)
 
@@ -502,7 +509,10 @@ def _handle_assign(
                 var_taints,
             )
 
-        elif isinstance(target, (ast.Subscript, ast.Attribute)):
+        # An Assign target is always Name/Tuple/List/Subscript/Attribute by the
+        # grammar, so these branches are exhaustive — the implicit "no branch matched,
+        # continue loop" arc out of this last elif is unreachable.
+        elif isinstance(target, (ast.Subscript, ast.Attribute)):  # pragma: no branch
             # Container/attribute write: d[k] = expr, obj.x = expr. Join the RHS
             # taint into the base variable's tracked taint, so a later READ of the
             # container (handled by the Subscript/Attribute branches of
@@ -570,7 +580,9 @@ def _handle_augassign(
     if isinstance(stmt.target, ast.Name):
         existing = var_taints.get(stmt.target.id, function_taint)
         var_taints[stmt.target.id] = least_trusted(existing, rhs_taint)
-    elif isinstance(stmt.target, (ast.Subscript, ast.Attribute)):
+    # An AugAssign target is always Name/Attribute/Subscript by the Python grammar,
+    # so these branches are exhaustive — the implicit fall-through is unreachable.
+    elif isinstance(stmt.target, (ast.Subscript, ast.Attribute)):  # pragma: no branch
         # d[k] += expr / obj.x += expr — contaminate the base container.
         _taint_container_base(stmt.target, rhs_taint, function_taint, var_taints)
 
@@ -794,7 +806,7 @@ def _handle_try(
             var_taints[var] = branch_taints[0]
             for t in branch_taints[1:]:
                 var_taints[var] = least_trusted(var_taints[var], t)
-        else:
+        else:  # pragma: no cover
             # Unreachable: ``all_vars`` is drawn solely from ``handler_branches``
             # (the try-success branch + each handler), every branch starts as a
             # copy of pre_try, so each var is present in >=1 branch and
@@ -932,12 +944,12 @@ def compute_return_taint(
     This is the precise input PY-WL-101 needs — distinct from ``project_taints``
     (the function's anchored *body* taint, pinned to its declaration).
     """
-    returns: list[tuple[TaintState, str | None]] = []
+    returns: list[tuple[TaintState, str | None, ast.expr]] = []
     _collect_return_paths(list(func_node.body), function_taint, taint_map, var_taints, returns)
     if not returns:
         return None
     result = returns[0][0]
-    for taint, _callee in returns[1:]:
+    for taint, _callee, _node in returns[1:]:
         result = least_trusted(result, taint)
     return result
 
@@ -964,18 +976,74 @@ def compute_return_callee(
 
     Because :func:`least_trusted` always returns one of its inputs, the worst taint
     always equals at least one collected path's taint, so the match is well-defined.
+
+    When the worst path is an INDIRECT ``return <var>`` (T1.3), resolve a single hop:
+    name the callee of the assignment that gave ``<var>`` its worst-taint value. This
+    is provenance/explainability only and never changes a fire/no-fire decision — the
+    taint VALUE (:func:`compute_return_taint`) is unaffected. Deeper / aliased chains
+    beyond one hop stay ``None`` (the N-hop walk lives in the Clarion stored-fact path).
     """
-    returns: list[tuple[TaintState, str | None]] = []
+    returns: list[tuple[TaintState, str | None, ast.expr]] = []
     _collect_return_paths(list(func_node.body), function_taint, taint_map, var_taints, returns)
     if not returns:
         return None
     worst = returns[0][0]
-    for taint, _callee in returns[1:]:
+    for taint, _callee, _node in returns[1:]:
         worst = least_trusted(worst, taint)
-    for taint, callee in returns:
+    # 1) a worst-taint path that is itself a direct call → its callee (unchanged).
+    for taint, callee, _node in returns:
         if taint == worst and callee is not None:
             return callee
+    # 2) single-hop indirection: a worst-taint ``return <Name>`` whose Name was set by
+    #    a direct call. Provenance only — never changes a fire/no-fire decision.
+    for taint, callee, node in returns:
+        if taint == worst and callee is None and isinstance(node, ast.Name):
+            indirect = _assignment_callee(list(func_node.body), node.id, worst, function_taint, taint_map, var_taints)
+            if indirect is not None:
+                return indirect
     return None
+
+
+def _assignment_callee(
+    nodes: list[ast.AST],
+    name: str,
+    worst: TaintState,
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    var_taints: dict[str, TaintState],
+) -> str | None:
+    """The callee of the LAST (source-order) direct-call assignment to ``name`` whose
+    RHS resolves to ``worst`` taint — the single-hop contributing call behind an
+    indirect ``return <name>``. Scope-respecting (does not descend into nested
+    def/class/lambda, whose assignments bind a different scope). Returns ``None`` when
+    ``name`` is not set by a direct call to the worst taint (a parameter, a literal, or
+    a deeper var-to-var chain) — honest, never invented.
+
+    This is best-effort PROVENANCE, not a fire/no-fire input: it is branch-unaware
+    (source-order last write wins, no reachability model), so in branchy bodies it may
+    name a worst-taint assignment from a different branch than the one that produced the
+    returned value. Harmless — the taint VALUE is already decided by
+    :func:`compute_return_taint`; this only labels the explain surface. NOTE: re-resolves
+    RHS expressions via :func:`_resolve_expr`, which mutates ``var_taints`` on walrus
+    targets — callers that must not mutate their map pass a copy (the analyzer does)."""
+    result: str | None = None
+    for node in nodes:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue
+        if isinstance(node, ast.Assign):
+            callee = _return_callee(node.value)
+            if (
+                callee is not None
+                and any(isinstance(t, ast.Name) and t.id == name for t in node.targets)
+                and _resolve_expr(node.value, function_taint, taint_map, var_taints) == worst
+            ):
+                result = callee
+        nested = _assignment_callee(
+            list(ast.iter_child_nodes(node)), name, worst, function_taint, taint_map, var_taints
+        )
+        if nested is not None:
+            result = nested
+    return result
 
 
 def _return_callee(node: ast.expr) -> str | None:
@@ -993,13 +1061,15 @@ def _collect_return_paths(
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
-    out: list[tuple[TaintState, str | None]],
+    out: list[tuple[TaintState, str | None, ast.expr]],
 ) -> None:
-    """Recurse the AST collecting ``(taint, callee_or_None)`` for each value-bearing
-    return, descending into ALL children EXCEPT nested ``FunctionDef``/
+    """Recurse the AST collecting ``(taint, callee_or_None, value_node)`` for each
+    value-bearing return, descending into ALL children EXCEPT nested ``FunctionDef``/
     ``AsyncFunctionDef``/``ClassDef``/``Lambda`` (separate scopes — their returns
     bind their own callable, not this one). The callee is the direct-call name of
-    the return's top-level expression (``None`` for non-call returns).
+    the return's top-level expression (``None`` for non-call returns); ``value_node``
+    is that raw ``ast.expr``, used by :func:`compute_return_callee` to resolve
+    single-hop indirection on an indirect ``return <name>``.
 
     Descent is unconditional because the constructs that hold returns are not all
     ``ast.stmt``: ``match``/``case`` bodies live under ``ast.match_case`` and
@@ -1014,5 +1084,5 @@ def _collect_return_paths(
             continue
         if isinstance(node, ast.Return) and node.value is not None:
             taint = _resolve_expr(node.value, function_taint, taint_map, var_taints)
-            out.append((taint, _return_callee(node.value)))
+            out.append((taint, _return_callee(node.value), node.value))
         _collect_return_paths(list(ast.iter_child_nodes(node)), function_taint, taint_map, var_taints, out)

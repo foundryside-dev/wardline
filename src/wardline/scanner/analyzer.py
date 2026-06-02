@@ -25,10 +25,14 @@ from wardline.scanner.diagnostics import (
     build_metric_finding,
     build_unknown_import_findings,
 )
+from wardline.scanner.grammar import TrustGrammar, default_grammar
 from wardline.scanner.index import discover_class_qualnames, discover_file_entities
 from wardline.scanner.rules import build_default_registry
 from wardline.scanner.taint.call_taint_map import build_call_taint_map
-from wardline.scanner.taint.decorator_provider import DecoratorTaintSourceProvider
+from wardline.scanner.taint.decorator_provider import (
+    DecoratorTaintSourceProvider,
+    vocabulary_star_exports,
+)
 from wardline.scanner.taint.function_level import seed_function_taints
 from wardline.scanner.taint.project_resolver import ModuleInput, resolve_project_taints
 from wardline.scanner.taint.provider import SeedContext, TaintSourceProvider
@@ -62,7 +66,14 @@ class WardlineAnalyzer:
         provider: TaintSourceProvider | None = None,
         registry: RuleRegistry | None = None,
         summary_cache: SummaryCache | None = None,
+        grammar: TrustGrammar | None = None,
     ) -> None:
+        # A grammar (Track 2) supplies boundary types -> provider and rules -> the
+        # per-config registry. An explicit provider/registry still wins (test seams).
+        # grammar=None keeps the no-arg path behavior-identical to pre-Track-2.
+        self._grammar = grammar
+        if provider is None and grammar is not None:
+            provider = DecoratorTaintSourceProvider(boundary_types=grammar.boundary_types)
         self._provider: TaintSourceProvider = provider or DecoratorTaintSourceProvider()
         self._registry = registry  # None -> build the default set per-config in analyze()
         self._cache = summary_cache
@@ -73,6 +84,9 @@ class WardlineAnalyzer:
         # (relpath, module_path, tree, entities, alias_map, class_qualnames)
         file_meta: list[tuple[str, str, ast.Module, tuple[Entity, ...], dict[str, str], frozenset[str]]] = []
         parse_findings: list[Finding] = []
+        # Statically-known star-import exports (the trust vocabulary, T1.2). A REGISTRY-
+        # derived constant for the whole scan — compute once and reuse at both seam points.
+        star_exports = vocabulary_star_exports()
 
         # ``discover`` resolves the root to an absolute path, so the files it yields are
         # absolute. Resolve ``root`` to the same base here, or ``is_relative_to`` fails and
@@ -115,7 +129,7 @@ class WardlineAnalyzer:
                 tree = ast.parse(source)
                 entities = tuple(discover_file_entities(tree, module=module, path=relpath))
                 classes = frozenset(discover_class_qualnames(tree, module=module))
-                alias_map = build_import_alias_map(tree, module_path=module)
+                alias_map = build_import_alias_map(tree, module_path=module, star_exports=star_exports)
                 seeds = seed_function_taints(
                     entities,
                     ctx=SeedContext(module=module, alias_map=alias_map),
@@ -160,6 +174,35 @@ class WardlineAnalyzer:
                 )
             )
             file_meta.append((relpath, module, tree, entities, alias_map, classes))
+            # T2.4 soundness inheritance: a CUSTOM boundary type that matched but
+            # could not be proven (a required level unreadable) seeded the fail-closed
+            # UNKNOWN_RAW. Surface it as an observable FACT so the extension plane
+            # cannot silently false-green. Builtins never set this (the provider keeps
+            # them silent), so the byte-identity oracle holds. NOT in
+            # UNANALYZED_RULE_IDS: the function WAS scanned — only its annotation was
+            # unreadable (an honest under-seed, not a file/function under-scan).
+            for ent in entities:
+                fn_seed = seeds.get(ent.qualname)
+                if fn_seed is None:
+                    continue
+                for boundary in fn_seed.unprovable_boundaries:
+                    parse_findings.append(
+                        Finding(
+                            rule_id="WLN-ENGINE-UNPROVABLE-BOUNDARY",
+                            message=(
+                                f"{ent.qualname}: custom boundary @{boundary} could not be "
+                                f"proven (argument unreadable) — seeded UNKNOWN_RAW"
+                            ),
+                            severity=Severity.NONE,
+                            kind=Kind.FACT,
+                            location=ent.location,
+                            # Keyed on (qualname, boundary) so two unprovable customs on
+                            # one function produce two distinct FACTs (no collision).
+                            fingerprint=_fp("WLN-ENGINE-UNPROVABLE-BOUNDARY", ent.qualname, boundary),
+                            qualname=ent.qualname,
+                            properties={"boundary": boundary, "reason": "arg_unreadable"},
+                        )
+                    )
 
         if self._cache is not None:
             result = resolve_project_taints(
@@ -275,8 +318,28 @@ class WardlineAnalyzer:
             build_unknown_import_findings(
                 [(rp, mp, tr) for rp, mp, tr, _e, _a, _c in file_meta],
                 project_modules=frozenset(mp for _rp, mp, _tr, _e, _a, _c in file_meta),
+                resolvable_star_modules=frozenset(star_exports.keys()),
             )
         )
-        registry = self._registry if self._registry is not None else build_default_registry(config)
+        registry = (
+            self._registry
+            if self._registry is not None
+            else build_default_registry(config, rules=(self._grammar.rules if self._grammar is not None else None))
+        )
         findings.extend(registry.run(context))
         return findings
+
+
+def build_analyzer(
+    *, grammar: TrustGrammar | None = None, summary_cache: SummaryCache | None = None
+) -> WardlineAnalyzer:
+    """Construct an analyzer from a :class:`TrustGrammar` (default = the builtins).
+
+    The grammar's boundary types feed the L1 provider; its rules feed the per-config
+    rule registry. ``build_analyzer()`` with no grammar is behavior-identical to a
+    bare ``WardlineAnalyzer()`` — this is the agent-facing entry point for running a
+    scan under an extended grammar (``default_grammar().extend(...)``)."""
+    return WardlineAnalyzer(
+        grammar=grammar if grammar is not None else default_grammar(),
+        summary_cache=summary_cache,
+    )
