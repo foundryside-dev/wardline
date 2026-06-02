@@ -40,7 +40,7 @@ least_trusted(INTEGRAL, ASSURED) == ASSURED  # weakest link wins
 absorbing top `MIXED_RAW`. After the three `least_trusted` migrations it has **no
 production call site** — it is retained deliberately as the documented contrast
 operator. See the ADR:
-[Retain the 8-state lattice](../decisions/2026-05-31-wardline-taint-lattice-retain.md).
+[Retain the 8-state lattice](https://github.com/foundryside-dev/wardline/blob/main/docs/decisions/2026-05-31-wardline-taint-lattice-retain.md).
 
 ## The discriminator: why even genuine value-merges use `least_trusted`
 
@@ -170,6 +170,6 @@ promises and what a value-level semantic analysis would require.
 
 - [Taint & trust model](model.md) — the reader-facing introduction.
 - [Rules](rules.md) — the checks built on this algebra.
-- [ADR: Retain the 8-state lattice](../decisions/2026-05-31-wardline-taint-lattice-retain.md).
+- [ADR: Retain the 8-state lattice](https://github.com/foundryside-dev/wardline/blob/main/docs/decisions/2026-05-31-wardline-taint-lattice-retain.md).
 - `docs/audits/2026-05-31-taint-combination-audit.md` — the audit this spec
   consolidates (findings F1–F6).

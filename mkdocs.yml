@@ -41,6 +41,8 @@ exclude_docs: |
   integration/
   bitbucket/
   notes/
+  decisions/
+  audits/
 
 nav:
   - Home: index.md
