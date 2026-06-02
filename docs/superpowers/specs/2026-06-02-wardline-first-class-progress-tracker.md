@@ -19,18 +19,22 @@ columns as work lands.
 
 ## Current position (update this line)
 
-**As of 2026-06-02 (latest):** **T1.5 (rule-set breadth) IN PROGRESS — 1 of 6 new rules done, 5/10 total.**
-On branch `feat/track3-sei-client` (T1.5 continues here on top of Track 3). The user chose the
-"broad-to-10" set (PY-WL-105 untrusted-arg→trusted-callee · 106 deserialization sink · 107
-dynamic-exec · 108 OS-command · 109 None-leak · 110 contradictory trust decorators). **DONE:
-PY-WL-110** (contradictory trust declaration — anchored entity with ≥2 distinct grammar markers;
-ERROR; ships violation/clean examples + `tests/corpus/fixtures/contradictory.py` + MANIFEST;
-golden regenerated; corpus FP 0%; dogfood clean; 1125 tests green). **REMAINING (turnkey via the
-plan): 105, 106, 107, 108, 109** — 106/107/108 share a new `rules/_sink_helpers.py` (conservative
-call-arg taint resolution off `function_var_taints`); 105 is the hardest (callee-trust resolution);
-109 is the managed-FP rule (guarded None-leak). Plan:
-`docs/superpowers/plans/2026-06-02-wardline-track1.5-rule-breadth.md`. Filigree `wardline-f0a2e9678e`.
-**Then:** review panel incl. `false-positive-analyst`, update DoD "≥10 rules", close the issue.
+**As of 2026-06-02 (latest):** **T1.5 (rule-set breadth) — ALL 10 RULES IMPLEMENTED (review pending).**
+On branch `feat/track3-sei-client` (T1.5 built on top of Track 3). The user chose the "broad-to-10"
+set; all six new rules are landed, each with violation/clean examples + a labeled corpus fixture:
+**PY-WL-110** contradictory trust decorators (ERROR) · **PY-WL-109** None-leak from a trusted
+producer (CWE-394, guarded) · **PY-WL-105** untrusted-arg→trusted-callee (CWE-501, ERROR, fires
+only on provably-untrusted EXTERNAL_RAW/MIXED_RAW) · **PY-WL-106** deserialization sink (CWE-502) ·
+**PY-WL-107** dynamic-exec sink (CWE-95) · **PY-WL-108** OS-command sink (CWE-78). 106/107/108 share
+`rules/_sink_helpers.py` (a `TaintedSinkRule` base + conservative, flow-insensitive call-arg taint
+resolution off `function_var_taints` — Name + same-module bare-call, under-fire otherwise; documented).
+DoD gates green: **10 curated rules** · corpus **FP 0%** (zero unaccounted) · `make ci` green
+(1143 tests, cov ≥90%) · dogfood clean · golden regenerated · warm/cold byte-identical green.
+Plan: `docs/superpowers/plans/2026-06-02-wardline-track1.5-rule-breadth.md`; Filigree `wardline-f0a2e9678e`.
+**REMAINING for T1.5 close-out:** the default code-review panel incl. `false-positive-analyst` (FP
+economics of the 6 new rules) + subsumption review (105 vs 101, 109 vs 102), apply must-fixes, then
+close the issue. **Next after that:** the autonomous critical path is effectively complete
+(T1→T2→T1.5); Track 4 (dossier) groundwork T4.1–T4.2 is the next parallel-autonomous item.
 
 ---
 
@@ -112,6 +116,7 @@ spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 | T1.2 | Star-import FN resolution | `wardline-2b427a9579` (P3) | ☑ |
 | T1.3 | Return-indirection in `compute_return_callee` | `wardline-82f49ec3c3` (P3) | ☑ |
 | T1.4 | FP economics: labeled corpus + FP-rate ≤5% + waiver discipline | `wardline-41f4a42a43` (P2) | ☑ |
+| T1.5 | Rule-set breadth 4 → 10 (PY-WL-105–110), authored on the Track 2 grammar | `wardline-f0a2e9678e` (P2) | ☑ (review pending) |
 
 **DoD gates:** FP ≤5% on labeled corpus · coverage 90% global / 95% on `taint/` · warm/cold byte-identical green · dogfood finding-clean · every closed hole has a RED-first regression test.
 **Deferred out of Track 1:** T1.5 rule-set breadth (4 → ≥10) → after Track 2.

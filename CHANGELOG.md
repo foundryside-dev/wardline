@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Track 1.5 — rule-set breadth (4 → 10 curated rules).** Six new trust-taint rules,
+  authored on the Track 2 grammar, each fail-closed/opt-in with violation+clean examples
+  and labeled corpus fixtures (corpus FP rate stays 0%):
+  - **PY-WL-105** — untrusted data passed to a trusted callee at a call site (CWE-501);
+    the call-site analogue of PY-WL-101. Fires only on provably-untrusted args.
+  - **PY-WL-106** — untrusted data reaches a deserialization sink (pickle/marshal/yaml.load, CWE-502).
+  - **PY-WL-107** — untrusted data reaches a dynamic-code-execution sink (eval/exec/compile, CWE-95).
+  - **PY-WL-108** — untrusted data reaches an OS-command sink (os.system/subprocess.*, CWE-78).
+  - **PY-WL-109** — None leaks from a trusted producer (mixed value + bare/None return, CWE-394).
+  - **PY-WL-110** — contradictory trust declaration (≥2 distinct trust markers on one entity).
+  105–108 are call-site rules; 106/107/108 are tier-modulated (silent in the developer-freedom
+  zone). All toggle via `wardline.yaml` `rules.enable`/`rules.severity` like the existing four.
 - **Track 3 — SEI-client groundwork (T3.1–T3.3).** An opt-in `wardline[clarion]`
   SEI abstraction (`wardline.clarion.identity`) carries Clarion's Stable Entity
   Identity as the **opaque, preferred** cross-tool binding handle, with an honest
