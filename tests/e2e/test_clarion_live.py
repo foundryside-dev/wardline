@@ -281,4 +281,4 @@ def test_sei_client_against_live_clarion(clarion_server: tuple[Path, str]) -> No
         assert binding.sei.startswith("clarion:eid:")
         assert binding.sei != locator
         # The opaque token round-trips through resolve_sei without the client parsing it.
-        assert resolver.is_orphaned(binding.sei) is IdentityStatus.ALIVE
+        assert resolver.resolve_identity_status(binding.sei) is IdentityStatus.ALIVE

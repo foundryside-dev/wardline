@@ -35,8 +35,10 @@ _CAPS_PRESENT = {"sei": {"supported": True, "version": 1}}
 
 
 def test_detect_reads_capability() -> None:
-    r = SeiResolver.detect(FakeClient(caps=_CAPS_PRESENT))
+    client = FakeClient(caps=_CAPS_PRESENT)
+    r = SeiResolver.detect(client)
     assert r.capability == SeiCapability(supported=True, version=1)
+    assert client.capabilities_calls == 1  # probed exactly once
 
 
 def test_round_trip_carries_opaque_sei_alive() -> None:
@@ -110,14 +112,28 @@ def test_sei_carried_verbatim_never_parsed() -> None:
     assert b.binding_key == weird
 
 
-def test_is_orphaned_maps_resolve_sei() -> None:
-    alive = SeiResolver.detect(FakeClient(caps=_CAPS_PRESENT, resolve_sei={"alive": True}))
-    assert alive.is_orphaned("clarion:eid:x") is IdentityStatus.ALIVE
+def test_resolve_identity_status_maps_resolve_sei() -> None:
+    alive_client = FakeClient(caps=_CAPS_PRESENT, resolve_sei={"alive": True})
+    alive = SeiResolver.detect(alive_client)
+    assert alive.resolve_identity_status("clarion:eid:x") is IdentityStatus.ALIVE
+    assert alive_client.sei_calls == ["clarion:eid:x"]  # opaque token passed verbatim
 
     orph = SeiResolver.detect(FakeClient(caps=_CAPS_PRESENT, resolve_sei={"alive": False, "lineage": []}))
-    assert orph.is_orphaned("clarion:eid:x") is IdentityStatus.ORPHANED
+    assert orph.resolve_identity_status("clarion:eid:x") is IdentityStatus.ORPHANED
 
     # capability absent OR soft outage -> UNAVAILABLE (never guess alive/orphaned).
-    assert SeiResolver(FakeClient(), SeiCapability(False)).is_orphaned("clarion:eid:x") is IdentityStatus.UNAVAILABLE
+    assert (
+        SeiResolver(FakeClient(), SeiCapability(False)).resolve_identity_status("clarion:eid:x")
+        is IdentityStatus.UNAVAILABLE
+    )
     soft = SeiResolver.detect(FakeClient(caps=_CAPS_PRESENT, resolve_sei=None))
-    assert soft.is_orphaned("clarion:eid:x") is IdentityStatus.UNAVAILABLE
+    assert soft.resolve_identity_status("clarion:eid:x") is IdentityStatus.UNAVAILABLE
+
+
+def test_resolve_identity_status_never_guesses_orphaned_from_malformed_body() -> None:
+    # Review (HIGH, convergent): ORPHANED is an actionable positive verdict; a 2xx body
+    # that is a dict but lacks a boolean `alive` must degrade to UNAVAILABLE, NOT be
+    # guessed ORPHANED. The wire contract defines only {alive:true} / {alive:false,...}.
+    for malformed in ({}, {"lineage": []}, {"alive": "false"}, {"alive": None}):
+        r = SeiResolver.detect(FakeClient(caps=_CAPS_PRESENT, resolve_sei=malformed))
+        assert r.resolve_identity_status("clarion:eid:x") is IdentityStatus.UNAVAILABLE

@@ -61,6 +61,15 @@ def test_binding_falls_back_to_locator_explicitly_when_no_sei() -> None:
     assert b.identity is IdentityStatus.UNAVAILABLE  # honest, not a silent identity
 
 
+def test_binding_rejects_empty_sei() -> None:
+    # The type must not represent an impossible state (empty SEI -> keyed_on_sei True,
+    # binding_key ""). None or a non-empty string only.
+    import pytest
+
+    with pytest.raises(ValueError, match="non-empty"):
+        EntityBinding(locator="x", sei="")
+
+
 def test_axes_are_orthogonal_defaults() -> None:
     # Neither axis is inferred from the other; both default to the honest "unknown".
     b = EntityBinding(locator="x")

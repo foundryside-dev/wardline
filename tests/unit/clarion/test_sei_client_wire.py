@@ -31,9 +31,11 @@ def test_capabilities_gets_route_and_parses() -> None:
     t = FakeTransport([Response(status=200, body=body)])
     caps = _client(t).capabilities()
     assert caps == {"sei": {"supported": True, "version": 1}}
-    method, url, _, _ = t.calls[0]
+    method, url, sent_body, headers = t.calls[0]
     assert method == "GET"
     assert url == "http://clarion.example/api/v1/_capabilities"
+    # GET routes are signed too (empty body) — the shared _send path signs everything.
+    assert headers["X-Loom-Component"] == f"clarion:{sign_request('s3cr3t', 'GET', '/api/v1/_capabilities', sent_body)}"
 
 
 def test_capabilities_soft_none_on_404() -> None:
@@ -78,9 +80,12 @@ def test_resolve_sei_gets_escaped_opaque_token() -> None:
     # A token with URL-significant chars proves it is escaped, never interpreted.
     data = _client(t).resolve_sei("clarion:eid:a/b c?d")
     assert data["alive"] is True
-    method, url, _, _ = t.calls[0]
+    method, url, sent_body, headers = t.calls[0]
     assert method == "GET"
-    assert url == "http://clarion.example/api/v1/identity/sei/clarion%3Aeid%3Aa%2Fb%20c%3Fd"
+    paq = "/api/v1/identity/sei/clarion%3Aeid%3Aa%2Fb%20c%3Fd"
+    assert url == f"http://clarion.example{paq}"
+    # HMAC is signed over the ESCAPED path-and-query exactly as sent (no double-encoding).
+    assert headers["X-Loom-Component"] == f"clarion:{sign_request('s3cr3t', 'GET', paq, sent_body)}"
 
 
 def test_resolve_sei_orphaned_returns_lineage_value() -> None:

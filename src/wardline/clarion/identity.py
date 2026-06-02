@@ -2,10 +2,14 @@
 """Track 3 (T3.1/T3.2): the SEI-client abstraction.
 
 Carry Clarion's Stable Entity Identity (SEI) as the OPAQUE handle for cross-tool
-bindings, with an honest two-axis status, and degrade gracefully when Clarion does
-not (yet) serve SEI. Built against the spec'd wire contract (SEI standard §4 +
-Clarion ADR-038 + the normative fixtures); Clarion's runtime does not serve SEI yet,
-so the live path degrades and the SEI-present path is exercised with mocks.
+bindings, with an honest two-axis status, and degrade gracefully when a Clarion
+instance does not serve SEI. Built against the spec'd wire contract (SEI standard §4 +
+Clarion ADR-038 + the normative fixtures). A real ``clarion serve`` (the local 1.0.1+
+build) already serves SEI end-to-end — ``_capabilities`` advertises
+``sei:{supported,version:1}`` and ``/api/v1/identity/resolve`` returns a real
+``clarion:eid:<hex>`` token — so this client is verified against a live SEI-serving
+Clarion (the ``clarion_e2e`` test exercises the ALIVE + opacity path), not only mocks.
+A pre-SEI Clarion (no ``sei`` capability) is the graceful-degrade case.
 
 Stdlib-only by contract: this module MUST NOT import blake3 or any extra, so importing
 it never forces the [clarion] extra and the base package stays zero-dependency.
@@ -22,7 +26,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol
 
 
 class IdentityStatus(Enum):
@@ -79,8 +83,19 @@ class EntityBinding:
     locator: str
     sei: str | None = None
     identity: IdentityStatus = IdentityStatus.UNAVAILABLE
+    # `content` is the content axis. It stays UNKNOWN unless a caller evaluates it
+    # against a same-granularity hash and rebinds it, e.g.
+    # `dataclasses.replace(binding, content=content_status(stored, current))`
+    # (see `content_status`). The resolver does NOT set it (cross-source freshness is
+    # T4.3) — leaving it UNKNOWN is the honest default, never a guessed FRESH.
     content: ContentStatus = ContentStatus.UNKNOWN
     content_hash: str | None = None  # Clarion entity-body granularity
+
+    def __post_init__(self) -> None:
+        # The type must not represent an impossible state: an empty-string SEI would
+        # make `keyed_on_sei` True and `binding_key` "" (a silent broken key).
+        if self.sei is not None and not self.sei:
+            raise ValueError("sei must be None or a non-empty opaque string")
 
     @property
     def keyed_on_sei(self) -> bool:
@@ -111,17 +126,27 @@ def content_status(stored_hash: str | None, current_hash: str | None) -> Content
     return ContentStatus.FRESH if stored_hash == current_hash else ContentStatus.STALE
 
 
+class SeiClient(Protocol):
+    """The narrow ClarionClient surface :class:`SeiResolver` depends on (so mypy checks
+    the calls and a test double need only implement these three). ``ClarionClient``
+    satisfies it structurally; no import cycle (``client.py`` does not import this)."""
+
+    def capabilities(self) -> dict[str, Any] | None: ...
+    def resolve_identity(self, locator: str) -> dict[str, Any] | None: ...
+    def resolve_sei(self, sei: str) -> dict[str, Any] | None: ...
+
+
 class SeiResolver:
     """Resolves locators → :class:`EntityBinding` via a ClarionClient, honoring
     capability detection and degrading gracefully. The SEI is treated strictly opaque.
 
     DEFERRED (no T3.1–T3.3 consumer): ``lineage(sei)`` — Clarion serves it (SEI std §4)
     but no Wardline groundwork path consumes the event log yet (it is a Track 4 dossier
-    / legis-audit concern). ``resolve_sei`` IS implemented because the ORPHANED identity
-    status is part of this track's two-axis model. This split is intentional, not an
+    / legis-audit concern). ``resolve_sei`` IS used because the ORPHANED identity status
+    is part of this track's two-axis model. This split is intentional, not an
     omission."""
 
-    def __init__(self, client: Any, capability: SeiCapability) -> None:
+    def __init__(self, client: SeiClient, capability: SeiCapability) -> None:
         self._client = client
         self._capability = capability
 
@@ -130,7 +155,7 @@ class SeiResolver:
         return self._capability
 
     @classmethod
-    def detect(cls, client: Any) -> SeiResolver:
+    def detect(cls, client: SeiClient) -> SeiResolver:
         """Probe ``_capabilities`` once and bind the resolver to the result. A probe
         that fails for ANY reason (outage / a pre-SEI Clarion's 404 / malformed body →
         ``client.capabilities()`` returns None) yields an unsupported capability, so the
@@ -160,13 +185,23 @@ class SeiResolver:
             content_hash=chash if isinstance(chash, str) else None,
         )
 
-    def is_orphaned(self, sei: str) -> IdentityStatus:
-        """The identity axis for a held SEI, via resolve_sei. ALIVE / ORPHANED, or
-        UNAVAILABLE when the capability is absent or the read soft-fails (never guess).
-        ``sei`` is opaque — passed verbatim to the client, never parsed."""
+    def resolve_identity_status(self, sei: str) -> IdentityStatus:
+        """The identity axis for a held SEI, via resolve_sei. ``alive:true`` → ALIVE;
+        ``alive:false`` → ORPHANED; anything else (capability absent, soft outage, or a
+        2xx body that does not carry a boolean ``alive``) → UNAVAILABLE. ORPHANED is an
+        actionable positive verdict, so it is asserted ONLY on an explicit ``alive:false``
+        — never guessed from a malformed/indefinite body (no false-green; mirrors
+        ``resolve_locator``). ``sei`` is opaque — passed verbatim, never parsed.
+
+        (Named for what it returns — a 3-valued :class:`IdentityStatus`, NOT a bool.)"""
         if not self._capability.supported:
             return IdentityStatus.UNAVAILABLE
         data = self._client.resolve_sei(sei)
         if not isinstance(data, dict):
             return IdentityStatus.UNAVAILABLE
-        return IdentityStatus.ALIVE if data.get("alive") is True else IdentityStatus.ORPHANED
+        alive = data.get("alive")
+        if alive is True:
+            return IdentityStatus.ALIVE
+        if alive is False:
+            return IdentityStatus.ORPHANED
+        return IdentityStatus.UNAVAILABLE  # malformed / alive-absent — never guess ORPHANED
