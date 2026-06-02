@@ -9,7 +9,7 @@ rules, so ``run`` returns nothing; SP2 supplies the rule set.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Protocol
 
@@ -48,6 +48,17 @@ class AnalysisContext:
     function_return_callee: Mapping[str, str | None]
     entities: Mapping[str, Entity]
     taint_provenance: Mapping[str, TaintProvenance]
+    # FLOW-SENSITIVE per-statement snapshots: ``{qualname: {id(stmt): {var: taint}}}``,
+    # the var-taint map on entry to each statement. The sink rules read the snapshot
+    # of a sink call's enclosing statement to resolve arg taint AT the sink line (not
+    # the flow-insensitive final map). Defaulted so direct constructions (tests) need
+    # not supply it; absence degrades a consumer to the final-map read.
+    function_call_site_taints: Mapping[str, Mapping[int, Mapping[str, TaintState]]] = field(default_factory=dict)
+    # Cross-method class-attribute summary (closure A): ``{class_qualname: {attr: taint}}``,
+    # the least-trusted value written to ``self.<attr>`` across the class's methods. Rules
+    # resolve a ``self.<attr>``/``cls.<attr>`` read against it. Defaulted for direct
+    # constructions; absence means no cross-method attribute taint (function-level only).
+    class_attr_taints: Mapping[str, Mapping[str, TaintState]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "project_taints", MappingProxyType(dict(self.project_taints)))
@@ -57,6 +68,8 @@ class AnalysisContext:
         object.__setattr__(self, "function_return_callee", MappingProxyType(dict(self.function_return_callee)))
         object.__setattr__(self, "entities", MappingProxyType(dict(self.entities)))
         object.__setattr__(self, "taint_provenance", MappingProxyType(dict(self.taint_provenance)))
+        object.__setattr__(self, "function_call_site_taints", MappingProxyType(dict(self.function_call_site_taints)))
+        object.__setattr__(self, "class_attr_taints", MappingProxyType(dict(self.class_attr_taints)))
 
 
 class _Rule(Protocol):

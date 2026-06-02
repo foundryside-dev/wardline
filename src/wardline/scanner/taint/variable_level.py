@@ -79,6 +79,7 @@ def compute_variable_taints(
     func_node: ast.FunctionDef | ast.AsyncFunctionDef,
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
+    call_site_taints: dict[int, dict[str, TaintState]] | None = None,
 ) -> dict[str, TaintState]:
     """Compute per-variable taint for a function body.
 
@@ -90,6 +91,13 @@ def compute_variable_taints(
             bare (``"foo"``) for ``foo()``, dotted (``"mod.fn"``) for
             ``mod.fn()`` — mapping to that call's return taint. Calls whose name
             is absent fall back to ``function_taint``.
+        call_site_taints: optional out-dict for FLOW-SENSITIVE reads. When given,
+            records ``{id(stmt): snapshot}`` — the per-variable taint map AS IT IS
+            on entry to each statement (in branches, the branch-local copy). A sink
+            rule reads the snapshot of a sink call's enclosing statement to get the
+            taint of its args AT the sink line, not the final (flow-insensitive)
+            map — closing the documented reassignment over-/under-fire. Threaded
+            only through the statement layer; the expression combiners are untouched.
 
     Returns:
         ``{variable_name: TaintState}`` for every assigned variable and parameter
@@ -97,7 +105,7 @@ def compute_variable_taints(
     """
     var_taints: dict[str, TaintState] = {}
     _seed_parameters(func_node, function_taint, var_taints)
-    _walk_body(func_node.body, function_taint, taint_map, var_taints)
+    _walk_body(func_node.body, function_taint, taint_map, var_taints, call_site_taints)
     return var_taints
 
 
@@ -187,8 +195,15 @@ def _resolve_expr(
         _resolve_expr(node.slice, function_taint, taint_map, var_taints)
         return _resolve_expr(node.value, function_taint, taint_map, var_taints)
     if isinstance(node, ast.Attribute):
-        # Attribute access carries the object's taint (the value path; the
-        # call-receiver path is handled in _resolve_call via _dotted_name).
+        # A ``self.<attr>``/``cls.<attr>`` read whose attribute has a project-computed
+        # cross-method summary (injected by the analyzer under that dotted key) reads
+        # the summary — closing the function-level fail-open where raw written to an
+        # attribute in one method escaped when surfaced from another (PY-WL-101/105 on
+        # OO code). Any other attribute access carries the object's own taint (the
+        # value path; the call-receiver path is handled in _resolve_call).
+        dotted = _dotted_name(node)
+        if dotted is not None and dotted in taint_map:
+            return taint_map[dotted]
         return _resolve_expr(node.value, function_taint, taint_map, var_taints)
     if isinstance(node, ast.Await):
         # Unwrap — the inner expression (typically a Call) is already handled.
@@ -383,10 +398,11 @@ def _walk_body(
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
+    call_site_taints: dict[int, dict[str, TaintState]] | None = None,
 ) -> None:
     """Walk a list of statements, updating var_taints in place."""
     for stmt in stmts:
-        _process_stmt(stmt, function_taint, taint_map, var_taints)
+        _process_stmt(stmt, function_taint, taint_map, var_taints, call_site_taints)
 
 
 def _process_stmt(
@@ -394,12 +410,19 @@ def _process_stmt(
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
+    call_site_taints: dict[int, dict[str, TaintState]] | None = None,
 ) -> None:
     """Process a single statement, dispatching by type.
 
     Uses isinstance dispatch rather than match/case to avoid PY-WL-003
     structural-gate findings at ASSURED taint (UNCONDITIONAL severity).
     """
+    if call_site_taints is not None:
+        # Flow-sensitive snapshot: var taints AS THEY ARE before this statement
+        # executes (after all prior siblings; branch-local inside if/try/match arms).
+        # A sink rule reads this for a sink call's enclosing statement.
+        call_site_taints[id(stmt)] = dict(var_taints)
+
     if isinstance(stmt, ast.Assign):
         _handle_assign(stmt, function_taint, taint_map, var_taints)
 
@@ -424,22 +447,22 @@ def _process_stmt(
             _resolve_expr(value, function_taint, taint_map, var_taints)
 
     elif isinstance(stmt, ast.For):
-        _handle_for(stmt, function_taint, taint_map, var_taints)
+        _handle_for(stmt, function_taint, taint_map, var_taints, call_site_taints)
 
     elif isinstance(stmt, ast.While):
-        _handle_while(stmt, function_taint, taint_map, var_taints)
+        _handle_while(stmt, function_taint, taint_map, var_taints, call_site_taints)
 
     elif isinstance(stmt, ast.If):
-        _handle_if(stmt, function_taint, taint_map, var_taints)
+        _handle_if(stmt, function_taint, taint_map, var_taints, call_site_taints)
 
     elif isinstance(stmt, (ast.With, ast.AsyncWith)):
-        _handle_with(stmt, function_taint, taint_map, var_taints)
+        _handle_with(stmt, function_taint, taint_map, var_taints, call_site_taints)
 
     elif isinstance(stmt, ast.Try):
-        _handle_try(stmt, function_taint, taint_map, var_taints)
+        _handle_try(stmt, function_taint, taint_map, var_taints, call_site_taints)
 
     elif isinstance(stmt, ast.Match):
-        _handle_match(stmt, function_taint, taint_map, var_taints)
+        _handle_match(stmt, function_taint, taint_map, var_taints, call_site_taints)
 
     elif isinstance(stmt, ast.Expr):
         # Expression statement — walk for side-effects (walrus operators).
@@ -627,6 +650,7 @@ def _handle_if(
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
+    call_site_taints: dict[int, dict[str, TaintState]] | None = None,
 ) -> None:
     """Handle if/elif/else — merge variable taints from branches."""
     # Resolve test expression (may contain walrus).
@@ -637,12 +661,12 @@ def _handle_if(
 
     # Walk the if-body.
     if_taints = dict(var_taints)
-    _walk_body(stmt.body, function_taint, taint_map, if_taints)
+    _walk_body(stmt.body, function_taint, taint_map, if_taints, call_site_taints)
 
     if stmt.orelse:
         # Walk the else-body.
         else_taints = dict(var_taints)
-        _walk_body(stmt.orelse, function_taint, taint_map, else_taints)
+        _walk_body(stmt.orelse, function_taint, taint_map, else_taints, call_site_taints)
     else:
         # No else — the "else" branch is the pre-if state.
         else_taints = pre_if
@@ -675,6 +699,7 @@ def _handle_for(
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
+    call_site_taints: dict[int, dict[str, TaintState]] | None = None,
 ) -> None:
     """Handle for loops — target gets iterable taint, body merges."""
     iter_taint = _resolve_expr(
@@ -691,7 +716,7 @@ def _handle_for(
     pre_loop = dict(var_taints)
 
     # Walk body.
-    _walk_body(stmt.body, function_taint, taint_map, var_taints)
+    _walk_body(stmt.body, function_taint, taint_map, var_taints, call_site_taints)
 
     # Merge body state with pre-loop (loop may not execute, or body assignments
     # may differ across iterations) — the var holds the body OR the pre-loop
@@ -708,7 +733,7 @@ def _handle_for(
 
     # Walk orelse (runs after normal loop completion).
     if stmt.orelse:
-        _walk_body(stmt.orelse, function_taint, taint_map, var_taints)
+        _walk_body(stmt.orelse, function_taint, taint_map, var_taints, call_site_taints)
 
 
 def _handle_while(
@@ -716,13 +741,14 @@ def _handle_while(
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
+    call_site_taints: dict[int, dict[str, TaintState]] | None = None,
 ) -> None:
     """Handle while loops — body merges with pre-loop state."""
     _resolve_expr(stmt.test, function_taint, taint_map, var_taints)
 
     pre_loop = dict(var_taints)
 
-    _walk_body(stmt.body, function_taint, taint_map, var_taints)
+    _walk_body(stmt.body, function_taint, taint_map, var_taints, call_site_taints)
 
     # Merge body state with pre-loop — the var holds the body OR the pre-loop
     # value, so combine via the rank-meet least_trusted (weakest-link), NOT
@@ -737,7 +763,7 @@ def _handle_while(
             _taint_val = None  # var only in one side of merge — no combine needed
 
     if stmt.orelse:
-        _walk_body(stmt.orelse, function_taint, taint_map, var_taints)
+        _walk_body(stmt.orelse, function_taint, taint_map, var_taints, call_site_taints)
 
 
 def _handle_with(
@@ -745,6 +771,7 @@ def _handle_with(
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
+    call_site_taints: dict[int, dict[str, TaintState]] | None = None,
 ) -> None:
     """Handle with/async-with statements."""
     for item in stmt.items:
@@ -757,7 +784,7 @@ def _handle_with(
         if item.optional_vars is not None:
             _assign_target(item.optional_vars, expr_taint, var_taints)
 
-    _walk_body(stmt.body, function_taint, taint_map, var_taints)
+    _walk_body(stmt.body, function_taint, taint_map, var_taints, call_site_taints)
 
 
 def _handle_try(
@@ -765,13 +792,14 @@ def _handle_try(
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
+    call_site_taints: dict[int, dict[str, TaintState]] | None = None,
 ) -> None:
     """Handle try/except/else/finally — snapshot-branch-join pattern."""
     pre_try = dict(var_taints)
 
     # Walk try body on a copy.
     try_taints = dict(pre_try)
-    _walk_body(stmt.body, function_taint, taint_map, try_taints)
+    _walk_body(stmt.body, function_taint, taint_map, try_taints, call_site_taints)
 
     # Walk each handler on separate copies (mutually exclusive with try body).
     handler_branches: list[dict[str, TaintState]] = [try_taints]  # try-success is one branch
@@ -779,12 +807,12 @@ def _handle_try(
         handler_taints = dict(pre_try)
         if handler.name:
             handler_taints[handler.name] = function_taint
-        _walk_body(handler.body, function_taint, taint_map, handler_taints)
+        _walk_body(handler.body, function_taint, taint_map, handler_taints, call_site_taints)
         handler_branches.append(handler_taints)
 
     # Walk orelse on try-success branch (runs only if no exception).
     if stmt.orelse:
-        _walk_body(stmt.orelse, function_taint, taint_map, try_taints)
+        _walk_body(stmt.orelse, function_taint, taint_map, try_taints, call_site_taints)
 
     # Merge all branches.
     all_vars: set[str] = set()
@@ -818,7 +846,7 @@ def _handle_try(
 
     # finalbody runs unconditionally after merge.
     if stmt.finalbody:
-        _walk_body(stmt.finalbody, function_taint, taint_map, var_taints)
+        _walk_body(stmt.finalbody, function_taint, taint_map, var_taints, call_site_taints)
 
 
 def _handle_match(
@@ -826,6 +854,7 @@ def _handle_match(
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
+    call_site_taints: dict[int, dict[str, TaintState]] | None = None,
 ) -> None:
     """Handle ``match``/``case`` — snapshot, walk each arm on a copy seeded with
     that arm's capture bindings, then join all arms with the no-match fall-through.
@@ -851,7 +880,7 @@ def _handle_match(
             # The guard is tested with the arm's captures in scope; resolve it for
             # walrus side effects (binds into this arm's state).
             _resolve_expr(case.guard, function_taint, taint_map, case_taints)
-        _walk_body(case.body, function_taint, taint_map, case_taints)
+        _walk_body(case.body, function_taint, taint_map, case_taints, call_site_taints)
         branches.append(case_taints)
 
     # The implicit "no arm matched" path keeps the pre-match state.
@@ -924,6 +953,56 @@ def _assign_target(
             _assign_target(elt, taint, var_taints)
     elif isinstance(target, ast.Starred) and isinstance(target.value, ast.Name):
         var_taints[target.value.id] = taint
+
+
+def _self_attr_name(target: ast.expr) -> str | None:
+    """The attribute name of a ``self.<attr>`` / ``cls.<attr>`` write target, else None.
+
+    Only a direct attribute of the instance/class receiver (``self.x = ...``) — a
+    subscript-into-attribute (``self.cache[k] = ...``) or deeper chain is NOT a direct
+    attribute write and is deliberately excluded (it would need container modelling)."""
+    if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id in ("self", "cls"):
+        return target.attr
+    return None
+
+
+def collect_self_attr_writes(
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    var_taints: dict[str, TaintState],
+) -> dict[str, TaintState]:
+    """Return ``{attr_name: least_trusted RHS taint}`` for every direct
+    ``self.<attr>``/``cls.<attr>`` assignment in *func_node*'s own scope.
+
+    The analyzer folds these across all of a class's methods (with :func:`least_trusted`)
+    into the per-class attribute summary that seeds cross-method attribute reads
+    (closure A — the function-level fail-open on OO code). RHS taints resolve against
+    the method's already-computed ``var_taints`` so local indirection
+    (``v = read_raw(p); self.x = v``) is captured (no fail-open). Does not descend into
+    nested def/class/lambda scopes (their ``self`` is a different binding)."""
+    out: dict[str, TaintState] = {}
+
+    def _writes(node: ast.AST) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                continue
+            targets: list[ast.expr] = []
+            value: ast.expr | None = None
+            if isinstance(child, ast.Assign):
+                targets, value = list(child.targets), child.value
+            elif isinstance(child, (ast.AnnAssign, ast.AugAssign)) and child.value is not None:
+                # ``self.x: T = expr`` and ``self.x += expr`` (AugAssign always has a value).
+                targets, value = [child.target], child.value
+            for tgt in targets:
+                attr = _self_attr_name(tgt)
+                if attr is not None and value is not None:
+                    rhs = _resolve_expr(value, function_taint, taint_map, var_taints)
+                    out[attr] = least_trusted(out[attr], rhs) if attr in out else rhs
+            _writes(child)
+
+    _writes(func_node)
+    return out
 
 
 def compute_return_taint(

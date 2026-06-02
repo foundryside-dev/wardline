@@ -1,5 +1,23 @@
 # Improvement backlog — rules, tests, soundness
 
+> **Status (2026-06-02, implemented — all items resolved):** The cheap test
+> guards (**#1–#5**) and **PY-WL-111** are DONE. #1 caught and fixed real
+> `PY-WL-101` example-rot; #4 pins the *real* anchor-line fingerprint contract
+> (the literal "blank-line insert → identical" framing below was incorrect —
+> `line_start` is a fingerprint input, so a line shift changes it by design).
+> #6 (mutation testing) is **deferred** — explicitly heavy, adds a dev dep + a
+> CI-gate decision, lowest value-per-effort (the one item not taken on).
+>
+> The **soundness / FN closures** are also DONE. Probing found three of the five
+> already sound — `*args`/`**kwargs` at call sites, comprehension/walrus targets,
+> and decorator-wrapped (`functools.wraps`) callees all propagate correctly — and
+> they are now pinned with regression locks. The two genuine holes were closed:
+> **flow-sensitive sink-arg taint** (closure E — fixed a two-way reassignment
+> over-/under-fire) and **cross-method class-attribute taint** (closure A —
+> per-class attribute summary; measured FP=0 on hand-built OO patterns + the
+> dogfood and corpus trees). Framework-specific sinks remain routed to
+> trust-grammar packs (`wardline-6e4ac6c148`).
+>
 > Working notes captured 2026-06-02, after the T1.5 rule-breadth work (builtins
 > 4 → 10, PY-WL-105–110). These are candidate follow-ups, grounded in the
 > current engine and its FP-discipline — not a committed plan. Promote an item

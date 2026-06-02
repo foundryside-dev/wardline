@@ -36,6 +36,7 @@ def test_default_registry_has_all_builtin_rules() -> None:
         "PY-WL-108",
         "PY-WL-109",
         "PY-WL-110",
+        "PY-WL-111",
     }
 
 

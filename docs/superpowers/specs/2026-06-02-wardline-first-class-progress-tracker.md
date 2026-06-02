@@ -8,7 +8,7 @@ columns as work lands.
 
 **Source-of-truth docs (this tracker overlays status onto them):**
 - Program spec: `2026-06-02-wardline-first-class-body-of-work-design.md` (the 5 tracks, quantified DoD)
-- Track specs: `2026-06-02-wardline-track1-engine-floor-design.md` (others written as reached)
+- Track specs: `archive/2026-06-02-wardline-track1-engine-floor-design.md` (others written as reached)
 - Roadmap (vision): `2026-06-01-wardline-roadmap-to-first-class.md`
 - SEI standard + reconciliation/lock state: `2026-06-01-loom-stable-entity-identity-conformance.md` §0.5
 - Suite umbrella: `2026-06-01-loom-goal-state-case-study.md`
@@ -96,7 +96,7 @@ only on provably-untrusted EXTERNAL_RAW/MIXED_RAW) · **PY-WL-106** deserializat
 resolution off `function_var_taints` — Name + same-module bare-call, under-fire otherwise; documented).
 DoD gates green: **10 curated rules** · corpus **FP 0%** (zero unaccounted) · `make ci` green
 (1143 tests, cov ≥90%) · dogfood clean · golden regenerated · warm/cold byte-identical green.
-Plan: `docs/superpowers/plans/2026-06-02-wardline-track1.5-rule-breadth.md`; Filigree `wardline-f0a2e9678e`.
+Plan: `docs/superpowers/plans/archive/2026-06-02-wardline-track1.5-rule-breadth.md`; Filigree `wardline-f0a2e9678e`.
 **T1.5 COMPLETE & panel-reviewed** (Filigree `wardline-f0a2e9678e` closed). The default panel
 (false-positive-analyst + rule-designer + python-quality) found + fixed: the PY-WL-109 Optional-flood
 (now requires an explicit non-None return annotation), a `dotted_name` bare-attr FP window, the
@@ -135,7 +135,7 @@ SEI client is therefore validated against a **real** SEI-serving Clarion, not on
 / Clarion-SEI gate may be closer to opening than the docs assume — surfaced, not acted on
 (T3.4 is the coordinated suite cutover, still out of scope). Spec basis: program spec §2
 Track 3 + SEI standard §4 + Clarion ADR-038; plan:
-`docs/superpowers/plans/2026-06-02-wardline-track3-sei-client.md`.
+`docs/superpowers/plans/archive/2026-06-02-wardline-track3-sei-client.md`.
 **Next:** the autonomous critical path is **T1.5 (rule-set breadth, 4 → ≥10, on the Track 2
 grammar)**; Track 4 groundwork (T4.1–T4.2 dossier skeleton) is also available in parallel.
 
@@ -154,15 +154,15 @@ Suite **1087 passing**; coverage 95.74% global / `scanner/taint/` + `grammar.py`
 ruff/format/mypy clean. Default code-review panel run (silent-failure + Python-quality):
 found + fixed a HIGH fail-closed hole (stacked provable + unprovable-custom decorators
 were silently over-trusted — now dragged to `UNKNOWN_RAW` + FACT) and a plural-reporting
-completeness gap. Spec: `2026-06-02-wardline-track2-extensible-trust-grammar-design.md`;
-plan: `docs/superpowers/plans/2026-06-02-wardline-track2-extensible-trust-grammar.md`.
+completeness gap. Spec: `archive/2026-06-02-wardline-track2-extensible-trust-grammar-design.md`;
+plan: `docs/superpowers/plans/archive/2026-06-02-wardline-track2-extensible-trust-grammar.md`.
 **Next:** the autonomous path continues to **T1.5 (rule-set breadth, 4 → ≥10, authored
 ON the grammar)**; parallel autonomous groundwork T3.1–T3.3 / T4.1–T4.2 is available.
 **Track 1 remains complete** (below).
 
 **Track 1 recap —** **Track 1 (engine-quality floor) COMPLETE**, merged onto
 `loom-step-up` (was branch `feat/track1-engine-floor`; plan:
-`docs/superpowers/plans/2026-06-02-wardline-track1-engine-floor.md`).
+`docs/superpowers/plans/archive/2026-06-02-wardline-track1-engine-floor.md`).
 All four units done with every DoD gate green: T1.4 labeled FP corpus + FP-rate gate
 (0% ≤ 5%, 21 TRUE_POSITIVE active DEFECTs across the FP-prone shapes) + waiver
 discipline; T1.2 star-import resolution (`from wardline.decorators import *` seeded
@@ -204,7 +204,7 @@ spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 | T2.4 | Soundness inheritance (unprovable **custom** boundary → `UNKNOWN_*` + `WLN-ENGINE-UNPROVABLE-BOUNDARY` FACT; builtins never) | ☑ |
 
 **DoD:** agent defines a new boundary+rule end-to-end (acceptance fixture, litmus = zero edits to `_match`/`_ALL_RULE_CLASSES`/`_ENTRIES`) · unprovable→UNKNOWN+FACT test · the 4 builtins re-expressed produce **byte-identical findings** to today (oracle held).
-**Note:** the hinge between "best analyzer" and "Loom citizen". Design spec: `2026-06-02-wardline-track2-extensible-trust-grammar-design.md`; plan: `…/plans/2026-06-02-wardline-track2-extensible-trust-grammar.md`. T1.5 (rule breadth) lands here, on the grammar. **Blockers baked into the plan:** released `core.registry` contract frozen (Clarion-consumed); summary-cache fingerprint must carry grammar identity (builtin = legacy string); `vocabulary.yaml`/`descriptor.py` unchanged (REGISTRY frozen).
+**Note:** the hinge between "best analyzer" and "Loom citizen". Design spec: `archive/2026-06-02-wardline-track2-extensible-trust-grammar-design.md`; plan: `…/plans/archive/2026-06-02-wardline-track2-extensible-trust-grammar.md`. T1.5 (rule breadth) lands here, on the grammar. **Blockers baked into the plan:** released `core.registry` contract frozen (Clarion-consumed); summary-cache fingerprint must carry grammar identity (builtin = legacy string); `vocabulary.yaml`/`descriptor.py` unchanged (REGISTRY frozen).
 
 ### Track 3 — SEI-client  ·  groundwork: none · wiring: SEI gate OPEN  ·  **☑ done (T3.1–T3.4, branch `feat/track3-sei-client`)**
 

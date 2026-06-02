@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from wardline.core.finding import Severity
 from wardline.scanner.context import RuleRegistry
+from wardline.scanner.rules.assert_only_boundary import AssertOnlyBoundary
 from wardline.scanner.rules.boundary_without_rejection import BoundaryWithoutRejection
 from wardline.scanner.rules.broad_exception import BroadException
 from wardline.scanner.rules.contradictory_trust import ContradictoryTrust
@@ -36,6 +37,7 @@ _ALL_RULE_CLASSES = (
     UntrustedToDeserialization,
     UntrustedToExec,
     UntrustedToCommand,
+    AssertOnlyBoundary,
 )
 
 # Public alias: the builtin rule set the default grammar (Track 2) preloads.

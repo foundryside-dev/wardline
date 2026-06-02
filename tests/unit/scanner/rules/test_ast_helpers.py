@@ -4,6 +4,7 @@ import ast
 import textwrap
 
 from wardline.scanner.rules._ast_helpers import (
+    asserts_are_sole_rejection,
     has_rejection_path,
     is_broad_except,
     is_silent_handler,
@@ -21,9 +22,23 @@ def test_has_rejection_path_detects_raise_and_falsy_returns() -> None:
     assert has_rejection_path(_fn("def f(p):\n if not p:\n  return False\n return p\n"))
     assert has_rejection_path(_fn("def f(p):\n if not p:\n  return\n return p\n"))
     assert has_rejection_path(_fn("def f(p):\n if not p:\n  return []\n return p\n"))
+    # assert counts as a rejection path (it DOES reject at runtime) — so PY-WL-102
+    # does not fire on an assert-only boundary; PY-WL-111 owns that case instead.
+    assert has_rejection_path(_fn("def f(p):\n assert p\n return p\n"))
     # no rejection: always returns the (possibly raw) input
     assert not has_rejection_path(_fn("def f(p):\n return p\n"))
     assert not has_rejection_path(_fn("def f(p):\n x = p\n return x\n"))
+
+
+def test_asserts_are_sole_rejection() -> None:
+    # only an assert -> True (PY-WL-111's case)
+    assert asserts_are_sole_rejection(_fn("def f(p):\n assert p\n return p\n"))
+    # a real raise present -> False (a real reject exists)
+    assert not asserts_are_sole_rejection(_fn("def f(p):\n assert p\n if not p:\n  raise ValueError\n return p\n"))
+    # a falsy-constant return present -> False
+    assert not asserts_are_sole_rejection(_fn("def f(p):\n assert p\n if not p:\n  return None\n return p\n"))
+    # no assert at all -> False
+    assert not asserts_are_sole_rejection(_fn("def f(p):\n return p\n"))
 
 
 def test_own_except_handlers_skips_nested_functions() -> None:

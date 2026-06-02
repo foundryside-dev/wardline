@@ -7,7 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0rc1] - 2026-06-02
+
+### Changed
+
+- **Cross-method class-attribute taint (soundness closure A).** Raw assigned to
+  `self.<attr>` in one method and returned from (or passed to a sink in) ANOTHER
+  method used to escape — the engine was function-level. A per-class attribute
+  summary (the least-trusted value written to each `self.<attr>` across all methods)
+  now seeds reads of that attribute, so `PY-WL-101`/`105` and the sink rules see raw
+  data surfaced via instance state. This does NOT over-fire on the common OO shapes
+  (validated setter + trusted getter, lazy-init): a `@trust_boundary`-validated write
+  is trusted, so the summary stays trusted — measured FP=0 on hand-built patterns and
+  on the dogfood + corpus trees. Two bounded residual FNs (never over-fires): a deep
+  `self.y = self.x` attribute-to-attribute chain may under-resolve, and the attribute
+  summary does not feed back into the L3 fixed point (attr-derived taint surfaced
+  through a non-anchored method's return won't propagate to that method's callers).
+- **Flow-sensitive sink-arg taint (soundness closure E).** The sink rules
+  (`PY-WL-106`/`107`/`108`) and `PY-WL-105` now resolve a call argument's taint AT
+  the sink statement, not from the function's final per-variable map. This closes a
+  documented two-way imprecision: a variable trusted at the sink but reassigned raw
+  *after* it no longer over-fires (a false positive), and one raw at the sink but
+  sanitised *after* it now correctly fires (a fail-open it previously missed). The
+  L2 walker captures a per-statement var-taint snapshot (`function_call_site_taints`
+  on the analysis context); the expression combinators are unchanged.
+
+### Internal
+
+- **Soundness-regression locks for closures B / C / D.** Probing the Track-1.6
+  candidate FN closures found three already sound — `*args`/`**kwargs` at call
+  sites, comprehension/walrus targets, and decorator-wrapped (`functools.wraps`)
+  callees all propagate taint correctly. Pinned with regression tests so a future
+  refactor cannot silently reopen them. (No engine change for B/C/D.)
+
 ### Added
+
+- **`PY-WL-111` — trust boundary whose only rejection path is `assert` (CWE-617).**
+  A `@trust_boundary` that rejects bad input only via `assert` validates in
+  development but is stripped under `python -O`, so the rejection silently
+  vanishes in production. The one genuinely-generic, FP-safe builtin still worth
+  adding (framework-specific sinks belong in opt-in trust-grammar packs).
+  Declaration-gated, `ERROR`, partitions cleanly with `PY-WL-102`: 102 fires when
+  a boundary cannot reject at all, 111 when it appears to reject but only via an
+  `-O`-stripped guard. The shared `has_rejection_path` helper now counts `assert`
+  so the two never double-fire.
+- **Test guards (no behavior change):** a rule-examples meta-test asserting every
+  builtin rule's `examples_violation`/`examples_clean` actually fire / stay clean
+  (caught and fixed rotted `PY-WL-101` examples that referenced an undefined
+  helper); a `RAW_ZONE` ↔ `TRUST_RANK` consistency pin; `least_trusted`
+  idempotence + associativity (exhaustive); a fingerprint-stability test pinning
+  the real anchor-line contract (anchor-preserving edits stay byte-identical, a
+  line-shifting edit changes it by design); and a CLI ↔ MCP finding-parity
+  differential guarding the "identical by construction" tenet.
 
 - **Track 5 — trust-vocabulary convergence + legis CI (T5.1–T5.3).** The final
   Wardline track: one trust vocabulary, one judge, proven against legis. All

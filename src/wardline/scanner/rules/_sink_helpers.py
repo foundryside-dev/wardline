@@ -38,7 +38,14 @@ if TYPE_CHECKING:
     from wardline.scanner.context import AnalysisContext
     from wardline.scanner.rules.metadata import RuleMetadata
 
-__all__ = ["RAW_ZONE", "TaintedSinkRule", "dotted_name", "sink_calls", "worst_arg_taint"]
+__all__ = [
+    "RAW_ZONE",
+    "TaintedSinkRule",
+    "call_site_var_taints",
+    "dotted_name",
+    "sink_calls",
+    "worst_arg_taint",
+]
 
 
 def dotted_name(node: ast.expr) -> str | None:
@@ -76,7 +83,7 @@ def sink_calls(func_node: ast.AST, sink_names: frozenset[str]) -> Iterator[tuple
 
 
 def _arg_taint(
-    arg: ast.expr, module: str, var_taints: Mapping[str, TaintState], context: AnalysisContext
+    arg: ast.expr, module: str, var_taints: Mapping[str, TaintState], context: AnalysisContext, qualname: str
 ) -> TaintState | None:
     if isinstance(arg, ast.Starred):
         arg = arg.value
@@ -87,20 +94,67 @@ def _arg_taint(
         if callee is not None and "." not in callee and module:
             return context.project_return_taints.get(f"{module}.{callee}")
         return None
+    if isinstance(arg, ast.Attribute) and isinstance(arg.value, ast.Name) and arg.value.id in ("self", "cls"):
+        # ``self.<attr>``/``cls.<attr>`` resolves against the cross-method class
+        # attribute summary (closure A): the enclosing class is the qualname minus
+        # the method leaf. None when the attribute has no summarised write.
+        enclosing_class = qualname.rsplit(".", 1)[0] if "." in qualname else ""
+        return context.class_attr_taints.get(enclosing_class, {}).get(arg.attr)
     return None
 
 
-def worst_arg_taint(call: ast.Call, qualname: str, context: AnalysisContext) -> TaintState | None:
+def worst_arg_taint(
+    call: ast.Call, qualname: str, context: AnalysisContext, var_taints: Mapping[str, TaintState]
+) -> TaintState | None:
     """The LEAST-trusted (highest TRUST_RANK) resolvable argument taint of *call*, or
-    None when no argument resolves. Positional + keyword args are considered."""
+    None when no argument resolves. Positional + keyword args are considered.
+
+    ``var_taints`` is the per-variable taint map to resolve ``ast.Name`` args against
+    — pass the FLOW-SENSITIVE snapshot for *call*'s enclosing statement (see
+    :func:`call_site_var_taints`) so a name reassigned after the call is read at its
+    taint AT the call line, not the final map."""
     module = qualname.rsplit(".", 1)[0] if "." in qualname else ""
-    var_taints = context.function_var_taints.get(qualname, {})
     worst: TaintState | None = None
     for arg in (*call.args, *(kw.value for kw in call.keywords)):
-        t = _arg_taint(arg, module, var_taints, context)
+        t = _arg_taint(arg, module, var_taints, context, qualname)
         if t is not None and (worst is None or TRUST_RANK[t] > TRUST_RANK[worst]):
             worst = t
     return worst
+
+
+def _calls_with_enclosing_stmt(
+    node: ast.AST, cur_stmt: ast.stmt | None = None
+) -> Iterator[tuple[ast.Call, ast.stmt | None]]:
+    """Yield ``(call, nearest_enclosing_stmt)`` for every own-scope call (never
+    descending into nested def/class/lambda — separate scopes). The enclosing
+    statement is the deepest ``ast.stmt`` ancestor; ``None`` only for the
+    degenerate case of a call directly under the function node with no statement
+    between (not reachable for a real body)."""
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue
+        new_stmt = child if isinstance(child, ast.stmt) else cur_stmt
+        if isinstance(child, ast.Call):
+            yield child, new_stmt
+        yield from _calls_with_enclosing_stmt(child, new_stmt)
+
+
+def call_site_var_taints(
+    func_node: ast.AST, qualname: str, context: AnalysisContext
+) -> dict[int, Mapping[str, TaintState]]:
+    """Map ``id(call) -> the var-taint snapshot to resolve that call's args against``.
+
+    Flow-sensitive: each own-scope call maps to its enclosing statement's snapshot
+    (``function_call_site_taints`` — the taint AT that statement). Falls back to the
+    function's final ``function_var_taints`` when no snapshot exists (older contexts,
+    or an L2-skipped function), preserving the previous flow-insensitive behavior."""
+    snapshots = context.function_call_site_taints.get(qualname, {})
+    final = context.function_var_taints.get(qualname, {})
+    result: dict[int, Mapping[str, TaintState]] = {}
+    for call, stmt in _calls_with_enclosing_stmt(func_node):
+        snap = snapshots.get(id(stmt)) if stmt is not None else None
+        result[id(call)] = snap if snap is not None else final
+    return result
 
 
 class TaintedSinkRule:
@@ -133,8 +187,10 @@ class TaintedSinkRule:
             severity = modulate(self.base_severity, tier)
             if severity == Severity.NONE:
                 continue  # freedom / fail-closed zone — suppressed
+            site_taints = call_site_var_taints(entity.node, qualname, context)
+            final = context.function_var_taints.get(qualname, {})
             for call, dotted in sink_calls(entity.node, self.SINKS):
-                worst = worst_arg_taint(call, qualname, context)
+                worst = worst_arg_taint(call, qualname, context, site_taints.get(id(call), final))
                 if worst is None or worst not in RAW_ZONE:
                     continue
                 line = call.lineno

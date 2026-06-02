@@ -40,7 +40,7 @@ least_trusted(INTEGRAL, ASSURED) == ASSURED  # weakest link wins
 absorbing top `MIXED_RAW`. After the three `least_trusted` migrations it has **no
 production call site** — it is retained deliberately as the documented contrast
 operator. See the ADR:
-[Retain the 8-state lattice](../decisions/2026-05-31-wardline-taint-lattice-retain.md).
+[Retain the 8-state lattice](https://github.com/foundryside-dev/wardline/blob/main/docs/decisions/2026-05-31-wardline-taint-lattice-retain.md).
 
 ## The discriminator: why even genuine value-merges use `least_trusted`
 
@@ -116,7 +116,7 @@ as the freedom zone and **suppresses** (returns `NONE`). The firing is **not**
 unconditional, though: if the *body* is itself `MIXED_RAW` (the realistic route to
 a `MIXED_RAW` actual return), `PY-WL-101`'s body-less-trusted-than-declared gate
 suppresses first and delegates to `PY-WL-102`, so `101` does not fire there.
-(Note `PY-WL-101`'s `_RAW_ZONE` set is a suppression gate on the *declared* tier,
+(Note `PY-WL-101`'s `RAW_ZONE` set is a suppression gate on the *declared* tier,
 not the firing condition — `MIXED_RAW`'s membership in it is inert because you
 never *declare* `MIXED_RAW`.) That asymmetry is harmless only because the input is
 unreachable. The F5 guards are what keep it latent.
@@ -170,6 +170,6 @@ promises and what a value-level semantic analysis would require.
 
 - [Taint & trust model](model.md) — the reader-facing introduction.
 - [Rules](rules.md) — the checks built on this algebra.
-- [ADR: Retain the 8-state lattice](../decisions/2026-05-31-wardline-taint-lattice-retain.md).
+- [ADR: Retain the 8-state lattice](https://github.com/foundryside-dev/wardline/blob/main/docs/decisions/2026-05-31-wardline-taint-lattice-retain.md).
 - `docs/audits/2026-05-31-taint-combination-audit.md` — the audit this spec
   consolidates (findings F1–F6).

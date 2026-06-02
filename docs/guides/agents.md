@@ -21,7 +21,7 @@ edits code, runs the gate, reads the result, and corrects itself before it ever
 asks you to look.
 
 If you have not installed Wardline yet, start with
-[Getting Started](getting-started.md).
+[Getting Started](../getting-started.md).
 
 ## One-command setup: `wardline install`
 
@@ -162,7 +162,7 @@ false positives while still flagging anything new.
 
 For an agent this closes the loop: scan flags a defect, judge classifies it,
 and an above-floor false positive is recorded as an audited suppression rather
-than left to nag every run. See the [LLM triage judge guide](guides/judge.md)
+than left to nag every run. See the [LLM triage judge guide](judge.md)
 for the verdict format, the floor, and the `judged.yaml` record shape.
 
 ## Hand off via SARIF
@@ -179,7 +179,7 @@ The log is standard SARIF 2.1.0 with a `wardline` driver and one result per
 finding (the defect alongside engine metric/fact entries), so it is not
 Filigree-specific — any SARIF consumer can read it. `--fail-on` still gates while
 the file is written, so the same command both publishes the report and blocks the
-agent's change. See the [Loom integration guide](guides/loom.md) for the full
+agent's change. See the [Loom integration guide](loom.md) for the full
 output matrix, including the native Filigree emitter.
 
 ## Call Wardline as MCP tools
@@ -209,7 +209,7 @@ boundary. Without a store, or without
 local re-scan. Known cost: with a store configured, each `scan` additionally
 builds taint facts (a blake3 hash per file) and POSTs them to Clarion — this is
 fail-soft, but a real per-scan cost in the agent loop. See the
-[Clarion taint store guide](guides/clarion-taint-store.md) for the full
+[Clarion taint store guide](clarion-taint-store.md) for the full
 opt-in, auth, and fail-soft details.
 
 The server is stateless — no session state is carried between calls; the

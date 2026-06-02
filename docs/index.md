@@ -56,4 +56,4 @@ field.
 
 - [Getting Started](getting-started.md) — install, run a first scan, and read a finding.
 - [The model](concepts/model.md) — trust tiers, boundaries, and how taint flows.
-- [Arming agents](agents.md) — using Wardline to give coding agents a trust-boundary check.
+- [Arming agents](guides/agents.md) — using Wardline to give coding agents a trust-boundary check.

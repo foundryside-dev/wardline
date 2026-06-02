@@ -144,6 +144,6 @@ through the gate.
 
 ## Next steps
 
-- [Rules](rules.md) — the four checks built on this model.
+- [Rules](rules.md) — the rules built on this model.
 - [Trust vocabulary reference](../reference/vocabulary.md) — the decorators and
   their exact arguments.

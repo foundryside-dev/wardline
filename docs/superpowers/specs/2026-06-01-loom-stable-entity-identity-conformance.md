@@ -392,7 +392,7 @@ surrogate approach is safe to set across a suite with a frozen member.
   interface ships it becomes the first external supplier, with no change to the
   SEI model and no move of identity authority out of Clarion. Shape the seam now
   with legis as the planned first implementer.
-- **The dossier** (`2026-06-01-wardline-loom-entity-dossier-design.md`) should be
+- **The dossier** (`archive/2026-06-01-wardline-loom-entity-dossier-design.md`) should be
   updated, once this lands, to key its sections on SEI and to replace its §6.1
   ad-hoc ORPHAN handling with the §2.1 two-axis model. Until then the dossier's
   fail-closed UNKNOWN handling is the correct interim.

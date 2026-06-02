@@ -224,9 +224,9 @@ before a defined lock gate. Mandate the direction; ratify the details.
 
 **What this produced** (this session's artifacts):
 - `2026-06-01-loom-stable-entity-identity-conformance.md` — the SEI standard.
-- `2026-06-01-wardline-loom-entity-dossier-design.md` — the one-call mastery read.
-- `2026-06-01-wardline-explicit-trusted-body-return-design.md` +
-  `2026-06-01-wardline-config-trust-declarations-design.md` — Wardline's trust
+- `archive/2026-06-01-wardline-loom-entity-dossier-design.md` — the one-call mastery read.
+- `../../bitbucket/2026-06-01-wardline-explicit-trusted-body-return-design.md` +
+  `../../bitbucket/2026-06-01-wardline-config-trust-declarations-design.md` — Wardline's trust
   vocabulary work (the seed of the *next* conformance domain — §5).
 
 ---
