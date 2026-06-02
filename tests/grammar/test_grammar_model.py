@@ -24,14 +24,14 @@ _EXPECTED_ARGS = {
 }
 
 
-def test_default_grammar_has_three_builtins_and_four_rules() -> None:
+def test_default_grammar_has_three_builtins_and_all_rules() -> None:
     g = default_grammar()
     assert tuple(bt.canonical_name for bt in g.boundary_types) == (
         "external_boundary",
         "trust_boundary",
         "trusted",
     )
-    assert [r.rule_id for r in g.rules] == ["PY-WL-101", "PY-WL-102", "PY-WL-103", "PY-WL-104"]
+    assert [r.rule_id for r in g.rules] == ["PY-WL-101", "PY-WL-102", "PY-WL-103", "PY-WL-104", "PY-WL-110"]
 
 
 def test_builtin_boundary_types_align_with_registry() -> None:

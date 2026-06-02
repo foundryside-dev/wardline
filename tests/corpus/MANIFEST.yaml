@@ -7,6 +7,8 @@
 # Per the 2026-05-31 taint-combination audit the engine has 0 live FP, so every entry
 # below is TRUE_POSITIVE today; the FALSE_POSITIVE label exists to capture a regression.
 fixtures:
+  contradictory.py:
+    - {rule_id: PY-WL-110, qualname: "contradictory.conflicting", label: TRUE_POSITIVE, note: "@trusted + @external_boundary — two distinct trust markers"}
   aliased_stdlib.py:
     - {rule_id: PY-WL-101, qualname: "aliased_stdlib.aliased_sink", label: TRUE_POSITIVE, note: "aliased json.loads returns GUARDED < declared ASSURED"}
     - {rule_id: PY-WL-101, qualname: "aliased_stdlib.indirect_return", label: TRUE_POSITIVE, note: "raw flows through a local var (single-hop indirection)"}

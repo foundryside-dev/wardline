@@ -22,10 +22,10 @@ def _analyze(tmp_path: Path, files: dict[str, str]):
     return analyzer.last_context, findings
 
 
-def test_default_registry_has_all_four_rules() -> None:
+def test_default_registry_has_all_builtin_rules() -> None:
     reg = build_default_registry(WardlineConfig())
     ids = {r.rule_id for r in reg.rules}
-    assert ids == {"PY-WL-101", "PY-WL-102", "PY-WL-103", "PY-WL-104"}
+    assert ids == {"PY-WL-101", "PY-WL-102", "PY-WL-103", "PY-WL-104", "PY-WL-110"}
 
 
 def test_rules_enable_filters() -> None:
