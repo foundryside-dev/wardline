@@ -230,12 +230,18 @@ class LinkagesSection:
 
 @dataclass(frozen=True, slots=True)
 class TicketRef:
-    """A compact reference to one Filigree issue bound to / touching the entity."""
+    """A compact reference to one Filigree issue bound to / touching the entity.
+
+    ``drift`` is True when the issue was bound to a PRIOR version of the entity
+    (Filigree's ``content_hash_at_attach`` no longer matches the entity's current
+    content hash) — surfaced per-ticket so a drifted binding is never silently
+    trusted (dossier design §6 / SEI conformance §2.1 content axis)."""
 
     issue_id: str
     status: str | None = None
     priority: str | None = None
     title: str | None = None
+    drift: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -243,6 +249,7 @@ class TicketRef:
             "status": self.status,
             "priority": self.priority,
             "title": self.title,
+            "drift": self.drift,
         }
 
 

@@ -70,6 +70,17 @@ class WriteResult:
 
 
 @dataclass(frozen=True, slots=True)
+class LinkageResult:
+    """One entity's call-graph neighbours on one side (callers OR callees), as read
+    live from Clarion. ``neighbours`` are Clarion entity ids (locators); ``truncated``
+    is Clarion's own pagination flag (surfaced, never silently dropped)."""
+
+    neighbours: tuple[str, ...]
+    total: int
+    truncated: bool
+
+
+@dataclass(frozen=True, slots=True)
 class TaintFactView:
     qualname: str
     exists: bool
@@ -255,3 +266,38 @@ class ClarionClient:
         is only URL-escaped for the path segment, never parsed or interpreted."""
         quoted = urllib.parse.quote(sei, safe="")
         return self._send_json_soft("GET", f"/api/v1/identity/sei/{quoted}", None)
+
+    # --- call-graph linkages (Track 4 T4.3) ----------------------------------
+    # GET /api/v1/entities/{entity_id}/callers|callees (Clarion Wave 0 / WS2). HMAC-
+    # gated like /api/v1/files; FAIL-SOFT on every non-happy band (a pre-linkage
+    # Clarion 404s the route; an unknown entity 404s; an outage 5xx → None), so the
+    # dossier degrades to an honest `unavailable` linkages section rather than crashing.
+
+    def _get_linkages(self, entity_id: str, direction: str, limit: int) -> LinkageResult | None:
+        quoted = urllib.parse.quote(entity_id, safe="")
+        query = urllib.parse.urlencode({"limit": limit})
+        data = self._send_json_soft("GET", f"/api/v1/entities/{quoted}/{direction}?{query}", None)
+        if data is None:
+            return None
+        rows = data.get(direction)
+        rows = rows if isinstance(rows, list) else []
+        neighbours = tuple(
+            str(r["entity_id"]) for r in rows if isinstance(r, dict) and isinstance(r.get("entity_id"), str)
+        )
+        total = data.get("total")
+        return LinkageResult(
+            neighbours=neighbours,
+            total=int(total) if isinstance(total, int) else len(neighbours),
+            truncated=bool(data.get("truncated", False)),
+        )
+
+    def get_callers(self, entity_id: str, *, limit: int = 50) -> LinkageResult | None:
+        """Inbound callers of ``entity_id`` (a Clarion locator), or None on a soft
+        failure / unknown entity / pre-linkage Clarion. ``entity_id`` is URL-escaped
+        into the path, never parsed."""
+        return self._get_linkages(entity_id, "callers", limit)
+
+    def get_callees(self, entity_id: str, *, limit: int = 50) -> LinkageResult | None:
+        """Outbound callees of ``entity_id``; same fail-soft contract as
+        :meth:`get_callers`."""
+        return self._get_linkages(entity_id, "callees", limit)

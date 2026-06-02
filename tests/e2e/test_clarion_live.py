@@ -282,3 +282,48 @@ def test_sei_client_against_live_clarion(clarion_server: tuple[Path, str]) -> No
         assert binding.sei != locator
         # The opaque token round-trips through resolve_sei without the client parsing it.
         assert resolver.resolve_identity_status(binding.sei) is IdentityStatus.ALIVE
+
+
+def test_loom_dossier_against_live_clarion(clarion_server: tuple[Path, str]) -> None:
+    """T4.3 oracle: assemble a one-call dossier against a real `clarion serve`.
+
+    Adaptive (a true oracle either way): the self/trust posture is always real; the
+    Clarion-sourced sections fill iff the live build advertises the SEI + HTTP-linkage
+    capabilities, and degrade to honest `unavailable` otherwise. Never crashes, never
+    parses the SEI, never exceeds the token budget."""
+    proj, url = clarion_server
+    from wardline.clarion.client import ClarionClient
+    from wardline.clarion.config import load_clarion_token, resolve_project_name
+    from wardline.clarion.identity import ContentStatus, IdentityStatus
+    from wardline.loom_dossier import build_loom_dossier
+
+    client = ClarionClient(url, secret=load_clarion_token(proj), project=resolve_project_name(proj))
+    caps = client.capabilities() or {}
+    sei_up = isinstance(caps.get("sei"), dict) and caps["sei"].get("supported") is True
+    linkages_up = isinstance(caps.get("linkages"), dict) and caps["linkages"].get("http") is True
+
+    d = build_loom_dossier("svc.leaky", root=proj, clarion_client=client)
+
+    # self/trust is always real — svc.leaky leaks an external-boundary value
+    assert d.identity.qualname == "svc.leaky"
+    assert d.trust.gate_verdict == "defect"
+    assert any(f.rule_id == "PY-WL-101" for f in d.trust.active_findings)
+    # token budget holds on a real envelope
+    assert d.estimated_tokens() <= 2000
+
+    if sei_up:
+        # SEI resolved live → opaque key, alive identity (never parsed)
+        assert isinstance(d.identity.sei, str) and d.identity.sei.startswith("clarion:eid:")
+        assert d.identity.keyed_on_sei is True
+        assert d.identity.identity_status is IdentityStatus.ALIVE
+    else:
+        assert d.identity.sei is None
+        assert d.identity.identity_status is IdentityStatus.UNAVAILABLE
+
+    if linkages_up:
+        # leaky -> read_raw, so callees must include read_raw's locator; content FRESH (live)
+        assert d.linkages.available is True
+        assert d.linkages.content_status is ContentStatus.FRESH
+        assert any("read_raw" in n for n in d.linkages.callees)
+    else:
+        assert d.linkages.available is False
