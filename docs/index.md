@@ -1,12 +1,9 @@
-# Wardline
-
-Wardline is a generic, lightweight semantic-tainting static analyzer for Python.
-It tracks the flow of untrusted data through a codebase, identifies
-trust-boundary violations, and emits structured findings — without runtime
-instrumentation. It is built for one-to-two-developer teams who want
-enterprise-class trust-boundary analysis without enterprise weight: the analysis
-engine has **zero runtime dependencies**, and Wardline is part of the Loom suite
-alongside Clarion (code intelligence) and Filigree (issue tracking).
+---
+template: home.html
+hide:
+  - navigation
+  - toc
+---
 
 ## Install
 

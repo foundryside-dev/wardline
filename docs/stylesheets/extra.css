@@ -1,0 +1,329 @@
+/* ==========================================================================
+   Wardline — Loom design system + Wardline accent, layered on Material.
+
+   Strategy:
+   - Material owns the light/dark toggle. We do NOT add a custom toggle and we
+     do NOT use light-dark()/[data-theme]; we map semantic tokens under
+     Material's own scheme selectors ([data-md-color-scheme="default"|"slate"])
+     and override Material's --md-primary/--md-accent variables there.
+   - OKLCH primitives are a shared Loom ramp; Wardline's accent is teal.
+   ========================================================================== */
+
+:root {
+  /* ---- Loom primitive ramp (OKLCH, perceptually uniform) ---- */
+  /* Slate/ink — shared Loom neutral hue (~255) */
+  --loom-ink-50:  oklch(0.97 0.010 255);
+  --loom-ink-100: oklch(0.93 0.018 255);
+  --loom-ink-200: oklch(0.86 0.028 255);
+  --loom-ink-700: oklch(0.40 0.060 255);
+  --loom-ink-900: oklch(0.22 0.040 255);
+
+  /* Wardline accent — teal (~195) */
+  --wl-teal-200: oklch(0.85 0.080 195);
+  --wl-teal-300: oklch(0.78 0.095 195);
+  --wl-teal-400: oklch(0.70 0.110 195);
+  --wl-teal-500: oklch(0.62 0.115 195);
+  --wl-teal-600: oklch(0.55 0.110 195);
+  --wl-teal-700: oklch(0.47 0.095 195);
+
+  /* ---- Spacing scale (4px base) ---- */
+  --wl-space-1: 0.25rem;
+  --wl-space-2: 0.5rem;
+  --wl-space-3: 0.75rem;
+  --wl-space-4: 1rem;
+  --wl-space-5: 1.5rem;
+  --wl-space-6: 2rem;
+  --wl-space-8: 3rem;
+  --wl-space-10: 4rem;
+
+  /* ---- Fluid type ---- */
+  --wl-text-hero: clamp(2.25rem, 1.6rem + 3vw, 3.5rem);
+  --wl-text-lead: clamp(1.1rem, 1rem + 0.6vw, 1.375rem);
+
+  --wl-radius: 10px;
+  --wl-content-width: 52rem;
+}
+
+/* ---- Material variable overrides: LIGHT scheme ---- */
+[data-md-color-scheme="default"] {
+  /* Teal-600 on white = strong contrast; used for links/headers */
+  --md-primary-fg-color:        var(--wl-teal-700);
+  --md-primary-fg-color--light: var(--wl-teal-500);
+  --md-primary-fg-color--dark:  var(--wl-teal-700);
+  --md-accent-fg-color:         var(--wl-teal-600);
+
+  /* Semantic tokens for landing markup */
+  --wl-bg:          oklch(0.99 0.003 255);
+  --wl-bg-subtle:   oklch(0.975 0.006 255);
+  --wl-bg-card:     oklch(1 0 0);
+  --wl-text:        var(--loom-ink-900);
+  --wl-text-muted:  oklch(0.46 0.020 255);
+  --wl-border:      var(--loom-ink-200);
+  --wl-accent:      var(--wl-teal-700);
+  --wl-accent-soft: oklch(0.95 0.030 195);
+  --wl-on-accent:   oklch(0.99 0.005 195);
+}
+
+/* ---- Material variable overrides: DARK (slate) scheme ---- */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color:        var(--wl-teal-400);
+  --md-primary-fg-color--light: var(--wl-teal-300);
+  --md-primary-fg-color--dark:  var(--wl-teal-500);
+  --md-accent-fg-color:         var(--wl-teal-300);
+
+  --wl-bg:          oklch(0.21 0.022 255);
+  --wl-bg-subtle:   oklch(0.25 0.022 255);
+  --wl-bg-card:     oklch(0.27 0.024 255);
+  --wl-text:        oklch(0.94 0.012 255);
+  --wl-text-muted:  oklch(0.80 0.018 255);
+  --wl-border:      oklch(0.36 0.024 255);
+  --wl-accent:      var(--wl-teal-300);
+  --wl-accent-soft: oklch(0.32 0.050 195);
+  --wl-on-accent:   oklch(0.18 0.030 195);
+}
+
+/* ==========================================================================
+   Landing page
+   ========================================================================== */
+
+.wl-landing {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 0 var(--wl-space-4) var(--wl-space-10);
+}
+
+/* ---- Hero ---- */
+.wl-hero {
+  text-align: center;
+  padding: var(--wl-space-10) var(--wl-space-3) var(--wl-space-8);
+}
+
+.wl-hero__title {
+  font-size: var(--wl-text-hero);
+  line-height: 1.05;
+  margin: 0 0 var(--wl-space-4);
+  letter-spacing: -0.02em;
+  color: var(--wl-text);
+}
+
+.wl-hero__tagline {
+  font-size: var(--wl-text-lead);
+  line-height: 1.5;
+  color: var(--wl-text-muted);
+  max-width: 40rem;
+  margin: 0 auto var(--wl-space-6);
+}
+
+.wl-hero__cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wl-space-3);
+  justify-content: center;
+}
+
+.wl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: var(--wl-space-3) var(--wl-space-5);
+  border-radius: var(--wl-radius);
+  font-weight: 600;
+  font-size: 1rem;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.wl-btn--primary {
+  background: var(--wl-accent);
+  color: var(--wl-on-accent);
+}
+.wl-btn--primary:hover,
+.wl-btn--primary:focus-visible {
+  background: var(--wl-teal-600);
+  color: var(--wl-on-accent);
+}
+[data-md-color-scheme="slate"] .wl-btn--primary:hover,
+[data-md-color-scheme="slate"] .wl-btn--primary:focus-visible {
+  background: var(--wl-teal-200);
+}
+
+.wl-btn--secondary {
+  background: transparent;
+  color: var(--wl-text);
+  border-color: var(--wl-border);
+}
+.wl-btn--secondary:hover,
+.wl-btn--secondary:focus-visible {
+  border-color: var(--wl-accent);
+  color: var(--wl-accent);
+}
+
+.wl-btn:focus-visible {
+  outline: 3px solid var(--wl-text);
+  outline-offset: 2px;
+}
+
+/* ---- Feature cards ---- */
+.wl-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--wl-space-4);
+  margin: var(--wl-space-6) 0 var(--wl-space-8);
+}
+
+.wl-feature-card {
+  padding: var(--wl-space-5);
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius);
+  background: var(--wl-bg-subtle);
+}
+
+.wl-feature-card h3 {
+  margin: 0 0 var(--wl-space-2);
+  font-size: 1.1rem;
+  color: var(--wl-text);
+}
+
+.wl-feature-card p {
+  margin: 0;
+  color: var(--wl-text-muted);
+  line-height: 1.55;
+}
+
+.wl-feature-card code {
+  background: var(--wl-accent-soft);
+  color: var(--wl-accent);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+
+/* ---- Embedded markdown body (install table + quick example) ---- */
+.wl-body {
+  margin: var(--wl-space-8) 0;
+}
+
+/* The markdown body provides its own H2s; give it a top divider for rhythm */
+.wl-body::before {
+  content: "";
+  display: block;
+  border-top: 1px solid var(--wl-border);
+  margin-bottom: var(--wl-space-6);
+}
+
+/* ---- Loom suite ---- */
+.wl-suite {
+  margin-top: var(--wl-space-10);
+  padding-top: var(--wl-space-6);
+  border-top: 1px solid var(--wl-border);
+}
+
+.wl-suite h2 {
+  margin: 0 0 var(--wl-space-2);
+}
+
+.wl-suite__intro {
+  color: var(--wl-text-muted);
+  max-width: 44rem;
+  line-height: 1.55;
+  margin: 0 0 var(--wl-space-5);
+}
+
+.wl-suite__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--wl-space-4);
+}
+
+.wl-suite-card {
+  display: block;
+  padding: var(--wl-space-5);
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius);
+  background: var(--wl-bg-card);
+  text-decoration: none;
+  color: var(--wl-text);
+  transition: border-color 150ms ease, transform 150ms ease;
+}
+
+.wl-suite-card:hover,
+.wl-suite-card:focus-visible {
+  border-color: var(--wl-accent);
+  transform: translateY(-2px);
+}
+
+.wl-suite-card:focus-visible {
+  outline: 3px solid var(--wl-accent);
+  outline-offset: 2px;
+}
+
+.wl-suite-card h3 {
+  margin: 0 0 var(--wl-space-2);
+  font-size: 1.1rem;
+  color: var(--wl-accent);
+}
+
+.wl-suite-card p {
+  margin: 0;
+  color: var(--wl-text-muted);
+  line-height: 1.5;
+}
+
+.wl-suite-card--current {
+  border-color: var(--wl-accent);
+  background: var(--wl-accent-soft);
+}
+
+.wl-suite-card__badge {
+  display: inline-block;
+  margin-top: var(--wl-space-3);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--wl-on-accent);
+  background: var(--wl-accent);
+  padding: 0.15em 0.6em;
+  border-radius: 999px;
+}
+
+/* ==========================================================================
+   Footer Loom suite links (copyright partial override) — site-wide
+   ========================================================================== */
+.wl-footer-suite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-3);
+  margin-bottom: var(--wl-space-2);
+  font-size: 0.8rem;
+}
+
+.wl-footer-suite__label {
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+.wl-footer-suite a {
+  color: inherit;
+  text-decoration: none;
+  opacity: 0.85;
+}
+
+.wl-footer-suite a:hover,
+.wl-footer-suite a:focus-visible {
+  text-decoration: underline;
+  opacity: 1;
+}
+
+/* ==========================================================================
+   Reduced motion
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .wl-btn,
+  .wl-suite-card {
+    transition: none;
+  }
+}

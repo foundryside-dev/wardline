@@ -1,0 +1,107 @@
+{% extends "main.html" %}
+
+{#
+  Wardline product landing page.
+  Applied only to docs/index.md via front-matter `template: home.html`.
+  The hero, feature cards, and Loom-suite grid are defined here; the existing
+  markdown body of index.md (install table, 30-second example, real PY-WL-101
+  finding) is rendered via {{ page.content }} so Material's syntax highlighting
+  and content.code.copy buttons keep working on the real fenced code blocks.
+#}
+
+{% block content %}
+<div class="wl-landing">
+
+  <section class="wl-hero">
+    <h1 class="wl-hero__title">Wardline</h1>
+    <p class="wl-hero__tagline">
+      Semantic-tainting static analysis for Python. Wardline tracks untrusted
+      data across your codebase and flags trust-boundary violations &mdash;
+      statically, with zero runtime dependencies.
+    </p>
+    <div class="wl-hero__cta">
+      <a class="wl-btn wl-btn--primary" href="{{ 'getting-started/' | url }}">
+        Get Started
+      </a>
+      <a class="wl-btn wl-btn--secondary" href="{{ config.repo_url }}"
+         rel="noopener" target="_blank">
+        View on GitHub
+      </a>
+    </div>
+  </section>
+
+  <section class="wl-features" aria-label="What Wardline does">
+    <div class="wl-feature-card">
+      <h3>Three trust decorators</h3>
+      <p>
+        Declare trust at the source with <code>@external_boundary</code>,
+        <code>@trust_boundary</code>, and <code>@trusted</code>. Undecorated
+        code stays in the developer-freedom zone &mdash; opt-in, fail-closed.
+      </p>
+    </div>
+    <div class="wl-feature-card">
+      <h3>Eleven policy rules</h3>
+      <p>
+        <code>PY-WL-101</code> through <code>PY-WL-111</code> catch trust-boundary
+        leaks, untrusted data reaching deserialization, exec, and shell sinks, and
+        validators that can&rsquo;t say &ldquo;no.&rdquo;
+      </p>
+    </div>
+    <div class="wl-feature-card">
+      <h3>SARIF and JSONL output</h3>
+      <p>
+        Emit findings as SARIF for code-scanning dashboards or JSONL for tooling.
+        Gate CI with <code>wardline scan --fail-on ERROR</code>.
+      </p>
+    </div>
+    <div class="wl-feature-card">
+      <h3>Agent-ready: MCP &amp; LLM triage</h3>
+      <p>
+        A built-in MCP server lets coding agents scan and explain taint. An
+        opt-in LLM triage judge, baselines, and waivers keep the signal clean.
+      </p>
+    </div>
+  </section>
+
+  {# The existing index.md markdown body: install layers, 30-second example,
+     and the real PY-WL-101 finding. Rendered as Material markdown so code
+     blocks keep highlighting + copy buttons. #}
+  <section class="wl-body" aria-label="Install and quick example">
+    {{ page.content }}
+  </section>
+
+  <section class="wl-suite" aria-labelledby="wl-suite-heading">
+    <h2 id="wl-suite-heading">The Loom suite</h2>
+    <p class="wl-suite__intro">
+      Wardline is one of four Loom citizens &mdash; agent-first tooling built on
+      &ldquo;humans on the loop, not in the loop.&rdquo; Each is zero-config and
+      opt-in: enterprise-class for one-to-two-developer teams, without enterprise
+      weight.
+    </p>
+    <div class="wl-suite__grid">
+      <a class="wl-suite-card wl-suite-card--current" href="https://wardline.foundryside.dev"
+         rel="noopener" target="_blank">
+        <h3>Wardline</h3>
+        <p>Semantic-tainting static analysis for Python.</p>
+        <span class="wl-suite-card__badge">You are here</span>
+      </a>
+      <a class="wl-suite-card" href="https://clarion.foundryside.dev"
+         rel="noopener" target="_blank">
+        <h3>Clarion</h3>
+        <p>Code intelligence &mdash; entity-level facts about your codebase.</p>
+      </a>
+      <a class="wl-suite-card" href="https://filigree.foundryside.dev"
+         rel="noopener" target="_blank">
+        <h3>Filigree</h3>
+        <p>Issue tracking built for agent-driven teams.</p>
+      </a>
+      <a class="wl-suite-card" href="https://legis.foundryside.dev"
+         rel="noopener" target="_blank">
+        <h3>Legis</h3>
+        <p>Opt-in governance for the development lifecycle.</p>
+      </a>
+    </div>
+  </section>
+
+</div>
+{% endblock %}

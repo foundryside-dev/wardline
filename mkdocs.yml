@@ -1,12 +1,13 @@
 site_name: Wardline
 site_description: Generic semantic-tainting static analyzer for Python
-site_url: https://foundryside-dev.github.io/wardline/
+site_url: https://wardline.foundryside.dev
 repo_url: https://github.com/foundryside-dev/wardline
 repo_name: foundryside-dev/wardline
 edit_uri: edit/main/docs/
 
 theme:
   name: material
+  custom_dir: overrides
   palette:
     - scheme: default
       primary: indigo
@@ -35,6 +36,9 @@ markdown_extensions:
   - pymdownx.inlinehilite
   - pymdownx.superfences
   - pymdownx.details
+
+extra_css:
+  - stylesheets/extra.css
 
 exclude_docs: |
   superpowers/
