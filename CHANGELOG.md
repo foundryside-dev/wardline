@@ -37,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `loom_dossier.py` — `build_loom_dossier`, the orchestrator: probe Clarion
     capabilities once, resolve the SEI binding, wire both providers, call the
     source-agnostic core assembler. Degrades honestly with whatever sources are present.
+  - **Surface:** `wardline dossier <qualname>` (CLI) and a `dossier` MCP tool, both thin
+    delegators to `build_loom_dossier` (CLI and MCP identical by construction — a parity
+    test asserts byte-identical envelopes). `wardline mcp` gains `--filigree-url`.
   - The base package stays **zero-dependency** (the Filigree reader is stdlib urllib;
     Clarion-consuming code lives behind the existing `wardline[clarion]` extra). Verified
     by a live `clarion_e2e` one-call dossier round-trip against a real `clarion serve`.

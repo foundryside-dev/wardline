@@ -36,7 +36,11 @@ source); `clarion/dossier_sources.py` (`ClarionLinkageProvider` + `resolve_entit
 `filigree/dossier_client.py` (dep-free urllib `FiligreeWorkProvider` reading ADR-029 entity-associations,
 content_hash_at_attach → per-ticket DRIFT + 3-valued section content axis); `loom_dossier.py`
 (`build_loom_dossier` orchestrator — probe caps once, resolve SEI binding via Track-3 `SeiResolver`, wire both
-providers). Two code-review panels run (silent-failure-hunter + python-code-reviewer ×2): fixed the
+providers). **Callable surface:** `wardline dossier <qualname>` (CLI) + a `dossier` MCP tool, both thin
+delegators to `build_loom_dossier` — **CLI≡MCP parity test asserts byte-identical envelopes** (the
+"identical by construction" tenet); `wardline mcp` gains `--filigree-url`. Filigree's entity-association
+contract verified against `~/filigree` source (`GET /api/entity-associations?entity_id=…` →
+`{"associations":[…]}`, rows carry entity-body-granular `content_hash_at_attach`). Two code-review panels run (silent-failure-hunter + python-code-reviewer ×2): fixed the
 false-green verdict, budget-marker honesty, two content-axis UNKNOWN→FRESH false-greens, one-sided-linkage
 masquerade, typed seams. **DoD green:** ≤2k token budget (tested incl. truncation + untrimmable-core paths) ·
 both freshness axes, SEI-keyed · honest-partial (no crash) · base stays **zero-dependency** · `make ci` green

@@ -21,11 +21,18 @@ from wardline.mcp.server import WardlineMCPServer
     "--clarion-url",
     "clarion_url",
     default=None,
-    help="Clarion taint-store URL: `scan` writes facts; `explain_taint` queries it.",
+    help="Clarion taint-store URL: `scan` writes facts; `explain_taint`/`dossier` query it.",
 )
-def mcp(root: Path, clarion_url: str | None) -> None:
+@click.option(
+    "--filigree-url",
+    "filigree_url",
+    default=None,
+    help="Filigree URL: `dossier` reads entity-associations (open work) from it.",
+)
+def mcp(root: Path, clarion_url: str | None, filigree_url: str | None) -> None:
     """Run the Wardline MCP server over stdio (JSON-RPC 2.0)."""
-    from wardline.core.config import resolve_clarion_url
+    from wardline.core.config import resolve_clarion_url, resolve_filigree_url
 
     clarion_url = resolve_clarion_url(clarion_url, root, None)
-    WardlineMCPServer(root=root, clarion_url=clarion_url).rpc.run_stdio()
+    filigree_url = resolve_filigree_url(filigree_url, root, None)
+    WardlineMCPServer(root=root, clarion_url=clarion_url, filigree_url=filigree_url).rpc.run_stdio()
