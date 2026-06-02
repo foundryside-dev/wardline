@@ -9,6 +9,7 @@ from pathlib import Path
 import click
 
 from wardline._version import __version__
+from wardline.cli.assure import assure
 from wardline.cli.dossier import dossier
 from wardline.cli.file_finding import file_finding
 from wardline.cli.findings import findings
@@ -35,6 +36,7 @@ cli.add_command(install)
 cli.add_command(dossier)
 cli.add_command(findings)
 cli.add_command(file_finding)
+cli.add_command(assure)
 
 
 @cli.command()
