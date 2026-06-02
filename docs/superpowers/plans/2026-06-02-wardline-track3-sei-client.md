@@ -520,6 +520,13 @@ git commit -m "feat(track3): ClarionClient SEI wire methods (resolve/resolve_sei
 
 ## Task 4: `SeiResolver` — capability gating + graceful degrade (T3.1/T3.2)
 
+> **Post-review note (as built):** the method named `is_orphaned` below was renamed to
+> `resolve_identity_status` during the code-review panel (an `is_`-prefixed method returning
+> a 3-valued `IdentityStatus`, not a bool, is a footgun) and made three-way explicit:
+> `alive:true`→ALIVE, `alive:false`→ORPHANED, anything else→UNAVAILABLE (never guess ORPHANED
+> from a malformed/`alive`-absent body — a convergent HIGH false-green finding). The code
+> blocks below reflect the original draft; the shipped code is the renamed/three-way form.
+
 **Files:**
 - Modify: `src/wardline/clarion/identity.py` (append `SeiResolver`)
 - Test: `tests/unit/clarion/test_sei_resolver.py`
