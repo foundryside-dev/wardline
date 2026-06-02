@@ -44,7 +44,7 @@ from wardline.core.taints import TaintState
 
 # Engine-inferred "could not prove" tiers — an entity whose declared posture is one
 # of these is undeclared/unprovable, never "clean".
-_UNKNOWN_TIERS: frozenset[str] = frozenset(
+UNKNOWN_TIERS: frozenset[str] = frozenset(
     {TaintState.UNKNOWN_RAW.value, TaintState.UNKNOWN_GUARDED.value, TaintState.UNKNOWN_ASSURED.value}
 )
 
@@ -53,7 +53,7 @@ _UNKNOWN_TIERS: frozenset[str] = frozenset(
 # "clean". UNANALYZED_RULE_IDS covers file/source-root under-scans; FUNCTION-SKIPPED
 # is the per-function recursion-limit skip (NOT in UNANALYZED_RULE_IDS by design,
 # since the function was reached — but its taint was never computed).
-_UNDER_SCAN_RULE_IDS: frozenset[str] = UNANALYZED_RULE_IDS | {"WLN-ENGINE-FUNCTION-SKIPPED"}
+UNDER_SCAN_RULE_IDS: frozenset[str] = UNANALYZED_RULE_IDS | {"WLN-ENGINE-FUNCTION-SKIPPED"}
 
 if TYPE_CHECKING:
     from wardline.core.run import ScanResult
@@ -477,17 +477,71 @@ def _build_identity(entity: Entity, binding: EntityBinding | None) -> IdentitySe
     )
 
 
+@dataclass(frozen=True, slots=True)
+class EntityTrustVerdict:
+    """The minimal per-entity trust verdict — verdict/tiers/under-scan reason only.
+
+    Deliberately smaller than :class:`TrustSection`: it carries no ``FindingRef``
+    list and no suppression count so it can be consumed cheaply by surfaces (e.g.
+    the ``assure`` coverage report) that need the verdict but not the full dossier
+    section. :func:`_build_trust` wraps this with the active/suppressed counts."""
+
+    verdict: str  # "defect" | "clean" | "unknown"
+    declared_tier: str | None
+    actual_tier: str | None
+    under_scan_reason: str | None
+
+
+def classify_entity_trust(result: ScanResult, context: AnalysisContext, qualname: str) -> EntityTrustVerdict:
+    """The single source of truth for one entity's trust verdict (defect/clean/unknown).
+
+    Reused by the dossier :class:`TrustSection` and by ``core/assure`` — identical by
+    construction.  The verdict is honest, never a false-green:
+
+    * ``"defect"`` — at least one ACTIVE (non-suppressed) DEFECT finding fires.
+    * ``"unknown"`` — engine under-scanned the entity (parse/recursion skip), or no
+      return taint was computed, or the declared tier is an UNKNOWN_* state (the
+      developer-freedom zone is not "clean").
+    * ``"clean"`` — declared posture that conforms, fully analysed, no active findings.
+    """
+    declared = context.project_return_taints.get(qualname)
+    actual = context.function_return_taints.get(qualname)
+    has_active = any(
+        f.qualname == qualname and f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE
+        for f in result.findings
+    )
+    # An engine under-scan FACT for THIS entity (parse error / recursion skip) means
+    # the body was never analysed — its silence is not a clean bill of health.
+    under_scan = next(
+        (f for f in result.findings if f.qualname == qualname and f.rule_id in UNDER_SCAN_RULE_IDS),
+        None,
+    )
+    declared_str = declared.value if declared is not None else None
+    if has_active:
+        verdict = "defect"
+    elif under_scan is not None or actual is None:
+        verdict = "unknown"
+    elif declared_str is None or declared_str in UNKNOWN_TIERS:
+        # undeclared / unprovable trust — the "developer-freedom zone", not "clean"
+        verdict = "unknown"
+    else:
+        verdict = "clean"
+    return EntityTrustVerdict(
+        verdict=verdict,
+        declared_tier=declared_str,
+        actual_tier=actual.value if actual is not None else None,
+        under_scan_reason=under_scan.message if under_scan is not None else None,
+    )
+
+
 def _build_trust(result: ScanResult, context: AnalysisContext, qualname: str) -> TrustSection:
     """Wardline's OWN posture, re-derived from the live scan → FRESH by construction.
 
-    The verdict is honest, never a false-green: ``"defect"`` if an active finding
-    fires; ``"unknown"`` if the engine under-scanned the entity (no return taint
-    computed — a parse/recursion skip) OR the entity is undeclared / its trust could
-    not be proven (declared tier is an UNKNOWN_* state); ``"clean"`` ONLY for a
-    declared posture that conforms. ``suppressed_findings`` surfaces accepted
+    Delegates the verdict/tier/under-scan logic to :func:`classify_entity_trust` (the
+    single source of truth) and wraps the result with the full finding lists required
+    by :class:`TrustSection`. ``suppressed_findings`` surfaces accepted
     (baselined/waived/judged) defects so a ``"clean"`` verdict never hides known debt."""
-    declared = context.project_return_taints.get(qualname)
-    actual = context.function_return_taints.get(qualname)
+    etv = classify_entity_trust(result, context, qualname)
     defects = [f for f in result.findings if f.qualname == qualname and f.kind is Kind.DEFECT]
     active = [
         FindingRef(
@@ -500,29 +554,14 @@ def _build_trust(result: ScanResult, context: AnalysisContext, qualname: str) ->
         if f.suppressed is SuppressionState.ACTIVE
     ]
     suppressed = sum(1 for f in defects if f.suppressed is not SuppressionState.ACTIVE)
-    # An engine under-scan FACT for THIS entity (parse error / recursion skip) means
-    # the body was never analysed — its silence is not a clean bill of health.
-    under_scan = next(
-        (f for f in result.findings if f.qualname == qualname and f.rule_id in _UNDER_SCAN_RULE_IDS),
-        None,
-    )
-    declared_str = declared.value if declared is not None else None
-    if active:
-        verdict = "defect"
-    elif under_scan is not None or actual is None:
-        verdict = "unknown"
-    elif declared_str is None or declared_str in _UNKNOWN_TIERS:
-        # undeclared / unprovable trust — the "developer-freedom zone", not "clean"
-        verdict = "unknown"
-    else:
-        verdict = "clean"
+    actual = context.function_return_taints.get(qualname)
     return TrustSection(
-        declared_return=declared_str,
+        declared_return=etv.declared_tier,
         actual_return=actual.value if actual is not None else None,
-        gate_verdict=verdict,
+        gate_verdict=etv.verdict,
         active_findings=active,
         suppressed_findings=suppressed,
-        unanalyzed_reason=under_scan.message if under_scan is not None else None,
+        unanalyzed_reason=etv.under_scan_reason,
     )
 
 
