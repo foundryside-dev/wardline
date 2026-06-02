@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Any
 from wardline._version import __version__
 from wardline.core import config as config_mod
 from wardline.core.assure import build_posture
+from wardline.core.attest import build_attestation, verify_attestation
+from wardline.core.attest_key import load_attest_key
 from wardline.core.baseline import generate_baseline
 from wardline.core.config_schema import WARDLINE_SCHEMA
 from wardline.core.descriptor import descriptor_to_yaml
@@ -279,6 +281,41 @@ def _assure(args: dict[str, Any], root: Path) -> dict[str, Any]:
     return posture.to_dict()
 
 
+def _attest(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, Any]:
+    """Build a SIGNED, reproducible evidence bundle for the project — identical to the
+    CLI `attest` by construction (both call ``build_attestation``). Path/config confined
+    under root. DEFAULTS to strict on a dirty tree (`allow_dirty=False`): an agent must
+    not silently attest uncommitted changes — core defaults the other way, so the MCP
+    boundary INVERTS it. A dirty refusal raises ``AttestError`` (a ``WardlineError``) →
+    the existing isError mapping, not a crash."""
+    resolved_root = _resolve_under_root(root, args["path"]) if args.get("path") else root
+    key = load_attest_key(resolved_root)
+    if key is None:
+        raise ToolError("no attest key — run `wardline install` to mint one (or set WARDLINE_ATTEST_KEY)")
+    allow_dirty = bool(args.get("allow_dirty", False))
+    return build_attestation(
+        resolved_root,
+        key,
+        config_path=_cfg(args, root),
+        confine_to_root=True,
+        clarion_client=clarion,
+        allow_dirty=allow_dirty,
+    )
+
+
+def _verify_attestation(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, Any]:
+    """Verify an attestation bundle's signature (offline, needs the project key) and
+    optionally re-derive it at the current tree (`reproduce=true`). Identical to the CLI
+    `attest --verify` by construction."""
+    bundle = _require(args, "bundle")
+    resolved_root = _resolve_under_root(root, args["path"]) if args.get("path") else root
+    key = load_attest_key(resolved_root)
+    if key is None:
+        raise ToolError("no attest key — run `wardline install` to mint one (or set WARDLINE_ATTEST_KEY)")
+    reproduce = bool(args.get("reproduce", False))
+    return verify_attestation(bundle, key, root=resolved_root, reproduce=reproduce, clarion_client=clarion)
+
+
 def _require(args: dict[str, Any], key: str) -> Any:
     """Mandatory tool argument. A missing/blank value is agent-actionable ("you must
     supply a reason/expiry") → ``ToolError`` → isError result, NOT a JSON-RPC fault."""
@@ -506,6 +543,42 @@ class WardlineMCPServer:
                     },
                 },
                 handler=lambda args, root: _assure(args, root),
+            )
+        )
+        self.add_tool(
+            Tool(
+                name="attest",
+                description="Build a SIGNED, reproducible evidence bundle (commit, ruleset hash, "
+                "trust-surface posture, boundaries) for the project. HMAC-signed with the "
+                "install-minted project key. Refuses a dirty working tree unless allow_dirty=true. "
+                "SEI-keyed when a Clarion store is configured.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "config": {"type": "string"},
+                        "allow_dirty": {"type": "boolean"},
+                    },
+                },
+                handler=lambda args, root: _attest(args, root, self._clarion_client()),
+            )
+        )
+        self.add_tool(
+            Tool(
+                name="verify_attestation",
+                description="Verify an attestation bundle's signature (offline, needs the project "
+                "key) and optionally its reproducibility (reproduce=true re-derives at the current "
+                "tree). Returns {signature_valid, reproduced, mismatches, note}.",
+                input_schema={
+                    "type": "object",
+                    "required": ["bundle"],
+                    "properties": {
+                        "bundle": {"type": "object"},
+                        "reproduce": {"type": "boolean"},
+                        "config": {"type": "string"},
+                    },
+                },
+                handler=lambda args, root: _verify_attestation(args, root, self._clarion_client()),
             )
         )
         self.add_tool(
