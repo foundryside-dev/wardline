@@ -19,8 +19,11 @@ METADATA = RuleMetadata(
     base_severity=Severity.WARN,
     kind=Kind.DEFECT,
     description="Untrusted data reaches a dynamic-code-execution sink (eval/exec/compile) in a trusted-tier function.",
-    examples_violation=("@trusted\ndef f(p):\n    src = read_raw(p)\n    return eval(src)",),
-    examples_clean=("@trusted\ndef f():\n    return eval('1 + 1')",),
+    examples_violation=(
+        "@external_boundary\ndef read_raw(p):\n    return p\n"
+        "@trusted(level='ASSURED')\ndef f(p):\n    eval(read_raw(p))",
+    ),
+    examples_clean=("@trusted(level='ASSURED')\ndef f():\n    return eval('1 + 1')",),
 )
 
 

@@ -3,14 +3,21 @@ from wardline.decorators import trusted
 
 
 @trusted(level="ASSURED")
-def maybe_none(flag):  # TP: value path + bare return -> None leaks from a trusted producer
+def maybe_none(flag) -> int:  # TP: -> int promises non-None, but a path returns None
     if flag:
         return 1
     return
 
 
 @trusted(level="ASSURED")
-def always_value(flag):  # clean: every path returns a value (no None leak)
+def declared_optional(flag) -> int | None:  # clean: nullable contract is declared
+    if flag:
+        return 1
+    return None
+
+
+@trusted(level="ASSURED")
+def always_value(flag) -> int:  # clean: every path returns a value
     if flag:
         return 1
     return 2

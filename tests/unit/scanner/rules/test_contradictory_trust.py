@@ -36,7 +36,7 @@ def test_two_distinct_markers_fire_at_error(tmp_path) -> None:
     findings = _run(ctx)
     assert [(f.rule_id, f.qualname) for f in findings] == [("PY-WL-110", "m.f")]
     assert findings[0].kind == Kind.DEFECT
-    assert findings[0].severity == Severity.ERROR  # declaration-gated, not modulated
+    assert findings[0].severity == Severity.WARN  # declaration-gated hygiene, not modulated
 
 
 def test_single_marker_does_not_fire(tmp_path) -> None:
@@ -66,6 +66,21 @@ def test_marker_plus_nontrust_decorator_does_not_fire(tmp_path) -> None:
         """,
     )
     assert [f for f in _run(ctx) if f.qualname == "m.g"] == []
+
+
+def test_two_same_markers_do_not_fire(tmp_path) -> None:
+    # Distinctness is by canonical name — two of the SAME marker is not contradictory.
+    ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+        @trusted
+        @trusted(level='ASSURED')
+        def f(p):
+            return p
+        """,
+    )
+    assert _run(ctx) == []
 
 
 def test_undecorated_does_not_fire(tmp_path) -> None:

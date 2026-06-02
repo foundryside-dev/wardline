@@ -6,17 +6,20 @@ deserialization / dynamic-exec / OS-command sink) inside a trusted-tier function
 These helpers find the sink calls in a function's own scope and resolve the taint of
 their arguments.
 
-**Argument-taint resolution is CONSERVATIVE (under-fire, never guess).** A rule reads
-the engine's RESOLVED state post-hoc, where only the FINAL per-variable taint map
-(`function_var_taints`) is available — it is flow-INSENSITIVE. So:
+**Argument-taint resolution is FLOW-INSENSITIVE.** A rule reads the engine's RESOLVED
+state post-hoc, where only the FINAL per-variable taint map (`function_var_taints`) is
+available. So:
   - ``ast.Name`` arg  → its final var taint, or skip if the name is unknown (a global /
     free / builtin name not in the var map);
   - same-module bare ``ast.Call`` arg (``sink(read_raw(p))``) → the callee's resolved
     return taint, if the callee resolves to a same-module entity; else skip;
   - anything else (literal, attribute, cross-module call, comprehension …) → skip.
-The known under-precision: a name reassigned from raw→trusted within one function reads
-its final (trusted) taint at the sink. This trades a rare false-negative/positive edge
-for FP-budget safety; the labeled corpus validates the ≤5% bar empirically.
+**Known limitation (it can both under- AND over-fire on reassignment):** the read is the
+name's FINAL taint, not its taint at the sink line. A name reassigned raw→trusted before
+the sink under-fires (a benign FN); a name reassigned trusted→raw *after* an earlier
+sink over-fires that earlier sink (a real FP). Both are bounded to multi-assignment
+shapes; the honest fix is flow-sensitive call-site taint in the engine (a follow-up). The
+labeled corpus tracks the realized FP rate; this is documented, not hidden.
 """
 
 from __future__ import annotations
@@ -26,7 +29,7 @@ from typing import TYPE_CHECKING
 
 from wardline.core.finding import Finding, Kind, Location, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
-from wardline.core.taints import TRUST_RANK, TaintState
+from wardline.core.taints import RAW_ZONE, TRUST_RANK, TaintState
 from wardline.scanner.rules.severity_model import modulate
 
 if TYPE_CHECKING:
@@ -35,16 +38,20 @@ if TYPE_CHECKING:
     from wardline.scanner.context import AnalysisContext
     from wardline.scanner.rules.metadata import RuleMetadata
 
-RAW_ZONE: frozenset[TaintState] = frozenset({TaintState.EXTERNAL_RAW, TaintState.UNKNOWN_RAW, TaintState.MIXED_RAW})
+__all__ = ["RAW_ZONE", "TaintedSinkRule", "dotted_name", "sink_calls", "worst_arg_taint"]
 
 
 def dotted_name(node: ast.expr) -> str | None:
-    """Reconstruct a dotted call name: ``eval`` (Name) / ``pickle.loads`` (Attribute)."""
+    """Reconstruct a dotted call name: ``eval`` (Name) / ``pickle.loads`` (Attribute).
+
+    Returns None when the receiver is not a pure Name/Attribute chain (e.g.
+    ``get_ctx().eval`` — a Call receiver), so a dynamic attribute access can never be
+    mistaken for a bare builtin sink like ``eval``."""
     if isinstance(node, ast.Name):
         return node.id
     if isinstance(node, ast.Attribute):
         base = dotted_name(node.value)
-        return f"{base}.{node.attr}" if base is not None else node.attr
+        return f"{base}.{node.attr}" if base is not None else None
     return None
 
 
@@ -109,6 +116,12 @@ class TaintedSinkRule:
     metadata: RuleMetadata
     SINKS: frozenset[str]
     sink_label: str
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        missing = [a for a in ("rule_id", "metadata", "SINKS", "sink_label") if not hasattr(cls, a)]
+        if missing:  # fail at import time, not at first check() — a config error in our own tree
+            raise TypeError(f"{cls.__name__} must define class attribute(s): {', '.join(missing)}")
 
     def __init__(self, base_severity: Severity | None = None) -> None:
         self.base_severity = base_severity or self.metadata.base_severity

@@ -1,10 +1,16 @@
 # src/wardline/scanner/rules/untrusted_to_command.py
 """PY-WL-108 — untrusted data reaches an OS-command sink.
 
-Passing untrusted data to ``os.system`` / ``os.popen`` / ``subprocess.*`` is OS command
-injection (CWE-78). Tier-modulated; fires only where trust is declared. (The presence
-of ``shell=True`` aggravates the risk but is not required to fire — any untrusted
-argument to these sinks in a trusted-tier function is reported.)
+Passing untrusted data to an **always-shell** OS-command API — ``os.system``,
+``os.popen``, ``subprocess.getoutput`` / ``getstatusoutput`` — is OS command injection
+(CWE-78): these take a shell *string*, so an untrusted argument is directly injectable.
+Tier-modulated; fires only where trust is declared.
+
+**Scope (FP-safe):** the ``subprocess.run`` / ``call`` / ``Popen`` / ``check_*`` family
+is intentionally NOT in the sink set — with the default ``shell=False`` an argv-LIST is
+safe (no shell), so firing on them floods false positives; only ``shell=True`` makes them
+injectable, and detecting that keyword reliably is deferred (a follow-up). Covering the
+always-shell APIs catches the unambiguous case without the argv-list FP.
 """
 
 from __future__ import annotations
@@ -17,12 +23,8 @@ _SINKS = frozenset(
     {
         "os.system",
         "os.popen",
-        "subprocess.run",
-        "subprocess.call",
-        "subprocess.check_call",
-        "subprocess.check_output",
-        "subprocess.Popen",
         "subprocess.getoutput",
+        "subprocess.getstatusoutput",
     }
 )
 
@@ -30,9 +32,12 @@ METADATA = RuleMetadata(
     rule_id="PY-WL-108",
     base_severity=Severity.WARN,
     kind=Kind.DEFECT,
-    description="Untrusted data reaches an OS-command sink (os.system/subprocess.*) in a trusted-tier function.",
-    examples_violation=("@trusted\ndef f(p):\n    cmd = read_raw(p)\n    os.system(cmd)",),
-    examples_clean=("@trusted\ndef f():\n    os.system('ls -la')",),
+    description="Untrusted data reaches an always-shell OS-command sink (os.system/os.popen/subprocess.getoutput).",
+    examples_violation=(
+        "@external_boundary\ndef read_raw(p):\n    return p\n"
+        "@trusted(level='ASSURED')\ndef f(p):\n    os.system(read_raw(p))",
+    ),
+    examples_clean=("@trusted(level='ASSURED')\ndef f():\n    os.system('ls -la')",),
 )
 
 

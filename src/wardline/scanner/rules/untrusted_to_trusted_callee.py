@@ -45,7 +45,11 @@ METADATA = RuleMetadata(
     base_severity=Severity.ERROR,
     kind=Kind.DEFECT,
     description="Untrusted data is passed as an argument to a trusted producer at a call site.",
-    examples_violation=("@trusted(level='ASSURED')\ndef store(x):\n    ...\ndef h(p):\n    store(read_raw(p))",),
+    examples_violation=(
+        "@external_boundary\ndef read_raw(p):\n    return p\n"
+        "@trusted(level='ASSURED')\ndef store(x):\n    return 1\n"
+        "def h(p):\n    store(read_raw(p))",
+    ),
     examples_clean=("def h(p):\n    store(validate(read_raw(p)))",),
 )
 

@@ -46,6 +46,12 @@ TRUST_RANK: MappingProxyType[TaintState, int] = MappingProxyType(
     }
 )
 
+# The "raw zone": the untrusted / unprovable / clash tiers. The single source of truth
+# for the rules' raw-tier gates (PY-WL-101/106/107/108/109) — keep it here so a new
+# raw-zone state cannot drift between rule modules. (MIXED_RAW is currently unreachable
+# per the F1 taint-combination invariant; its membership is inert but carried.)
+RAW_ZONE: frozenset[TaintState] = frozenset({TaintState.EXTERNAL_RAW, TaintState.UNKNOWN_RAW, TaintState.MIXED_RAW})
+
 
 # Non-trivial ``taint_join`` pairs, keys normalized to (min, max) by ``.value``.
 # Self-joins are identity; any pair touching MIXED_RAW yields MIXED_RAW; every

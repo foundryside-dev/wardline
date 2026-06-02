@@ -36,7 +36,7 @@ _MARKER_NAMES: frozenset[str] = frozenset(bt.canonical_name for bt in BUILTIN_BO
 
 METADATA = RuleMetadata(
     rule_id="PY-WL-110",
-    base_severity=Severity.ERROR,
+    base_severity=Severity.WARN,  # declaration hygiene, not a proven taint exploit (promote via wardline.yaml)
     kind=Kind.DEFECT,
     description=(
         "An entity carries two or more distinct trust markers (e.g. @trusted + "

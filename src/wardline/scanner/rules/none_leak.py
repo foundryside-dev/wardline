@@ -1,19 +1,21 @@
 # src/wardline/scanner/rules/none_leak.py
 """PY-WL-109 — None leaks from a trusted producer.
 
-Fires on an anchored trusted producer (declared return NOT in the raw zone) that has
-BOTH a value-bearing return AND a None-yielding return (a bare ``return`` or
-``return None``) in its own scope — an inconsistent contract: the function claims to
-produce trusted data but some path yields ``None``, which downstream trusted code does
-not expect (CWE-394 / a latent None-deref).
+Fires on an anchored trusted producer whose **return annotation promises a non-None
+type** yet a path yields ``None`` (a bare ``return`` or ``return None``) alongside a
+value-bearing return — a PROVABLE contract violation: the function declares ``-> T``
+(non-None) but leaks ``None`` (CWE-394 / a latent None-deref downstream).
 
-Declaration-gated (base WARN). Conservative to protect the FP budget:
-  - requires BOTH shapes (a pure ``return None`` void-ish helper has no value path → no
-    fire; an all-value function has no None path → no fire);
+Declaration-gated (base WARN). FP-guarded — the annotation is the load-bearing guard:
+  - **requires an explicit non-None return annotation** (``-> T``). A function with NO
+    annotation, or one declaring ``Optional[T]`` / ``T | None`` / ``-> None``, does NOT
+    fire — that is a deliberately-nullable (or unstated) contract, not a leak. This is
+    what keeps the rule off the single most common legitimate pattern (``Optional``
+    returns), per the FP-economics review;
+  - requires BOTH a value-bearing return AND a None-yielding return in scope;
   - **skips generators** (a bare ``return`` ends iteration — not a None value leak);
-  - skips the trust-RAISING shape (body less trusted than declared — that is
-    ``@trust_boundary``'s territory, policed by PY-WL-102), mirroring PY-WL-101's
-    delegation, so 109 polices ``@trusted``-style producers.
+  - skips the trust-RAISING shape (body less trusted than declared — ``@trust_boundary``'s
+    territory, policed by PY-WL-102), mirroring PY-WL-101's delegation.
 """
 
 from __future__ import annotations
@@ -23,14 +25,12 @@ from typing import TYPE_CHECKING
 
 from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
-from wardline.core.taints import TRUST_RANK, TaintState
+from wardline.core.taints import RAW_ZONE, TRUST_RANK
 from wardline.scanner.rules._ast_helpers import _own_statements
 from wardline.scanner.rules.metadata import RuleMetadata
 
 if TYPE_CHECKING:
     from wardline.scanner.context import AnalysisContext
-
-_RAW_ZONE: frozenset[TaintState] = frozenset({TaintState.EXTERNAL_RAW, TaintState.UNKNOWN_RAW, TaintState.MIXED_RAW})
 
 METADATA = RuleMetadata(
     rule_id="PY-WL-109",
@@ -40,9 +40,11 @@ METADATA = RuleMetadata(
         "A trusted producer has both a value-bearing return and a None-yielding return "
         "(bare return / return None) — None leaks from a function declaring trusted output."
     ),
-    examples_violation=("@trusted(level='ASSURED')\ndef f(flag):\n    if flag:\n        return g()\n    return",),
+    examples_violation=(
+        "@trusted(level='ASSURED')\ndef f(flag) -> int:\n    if flag:\n        return g()\n    return",
+    ),
     examples_clean=(
-        "@trusted(level='ASSURED')\ndef f(flag):\n    if flag:\n        return g()\n    raise LookupError",
+        "@trusted(level='ASSURED')\ndef f(flag) -> int | None:\n    if flag:\n        return g()\n    return None",
     ),
 )
 
@@ -50,6 +52,30 @@ METADATA = RuleMetadata(
 def _is_none_return(stmt: ast.Return) -> bool:
     """A bare ``return`` (value is None) or an explicit ``return None``."""
     return stmt.value is None or (isinstance(stmt.value, ast.Constant) and stmt.value.value is None)
+
+
+def _annotation_allows_none(ann: ast.expr) -> bool:
+    """True if a return annotation permits ``None``: bare ``None``, ``Optional[...]``,
+    or a ``... | None`` union (recursively)."""
+    if isinstance(ann, ast.Constant) and ann.value is None:
+        return True
+    if isinstance(ann, ast.Name) and ann.id == "None":
+        return True
+    if isinstance(ann, ast.Subscript):  # Optional[X] / typing.Optional[X]
+        base = ann.value
+        if (isinstance(base, ast.Name) and base.id == "Optional") or (
+            isinstance(base, ast.Attribute) and base.attr == "Optional"
+        ):
+            return True
+    if isinstance(ann, ast.BinOp) and isinstance(ann.op, ast.BitOr):  # X | None
+        return _annotation_allows_none(ann.left) or _annotation_allows_none(ann.right)
+    return False
+
+
+def _promises_non_none(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """True iff the function has an explicit return annotation that does NOT permit
+    None — the provable non-None contract 109 polices. No annotation → False."""
+    return node.returns is not None and not _annotation_allows_none(node.returns)
 
 
 def _is_generator(node: ast.AST) -> bool:
@@ -77,13 +103,15 @@ class NoneLeak:
             if prov is None or prov.source != "anchored":
                 continue
             declared = context.project_return_taints.get(qualname)
-            if declared is None or declared in _RAW_ZONE:
+            if declared is None or declared in RAW_ZONE:
                 continue  # trust-claim gate (same as PY-WL-101)
             body = context.project_taints.get(qualname)
             if body is not None and TRUST_RANK[body] > TRUST_RANK[declared]:
                 continue  # trust-raising shape -> PY-WL-102's territory, not 109's
             if _is_generator(entity.node):
                 continue
+            if not _promises_non_none(entity.node):
+                continue  # no explicit non-None contract -> not a provable leak (FP guard)
             has_value = has_none = False
             for stmt in _own_statements(entity.node):
                 if isinstance(stmt, ast.Return):

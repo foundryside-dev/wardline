@@ -22,6 +22,8 @@ _SINKS = frozenset(
         "marshal.load",
         "yaml.load",
         "yaml.load_all",
+        "yaml.unsafe_load",
+        "yaml.full_load",
     }
 )
 
@@ -30,8 +32,11 @@ METADATA = RuleMetadata(
     base_severity=Severity.WARN,
     kind=Kind.DEFECT,
     description="Untrusted data reaches a deserialization sink (pickle/marshal/yaml.load) in a trusted-tier function.",
-    examples_violation=("@trusted\ndef f(p):\n    b = read_raw(p)\n    return pickle.loads(b)",),
-    examples_clean=("@trusted\ndef f(p):\n    return pickle.loads(trusted_blob())",),
+    examples_violation=(
+        "@external_boundary\ndef read_raw(p):\n    return p\n"
+        "@trusted(level='ASSURED')\ndef f(p):\n    pickle.loads(read_raw(p))",
+    ),
+    examples_clean=("@trusted(level='ASSURED')\ndef f():\n    return pickle.loads(trusted_blob())",),
 )
 
 

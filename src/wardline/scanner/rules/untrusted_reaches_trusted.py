@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 
 from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
-from wardline.core.taints import TRUST_RANK, TaintState
+from wardline.core.taints import RAW_ZONE, TRUST_RANK
 from wardline.scanner.rules.metadata import RuleMetadata
 
 if TYPE_CHECKING:
@@ -45,14 +45,14 @@ if TYPE_CHECKING:
 # NONE). The firing is NOT unconditional: if the body itself is MIXED_RAW (the
 # realistic route to a MIXED_RAW actual return), the :86-87 body-less-trusted-than-
 # declared gate suppresses first and delegates to PY-WL-102, so 101 does not fire
-# there. NOTE the _RAW_ZONE set here is the
-# SUPPRESSION gate on the *declared* tier (the `declared in _RAW_ZONE: continue`
+# there. NOTE the RAW_ZONE set here is the
+# SUPPRESSION gate on the *declared* tier (the `declared in RAW_ZONE: continue`
 # below) — MIXED_RAW's membership in it is inert, because you never *declare*
 # MIXED_RAW; the firing is via the actual-return rank, not this set. The F5 guards
 # are what preserve the invariant that this asymmetry stays latent. See
 # docs/decisions/2026-05-31-wardline-taint-lattice-retain.md and
 # docs/concepts/taint-algebra.md.
-_RAW_ZONE: frozenset[TaintState] = frozenset({TaintState.EXTERNAL_RAW, TaintState.UNKNOWN_RAW, TaintState.MIXED_RAW})
+# (RAW_ZONE is imported from core.taints — the single source of truth for the raw tiers.)
 
 METADATA = RuleMetadata(
     rule_id="PY-WL-101",
@@ -82,7 +82,7 @@ class UntrustedReachesTrusted:
                 continue
             body = context.project_taints.get(qualname)
             declared = context.project_return_taints.get(qualname)
-            if declared is None or declared in _RAW_ZONE:
+            if declared is None or declared in RAW_ZONE:
                 continue  # trust-claim gate
             # Trust-RAISING transition (body less trusted than return) is
             # @trust_boundary's shape — covered by PY-WL-102, not PY-WL-101.
