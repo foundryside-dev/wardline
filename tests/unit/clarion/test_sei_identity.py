@@ -9,6 +9,7 @@ from wardline.clarion.identity import (
     EntityBinding,
     IdentityStatus,
     SeiCapability,
+    TaintStoreCapability,
     content_status,
 )
 
@@ -18,6 +19,7 @@ _CAPS_SEI_PRESENT = {
     "api_version": 1,
     "linkages": {"http": True},
     "sei": {"supported": True, "version": 1},
+    "taint_store": {"read_by_sei": True},
 }
 
 
@@ -42,6 +44,29 @@ def test_capability_fail_closed_on_garbage() -> None:
     assert SeiCapability.from_capabilities(None).supported is False
     assert SeiCapability.from_capabilities({"sei": "yes"}).supported is False  # type: ignore[arg-type]
     assert SeiCapability.from_capabilities({"sei": {"supported": True}}).version is None
+
+
+# --- T3.4: taint_store.read_by_sei is a DISTINCT capability ----------------
+# An older SEI-capable Clarion (sei.supported True) predates the by-sei route, so a
+# consumer MUST gate on read_by_sei, never infer it from sei.supported.
+
+
+def test_taint_store_capability_present_from_fixture() -> None:
+    cap = TaintStoreCapability.from_capabilities(_CAPS_SEI_PRESENT)
+    assert cap.read_by_sei is True
+
+
+def test_taint_store_capability_independent_of_sei_support() -> None:
+    # SEI supported but no taint_store block (an older SEI Clarion) -> read_by_sei False.
+    body = {"sei": {"supported": True, "version": 1}}
+    assert TaintStoreCapability.from_capabilities(body).read_by_sei is False
+
+
+def test_taint_store_capability_fail_closed_on_garbage() -> None:
+    assert TaintStoreCapability.from_capabilities(None).read_by_sei is False
+    assert TaintStoreCapability.from_capabilities({"taint_store": "yes"}).read_by_sei is False  # type: ignore[arg-type]
+    assert TaintStoreCapability.from_capabilities({"taint_store": {"read_by_sei": "true"}}).read_by_sei is False
+    assert TaintStoreCapability.from_capabilities({"taint_store": {}}).read_by_sei is False
 
 
 def test_binding_prefers_sei_when_present() -> None:

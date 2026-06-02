@@ -66,8 +66,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guard locks the fingerprint input set; the warm/cold byte-identical guarantee holds).
   Built against the spec'd wire contract (SEI standard §4 + Clarion ADR-038, pinned
   `/api/v1/identity/*` routes) and verified live against a real SEI-serving `clarion
-  serve`. The base package stays zero-dependency (the module is stdlib-only). The
-  locator→SEI fact re-key (T3.4) is gated on the coordinated suite SEI cutover.
+  serve`. The base package stays zero-dependency (the module is stdlib-only).
+- **Track 3 — rename-stable taint read-by-SEI (T3.4).** Consumes Clarion's additive
+  migration 0006 (a nullable `sei` column + `POST /api/wardline/taint-facts/by-sei`
+  route + discrete `taint_store.read_by_sei` capability). `TaintStoreCapability`
+  detects the route **gated separately from `sei.supported`** (an older SEI-capable
+  Clarion predates the route), fail-closed. `ClarionClient.batch_get_by_sei` reads
+  taint facts by their stable **opaque SEI** — the surface by which a fact written
+  under a former locator survives a rename — fail-soft like `batch_get` (outage/403 →
+  None; route-absent 404 → loud read-skew). The write path is unchanged: Clarion
+  **stamps each fact's SEI server-side** from its alive `sei_bindings` row, so facts
+  become SEI-tagged with no Wardline change. Verified live (write → resolve →
+  read-by-SEI round-trip + bogus-SEI honest miss) and at the unit level (the
+  deterministic rename model: by-new-locator misses, by-SEI hits). There is
+  **no in-repo serve consumer** — by-SEI is the cross-tool rename-stable read surface
+  for Track 5/legis and dossier-over-time (an explain fast-path consumer would be dead
+  code: a renamed entity's fact is anchored to its old `source_file_path`, so a qualname
+  change implies a content/path change and the fact reads stale). Base stays zero-dep.
 - **Track 2 — extensible trust grammar.** The three trust decorators and four
   rules are no longer hardcoded: a project can declare custom **boundary types**
   (a trust transition + its L1 seed) and **rules** and register them via

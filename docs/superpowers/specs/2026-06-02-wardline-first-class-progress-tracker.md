@@ -19,7 +19,25 @@ columns as work lands.
 
 ## Current position (update this line)
 
-**As of 2026-06-02 (latest):** **TRACK 4 (dossier assembler) COMPLETE — T4.1 + T4.2 + T4.3 done & panel-reviewed**,
+**As of 2026-06-02 (latest):** **TRACK 3 NOW COMPLETE — T3.4 (rename-stable taint read-by-SEI) done & panel-reviewed**,
+on branch `feat/track3-sei-client` (nothing pushed). Clarion landed the enabling change **additively** (its
+commit `caa2665`, migration 0006: nullable `sei` column on `wardline_taint_facts` + `POST
+/api/wardline/taint-facts/by-sei` route + discrete `taint_store.read_by_sei` capability) — so the original
+"re-key in a single hard cutover" mechanism collapsed to a property (**a fact survives a rename**) achievable
+with **no PK re-key, no backfill, no suite freeze**. Wardline's reciprocal half delivered: `TaintStoreCapability`
+(detects the route, **gated separately from `sei.supported`** — an older SEI Clarion lacks it, fail-closed);
+`ClarionClient.batch_get_by_sei` + `TaintFactBySeiView` (read facts by their **opaque** stable SEI, fail-soft like
+`batch_get`); writes unchanged (Clarion stamps each fact's SEI server-side). **No in-repo serve consumer** — by-SEI
+is the cross-tool rename-stable read surface for Track 5/legis + dossier-over-time; an explain fast-path consumer
+would be **dead code** (a renamed entity's fact stays anchored to its old `source_file_path` ⇒ stale ⇒ serve-fresh
+never fires), so it was deliberately not built. Rename-survival proven as a **split oracle**: Wardline unit test
+(by-new-locator misses, by-SEI hits) + live `clarion_e2e` (write → resolve → read-by-SEI round-trip + bogus-SEI
+honest miss) + Clarion's own binding-flip oracle. **`make ci` green** (1235 tests; ruff/format/mypy clean; cov
+96%, `clarion/identity.py` 100% + new by-sei method 100%; dogfood exit 0); **4 live `clarion_e2e` PASS**. Filigree
+`wardline-51a8408618`. **Next + ONLY remaining Wardline track: Track 5** (trust-vocab convergence + legis CI) —
+the legis gate is **OPEN** (legis built through Sprint 6 with a live `/wardline/scan-results` intake).
+
+**Prior position (retained for context):** **TRACK 4 (dossier assembler) COMPLETE — T4.1 + T4.2 + T4.3 done & panel-reviewed**,
 on branch `feat/track3-sei-client` (Track 4 stacked on Track 3 + T1.5, NOT off `loom-step-up` as the
 original prompt said — building on `loom-step-up` would have lost Track 3's two-axis SEI types
 (`clarion/identity.py`: `IdentityStatus`×`ContentStatus`), which the dossier envelope KEYS ON; the prompt
@@ -170,28 +188,35 @@ spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 **DoD:** agent defines a new boundary+rule end-to-end (acceptance fixture, litmus = zero edits to `_match`/`_ALL_RULE_CLASSES`/`_ENTRIES`) · unprovable→UNKNOWN+FACT test · the 4 builtins re-expressed produce **byte-identical findings** to today (oracle held).
 **Note:** the hinge between "best analyzer" and "Loom citizen". Design spec: `2026-06-02-wardline-track2-extensible-trust-grammar-design.md`; plan: `…/plans/2026-06-02-wardline-track2-extensible-trust-grammar.md`. T1.5 (rule breadth) lands here, on the grammar. **Blockers baked into the plan:** released `core.registry` contract frozen (Clarion-consumed); summary-cache fingerprint must carry grammar identity (builtin = legacy string); `vocabulary.yaml`/`descriptor.py` unchanged (REGISTRY frozen).
 
-### Track 3 — SEI-client  ·  groundwork: none · wiring: ⛔ Clarion SEI  ·  **◐ groundwork done (T3.1–T3.3); T3.4 ⛔ Clarion SEI**
+### Track 3 — SEI-client  ·  groundwork: none · wiring: SEI gate OPEN  ·  **☑ done (T3.1–T3.4, branch `feat/track3-sei-client`)**
 
 | Unit | Work | Gate | Status |
 |---|---|---|---|
 | T3.1 | SEI-client abstraction (carry SEI as explain/dossier handle, opaque) | none | ☑ |
 | T3.2 | Capability detection + graceful degrade (no `sei` cap → honest fallback) | none | ☑ |
 | T3.3 | Fingerprint-isolation test (SEI must NOT enter finding fingerprints) | none | ☑ |
-| T3.4 | Re-key taint facts locator→SEI in the hard cutover (idempotent/resumable) | ⛔ Clarion **SEI-keyed taint-fact store** (not the SEI authority — that ships) + coordinated suite cutover | ☐ |
+| T3.4 | Rename-stable taint **read-by-SEI** (consume Clarion's additive SEI lookup key) | ~~⛔ Clarion SEI-keyed taint store~~ **OPEN — shipped additively (Clarion migration 0006)** | ☑ |
 
-> **T3.4 gate re-assessed (2026-06-02, cross-repo verified).** Clarion's SEI *authority* is
-> done and serving live (resolve/resolve_sei/lineage/_capabilities, oracle-passing) — the
-> SEI client (T3.1–T3.3) is proven against it. T3.4 is NOT blocked on "Clarion ships SEI";
-> it is blocked on two specific, narrow things: (1) Clarion's `wardline_taint_facts` store is
-> still **locator(`entity_id`)-keyed** — a re-key needs an SEI-keyed target that does not yet
-> exist (un-scoped in Clarion's plan); (2) the **§7.1 single hard cutover** is a suite-owned
-> coordinated release (Filigree's backfill is not built; the cutover needs a freeze window).
-> **Recommended next step toward T3.4 (suite-level):** file a Clarion ask for an SEI-keyed
-> taint-fact store (or an additive SEI annotation on the existing fact), then sequence the
-> coordinated backfill. Wardline's half (resolve locator→SEI via the now-built `SeiResolver`,
-> idempotent/resumable, ORPHAN-surfacing) is thin and ready the moment that target exists.
+> **T3.4 re-scoped + closed (2026-06-02, cross-repo verified).** The original framing
+> ("re-key the store in a single hard cutover") was a *mechanism*; the requirement is a
+> *property* — **a fact survives a rename**. Clarion landed that property **additively**
+> (migration 0006: a nullable `sei` column on `wardline_taint_facts` + a `POST
+> /api/wardline/taint-facts/by-sei` route + a discrete `taint_store.read_by_sei`
+> capability), so no primary-key re-key, no backfill, and **no coordinated suite freeze**
+> is required — the locator-keyed store stays as-is and gains a second, rename-stable
+> lookup key. Wardline's reciprocal half (this commit): `TaintStoreCapability` (gated
+> separately from `sei.supported`), `ClarionClient.batch_get_by_sei`, and the rename
+> oracle (live + unit). Writes are unchanged — Clarion stamps each fact's SEI server-side.
+> **There is no in-repo serve consumer** of by-SEI: it is the cross-tool rename-stable
+> read surface for Track 5/legis and dossier-over-time. An explain fast-path consumer
+> would be **dead code** (a renamed entity's fact is anchored to its old
+> `source_file_path`, so a qualname change implies a content/path change → the fact reads
+> stale → the serve-fresh path never fires); it was deliberately not built rather than
+> manufactured to look used. The DoD's rename-survival line is met as a split oracle:
+> Wardline's unit test (by-new-locator misses, by-SEI hits) + Clarion's own
+> binding-flip oracle (Wardline cannot flip Clarion's `sei_bindings` from the client).
 
-**DoD:** fingerprint byte-identical across SEI introduction · graceful-degrade test · opaque round-trip · (post-cutover) a fact survives a rename.
+**DoD:** fingerprint byte-identical across SEI introduction ✅ · graceful-degrade test ✅ · opaque round-trip ✅ · a fact survives a rename ✅ (split: Wardline unit + Clarion oracle).
 
 ### Track 4 — Dossier assembler  ·  groundwork: none · wiring: SEI gate OPEN  ·  **☑ done (T4.1–T4.3, branch `feat/track3-sei-client`)**
 
@@ -217,7 +242,7 @@ spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 
 - **Autonomous critical path:** T1 → T2 (→ T1.5 on the grammar). **Start here.**
 - **Parallel autonomous groundwork:** T3.1–T3.3 and T4.1–T4.2 (can run alongside T1→T2).
-- **Gated finishes:** T3.4 (Clarion SEI) · T4.3 (Clarion SEI + HTTP linkages) · T5 (legis).
+- **Gated finishes:** ~~T3.4 (Clarion SEI)~~ **done** · ~~T4.3 (Clarion SEI + HTTP linkages)~~ **done** · T5 (legis).
 
 **Program exit (first-class done):** all track DoDs green + Wardline's goal-state-checklist items + a dogfood proof of a one-call mastery read that survives a rename.
 
@@ -229,14 +254,16 @@ spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 |---|---|---|
 | **SEI lock** | **Lock-ready in substance (2026-06-02, cross-repo verified).** All four reported; ADR-038 **accepted**; the §8 conformance oracle **exists and passes all six scenarios in Clarion CI** (`clarion/crates/clarion-storage/tests/sei_conformance_oracle.rs`). Not yet *formally* declared locked; remaining = other subsystems wiring the oracle into their own harnesses + the formal flip. | suite (Clarion authority) |
 | **Clarion SEI authority** *(re-assessed)* | **IMPLEMENTED + oracle-passing + serving live** (sei_bindings/sei_lineage migrations, deterministic matcher §3, prior-index retention §3.1, all `/api/v1/identity/*` routes, REQ-F-02 reserved-prefix rejection, `_capabilities.sei`). In Clarion `[Unreleased]` (WS1 merged, not tagged). Wardline's T3.1–T3.3 client verified against it live. | Clarion |
-| **Clarion SEI-keyed taint-fact store** | ⛔ **NOT built** — `wardline_taint_facts` is still `entity_id`(locator)-keyed; there is no SEI-keyed taint-fact store. **This is the real blocker for Wardline T3.4** (a re-key needs an SEI-keyed target). Not yet scoped in Clarion's plan. | Clarion |
+| **Clarion SEI-keyed taint-fact store** | **SHIPPED additively** (Clarion `caa2665`, migration 0006, verified 2026-06-02) — `wardline_taint_facts` keeps its `entity_id` PK and gains a nullable `sei` column + partial index, a `POST /api/wardline/taint-facts/by-sei` route, and a discrete `taint_store.read_by_sei` capability. Writes stamp the SEI server-side from the alive `sei_bindings` row. No PK re-key, no backfill, no suite freeze. **Unblocked + closed Wardline T3.4.** | Clarion |
 | **Clarion HTTP linkages** | **SHIPPED** (verified 2026-06-02) — `/api/v1/entities/{id}/callers|callees` (+ batch) live over the HTTP read API (`clarion-cli/src/http_read.rs`); `_capabilities.linkages.http`. Wired live into the Track 4 dossier. | Clarion |
 | **Clarion prior-index retention** | **BUILT** — migration `0004_sei_prior_index` (the side table the matcher diffs against). | Clarion |
 | **legis runtime** | **IMPLEMENTED through Sprint 6** (verified in source 2026-06-02; `/home/john/legis`, branch `sprint-6-suite-combinations`): the 2×2 enforcement engine, the API incl. **`POST /wardline/scan-results` → 2×2 cell**, SEI-consumer **passing the §8 oracle** (`tests/conformance/test_sei_oracle.py`), SEI-keyed Filigree sign-off, and the git-rename surface. **NOT design-ready — built. The legis gate for Track 5 is OPEN.** | legis |
 | **Filigree SEI conformance** | ⛔ **the real SEI-lock laggard** — Filigree is `release/2.3.0` with **no SEI in source**; its locator→SEI backfill + oracle pass have not happened. | Filigree |
 
-The Wardline halves of the gated tracks (T3.4, T4.3, T5) are **thin and ready** — they
-become wiring steps, not builds, the moment the sibling gate opens.
+T3.4 and T4.3 are now **done** (their Clarion gates opened and Wardline's halves landed).
+The remaining gated track is **T5 (legis)** — and the legis gate is **OPEN** (legis is
+built through Sprint 6 with a live `/wardline/scan-results` intake), so T5 is now a wiring
+step, not a build.
 
 ---
 

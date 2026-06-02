@@ -67,6 +67,30 @@ class SeiCapability:
 
 
 @dataclass(frozen=True, slots=True)
+class TaintStoreCapability:
+    """Whether a Clarion instance serves the T3.4 read-by-SEI taint route
+    (from GET /api/v1/_capabilities → ``taint_store.read_by_sei``).
+
+    DISTINCT from :class:`SeiCapability`: an older SEI-capable Clarion (``sei.supported``
+    True) predates migration 0006's ``POST /api/wardline/taint-facts/by-sei`` route, so a
+    consumer MUST gate on this flag, never infer the route from ``sei.supported`` (Clarion's
+    own capability comment makes the same point)."""
+
+    read_by_sei: bool
+
+    @classmethod
+    def from_capabilities(cls, body: Mapping[str, Any] | None) -> TaintStoreCapability:
+        """Parse the ``_capabilities`` body, fail-closed. Absent / non-mapping /
+        ``read_by_sei`` not exactly True → unsupported (honest degrade); never raises."""
+        if not isinstance(body, Mapping):
+            return cls(read_by_sei=False)
+        ts = body.get("taint_store")
+        if not isinstance(ts, Mapping) or ts.get("read_by_sei") is not True:
+            return cls(read_by_sei=False)
+        return cls(read_by_sei=True)
+
+
+@dataclass(frozen=True, slots=True)
 class EntityBinding:
     """A cross-tool binding handle for one entity, carrying both status axes.
 

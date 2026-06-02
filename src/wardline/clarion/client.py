@@ -97,6 +97,27 @@ class TaintFactView:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class TaintFactBySeiView:
+    """One row of the T3.4 read-by-SEI response. Keyed on the opaque SEI (not a
+    qualname): the rename-stable retrieval surface. The SEI is carried verbatim,
+    never parsed."""
+
+    sei: str
+    exists: bool
+    wardline_json: dict[str, Any] | None = None
+    current_content_hash: str | None = None
+
+    @classmethod
+    def from_wire(cls, obj: Mapping[str, Any]) -> TaintFactBySeiView:
+        return cls(
+            sei=str(obj.get("sei", "")),
+            exists=bool(obj.get("exists", False)),
+            wardline_json=obj.get("wardline_json"),  # field-absent → None
+            current_content_hash=obj.get("current_content_hash"),  # field-absent → None
+        )
+
+
 def _chunks(seq: Sequence[Any], size: int) -> Iterator[Sequence[Any]]:
     for i in range(0, len(seq), size):
         yield seq[i : i + size]
@@ -223,6 +244,32 @@ class ClarionClient:
             if not 200 <= resp.status < 300 or not isinstance(parsed, list):
                 raise ClarionError(f"Clarion rejected batch-get ({resp.status}; code={_error_code(resp.body)})")
             views.extend(TaintFactView.from_wire(o) for o in parsed if isinstance(o, dict))
+        return views
+
+    def batch_get_by_sei(self, seis: list[str]) -> list[TaintFactBySeiView] | None:
+        """Read taint facts by their stable opaque SEI (T3.4, migration 0006). The
+        rename-survival surface: a fact written under a former locator is retrievable
+        here after a rename. Fail-soft like ``batch_get`` — outage/5xx or 403
+        PROJECT_MISMATCH → None; a 404 (an older SEI Clarion lacks the route) or other
+        non-2xx → loud ClarionError (read-skew). SEIs are sent verbatim, never parsed.
+
+        Gate on :meth:`wardline.clarion.identity.TaintStoreCapability` before calling —
+        the route is absent on a pre-0006 Clarion."""
+        views: list[TaintFactBySeiView] = []
+        for chunk in _chunks(seis, self._batch_max):
+            payload = {"project": self._project, "seis": list(chunk)}
+            resp = self._send("POST", "/api/wardline/taint-facts/by-sei", payload)
+            if resp is None:
+                return None
+            if resp.status == 403:
+                return None  # PROJECT_MISMATCH — soft
+            try:
+                parsed = json.loads(resp.body) if resp.body else []
+            except json.JSONDecodeError:
+                parsed = []
+            if not 200 <= resp.status < 300 or not isinstance(parsed, list):
+                raise ClarionError(f"Clarion rejected by-sei ({resp.status}; code={_error_code(resp.body)})")
+            views.extend(TaintFactBySeiView.from_wire(o) for o in parsed if isinstance(o, dict))
         return views
 
     # --- SEI identity wire (Track 3 T3.1) ------------------------------------
