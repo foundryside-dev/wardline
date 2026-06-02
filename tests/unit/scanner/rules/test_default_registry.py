@@ -25,7 +25,18 @@ def _analyze(tmp_path: Path, files: dict[str, str]):
 def test_default_registry_has_all_builtin_rules() -> None:
     reg = build_default_registry(WardlineConfig())
     ids = {r.rule_id for r in reg.rules}
-    assert ids == {"PY-WL-101", "PY-WL-102", "PY-WL-103", "PY-WL-104", "PY-WL-109", "PY-WL-110"}
+    assert ids == {
+        "PY-WL-101",
+        "PY-WL-102",
+        "PY-WL-103",
+        "PY-WL-104",
+        "PY-WL-105",
+        "PY-WL-106",
+        "PY-WL-107",
+        "PY-WL-108",
+        "PY-WL-109",
+        "PY-WL-110",
+    }
 
 
 def test_rules_enable_filters() -> None:

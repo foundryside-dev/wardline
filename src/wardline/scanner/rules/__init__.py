@@ -15,6 +15,10 @@ from wardline.scanner.rules.contradictory_trust import ContradictoryTrust
 from wardline.scanner.rules.none_leak import NoneLeak
 from wardline.scanner.rules.silent_exception import SilentException
 from wardline.scanner.rules.untrusted_reaches_trusted import UntrustedReachesTrusted
+from wardline.scanner.rules.untrusted_to_command import UntrustedToCommand
+from wardline.scanner.rules.untrusted_to_deserialization import UntrustedToDeserialization
+from wardline.scanner.rules.untrusted_to_exec import UntrustedToExec
+from wardline.scanner.rules.untrusted_to_trusted_callee import UntrustedReachesTrustedCallee
 
 if TYPE_CHECKING:
     from wardline.core.config import WardlineConfig
@@ -28,6 +32,10 @@ _ALL_RULE_CLASSES = (
     SilentException,
     ContradictoryTrust,
     NoneLeak,
+    UntrustedReachesTrustedCallee,
+    UntrustedToDeserialization,
+    UntrustedToExec,
+    UntrustedToCommand,
 )
 
 # Public alias: the builtin rule set the default grammar (Track 2) preloads.

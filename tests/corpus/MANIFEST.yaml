@@ -11,6 +11,14 @@ fixtures:
     - {rule_id: PY-WL-110, qualname: "contradictory.conflicting", label: TRUE_POSITIVE, note: "@trusted + @external_boundary — two distinct trust markers"}
   none_leak.py:
     - {rule_id: PY-WL-109, qualname: "none_leak.maybe_none", label: TRUE_POSITIVE, note: "value path + bare return — None leaks from a trusted producer"}
+  deser_sink.py:
+    - {rule_id: PY-WL-106, qualname: "deser_sink.loads_untrusted", label: TRUE_POSITIVE, note: "EXTERNAL_RAW reaches pickle.loads in a trusted-tier fn"}
+  exec_sink.py:
+    - {rule_id: PY-WL-107, qualname: "exec_sink.evals_untrusted", label: TRUE_POSITIVE, note: "EXTERNAL_RAW reaches eval() in a trusted-tier fn"}
+  command_sink.py:
+    - {rule_id: PY-WL-108, qualname: "command_sink.runs_untrusted", label: TRUE_POSITIVE, note: "EXTERNAL_RAW reaches os.system in a trusted-tier fn"}
+  trusted_callee.py:
+    - {rule_id: PY-WL-105, qualname: "trusted_callee.handler", label: TRUE_POSITIVE, note: "EXTERNAL_RAW passed to the trusted callee store()"}
   aliased_stdlib.py:
     - {rule_id: PY-WL-101, qualname: "aliased_stdlib.aliased_sink", label: TRUE_POSITIVE, note: "aliased json.loads returns GUARDED < declared ASSURED"}
     - {rule_id: PY-WL-101, qualname: "aliased_stdlib.indirect_return", label: TRUE_POSITIVE, note: "raw flows through a local var (single-hop indirection)"}
