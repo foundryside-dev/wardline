@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `wardline assure` CLI and MCP `assure` tool: trust-surface COVERAGE posture — how many
+  declared trust boundaries (`@external_boundary` / `@trust_boundary` / `@trusted`) the
+  engine reached a definite verdict on vs. how many are honestly unknown (`unknown` list),
+  plus a `waiver_debt` rollup (days-to-expiry per configured waiver, lapsed entries
+  surfaced not dropped). Zero-config — reads what every scan already computes.
 - `file_finding` (MCP tool + `wardline file-finding` CLI): file ONE finding by fingerprint
   into a tracked Filigree issue, returning its id (idempotent, fail-soft). Scan emission now
   sets `mark_unseen=True` (non-empty scans) so a fixed finding enters Filigree's
