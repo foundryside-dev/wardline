@@ -127,19 +127,33 @@ def _read_level(
     return default
 
 
+def _seed_identity(seed: object) -> str:
+    """A stable identity string for a boundary type's seed callable.
+
+    For a Python function/lambda, keys on the bytecode + constants
+    (``__code__.co_code`` + ``co_consts``) — so two DISTINCT lambda bodies that share
+    ``__qualname__ == "<lambda>"`` get DISTINCT identities (closing the cache
+    cross-contamination false-green: two grammars differing only in a lambda seed
+    body must not share cached summaries). For a non-function callable (no
+    ``__code__``), falls back to ``__qualname__`` / ``repr``. This only ever
+    OVER-invalidates the summary cache (a changed seed body → a different identity →
+    a cold re-scan), never wrongly reuses — strictly safe."""
+    code = getattr(seed, "__code__", None)
+    if code is not None:
+        return f"{code.co_code.hex()}|{code.co_consts!r}"
+    return str(getattr(seed, "__qualname__", repr(seed)))
+
+
 def _grammar_digest(boundary_types: tuple[BoundaryType, ...]) -> str:
     """A stable digest over a grammar's boundary types — its declaration identity.
 
     Bound into the provider fingerprint so two DIFFERENT loaded grammars cannot
     share cached module summaries (a false-green correctness bug — design spec §6).
-    Order-sensitive. Seed identity is the seed callable's ``__qualname__``: two
-    grammars differing only in a seed function's *body* but sharing a qualname is an
-    accepted, vanishingly-rare collision (same caveat as descriptor.py's ``__name__``
-    note); name/prefix/group/level-arg-schema changes always change the digest.
+    Order-sensitive over (name, prefix, group, seed identity, level-arg schema).
     """
     h = hashlib.sha256()
     for bt in boundary_types:
-        parts = [bt.canonical_name, bt.module_prefix, str(bt.group), getattr(bt.seed, "__qualname__", "?")]
+        parts = [bt.canonical_name, bt.module_prefix, str(bt.group), _seed_identity(bt.seed)]
         for la in bt.level_args:
             allowed = ",".join(sorted(t.value for t in la.allowed))
             default = la.default.value if la.default is not None else ""

@@ -131,3 +131,31 @@ def test_fingerprint_custom_grammar_is_distinct_and_stable() -> None:
     builtin_fp = DecoratorTaintSourceProvider().fingerprint()
     assert p1.fingerprint() != builtin_fp  # distinct from builtins
     assert p1.fingerprint() == p2.fingerprint()  # stable across equal grammars
+
+
+def test_fingerprint_distinguishes_distinct_lambda_seed_bodies() -> None:
+    # Cache cross-contamination guard: two boundary types identical in name/prefix/
+    # group/levels but with DIFFERENT lambda seed bodies (both __qualname__ ==
+    # "<lambda>") must produce DIFFERENT fingerprints, or a persistent SummaryCache
+    # could serve grammar A's summaries to grammar B.
+    args = (LevelArg("to_level", frozenset({TaintState.GUARDED, TaintState.ASSURED}), None),)
+    seed_a = lambda lv: FunctionTaint(lv["to_level"], lv["to_level"])  # noqa: E731
+    seed_b = lambda lv: FunctionTaint(TaintState.EXTERNAL_RAW, lv["to_level"])  # noqa: E731
+    bt_a = BoundaryType("s", "p.q", 1, args, seed_a, builtin=False)
+    bt_b = BoundaryType("s", "p.q", 1, args, seed_b, builtin=False)
+    fp_a = DecoratorTaintSourceProvider(boundary_types=(bt_a,)).fingerprint()
+    fp_b = DecoratorTaintSourceProvider(boundary_types=(bt_b,)).fingerprint()
+    assert fp_a != fp_b
+
+
+def test_fingerprint_handles_non_function_seed_callable() -> None:
+    # A seed need not be a function/lambda — a callable object (no __code__) must
+    # still produce a stable fingerprint via the __qualname__/repr fallback.
+    class _Seed:
+        def __call__(self, lv):  # noqa: ANN001, ANN204
+            return FunctionTaint(lv["to_level"], lv["to_level"])
+
+    args = (LevelArg("to_level", frozenset({TaintState.GUARDED}), None),)
+    bt = BoundaryType("s", "p.q", 1, args, _Seed(), builtin=False)
+    fp = DecoratorTaintSourceProvider(boundary_types=(bt,)).fingerprint()
+    assert isinstance(fp, str) and fp.startswith("decorator-vocab:")
