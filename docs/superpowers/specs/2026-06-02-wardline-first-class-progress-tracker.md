@@ -119,7 +119,19 @@ spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 | T3.1 | SEI-client abstraction (carry SEI as explain/dossier handle, opaque) | none | ☑ |
 | T3.2 | Capability detection + graceful degrade (no `sei` cap → honest fallback) | none | ☑ |
 | T3.3 | Fingerprint-isolation test (SEI must NOT enter finding fingerprints) | none | ☑ |
-| T3.4 | Re-key taint facts locator→SEI in the hard cutover (idempotent/resumable) | ⛔ Clarion SEI | ☐ |
+| T3.4 | Re-key taint facts locator→SEI in the hard cutover (idempotent/resumable) | ⛔ Clarion **SEI-keyed taint-fact store** (not the SEI authority — that ships) + coordinated suite cutover | ☐ |
+
+> **T3.4 gate re-assessed (2026-06-02, cross-repo verified).** Clarion's SEI *authority* is
+> done and serving live (resolve/resolve_sei/lineage/_capabilities, oracle-passing) — the
+> SEI client (T3.1–T3.3) is proven against it. T3.4 is NOT blocked on "Clarion ships SEI";
+> it is blocked on two specific, narrow things: (1) Clarion's `wardline_taint_facts` store is
+> still **locator(`entity_id`)-keyed** — a re-key needs an SEI-keyed target that does not yet
+> exist (un-scoped in Clarion's plan); (2) the **§7.1 single hard cutover** is a suite-owned
+> coordinated release (Filigree's backfill is not built; the cutover needs a freeze window).
+> **Recommended next step toward T3.4 (suite-level):** file a Clarion ask for an SEI-keyed
+> taint-fact store (or an additive SEI annotation on the existing fact), then sequence the
+> coordinated backfill. Wardline's half (resolve locator→SEI via the now-built `SeiResolver`,
+> idempotent/resumable, ORPHAN-surfacing) is thin and ready the moment that target exists.
 
 **DoD:** fingerprint byte-identical across SEI introduction · graceful-degrade test · opaque round-trip · (post-cutover) a fact survives a rename.
 
@@ -157,7 +169,9 @@ spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 
 | Gate | Current state (2026-06-02) | Owner |
 |---|---|---|
-| **SEI lock** | REQ-C-01/C-02 **RESOLVED** (Clarion ADR-038); all four subsystems reported. Lock waits ONLY on the §8 conformance oracle (+ ADR-038 authored). | suite (Clarion authority) |
+| **SEI lock** | **Lock-ready in substance (2026-06-02, cross-repo verified).** All four reported; ADR-038 **accepted**; the §8 conformance oracle **exists and passes all six scenarios in Clarion CI** (`clarion/crates/clarion-storage/tests/sei_conformance_oracle.rs`). Not yet *formally* declared locked; remaining = other subsystems wiring the oracle into their own harnesses + the formal flip. | suite (Clarion authority) |
+| **Clarion SEI authority** *(re-assessed)* | **IMPLEMENTED + oracle-passing + serving live** (sei_bindings/sei_lineage migrations, deterministic matcher §3, prior-index retention §3.1, all `/api/v1/identity/*` routes, REQ-F-02 reserved-prefix rejection, `_capabilities.sei`). In Clarion `[Unreleased]` (WS1 merged, not tagged). Wardline's T3.1–T3.3 client verified against it live. | Clarion |
+| **Clarion SEI-keyed taint-fact store** | ⛔ **NOT built** — `wardline_taint_facts` is still `entity_id`(locator)-keyed; there is no SEI-keyed taint-fact store. **This is the real blocker for Wardline T3.4** (a re-key needs an SEI-keyed target). Not yet scoped in Clarion's plan. | Clarion |
 | **Clarion HTTP linkages** | ☐ not shipped — Clarion P0, autonomous (their roadmap M4) | Clarion |
 | **Clarion prior-index retention** | ☐ not shipped — Clarion P0, autonomous (M3); prerequisite for SEI matcher + incremental | Clarion |
 | **Clarion SEI authority** | ⛔ gated on SEI lock; then minting/matcher/lineage/wire (M5). **NOTE (2026-06-02, live):** the local `~/clarion/target/release/clarion` build *already* advertises `sei:{supported,version:1}` and resolves a real `clarion:eid:<32hex>` token end-to-end — the wire is further along than "not started." Wardline's T3.1–T3.3 client is verified against it. The remaining gate for T3.4 is the **coordinated suite cutover** (single hard cutover, §7.1) + SEI **lock** (§8 oracle), not the route existing. | Clarion |
