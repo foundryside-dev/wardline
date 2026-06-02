@@ -19,6 +19,33 @@ columns as work lands.
 
 ## Current position (update this line)
 
+**As of 2026-06-02 (latest):** **Track 3 SEI-client GROUNDWORK COMPLETE (T3.1–T3.3)**
+on branch `feat/track3-sei-client` (branched off `loom-step-up`; nothing pushed). A
+stdlib-only, opt-in SEI abstraction (`src/wardline/clarion/identity.py`:
+`IdentityStatus`/`ContentStatus`/`SeiCapability`/`EntityBinding`/`content_status`/`SeiResolver`)
+carries Clarion's SEI as the **opaque, preferred** binding handle with a **two-axis**
+status (identity alive/orphaned/unavailable × content fresh/stale/unknown, never
+collapsed), plus three fail-soft `ClarionClient` wire methods for the pinned
+`/api/v1/identity/*` + `/api/v1/_capabilities` routes. All three DoD gates green:
+**fingerprint isolation** (golden-digest guard on `compute_finding_fingerprint`,
+RED-first-proven to bite if an SEI leaks in — SEI never enters fingerprints; warm/cold
+byte-identical holds); **graceful degrade** (no `sei` cap → honest UNAVAILABLE, no wire
+call, no crash); **opacity / never-parse** (an atypical token round-trips verbatim).
+Strictly additive — `build_taint_facts` stays qualname-keyed (T3.4 re-key is gated).
+1117 tests pass; coverage 95.81% global / `clarion/identity.py` 100%; ruff/format/mypy
+clean; dogfood clean; base stays zero-dependency. **DISCOVERY (live oracle):** the local
+`~/clarion/target/release/clarion` build **already serves SEI end-to-end** — `_capabilities`
+advertises `sei:{supported,version:1}` and `/api/v1/identity/resolve` returns a real
+ADR-038 token (`clarion:eid:<32hex>`, `alive:true`, entity-body `content_hash`). The
+SEI client is therefore validated against a **real** SEI-serving Clarion, not only mocks
+(the live `clarion_e2e` test exercises the ALIVE + opacity path). This means the SEI lock
+/ Clarion-SEI gate may be closer to opening than the docs assume — surfaced, not acted on
+(T3.4 is the coordinated suite cutover, still out of scope). Spec basis: program spec §2
+Track 3 + SEI standard §4 + Clarion ADR-038; plan:
+`docs/superpowers/plans/2026-06-02-wardline-track3-sei-client.md`.
+**Next:** the autonomous critical path is **T1.5 (rule-set breadth, 4 → ≥10, on the Track 2
+grammar)**; Track 4 groundwork (T4.1–T4.2 dossier skeleton) is also available in parallel.
+
 **As of 2026-06-02:** **Track 2 (extensible trust grammar) COMPLETE** on branch
 `loom-step-up` (Track 1 merged here). The grammar is a *code* seam
 (`src/wardline/scanner/grammar.py`: `BoundaryType`/`LevelArg`/`TrustGrammar`/`default_grammar()`),
@@ -85,13 +112,13 @@ spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 **DoD:** agent defines a new boundary+rule end-to-end (acceptance fixture, litmus = zero edits to `_match`/`_ALL_RULE_CLASSES`/`_ENTRIES`) · unprovable→UNKNOWN+FACT test · the 4 builtins re-expressed produce **byte-identical findings** to today (oracle held).
 **Note:** the hinge between "best analyzer" and "Loom citizen". Design spec: `2026-06-02-wardline-track2-extensible-trust-grammar-design.md`; plan: `…/plans/2026-06-02-wardline-track2-extensible-trust-grammar.md`. T1.5 (rule breadth) lands here, on the grammar. **Blockers baked into the plan:** released `core.registry` contract frozen (Clarion-consumed); summary-cache fingerprint must carry grammar identity (builtin = legacy string); `vocabulary.yaml`/`descriptor.py` unchanged (REGISTRY frozen).
 
-### Track 3 — SEI-client  ·  groundwork: none · wiring: ⛔ Clarion SEI  ·  **☐ not started**
+### Track 3 — SEI-client  ·  groundwork: none · wiring: ⛔ Clarion SEI  ·  **◐ groundwork done (T3.1–T3.3); T3.4 ⛔ Clarion SEI**
 
 | Unit | Work | Gate | Status |
 |---|---|---|---|
-| T3.1 | SEI-client abstraction (carry SEI as explain/dossier handle, opaque) | none | ☐ |
-| T3.2 | Capability detection + graceful degrade (no `sei` cap → honest fallback) | none | ☐ |
-| T3.3 | Fingerprint-isolation test (SEI must NOT enter finding fingerprints) | none | ☐ |
+| T3.1 | SEI-client abstraction (carry SEI as explain/dossier handle, opaque) | none | ☑ |
+| T3.2 | Capability detection + graceful degrade (no `sei` cap → honest fallback) | none | ☑ |
+| T3.3 | Fingerprint-isolation test (SEI must NOT enter finding fingerprints) | none | ☑ |
 | T3.4 | Re-key taint facts locator→SEI in the hard cutover (idempotent/resumable) | ⛔ Clarion SEI | ☐ |
 
 **DoD:** fingerprint byte-identical across SEI introduction · graceful-degrade test · opaque round-trip · (post-cutover) a fact survives a rename.
@@ -133,7 +160,7 @@ spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 | **SEI lock** | REQ-C-01/C-02 **RESOLVED** (Clarion ADR-038); all four subsystems reported. Lock waits ONLY on the §8 conformance oracle (+ ADR-038 authored). | suite (Clarion authority) |
 | **Clarion HTTP linkages** | ☐ not shipped — Clarion P0, autonomous (their roadmap M4) | Clarion |
 | **Clarion prior-index retention** | ☐ not shipped — Clarion P0, autonomous (M3); prerequisite for SEI matcher + incremental | Clarion |
-| **Clarion SEI authority** | ⛔ gated on SEI lock; then minting/matcher/lineage/wire (M5) | Clarion |
+| **Clarion SEI authority** | ⛔ gated on SEI lock; then minting/matcher/lineage/wire (M5). **NOTE (2026-06-02, live):** the local `~/clarion/target/release/clarion` build *already* advertises `sei:{supported,version:1}` and resolves a real `clarion:eid:<32hex>` token end-to-end — the wire is further along than "not started." Wardline's T3.1–T3.3 client is verified against it. The remaining gate for T3.4 is the **coordinated suite cutover** (single hard cutover, §7.1) + SEI **lock** (§8 oracle), not the route existing. | Clarion |
 | **legis runtime** | ☐ design-ready, NOT implemented (repo `/home/john/legis`) | legis |
 
 The Wardline halves of the gated tracks (T3.4, T4.3, T5) are **thin and ready** — they

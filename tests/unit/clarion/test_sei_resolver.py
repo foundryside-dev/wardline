@@ -90,6 +90,16 @@ def test_resolve_soft_outage_is_unavailable() -> None:
     assert SeiResolver.detect(client).resolve_locator("m.f").identity is IdentityStatus.UNAVAILABLE
 
 
+def test_alive_without_usable_sei_degrades_fail_closed() -> None:
+    # Malformed: alive:true but no usable `sei` (missing / empty / non-str). The
+    # resolver must NOT claim ALIVE without an identity — degrade to UNAVAILABLE.
+    for bad in ({"alive": True}, {"alive": True, "sei": ""}, {"alive": True, "sei": 123}):
+        client = FakeClient(caps=_CAPS_PRESENT, resolve=bad)
+        b = SeiResolver.detect(client).resolve_locator("python:function:m.f")
+        assert b.identity is IdentityStatus.UNAVAILABLE
+        assert b.sei is None
+
+
 def test_sei_carried_verbatim_never_parsed() -> None:
     # Guardrail 4: an ATYPICAL opaque token round-trips verbatim with no branching on
     # its content. The resolver must not validate, prefix-check, or transform it.

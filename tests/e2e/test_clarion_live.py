@@ -238,3 +238,47 @@ def test_scan_write_then_explain_query_round_trip(clarion_server: tuple[Path, st
     assert exp is not None
     assert exp.sink_qualname == "svc.leaky"
     assert exp.tier_in == "EXTERNAL_RAW"
+
+
+def test_sei_client_against_live_clarion(clarion_server: tuple[Path, str]) -> None:
+    """Exercise the SEI client against whatever a real `clarion serve` actually
+    advertises — adaptive, so it is a true oracle either way (the SEI conformance
+    oracle's two consumer-side scenarios):
+      - capability ABSENT  -> honest degrade (UNAVAILABLE, no crash, works on locator)
+      - capability PRESENT -> resolve a real locator; opacity holds on any SEI returned
+    The consumer must NEVER crash and must NEVER parse the SEI."""
+    proj, url = clarion_server
+    from wardline.clarion.client import ClarionClient
+    from wardline.clarion.config import load_clarion_token, resolve_project_name
+    from wardline.clarion.identity import IdentityStatus, SeiResolver
+
+    client = ClarionClient(url, secret=load_clarion_token(proj), project=resolve_project_name(proj))
+    resolver = SeiResolver.detect(client)
+
+    # Discover svc.leaky's real locator via the SP9 qualname->locator resolve; fall back
+    # to the canonical locator form if that route is unavailable.
+    rr = client.resolve(["svc.leaky"])
+    locator = (rr.resolved.get("svc.leaky") if rr is not None else None) or "python:function:svc.leaky"
+
+    binding = resolver.resolve_locator(locator)  # must never crash
+    assert binding.binding_key  # coherent, non-empty, either branch
+
+    if not resolver.capability.supported:
+        # Degrade path: no `sei` capability -> honest unavailable, no guessing.
+        assert binding.identity is IdentityStatus.UNAVAILABLE
+        assert binding.sei is None
+        assert binding.keyed_on_sei is False
+        assert binding.binding_key == locator
+        return
+
+    # SEI-present path: resolution is coherent; any SEI returned is OPAQUE + verbatim.
+    assert binding.identity in (IdentityStatus.ALIVE, IdentityStatus.UNAVAILABLE)
+    if binding.identity is IdentityStatus.ALIVE:
+        assert isinstance(binding.sei, str) and binding.sei
+        assert binding.keyed_on_sei is True
+        assert binding.binding_key == binding.sei
+        # Opacity (oracle identity_round_trip_and_opacity): reserved prefix, not the locator.
+        assert binding.sei.startswith("clarion:eid:")
+        assert binding.sei != locator
+        # The opaque token round-trips through resolve_sei without the client parsing it.
+        assert resolver.is_orphaned(binding.sei) is IdentityStatus.ALIVE

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Track 3 — SEI-client groundwork (T3.1–T3.3).** An opt-in `wardline[clarion]`
+  SEI abstraction (`wardline.clarion.identity`) carries Clarion's Stable Entity
+  Identity as the **opaque, preferred** cross-tool binding handle, with an honest
+  **two-axis** status (identity alive/orphaned/unavailable × content fresh/stale/unknown,
+  never collapsed). `SeiResolver` reads Clarion's `_capabilities` and **degrades
+  gracefully** — when no `sei` capability is advertised it reports "identity
+  unavailable" and keeps working on the locator, never guessing or crashing. The SEI
+  is **never parsed** and **never enters Wardline finding fingerprints** (a golden-digest
+  guard locks the fingerprint input set; the warm/cold byte-identical guarantee holds).
+  Built against the spec'd wire contract (SEI standard §4 + Clarion ADR-038, pinned
+  `/api/v1/identity/*` routes) and verified live against a real SEI-serving `clarion
+  serve`. The base package stays zero-dependency (the module is stdlib-only). The
+  locator→SEI fact re-key (T3.4) is gated on the coordinated suite SEI cutover.
 - **Track 2 — extensible trust grammar.** The three trust decorators and four
   rules are no longer hardcoded: a project can declare custom **boundary types**
   (a trust transition + its L1 seed) and **rules** and register them via

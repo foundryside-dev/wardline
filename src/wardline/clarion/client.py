@@ -221,7 +221,9 @@ class ClarionClient:
     # a consumer can detect a non-SEI Clarion and DEGRADE rather than guess or crash.
     # Distinct from the WRITE path, where a 4xx is a loud Wardline bug.
 
-    def _send_json_soft(self, method: str, path_and_query: str, payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    def _send_json_soft(
+        self, method: str, path_and_query: str, payload: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
         """Send + parse a JSON object, FAIL-SOFT on every non-happy band. Returns the
         parsed dict on a 2xx with a JSON-object body; None on outage/5xx (``_send``),
         any other non-2xx (e.g. a pre-SEI Clarion's 404, a 4xx), or a non-object/bad
