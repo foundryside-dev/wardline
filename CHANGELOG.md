@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- MCP `scan` now emits findings to Filigree when a `--filigree-url` is configured, at
+  parity with the CLI (a `filigree` block in the scan result; fail-soft — an unreachable
+  sibling or rejected payload is reported, never fails the scan). Closes the CLI/MCP
+  finding-emission asymmetry. (WS-A1)
+
 ## [1.0.0rc1] - 2026-06-02
 
 ### Changed

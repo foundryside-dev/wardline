@@ -27,7 +27,10 @@ from wardline.mcp.server import WardlineMCPServer
     "--filigree-url",
     "filigree_url",
     default=None,
-    help="Filigree URL: `dossier` reads entity-associations (open work) from it.",
+    help=(
+        "Filigree URL: `scan` POSTs findings to it (fail-soft); "
+        "`dossier` reads entity-associations (open work) from it."
+    ),
 )
 def mcp(root: Path, clarion_url: str | None, filigree_url: str | None) -> None:
     """Run the Wardline MCP server over stdio (JSON-RPC 2.0)."""

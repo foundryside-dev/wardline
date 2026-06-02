@@ -19,8 +19,9 @@ from wardline.core import config as config_mod
 from wardline.core.baseline import generate_baseline
 from wardline.core.config_schema import WARDLINE_SCHEMA
 from wardline.core.descriptor import descriptor_to_yaml
-from wardline.core.errors import WardlineError
+from wardline.core.errors import FiligreeEmitError, WardlineError
 from wardline.core.explain import explain_chain, explain_finding
+from wardline.core.filigree_emit import EmitResult, FiligreeEmitter
 from wardline.core.finding import Finding, Severity
 from wardline.core.judge_run import run_judge
 from wardline.core.run import gate_decision, run_scan
@@ -68,7 +69,28 @@ def _cfg(args: dict[str, Any], root: Path) -> Path | None:
     return _resolve_under_root(root, args["config"]) if args.get("config") else None
 
 
-def _scan(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, Any]:
+def _emit_filigree(findings: list[Finding], filigree: Any) -> dict[str, Any] | None:
+    """Fail-soft Filigree emission for the MCP `scan`. Returns None when no emitter
+    is injected (no URL). Mirrors the Clarion block's deliberate asymmetry: the CLI
+    is LOUD on a FiligreeEmitError (4xx -> exit 2), but the MCP scan must SURVIVE an
+    optional-write failure and report it, never discard the scan payload. An
+    unreachable sibling / 5xx already returns a soft EmitResult(reachable=False)."""
+    if filigree is None:
+        return None
+    try:
+        er = filigree.emit(findings)
+    except FiligreeEmitError as exc:
+        er = EmitResult(reachable=False, warnings=(str(exc),))
+    return {
+        "reachable": er.reachable,
+        "created": er.created,
+        "updated": er.updated,
+        "failed": er.failed,
+        "warnings": list(er.warnings),
+    }
+
+
+def _scan(args: dict[str, Any], root: Path, clarion: Any = None, filigree: Any = None) -> dict[str, Any]:
     path = _resolve_under_root(root, args["path"]) if args.get("path") else root
     fail_on = args.get("fail_on")
     try:
@@ -100,6 +122,7 @@ def _scan(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, An
             "disabled_reason": wr.disabled_reason,
         }
     decision = gate_decision(result, threshold)
+    filigree_block = _emit_filigree(result.findings, filigree)
     return {
         "files_scanned": result.files_scanned,
         "findings": [_finding_to_dict(f) for f in result.findings],
@@ -116,6 +139,7 @@ def _scan(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, An
         },
         "gate": {"tripped": decision.tripped, "fail_on": decision.fail_on, "exit_class": decision.exit_class},
         "clarion": clarion_block,
+        "filigree": filigree_block,
     }
 
 
@@ -297,13 +321,23 @@ class WardlineMCPServer:
             project=resolve_project_name(self.root),
         )
 
+    def _filigree_emitter(self) -> Any:
+        """Build a FiligreeEmitter for this server's URL, or None when no URL is set.
+        Mirrors _clarion_client: the URL already resolves in cli/mcp.py and reaches
+        __init__ as self.filigree_url."""
+        if self.filigree_url is None:
+            return None
+        return FiligreeEmitter(self.filigree_url)
+
     def _register_tools(self) -> None:
         self.add_tool(
             Tool(
                 name="scan",
                 description="Whole-program taint scan of the project. Returns structured "
                 "findings, the suppression summary (active = the gate population), "
-                "and the gate verdict.",
+                "and the gate verdict. When a Filigree URL is configured, also POSTs the "
+                "findings to Filigree (fail-soft: an unreachable sibling or rejected payload "
+                "is reported in the `filigree` block, never fails the scan).",
                 input_schema={
                     "type": "object",
                     "properties": {
@@ -312,7 +346,7 @@ class WardlineMCPServer:
                         "config": {"type": "string"},
                     },
                 },
-                handler=lambda args, root: _scan(args, root, self._clarion_client()),
+                handler=lambda args, root: _scan(args, root, self._clarion_client(), self._filigree_emitter()),
             )
         )
         self.add_tool(

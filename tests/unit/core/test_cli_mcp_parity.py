@@ -46,3 +46,28 @@ def test_cli_and_mcp_scan_agree_on_findings_and_gate() -> None:
     assert mcp["files_scanned"] == cli_result.files_scanned
     # Sanity: the labeled corpus is a non-trivial substrate (it fires real defects).
     assert any(f["kind"] == "defect" for f in cli_findings)
+
+
+def test_cli_and_mcp_emit_identical_filigree_body() -> None:
+    """The Filigree emission set must be identical across surfaces. The CLI passes
+    `result.findings` to FiligreeEmitter.emit (scan.py:83). The MCP scan must hand its
+    injected emitter exactly the same finding set, so the POST body is byte-identical."""
+    from wardline.core.filigree_emit import EmitResult
+
+    cli_findings = run_scan(_CORPUS).findings
+
+    class _Capture:
+        def __init__(self) -> None:
+            self.seen: list = []
+
+        def emit(self, findings):
+            self.seen = list(findings)
+            return EmitResult(reachable=True)
+
+    cap = _Capture()
+    _scan({}, root=_CORPUS, filigree=cap)
+
+    # The real contract: the MCP scan hands the emitter the SAME unfiltered finding
+    # set the CLI passes (result.findings) — guards against a future filter (e.g.
+    # active-only) silently diverging the two surfaces' Filigree emission.
+    assert [f.fingerprint for f in cap.seen] == [f.fingerprint for f in cli_findings]
