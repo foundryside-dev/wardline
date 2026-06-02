@@ -199,7 +199,7 @@ spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 
 **DoD:** envelope ≤2k tokens · freshness both axes · SEI-keyed · honest partial when sources absent · (post-wiring) one-call dossier on a real dogfood entity.
 
-### Track 5 — Trust-vocab convergence + legis CI  ·  gate: ⛔ legis existing (+ T2 done)  ·  **☐ not started**
+### Track 5 — Trust-vocab convergence + legis CI  ·  gate: **legis OPEN** (implemented through Sprint 6) + T2 done ✓  ·  **☐ not started — now a LIVE integration (legis exists with a `/wardline/scan-results` intake)**
 
 | Unit | Work | Status |
 |---|---|---|
@@ -226,10 +226,10 @@ spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 | **SEI lock** | **Lock-ready in substance (2026-06-02, cross-repo verified).** All four reported; ADR-038 **accepted**; the §8 conformance oracle **exists and passes all six scenarios in Clarion CI** (`clarion/crates/clarion-storage/tests/sei_conformance_oracle.rs`). Not yet *formally* declared locked; remaining = other subsystems wiring the oracle into their own harnesses + the formal flip. | suite (Clarion authority) |
 | **Clarion SEI authority** *(re-assessed)* | **IMPLEMENTED + oracle-passing + serving live** (sei_bindings/sei_lineage migrations, deterministic matcher §3, prior-index retention §3.1, all `/api/v1/identity/*` routes, REQ-F-02 reserved-prefix rejection, `_capabilities.sei`). In Clarion `[Unreleased]` (WS1 merged, not tagged). Wardline's T3.1–T3.3 client verified against it live. | Clarion |
 | **Clarion SEI-keyed taint-fact store** | ⛔ **NOT built** — `wardline_taint_facts` is still `entity_id`(locator)-keyed; there is no SEI-keyed taint-fact store. **This is the real blocker for Wardline T3.4** (a re-key needs an SEI-keyed target). Not yet scoped in Clarion's plan. | Clarion |
-| **Clarion HTTP linkages** | ☐ not shipped — Clarion P0, autonomous (their roadmap M4) | Clarion |
-| **Clarion prior-index retention** | ☐ not shipped — Clarion P0, autonomous (M3); prerequisite for SEI matcher + incremental | Clarion |
-| **Clarion SEI authority** | ⛔ gated on SEI lock; then minting/matcher/lineage/wire (M5). **NOTE (2026-06-02, live):** the local `~/clarion/target/release/clarion` build *already* advertises `sei:{supported,version:1}` and resolves a real `clarion:eid:<32hex>` token end-to-end — the wire is further along than "not started." Wardline's T3.1–T3.3 client is verified against it. The remaining gate for T3.4 is the **coordinated suite cutover** (single hard cutover, §7.1) + SEI **lock** (§8 oracle), not the route existing. | Clarion |
-| **legis runtime** | ☐ design-ready, NOT implemented (repo `/home/john/legis`) | legis |
+| **Clarion HTTP linkages** | **SHIPPED** (verified 2026-06-02) — `/api/v1/entities/{id}/callers|callees` (+ batch) live over the HTTP read API (`clarion-cli/src/http_read.rs`); `_capabilities.linkages.http`. Wired live into the Track 4 dossier. | Clarion |
+| **Clarion prior-index retention** | **BUILT** — migration `0004_sei_prior_index` (the side table the matcher diffs against). | Clarion |
+| **legis runtime** | **IMPLEMENTED through Sprint 6** (verified in source 2026-06-02; `/home/john/legis`, branch `sprint-6-suite-combinations`): the 2×2 enforcement engine, the API incl. **`POST /wardline/scan-results` → 2×2 cell**, SEI-consumer **passing the §8 oracle** (`tests/conformance/test_sei_oracle.py`), SEI-keyed Filigree sign-off, and the git-rename surface. **NOT design-ready — built. The legis gate for Track 5 is OPEN.** | legis |
+| **Filigree SEI conformance** | ⛔ **the real SEI-lock laggard** — Filigree is `release/2.3.0` with **no SEI in source**; its locator→SEI backfill + oracle pass have not happened. | Filigree |
 
 The Wardline halves of the gated tracks (T3.4, T4.3, T5) are **thin and ready** — they
 become wiring steps, not builds, the moment the sibling gate opens.

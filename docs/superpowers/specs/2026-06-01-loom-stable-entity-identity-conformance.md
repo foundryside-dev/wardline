@@ -163,10 +163,33 @@ in it.
 **All four subsystems have now reported** (as of 2026-06-02), and the two items
 that were OPEN — Clarion's REQ-C-01 / REQ-C-02 — are now **RESOLVED by Clarion in
 ADR-038**. The four roadmaps are mutually consistent (the one cross-subsystem seam,
-git-rename, is *agreement* from both sides, §6). **Remaining before lock (§0.3):
-the §8 conformance oracle encodes the resolutions** — and ADR-038 itself is authored
-(Clarion records it as a plan task, not yet a written file, so the citation is a
-near-term forward reference).
+git-rename, is *agreement* from both sides, §6).
+
+**Implementation status — verified against source 2026-06-02 (supersedes the
+"pending" framing this section opened with):** the standard is now substantially
+**built**, not merely reconciled.
+- The shared **§8 conformance oracle EXISTS** as fixtures
+  (`clarion/docs/federation/fixtures/sei-conformance-oracle.json`).
+- **Clarion** (authority) has shipped SEI end-to-end: migrations `0004_sei_prior_index`
+  + `0005_sei`, `clarion-storage/src/sei.rs`
+  (`resolve_locator`/`resolve_sei`/`sei_lineage`/`rebind_or_mint`), a passing
+  `sei_conformance_oracle.rs`, the git-rename signal (`sei_git.rs`), **and the HTTP
+  callers/callees linkages** (`/api/v1/entities/{id}/callers|callees`). **ADR-038 is
+  an Accepted, written file.**
+- **legis** is **implemented through Sprint 6** and **passes the oracle as a consumer**
+  (`legis/tests/conformance/test_sei_oracle.py`), with the Wardline `/wardline/scan-results`
+  intake, the SEI-keyed Filigree sign-off, and git-rename consumption all live.
+- **Wardline** has shipped its SEI-client (Track 3) and the dossier (Track 4, incl. a
+  live `clarion_e2e` one-call round-trip resolving SEI + reading linkages).
+- **The real remaining lock gate is FILIGREE** — still `release/2.3.0` with **no SEI in
+  source**: its locator→SEI backfill + oracle pass have not happened.
+
+**Remaining before lock (§0.3):** (a) **Filigree's conformance** (the locator→SEI
+backfill + oracle pass — the laggard), (b) confirm **Wardline runs the shared §8
+oracle** (it has SEI-client/dossier tests + a live e2e, but its consumer-side run of
+the shared fixture should be pinned), and (c) the coordinated **§7.1 hard cutover + a
+lock declaration**. Lock is NOT waiting on the oracle existing or any design item —
+those are done.
 
 | Subsystem | Status | Recorded requirements |
 |---|---|---|
