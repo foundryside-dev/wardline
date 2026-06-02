@@ -31,10 +31,16 @@ resolution off `function_var_taints` — Name + same-module bare-call, under-fir
 DoD gates green: **10 curated rules** · corpus **FP 0%** (zero unaccounted) · `make ci` green
 (1143 tests, cov ≥90%) · dogfood clean · golden regenerated · warm/cold byte-identical green.
 Plan: `docs/superpowers/plans/2026-06-02-wardline-track1.5-rule-breadth.md`; Filigree `wardline-f0a2e9678e`.
-**REMAINING for T1.5 close-out:** the default code-review panel incl. `false-positive-analyst` (FP
-economics of the 6 new rules) + subsumption review (105 vs 101, 109 vs 102), apply must-fixes, then
-close the issue. **Next after that:** the autonomous critical path is effectively complete
-(T1→T2→T1.5); Track 4 (dossier) groundwork T4.1–T4.2 is the next parallel-autonomous item.
+**T1.5 COMPLETE & panel-reviewed** (Filigree `wardline-f0a2e9678e` closed). The default panel
+(false-positive-analyst + rule-designer + python-quality) found + fixed: the PY-WL-109 Optional-flood
+(now requires an explicit non-None return annotation), a `dotted_name` bare-attr FP window, the
+PY-WL-108 subprocess argv-list FP (narrowed to always-shell APIs), the flow-insensitivity docstring
+(honest about over-fire on trusted→raw reassignment), `RAW_ZONE` triplication (consolidated into
+`core.taints`), 110 ERROR→WARN, and misleading examples. **The autonomous critical path
+T1→T2→T1.5 is now COMPLETE.** **Next parallel-autonomous item:** Track 4 (dossier assembler)
+groundwork T4.1 (envelope schema, ≤2k tokens, two-axis freshness, SEI-keyed) + T4.2 (assembler
+skeleton, honest partial). **Open suite-level recommendation (from the Track 3 re-assessment):** file
+the Clarion ask for an SEI-keyed taint-fact store to unblock T3.4.
 
 ---
 
@@ -116,7 +122,7 @@ spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 | T1.2 | Star-import FN resolution | `wardline-2b427a9579` (P3) | ☑ |
 | T1.3 | Return-indirection in `compute_return_callee` | `wardline-82f49ec3c3` (P3) | ☑ |
 | T1.4 | FP economics: labeled corpus + FP-rate ≤5% + waiver discipline | `wardline-41f4a42a43` (P2) | ☑ |
-| T1.5 | Rule-set breadth 4 → 10 (PY-WL-105–110), authored on the Track 2 grammar | `wardline-f0a2e9678e` (P2) | ☑ (review pending) |
+| T1.5 | Rule-set breadth 4 → 10 (PY-WL-105–110), authored on the Track 2 grammar | `wardline-f0a2e9678e` (P2) | ☑ (panel-reviewed) |
 
 **DoD gates:** FP ≤5% on labeled corpus · coverage 90% global / 95% on `taint/` · warm/cold byte-identical green · dogfood finding-clean · every closed hole has a RED-first regression test.
 **Deferred out of Track 1:** T1.5 rule-set breadth (4 → ≥10) → after Track 2.
