@@ -70,6 +70,23 @@ def test_drifted_association_is_flagged_per_ticket_and_section_stale() -> None:
     assert sec.identity_status is IdentityStatus.ALIVE
 
 
+def test_unknown_compare_is_unknown_not_fresh_when_binding_hash_absent() -> None:
+    # binding has no current content hash → the compare is UNKNOWN, never FRESH
+    # (surfacing FRESH would be a false-green: nothing was actually compared).
+    binding = EntityBinding(locator="x", sei="clarion:eid:abc", identity=IdentityStatus.ALIVE, content_hash=None)
+    body = _rows({"issue_id": "wardline-1", "content_hash_at_attach": "some-hash"})
+    sec = FiligreeWorkProvider("http://f", transport=FakeTransport(Response(status=200, body=body))).work(binding)
+    assert sec.available is True
+    assert sec.tickets[0].drift is False  # bool axis: not provably stale
+    assert sec.content_status is ContentStatus.UNKNOWN  # but honestly unknown, not FRESH
+
+
+def test_unknown_compare_when_row_lacks_attach_hash() -> None:
+    body = _rows({"issue_id": "wardline-1"})  # no content_hash_at_attach
+    sec = FiligreeWorkProvider("http://f", transport=FakeTransport(Response(status=200, body=body))).work(_BINDING)
+    assert sec.content_status is ContentStatus.UNKNOWN
+
+
 def test_no_sei_is_honest_unavailable_without_a_wire_call() -> None:
     t = FakeTransport(Response(status=200, body=_rows()))
     binding = EntityBinding(locator="svc.leaky")  # no SEI
@@ -161,3 +178,20 @@ def test_urllib_transport_get_round_trips(monkeypatch) -> None:
     resp = UrllibTransport().get("http://filigree.example/api/entity-associations?entity_id=x", {})
     assert resp.status == 200
     assert resp.body == '{"associations": []}'
+
+
+def test_urllib_transport_get_surfaces_http_error_status(monkeypatch) -> None:
+    # an HTTP 4xx/5xx must be converted to a Response with the status (mirrors
+    # clarion's transport), NOT raised as an outage — so work() classifies it by band.
+    import io
+    import urllib.error
+    import urllib.request
+
+    from wardline.filigree.dossier_client import UrllibTransport
+
+    def _raise(req, timeout=None):
+        raise urllib.error.HTTPError("http://f", 503, "Service Unavailable", {}, io.BytesIO(b"down"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", _raise)
+    resp = UrllibTransport().get("http://f/api/entity-associations?entity_id=x", {})
+    assert resp.status == 503

@@ -28,6 +28,8 @@ from wardline.core.dossier import (
     WorkProvider,
     build_dossier,
 )
+from wardline.filigree.dossier_client import FiligreeWorkProvider
+from wardline.filigree.dossier_client import Transport as FiligreeTransport
 
 
 class _ClarionClient(Protocol):
@@ -58,7 +60,7 @@ def build_loom_dossier(
     root: Path,
     clarion_client: _ClarionClient | None = None,
     filigree_url: str | None = None,
-    filigree_transport: Any | None = None,
+    filigree_transport: FiligreeTransport | None = None,
     config_path: Path | None = None,
     confine_to_root: bool = False,
     budget: int = DOSSIER_TOKEN_BUDGET,
@@ -81,8 +83,6 @@ def build_loom_dossier(
         linkage_provider = ClarionLinkageProvider(clarion_client, linkages_http=_linkages_http(capabilities))
 
     if filigree_url is not None:
-        from wardline.filigree.dossier_client import FiligreeWorkProvider
-
         work_provider = FiligreeWorkProvider(filigree_url, transport=filigree_transport)
 
     return build_dossier(

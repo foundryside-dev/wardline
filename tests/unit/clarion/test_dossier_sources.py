@@ -72,6 +72,32 @@ def test_linkages_unavailable_when_both_sides_soft_fail() -> None:
     assert sec.reason is not None
 
 
+def test_one_sided_outage_is_named_not_rendered_as_empty() -> None:
+    # callees soft-fails while callers succeeds: the empty callees list must NOT read as
+    # "genuinely zero callees" — the degraded side is named in the reason (no false-green).
+    client = _FakeClient(
+        callers=LinkageResult(neighbours=("python:function:svc.a",), total=1, truncated=False),
+        callees=None,
+    )
+    sec = ClarionLinkageProvider(client, linkages_http=True).linkages(_ALIVE)
+    assert sec.available is True
+    assert sec.callers == ["python:function:svc.a"]
+    assert sec.callees == []
+    assert sec.reason is not None and "callees unreachable" in sec.reason
+
+
+def test_one_sided_outage_callers_side_is_named() -> None:
+    client = _FakeClient(
+        callers=None,
+        callees=LinkageResult(neighbours=("python:function:svc.mid",), total=1, truncated=False),
+    )
+    sec = ClarionLinkageProvider(client, linkages_http=True).linkages(_ALIVE)
+    assert sec.available is True
+    assert sec.callers == []
+    assert sec.callees == ["python:function:svc.mid"]
+    assert sec.reason is not None and "callers unreachable" in sec.reason
+
+
 def test_linkages_truncation_is_surfaced() -> None:
     client = _FakeClient(
         callers=LinkageResult(neighbours=("a",), total=99, truncated=True),

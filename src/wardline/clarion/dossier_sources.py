@@ -21,7 +21,7 @@ from wardline.clarion.identity import ContentStatus, EntityBinding
 from wardline.core.dossier import LinkagesSection
 
 if TYPE_CHECKING:
-    from wardline.clarion.client import LinkageResult
+    from wardline.clarion.client import LinkageResult, ResolveResult
 
 
 class _LinkageClient(Protocol):
@@ -33,7 +33,7 @@ class _LinkageClient(Protocol):
 
 
 class _ResolveClient(Protocol):
-    def resolve(self, qualnames: list[str]) -> object | None: ...
+    def resolve(self, qualnames: list[str]) -> ResolveResult | None: ...
 
 
 class _Resolver(Protocol):
@@ -58,11 +58,16 @@ class ClarionLinkageProvider:
         callers = self._client.get_callers(binding.locator, limit=self._limit)
         callees = self._client.get_callees(binding.locator, limit=self._limit)
         if callers is None and callees is None:
-            return LinkagesSection.unavailable("clarion linkages unreachable or entity unknown")
-        truncated = (callers.truncated if callers is not None else False) or (
-            callees.truncated if callees is not None else False
-        )
-        reason = "clarion truncated the linkage list (more neighbours available)" if truncated else None
+            return LinkagesSection.unavailable("clarion linkages unreachable, unknown, or access-denied")
+        # A ONE-sided soft failure must not masquerade as "genuinely zero neighbours":
+        # name the degraded side so an empty list is never read as a complete answer.
+        notes: list[str] = []
+        if callers is None:
+            notes.append("callers unreachable (callees shown only)")
+        if callees is None:
+            notes.append("callees unreachable (callers shown only)")
+        if (callers is not None and callers.truncated) or (callees is not None and callees.truncated):
+            notes.append("clarion truncated the linkage list (more neighbours available)")
         return LinkagesSection(
             available=True,
             callers=list(callers.neighbours) if callers is not None else [],
@@ -70,7 +75,7 @@ class ClarionLinkageProvider:
             scc_peers=[],  # SCC membership is not served over HTTP yet — honest empty
             identity_status=binding.identity,  # SEI axis, from the resolved binding
             content_status=ContentStatus.FRESH,  # read live from the current Clarion index
-            reason=reason,
+            reason="; ".join(notes) if notes else None,
         )
 
 
@@ -82,8 +87,7 @@ def resolve_entity_binding(client: _ResolveClient, resolver: _Resolver, qualname
     identity axis). Returns None when the qualname cannot be resolved to a locator (the
     caller degrades to a no-binding, honest-unavailable dossier — never a guessed key)."""
     rr = client.resolve([qualname])
-    resolved = getattr(rr, "resolved", None)
-    locator = resolved.get(qualname) if isinstance(resolved, dict) else None
+    locator = rr.resolved.get(qualname) if rr is not None else None
     if not locator:
         return None
     return resolver.resolve_locator(locator)

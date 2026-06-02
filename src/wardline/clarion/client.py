@@ -287,7 +287,8 @@ class ClarionClient:
         total = data.get("total")
         return LinkageResult(
             neighbours=neighbours,
-            total=int(total) if isinstance(total, int) else len(neighbours),
+            # accept int or a JSON float; any other shape → fall back to the count read
+            total=int(total) if isinstance(total, (int, float)) and not isinstance(total, bool) else len(neighbours),
             truncated=bool(data.get("truncated", False)),
         )
 
