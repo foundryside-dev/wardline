@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Track 4 — the Loom entity dossier (assembler + live wiring, T4.1–T4.3).** One
+  freshness-honest call returns everything an agent needs to reason about a function
+  without reading its source. Wardline is the **assembler** (composes each tool's
+  slice; it does not become the store).
+  - `core/dossier.py` — the `EntityDossier` envelope: frozen, JSON-serialisable, keyed
+    on the **opaque SEI**, freshness-stamped on **both orthogonal axes** (identity
+    alive/orphaned/unavailable × content fresh/stale/unknown, never collapsed). The
+    default envelope is **token-bounded ≤2k** via a conservative deterministic estimator;
+    over-budget content is trimmed with an explicit, elision-honest truncation marker
+    (shown-of-total), and an untrimmable core is reported as EXCEEDS-budget — never a
+    silent cap. `build_dossier` composes Wardline's OWN trust posture for real (re-scan
+    → FRESH) with a **three-valued honest verdict** (defect / clean / **unknown** — an
+    undeclared or under-scanned entity is never reported "clean"), and reads Clarion
+    linkages + Filigree work through injected `LinkageProvider`/`WorkProvider` seams.
+    An absent / no-opinion / unreachable source degrades to an honest `unavailable`
+    section — never fabricated, never a crash.
+  - `clarion/client.py` — `get_callers`/`get_callees` (HMAC-gated call-graph reads,
+    fail-soft); `clarion/dossier_sources.py` — `ClarionLinkageProvider` (live linkages,
+    SEI identity axis + FRESH live-read content axis, one-sided outages named) and
+    `resolve_entity_binding` (qualname → locator → opaque SEI binding via the Track-3
+    `SeiResolver`; never mints or parses the SEI).
+  - `filigree/dossier_client.py` — a dep-free urllib `FiligreeWorkProvider` reading
+    ADR-029 entity-associations keyed on the SEI; compares `content_hash_at_attach`
+    (same entity-body granularity as Clarion's resolve) to set per-ticket **DRIFT** and
+    a three-valued section content axis (STALE / UNKNOWN / FRESH — never guesses FRESH).
+  - `loom_dossier.py` — `build_loom_dossier`, the orchestrator: probe Clarion
+    capabilities once, resolve the SEI binding, wire both providers, call the
+    source-agnostic core assembler. Degrades honestly with whatever sources are present.
+  - The base package stays **zero-dependency** (the Filigree reader is stdlib urllib;
+    Clarion-consuming code lives behind the existing `wardline[clarion]` extra). Verified
+    by a live `clarion_e2e` one-call dossier round-trip against a real `clarion serve`.
 - **Track 1.5 — rule-set breadth (4 → 10 curated rules).** Six new trust-taint rules,
   authored on the Track 2 grammar, each fail-closed/opt-in with violation+clean examples
   and labeled corpus fixtures (corpus FP rate stays 0%):

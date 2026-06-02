@@ -19,7 +19,33 @@ columns as work lands.
 
 ## Current position (update this line)
 
-**As of 2026-06-02 (latest):** **T1.5 (rule-set breadth) — ALL 10 RULES IMPLEMENTED (review pending).**
+**As of 2026-06-02 (latest):** **TRACK 4 (dossier assembler) COMPLETE — T4.1 + T4.2 + T4.3 done & panel-reviewed**,
+on branch `feat/track3-sei-client` (Track 4 stacked on Track 3 + T1.5, NOT off `loom-step-up` as the
+original prompt said — building on `loom-step-up` would have lost Track 3's two-axis SEI types
+(`clarion/identity.py`: `IdentityStatus`×`ContentStatus`), which the dossier envelope KEYS ON; the prompt
+predated Track 3 landing, so this deviation was forced and is surfaced here). **The SEI gate is OPEN:** the
+local `~/clarion/target/release/clarion` build serves SEI **and** call-graph linkages over HTTP
+(`/api/v1/identity/*` + `/api/v1/entities/{id}/callers|callees`; `_capabilities` advertises `sei` +
+`linkages.http`) — so T4.3 was unblocked and wired, not just grounded. Delivered: `core/dossier.py`
+(`EntityDossier` envelope — typed, JSON-serialisable, keyed on the **opaque SEI**, freshness-stamped on
+**both orthogonal axes** identity×content, token-bounded **≤2k** with explicit elision-honest truncation +
+EXCEEDS-budget honesty; `build_dossier` composes Wardline's OWN trust posture for real with a **3-valued
+honest verdict** defect/clean/**unknown** — no false-green on undeclared/under-scanned entities — and
+Clarion/Filigree via typed `LinkageProvider`/`WorkProvider` seams, honest-partial on every absent/unreachable
+source); `clarion/dossier_sources.py` (`ClarionLinkageProvider` + `resolve_entity_binding`);
+`filigree/dossier_client.py` (dep-free urllib `FiligreeWorkProvider` reading ADR-029 entity-associations,
+content_hash_at_attach → per-ticket DRIFT + 3-valued section content axis); `loom_dossier.py`
+(`build_loom_dossier` orchestrator — probe caps once, resolve SEI binding via Track-3 `SeiResolver`, wire both
+providers). Two code-review panels run (silent-failure-hunter + python-code-reviewer ×2): fixed the
+false-green verdict, budget-marker honesty, two content-axis UNKNOWN→FRESH false-greens, one-sided-linkage
+masquerade, typed seams. **DoD green:** ≤2k token budget (tested incl. truncation + untrimmable-core paths) ·
+both freshness axes, SEI-keyed · honest-partial (no crash) · base stays **zero-dependency** · `make ci` green
+(**1216 tests, 96.17%**, all new dossier modules 100%) · dogfood exit 0 · **LIVE `clarion_e2e` one-call
+dossier round-trip PASSED** against a real `clarion serve` (resolve SEI + read linkages, leaky→read_raw edge
+asserted). Filigree: `wardline-730d3efa6b` (T4.1), `wardline-d5c366102f` (T4.2), `wardline-4e3bcf3e49` (T4.3).
+**Next:** Track 5 (trust-vocab convergence + legis CI) — gated on `legis` existing.
+
+**Prior position (retained for context):** **T1.5 (rule-set breadth) — ALL 10 RULES IMPLEMENTED (review pending).**
 On branch `feat/track3-sei-client` (T1.5 built on top of Track 3). The user chose the "broad-to-10"
 set; all six new rules are landed, each with violation/clean examples + a labeled corpus fixture:
 **PY-WL-110** contradictory trust decorators (ERROR) · **PY-WL-109** None-leak from a trusted
@@ -163,13 +189,13 @@ spec (its own brainstorm); the FP corpus is the substrate it and T1.5 reuse.
 
 **DoD:** fingerprint byte-identical across SEI introduction · graceful-degrade test · opaque round-trip · (post-cutover) a fact survives a rename.
 
-### Track 4 — Dossier assembler  ·  groundwork: none · wiring: ⛔ Clarion SEI + HTTP linkages  ·  **☐ not started**
+### Track 4 — Dossier assembler  ·  groundwork: none · wiring: SEI gate OPEN  ·  **☑ done (T4.1–T4.3, branch `feat/track3-sei-client`)**
 
 | Unit | Work | Gate | Status |
 |---|---|---|---|
-| T4.1 | Envelope schema (typed, ≤2k tokens, two-axis freshness, SEI-keyed) | none | ☐ |
-| T4.2 | Assembler skeleton (compose taint + stubbed Clarion + Filigree; honest partial) | none | ☐ |
-| T4.3 | Wire Clarion HTTP linkages + SEI + Filigree associations | ⛔ Clarion SEI + HTTP linkages | ☐ |
+| T4.1 | Envelope schema (typed, ≤2k tokens, two-axis freshness, SEI-keyed) | none | ☑ |
+| T4.2 | Assembler skeleton (compose taint + stubbed Clarion + Filigree; honest partial) | none | ☑ |
+| T4.3 | Wire Clarion HTTP linkages + SEI + Filigree associations | ~~⛔ Clarion SEI + HTTP linkages~~ **OPEN — both ship over HTTP** | ☑ |
 
 **DoD:** envelope ≤2k tokens · freshness both axes · SEI-keyed · honest partial when sources absent · (post-wiring) one-call dossier on a real dogfood entity.
 
