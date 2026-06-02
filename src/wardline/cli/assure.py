@@ -90,6 +90,10 @@ def _render_waiver_debt(waiver_debt: list[dict[str, Any]]) -> None:
     with_expiry = [w for w in waiver_debt if w.get("days_left") is not None]
     soonest = min(with_expiry, key=lambda w: w["days_left"]) if with_expiry else None
     if soonest is not None:
-        click.echo(f"  {len(waiver_debt)} waiver(s); {soonest['days_left']} day(s) until earliest expiry")
+        days: int = soonest["days_left"]
+        if days < 0:
+            click.echo(f"  {len(waiver_debt)} waiver(s); expired {-days} day(s) ago")
+        else:
+            click.echo(f"  {len(waiver_debt)} waiver(s); {days} day(s) until earliest expiry")
     else:
         click.echo(f"  {len(waiver_debt)} waiver(s); no expiry set")

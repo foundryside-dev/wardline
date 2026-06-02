@@ -41,8 +41,10 @@ A **definite verdict** is either:
 The **honesty gap** is `unknown` — entities whose trust the engine could not
 determine. Wardline records these explicitly rather than silently passing them.
 
-When `boundaries_total == 0` (no trust annotations in the scanned path) the
-result is a vacuous `100.0`: there is nothing to be unknown about.
+When `boundaries_total == 0` (no trust annotations in the scanned path),
+`coverage_pct` is `null` — no trust surface to cover means coverage is null,
+never a vacuous `100.0` that reads as a false-green to an agent using a numeric
+gate. The human format prints "nothing to assure" to make this explicit.
 
 ## The structured posture object
 
@@ -94,7 +96,7 @@ return the same object (identical by construction — both call the same
 | `defect_total` | int | Entities with an active defect (covered — a definite negative verdict) |
 | `unknown` | list | Entities with no definite verdict — the honesty gap |
 | `engine_limited` | int | Subset of `unknown` caused by engine under-scan (parse/recursion skip → `WLN-ENGINE-*` FACT) |
-| `coverage_pct` | float | `100 × (boundaries_total − unknown_count) / boundaries_total`; `100.0` when denominator is 0 |
+| `coverage_pct` | float \| null | `100 × (boundaries_total − unknown_count) / boundaries_total`; `null` when `boundaries_total == 0` (no trust surface → not a false-green 100%) |
 | `unanalyzed_rule_ids` | list[str] | Distinct `WLN-ENGINE-*` rule ids seen in findings — indicates *why* engine-limited unknowns occurred |
 | `waiver_debt` | list | Every configured waiver from `wardline.yaml`, with days-to-expiry |
 | `baselined_total` | int | Findings suppressed via the accepted baseline |
@@ -145,7 +147,7 @@ When the scanned path contains no trust-annotated functions:
   "defect_total": 0,
   "unknown": [],
   "engine_limited": 0,
-  "coverage_pct": 100.0,
+  "coverage_pct": null,
   "unanalyzed_rule_ids": [],
   "waiver_debt": [],
   "baselined_total": 0,
@@ -182,9 +184,13 @@ The agent reads the result and branches:
 ```python
 posture = call_mcp("assure", {"path": "src/myapp"})
 
-if posture["coverage_pct"] < 80.0:
+pct = posture["coverage_pct"]
+if pct is None:
+    # No trust surface declared — cannot gate on coverage (this is NOT a green).
+    block_merge(reason="No trust annotations declared; coverage undefined")
+elif pct < 80.0:
     # Too many unknowns — flag for human review before merge.
-    block_merge(reason=f"Coverage {posture['coverage_pct']}% below threshold")
+    block_merge(reason=f"Coverage {pct}% below threshold")
 
 if posture["unknown"]:
     engine_limited = [u for u in posture["unknown"] if u["reason"] is not None]

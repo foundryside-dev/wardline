@@ -72,3 +72,22 @@ def test_human_format_empty_surface(tmp_path: Path) -> None:
     assert "nothing to assure" in result.output.lower()
     # Must not mislead the user with a bare coverage claim on an empty surface.
     assert "100% coverage" not in result.output
+
+
+def test_human_lapsed_waiver_wording(tmp_path: Path) -> None:
+    """A lapsed waiver must say "expired N day(s) ago", not "-N day(s) until earliest expiry"."""
+    # Write a decorated module so the posture is non-empty, then invoke via JSON
+    # to inspect waiver_debt directly, and human to check the wording.
+    (tmp_path / "m.py").write_text(_MODULE, encoding="utf-8")
+    # Waiver with an expiry in the past (2026-01-01 is well before today 2026-06-03).
+    waiver_yaml = 'waivers:\n  - fingerprint: "' + "a" * 64 + '"\n    reason: "old"\n    expires: "2026-01-01"\n'
+    (tmp_path / "wardline.yaml").write_text(waiver_yaml, encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["assure", str(tmp_path), "--format", "human"])
+    assert result.exit_code == 0, result.output
+    # Must say "expired N day(s) ago", not a negative "until expiry".
+    assert "expired" in result.output.lower()
+    assert "ago" in result.output.lower()
+    # The negative "until" wording must be gone.
+    assert "until earliest expiry" not in result.output or "-" not in result.output

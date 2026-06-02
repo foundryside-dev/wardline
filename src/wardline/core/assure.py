@@ -93,14 +93,18 @@ class AssurancePosture:
     """The trust-surface coverage rollup. ``boundaries_total`` is the denominator
     (anchored entities only); ``proven`` + ``defect_total`` + ``len(unknown)`` ==
     ``boundaries_total``. ``coverage_pct`` is the share with a definite verdict
-    (defects counted as covered); ``unknown`` is the honesty gap."""
+    (defects counted as covered); ``unknown`` is the honesty gap.
+
+    ``coverage_pct`` is ``None`` when ``boundaries_total == 0`` — no trust surface to
+    cover means coverage is null, never a vacuous 100% that reads as a false-green to
+    an agent using a numeric gate (the project's #1 forbidden failure mode)."""
 
     boundaries_total: int
     proven: int
     defect_total: int
     unknown: list[UnknownBoundary]
     engine_limited: int
-    coverage_pct: float
+    coverage_pct: float | None
     unanalyzed_rule_ids: list[str]
     waiver_debt: list[WaiverDebtEntry]
     baselined_total: int
@@ -124,19 +128,20 @@ class AssurancePosture:
 def _empty_posture(waivers: tuple[Waiver, ...], today: date) -> AssurancePosture:
     """An honest empty posture — no analysis context, so no trust surface to cover.
 
-    ``coverage_pct`` is 100.0 by the same empty-denominator convention as a context
-    with zero anchored entities: there is nothing left unknown. ``waiver_debt`` is
-    DELIBERATELY still populated even on this branch — it is a config-level rollup
-    independent of whether anything was analysable, so suppressing it would hide
-    accepted debt behind an empty scan (a false-green). Every coverage list (``unknown``,
-    ``unanalyzed_rule_ids``) is empty, as is correct with no surface analysed."""
+    ``coverage_pct`` is ``None``: no trust surface to cover means coverage is null,
+    never a vacuous 100% that reads as a false-green to an agent using a numeric gate.
+    ``waiver_debt`` is DELIBERATELY still populated even on this branch — it is a
+    config-level rollup independent of whether anything was analysable, so suppressing
+    it would hide accepted debt behind an empty scan (a false-green). Every coverage
+    list (``unknown``, ``unanalyzed_rule_ids``) is empty, as is correct with no surface
+    analysed."""
     return AssurancePosture(
         boundaries_total=0,
         proven=0,
         defect_total=0,
         unknown=[],
         engine_limited=0,
-        coverage_pct=100.0,
+        coverage_pct=None,
         unanalyzed_rule_ids=[],
         waiver_debt=_waiver_debt(waivers, today),
         baselined_total=0,
@@ -205,7 +210,7 @@ def posture_from_scan(
     unknown.sort(key=lambda u: u.qualname)
 
     if boundaries_total == 0:
-        coverage_pct = 100.0
+        coverage_pct: float | None = None
     else:
         coverage_pct = round(100 * (boundaries_total - len(unknown)) / boundaries_total, 1)
 

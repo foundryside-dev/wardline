@@ -14,7 +14,7 @@ from datetime import date
 from pathlib import Path
 from types import MappingProxyType
 
-from wardline.core.assure import build_posture, posture_from_scan
+from wardline.core.assure import _empty_posture, build_posture, posture_from_scan
 from wardline.core.finding import Finding, Kind, Location, Severity
 from wardline.core.run import ScanResult, ScanSummary
 from wardline.core.taints import TaintState
@@ -155,3 +155,58 @@ def test_unknown_and_engine_limited_branch() -> None:
     assert got["unknown"][1]["reason"] is not None and "recursion" in got["unknown"][1]["reason"]
     assert got["unknown"][0]["location"] == {"path": "m.py", "line": 4}
     assert "WLN-ENGINE-FUNCTION-SKIPPED" in got["unanalyzed_rule_ids"]
+
+
+def test_empty_surface_coverage_is_null(tmp_path: Path) -> None:
+    """An undecorated tree has no trust surface → coverage_pct must be None (null in
+    JSON/MCP), not 100.0. A numeric 100.0 would read as "fully assured" to any agent
+    using a numeric gate — a false-green (the project's #1 forbidden failure mode).
+
+    Gates both the I/O shell (``build_posture``) and the ``_empty_posture`` helper
+    directly, plus the ``posture_from_scan`` pure-core path with an empty
+    ``declared_qualnames`` set.
+    """
+    # I/O shell path: real scan of a plain undecorated module.
+    _PLAIN = "def f():\n    return 1\n"
+    (tmp_path / "f.py").write_text(_PLAIN, encoding="utf-8")
+
+    posture = build_posture(tmp_path, today=date(2026, 6, 3))
+    got = posture.to_dict()
+
+    assert got["boundaries_total"] == 0
+    assert got["coverage_pct"] is None, (
+        f"expected None but got {got['coverage_pct']!r}; "
+        "a vacuous 100.0 reads as 'fully assured' to a numeric gate — false-green"
+    )
+
+    # _empty_posture helper path.
+    from datetime import date as _date
+
+    empty = _empty_posture(waivers=(), today=_date(2026, 6, 3))
+    assert empty.coverage_pct is None
+    assert empty.to_dict()["coverage_pct"] is None
+
+    # posture_from_scan pure-core path with empty declared_qualnames.
+    from types import MappingProxyType
+
+    from wardline.core.run import ScanResult, ScanSummary
+
+    empty_ctx = AnalysisContext(
+        project_taints={},
+        project_return_taints={},
+        function_var_taints={},
+        function_return_taints={},
+        function_return_callee={},
+        entities=MappingProxyType({}),
+        taint_provenance={},
+        declared_qualnames=frozenset(),
+    )
+    empty_result = ScanResult(
+        findings=[],
+        summary=ScanSummary(total=0, active=0, baselined=0, waived=0, judged=0),
+        files_scanned=0,
+        context=empty_ctx,
+    )
+    pure_posture = posture_from_scan(empty_result, empty_ctx, waivers=(), today=date(2026, 6, 3))
+    assert pure_posture.coverage_pct is None
+    assert pure_posture.to_dict()["coverage_pct"] is None
