@@ -14,6 +14,12 @@ What it proves: Wardline emits a scan response; the agent hands it to legis's
 `POST /wardline/scan-results`; legis governs (routes the active defects into the
 named 2x2 cell) WITHOUT Wardline re-judging. The routed population matches
 Wardline's own active-defect set — the one-judge property, live.
+
+Cell choice: this oracle deliberately drives ONLY the `surface_override` cell, so a
+bare `create_app()` factory server suffices to run it — that cell builds its engine
+lazily and needs no wired sign-off gate. (`block_escalate` would require a server
+stood up with a `signoff_gate`; exercising it is out of this seam's scope.) Verified
+live against `uvicorn --factory legis.api.app:create_app`.
 """
 
 from __future__ import annotations
