@@ -59,6 +59,11 @@ class AnalysisContext:
     # resolve a ``self.<attr>``/``cls.<attr>`` read against it. Defaulted for direct
     # constructions; absence means no cross-method attribute taint (function-level only).
     class_attr_taints: Mapping[str, Mapping[str, TaintState]] = field(default_factory=dict)
+    # Qualnames of entities the L1 provider seeded from a DECLARATION (a trust
+    # decorator) — the "trust surface". Read by core/assure.py as the coverage
+    # denominator. Additive + defaulted so direct constructions/tests need not
+    # supply it; frozenset is already immutable so no proxy wrap is needed.
+    declared_qualnames: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "project_taints", MappingProxyType(dict(self.project_taints)))
