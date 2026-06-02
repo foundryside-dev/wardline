@@ -237,6 +237,7 @@ class WardlineAnalyzer:
                     bucket[rest] = project_return_taints.get(ent.qualname, TaintState.UNKNOWN_RAW)
 
         function_var_taints: dict[str, dict[str, TaintState]] = {}
+        function_call_site_taints: dict[str, dict[int, dict[str, TaintState]]] = {}
         function_return_taints: dict[str, TaintState] = {}
         function_return_callee: dict[str, str | None] = {}
         entity_index: dict[str, Entity] = {}
@@ -266,7 +267,9 @@ class WardlineAnalyzer:
                             method_tm[f"self.{sib_name}"] = sib_taint
                             method_tm[f"cls.{sib_name}"] = sib_taint
                 try:
-                    var_taints = compute_variable_taints(ent.node, seed, dict(method_tm))
+                    call_sites: dict[int, dict[str, TaintState]] = {}
+                    var_taints = compute_variable_taints(ent.node, seed, dict(method_tm), call_sites)
+                    function_call_site_taints[ent.qualname] = call_sites
                     ret_taint = compute_return_taint(ent.node, seed, dict(method_tm), var_taints)
                     # Pass a COPY of var_taints: _resolve_expr's walrus (NamedExpr)
                     # branch mutates the dict it walks, and var_taints is stored into
@@ -303,6 +306,7 @@ class WardlineAnalyzer:
             project_taints=project_taints,
             project_return_taints=project_return_taints,
             function_var_taints=function_var_taints,
+            function_call_site_taints=function_call_site_taints,
             function_return_taints=function_return_taints,
             function_return_callee=function_return_callee,
             entities=entity_index,

@@ -29,7 +29,13 @@ from typing import TYPE_CHECKING
 from wardline.core.finding import Finding, Kind, Location, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import TaintState
-from wardline.scanner.rules._sink_helpers import RAW_ZONE, _own_calls, dotted_name, worst_arg_taint
+from wardline.scanner.rules._sink_helpers import (
+    RAW_ZONE,
+    _own_calls,
+    call_site_var_taints,
+    dotted_name,
+    worst_arg_taint,
+)
 from wardline.scanner.rules.metadata import RuleMetadata
 
 if TYPE_CHECKING:
@@ -78,6 +84,8 @@ class UntrustedReachesTrustedCallee:
         findings: list[Finding] = []
         for qualname, entity in context.entities.items():
             module = qualname.rsplit(".", 1)[0] if "." in qualname else ""
+            site_taints = call_site_var_taints(entity.node, qualname, context)
+            final = context.function_var_taints.get(qualname, {})
             for call in _own_calls(entity.node):
                 callee = _resolve_callee(call, module, context)
                 if callee is None:
@@ -88,7 +96,7 @@ class UntrustedReachesTrustedCallee:
                 callee_body = context.project_taints.get(callee)
                 if callee_body is None or callee_body in RAW_ZONE:
                     continue  # @external_boundary / @trust_boundary body is raw — raw input expected
-                worst = worst_arg_taint(call, qualname, context)
+                worst = worst_arg_taint(call, qualname, context, site_taints.get(id(call), final))
                 if worst is None or worst not in _PROVABLY_UNTRUSTED:
                     continue
                 line = call.lineno

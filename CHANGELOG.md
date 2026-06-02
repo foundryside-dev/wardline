@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Flow-sensitive sink-arg taint (soundness closure E).** The sink rules
+  (`PY-WL-106`/`107`/`108`) and `PY-WL-105` now resolve a call argument's taint AT
+  the sink statement, not from the function's final per-variable map. This closes a
+  documented two-way imprecision: a variable trusted at the sink but reassigned raw
+  *after* it no longer over-fires (a false positive), and one raw at the sink but
+  sanitised *after* it now correctly fires (a fail-open it previously missed). The
+  L2 walker captures a per-statement var-taint snapshot (`function_call_site_taints`
+  on the analysis context); the expression combinators are unchanged.
+
+### Internal
+
+- **Soundness-regression locks for closures B / C / D.** Probing the Track-1.6
+  candidate FN closures found three already sound — `*args`/`**kwargs` at call
+  sites, comprehension/walrus targets, and decorator-wrapped (`functools.wraps`)
+  callees all propagate taint correctly. Pinned with regression tests so a future
+  refactor cannot silently reopen them. (No engine change for B/C/D.)
+
 ### Added
 
 - **`PY-WL-111` — trust boundary whose only rejection path is `assert` (CWE-617).**
