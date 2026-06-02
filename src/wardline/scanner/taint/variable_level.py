@@ -195,8 +195,15 @@ def _resolve_expr(
         _resolve_expr(node.slice, function_taint, taint_map, var_taints)
         return _resolve_expr(node.value, function_taint, taint_map, var_taints)
     if isinstance(node, ast.Attribute):
-        # Attribute access carries the object's taint (the value path; the
-        # call-receiver path is handled in _resolve_call via _dotted_name).
+        # A ``self.<attr>``/``cls.<attr>`` read whose attribute has a project-computed
+        # cross-method summary (injected by the analyzer under that dotted key) reads
+        # the summary — closing the function-level fail-open where raw written to an
+        # attribute in one method escaped when surfaced from another (PY-WL-101/105 on
+        # OO code). Any other attribute access carries the object's own taint (the
+        # value path; the call-receiver path is handled in _resolve_call).
+        dotted = _dotted_name(node)
+        if dotted is not None and dotted in taint_map:
+            return taint_map[dotted]
         return _resolve_expr(node.value, function_taint, taint_map, var_taints)
     if isinstance(node, ast.Await):
         # Unwrap — the inner expression (typically a Call) is already handled.
@@ -946,6 +953,56 @@ def _assign_target(
             _assign_target(elt, taint, var_taints)
     elif isinstance(target, ast.Starred) and isinstance(target.value, ast.Name):
         var_taints[target.value.id] = taint
+
+
+def _self_attr_name(target: ast.expr) -> str | None:
+    """The attribute name of a ``self.<attr>`` / ``cls.<attr>`` write target, else None.
+
+    Only a direct attribute of the instance/class receiver (``self.x = ...``) — a
+    subscript-into-attribute (``self.cache[k] = ...``) or deeper chain is NOT a direct
+    attribute write and is deliberately excluded (it would need container modelling)."""
+    if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id in ("self", "cls"):
+        return target.attr
+    return None
+
+
+def collect_self_attr_writes(
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    var_taints: dict[str, TaintState],
+) -> dict[str, TaintState]:
+    """Return ``{attr_name: least_trusted RHS taint}`` for every direct
+    ``self.<attr>``/``cls.<attr>`` assignment in *func_node*'s own scope.
+
+    The analyzer folds these across all of a class's methods (with :func:`least_trusted`)
+    into the per-class attribute summary that seeds cross-method attribute reads
+    (closure A — the function-level fail-open on OO code). RHS taints resolve against
+    the method's already-computed ``var_taints`` so local indirection
+    (``v = read_raw(p); self.x = v``) is captured (no fail-open). Does not descend into
+    nested def/class/lambda scopes (their ``self`` is a different binding)."""
+    out: dict[str, TaintState] = {}
+
+    def _writes(node: ast.AST) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                continue
+            targets: list[ast.expr] = []
+            value: ast.expr | None = None
+            if isinstance(child, ast.Assign):
+                targets, value = list(child.targets), child.value
+            elif isinstance(child, (ast.AnnAssign, ast.AugAssign)) and child.value is not None:
+                # ``self.x: T = expr`` and ``self.x += expr`` (AugAssign always has a value).
+                targets, value = [child.target], child.value
+            for tgt in targets:
+                attr = _self_attr_name(tgt)
+                if attr is not None and value is not None:
+                    rhs = _resolve_expr(value, function_taint, taint_map, var_taints)
+                    out[attr] = least_trusted(out[attr], rhs) if attr in out else rhs
+            _writes(child)
+
+    _writes(func_node)
+    return out
 
 
 def compute_return_taint(

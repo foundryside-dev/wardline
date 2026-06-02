@@ -54,6 +54,11 @@ class AnalysisContext:
     # the flow-insensitive final map). Defaulted so direct constructions (tests) need
     # not supply it; absence degrades a consumer to the final-map read.
     function_call_site_taints: Mapping[str, Mapping[int, Mapping[str, TaintState]]] = field(default_factory=dict)
+    # Cross-method class-attribute summary (closure A): ``{class_qualname: {attr: taint}}``,
+    # the least-trusted value written to ``self.<attr>`` across the class's methods. Rules
+    # resolve a ``self.<attr>``/``cls.<attr>`` read against it. Defaulted for direct
+    # constructions; absence means no cross-method attribute taint (function-level only).
+    class_attr_taints: Mapping[str, Mapping[str, TaintState]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "project_taints", MappingProxyType(dict(self.project_taints)))
@@ -64,6 +69,7 @@ class AnalysisContext:
         object.__setattr__(self, "entities", MappingProxyType(dict(self.entities)))
         object.__setattr__(self, "taint_provenance", MappingProxyType(dict(self.taint_provenance)))
         object.__setattr__(self, "function_call_site_taints", MappingProxyType(dict(self.function_call_site_taints)))
+        object.__setattr__(self, "class_attr_taints", MappingProxyType(dict(self.class_attr_taints)))
 
 
 class _Rule(Protocol):

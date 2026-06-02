@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Cross-method class-attribute taint (soundness closure A).** Raw assigned to
+  `self.<attr>` in one method and returned from (or passed to a sink in) ANOTHER
+  method used to escape — the engine was function-level. A per-class attribute
+  summary (the least-trusted value written to each `self.<attr>` across all methods)
+  now seeds reads of that attribute, so `PY-WL-101`/`105` and the sink rules see raw
+  data surfaced via instance state. This does NOT over-fire on the common OO shapes
+  (validated setter + trusted getter, lazy-init): a `@trust_boundary`-validated write
+  is trusted, so the summary stays trusted — measured FP=0 on hand-built patterns and
+  on the dogfood + corpus trees. A deep `self.y = self.x` attribute-to-attribute chain
+  may under-resolve (a bounded residual FN, never an over-fire).
 - **Flow-sensitive sink-arg taint (soundness closure E).** The sink rules
   (`PY-WL-106`/`107`/`108`) and `PY-WL-105` now resolve a call argument's taint AT
   the sink statement, not from the function's final per-variable map. This closes a

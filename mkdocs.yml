@@ -39,6 +39,8 @@ markdown_extensions:
 exclude_docs: |
   superpowers/
   integration/
+  bitbucket/
+  notes/
 
 nav:
   - Home: index.md

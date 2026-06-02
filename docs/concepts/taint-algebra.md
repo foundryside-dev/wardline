@@ -116,7 +116,7 @@ as the freedom zone and **suppresses** (returns `NONE`). The firing is **not**
 unconditional, though: if the *body* is itself `MIXED_RAW` (the realistic route to
 a `MIXED_RAW` actual return), `PY-WL-101`'s body-less-trusted-than-declared gate
 suppresses first and delegates to `PY-WL-102`, so `101` does not fire there.
-(Note `PY-WL-101`'s `_RAW_ZONE` set is a suppression gate on the *declared* tier,
+(Note `PY-WL-101`'s `RAW_ZONE` set is a suppression gate on the *declared* tier,
 not the firing condition — `MIXED_RAW`'s membership in it is inert because you
 never *declare* `MIXED_RAW`.) That asymmetry is harmless only because the input is
 unreachable. The F5 guards are what keep it latent.

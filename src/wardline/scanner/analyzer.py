@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from wardline.core.finding import Finding, Kind, Location, Severity
 from wardline.core.qualname import module_dotted_name
-from wardline.core.taints import TaintState
+from wardline.core.taints import TaintState, least_trusted
 from wardline.scanner.ast_primitives import build_import_alias_map
 from wardline.scanner.context import AnalysisContext, RuleRegistry
 from wardline.scanner.diagnostics import (
@@ -37,6 +37,7 @@ from wardline.scanner.taint.function_level import seed_function_taints
 from wardline.scanner.taint.project_resolver import ModuleInput, resolve_project_taints
 from wardline.scanner.taint.provider import SeedContext, TaintSourceProvider
 from wardline.scanner.taint.variable_level import (
+    collect_self_attr_writes,
     compute_return_callee,
     compute_return_taint,
     compute_variable_taints,
@@ -242,6 +243,41 @@ class WardlineAnalyzer:
         function_return_callee: dict[str, str | None] = {}
         entity_index: dict[str, Entity] = {}
         func_skip_findings: list[Finding] = []
+        # Records carried from L2 pass 1 to pass 2 (closure A): one per entity.
+        l2_records: list[tuple[Entity, TaintState, dict[str, TaintState], str]] = []
+        # Per-class attribute summary: ``{class_qualname: {attr: least_trusted write taint}}``.
+        class_attr_taints: dict[str, dict[str, TaintState]] = {}
+        l2_failed: set[str] = set()
+
+        def _run_l2(
+            node: ast.FunctionDef | ast.AsyncFunctionDef, seed: TaintState, tm: dict[str, TaintState]
+        ) -> tuple[dict[int, dict[str, TaintState]], dict[str, TaintState], TaintState | None, str | None]:
+            call_sites: dict[int, dict[str, TaintState]] = {}
+            var_taints = compute_variable_taints(node, seed, dict(tm), call_sites)
+            ret_taint = compute_return_taint(node, seed, dict(tm), var_taints)
+            # Pass a COPY of var_taints: _resolve_expr's walrus (NamedExpr) branch mutates
+            # the dict it walks, and var_taints is stored into function_var_taints. A
+            # forward-referencing walrus inside a return would otherwise get a second,
+            # non-idempotent resolve pass that perturbs the stored map. Same start ⇒ same callee.
+            ret_callee = compute_return_callee(node, seed, dict(tm), dict(var_taints))
+            return call_sites, var_taints, ret_taint, ret_callee
+
+        def _store(
+            qn: str,
+            call_sites: dict[int, dict[str, TaintState]],
+            var_taints: dict[str, TaintState],
+            ret_taint: TaintState | None,
+            ret_callee: str | None,
+        ) -> None:
+            function_var_taints[qn] = var_taints
+            function_call_site_taints[qn] = call_sites
+            if ret_taint is not None:
+                function_return_taints[qn] = ret_taint
+            else:
+                function_return_taints.pop(qn, None)
+            function_return_callee[qn] = ret_callee
+
+        # ── L2 pass 1 — per-method var/return taints + per-class attribute summary ──
         for _relpath, module, _tree, entities, alias_map, classes in file_meta:
             call_tm = build_call_taint_map(module_path=module, alias_map=alias_map, project_by_module=project_by_module)
             for ent in entities:
@@ -258,7 +294,8 @@ class WardlineAnalyzer:
                 # baking it into the shared module map would collide across classes.
                 method_tm = dict(call_tm)
                 enclosing_class = ent.qualname.rsplit(".", 1)[0]
-                if enclosing_class in classes:
+                is_method = enclosing_class in classes
+                if is_method:
                     sib_prefix = enclosing_class + "."
                     for sib in entities:
                         if sib.qualname.startswith(sib_prefix) and "." not in sib.qualname[len(sib_prefix) :]:
@@ -267,24 +304,14 @@ class WardlineAnalyzer:
                             method_tm[f"self.{sib_name}"] = sib_taint
                             method_tm[f"cls.{sib_name}"] = sib_taint
                 try:
-                    call_sites: dict[int, dict[str, TaintState]] = {}
-                    var_taints = compute_variable_taints(ent.node, seed, dict(method_tm), call_sites)
-                    function_call_site_taints[ent.qualname] = call_sites
-                    ret_taint = compute_return_taint(ent.node, seed, dict(method_tm), var_taints)
-                    # Pass a COPY of var_taints: _resolve_expr's walrus (NamedExpr)
-                    # branch mutates the dict it walks, and var_taints is stored into
-                    # function_var_taints. A forward-referencing walrus inside a return
-                    # would otherwise get a second, non-idempotent resolve pass that
-                    # perturbs the stored map. Same starting state ⇒ same ret_callee.
-                    ret_callee = compute_return_callee(ent.node, seed, dict(method_tm), dict(var_taints))
+                    call_sites, var_taints, ret_taint, ret_callee = _run_l2(ent.node, seed, method_tm)
                 except RecursionError:
                     # Fail-closed: absent vars read as the function taint, and the
                     # return taint is unknown. Emit a FACT so the gap is observable
                     # — a silently-absent function_return_taints entry would make
                     # PY-WL-101 quietly skip this function (an invisible under-taint).
-                    var_taints = {}
-                    ret_taint = None
-                    ret_callee = None
+                    l2_failed.add(ent.qualname)
+                    call_sites, var_taints, ret_taint, ret_callee = {}, {}, None, None
                     func_skip_findings.append(
                         Finding(
                             rule_id="WLN-ENGINE-FUNCTION-SKIPPED",
@@ -297,16 +324,49 @@ class WardlineAnalyzer:
                             properties={"reason": "recursion_limit"},
                         )
                     )
-                function_var_taints[ent.qualname] = var_taints
-                if ret_taint is not None:
-                    function_return_taints[ent.qualname] = ret_taint
-                function_return_callee[ent.qualname] = ret_callee
+                _store(ent.qualname, call_sites, var_taints, ret_taint, ret_callee)
+                l2_records.append((ent, seed, method_tm, enclosing_class))
+                # Closure A: fold this method's ``self.<attr>`` writes into the class
+                # summary (least_trusted = weakest-link, so any raw write makes the
+                # attribute raw for cross-method reads). RHS resolves against this
+                # method's pass-1 var_taints so local indirection (``v = raw; self.x = v``)
+                # is captured. Single round: a ``self.y = self.x`` attribute-to-attribute
+                # chain resolves self.x at its pre-summary value here, so a deep attr chain
+                # may under-resolve — a bounded residual FN (never an over-fire), consistent
+                # with the engine's other documented function-level limits.
+                if is_method and ent.qualname not in l2_failed:
+                    writes = collect_self_attr_writes(ent.node, seed, dict(method_tm), dict(var_taints))
+                    if writes:
+                        summary = class_attr_taints.setdefault(enclosing_class, {})
+                        for attr_name, attr_taint in writes.items():
+                            summary[attr_name] = (
+                                least_trusted(summary[attr_name], attr_taint) if attr_name in summary else attr_taint
+                            )
+
+        # ── L2 pass 2 — re-run methods of classes with an attribute summary, with
+        # ``self.<attr>``/``cls.<attr>`` injected so cross-method reads see the summary.
+        # Methods that read no summarised attribute recompute to identical values, so
+        # overwriting is safe; pass-1-skipped methods (RecursionError) stay skipped.
+        for ent, seed, method_tm, enclosing_class in l2_records:
+            attr_summary = class_attr_taints.get(enclosing_class)
+            if not attr_summary or ent.qualname in l2_failed:
+                continue
+            tm2 = dict(method_tm)
+            for attr_name, attr_taint in attr_summary.items():
+                tm2[f"self.{attr_name}"] = attr_taint
+                tm2[f"cls.{attr_name}"] = attr_taint
+            try:
+                call_sites, var_taints, ret_taint, ret_callee = _run_l2(ent.node, seed, tm2)
+            except RecursionError:  # pragma: no cover - pass 1 succeeded; defensive
+                continue
+            _store(ent.qualname, call_sites, var_taints, ret_taint, ret_callee)
 
         context = AnalysisContext(
             project_taints=project_taints,
             project_return_taints=project_return_taints,
             function_var_taints=function_var_taints,
             function_call_site_taints=function_call_site_taints,
+            class_attr_taints=class_attr_taints,
             function_return_taints=function_return_taints,
             function_return_callee=function_return_callee,
             entities=entity_index,

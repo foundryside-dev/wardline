@@ -83,7 +83,7 @@ def sink_calls(func_node: ast.AST, sink_names: frozenset[str]) -> Iterator[tuple
 
 
 def _arg_taint(
-    arg: ast.expr, module: str, var_taints: Mapping[str, TaintState], context: AnalysisContext
+    arg: ast.expr, module: str, var_taints: Mapping[str, TaintState], context: AnalysisContext, qualname: str
 ) -> TaintState | None:
     if isinstance(arg, ast.Starred):
         arg = arg.value
@@ -94,6 +94,12 @@ def _arg_taint(
         if callee is not None and "." not in callee and module:
             return context.project_return_taints.get(f"{module}.{callee}")
         return None
+    if isinstance(arg, ast.Attribute) and isinstance(arg.value, ast.Name) and arg.value.id in ("self", "cls"):
+        # ``self.<attr>``/``cls.<attr>`` resolves against the cross-method class
+        # attribute summary (closure A): the enclosing class is the qualname minus
+        # the method leaf. None when the attribute has no summarised write.
+        enclosing_class = qualname.rsplit(".", 1)[0] if "." in qualname else ""
+        return context.class_attr_taints.get(enclosing_class, {}).get(arg.attr)
     return None
 
 
@@ -110,7 +116,7 @@ def worst_arg_taint(
     module = qualname.rsplit(".", 1)[0] if "." in qualname else ""
     worst: TaintState | None = None
     for arg in (*call.args, *(kw.value for kw in call.keywords)):
-        t = _arg_taint(arg, module, var_taints, context)
+        t = _arg_taint(arg, module, var_taints, context, qualname)
         if t is not None and (worst is None or TRUST_RANK[t] > TRUST_RANK[worst]):
             worst = t
     return worst
