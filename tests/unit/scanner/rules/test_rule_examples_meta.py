@@ -25,19 +25,19 @@ from pathlib import Path
 import pytest
 
 from wardline.core.config import WardlineConfig
+from wardline.core.finding import Kind
 from wardline.scanner.analyzer import WardlineAnalyzer
 from wardline.scanner.rules import BUILTIN_RULE_CLASSES
 
 _IMPORTS = "from wardline.decorators import external_boundary, trust_boundary, trusted\n"
 
 
-def _rule_ids(tmp_path: Path, snippet: str) -> set[str]:
-    """Scan one example snippet as its own isolated module; return the rule ids fired."""
+def _scan(tmp_path: Path, snippet: str) -> list:
+    """Scan one example snippet as its own isolated module; return its findings."""
     src = tmp_path / "example.py"
     src.write_text(_IMPORTS + textwrap.dedent(snippet), encoding="utf-8")
     analyzer = WardlineAnalyzer()
-    findings = analyzer.analyze([src], WardlineConfig(), root=tmp_path)
-    return {f.rule_id for f in findings}
+    return list(analyzer.analyze([src], WardlineConfig(), root=tmp_path))
 
 
 # (rule_id, snippet) pairs — flattened so a single failure names the exact example.
@@ -55,14 +55,16 @@ _CLEAN_CASES = [
 
 @pytest.mark.parametrize(("rule_id", "snippet"), _VIOLATION_CASES)
 def test_violation_example_fires_its_rule(tmp_path: Path, rule_id: str, snippet: str) -> None:
-    fired = _rule_ids(tmp_path, snippet)
+    fired = {f.rule_id for f in _scan(tmp_path, snippet)}
     assert rule_id in fired, f"{rule_id} violation example did not fire it; fired={sorted(fired)}"
 
 
 @pytest.mark.parametrize(("rule_id", "snippet"), _CLEAN_CASES)
-def test_clean_example_does_not_fire_its_rule(tmp_path: Path, rule_id: str, snippet: str) -> None:
-    fired = _rule_ids(tmp_path, snippet)
-    assert rule_id not in fired, f"{rule_id} clean example wrongly fired it; fired={sorted(fired)}"
+def test_clean_example_fires_no_defect(tmp_path: Path, rule_id: str, snippet: str) -> None:
+    # A clean example is exemplary — it ships to agents as "the clean way", so it
+    # must be clean OVERALL, not merely w.r.t. its own rule (the stronger contract).
+    defects = sorted({f.rule_id for f in _scan(tmp_path, snippet) if f.kind is Kind.DEFECT})
+    assert not defects, f"{rule_id} clean example fired defect(s): {defects}"
 
 
 @pytest.mark.parametrize("cls", BUILTIN_RULE_CLASSES, ids=[c.rule_id for c in BUILTIN_RULE_CLASSES])

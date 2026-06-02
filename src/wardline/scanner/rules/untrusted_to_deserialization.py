@@ -36,7 +36,12 @@ METADATA = RuleMetadata(
         "@external_boundary\ndef read_raw(p):\n    return p\n"
         "@trusted(level='ASSURED')\ndef f(p):\n    pickle.loads(read_raw(p))",
     ),
-    examples_clean=("@trusted(level='ASSURED')\ndef f():\n    return pickle.loads(trusted_blob())",),
+    examples_clean=(
+        "@external_boundary\ndef read_raw(p):\n    return p\n"
+        "@trust_boundary(to_level='ASSURED')\ndef validate(x):\n    if not x:\n        raise ValueError\n    return x\n"
+        "@trusted(level='ASSURED')\ndef f(p):\n    blob = validate(read_raw(p))\n"
+        "    obj = pickle.loads(blob)\n    return blob",
+    ),
 )
 
 
