@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from wardline.core.taints import TRUST_RANK, TaintState, least_trusted, taint_join
+from wardline.core.taints import RAW_ZONE, TRUST_RANK, TaintState, least_trusted, taint_join
 
 _UA = TaintState.UNKNOWN_ASSURED
 _UG = TaintState.UNKNOWN_GUARDED
@@ -75,3 +75,26 @@ def test_join_and_least_trusted_diverge_across_families() -> None:
     # The whole point of having both operators: same inputs, different outputs.
     assert taint_join(TaintState.INTEGRAL, TaintState.ASSURED) == _MIXED
     assert least_trusted(TaintState.INTEGRAL, TaintState.ASSURED) == TaintState.ASSURED
+
+
+def test_raw_zone_matches_rank_threshold() -> None:
+    # The rules gate on BOTH RAW_ZONE set-membership and rank comparisons (e.g.
+    # PY-WL-101's declared-tier gate vs. its strict-rank check). If the hand-written
+    # RAW_ZONE set ever drifts from "rank >= EXTERNAL_RAW", rules misfire silently.
+    # This one assertion closes that coupling.
+    threshold = TRUST_RANK[TaintState.EXTERNAL_RAW]
+    assert frozenset(s for s in TaintState if TRUST_RANK[s] >= threshold) == RAW_ZONE
+
+
+@pytest.mark.parametrize("a", list(TaintState))
+def test_least_trusted_idempotent(a: TaintState) -> None:
+    assert least_trusted(a, a) == a
+
+
+@pytest.mark.parametrize("a", list(TaintState))
+@pytest.mark.parametrize("b", list(TaintState))
+@pytest.mark.parametrize("c", list(TaintState))
+def test_least_trusted_associative(a: TaintState, b: TaintState, c: TaintState) -> None:
+    # The L3 fixed point folds least_trusted over many return values; associativity
+    # is what makes that fold order-independent. 8^3 is tiny — exhaustive, no hypothesis.
+    assert least_trusted(least_trusted(a, b), c) == least_trusted(a, least_trusted(b, c))

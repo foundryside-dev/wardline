@@ -123,7 +123,7 @@ Eight ordered taint states (`core/taints.py`), most→least trusted:
 (validator that raises trust), `@trusted(level=...)` (trusted producer). The
 `UNKNOWN_*` / `MIXED_RAW` states are engine-inferred and never written.
 
-### The four policy rules (`scanner/rules/`)
+### The policy rules (`scanner/rules/`)
 
 | Rule | Flags | Gating |
 |---|---|---|
@@ -131,9 +131,18 @@ Eight ordered taint states (`core/taints.py`), most→least trusted:
 | `PY-WL-102` | trust boundary with no rejection path (can't say "no") | declaration-gated |
 | `PY-WL-103` | broad exception handler in a trusted-tier function | tier-modulated severity |
 | `PY-WL-104` | silently-swallowed exception in a trusted-tier function | tier-modulated severity |
+| `PY-WL-105` | untrusted data passed as an arg to a trusted producer (call-site counterpart of 101) | declaration-gated |
+| `PY-WL-106` | untrusted data reaches a deserialization sink (pickle/marshal/yaml.load) | tier-modulated severity |
+| `PY-WL-107` | untrusted data reaches a dynamic-code-exec sink (eval/exec/compile) | tier-modulated severity |
+| `PY-WL-108` | untrusted data reaches an always-shell OS-command sink | tier-modulated severity |
+| `PY-WL-109` | None leaks from a trusted producer (value-bearing + None-yielding returns) | declaration-gated |
+| `PY-WL-110` | contradictory trust declaration (two distinct trust markers on one entity) | declaration-gated |
+| `PY-WL-111` | trust boundary whose only rejection is `assert` (stripped under `python -O`, CWE-617) | declaration-gated |
 
 Rules are toggled / re-severitied per project via `wardline.yaml`
-(`rules.enable` / `rules.severity`).
+(`rules.enable` / `rules.severity`). See `docs/concepts/rules.md` for the full
+prose and examples; the 106/107/108 sink set is curated and importable-symbol
+only — framework-specific sinks belong in opt-in trust-grammar packs.
 
 ## Package map (`src/wardline/`)
 

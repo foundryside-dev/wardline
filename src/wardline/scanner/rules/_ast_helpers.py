@@ -85,13 +85,40 @@ def _is_falsy_constant_return(value: ast.expr | None) -> bool:
 
 
 def has_rejection_path(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """True when *node* can reject: any ``raise`` or any falsy-constant ``return``
-    in its own scope. Deliberately generous — PY-WL-102 is always-on, so we err
-    toward SEEING a rejection path (risk a missed finding) over firing on a real
-    validator."""
+    """True when *node* can reject: any ``raise``, any falsy-constant ``return``,
+    or any ``assert`` in its own scope. Deliberately generous — PY-WL-102 is
+    always-on, so we err toward SEEING a rejection path (risk a missed finding)
+    over firing on a real validator.
+
+    ``assert`` counts as a rejection here so PY-WL-102 does NOT fire on a boundary
+    whose only reject is an assert — that boundary DOES reject at runtime. The
+    distinct hazard (asserts are stripped under ``python -O``, so the validation
+    silently vanishes in production) is PY-WL-111's job, via
+    :func:`asserts_are_sole_rejection`. The two rules partition the space cleanly:
+    102 fires on "no rejection of any shape", 111 on "the only rejection is an
+    assert" — never both on one boundary."""
     for stmt in _own_statements(node):
-        if isinstance(stmt, ast.Raise):
+        if isinstance(stmt, (ast.Raise, ast.Assert)):
             return True
         if isinstance(stmt, ast.Return) and _is_falsy_constant_return(stmt.value):
             return True
     return False
+
+
+def asserts_are_sole_rejection(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """True when *node*'s ONLY rejection mechanism is ``assert`` — at least one
+    ``assert`` in its own scope, and NO ``raise`` and NO falsy-constant ``return``.
+
+    This is PY-WL-111's predicate: such a boundary validates in development but is
+    stripped under ``python -O`` (CWE-617), so the rejection silently vanishes in
+    production. Mutually exclusive with PY-WL-102 (which fires only when
+    :func:`has_rejection_path` is False, i.e. NO assert either)."""
+    has_assert = False
+    for stmt in _own_statements(node):
+        if isinstance(stmt, ast.Raise):
+            return False
+        if isinstance(stmt, ast.Return) and _is_falsy_constant_return(stmt.value):
+            return False
+        if isinstance(stmt, ast.Assert):
+            has_assert = True
+    return has_assert

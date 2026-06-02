@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`PY-WL-111` — trust boundary whose only rejection path is `assert` (CWE-617).**
+  A `@trust_boundary` that rejects bad input only via `assert` validates in
+  development but is stripped under `python -O`, so the rejection silently
+  vanishes in production. The one genuinely-generic, FP-safe builtin still worth
+  adding (framework-specific sinks belong in opt-in trust-grammar packs).
+  Declaration-gated, `ERROR`, partitions cleanly with `PY-WL-102`: 102 fires when
+  a boundary cannot reject at all, 111 when it appears to reject but only via an
+  `-O`-stripped guard. The shared `has_rejection_path` helper now counts `assert`
+  so the two never double-fire.
+- **Test guards (no behavior change):** a rule-examples meta-test asserting every
+  builtin rule's `examples_violation`/`examples_clean` actually fire / stay clean
+  (caught and fixed rotted `PY-WL-101` examples that referenced an undefined
+  helper); a `RAW_ZONE` ↔ `TRUST_RANK` consistency pin; `least_trusted`
+  idempotence + associativity (exhaustive); a fingerprint-stability test pinning
+  the real anchor-line contract (anchor-preserving edits stay byte-identical, a
+  line-shifting edit changes it by design); and a CLI ↔ MCP finding-parity
+  differential guarding the "identical by construction" tenet.
+
 - **Track 5 — trust-vocabulary convergence + legis CI (T5.1–T5.3).** The final
   Wardline track: one trust vocabulary, one judge, proven against legis. All
   Wardline-repo-only (legis is a fixed external contract; elspeth is inspiration

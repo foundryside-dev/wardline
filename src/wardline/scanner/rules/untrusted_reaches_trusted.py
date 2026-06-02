@@ -62,8 +62,15 @@ METADATA = RuleMetadata(
         "A trust-anchored function returns data less trusted than the level it "
         "declares — untrusted data reaches a trusted producer with no validation."
     ),
-    examples_violation=("@trusted\ndef f(p):\n    return read_raw(p)",),
-    examples_clean=("@trusted(level='ASSURED')\ndef f(p):\n    return validate(read_raw(p))",),
+    examples_violation=(
+        "@external_boundary\ndef read_raw(p):\n    return p\n"
+        "@trusted(level='ASSURED')\ndef f(p):\n    return read_raw(p)",
+    ),
+    examples_clean=(
+        "@external_boundary\ndef read_raw(p):\n    return p\n"
+        "@trust_boundary(to_level='ASSURED')\ndef validate(x):\n    if not x:\n        raise ValueError\n    return x\n"
+        "@trusted(level='ASSURED')\ndef f(p):\n    return validate(read_raw(p))",
+    ),
 )
 
 

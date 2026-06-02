@@ -1,5 +1,16 @@
 # Improvement backlog — rules, tests, soundness
 
+> **Status (2026-06-02, implemented):** Items **#1, #2, #3, #4, #5** (the cheap
+> test guards) and **PY-WL-111** are DONE. #1 caught and fixed real `PY-WL-101`
+> example-rot; #4 pins the *real* anchor-line fingerprint contract (the literal
+> "blank-line insert → identical" framing below was incorrect — `line_start` is a
+> fingerprint input, so a line shift changes it by design). #6 (mutation testing)
+> is **deferred** — explicitly heavy, adds a dev dep + a CI-gate decision,
+> lowest value-per-effort. The **soundness / FN closures** below remain a
+> **separate batch** (each is real engine work with its own FP analysis +
+> soundness-regression fixture; class-attribute taint is the highest-value start).
+> Framework-specific sinks remain routed to trust-grammar packs (`wardline-6e4ac6c148`).
+>
 > Working notes captured 2026-06-02, after the T1.5 rule-breadth work (builtins
 > 4 → 10, PY-WL-105–110). These are candidate follow-ups, grounded in the
 > current engine and its FP-discipline — not a committed plan. Promote an item
