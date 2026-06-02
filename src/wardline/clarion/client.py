@@ -213,3 +213,43 @@ class ClarionClient:
                 raise ClarionError(f"Clarion rejected batch-get ({resp.status}; code={_error_code(resp.body)})")
             views.extend(TaintFactView.from_wire(o) for o in parsed if isinstance(o, dict))
         return views
+
+    # --- SEI identity wire (Track 3 T3.1) ------------------------------------
+    # The pinned /api/v1/identity/* + /api/v1/_capabilities routes (SEI standard §4,
+    # Clarion ADR-038). These are the IDENTITY READ path: they FAIL-SOFT on every
+    # non-happy band (a pre-SEI Clarion 404s the routes / advertises no `sei` cap), so
+    # a consumer can detect a non-SEI Clarion and DEGRADE rather than guess or crash.
+    # Distinct from the WRITE path, where a 4xx is a loud Wardline bug.
+
+    def _send_json_soft(self, method: str, path_and_query: str, payload: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Send + parse a JSON object, FAIL-SOFT on every non-happy band. Returns the
+        parsed dict on a 2xx with a JSON-object body; None on outage/5xx (``_send``),
+        any other non-2xx (e.g. a pre-SEI Clarion's 404, a 4xx), or a non-object/bad
+        body. Never routes through ``_require_ok`` (which raises on non-2xx)."""
+        resp = self._send(method, path_and_query, payload)
+        if resp is None or not 200 <= resp.status < 300:
+            return None
+        try:
+            parsed = json.loads(resp.body) if resp.body else {}
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    def capabilities(self) -> dict[str, Any] | None:
+        """GET /api/v1/_capabilities → the parsed capability dict, or None when the
+        probe fails for ANY reason (a pre-SEI Clarion 404s the route). Lets a consumer
+        detect a non-SEI Clarion and degrade rather than guess."""
+        return self._send_json_soft("GET", "/api/v1/_capabilities", None)
+
+    def resolve_identity(self, locator: str) -> dict[str, Any] | None:
+        """POST /api/v1/identity/resolve {locator} → {sei, current_locator,
+        content_hash, alive:true} or {alive:false}; None on a soft failure. ``locator``
+        is a Wardline-side address (qualname-form), never an SEI."""
+        return self._send_json_soft("POST", "/api/v1/identity/resolve", {"locator": locator})
+
+    def resolve_sei(self, sei: str) -> dict[str, Any] | None:
+        """GET /api/v1/identity/sei/{sei} → {current_locator, content_hash, alive:true}
+        or {alive:false, lineage:[...]}; None on a soft failure. ``sei`` is OPAQUE — it
+        is only URL-escaped for the path segment, never parsed or interpreted."""
+        quoted = urllib.parse.quote(sei, safe="")
+        return self._send_json_soft("GET", f"/api/v1/identity/sei/{quoted}", None)
