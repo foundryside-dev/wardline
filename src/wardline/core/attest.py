@@ -21,9 +21,16 @@ the payload is sorted on a stable key (boundaries by qualname; the posture sorts
 lists) so the suite's ``pytest-randomly`` ordering cannot perturb the bytes.
 
 Zero-dependency: stdlib ``hmac`` / ``hashlib`` / ``subprocess`` / ``json`` only. This
-module never imports ``wardline.clarion`` (an optional extra); SEI enrichment of the
-``boundaries`` entries arrives later behind a lazy import — until then every ``sei`` is
+module never imports ``wardline.clarion`` (an optional extra) at module level; SEI
+enrichment of the ``boundaries`` entries is opt-in via a ``clarion_client`` and happens
+behind a LAZY import inside :func:`_enrich_seis`. Without a client every ``sei`` stays
 None and ``sei_source`` is ``"unavailable"``.
+
+SEI values live in the SIGNED payload, so reproducibility threads the same
+``clarion_client`` through BOTH build and verify: re-verifying a SEI-keyed bundle WITH
+the same client (and unchanged tree) reproduces; re-verifying WITHOUT a client honestly
+reports ``reproduced=False`` (the SEIs cannot be re-derived) while the signature — which
+is over the recorded payload — stays valid.
 """
 
 from __future__ import annotations
@@ -125,12 +132,48 @@ def _sign(payload: dict[str, Any], key: str) -> dict[str, str]:
     return {"alg": "HMAC-SHA256", "value": value, "key_id": key_id(key)}
 
 
+def _enrich_seis(boundaries: list[dict[str, Any]], clarion_client: Any) -> str:
+    """Fill each boundary's ``sei`` from Clarion, fail-soft per boundary.
+
+    Returns the ``sei_source``: ``"clarion"`` if a client was supplied AND at least one
+    SEI resolved, else ``"unavailable"``. The Clarion seam is an optional extra, so it is
+    imported LAZILY here (the module base stays zero-dependency). Any failure leaves
+    ``sei=None`` and never crashes attestation: an outer ``try`` degrades the WHOLE
+    enrichment (a capabilities / resolver-construction outage → ``"unavailable"``), and a
+    per-qualname ``try`` keeps one unresolvable boundary from aborting the rest.
+    """
+    if clarion_client is None:
+        return "unavailable"
+
+    try:
+        from wardline.clarion.dossier_sources import resolve_entity_binding
+        from wardline.clarion.identity import SeiCapability, SeiResolver
+
+        capabilities = clarion_client.capabilities()
+        resolver = SeiResolver(clarion_client, SeiCapability.from_capabilities(capabilities))
+
+        resolved_any = False
+        for boundary in boundaries:
+            try:
+                binding = resolve_entity_binding(clarion_client, resolver, boundary["qualname"])
+            except Exception:  # noqa: BLE001 — per-boundary fail-soft, see docstring
+                continue
+            if binding is not None and binding.sei:
+                boundary["sei"] = binding.sei
+                resolved_any = True
+    except Exception:  # noqa: BLE001 — whole-enrichment fail-soft, see docstring
+        return "unavailable"
+
+    return "clarion" if resolved_any else "unavailable"
+
+
 def _build_payload(
     root: Path,
     *,
     config_path: Path | None,
     confine_to_root: bool,
     today: date,
+    clarion_client: Any = None,
 ) -> dict[str, Any]:
     """Derive the (unsigned) attestation payload from the tree at ``root``.
 
@@ -149,6 +192,7 @@ def _build_payload(
     if result.context is None:
         posture = _empty_posture(waivers, today)
         boundaries: list[dict[str, Any]] = []
+        sei_source = "unavailable"  # no boundaries → nothing to key
     else:
         posture = posture_from_scan(result, result.context, waivers=waivers, today=today)
         boundaries = []
@@ -157,11 +201,12 @@ def _build_payload(
             boundaries.append(
                 {
                     "qualname": qualname,
-                    "sei": None,  # filled later behind a lazy Clarion import
+                    "sei": None,  # filled by _enrich_seis below behind a lazy Clarion import
                     "verdict": verdict.verdict,
                     "tier": verdict.declared_tier,
                 }
             )
+        sei_source = _enrich_seis(boundaries, clarion_client)
 
     return {
         "wardline_version": __version__,
@@ -170,7 +215,7 @@ def _build_payload(
         "ruleset_hash": ruleset_hash(config),
         "posture": posture.to_dict(),
         "boundaries": boundaries,
-        "sei_source": "unavailable",
+        "sei_source": sei_source,
     }
 
 
@@ -191,12 +236,12 @@ def build_attestation(
     with uncommitted changes is refused (:class:`AttestError`) so a bundle's ``commit``
     truthfully pins its source.
 
-    ``clarion_client`` is accepted for forward-compatibility (SEI enrichment of the
-    ``boundaries`` entries lands later behind a lazy Clarion import) and is unused here;
-    every ``sei`` stays None and ``sei_source`` is ``"unavailable"``. See the module
-    threat model: the signature is shared-secret tamper-evidence, not asymmetric proof.
+    With a ``clarion_client``, each boundary's ``sei`` is resolved from Clarion (opt-in,
+    fail-soft, behind a lazy import — see :func:`_enrich_seis`) and ``sei_source`` becomes
+    ``"clarion"`` if any SEI resolved; without one every ``sei`` stays None and
+    ``sei_source`` is ``"unavailable"``. See the module threat model: the signature is
+    shared-secret tamper-evidence, not asymmetric proof.
     """
-    del clarion_client  # reserved; see docstring
     if today is None:
         today = date.today()
 
@@ -205,6 +250,7 @@ def build_attestation(
         config_path=config_path,
         confine_to_root=confine_to_root,
         today=today,
+        clarion_client=clarion_client,
     )
     if payload["dirty"] and not allow_dirty:
         raise AttestError("refusing to attest a dirty working tree (uncommitted changes); pass allow_dirty to override")
@@ -219,6 +265,7 @@ def verify_attestation(
     *,
     root: Path | None = None,
     reproduce: bool = False,
+    clarion_client: Any = None,
 ) -> dict[str, Any]:
     """Verify a bundle's signature (always, offline) and optionally its reproducibility.
 
@@ -232,6 +279,12 @@ def verify_attestation(
     ``reproduced=True``, otherwise ``mismatches`` lists the differing top-level payload
     keys. ``reproduced`` is None when ``reproduce=False``. NOTE: reproducibility holds
     against the RECORDED commit — a mismatch may mean the tree moved on, not tamper.
+
+    Since SEI values are part of the signed payload, reproducing a SEI-keyed bundle
+    requires the SAME ``clarion_client`` used to build it: pass it here so the
+    re-derivation resolves SEIs identically. Without it, a SEI-keyed bundle re-derives
+    with ``sei=None`` and honestly reports ``reproduced=False`` (the binding cannot be
+    reproduced), while ``signature_valid`` is unaffected (it is over the recorded bytes).
     """
     recorded_payload: dict[str, Any] = bundle["payload"]
     expected = _sign(recorded_payload, key)["value"]
@@ -252,6 +305,7 @@ def verify_attestation(
         config_path=None,
         confine_to_root=False,
         today=date.today(),
+        clarion_client=clarion_client,
     )
     if _canonical_bytes(rederived) == _canonical_bytes(recorded_payload):
         return {

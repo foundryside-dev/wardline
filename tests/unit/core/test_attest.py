@@ -271,3 +271,97 @@ def test_dirty_tree_refusal(tmp_path: Path) -> None:
     assert bundle["payload"]["dirty"] is True
     assert bundle["payload"]["commit"] == commit
     assert verify_attestation(bundle, _KEY)["signature_valid"] is True
+
+
+# --------------------------------------------------------------------------- #
+# 6. SEI enrichment (optional, behind a lazy Clarion import)
+# --------------------------------------------------------------------------- #
+from wardline.clarion.client import ResolveResult  # noqa: E402 — kept with the SEI tests it serves
+
+_SEI = "clarion:eid:00112233445566778899aabbccddeeff"
+
+
+class _FakeClarion:
+    """A Clarion double that resolves exactly ONE qualname to an SEI.
+
+    Mirrors ``tests/unit/core/test_loom_dossier.py``'s fake but is SELECTIVE: only the
+    ``hit`` qualname resolves to a locator (others land in ``unresolved`` → no binding →
+    ``sei=None``), so the "other boundaries stay None" assertion is real."""
+
+    def __init__(self, *, hit: str = "m.leak", sei: str = _SEI) -> None:
+        self._hit = hit
+        self._sei = sei
+
+    def capabilities(self) -> dict[str, object]:
+        return {"sei": {"supported": True, "version": 1}}
+
+    def resolve(self, qualnames: list[str]) -> ResolveResult:
+        resolved = {q: f"python:function:{q}" for q in qualnames if q == self._hit}
+        unresolved = [q for q in qualnames if q != self._hit]
+        return ResolveResult(resolved=resolved, unresolved=unresolved)
+
+    def resolve_identity(self, locator: str) -> dict[str, object]:
+        return {"sei": self._sei, "current_locator": locator, "content_hash": "ch", "alive": True}
+
+    def resolve_sei(self, sei: str) -> dict[str, object]:
+        return {"alive": True}
+
+
+class _RaisingClarion(_FakeClarion):
+    """capabilities() raises → the WHOLE enrichment degrades to unavailable, never crashes."""
+
+    def capabilities(self) -> dict[str, object]:
+        raise RuntimeError("clarion unreachable")
+
+
+def test_sei_keyed_bundle_fills_resolved_boundary_only(tmp_path: Path) -> None:
+    tree = _annotated_tree(tmp_path)
+    bundle = build_attestation(tree, _KEY, clarion_client=_FakeClarion(hit="m.leak"), today=_PINNED)
+
+    payload = bundle["payload"]
+    assert payload["sei_source"] == "clarion"
+    by_qn = {b["qualname"]: b for b in payload["boundaries"]}
+    assert by_qn["m.leak"]["sei"] == _SEI  # the one resolvable qualname is keyed
+    assert by_qn["m.clean"]["sei"] is None  # unresolved → honestly None
+    assert by_qn["m.src"]["sei"] is None
+    assert verify_attestation(bundle, _KEY)["signature_valid"] is True
+
+
+def test_sei_enrichment_is_fail_soft(tmp_path: Path) -> None:
+    """Attestation must never fail because Clarion is unreachable: a raising client
+    degrades to every ``sei=None`` and ``sei_source == "unavailable"``."""
+    tree = _annotated_tree(tmp_path)
+    bundle = build_attestation(tree, _KEY, clarion_client=_RaisingClarion(), today=_PINNED)
+
+    payload = bundle["payload"]
+    assert payload["sei_source"] == "unavailable"
+    assert all(b["sei"] is None for b in payload["boundaries"])
+    assert verify_attestation(bundle, _KEY)["signature_valid"] is True
+
+
+def test_no_clarion_client_is_unavailable(tmp_path: Path) -> None:
+    tree = _annotated_tree(tmp_path)
+    bundle = build_attestation(tree, _KEY, today=_PINNED)
+
+    payload = bundle["payload"]
+    assert payload["sei_source"] == "unavailable"
+    assert all(b["sei"] is None for b in payload["boundaries"])
+
+
+def test_sei_keyed_bundle_reproducibility(tmp_path: Path) -> None:
+    """A SEI-keyed bundle reproduces with the SAME client (same tree → same SEIs); without
+    a client the boundaries re-derive with ``sei=None`` so ``reproduced`` is honestly False,
+    while ``signature_valid`` stays True (the signature is over the recorded payload)."""
+    tree = _annotated_tree(tmp_path)
+    bundle = build_attestation(tree, _KEY, clarion_client=_FakeClarion(hit="m.leak"), today=_PINNED)
+
+    with_client = verify_attestation(bundle, _KEY, root=tree, reproduce=True, clarion_client=_FakeClarion(hit="m.leak"))
+    assert with_client["signature_valid"] is True
+    assert with_client["reproduced"] is True
+    assert with_client["mismatches"] == []
+
+    without_client = verify_attestation(bundle, _KEY, root=tree, reproduce=True)
+    assert without_client["signature_valid"] is True
+    assert without_client["reproduced"] is False
+    assert "boundaries" in without_client["mismatches"]
+    assert "sei_source" in without_client["mismatches"]
