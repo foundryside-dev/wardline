@@ -35,6 +35,11 @@ class ClarionError(WardlineError):
     403 WRITE_DISABLED/PROJECT_MISMATCH — are NOT this; they warn and continue."""
 
 
+class AttestError(WardlineError):
+    """An attestation build refused: e.g. a dirty working tree without
+    ``allow_dirty``. A tool-execution fault the operator must act on."""
+
+
 class DossierError(WardlineError):
     """A dossier tool-execution fault the agent must act on: the requested entity is
     not in the scanned set, or its module could not be analysed. Optional-source
