@@ -19,7 +19,24 @@ columns as work lands.
 
 ## Current position (update this line)
 
-**As of 2026-06-02 (latest):** **Track 3 SEI-client GROUNDWORK COMPLETE (T3.1–T3.3)**
+**As of 2026-06-02 (latest):** **T1.5 (rule-set breadth) IN PROGRESS — 1 of 6 new rules done, 5/10 total.**
+On branch `feat/track3-sei-client` (T1.5 continues here on top of Track 3). The user chose the
+"broad-to-10" set (PY-WL-105 untrusted-arg→trusted-callee · 106 deserialization sink · 107
+dynamic-exec · 108 OS-command · 109 None-leak · 110 contradictory trust decorators). **DONE:
+PY-WL-110** (contradictory trust declaration — anchored entity with ≥2 distinct grammar markers;
+ERROR; ships violation/clean examples + `tests/corpus/fixtures/contradictory.py` + MANIFEST;
+golden regenerated; corpus FP 0%; dogfood clean; 1125 tests green). **REMAINING (turnkey via the
+plan): 105, 106, 107, 108, 109** — 106/107/108 share a new `rules/_sink_helpers.py` (conservative
+call-arg taint resolution off `function_var_taints`); 105 is the hardest (callee-trust resolution);
+109 is the managed-FP rule (guarded None-leak). Plan:
+`docs/superpowers/plans/2026-06-02-wardline-track1.5-rule-breadth.md`. Filigree `wardline-f0a2e9678e`.
+**Then:** review panel incl. `false-positive-analyst`, update DoD "≥10 rules", close the issue.
+
+---
+
+**Track 3 SEI-client GROUNDWORK COMPLETE (T3.1–T3.3)** (prior position, retained for context)
+
+**As of 2026-06-02:** **Track 3 SEI-client GROUNDWORK COMPLETE (T3.1–T3.3)**
 on branch `feat/track3-sei-client` (branched off `loom-step-up`; nothing pushed). A
 stdlib-only, opt-in SEI abstraction (`src/wardline/clarion/identity.py`:
 `IdentityStatus`/`ContentStatus`/`SeiCapability`/`EntityBinding`/`content_status`/`SeiResolver`)
