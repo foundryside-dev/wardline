@@ -56,10 +56,17 @@ def _finding_to_wire(finding: Finding) -> dict[str, Any]:
 
 
 def build_scan_results_body(findings: Sequence[Finding], *, scan_source: str = "wardline") -> dict[str, Any]:
-    """Build the ``POST /api/loom/scan-results`` request body. Emits ALL finding kinds."""
+    """Build the ``POST /api/loom/scan-results`` request body. Emits ALL finding kinds.
+    ``mark_unseen`` opts into Filigree's per-(file, scan_source) absent-fingerprint sweep:
+    a fingerprint seen before but absent now (in a file still in this batch) enters
+    ``unseen_in_latest``. Set only when there ARE findings — Filigree rejects
+    ``mark_unseen=True`` on an empty batch (it cannot identify which file/scan_source
+    pairs to sweep), and an empty scan has nothing to reconcile."""
+    findings_wire = [_finding_to_wire(f) for f in findings]
     return {
         "scan_source": scan_source,
-        "findings": [_finding_to_wire(f) for f in findings],
+        "mark_unseen": bool(findings_wire),
+        "findings": findings_wire,
     }
 
 

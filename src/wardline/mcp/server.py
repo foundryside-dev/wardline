@@ -107,6 +107,24 @@ def _emit_filigree(findings: list[Finding], filigree: Any) -> dict[str, Any] | N
     }
 
 
+def _file_finding(args: dict[str, Any], root: Path, filer: Any) -> dict[str, Any]:
+    """File ONE finding (by fingerprint) into a tracked Filigree issue, returning its
+    id. Fail-soft on reachability; a 404 (unknown fingerprint) surfaces as not_found."""
+    if filer is None:
+        raise ToolError("no Filigree URL configured; launch `wardline mcp --filigree-url ...`")
+    fp = _require(args, "fingerprint")
+    labels = args.get("labels")
+    res = filer.file(fp, priority=args.get("priority"), labels=labels)
+    return {
+        "reachable": res.reachable,
+        "issue_id": res.issue_id,
+        "created": res.created,
+        "not_found": res.not_found,
+        "fingerprint": fp,
+        "disabled_reason": res.disabled_reason,
+    }
+
+
 def _scan(args: dict[str, Any], root: Path, clarion: Any = None, filigree: Any = None) -> dict[str, Any]:
     path = _resolve_under_root(root, args["path"]) if args.get("path") else root
     fail_on = args.get("fail_on")
@@ -360,6 +378,14 @@ class WardlineMCPServer:
             return None
         return FiligreeEmitter(self.filigree_url)
 
+    def _filigree_filer(self) -> Any:
+        """Build a FiligreeIssueFiler from this server's Loom URL, or None when unset."""
+        if self.filigree_url is None:
+            return None
+        from wardline.core.filigree_issue import FiligreeIssueFiler
+
+        return FiligreeIssueFiler(self.filigree_url)
+
     def _register_tools(self) -> None:
         self.add_tool(
             Tool(
@@ -453,6 +479,26 @@ class WardlineMCPServer:
                     },
                 },
                 handler=lambda args, root: _dossier(args, root, self._clarion_client(), self.filigree_url),
+            )
+        )
+        self.add_tool(
+            Tool(
+                name="file_finding",
+                description="File ONE finding (by `fingerprint`) into a tracked Filigree issue and "
+                "return its `issue_id`. Idempotent (re-filing returns the same issue). Emit findings "
+                "to Filigree first (scan with a configured Filigree URL) so the fingerprint is known; "
+                "a `not_found: true` result means it isn't. Reconciliation (close-on-fixed / "
+                "reopen-on-regress) happens automatically on later scans. Fail-soft.",
+                input_schema={
+                    "type": "object",
+                    "required": ["fingerprint"],
+                    "properties": {
+                        "fingerprint": {"type": "string"},
+                        "priority": {"type": "string", "description": "Filigree priority, e.g. P2"},
+                        "labels": {"type": "array", "items": {"type": "string"}},
+                    },
+                },
+                handler=lambda args, root: _file_finding(args, root, self._filigree_filer()),
             )
         )
         self.add_tool(

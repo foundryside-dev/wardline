@@ -36,6 +36,18 @@ def test_body_envelope() -> None:
     assert isinstance(body["findings"], list) and len(body["findings"]) == 1
 
 
+def test_scan_results_body_sets_mark_unseen() -> None:
+    """Wardline opts into Filigree's per-(file, scan_source) absent-fingerprint sweep
+    so a fixed finding enters unseen_in_latest — but only on a non-empty batch, since
+    Filigree rejects mark_unseen=True with no findings to identify the files to sweep."""
+    nonempty = build_scan_results_body([_f()])
+    assert nonempty["mark_unseen"] is True
+    assert nonempty["scan_source"] == "wardline"
+    empty = build_scan_results_body([])
+    assert empty["mark_unseen"] is False
+    assert empty["scan_source"] == "wardline"
+
+
 def test_finding_uses_path_not_file_path() -> None:
     wire = build_scan_results_body([_f()])["findings"][0]
     assert wire["path"] == "src/m.py"

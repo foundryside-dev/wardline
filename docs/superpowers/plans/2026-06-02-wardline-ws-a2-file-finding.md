@@ -38,6 +38,19 @@ Internally: resolve `(scan_source, fingerprint)` → `finding_id`, then call the
 ### Ask #2 — finding→issue status cascade
 When a fingerprint-linked finding transitions to `fixed` (via the unseen→clean-stale path), **close its linked issue**; when it regresses `fixed/unseen → open`, **reopen its linked issue** (respecting terminal `false_positive`/`acknowledged`). *Why:* this is literally A2's "close when fixed / reopen on regress." Today the finding row flips but the filed issue is frozen. This is the load-bearing behavioral gap.
 
+> **CORRECTION (2026-06-02, post-delivery) — the close trigger moved to ask #3.** Filigree
+> shipped ask #2 exactly as written: reopen-on-regress is wired into `process_scan_results`
+> (immediate on re-scan), but **close** is reachable only from `clean_stale_findings` (an
+> age-gated retention sweep), which Wardline never calls. So as-shipped a re-scan moves a
+> fixed finding to `unseen_in_latest` but does **not** close the linked issue. Reopen works;
+> close does not — A2's auto-close DoD is unmet by ask #2 alone. The fix (user-chosen
+> 2026-06-02) is a **symmetric close cascade wired into ingest**, requested in
+> `docs/superpowers/specs/2026-06-02-filigree-ask-close-cascade-on-ingest.md` (ask #3). It
+> needs **no further Wardline change** — Wardline already sends `mark_unseen=True` on
+> non-empty scans, which is its input. Until ask #3 lands, A2 ships `file_finding` +
+> reopen-on-regress; close-on-fixed is gated on Filigree's clean-stale sweep (the CHANGELOG
+> entry states this honestly).
+
 ### (Wardline-side precondition, ours not Filigree's) — send `mark_unseen=True`
 Wardline's `build_scan_results_body` must set `mark_unseen=True` on full-project scans so absent fingerprints enter `unseen_in_latest` (the input to ask #2). Implemented as Task 5 below. Safe today: the param exists and defaults False (`dashboard_routes/files.py:125`).
 
