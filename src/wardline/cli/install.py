@@ -26,6 +26,7 @@ from wardline.install.skill import install_skill
 @click.option("--no-skill", is_flag=True, help="Skip the wardline-gate skill.")
 @click.option("--no-mcp", is_flag=True, help="Skip wiring .mcp.json.")
 @click.option("--no-bindings", is_flag=True, help="Skip Clarion/Filigree detection.")
+@click.option("--no-attest-key", is_flag=True, help="Skip minting the attest signing key.")
 def install(
     root: Path,
     no_claude_md: bool,
@@ -33,6 +34,7 @@ def install(
     no_skill: bool,
     no_mcp: bool,
     no_bindings: bool,
+    no_attest_key: bool,
 ) -> None:
     """Install wardline's agent-facing guidance and sibling bindings into ROOT.
 
@@ -54,6 +56,11 @@ def install(
         if not no_bindings:
             for name, status in record_bindings(root).items():
                 lines.append(f"{name}: {status}")
+        if not no_attest_key:
+            from wardline.core.attest_key import mint_attest_key
+
+            _key, status = mint_attest_key(root)
+            lines.append(f"attest key: {status}")
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
