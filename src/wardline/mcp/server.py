@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from wardline._version import __version__
 from wardline.core import config as config_mod
+from wardline.core.assure import build_posture
 from wardline.core.baseline import generate_baseline
 from wardline.core.config_schema import WARDLINE_SCHEMA
 from wardline.core.descriptor import descriptor_to_yaml
@@ -268,6 +269,16 @@ def _dossier(args: dict[str, Any], root: Path, clarion: Any = None, filigree_url
     return dossier.to_dict()
 
 
+def _assure(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    """Trust-surface COVERAGE posture — the pre-trust-decision read. How many declared
+    trust boundaries the engine reached a definite verdict on vs. how many are honestly
+    unknown, plus waiver-debt. Identical to the CLI `assure` JSON by construction (both
+    call ``build_posture``). Path/config confined under root like every rooted tool."""
+    path = _resolve_under_root(root, args["path"]) if args.get("path") else root
+    posture = build_posture(path, config_path=_cfg(args, root), confine_to_root=True)
+    return posture.to_dict()
+
+
 def _require(args: dict[str, Any], key: str) -> Any:
     """Mandatory tool argument. A missing/blank value is agent-actionable ("you must
     supply a reason/expiry") → ``ToolError`` → isError result, NOT a JSON-RPC fault."""
@@ -479,6 +490,22 @@ class WardlineMCPServer:
                     },
                 },
                 handler=lambda args, root: _dossier(args, root, self._clarion_client(), self.filigree_url),
+            )
+        )
+        self.add_tool(
+            Tool(
+                name="assure",
+                description="Trust-surface COVERAGE posture: how many declared trust boundaries the "
+                "engine reached a definite verdict on vs. how many are honestly unknown, plus "
+                "waiver-debt. Consult before deciding to trust a module.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "config": {"type": "string"},
+                    },
+                },
+                handler=lambda args, root: _assure(args, root),
             )
         )
         self.add_tool(
