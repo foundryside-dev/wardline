@@ -38,8 +38,22 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from wardline.clarion.identity import ContentStatus, EntityBinding, IdentityStatus
 from wardline.core.errors import DossierError
-from wardline.core.finding import Kind, SuppressionState
+from wardline.core.finding import UNANALYZED_RULE_IDS, Kind, SuppressionState
 from wardline.core.run import run_scan
+from wardline.core.taints import TaintState
+
+# Engine-inferred "could not prove" tiers — an entity whose declared posture is one
+# of these is undeclared/unprovable, never "clean".
+_UNKNOWN_TIERS: frozenset[str] = frozenset(
+    {TaintState.UNKNOWN_RAW.value, TaintState.UNKNOWN_GUARDED.value, TaintState.UNKNOWN_ASSURED.value}
+)
+
+# Per-entity engine under-scan FACTs (carry a qualname) — their presence means the
+# entity's body was NOT fully analysed, so its trust verdict is "unknown", never
+# "clean". UNANALYZED_RULE_IDS covers file/source-root under-scans; FUNCTION-SKIPPED
+# is the per-function recursion-limit skip (NOT in UNANALYZED_RULE_IDS by design,
+# since the function was reached — but its taint was never computed).
+_UNDER_SCAN_RULE_IDS: frozenset[str] = UNANALYZED_RULE_IDS | {"WLN-ENGINE-FUNCTION-SKIPPED"}
 
 if TYPE_CHECKING:
     from wardline.core.run import ScanResult
@@ -149,12 +163,22 @@ class FindingRef:
 class TrustSection:
     """Wardline's OWN posture. FRESH by construction — it is re-derived on demand,
     so it never carries a stale verdict and needs no freshness flag (dossier spec
-    §6: "re-derive cheap")."""
+    §6: "re-derive cheap").
+
+    ``gate_verdict`` is THREE-valued, never two: ``"defect"`` (active findings),
+    ``"clean"`` (a declared posture that conforms), or ``"unknown"`` (the entity is
+    undeclared / its trust could not be proven / the engine under-scanned it). A
+    fail-closed tool must never report unproven code as ``"clean"`` — that is a
+    false-green. ``unanalyzed_reason`` carries the engine FACT when the body was not
+    analysed; ``suppressed_findings`` surfaces accepted (baselined/waived/judged)
+    defects so a ``"clean"`` gate verdict does not hide known, accepted debt."""
 
     declared_return: str | None
     actual_return: str | None
-    gate_verdict: str  # "clean" | "defect"
+    gate_verdict: str  # "defect" | "clean" | "unknown"
     active_findings: list[FindingRef] = field(default_factory=list)
+    suppressed_findings: int = 0
+    unanalyzed_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -162,6 +186,8 @@ class TrustSection:
             "actual_return": self.actual_return,
             "gate_verdict": self.gate_verdict,
             "active_findings": [f.to_dict() for f in self.active_findings],
+            "suppressed_findings": self.suppressed_findings,
+            "unanalyzed_reason": self.unanalyzed_reason,
             "freshness": "fresh_by_construction",
         }
 
@@ -375,7 +401,17 @@ def bound_to_budget(dossier: EntityDossier, *, budget: int = DOSSIER_TOKEN_BUDGE
         note_bits.append("lists trimmed to fit token budget")
     if synthesis_dropped:
         note_bits.append("synthesis dropped to fit token budget")
-    note = "; ".join(note_bits) or "trimmed to fit token budget"
+    # Honest about a fit we did NOT achieve: identity/shape are never trimmed, so a
+    # pathologically long qualname/path can leave the core over budget. Say so rather
+    # than claiming "trimmed to fit" — a dishonest marker is itself a false-green.
+    remaining = current.estimated_tokens()
+    if remaining > budget:
+        note = (
+            f"EXCEEDS token budget: untrimmable identity/shape ~{remaining} of {budget} tokens; "
+            "nothing further is trimmable"
+        )
+    else:
+        note = "; ".join(note_bits) or "trimmed to fit token budget"
     return dataclasses.replace(current, truncation=Truncation(truncated=True, elided=elided, note=note))
 
 
@@ -435,9 +471,17 @@ def _build_identity(entity: Entity, binding: EntityBinding | None) -> IdentitySe
 
 
 def _build_trust(result: ScanResult, context: AnalysisContext, qualname: str) -> TrustSection:
-    """Wardline's OWN posture, re-derived from the live scan → FRESH by construction."""
+    """Wardline's OWN posture, re-derived from the live scan → FRESH by construction.
+
+    The verdict is honest, never a false-green: ``"defect"`` if an active finding
+    fires; ``"unknown"`` if the engine under-scanned the entity (no return taint
+    computed — a parse/recursion skip) OR the entity is undeclared / its trust could
+    not be proven (declared tier is an UNKNOWN_* state); ``"clean"`` ONLY for a
+    declared posture that conforms. ``suppressed_findings`` surfaces accepted
+    (baselined/waived/judged) defects so a ``"clean"`` verdict never hides known debt."""
     declared = context.project_return_taints.get(qualname)
     actual = context.function_return_taints.get(qualname)
+    defects = [f for f in result.findings if f.qualname == qualname and f.kind is Kind.DEFECT]
     active = [
         FindingRef(
             rule_id=f.rule_id,
@@ -445,54 +489,85 @@ def _build_trust(result: ScanResult, context: AnalysisContext, qualname: str) ->
             message=f.message,
             line=f.location.line_start,
         )
-        for f in result.findings
-        if f.qualname == qualname and f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE
+        for f in defects
+        if f.suppressed is SuppressionState.ACTIVE
     ]
+    suppressed = sum(1 for f in defects if f.suppressed is not SuppressionState.ACTIVE)
+    # An engine under-scan FACT for THIS entity (parse error / recursion skip) means
+    # the body was never analysed — its silence is not a clean bill of health.
+    under_scan = next(
+        (f for f in result.findings if f.qualname == qualname and f.rule_id in _UNDER_SCAN_RULE_IDS),
+        None,
+    )
+    declared_str = declared.value if declared is not None else None
+    if active:
+        verdict = "defect"
+    elif under_scan is not None or actual is None:
+        verdict = "unknown"
+    elif declared_str is None or declared_str in _UNKNOWN_TIERS:
+        # undeclared / unprovable trust — the "developer-freedom zone", not "clean"
+        verdict = "unknown"
+    else:
+        verdict = "clean"
     return TrustSection(
-        declared_return=declared.value if declared is not None else None,
+        declared_return=declared_str,
         actual_return=actual.value if actual is not None else None,
-        gate_verdict="defect" if active else "clean",
+        gate_verdict=verdict,
         active_findings=active,
+        suppressed_findings=suppressed,
+        unanalyzed_reason=under_scan.message if under_scan is not None else None,
     )
 
 
-def _section_from_provider(
-    provider: Any,
-    method: str,
-    binding: EntityBinding | None,
-    *,
-    unavailable: Any,
-    not_configured: str,
-) -> Any:
-    """Call an optional source provider fail-soft. No provider → not-configured
-    unavailable; a ``None`` return → no-opinion unavailable; any raise → unreachable
-    unavailable carrying the reason. The dossier never fails wholesale on an optional
-    source (dossier design §8.1)."""
+def _linkages_from(provider: LinkageProvider | None, binding: EntityBinding | None) -> LinkagesSection:
+    """Read the Clarion linkages section fail-soft. No provider → not-configured; no
+    binding → cannot key a cross-tool lookup; a raise → unreachable; a ``None`` return
+    → no-opinion. The dossier never fails wholesale on an optional source (§8.1).
+    Typed against the Protocol so a method-name typo is a mypy error, not a swallowed
+    AttributeError masquerading as an outage."""
     if provider is None:
-        return unavailable(not_configured)
-    bind = binding if binding is not None else EntityBinding(locator="")
+        return LinkagesSection.unavailable("clarion linkages not configured")
+    if binding is None:
+        return LinkagesSection.unavailable("no entity binding: cannot resolve linkages")
     try:
-        section = getattr(provider, method)(bind)
+        section = provider.linkages(binding)
     except Exception as exc:  # fail-soft: an optional source is never load-bearing
-        return unavailable(f"source unreachable: {exc}")
-    if section is None:
-        return unavailable("source returned no data")
-    return section
+        return LinkagesSection.unavailable(f"source unreachable: {exc}")
+    return section if section is not None else LinkagesSection.unavailable("source returned no data")
+
+
+def _work_from(provider: WorkProvider | None, binding: EntityBinding | None) -> WorkSection:
+    """Read the Filigree open-work section fail-soft. Same None/no-binding/raise/None
+    → ``unavailable`` contract as :func:`_linkages_from`."""
+    if provider is None:
+        return WorkSection.unavailable("filigree not configured")
+    if binding is None:
+        return WorkSection.unavailable("no entity binding: cannot resolve work")
+    try:
+        section = provider.work(binding)
+    except Exception as exc:  # fail-soft: an optional source is never load-bearing
+        return WorkSection.unavailable(f"source unreachable: {exc}")
+    return section if section is not None else WorkSection.unavailable("source returned no data")
 
 
 def _synthesize(identity: IdentitySection, trust: TrustSection, linkages: LinkagesSection, work: WorkSection) -> str:
     """The best-effort actionable join. Degrades with its inputs — it never asserts a
     join it could not compute (no call-graph locus without linkages; no ticket without
-    work)."""
+    work) and never reports unproven trust as ``clean`` (it mirrors the honest
+    three-valued verdict, with no Python ``None`` sentinels leaking into prose)."""
+    declared = trust.declared_return or "undeclared"
+    actual = trust.actual_return or "unknown"
     bits: list[str] = []
-    if trust.active_findings:
+    if trust.gate_verdict == "defect":
         rules = ", ".join(sorted({f.rule_id for f in trust.active_findings}))
-        bits.append(
-            f"{identity.qualname} declares {trust.declared_return} but its actual return is "
-            f"{trust.actual_return} ({rules})."
-        )
+        bits.append(f"{identity.qualname} declares {declared} but its actual return is {actual} ({rules}).")
+    elif trust.gate_verdict == "unknown":
+        reason = trust.unanalyzed_reason or "undeclared / trust not provable"
+        bits.append(f"{identity.qualname} has unknown trust posture ({reason}).")
     else:
-        bits.append(f"{identity.qualname} is trust-clean (declared {trust.declared_return}).")
+        bits.append(f"{identity.qualname} is trust-clean (declared {declared}).")
+    if trust.suppressed_findings:
+        bits.append(f"{trust.suppressed_findings} accepted (suppressed) finding(s) — known debt.")
     if linkages.available and (linkages.callers or linkages.callees):
         bits.append(f"{len(linkages.callers)} caller(s), {len(linkages.callees)} callee(s) in the call graph.")
     else:
@@ -535,20 +610,8 @@ def build_dossier(
     identity = _build_identity(target, binding)
     shape = ShapeSection(signature=_signature_of(target.node), decorators=_decorators_of(target.node))
     trust = _build_trust(result, context, entity)
-    linkages = _section_from_provider(
-        linkage_provider,
-        "linkages",
-        binding,
-        unavailable=LinkagesSection.unavailable,
-        not_configured="clarion linkages not configured",
-    )
-    work = _section_from_provider(
-        work_provider,
-        "work",
-        binding,
-        unavailable=WorkSection.unavailable,
-        not_configured="filigree not configured",
-    )
+    linkages = _linkages_from(linkage_provider, binding)
+    work = _work_from(work_provider, binding)
     synthesis = _synthesize(identity, trust, linkages, work)
     dossier = EntityDossier(
         identity=identity,

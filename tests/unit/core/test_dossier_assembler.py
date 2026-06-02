@@ -57,10 +57,25 @@ def test_self_trust_posture_is_real(tmp_path: Path) -> None:
     assert any(f.rule_id == "PY-WL-101" for f in d.trust.active_findings)
 
 
-def test_clean_entity_has_clean_verdict_and_no_findings(tmp_path: Path) -> None:
+def test_declared_boundary_conforming_is_clean(tmp_path: Path) -> None:
+    # @external_boundary read_raw returns raw by CONTRACT — a declared posture that
+    # conforms, with no active finding → genuinely clean.
     d = build_dossier("svc.read_raw", root=_proj(tmp_path))
     assert d.trust.gate_verdict == "clean"
     assert d.trust.active_findings == []
+
+
+def test_undecorated_entity_is_unknown_not_clean(tmp_path: Path) -> None:
+    # The false-green guard: an UNDECLARED function lives in the developer-freedom
+    # zone (engine infers UNKNOWN_RAW). A fail-closed tool must NOT call that "clean".
+    proj = tmp_path / "u"
+    proj.mkdir()
+    (proj / "m.py").write_text("def plain(x):\n    return x + 1\n", encoding="utf-8")
+    d = build_dossier("m.plain", root=proj)
+    assert d.trust.gate_verdict == "unknown"
+    assert "unknown trust posture" in (d.synthesis or "")
+    # no Python None sentinel leaks into agent-facing prose
+    assert "None" not in (d.synthesis or "")
 
 
 def test_shape_section_carries_signature_and_decorators(tmp_path: Path) -> None:
@@ -122,6 +137,22 @@ def test_no_binding_means_unavailable_identity_axes(tmp_path: Path) -> None:
     assert d.identity.content_status is ContentStatus.UNKNOWN
 
 
+def test_suppressed_defect_is_surfaced_not_hidden(tmp_path: Path) -> None:
+    # A baselined (accepted) PY-WL-101 must not silently read as a pristine "clean":
+    # surface the accepted-debt count so the dossier never hides known findings.
+    from wardline.core.baseline import write_baseline
+    from wardline.core.run import run_scan
+
+    proj = _proj(tmp_path)
+    leak = next(f for f in run_scan(proj).findings if f.rule_id == "PY-WL-101")
+    write_baseline(proj / ".wardline" / "baseline.yaml", [leak])
+
+    d = build_dossier("svc.leaky", root=proj)
+    assert d.trust.active_findings == []  # the leak is no longer active
+    assert d.trust.suppressed_findings == 1  # but it is surfaced
+    assert "accepted" in (d.synthesis or "")
+
+
 # --- error model: entity not found is a tool-execution fault -----------------
 
 
@@ -143,19 +174,105 @@ class _SilentLinkages:
         return None  # the provider has no opinion for this entity
 
 
+_BINDING = EntityBinding(locator="svc.leaky", sei="clarion:eid:x", identity=IdentityStatus.ALIVE)
+
+
 def test_provider_no_opinion_degrades_to_unavailable(tmp_path: Path) -> None:
-    d = build_dossier("svc.leaky", root=_proj(tmp_path), linkage_provider=_SilentLinkages())
+    d = build_dossier("svc.leaky", root=_proj(tmp_path), binding=_BINDING, linkage_provider=_SilentLinkages())
     assert d.linkages.available is False
     assert d.linkages.reason == "source returned no data"
 
 
 def test_provider_failure_degrades_to_unavailable(tmp_path: Path) -> None:
-    d = build_dossier("svc.leaky", root=_proj(tmp_path), linkage_provider=_BoomLinkages())
+    d = build_dossier("svc.leaky", root=_proj(tmp_path), binding=_BINDING, linkage_provider=_BoomLinkages())
     assert d.linkages.available is False
     assert d.linkages.reason is not None
     assert "clarion unreachable" in d.linkages.reason
     # the rest of the envelope is intact — the call SUCCEEDED
     assert d.trust.gate_verdict == "defect"
+
+
+def test_provider_not_called_without_a_binding(tmp_path: Path) -> None:
+    # No SEI binding → no key to resolve a cross-tool lookup. The provider must NOT be
+    # called; the section is an honest unavailable, never a query on an empty key.
+    class _MustNotBeCalled:
+        def linkages(self, binding: EntityBinding) -> LinkagesSection | None:
+            raise AssertionError("provider must not be called when binding is None")
+
+    d = build_dossier("svc.leaky", root=_proj(tmp_path), linkage_provider=_MustNotBeCalled())
+    assert d.linkages.available is False
+    assert "no entity binding" in (d.linkages.reason or "")
+
+
+class _BoomWork:
+    def work(self, binding: EntityBinding) -> WorkSection:
+        raise RuntimeError("filigree unreachable: connection refused")
+
+
+class _SilentWork:
+    def work(self, binding: EntityBinding) -> WorkSection | None:
+        return None
+
+
+def test_work_provider_failure_degrades_to_unavailable(tmp_path: Path) -> None:
+    d = build_dossier("svc.leaky", root=_proj(tmp_path), binding=_BINDING, work_provider=_BoomWork())
+    assert d.work.available is False
+    assert "filigree unreachable" in (d.work.reason or "")
+    assert d.trust.gate_verdict == "defect"  # rest of envelope intact
+
+
+def test_work_provider_no_opinion_and_no_binding(tmp_path: Path) -> None:
+    proj = _proj(tmp_path)
+    d1 = build_dossier("svc.leaky", root=proj, binding=_BINDING, work_provider=_SilentWork())
+    assert d1.work.reason == "source returned no data"
+    # provider configured but no binding → not called, honest unavailable
+    d2 = build_dossier("svc.leaky", root=proj, work_provider=_SilentWork())
+    assert "no entity binding" in (d2.work.reason or "")
+
+
+def test_under_scanned_entity_is_unknown_not_clean() -> None:
+    # Unit-test the honest verdict directly: an entity present in the index but with NO
+    # computed return taint AND an engine under-scan FACT must read "unknown" (the body
+    # was never analysed — its silence is not a clean bill of health), never "clean".
+    import ast
+    from types import MappingProxyType
+
+    from wardline.core.dossier import _build_trust
+    from wardline.core.finding import Finding, Kind, Location, Severity
+    from wardline.core.run import ScanResult, ScanSummary
+    from wardline.scanner.context import AnalysisContext
+    from wardline.scanner.index import Entity
+
+    node = ast.parse("def f():\n    return 1\n").body[0]
+    assert isinstance(node, ast.FunctionDef)
+    ent = Entity(qualname="m.f", kind="function", node=node, location=Location(path="m.py", line_start=1))
+    ctx = AnalysisContext(
+        project_taints={},
+        project_return_taints={},  # no declared
+        function_var_taints={},
+        function_return_taints={},  # NO actual return computed → under-scanned
+        function_return_callee={},
+        entities=MappingProxyType({"m.f": ent}),
+        taint_provenance={},
+    )
+    skip = Finding(
+        rule_id="WLN-ENGINE-FUNCTION-SKIPPED",
+        message="recursion limit hit; entity skipped",
+        severity=Severity.NONE,
+        kind=Kind.FACT,
+        location=Location(path="m.py", line_start=1),
+        fingerprint="x" * 64,
+        qualname="m.f",
+    )
+    result = ScanResult(
+        findings=[skip],
+        summary=ScanSummary(total=1, active=0, baselined=0, waived=0, judged=0),
+        files_scanned=1,
+        context=ctx,
+    )
+    trust = _build_trust(result, ctx, "m.f")
+    assert trust.gate_verdict == "unknown"
+    assert trust.unanalyzed_reason is not None and "recursion" in trust.unanalyzed_reason
 
 
 # --- a working stub provider proves the seam (T4.3 wiring drops in) ----------

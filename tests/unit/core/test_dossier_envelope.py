@@ -219,6 +219,19 @@ def test_oversize_from_synthesis_only_drops_synthesis_with_empty_elision() -> No
     assert estimate_tokens(json.dumps(bounded.to_dict(), sort_keys=True)) <= DOSSIER_TOKEN_BUDGET
 
 
+def test_untrimmable_core_over_budget_is_marked_honestly() -> None:
+    # identity/shape are never trimmed, so a pathologically long qualname can leave
+    # the core over budget. The marker must NOT claim "trimmed to fit" — it must say
+    # the budget was not achievable (a dishonest marker is itself a false-green).
+    huge = _minimal_dossier(identity=_identity(qualname="m." + "x" * 12_000))
+    bounded = bound_to_budget(huge)
+    assert bounded.truncation.truncated is True
+    assert estimate_tokens(json.dumps(bounded.to_dict(), sort_keys=True)) > DOSSIER_TOKEN_BUDGET
+    assert "EXCEEDS token budget" in (bounded.truncation.note or "")
+    # identity is preserved even when un-fittable
+    assert bounded.identity.qualname.startswith("m.x")
+
+
 def test_elided_section_shape() -> None:
     e = ElidedSection(section="linkages.callers", shown=5, total=400)
     assert (e.section, e.shown, e.total) == ("linkages.callers", 5, 400)
