@@ -11,10 +11,12 @@ from wardline.core.errors import WardlineError
 from wardline.install.block import inject_block
 from wardline.install.detect import record_bindings
 from wardline.install.mcp_json import merge_mcp_entry
+from wardline.install.pack import activate_pack
 from wardline.install.skill import install_skill
 
 
 @click.command()
+@click.argument("pack", required=False, default=None)
 @click.option(
     "--root",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
@@ -28,6 +30,7 @@ from wardline.install.skill import install_skill
 @click.option("--no-bindings", is_flag=True, help="Skip Clarion/Filigree detection.")
 @click.option("--no-attest-key", is_flag=True, help="Skip minting the attest signing key.")
 def install(
+    pack: str | None,
     root: Path,
     no_claude_md: bool,
     no_agents_md: bool,
@@ -61,6 +64,15 @@ def install(
 
             _key, status = mint_attest_key(root)
             lines.append(f"attest key: {status}")
+        if pack is not None:
+            try:
+                import importlib
+
+                importlib.import_module(pack)
+            except ImportError:
+                click.echo(f"warning: trust-grammar pack {pack!r} is not installed or importable locally", err=True)
+            status = activate_pack(root, pack)
+            lines.append(f"packs: {status}")
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc

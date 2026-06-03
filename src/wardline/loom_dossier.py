@@ -20,7 +20,7 @@ from typing import Any, Protocol
 
 from wardline.clarion.client import LinkageResult
 from wardline.clarion.dossier_sources import ClarionLinkageProvider, resolve_entity_binding
-from wardline.clarion.identity import EntityBinding, SeiCapability, SeiResolver
+from wardline.clarion.identity import ContentStatus, EntityBinding, IdentityStatus, SeiCapability, SeiResolver
 from wardline.core.dossier import (
     DOSSIER_TOKEN_BUDGET,
     EntityDossier,
@@ -28,6 +28,8 @@ from wardline.core.dossier import (
     WorkProvider,
     build_dossier,
 )
+from wardline.core.errors import DossierError
+from wardline.core.sei_resolution import locator_to_qualname
 from wardline.filigree.dossier_client import FiligreeWorkProvider
 from wardline.filigree.dossier_client import Transport as FiligreeTransport
 
@@ -76,7 +78,28 @@ def build_loom_dossier(
     linkage_provider: LinkageProvider | None = None
     work_provider: WorkProvider | None = None
 
-    if clarion_client is not None:
+    if entity.startswith("sei:"):
+        if clarion_client is None:
+            raise DossierError(f"no Clarion URL configured; cannot resolve SEI: {entity}")
+        capabilities = clarion_client.capabilities()
+        resolver = SeiResolver(clarion_client, SeiCapability.from_capabilities(capabilities))
+        if not resolver.capability.supported:
+            raise DossierError(f"Clarion instance does not support SEI; cannot resolve SEI: {entity}")
+        data = clarion_client.resolve_sei(entity)
+        if data is None or data.get("alive") is not True or data.get("current_locator") is None:
+            raise DossierError(f"cannot resolve SEI to a qualname: {entity}")
+        current_locator = data["current_locator"]
+        input_sei = entity
+        entity = locator_to_qualname(current_locator)
+        binding = EntityBinding(
+            locator=current_locator,
+            sei=data.get("sei") or input_sei,
+            identity=IdentityStatus.ALIVE,
+            content_hash=data.get("content_hash"),
+            content=ContentStatus.UNKNOWN,
+        )
+        linkage_provider = ClarionLinkageProvider(clarion_client, linkages_http=_linkages_http(capabilities))
+    elif clarion_client is not None:
         capabilities = clarion_client.capabilities()
         resolver = SeiResolver(clarion_client, SeiCapability.from_capabilities(capabilities))
         binding = resolve_entity_binding(clarion_client, resolver, entity)

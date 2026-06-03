@@ -64,6 +64,9 @@ class AnalysisContext:
     # denominator. Additive + defaulted so direct constructions/tests need not
     # supply it; frozenset is already immutable so no proxy wrap is needed.
     declared_qualnames: frozenset[str] = frozenset()
+    # Inter-module call edges: ``{caller: frozenset({callees})}``. Defaulted for
+    # direct constructions; absence means no project edges available.
+    project_edges: Mapping[str, frozenset[str]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "project_taints", MappingProxyType(dict(self.project_taints)))
@@ -75,6 +78,11 @@ class AnalysisContext:
         object.__setattr__(self, "taint_provenance", MappingProxyType(dict(self.taint_provenance)))
         object.__setattr__(self, "function_call_site_taints", MappingProxyType(dict(self.function_call_site_taints)))
         object.__setattr__(self, "class_attr_taints", MappingProxyType(dict(self.class_attr_taints)))
+        object.__setattr__(
+            self,
+            "project_edges",
+            MappingProxyType({k: frozenset(v) for k, v in self.project_edges.items()}),
+        )
 
 
 class _Rule(Protocol):

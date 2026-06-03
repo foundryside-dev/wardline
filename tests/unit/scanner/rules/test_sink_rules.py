@@ -9,6 +9,7 @@ from wardline.scanner.analyzer import WardlineAnalyzer
 from wardline.scanner.rules.untrusted_to_command import UntrustedToCommand
 from wardline.scanner.rules.untrusted_to_deserialization import UntrustedToDeserialization
 from wardline.scanner.rules.untrusted_to_exec import UntrustedToExec
+from wardline.scanner.rules.untrusted_to_shell_subprocess import UntrustedToShellSubprocess
 
 _HEADER = (
     "import os, pickle\n"
@@ -122,3 +123,93 @@ def test_108_trusted_literal_arg_does_not_fire(tmp_path) -> None:
         """,
     )
     assert UntrustedToCommand().check(ctx) == []
+
+
+def test_107_self_method_call_arg_fires(tmp_path) -> None:
+    # Sibling method call (self.get_raw) should resolve to EXTERNAL_RAW and trigger PY-WL-107.
+    ctx = _analyze(
+        tmp_path,
+        """
+        class Service:
+            def get_raw(self, p):
+                return read_raw(p)
+            
+            @trusted(level='ASSURED')
+            def run(self, p):
+                eval(self.get_raw(p))
+        """,
+    )
+    findings = UntrustedToExec().check(ctx)
+    assert [(x.rule_id, x.qualname) for x in findings] == [("PY-WL-107", "m.Service.run")]
+
+
+def test_112_raw_reaches_subprocess_shell_true(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        import subprocess
+        @trusted(level='ASSURED')
+        def f(p):
+            subprocess.run(read_raw(p), shell=True)
+            return 1
+        """,
+    )
+    findings = UntrustedToShellSubprocess().check(ctx)
+    assert [(x.rule_id, x.qualname) for x in findings] == [("PY-WL-112", "m.f")]
+
+
+def test_112_literal_command_shell_true_does_not_fire(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        import subprocess
+        @trusted(level='ASSURED')
+        def f():
+            subprocess.run('ls -la', shell=True)
+            return 1
+        """,
+    )
+    assert UntrustedToShellSubprocess().check(ctx) == []
+
+
+def test_112_raw_reaches_subprocess_shell_false_does_not_fire(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        import subprocess
+        @trusted(level='ASSURED')
+        def f(p):
+            subprocess.run(['ls', read_raw(p)])
+            subprocess.run(read_raw(p), shell=False)
+            return 1
+        """,
+    )
+    assert UntrustedToShellSubprocess().check(ctx) == []
+
+
+def test_112_non_constant_shell_does_not_fire(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        import subprocess
+        @trusted(level='ASSURED')
+        def f(p):
+            flag = True
+            subprocess.run(read_raw(p), shell=flag)
+            return 1
+        """,
+    )
+    assert UntrustedToShellSubprocess().check(ctx) == []
+
+
+def test_112_undecorated_is_suppressed(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        import subprocess
+        def f(p):
+            subprocess.run(read_raw(p), shell=True)
+            return 1
+        """,
+    )
+    assert UntrustedToShellSubprocess().check(ctx) == []

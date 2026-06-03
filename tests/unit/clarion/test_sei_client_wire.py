@@ -69,9 +69,15 @@ def test_resolve_identity_alive_false_is_a_value_not_an_error() -> None:
     assert _client(t).resolve_identity("python:function:gone") == {"alive": False}
 
 
-def test_resolve_identity_soft_none_on_4xx() -> None:
+def test_resolve_identity_soft_none_on_4xx(caplog) -> None:
+    import logging
+
     t = FakeTransport([Response(status=400, body='{"code":"NOT_A_LOCATOR"}')])
-    assert _client(t).resolve_identity("python:function:m.f") is None
+    with caplog.at_level(logging.WARNING):
+        res = _client(t).resolve_identity("python:function:m.f")
+        assert res is None
+        assert len(caplog.records) == 1
+        assert "Clarion identity read returned status 400" in caplog.text
 
 
 def test_resolve_sei_gets_escaped_opaque_token() -> None:

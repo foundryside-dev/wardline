@@ -29,6 +29,7 @@ from wardline.core.finding import Finding, Kind, Severity, SuppressionState
 from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
 from wardline.core.run import gate_decision, run_scan
+from wardline.core.sei_resolution import resolve_query_filters
 from wardline.core.waivers import add_waiver
 from wardline.mcp.protocol import JsonRpcServer, McpError
 from wardline.scanner.rules import _ALL_RULE_CLASSES
@@ -137,7 +138,8 @@ def _scan(args: dict[str, Any], root: Path, clarion: Any = None, filigree: Any =
         # A bad enum value is agent-actionable — give it the valid set rather than
         # letting it surface as an opaque generic JSON-RPC -32603.
         raise ToolError("fail_on must be one of CRITICAL/ERROR/WARN/INFO") from exc
-    result = run_scan(path, config_path=_cfg(args, root), confine_to_root=True)
+    new_since = args.get("new_since")
+    result = run_scan(path, config_path=_cfg(args, root), confine_to_root=True, new_since=new_since)
     # Fail-soft Clarion write: only when a client was injected (server has a URL).
     # An outage/403 yields a not-reachable WriteResult; never raises here.
     clarion_block: dict[str, Any] | None = None
@@ -161,10 +163,12 @@ def _scan(args: dict[str, Any], root: Path, clarion: Any = None, filigree: Any =
         }
     decision = gate_decision(result, threshold)
     filigree_block = _emit_filigree(result.findings, filigree)
+    where = args.get("where")
     try:
-        selected = filter_findings(result.findings, args.get("where"))
-    except ValueError as exc:
-        # An unknown filter key is agent-actionable -> isError result, not a crash.
+        resolved_where = resolve_query_filters(where, root, _cfg(args, root), clarion)
+        selected = filter_findings(result.findings, resolved_where)
+    except (ValueError, WardlineError) as exc:
+        # An unknown filter key or SEI resolution failure is agent-actionable -> isError result.
         raise ToolError(str(exc)) from exc
     explain = bool(args.get("explain"))
     findings_out: list[dict[str, Any]] = []
@@ -485,6 +489,11 @@ class WardlineMCPServer:
                             "description": "Inline each active defect's taint provenance "
                             "(immediate tainted callee, source boundary, trust tiers, resolution "
                             "counts) — one call instead of an explain_taint per finding.",
+                        },
+                        "new_since": {
+                            "type": "string",
+                            "description": "PR-scoped 'new findings only' gate: only gate on findings in "
+                            "files/entities changed since this git ref",
                         },
                     },
                 },

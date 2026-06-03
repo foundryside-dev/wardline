@@ -9,8 +9,8 @@ Tier-modulated; fires only where trust is declared.
 **Scope (FP-safe):** the ``subprocess.run`` / ``call`` / ``Popen`` / ``check_*`` family
 is intentionally NOT in the sink set — with the default ``shell=False`` an argv-LIST is
 safe (no shell), so firing on them floods false positives; only ``shell=True`` makes them
-injectable, and detecting that keyword reliably is deferred (a follow-up). Covering the
-always-shell APIs catches the unambiguous case without the argv-list FP.
+injectable, and detecting that keyword reliably is policed separately by PY-WL-112.
+Covering the always-shell APIs catches the unambiguous case without the argv-list FP.
 """
 
 from __future__ import annotations

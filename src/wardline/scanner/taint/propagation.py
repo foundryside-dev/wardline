@@ -105,7 +105,7 @@ def _check_monotonicity_violation(
 # ── Provenance dataclass ──────────────────────────────────────────
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TaintProvenance:
     """Records how a function's L3 taint was determined.
 
@@ -115,7 +115,6 @@ class TaintProvenance:
     source: Literal[
         "anchored",
         "module_default",
-        "minimum_scope",
         "callgraph",
         "fallback",
     ]
@@ -171,7 +170,7 @@ def _compute_scc_round(
         # The line-above floor pins TRUST_RANK[new_taint] >= TRUST_RANK[floor]
         # unconditionally, so the former inner unresolved-clamp guard
         # (rank[floor] > rank[new_taint]) was never true — dead code removed
-        # (taint-combination audit, F2; minimum_scope.py:158-161 makes the same
+        # (taint-combination audit, F2; legacy minimum_scope.py:158-161 made the same
         # point in prose). The unresolved floor is already applied at seed time
         # (phase2_floor incorporates the unresolved pessimistic floor from the
         # Phase-1 external-influence pass).

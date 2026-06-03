@@ -155,3 +155,18 @@ def test_verify_malformed_bundle_exits_2_no_traceback(tmp_path: Path, monkeypatc
     assert "error:" in result.stderr
     # A clean exit-2, not a crashed traceback.
     assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+def test_verify_list_bundle_exits_2_no_traceback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``--verify`` on a list-form json bundle exits 2 cleanly with an ``error:`` and no traceback."""
+    monkeypatch.delenv("WARDLINE_ATTEST_KEY", raising=False)
+    _make_clean_repo(tmp_path)
+
+    bad_path = tmp_path / "list.json"
+    bad_path.write_text("[1, 2, 3]", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["attest", str(tmp_path), "--verify", str(bad_path)])
+    assert result.exit_code == 2
+    assert "error:" in result.stderr
+    assert result.exception is None or isinstance(result.exception, SystemExit)

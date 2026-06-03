@@ -12,8 +12,10 @@ from pathlib import Path
 
 import click
 
+from wardline.core.errors import WardlineError
 from wardline.core.finding_query import filter_findings
 from wardline.core.run import run_scan
+from wardline.core.sei_resolution import resolve_query_filters
 
 
 @click.command()
@@ -34,8 +36,9 @@ def findings(path: Path, config_path: Path | None, where_json: str | None) -> No
             raise SystemExit(2)
     result = run_scan(path, config_path=config_path)
     try:
-        selected = filter_findings(result.findings, where)
-    except ValueError as exc:
+        resolved_where = resolve_query_filters(where, path, config_path)
+        selected = filter_findings(result.findings, resolved_where)
+    except (ValueError, WardlineError) as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
     for f in selected:

@@ -23,7 +23,11 @@ _BUILTIN_IDS = [
     "PY-WL-106",
     "PY-WL-107",
     "PY-WL-108",
+    "PY-WL-112",
     "PY-WL-111",
+    "PY-WL-113",
+    "PY-WL-114",
+    "PY-WL-115",
 ]
 
 

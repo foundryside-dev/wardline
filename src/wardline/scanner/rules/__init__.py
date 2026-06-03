@@ -13,12 +13,16 @@ from wardline.scanner.rules.assert_only_boundary import AssertOnlyBoundary
 from wardline.scanner.rules.boundary_without_rejection import BoundaryWithoutRejection
 from wardline.scanner.rules.broad_exception import BroadException
 from wardline.scanner.rules.contradictory_trust import ContradictoryTrust
+from wardline.scanner.rules.failopen_boundary import FailOpenBoundary
+from wardline.scanner.rules.invalid_decorator_level import InvalidDecoratorLevel
 from wardline.scanner.rules.none_leak import NoneLeak
 from wardline.scanner.rules.silent_exception import SilentException
 from wardline.scanner.rules.untrusted_reaches_trusted import UntrustedReachesTrusted
 from wardline.scanner.rules.untrusted_to_command import UntrustedToCommand
 from wardline.scanner.rules.untrusted_to_deserialization import UntrustedToDeserialization
 from wardline.scanner.rules.untrusted_to_exec import UntrustedToExec
+from wardline.scanner.rules.untrusted_to_import import UntrustedToImport
+from wardline.scanner.rules.untrusted_to_shell_subprocess import UntrustedToShellSubprocess
 from wardline.scanner.rules.untrusted_to_trusted_callee import UntrustedReachesTrustedCallee
 
 if TYPE_CHECKING:
@@ -37,8 +41,13 @@ _ALL_RULE_CLASSES = (
     UntrustedToDeserialization,
     UntrustedToExec,
     UntrustedToCommand,
+    UntrustedToShellSubprocess,
     AssertOnlyBoundary,
+    FailOpenBoundary,
+    InvalidDecoratorLevel,
+    UntrustedToImport,
 )
+
 
 # Public alias: the builtin rule set the default grammar (Track 2) preloads.
 # Kept as the single source of truth — `default_grammar()` references this so the

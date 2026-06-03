@@ -122,3 +122,20 @@ def asserts_are_sole_rejection(node: ast.FunctionDef | ast.AsyncFunctionDef) -> 
         if isinstance(stmt, ast.Assert):
             has_assert = True
     return has_assert
+
+
+def _contains_reraise(handler: ast.ExceptHandler) -> bool:
+    """True if *handler* re-raises anywhere in its own body (bare ``raise`` /
+    ``raise X`` / ``raise X from e``). Does not descend into nested def/class."""
+    return any(isinstance(stmt, ast.Raise) for stmt in _own_statements(handler))
+
+
+def handler_substitutes_on_failure(handler: ast.ExceptHandler) -> bool:
+    """FAIL-OPEN: does not re-raise and returns a value-bearing (non-rejection)
+    result. A falsy/bare ``return`` is a REJECTION signal, not substitution, so it
+    does not match; a (even conditional) re-raise never matches. PY-WL-113."""
+    if _contains_reraise(handler):
+        return False
+    return any(
+        isinstance(stmt, ast.Return) and not _is_falsy_constant_return(stmt.value) for stmt in _own_statements(handler)
+    )

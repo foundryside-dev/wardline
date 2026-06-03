@@ -148,3 +148,19 @@ def test_trust_boundary_shape_delegates_to_102(tmp_path) -> None:
         """,
     )
     assert _ids(ctx) == []
+
+
+def test_union_annotation_does_not_fire(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        from typing import Union
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def maybe(flag) -> Union[int, None]:
+            if flag:
+                return 1
+            return None
+        """,
+    )
+    assert _ids(ctx) == []

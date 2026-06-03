@@ -1,0 +1,99 @@
+# tests/unit/scanner/rules/test_invalid_decorator_level.py
+"""Tests for PY-WL-114: invalid or out-of-range builtin trust decorator levels."""
+
+from __future__ import annotations
+
+import textwrap
+from pathlib import Path
+
+from wardline.core.config import WardlineConfig
+from wardline.core.finding import Kind, Severity
+from wardline.scanner.analyzer import WardlineAnalyzer
+from wardline.scanner.rules.invalid_decorator_level import InvalidDecoratorLevel
+
+
+def _analyze(tmp_path: Path, src: str) -> tuple[WardlineAnalyzer, object]:
+    p = tmp_path / "m.py"
+    p.write_text(textwrap.dedent(src), encoding="utf-8")
+    analyzer = WardlineAnalyzer()
+    analyzer.analyze([p], WardlineConfig(), root=tmp_path)
+    assert analyzer.last_context is not None
+    return analyzer, analyzer.last_context
+
+
+def test_invalid_decorator_level_trusted_typo(tmp_path) -> None:
+    _, ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+
+        @trusted(level='ASURED')
+        def f(p):
+            return p
+        """,
+    )
+    findings = InvalidDecoratorLevel().check(ctx)
+    assert [(f.rule_id, f.qualname) for f in findings] == [("PY-WL-114", "m.f")]
+    assert findings[0].kind == Kind.DEFECT
+    assert findings[0].severity == Severity.ERROR
+    assert "ASURED" in findings[0].message
+
+
+def test_invalid_decorator_level_boundary_out_of_range(tmp_path) -> None:
+    _, ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trust_boundary
+
+        @trust_boundary(to_level='INTEGRAL')
+        def g(p):
+            if not p: raise ValueError
+            return p
+        """,
+    )
+    findings = InvalidDecoratorLevel().check(ctx)
+    assert [(f.rule_id, f.qualname) for f in findings] == [("PY-WL-114", "m.g")]
+    assert "INTEGRAL" in findings[0].message
+
+
+def test_invalid_decorator_level_invalid_name(tmp_path) -> None:
+    _, ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+
+        @trusted(level='BOGUS')
+        def h(p):
+            return p
+        """,
+    )
+    findings = InvalidDecoratorLevel().check(ctx)
+    assert [(f.rule_id, f.qualname) for f in findings] == [("PY-WL-114", "m.h")]
+
+
+def test_invalid_decorator_level_clean_cases(tmp_path) -> None:
+    _, ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted, trust_boundary
+
+        @trusted(level='INTEGRAL')
+        def clean_1(p):
+            return p
+
+        @trusted(level='ASSURED')
+        def clean_2(p):
+            return p
+
+        @trust_boundary(to_level='GUARDED')
+        def clean_3(p):
+            if not p: raise ValueError
+            return p
+
+        @trusted(level=cfg.LEVEL)
+        def clean_dynamic(p):
+            return p
+        """,
+    )
+    findings = InvalidDecoratorLevel().check(ctx)
+    assert len(findings) == 0

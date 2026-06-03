@@ -86,6 +86,9 @@ def build_call_taint_map(
                 # written ``local.<rest-of-pkg>.fn`` (e.g. urllib.request.urlopen).
                 remainder = pkg[len(target) + 1 :]
                 tm.setdefault(f"{local}.{remainder}.{fn}", value)
+            elif f"{pkg}.{fn}".startswith(target + "."):
+                remainder = f"{pkg}.{fn}"[len(target) + 1 :]
+                tm.setdefault(f"{local}.{remainder}", value)
 
     # (e) Serialisation-sink alias closure. The override in (d) only fires for
     # sinks that are ALSO present in stdlib_taint (just json.load/loads). Sinks
@@ -108,5 +111,8 @@ def build_call_taint_map(
             elif pkg.startswith(target + "."):
                 remainder = pkg[len(target) + 1 :]
                 tm.setdefault(f"{local}.{remainder}.{fn}", TaintState.UNKNOWN_RAW)
+            elif sink.startswith(target + "."):
+                remainder = sink[len(target) + 1 :]
+                tm.setdefault(f"{local}.{remainder}", TaintState.UNKNOWN_RAW)
 
     return tm

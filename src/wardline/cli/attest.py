@@ -95,7 +95,7 @@ def attest(
                 config_path=config_path,
                 clarion_client=clarion_client,
             )
-        except (json.JSONDecodeError, KeyError, ValueError, WardlineError) as exc:
+        except (json.JSONDecodeError, KeyError, ValueError, TypeError, WardlineError) as exc:
             click.echo(f"error: invalid attestation bundle: {exc}", err=True)
             raise SystemExit(2) from exc
         click.echo(json.dumps(result))

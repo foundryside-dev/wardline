@@ -54,6 +54,12 @@ from wardline.core.sarif import SarifSink
     default=None,
     help="Persist per-entity taint facts to this Clarion taint-store URL (opt-in, fail-soft).",
 )
+@click.option(
+    "--new-since",
+    type=str,
+    default=None,
+    help="PR-scoped 'new findings only' gate: only gate on findings in files/entities changed since this git ref.",
+)
 def scan(
     path: Path,
     config_path: Path | None,
@@ -64,6 +70,7 @@ def scan(
     cache_dir: Path | None,
     filigree_url: str | None,
     clarion_url: str | None,
+    new_since: str | None,
 ) -> None:
     """Scan PATH for findings."""
     default_name = "findings.sarif" if fmt == "sarif" else "findings.jsonl"
@@ -73,7 +80,7 @@ def scan(
     try:
         filigree_url = resolve_filigree_url(filigree_url, path, config_path)
         clarion_url = resolve_clarion_url(clarion_url, path, config_path)
-        result = run_scan(path, config_path=config_path, cache_dir=cache_dir)
+        result = run_scan(path, config_path=config_path, cache_dir=cache_dir, new_since=new_since)
         findings = result.findings
         sink = SarifSink(output) if fmt == "sarif" else JsonlSink(output)
         sink.write(findings)

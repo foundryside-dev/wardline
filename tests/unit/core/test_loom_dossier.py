@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from wardline.clarion.client import LinkageResult, ResolveResult
 from wardline.clarion.identity import ContentStatus, IdentityStatus
 from wardline.filigree.dossier_client import Response
@@ -52,7 +54,12 @@ class _FakeClarion:
         return {"sei": self._sei, "current_locator": locator, "content_hash": self._content_hash, "alive": True}
 
     def resolve_sei(self, sei):
-        return {"alive": True}
+        return {
+            "alive": True,
+            "current_locator": "python:function:svc.leaky",
+            "content_hash": self._content_hash,
+            "sei": sei,
+        }
 
     def get_callers(self, entity_id, *, limit=50):
         return LinkageResult(neighbours=("python:function:svc.caller",), total=1, truncated=False)
@@ -142,3 +149,37 @@ def test_clarion_capabilities_outage_degrades_to_self_only(tmp_path: Path) -> No
     assert d.identity.identity_status is IdentityStatus.UNAVAILABLE
     assert d.linkages.available is False
     assert d.trust.gate_verdict == "defect"
+
+
+def test_loom_dossier_with_sei_entity(tmp_path: Path) -> None:
+    fili_body = json.dumps({"associations": [{"issue_id": "wardline-7", "content_hash_at_attach": "ch"}]})
+    d = build_loom_dossier(
+        "sei:clarion:eid:abc",
+        root=_proj(tmp_path),
+        clarion_client=_FakeClarion(),
+        filigree_url="http://filigree.example",
+        filigree_transport=_FakeFiligreeTransport(fili_body),
+    )
+    # identity keyed on the resolved SEI
+    assert d.identity.sei == "sei:clarion:eid:abc"
+    assert d.identity.keyed_on_sei is True
+    assert d.identity.identity_status is IdentityStatus.ALIVE
+    # self trust posture (real) still computed for resolved svc.leaky
+    assert d.trust.gate_verdict == "defect"
+    # linkages resolved via locator
+    assert d.linkages.available is True
+    assert d.linkages.callees == ["python:function:svc.mid"]
+
+
+def test_loom_dossier_with_sei_entity_unsupported_or_missing_clarion(tmp_path: Path) -> None:
+    from wardline.core.errors import DossierError
+
+    proj = _proj(tmp_path)
+
+    # Missing clarion_client
+    with pytest.raises(DossierError, match="no Clarion URL configured"):
+        build_loom_dossier("sei:clarion:eid:abc", root=proj)
+
+    # Unsupported SEI
+    with pytest.raises(DossierError, match="Clarion instance does not support SEI"):
+        build_loom_dossier("sei:clarion:eid:abc", root=proj, clarion_client=_FakeClarion(sei_supported=False))

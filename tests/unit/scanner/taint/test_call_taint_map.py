@@ -201,3 +201,20 @@ def test_multicomponent_package_sink_keyed_under_collapsed_alias(monkeypatch) ->
     aliases = _aliases("import deep.pkg\n", "m")
     tm = build_call_taint_map(module_path="m", alias_map=aliases)
     assert tm["deep.pkg.dump"] == T.UNKNOWN_RAW
+
+
+def test_from_import_parent_of_nested_stdlib_function() -> None:
+    # from os import environ; environ.get(k)
+    aliases = _aliases("from os import environ\n", "m")
+    tm = build_call_taint_map(module_path="m", alias_map=aliases)
+    assert tm["environ.get"] == T.EXTERNAL_RAW
+
+
+def test_from_import_parent_of_nested_sink(monkeypatch) -> None:
+    # from deep import pkg; pkg.dump(x)
+    import wardline.scanner.taint.call_taint_map as ctm
+
+    monkeypatch.setattr(ctm, "_SERIALISATION_SINKS", frozenset({"deep.pkg.dump"}))
+    aliases = _aliases("from deep import pkg\n", "m")
+    tm = build_call_taint_map(module_path="m", alias_map=aliases)
+    assert tm["pkg.dump"] == T.UNKNOWN_RAW

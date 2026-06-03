@@ -92,3 +92,22 @@ def test_external_boundary_callee_is_not_a_sink(tmp_path) -> None:
         """,
     )
     assert _ids(ctx) == []
+
+
+def test_self_method_call_fires(tmp_path) -> None:
+    # Sibling method call (self.store) should resolve and trigger PY-WL-105.
+    ctx = _analyze(
+        tmp_path,
+        """
+        class Service:
+            @trusted(level='ASSURED')
+            def store(self, x):
+                return 1
+            
+            def run(self, p):
+                self.store(read_raw(p))
+        """,
+    )
+    findings = UntrustedReachesTrustedCallee().check(ctx)
+    assert [(f.rule_id, f.qualname) for f in findings] == [("PY-WL-105", "m.Service.run")]
+    assert findings[0].properties["callee"] == "m.Service.store"

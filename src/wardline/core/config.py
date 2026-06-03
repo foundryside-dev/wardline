@@ -27,6 +27,7 @@ class WardlineConfig:
     judge: Mapping[str, Any] = field(default_factory=dict)
     filigree: Mapping[str, Any] = field(default_factory=dict)
     clarion: Mapping[str, Any] = field(default_factory=dict)
+    packs: tuple[str, ...] = ()
 
     @property
     def clarion_url(self) -> str | None:
@@ -39,6 +40,21 @@ class WardlineConfig:
         return value if isinstance(value, str) else None
 
 
+def _deep_merge(local: dict[str, Any], default: dict[str, Any]) -> dict[str, Any]:
+    res = dict(default)
+    for k, v in local.items():
+        if k in res and isinstance(res[k], dict) and isinstance(v, dict):
+            res[k] = _deep_merge(v, res[k])
+        elif k in res and isinstance(res[k], list) and isinstance(v, list):
+            if k in ("exclude", "source_roots"):
+                res[k] = list(dict.fromkeys(res[k] + v))
+            else:
+                res[k] = res[k] + v
+        else:
+            res[k] = v
+    return res
+
+
 def load(path: Path | None) -> WardlineConfig:
     if path is None or not path.exists():
         return WardlineConfig()
@@ -48,21 +64,46 @@ def load(path: Path | None) -> WardlineConfig:
         raise ConfigError(f"malformed {path.name}: {exc}") from exc
     if not isinstance(raw, dict):
         raise ConfigError(f"{path.name} must be a mapping at top level")
+
+    # Load and merge packs config
+    packs = raw.get("packs") or []
+    if not isinstance(packs, list):
+        raise ConfigError(f"packs key in {path.name} must be a list")
+
+    merged_raw = dict(raw)
+    for pack_name in packs:
+        if not isinstance(pack_name, str):
+            raise ConfigError(f"packs list in {path.name} must contain strings only")
+        try:
+            import importlib
+
+            pkg = importlib.import_module(pack_name)
+        except ImportError as exc:
+            raise ConfigError(f"failed to load trust-grammar pack {pack_name!r}: {exc}") from exc
+
+        pack_config = getattr(pkg, "config", None)
+        if pack_config is not None:
+            if not isinstance(pack_config, dict):
+                raise ConfigError(f"pack {pack_name!r} attribute 'config' must be a dictionary")
+            merged_raw = _deep_merge(merged_raw, pack_config)
+
     try:
-        jsonschema.validate(raw, WARDLINE_SCHEMA)
+        jsonschema.validate(merged_raw, WARDLINE_SCHEMA)
     except jsonschema.ValidationError as exc:
-        raise ConfigError(f"invalid {path.name}: {exc.message}") from exc
-    rules = raw.get("rules") or {}
+        raise ConfigError(f"invalid {path.name} (after merging packs): {exc.message}") from exc
+
+    rules = merged_raw.get("rules") or {}
     return WardlineConfig(
-        source_roots=tuple(raw.get("source_roots") or (".",)),
-        exclude=tuple(raw.get("exclude") or ()),
+        source_roots=tuple(merged_raw.get("source_roots") or (".",)),
+        exclude=tuple(merged_raw.get("exclude") or ()),
         rules_enable=tuple(rules.get("enable") or ("*",)),
         rules_severity=dict(rules.get("severity") or {}),
-        baseline=dict(raw.get("baseline") or {}),
-        waivers=tuple(raw.get("waivers") or ()),
-        judge=dict(raw.get("judge") or {}),
-        filigree=dict(raw.get("filigree") or {}),
-        clarion=dict(raw.get("clarion") or {}),
+        baseline=dict(merged_raw.get("baseline") or {}),
+        waivers=tuple(merged_raw.get("waivers") or ()),
+        judge=dict(merged_raw.get("judge") or {}),
+        filigree=dict(merged_raw.get("filigree") or {}),
+        clarion=dict(merged_raw.get("clarion") or {}),
+        packs=tuple(packs),
     )
 
 

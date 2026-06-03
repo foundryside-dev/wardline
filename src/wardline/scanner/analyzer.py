@@ -372,6 +372,7 @@ class WardlineAnalyzer:
             entities=entity_index,
             taint_provenance=dict(result.taint_provenance),
             declared_qualnames=frozenset(q for m in modules for q, s in m.seeds.items() if s.source == "provider"),
+            project_edges=result.project_edges,
         )
         self.last_context = context
 

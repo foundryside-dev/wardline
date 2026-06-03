@@ -24,6 +24,7 @@ that *returns* such a call is 101, the *pass-in* is 105 even if the result is di
 
 from __future__ import annotations
 
+import ast
 from typing import TYPE_CHECKING
 
 from wardline.core.finding import Finding, Kind, Location, Severity
@@ -39,8 +40,6 @@ from wardline.scanner.rules._sink_helpers import (
 from wardline.scanner.rules.metadata import RuleMetadata
 
 if TYPE_CHECKING:
-    import ast
-
     from wardline.scanner.context import AnalysisContext
 
 # PROVABLY untrusted (came through a declared boundary), NOT merely-unprovable UNKNOWN_RAW.
@@ -60,10 +59,23 @@ METADATA = RuleMetadata(
 )
 
 
-def _resolve_callee(call: ast.Call, module: str, context: AnalysisContext) -> str | None:
+def _resolve_callee(call: ast.Call, module: str, context: AnalysisContext, *, caller_qualname: str = "") -> str | None:
     """The callee's entity qualname, conservatively: a same-module bare name
     (``store`` -> ``<module>.store``) that is a known entity, or a dotted name that is
     itself an entity key. Else None (unresolved -> skip)."""
+    if (
+        isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id in {"self", "cls"}
+        and caller_qualname
+    ):
+        caller_entity = context.entities.get(caller_qualname)
+        if caller_entity is not None and caller_entity.kind == "method":
+            enclosing_class = caller_qualname.rsplit(".", 1)[0]
+            candidate = f"{enclosing_class}.{call.func.attr}"
+            if candidate in context.entities:
+                return candidate
+
     dotted = dotted_name(call.func)
     if dotted is None:
         return None
@@ -81,13 +93,15 @@ class UntrustedReachesTrustedCallee:
         self.base_severity = base_severity or METADATA.base_severity
 
     def check(self, context: AnalysisContext) -> list[Finding]:
+        from wardline.core.qualname import module_dotted_name
+
         findings: list[Finding] = []
         for qualname, entity in context.entities.items():
-            module = qualname.rsplit(".", 1)[0] if "." in qualname else ""
+            module = module_dotted_name(entity.location.path) or ""
             site_taints = call_site_var_taints(entity.node, qualname, context)
             final = context.function_var_taints.get(qualname, {})
             for call in _own_calls(entity.node):
-                callee = _resolve_callee(call, module, context)
+                callee = _resolve_callee(call, module, context, caller_qualname=qualname)
                 if callee is None:
                     continue
                 prov = context.taint_provenance.get(callee)

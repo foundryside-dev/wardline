@@ -61,12 +61,22 @@ def _annotation_allows_none(ann: ast.expr) -> bool:
         return True
     if isinstance(ann, ast.Name) and ann.id == "None":
         return True
-    if isinstance(ann, ast.Subscript):  # Optional[X] / typing.Optional[X]
+    if isinstance(ann, ast.Subscript):  # Optional[X] / Union[X, None]
         base = ann.value
         if (isinstance(base, ast.Name) and base.id == "Optional") or (
             isinstance(base, ast.Attribute) and base.attr == "Optional"
         ):
             return True
+        if (isinstance(base, ast.Name) and base.id == "Union") or (
+            isinstance(base, ast.Attribute) and base.attr == "Union"
+        ):
+            sl = ann.slice
+            # Handle ast.Index wrapper on older Python versions (e.g. <3.9)
+            if hasattr(ast, "Index") and isinstance(sl, ast.Index):
+                sl = sl.value  # type: ignore
+            if isinstance(sl, ast.Tuple):
+                return any(_annotation_allows_none(elt) for elt in sl.elts)
+            return _annotation_allows_none(sl)
     if isinstance(ann, ast.BinOp) and isinstance(ann.op, ast.BitOr):  # X | None
         return _annotation_allows_none(ann.left) or _annotation_allows_none(ann.right)
     return False

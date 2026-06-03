@@ -17,6 +17,7 @@ WARDLINE_SCHEMA: dict[str, Any] = {
     "properties": {
         "source_roots": {"type": "array", "items": {"type": "string"}},
         "exclude": {"type": "array", "items": {"type": "string"}},
+        "packs": {"type": "array", "items": {"type": "string"}},
         "rules": {
             "type": "object",
             "additionalProperties": False,

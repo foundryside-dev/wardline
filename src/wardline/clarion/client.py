@@ -14,6 +14,7 @@ and in error-message text, never as the soft-vs-loud decision.
 from __future__ import annotations
 
 import json
+import logging
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -23,6 +24,9 @@ from typing import Any, Protocol
 
 from wardline.clarion._hmac import sign_request
 from wardline.core.errors import ClarionError
+
+logger = logging.getLogger(__name__)
+
 
 _ALLOWED_SCHEMES = ("http", "https")
 
@@ -287,7 +291,16 @@ class ClarionClient:
         any other non-2xx (e.g. a pre-SEI Clarion's 404, a 4xx), or a non-object/bad
         body. Never routes through ``_require_ok`` (which raises on non-2xx)."""
         resp = self._send(method, path_and_query, payload)
-        if resp is None or not 200 <= resp.status < 300:
+        if resp is None:
+            return None
+        if not 200 <= resp.status < 300:
+            if resp.status != 404:
+                logger.warning(
+                    "Clarion identity read returned status %d for path %s: %s",
+                    resp.status,
+                    path_and_query,
+                    resp.body,
+                )
             return None
         try:
             parsed = json.loads(resp.body) if resp.body else {}

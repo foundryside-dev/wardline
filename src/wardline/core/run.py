@@ -9,12 +9,14 @@ identical by construction — same findings, same ``active`` count, same gate.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+import importlib
+from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 
 from wardline.core import config as config_mod
 from wardline.core.baseline import load_baseline
+from wardline.core.delta import get_affected_entities, get_changed_files_since
 from wardline.core.discovery import discover, missing_source_roots
 from wardline.core.errors import ConfigError
 from wardline.core.finding import (
@@ -28,8 +30,9 @@ from wardline.core.finding import (
 from wardline.core.judged import load_judged
 from wardline.core.suppression import apply_suppressions, gate_trips
 from wardline.core.waivers import WaiverSet, parse_waivers
-from wardline.scanner.analyzer import WardlineAnalyzer
+from wardline.scanner.analyzer import build_analyzer
 from wardline.scanner.context import AnalysisContext
+from wardline.scanner.grammar import TrustGrammar, default_grammar
 from wardline.scanner.taint.summary_cache import SummaryCache
 
 
@@ -77,6 +80,7 @@ def run_scan(
     config_path: Path | None = None,
     cache_dir: Path | None = None,
     confine_to_root: bool = False,
+    new_since: str | None = None,
 ) -> ScanResult:
     """Discover → analyze → apply suppressions. Pure function of (disk + config).
 
@@ -100,7 +104,22 @@ def run_scan(
         cache = SummaryCache(cache_dir=cache_dir)
         cache.load()
     files = discover(root, cfg, confine_to_root=confine_to_root)
-    analyzer = WardlineAnalyzer(summary_cache=cache)
+    grammar = default_grammar()
+    for pack_name in cfg.packs:
+        try:
+            pkg = importlib.import_module(pack_name)
+        except ImportError as exc:
+            raise ConfigError(f"failed to load trust-grammar pack {pack_name!r}: {exc}") from exc
+        pack_grammar = getattr(pkg, "grammar", None)
+        if pack_grammar is not None:
+            if not isinstance(pack_grammar, TrustGrammar):
+                raise ConfigError(f"pack {pack_name!r} attribute 'grammar' must be a TrustGrammar instance")
+            grammar = grammar.extend(
+                boundary_types=pack_grammar.boundary_types,
+                rules=pack_grammar.rules,
+            )
+
+    analyzer = build_analyzer(grammar=grammar, summary_cache=cache)
     raw = list(analyzer.analyze(files, cfg, root=root))
     # A non-existent (non-escaping) source_root is otherwise only a stderr warning
     # from discover — invisible to the MCP agent. Surface it as a finding that
@@ -123,6 +142,27 @@ def run_scan(
     waivers = WaiverSet(parse_waivers(cfg.waivers))
     judged = load_judged(root / ".wardline" / "judged.yaml")
     findings = apply_suppressions(raw, baseline, waivers, today=date.today(), judged=judged)
+
+    if new_since is not None:
+        changed_files = get_changed_files_since(new_since, root)
+        context = analyzer.last_context
+        if context is not None:
+            affected = get_affected_entities(changed_files, context.entities, context.project_edges)
+        else:
+            affected = set()
+
+        new_findings = []
+        for f in findings:
+            if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE:
+                is_new = (f.location.path in changed_files) or (f.qualname is not None and f.qualname in affected)
+                if not is_new:
+                    f = replace(
+                        f,
+                        suppressed=SuppressionState.BASELINED,
+                        suppression_reason=f"delta: unchanged since {new_since}",
+                    )
+            new_findings.append(f)
+        findings = new_findings
 
     defects = [f for f in findings if f.kind is Kind.DEFECT]
     summary = ScanSummary(

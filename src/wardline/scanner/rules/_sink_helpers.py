@@ -90,6 +90,16 @@ def _arg_taint(
     if isinstance(arg, ast.Name):
         return var_taints.get(arg.id)  # None when the name is not a tracked var → skip
     if isinstance(arg, ast.Call):
+        if (
+            isinstance(arg.func, ast.Attribute)
+            and isinstance(arg.func.value, ast.Name)
+            and arg.func.value.id in {"self", "cls"}
+        ):
+            caller_entity = context.entities.get(qualname)
+            if caller_entity is not None and caller_entity.kind == "method":
+                enclosing_class = qualname.rsplit(".", 1)[0]
+                candidate = f"{enclosing_class}.{arg.func.attr}"
+                return context.project_return_taints.get(candidate)
         callee = dotted_name(arg.func)
         if callee is not None and "." not in callee and module:
             return context.project_return_taints.get(f"{module}.{callee}")
@@ -113,7 +123,13 @@ def worst_arg_taint(
     — pass the FLOW-SENSITIVE snapshot for *call*'s enclosing statement (see
     :func:`call_site_var_taints`) so a name reassigned after the call is read at its
     taint AT the call line, not the final map."""
-    module = qualname.rsplit(".", 1)[0] if "." in qualname else ""
+    entity = context.entities.get(qualname)
+    if entity is not None:
+        from wardline.core.qualname import module_dotted_name
+
+        module = module_dotted_name(entity.location.path) or ""
+    else:
+        module = qualname.rsplit(".", 1)[0] if "." in qualname else ""
     worst: TaintState | None = None
     for arg in (*call.args, *(kw.value for kw in call.keywords)):
         t = _arg_taint(arg, module, var_taints, context, qualname)
@@ -180,6 +196,10 @@ class TaintedSinkRule:
     def __init__(self, base_severity: Severity | None = None) -> None:
         self.base_severity = base_severity or self.metadata.base_severity
 
+    def _accept_call(self, call: ast.Call) -> bool:  # noqa: PLR6301
+        """Extra per-call gate after the SINK-name match. Default: accept."""
+        return True
+
     def check(self, context: AnalysisContext) -> list[Finding]:
         findings: list[Finding] = []
         for qualname, entity in context.entities.items():
@@ -190,6 +210,8 @@ class TaintedSinkRule:
             site_taints = call_site_var_taints(entity.node, qualname, context)
             final = context.function_var_taints.get(qualname, {})
             for call, dotted in sink_calls(entity.node, self.SINKS):
+                if not self._accept_call(call):
+                    continue
                 worst = worst_arg_taint(call, qualname, context, site_taints.get(id(call), final))
                 if worst is None or worst not in RAW_ZONE:
                     continue
