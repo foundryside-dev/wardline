@@ -129,7 +129,15 @@ def _file_finding(args: dict[str, Any], root: Path, filer: Any) -> dict[str, Any
     }
 
 
-def _scan(args: dict[str, Any], root: Path, clarion: Any = None, filigree: Any = None) -> dict[str, Any]:
+def _scan(
+    args: dict[str, Any],
+    root: Path,
+    clarion: Any = None,
+    filigree: Any = None,
+    *,
+    trust_local_packs: bool = False,
+    strict_defaults: bool = False,
+) -> dict[str, Any]:
     path = _resolve_under_root(root, args["path"]) if args.get("path") else root
     fail_on = args.get("fail_on")
     try:
@@ -150,7 +158,9 @@ def _scan(args: dict[str, Any], root: Path, clarion: Any = None, filigree: Any =
         cache_dir=cache_dir,
         confine_to_root=True,
         new_since=new_since,
+        trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
+        strict_defaults=strict_defaults,
     )
     # Fail-soft Clarion write: only when a client was injected (server has a URL).
     # An outage/403 yields a not-reachable WriteResult; never raises here.
@@ -364,8 +374,10 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
         max_findings=args.get("max_findings"),
         write=bool(args.get("write", False)),
         confine_to_root=True,
+        trust_local_packs=bool(args.get("trust_local_packs", False)),
         trusted_packs=tuple(args.get("trust_packs") or []),
         trust_judge_policy=bool(args.get("trust_judge_policy", False)),
+        strict_defaults=bool(args.get("strict_defaults", False)),
         context_lines=int(context_lines) if context_lines is not None else None,
     )
     return {
@@ -464,9 +476,23 @@ class WardlineMCPServer:
         self._register_tools()
         self._wire()
 
-    def _clarion_client(self, config_path: Path | None = None) -> Any:
+    def _clarion_client(
+        self,
+        config_path: Path | None = None,
+        *,
+        trust_local_packs: bool = False,
+        trusted_packs: Iterable[str] = (),
+        strict_defaults: bool = False,
+    ) -> Any:
         """Build a ClarionClient for this server's root, or None when no URL is set."""
-        url = config_mod.resolve_clarion_url(self.clarion_url, self.root, config_path)
+        url = config_mod.resolve_clarion_url(
+            self.clarion_url,
+            self.root,
+            config_path,
+            trust_local_packs=trust_local_packs,
+            trusted_packs=trusted_packs,
+            strict_defaults=strict_defaults,
+        )
         if url is None:
             return None
         from wardline.clarion.client import ClarionClient
@@ -478,16 +504,44 @@ class WardlineMCPServer:
             project=resolve_project_name(self.root),
         )
 
-    def _filigree_emitter(self, config_path: Path | None = None) -> Any:
+    def _filigree_emitter(
+        self,
+        config_path: Path | None = None,
+        *,
+        trust_local_packs: bool = False,
+        trusted_packs: Iterable[str] = (),
+        strict_defaults: bool = False,
+    ) -> Any:
         """Build a FiligreeEmitter for this server's URL, or None when no URL is set."""
-        url = config_mod.resolve_filigree_url(self.filigree_url, self.root, config_path)
+        url = config_mod.resolve_filigree_url(
+            self.filigree_url,
+            self.root,
+            config_path,
+            trust_local_packs=trust_local_packs,
+            trusted_packs=trusted_packs,
+            strict_defaults=strict_defaults,
+        )
         if url is None:
             return None
         return FiligreeEmitter(url)
 
-    def _filigree_filer(self, config_path: Path | None = None) -> Any:
+    def _filigree_filer(
+        self,
+        config_path: Path | None = None,
+        *,
+        trust_local_packs: bool = False,
+        trusted_packs: Iterable[str] = (),
+        strict_defaults: bool = False,
+    ) -> Any:
         """Build a FiligreeIssueFiler from this server's Loom URL, or None when unset."""
-        url = config_mod.resolve_filigree_url(self.filigree_url, self.root, config_path)
+        url = config_mod.resolve_filigree_url(
+            self.filigree_url,
+            self.root,
+            config_path,
+            trust_local_packs=trust_local_packs,
+            trusted_packs=trusted_packs,
+            strict_defaults=strict_defaults,
+        )
         if url is None:
             return None
         from wardline.core.filigree_issue import FiligreeIssueFiler
@@ -547,13 +601,33 @@ class WardlineMCPServer:
                             "description": "subdir relative to project root for summary cache",
                         },
                         "trust_packs": {"type": "array", "items": {"type": "string"}},
+                        "trust_local_packs": {
+                            "type": "boolean",
+                            "description": "Allow loading custom trust-grammar packs from the local project directory",
+                        },
+                        "strict_defaults": {
+                            "type": "boolean",
+                            "description": "Ignore repository-supplied custom configuration overrides (wardline.yaml)",
+                        },
                     },
                 },
                 handler=lambda args, root: _scan(
                     args,
                     root,
-                    self._clarion_client(_cfg(args, root)),
-                    self._filigree_emitter(_cfg(args, root)),
+                    self._clarion_client(
+                        _cfg(args, root),
+                        trust_local_packs=bool(args.get("trust_local_packs") or False),
+                        trusted_packs=tuple(args.get("trust_packs") or []),
+                        strict_defaults=bool(args.get("strict_defaults") or False),
+                    ),
+                    self._filigree_emitter(
+                        _cfg(args, root),
+                        trust_local_packs=bool(args.get("trust_local_packs") or False),
+                        trusted_packs=tuple(args.get("trust_packs") or []),
+                        strict_defaults=bool(args.get("strict_defaults") or False),
+                    ),
+                    trust_local_packs=bool(args.get("trust_local_packs") or False),
+                    strict_defaults=bool(args.get("strict_defaults") or False),
                 ),
             )
         )
@@ -698,6 +772,8 @@ class WardlineMCPServer:
                         "write": {"type": "boolean", "description": "append above-floor FPs to judged.yaml"},
                         "trust_judge_policy": {"type": "boolean"},
                         "trust_packs": {"type": "array", "items": {"type": "string"}},
+                        "trust_local_packs": {"type": "boolean"},
+                        "strict_defaults": {"type": "boolean"},
                         "context_lines": {"type": "integer"},
                     },
                 },
