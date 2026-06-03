@@ -63,6 +63,8 @@ for module in [
     "wardline.scanner.taint.stdlib_taint",
     "wardline.install.pack",
     "wardline.cli.entrypoint",
+    "wardline.mcp.server",
+    "wardline.mcp.lsp",
 ]:
     importlib.import_module(module)
 """

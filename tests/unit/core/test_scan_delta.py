@@ -41,19 +41,31 @@ def test_delta_scan_transitive_propagation(tmp_path) -> None:
 
     # 2. Mock subprocess.run to simulate git repository where only callee.py changed
     with patch("subprocess.run") as mock_run:
-        mock_rev_parse = MagicMock()
-        mock_rev_parse.stdout = f"{tmp_path.resolve()}\n"
 
-        mock_diff = MagicMock()
-        mock_diff.stdout = "callee.py\n"
+        def run_dispatch(args, **kwargs):
+            if "rev-parse" in args and "--show-toplevel" in args:
+                mock = MagicMock()
+                mock.stdout = f"{tmp_path.resolve()}\n"
+                mock.returncode = 0
+                return mock
+            if "rev-parse" in args and "--verify" in args:
+                mock = MagicMock()
+                mock.stdout = "abc123\n"
+                mock.returncode = 0
+                return mock
+            if "diff" in args and "--name-only" in args:
+                mock = MagicMock()
+                mock.stdout = "callee.py\n"
+                mock.returncode = 0
+                return mock
+            if "ls-files" in args:
+                mock = MagicMock()
+                mock.stdout = ""
+                mock.returncode = 0
+                return mock
+            raise ValueError(f"Unexpected git command: {args}")
 
-        mock_verify = MagicMock()
-        mock_verify.stdout = "abc123\n"
-
-        mock_ls_files = MagicMock()
-        mock_ls_files.stdout = ""
-
-        mock_run.side_effect = [mock_rev_parse, mock_verify, mock_diff, mock_ls_files]
+        mock_run.side_effect = run_dispatch
 
         result = run_scan(tmp_path, new_since="HEAD~1")
 

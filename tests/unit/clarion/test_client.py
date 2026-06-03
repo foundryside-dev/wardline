@@ -41,7 +41,9 @@ def test_resolve_signs_and_parses():
     assert method == "POST"
     assert url == "http://clarion.example/api/wardline/resolve"
     assert json.loads(sent_body)["project"] == "proj"
-    expected = sign_request("s3cr3t", "POST", "/api/wardline/resolve", sent_body, timestamp=headers["X-Wardline-Timestamp"])
+    expected = sign_request(
+        "s3cr3t", "POST", "/api/wardline/resolve", sent_body, timestamp=headers["X-Wardline-Timestamp"]
+    )
     assert headers["X-Loom-Component"] == f"clarion:{expected}"
 
 

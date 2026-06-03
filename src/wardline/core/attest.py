@@ -74,7 +74,7 @@ def git_state(root: Path) -> tuple[str | None, bool]:
             capture_output=True,
             text=True,
         )
-    except FileNotFoundError:
+    except OSError:
         return None, False
     if rev.returncode != 0:
         return None, False
@@ -89,7 +89,7 @@ def git_state(root: Path) -> tuple[str | None, bool]:
             capture_output=True,
             text=True,
         )
-    except FileNotFoundError:  # pragma: no cover - git existed for rev-parse
+    except OSError:  # pragma: no cover
         return commit, False
     if status.returncode != 0:  # pragma: no cover - unusual
         return commit, False
@@ -174,7 +174,7 @@ def _build_payload(
     root: Path,
     *,
     config_path: Path | None,
-    confine_to_root: bool,
+    confine_to_root: bool = False,
     today: date,
     clarion_client: Any = None,
 ) -> dict[str, Any]:

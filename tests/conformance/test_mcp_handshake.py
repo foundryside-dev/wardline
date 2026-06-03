@@ -151,3 +151,28 @@ def test_unknown_method_is_a_jsonrpc_error() -> None:
     )
     by_id = {r["id"]: r for r in responses}
     assert by_id[2]["error"]["code"] == -32601
+
+
+def test_reject_before_initialize() -> None:
+    server = WardlineMCPServer(root=FIXTURE)
+    server.rpc._initialized = False
+    server.rpc._initializing = False
+    messages = [{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}]
+    stdin = io.StringIO("".join(json.dumps(m) + "\n" for m in messages))
+    stdout = io.StringIO()
+    server.rpc.run_stdio(stdin=stdin, stdout=stdout)
+    responses = [json.loads(ln) for ln in stdout.getvalue().splitlines() if ln.strip()]
+    assert len(responses) == 1
+    assert responses[0]["error"]["code"] == -32600
+    assert "server not initialized" in responses[0]["error"]["message"]
+
+
+def test_line_too_long() -> None:
+    server = WardlineMCPServer(root=FIXTURE)
+    stdin = io.StringIO("a" * (10 * 1024 * 1024 + 1) + "\n")
+    stdout = io.StringIO()
+    server.rpc.run_stdio(stdin=stdin, stdout=stdout)
+    responses = [json.loads(ln) for ln in stdout.getvalue().splitlines() if ln.strip()]
+    assert len(responses) == 1
+    assert responses[0]["error"]["code"] == -32700
+    assert "line too long" in responses[0]["error"]["message"]

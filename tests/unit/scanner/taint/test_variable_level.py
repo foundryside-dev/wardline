@@ -1219,3 +1219,26 @@ def test_return_callee_indirect_call_func_is_none() -> None:
     node = ast.parse(textwrap.dedent(src)).body[0]
     vt = compute_variable_taints(node, T.EXTERNAL_RAW, {})
     assert compute_return_callee(node, T.EXTERNAL_RAW, {}, vt) is None
+
+
+def test_generator_yield_carries_yielded_taint() -> None:
+    import ast
+    import textwrap
+
+    from wardline.scanner.taint.variable_level import compute_return_taint, compute_variable_taints
+
+    tm = {"read_raw": T.EXTERNAL_RAW}
+    src = "def f(p):\n    yield read_raw(p)\n"
+    node = ast.parse(textwrap.dedent(src)).body[0]
+    var_taints = compute_variable_taints(node, T.INTEGRAL, dict(tm))
+    assert compute_return_taint(node, T.INTEGRAL, dict(tm), var_taints) == T.EXTERNAL_RAW
+
+
+def test_unresolved_nested_imported_call_returns_unknown_raw() -> None:
+    out = _vt(
+        "def f():\n    x = vendor.sub.clean()\n",
+        function_taint=T.GUARDED,
+        taint_map={},
+        alias_map={"vendor": "vendor"},
+    )
+    assert out["x"] == T.UNKNOWN_RAW

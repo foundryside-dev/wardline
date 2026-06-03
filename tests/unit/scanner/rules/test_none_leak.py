@@ -193,3 +193,39 @@ def test_string_literal_annotations(tmp_path) -> None:
         """,
     )
     assert _ids(ctx2) == [("PY-WL-109", "m.maybe_not")]
+
+
+def test_none_leak_with_imported_aliases(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        from typing import Optional as Opt, Union as U
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def f1(flag) -> Opt[int]:
+            if flag:
+                return 1
+            return None
+        @trusted(level='ASSURED')
+        def f2(flag) -> U[int, None]:
+            if flag:
+                return 1
+            return None
+        """,
+    )
+    assert _ids(ctx) == []
+
+
+def test_none_leak_with_implicit_none_return(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def f(flag) -> int:
+            if flag:
+                return 1
+            # Implicitly returns None here
+        """,
+    )
+    assert _ids(ctx) == [("PY-WL-109", "m.f")]

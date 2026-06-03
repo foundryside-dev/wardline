@@ -60,8 +60,8 @@ def test_aliased_overload_not_recognized() -> None:
     assert _quals(src) == [("demo.h", "function")]
 
 
-def test_property_setter_collapses_first_wins() -> None:
-    # getter and setter share __qualname__ "C.x"; first-wins keeps the getter.
+def test_property_setter_registers_separately() -> None:
+    # getter and setter get distinct qualnames; both are registered.
     src = (
         "class C:\n"
         "    @property\n"
@@ -72,15 +72,21 @@ def test_property_setter_collapses_first_wins() -> None:
         "        pass\n"
     )
     entities = discover_file_entities(ast.parse(src), module="demo", path="demo.py")
-    assert [(e.qualname, e.kind) for e in entities] == [("demo.C.x", "method")]
-    # Prove the GETTER survived (not last-wins): its node carries @property and
-    # returns 1; the dropped setter has the @x.setter decorator and a bare pass.
-    surviving = entities[0].node
-    assert [d.id for d in surviving.decorator_list if isinstance(d, ast.Name)] == ["property"]
-    ret = surviving.body[0]
+    assert [(e.qualname, e.kind) for e in entities] == [
+        ("demo.C.x", "method"),
+        ("demo.C.x:setter", "method"),
+    ]
+    # Prove the GETTER has @property and returns 1
+    getter = entities[0].node
+    assert [d.id for d in getter.decorator_list if isinstance(d, ast.Name)] == ["property"]
+    ret = getter.body[0]
     assert isinstance(ret, ast.Return)
     assert isinstance(ret.value, ast.Constant)
     assert ret.value.value == 1
+
+    # Prove the SETTER is registered too
+    setter = entities[1].node
+    assert [d.attr for d in setter.decorator_list if isinstance(d, ast.Attribute)] == ["setter"]
 
 
 def test_redefinition_last_wins() -> None:

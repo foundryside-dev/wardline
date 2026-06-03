@@ -444,12 +444,10 @@ def _resolve_call(
     alias_map = _CURRENT_ALIAS_MAP.get()
     imported_fqn: str | None = None
     if alias_map is not None:
-        if isinstance(node.func, ast.Name):
-            imported_fqn = alias_map.get(node.func.id)
-        elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
-            prefix = alias_map.get(node.func.value.id)
-            if prefix:
-                imported_fqn = f"{prefix}.{node.func.attr}"
+        from wardline.scanner.ast_primitives import resolve_call_fqn
+
+        module_prefix = _CURRENT_MODULE_PREFIX.get() or ""
+        imported_fqn = resolve_call_fqn(node, alias_map, frozenset(taint_map.keys()), module_prefix)
         if imported_fqn in _CONTEXT_ENCODERS:
             if not arg_taints:
                 return TaintState.GUARDED
@@ -457,6 +455,10 @@ def _resolve_call(
             for at in arg_taints[1:]:
                 result = combine(result, at)
             return combine(result, TaintState.GUARDED)
+        if imported_fqn in _SERIALISATION_SINKS:
+            return TaintState.UNKNOWN_RAW
+        if imported_fqn in taint_map:
+            return taint_map[imported_fqn]
 
     if isinstance(node.func, ast.Attribute):
         dotted = _dotted_name(node.func)

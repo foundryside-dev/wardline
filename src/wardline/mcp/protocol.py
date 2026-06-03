@@ -92,6 +92,9 @@ class JsonRpcServer:
         except McpError as exc:
             return None if is_notification else self._err(msg_id, exc.code, exc.message)
         except Exception as exc:  # noqa: BLE001 — surface any handler crash as -32603
+            import traceback
+
+            traceback.print_exc(file=sys.stderr)
             return None if is_notification else self._err(msg_id, _INTERNAL_ERROR, str(exc))
         return None if is_notification else self._ok(msg_id, result)
 

@@ -13,20 +13,30 @@ from wardline.scanner.index import Entity
 
 @patch("subprocess.run")
 def test_get_changed_files_since_success(mock_run) -> None:
-    # 1. Mock git rev-parse --show-toplevel
-    mock_rev_parse = MagicMock()
-    mock_rev_parse.stdout = "/git/root\n"
-    # 2. Mock git rev-parse --verify
-    mock_verify = MagicMock()
-    mock_verify.stdout = "abc123\n"
-    # 3. Mock git diff --name-only
-    mock_diff = MagicMock()
-    mock_diff.stdout = "src/foo.py\nsrc/bar.py\n"
-    # 4. Mock git ls-files
-    mock_ls_files = MagicMock()
-    mock_ls_files.stdout = "src/baz.py\n"
+    def run_dispatch(args, **kwargs):
+        if "rev-parse" in args and "--show-toplevel" in args:
+            mock = MagicMock()
+            mock.stdout = "/git/root\n"
+            mock.returncode = 0
+            return mock
+        if "rev-parse" in args and "--verify" in args:
+            mock = MagicMock()
+            mock.stdout = "abc123\n"
+            mock.returncode = 0
+            return mock
+        if "diff" in args and "--name-only" in args:
+            mock = MagicMock()
+            mock.stdout = "src/foo.py\nsrc/bar.py\n"
+            mock.returncode = 0
+            return mock
+        if "ls-files" in args:
+            mock = MagicMock()
+            mock.stdout = "src/baz.py\n"
+            mock.returncode = 0
+            return mock
+        raise ValueError(f"Unexpected git command: {args}")
 
-    mock_run.side_effect = [mock_rev_parse, mock_verify, mock_diff, mock_ls_files]
+    mock_run.side_effect = run_dispatch
 
     # Cwd root is a subdirectory of git root
     root = Path("/git/root/src")

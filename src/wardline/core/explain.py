@@ -253,6 +253,15 @@ def explain_finding(
     scanned, so it knows the sink's qualname), consult the store FIRST — a FRESH fact
     is served from the blob with NO re-analysis. On a miss/stale/outage, or when no
     ``sink_qualname`` is available, fall back to the SP8 re-run (``_explain_local``)."""
+    if path is not None:
+        try:
+            p = Path(path)
+            if p.is_absolute():
+                path = p.relative_to(root.resolve()).as_posix()
+            else:
+                path = (root / p).resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            pass
     if clarion is not None and sink_qualname is not None:
         try:
             views = clarion.batch_get([sink_qualname])

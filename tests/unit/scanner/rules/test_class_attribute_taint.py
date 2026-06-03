@@ -127,7 +127,7 @@ def test_helper_method_returning_assured_does_not_false_positive(tmp_path: Path)
         class Helper:
             @trusted(level='ASSURED')
             def get_assured(self, p):
-                return p
+                return validate(p)
 
         class C:
             def __init__(self, p):

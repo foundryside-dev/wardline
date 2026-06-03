@@ -154,6 +154,7 @@ class ClarionClient:
     def _send(self, method: str, path_and_query: str, payload: dict[str, Any] | None) -> Response | None:
         """Sign + send. Returns the Response, or None on a SOFT failure (outage/5xx)."""
         import time
+
         body = json.dumps(payload).encode("utf-8") if payload is not None else b""
         headers: dict[str, str] = {}
         if payload is not None:

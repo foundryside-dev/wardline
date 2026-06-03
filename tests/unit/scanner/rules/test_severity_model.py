@@ -24,9 +24,9 @@ def test_freedom_tiers_suppress_to_none() -> None:
         assert modulate(Severity.CRITICAL, tier) == Severity.NONE
         assert modulate(Severity.INFO, tier) == Severity.NONE
 
-    # MIXED_RAW does not suppress (LOG-01)
-    assert modulate(Severity.CRITICAL, T.MIXED_RAW) == Severity.CRITICAL
-    assert modulate(Severity.INFO, T.MIXED_RAW) == Severity.INFO
+    # MIXED_RAW is a freedom-zone tier and suppresses to NONE
+    assert modulate(Severity.CRITICAL, T.MIXED_RAW) == Severity.NONE
+    assert modulate(Severity.INFO, T.MIXED_RAW) == Severity.NONE
 
 
 def test_every_taint_state_is_classified() -> None:

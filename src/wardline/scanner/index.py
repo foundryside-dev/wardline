@@ -73,7 +73,7 @@ def discover_file_entities(tree: ast.Module, *, module: str, path: str) -> list[
     entities: list[Entity] = []
     entity_index: dict[str, int] = {}
 
-    def is_property_setter_or_deleter(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    def property_decorator_kind(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
         for decorator in node.decorator_list:
             if (
                 isinstance(decorator, ast.Attribute)
@@ -81,8 +81,8 @@ def discover_file_entities(tree: ast.Module, *, module: str, path: str) -> list[
                 and isinstance(decorator.value, ast.Name)
                 and decorator.value.id == node.name
             ):
-                return True
-        return False
+                return decorator.attr
+        return None
 
     def make_entity(
         child: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -130,8 +130,10 @@ def discover_file_entities(tree: ast.Module, *, module: str, path: str) -> list[
                     # innermost->outermost.
                     local = reconstruct_qualname(child.name, list(reversed(scope)))
                     qualname = f"{module}.{local}"
-                    if qualname not in entity_index or not is_property_setter_or_deleter(child):
-                        add_or_replace_entity(make_entity(child, qualname=qualname, parent_is_class=parent_is_class))
+                    prop_kind = property_decorator_kind(child)
+                    if prop_kind is not None:
+                        qualname = f"{qualname}:{prop_kind}"
+                    add_or_replace_entity(make_entity(child, qualname=qualname, parent_is_class=parent_is_class))
                 # A function nested inside this one is a "function", not a method.
                 visit(child, [*scope, child], parent_is_class=False)
             elif isinstance(child, ast.ClassDef):

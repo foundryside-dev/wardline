@@ -38,15 +38,17 @@ def _call(server: WardlineMCPServer, name: str, arguments: dict) -> dict:
     return json.loads(resp["result"]["content"][0]["text"])
 
 
-def test_baseline_create_requires_reason(tmp_path: Path) -> None:
+def test_baseline_create_optional_reason(tmp_path: Path) -> None:
     proj = _leaky_project(tmp_path)
     server = WardlineMCPServer(root=proj)
     resp = server.rpc.dispatch(
         {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "baseline_create", "arguments": {}}}
     )
-    # reason is mandatory -> tool-execution error (isError result)
-    assert resp["result"]["isError"] is True
-    assert "reason" in resp["result"]["content"][0]["text"].lower()
+    assert "error" not in resp, resp
+    assert not resp["result"].get("isError"), resp
+    out = json.loads(resp["result"]["content"][0]["text"])
+    assert out["baselined_count"] >= 1
+    assert out["reason"] is None
 
 
 def test_baseline_create_then_update(tmp_path: Path) -> None:

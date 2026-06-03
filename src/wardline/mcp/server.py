@@ -8,7 +8,7 @@ project files on disk. Rooted at a project path (launch cwd by default)."""
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -399,7 +399,7 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _baseline_create(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    reason = _require(args, "reason")
+    reason = args.get("reason")
     try:
         count = generate_baseline(root, overwrite=False, config_path=_cfg(args, root), confine_to_root=True)
     except FileExistsError as exc:
@@ -409,7 +409,7 @@ def _baseline_create(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _baseline_update(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    reason = _require(args, "reason")
+    reason = args.get("reason")
     count = generate_baseline(root, overwrite=True, config_path=_cfg(args, root), confine_to_root=True)
     return {"baselined_count": count, "path": str(root / ".wardline" / "baseline.yaml"), "reason": reason}
 
@@ -784,10 +784,9 @@ class WardlineMCPServer:
             Tool(
                 name="baseline_create",
                 description="Snapshot current defects as the baseline so only NEW findings surface. "
-                "Prefer FIXING a finding over baselining it. Requires a reason.",
+                "Prefer FIXING a finding over baselining it. Optional reason.",
                 input_schema={
                     "type": "object",
-                    "required": ["reason"],
                     "properties": {"reason": {"type": "string"}, "config": {"type": "string"}},
                 },
                 handler=_baseline_create,
@@ -796,10 +795,9 @@ class WardlineMCPServer:
         self.add_tool(
             Tool(
                 name="baseline_update",
-                description="Re-derive and OVERWRITE the baseline. Requires a reason.",
+                description="Re-derive and OVERWRITE the baseline. Optional reason.",
                 input_schema={
                     "type": "object",
-                    "required": ["reason"],
                     "properties": {"reason": {"type": "string"}, "config": {"type": "string"}},
                 },
                 handler=_baseline_update,
@@ -927,7 +925,9 @@ class WardlineMCPServer:
 
                 jsonschema.validate(arguments, tool.input_schema)
             except ImportError:
-                pass
+                import sys
+
+                print("Warning: jsonschema is missing; skipping MCP tool argument validation.", file=sys.stderr)
             except jsonschema.ValidationError as exc:
                 return self._is_error(f"invalid arguments: {exc.message}")
 
@@ -948,6 +948,10 @@ class WardlineMCPServer:
             # the taint engine mid-scan) is a tool-EXECUTION error, not a protocol fault.
             # Surface it as an isError RESULT so the detail lands in the channel MCP
             # clients reliably relay, rather than a -32603 whose message they may drop.
+            import sys
+            import traceback
+
+            traceback.print_exc(file=sys.stderr)
             return self._is_error(f"wardline internal error: {exc}")
         return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}]}
 

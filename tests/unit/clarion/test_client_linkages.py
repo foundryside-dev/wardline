@@ -51,7 +51,7 @@ def test_get_callers_parses_neighbours_and_signs():
     # the locator is URL-escaped into the path segment, never parsed
     assert url == "http://clarion.example/api/v1/entities/python%3Afunction%3Asvc.leaky/callers?limit=50"
     paq = "/api/v1/entities/python%3Afunction%3Asvc.leaky/callers?limit=50"
-    expected = sign_request('s3cr3t', 'GET', paq, b'', timestamp=headers["X-Wardline-Timestamp"])
+    expected = sign_request("s3cr3t", "GET", paq, b"", timestamp=headers["X-Wardline-Timestamp"])
     assert headers["X-Loom-Component"] == f"clarion:{expected}"
 
 

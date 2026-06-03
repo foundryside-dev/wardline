@@ -86,7 +86,8 @@
       "rel_path": "demo.py",
       "source": "class C:\n    @property\n    def x(self):\n        return 1\n    @x.setter\n    def x(self, v):\n        pass\n",
       "expected": [
-        {"qualname": "demo.C.x", "kind": "method"}
+        {"qualname": "demo.C.x", "kind": "method"},
+        {"qualname": "demo.C.x:setter", "kind": "method"}
       ]
     },
     {

@@ -63,6 +63,19 @@ def _collect_stored_vars(node: ast.AST) -> set[str]:
                         for elt in target.elts:
                             if isinstance(elt, ast.Name):
                                 stored_vars.add(elt.id)
+        elif isinstance(child, ast.AnnAssign) and child.value is not None:
+            is_storage = False
+            for val_node in own_nodes(child.value):
+                if _is_storage_read_call(val_node):
+                    is_storage = True
+                    break
+            if not is_storage:
+                for val_node in own_nodes(child.value):
+                    if isinstance(val_node, ast.Name) and val_node.id in stored_vars:
+                        is_storage = True
+                        break
+            if is_storage and isinstance(child.target, ast.Name):
+                stored_vars.add(child.target.id)
     return stored_vars
 
 

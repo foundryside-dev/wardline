@@ -1,4 +1,5 @@
 import inspect
+
 import pytest
 
 import wardline.core.errors as errors

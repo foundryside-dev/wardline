@@ -21,6 +21,7 @@ Declaration-gated (base WARN). FP-guarded — the annotation is the load-bearing
 from __future__ import annotations
 
 import ast
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from wardline.core.finding import Finding, Kind, Severity
@@ -49,12 +50,20 @@ METADATA = RuleMetadata(
 )
 
 
+def _module_for_qualname(qualname: str, context: AnalysisContext) -> str | None:
+    modules = context.alias_maps.keys()
+    for module in sorted(modules, key=len, reverse=True):
+        if qualname == module or qualname.startswith(module + "."):
+            return module
+    return None
+
+
 def _is_none_return(stmt: ast.Return) -> bool:
     """A bare ``return`` (value is None) or an explicit ``return None``."""
     return stmt.value is None or (isinstance(stmt.value, ast.Constant) and stmt.value.value is None)
 
 
-def _annotation_allows_none(ann: ast.expr) -> bool:
+def _annotation_allows_none(ann: ast.expr, alias_map: Mapping[str, str] | None = None) -> bool:
     """True if a return annotation permits ``None``: bare ``None``, ``Optional[...]``,
     or a ``... | None`` union (recursively)."""
     if isinstance(ann, ast.Constant) and ann.value is None:
@@ -62,36 +71,57 @@ def _annotation_allows_none(ann: ast.expr) -> bool:
     if isinstance(ann, ast.Constant) and isinstance(ann.value, str):
         try:
             parsed = ast.parse(ann.value, mode="eval")
-            return _annotation_allows_none(parsed.body)
+            return _annotation_allows_none(parsed.body, alias_map)
         except SyntaxError:
             return False
     if isinstance(ann, ast.Name) and ann.id == "None":
         return True
+
+    fqn: str | None = None
+    if isinstance(ann, ast.Name):
+        fqn = alias_map.get(ann.id) if alias_map else None
+        if not fqn:
+            fqn = ann.id
+    elif isinstance(ann, ast.Attribute) and isinstance(ann.value, ast.Name):
+        base = alias_map.get(ann.value.id) if alias_map else None
+        fqn = f"{base}.{ann.attr}" if base else f"{ann.value.id}.{ann.attr}"
+
+    if fqn in ("typing.Optional", "Optional"):
+        return True
+
     if isinstance(ann, ast.Subscript):  # Optional[X] / Union[X, None]
-        base = ann.value
-        if (isinstance(base, ast.Name) and base.id == "Optional") or (
-            isinstance(base, ast.Attribute) and base.attr == "Optional"
-        ):
+        ann_base = ann.value
+        base_fqn: str | None = None
+        if isinstance(ann_base, ast.Name):
+            base_fqn = alias_map.get(ann_base.id) if alias_map else None
+            if not base_fqn:
+                base_fqn = ann_base.id
+        elif isinstance(ann_base, ast.Attribute) and isinstance(ann_base.value, ast.Name):
+            b_base = alias_map.get(ann_base.value.id) if alias_map else None
+            base_fqn = f"{b_base}.{ann_base.attr}" if b_base else f"{ann_base.value.id}.{ann_base.attr}"
+
+        if base_fqn in ("typing.Optional", "Optional"):
             return True
-        if (isinstance(base, ast.Name) and base.id == "Union") or (
-            isinstance(base, ast.Attribute) and base.attr == "Union"
-        ):
+        if base_fqn in ("typing.Union", "Union"):
             sl = ann.slice
             # Handle ast.Index wrapper on older Python versions (e.g. <3.9)
             if hasattr(ast, "Index") and isinstance(sl, ast.Index):
                 sl = sl.value  # type: ignore
             if isinstance(sl, ast.Tuple):
-                return any(_annotation_allows_none(elt) for elt in sl.elts)
-            return _annotation_allows_none(sl)
+                return any(_annotation_allows_none(elt, alias_map) for elt in sl.elts)
+            return _annotation_allows_none(sl, alias_map)
+
     if isinstance(ann, ast.BinOp) and isinstance(ann.op, ast.BitOr):  # X | None
-        return _annotation_allows_none(ann.left) or _annotation_allows_none(ann.right)
+        return _annotation_allows_none(ann.left, alias_map) or _annotation_allows_none(ann.right, alias_map)
     return False
 
 
-def _promises_non_none(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+def _promises_non_none(
+    node: ast.FunctionDef | ast.AsyncFunctionDef, alias_map: Mapping[str, str] | None = None
+) -> bool:
     """True iff the function has an explicit return annotation that does NOT permit
     None — the provable non-None contract 109 polices. No annotation → False."""
-    return node.returns is not None and not _annotation_allows_none(node.returns)
+    return node.returns is not None and not _annotation_allows_none(node.returns, alias_map)
 
 
 def _is_generator(node: ast.AST) -> bool:
@@ -103,6 +133,25 @@ def _is_generator(node: ast.AST) -> bool:
         if isinstance(child, (ast.Yield, ast.YieldFrom)) or _is_generator(child):
             return True
     return False
+
+
+def _can_fall_through(stmts: list[ast.stmt]) -> bool:
+    """True if there is any execution path through stmts that doesn't end with return or raise."""
+    if not stmts:
+        return True
+    for stmt in stmts:
+        if isinstance(stmt, (ast.Return, ast.Raise)):
+            return False
+        if isinstance(stmt, ast.If):
+            if not stmt.orelse:
+                # If can fall through if condition is false
+                pass
+            else:
+                body_falls = _can_fall_through(stmt.body)
+                else_falls = _can_fall_through(stmt.orelse)
+                if not body_falls and not else_falls:
+                    return False
+    return True
 
 
 class NoneLeak:
@@ -126,9 +175,12 @@ class NoneLeak:
                 continue  # trust-raising shape -> PY-WL-102's territory, not 109's
             if _is_generator(entity.node):
                 continue
-            if not _promises_non_none(entity.node):
+            module = _module_for_qualname(qualname, context)
+            alias_map = context.alias_maps.get(module, {}) if module is not None else {}
+            if not _promises_non_none(entity.node, alias_map):
                 continue  # no explicit non-None contract -> not a provable leak (FP guard)
-            has_value = has_none = False
+            has_value = False
+            has_none = _can_fall_through(entity.node.body)
             for stmt in _own_statements(entity.node):
                 if isinstance(stmt, ast.Return):
                     if _is_none_return(stmt):

@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity
 from wardline.core.qualname import module_dotted_name
-from wardline.core.taints import TaintState, combine, least_trusted
+from wardline.core.taints import TaintState, combine
 from wardline.scanner.ast_primitives import build_import_alias_map
 from wardline.scanner.context import AnalysisContext, RuleRegistry
 from wardline.scanner.diagnostics import (
@@ -176,7 +176,10 @@ class WardlineAnalyzer:
                 tree = ast.parse(source)
                 entities = tuple(discover_file_entities(tree, module=module, path=relpath))
                 classes = frozenset(discover_class_qualnames(tree, module=module))
-                alias_map = build_import_alias_map(tree, module_path=module, star_exports=star_exports)
+                is_pkg_file = path.name == "__init__.py"
+                alias_map = build_import_alias_map(
+                    tree, module_path=module, is_package=is_pkg_file, star_exports=star_exports
+                )
                 seeds = seed_function_taints(
                     entities,
                     ctx=SeedContext(module=module, alias_map=alias_map),
@@ -276,6 +279,17 @@ class WardlineAnalyzer:
                 provider_fingerprint=self._provider.fingerprint(),
                 config=config,
             )
+
+        if self._cache is not None:
+            fqn_to_module = {e.qualname: m.module_path for m in modules for e in m.entities}
+            from wardline.scanner.taint.reverse_edge_index import ReverseModuleIndex
+
+            frontier = ReverseModuleIndex.from_forward_edges(
+                {k: set(v) for k, v in result.project_edges.items()},
+                fqn_to_module=fqn_to_module,
+            ).transitive_callers(frozenset(dirty_modules))
+        else:
+            frontier = frozenset()
 
         # Measured AFTER resolve so it reflects THIS run's cache effectiveness
         # (0.0 cold, →1.0 warm). It is a genuinely run-varying METRIC; the
@@ -501,6 +515,15 @@ class WardlineAnalyzer:
         # ── L2 pass 1 — per-method var/return taints + per-class attribute summary ──
         all_classes = frozenset(c for m in modules for c in m.class_qualnames)
         for _relpath, module, _tree, entities, alias_map, classes in file_meta:
+            bypass_l2 = self._cache is not None and (module not in dirty_modules) and (module not in frontier)
+            if bypass_l2:
+                for ent in entities:
+                    entity_index[ent.qualname] = ent
+                    val = project_return_taints.get(ent.qualname, TaintState.UNKNOWN_RAW)
+                    function_return_taints[ent.qualname] = val
+                    function_return_callee[ent.qualname] = None
+                continue
+
             call_tm = build_call_taint_map(
                 module_path=module,
                 alias_map=alias_map,
@@ -675,7 +698,7 @@ class WardlineAnalyzer:
             affected = sorted(ent.qualname for ent, *_rest in l2_records if ent.qualname not in l2_failed)
             for qualname in affected:
                 if qualname in function_return_taints:
-                    function_return_taints[qualname] = least_trusted(
+                    function_return_taints[qualname] = combine(
                         function_return_taints[qualname],
                         TaintState.UNKNOWN_RAW,
                     )

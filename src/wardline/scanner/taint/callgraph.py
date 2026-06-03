@@ -86,6 +86,33 @@ def build_call_edges(
         if caller_class_fqn not in class_qualnames:
             caller_class_fqn = None
 
+        # Collect local variable type definitions via constructor calls
+        local_var_types: dict[str, str] = {}
+        for node in ast.walk(entity.node):
+            if (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda))
+                and node is not entity.node
+            ):
+                continue
+            targets: list[ast.expr] = []
+            value: ast.expr | None = None
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+                value = node.value
+            elif isinstance(node, ast.AnnAssign):
+                targets = [node.target]
+                value = node.value
+            if value is not None:
+                class_candidate = None
+                if isinstance(value, ast.Call):
+                    class_candidate = resolve_call_fqn(value, alias_map, project_fqns | class_qualnames, module_prefix)
+                elif isinstance(value, ast.Name):
+                    class_candidate = local_var_types.get(value.id)
+                if class_candidate in class_qualnames:
+                    for tgt in targets:
+                        if isinstance(tgt, ast.Name):
+                            local_var_types[tgt.id] = class_candidate
+
         callees: set[str] = set()
         resolved = 0
         unresolved = 0
@@ -109,6 +136,24 @@ def build_call_edges(
                 target = _resolve_classmethod_call(call)
                 if target is not None:
                     implicit_receiver = "class"
+            if (
+                (target is None or target not in project_fqns)
+                and isinstance(call.func, ast.Attribute)
+                and isinstance(call.func.value, ast.Name)
+            ):
+                var_name = call.func.value.id
+                if var_name in local_var_types:
+                    class_fqn = local_var_types[var_name]
+                    candidate = f"{class_fqn}.{call.func.attr}"
+                    if candidate in project_fqns:
+                        target = candidate
+                        target_entity = entity_by_fqn.get(target)
+                        if target_entity is not None and _has_decorator(target_entity, "staticmethod"):
+                            implicit_receiver = None
+                        elif target_entity is not None and _has_decorator(target_entity, "classmethod"):
+                            implicit_receiver = "class"
+                        else:
+                            implicit_receiver = "instance"
             if target is not None and target in project_fqns:
                 callees.add(target)
                 resolved += 1
