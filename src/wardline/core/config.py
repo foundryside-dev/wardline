@@ -10,6 +10,7 @@ from typing import Any
 
 from wardline.core.config_schema import WARDLINE_SCHEMA
 from wardline.core.errors import ConfigError
+from wardline.core.optional_deps import require_jsonschema, require_yaml
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,8 +95,8 @@ def _is_local_pack(pack_name: str, config_path: Path | None) -> bool:
 def load(path: Path | None, *, trust_local_packs: bool = False) -> WardlineConfig:
     if path is None or not path.exists():
         return WardlineConfig()
-    import jsonschema
-    import yaml
+    yaml = require_yaml("loading wardline.yaml")
+    jsonschema = require_jsonschema("validating wardline.yaml")
 
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -171,12 +172,28 @@ def _config_for(
     )
 
 
+def _is_safe_url(url: str | None) -> bool:
+    if not url:
+        return True
+    try:
+        from urllib.parse import urlsplit
+
+        parsed = urlsplit(url)
+        hostname = parsed.hostname
+        if hostname in ("localhost", "127.0.0.1", "::1"):
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def resolve_clarion_url(
     flag: str | None,
     root: Path,
     config_path: Path | None = None,
     *,
     trust_local_packs: bool = False,
+    trust_config_urls: bool = False,
 ) -> str | None:
     """Clarion URL by precedence: explicit flag > env var > wardline.yaml."""
     if flag is not None:
@@ -184,7 +201,13 @@ def resolve_clarion_url(
     env = os.environ.get(_CLARION_URL_ENV)
     if env:
         return env
-    return _config_for(root, config_path, trust_local_packs=trust_local_packs).clarion_url
+    url = _config_for(root, config_path, trust_local_packs=trust_local_packs).clarion_url
+    if url and not trust_config_urls and not _is_safe_url(url):
+        raise ConfigError(
+            f"Loading Clarion URL {url!r} from project config is disabled by default for security. "
+            "Specify the URL via command-line flags, environment variables, or allow local config URLs."
+        )
+    return url
 
 
 def resolve_filigree_url(
@@ -193,6 +216,7 @@ def resolve_filigree_url(
     config_path: Path | None = None,
     *,
     trust_local_packs: bool = False,
+    trust_config_urls: bool = False,
 ) -> str | None:
     """Filigree Loom URL by precedence: explicit flag > env var > wardline.yaml."""
     if flag is not None:
@@ -200,7 +224,13 @@ def resolve_filigree_url(
     env = os.environ.get(_FILIGREE_URL_ENV)
     if env:
         return env
-    return _config_for(root, config_path, trust_local_packs=trust_local_packs).filigree_url
+    url = _config_for(root, config_path, trust_local_packs=trust_local_packs).filigree_url
+    if url and not trust_config_urls and not _is_safe_url(url):
+        raise ConfigError(
+            f"Loading Filigree URL {url!r} from project config is disabled by default for security. "
+            "Specify the URL via command-line flags, environment variables, or allow local config URLs."
+        )
+    return url
 
 
 @dataclass(frozen=True, slots=True)

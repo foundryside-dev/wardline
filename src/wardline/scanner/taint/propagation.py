@@ -333,18 +333,7 @@ def _propagate_callgraph_taints_inner(
                     l1_rank = TRUST_RANK[taint_map[f]]
                     if l1_rank > TRUST_RANK[ext_taint]:
                         ext_taint = taint_map[f]
-                # Unresolved calls pessimistic floor (ordering, not combination)
-                try:
-                    f_unresolved = unresolved_counts[f]
-                except KeyError:
-                    f_unresolved = 0
-                if f_unresolved > 0 and TRUST_RANK[taint_map[f]] > TRUST_RANK[ext_taint]:
-                    # Unreachable: the floating floor above already pinned
-                    # ext_taint == taint_map[f] whenever rank[L1] > rank[ext] (the
-                    # same predicate), and every non-anchored f is floating — so by
-                    # this point rank[taint_map[f]] <= rank[ext_taint] always holds.
-                    # Redundant clamp kept for parity (taint-combination audit, F2).
-                    ext_taint = taint_map[f]  # pragma: no cover
+
                 if ext_taint != current[f]:
                     current[f] = ext_taint
                     refined.add(f)

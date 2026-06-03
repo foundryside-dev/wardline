@@ -21,7 +21,7 @@ def test_local_bare_call_edge() -> None:
     src = "def a():\n    return b()\ndef b():\n    return 1\n"
     tree, entities, classes, aliases = _module(src, module="m")
     project_fqns = frozenset(e.qualname for e in entities)
-    edges, resolved, unresolved, callees = build_call_edges(
+    edges, resolved, unresolved, callees, implicit = build_call_edges(
         entities=entities,
         class_qualnames=classes,
         alias_map=aliases,
@@ -32,13 +32,14 @@ def test_local_bare_call_edge() -> None:
     assert resolved["m.a"] == 1
     assert unresolved["m.a"] == 0
     assert edges["m.b"] == frozenset()
+    assert implicit == {}
 
 
 def test_imported_call_edge() -> None:
     src = "from other import helper\ndef a():\n    return helper()\n"
     tree, entities, classes, aliases = _module(src, module="m")
     project_fqns = frozenset({"m.a", "other.helper"})
-    edges, resolved, unresolved, callees = build_call_edges(
+    edges, resolved, unresolved, callees, implicit = build_call_edges(
         entities=entities,
         class_qualnames=classes,
         alias_map=aliases,
@@ -46,13 +47,14 @@ def test_imported_call_edge() -> None:
         project_fqns=project_fqns,
     )
     assert edges["m.a"] == frozenset({"other.helper"})
+    assert implicit == {}
 
 
 def test_self_method_edge() -> None:
     src = "class C:\n    def process(self):\n        return self.helper()\n    def helper(self):\n        return 1\n"
     tree, entities, classes, aliases = _module(src, module="m")
     project_fqns = frozenset(e.qualname for e in entities)
-    edges, resolved, unresolved, callees = build_call_edges(
+    edges, resolved, unresolved, callees, implicit = build_call_edges(
         entities=entities,
         class_qualnames=classes,
         alias_map=aliases,
@@ -61,13 +63,37 @@ def test_self_method_edge() -> None:
     )
     assert edges["m.C.process"] == frozenset({"m.C.helper"})
     assert resolved["m.C.process"] == 1
+    assert implicit == {next(iter(callees)): "instance"}
+
+
+def test_classmethod_edge_records_implicit_class_receiver() -> None:
+    src = (
+        "class C:\n"
+        "    def process(self, raw):\n"
+        "        return C.helper(raw)\n"
+        "    @classmethod\n"
+        "    def helper(cls, value):\n"
+        "        return value\n"
+    )
+    tree, entities, classes, aliases = _module(src, module="m")
+    project_fqns = frozenset(e.qualname for e in entities)
+    edges, resolved, unresolved, callees, implicit = build_call_edges(
+        entities=entities,
+        class_qualnames=classes,
+        alias_map=aliases,
+        module_prefix="m",
+        project_fqns=project_fqns,
+    )
+    assert edges["m.C.process"] == frozenset({"m.C.helper"})
+    assert resolved["m.C.process"] == 1
+    assert implicit == {next(iter(callees)): "class"}
 
 
 def test_unresolved_external_call_counted() -> None:
     src = "def a():\n    return some_external_thing()\n"
     tree, entities, classes, aliases = _module(src, module="m")
     project_fqns = frozenset({"m.a"})
-    edges, resolved, unresolved, callees = build_call_edges(
+    edges, resolved, unresolved, callees, implicit = build_call_edges(
         entities=entities,
         class_qualnames=classes,
         alias_map=aliases,
@@ -76,6 +102,7 @@ def test_unresolved_external_call_counted() -> None:
     )
     assert edges["m.a"] == frozenset()
     assert unresolved["m.a"] == 1
+    assert implicit == {}
 
 
 def test_constructor_call_is_unresolved() -> None:
@@ -83,7 +110,7 @@ def test_constructor_call_is_unresolved() -> None:
     src = "class C:\n    def __init__(self): pass\ndef make():\n    return C()\n"
     tree, entities, classes, aliases = _module(src, module="m")
     project_fqns = frozenset(e.qualname for e in entities)
-    edges, resolved, unresolved, callees = build_call_edges(
+    edges, resolved, unresolved, callees, implicit = build_call_edges(
         entities=entities,
         class_qualnames=classes,
         alias_map=aliases,
@@ -92,13 +119,14 @@ def test_constructor_call_is_unresolved() -> None:
     )
     assert edges["m.make"] == frozenset()
     assert unresolved["m.make"] == 1
+    assert implicit == {}
 
 
 def test_nested_def_calls_not_attributed_to_outer() -> None:
     src = "def outer():\n    def inner():\n        return b()\n    return inner()\ndef b():\n    return 1\n"
     tree, entities, classes, aliases = _module(src, module="m")
     project_fqns = frozenset(e.qualname for e in entities)
-    edges, resolved, unresolved, callees = build_call_edges(
+    edges, resolved, unresolved, callees, implicit = build_call_edges(
         entities=entities,
         class_qualnames=classes,
         alias_map=aliases,
@@ -108,3 +136,4 @@ def test_nested_def_calls_not_attributed_to_outer() -> None:
     # outer() calls inner() (a nested def, not a project entity) -> unresolved;
     # b() is called only inside inner's body, NOT attributed to outer.
     assert "m.b" not in edges["m.outer"]
+    assert implicit == {}

@@ -62,6 +62,9 @@ class AnalysisContext:
     )
     # Resolved call targets in the project: ``{id(call): callee_qn}``.
     call_site_callees: Mapping[int, str] = field(default_factory=dict)
+    # Bound method call sites whose explicit args start after an implicit receiver:
+    # ``{id(call): "instance" | "class"}``.
+    call_site_implicit_receivers: Mapping[int, str] = field(default_factory=dict)
     # Cross-method class-attribute summary (closure A): ``{class_qualname: {attr: taint}}``,
     # the least-trusted value written to ``self.<attr>`` across the class's methods. Rules
     # resolve a ``self.<attr>``/``cls.<attr>`` read against it. Defaulted for direct
@@ -93,6 +96,11 @@ class AnalysisContext:
             MappingProxyType(dict(self.function_call_site_arg_taints)),
         )
         object.__setattr__(self, "call_site_callees", MappingProxyType(dict(self.call_site_callees)))
+        object.__setattr__(
+            self,
+            "call_site_implicit_receivers",
+            MappingProxyType(dict(self.call_site_implicit_receivers)),
+        )
         object.__setattr__(self, "class_attr_taints", MappingProxyType(dict(self.class_attr_taints)))
         object.__setattr__(
             self,

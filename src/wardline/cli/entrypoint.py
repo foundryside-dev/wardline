@@ -1,0 +1,21 @@
+"""Dependency-light console-script shim."""
+
+from __future__ import annotations
+
+import sys
+
+_SCANNER_EXTRA_IMPORTS = frozenset({"click", "jsonschema", "yaml"})
+
+
+def main() -> None:
+    try:
+        from wardline.cli.main import cli
+    except ModuleNotFoundError as exc:
+        if exc.name in _SCANNER_EXTRA_IMPORTS:
+            print(
+                "error: the wardline CLI requires the scanner extra; install `wardline[scanner]`.",
+                file=sys.stderr,
+            )
+            raise SystemExit(2) from exc
+        raise
+    cli()

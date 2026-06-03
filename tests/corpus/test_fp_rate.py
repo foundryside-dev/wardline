@@ -6,7 +6,7 @@ The corpus is sized so a single mislabel cannot trivially breach the budget.
 
 from __future__ import annotations
 
-from corpus.harness import reconcile
+from corpus.harness import reconcile  # type: ignore[import-not-found]
 
 
 def test_fp_rate_within_budget():
@@ -27,7 +27,7 @@ def test_fp_rate_within_budget():
 def test_reconciliation_fp_rate_arithmetic():
     # Directly exercise the FP-rate computation on the FALSE_POSITIVE path, which the
     # live corpus (all TRUE_POSITIVE today) never hits. Guards the gate's own math.
-    from corpus.harness import Reconciliation
+    from corpus.harness import Reconciliation  # type: ignore[import-not-found]
 
     none_fp = Reconciliation(active_defects=20, false_positives=0, unaccounted=[], stale=[])
     assert none_fp.fp_rate == 0.0

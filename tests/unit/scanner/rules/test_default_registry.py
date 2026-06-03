@@ -6,6 +6,7 @@ from pathlib import Path
 from wardline.core.config import WardlineConfig
 from wardline.core.finding import Kind, Severity
 from wardline.scanner.analyzer import WardlineAnalyzer
+from wardline.scanner.context import AnalysisContext
 from wardline.scanner.rules import build_default_registry
 
 
@@ -20,6 +21,18 @@ def _analyze(tmp_path: Path, files: dict[str, str]):
     findings = analyzer.analyze(sorted(paths), WardlineConfig(), root=tmp_path)
     assert analyzer.last_context is not None
     return analyzer.last_context, findings
+
+
+def _empty_context() -> AnalysisContext:
+    return AnalysisContext(
+        project_taints={},
+        project_return_taints={},
+        function_var_taints={},
+        function_return_taints={},
+        function_return_callee={},
+        entities={},
+        taint_provenance={},
+    )
 
 
 def test_default_registry_has_all_builtin_rules() -> None:
@@ -56,10 +69,32 @@ def test_rules_enable_filters() -> None:
     assert {r.rule_id for r in reg2.rules} == {"PY-WL-103", "PY-WL-104"}
 
 
+def test_rules_enable_unknown_pattern_emits_gate_defect() -> None:
+    reg = build_default_registry(WardlineConfig(rules_enable=("NO_SUCH_RULE",)))
+    assert {r.rule_id for r in reg.rules} == {"WLN-ENGINE-POLICY-CONFIG"}
+
+    findings = reg.run(_empty_context())
+    assert len(findings) == 2
+    assert all(f.rule_id == "WLN-ENGINE-POLICY-CONFIG" for f in findings)
+    assert all(f.kind is Kind.DEFECT and f.severity is Severity.ERROR for f in findings)
+
+
 def test_rules_severity_overrides_base() -> None:
     reg = build_default_registry(WardlineConfig(rules_severity={"PY-WL-103": "CRITICAL"}))
     rule = next(r for r in reg.rules if r.rule_id == "PY-WL-103")
     assert rule.base_severity == Severity.CRITICAL
+
+
+def test_rules_severity_none_for_defect_rule_emits_gate_defect_and_uses_default() -> None:
+    reg = build_default_registry(WardlineConfig(rules_severity={"PY-WL-101": "NONE"}))
+    rule = next(r for r in reg.rules if r.rule_id == "PY-WL-101")
+    assert rule.base_severity == Severity.ERROR
+
+    findings = reg.run(_empty_context())
+    config_findings = [f for f in findings if f.rule_id == "WLN-ENGINE-POLICY-CONFIG"]
+    assert len(config_findings) == 1
+    assert config_findings[0].kind is Kind.DEFECT
+    assert config_findings[0].severity is Severity.ERROR
 
 
 def test_analyzer_runs_default_rules_end_to_end(tmp_path) -> None:

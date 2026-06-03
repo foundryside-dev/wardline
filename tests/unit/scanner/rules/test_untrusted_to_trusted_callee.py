@@ -111,3 +111,27 @@ def test_self_method_call_fires(tmp_path) -> None:
     findings = UntrustedReachesTrustedCallee().check(ctx)
     assert [(f.rule_id, f.qualname) for f in findings] == [("PY-WL-105", "m.Service.run")]
     assert findings[0].properties["callee"] == "m.Service.store"
+
+
+def test_args_unpacking_fires(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        def h(p):
+            args = [read_raw(p)]
+            store(*args)
+        """,
+    )
+    assert _ids(ctx) == [("PY-WL-105", "m.h")]
+
+
+def test_kwargs_unpacking_fires(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        def h(p):
+            kwargs = {"x": read_raw(p)}
+            store(**kwargs)
+        """,
+    )
+    assert _ids(ctx) == [("PY-WL-105", "m.h")]

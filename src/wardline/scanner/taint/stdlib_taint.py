@@ -16,8 +16,7 @@ from importlib.resources import files
 from types import MappingProxyType
 from typing import Any
 
-import yaml
-
+from wardline.core.optional_deps import require_yaml
 from wardline.core.taints import TaintState
 
 # Legal return tiers for a stdlib call. A stdlib function returns data the
@@ -119,6 +118,7 @@ def load_stdlib_taint() -> StdlibTaintTable:
 
     Immutable (``MappingProxyType``) and cached once per process.
     """
+    yaml = require_yaml("loading stdlib_taint.yaml")
     yaml_path = files("wardline.scanner.taint").joinpath("stdlib_taint.yaml")
     raw = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
     return _build_table(raw)

@@ -15,9 +15,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from wardline.core.errors import ConfigError
+from wardline.core.optional_deps import require_yaml
 
 _HEX = frozenset("0123456789abcdef")
 
@@ -85,6 +84,7 @@ def add_waiver(config_path: Path, *, fingerprint: str, reason: str, expires: dat
     # ConfigError on a bad fingerprint/reason/expiry BEFORE the file is touched.
     waiver = parse_waivers((entry,))[0]
 
+    yaml = require_yaml("updating wardline.yaml waivers")
     raw: dict[str, Any] = {}
     if config_path.exists():
         try:

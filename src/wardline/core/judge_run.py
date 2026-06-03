@@ -12,13 +12,10 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
 
 from wardline.core import config as config_mod
-from wardline.core.baseline import load_baseline
 from wardline.core.config import JudgeSettings, parse_judge_settings
-from wardline.core.discovery import discover
 from wardline.core.errors import WardlineError
 from wardline.core.judge import (
     _API_KEY_ENV,
@@ -28,11 +25,9 @@ from wardline.core.judge import (
     call_judge,
 )
 from wardline.core.judged import JudgedFP, JudgedSet, load_judged, write_judged
+from wardline.core.run import run_scan
 from wardline.core.source_excerpt import extract_excerpt
-from wardline.core.suppression import apply_suppressions
 from wardline.core.triage import TriageResult, run_triage
-from wardline.core.waivers import WaiverSet, parse_waivers
-from wardline.scanner.analyzer import WardlineAnalyzer
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,15 +152,11 @@ def run_judge(
     else:
         caller = judge_caller
 
-    files = discover(root, cfg, confine_to_root=confine_to_root)
-    findings = WardlineAnalyzer().analyze(files, cfg, root=root)
-    baseline = load_baseline(root / ".wardline" / "baseline.yaml")
-    waivers = WaiverSet(parse_waivers(cfg.waivers))
+    scan = run_scan(root, config_path=config_path, confine_to_root=confine_to_root)
     judged_set = load_judged(root / ".wardline" / "judged.yaml")
-    findings = apply_suppressions(findings, baseline, waivers, today=date.today(), judged=judged_set)
 
     result = run_triage(
-        findings,
+        scan.findings,
         read_excerpt=lambda f: extract_excerpt(
             root, f.location.path, line=f.location.line_start or 1, context_lines=ctx_lines
         ),

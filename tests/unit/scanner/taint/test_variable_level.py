@@ -12,10 +12,11 @@ def _vt(
     src: str,
     function_taint: TaintState = T.UNKNOWN_RAW,
     taint_map: dict[str, TaintState] | None = None,
+    alias_map: dict[str, str] | None = None,
 ) -> dict[str, TaintState]:
     func = ast.parse(src).body[0]
     assert isinstance(func, ast.FunctionDef | ast.AsyncFunctionDef)
-    return compute_variable_taints(func, function_taint, taint_map or {})
+    return compute_variable_taints(func, function_taint, taint_map or {}, alias_map=alias_map)
 
 
 def test_literal_is_integral() -> None:
@@ -184,9 +185,14 @@ def test_serialisation_sink_sheds_to_unknown_raw() -> None:
     assert out["x"] == T.UNKNOWN_RAW
 
 
-def test_unresolved_call_falls_back_to_function_taint() -> None:
-    out = _vt("def f():\n    x = mystery()\n", function_taint=T.GUARDED, taint_map={})
-    assert out["x"] == T.GUARDED
+def test_unresolved_imported_call_returns_unknown_raw_not_function_taint() -> None:
+    out = _vt(
+        "def f():\n    x = vendor.clean()\n",
+        function_taint=T.GUARDED,
+        taint_map={},
+        alias_map={"vendor": "vendor"},
+    )
+    assert out["x"] == T.UNKNOWN_RAW
 
 
 def test_nested_function_body_is_skipped() -> None:

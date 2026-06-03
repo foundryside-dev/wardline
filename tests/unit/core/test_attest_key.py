@@ -161,3 +161,19 @@ def test_key_id_stable_for_same_key() -> None:
 def test_key_id_different_for_different_keys() -> None:
     """key_id differs for different keys."""
     assert key_id("key-one") != key_id("key-two")
+
+
+def test_mint_sets_permissions_on_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """mint_attest_key sets .env file permissions to owner-only read/write (0o600)."""
+    import stat
+    import sys
+
+    monkeypatch.delenv(WARDLINE_ATTEST_KEY_ENV, raising=False)
+    mint_attest_key(tmp_path)
+    env_file = tmp_path / ".env"
+    assert env_file.exists()
+
+    if sys.platform != "win32":
+        mode = env_file.stat().st_mode
+        # Mode on POSIX check for owner-only read/write (0o600 -> S_IRUSR | S_IWUSR)
+        assert stat.S_IMODE(mode) == 0o600

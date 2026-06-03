@@ -1,8 +1,8 @@
 """SP8: the Wardline MCP server — tools/resources/prompts wired to core/.
 
 Stateless (no server-side session carried between calls). The read-only tools
-(scan, explain_taint) are pure functions of (disk + config); the suppression
-tools (baseline_create/baseline_update, waiver_add) and judge --write mutate
+(scan, explain_taint) are pure functions of (disk + config); fix, the suppression
+tools (baseline_create/baseline_update, waiver_add), and judge --write mutate
 project files on disk. Rooted at a project path (launch cwd by default)."""
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from wardline.core.judge_run import run_judge
 from wardline.core.run import gate_decision, run_scan
 from wardline.core.sei_resolution import resolve_query_filters
 from wardline.core.waivers import add_waiver
-from wardline.mcp.protocol import JsonRpcServer, McpError
+from wardline.mcp.protocol import _INVALID_PARAMS, JsonRpcServer, McpError
 from wardline.scanner.rules import _ALL_RULE_CLASSES
 
 if TYPE_CHECKING:
@@ -141,7 +141,10 @@ def _scan(args: dict[str, Any], root: Path, clarion: Any = None, filigree: Any =
         # letting it surface as an opaque generic JSON-RPC -32603.
         raise ToolError("fail_on must be one of CRITICAL/ERROR/WARN/INFO") from exc
     new_since = args.get("new_since")
-    result = run_scan(path, config_path=_cfg(args, root), confine_to_root=True, new_since=new_since)
+    cache_dir = _resolve_under_root(root, args["cache_dir"]) if args.get("cache_dir") else None
+    result = run_scan(
+        path, config_path=_cfg(args, root), cache_dir=cache_dir, confine_to_root=True, new_since=new_since
+    )
     # Fail-soft Clarion write: only when a client was injected (server has a URL).
     # An outage/403 yields a not-reachable WriteResult; never raises here.
     clarion_block: dict[str, Any] | None = None
@@ -407,6 +410,32 @@ def _waiver_add(args: dict[str, Any], root: Path) -> dict[str, Any]:
     }
 
 
+def _fix(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    """Scan the path and apply mechanical autofixes to findings in-place."""
+    path = _resolve_under_root(root, args["path"]) if args.get("path") else root
+    cfg_path = _cfg(args, root)
+    try:
+        from wardline.core.config import load
+
+        cfg = load(cfg_path or (path / "wardline.yaml"))
+        result = run_scan(path, config_path=cfg_path, confine_to_root=True)
+    except WardlineError as exc:
+        raise ToolError(str(exc)) from exc
+
+    findings = [f for f in result.findings if f.rule_id == "PY-WL-111"]
+    if not findings:
+        return {"fixed": {}, "message": "No fixable findings found."}
+
+    from wardline.core.autofix import run_autofix
+
+    dry_run = bool(args.get("dry_run", False))
+    applied = run_autofix(findings, cfg, path, dry_run=dry_run)
+    return {
+        "fixed": applied,
+        "message": f"Applied fixes to {len(applied)} files." if applied else "No fixes applied.",
+    }
+
+
 # Gate thresholds are the four defect severities. Severity also defines NONE
 # (the "facts carry no defect severity" sentinel), deliberately excluded here:
 # fail_on=NONE is not a meaningful gate threshold.
@@ -500,6 +529,10 @@ class WardlineMCPServer:
                             "type": "string",
                             "description": "PR-scoped 'new findings only' gate: only gate on findings in "
                             "files/entities changed since this git ref",
+                        },
+                        "cache_dir": {
+                            "type": "string",
+                            "description": "subdir relative to project root for summary cache",
                         },
                     },
                 },
@@ -696,6 +729,21 @@ class WardlineMCPServer:
                 handler=_waiver_add,
             )
         )
+        self.add_tool(
+            Tool(
+                name="fix",
+                description="Scan and apply mechanical autofixes to findings (currently only PY-WL-111 is supported).",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "subdir relative to project root to scan and fix"},
+                        "config": {"type": "string"},
+                        "dry_run": {"type": "boolean", "description": "preview changes without modifying files"},
+                    },
+                },
+                handler=_fix,
+            )
+        )
 
     def add_tool(self, tool: Tool) -> None:
         self._tools[tool.name] = tool
@@ -745,7 +793,7 @@ class WardlineMCPServer:
                 },
                 ensure_ascii=False,
             ), "application/json"
-        raise McpError(f"unknown resource: {uri}")
+        raise McpError(f"unknown resource: {uri}", code=_INVALID_PARAMS)
 
     def _wire(self) -> None:
         self.rpc.capabilities["tools"] = {"listChanged": False}
@@ -773,7 +821,7 @@ class WardlineMCPServer:
         if tool is None:
             # Protocol fault (caller bug) → JSON-RPC error, not an agent-actionable
             # tool-execution outcome.
-            raise McpError(f"unknown tool: {name}")
+            raise McpError(f"unknown tool: {name}", code=_INVALID_PARAMS)
 
         if tool.input_schema:
             try:
@@ -830,7 +878,7 @@ class WardlineMCPServer:
 
     def _prompts_get(self, params: dict[str, Any]) -> dict[str, Any]:
         if params.get("name") != "wardline:loop":
-            raise McpError(f"unknown prompt: {params.get('name')}")
+            raise McpError(f"unknown prompt: {params.get('name')}", code=_INVALID_PARAMS)
         return {
             "description": "The intended scan→explain→fix→rescan loop.",
             "messages": [{"role": "user", "content": {"type": "text", "text": self._LOOP_PROMPT}}],

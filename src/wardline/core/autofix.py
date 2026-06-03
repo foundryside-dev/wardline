@@ -6,6 +6,7 @@ from __future__ import annotations
 import ast
 import contextlib
 import io
+import logging
 import tokenize
 from collections import defaultdict
 from collections.abc import Callable, Iterator, Sequence
@@ -13,6 +14,8 @@ from pathlib import Path
 
 from wardline.core.config import WardlineConfig
 from wardline.core.finding import Finding
+
+logger = logging.getLogger(__name__)
 
 
 def has_comment_in_span(
@@ -109,14 +112,16 @@ def run_autofix(
         rel_path = file_path.relative_to(root).as_posix()
         try:
             source = file_path.read_text(encoding="utf-8")
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to read %s for autofix: %s", file_path, exc)
             continue
 
         source_lines = source.splitlines(keepends=True)
         # Parse AST to locate specific statement nodes
         try:
             tree = ast.parse(source)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to parse AST of %s for autofix: %s", file_path, exc)
             continue
 
         # Map function line_start to function nodes

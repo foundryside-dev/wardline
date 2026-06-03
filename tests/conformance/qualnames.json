@@ -58,7 +58,7 @@
       ]
     },
     {
-      "name": "overload_dropped_before_first_wins",
+      "name": "overload_dropped_before_real_definition",
       "rel_path": "demo.py",
       "source": "from typing import overload\n@overload\ndef f(x: int) -> int: ...\n@overload\ndef f(x: str) -> str: ...\ndef f(x):\n    return x\n",
       "expected": [
@@ -90,7 +90,7 @@
       ]
     },
     {
-      "name": "redefinition_first_wins",
+      "name": "redefinition_last_wins",
       "rel_path": "demo.py",
       "source": "def dup():\n    return 1\ndef dup():\n    return 2\n",
       "expected": [

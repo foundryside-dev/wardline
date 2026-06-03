@@ -11,14 +11,15 @@ Tests for:
 from __future__ import annotations
 
 import textwrap
+from collections.abc import Sequence
 from pathlib import Path
 
 from wardline.core.config import WardlineConfig
-from wardline.core.finding import Kind
+from wardline.core.finding import Finding, Kind
 from wardline.scanner.analyzer import WardlineAnalyzer
 
 
-def _analyze_files(tmp_path: Path, files: dict[str, str]) -> list[any]:
+def _analyze_files(tmp_path: Path, files: dict[str, str]) -> Sequence[Finding]:
     for name, content in files.items():
         p = tmp_path / name
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -108,6 +109,25 @@ def test_ssrf_fires_on_httpx_post(tmp_path: Path) -> None:
     defects = [f for f in findings if f.kind is Kind.DEFECT]
     ssrf_findings = [f for f in defects if f.rule_id == "PY-WL-117"]
     assert len(ssrf_findings) == 1
+
+
+def test_ssrf_fires_on_nested_module_alias(tmp_path: Path) -> None:
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            import urllib.request as ur
+
+            @trusted(level='ASSURED')
+            def test_ssrf(p):
+                ur.urlopen(read_raw(p))
+            """
+        },
+    )
+    defects = [f for f in findings if f.kind is Kind.DEFECT]
+    ssrf_findings = [f for f in defects if f.rule_id == "PY-WL-117"]
+    assert len(ssrf_findings) == 1
+    assert ssrf_findings[0].properties["sink"] == "urllib.request.urlopen"
 
 
 # ── PY-WL-118: SQL Injection ───────────────────────────────────────────────

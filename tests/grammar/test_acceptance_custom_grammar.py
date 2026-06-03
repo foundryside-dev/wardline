@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from grammar.fixtures.custom_grammar import GRAMMAR
+from grammar.fixtures.custom_grammar import GRAMMAR  # type: ignore[import-not-found]
 from wardline.core.config import WardlineConfig
 from wardline.core.finding import Kind
 from wardline.scanner.analyzer import WardlineAnalyzer, build_analyzer

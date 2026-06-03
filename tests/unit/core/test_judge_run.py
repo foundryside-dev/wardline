@@ -3,11 +3,15 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from types import ModuleType
 
+from wardline.core.finding import Kind, SuppressionState
 from wardline.core.judge import JudgeRequest, JudgeResponse, JudgeVerdict
 from wardline.core.judge_run import JudgeOutcome, run_judge
+from wardline.core.run import run_scan
 
 # A @trust_boundary(to_level=GUARDED) validator that returns its input unchanged
 # (no rejection path) -> an active PY-WL-102 defect. Mirrors the proven CLI fixture.
@@ -84,3 +88,60 @@ def test_run_judge_write_holds_back_low_confidence_fp(tmp_path: Path) -> None:
     assert outcome.wrote == 0
     assert outcome.held_back >= 1
     assert not (root / ".wardline" / "judged.yaml").exists()
+
+
+def test_run_judge_triages_same_active_defect_fingerprints_as_scan_with_packs(tmp_path: Path) -> None:
+    project_root = Path(__file__).resolve().parents[3]
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+    from tests.unit.install.mock_pack import grammar as mock_grammar
+
+    fake_pack = ModuleType("judge_parity_pack")
+    fake_pack.grammar = mock_grammar  # type: ignore[attr-defined]
+    sys.modules["judge_parity_pack"] = fake_pack
+
+    try:
+        root = tmp_path / "proj"
+        root.mkdir()
+        (root / "wardline.yaml").write_text("packs:\n  - judge_parity_pack\n", encoding="utf-8")
+        (root / "svc.py").write_text("def violator():\n    pass\n", encoding="utf-8")
+
+        scan = run_scan(root)
+        scan_candidate_fps = {
+            finding.fingerprint
+            for finding in scan.findings
+            if finding.kind is Kind.DEFECT and finding.suppressed is SuppressionState.ACTIVE
+        }
+
+        seen_requests: list[str] = []
+
+        def _recording_caller(req: JudgeRequest) -> JudgeResponse:
+            seen_requests.append(req.fingerprint)
+            return _tp_caller(req)
+
+        outcome = run_judge(root, judge_caller=_recording_caller, write=False)
+
+        assert {verdict.fingerprint for verdict in outcome.verdicts} == scan_candidate_fps
+        assert set(seen_requests) == scan_candidate_fps
+        assert scan_candidate_fps == {"PY-WL-901:svc.py:1"}
+    finally:
+        sys.modules.pop("judge_parity_pack", None)
+
+
+def test_parse_verdict_payload_with_markdown() -> None:
+    from wardline.core.judge import _parse_verdict_payload
+
+    raw_markdown = (
+        "```json\n"
+        "{\n"
+        '  "verdict": "FALSE_POSITIVE",\n'
+        '  "rationale": " benign over-approximation in loop",\n'
+        '  "confidence": 0.85\n'
+        "}\n"
+        "```"
+    )
+    res = _parse_verdict_payload(raw_markdown)
+    assert res["verdict"] == "FALSE_POSITIVE"
+    assert res["rationale"] == " benign over-approximation in loop"
+    assert res["confidence"] == 0.85

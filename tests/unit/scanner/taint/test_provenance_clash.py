@@ -108,7 +108,7 @@ def test_l3_propagation_clash() -> None:
     taint_map = {"A": T.INTEGRAL, "B": T.INTEGRAL, "C": T.ASSURED}
     taint_sources = {"A": "fallback", "B": "anchored", "C": "anchored"}
     resolved_counts = {"A": 2}
-    unresolved_counts = {}
+    unresolved_counts: dict[str, int] = {}
     return_taint_map = {"B": T.INTEGRAL, "C": T.ASSURED}
 
     # 1. provenance_clash = False

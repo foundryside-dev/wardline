@@ -213,3 +213,124 @@ def test_112_undecorated_is_suppressed(tmp_path) -> None:
         """,
     )
     assert UntrustedToShellSubprocess().check(ctx) == []
+
+
+def test_106_resolves_aliased_deserialization_sinks(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        import pickle as pkl
+        from pickle import loads as pickle_loads
+
+        @trusted(level='ASSURED')
+        def via_module_alias(p):
+            pkl.loads(read_raw(p))
+
+        @trusted(level='ASSURED')
+        def via_from_import_alias(p):
+            pickle_loads(read_raw(p))
+        """,
+    )
+    findings = UntrustedToDeserialization().check(ctx)
+    assert [(x.rule_id, x.qualname, x.properties["sink"]) for x in findings] == [
+        ("PY-WL-106", "m.via_module_alias", "pickle.loads"),
+        ("PY-WL-106", "m.via_from_import_alias", "pickle.loads"),
+    ]
+
+
+def test_107_resolves_aliased_dynamic_exec_sinks(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        import builtins as b
+        from builtins import eval as builtin_eval
+
+        @trusted(level='ASSURED')
+        def via_module_alias(p):
+            b.eval(read_raw(p))
+
+        @trusted(level='ASSURED')
+        def via_from_import_alias(p):
+            builtin_eval(read_raw(p))
+        """,
+    )
+    findings = UntrustedToExec().check(ctx)
+    assert [(x.rule_id, x.qualname, x.properties["sink"]) for x in findings] == [
+        ("PY-WL-107", "m.via_module_alias", "builtins.eval"),
+        ("PY-WL-107", "m.via_from_import_alias", "builtins.eval"),
+    ]
+
+
+def test_108_resolves_aliased_command_sinks(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        import subprocess as sp
+        from os import system as os_system
+
+        @trusted(level='ASSURED')
+        def via_module_alias(p):
+            sp.getoutput(read_raw(p))
+
+        @trusted(level='ASSURED')
+        def via_from_import_alias(p):
+            os_system(read_raw(p))
+        """,
+    )
+    findings = UntrustedToCommand().check(ctx)
+    assert [(x.rule_id, x.qualname, x.properties["sink"]) for x in findings] == [
+        ("PY-WL-108", "m.via_module_alias", "subprocess.getoutput"),
+        ("PY-WL-108", "m.via_from_import_alias", "os.system"),
+    ]
+
+
+def test_112_resolves_aliased_shell_subprocess_sinks(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        import subprocess as sp
+        from subprocess import run as subprocess_run
+
+        @trusted(level='ASSURED')
+        def via_module_alias(p):
+            sp.run(read_raw(p), shell=True)
+
+        @trusted(level='ASSURED')
+        def via_from_import_alias(p):
+            subprocess_run(read_raw(p), shell=True)
+        """,
+    )
+    findings = UntrustedToShellSubprocess().check(ctx)
+    assert [(x.rule_id, x.qualname, x.properties["sink"]) for x in findings] == [
+        ("PY-WL-112", "m.via_module_alias", "subprocess.run"),
+        ("PY-WL-112", "m.via_from_import_alias", "subprocess.run"),
+    ]
+
+
+def test_fallback_flow_insensitive_warnings() -> None:
+    # If flow-sensitive map is missing, we warn and pessimistically assume UNKNOWN_RAW.
+    import ast
+    import warnings
+
+    from wardline.core.taints import TaintState
+    from wardline.scanner.context import AnalysisContext
+    from wardline.scanner.rules._sink_helpers import worst_arg_taint
+
+    call = ast.parse("eval(x)").body[0].value
+    assert isinstance(call, ast.Call)
+    context = AnalysisContext(
+        project_taints={},
+        project_return_taints={},
+        function_var_taints={},
+        function_return_taints={},
+        function_return_callee={},
+        entities={},
+        taint_provenance={},
+    )  # Empty context has no flow-sensitive mappings
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        res = worst_arg_taint(call, "m.f", context, {})
+        assert len(w) == 1
+        assert "WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK" in str(w[0].message)
+        assert res == TaintState.UNKNOWN_RAW

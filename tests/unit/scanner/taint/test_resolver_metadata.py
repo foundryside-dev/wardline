@@ -49,6 +49,7 @@ def test_result_wraps_mappings_immutably() -> None:
         return_taint_map={"m.f": T.UNKNOWN_RAW},
         project_edges={"m.f": frozenset()},
         call_site_callees={},
+        call_site_implicit_receivers={1: "instance"},
         taint_provenance={"m.f": TaintProvenance(source="fallback")},
         diagnostics=(("L3_LOW_RESOLUTION", "m.f has 80% unresolved"),),
         metadata=_meta(),
@@ -56,7 +57,10 @@ def test_result_wraps_mappings_immutably() -> None:
     assert isinstance(res.taint_map, MappingProxyType)
     assert isinstance(res.project_edges, MappingProxyType)
     assert isinstance(res.call_site_callees, MappingProxyType)
+    assert isinstance(res.call_site_implicit_receivers, MappingProxyType)
     assert isinstance(res.taint_provenance, MappingProxyType)
     assert res.diagnostics[0][0] == "L3_LOW_RESOLUTION"
     with pytest.raises(TypeError):
         res.taint_map["m.g"] = T.INTEGRAL  # type: ignore[index]
+    with pytest.raises(TypeError):
+        res.call_site_implicit_receivers[2] = "class"  # type: ignore[index]

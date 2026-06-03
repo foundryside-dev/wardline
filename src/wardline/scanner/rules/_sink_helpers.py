@@ -3,8 +3,8 @@
 
 A "sink rule" fires when raw-zone data reaches a named dangerous call (a
 deserialization / dynamic-exec / OS-command sink) inside a trusted-tier function.
-These helpers find the sink calls in a function's own scope and resolve the taint of
-their arguments.
+These helpers find the sink calls in a function's own scope, canonicalize their
+names through the module import alias map, and resolve the taint of their arguments.
 
 **Argument-taint resolution is FLOW-INSENSITIVE.** A rule reads the engine's RESOLVED
 state post-hoc, where only the FINAL per-variable taint map (`function_var_taints`) is
@@ -42,6 +42,7 @@ __all__ = [
     "RAW_ZONE",
     "TaintedSinkRule",
     "call_site_var_taints",
+    "canonical_call_name",
     "dotted_name",
     "sink_calls",
     "worst_arg_taint",
@@ -62,6 +63,21 @@ def dotted_name(node: ast.expr) -> str | None:
     return None
 
 
+def canonical_call_name(dotted: str, alias_map: Mapping[str, str]) -> str:
+    """Resolve a raw dotted call spelling through the module's import aliases.
+
+    Handles ``import pickle as p; p.loads()``, ``from pickle import loads as l;
+    l()``, and nested module aliases like ``import urllib.request as ur;
+    ur.urlopen()``.
+    """
+    for local, target in sorted(alias_map.items(), key=lambda item: len(item[0]), reverse=True):
+        if dotted == local:
+            return target
+        if dotted.startswith(local + "."):
+            return f"{target}{dotted[len(local) :]}"
+    return dotted
+
+
 def _own_calls(node: ast.AST) -> Iterator[ast.Call]:
     """Yield every ``ast.Call`` in *node*'s own scope (never descending into nested
     def/class/lambda — those are separate scopes / separate entities)."""
@@ -73,13 +89,29 @@ def _own_calls(node: ast.AST) -> Iterator[ast.Call]:
         yield from _own_calls(child)
 
 
-def sink_calls(func_node: ast.AST, sink_names: frozenset[str]) -> Iterator[tuple[ast.Call, str]]:
+def sink_calls(
+    func_node: ast.AST,
+    sink_names: frozenset[str],
+    alias_map: Mapping[str, str] | None = None,
+) -> Iterator[tuple[ast.Call, str]]:
     """Yield ``(call, dotted_name)`` for own-scope calls whose func resolves to a
-    name in *sink_names* (matches both ``eval`` and ``pickle.loads`` forms)."""
+    canonical name in *sink_names* (matches both ``eval`` and ``pickle.loads`` forms)."""
+    alias_map = alias_map or {}
     for call in _own_calls(func_node):
         dotted = dotted_name(call.func)
-        if dotted is not None and dotted in sink_names:
-            yield call, dotted
+        if dotted is None:
+            continue
+        canonical = canonical_call_name(dotted, alias_map)
+        if canonical in sink_names:
+            yield call, canonical
+
+
+def _module_for_qualname(qualname: str, context: AnalysisContext) -> str | None:
+    modules = context.alias_maps.keys()
+    for module in sorted(modules, key=len, reverse=True):
+        if qualname == module or qualname.startswith(module + "."):
+            return module
+    return None
 
 
 def _arg_taint(
@@ -132,20 +164,13 @@ def worst_arg_taint(
                 worst_fs = ts
         return worst_fs
 
-    # 2. Fallback to post-hoc flow-insensitive resolution
-    entity = context.entities.get(qualname)
-    if entity is not None:
-        from wardline.core.qualname import module_dotted_name
+    # Flow-sensitive snapshot is missing. Warn and enforce pessimistic default.
+    import warnings
 
-        module = module_dotted_name(entity.location.path) or ""
-    else:
-        module = qualname.rsplit(".", 1)[0] if "." in qualname else ""
-    worst: TaintState | None = None
-    for arg in (*call.args, *(kw.value for kw in call.keywords)):
-        t = _arg_taint(arg, module, var_taints, context, qualname)
-        if t is not None and (worst is None or TRUST_RANK[t] > TRUST_RANK[worst]):
-            worst = t
-    return worst
+    warnings.warn(f"WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK: {qualname}", stacklevel=2)
+    if call.args or call.keywords:
+        return TaintState.UNKNOWN_RAW
+    return None
 
 
 def _calls_with_enclosing_stmt(
@@ -219,7 +244,9 @@ class TaintedSinkRule:
                 continue  # freedom / fail-closed zone — suppressed
             site_taints = call_site_var_taints(entity.node, qualname, context)
             final = context.function_var_taints.get(qualname, {})
-            for call, dotted in sink_calls(entity.node, self.SINKS):
+            module = _module_for_qualname(qualname, context)
+            alias_map = context.alias_maps.get(module, {}) if module is not None else {}
+            for call, dotted in sink_calls(entity.node, self.SINKS, alias_map):
                 if not self._accept_call(call):
                     continue
                 worst = worst_arg_taint(call, qualname, context, site_taints.get(id(call), final))

@@ -60,7 +60,7 @@ _SERIALISATION_SINKS: frozenset[str] = frozenset(
 )
 
 # Curated taint-PROPAGATING builtins. A small explicit table (NOT a general rule
-# — unknown calls still fall back to function_taint, so len/int/validate stay
+# — bare unknown calls still fall back to function_taint, so len/int/validate stay
 # unaffected and there is no false-positive explosion). These return the join of
 # their argument taints: a string conversion / iterator advance carries whatever
 # taint went in. ``next`` closes the ``next(genexp)`` shape (the iterator arg).
@@ -85,6 +85,10 @@ _CURRENT_CALL_SITE_ARG_TAINTS: contextvars.ContextVar[dict[int, dict[int | str |
 
 _CURRENT_VAR_TYPES: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
     "_CURRENT_VAR_TYPES", default=None
+)
+
+_CURRENT_MODULE_PREFIX: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "_CURRENT_MODULE_PREFIX", default=None
 )
 
 _CONTEXT_ENCODERS: frozenset[str] = frozenset(
@@ -116,8 +120,10 @@ def compute_variable_taints(
             fallback for unknown expressions.
         taint_map: call-resolution map keyed by the call-site name AS WRITTEN —
             bare (``"foo"``) for ``foo()``, dotted (``"mod.fn"``) for
-            ``mod.fn()`` — mapping to that call's return taint. Calls whose name
-            is absent fall back to ``function_taint``.
+            ``mod.fn()`` — mapping to that call's return taint. Bare calls whose
+            name is absent fall back to ``function_taint``; imported-but-unmodeled
+            calls resolve to ``UNKNOWN_RAW`` so external code cannot inherit a
+            trusted caller seed.
         call_site_taints: optional out-dict for FLOW-SENSITIVE reads. When given,
             records ``{id(stmt): snapshot}`` — the per-variable taint map AS IT IS
             on entry to each statement (in branches, the branch-local copy). A sink
@@ -167,21 +173,26 @@ def _seed_parameters(
     param_meets: dict[str, TaintState] | None = None,
 ) -> None:
     args = func_node.args
-    for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs):
+    var_types = _CURRENT_VAR_TYPES.get()
+    alias_map = _CURRENT_ALIAS_MAP.get()
+
+    def handle_arg(arg: ast.arg) -> None:
         seed_val = function_taint
         if param_meets is not None and arg.arg in param_meets:
             seed_val = least_trusted(seed_val, param_meets[arg.arg])
         var_taints[arg.arg] = seed_val
+
+        if arg.annotation and var_types is not None:
+            fqn = _resolve_expr_fqn(arg.annotation, alias_map)
+            if fqn:
+                var_types[arg.arg] = fqn
+
+    for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs):
+        handle_arg(arg)
     if args.vararg:
-        seed_val = function_taint
-        if param_meets is not None and args.vararg.arg in param_meets:
-            seed_val = least_trusted(seed_val, param_meets[args.vararg.arg])
-        var_taints[args.vararg.arg] = seed_val
+        handle_arg(args.vararg)
     if args.kwarg:
-        seed_val = function_taint
-        if param_meets is not None and args.kwarg.arg in param_meets:
-            seed_val = least_trusted(seed_val, param_meets[args.kwarg.arg])
-        var_taints[args.kwarg.arg] = seed_val
+        handle_arg(args.kwarg)
 
 
 def _dotted_name(node: ast.expr) -> str | None:
@@ -397,6 +408,8 @@ def _resolve_call(
         t = _resolve_expr(arg, function_taint, taint_map, var_taints)
         pos_taints.append(t)
         resolved_args[i] = t
+        if isinstance(arg, ast.Starred):
+            resolved_args[f"*{i}"] = t
     kw_taints = []
     for kw in node.keywords:
         t = _resolve_expr(kw.value, function_taint, taint_map, var_taints)
@@ -409,15 +422,15 @@ def _resolve_call(
         call_site_arg_taints[id(node)] = resolved_args
 
     alias_map = _CURRENT_ALIAS_MAP.get()
+    imported_fqn: str | None = None
     if alias_map is not None:
-        fqn = None
         if isinstance(node.func, ast.Name):
-            fqn = alias_map.get(node.func.id)
+            imported_fqn = alias_map.get(node.func.id)
         elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
             prefix = alias_map.get(node.func.value.id)
             if prefix:
-                fqn = f"{prefix}.{node.func.attr}"
-        if fqn in _CONTEXT_ENCODERS:
+                imported_fqn = f"{prefix}.{node.func.attr}"
+        if imported_fqn in _CONTEXT_ENCODERS:
             if not arg_taints:
                 return TaintState.GUARDED
             result = arg_taints[0]
@@ -496,6 +509,10 @@ def _resolve_call(
         receiver_taint = _resolve_expr(node.func.value, function_taint, taint_map, var_taints)
         if receiver_taint in RAW_ZONE:
             return receiver_taint
+    if imported_fqn is not None:
+        # An imported call that was not modeled by project summaries, stdlib_taint,
+        # config, sink handling, or propagation rules returns data we cannot prove.
+        return TaintState.UNKNOWN_RAW
     return function_taint
 
 
@@ -614,6 +631,9 @@ def _resolve_expr_fqn(node: ast.expr, alias_map: dict[str, str] | None) -> str |
     if isinstance(node, ast.Name):
         if alias_map and node.id in alias_map:
             return alias_map[node.id]
+        module_prefix = _CURRENT_MODULE_PREFIX.get()
+        if module_prefix:
+            return f"{module_prefix}.{node.id}"
         return node.id
     if isinstance(node, ast.Attribute):
         base = _resolve_expr_fqn(node.value, alias_map)
@@ -819,8 +839,8 @@ def _handle_if(
             var_taints[var] = least_trusted(if_val, else_val)
         elif if_val is not None:
             var_taints[var] = if_val
-        else:
-            var_taints[var] = else_val  # type: ignore[assignment]
+        elif else_val is not None:
+            var_taints[var] = else_val
 
 
 def _handle_for(

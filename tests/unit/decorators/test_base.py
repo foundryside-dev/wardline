@@ -87,7 +87,7 @@ def test_apply_marker_stamps_underlying_classmethod() -> None:
     def _impl(cls: object) -> int:
         return 1
 
-    cm = classmethod(_impl)
+    cm = classmethod(_impl)  # type: ignore[var-annotated]
     out = apply_marker(cm, name="trusted", group=1, attrs={"_wardline_level": TaintState.INTEGRAL})
     assert out is cm
     assert cm.__func__._wardline_level is TaintState.INTEGRAL  # type: ignore[attr-defined]

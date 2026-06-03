@@ -134,6 +134,7 @@ def test_resolve_identity_status_never_guesses_orphaned_from_malformed_body() ->
     # Review (HIGH, convergent): ORPHANED is an actionable positive verdict; a 2xx body
     # that is a dict but lacks a boolean `alive` must degrade to UNAVAILABLE, NOT be
     # guessed ORPHANED. The wire contract defines only {alive:true} / {alive:false,...}.
+    malformed: dict[str, object]
     for malformed in ({}, {"lineage": []}, {"alive": "false"}, {"alive": None}):
         r = SeiResolver.detect(FakeClient(caps=_CAPS_PRESENT, resolve_sei=malformed))
         assert r.resolve_identity_status("clarion:eid:x") is IdentityStatus.UNAVAILABLE

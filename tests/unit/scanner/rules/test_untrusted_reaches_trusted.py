@@ -5,6 +5,7 @@ from pathlib import Path
 
 from wardline.core.config import WardlineConfig
 from wardline.core.finding import Kind
+from wardline.core.taints import TaintState
 from wardline.scanner.analyzer import WardlineAnalyzer
 from wardline.scanner.rules.untrusted_reaches_trusted import UntrustedReachesTrusted
 
@@ -41,6 +42,44 @@ def test_trusted_returning_raw_fires(tmp_path) -> None:
     ids = {(f.rule_id, f.qualname) for f in findings}
     assert ("PY-WL-101", "svc.leaky") in ids
     assert all(f.kind == Kind.DEFECT for f in findings)
+
+
+def test_duplicate_trusted_function_uses_second_definition_for_py_wl_101(tmp_path) -> None:
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "svc.py": "from wardline.decorators import external_boundary, trusted\n"
+            "@external_boundary\n"
+            "def raw(p):\n"
+            "    return p\n"
+            "@trusted(level='ASSURED')\n"
+            "def f(p):\n"
+            "    return 'clean'\n"
+            "@trusted(level='ASSURED')\n"
+            "def f(p):\n"
+            "    return raw(p)\n",
+        },
+    )
+
+    findings = _run(ctx)
+    assert ("PY-WL-101", "svc.f") in {(f.rule_id, f.qualname) for f in findings}
+
+
+def test_trusted_returning_unresolved_imported_call_fires(tmp_path) -> None:
+    ctx, all_findings = _analyze(
+        tmp_path,
+        {
+            "svc.py": "import vendor\n"
+            "from wardline.decorators import trusted\n"
+            "@trusted(level='ASSURED')\n"
+            "def f(x):\n"
+            "    return vendor.clean(x)\n",
+        },
+    )
+    assert ctx.function_return_taints["svc.f"] == TaintState.UNKNOWN_RAW
+    assert any(f.rule_id == "WLN-L3-LOW-RESOLUTION" for f in all_findings)
+    findings = _run(ctx)
+    assert ("PY-WL-101", "svc.f") in {(f.rule_id, f.qualname) for f in findings}
 
 
 def test_trusted_returning_validated_is_clean(tmp_path) -> None:
@@ -161,6 +200,74 @@ def test_trusted_method_leaking_raw_via_self_method_fires(tmp_path) -> None:
     )
     ids = {(f.rule_id, f.qualname) for f in _run(ctx)}
     assert ("PY-WL-101", "svc.S.m") in ids
+
+
+def test_bound_self_method_binds_explicit_arg_after_self(tmp_path) -> None:
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "svc.py": "from wardline.decorators import trusted, external_boundary\n"
+            "class S:\n"
+            "    @external_boundary\n"
+            "    def raw(self, p):\n"
+            "        return p\n"
+            "    @trusted(level='ASSURED')\n"
+            "    def helper(self, value):\n"
+            "        return value\n"
+            "    @trusted(level='ASSURED')\n"
+            "    def m(self, p):\n"
+            "        return self.helper(self.raw(p))\n",
+        },
+    )
+
+    ids = {(f.rule_id, f.qualname) for f in _run(ctx)}
+    assert ("PY-WL-101", "svc.S.helper") in ids
+
+
+def test_bound_classmethod_binds_explicit_arg_after_cls(tmp_path) -> None:
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "svc.py": "from wardline.decorators import trusted, external_boundary\n"
+            "@external_boundary\n"
+            "def raw(p):\n"
+            "    return p\n"
+            "class S:\n"
+            "    @classmethod\n"
+            "    @trusted(level='ASSURED')\n"
+            "    def helper(cls, value):\n"
+            "        return value\n"
+            "    @trusted(level='ASSURED')\n"
+            "    def m(self, p):\n"
+            "        return S.helper(raw(p))\n",
+        },
+    )
+
+    ids = {(f.rule_id, f.qualname) for f in _run(ctx)}
+    assert ("PY-WL-101", "svc.S.helper") in ids
+
+
+def test_long_parameter_chain_converges_past_ten_l2_iterations(tmp_path) -> None:
+    chain_len = 13
+    funcs = []
+    for i in range(chain_len):
+        body = "    return x\n" if i == chain_len - 1 else f"    return f{i + 1}(x)\n"
+        funcs.append(f"@trusted(level='ASSURED')\ndef f{i}(x):\n{body}")
+    ctx, all_findings = _analyze(
+        tmp_path,
+        {
+            "svc.py": "from wardline.decorators import external_boundary, trusted\n"
+            "@external_boundary\n"
+            "def raw(p):\n"
+            "    return p\n" + "\n".join(funcs) + "\n@trusted(level='ASSURED')\n"
+            "def entry(p):\n"
+            "    return f0(raw(p))\n",
+        },
+    )
+
+    assert not any(f.rule_id == "WLN-ENGINE-L2-CONVERGENCE-BOUND" for f in all_findings)
+    assert ctx.function_var_taints["svc.f12"]["x"] == TaintState.EXTERNAL_RAW
+    assert ("PY-WL-101", "svc.f12") in {(f.rule_id, f.qualname) for f in _run(ctx)}
 
 
 def test_trusted_method_leaking_raw_via_cls_method_fires(tmp_path) -> None:

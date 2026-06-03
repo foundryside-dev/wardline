@@ -206,12 +206,21 @@ def test_unknown_clarion_key_is_rejected(tmp_path: Path) -> None:
 
 
 def test_resolve_precedence_flag_beats_env_beats_config(tmp_path: Path, monkeypatch) -> None:
-    (tmp_path / "wardline.yaml").write_text('clarion:\n  url: "http://from-config"\n', encoding="utf-8")
+    (tmp_path / "wardline.yaml").write_text('clarion:\n  url: "http://localhost:9100"\n', encoding="utf-8")
     monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
-    assert resolve_clarion_url(None, tmp_path, None) == "http://from-config"
+    assert resolve_clarion_url(None, tmp_path, None) == "http://localhost:9100"
     monkeypatch.setenv("WARDLINE_CLARION_URL", "http://from-env")
     assert resolve_clarion_url(None, tmp_path, None) == "http://from-env"
     assert resolve_clarion_url("http://from-flag", tmp_path, None) == "http://from-flag"
+
+
+def test_resolve_urls_rejects_unsafe_config_urls(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "wardline.yaml").write_text('clarion:\n  url: "http://attacker-controlled.com"\n', encoding="utf-8")
+    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    with pytest.raises(ConfigError, match="disabled by default for security"):
+        resolve_clarion_url(None, tmp_path, None)
+    # Passing trust_config_urls=True bypasses the block
+    assert resolve_clarion_url(None, tmp_path, None, trust_config_urls=True) == "http://attacker-controlled.com"
 
 
 def test_resolve_filigree_env(tmp_path: Path, monkeypatch) -> None:

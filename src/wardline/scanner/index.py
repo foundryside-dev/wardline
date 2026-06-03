@@ -4,9 +4,8 @@
 An *entity* is a ``FunctionDef`` or ``AsyncFunctionDef`` — the unit the taint
 engine seeds. Classes are traversed as *scope* only (they contribute to
 qualnames) and are not emitted. ``@overload`` stubs are dropped before
-deduplication; duplicate qualnames are resolved first-wins (source order), so a
-``@property`` getter wins over its setter and an earlier redefinition wins over
-a later one.
+deduplication; normal duplicate qualnames are resolved last-wins to match
+Python rebinding, while ``@property`` setters/deleters keep the original getter.
 """
 
 from __future__ import annotations
@@ -65,15 +64,63 @@ def discover_file_entities(tree: ast.Module, *, module: str, path: str) -> list[
             files where that returned ``None`` (a top-level ``__init__.py``).
         path: project-relative POSIX path, recorded on each entity's Location.
 
-    The first definition wins when two produce the same qualname. ``@overload``
-    stubs are dropped *before* this deduplication, so a real implementation
-    following stubs is the surviving entity. Note: on a plain redefinition
-    (``def f`` twice) first-wins keeps the *lexically first* node, which is the
-    shadowed/dead one at runtime — consumers reconcile on ``qualname`` and must
-    not assume the seeded node is the runtime-live object.
+    Plain redefinitions use last-wins semantics, matching Python's runtime
+    rebinding. ``@overload`` stubs are dropped *before* this deduplication, so a
+    real implementation following stubs is the surviving entity. ``@property``
+    setter/deleter functions intentionally do not replace the getter entity,
+    because the property object remains bound to the shared method qualname.
     """
     entities: list[Entity] = []
-    seen: set[str] = set()
+    entity_index: dict[str, int] = {}
+
+    def is_property_setter_or_deleter(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        for decorator in node.decorator_list:
+            if (
+                isinstance(decorator, ast.Attribute)
+                and decorator.attr in {"setter", "deleter"}
+                and isinstance(decorator.value, ast.Name)
+                and decorator.value.id == node.name
+            ):
+                return True
+        return False
+
+    def make_entity(
+        child: ast.FunctionDef | ast.AsyncFunctionDef,
+        *,
+        qualname: str,
+        parent_is_class: bool,
+    ) -> Entity:
+        return Entity(
+            qualname=qualname,
+            kind="method" if parent_is_class else "function",
+            node=child,
+            location=Location(
+                path=path,
+                line_start=child.lineno,
+                line_end=child.end_lineno,
+                col_start=child.col_offset,
+                col_end=child.end_col_offset,
+            ),
+        )
+
+    def remove_shadowed_function(qualname: str) -> None:
+        shadowed_nested_prefix = f"{qualname}.<locals>."
+        remove_at = [
+            idx
+            for idx, entity in enumerate(entities)
+            if entity.qualname == qualname or entity.qualname.startswith(shadowed_nested_prefix)
+        ]
+        for idx in reversed(remove_at):
+            entities.pop(idx)
+        entity_index.clear()
+        entity_index.update({entity.qualname: idx for idx, entity in enumerate(entities)})
+
+    def add_or_replace_entity(entity: Entity) -> None:
+        existing_idx = entity_index.get(entity.qualname)
+        if existing_idx is not None:
+            remove_shadowed_function(entity.qualname)
+        entity_index[entity.qualname] = len(entities)
+        entities.append(entity)
 
     def visit(node: ast.AST, scope: list[ast.AST], *, parent_is_class: bool) -> None:
         for child in ast.iter_child_nodes(node):
@@ -83,22 +130,8 @@ def discover_file_entities(tree: ast.Module, *, module: str, path: str) -> list[
                     # innermost->outermost.
                     local = reconstruct_qualname(child.name, list(reversed(scope)))
                     qualname = f"{module}.{local}"
-                    if qualname not in seen:
-                        seen.add(qualname)
-                        entities.append(
-                            Entity(
-                                qualname=qualname,
-                                kind="method" if parent_is_class else "function",
-                                node=child,
-                                location=Location(
-                                    path=path,
-                                    line_start=child.lineno,
-                                    line_end=child.end_lineno,
-                                    col_start=child.col_offset,
-                                    col_end=child.end_col_offset,
-                                ),
-                            )
-                        )
+                    if qualname not in entity_index or not is_property_setter_or_deleter(child):
+                        add_or_replace_entity(make_entity(child, qualname=qualname, parent_is_class=parent_is_class))
                 # A function nested inside this one is a "function", not a method.
                 visit(child, [*scope, child], parent_is_class=False)
             elif isinstance(child, ast.ClassDef):

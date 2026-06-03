@@ -13,14 +13,15 @@ Tests for:
 from __future__ import annotations
 
 import textwrap
+from collections.abc import Sequence
 from pathlib import Path
 
 from wardline.core.config import WardlineConfig
-from wardline.core.finding import Kind
+from wardline.core.finding import Finding, Kind
 from wardline.scanner.analyzer import WardlineAnalyzer
 
 
-def _analyze_files(tmp_path: Path, files: dict[str, str]) -> list[any]:
+def _analyze_files(tmp_path: Path, files: dict[str, str]) -> Sequence[Finding]:
     for name, content in files.items():
         p = tmp_path / name
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -75,9 +76,9 @@ def test_starred_args_and_kwargs_resolution_flow_sensitive(tmp_path: Path) -> No
             @trusted(level='ASSURED')
             def target(a, b, c=None):
                 eval(a)  # Should FIRE (line 13)
-                eval(b)  # Should NOT fire (line 14)
+                eval(b)  # Should FIRE (line 14) - under-tainting resolved, *args propagates to all positional params
                 if c:
-                    eval(c)  # Should NOT fire (line 16)
+                    eval(c)  # Should FIRE (line 16) - *args propagates to all positional params
                 return 1
 
             def test_starred(p):
@@ -88,13 +89,14 @@ def test_starred_args_and_kwargs_resolution_flow_sensitive(tmp_path: Path) -> No
         },
     )
     defects = [f for f in findings if f.kind is Kind.DEFECT]
-    # target(a, b) gets called where a is read_raw(p) (untrusted) and b is 'safe' (trusted)
-    # The eval(a) inside target should trigger PY-WL-107.
-    # The eval(b) and eval(c) should NOT trigger.
+    # Under sound starred-argument propagation, all positional parameters (a, b, c)
+    # get contaminated because the exact index mapping of elements inside the tuple
+    # is not statically traced.
     py_wl_107_findings = [f for f in defects if f.rule_id == "PY-WL-107"]
-    assert len(py_wl_107_findings) == 1
-    assert py_wl_107_findings[0].qualname == "m.target"
-    assert py_wl_107_findings[0].location.line_start == 13
+    assert len(py_wl_107_findings) == 3
+    assert all(f.qualname == "m.target" for f in py_wl_107_findings)
+    lines = sorted((f.location.line_start or 0) for f in py_wl_107_findings)
+    assert lines == [13, 14, 16]
 
 
 # ── WP8: Cross-Module Call-Argument Taint ──────────────────────────────────
@@ -209,3 +211,25 @@ def test_external_attribute_write_copied_variable_type(tmp_path: Path) -> None:
     py_wl_101_findings = [f for f in defects if f.rule_id == "PY-WL-101"]
     assert len(py_wl_101_findings) == 1
     assert py_wl_101_findings[0].qualname == "m.MyClass.get_x"
+
+
+def test_parameter_type_annotation_method_resolution(tmp_path: Path) -> None:
+    # Test that parameter type annotations are parsed and used to resolve method calls.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            class MyClass:
+                def get_raw(self, p):
+                    return read_raw(p)
+
+            @trusted(level='ASSURED')
+            def run(obj: MyClass, p):
+                eval(obj.get_raw(p))
+            """
+        },
+    )
+    defects = [f for f in findings if f.kind is Kind.DEFECT]
+    py_wl_107_findings = [f for f in defects if f.rule_id == "PY-WL-107"]
+    assert len(py_wl_107_findings) == 1
+    assert py_wl_107_findings[0].qualname == "m.run"

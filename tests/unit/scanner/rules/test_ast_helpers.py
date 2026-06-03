@@ -76,6 +76,8 @@ def test_is_silent_handler() -> None:
     assert is_silent_handler(handler("  pass\n"))
     assert is_silent_handler(handler("  ...\n"))
     assert is_silent_handler(handler("  continue\n"))
+    assert is_silent_handler(handler("  'ignored'\n"))
+    assert is_silent_handler(handler("  123\n"))
     assert not is_silent_handler(handler("  raise\n"))
     assert not is_silent_handler(handler("  log(e)\n"))
     assert not is_silent_handler(handler("  return None\n"))

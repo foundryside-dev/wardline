@@ -18,6 +18,7 @@ Handler = Callable[[dict[str, Any]], Any]
 _PARSE_ERROR = -32700
 _INVALID_REQUEST = -32600
 _METHOD_NOT_FOUND = -32601
+_INVALID_PARAMS = -32602
 _INTERNAL_ERROR = -32603
 
 
@@ -103,23 +104,34 @@ class JsonRpcServer:
         Newline framing (one JSON object per line) is what the common MCP stdio
         clients use; each response is flushed immediately."""
         in_stream: TextIO = stdin if stdin is not None else sys.stdin
-        out_stream: TextIO = stdout if stdout is not None else sys.stdout
-        for raw in in_stream:
-            line = raw.strip()
-            if not line:
-                continue
-            try:
-                message = json.loads(line)
-            except json.JSONDecodeError:
-                self._write(out_stream, self._err(None, _PARSE_ERROR, "parse error"))
-                continue
-            if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
-                bad_id = message.get("id") if isinstance(message, dict) else None
-                self._write(out_stream, self._err(bad_id, _INVALID_REQUEST, "invalid request"))
-                continue
-            response = self.dispatch(message)
-            if response is not None:
-                self._write(out_stream, response)
+        if stdout is not None:
+            out_stream: TextIO = stdout
+        else:
+            # Capture the original stdout for JSON-RPC messages, and redirect sys.stdout to sys.stderr
+            out_stream = sys.stdout
+            sys.stdout = sys.stderr
+
+        try:
+            for raw in in_stream:
+                line = raw.strip()
+                if not line:
+                    continue
+                try:
+                    message = json.loads(line)
+                except json.JSONDecodeError:
+                    self._write(out_stream, self._err(None, _PARSE_ERROR, "parse error"))
+                    continue
+                if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
+                    bad_id = message.get("id") if isinstance(message, dict) else None
+                    self._write(out_stream, self._err(bad_id, _INVALID_REQUEST, "invalid request"))
+                    continue
+                response = self.dispatch(message)
+                if response is not None:
+                    self._write(out_stream, response)
+        finally:
+            if stdout is None:
+                # Restore original stdout on exit
+                sys.stdout = out_stream
 
     @staticmethod
     def _write(stdout: TextIO, obj: dict[str, Any]) -> None:

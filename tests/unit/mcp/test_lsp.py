@@ -81,7 +81,7 @@ def test_lsp_diagnostics_flow(tmp_path: Path) -> None:
 
     with patch("wardline.mcp.lsp.run_scan", return_value=scan_res) as mock_run:
         server.run()
-        mock_run.assert_called_once_with(tmp_path)
+        mock_run.assert_called_once_with(tmp_path, confine_to_root=True)
 
     output = stdout.getvalue()
     assert "textDocument/publishDiagnostics" in output
@@ -108,6 +108,73 @@ def test_lsp_diagnostics_flow(tmp_path: Path) -> None:
     assert diag["range"]["start"]["character"] == 4
     assert diag["range"]["end"]["line"] == 0
     assert diag["range"]["end"]["character"] == 12
+
+
+def test_lsp_initialize_root_uri_escape_is_ignored(tmp_path: Path) -> None:
+    launch_root = tmp_path / "safe"
+    launch_root.mkdir()
+    outside_root = tmp_path / "outside"
+    outside_root.mkdir()
+
+    server = LspServer(root=launch_root, stdin=io.StringIO(), stdout=io.StringIO())
+    server.handle_message(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"rootUri": outside_root.as_uri()},
+        }
+    )
+
+    assert server.root == launch_root.resolve()
+
+
+def test_lsp_initialize_root_path_escape_is_ignored(tmp_path: Path) -> None:
+    launch_root = tmp_path / "safe"
+    launch_root.mkdir()
+    outside_root = tmp_path / "outside"
+    outside_root.mkdir()
+
+    server = LspServer(root=launch_root, stdin=io.StringIO(), stdout=io.StringIO())
+    server.handle_message(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"rootPath": str(outside_root)},
+        }
+    )
+
+    assert server.root == launch_root.resolve()
+
+
+def test_lsp_did_open_outside_launch_root_is_ignored(tmp_path: Path) -> None:
+    launch_root = tmp_path / "safe"
+    launch_root.mkdir()
+    outside_root = tmp_path / "outside"
+    outside_root.mkdir()
+    outside_file = outside_root / "evil.py"
+    outside_file.write_text("print('outside')\n", encoding="utf-8")
+
+    server = LspServer(root=launch_root, stdin=io.StringIO(), stdout=io.StringIO())
+    with patch("wardline.mcp.lsp.run_scan") as mock_run:
+        server.handle_message(
+            {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": outside_file.as_uri(),
+                        "languageId": "python",
+                        "version": 1,
+                        "text": "print('outside')\n",
+                    }
+                },
+            }
+        )
+
+    assert outside_file.resolve() not in server.open_documents
+    mock_run.assert_not_called()
 
 
 def test_lsp_did_close_clears_diagnostics(tmp_path: Path) -> None:

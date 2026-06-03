@@ -83,15 +83,16 @@ def test_property_setter_collapses_first_wins() -> None:
     assert ret.value.value == 1
 
 
-def test_redefinition_first_wins() -> None:
+def test_redefinition_last_wins() -> None:
     src = "def dup():\n    return 1\ndef dup():\n    return 2\n"
     entities = discover_file_entities(ast.parse(src), module="demo", path="demo.py")
     assert [e.qualname for e in entities] == ["demo.dup"]
-    # first-wins keeps the FIRST definition's node (returns 1)
+    # Plain Python redefinition keeps the later runtime-live definition.
     body = entities[0].node.body[0]
     assert isinstance(body, ast.Return)
     assert isinstance(body.value, ast.Constant)
-    assert body.value.value == 1
+    assert body.value.value == 2
+    assert entities[0].location.line_start == 3
 
 
 def test_function_inside_if_at_class_scope_is_method() -> None:

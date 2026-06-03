@@ -11,7 +11,7 @@ builtin vocabulary (so it never appears here).
 
 from __future__ import annotations
 
-from grammar.golden_harness import GOLDEN, produce_stream
+from grammar.golden_harness import GOLDEN, produce_stream  # type: ignore[import-not-found]
 
 
 def test_builtin_findings_match_golden() -> None:

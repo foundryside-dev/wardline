@@ -110,7 +110,21 @@ def run_scan(
             cache.load()
         finally:
             _PROVENANCE_CLASH.reset(token_clash)
-    files = discover(root, cfg, confine_to_root=confine_to_root)
+    import warnings
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        files = discover(root, cfg, confine_to_root=confine_to_root)
+        captured_warnings = list(w)
+    for warn in captured_warnings:
+        msg = str(warn.message)
+        if not msg.startswith("WLN-ENGINE-FILE-SKIPPED: "):
+            warnings.warn_explicit(
+                warn.message,
+                warn.category,
+                warn.filename,
+                warn.lineno,
+            )
     grammar = default_grammar()
     for pack_name in cfg.packs:
         try:
@@ -128,6 +142,21 @@ def run_scan(
 
     analyzer = build_analyzer(grammar=grammar, summary_cache=cache)
     raw = list(analyzer.analyze(files, cfg, root=root))
+    for warn in captured_warnings:
+        msg = str(warn.message)
+        if msg.startswith("WLN-ENGINE-FILE-SKIPPED: "):
+            skipped_rel = msg[len("WLN-ENGINE-FILE-SKIPPED: ") :].strip()
+            raw.append(
+                Finding(
+                    rule_id="WLN-ENGINE-FILE-SKIPPED",
+                    message=f"{skipped_rel}: skipped — symlink resolves outside the project root",
+                    severity=Severity.NONE,
+                    kind=Kind.FACT,
+                    location=Location(path=skipped_rel),
+                    fingerprint=_fp("WLN-ENGINE-FILE-SKIPPED", skipped_rel),
+                    properties={"reason": "out_of_root_symlink"},
+                )
+            )
     # A non-existent (non-escaping) source_root is otherwise only a stderr warning
     # from discover — invisible to the MCP agent. Surface it as a finding that
     # reaches both the CLI summary and the MCP result, and counts toward unanalyzed.

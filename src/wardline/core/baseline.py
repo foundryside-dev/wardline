@@ -15,12 +15,11 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from wardline.core import config as _config_mod
 from wardline.core.discovery import discover
 from wardline.core.errors import ConfigError
 from wardline.core.finding import Finding, Kind, Severity
+from wardline.core.optional_deps import require_yaml
 from wardline.core.waivers import WaiverSet, parse_waivers
 
 BASELINE_VERSION: int = 1
@@ -64,6 +63,7 @@ def build_baseline_document(findings: Iterable[Finding]) -> dict[str, Any]:
 
 
 def write_baseline(path: Path, findings: Iterable[Finding]) -> None:
+    yaml = require_yaml("writing baseline.yaml")
     path.parent.mkdir(parents=True, exist_ok=True)
     text = yaml.safe_dump(
         build_baseline_document(findings), sort_keys=False, default_flow_style=False, allow_unicode=True
@@ -131,6 +131,7 @@ def generate_baseline(
 def load_baseline(path: Path) -> Baseline:
     if not path.exists():
         return Baseline(frozenset())
+    yaml = require_yaml("loading baseline.yaml")
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as exc:

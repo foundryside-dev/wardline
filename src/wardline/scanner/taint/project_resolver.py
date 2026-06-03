@@ -84,8 +84,9 @@ def resolve_project_taints(
     resolved_counts: dict[str, int] = {}
     unresolved_counts: dict[str, int] = {}
     call_site_callees: dict[int, str] = {}
+    call_site_implicit_receivers: dict[int, str] = {}
     for m in modules:
-        m_edges, m_resolved, m_unresolved, m_callees = build_call_edges(
+        m_edges, m_resolved, m_unresolved, m_callees, m_implicit_receivers = build_call_edges(
             entities=m.entities,
             class_qualnames=all_classes,
             alias_map=m.alias_map,
@@ -96,6 +97,7 @@ def resolve_project_taints(
         resolved_counts.update(m_resolved)
         unresolved_counts.update(m_unresolved)
         call_site_callees.update(m_callees)
+        call_site_implicit_receivers.update(m_implicit_receivers)
 
     # Transitive dirty frontier (performance over-approximation — bounds which
     # clean modules skip provider re-invocation; NOT a correctness gate).
@@ -181,6 +183,7 @@ def resolve_project_taints(
         return_taint_map=MappingProxyType(effective_return),
         project_edges=MappingProxyType({fqn: frozenset(callees) for fqn, callees in edges.items()}),
         call_site_callees=MappingProxyType(call_site_callees),
+        call_site_implicit_receivers=MappingProxyType(call_site_implicit_receivers),
         taint_provenance=MappingProxyType(dict(provenance)),
         diagnostics=tuple(diagnostics),
         metadata=metadata,

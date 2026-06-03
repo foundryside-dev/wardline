@@ -22,10 +22,9 @@ revisit the serialization if that day comes.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
-import yaml
-
+from wardline.core.optional_deps import require_yaml
 from wardline.core.registry import REGISTRY, REGISTRY_VERSION
 
 
@@ -46,8 +45,12 @@ def build_vocabulary_descriptor() -> dict[str, Any]:
 
 def descriptor_to_yaml() -> str:
     """Serialize the descriptor to deterministic YAML (key order preserved)."""
-    return yaml.safe_dump(
-        build_vocabulary_descriptor(),
-        sort_keys=False,
-        default_flow_style=False,
+    yaml = require_yaml("emitting the vocabulary descriptor")
+    return cast(
+        str,
+        yaml.safe_dump(
+            build_vocabulary_descriptor(),
+            sort_keys=False,
+            default_flow_style=False,
+        ),
     )

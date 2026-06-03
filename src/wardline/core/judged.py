@@ -16,9 +16,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from wardline.core.errors import ConfigError
+from wardline.core.optional_deps import require_yaml
 
 JUDGED_VERSION: int = 1
 _HEX = frozenset("0123456789abcdef")
@@ -74,6 +73,7 @@ def build_judged_document(entries: Iterable[JudgedFP]) -> dict[str, Any]:
 
 
 def write_judged(path: Path, entries: Iterable[JudgedFP]) -> None:
+    yaml = require_yaml("writing judged.yaml")
     path.parent.mkdir(parents=True, exist_ok=True)
     text = yaml.safe_dump(build_judged_document(entries), sort_keys=False, default_flow_style=False, allow_unicode=True)
     path.write_text(text, encoding="utf-8")
@@ -82,6 +82,7 @@ def write_judged(path: Path, entries: Iterable[JudgedFP]) -> None:
 def load_judged(path: Path) -> JudgedSet:
     if not path.exists():
         return JudgedSet([])
+    yaml = require_yaml("loading judged.yaml")
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as exc:

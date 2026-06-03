@@ -10,7 +10,7 @@ downstream stages receive immutable views. Kernel diagnostics ride as plain
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
@@ -73,10 +73,16 @@ class ResolverResult:
     taint_provenance: Mapping[str, TaintProvenance]
     diagnostics: tuple[tuple[str, str], ...]
     metadata: ResolverRunMetadata
+    call_site_implicit_receivers: Mapping[int, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "taint_map", MappingProxyType(dict(self.taint_map)))
         object.__setattr__(self, "return_taint_map", MappingProxyType(dict(self.return_taint_map)))
         object.__setattr__(self, "project_edges", MappingProxyType(dict(self.project_edges)))
         object.__setattr__(self, "call_site_callees", MappingProxyType(dict(self.call_site_callees)))
+        object.__setattr__(
+            self,
+            "call_site_implicit_receivers",
+            MappingProxyType(dict(self.call_site_implicit_receivers)),
+        )
         object.__setattr__(self, "taint_provenance", MappingProxyType(dict(self.taint_provenance)))

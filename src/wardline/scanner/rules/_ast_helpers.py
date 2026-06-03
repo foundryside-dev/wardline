@@ -58,15 +58,17 @@ def is_broad_except(handler: ast.ExceptHandler) -> bool:
     return _names_a_broad_exception(t)
 
 
-def _is_ellipsis(stmt: ast.stmt) -> bool:
-    return isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant) and stmt.value.value is Ellipsis
+def _is_ellipsis_or_constant(stmt: ast.stmt) -> bool:
+    return isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant)
 
 
 def is_silent_handler(handler: ast.ExceptHandler) -> bool:
     """True when the handler body only swallows: every statement is ``pass``,
-    ``...``, ``continue``, or ``break`` (no logging, re-raise, return, or other
-    handling)."""
-    return all(isinstance(stmt, (ast.Pass, ast.Continue, ast.Break)) or _is_ellipsis(stmt) for stmt in handler.body)
+    ``...``, ``continue``, ``break``, or a constant expression (no logging,
+    re-raise, return, or other handling)."""
+    return all(
+        isinstance(stmt, (ast.Pass, ast.Continue, ast.Break)) or _is_ellipsis_or_constant(stmt) for stmt in handler.body
+    )
 
 
 def _is_falsy_constant_return(value: ast.expr | None) -> bool:

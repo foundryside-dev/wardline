@@ -6,7 +6,9 @@ from wardline.cli.main import cli
 
 
 def test_scan_reads_filigree_url_from_config(tmp_path: Path, monkeypatch) -> None:
-    (tmp_path / "wardline.yaml").write_text('filigree:\n  url: "http://configured-filigree"\n', encoding="utf-8")
+    (tmp_path / "wardline.yaml").write_text(
+        'filigree:\n  url: "http://localhost:8080/configured-filigree"\n', encoding="utf-8"
+    )
     (tmp_path / "m.py").write_text("x = 1\n", encoding="utf-8")
     captured: dict[str, object] = {}
 
@@ -22,11 +24,13 @@ def test_scan_reads_filigree_url_from_config(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _FakeEmitter)
     result = CliRunner().invoke(cli, ["scan", str(tmp_path)])
     assert result.exit_code == 0, result.output
-    assert captured["url"] == "http://configured-filigree"
+    assert captured["url"] == "http://localhost:8080/configured-filigree"
 
 
 def test_mcp_resolves_clarion_url_from_config(tmp_path: Path, monkeypatch) -> None:
-    (tmp_path / "wardline.yaml").write_text('clarion:\n  url: "http://configured-clarion"\n', encoding="utf-8")
+    (tmp_path / "wardline.yaml").write_text(
+        'clarion:\n  url: "http://localhost:9000/configured-clarion"\n', encoding="utf-8"
+    )
     captured: dict[str, object] = {}
 
     class _FakeServer:
@@ -41,7 +45,7 @@ def test_mcp_resolves_clarion_url_from_config(tmp_path: Path, monkeypatch) -> No
     monkeypatch.setattr("wardline.cli.mcp.WardlineMCPServer", _FakeServer)
     result = CliRunner().invoke(cli, ["mcp", "--root", str(tmp_path)])
     assert result.exit_code == 0, result.output
-    assert captured["clarion_url"] == "http://configured-clarion"
+    assert captured["clarion_url"] == "http://localhost:9000/configured-clarion"
 
 
 def test_install_writes_all_artifacts(tmp_path: Path, monkeypatch) -> None:

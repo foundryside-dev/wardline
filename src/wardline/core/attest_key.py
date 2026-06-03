@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import os
 import secrets
+from contextlib import suppress
 from pathlib import Path
 
 WARDLINE_ATTEST_KEY_ENV = "WARDLINE_ATTEST_KEY"
@@ -61,6 +62,8 @@ def mint_attest_key(root: Path) -> tuple[str, str]:
     else:
         text = f'{WARDLINE_ATTEST_KEY_ENV}="{key}"\n'
     env_path.write_text(text, encoding="utf-8")
+    with suppress(OSError):
+        os.chmod(env_path, 0o600)
 
     # --- ensure .env is gitignored --------------------------------------
     gitignore_path = root / ".gitignore"

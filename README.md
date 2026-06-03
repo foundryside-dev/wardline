@@ -125,8 +125,8 @@ This injects a hash-fenced instruction block into `CLAUDE.md`/`AGENTS.md`,
 installs the `wardline-gate` skill, merges a `wardline` entry into `.mcp.json`,
 and records Clarion/Filigree bindings if present. Agents then run the
 scan → explain → fix-at-boundary → rescan loop natively. The `wardline mcp`
-server exposes `scan`, `explain_taint`, `judge`, baseline, and waiver tools over
-JSON-RPC with no SDK.
+server exposes `scan`, `explain_taint`, `fix`, `judge`, baseline, and waiver
+tools over JSON-RPC with no SDK.
 
 ## Where Wardline fits
 

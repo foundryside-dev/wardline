@@ -57,8 +57,8 @@ non-issue, always with a reason:
 
 - **CLI:** `wardline scan`, `wardline judge`, `wardline baseline create/update`.
   Branch on the exit code; read the findings file it writes.
-- **MCP:** `wardline mcp` exposes `scan`, `explain_taint`, `judge` (network),
-  `baseline_create`, `baseline_update`, `waiver_add`; resources
+- **MCP:** `wardline mcp` exposes `scan`, `explain_taint`, `fix`, `judge`
+  (network), `baseline_create`, `baseline_update`, `waiver_add`; resources
   `wardline://vocab|rules|config|config-schema`; and the `wardline:loop` prompt.
   The server is stateless — the read-only tools are pure functions of your code
   on disk and your config.

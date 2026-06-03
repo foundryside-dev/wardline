@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import ast
 import hashlib
+from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
-from wardline.core.finding import Finding, Kind, Location, Severity
+from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity
 from wardline.core.qualname import module_dotted_name
 from wardline.core.taints import TaintState, least_trusted
 from wardline.scanner.ast_primitives import build_import_alias_map
@@ -26,7 +27,7 @@ from wardline.scanner.diagnostics import (
     build_unknown_import_findings,
 )
 from wardline.scanner.grammar import TrustGrammar, default_grammar
-from wardline.scanner.index import discover_class_qualnames, discover_file_entities
+from wardline.scanner.index import Entity, discover_class_qualnames, discover_file_entities
 from wardline.scanner.rules import build_default_registry
 from wardline.scanner.taint.call_taint_map import build_call_taint_map
 from wardline.scanner.taint.decorator_provider import (
@@ -47,7 +48,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from wardline.core.config import WardlineConfig
-    from wardline.scanner.index import Entity
     from wardline.scanner.taint.summary_cache import SummaryCache
 
 
@@ -55,6 +55,9 @@ def _fp(*parts: str) -> str:
     digest = hashlib.sha256()
     digest.update("\x00".join(parts).encode("utf-8"))
     return digest.hexdigest()
+
+
+_L2Record = tuple[Entity, TaintState, dict[str, TaintState], str, dict[str, str], str, bool]
 
 
 class WardlineAnalyzer:
@@ -274,7 +277,7 @@ class WardlineAnalyzer:
         entity_index: dict[str, Entity] = {}
         func_skip_findings: list[Finding] = []
         # Records carried from L2 pass 1 to pass 2 (closure A): one per entity.
-        l2_records: list[tuple[Entity, TaintState, dict[str, TaintState], str, dict[str, str]]] = []
+        l2_records: list[_L2Record] = []
         # Per-class attribute summary: ``{class_qualname: {attr: least_trusted write taint}}``.
         class_attr_taints: dict[str, dict[str, TaintState]] = {}
         l2_failed: set[str] = set()
@@ -282,20 +285,30 @@ class WardlineAnalyzer:
         def _bind_call_site_arguments_to_parameters(
             args_node: ast.arguments,
             arg_taints: dict[int | str | None, TaintState],
+            *,
+            skip_implicit_receiver: bool = False,
         ) -> dict[str, TaintState]:
             bound: dict[str, list[TaintState]] = {}
+            posonly_params = list(args_node.posonlyargs)
+            positional_params = list(args_node.args)
+            if skip_implicit_receiver:
+                if posonly_params:
+                    posonly_params = posonly_params[1:]
+                elif positional_params:
+                    positional_params = positional_params[1:]
+
             pos_args: list[TaintState] = []
             i = 0
             while i in arg_taints:
                 pos_args.append(arg_taints[i])
                 i += 1
             pos_idx = 0
-            for param in args_node.posonlyargs:
+            for param in posonly_params:
                 if pos_idx < len(pos_args):
                     bound.setdefault(param.arg, []).append(pos_args[pos_idx])
                     pos_idx += 1
             filled_args = set()
-            for param in args_node.args:
+            for param in positional_params:
                 if pos_idx < len(pos_args):
                     bound.setdefault(param.arg, []).append(pos_args[pos_idx])
                     filled_args.add(param.arg)
@@ -303,19 +316,43 @@ class WardlineAnalyzer:
             if args_node.vararg and pos_idx < len(pos_args):
                 for taint in pos_args[pos_idx:]:
                     bound.setdefault(args_node.vararg.arg, []).append(taint)
+
+            # Handle *args unpacking
+            starred_taints = [
+                taint for key, taint in arg_taints.items() if isinstance(key, str) and key.startswith("*")
+            ]
+            if starred_taints:
+                star_meet = starred_taints[0]
+                for st in starred_taints[1:]:
+                    star_meet = least_trusted(star_meet, st)
+                for param in posonly_params:
+                    bound.setdefault(param.arg, []).append(star_meet)
+                for param in positional_params:
+                    bound.setdefault(param.arg, []).append(star_meet)
+                if args_node.vararg:
+                    bound.setdefault(args_node.vararg.arg, []).append(star_meet)
+
             for key, taint in arg_taints.items():
-                if isinstance(key, int) or key is None:
+                if isinstance(key, int) or key is None or (isinstance(key, str) and key.startswith("*")):
                     continue
-                if any(p.arg == key for p in args_node.args):
+                if any(p.arg == key for p in positional_params):
                     if key not in filled_args:
                         bound.setdefault(key, []).append(taint)
                 elif any(p.arg == key for p in args_node.kwonlyargs):
                     bound.setdefault(key, []).append(taint)
                 elif args_node.kwarg:
                     bound.setdefault(args_node.kwarg.arg, []).append(taint)
+
             # Handle **kwargs unpacking
-            if None in arg_taints and args_node.kwarg:
-                bound.setdefault(args_node.kwarg.arg, []).append(arg_taints[None])
+            if None in arg_taints:
+                unpack_taint = arg_taints[None]
+                if args_node.kwarg:
+                    bound.setdefault(args_node.kwarg.arg, []).append(unpack_taint)
+                for param in positional_params:
+                    bound.setdefault(param.arg, []).append(unpack_taint)
+                for param in args_node.kwonlyargs:
+                    bound.setdefault(param.arg, []).append(unpack_taint)
+
             result: dict[str, TaintState] = {}
             for param_name, taints in bound.items():
                 if taints:
@@ -325,12 +362,58 @@ class WardlineAnalyzer:
                     result[param_name] = meet
             return result
 
+        def _iter_l2_body_nodes(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.AST]:
+            def walk(current: ast.AST) -> Iterator[ast.AST]:
+                for child in ast.iter_child_nodes(current):
+                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                        continue
+                    yield child
+                    yield from walk(child)
+
+            for stmt in node.body:
+                yield stmt
+                yield from walk(stmt)
+
+        def _assignment_targets(node: ast.AST) -> list[ast.expr]:
+            if isinstance(node, ast.Assign):
+                return list(node.targets)
+            if isinstance(node, ast.AnnAssign | ast.AugAssign):
+                return [node.target]
+            return []
+
+        def _count_parameter_cells(records: list[_L2Record]) -> int:
+            total = 0
+            for ent, _seed, _tm, _enclosing_class, _alias_map, _module, _is_method in records:
+                args = ent.node.args
+                total += len(args.posonlyargs) + len(args.args) + len(args.kwonlyargs)
+                total += 1 if args.vararg else 0
+                total += 1 if args.kwarg else 0
+            return total
+
+        def _count_attribute_cells(records: list[_L2Record]) -> int:
+            cells: set[tuple[str, str]] = set()
+            for ent, _seed, _tm, enclosing_class, _alias_map, _module, is_method in records:
+                for node in _iter_l2_body_nodes(ent.node):
+                    for target in _assignment_targets(node):
+                        if isinstance(target, ast.Attribute):
+                            if isinstance(target.value, ast.Name) and target.value.id in {"self", "cls"} and is_method:
+                                cells.add((enclosing_class, target.attr))
+                            else:
+                                cells.add((ent.qualname, target.attr))
+            return len(cells)
+
+        def _l2_iteration_bound(records: list[_L2Record]) -> int:
+            lattice_demotions = max(1, len(TaintState) - 1)
+            cells = max(1, _count_parameter_cells(records) + _count_attribute_cells(records))
+            return lattice_demotions * cells + 1
+
         def _run_l2(
             node: ast.FunctionDef | ast.AsyncFunctionDef,
             seed: TaintState,
             tm: dict[str, TaintState],
             alias_map: dict[str, str],
             param_meets: dict[str, TaintState] | None = None,
+            module_prefix: str | None = None,
         ) -> tuple[
             dict[int, dict[str, TaintState]],
             dict[int, dict[int | str | None, TaintState]],
@@ -338,11 +421,16 @@ class WardlineAnalyzer:
             TaintState | None,
             str | None,
         ]:
-            from wardline.scanner.taint.variable_level import _CURRENT_ALIAS_MAP, _CURRENT_CALL_SITE_ARG_TAINTS
+            from wardline.scanner.taint.variable_level import (
+                _CURRENT_ALIAS_MAP,
+                _CURRENT_CALL_SITE_ARG_TAINTS,
+                _CURRENT_MODULE_PREFIX,
+            )
 
             token = _CURRENT_ALIAS_MAP.set(alias_map)
             call_args: dict[int, dict[int | str | None, TaintState]] = {}
             token_args = _CURRENT_CALL_SITE_ARG_TAINTS.set(call_args)
+            token_module = _CURRENT_MODULE_PREFIX.set(module_prefix)
             try:
                 call_sites: dict[int, dict[str, TaintState]] = {}
                 var_taints = compute_variable_taints(
@@ -360,6 +448,7 @@ class WardlineAnalyzer:
             finally:
                 _CURRENT_ALIAS_MAP.reset(token)
                 _CURRENT_CALL_SITE_ARG_TAINTS.reset(token_args)
+                _CURRENT_MODULE_PREFIX.reset(token_module)
 
         def _store(
             qn: str,
@@ -406,7 +495,7 @@ class WardlineAnalyzer:
                             method_tm[f"cls.{sib_name}"] = sib_taint
                 try:
                     call_sites, call_args, var_taints, ret_taint, ret_callee = _run_l2(
-                        ent.node, seed, method_tm, alias_map
+                        ent.node, seed, method_tm, alias_map, module_prefix=module
                     )
                 except RecursionError:
                     l2_failed.add(ent.qualname)
@@ -425,7 +514,7 @@ class WardlineAnalyzer:
                     )
                 _store(ent.qualname, call_sites, call_args, var_taints, ret_taint, ret_callee)
                 project_call_site_arg_taints.update(call_args)
-                l2_records.append((ent, seed, method_tm, enclosing_class, alias_map))
+                l2_records.append((ent, seed, method_tm, enclosing_class, alias_map, module, is_method))
                 if ent.qualname not in l2_failed:
                     from wardline.scanner.taint.variable_level import collect_attribute_writes
 
@@ -446,14 +535,18 @@ class WardlineAnalyzer:
                                 least_trusted(summary[attr_name], attr_taint) if attr_name in summary else attr_taint
                             )
 
-        # Compute project-wide parameter meets from pass-1 call sites
+        # Compute initial project-wide parameter meets from pass-1 call sites
         project_param_meets: dict[str, dict[str, TaintState]] = {}
         for call_id, callee_qn in result.call_site_callees.items():
             callee_ent = entity_index.get(callee_qn)
             if callee_ent is not None:
                 arg_taints = project_call_site_arg_taints.get(call_id)
                 if arg_taints:
-                    call_meets = _bind_call_site_arguments_to_parameters(callee_ent.node.args, arg_taints)
+                    call_meets = _bind_call_site_arguments_to_parameters(
+                        callee_ent.node.args,
+                        arg_taints,
+                        skip_implicit_receiver=call_id in result.call_site_implicit_receivers,
+                    )
                     callee_meets = project_param_meets.setdefault(callee_qn, {})
                     for param, taint in call_meets.items():
                         if param in callee_meets:
@@ -461,24 +554,105 @@ class WardlineAnalyzer:
                         else:
                             callee_meets[param] = taint
 
-        # ── L2 pass 2 — re-run all functions to apply parameter meets and class attribute summaries ──
-        for ent, seed, method_tm, enclosing_class, alias_map in l2_records:
-            if ent.qualname in l2_failed:
-                continue
-            tm2 = dict(method_tm)
-            attr_summary = class_attr_taints.get(enclosing_class)
-            if attr_summary:
-                for attr_name, attr_taint in attr_summary.items():
-                    tm2[f"self.{attr_name}"] = attr_taint
-                    tm2[f"cls.{attr_name}"] = attr_taint
-            param_meets = project_param_meets.get(ent.qualname)
-            try:
-                call_sites, call_args, var_taints, ret_taint, ret_callee = _run_l2(
-                    ent.node, seed, tm2, alias_map, param_meets=param_meets
+        # ── Iterative Fixed-point L2 Loop to converge parameters and attributes ──
+        l2_iteration_bound = _l2_iteration_bound(l2_records)
+        l2_converged = False
+        for _iteration in range(l2_iteration_bound):
+            old_class_attr_taints = {k: dict(v) for k, v in class_attr_taints.items()}
+            old_project_param_meets = {k: dict(v) for k, v in project_param_meets.items()}
+
+            # Run L2 pass on all functions with current class_attr_taints and project_param_meets
+            class_attr_taints = {}
+            project_call_site_arg_taints = {}
+            for ent, seed, method_tm, enclosing_class, alias_map, module, is_method in l2_records:
+                if ent.qualname in l2_failed:
+                    continue
+                tm_iter = dict(method_tm)
+                attr_summary = old_class_attr_taints.get(enclosing_class)
+                if attr_summary:
+                    for attr_name, attr_taint in attr_summary.items():
+                        tm_iter[f"self.{attr_name}"] = attr_taint
+                        tm_iter[f"cls.{attr_name}"] = attr_taint
+                param_meets = old_project_param_meets.get(ent.qualname)
+                try:
+                    call_sites, call_args, var_taints, ret_taint, ret_callee = _run_l2(
+                        ent.node, seed, tm_iter, alias_map, param_meets=param_meets, module_prefix=module
+                    )
+                except RecursionError:
+                    continue
+                _store(ent.qualname, call_sites, call_args, var_taints, ret_taint, ret_callee)
+                project_call_site_arg_taints.update(call_args)
+
+                # Re-collect attribute writes
+                from wardline.scanner.taint.variable_level import collect_attribute_writes
+
+                writes = collect_attribute_writes(
+                    ent.node,
+                    seed,
+                    dict(tm_iter),
+                    dict(var_taints),
+                    all_classes,
+                    alias_map,
+                    module,
+                    enclosing_class=enclosing_class if is_method else None,
                 )
-            except RecursionError:  # pragma: no cover - pass 1 succeeded; defensive
-                continue
-            _store(ent.qualname, call_sites, call_args, var_taints, ret_taint, ret_callee)
+                for target_class, cls_writes in writes.items():
+                    summary = class_attr_taints.setdefault(target_class, {})
+                    for attr_name, attr_taint in cls_writes.items():
+                        summary[attr_name] = (
+                            least_trusted(summary[attr_name], attr_taint) if attr_name in summary else attr_taint
+                        )
+
+            # Re-compute project-wide parameter meets
+            project_param_meets = {}
+            for call_id, callee_qn in result.call_site_callees.items():
+                callee_ent = entity_index.get(callee_qn)
+                if callee_ent is not None:
+                    arg_taints = project_call_site_arg_taints.get(call_id)
+                    if arg_taints:
+                        call_meets = _bind_call_site_arguments_to_parameters(
+                            callee_ent.node.args,
+                            arg_taints,
+                            skip_implicit_receiver=call_id in result.call_site_implicit_receivers,
+                        )
+                        callee_meets = project_param_meets.setdefault(callee_qn, {})
+                        for param, taint in call_meets.items():
+                            if param in callee_meets:
+                                callee_meets[param] = least_trusted(callee_meets[param], taint)
+                            else:
+                                callee_meets[param] = taint
+
+            # Break if class_attr_taints and project_param_meets did not change
+            if class_attr_taints == old_class_attr_taints and project_param_meets == old_project_param_meets:
+                l2_converged = True
+                break
+
+        if not l2_converged:
+            affected = sorted(ent.qualname for ent, *_rest in l2_records if ent.qualname not in l2_failed)
+            for qualname in affected:
+                if qualname in function_return_taints:
+                    function_return_taints[qualname] = least_trusted(
+                        function_return_taints[qualname],
+                        TaintState.UNKNOWN_RAW,
+                    )
+                    function_return_callee[qualname] = None
+            func_skip_findings.append(
+                Finding(
+                    rule_id="WLN-ENGINE-L2-CONVERGENCE-BOUND",
+                    message=(
+                        "L2 parameter/attribute fixed point did not converge within "
+                        f"{l2_iteration_bound} lattice-bounded iterations"
+                    ),
+                    severity=Severity.NONE,
+                    kind=Kind.FACT,
+                    location=Location(path=ENGINE_PATH),
+                    fingerprint=_fp("WLN-ENGINE-L2-CONVERGENCE-BOUND", str(l2_iteration_bound)),
+                    properties={
+                        "iteration_bound": l2_iteration_bound,
+                        "affected_functions": affected,
+                    },
+                )
+            )
 
         context = AnalysisContext(
             project_taints=project_taints,
@@ -494,6 +668,7 @@ class WardlineAnalyzer:
             taint_provenance=dict(result.taint_provenance),
             declared_qualnames=frozenset(q for m in modules for q, s in m.seeds.items() if s.source == "provider"),
             project_edges=result.project_edges,
+            call_site_implicit_receivers=result.call_site_implicit_receivers,
             alias_maps={m.module_path: m.alias_map for m in modules},
         )
         self.last_context = context

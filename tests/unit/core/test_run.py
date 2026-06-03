@@ -54,6 +54,33 @@ def test_gate_decision_none_threshold_never_trips() -> None:
     assert decision.exit_class == 0
 
 
+def test_run_scan_unknown_rule_enable_is_gate_relevant(tmp_path: Path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
+    (proj / "wardline.yaml").write_text("rules:\n  enable:\n    - NO_SUCH_RULE\n", encoding="utf-8")
+
+    result = run_scan(proj)
+    policy_findings = [f for f in result.findings if f.rule_id == "WLN-ENGINE-POLICY-CONFIG"]
+    assert len(policy_findings) == 2
+    assert all(f.kind is Kind.DEFECT and f.severity is Severity.ERROR for f in policy_findings)
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
+def test_run_scan_none_severity_override_is_gate_relevant(tmp_path: Path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
+    (proj / "wardline.yaml").write_text("rules:\n  severity:\n    PY-WL-101: NONE\n", encoding="utf-8")
+
+    result = run_scan(proj)
+    policy_findings = [f for f in result.findings if f.rule_id == "WLN-ENGINE-POLICY-CONFIG"]
+    assert len(policy_findings) == 1
+    assert policy_findings[0].kind is Kind.DEFECT
+    assert policy_findings[0].severity is Severity.ERROR
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
 def test_run_scan_baselined_count_distinguishes_categories(tmp_path: Path) -> None:
     # A genuinely suppressed defect must land in `baselined` and ONLY `baselined`
     # — pins the ScanSummary category labels so a baselined<->waived<->judged
@@ -150,3 +177,26 @@ def test_run_scan_implicit_missing_config_uses_defaults(tmp_path: Path) -> None:
     (proj / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
     result = run_scan(proj, config_path=None)
     assert isinstance(result, ScanResult)
+
+
+def test_run_scan_out_of_root_symlink_yields_finding(tmp_path: Path) -> None:
+    # Out-of-root target the symlink points at.
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    secret = outside / "secret.py"
+    secret.write_text("SECRET = 1\n")
+
+    root = tmp_path / "root"
+    src = root / "src"
+    src.mkdir(parents=True)
+    real = src / "real.py"
+    real.write_text("x = 1\n")
+    # A *.py symlink inside a legitimate source_root pointing outside the root.
+    (src / "evil.py").symlink_to(secret)
+
+    # run_scan with confine_to_root=True should skip evil.py and add a finding.
+    result = run_scan(root, confine_to_root=True)
+    skipped = [f for f in result.findings if f.rule_id == "WLN-ENGINE-FILE-SKIPPED"]
+    assert len(skipped) == 1
+    assert skipped[0].location.path == "src/evil.py"
+    assert skipped[0].properties.get("reason") == "out_of_root_symlink"

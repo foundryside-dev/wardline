@@ -9,8 +9,8 @@ entity reconciliation stays lossless. A shared conformance corpus
 (``tests/conformance/qualnames.json``) pins the behavior on both sides.
 
 This deliberately does NOT match ``wardline.old``'s ``_qualnames.py``: that
-emits ``outer.inner`` (no ``<locals>``), lacks overload/first-wins handling, and
-adds descriptor-accessor suffixing that Clarion does not. Do not port it.
+emits ``outer.inner`` (no ``<locals>``), lacks overload/property-dedup handling,
+and adds descriptor-accessor suffixing that Clarion does not. Do not port it.
 """
 
 from __future__ import annotations

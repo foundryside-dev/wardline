@@ -378,6 +378,13 @@ def _extract_text(completion: dict[str, Any]) -> str:
 
 def _parse_verdict_payload(raw_text: str) -> dict[str, Any]:
     stripped = raw_text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        stripped = "\n".join(lines).strip()
     try:
         parsed = json.loads(stripped)
     except json.JSONDecodeError as exc:

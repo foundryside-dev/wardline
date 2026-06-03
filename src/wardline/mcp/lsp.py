@@ -21,7 +21,8 @@ class LspServer:
         stdin: TextIO | None = None,
         stdout: TextIO | None = None,
     ) -> None:
-        self.root = root.resolve()
+        self.launch_root = root.resolve()
+        self.root = self.launch_root
         self.stdin = stdin or sys.stdin
         self.stdout = stdout or sys.stdout
         self.open_documents: set[Path] = set()
@@ -99,11 +100,11 @@ class LspServer:
             root_uri = params.get("rootUri")
             if root_uri:
                 extracted_root = self.uri_to_path(root_uri)
-                if extracted_root and extracted_root.exists():
+                if extracted_root is not None and self._is_allowed_root(extracted_root):
                     self.root = extracted_root
             elif params.get("rootPath"):
                 extracted_root = Path(params["rootPath"]).resolve()
-                if extracted_root.exists():
+                if self._is_allowed_root(extracted_root):
                     self.root = extracted_root
 
             self.write_message(
@@ -130,7 +131,7 @@ class LspServer:
         elif method == "textDocument/didOpen":
             uri = params.get("textDocument", {}).get("uri", "")
             path = self.uri_to_path(uri)
-            if path:
+            if path is not None and self._is_under_launch_root(path):
                 self.open_documents.add(path)
                 self.run_and_publish()
         elif method == "textDocument/didClose":
@@ -151,7 +152,7 @@ class LspServer:
     def run_and_publish(self) -> None:
         """Run project scan and publish diagnostics for all open documents."""
         try:
-            res = run_scan(self.root)
+            res = run_scan(self.root, confine_to_root=True)
         except Exception:
             return
 
@@ -214,3 +215,11 @@ class LspServer:
 
     def path_to_uri(self, path: Path) -> str:
         return path.as_uri()
+
+    def _is_allowed_root(self, path: Path) -> bool:
+        resolved = path.resolve()
+        return resolved.exists() and self._is_under_launch_root(resolved)
+
+    def _is_under_launch_root(self, path: Path) -> bool:
+        resolved = path.resolve()
+        return resolved == self.launch_root or resolved.is_relative_to(self.launch_root)

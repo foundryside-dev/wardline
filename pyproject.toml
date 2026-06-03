@@ -42,7 +42,7 @@ dev = [
 ]
 
 [project.scripts]
-wardline = "wardline.cli.main:cli"
+wardline = "wardline.cli.entrypoint:main"
 
 [project.urls]
 Homepage = "https://github.com/foundryside-dev/wardline"
@@ -71,7 +71,36 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["src/wardline"]
+files = ["src/wardline", "tests"]
+exclude = [
+    '^tests/grammar/fixtures/',
+    '^tests/unit/install/mock_pack/',
+]
+mypy_path = ["src", "."]
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = [
+    "tests",
+    "tests.*",
+]
+check_untyped_defs = false
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+disallow_incomplete_defs = false
+disallow_untyped_decorators = false
+warn_return_any = false
+warn_unused_ignores = false
+disable_error_code = [
+    "index",
+    "operator",
+    "type-arg",
+    "attr-defined",
+    "no-any-return",
+    "assignment",
+    "arg-type",
+    "override",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -5,9 +5,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
-
 from wardline.core.errors import ConfigError
+from wardline.core.optional_deps import require_yaml
 
 
 def activate_pack(root: Path, pack_name: str) -> str:
@@ -15,6 +14,7 @@ def activate_pack(root: Path, pack_name: str) -> str:
 
     Returns "activated" or "already_active".
     """
+    yaml = require_yaml("activating a trust-grammar pack")
     config_path = root / "wardline.yaml"
     if not config_path.exists():
         raw = {"packs": [pack_name]}

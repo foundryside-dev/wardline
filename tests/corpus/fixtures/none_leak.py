@@ -6,7 +6,7 @@ from wardline.decorators import trusted
 def maybe_none(flag) -> int:  # TP: -> int promises non-None, but a path returns None
     if flag:
         return 1
-    return
+    return  # type: ignore[return-value]
 
 
 @trusted(level="ASSURED")

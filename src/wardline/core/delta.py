@@ -4,9 +4,12 @@ import subprocess
 from collections import deque
 from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from wardline.core.errors import WardlineError
-from wardline.scanner.index import Entity
+
+if TYPE_CHECKING:
+    from wardline.scanner.index import Entity
 
 
 def get_changed_files_since(ref: str, root: Path) -> set[str]:

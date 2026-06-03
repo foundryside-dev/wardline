@@ -165,5 +165,52 @@ def test_unknown_tool_name_is_a_jsonrpc_error() -> None:
         {"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "does_not_exist", "arguments": {}}}
     )
     assert "result" not in resp, resp
-    assert resp["error"]["code"] == -32603
+    assert resp["error"]["code"] == -32602
     assert "does_not_exist" in resp["error"]["message"]
+
+
+def test_unknown_resource_is_invalid_params() -> None:
+    server = WardlineMCPServer(root=FIXTURE)
+    resp = server.rpc.dispatch(
+        {"jsonrpc": "2.0", "id": 12, "method": "resources/read", "params": {"uri": "wardline://does_not_exist"}}
+    )
+    assert "result" not in resp, resp
+    assert resp["error"]["code"] == -32602
+    assert "unknown resource" in resp["error"]["message"]
+
+
+def test_unknown_prompt_is_invalid_params() -> None:
+    server = WardlineMCPServer(root=FIXTURE)
+    resp = server.rpc.dispatch(
+        {"jsonrpc": "2.0", "id": 13, "method": "prompts/get", "params": {"name": "does_not_exist"}}
+    )
+    assert "result" not in resp, resp
+    assert resp["error"]["code"] == -32602
+    assert "unknown prompt" in resp["error"]["message"]
+
+
+def test_fix_tool_applied(tmp_path: Path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "wardline.yaml").write_text("autofix:\n  boundary_exception: ValueError\n", encoding="utf-8")
+
+    src_content = (
+        "from wardline.decorators import trust_boundary\n"
+        "@trust_boundary(to_level='ASSURED')\n"
+        "def check(val):\n"
+        "    assert val is not None\n"
+        "    return val\n"
+    )
+    (proj / "svc.py").write_text(src_content, encoding="utf-8")
+
+    server = WardlineMCPServer(root=proj)
+
+    out_dry = _call(server, "fix", {"path": "", "dry_run": True})
+    assert "svc.py" in out_dry["fixed"]
+    assert "assert val is not None" in (proj / "svc.py").read_text(encoding="utf-8")
+
+    out_apply = _call(server, "fix", {"path": ""})
+    assert "svc.py" in out_apply["fixed"]
+    modified_src = (proj / "svc.py").read_text(encoding="utf-8")
+    assert "assert val is not None" not in modified_src
+    assert "raise ValueError" in modified_src
