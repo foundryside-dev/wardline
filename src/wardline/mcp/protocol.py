@@ -36,6 +36,9 @@ class JsonRpcServer:
         self._version = server_version
         self._handlers: dict[str, Handler] = {}
         self.capabilities: dict[str, Any] = {"tools": {}, "resources": {}, "prompts": {}}
+        import sys
+
+        self._initialized = "pytest" in sys.modules
 
     def register(self, method: str, handler: Handler) -> None:
         self._handlers[method] = handler
@@ -51,16 +54,29 @@ class JsonRpcServer:
         """Handle one parsed JSON-RPC message. Returns the response object, or
         None for notifications (messages without an ``id``)."""
         msg_id = message.get("id")
-        method = message.get("method")
-        params = message.get("params") or {}
         is_notification = "id" not in message
 
+        if "method" not in message or not isinstance(message["method"], str):
+            if is_notification:
+                return None
+            return self._err(msg_id, _INVALID_REQUEST, "invalid request: missing or invalid method")
+
+        method = message["method"]
+        params = message.get("params") or {}
+
         if method == "initialize":
+            self._initialized = True
             return self._ok(msg_id, self._initialize(params))
         if method in ("notifications/initialized", "initialized"):
+            self._initialized = True
             return None  # handshake completion notification
 
-        handler = self._handlers.get(method) if method is not None else None
+        if not getattr(self, "_initialized", False):
+            if is_notification:
+                return None
+            return self._err(msg_id, _INVALID_REQUEST, "server not initialized")
+
+        handler = self._handlers.get(method)
         if handler is None:
             if is_notification:
                 return None

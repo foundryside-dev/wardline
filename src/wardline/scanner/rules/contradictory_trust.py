@@ -19,6 +19,7 @@ markers are not contradictory.
 from __future__ import annotations
 
 import ast
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from wardline.core.finding import Finding, Kind, Severity
@@ -47,14 +48,34 @@ METADATA = RuleMetadata(
 )
 
 
-def _marker_name(deco: ast.expr) -> str | None:
-    """The trailing identifier of a decorator (``@a.b.trusted`` -> ``trusted``,
-    ``@trusted(...)`` -> ``trusted``), or None for a non-name decorator."""
-    node = deco.func if isinstance(deco, ast.Call) else deco
-    if isinstance(node, ast.Attribute):
-        return node.attr
+def _dotted_name(node: ast.expr) -> str | None:
     if isinstance(node, ast.Name):
         return node.id
+    if isinstance(node, ast.Attribute):
+        base = _dotted_name(node.value)
+        return f"{base}.{node.attr}" if base is not None else None
+    return None
+
+
+def _resolve_decorator_fqn(deco: ast.expr, alias_map: Mapping[str, str]) -> str | None:
+    func = deco.func if isinstance(deco, ast.Call) else deco
+    dotted = _dotted_name(func)
+    if dotted is None:
+        return None
+    head, _, rest = dotted.partition(".")
+    head_fqn = alias_map.get(head, head)
+    return f"{head_fqn}.{rest}" if rest else head_fqn
+
+
+def _marker_canonical_name(deco: ast.expr, alias_map: Mapping[str, str]) -> str | None:
+    fqn = _resolve_decorator_fqn(deco, alias_map)
+    if fqn is None:
+        return None
+    last = fqn.rsplit(".", 1)[-1]
+    if last in {"external_boundary", "trust_boundary", "trusted"} and (
+        fqn.startswith("wardline.decorators.") or fqn.startswith("wardline.decorators.trust.")
+    ):
+        return last
     return None
 
 
@@ -67,11 +88,26 @@ class ContradictoryTrust:
 
     def check(self, context: AnalysisContext) -> list[Finding]:
         findings: list[Finding] = []
+        modules = list(context.alias_maps.keys())
         for qualname, entity in context.entities.items():
             prov = context.taint_provenance.get(qualname)
             if prov is None or prov.source != "anchored":
                 continue  # opt-in: only where the engine confirmed a real trust marker
-            markers = {name for deco in entity.node.decorator_list if (name := _marker_name(deco)) in _MARKER_NAMES}
+
+            # Find the module name that owns this entity
+            mod_name = None
+            for m in sorted(modules, key=len, reverse=True):
+                if qualname == m or qualname.startswith(m + "."):
+                    mod_name = m
+                    break
+            alias_map = (context.alias_maps.get(mod_name) if mod_name is not None else None) or {}
+
+            markers = set()
+            for deco in entity.node.decorator_list:
+                name = _marker_canonical_name(deco, alias_map)
+                if name is not None:
+                    markers.add(name)
+
             if len(markers) < 2:
                 continue
             taint_path = "+".join(sorted(markers))

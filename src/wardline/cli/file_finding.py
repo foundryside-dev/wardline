@@ -18,7 +18,12 @@ from wardline.core.filigree_issue import FiligreeIssueFiler
 @click.command(name="file-finding")
 @click.argument("fingerprint", type=str)
 @click.argument("path", type=click.Path(exists=True, file_okay=False, path_type=Path), default=".")
-@click.option("--config", "config_path", type=click.Path(path_type=Path), default=None)
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    default=None,
+)
 @click.option("--filigree-url", "filigree_url", default=None, help="Filigree Loom URL (else env/wardline.yaml).")
 @click.option("--priority", default=None, help="Filigree priority, e.g. P2.")
 @click.option("--label", "labels", multiple=True, help="Label to attach (repeatable).")

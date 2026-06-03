@@ -13,7 +13,7 @@ from dataclasses import replace
 from datetime import date
 
 from wardline.core.baseline import Baseline
-from wardline.core.finding import ENGINE_PATH, Finding, Kind, Severity, SuppressionState
+from wardline.core.finding import ENGINE_PATH, Finding, Kind, Maturity, Severity, SuppressionState
 from wardline.core.judged import JudgedSet
 from wardline.core.waivers import WaiverSet
 
@@ -37,18 +37,27 @@ def apply_suppressions(
         if f.kind is not Kind.DEFECT:
             out.append(f)
             continue
-        # Engine invariant (spec §12): a *rule* DEFECT (PY-WL-*) must carry a line,
-        # or its line-based fingerprint's line discriminator collapses to "None" and
-        # collision risk rises under the strict match. Rule findings always set
-        # line_start; assert it to catch any future rule that emits a line-less DEFECT.
-        # Engine-diagnostic DEFECTs (<engine> path, e.g. WLN-L3-MONOTONICITY-VIOLATION,
-        # WLN-ENGINE-DIAGNOSTIC) are exempt: they are not tied to a source line and build
-        # a line-independent fingerprint from identifying fields, so the invariant does
-        # not apply — and they MUST surface (the "fail loud-but-survivable" safety net),
-        # not abort the run.
-        assert f.location.path == ENGINE_PATH or f.location.line_start is not None, (
-            f"DEFECT {f.rule_id} entered suppression with line_start=None — weak fingerprint identity (collision risk)"
-        )
+        if f.location.path != ENGINE_PATH and f.location.line_start is None:
+            import hashlib
+
+            digest = hashlib.sha256()
+            digest.update(f"WLN-ENGINE-LINELESS-DEFECT\x00{f.rule_id}\x00{f.location.path}".encode())
+            warning_fp = digest.hexdigest()
+            out.append(
+                Finding(
+                    rule_id="WLN-ENGINE-LINELESS-DEFECT",
+                    message=(
+                        f"DEFECT {f.rule_id} on path {f.location.path} has line_start=None — "
+                        f"skipped to avoid fingerprint collision risk"
+                    ),
+                    severity=Severity.NONE,
+                    kind=Kind.FACT,
+                    location=f.location,
+                    fingerprint=warning_fp,
+                    properties={"rule_id": f.rule_id, "original_kind": "DEFECT"},
+                )
+            )
+            continue
         # Precedence: waiver (explicit human intent, carries expiry) > judged (LLM
         # FP-verdict, carries the rationale) > baseline (silent).
         waiver = waivers.match(f.fingerprint, today)
@@ -69,6 +78,8 @@ def gate_trips(findings: Iterable[Finding], fail_on: Severity) -> bool:
     threshold = _RANK[fail_on]
     for f in findings:
         if f.kind is not Kind.DEFECT or f.suppressed is not SuppressionState.ACTIVE:
+            continue
+        if f.maturity == Maturity.PREVIEW:
             continue
         rank = _RANK.get(f.severity)
         if rank is not None and rank >= threshold:

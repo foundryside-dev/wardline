@@ -271,6 +271,7 @@ def verify_attestation(
     reproduce: bool = False,
     config_path: Path | None = None,
     clarion_client: Any = None,
+    confine_to_root: bool = True,
 ) -> dict[str, Any]:
     """Verify a bundle's signature (always, offline) and optionally its reproducibility.
 
@@ -314,7 +315,7 @@ def verify_attestation(
     rederived = _build_payload(
         root,
         config_path=config_path,
-        confine_to_root=False,
+        confine_to_root=confine_to_root,
         today=today,
         clarion_client=clarion_client,
     )

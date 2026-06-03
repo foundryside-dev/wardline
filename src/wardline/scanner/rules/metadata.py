@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from wardline.core.finding import Kind, Severity
+from wardline.core.finding import Kind, Maturity, Severity
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,3 +19,4 @@ class RuleMetadata:
     description: str
     examples_violation: tuple[str, ...] = field(default_factory=tuple)
     examples_clean: tuple[str, ...] = field(default_factory=tuple)
+    maturity: Maturity = Maturity.STABLE

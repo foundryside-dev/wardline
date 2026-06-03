@@ -397,7 +397,7 @@ def test_scan_filigree_emit_success(tmp_path, monkeypatch) -> None:
             from wardline.core.filigree_emit import EmitResult
 
             captured["n"] = len(findings)
-            return EmitResult(reachable=True, created=len(findings), warnings=("w1",))
+            return EmitResult(reachable=True, created=len(findings), warnings=())
 
     monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _StubEmitter)
     out = tmp_path / "f.jsonl"
@@ -406,7 +406,7 @@ def test_scan_filigree_emit_success(tmp_path, monkeypatch) -> None:
     )
     assert result.exit_code == 0, result.output
     assert captured["url"] == "http://x/api/loom/scan-results"
-    assert "emitted" in result.output and "w1" in result.output  # stats + warning surfaced
+    assert "emitted" in result.output and "warning" not in result.output  # stats surfaced, no warning
 
 
 def test_scan_filigree_protocol_error_exits_2(tmp_path, monkeypatch) -> None:
@@ -537,7 +537,7 @@ _JUDGE_FIXTURE = (
     "from wardline.decorators.trust import trust_boundary\n"
     "from wardline.core.taints import TaintState\n"
     "@trust_boundary(to_level=TaintState.GUARDED)\n"
-    "def validate(x):\n    return x\n"
+    "def validate(x):\n    y = x\n    return y\n"
 )
 
 
@@ -684,3 +684,174 @@ def test_judge_write_then_scan_gate_is_cleared(monkeypatch, tmp_path) -> None:
     after = CliRunner().invoke(cli, ["scan", str(proj), "--output", str(out), "--fail-on", "INFO"])
     assert after.exit_code == 0, after.output
     assert "judged" in after.output
+
+
+def test_scan_fix_and_fix_command(tmp_path: Path) -> None:
+    (tmp_path / "wardline.yaml").write_text("source_roots:\n  - .\n", encoding="utf-8")
+    src = """from wardline.decorators import trust_boundary, external_boundary
+
+@external_boundary
+def read_raw(p):
+    return p
+
+@trust_boundary(to_level='ASSURED')
+def v(p):
+    assert p
+    return read_raw(p)
+"""
+    m_py = tmp_path / "m.py"
+    m_py.write_text(src, encoding="utf-8")
+
+    # 1. Run fix command with dry-run and reject
+    res_dry = CliRunner().invoke(cli, ["fix", str(tmp_path), "--dry-run"], input="n\n")
+    assert res_dry.exit_code == 0, res_dry.output
+    assert "No fixes applied" in res_dry.output
+    assert m_py.read_text(encoding="utf-8") == src
+
+    # 2. Run fix command with dry-run and accept
+    res_dry_accept = CliRunner().invoke(cli, ["fix", str(tmp_path), "--dry-run"], input="y\n")
+    assert res_dry_accept.exit_code == 0, res_dry_accept.output
+    assert "replaced assert" in res_dry_accept.output
+    assert m_py.read_text(encoding="utf-8") == src
+
+    # 3. Run fix command with --yes
+    res_fix = CliRunner().invoke(cli, ["fix", str(tmp_path), "--yes"])
+    assert res_fix.exit_code == 0, res_fix.output
+    assert "Fixed m.py" in res_fix.output
+    assert "raise ValueError" in m_py.read_text(encoding="utf-8")
+
+
+def test_scan_with_fix(tmp_path: Path) -> None:
+    (tmp_path / "wardline.yaml").write_text("source_roots:\n  - .\n", encoding="utf-8")
+    src = """from wardline.decorators import trust_boundary, external_boundary
+
+@external_boundary
+def read_raw(p):
+    return p
+
+@trust_boundary(to_level='ASSURED')
+def v(p):
+    assert p
+    return read_raw(p)
+"""
+    m_py = tmp_path / "m.py"
+    m_py.write_text(src, encoding="utf-8")
+
+    # Run scan with --fix and --yes
+    res = CliRunner().invoke(cli, ["scan", str(tmp_path), "--fix", "--yes"])
+    assert res.exit_code == 0, res.output
+    # The scan output should show that the findings were fixed, and the re-run has 0 new defects
+    assert "0 new" in res.output
+    assert "raise ValueError" in m_py.read_text(encoding="utf-8")
+
+
+def test_fix_command_no_findings(tmp_path: Path) -> None:
+    (tmp_path / "wardline.yaml").write_text("source_roots:\n  - .\n", encoding="utf-8")
+    src = "def v(p):\n    return p\n"
+    (tmp_path / "m.py").write_text(src, encoding="utf-8")
+    res = CliRunner().invoke(cli, ["fix", str(tmp_path)])
+    assert res.exit_code == 0
+    assert "No fixable findings found" in res.output
+
+
+def test_fix_command_config_error(tmp_path: Path) -> None:
+    res = CliRunner().invoke(cli, ["fix", str(tmp_path), "--config", str(tmp_path / "non_existent.yaml")])
+    assert res.exit_code == 2
+    assert "error:" in res.output.lower()
+
+
+def test_scan_fix_interactive(tmp_path: Path) -> None:
+    (tmp_path / "wardline.yaml").write_text("source_roots:\n  - .\n", encoding="utf-8")
+    src = """from wardline.decorators import trust_boundary, external_boundary
+
+@external_boundary
+def read_raw(p):
+    return p
+
+@trust_boundary(to_level='ASSURED')
+def v(p):
+    assert p
+    return read_raw(p)
+"""
+    m_py = tmp_path / "m.py"
+    m_py.write_text(src, encoding="utf-8")
+
+    # Reject interactive fix
+    res_reject = CliRunner().invoke(cli, ["scan", str(tmp_path), "--fix"], input="n\n")
+    assert res_reject.exit_code == 0
+    assert m_py.read_text(encoding="utf-8") == src  # Unchanged
+
+    # Accept interactive fix
+    res_accept = CliRunner().invoke(cli, ["scan", str(tmp_path), "--fix"], input="y\n")
+    assert res_accept.exit_code == 0
+    assert "raise ValueError" in m_py.read_text(encoding="utf-8")
+
+
+def test_scan_fix_no_fixable_findings(tmp_path: Path) -> None:
+    (tmp_path / "wardline.yaml").write_text("source_roots:\n  - .\n", encoding="utf-8")
+    src = "def v(p):\n    return p\n"
+    m_py = tmp_path / "m.py"
+    m_py.write_text(src, encoding="utf-8")
+    res = CliRunner().invoke(cli, ["scan", str(tmp_path), "--fix"])
+    assert res.exit_code == 0
+    assert "1 finding" in res.output
+    assert m_py.read_text(encoding="utf-8") == src
+
+
+def test_scan_fix_non_fixable_findings(tmp_path: Path) -> None:
+    (tmp_path / "wardline.yaml").write_text("source_roots:\n  - .\n", encoding="utf-8")
+    src = """from wardline.decorators import external_boundary, trusted
+@external_boundary
+def read_raw(p):
+    return p
+@trusted
+def leaky(p):
+    return read_raw(p)
+"""
+    m_py = tmp_path / "m.py"
+    m_py.write_text(src, encoding="utf-8")
+    # This generates PY-WL-101 finding, which is not fixable via autofix.
+    res = CliRunner().invoke(cli, ["scan", str(tmp_path), "--fix"])
+    assert res.exit_code == 0
+    assert "3 finding(s)" in res.output
+    # Source file must be unchanged
+    assert m_py.read_text(encoding="utf-8") == src
+
+
+def test_scan_filigree_emit_with_failed_and_warnings(tmp_path, monkeypatch) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+
+    class _WarningFailedEmitter:
+        def __init__(self, url, **kw):
+            pass
+
+        def emit(self, findings):
+            from wardline.core.filigree_emit import EmitResult
+
+            return EmitResult(reachable=True, created=0, updated=0, failed=1, warnings=("w1", "w2"))
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _WarningFailedEmitter)
+    out = tmp_path / "f.jsonl"
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--filigree-url", "http://x"])
+    assert result.exit_code == 0, result.output
+    assert "failed" in result.output
+    assert "warning(s): w1; w2" in result.output
+
+
+def test_scan_clarion_with_unresolved_qualnames(tmp_path, monkeypatch) -> None:
+    from wardline.clarion.client import WriteResult
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    monkeypatch.setattr(
+        "wardline.clarion.write.write_facts_to_clarion",
+        lambda *a, **k: WriteResult(reachable=True, written=1, unresolved_qualnames=("svc.leaky",)),
+    )
+    out = tmp_path / "f.jsonl"
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--clarion-url", "http://x/api/taint"])
+    assert result.exit_code == 0, result.output
+    assert "wrote 1 taint fact(s)" in result.output
+    assert "unresolved" in result.output

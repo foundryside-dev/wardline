@@ -81,6 +81,7 @@ def run_scan(
     cache_dir: Path | None = None,
     confine_to_root: bool = False,
     new_since: str | None = None,
+    trust_local_packs: bool = False,
 ) -> ScanResult:
     """Discover → analyze → apply suppressions. Pure function of (disk + config).
 
@@ -98,11 +99,17 @@ def run_scan(
     if config_path is not None and not config_path.exists():
         raise ConfigError(f"config file does not exist: {config_path}")
     cfg_path = config_path or (root / "wardline.yaml")
-    cfg = config_mod.load(cfg_path)
+    cfg = config_mod.load(cfg_path, trust_local_packs=trust_local_packs)
     cache = None
     if cache_dir is not None:
         cache = SummaryCache(cache_dir=cache_dir)
-        cache.load()
+        from wardline.core.taints import _PROVENANCE_CLASH
+
+        token_clash = _PROVENANCE_CLASH.set(cfg.provenance_clash)
+        try:
+            cache.load()
+        finally:
+            _PROVENANCE_CLASH.reset(token_clash)
     files = discover(root, cfg, confine_to_root=confine_to_root)
     grammar = default_grammar()
     for pack_name in cfg.packs:

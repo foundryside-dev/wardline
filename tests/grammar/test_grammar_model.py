@@ -47,6 +47,11 @@ def test_default_grammar_has_three_builtins_and_all_rules() -> None:
         "PY-WL-113",
         "PY-WL-114",
         "PY-WL-115",
+        "PY-WL-116",
+        "PY-WL-117",
+        "PY-WL-118",
+        "PY-WL-119",
+        "PY-WL-120",
     ]
 
 

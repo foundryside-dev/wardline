@@ -59,6 +59,12 @@ def _annotation_allows_none(ann: ast.expr) -> bool:
     or a ``... | None`` union (recursively)."""
     if isinstance(ann, ast.Constant) and ann.value is None:
         return True
+    if isinstance(ann, ast.Constant) and isinstance(ann.value, str):
+        try:
+            parsed = ast.parse(ann.value, mode="eval")
+            return _annotation_allows_none(parsed.body)
+        except SyntaxError:
+            return False
     if isinstance(ann, ast.Name) and ann.id == "None":
         return True
     if isinstance(ann, ast.Subscript):  # Optional[X] / Union[X, None]

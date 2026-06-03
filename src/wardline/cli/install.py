@@ -29,6 +29,7 @@ from wardline.install.skill import install_skill
 @click.option("--no-mcp", is_flag=True, help="Skip wiring .mcp.json.")
 @click.option("--no-bindings", is_flag=True, help="Skip Clarion/Filigree detection.")
 @click.option("--no-attest-key", is_flag=True, help="Skip minting the attest signing key.")
+@click.option("--no-pre-commit", is_flag=True, help="Skip adding pre-commit hook config.")
 def install(
     pack: str | None,
     root: Path,
@@ -38,6 +39,7 @@ def install(
     no_mcp: bool,
     no_bindings: bool,
     no_attest_key: bool,
+    no_pre_commit: bool,
 ) -> None:
     """Install wardline's agent-facing guidance and sibling bindings into ROOT.
 
@@ -64,6 +66,14 @@ def install(
 
             _key, status = mint_attest_key(root)
             lines.append(f"attest key: {status}")
+        if (
+            not no_pre_commit
+            and (root / ".pre-commit-config.yaml").exists()
+            and click.confirm("Add wardline-scan pre-commit hook to .pre-commit-config.yaml?", default=True)
+        ):
+            from wardline.install.pre_commit import install_pre_commit_hook
+
+            lines.append(f"pre-commit hook: {install_pre_commit_hook(root)}")
         if pack is not None:
             try:
                 import importlib

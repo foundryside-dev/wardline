@@ -14,7 +14,7 @@ from pathlib import Path
 
 import yaml
 
-from wardline.core.finding import Kind, SuppressionState
+from wardline.core.finding import Kind, Maturity, SuppressionState
 from wardline.core.run import run_scan
 
 CORPUS_ROOT = Path(__file__).parent / "fixtures"
@@ -76,6 +76,8 @@ def reconcile() -> Reconciliation:
     unaccounted: list[tuple[str, str, str]] = []
     for finding in result.findings:
         if finding.kind is not Kind.DEFECT or finding.suppressed is not SuppressionState.ACTIVE:
+            continue
+        if finding.maturity is Maturity.PREVIEW:
             continue
         active_defects += 1
         key = (finding.location.path, finding.rule_id, finding.qualname or "")

@@ -108,3 +108,26 @@ def test_install_fails_2_on_malformed_mcp_json(tmp_path: Path, monkeypatch) -> N
     result = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
     assert result.exit_code == 2
     assert "malformed .mcp.json" in result.output
+
+
+def test_install_pre_commit_hook(tmp_path: Path, monkeypatch) -> None:
+    # 1. No pre-commit config: should skip
+    result = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "pre-commit" not in result.output
+
+    # 2. Config exists, accept integration
+    config_path = tmp_path / ".pre-commit-config.yaml"
+    config_path.write_text("repos:\n", encoding="utf-8")
+    result2 = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)], input="y\n")
+    assert result2.exit_code == 0, result2.output
+    assert "pre-commit hook: added" in result2.output
+    config_text = config_path.read_text(encoding="utf-8")
+    assert "id: wardline-scan" in config_text
+    assert "language: system" in config_text
+    assert "pass_filenames: false" in config_text
+
+    # 3. Running again should report already configured
+    result3 = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)], input="y\n")
+    assert result3.exit_code == 0, result3.output
+    assert "pre-commit hook: already configured" in result3.output

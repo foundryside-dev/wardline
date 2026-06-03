@@ -20,9 +20,13 @@ def test_partial_tiers_downgrade_one_step() -> None:
 
 
 def test_freedom_tiers_suppress_to_none() -> None:
-    for tier in (T.EXTERNAL_RAW, T.UNKNOWN_RAW, T.MIXED_RAW):
+    for tier in (T.EXTERNAL_RAW, T.UNKNOWN_RAW):
         assert modulate(Severity.CRITICAL, tier) == Severity.NONE
         assert modulate(Severity.INFO, tier) == Severity.NONE
+
+    # MIXED_RAW does not suppress (LOG-01)
+    assert modulate(Severity.CRITICAL, T.MIXED_RAW) == Severity.CRITICAL
+    assert modulate(Severity.INFO, T.MIXED_RAW) == Severity.INFO
 
 
 def test_every_taint_state_is_classified() -> None:

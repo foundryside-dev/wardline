@@ -33,10 +33,33 @@ pre-existing, not worsened here.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 from wardline.core.taints import TaintState
 from wardline.scanner.taint.stdlib_taint import load_stdlib_taint
 from wardline.scanner.taint.variable_level import _SERIALISATION_SINKS
+
+if TYPE_CHECKING:
+    from wardline.core.config import WardlineConfig
+
+
+def _match_config_item(item: str, alias_map: dict[str, str]) -> list[str]:
+    pkg, _, fn = item.rpartition(".")
+    if not pkg:
+        return []
+    keys = []
+    for local, target in alias_map.items():
+        if target == pkg:
+            keys.append(f"{local}.{fn}")
+        elif target == f"{pkg}.{fn}":
+            keys.append(local)
+        elif pkg.startswith(target + "."):
+            remainder = pkg[len(target) + 1 :]
+            keys.append(f"{local}.{remainder}.{fn}")
+        elif f"{pkg}.{fn}".startswith(target + "."):
+            remainder = f"{pkg}.{fn}"[len(target) + 1 :]
+            keys.append(f"{local}.{remainder}")
+    return keys
 
 
 def build_call_taint_map(
@@ -44,6 +67,9 @@ def build_call_taint_map(
     module_path: str,
     alias_map: dict[str, str],
     project_by_module: Mapping[str, Mapping[str, TaintState]] | None = None,
+    config: WardlineConfig | None = None,
+    matched_sources: set[str] | None = None,
+    matched_sanitisers: set[str] | None = None,
 ) -> dict[str, TaintState]:
     """Return ``{call-site-name: return-taint}`` for one file.
 
@@ -89,6 +115,8 @@ def build_call_taint_map(
             elif f"{pkg}.{fn}".startswith(target + "."):
                 remainder = f"{pkg}.{fn}"[len(target) + 1 :]
                 tm.setdefault(f"{local}.{remainder}", value)
+        if pkg == "builtins":
+            tm.setdefault(fn, value)
 
     # (e) Serialisation-sink alias closure. The override in (d) only fires for
     # sinks that are ALSO present in stdlib_taint (just json.load/loads). Sinks
@@ -114,5 +142,23 @@ def build_call_taint_map(
             elif sink.startswith(target + "."):
                 remainder = sink[len(target) + 1 :]
                 tm.setdefault(f"{local}.{remainder}", TaintState.UNKNOWN_RAW)
+
+    # (f) Add config-defined untrusted sources and sanitisers (strictly additive)
+    if config is not None:
+        for src in config.untrusted_sources:
+            keys = _match_config_item(src, alias_map)
+            if keys:
+                if matched_sources is not None:
+                    matched_sources.add(src)
+                for k in keys:
+                    tm.setdefault(k, TaintState.EXTERNAL_RAW)
+
+        for san in config.sanitisers:
+            keys = _match_config_item(san, alias_map)
+            if keys:
+                if matched_sanitisers is not None:
+                    matched_sanitisers.add(san)
+                for k in keys:
+                    tm.setdefault(k, TaintState.ASSURED)
 
     return tm

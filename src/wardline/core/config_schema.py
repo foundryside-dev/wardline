@@ -18,6 +18,9 @@ WARDLINE_SCHEMA: dict[str, Any] = {
         "source_roots": {"type": "array", "items": {"type": "string"}},
         "exclude": {"type": "array", "items": {"type": "string"}},
         "packs": {"type": "array", "items": {"type": "string"}},
+        "untrusted_sources": {"type": "array", "items": {"type": "string"}},
+        "sanitisers": {"type": "array", "items": {"type": "string"}},
+        "provenance_clash": {"type": "boolean"},
         "rules": {
             "type": "object",
             "additionalProperties": False,
@@ -48,6 +51,13 @@ WARDLINE_SCHEMA: dict[str, Any] = {
             "type": "object",
             "additionalProperties": False,
             "properties": {"url": {"type": "string"}},
+        },
+        "autofix": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "boundary_exception": {"type": "string"},
+            },
         },
     },
 }

@@ -22,7 +22,12 @@ from wardline.core.sarif import SarifSink
     type=click.Path(exists=True, file_okay=False, path_type=Path),
     default=".",
 )
-@click.option("--config", "config_path", type=click.Path(path_type=Path), default=None)
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    default=None,
+)
 @click.option("--format", "fmt", type=click.Choice(["jsonl", "sarif"]), default="jsonl")
 @click.option("--output", type=click.Path(path_type=Path), default=None)
 # exit 1 if any non-suppressed DEFECT has severity >= this threshold (SP3b)
@@ -60,6 +65,17 @@ from wardline.core.sarif import SarifSink
     default=None,
     help="PR-scoped 'new findings only' gate: only gate on findings in files/entities changed since this git ref.",
 )
+@click.option(
+    "--fix",
+    is_flag=True,
+    help="Apply mechanical autofixes during the scan.",
+)
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help="Automatically confirm all fixes when --fix is specified.",
+)
 def scan(
     path: Path,
     config_path: Path | None,
@@ -71,6 +87,8 @@ def scan(
     filigree_url: str | None,
     clarion_url: str | None,
     new_since: str | None,
+    fix: bool,
+    yes: bool,
 ) -> None:
     """Scan PATH for findings."""
     default_name = "findings.sarif" if fmt == "sarif" else "findings.jsonl"
@@ -82,8 +100,33 @@ def scan(
         clarion_url = resolve_clarion_url(clarion_url, path, config_path)
         result = run_scan(path, config_path=config_path, cache_dir=cache_dir, new_since=new_since)
         findings = result.findings
-        sink = SarifSink(output) if fmt == "sarif" else JsonlSink(output)
-        sink.write(findings)
+        if fix:
+            from wardline.core.autofix import run_autofix
+            from wardline.core.config import load
+            from wardline.core.finding import Finding
+
+            cfg = load(config_path or (path / "wardline.yaml"))
+            fixable = [f for f in findings if f.rule_id == "PY-WL-111"]
+            if fixable:
+
+                def confirm_cb(rel_path: str, orig: str, replacement: str, f: Finding) -> bool:
+                    if yes:
+                        return True
+                    click.echo(f"\n[PY-WL-111] Suggesting boundary fix in {rel_path} (line {f.location.line_start}):")
+                    click.echo(f"  - {click.style(orig, fg='red')}")
+                    click.echo(f"  + {click.style(replacement, fg='green')}")
+                    return click.confirm("Apply this fix?", default=True)
+
+                applied = run_autofix(fixable, cfg, path, dry_run=False, confirm_cb=confirm_cb)
+                if applied:
+                    result = run_scan(path, config_path=config_path, cache_dir=cache_dir, new_since=new_since)
+                    findings = result.findings
+        if fmt == "sarif":
+            sarif_sink = SarifSink(output)
+            sarif_sink.write(findings, result.context)
+        else:
+            jsonl_sink = JsonlSink(output)
+            jsonl_sink.write(findings)
         # Loom emission is additive: a FiligreeEmitError (HTTP >= 400) is a Wardline
         # payload bug -> caught below -> exit 2; an unreachable sibling warns + continues.
         if filigree_url is not None:

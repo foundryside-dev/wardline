@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from wardline.scanner.taint.callgraph import build_call_edges
 from wardline.scanner.taint.module_summariser import summarise_module
@@ -61,6 +61,7 @@ def resolve_project_taints(
     provider_fingerprint: str,
     summary_cache: SummaryCache | None = None,
     dirty_modules: frozenset[str] | None = None,
+    config: Any = None,
 ) -> ResolverResult:
     """Run whole-project transitive taint resolution over ``modules``.
 
@@ -82,8 +83,9 @@ def resolve_project_taints(
     edges: dict[str, frozenset[str]] = {}
     resolved_counts: dict[str, int] = {}
     unresolved_counts: dict[str, int] = {}
+    call_site_callees: dict[int, str] = {}
     for m in modules:
-        m_edges, m_resolved, m_unresolved = build_call_edges(
+        m_edges, m_resolved, m_unresolved, m_callees = build_call_edges(
             entities=m.entities,
             class_qualnames=all_classes,
             alias_map=m.alias_map,
@@ -93,6 +95,7 @@ def resolve_project_taints(
         edges.update(m_edges)
         resolved_counts.update(m_resolved)
         unresolved_counts.update(m_unresolved)
+        call_site_callees.update(m_callees)
 
     # Transitive dirty frontier (performance over-approximation — bounds which
     # clean modules skip provider re-invocation; NOT a correctness gate).
@@ -144,6 +147,7 @@ def resolve_project_taints(
         resolved_counts=resolved_counts,
         unresolved_counts=unresolved_counts,
         return_taint_map=return_taint_map,
+        config=config,
     )
 
     # Effective return taint: anchored functions surface their DECLARED return
@@ -176,6 +180,7 @@ def resolve_project_taints(
         taint_map=MappingProxyType(refined),
         return_taint_map=MappingProxyType(effective_return),
         project_edges=MappingProxyType({fqn: frozenset(callees) for fqn, callees in edges.items()}),
+        call_site_callees=MappingProxyType(call_site_callees),
         taint_provenance=MappingProxyType(dict(provenance)),
         diagnostics=tuple(diagnostics),
         metadata=metadata,

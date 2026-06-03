@@ -35,10 +35,10 @@ def build_call_edges(
     alias_map: dict[str, str],
     module_prefix: str,
     project_fqns: frozenset[str],
-) -> tuple[dict[str, frozenset[str]], dict[str, int], dict[str, int]]:
+) -> tuple[dict[str, frozenset[str]], dict[str, int], dict[str, int], dict[int, str]]:
     """Resolve intra-/inter-module call edges for one module's entities.
 
-    Returns ``(edges, resolved_counts, unresolved_counts)`` keyed by caller
+    Returns ``(edges, resolved_counts, unresolved_counts, call_site_callees)`` keyed by caller
     qualname. ``edges[caller]`` is the set of resolved project callee FQNs;
     counts are per-call-site (a callee reached twice counts twice toward
     ``resolved_counts`` but appears once in the edge set).
@@ -46,6 +46,7 @@ def build_call_edges(
     edges: dict[str, frozenset[str]] = {}
     resolved_counts: dict[str, int] = {}
     unresolved_counts: dict[str, int] = {}
+    call_site_callees: dict[int, str] = {}
 
     for entity in entities:
         caller_class_fqn: str | None = entity.qualname.rsplit(".", 1)[0]
@@ -66,6 +67,7 @@ def build_call_edges(
             if target is not None and target in project_fqns:
                 callees.add(target)
                 resolved += 1
+                call_site_callees[id(call)] = target
             else:
                 unresolved += 1
 
@@ -73,4 +75,4 @@ def build_call_edges(
         resolved_counts[entity.qualname] = resolved
         unresolved_counts[entity.qualname] = unresolved
 
-    return edges, resolved_counts, unresolved_counts
+    return edges, resolved_counts, unresolved_counts, call_site_callees

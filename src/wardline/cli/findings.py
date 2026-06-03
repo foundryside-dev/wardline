@@ -20,7 +20,12 @@ from wardline.core.sei_resolution import resolve_query_filters
 
 @click.command()
 @click.argument("path", type=click.Path(exists=True, file_okay=False, path_type=Path), default=".")
-@click.option("--config", "config_path", type=click.Path(path_type=Path), default=None)
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    default=None,
+)
 @click.option("--where", "where_json", default=None, help='JSON filter object, e.g. \'{"rule_id":"PY-WL-106"}\'.')
 def findings(path: Path, config_path: Path | None, where_json: str | None) -> None:
     """Scan PATH and print filtered findings as JSONL (read-only)."""

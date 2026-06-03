@@ -36,7 +36,7 @@ def test_scan_handler_threads_filigree_emitter(tmp_path, monkeypatch):
     cap = CapturingEmitter()
     # The scan handler calls self._filigree_emitter() at call time, so patching the
     # bound method on the instance redirects it to our capturing fake.
-    monkeypatch.setattr(srv, "_filigree_emitter", lambda: cap)
+    monkeypatch.setattr(srv, "_filigree_emitter", lambda *args, **kwargs: cap)
     out = srv._tools["scan"].handler({}, tmp_path)
     assert out["filigree"]["reachable"] is True
     assert cap.seen is not None and len(cap.seen) >= 1

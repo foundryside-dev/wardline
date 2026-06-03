@@ -14,8 +14,10 @@ from wardline.cli.attest import attest
 from wardline.cli.dossier import dossier
 from wardline.cli.file_finding import file_finding
 from wardline.cli.findings import findings
+from wardline.cli.fix import fix
 from wardline.cli.install import install
 from wardline.cli.judge import judge as judge_command
+from wardline.cli.lsp import lsp
 from wardline.cli.mcp import mcp
 from wardline.cli.scan import scan
 from wardline.core.baseline import collect_and_write_baseline
@@ -33,6 +35,8 @@ def cli() -> None:
 cli.add_command(scan)
 cli.add_command(judge_command)
 cli.add_command(mcp)
+cli.add_command(lsp)
+cli.add_command(fix)
 cli.add_command(install)
 cli.add_command(dossier)
 cli.add_command(findings)
@@ -77,7 +81,12 @@ def baseline(ctx: click.Context) -> None:
 
 @baseline.command("create")
 @click.argument("path", type=click.Path(exists=True, file_okay=False, path_type=Path), default=".")
-@click.option("--config", "config_path", type=click.Path(path_type=Path), default=None)
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    default=None,
+)
 def baseline_create(path: Path, config_path: Path | None) -> None:
     """Write a new baseline from current findings (refuses if one exists)."""
     _generate_baseline(path, overwrite=False, config_path=config_path)
@@ -85,7 +94,12 @@ def baseline_create(path: Path, config_path: Path | None) -> None:
 
 @baseline.command("update")
 @click.argument("path", type=click.Path(exists=True, file_okay=False, path_type=Path), default=".")
-@click.option("--config", "config_path", type=click.Path(path_type=Path), default=None)
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    default=None,
+)
 def baseline_update(path: Path, config_path: Path | None) -> None:
     """Re-derive and overwrite the baseline from current findings."""
     _generate_baseline(path, overwrite=True, config_path=config_path)

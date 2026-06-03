@@ -103,3 +103,20 @@ def test_two_distinct_markers_with_call_form_fire(tmp_path) -> None:
         """,
     )
     assert [(x.rule_id, x.qualname) for x in _run(ctx)] == [("PY-WL-110", "m.f")]
+
+
+def test_aliased_decorators_fire(tmp_path) -> None:
+    # Test LOG-03 alias resolution fix. Aliased decorators must be resolved
+    # to canonical names and detect contradictory annotations.
+    ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted as my_trusted, external_boundary as my_boundary
+        @my_trusted
+        @my_boundary
+        def f(p):
+            return p
+        """,
+    )
+    findings = _run(ctx)
+    assert [(f.rule_id, f.qualname) for f in findings] == [("PY-WL-110", "m.f")]

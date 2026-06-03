@@ -118,3 +118,24 @@ def test_raw_attr_reaches_sink_in_other_method_fires(tmp_path: Path) -> None:
         """,
     )
     assert "PY-WL-107" in defects, defects
+
+
+def test_helper_method_returning_assured_does_not_false_positive(tmp_path: Path) -> None:
+    defects = _defects(
+        tmp_path,
+        """
+        class Helper:
+            @trusted(level='ASSURED')
+            def get_assured(self, p):
+                return p
+
+        class C:
+            def __init__(self, p):
+                h = Helper()
+                self.x = h.get_assured(p)
+            @trusted(level='ASSURED')
+            def get(self):
+                return self.x
+        """,
+    )
+    assert "PY-WL-101" not in defects, defects

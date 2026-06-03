@@ -9,9 +9,11 @@ rules, so ``run`` returns nothing; SP2 supplies the rule set.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Protocol
+
+from wardline.core.finding import Maturity
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -54,6 +56,12 @@ class AnalysisContext:
     # the flow-insensitive final map). Defaulted so direct constructions (tests) need
     # not supply it; absence degrades a consumer to the final-map read.
     function_call_site_taints: Mapping[str, Mapping[int, Mapping[str, TaintState]]] = field(default_factory=dict)
+    # FLOW-SENSITIVE call-site argument taints: ``{qualname: {id(call): {arg_idx_or_kw: taint}}}``.
+    function_call_site_arg_taints: Mapping[str, Mapping[int, Mapping[int | str | None, TaintState]]] = field(
+        default_factory=dict
+    )
+    # Resolved call targets in the project: ``{id(call): callee_qn}``.
+    call_site_callees: Mapping[int, str] = field(default_factory=dict)
     # Cross-method class-attribute summary (closure A): ``{class_qualname: {attr: taint}}``,
     # the least-trusted value written to ``self.<attr>`` across the class's methods. Rules
     # resolve a ``self.<attr>``/``cls.<attr>`` read against it. Defaulted for direct
@@ -67,6 +75,8 @@ class AnalysisContext:
     # Inter-module call edges: ``{caller: frozenset({callees})}``. Defaulted for
     # direct constructions; absence means no project edges available.
     project_edges: Mapping[str, frozenset[str]] = field(default_factory=dict)
+    # Import alias maps per module: ``{module: {alias: target_fqn}}``.
+    alias_maps: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "project_taints", MappingProxyType(dict(self.project_taints)))
@@ -77,11 +87,22 @@ class AnalysisContext:
         object.__setattr__(self, "entities", MappingProxyType(dict(self.entities)))
         object.__setattr__(self, "taint_provenance", MappingProxyType(dict(self.taint_provenance)))
         object.__setattr__(self, "function_call_site_taints", MappingProxyType(dict(self.function_call_site_taints)))
+        object.__setattr__(
+            self,
+            "function_call_site_arg_taints",
+            MappingProxyType(dict(self.function_call_site_arg_taints)),
+        )
+        object.__setattr__(self, "call_site_callees", MappingProxyType(dict(self.call_site_callees)))
         object.__setattr__(self, "class_attr_taints", MappingProxyType(dict(self.class_attr_taints)))
         object.__setattr__(
             self,
             "project_edges",
             MappingProxyType({k: frozenset(v) for k, v in self.project_edges.items()}),
+        )
+        object.__setattr__(
+            self,
+            "alias_maps",
+            MappingProxyType({k: MappingProxyType(dict(v)) for k, v in self.alias_maps.items()}),
         )
 
 
@@ -118,5 +139,10 @@ class RuleRegistry:
     def run(self, context: AnalysisContext) -> list[Finding]:
         findings: list[Finding] = []
         for rule in self._rules:
-            findings.extend(rule.check(context))
+            rule_findings = rule.check(context)
+            metadata = getattr(rule, "metadata", None)
+            maturity = getattr(metadata, "maturity", None) if metadata is not None else None
+            if maturity and maturity != Maturity.STABLE:
+                rule_findings = [replace(f, maturity=maturity) for f in rule_findings]
+            findings.extend(rule_findings)
         return findings

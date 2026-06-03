@@ -65,3 +65,61 @@ entries:
     function: literal_eval
     returns_taint: GUARDED
     rationale: Safe literal parser; shape is validated, semantics are the literal.
+
+  # Command line and environment
+  - package: sys
+    function: argv
+    returns_taint: EXTERNAL_RAW
+    rationale: Command line arguments from the OS.
+
+  - package: os
+    function: environ
+    returns_taint: EXTERNAL_RAW
+    rationale: Process environment variables.
+
+  # Web framework request attributes (Flask)
+  - package: flask.request
+    function: args
+    returns_taint: EXTERNAL_RAW
+    rationale: Flask query parameters.
+
+  - package: flask.request
+    function: form
+    returns_taint: EXTERNAL_RAW
+    rationale: Flask POST form data.
+
+  - package: flask.request
+    function: json
+    returns_taint: EXTERNAL_RAW
+    rationale: Flask parsed JSON body.
+
+  - package: flask.request
+    function: get_json
+    returns_taint: EXTERNAL_RAW
+    rationale: Flask JSON parsing method.
+
+  - package: flask.request
+    function: values
+    returns_taint: EXTERNAL_RAW
+    rationale: Combined query parameters and form data.
+
+  - package: flask.request
+    function: cookies
+    returns_taint: EXTERNAL_RAW
+    rationale: Incoming request cookies.
+
+  - package: flask.request
+    function: headers
+    returns_taint: EXTERNAL_RAW
+    rationale: Request HTTP headers.
+
+  - package: flask.request
+    function: data
+    returns_taint: EXTERNAL_RAW
+    rationale: Raw request body data.
+
+  - package: flask.request
+    function: query_string
+    returns_taint: EXTERNAL_RAW
+    rationale: Raw URL query string.
+

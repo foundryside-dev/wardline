@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from collections import deque
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -93,9 +94,9 @@ def get_affected_entities(
             reverse_edges.setdefault(callee, set()).add(caller)
 
     # BFS/DFS to find all transitively affected callers
-    queue = list(affected)
+    queue = deque(affected)
     while queue:
-        current = queue.pop(0)
+        current = queue.popleft()
         for caller in reverse_edges.get(current, []):
             if caller not in affected:
                 affected.add(caller)

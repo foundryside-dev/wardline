@@ -13,10 +13,15 @@ from wardline.scanner.rules.assert_only_boundary import AssertOnlyBoundary
 from wardline.scanner.rules.boundary_without_rejection import BoundaryWithoutRejection
 from wardline.scanner.rules.broad_exception import BroadException
 from wardline.scanner.rules.contradictory_trust import ContradictoryTrust
+from wardline.scanner.rules.degenerate_boundary import DegenerateBoundary
 from wardline.scanner.rules.failopen_boundary import FailOpenBoundary
 from wardline.scanner.rules.invalid_decorator_level import InvalidDecoratorLevel
 from wardline.scanner.rules.none_leak import NoneLeak
+from wardline.scanner.rules.path_traversal import PathTraversal
 from wardline.scanner.rules.silent_exception import SilentException
+from wardline.scanner.rules.sql_injection import SQLInjection
+from wardline.scanner.rules.ssrf import SSRF
+from wardline.scanner.rules.stored_taint import StoredTaint
 from wardline.scanner.rules.untrusted_reaches_trusted import UntrustedReachesTrusted
 from wardline.scanner.rules.untrusted_to_command import UntrustedToCommand
 from wardline.scanner.rules.untrusted_to_deserialization import UntrustedToDeserialization
@@ -46,6 +51,11 @@ _ALL_RULE_CLASSES = (
     FailOpenBoundary,
     InvalidDecoratorLevel,
     UntrustedToImport,
+    PathTraversal,
+    SSRF,
+    SQLInjection,
+    DegenerateBoundary,
+    StoredTaint,
 )
 
 

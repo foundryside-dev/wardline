@@ -118,6 +118,8 @@ def _file_finding(args: dict[str, Any], root: Path, filer: Any) -> dict[str, Any
         raise ToolError("no Filigree URL configured; launch `wardline mcp --filigree-url ...`")
     fp = _require(args, "fingerprint")
     labels = args.get("labels")
+    if labels is not None and not isinstance(labels, list):
+        raise ToolError("labels must be an array of strings")
     res = filer.file(fp, priority=args.get("priority"), labels=labels)
     return {
         "reachable": res.reachable,
@@ -239,9 +241,9 @@ def _explain_taint(args: dict[str, Any], root: Path, clarion: Any = None) -> dic
         **_explanation_to_dict(exp),
     }
     if args.get("chain") and clarion is not None and exp.sink_qualname:
-        ch = explain_chain(
-            root, sink_qualname=exp.sink_qualname, clarion=clarion, max_hops=int(args.get("max_hops", 20))
-        )
+        max_hops_raw = args.get("max_hops")
+        max_hops = int(max_hops_raw) if max_hops_raw is not None else 20
+        ch = explain_chain(root, sink_qualname=exp.sink_qualname, clarion=clarion, max_hops=max_hops)
         result_dict["chain"] = {
             "hops": [
                 {
@@ -326,6 +328,7 @@ def _verify_attestation(args: dict[str, Any], root: Path, clarion: Any = None) -
         reproduce=reproduce,
         config_path=_cfg(args, root),
         clarion_client=clarion,
+        confine_to_root=True,
     )
 
 
@@ -389,6 +392,8 @@ def _waiver_add(args: dict[str, Any], root: Path) -> dict[str, Any]:
     fp = _require(args, "fingerprint")
     reason = _require(args, "reason")
     expires_str = _require(args, "expires")  # mandatory at the tool boundary
+    if not isinstance(expires_str, str):
+        raise ToolError("expires must be a string in YYYY-MM-DD format")
     try:
         expires = date.fromisoformat(expires_str)
     except ValueError as exc:
@@ -418,34 +423,35 @@ class WardlineMCPServer:
         self._register_tools()
         self._wire()
 
-    def _clarion_client(self) -> Any:
+    def _clarion_client(self, config_path: Path | None = None) -> Any:
         """Build a ClarionClient for this server's root, or None when no URL is set."""
-        if self.clarion_url is None:
+        url = config_mod.resolve_clarion_url(self.clarion_url, self.root, config_path)
+        if url is None:
             return None
         from wardline.clarion.client import ClarionClient
         from wardline.clarion.config import load_clarion_token, resolve_project_name
 
         return ClarionClient(
-            self.clarion_url,
+            url,
             secret=load_clarion_token(self.root),
             project=resolve_project_name(self.root),
         )
 
-    def _filigree_emitter(self) -> Any:
-        """Build a FiligreeEmitter for this server's URL, or None when no URL is set.
-        Mirrors _clarion_client: the URL already resolves in cli/mcp.py and reaches
-        __init__ as self.filigree_url."""
-        if self.filigree_url is None:
+    def _filigree_emitter(self, config_path: Path | None = None) -> Any:
+        """Build a FiligreeEmitter for this server's URL, or None when no URL is set."""
+        url = config_mod.resolve_filigree_url(self.filigree_url, self.root, config_path)
+        if url is None:
             return None
-        return FiligreeEmitter(self.filigree_url)
+        return FiligreeEmitter(url)
 
-    def _filigree_filer(self) -> Any:
+    def _filigree_filer(self, config_path: Path | None = None) -> Any:
         """Build a FiligreeIssueFiler from this server's Loom URL, or None when unset."""
-        if self.filigree_url is None:
+        url = config_mod.resolve_filigree_url(self.filigree_url, self.root, config_path)
+        if url is None:
             return None
         from wardline.core.filigree_issue import FiligreeIssueFiler
 
-        return FiligreeIssueFiler(self.filigree_url)
+        return FiligreeIssueFiler(url)
 
     def _register_tools(self) -> None:
         self.add_tool(
@@ -497,7 +503,12 @@ class WardlineMCPServer:
                         },
                     },
                 },
-                handler=lambda args, root: _scan(args, root, self._clarion_client(), self._filigree_emitter()),
+                handler=lambda args, root: _scan(
+                    args,
+                    root,
+                    self._clarion_client(_cfg(args, root)),
+                    self._filigree_emitter(_cfg(args, root)),
+                ),
             )
         )
         self.add_tool(
@@ -523,7 +534,7 @@ class WardlineMCPServer:
                         "config": {"type": "string"},
                     },
                 },
-                handler=lambda args, root: _explain_taint(args, root, self._clarion_client()),
+                handler=lambda args, root: _explain_taint(args, root, self._clarion_client(_cfg(args, root))),
             )
         )
         self.add_tool(
@@ -544,7 +555,12 @@ class WardlineMCPServer:
                         "config": {"type": "string"},
                     },
                 },
-                handler=lambda args, root: _dossier(args, root, self._clarion_client(), self.filigree_url),
+                handler=lambda args, root: _dossier(
+                    args,
+                    root,
+                    self._clarion_client(_cfg(args, root)),
+                    config_mod.resolve_filigree_url(self.filigree_url, root, _cfg(args, root)),
+                ),
             )
         )
         self.add_tool(
@@ -578,7 +594,7 @@ class WardlineMCPServer:
                         "allow_dirty": {"type": "boolean"},
                     },
                 },
-                handler=lambda args, root: _attest(args, root, self._clarion_client()),
+                handler=lambda args, root: _attest(args, root, self._clarion_client(_cfg(args, root))),
             )
         )
         self.add_tool(
@@ -596,7 +612,7 @@ class WardlineMCPServer:
                         "config": {"type": "string"},
                     },
                 },
-                handler=lambda args, root: _verify_attestation(args, root, self._clarion_client()),
+                handler=lambda args, root: _verify_attestation(args, root, self._clarion_client(_cfg(args, root))),
             )
         )
         self.add_tool(
@@ -758,6 +774,17 @@ class WardlineMCPServer:
             # Protocol fault (caller bug) → JSON-RPC error, not an agent-actionable
             # tool-execution outcome.
             raise McpError(f"unknown tool: {name}")
+
+        if tool.input_schema:
+            try:
+                import jsonschema
+
+                jsonschema.validate(arguments, tool.input_schema)
+            except ImportError:
+                pass
+            except jsonschema.ValidationError as exc:
+                return self._is_error(f"invalid arguments: {exc.message}")
+
         try:
             payload = tool.handler(arguments, self.root)
         except ToolError as exc:

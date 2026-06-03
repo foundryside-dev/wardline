@@ -65,7 +65,10 @@ def test_scan_bad_fail_on_enum_is_actionable_iserror(tmp_path: Path) -> None:
     # isError naming the valid set.
     server = WardlineMCPServer(root=tmp_path)
     resp = _dispatch(server, "scan", {"fail_on": "BOGUS"})
-    _assert_iserror(resp, "CRITICAL/ERROR/WARN/INFO")
+    _assert_iserror(resp, "")
+    text = resp["result"]["content"][0]["text"]
+    for w in ["CRITICAL", "ERROR", "WARN", "INFO"]:
+        assert w in text
 
 
 def test_poisoned_source_roots_refused_by_mcp_but_allowed_by_cli(tmp_path: Path) -> None:

@@ -50,4 +50,6 @@ def modulate(base: Severity, taint: TaintState) -> Severity:
         return base
     if taint in _PARTIAL:
         return _DOWNGRADE[base]
+    if taint == TaintState.MIXED_RAW:
+        return base
     return Severity.NONE  # freedom / fail-closed zone — suppressed

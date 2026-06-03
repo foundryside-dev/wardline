@@ -8,9 +8,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import jsonschema
-import yaml
-
 from wardline.core.config_schema import WARDLINE_SCHEMA
 from wardline.core.errors import ConfigError
 
@@ -28,6 +25,15 @@ class WardlineConfig:
     filigree: Mapping[str, Any] = field(default_factory=dict)
     clarion: Mapping[str, Any] = field(default_factory=dict)
     packs: tuple[str, ...] = ()
+    untrusted_sources: tuple[str, ...] = ()
+    sanitisers: tuple[str, ...] = ()
+    provenance_clash: bool = False
+    autofix: Mapping[str, Any] = field(default_factory=dict)
+
+    @property
+    def boundary_exception(self) -> str:
+        value = self.autofix.get("boundary_exception")
+        return value if isinstance(value, str) else "ValueError"
 
     @property
     def clarion_url(self) -> str | None:
@@ -55,9 +61,42 @@ def _deep_merge(local: dict[str, Any], default: dict[str, Any]) -> dict[str, Any
     return res
 
 
-def load(path: Path | None) -> WardlineConfig:
+def _is_local_pack(pack_name: str, config_path: Path | None) -> bool:
+    import importlib.util
+
+    try:
+        spec = importlib.util.find_spec(pack_name)
+    except Exception:
+        return False
+    if spec is None:
+        return False
+    origins = []
+    if spec.origin:
+        origins.append(Path(spec.origin))
+    if spec.submodule_search_locations:
+        for loc in spec.submodule_search_locations:
+            origins.append(Path(loc))
+
+    def _is_under(p: Path, folder: Path) -> bool:
+        try:
+            return p.resolve().is_relative_to(folder.resolve())
+        except Exception:
+            return False
+
+    for origin in origins:
+        if config_path is not None and _is_under(origin, config_path.parent):
+            return True
+        if _is_under(origin, Path.cwd()):
+            return True
+    return False
+
+
+def load(path: Path | None, *, trust_local_packs: bool = False) -> WardlineConfig:
     if path is None or not path.exists():
         return WardlineConfig()
+    import jsonschema
+    import yaml
+
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as exc:
@@ -74,6 +113,11 @@ def load(path: Path | None) -> WardlineConfig:
     for pack_name in packs:
         if not isinstance(pack_name, str):
             raise ConfigError(f"packs list in {path.name} must contain strings only")
+        if not trust_local_packs and _is_local_pack(pack_name, path):
+            raise ConfigError(
+                f"loading trust-grammar pack {pack_name!r} from local project directory is disabled "
+                f"for security. Use trust_local_packs to override."
+            )
         try:
             import importlib
 
@@ -104,6 +148,10 @@ def load(path: Path | None) -> WardlineConfig:
         filigree=dict(merged_raw.get("filigree") or {}),
         clarion=dict(merged_raw.get("clarion") or {}),
         packs=tuple(packs),
+        untrusted_sources=tuple(merged_raw.get("untrusted_sources") or ()),
+        sanitisers=tuple(merged_raw.get("sanitisers") or ()),
+        provenance_clash=bool(merged_raw.get("provenance_clash") or False),
+        autofix=dict(merged_raw.get("autofix") or {}),
     )
 
 
@@ -111,28 +159,48 @@ _CLARION_URL_ENV = "WARDLINE_CLARION_URL"
 _FILIGREE_URL_ENV = "WARDLINE_FILIGREE_URL"
 
 
-def _config_for(root: Path, config_path: Path | None) -> WardlineConfig:
-    return load(config_path if config_path is not None else root / "wardline.yaml")
+def _config_for(
+    root: Path,
+    config_path: Path | None,
+    *,
+    trust_local_packs: bool = False,
+) -> WardlineConfig:
+    return load(
+        config_path if config_path is not None else root / "wardline.yaml",
+        trust_local_packs=trust_local_packs,
+    )
 
 
-def resolve_clarion_url(flag: str | None, root: Path, config_path: Path | None = None) -> str | None:
+def resolve_clarion_url(
+    flag: str | None,
+    root: Path,
+    config_path: Path | None = None,
+    *,
+    trust_local_packs: bool = False,
+) -> str | None:
     """Clarion URL by precedence: explicit flag > env var > wardline.yaml."""
     if flag is not None:
         return flag
     env = os.environ.get(_CLARION_URL_ENV)
     if env:
         return env
-    return _config_for(root, config_path).clarion_url
+    return _config_for(root, config_path, trust_local_packs=trust_local_packs).clarion_url
 
 
-def resolve_filigree_url(flag: str | None, root: Path, config_path: Path | None = None) -> str | None:
+def resolve_filigree_url(
+    flag: str | None,
+    root: Path,
+    config_path: Path | None = None,
+    *,
+    trust_local_packs: bool = False,
+) -> str | None:
     """Filigree Loom URL by precedence: explicit flag > env var > wardline.yaml."""
     if flag is not None:
         return flag
     env = os.environ.get(_FILIGREE_URL_ENV)
     if env:
         return env
-    return _config_for(root, config_path).filigree_url
+    return _config_for(root, config_path, trust_local_packs=trust_local_packs).filigree_url
 
 
 @dataclass(frozen=True, slots=True)

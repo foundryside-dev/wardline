@@ -22,8 +22,9 @@ against the caller-supplied ``taint_map`` (see ``compute_variable_taints``).
 from __future__ import annotations
 
 import ast
+import contextvars
 
-from wardline.core.taints import TaintState, least_trusted
+from wardline.core.taints import _PROVENANCE_CLASH, TaintState, least_trusted
 
 # Serialisation sinks — calls that cross the representation boundary. Their
 # output sheds validation provenance (raw bytes/str), so → UNKNOWN_RAW. This is
@@ -74,12 +75,38 @@ _PROPAGATING_BUILTINS: frozenset[str] = frozenset({"str", "repr", "ascii", "byte
 _PROPAGATING_METHODS_WITH_ARGS: frozenset[str] = frozenset({"format", "join"})
 _PROPAGATING_METHODS_RECEIVER: frozenset[str] = frozenset({"get", "pop", "setdefault"})
 
+_CURRENT_ALIAS_MAP: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
+    "_CURRENT_ALIAS_MAP", default=None
+)
+
+_CURRENT_CALL_SITE_ARG_TAINTS: contextvars.ContextVar[dict[int, dict[int | str | None, TaintState]] | None] = (
+    contextvars.ContextVar("_CURRENT_CALL_SITE_ARG_TAINTS", default=None)
+)
+
+_CURRENT_VAR_TYPES: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
+    "_CURRENT_VAR_TYPES", default=None
+)
+
+_CONTEXT_ENCODERS: frozenset[str] = frozenset(
+    {
+        "html.escape",
+        "shlex.quote",
+        "urllib.parse.quote",
+        "urllib.parse.quote_plus",
+    }
+)
+
 
 def compute_variable_taints(
     func_node: ast.FunctionDef | ast.AsyncFunctionDef,
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     call_site_taints: dict[int, dict[str, TaintState]] | None = None,
+    alias_map: dict[str, str] | None = None,
+    call_site_arg_taints: dict[int, dict[int | str | None, TaintState]] | None = None,
+    param_meets: dict[str, TaintState] | None = None,
+    *,
+    provenance_clash: bool | None = None,
 ) -> dict[str, TaintState]:
     """Compute per-variable taint for a function body.
 
@@ -98,29 +125,63 @@ def compute_variable_taints(
             taint of its args AT the sink line, not the final (flow-insensitive)
             map — closing the documented reassignment over-/under-fire. Threaded
             only through the statement layer; the expression combiners are untouched.
+        alias_map: optional alias map for imports.
+        call_site_arg_taints: optional out-dict to record resolved argument taints.
+        param_meets: optional parameter meets mapping param_name -> TaintState to
+            seed parameters with instead of function_taint.
+        provenance_clash: set True to use provenance-clash semantics.
 
     Returns:
         ``{variable_name: TaintState}`` for every assigned variable and parameter
         in the function body. Nested function/class scopes are not descended.
     """
-    var_taints: dict[str, TaintState] = {}
-    _seed_parameters(func_node, function_taint, var_taints)
-    _walk_body(func_node.body, function_taint, taint_map, var_taints, call_site_taints)
-    return var_taints
+    token = None
+    token_args = None
+    token_clash = None
+    if provenance_clash is not None:
+        token_clash = _PROVENANCE_CLASH.set(provenance_clash)
+    token_types = _CURRENT_VAR_TYPES.set({})
+    if alias_map is not None:
+        token = _CURRENT_ALIAS_MAP.set(alias_map)
+    if call_site_arg_taints is not None:
+        token_args = _CURRENT_CALL_SITE_ARG_TAINTS.set(call_site_arg_taints)
+    try:
+        var_taints: dict[str, TaintState] = {}
+        _seed_parameters(func_node, function_taint, var_taints, param_meets)
+        _walk_body(func_node.body, function_taint, taint_map, var_taints, call_site_taints)
+        return var_taints
+    finally:
+        if token_clash is not None:
+            _PROVENANCE_CLASH.reset(token_clash)
+        _CURRENT_VAR_TYPES.reset(token_types)
+        if token is not None:
+            _CURRENT_ALIAS_MAP.reset(token)
+        if token_args is not None:
+            _CURRENT_CALL_SITE_ARG_TAINTS.reset(token_args)
 
 
 def _seed_parameters(
     func_node: ast.FunctionDef | ast.AsyncFunctionDef,
     function_taint: TaintState,
     var_taints: dict[str, TaintState],
+    param_meets: dict[str, TaintState] | None = None,
 ) -> None:
     args = func_node.args
     for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs):
-        var_taints[arg.arg] = function_taint
+        seed_val = function_taint
+        if param_meets is not None and arg.arg in param_meets:
+            seed_val = least_trusted(seed_val, param_meets[arg.arg])
+        var_taints[arg.arg] = seed_val
     if args.vararg:
-        var_taints[args.vararg.arg] = function_taint
+        seed_val = function_taint
+        if param_meets is not None and args.vararg.arg in param_meets:
+            seed_val = least_trusted(seed_val, param_meets[args.vararg.arg])
+        var_taints[args.vararg.arg] = seed_val
     if args.kwarg:
-        var_taints[args.kwarg.arg] = function_taint
+        seed_val = function_taint
+        if param_meets is not None and args.kwarg.arg in param_meets:
+            seed_val = least_trusted(seed_val, param_meets[args.kwarg.arg])
+        var_taints[args.kwarg.arg] = seed_val
 
 
 def _dotted_name(node: ast.expr) -> str | None:
@@ -187,6 +248,8 @@ def _resolve_expr(
         true_t = _resolve_expr(node.body, function_taint, taint_map, var_taints)
         false_t = _resolve_expr(node.orelse, function_taint, taint_map, var_taints)
         return least_trusted(true_t, false_t)
+    if isinstance(node, ast.Starred):
+        return _resolve_expr(node.value, function_taint, taint_map, var_taints)
     if isinstance(node, ast.UnaryOp):
         return _resolve_expr(node.operand, function_taint, taint_map, var_taints)
     if isinstance(node, ast.Subscript):
@@ -328,8 +391,40 @@ def _resolve_call(
     # ``foo(x := bar())`` must bind ``x`` even when the call's own taint comes
     # from ``node.func`` — AND captures the arg taints for the curated
     # taint-PROPAGATING ops below (str(raw), "{}".format(raw), etc.).
-    arg_taints = [_resolve_expr(arg, function_taint, taint_map, var_taints) for arg in node.args]
-    arg_taints += [_resolve_expr(keyword.value, function_taint, taint_map, var_taints) for keyword in node.keywords]
+    resolved_args: dict[int | str | None, TaintState] = {}
+    pos_taints = []
+    for i, arg in enumerate(node.args):
+        t = _resolve_expr(arg, function_taint, taint_map, var_taints)
+        pos_taints.append(t)
+        resolved_args[i] = t
+    kw_taints = []
+    for kw in node.keywords:
+        t = _resolve_expr(kw.value, function_taint, taint_map, var_taints)
+        kw_taints.append(t)
+        resolved_args[kw.arg] = t
+    arg_taints = pos_taints + kw_taints
+
+    call_site_arg_taints = _CURRENT_CALL_SITE_ARG_TAINTS.get()
+    if call_site_arg_taints is not None:
+        call_site_arg_taints[id(node)] = resolved_args
+
+    alias_map = _CURRENT_ALIAS_MAP.get()
+    if alias_map is not None:
+        fqn = None
+        if isinstance(node.func, ast.Name):
+            fqn = alias_map.get(node.func.id)
+        elif isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+            prefix = alias_map.get(node.func.value.id)
+            if prefix:
+                fqn = f"{prefix}.{node.func.attr}"
+        if fqn in _CONTEXT_ENCODERS:
+            if not arg_taints:
+                return TaintState.GUARDED
+            result = arg_taints[0]
+            for at in arg_taints[1:]:
+                result = least_trusted(result, at)
+            return least_trusted(result, TaintState.GUARDED)
+
     if isinstance(node.func, ast.Attribute):
         dotted = _dotted_name(node.func)
         if dotted is not None:
@@ -341,6 +436,14 @@ def _resolve_call(
             taint_hit = taint_map.get(dotted)
             if taint_hit is not None:
                 return taint_hit
+        if isinstance(node.func.value, ast.Name):
+            var_types = _CURRENT_VAR_TYPES.get()
+            if var_types is not None and node.func.value.id in var_types:
+                type_prefix = var_types[node.func.value.id]
+                resolved_dotted = f"{type_prefix}.{node.func.attr}"
+                taint_hit = taint_map.get(resolved_dotted)
+                if taint_hit is not None:
+                    return taint_hit
         attr = node.func.attr
         if attr in _PROPAGATING_METHODS_WITH_ARGS:
             # ``.format``/``.join`` are string-BUILDING value flows: combine the
@@ -387,6 +490,12 @@ def _resolve_call(
             for at in arg_taints[1:]:
                 result = least_trusted(result, at)
             return result
+    if isinstance(node.func, ast.Attribute):
+        from wardline.core.taints import RAW_ZONE
+
+        receiver_taint = _resolve_expr(node.func.value, function_taint, taint_map, var_taints)
+        if receiver_taint in RAW_ZONE:
+            return receiver_taint
     return function_taint
 
 
@@ -501,7 +610,16 @@ def _walk_exprs_for_walrus(
         _walk_exprs_for_walrus(child, function_taint, taint_map, var_taints)
 
 
-# ── Assignment handlers ──────────────────────────────────────────
+def _resolve_expr_fqn(node: ast.expr, alias_map: dict[str, str] | None) -> str | None:
+    if isinstance(node, ast.Name):
+        if alias_map and node.id in alias_map:
+            return alias_map[node.id]
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _resolve_expr_fqn(node.value, alias_map)
+        if base:
+            return f"{base}.{node.attr}"
+    return None
 
 
 def _handle_assign(
@@ -521,6 +639,17 @@ def _handle_assign(
                 var_taints,
             )
             var_taints[target.id] = taint
+
+            var_types = _CURRENT_VAR_TYPES.get()
+            if var_types is not None:
+                alias_map = _CURRENT_ALIAS_MAP.get()
+                if isinstance(stmt.value, ast.Call):
+                    fqn = _resolve_expr_fqn(stmt.value.func, alias_map)
+                    if fqn:
+                        var_types[target.id] = fqn
+                elif isinstance(stmt.value, ast.Name):
+                    if stmt.value.id in var_types:
+                        var_types[target.id] = var_types[stmt.value.id]
 
         elif isinstance(target, (ast.Tuple, ast.List)):
             # Tuple unpacking: a, b = ...
@@ -966,43 +1095,113 @@ def _self_attr_name(target: ast.expr) -> str | None:
     return None
 
 
+def collect_attribute_writes(
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    var_taints: dict[str, TaintState],
+    class_qualnames: frozenset[str],
+    alias_map: dict[str, str],
+    module_prefix: str,
+    enclosing_class: str | None = None,
+) -> dict[str, dict[str, TaintState]]:
+    """Return ``{class_qualname: {attr_name: least_trusted RHS taint}}`` for every
+    instance attribute assignment in *func_node*'s body.
+
+    Handles both internal ``self.x = ...`` writes (enclosing class) and external
+    ``obj.x = ...`` writes where ``obj`` was instantiated via a class constructor
+    call.
+    """
+    from wardline.scanner.ast_primitives import resolve_call_fqn
+
+    out: dict[str, dict[str, TaintState]] = {}
+    var_types: dict[str, str] = {}
+
+    def _walk(node: ast.AST) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                continue
+
+            # 1. Track variable types assigned to constructors or copied
+            targets: list[ast.expr] = []
+            value: ast.expr | None = None
+            if isinstance(child, ast.Assign):
+                targets = child.targets
+                value = child.value
+            elif isinstance(child, ast.AnnAssign):
+                targets = [child.target]
+                value = child.value
+
+            class_fqn = None
+            if value is not None:
+                if isinstance(value, ast.Call):
+                    fqn = resolve_call_fqn(value, alias_map, class_qualnames, module_prefix)
+                    if fqn in class_qualnames:
+                        class_fqn = fqn
+                elif isinstance(value, ast.Name):
+                    class_fqn = var_types.get(value.id)
+
+            if class_fqn is not None:
+                for tgt in targets:
+                    if isinstance(tgt, ast.Name):
+                        var_types[tgt.id] = class_fqn
+
+            # 2. Record attribute writes
+            targets_to_check: list[ast.expr] = []
+            if isinstance(child, ast.Assign):
+                targets_to_check = child.targets
+                value = child.value
+            elif isinstance(child, (ast.AnnAssign, ast.AugAssign)):
+                targets_to_check = [child.target]
+                value = child.value
+
+            for tgt in targets_to_check:
+                if isinstance(tgt, ast.Attribute) and isinstance(tgt.value, ast.Name):
+                    var_name = tgt.value.id
+                    attr_name = tgt.attr
+                    target_class = None
+                    if var_name in ("self", "cls") and enclosing_class:
+                        target_class = enclosing_class
+                    elif var_name in var_types:
+                        target_class = var_types[var_name]
+
+                    if target_class is not None and value is not None:
+                        rhs_taint = _resolve_expr(value, function_taint, taint_map, var_taints)
+                        cls_writes = out.setdefault(target_class, {})
+                        cls_writes[attr_name] = (
+                            least_trusted(cls_writes[attr_name], rhs_taint) if attr_name in cls_writes else rhs_taint
+                        )
+
+            _walk(child)
+
+    token_types = _CURRENT_VAR_TYPES.set(var_types)
+    token_alias = _CURRENT_ALIAS_MAP.set(alias_map)
+    try:
+        _walk(func_node)
+    finally:
+        _CURRENT_VAR_TYPES.reset(token_types)
+        _CURRENT_ALIAS_MAP.reset(token_alias)
+    return out
+
+
 def collect_self_attr_writes(
     func_node: ast.FunctionDef | ast.AsyncFunctionDef,
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
 ) -> dict[str, TaintState]:
-    """Return ``{attr_name: least_trusted RHS taint}`` for every direct
-    ``self.<attr>``/``cls.<attr>`` assignment in *func_node*'s own scope.
-
-    The analyzer folds these across all of a class's methods (with :func:`least_trusted`)
-    into the per-class attribute summary that seeds cross-method attribute reads
-    (closure A — the function-level fail-open on OO code). RHS taints resolve against
-    the method's already-computed ``var_taints`` so local indirection
-    (``v = read_raw(p); self.x = v``) is captured (no fail-open). Does not descend into
-    nested def/class/lambda scopes (their ``self`` is a different binding)."""
-    out: dict[str, TaintState] = {}
-
-    def _writes(node: ast.AST) -> None:
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-                continue
-            targets: list[ast.expr] = []
-            value: ast.expr | None = None
-            if isinstance(child, ast.Assign):
-                targets, value = list(child.targets), child.value
-            elif isinstance(child, (ast.AnnAssign, ast.AugAssign)) and child.value is not None:
-                # ``self.x: T = expr`` and ``self.x += expr`` (AugAssign always has a value).
-                targets, value = [child.target], child.value
-            for tgt in targets:
-                attr = _self_attr_name(tgt)
-                if attr is not None and value is not None:
-                    rhs = _resolve_expr(value, function_taint, taint_map, var_taints)
-                    out[attr] = least_trusted(out[attr], rhs) if attr in out else rhs
-            _writes(child)
-
-    _writes(func_node)
-    return out
+    """Compatibility wrapper for internal-only writes."""
+    writes = collect_attribute_writes(
+        func_node,
+        function_taint,
+        taint_map,
+        var_taints,
+        class_qualnames=frozenset(),
+        alias_map={},
+        module_prefix="",
+        enclosing_class="dummy",
+    )
+    return writes.get("dummy", {})
 
 
 def compute_return_taint(

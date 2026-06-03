@@ -123,6 +123,16 @@ def worst_arg_taint(
     — pass the FLOW-SENSITIVE snapshot for *call*'s enclosing statement (see
     :func:`call_site_var_taints`) so a name reassigned after the call is read at its
     taint AT the call line, not the final map."""
+    # 1. Flow-sensitive resolved argument taints from L2 walk
+    arg_taints_map = context.function_call_site_arg_taints.get(qualname, {}).get(id(call))
+    if arg_taints_map is not None:
+        worst_fs: TaintState | None = None
+        for ts in arg_taints_map.values():
+            if ts is not None and (worst_fs is None or TRUST_RANK[ts] > TRUST_RANK[worst_fs]):
+                worst_fs = ts
+        return worst_fs
+
+    # 2. Fallback to post-hoc flow-insensitive resolution
     entity = context.entities.get(qualname)
     if entity is not None:
         from wardline.core.qualname import module_dotted_name

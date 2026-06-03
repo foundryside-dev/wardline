@@ -164,3 +164,32 @@ def test_union_annotation_does_not_fire(tmp_path) -> None:
         """,
     )
     assert _ids(ctx) == []
+
+
+def test_string_literal_annotations(tmp_path) -> None:
+    # Forward-references in string literals must be parsed and check nullable (LOG-04)
+    ctx1 = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def maybe(flag) -> "int | None":
+            if flag:
+                return 1
+            return None
+        """,
+    )
+    assert _ids(ctx1) == []
+
+    ctx2 = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def maybe_not(flag) -> "int":
+            if flag:
+                return 1
+            return None
+        """,
+    )
+    assert _ids(ctx2) == [("PY-WL-109", "m.maybe_not")]

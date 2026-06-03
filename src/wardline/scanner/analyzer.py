@@ -37,7 +37,6 @@ from wardline.scanner.taint.function_level import seed_function_taints
 from wardline.scanner.taint.project_resolver import ModuleInput, resolve_project_taints
 from wardline.scanner.taint.provider import SeedContext, TaintSourceProvider
 from wardline.scanner.taint.variable_level import (
-    collect_self_attr_writes,
     compute_return_callee,
     compute_return_taint,
     compute_variable_taints,
@@ -81,6 +80,15 @@ class WardlineAnalyzer:
         self.last_context: AnalysisContext | None = None
 
     def analyze(self, files: Sequence[Path], config: WardlineConfig, *, root: Path) -> Sequence[Finding]:
+        from wardline.core.taints import _PROVENANCE_CLASH
+
+        token_clash = _PROVENANCE_CLASH.set(config.provenance_clash)
+        try:
+            return self._analyze_inner(files, config, root=root)
+        finally:
+            _PROVENANCE_CLASH.reset(token_clash)
+
+    def _analyze_inner(self, files: Sequence[Path], config: WardlineConfig, *, root: Path) -> Sequence[Finding]:
         modules: list[ModuleInput] = []
         # (relpath, module_path, tree, entities, alias_map, class_qualnames)
         file_meta: list[tuple[str, str, ast.Module, tuple[Entity, ...], dict[str, str], frozenset[str]]] = []
@@ -88,6 +96,10 @@ class WardlineAnalyzer:
         # Statically-known star-import exports (the trust vocabulary, T1.2). A REGISTRY-
         # derived constant for the whole scan — compute once and reuse at both seam points.
         star_exports = vocabulary_star_exports()
+
+        # Track config-defined sources and sanitisers matched across the project
+        matched_sources: set[str] = set()
+        matched_sanitisers: set[str] = set()
 
         # ``discover`` resolves the root to an absolute path, so the files it yields are
         # absolute. Resolve ``root`` to the same base here, or ``is_relative_to`` fails and
@@ -136,6 +148,17 @@ class WardlineAnalyzer:
                     ctx=SeedContext(module=module, alias_map=alias_map),
                     provider=self._provider,
                 )
+                for ent in entities:
+                    if ent.qualname in config.untrusted_sources:
+                        from wardline.scanner.taint.function_level import FunctionSeed
+
+                        seeds[ent.qualname] = FunctionSeed(
+                            qualname=ent.qualname,
+                            body_taint=TaintState.EXTERNAL_RAW,
+                            return_taint=TaintState.EXTERNAL_RAW,
+                            source="provider",
+                            unprovable_boundaries=(),
+                        )
             except (SyntaxError, UnicodeDecodeError, OSError) as exc:
                 msg = getattr(exc, "msg", None) or str(exc)
                 lineno = exc.lineno if isinstance(exc, SyntaxError) else None
@@ -211,9 +234,14 @@ class WardlineAnalyzer:
                 provider_fingerprint=self._provider.fingerprint(),
                 summary_cache=self._cache,
                 dirty_modules=frozenset(),
+                config=config,
             )
         else:
-            result = resolve_project_taints(modules=modules, provider_fingerprint=self._provider.fingerprint())
+            result = resolve_project_taints(
+                modules=modules,
+                provider_fingerprint=self._provider.fingerprint(),
+                config=config,
+            )
 
         # Measured AFTER resolve so it reflects THIS run's cache effectiveness
         # (0.0 cold, →1.0 warm). It is a genuinely run-varying METRIC; the
@@ -239,38 +267,111 @@ class WardlineAnalyzer:
 
         function_var_taints: dict[str, dict[str, TaintState]] = {}
         function_call_site_taints: dict[str, dict[int, dict[str, TaintState]]] = {}
+        function_call_site_arg_taints: dict[str, dict[int, dict[int | str | None, TaintState]]] = {}
+        project_call_site_arg_taints: dict[int, dict[int | str | None, TaintState]] = {}
         function_return_taints: dict[str, TaintState] = {}
         function_return_callee: dict[str, str | None] = {}
         entity_index: dict[str, Entity] = {}
         func_skip_findings: list[Finding] = []
         # Records carried from L2 pass 1 to pass 2 (closure A): one per entity.
-        l2_records: list[tuple[Entity, TaintState, dict[str, TaintState], str]] = []
+        l2_records: list[tuple[Entity, TaintState, dict[str, TaintState], str, dict[str, str]]] = []
         # Per-class attribute summary: ``{class_qualname: {attr: least_trusted write taint}}``.
         class_attr_taints: dict[str, dict[str, TaintState]] = {}
         l2_failed: set[str] = set()
 
+        def _bind_call_site_arguments_to_parameters(
+            args_node: ast.arguments,
+            arg_taints: dict[int | str | None, TaintState],
+        ) -> dict[str, TaintState]:
+            bound: dict[str, list[TaintState]] = {}
+            pos_args: list[TaintState] = []
+            i = 0
+            while i in arg_taints:
+                pos_args.append(arg_taints[i])
+                i += 1
+            pos_idx = 0
+            for param in args_node.posonlyargs:
+                if pos_idx < len(pos_args):
+                    bound.setdefault(param.arg, []).append(pos_args[pos_idx])
+                    pos_idx += 1
+            filled_args = set()
+            for param in args_node.args:
+                if pos_idx < len(pos_args):
+                    bound.setdefault(param.arg, []).append(pos_args[pos_idx])
+                    filled_args.add(param.arg)
+                    pos_idx += 1
+            if args_node.vararg and pos_idx < len(pos_args):
+                for taint in pos_args[pos_idx:]:
+                    bound.setdefault(args_node.vararg.arg, []).append(taint)
+            for key, taint in arg_taints.items():
+                if isinstance(key, int) or key is None:
+                    continue
+                if any(p.arg == key for p in args_node.args):
+                    if key not in filled_args:
+                        bound.setdefault(key, []).append(taint)
+                elif any(p.arg == key for p in args_node.kwonlyargs):
+                    bound.setdefault(key, []).append(taint)
+                elif args_node.kwarg:
+                    bound.setdefault(args_node.kwarg.arg, []).append(taint)
+            # Handle **kwargs unpacking
+            if None in arg_taints and args_node.kwarg:
+                bound.setdefault(args_node.kwarg.arg, []).append(arg_taints[None])
+            result: dict[str, TaintState] = {}
+            for param_name, taints in bound.items():
+                if taints:
+                    meet = taints[0]
+                    for t in taints[1:]:
+                        meet = least_trusted(meet, t)
+                    result[param_name] = meet
+            return result
+
         def _run_l2(
-            node: ast.FunctionDef | ast.AsyncFunctionDef, seed: TaintState, tm: dict[str, TaintState]
-        ) -> tuple[dict[int, dict[str, TaintState]], dict[str, TaintState], TaintState | None, str | None]:
-            call_sites: dict[int, dict[str, TaintState]] = {}
-            var_taints = compute_variable_taints(node, seed, dict(tm), call_sites)
-            ret_taint = compute_return_taint(node, seed, dict(tm), var_taints)
-            # Pass a COPY of var_taints: _resolve_expr's walrus (NamedExpr) branch mutates
-            # the dict it walks, and var_taints is stored into function_var_taints. A
-            # forward-referencing walrus inside a return would otherwise get a second,
-            # non-idempotent resolve pass that perturbs the stored map. Same start ⇒ same callee.
-            ret_callee = compute_return_callee(node, seed, dict(tm), dict(var_taints))
-            return call_sites, var_taints, ret_taint, ret_callee
+            node: ast.FunctionDef | ast.AsyncFunctionDef,
+            seed: TaintState,
+            tm: dict[str, TaintState],
+            alias_map: dict[str, str],
+            param_meets: dict[str, TaintState] | None = None,
+        ) -> tuple[
+            dict[int, dict[str, TaintState]],
+            dict[int, dict[int | str | None, TaintState]],
+            dict[str, TaintState],
+            TaintState | None,
+            str | None,
+        ]:
+            from wardline.scanner.taint.variable_level import _CURRENT_ALIAS_MAP, _CURRENT_CALL_SITE_ARG_TAINTS
+
+            token = _CURRENT_ALIAS_MAP.set(alias_map)
+            call_args: dict[int, dict[int | str | None, TaintState]] = {}
+            token_args = _CURRENT_CALL_SITE_ARG_TAINTS.set(call_args)
+            try:
+                call_sites: dict[int, dict[str, TaintState]] = {}
+                var_taints = compute_variable_taints(
+                    node,
+                    seed,
+                    dict(tm),
+                    call_sites,
+                    alias_map=alias_map,
+                    call_site_arg_taints=call_args,
+                    param_meets=param_meets,
+                )
+                ret_taint = compute_return_taint(node, seed, dict(tm), var_taints)
+                ret_callee = compute_return_callee(node, seed, dict(tm), dict(var_taints))
+                return call_sites, call_args, var_taints, ret_taint, ret_callee
+            finally:
+                _CURRENT_ALIAS_MAP.reset(token)
+                _CURRENT_CALL_SITE_ARG_TAINTS.reset(token_args)
 
         def _store(
             qn: str,
             call_sites: dict[int, dict[str, TaintState]],
+            call_args: dict[int, dict[int | str | None, TaintState]],
             var_taints: dict[str, TaintState],
             ret_taint: TaintState | None,
             ret_callee: str | None,
         ) -> None:
             function_var_taints[qn] = var_taints
             function_call_site_taints[qn] = call_sites
+            function_call_site_arg_taints[qn] = call_args
             if ret_taint is not None:
                 function_return_taints[qn] = ret_taint
             else:
@@ -278,21 +379,21 @@ class WardlineAnalyzer:
             function_return_callee[qn] = ret_callee
 
         # ── L2 pass 1 — per-method var/return taints + per-class attribute summary ──
+        all_classes = frozenset(c for m in modules for c in m.class_qualnames)
         for _relpath, module, _tree, entities, alias_map, classes in file_meta:
-            call_tm = build_call_taint_map(module_path=module, alias_map=alias_map, project_by_module=project_by_module)
+            call_tm = build_call_taint_map(
+                module_path=module,
+                alias_map=alias_map,
+                project_by_module=project_by_module,
+                config=config,
+                matched_sources=matched_sources,
+                matched_sanitisers=matched_sanitisers,
+            )
             for ent in entities:
                 entity_index[ent.qualname] = ent
                 seed = project_taints.get(ent.qualname, TaintState.UNKNOWN_RAW)
-                # PART C — self/cls method-call parity with L3. The module-scoped
-                # call_tm keys top-level functions only; a method's ``self.<sib>``
-                # / ``cls.<sib>`` call sites are absent, so they used to fall back
-                # to the function seed (fail-open launder for a @trusted method).
-                # For a method entity whose enclosing class is known, inject the
-                # sibling methods' RETURN taints under ``self.<name>``/``cls.<name>``
-                # — mirroring resolve_self_method_fqn's class-membership gate.
-                # Per-entity (not in call_tm) because ``self`` is class-relative:
-                # baking it into the shared module map would collide across classes.
                 method_tm = dict(call_tm)
+                method_tm.update(project_return_taints)
                 enclosing_class = ent.qualname.rsplit(".", 1)[0]
                 is_method = enclosing_class in classes
                 if is_method:
@@ -304,14 +405,12 @@ class WardlineAnalyzer:
                             method_tm[f"self.{sib_name}"] = sib_taint
                             method_tm[f"cls.{sib_name}"] = sib_taint
                 try:
-                    call_sites, var_taints, ret_taint, ret_callee = _run_l2(ent.node, seed, method_tm)
+                    call_sites, call_args, var_taints, ret_taint, ret_callee = _run_l2(
+                        ent.node, seed, method_tm, alias_map
+                    )
                 except RecursionError:
-                    # Fail-closed: absent vars read as the function taint, and the
-                    # return taint is unknown. Emit a FACT so the gap is observable
-                    # — a silently-absent function_return_taints entry would make
-                    # PY-WL-101 quietly skip this function (an invisible under-taint).
                     l2_failed.add(ent.qualname)
-                    call_sites, var_taints, ret_taint, ret_callee = {}, {}, None, None
+                    call_sites, call_args, var_taints, ret_taint, ret_callee = {}, {}, {}, None, None
                     func_skip_findings.append(
                         Finding(
                             rule_id="WLN-ENGINE-FUNCTION-SKIPPED",
@@ -324,48 +423,70 @@ class WardlineAnalyzer:
                             properties={"reason": "recursion_limit"},
                         )
                     )
-                _store(ent.qualname, call_sites, var_taints, ret_taint, ret_callee)
-                l2_records.append((ent, seed, method_tm, enclosing_class))
-                # Closure A: fold this method's ``self.<attr>`` writes into the class
-                # summary (least_trusted = weakest-link, so any raw write makes the
-                # attribute raw for cross-method reads). RHS resolves against this
-                # method's pass-1 var_taints so local indirection (``v = raw; self.x = v``)
-                # is captured. Single round: a ``self.y = self.x`` attribute-to-attribute
-                # chain resolves self.x at its pre-summary value here, so a deep attr chain
-                # may under-resolve — a bounded residual FN (never an over-fire), consistent
-                # with the engine's other documented function-level limits.
-                if is_method and ent.qualname not in l2_failed:
-                    writes = collect_self_attr_writes(ent.node, seed, dict(method_tm), dict(var_taints))
-                    if writes:
-                        summary = class_attr_taints.setdefault(enclosing_class, {})
-                        for attr_name, attr_taint in writes.items():
+                _store(ent.qualname, call_sites, call_args, var_taints, ret_taint, ret_callee)
+                project_call_site_arg_taints.update(call_args)
+                l2_records.append((ent, seed, method_tm, enclosing_class, alias_map))
+                if ent.qualname not in l2_failed:
+                    from wardline.scanner.taint.variable_level import collect_attribute_writes
+
+                    writes = collect_attribute_writes(
+                        ent.node,
+                        seed,
+                        dict(method_tm),
+                        dict(var_taints),
+                        all_classes,
+                        alias_map,
+                        module,
+                        enclosing_class=enclosing_class if is_method else None,
+                    )
+                    for target_class, cls_writes in writes.items():
+                        summary = class_attr_taints.setdefault(target_class, {})
+                        for attr_name, attr_taint in cls_writes.items():
                             summary[attr_name] = (
                                 least_trusted(summary[attr_name], attr_taint) if attr_name in summary else attr_taint
                             )
 
-        # ── L2 pass 2 — re-run methods of classes with an attribute summary, with
-        # ``self.<attr>``/``cls.<attr>`` injected so cross-method reads see the summary.
-        # Methods that read no summarised attribute recompute to identical values, so
-        # overwriting is safe; pass-1-skipped methods (RecursionError) stay skipped.
-        for ent, seed, method_tm, enclosing_class in l2_records:
-            attr_summary = class_attr_taints.get(enclosing_class)
-            if not attr_summary or ent.qualname in l2_failed:
+        # Compute project-wide parameter meets from pass-1 call sites
+        project_param_meets: dict[str, dict[str, TaintState]] = {}
+        for call_id, callee_qn in result.call_site_callees.items():
+            callee_ent = entity_index.get(callee_qn)
+            if callee_ent is not None:
+                arg_taints = project_call_site_arg_taints.get(call_id)
+                if arg_taints:
+                    call_meets = _bind_call_site_arguments_to_parameters(callee_ent.node.args, arg_taints)
+                    callee_meets = project_param_meets.setdefault(callee_qn, {})
+                    for param, taint in call_meets.items():
+                        if param in callee_meets:
+                            callee_meets[param] = least_trusted(callee_meets[param], taint)
+                        else:
+                            callee_meets[param] = taint
+
+        # ── L2 pass 2 — re-run all functions to apply parameter meets and class attribute summaries ──
+        for ent, seed, method_tm, enclosing_class, alias_map in l2_records:
+            if ent.qualname in l2_failed:
                 continue
             tm2 = dict(method_tm)
-            for attr_name, attr_taint in attr_summary.items():
-                tm2[f"self.{attr_name}"] = attr_taint
-                tm2[f"cls.{attr_name}"] = attr_taint
+            attr_summary = class_attr_taints.get(enclosing_class)
+            if attr_summary:
+                for attr_name, attr_taint in attr_summary.items():
+                    tm2[f"self.{attr_name}"] = attr_taint
+                    tm2[f"cls.{attr_name}"] = attr_taint
+            param_meets = project_param_meets.get(ent.qualname)
             try:
-                call_sites, var_taints, ret_taint, ret_callee = _run_l2(ent.node, seed, tm2)
+                call_sites, call_args, var_taints, ret_taint, ret_callee = _run_l2(
+                    ent.node, seed, tm2, alias_map, param_meets=param_meets
+                )
             except RecursionError:  # pragma: no cover - pass 1 succeeded; defensive
                 continue
-            _store(ent.qualname, call_sites, var_taints, ret_taint, ret_callee)
+            _store(ent.qualname, call_sites, call_args, var_taints, ret_taint, ret_callee)
 
         context = AnalysisContext(
             project_taints=project_taints,
             project_return_taints=project_return_taints,
             function_var_taints=function_var_taints,
             function_call_site_taints=function_call_site_taints,
+            function_call_site_arg_taints=function_call_site_arg_taints,
+            call_site_callees=result.call_site_callees,
             class_attr_taints=class_attr_taints,
             function_return_taints=function_return_taints,
             function_return_callee=function_return_callee,
@@ -373,6 +494,7 @@ class WardlineAnalyzer:
             taint_provenance=dict(result.taint_provenance),
             declared_qualnames=frozenset(q for m in modules for q, s in m.seeds.items() if s.source == "provider"),
             project_edges=result.project_edges,
+            alias_maps={m.module_path: m.alias_map for m in modules},
         )
         self.last_context = context
 
@@ -387,6 +509,41 @@ class WardlineAnalyzer:
                 resolvable_star_modules=frozenset(star_exports.keys()),
             )
         )
+        # Check for unused config sources
+        unused_sources = set(config.untrusted_sources) - matched_sources
+        for src in sorted(unused_sources):
+            findings.append(
+                Finding(
+                    rule_id="WLN-CONFIG-UNUSED-SOURCE",
+                    message=(
+                        f"Configuration error: untrusted source '{src}' "
+                        "did not match any imports or calls in the scanned tree"
+                    ),
+                    severity=Severity.NONE,
+                    kind=Kind.FACT,
+                    location=Location(path="wardline.yaml"),
+                    fingerprint=_fp("WLN-CONFIG-UNUSED-SOURCE", src),
+                    properties={"source": src},
+                )
+            )
+
+        # Check for unused config sanitisers
+        unused_sanitisers = set(config.sanitisers) - matched_sanitisers
+        for san in sorted(unused_sanitisers):
+            findings.append(
+                Finding(
+                    rule_id="WLN-CONFIG-UNUSED-SANITISER",
+                    message=(
+                        f"Configuration error: sanitiser '{san}' did not match any imports or calls in the scanned tree"
+                    ),
+                    severity=Severity.NONE,
+                    kind=Kind.FACT,
+                    location=Location(path="wardline.yaml"),
+                    fingerprint=_fp("WLN-CONFIG-UNUSED-SANITISER", san),
+                    properties={"sanitiser": san},
+                )
+            )
+
         registry = (
             self._registry
             if self._registry is not None

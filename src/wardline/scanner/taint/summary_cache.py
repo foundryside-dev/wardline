@@ -69,7 +69,12 @@ def _parse_cache_taint(raw: str, field: str) -> TaintState:
     poisoned file with a warning (cold-cache fallback), so an enforced invariant
     here cannot crash a scan.
     """
+    from wardline.core.taints import _PROVENANCE_CLASH
+
     state = TaintState(raw)  # may raise ValueError on a non-canonical string
+    if state == TaintState.MIXED_RAW and _PROVENANCE_CLASH.get():
+        return state
+
     if state not in _CACHE_LEGAL_TAINT:
         raise ValueError(
             f"cached {field}={raw!r} is the unreachable taint state {raw!r}; no "

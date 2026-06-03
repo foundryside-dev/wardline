@@ -116,3 +116,11 @@ def test_run_stdio_rejects_non_object_json() -> None:
     assert len(lines) == 1
     assert lines[0]["error"]["code"] == -32600  # invalid request
     assert lines[0]["id"] is None
+
+
+def test_initialization_gate() -> None:
+    srv = _server()
+    srv._initialized = False  # Force uninitialized to test gate
+    resp = srv.dispatch({"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {"n": 1}})
+    assert resp["error"]["code"] == -32600
+    assert "not initialized" in resp["error"]["message"]

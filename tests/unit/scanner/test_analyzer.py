@@ -87,10 +87,10 @@ def test_analyzer_l2_recursion_boundary_contains_per_function(monkeypatch) -> No
 
     real = analyzer_mod.compute_variable_taints
 
-    def _boom(func_node, function_taint, taint_map, call_site_taints=None):  # noqa: ANN001, ANN202
+    def _boom(func_node, function_taint, taint_map, *args, **kwargs):  # noqa: ANN001, ANN202
         if any(isinstance(n, ast.Name) and n.id == "boom" for n in ast.walk(func_node)):
             raise RecursionError("simulated deep L2")
-        return real(func_node, function_taint, taint_map, call_site_taints)
+        return real(func_node, function_taint, taint_map, *args, **kwargs)
 
     monkeypatch.setattr(analyzer_mod, "compute_variable_taints", _boom)
 

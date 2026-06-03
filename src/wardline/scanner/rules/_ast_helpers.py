@@ -139,3 +139,18 @@ def handler_substitutes_on_failure(handler: ast.ExceptHandler) -> bool:
     return any(
         isinstance(stmt, ast.Return) and not _is_falsy_constant_return(stmt.value) for stmt in _own_statements(handler)
     )
+
+
+def own_nodes(node: ast.AST) -> Iterator[ast.AST]:
+    """Yield *node* itself and all descendant nodes in its own scope (skipping nested scopes)."""
+    yield node
+    yield from _walk_own(node)
+
+
+def _walk_own(node: ast.AST) -> Iterator[ast.AST]:
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            yield child
+        else:
+            yield child
+            yield from _walk_own(child)

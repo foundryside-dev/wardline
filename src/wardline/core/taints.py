@@ -9,10 +9,11 @@ SARIF label table and codegen vocabulary (``TAINT_STATE_LABELS``,
 SP4; the codegen map is unused here.
 """
 
-from __future__ import annotations
-
+import contextvars
 from enum import StrEnum
 from types import MappingProxyType
+
+_PROVENANCE_CLASH: contextvars.ContextVar[bool] = contextvars.ContextVar("_PROVENANCE_CLASH", default=False)
 
 
 class TaintState(StrEnum):
@@ -111,3 +112,10 @@ def least_trusted(a: TaintState, b: TaintState) -> TaintState:
     :func:`taint_join` — see that docstring.
     """
     return a if TRUST_RANK[a] >= TRUST_RANK[b] else b
+
+
+def combine(a: TaintState, b: TaintState) -> TaintState:
+    """Combine two taints, dynamically using taint_join or least_trusted."""
+    if _PROVENANCE_CLASH.get():
+        return taint_join(a, b)
+    return least_trusted(a, b)

@@ -71,6 +71,11 @@ class SuppressionState(StrEnum):
     JUDGED = "judged"  # LLM triage judged it a FALSE_POSITIVE (SP5)
 
 
+class Maturity(StrEnum):
+    STABLE = "stable"
+    PREVIEW = "preview"
+
+
 @dataclass(frozen=True, slots=True)
 class Location:
     path: str  # repo-relative POSIX path; Filigree's file_path anchor
@@ -97,6 +102,7 @@ class Finding:
     properties: Mapping[str, Any] = field(default_factory=dict)
     suppressed: SuppressionState = SuppressionState.ACTIVE
     suppression_reason: str | None = None
+    maturity: Maturity = Maturity.STABLE
 
     def to_jsonl(self) -> str:
         payload: dict[str, Any] = {
@@ -119,6 +125,7 @@ class Finding:
             "properties": dict(self.properties),
             "suppressed": self.suppressed.value,
             "suppression_reason": self.suppression_reason,
+            "maturity": self.maturity.value,
         }
         return json.dumps(payload, sort_keys=True, ensure_ascii=False)
 

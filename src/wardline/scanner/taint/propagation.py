@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from functools import reduce
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from wardline.core.taints import TRUST_RANK
 
@@ -117,6 +117,7 @@ class TaintProvenance:
         "module_default",
         "callgraph",
         "fallback",
+        "config",
     ]
     via_callee: str | None = None
     resolved_call_count: int = 0
@@ -193,36 +194,47 @@ def propagate_callgraph_taints(
     unresolved_counts: dict[str, int],
     *,
     return_taint_map: dict[str, TaintState],
+    config: Any = None,
 ) -> tuple[
     dict[str, TaintState],
     dict[str, TaintProvenance],
     list[tuple[str, str]],
     dict[frozenset[str], int],
 ]:
-    """Run SCC-based fixed-point propagation to refine L1 taints.
+    from wardline.core.taints import _PROVENANCE_CLASH
 
-    Args:
-        edges: Forward adjacency ``{caller: {callee, ...}}``.
-        taint_map: L1 body-evaluation taint assignments (copied, not mutated).
-        taint_sources: L1 provenance classification per function.
-        resolved_counts: Resolved call-site counts per caller.
-        unresolved_counts: Unresolved call-site counts per caller.
-        return_taint_map: L1 return-value taint map. Used to resolve
-            anchored callee contributions (OUTPUT tier).
+    clash_val = getattr(config, "provenance_clash", False) if config is not None else False
+    token_clash = _PROVENANCE_CLASH.set(clash_val)
+    try:
+        return _propagate_callgraph_taints_inner(
+            edges=edges,
+            taint_map=taint_map,
+            taint_sources=taint_sources,
+            resolved_counts=resolved_counts,
+            unresolved_counts=unresolved_counts,
+            return_taint_map=return_taint_map,
+            config=config,
+        )
+    finally:
+        _PROVENANCE_CLASH.reset(token_clash)
 
-    Returns:
-        Tuple of ``(refined_taint_map, provenance_map, diagnostics,
-        scc_iteration_counts)``. Diagnostics is a list of ``(code, message)``
-        tuples for L3_CONVERGENCE_BOUND and L3_LOW_RESOLUTION conditions.
-        ``scc_iteration_counts`` maps each SCC (identified by its
-        ``frozenset`` of member FQNs) to the number of Phase-2 fixed-point
-        rounds it consumed. Convergent SCCs record ``iterations + 1``
-        (the convergent round IS a round of work, per Revision 2 NEW-3
-        off-by-one correction); bound-hit SCCs record ``iterations``
-        (the L3_CONVERGENCE_BOUND diagnostic already marks the cap).
-        The Phase 3a resolver aggregates this dict into
-        ``ResolverRunMetadata.convergence_iterations_{max,histogram}``.
-    """
+
+def _propagate_callgraph_taints_inner(
+    edges: dict[str, set[str]],
+    taint_map: dict[str, TaintState],
+    taint_sources: dict[str, TaintSourceClass],
+    resolved_counts: dict[str, int],
+    unresolved_counts: dict[str, int],
+    *,
+    return_taint_map: dict[str, TaintState],
+    config: Any = None,
+) -> tuple[
+    dict[str, TaintState],
+    dict[str, TaintProvenance],
+    list[tuple[str, str]],
+    dict[frozenset[str], int],
+]:
+    """Run SCC-based fixed-point propagation to refine L1 taints."""
     from wardline.core.taints import least_trusted
 
     scc_iteration_counts: dict[frozenset[str], int] = {}
@@ -518,6 +530,7 @@ def propagate_callgraph_taints(
                     taint_sources,
                     resolved_counts,
                     unresolved_counts,
+                    config=config,
                 ),
                 diagnostics,
                 scc_iteration_counts,
@@ -539,6 +552,7 @@ def propagate_callgraph_taints(
                     taint_sources,
                     resolved_counts,
                     unresolved_counts,
+                    config=config,
                 ),
                 diagnostics,
                 scc_iteration_counts,
@@ -578,8 +592,11 @@ def propagate_callgraph_taints(
                 func_unresolved = unresolved_counts[func]
             except KeyError:
                 func_unresolved = 0
+            prov_source: Literal["anchored", "module_default", "callgraph", "fallback", "config"] = (
+                "config" if (config is not None and func in config.untrusted_sources) else "anchored"
+            )
             provenance[func] = TaintProvenance(
-                source="anchored",
+                source=prov_source,
                 via_callee=None,
                 resolved_call_count=func_resolved,
                 unresolved_call_count=func_unresolved,
@@ -646,6 +663,7 @@ def _seed_provenance_only(
     taint_sources: dict[str, TaintSourceClass],
     resolved_counts: dict[str, int],
     unresolved_counts: dict[str, int],
+    config: Any = None,
 ) -> dict[str, TaintProvenance]:
     """Build provenance records without any L3 refinement (fallback path)."""
     provenance: dict[str, TaintProvenance] = {}
@@ -655,7 +673,9 @@ def _seed_provenance_only(
         except KeyError:
             src = "fallback"
         if src == "anchored":
-            prov_source: Literal["anchored", "module_default", "callgraph", "fallback"] = "anchored"
+            prov_source: Literal["anchored", "module_default", "callgraph", "fallback", "config"] = (
+                "config" if (config is not None and func in config.untrusted_sources) else "anchored"
+            )
         elif src == "module_default":
             prov_source = "module_default"
         else:

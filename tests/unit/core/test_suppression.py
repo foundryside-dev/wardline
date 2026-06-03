@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-import pytest
-
 from wardline.core.baseline import Baseline
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.judged import JudgedFP, JudgedSet
@@ -44,8 +42,10 @@ def test_defect_without_line_start_is_rejected() -> None:
         location=Location(path="src/m.py", line_start=None),
         fingerprint=_FP_A,
     )
-    with pytest.raises(AssertionError):
-        apply_suppressions([bad], _empty_baseline(), _no_waivers(), today=_TODAY)
+    out = apply_suppressions([bad], _empty_baseline(), _no_waivers(), today=_TODAY)
+    assert len(out) == 1
+    assert out[0].rule_id == "WLN-ENGINE-LINELESS-DEFECT"
+    assert out[0].kind == Kind.FACT
 
 
 def test_engine_diagnostic_defect_without_line_start_surfaces() -> None:

@@ -19,7 +19,12 @@ from wardline.core.errors import WardlineError
 
 @click.command()
 @click.argument("path", type=click.Path(exists=True, file_okay=False, path_type=Path), default=".")
-@click.option("--config", "config_path", type=click.Path(path_type=Path), default=None)
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    default=None,
+)
 @click.option(
     "--format",
     "output_format",

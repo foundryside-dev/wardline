@@ -1,0 +1,8 @@
+- id: wardline-scan
+  name: wardline scan
+  description: "Generic semantic-tainting static analyzer for Python."
+  entry: wardline scan
+  language: python
+  types: [python]
+  pass_filenames: false
+

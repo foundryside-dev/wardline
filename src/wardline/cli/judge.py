@@ -30,7 +30,12 @@ from wardline.core.triage import TriageResult
 
 @click.command()
 @click.argument("path", type=click.Path(exists=True, file_okay=False, path_type=Path), default=".")
-@click.option("--config", "config_path", type=click.Path(path_type=Path), default=None)
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    default=None,
+)
 @click.option("--model", default=None, help="OpenRouter model slug (overrides config).")
 @click.option("--context-lines", type=int, default=None, help="Excerpt radius (default 30).")
 @click.option("--max-findings", type=int, default=None, help="Cap findings triaged this run.")

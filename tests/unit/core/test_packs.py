@@ -37,7 +37,7 @@ def test_config_load_and_deep_merge_pack(tmp_path: Path) -> None:
         "    PY-WL-103: WARN\n",
         encoding="utf-8",
     )
-    cfg = load(p)
+    cfg = load(p, trust_local_packs=True)
     assert "tests.unit.install.mock_pack" in cfg.packs
     assert "**/mock_exclude/**" in cfg.exclude
     assert "local_exclude" in cfg.exclude
@@ -63,7 +63,7 @@ def test_invalid_grammar_attribute_raises_config_error(tmp_path: Path) -> None:
         (proj / "wardline.yaml").write_text("packs:\n  - invalid_grammar_pack\n", encoding="utf-8")
         (proj / "m.py").write_text("def f(): pass\n", encoding="utf-8")
         with pytest.raises(ConfigError, match="attribute 'grammar' must be a TrustGrammar instance"):
-            run_scan(proj)
+            run_scan(proj, trust_local_packs=True)
     finally:
         sys.modules.pop("invalid_grammar_pack", None)
 
@@ -80,7 +80,7 @@ def test_analyzer_pack_integration(tmp_path: Path) -> None:
     source = "from tests.unit.install.mock_pack import mock_boundary\n\n@mock_boundary\ndef violator():\n    pass\n"
     (proj / "m.py").write_text(source, encoding="utf-8")
 
-    res = run_scan(proj)
+    res = run_scan(proj, trust_local_packs=True)
 
     # 1. Custom rule should have run and fired on 'violator'
     findings = [f for f in res.findings if f.rule_id == "PY-WL-901"]

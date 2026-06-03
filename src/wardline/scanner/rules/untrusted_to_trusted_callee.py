@@ -60,9 +60,13 @@ METADATA = RuleMetadata(
 
 
 def _resolve_callee(call: ast.Call, module: str, context: AnalysisContext, *, caller_qualname: str = "") -> str | None:
-    """The callee's entity qualname, conservatively: a same-module bare name
-    (``store`` -> ``<module>.store``) that is a known entity, or a dotted name that is
-    itself an entity key. Else None (unresolved -> skip)."""
+    """The callee's entity qualname, resolved using call_site_callees or falling back to local heuristic."""
+    # 1. Use the project-wide call site callee map if available
+    callee = context.call_site_callees.get(id(call))
+    if callee is not None and callee in context.entities:
+        return callee
+
+    # 2. Fall back to local same-module or self/cls heuristic
     if (
         isinstance(call.func, ast.Attribute)
         and isinstance(call.func.value, ast.Name)

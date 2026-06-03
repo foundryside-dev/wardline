@@ -48,12 +48,14 @@ def test_result_wraps_mappings_immutably() -> None:
         taint_map={"m.f": T.UNKNOWN_RAW},
         return_taint_map={"m.f": T.UNKNOWN_RAW},
         project_edges={"m.f": frozenset()},
+        call_site_callees={},
         taint_provenance={"m.f": TaintProvenance(source="fallback")},
         diagnostics=(("L3_LOW_RESOLUTION", "m.f has 80% unresolved"),),
         metadata=_meta(),
     )
     assert isinstance(res.taint_map, MappingProxyType)
     assert isinstance(res.project_edges, MappingProxyType)
+    assert isinstance(res.call_site_callees, MappingProxyType)
     assert isinstance(res.taint_provenance, MappingProxyType)
     assert res.diagnostics[0][0] == "L3_LOW_RESOLUTION"
     with pytest.raises(TypeError):

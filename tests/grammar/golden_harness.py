@@ -29,6 +29,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from wardline.core.config import WardlineConfig
+from wardline.core.finding import Maturity
 from wardline.scanner.analyzer import WardlineAnalyzer
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -43,4 +44,5 @@ def produce_stream() -> str:
     files = sorted(target.rglob("*.py"))
     analyzer = WardlineAnalyzer()  # builtin grammar / default provider + registry
     findings = analyzer.analyze(files, WardlineConfig(), root=REPO_ROOT)
-    return "\n".join(f.to_jsonl() for f in findings)
+    stable_findings = [f for f in findings if f.maturity is Maturity.STABLE]
+    return "\n".join(f.to_jsonl() for f in stable_findings)

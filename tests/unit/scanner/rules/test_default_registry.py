@@ -41,6 +41,11 @@ def test_default_registry_has_all_builtin_rules() -> None:
         "PY-WL-113",
         "PY-WL-114",
         "PY-WL-115",
+        "PY-WL-116",
+        "PY-WL-117",
+        "PY-WL-118",
+        "PY-WL-119",
+        "PY-WL-120",
     }
 
 
@@ -70,3 +75,56 @@ def test_analyzer_runs_default_rules_end_to_end(tmp_path) -> None:
     )
     defects = [f for f in findings if f.kind == Kind.DEFECT]
     assert any(f.rule_id == "PY-WL-101" and f.qualname == "svc.leaky" for f in defects)
+
+
+def test_preview_rules_are_non_gating() -> None:
+    from wardline.core.finding import Finding, Kind, Location, Maturity, Severity
+    from wardline.core.finding import compute_finding_fingerprint as _fp
+    from wardline.core.suppression import gate_trips
+    from wardline.scanner.context import AnalysisContext, RuleRegistry
+    from wardline.scanner.rules.metadata import RuleMetadata
+
+    class DummyPreviewRule:
+        rule_id = "PY-WL-TEST-PREVIEW"
+        metadata = RuleMetadata(
+            rule_id="PY-WL-TEST-PREVIEW",
+            base_severity=Severity.ERROR,
+            kind=Kind.DEFECT,
+            description="test preview rule",
+            maturity=Maturity.PREVIEW,
+        )
+
+        def __init__(self, base_severity=None):
+            pass
+
+        def check(self, context: AnalysisContext) -> list[Finding]:
+            return [
+                Finding(
+                    rule_id=self.rule_id,
+                    message="preview finding",
+                    severity=Severity.ERROR,
+                    kind=Kind.DEFECT,
+                    location=Location(path="test.py", line_start=1),
+                    fingerprint=_fp(rule_id=self.rule_id, path="test.py", line_start=1),
+                )
+            ]
+
+    registry = RuleRegistry()
+    registry.register(DummyPreviewRule())
+
+    context = AnalysisContext(
+        project_taints={},
+        project_return_taints={},
+        function_var_taints={},
+        function_return_taints={},
+        function_return_callee={},
+        entities={},
+        taint_provenance={},
+    )
+
+    findings = registry.run(context)
+    assert len(findings) == 1
+    assert findings[0].maturity == Maturity.PREVIEW
+
+    # Check that it doesn't trip the gate
+    assert not gate_trips(findings, Severity.ERROR)
