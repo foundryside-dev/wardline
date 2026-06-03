@@ -80,9 +80,17 @@ def canonical_call_name(dotted: str, alias_map: Mapping[str, str]) -> str:
 
 def _own_calls(node: ast.AST) -> Iterator[ast.Call]:
     """Yield every ``ast.Call`` in *node*'s own scope (never descending into nested
-    def/class/lambda — those are separate scopes / separate entities)."""
+    def/class — those are separate scopes / separate entities). Lambda bodies are traversed."""
     for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if isinstance(child, ast.Lambda):
+            yield from _own_calls(child.body)
+            for default in child.args.defaults:
+                yield from _own_calls(default)
+            for kw_default in child.args.kw_defaults:
+                if kw_default is not None:
+                    yield from _own_calls(kw_default)
             continue
         if isinstance(child, ast.Call):
             yield child
@@ -93,17 +101,24 @@ def sink_calls(
     func_node: ast.AST,
     sink_names: frozenset[str],
     alias_map: Mapping[str, str] | None = None,
+    module_prefix: str = "",
 ) -> Iterator[tuple[ast.Call, str]]:
     """Yield ``(call, dotted_name)`` for own-scope calls whose func resolves to a
     canonical name in *sink_names* (matches both ``eval`` and ``pickle.loads`` forms)."""
-    alias_map = alias_map or {}
+    from wardline.scanner.ast_primitives import resolve_call_fqn
+
+    aliases = dict(alias_map or {})
     for call in _own_calls(func_node):
-        dotted = dotted_name(call.func)
-        if dotted is None:
-            continue
-        canonical = canonical_call_name(dotted, alias_map)
-        if canonical in sink_names:
-            yield call, canonical
+        fqn = resolve_call_fqn(call, aliases, frozenset(), module_prefix)
+        if fqn is not None and fqn in sink_names:
+            yield call, fqn
+        else:
+            dotted = dotted_name(call.func)
+            if dotted is None:
+                continue
+            canonical = canonical_call_name(dotted, aliases)
+            if canonical in sink_names:
+                yield call, canonical
 
 
 def _module_for_qualname(qualname: str, context: AnalysisContext) -> str | None:
@@ -238,15 +253,16 @@ class TaintedSinkRule:
     def check(self, context: AnalysisContext) -> list[Finding]:
         findings: list[Finding] = []
         for qualname, entity in context.entities.items():
-            tier = context.project_taints.get(qualname, TaintState.UNKNOWN_RAW)
+            lookup_name = qualname.split(".<locals>.")[0]
+            tier = context.project_taints.get(lookup_name, TaintState.UNKNOWN_RAW)
             severity = modulate(self.base_severity, tier)
             if severity == Severity.NONE:
                 continue  # freedom / fail-closed zone — suppressed
             site_taints = call_site_var_taints(entity.node, qualname, context)
             final = context.function_var_taints.get(qualname, {})
-            module = _module_for_qualname(qualname, context)
+            module = _module_for_qualname(lookup_name, context)
             alias_map = context.alias_maps.get(module, {}) if module is not None else {}
-            for call, dotted in sink_calls(entity.node, self.SINKS, alias_map):
+            for call, dotted in sink_calls(entity.node, self.SINKS, alias_map, module or ""):
                 if not self._accept_call(call):
                     continue
                 worst = worst_arg_taint(call, qualname, context, site_taints.get(id(call), final))

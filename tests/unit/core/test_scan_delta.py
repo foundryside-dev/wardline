@@ -47,10 +47,13 @@ def test_delta_scan_transitive_propagation(tmp_path) -> None:
         mock_diff = MagicMock()
         mock_diff.stdout = "callee.py\n"
 
+        mock_verify = MagicMock()
+        mock_verify.stdout = "abc123\n"
+
         mock_ls_files = MagicMock()
         mock_ls_files.stdout = ""
 
-        mock_run.side_effect = [mock_rev_parse, mock_diff, mock_ls_files]
+        mock_run.side_effect = [mock_rev_parse, mock_verify, mock_diff, mock_ls_files]
 
         result = run_scan(tmp_path, new_since="HEAD~1")
 
@@ -83,8 +86,8 @@ def test_delta_scan_invalid_ref(tmp_path) -> None:
 
         mock_run.side_effect = [
             mock_rev_parse,
-            subprocess.CalledProcessError(1, "git diff", stderr="fatal: bad revision"),
+            subprocess.CalledProcessError(1, "git rev-parse", stderr="fatal: bad revision"),
         ]
 
-        with pytest.raises(WardlineError, match="Git diff failed for ref 'badref'"):
+        with pytest.raises(WardlineError, match="Git ref verification failed for ref 'badref'"):
             run_scan(tmp_path, new_since="badref")

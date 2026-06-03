@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+
+from wardline.core.errors import WardlineError
 from wardline.install.block import inject_block, render_block
 
 
@@ -15,6 +18,18 @@ def test_inject_into_absent_file_creates_it(tmp_path: Path) -> None:
     f = tmp_path / "CLAUDE.md"
     assert inject_block(f) == "created"
     assert f.read_text(encoding="utf-8").count("wardline:instructions:v") == 1
+
+
+def test_inject_rejects_symlinked_agents_file(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.md"
+    outside.write_text("outside\n", encoding="utf-8")
+    target = tmp_path / "AGENTS.md"
+    target.symlink_to(outside)
+
+    with pytest.raises(WardlineError, match="symlink"):
+        inject_block(target)
+
+    assert outside.read_text(encoding="utf-8") == "outside\n"
 
 
 def test_inject_appends_when_no_fence_present(tmp_path: Path) -> None:

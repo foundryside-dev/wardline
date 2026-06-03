@@ -10,8 +10,14 @@ import urllib.parse
 from pathlib import Path
 from typing import Any, TextIO
 
-from wardline.core.finding import ENGINE_PATH, Finding, Kind, Severity, SuppressionState
-from wardline.core.run import run_scan
+from wardline.core.errors import WardlineError
+from wardline.core.finding import ENGINE_PATH, UNANALYZED_RULE_IDS, Finding, Kind, Severity, SuppressionState
+
+
+def run_scan(*args: Any, **kwargs: Any) -> Any:
+    from wardline.core.run import run_scan as _run_scan
+
+    return _run_scan(*args, **kwargs)
 
 
 class LspServer:
@@ -115,7 +121,7 @@ class LspServer:
                         "capabilities": {
                             "textDocumentSync": {
                                 "openClose": True,
-                                "change": 1,  # Full sync
+                                "change": 0,
                                 "save": {"includeText": True},
                             }
                         }
@@ -153,12 +159,28 @@ class LspServer:
         """Run project scan and publish diagnostics for all open documents."""
         try:
             res = run_scan(self.root, confine_to_root=True)
-        except Exception:
+        except WardlineError as exc:
+            self._publish_scan_failure(f"Wardline scan failed: {exc}", notification_method="window/showMessage")
             return
+        except Exception as exc:  # noqa: BLE001
+            self._publish_scan_failure(
+                f"unexpected Wardline scan failure: {exc}",
+                notification_method="window/logMessage",
+            )
+            return
+
+        if res.summary.unanalyzed:
+            self.send_notification(
+                "window/logMessage",
+                {
+                    "type": 2,
+                    "message": f"Wardline could not analyze {res.summary.unanalyzed} file/source root(s).",
+                },
+            )
 
         findings_by_file: dict[Path, list[Finding]] = {}
         for f in res.findings:
-            if f.kind is not Kind.DEFECT or f.suppressed is not SuppressionState.ACTIVE:
+            if not self._should_publish_finding(f):
                 continue
             if f.location.path and f.location.path != ENGINE_PATH:
                 abs_path = (self.root / f.location.path).resolve()
@@ -170,37 +192,71 @@ class LspServer:
             diagnostics = []
             file_findings = findings_by_file.get(open_path, [])
             for f in file_findings:
-                loc = f.location
-                line_start = (loc.line_start or 1) - 1
-                col_start = loc.col_start or 0
-                line_end = (loc.line_end or loc.line_start or 1) - 1
-                col_end = loc.col_end if loc.col_end is not None else (col_start + 1)
-
-                severity = 4  # Hint
-                if f.severity == Severity.CRITICAL or f.severity == Severity.ERROR:
-                    severity = 1
-                elif f.severity == Severity.WARN:
-                    severity = 2
-                elif f.severity == Severity.INFO:
-                    severity = 3
-
-                diagnostics.append(
-                    {
-                        "range": {
-                            "start": {"line": line_start, "character": col_start},
-                            "end": {"line": line_end, "character": col_end},
-                        },
-                        "severity": severity,
-                        "code": f.rule_id,
-                        "message": f.message,
-                    }
-                )
+                diagnostics.append(self._finding_to_diagnostic(f))
 
             self.send_notification(
                 "textDocument/publishDiagnostics",
                 {
                     "uri": self.path_to_uri(open_path),
                     "diagnostics": diagnostics,
+                },
+            )
+
+    def _should_publish_finding(self, finding: Finding) -> bool:
+        if finding.suppressed is not SuppressionState.ACTIVE:
+            return False
+        if finding.kind is Kind.DEFECT:
+            return True
+        return finding.kind is Kind.FACT and finding.rule_id in UNANALYZED_RULE_IDS
+
+    def _finding_to_diagnostic(self, finding: Finding) -> dict[str, Any]:
+        loc = finding.location
+        line_start = (loc.line_start or 1) - 1
+        col_start = loc.col_start or 0
+        line_end = (loc.line_end or loc.line_start or 1) - 1
+        col_end = loc.col_end if loc.col_end is not None else (col_start + 1)
+
+        severity = 4  # Hint
+        if finding.severity == Severity.CRITICAL or finding.severity == Severity.ERROR:
+            severity = 1
+        elif finding.severity == Severity.WARN:
+            severity = 2
+        elif finding.severity == Severity.INFO:
+            severity = 3
+
+        return {
+            "range": {
+                "start": {"line": line_start, "character": col_start},
+                "end": {"line": line_end, "character": col_end},
+            },
+            "severity": severity,
+            "code": finding.rule_id,
+            "message": finding.message,
+        }
+
+    def _publish_scan_failure(self, message: str, *, notification_method: str) -> None:
+        self.send_notification(
+            notification_method,
+            {
+                "type": 1,
+                "message": message,
+            },
+        )
+        diagnostic = {
+            "range": {
+                "start": {"line": 0, "character": 0},
+                "end": {"line": 0, "character": 1},
+            },
+            "severity": 1,
+            "code": "WLN-ENGINE-LSP-SCAN-FAILED",
+            "message": message,
+        }
+        for open_path in self.open_documents:
+            self.send_notification(
+                "textDocument/publishDiagnostics",
+                {
+                    "uri": self.path_to_uri(open_path),
+                    "diagnostics": [diagnostic],
                 },
             )
 

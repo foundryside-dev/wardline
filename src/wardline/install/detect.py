@@ -14,6 +14,8 @@ import re
 import shutil
 from pathlib import Path
 
+from wardline.core.safe_paths import safe_project_file
+
 
 def _detect_clarion() -> tuple[bool, str | None]:
     url = os.environ.get("WARDLINE_CLARION_URL") or None
@@ -56,7 +58,7 @@ def _already_recorded(text: str, key: str) -> bool:
 
 def record_bindings(root: Path) -> dict[str, str]:
     """Detect siblings and append stanzas to wardline.yaml. Returns per-key status."""
-    cfg = root / "wardline.yaml"
+    cfg = safe_project_file(root, root / "wardline.yaml", label="wardline.yaml")
     text = cfg.read_text(encoding="utf-8") if cfg.exists() else ""
     detections = {"clarion": _detect_clarion(), "filigree": _detect_filigree(root)}
     additions: list[str] = []

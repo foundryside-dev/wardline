@@ -41,7 +41,8 @@ class SilentException:
     def check(self, context: AnalysisContext) -> list[Finding]:
         findings: list[Finding] = []
         for qualname, entity in context.entities.items():
-            tier = context.project_taints.get(qualname, TaintState.UNKNOWN_RAW)
+            lookup_name = qualname.split(".<locals>.")[0]
+            tier = context.project_taints.get(lookup_name, TaintState.UNKNOWN_RAW)
             severity = modulate(self.base_severity, tier)
             if severity == Severity.NONE:
                 continue

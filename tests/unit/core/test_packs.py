@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 # Ensure project root (which contains 'tests') is in sys.path
 project_root = Path(__file__).resolve().parents[3]
@@ -37,7 +38,7 @@ def test_config_load_and_deep_merge_pack(tmp_path: Path) -> None:
         "    PY-WL-103: WARN\n",
         encoding="utf-8",
     )
-    cfg = load(p, trust_local_packs=True)
+    cfg = load(p, trust_local_packs=True, trusted_packs=("tests.unit.install.mock_pack",))
     assert "tests.unit.install.mock_pack" in cfg.packs
     assert "**/mock_exclude/**" in cfg.exclude
     assert "local_exclude" in cfg.exclude
@@ -49,7 +50,17 @@ def test_missing_pack_raises_config_error(tmp_path: Path) -> None:
     p = tmp_path / "wardline.yaml"
     p.write_text("packs:\n  - non_existent_pack_xyz\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="failed to load trust-grammar pack"):
+        load(p, trusted_packs=("non_existent_pack_xyz",))
+
+
+def test_pack_config_is_rejected_by_default_without_importing(tmp_path: Path) -> None:
+    p = tmp_path / "wardline.yaml"
+    p.write_text("packs:\n  - import_side_effect_pack\n", encoding="utf-8")
+
+    with patch("importlib.import_module") as mock_import, pytest.raises(ConfigError, match="not trusted"):
         load(p)
+
+    mock_import.assert_not_called()
 
 
 def test_invalid_grammar_attribute_raises_config_error(tmp_path: Path) -> None:
@@ -63,7 +74,7 @@ def test_invalid_grammar_attribute_raises_config_error(tmp_path: Path) -> None:
         (proj / "wardline.yaml").write_text("packs:\n  - invalid_grammar_pack\n", encoding="utf-8")
         (proj / "m.py").write_text("def f(): pass\n", encoding="utf-8")
         with pytest.raises(ConfigError, match="attribute 'grammar' must be a TrustGrammar instance"):
-            run_scan(proj, trust_local_packs=True)
+            run_scan(proj, trust_local_packs=True, trusted_packs=("invalid_grammar_pack",))
     finally:
         sys.modules.pop("invalid_grammar_pack", None)
 
@@ -80,7 +91,7 @@ def test_analyzer_pack_integration(tmp_path: Path) -> None:
     source = "from tests.unit.install.mock_pack import mock_boundary\n\n@mock_boundary\ndef violator():\n    pass\n"
     (proj / "m.py").write_text(source, encoding="utf-8")
 
-    res = run_scan(proj, trust_local_packs=True)
+    res = run_scan(proj, trust_local_packs=True, trusted_packs=("tests.unit.install.mock_pack",))
 
     # 1. Custom rule should have run and fired on 'violator'
     findings = [f for f in res.findings if f.rule_id == "PY-WL-901"]

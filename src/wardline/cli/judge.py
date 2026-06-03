@@ -46,6 +46,31 @@ from wardline.core.triage import TriageResult
     default=False,
     help="Append FALSE_POSITIVE verdicts to .wardline/judged.yaml (default: dry-run).",
 )
+@click.option(
+    "--trust-judge-policy",
+    is_flag=True,
+    default=False,
+    help="Allow loading judge.policy_file from the scanned project as untrusted judge context.",
+)
+@click.option(
+    "--trust-pack",
+    "trusted_packs",
+    multiple=True,
+    help="Allow importing this trust-grammar pack from wardline.yaml. May be repeated.",
+)
+@click.option(
+    "--allow-custom-packs",
+    "trust_local_packs",
+    is_flag=True,
+    default=False,
+    help="Allow loading custom trust-grammar packs from the local project directory.",
+)
+@click.option(
+    "--strict-defaults",
+    is_flag=True,
+    default=False,
+    help="Ignore repository-supplied custom configuration overrides (wardline.yaml).",
+)
 def judge(
     path: Path,
     config_path: Path | None,
@@ -53,10 +78,19 @@ def judge(
     context_lines: int | None,
     max_findings: int | None,
     do_write: bool,
+    trust_judge_policy: bool,
+    trusted_packs: tuple[str, ...],
+    trust_local_packs: bool,
+    strict_defaults: bool,
 ) -> None:
     """Triage active DEFECTs with the opt-in LLM judge."""
     try:
-        cfg = config_mod.load(config_path or (path / "wardline.yaml"))
+        cfg = config_mod.load(
+            config_path or (path / "wardline.yaml"),
+            trust_local_packs=trust_local_packs,
+            trusted_packs=trusted_packs,
+            strict_defaults=strict_defaults,
+        )
         settings = parse_judge_settings(cfg.judge)
         model_id = model or settings.model
         # Build the real network caller here so test monkeypatching of this module's
@@ -64,9 +98,12 @@ def judge(
         # (network) caller branch from the CLI.
         _load_env_key(path)
         policy_block = resolve_policy_block(path, settings)
+        from wardline.core.judge_run import resolve_project_policy
+
+        project_policy = resolve_project_policy(path, settings, trust_judge_policy=trust_judge_policy)
 
         def _caller(req: JudgeRequest) -> JudgeResponse:
-            return call_judge(req, model_id=model_id, policy_block=policy_block)
+            return call_judge(req, model_id=model_id, policy_block=policy_block, project_policy=project_policy)
 
         outcome = run_judge(
             path,
@@ -75,6 +112,10 @@ def judge(
             context_lines=context_lines,
             max_findings=max_findings,
             write=do_write,
+            trust_local_packs=trust_local_packs,
+            trusted_packs=trusted_packs,
+            trust_judge_policy=trust_judge_policy,
+            strict_defaults=strict_defaults,
             judge_caller=_caller,
         )
     except JudgeContractError as exc:

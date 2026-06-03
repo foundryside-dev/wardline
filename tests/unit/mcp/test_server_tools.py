@@ -70,6 +70,24 @@ def test_scan_tool_summary_includes_unanalyzed(tmp_path: Path) -> None:
     assert out["summary"]["unanalyzed"] >= 1
 
 
+def test_scan_tool_option_like_new_since_is_iserror(tmp_path: Path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
+    server = WardlineMCPServer(root=proj)
+    resp = server.rpc.dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "scan", "arguments": {"new_since": "-c"}},
+        }
+    )
+    assert "error" not in resp, resp
+    assert resp["result"]["isError"] is True
+    assert "must not begin with '-'" in resp["result"]["content"][0]["text"]
+
+
 def test_explain_taint_success_through_mcp(tmp_path: Path) -> None:
     # scan to get a real PY-WL-101 fingerprint, then explain it through the MCP
     # layer: NOT isError, and the projected provenance fields are populated.

@@ -92,7 +92,10 @@ def build_call_edges(
         for call in iter_calls_in_function_body(entity.node):
             implicit_receiver: str | None = None
             target = resolve_call_fqn(call, alias_map, project_fqns, module_prefix)
-            if target is None or target not in project_fqns:
+            if target is not None and target in project_fqns:
+                if _resolve_classmethod_call(call) is not None:
+                    implicit_receiver = "class"
+            else:
                 target = resolve_self_method_fqn(
                     call,
                     caller_class_fqn=caller_class_fqn,

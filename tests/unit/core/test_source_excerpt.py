@@ -33,6 +33,11 @@ def test_excerpt_rejects_path_escape(tmp_path: Path) -> None:
         extract_excerpt(tmp_path, "../../etc/passwd", line=1, context_lines=2)
 
 
+def test_excerpt_rejects_absolute_path_escape(tmp_path: Path) -> None:
+    with pytest.raises(DiscoveryError):
+        extract_excerpt(tmp_path, "/etc/passwd", line=1, context_lines=2)
+
+
 def test_excerpt_truncates_to_char_limit(tmp_path: Path) -> None:
     _write(tmp_path, "src/m.py", 5)
     text = extract_excerpt(tmp_path, "src/m.py", line=3, context_lines=2, char_limit=10)

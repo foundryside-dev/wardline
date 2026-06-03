@@ -153,13 +153,16 @@ class ClarionClient:
 
     def _send(self, method: str, path_and_query: str, payload: dict[str, Any] | None) -> Response | None:
         """Sign + send. Returns the Response, or None on a SOFT failure (outage/5xx)."""
+        import time
         body = json.dumps(payload).encode("utf-8") if payload is not None else b""
         headers: dict[str, str] = {}
         if payload is not None:
             headers["Content-Type"] = "application/json"
         if self._secret:
-            sig = sign_request(self._secret, method, path_and_query, body)
+            timestamp = str(int(time.time()))
+            sig = sign_request(self._secret, method, path_and_query, body, timestamp=timestamp)
             headers["X-Loom-Component"] = f"clarion:{sig}"
+            headers["X-Wardline-Timestamp"] = timestamp
         url = f"{self._base}{path_and_query}"
         try:
             resp = self._transport.request(method, url, body, headers)

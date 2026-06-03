@@ -6,13 +6,14 @@ import json
 from pathlib import Path
 
 from wardline.core.errors import WardlineError
+from wardline.core.safe_paths import safe_project_file
 
 _ENTRY = {"type": "stdio", "command": "wardline", "args": ["mcp", "--root", "."]}
 
 
 def merge_mcp_entry(root: Path) -> str:
     """Add/replace the `wardline` entry under mcpServers. Returns created|updated|unchanged."""
-    path = root / ".mcp.json"
+    path = safe_project_file(root, root / ".mcp.json", label=".mcp.json")
     if not path.exists():
         payload = {"mcpServers": {"wardline": dict(_ENTRY)}}
         path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

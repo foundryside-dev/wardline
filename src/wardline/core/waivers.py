@@ -17,6 +17,7 @@ from typing import Any
 
 from wardline.core.errors import ConfigError
 from wardline.core.optional_deps import require_yaml
+from wardline.core.safe_paths import safe_project_file
 
 _HEX = frozenset("0123456789abcdef")
 
@@ -68,7 +69,14 @@ def parse_waivers(raw: Sequence[Mapping[str, Any]]) -> tuple[Waiver, ...]:
     return tuple(waivers)
 
 
-def add_waiver(config_path: Path, *, fingerprint: str, reason: str, expires: date | None) -> Waiver:
+def add_waiver(
+    config_path: Path,
+    *,
+    fingerprint: str,
+    reason: str,
+    expires: date | None,
+    root: Path | None = None,
+) -> Waiver:
     """Append a waiver to ``config_path``'s ``waivers:`` list (creating the file if
     absent). Validates via the SAME rules as :func:`parse_waivers`, so a bad
     fingerprint or empty reason raises :class:`ConfigError` BEFORE any write.
@@ -77,6 +85,8 @@ def add_waiver(config_path: Path, *, fingerprint: str, reason: str, expires: dat
     canonical form; both the in-line validation parse and a later
     ``load`` → ``parse_waivers`` round-trip accept it.
     """
+    if root is not None:
+        config_path = safe_project_file(root, config_path, label=config_path.name)
     entry: dict[str, object] = {"fingerprint": fingerprint, "reason": reason}
     if expires is not None:
         entry["expires"] = expires.isoformat()

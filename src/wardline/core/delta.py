@@ -16,6 +16,9 @@ def get_changed_files_since(ref: str, root: Path) -> set[str]:
     """Get the set of file paths (repo-relative, POSIX-style matching Location.path)
     that have changed since `ref`, including staged, unstaged, and untracked changes.
     """
+    if ref.startswith("-"):
+        raise WardlineError("new_since git ref must not begin with '-'")
+
     # 1. Get the git toplevel directory.
     try:
         res = subprocess.run(
@@ -32,10 +35,26 @@ def get_changed_files_since(ref: str, root: Path) -> set[str]:
             "Ensure git is installed and you are in a Git repository."
         ) from exc
 
-    # 2. Get changed files since ref (committed since ref, staged, unstaged).
+    # 2. Resolve ref to a verified object id before passing it to git diff.
     try:
         res = subprocess.run(
-            ["git", "diff", "--name-only", ref],
+            ["git", "rev-parse", "--verify", "--end-of-options", ref],
+            cwd=git_toplevel,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        verified_ref = res.stdout.strip().splitlines()[0]
+    except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr.strip() if exc.stderr else str(exc)
+        raise WardlineError(f"Git ref verification failed for ref {ref!r}: {stderr}") from exc
+    if not verified_ref:
+        raise WardlineError(f"Git ref verification failed for ref {ref!r}: empty object id")
+
+    # 3. Get changed files since ref (committed since ref, staged, unstaged).
+    try:
+        res = subprocess.run(
+            ["git", "diff", "--name-only", verified_ref, "--"],
             cwd=git_toplevel,
             capture_output=True,
             text=True,
@@ -46,7 +65,7 @@ def get_changed_files_since(ref: str, root: Path) -> set[str]:
         stderr = exc.stderr.strip() if exc.stderr else str(exc)
         raise WardlineError(f"Git diff failed for ref {ref!r}: {stderr}") from exc
 
-    # 3. Get untracked files.
+    # 4. Get untracked files.
     try:
         res = subprocess.run(
             ["git", "ls-files", "--others", "--exclude-standard"],
@@ -59,7 +78,7 @@ def get_changed_files_since(ref: str, root: Path) -> set[str]:
     except subprocess.CalledProcessError:
         untracked_paths = []
 
-    # 4. Map both lists to path relative to `root` (POSIX-style).
+    # 5. Map both lists to path relative to `root` (POSIX-style).
     changed_rel = set()
     root_resolved = root.resolve()
     for gp in diff_paths + untracked_paths:

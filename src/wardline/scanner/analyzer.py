@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity
 from wardline.core.qualname import module_dotted_name
-from wardline.core.taints import TaintState, least_trusted
+from wardline.core.taints import TaintState, combine, least_trusted
 from wardline.scanner.ast_primitives import build_import_alias_map
 from wardline.scanner.context import AnalysisContext, RuleRegistry
 from wardline.scanner.diagnostics import (
@@ -58,6 +58,19 @@ def _fp(*parts: str) -> str:
 
 
 _L2Record = tuple[Entity, TaintState, dict[str, TaintState], str, dict[str, str], str, bool]
+type _L2InputKey = tuple[
+    TaintState,
+    tuple[tuple[str, TaintState], ...],
+    tuple[tuple[str, TaintState], ...] | None,
+]
+type _L2Result = tuple[
+    dict[int, dict[str, TaintState]],
+    dict[int, dict[int | str | None, TaintState]],
+    dict[str, TaintState],
+    TaintState | None,
+    str | None,
+    dict[str, dict[str, TaintState]],
+]
 
 
 class WardlineAnalyzer:
@@ -111,6 +124,7 @@ class WardlineAnalyzer:
         # Filigree's project-relative-path validation.
         root = root.resolve()
 
+        dirty_modules: set[str] = set()
         for path in files:
             relpath = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
             module = module_dotted_name(relpath)
@@ -142,6 +156,23 @@ class WardlineAnalyzer:
             # finer-grained defense for the case where parse + discovery succeed.
             try:
                 source = path.read_text(encoding="utf-8")  # universal-newline -> LF
+                source_bytes = source.encode("utf-8")
+
+                # WLN-MED-10: Check cache before parsing and L2
+                provider_fingerprint = self._provider.fingerprint()
+                from wardline.scanner.taint.project_resolver import _RESOLVER_VERSION
+                from wardline.scanner.taint.summary import SUMMARY_SCHEMA_VERSION, compute_cache_key
+
+                cache_key = compute_cache_key(
+                    module_path=module,
+                    source_bytes=source_bytes,
+                    schema_version=SUMMARY_SCHEMA_VERSION,
+                    resolver_version=_RESOLVER_VERSION,
+                    provider_fingerprint=provider_fingerprint,
+                )
+                if self._cache is None or cache_key not in self._cache._entries:
+                    dirty_modules.add(module)
+
                 tree = ast.parse(source)
                 entities = tuple(discover_file_entities(tree, module=module, path=relpath))
                 classes = frozenset(discover_class_qualnames(tree, module=module))
@@ -236,7 +267,7 @@ class WardlineAnalyzer:
                 modules=modules,
                 provider_fingerprint=self._provider.fingerprint(),
                 summary_cache=self._cache,
-                dirty_modules=frozenset(),
+                dirty_modules=frozenset(dirty_modules),
                 config=config,
             )
         else:
@@ -324,7 +355,7 @@ class WardlineAnalyzer:
             if starred_taints:
                 star_meet = starred_taints[0]
                 for st in starred_taints[1:]:
-                    star_meet = least_trusted(star_meet, st)
+                    star_meet = combine(star_meet, st)
                 for param in posonly_params:
                     bound.setdefault(param.arg, []).append(star_meet)
                 for param in positional_params:
@@ -346,19 +377,19 @@ class WardlineAnalyzer:
             # Handle **kwargs unpacking
             if None in arg_taints:
                 unpack_taint = arg_taints[None]
+                for arg in (*args_node.posonlyargs, *args_node.args, *args_node.kwonlyargs):
+                    bound.setdefault(arg.arg, []).append(unpack_taint)
+                if args_node.vararg:
+                    bound.setdefault(args_node.vararg.arg, []).append(unpack_taint)
                 if args_node.kwarg:
                     bound.setdefault(args_node.kwarg.arg, []).append(unpack_taint)
-                for param in positional_params:
-                    bound.setdefault(param.arg, []).append(unpack_taint)
-                for param in args_node.kwonlyargs:
-                    bound.setdefault(param.arg, []).append(unpack_taint)
 
             result: dict[str, TaintState] = {}
             for param_name, taints in bound.items():
                 if taints:
                     meet = taints[0]
                     for t in taints[1:]:
-                        meet = least_trusted(meet, t)
+                        meet = combine(meet, t)
                     result[param_name] = meet
             return result
 
@@ -532,7 +563,7 @@ class WardlineAnalyzer:
                         summary = class_attr_taints.setdefault(target_class, {})
                         for attr_name, attr_taint in cls_writes.items():
                             summary[attr_name] = (
-                                least_trusted(summary[attr_name], attr_taint) if attr_name in summary else attr_taint
+                                combine(summary[attr_name], attr_taint) if attr_name in summary else attr_taint
                             )
 
         # Compute initial project-wide parameter meets from pass-1 call sites
@@ -550,13 +581,15 @@ class WardlineAnalyzer:
                     callee_meets = project_param_meets.setdefault(callee_qn, {})
                     for param, taint in call_meets.items():
                         if param in callee_meets:
-                            callee_meets[param] = least_trusted(callee_meets[param], taint)
+                            callee_meets[param] = combine(callee_meets[param], taint)
                         else:
                             callee_meets[param] = taint
 
         # ── Iterative Fixed-point L2 Loop to converge parameters and attributes ──
         l2_iteration_bound = _l2_iteration_bound(l2_records)
         l2_converged = False
+        last_l2_inputs: dict[str, _L2InputKey] = {}
+        last_l2_results: dict[str, _L2Result] = {}
         for _iteration in range(l2_iteration_bound):
             old_class_attr_taints = {k: dict(v) for k, v in class_attr_taints.items()}
             old_project_param_meets = {k: dict(v) for k, v in project_param_meets.items()}
@@ -574,33 +607,44 @@ class WardlineAnalyzer:
                         tm_iter[f"self.{attr_name}"] = attr_taint
                         tm_iter[f"cls.{attr_name}"] = attr_taint
                 param_meets = old_project_param_meets.get(ent.qualname)
-                try:
-                    call_sites, call_args, var_taints, ret_taint, ret_callee = _run_l2(
-                        ent.node, seed, tm_iter, alias_map, param_meets=param_meets, module_prefix=module
-                    )
-                except RecursionError:
-                    continue
+
+                inputs_key = (
+                    seed,
+                    tuple(sorted(tm_iter.items())),
+                    tuple(sorted(param_meets.items())) if param_meets else None,
+                )
+                if last_l2_inputs.get(ent.qualname) == inputs_key:
+                    call_sites, call_args, var_taints, ret_taint, ret_callee, writes = last_l2_results[ent.qualname]
+                else:
+                    try:
+                        call_sites, call_args, var_taints, ret_taint, ret_callee = _run_l2(
+                            ent.node, seed, tm_iter, alias_map, param_meets=param_meets, module_prefix=module
+                        )
+                        from wardline.scanner.taint.variable_level import collect_attribute_writes
+
+                        writes = collect_attribute_writes(
+                            ent.node,
+                            seed,
+                            dict(tm_iter),
+                            dict(var_taints),
+                            all_classes,
+                            alias_map,
+                            module,
+                            enclosing_class=enclosing_class if is_method else None,
+                        )
+                    except RecursionError:
+                        continue
+                    last_l2_inputs[ent.qualname] = inputs_key
+                    last_l2_results[ent.qualname] = (call_sites, call_args, var_taints, ret_taint, ret_callee, writes)
+
                 _store(ent.qualname, call_sites, call_args, var_taints, ret_taint, ret_callee)
                 project_call_site_arg_taints.update(call_args)
 
-                # Re-collect attribute writes
-                from wardline.scanner.taint.variable_level import collect_attribute_writes
-
-                writes = collect_attribute_writes(
-                    ent.node,
-                    seed,
-                    dict(tm_iter),
-                    dict(var_taints),
-                    all_classes,
-                    alias_map,
-                    module,
-                    enclosing_class=enclosing_class if is_method else None,
-                )
                 for target_class, cls_writes in writes.items():
                     summary = class_attr_taints.setdefault(target_class, {})
                     for attr_name, attr_taint in cls_writes.items():
                         summary[attr_name] = (
-                            least_trusted(summary[attr_name], attr_taint) if attr_name in summary else attr_taint
+                            combine(summary[attr_name], attr_taint) if attr_name in summary else attr_taint
                         )
 
             # Re-compute project-wide parameter meets
@@ -618,7 +662,7 @@ class WardlineAnalyzer:
                         callee_meets = project_param_meets.setdefault(callee_qn, {})
                         for param, taint in call_meets.items():
                             if param in callee_meets:
-                                callee_meets[param] = least_trusted(callee_meets[param], taint)
+                                callee_meets[param] = combine(callee_meets[param], taint)
                             else:
                                 callee_meets[param] = taint
 

@@ -6,6 +6,8 @@ import hashlib
 import re
 from pathlib import Path
 
+from wardline.core.safe_paths import safe_project_file
+
 _BLOCK_VERSION = "1"
 
 _BODY = (
@@ -36,6 +38,7 @@ def inject_block(file_path: Path) -> str:
 
     Returns created|updated|unchanged.
     """
+    file_path = safe_project_file(file_path.parent, file_path, label=file_path.name)
     block = render_block()
     if not file_path.exists():
         file_path.write_text(block + "\n", encoding="utf-8")

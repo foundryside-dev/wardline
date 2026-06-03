@@ -18,6 +18,7 @@ from typing import Any
 
 from wardline.core.errors import ConfigError
 from wardline.core.optional_deps import require_yaml
+from wardline.core.safe_paths import safe_project_file
 
 JUDGED_VERSION: int = 1
 _HEX = frozenset("0123456789abcdef")
@@ -72,8 +73,10 @@ def build_judged_document(entries: Iterable[JudgedFP]) -> dict[str, Any]:
     }
 
 
-def write_judged(path: Path, entries: Iterable[JudgedFP]) -> None:
+def write_judged(path: Path, entries: Iterable[JudgedFP], root: Path | None = None) -> None:
     yaml = require_yaml("writing judged.yaml")
+    if root is not None:
+        path = safe_project_file(root, path, label=path.name)
     path.parent.mkdir(parents=True, exist_ok=True)
     text = yaml.safe_dump(build_judged_document(entries), sort_keys=False, default_flow_style=False, allow_unicode=True)
     path.write_text(text, encoding="utf-8")

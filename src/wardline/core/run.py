@@ -9,10 +9,10 @@ identical by construction — same findings, same ``active`` count, same gate.
 from __future__ import annotations
 
 import hashlib
-import importlib
 from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from wardline.core import config as config_mod
 from wardline.core.baseline import load_baseline
@@ -30,10 +30,9 @@ from wardline.core.finding import (
 from wardline.core.judged import load_judged
 from wardline.core.suppression import apply_suppressions, gate_trips
 from wardline.core.waivers import WaiverSet, parse_waivers
-from wardline.scanner.analyzer import build_analyzer
-from wardline.scanner.context import AnalysisContext
-from wardline.scanner.grammar import TrustGrammar, default_grammar
-from wardline.scanner.taint.summary_cache import SummaryCache
+
+if TYPE_CHECKING:
+    from wardline.scanner.context import AnalysisContext
 
 
 def _fp(*parts: str) -> str:
@@ -82,6 +81,8 @@ def run_scan(
     confine_to_root: bool = False,
     new_since: str | None = None,
     trust_local_packs: bool = False,
+    trusted_packs: tuple[str, ...] = (),
+    strict_defaults: bool = False,
 ) -> ScanResult:
     """Discover → analyze → apply suppressions. Pure function of (disk + config).
 
@@ -92,6 +93,10 @@ def run_scan(
     ``discover`` reject any ``source_root`` that resolves outside ``root`` — the
     MCP server passes True so a poisoned config cannot read out-of-root source.
     """
+    from wardline.scanner.analyzer import build_analyzer
+    from wardline.scanner.grammar import TrustGrammar, default_grammar
+    from wardline.scanner.taint.summary_cache import SummaryCache
+
     # An EXPLICIT --config path that doesn't exist must NOT silently fall back to
     # default policy (dropping the operator's severity overrides/excludes) — that
     # is a false-green. The IMPLICIT default (root/wardline.yaml) may legitimately
@@ -99,7 +104,12 @@ def run_scan(
     if config_path is not None and not config_path.exists():
         raise ConfigError(f"config file does not exist: {config_path}")
     cfg_path = config_path or (root / "wardline.yaml")
-    cfg = config_mod.load(cfg_path, trust_local_packs=trust_local_packs)
+    cfg = config_mod.load(
+        cfg_path,
+        trust_local_packs=trust_local_packs,
+        trusted_packs=trusted_packs,
+        strict_defaults=strict_defaults,
+    )
     cache = None
     if cache_dir is not None:
         cache = SummaryCache(cache_dir=cache_dir)
@@ -126,11 +136,7 @@ def run_scan(
                 warn.lineno,
             )
     grammar = default_grammar()
-    for pack_name in cfg.packs:
-        try:
-            pkg = importlib.import_module(pack_name)
-        except ImportError as exc:
-            raise ConfigError(f"failed to load trust-grammar pack {pack_name!r}: {exc}") from exc
+    for pack_name, pkg in cfg.pack_modules.items():
         pack_grammar = getattr(pkg, "grammar", None)
         if pack_grammar is not None:
             if not isinstance(pack_grammar, TrustGrammar):

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -26,6 +26,7 @@ class WardlineConfig:
     filigree: Mapping[str, Any] = field(default_factory=dict)
     clarion: Mapping[str, Any] = field(default_factory=dict)
     packs: tuple[str, ...] = ()
+    pack_modules: Mapping[str, Any] = field(default_factory=dict)
     untrusted_sources: tuple[str, ...] = ()
     sanitisers: tuple[str, ...] = ()
     provenance_clash: bool = False
@@ -64,36 +65,59 @@ def _deep_merge(local: dict[str, Any], default: dict[str, Any]) -> dict[str, Any
 
 def _is_local_pack(pack_name: str, config_path: Path | None) -> bool:
     import importlib.util
+    import sys
 
     try:
         spec = importlib.util.find_spec(pack_name)
     except Exception:
         return False
-    if spec is None:
-        return False
-    origins = []
-    if spec.origin:
-        origins.append(Path(spec.origin))
-    if spec.submodule_search_locations:
-        for loc in spec.submodule_search_locations:
-            origins.append(Path(loc))
+    roots: list[Path] = []
+    if spec and spec.origin and spec.origin not in ("built-in", "frozen"):
+        roots.append(Path(spec.origin).parent.resolve())
+    if config_path is not None:
+        roots.append(config_path.parent.resolve())
+    roots.append(Path.cwd().resolve())
 
-    def _is_under(p: Path, folder: Path) -> bool:
-        try:
-            return p.resolve().is_relative_to(folder.resolve())
-        except Exception:
-            return False
+    parts = pack_name.split(".")
 
-    for origin in origins:
-        if config_path is not None and _is_under(origin, config_path.parent):
-            return True
-        if _is_under(origin, Path.cwd()):
-            return True
+    for p_str in sys.path:
+        p_path = Path.cwd().resolve() if not p_str else Path(p_str).resolve()
+
+        if "site-packages" in p_path.parts or "dist-packages" in p_path.parts:
+            continue
+
+        is_local = False
+        for r in roots:
+            try:
+                if p_path == r or p_path.is_relative_to(r):
+                    is_local = True
+                    break
+            except Exception:
+                continue
+
+        if is_local:
+            target = p_path
+            exists = True
+            for part in parts[:-1]:
+                target = target / part
+                if not (target.is_dir() or (target.parent / f"{part}.py").is_file()):
+                    exists = False
+                    break
+            if exists:
+                last = parts[-1]
+                if (target / last).is_dir() or (target / f"{last}.py").is_file():
+                    return True
     return False
 
 
-def load(path: Path | None, *, trust_local_packs: bool = False) -> WardlineConfig:
-    if path is None or not path.exists():
+def load(
+    path: Path | None,
+    *,
+    trust_local_packs: bool = False,
+    trusted_packs: Iterable[str] = (),
+    strict_defaults: bool = False,
+) -> WardlineConfig:
+    if strict_defaults or path is None or not path.exists():
         return WardlineConfig()
     yaml = require_yaml("loading wardline.yaml")
     jsonschema = require_jsonschema("validating wardline.yaml")
@@ -111,9 +135,15 @@ def load(path: Path | None, *, trust_local_packs: bool = False) -> WardlineConfi
         raise ConfigError(f"packs key in {path.name} must be a list")
 
     merged_raw = dict(raw)
+    trusted_pack_names = frozenset(trusted_packs)
+    pack_modules: dict[str, Any] = {}
     for pack_name in packs:
         if not isinstance(pack_name, str):
             raise ConfigError(f"packs list in {path.name} must contain strings only")
+        if pack_name not in trusted_pack_names:
+            raise ConfigError(
+                f"trust-grammar pack {pack_name!r} is not trusted. Pass --trust-pack {pack_name} to allow importing it."
+            )
         if not trust_local_packs and _is_local_pack(pack_name, path):
             raise ConfigError(
                 f"loading trust-grammar pack {pack_name!r} from local project directory is disabled "
@@ -126,6 +156,7 @@ def load(path: Path | None, *, trust_local_packs: bool = False) -> WardlineConfi
         except ImportError as exc:
             raise ConfigError(f"failed to load trust-grammar pack {pack_name!r}: {exc}") from exc
 
+        pack_modules[pack_name] = pkg
         pack_config = getattr(pkg, "config", None)
         if pack_config is not None:
             if not isinstance(pack_config, dict):
@@ -149,6 +180,7 @@ def load(path: Path | None, *, trust_local_packs: bool = False) -> WardlineConfi
         filigree=dict(merged_raw.get("filigree") or {}),
         clarion=dict(merged_raw.get("clarion") or {}),
         packs=tuple(packs),
+        pack_modules=pack_modules,
         untrusted_sources=tuple(merged_raw.get("untrusted_sources") or ()),
         sanitisers=tuple(merged_raw.get("sanitisers") or ()),
         provenance_clash=bool(merged_raw.get("provenance_clash") or False),
@@ -165,10 +197,14 @@ def _config_for(
     config_path: Path | None,
     *,
     trust_local_packs: bool = False,
+    trusted_packs: Iterable[str] = (),
+    strict_defaults: bool = False,
 ) -> WardlineConfig:
     return load(
         config_path if config_path is not None else root / "wardline.yaml",
         trust_local_packs=trust_local_packs,
+        trusted_packs=trusted_packs,
+        strict_defaults=strict_defaults,
     )
 
 
@@ -193,7 +229,9 @@ def resolve_clarion_url(
     config_path: Path | None = None,
     *,
     trust_local_packs: bool = False,
+    trusted_packs: Iterable[str] = (),
     trust_config_urls: bool = False,
+    strict_defaults: bool = False,
 ) -> str | None:
     """Clarion URL by precedence: explicit flag > env var > wardline.yaml."""
     if flag is not None:
@@ -201,7 +239,13 @@ def resolve_clarion_url(
     env = os.environ.get(_CLARION_URL_ENV)
     if env:
         return env
-    url = _config_for(root, config_path, trust_local_packs=trust_local_packs).clarion_url
+    url = _config_for(
+        root,
+        config_path,
+        trust_local_packs=trust_local_packs,
+        trusted_packs=trusted_packs,
+        strict_defaults=strict_defaults,
+    ).clarion_url
     if url and not trust_config_urls and not _is_safe_url(url):
         raise ConfigError(
             f"Loading Clarion URL {url!r} from project config is disabled by default for security. "
@@ -216,7 +260,9 @@ def resolve_filigree_url(
     config_path: Path | None = None,
     *,
     trust_local_packs: bool = False,
+    trusted_packs: Iterable[str] = (),
     trust_config_urls: bool = False,
+    strict_defaults: bool = False,
 ) -> str | None:
     """Filigree Loom URL by precedence: explicit flag > env var > wardline.yaml."""
     if flag is not None:
@@ -224,7 +270,13 @@ def resolve_filigree_url(
     env = os.environ.get(_FILIGREE_URL_ENV)
     if env:
         return env
-    url = _config_for(root, config_path, trust_local_packs=trust_local_packs).filigree_url
+    url = _config_for(
+        root,
+        config_path,
+        trust_local_packs=trust_local_packs,
+        trusted_packs=trusted_packs,
+        strict_defaults=strict_defaults,
+    ).filigree_url
     if url and not trust_config_urls and not _is_safe_url(url):
         raise ConfigError(
             f"Loading Filigree URL {url!r} from project config is disabled by default for security. "
@@ -248,9 +300,9 @@ class JudgeSettings:
 def parse_judge_settings(raw: Mapping[str, Any]) -> JudgeSettings:
     """Parse the ``judge:`` config section, fail-loud on bad types.
 
-    ``wardline.yaml`` (including ``judge.policy_file``) is TRUSTED operator input —
-    the same tier as ``rules.enable`` (which can already disable every rule). Scanned
-    source code is the untrusted tier; the two are kept distinct in the judge prompt.
+    ``wardline.yaml`` is project-supplied input. ``judge.policy_file`` is parsed
+    here as a string only; loading its contents requires an explicit trusted
+    caller flag in the judge runner.
     """
 
     def _int(key: str, default: int | None) -> int | None:

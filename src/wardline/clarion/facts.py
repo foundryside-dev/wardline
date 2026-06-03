@@ -22,9 +22,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from wardline.clarion import require_blake3
-from wardline.core.run import ScanResult
 
 if TYPE_CHECKING:
+    from wardline.core.run import ScanResult
     from wardline.scanner.context import AnalysisContext
 
 SCHEMA_VERSION = "wardline-taint-1"

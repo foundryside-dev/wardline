@@ -12,6 +12,8 @@ import secrets
 from contextlib import suppress
 from pathlib import Path
 
+from wardline.core.safe_paths import safe_project_file
+
 WARDLINE_ATTEST_KEY_ENV = "WARDLINE_ATTEST_KEY"
 
 
@@ -23,7 +25,7 @@ def load_attest_key(root: Path) -> str | None:
     value = os.environ.get(WARDLINE_ATTEST_KEY_ENV)
     if value:
         return value
-    env_path = root / ".env"
+    env_path = safe_project_file(root, root / ".env", label=".env")
     if not env_path.is_file():
         return None
     for raw in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -53,7 +55,7 @@ def mint_attest_key(root: Path) -> tuple[str, str]:
     key = secrets.token_hex(32)
 
     # --- write to .env --------------------------------------------------
-    env_path = root / ".env"
+    env_path = safe_project_file(root, root / ".env", label=".env")
     if env_path.exists():
         text = env_path.read_text(encoding="utf-8")
         if not text.endswith("\n"):
@@ -66,7 +68,7 @@ def mint_attest_key(root: Path) -> tuple[str, str]:
         os.chmod(env_path, 0o600)
 
     # --- ensure .env is gitignored --------------------------------------
-    gitignore_path = root / ".gitignore"
+    gitignore_path = safe_project_file(root, root / ".gitignore", label=".gitignore")
     if gitignore_path.exists():
         gi_text = gitignore_path.read_text(encoding="utf-8")
         existing_lines = {ln.strip() for ln in gi_text.splitlines()}

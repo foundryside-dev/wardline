@@ -65,7 +65,7 @@ def test_fn(x, y):
         param_meets=param_meets,
         provenance_clash=True,
     )
-    assert var_taints["z"] == T.ASSURED
+    assert var_taints["z"] == T.MIXED_RAW
 
 
 def test_l2_control_flow_merge_clash() -> None:
@@ -100,7 +100,7 @@ def test_fn(cond, x, y):
         param_meets=param_meets,
         provenance_clash=True,
     )
-    assert var_taints["z"] == T.ASSURED
+    assert var_taints["z"] == T.MIXED_RAW
 
 
 def test_l3_propagation_clash() -> None:
@@ -135,7 +135,7 @@ def test_l3_propagation_clash() -> None:
         return_taint_map=return_taint_map,
         config=config_true,
     )
-    assert refined["A"] == T.ASSURED
+    assert refined["A"] == T.MIXED_RAW
 
 
 def test_summary_cache_mixed_raw_clash() -> None:

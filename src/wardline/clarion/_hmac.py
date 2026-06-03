@@ -17,18 +17,25 @@ import hashlib
 import hmac
 
 
-def canonical_message(method: str, path_and_query: str, body: bytes) -> str:
-    """The exact string Clarion signs: three parts joined by '\\n', no trailing newline.
+def canonical_message(
+    method: str, path_and_query: str, body: bytes, timestamp: str | None = None
+) -> str:
+    """The exact string Clarion signs: parts joined by '\n', no trailing newline.
 
     ``method`` is signed verbatim; pass the uppercase HTTP verb (e.g. ``"POST"``)
     so the signature matches Clarion's server-side uppercase method string."""
-    return f"{method}\n{path_and_query}\n{hashlib.sha256(body).hexdigest()}"
+    body_hash = hashlib.sha256(body).hexdigest()
+    if timestamp is not None:
+        return f"{method}\n{path_and_query}\n{timestamp}\n{body_hash}"
+    return f"{method}\n{path_and_query}\n{body_hash}"
 
 
-def sign_request(secret: str, method: str, path_and_query: str, body: bytes) -> str:
+def sign_request(
+    secret: str, method: str, path_and_query: str, body: bytes, timestamp: str | None = None
+) -> str:
     """Return the lowercase-hex HMAC-SHA256 signature (bare hex, no 'clarion:' prefix)."""
     return hmac.new(
         secret.encode("utf-8"),
-        canonical_message(method, path_and_query, body).encode("utf-8"),
+        canonical_message(method, path_and_query, body, timestamp).encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()

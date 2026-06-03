@@ -135,7 +135,7 @@ def _compute_scc_round(
     phase2_floor: dict[str, TaintState],
 ) -> tuple[dict[str, TaintState], dict[str, str | None]]:
     """Compute one synchronous SCC refinement round from a stable snapshot."""
-    from wardline.core.taints import least_trusted
+    from wardline.core.taints import combine
 
     updates: dict[str, TaintState] = {}
     via_callee: dict[str, str | None] = {}
@@ -166,7 +166,7 @@ def _compute_scc_round(
         # rank-meet least_trusted (weakest-link), NOT taint_join: clean callees of
         # different families must not clash the caller to MIXED_RAW (a RAW_ZONE
         # false positive); a raw callee still propagates at its precise rank.
-        combined = reduce(least_trusted, callee_taints)
+        combined = reduce(combine, callee_taints)
         floor = phase2_floor[func]
         # The line-above floor pins TRUST_RANK[new_taint] >= TRUST_RANK[floor]
         # unconditionally, so the former inner unresolved-clamp guard
@@ -235,7 +235,7 @@ def _propagate_callgraph_taints_inner(
     dict[frozenset[str], int],
 ]:
     """Run SCC-based fixed-point propagation to refine L1 taints."""
-    from wardline.core.taints import least_trusted
+    from wardline.core.taints import combine
 
     scc_iteration_counts: dict[frozenset[str], int] = {}
 
@@ -322,7 +322,7 @@ def _propagate_callgraph_taints_inner(
                         ext_taints.append(c_return_taint)
                     else:
                         ext_taints.append(current[c])
-                ext_combined = reduce(least_trusted, ext_taints)
+                ext_combined = reduce(combine, ext_taints)
 
                 # TRUST_RANK: ordering comparison, not taint combination (see §6)
                 ext_taint = ext_combined
@@ -409,7 +409,7 @@ def _propagate_callgraph_taints_inner(
             # least_trusted is order-independent (commutative, associative,
             # idempotent), preserving the order-independence this seed pass exists
             # to guarantee.
-            seed_join = reduce(least_trusted, seed_taints)
+            seed_join = reduce(combine, seed_taints)
             if TRUST_RANK[seed_join] > TRUST_RANK[current[f]]:
                 current[f] = seed_join
                 refined.add(f)

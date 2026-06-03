@@ -15,6 +15,17 @@ def test_create_when_absent(tmp_path: Path) -> None:
     assert data["mcpServers"]["wardline"] == _WARDLINE_ENTRY
 
 
+def test_merge_rejects_symlinked_mcp_json(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.json"
+    outside.write_text("{}", encoding="utf-8")
+    (tmp_path / ".mcp.json").symlink_to(outside)
+
+    with pytest.raises(WardlineError, match="symlink"):
+        merge_mcp_entry(tmp_path)
+
+    assert outside.read_text(encoding="utf-8") == "{}"
+
+
 def test_merge_preserves_siblings(tmp_path: Path) -> None:
     (tmp_path / ".mcp.json").write_text(
         json.dumps({"mcpServers": {"filigree": {"type": "stdio", "command": "filigree-mcp", "args": []}}}),

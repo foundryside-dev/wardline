@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+
+from wardline.core.errors import WardlineError
 from wardline.install.detect import record_bindings
 
 
@@ -22,6 +25,20 @@ def test_filigree_marker_writes_commented_stanza(tmp_path: Path, monkeypatch) ->
     text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
     assert "wardline-install:filigree" in text
     assert "# filigree:" in text
+
+
+def test_record_bindings_rejects_symlinked_wardline_yaml(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("WARDLINE_CLARION_URL", "http://clar:9100")
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    outside = tmp_path / "outside.yaml"
+    outside.write_text("existing: true\n", encoding="utf-8")
+    (tmp_path / "wardline.yaml").symlink_to(outside)
+
+    with pytest.raises(WardlineError, match="symlink"):
+        record_bindings(tmp_path)
+
+    assert outside.read_text(encoding="utf-8") == "existing: true\n"
 
 
 def test_env_url_writes_live_stanza(tmp_path: Path, monkeypatch) -> None:

@@ -20,6 +20,7 @@ from wardline.core.discovery import discover
 from wardline.core.errors import ConfigError
 from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.optional_deps import require_yaml
+from wardline.core.safe_paths import safe_project_file
 from wardline.core.waivers import WaiverSet, parse_waivers
 
 BASELINE_VERSION: int = 1
@@ -62,8 +63,10 @@ def build_baseline_document(findings: Iterable[Finding]) -> dict[str, Any]:
     }
 
 
-def write_baseline(path: Path, findings: Iterable[Finding]) -> None:
+def write_baseline(path: Path, findings: Iterable[Finding], root: Path | None = None) -> None:
     yaml = require_yaml("writing baseline.yaml")
+    if root is not None:
+        path = safe_project_file(root, path, label=path.name)
     path.parent.mkdir(parents=True, exist_ok=True)
     text = yaml.safe_dump(
         build_baseline_document(findings), sort_keys=False, default_flow_style=False, allow_unicode=True
@@ -103,7 +106,7 @@ def collect_and_write_baseline(
     files = discover(root, cfg, confine_to_root=confine_to_root)
     findings = WardlineAnalyzer().analyze(files, cfg, root=root)
     to_baseline = [f for f in findings if f.kind is Kind.DEFECT and waivers.match(f.fingerprint, today) is None]
-    write_baseline(baseline_path, to_baseline)
+    write_baseline(baseline_path, to_baseline, root=root)
     return to_baseline
 
 

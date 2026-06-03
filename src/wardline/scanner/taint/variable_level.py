@@ -24,7 +24,7 @@ from __future__ import annotations
 import ast
 import contextvars
 
-from wardline.core.taints import _PROVENANCE_CLASH, TaintState, least_trusted
+from wardline.core.taints import _PROVENANCE_CLASH, TaintState, combine
 
 # Serialisation sinks — calls that cross the representation boundary. Their
 # output sheds validation provenance (raw bytes/str), so → UNKNOWN_RAW. This is
@@ -153,7 +153,7 @@ def compute_variable_taints(
         token_args = _CURRENT_CALL_SITE_ARG_TAINTS.set(call_site_arg_taints)
     try:
         var_taints: dict[str, TaintState] = {}
-        _seed_parameters(func_node, function_taint, var_taints, param_meets)
+        _seed_parameters(func_node, function_taint, var_taints, param_meets, taint_map)
         _walk_body(func_node.body, function_taint, taint_map, var_taints, call_site_taints)
         return var_taints
     finally:
@@ -171,15 +171,35 @@ def _seed_parameters(
     function_taint: TaintState,
     var_taints: dict[str, TaintState],
     param_meets: dict[str, TaintState] | None = None,
+    taint_map: dict[str, TaintState] | None = None,
 ) -> None:
     args = func_node.args
     var_types = _CURRENT_VAR_TYPES.get()
     alias_map = _CURRENT_ALIAS_MAP.get()
 
+    default_taints: dict[str, TaintState] = {}
+
+    # Map positional parameter defaults
+    defaults = args.defaults
+    total_pos_args = len(args.posonlyargs) + len(args.args)
+    num_defaults = len(defaults)
+    all_pos_params = args.posonlyargs + args.args
+    for i, default_expr in enumerate(defaults):
+        param_idx = total_pos_args - num_defaults + i
+        if 0 <= param_idx < len(all_pos_params):
+            param_name = all_pos_params[param_idx].arg
+            default_taints[param_name] = _resolve_expr(default_expr, function_taint, taint_map or {}, {})
+
+    # Map keyword-only parameter defaults
+    for param, kw_default_expr in zip(args.kwonlyargs, args.kw_defaults, strict=True):
+        if kw_default_expr is not None:
+            default_taints[param.arg] = _resolve_expr(kw_default_expr, function_taint, taint_map or {}, {})
+
     def handle_arg(arg: ast.arg) -> None:
-        seed_val = function_taint
+        fallback = default_taints.get(arg.arg, function_taint)
+        seed_val = fallback
         if param_meets is not None and arg.arg in param_meets:
-            seed_val = least_trusted(seed_val, param_meets[arg.arg])
+            seed_val = combine(seed_val, param_meets[arg.arg])
         var_taints[arg.arg] = seed_val
 
         if arg.annotation and var_types is not None:
@@ -226,7 +246,7 @@ def _resolve_expr(
         # Consistent with the f-string/.format/.join combiners.
         left = _resolve_expr(node.left, function_taint, taint_map, var_taints)
         right = _resolve_expr(node.right, function_taint, taint_map, var_taints)
-        return least_trusted(left, right)
+        return combine(left, right)
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
         # Container summary = weakest-link of its elements (least_trusted), so a
         # clean literal element does not clash validated data to MIXED_RAW.
@@ -234,7 +254,7 @@ def _resolve_expr(
             return TaintState.INTEGRAL
         result = _resolve_expr(node.elts[0], function_taint, taint_map, var_taints)
         for elt in node.elts[1:]:
-            result = least_trusted(result, _resolve_expr(elt, function_taint, taint_map, var_taints))
+            result = combine(result, _resolve_expr(elt, function_taint, taint_map, var_taints))
         return result
     if isinstance(node, ast.Dict):
         # Container summary = weakest-link of its values (least_trusted).
@@ -243,7 +263,7 @@ def _resolve_expr(
             return TaintState.INTEGRAL
         result = parts[0]
         for p in parts[1:]:
-            result = least_trusted(result, p)
+            result = combine(result, p)
         return result
     if isinstance(node, ast.NamedExpr):
         taint = _resolve_expr(node.value, function_taint, taint_map, var_taints)
@@ -258,7 +278,7 @@ def _resolve_expr(
         # clash) while a raw arm still propagates.
         true_t = _resolve_expr(node.body, function_taint, taint_map, var_taints)
         false_t = _resolve_expr(node.orelse, function_taint, taint_map, var_taints)
-        return least_trusted(true_t, false_t)
+        return combine(true_t, false_t)
     if isinstance(node, ast.Starred):
         return _resolve_expr(node.value, function_taint, taint_map, var_taints)
     if isinstance(node, ast.UnaryOp):
@@ -288,7 +308,7 @@ def _resolve_expr(
         # clean, a raw value still propagates.
         result = _resolve_expr(node.values[0], function_taint, taint_map, var_taints)
         for value in node.values[1:]:
-            result = least_trusted(result, _resolve_expr(value, function_taint, taint_map, var_taints))
+            result = combine(result, _resolve_expr(value, function_taint, taint_map, var_taints))
         return result
     if isinstance(node, ast.JoinedStr):
         return _resolve_joined_str(node, function_taint, taint_map, var_taints)
@@ -329,7 +349,7 @@ def _resolve_joined_str(
         return TaintState.INTEGRAL
     result = parts[0]
     for p in parts[1:]:
-        result = least_trusted(result, p)
+        result = combine(result, p)
     return result
 
 
@@ -369,7 +389,7 @@ def _resolve_comprehension(
         # clean key does not clash a validated value to MIXED_RAW.
         key_t = _resolve_expr(node.key, function_taint, taint_map, local)
         val_t = _resolve_expr(node.value, function_taint, taint_map, local)
-        result = least_trusted(key_t, val_t)
+        result = combine(key_t, val_t)
     else:
         result = _resolve_expr(node.elt, function_taint, taint_map, local)
     # Walrus targets bound by the element (PEP 572) leak to the enclosing scope.
@@ -435,8 +455,8 @@ def _resolve_call(
                 return TaintState.GUARDED
             result = arg_taints[0]
             for at in arg_taints[1:]:
-                result = least_trusted(result, at)
-            return least_trusted(result, TaintState.GUARDED)
+                result = combine(result, at)
+            return combine(result, TaintState.GUARDED)
 
     if isinstance(node.func, ast.Attribute):
         dotted = _dotted_name(node.func)
@@ -467,7 +487,7 @@ def _resolve_call(
             receiver = _resolve_expr(node.func.value, function_taint, taint_map, var_taints)
             result = receiver
             for at in arg_taints:
-                result = least_trusted(result, at)
+                result = combine(result, at)
             return result
         if attr in _PROPAGATING_METHODS_RECEIVER:
             # ``.get``/``.pop``/``.setdefault`` evaluate to ONE of the receiver's
@@ -485,7 +505,7 @@ def _resolve_call(
             # no key to skip, so every keyword value is a candidate default.
             skip = 1 if node.args else 0
             for default_taint in arg_taints[skip:]:
-                result = least_trusted(result, default_taint)
+                result = combine(result, default_taint)
             return result
     if isinstance(node.func, ast.Name):
         try:
@@ -501,7 +521,7 @@ def _resolve_call(
                 return TaintState.INTEGRAL
             result = arg_taints[0]
             for at in arg_taints[1:]:
-                result = least_trusted(result, at)
+                result = combine(result, at)
             return result
     if isinstance(node.func, ast.Attribute):
         from wardline.core.taints import RAW_ZONE
@@ -751,7 +771,7 @@ def _handle_augassign(
     )
     if isinstance(stmt.target, ast.Name):
         existing = var_taints.get(stmt.target.id, function_taint)
-        var_taints[stmt.target.id] = least_trusted(existing, rhs_taint)
+        var_taints[stmt.target.id] = combine(existing, rhs_taint)
     # An AugAssign target is always Name/Attribute/Subscript by the Python grammar,
     # so these branches are exhaustive — the implicit fall-through is unreachable.
     elif isinstance(stmt.target, (ast.Subscript, ast.Attribute)):  # pragma: no branch
@@ -788,7 +808,7 @@ def _taint_container_base(
     """
     base = _container_base_name(target)
     if base is not None:
-        var_taints[base] = least_trusted(var_taints.get(base, function_taint), rhs)
+        var_taints[base] = combine(var_taints.get(base, function_taint), rhs)
 
 
 # ── Control flow handlers ────────────────────────────────────────
@@ -827,16 +847,10 @@ def _handle_if(
     # its rank).
     all_vars = set(if_taints) | set(else_taints)
     for var in all_vars:
-        try:
-            if_val: TaintState | None = if_taints[var]
-        except KeyError:
-            if_val = None
-        try:
-            else_val: TaintState | None = else_taints[var]
-        except KeyError:
-            else_val = None
+        if_val = if_taints.get(var)
+        else_val = else_taints.get(var)
         if if_val is not None and else_val is not None:
-            var_taints[var] = least_trusted(if_val, else_val)
+            var_taints[var] = combine(if_val, else_val)
         elif if_val is not None:
             var_taints[var] = if_val
         elif else_val is not None:
@@ -858,27 +872,21 @@ def _handle_for(
         var_taints,
     )
 
-    # Assign the loop variable.
-    _assign_target(stmt.target, iter_taint, var_taints)
-
     # Snapshot pre-loop.
     pre_loop = dict(var_taints)
 
-    # Walk body.
-    _walk_body(stmt.body, function_taint, taint_map, var_taints, call_site_taints)
-
-    # Merge body state with pre-loop (loop may not execute, or body assignments
-    # may differ across iterations) — the var holds the body OR the pre-loop
-    # value, so combine via the rank-meet least_trusted (weakest-link), NOT
-    # taint_join: a clean-accumulate body must not clash to MIXED_RAW at the
-    # back-edge, while a raw body still propagates (least_trusted keeps its rank).
-    for var in set(var_taints) | set(pre_loop):
-        try:
-            current = var_taints[var]
-            prior = pre_loop[var]
-            var_taints[var] = least_trusted(current, prior)
-        except KeyError:
-            _taint_val = None  # var only in one side of merge — no combine needed
+    # Iterate walk until convergence (WLN-MED-09)
+    for _ in range(8):
+        current_state = dict(var_taints)
+        # Assign the loop variable.
+        _assign_target(stmt.target, iter_taint, var_taints)
+        # Walk body.
+        _walk_body(stmt.body, function_taint, taint_map, var_taints, call_site_taints)
+        # Merge body state with pre-loop
+        for var in set(var_taints) | set(pre_loop):
+            var_taints[var] = combine(var_taints.get(var, function_taint), pre_loop.get(var, function_taint))
+        if var_taints == current_state:
+            break
 
     # Walk orelse (runs after normal loop completion).
     if stmt.orelse:
@@ -893,23 +901,16 @@ def _handle_while(
     call_site_taints: dict[int, dict[str, TaintState]] | None = None,
 ) -> None:
     """Handle while loops — body merges with pre-loop state."""
-    _resolve_expr(stmt.test, function_taint, taint_map, var_taints)
-
     pre_loop = dict(var_taints)
 
-    _walk_body(stmt.body, function_taint, taint_map, var_taints, call_site_taints)
-
-    # Merge body state with pre-loop — the var holds the body OR the pre-loop
-    # value, so combine via the rank-meet least_trusted (weakest-link), NOT
-    # taint_join (see _handle_for): no MIXED_RAW clash on a clean body; a raw body
-    # still propagates.
-    for var in set(var_taints) | set(pre_loop):
-        try:
-            current = var_taints[var]
-            prior = pre_loop[var]
-            var_taints[var] = least_trusted(current, prior)
-        except KeyError:
-            _taint_val = None  # var only in one side of merge — no combine needed
+    for _ in range(8):
+        current_state = dict(var_taints)
+        _resolve_expr(stmt.test, function_taint, taint_map, var_taints)
+        _walk_body(stmt.body, function_taint, taint_map, var_taints, call_site_taints)
+        for var in set(var_taints) | set(pre_loop):
+            var_taints[var] = combine(var_taints.get(var, function_taint), pre_loop.get(var, function_taint))
+        if var_taints == current_state:
+            break
 
     if stmt.orelse:
         _walk_body(stmt.orelse, function_taint, taint_map, var_taints, call_site_taints)
@@ -969,20 +970,15 @@ def _handle_try(
         all_vars.update(branch.keys())
 
     for var in all_vars:
-        # try-success and each handler are mutually-exclusive branches — the var
-        # holds ONE branch's value, so combine via the rank-meet least_trusted
-        # (weakest-link), NOT taint_join: clean-but-different-family branches must
-        # not clash to MIXED_RAW; a raw branch still propagates.
         branch_taints: list[TaintState] = []
         for b in handler_branches:
-            try:
-                branch_taints.append(b[var])
-            except KeyError:
-                _taint_val = None  # var absent from this handler branch — skip
+            val = b.get(var)
+            if val is not None:
+                branch_taints.append(val)
         if branch_taints:
             var_taints[var] = branch_taints[0]
             for t in branch_taints[1:]:
-                var_taints[var] = least_trusted(var_taints[var], t)
+                var_taints[var] = combine(var_taints[var], t)
         else:  # pragma: no cover
             # Unreachable: ``all_vars`` is drawn solely from ``handler_branches``
             # (the try-success branch + each handler), every branch starts as a
@@ -1039,14 +1035,10 @@ def _handle_match(
     for branch in branches:
         all_vars.update(branch)
     for var in all_vars:
-        # Each arm + the no-match fall-through are mutually-exclusive branches —
-        # the var holds ONE arm's value, so combine via the rank-meet least_trusted
-        # (weakest-link), NOT taint_join: two clean arms must not clash to
-        # MIXED_RAW; a raw arm still propagates.
         vals = [branch[var] for branch in branches if var in branch]
         merged = vals[0]
         for v in vals[1:]:
-            merged = least_trusted(merged, v)
+            merged = combine(merged, v)
         var_taints[var] = merged
 
 
@@ -1189,7 +1181,7 @@ def collect_attribute_writes(
                         rhs_taint = _resolve_expr(value, function_taint, taint_map, var_taints)
                         cls_writes = out.setdefault(target_class, {})
                         cls_writes[attr_name] = (
-                            least_trusted(cls_writes[attr_name], rhs_taint) if attr_name in cls_writes else rhs_taint
+                            combine(cls_writes[attr_name], rhs_taint) if attr_name in cls_writes else rhs_taint
                         )
 
             _walk(child)
@@ -1248,7 +1240,7 @@ def compute_return_taint(
         return None
     result = returns[0][0]
     for taint, _callee, _node in returns[1:]:
-        result = least_trusted(result, taint)
+        result = combine(result, taint)
     return result
 
 
@@ -1287,7 +1279,7 @@ def compute_return_callee(
         return None
     worst = returns[0][0]
     for taint, _callee, _node in returns[1:]:
-        worst = least_trusted(worst, taint)
+        worst = combine(worst, taint)
     # 1) a worst-taint path that is itself a direct call → its callee (unchanged).
     for taint, callee, _node in returns:
         if taint == worst and callee is not None:
@@ -1380,7 +1372,7 @@ def _collect_return_paths(
     for node in nodes:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             continue
-        if isinstance(node, ast.Return) and node.value is not None:
+        if isinstance(node, (ast.Return, ast.Yield, ast.YieldFrom)) and node.value is not None:
             taint = _resolve_expr(node.value, function_taint, taint_map, var_taints)
             out.append((taint, _return_callee(node.value), node.value))
         _collect_return_paths(list(ast.iter_child_nodes(node)), function_taint, taint_map, var_taints, out)

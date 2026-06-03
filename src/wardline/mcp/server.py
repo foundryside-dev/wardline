@@ -21,7 +21,6 @@ from wardline.core.attest import build_attestation, verify_attestation
 from wardline.core.attest_key import load_attest_key
 from wardline.core.baseline import generate_baseline
 from wardline.core.config_schema import WARDLINE_SCHEMA
-from wardline.core.descriptor import descriptor_to_yaml
 from wardline.core.errors import FiligreeEmitError, WardlineError
 from wardline.core.explain import explain_chain, explain_finding, explanation_from_context
 from wardline.core.filigree_emit import EmitResult, FiligreeEmitter
@@ -32,7 +31,6 @@ from wardline.core.run import gate_decision, run_scan
 from wardline.core.sei_resolution import resolve_query_filters
 from wardline.core.waivers import add_waiver
 from wardline.mcp.protocol import _INVALID_PARAMS, JsonRpcServer, McpError
-from wardline.scanner.rules import _ALL_RULE_CLASSES
 
 if TYPE_CHECKING:
     from wardline.core.explain import TaintExplanation
@@ -141,9 +139,18 @@ def _scan(args: dict[str, Any], root: Path, clarion: Any = None, filigree: Any =
         # letting it surface as an opaque generic JSON-RPC -32603.
         raise ToolError("fail_on must be one of CRITICAL/ERROR/WARN/INFO") from exc
     new_since = args.get("new_since")
+    trusted_packs_raw = args.get("trust_packs") or []
+    if not isinstance(trusted_packs_raw, list) or not all(isinstance(p, str) for p in trusted_packs_raw):
+        raise ToolError("trust_packs must be an array of strings")
+    trusted_packs = tuple(trusted_packs_raw)
     cache_dir = _resolve_under_root(root, args["cache_dir"]) if args.get("cache_dir") else None
     result = run_scan(
-        path, config_path=_cfg(args, root), cache_dir=cache_dir, confine_to_root=True, new_since=new_since
+        path,
+        config_path=_cfg(args, root),
+        cache_dir=cache_dir,
+        confine_to_root=True,
+        new_since=new_since,
+        trusted_packs=trusted_packs,
     )
     # Fail-soft Clarion write: only when a client was injected (server has a URL).
     # An outage/403 yields a not-reachable WriteResult; never raises here.
@@ -349,6 +356,7 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
     # WardlineError) naming WARDLINE_OPENROUTER_API_KEY; _tools_call turns that into
     # an isError result the agent can read. The network is touched only here, only
     # when a finding is actually triaged.
+    context_lines = args.get("context_lines")
     outcome = run_judge(
         root,
         config_path=_cfg(args, root),
@@ -356,6 +364,9 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
         max_findings=args.get("max_findings"),
         write=bool(args.get("write", False)),
         confine_to_root=True,
+        trusted_packs=tuple(args.get("trust_packs") or []),
+        trust_judge_policy=bool(args.get("trust_judge_policy", False)),
+        context_lines=int(context_lines) if context_lines is not None else None,
     )
     return {
         "verdicts": [
@@ -402,7 +413,8 @@ def _waiver_add(args: dict[str, Any], root: Path) -> dict[str, Any]:
     except ValueError as exc:
         # A malformed date is something the agent can fix and should see.
         raise ToolError("expires must be an ISO date (YYYY-MM-DD)") from exc
-    waiver = add_waiver(root / "wardline.yaml", fingerprint=fp, reason=reason, expires=expires)
+    cfg_path = _cfg(args, root) or (root / "wardline.yaml")
+    waiver = add_waiver(cfg_path, fingerprint=fp, reason=reason, expires=expires)
     return {
         "fingerprint": waiver.fingerprint,
         "reason": waiver.reason,
@@ -534,6 +546,7 @@ class WardlineMCPServer:
                             "type": "string",
                             "description": "subdir relative to project root for summary cache",
                         },
+                        "trust_packs": {"type": "array", "items": {"type": "string"}},
                     },
                 },
                 handler=lambda args, root: _scan(
@@ -643,6 +656,7 @@ class WardlineMCPServer:
                         "bundle": {"type": "object"},
                         "reproduce": {"type": "boolean"},
                         "config": {"type": "string"},
+                        "path": {"type": "string"},
                     },
                 },
                 handler=lambda args, root: _verify_attestation(args, root, self._clarion_client(_cfg(args, root))),
@@ -682,6 +696,9 @@ class WardlineMCPServer:
                         "model": {"type": "string"},
                         "max_findings": {"type": "integer"},
                         "write": {"type": "boolean", "description": "append above-floor FPs to judged.yaml"},
+                        "trust_judge_policy": {"type": "boolean"},
+                        "trust_packs": {"type": "array", "items": {"type": "string"}},
+                        "context_lines": {"type": "integer"},
                     },
                 },
                 handler=_judge,
@@ -724,6 +741,7 @@ class WardlineMCPServer:
                         "fingerprint": {"type": "string"},
                         "reason": {"type": "string"},
                         "expires": {"type": "string", "description": "YYYY-MM-DD"},
+                        "config": {"type": "string"},
                     },
                 },
                 handler=_waiver_add,
@@ -762,10 +780,14 @@ class WardlineMCPServer:
     def _read_resource(self, uri: str | None) -> tuple[str, str]:
         """Return (text, mime_type) for a resource URI."""
         if uri == "wardline://vocab":
+            from wardline.core.descriptor import descriptor_to_yaml
+
             return descriptor_to_yaml(), "text/yaml"
         if uri == "wardline://config-schema":
             return json.dumps(WARDLINE_SCHEMA, ensure_ascii=False), "application/json"
         if uri == "wardline://rules":
+            from wardline.scanner.rules import _ALL_RULE_CLASSES
+
             # rule_id is a class attr; base_severity is set in __init__, so
             # instantiate cls() (its default base_severity = METADATA.base_severity).
             rules: list[dict[str, Any]] = []

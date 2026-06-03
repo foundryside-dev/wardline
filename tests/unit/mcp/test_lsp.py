@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+from wardline.core.errors import ConfigError
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.run import ScanResult, ScanSummary
 from wardline.mcp.lsp import LspServer
@@ -17,6 +18,17 @@ class MockBytesIO(io.BytesIO):
 
     def read(self, size: int = -1) -> bytes:
         return super().read(size)
+
+
+def _lsp_messages(output: str) -> list[dict]:
+    messages = []
+    for part in output.split("Content-Length:"):
+        if not part.strip():
+            continue
+        subparts = part.split("\r\n\r\n", 1)
+        if len(subparts) == 2:
+            messages.append(json.loads(subparts[1]))
+    return messages
 
 
 def test_lsp_handshake() -> None:
@@ -41,6 +53,8 @@ def test_lsp_handshake() -> None:
     assert res["id"] == 1
     assert "capabilities" in res["result"]
     assert res["result"]["capabilities"]["textDocumentSync"]["openClose"] is True
+    assert res["result"]["capabilities"]["textDocumentSync"]["change"] == 0
+    assert res["result"]["capabilities"]["textDocumentSync"]["save"] == {"includeText": True}
 
 
 def test_lsp_diagnostics_flow(tmp_path: Path) -> None:
@@ -108,6 +122,184 @@ def test_lsp_diagnostics_flow(tmp_path: Path) -> None:
     assert diag["range"]["start"]["character"] == 4
     assert diag["range"]["end"]["line"] == 0
     assert diag["range"]["end"]["character"] == 12
+
+
+def test_lsp_scan_config_error_publishes_visible_diagnostic(tmp_path: Path) -> None:
+    file_path = tmp_path / "foo.py"
+    file_path.write_text("def f():\n    return 1\n", encoding="utf-8")
+
+    req_open = {
+        "jsonrpc": "2.0",
+        "method": "textDocument/didOpen",
+        "params": {
+            "textDocument": {"uri": file_path.as_uri(), "languageId": "python", "version": 1, "text": "def f():\n"}
+        },
+    }
+    body_open = json.dumps(req_open)
+    raw_input = f"Content-Length: {len(body_open)}\r\n\r\n{body_open}"
+
+    stdout = io.StringIO()
+    server = LspServer(root=tmp_path, stdin=io.StringIO(raw_input), stdout=stdout)
+
+    with patch("wardline.mcp.lsp.run_scan", side_effect=ConfigError("bad wardline.yaml")):
+        server.run()
+
+    messages = _lsp_messages(stdout.getvalue())
+    assert any(msg["method"] == "window/showMessage" for msg in messages)
+    diagnostics = [msg for msg in messages if msg["method"] == "textDocument/publishDiagnostics"]
+    assert len(diagnostics) == 1
+    diag = diagnostics[0]["params"]["diagnostics"][0]
+    assert diag["code"] == "WLN-ENGINE-LSP-SCAN-FAILED"
+    assert diag["severity"] == 1
+    assert "bad wardline.yaml" in diag["message"]
+
+
+def test_lsp_unexpected_scan_error_is_not_silent(tmp_path: Path) -> None:
+    file_path = tmp_path / "foo.py"
+    file_path.write_text("def f():\n    return 1\n", encoding="utf-8")
+
+    req_open = {
+        "jsonrpc": "2.0",
+        "method": "textDocument/didOpen",
+        "params": {
+            "textDocument": {"uri": file_path.as_uri(), "languageId": "python", "version": 1, "text": "def f():\n"}
+        },
+    }
+    body_open = json.dumps(req_open)
+    raw_input = f"Content-Length: {len(body_open)}\r\n\r\n{body_open}"
+
+    stdout = io.StringIO()
+    server = LspServer(root=tmp_path, stdin=io.StringIO(raw_input), stdout=stdout)
+
+    with patch("wardline.mcp.lsp.run_scan", side_effect=RuntimeError("engine broke")):
+        server.run()
+
+    messages = _lsp_messages(stdout.getvalue())
+    assert any(msg["method"] == "window/logMessage" for msg in messages)
+    diagnostics = [msg for msg in messages if msg["method"] == "textDocument/publishDiagnostics"]
+    assert len(diagnostics) == 1
+    diag = diagnostics[0]["params"]["diagnostics"][0]
+    assert diag["code"] == "WLN-ENGINE-LSP-SCAN-FAILED"
+    assert "unexpected Wardline scan failure" in diag["message"]
+
+
+def test_lsp_publishes_under_scan_engine_facts_as_info_diagnostics(tmp_path: Path) -> None:
+    file_path = tmp_path / "foo.py"
+    file_path.write_text("def f(:\n", encoding="utf-8")
+
+    finding = Finding(
+        rule_id="WLN-ENGINE-PARSE-ERROR",
+        message="foo.py: could not be parsed",
+        severity=Severity.NONE,
+        kind=Kind.FACT,
+        location=Location(path="foo.py", line_start=1, col_start=0, col_end=1),
+        fingerprint="fp-engine",
+    )
+    scan_res = ScanResult(
+        findings=[finding],
+        summary=ScanSummary(total=1, active=0, baselined=0, waived=0, judged=0, unanalyzed=1),
+        files_scanned=1,
+        context=None,
+    )
+
+    req_open = {
+        "jsonrpc": "2.0",
+        "method": "textDocument/didOpen",
+        "params": {
+            "textDocument": {"uri": file_path.as_uri(), "languageId": "python", "version": 1, "text": "def f(:\n"}
+        },
+    }
+    body_open = json.dumps(req_open)
+    raw_input = f"Content-Length: {len(body_open)}\r\n\r\n{body_open}"
+
+    stdout = io.StringIO()
+    server = LspServer(root=tmp_path, stdin=io.StringIO(raw_input), stdout=stdout)
+
+    with patch("wardline.mcp.lsp.run_scan", return_value=scan_res):
+        server.run()
+
+    messages = _lsp_messages(stdout.getvalue())
+    assert any(
+        msg["method"] == "window/logMessage" and "could not analyze" in msg["params"]["message"] for msg in messages
+    )
+    diagnostics = [msg for msg in messages if msg["method"] == "textDocument/publishDiagnostics"]
+    assert len(diagnostics) == 1
+    diag = diagnostics[0]["params"]["diagnostics"][0]
+    assert diag["code"] == "WLN-ENGINE-PARSE-ERROR"
+    assert diag["severity"] == 4
+
+
+def test_lsp_did_change_does_not_rescan_unsaved_buffers(tmp_path: Path) -> None:
+    file_path = tmp_path / "foo.py"
+    file_path.write_text("def f():\n    return 1\n", encoding="utf-8")
+    scan_res = ScanResult(
+        findings=[],
+        summary=ScanSummary(total=0, active=0, baselined=0, waived=0, judged=0, unanalyzed=0),
+        files_scanned=1,
+        context=None,
+    )
+    req_open = {
+        "jsonrpc": "2.0",
+        "method": "textDocument/didOpen",
+        "params": {
+            "textDocument": {"uri": file_path.as_uri(), "languageId": "python", "version": 1, "text": "def f():\n"}
+        },
+    }
+    req_change = {
+        "jsonrpc": "2.0",
+        "method": "textDocument/didChange",
+        "params": {
+            "textDocument": {"uri": file_path.as_uri(), "version": 2},
+            "contentChanges": [{"text": "@trusted\ndef f():\n    return raw()\n"}],
+        },
+    }
+    body_open = json.dumps(req_open)
+    body_change = json.dumps(req_change)
+    raw_input = (
+        f"Content-Length: {len(body_open)}\r\n\r\n{body_open}Content-Length: {len(body_change)}\r\n\r\n{body_change}"
+    )
+
+    server = LspServer(root=tmp_path, stdin=io.StringIO(raw_input), stdout=io.StringIO())
+
+    with patch("wardline.mcp.lsp.run_scan", return_value=scan_res) as mock_run:
+        server.run()
+
+    mock_run.assert_called_once_with(tmp_path, confine_to_root=True)
+
+
+def test_lsp_did_save_triggers_rescan(tmp_path: Path) -> None:
+    file_path = tmp_path / "foo.py"
+    file_path.write_text("def f():\n    return 1\n", encoding="utf-8")
+    scan_res = ScanResult(
+        findings=[],
+        summary=ScanSummary(total=0, active=0, baselined=0, waived=0, judged=0, unanalyzed=0),
+        files_scanned=1,
+        context=None,
+    )
+    req_open = {
+        "jsonrpc": "2.0",
+        "method": "textDocument/didOpen",
+        "params": {
+            "textDocument": {"uri": file_path.as_uri(), "languageId": "python", "version": 1, "text": "def f():\n"}
+        },
+    }
+    req_save = {
+        "jsonrpc": "2.0",
+        "method": "textDocument/didSave",
+        "params": {"textDocument": {"uri": file_path.as_uri()}, "text": "def f():\n    return 2\n"},
+    }
+    body_open = json.dumps(req_open)
+    body_save = json.dumps(req_save)
+    raw_input = (
+        f"Content-Length: {len(body_open)}\r\n\r\n{body_open}Content-Length: {len(body_save)}\r\n\r\n{body_save}"
+    )
+
+    server = LspServer(root=tmp_path, stdin=io.StringIO(raw_input), stdout=io.StringIO())
+
+    with patch("wardline.mcp.lsp.run_scan", return_value=scan_res) as mock_run:
+        server.run()
+
+    assert mock_run.call_count == 2
 
 
 def test_lsp_initialize_root_uri_escape_is_ignored(tmp_path: Path) -> None:

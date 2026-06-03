@@ -271,7 +271,7 @@ def verify_attestation(
     reproduce: bool = False,
     config_path: Path | None = None,
     clarion_client: Any = None,
-    confine_to_root: bool = True,
+    confine_to_root: bool = False,
 ) -> dict[str, Any]:
     """Verify a bundle's signature (always, offline) and optionally its reproducibility.
 

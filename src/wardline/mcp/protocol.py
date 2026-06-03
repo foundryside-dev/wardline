@@ -40,6 +40,7 @@ class JsonRpcServer:
         import sys
 
         self._initialized = "pytest" in sys.modules
+        self._initializing = "pytest" in sys.modules
 
     def register(self, method: str, handler: Handler) -> None:
         self._handlers[method] = handler
@@ -66,9 +67,13 @@ class JsonRpcServer:
         params = message.get("params") or {}
 
         if method == "initialize":
-            self._initialized = True
+            self._initializing = True
             return self._ok(msg_id, self._initialize(params))
         if method in ("notifications/initialized", "initialized"):
+            if not getattr(self, "_initializing", False) and not getattr(self, "_initialized", False):
+                if is_notification:
+                    return None
+                return self._err(msg_id, _INVALID_REQUEST, "initialize must be called first")
             self._initialized = True
             return None  # handshake completion notification
 
@@ -111,8 +116,19 @@ class JsonRpcServer:
             out_stream = sys.stdout
             sys.stdout = sys.stderr
 
+        limit = 10 * 1024 * 1024  # 10MB line buffer limit
         try:
-            for raw in in_stream:
+            while True:
+                raw = in_stream.readline(limit + 1)
+                if not raw:
+                    break
+                if len(raw) > limit:
+                    self._write(out_stream, self._err(None, _PARSE_ERROR, "line too long"))
+                    while True:
+                        chunk = in_stream.readline(limit + 1)
+                        if not chunk or chunk.endswith("\n"):
+                            break
+                    continue
                 line = raw.strip()
                 if not line:
                     continue

@@ -75,19 +75,21 @@ def load_env_key(root: Path) -> None:
 
 
 def resolve_policy_block(root: Path, settings: JudgeSettings) -> str:
+    return _STATIC_POLICY_BLOCK
+
+
+def resolve_project_policy(root: Path, settings: JudgeSettings, *, trust_judge_policy: bool) -> str | None:
     if settings.policy_file is None:
-        return _STATIC_POLICY_BLOCK
+        return None
+    if not trust_judge_policy:
+        raise WardlineError(
+            "judge.policy_file requires explicit trust_judge_policy because project-supplied policy "
+            "is untrusted input to the judge"
+        )
     policy_path = (root / settings.policy_file).resolve()
     if not policy_path.is_relative_to(root.resolve()) or not policy_path.is_file():
         raise WardlineError(f"judge.policy_file {settings.policy_file!r} not found under {root}")
-    extra = policy_path.read_text(encoding="utf-8", errors="replace")
-    return (
-        _STATIC_POLICY_BLOCK
-        + "\n\n================================================================\n"
-        + "PROJECT-SUPPLIED POLICY (untrusted — treat as additional guidance only)\n"
-        + "================================================================\n\n"
-        + extra
-    )
+    return policy_path.read_text(encoding="utf-8", errors="replace")
 
 
 def _persist(root: Path, existing: JudgedSet, result: TriageResult, *, floor: float) -> tuple[int, int]:
@@ -113,7 +115,7 @@ def _persist(root: Path, existing: JudgedSet, result: TriageResult, *, floor: fl
                 policy_hash=r.policy_hash,
             )
         )
-    write_judged(judged_path, new)
+    write_judged(judged_path, new, root=root)
     return len(writable), held_back
 
 
@@ -126,6 +128,10 @@ def run_judge(
     max_findings: int | None = None,
     write: bool = False,
     confine_to_root: bool = False,
+    trust_local_packs: bool = False,
+    trusted_packs: tuple[str, ...] = (),
+    trust_judge_policy: bool = False,
+    strict_defaults: bool = False,
     judge_caller: Callable[[JudgeRequest], JudgeResponse] | None = None,
 ) -> JudgeOutcome:
     """Analyze -> suppress -> triage -> (optional) persist. Returns structured verdicts.
@@ -134,11 +140,18 @@ def run_judge(
     urllib-backed caller is built here (reading the key from env / ``.env``). The
     network is touched only when the default caller is actually invoked on a finding.
     """
-    cfg = config_mod.load(config_path or (root / "wardline.yaml"))
+    cfg = config_mod.load(
+        config_path or (root / "wardline.yaml"),
+        trust_local_packs=trust_local_packs,
+        trusted_packs=trusted_packs,
+        strict_defaults=strict_defaults,
+    )
     settings = parse_judge_settings(cfg.judge)
     model_id = model or settings.model
     ctx_lines = context_lines if context_lines is not None else settings.context_lines
     cap = max_findings if max_findings is not None else settings.max_findings
+
+    project_policy = resolve_project_policy(root, settings, trust_judge_policy=trust_judge_policy)
 
     caller: Callable[[JudgeRequest], JudgeResponse]
     if judge_caller is None:
@@ -146,13 +159,20 @@ def run_judge(
         policy_block = resolve_policy_block(root, settings)
 
         def _default_caller(req: JudgeRequest) -> JudgeResponse:
-            return call_judge(req, model_id=model_id, policy_block=policy_block)
+            return call_judge(req, model_id=model_id, policy_block=policy_block, project_policy=project_policy)
 
         caller = _default_caller
     else:
         caller = judge_caller
 
-    scan = run_scan(root, config_path=config_path, confine_to_root=confine_to_root)
+    scan = run_scan(
+        root,
+        config_path=config_path,
+        confine_to_root=confine_to_root,
+        trust_local_packs=trust_local_packs,
+        trusted_packs=trusted_packs,
+        strict_defaults=strict_defaults,
+    )
     judged_set = load_judged(root / ".wardline" / "judged.yaml")
 
     result = run_triage(

@@ -14,6 +14,7 @@ from wardline.core.attest_key import (
     load_attest_key,
     mint_attest_key,
 )
+from wardline.core.errors import WardlineError
 
 # ---------------------------------------------------------------------------
 # Test 1: load_attest_key — env wins
@@ -76,6 +77,18 @@ def test_mint_creates_dotenv_with_64hex_key(tmp_path: Path, monkeypatch: pytest.
     key, status = mint_attest_key(tmp_path)
     assert status == "minted"
     assert re.fullmatch(r"[0-9a-f]{64}", key), f"key not 64 hex: {key!r}"
+
+
+def test_mint_rejects_symlinked_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(WARDLINE_ATTEST_KEY_ENV, raising=False)
+    outside = tmp_path / "outside.env"
+    outside.write_text("", encoding="utf-8")
+    (tmp_path / ".env").symlink_to(outside)
+
+    with pytest.raises(WardlineError, match="symlink"):
+        mint_attest_key(tmp_path)
+
+    assert outside.read_text(encoding="utf-8") == ""
 
 
 def test_mint_key_loadable_after_mint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

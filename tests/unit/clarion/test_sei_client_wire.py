@@ -35,7 +35,8 @@ def test_capabilities_gets_route_and_parses() -> None:
     assert method == "GET"
     assert url == "http://clarion.example/api/v1/_capabilities"
     # GET routes are signed too (empty body) — the shared _send path signs everything.
-    assert headers["X-Loom-Component"] == f"clarion:{sign_request('s3cr3t', 'GET', '/api/v1/_capabilities', sent_body)}"
+    expected = sign_request('s3cr3t', 'GET', '/api/v1/_capabilities', sent_body, timestamp=headers["X-Wardline-Timestamp"])
+    assert headers["X-Loom-Component"] == f"clarion:{expected}"
 
 
 def test_capabilities_soft_none_on_404() -> None:
@@ -60,7 +61,7 @@ def test_resolve_identity_posts_locator_and_signs() -> None:
     assert method == "POST"
     assert url == "http://clarion.example/api/v1/identity/resolve"
     assert json.loads(sent_body) == {"locator": "python:function:m.f"}
-    expected = sign_request("s3cr3t", "POST", "/api/v1/identity/resolve", sent_body)
+    expected = sign_request("s3cr3t", "POST", "/api/v1/identity/resolve", sent_body, timestamp=headers["X-Wardline-Timestamp"])
     assert headers["X-Loom-Component"] == f"clarion:{expected}"
 
 
@@ -91,7 +92,8 @@ def test_resolve_sei_gets_escaped_opaque_token() -> None:
     paq = "/api/v1/identity/sei/clarion%3Aeid%3Aa%2Fb%20c%3Fd"
     assert url == f"http://clarion.example{paq}"
     # HMAC is signed over the ESCAPED path-and-query exactly as sent (no double-encoding).
-    assert headers["X-Loom-Component"] == f"clarion:{sign_request('s3cr3t', 'GET', paq, sent_body)}"
+    expected = sign_request('s3cr3t', 'GET', paq, sent_body, timestamp=headers["X-Wardline-Timestamp"])
+    assert headers["X-Loom-Component"] == f"clarion:{expected}"
 
 
 def test_resolve_sei_orphaned_returns_lineage_value() -> None:

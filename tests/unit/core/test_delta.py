@@ -16,20 +16,32 @@ def test_get_changed_files_since_success(mock_run) -> None:
     # 1. Mock git rev-parse --show-toplevel
     mock_rev_parse = MagicMock()
     mock_rev_parse.stdout = "/git/root\n"
-    # 2. Mock git diff --name-only
+    # 2. Mock git rev-parse --verify
+    mock_verify = MagicMock()
+    mock_verify.stdout = "abc123\n"
+    # 3. Mock git diff --name-only
     mock_diff = MagicMock()
     mock_diff.stdout = "src/foo.py\nsrc/bar.py\n"
-    # 3. Mock git ls-files
+    # 4. Mock git ls-files
     mock_ls_files = MagicMock()
     mock_ls_files.stdout = "src/baz.py\n"
 
-    mock_run.side_effect = [mock_rev_parse, mock_diff, mock_ls_files]
+    mock_run.side_effect = [mock_rev_parse, mock_verify, mock_diff, mock_ls_files]
 
     # Cwd root is a subdirectory of git root
     root = Path("/git/root/src")
     res = get_changed_files_since("HEAD~1", root)
 
     assert res == {"foo.py", "bar.py", "baz.py"}
+    assert mock_run.call_args_list[1].args[0] == ["git", "rev-parse", "--verify", "--end-of-options", "HEAD~1"]
+    assert mock_run.call_args_list[2].args[0] == ["git", "diff", "--name-only", "abc123", "--"]
+
+
+@patch("subprocess.run")
+def test_get_changed_files_since_rejects_option_like_ref_before_git(mock_run) -> None:
+    with pytest.raises(WardlineError, match="must not begin with '-'"):
+        get_changed_files_since("--help", Path("/git/root"))
+    mock_run.assert_not_called()
 
 
 @patch("subprocess.run")
@@ -46,15 +58,15 @@ def test_get_changed_files_since_invalid_ref(mock_run) -> None:
     mock_rev_parse = MagicMock()
     mock_rev_parse.stdout = "/git/root\n"
 
-    # git diff returns error status
+    # git rev-parse --verify returns error status
     import subprocess
 
     mock_run.side_effect = [
         mock_rev_parse,
-        subprocess.CalledProcessError(1, "git diff", stderr="fatal: bad revision 'badref'"),
+        subprocess.CalledProcessError(1, "git rev-parse", stderr="fatal: bad revision 'badref'"),
     ]
 
-    with pytest.raises(WardlineError, match="Git diff failed for ref 'badref'"):
+    with pytest.raises(WardlineError, match="Git ref verification failed for ref 'badref'"):
         get_changed_files_since("badref", Path("/git/root"))
 
 

@@ -66,6 +66,19 @@ from wardline.core.sarif import SarifSink
     help="PR-scoped 'new findings only' gate: only gate on findings in files/entities changed since this git ref.",
 )
 @click.option(
+    "--trust-pack",
+    "trusted_packs",
+    multiple=True,
+    help="Allow importing this trust-grammar pack from wardline.yaml. May be repeated.",
+)
+@click.option(
+    "--allow-custom-packs",
+    "trust_local_packs",
+    is_flag=True,
+    default=False,
+    help="Allow loading custom trust-grammar packs from the local project directory.",
+)
+@click.option(
     "--fix",
     is_flag=True,
     help="Apply mechanical autofixes during the scan.",
@@ -75,6 +88,12 @@ from wardline.core.sarif import SarifSink
     "-y",
     is_flag=True,
     help="Automatically confirm all fixes when --fix is specified.",
+)
+@click.option(
+    "--strict-defaults",
+    is_flag=True,
+    default=False,
+    help="Ignore repository-supplied custom configuration overrides (wardline.yaml).",
 )
 def scan(
     path: Path,
@@ -87,8 +106,11 @@ def scan(
     filigree_url: str | None,
     clarion_url: str | None,
     new_since: str | None,
+    trusted_packs: tuple[str, ...],
+    trust_local_packs: bool,
     fix: bool,
     yes: bool,
+    strict_defaults: bool,
 ) -> None:
     """Scan PATH for findings."""
     default_name = "findings.sarif" if fmt == "sarif" else "findings.jsonl"
@@ -96,16 +118,43 @@ def scan(
     emit_result: EmitResult | None = None
     clarion_result = None
     try:
-        filigree_url = resolve_filigree_url(filigree_url, path, config_path)
-        clarion_url = resolve_clarion_url(clarion_url, path, config_path)
-        result = run_scan(path, config_path=config_path, cache_dir=cache_dir, new_since=new_since)
+        filigree_url = resolve_filigree_url(
+            filigree_url,
+            path,
+            config_path,
+            trust_local_packs=trust_local_packs,
+            trusted_packs=trusted_packs,
+            strict_defaults=strict_defaults,
+        )
+        clarion_url = resolve_clarion_url(
+            clarion_url,
+            path,
+            config_path,
+            trust_local_packs=trust_local_packs,
+            trusted_packs=trusted_packs,
+            strict_defaults=strict_defaults,
+        )
+        result = run_scan(
+            path,
+            config_path=config_path,
+            cache_dir=cache_dir,
+            new_since=new_since,
+            trust_local_packs=trust_local_packs,
+            trusted_packs=trusted_packs,
+            strict_defaults=strict_defaults,
+        )
         findings = result.findings
         if fix:
             from wardline.core.autofix import run_autofix
             from wardline.core.config import load
             from wardline.core.finding import Finding
 
-            cfg = load(config_path or (path / "wardline.yaml"))
+            cfg = load(
+                config_path or (path / "wardline.yaml"),
+                trust_local_packs=trust_local_packs,
+                trusted_packs=trusted_packs,
+                strict_defaults=strict_defaults,
+            )
             fixable = [f for f in findings if f.rule_id == "PY-WL-111"]
             if fixable:
 
@@ -119,7 +168,14 @@ def scan(
 
                 applied = run_autofix(fixable, cfg, path, dry_run=False, confirm_cb=confirm_cb)
                 if applied:
-                    result = run_scan(path, config_path=config_path, cache_dir=cache_dir, new_since=new_since)
+                    result = run_scan(
+                        path,
+                        config_path=config_path,
+                        cache_dir=cache_dir,
+                        new_since=new_since,
+                        trust_local_packs=trust_local_packs,
+                        trusted_packs=trusted_packs,
+                    )
                     findings = result.findings
         if fmt == "sarif":
             sarif_sink = SarifSink(output)

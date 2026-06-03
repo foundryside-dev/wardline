@@ -106,6 +106,15 @@ def _explain_local(
     fingerprint — re-scan)."""
     if fingerprint is None and (path is None or line is None):
         raise ValueError("explain_finding requires either fingerprint or (path, line)")
+    if path is not None:
+        try:
+            p = Path(path)
+            if p.is_absolute():
+                path = p.relative_to(root.resolve()).as_posix()
+            else:
+                path = (root / p).resolve().relative_to(root.resolve()).as_posix()
+        except ValueError:
+            pass
     result = run_scan(root, config_path=config_path, confine_to_root=confine_to_root)
     finding = _match(result.findings, fingerprint=fingerprint, path=path, line=line)
     if finding is None:

@@ -188,9 +188,22 @@ def resolve_call_fqn(
             return local_candidate
         return alias_map.get(bare_name)
 
-    if isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name):
-        prefix_fqn = alias_map.get(call.func.value.id)
+    node = call.func
+    attrs = []
+    while isinstance(node, ast.Attribute):
+        attrs.append(node.attr)
+        node = node.value
+
+    if isinstance(node, ast.Name):
+        leftmost_name = node.id
+        attrs.reverse()
+        local_candidate = f"{module_prefix}.{leftmost_name}" if module_prefix else leftmost_name
+        if not attrs and local_candidate in local_fqns:
+            return local_candidate
+
+        prefix_fqn = alias_map.get(leftmost_name)
         if prefix_fqn is not None:
-            return f"{prefix_fqn}.{call.func.attr}"
+            parts = [prefix_fqn] + attrs
+            return ".".join(parts)
 
     return None
