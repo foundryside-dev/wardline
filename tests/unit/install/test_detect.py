@@ -27,6 +27,25 @@ def test_filigree_marker_writes_commented_stanza(tmp_path: Path, monkeypatch) ->
     assert "# filigree:" in text
 
 
+def test_filigree_commented_stanza_is_upgraded_when_port_becomes_discoverable(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    (tmp_path / ".filigree.conf").write_text("{}", encoding="utf-8")
+    record_bindings(tmp_path)
+
+    filigree_dir = tmp_path / ".filigree"
+    filigree_dir.mkdir()
+    (filigree_dir / "ephemeral.port").write_text("8628", encoding="utf-8")
+    results = record_bindings(tmp_path)
+
+    assert results["filigree"] == "wired (discovered URL)"
+    text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
+    assert "# filigree:" not in text
+    assert text.count("wardline-install:filigree") == 1
+    assert 'filigree:\n  url: "http://localhost:8628/api/loom/scan-results"' in text
+
+
 def test_filigree_ephemeral_port_writes_live_stanza(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
@@ -74,6 +93,29 @@ def test_clarion_yaml_http_disabled_remains_commented(tmp_path: Path, monkeypatc
     text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
     assert "# clarion:" in text
     assert 'url: "http://127.0.0.1:9111"' not in text
+
+
+def test_clarion_commented_stanza_is_upgraded_when_http_becomes_discoverable(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: "clarion")
+    (tmp_path / "clarion.yaml").write_text(
+        "serve:\n  http:\n    enabled: false\n    bind: 127.0.0.1:9111\n",
+        encoding="utf-8",
+    )
+    record_bindings(tmp_path)
+
+    (tmp_path / "clarion.yaml").write_text(
+        "serve:\n  http:\n    enabled: true\n    bind: 127.0.0.1:9111\n",
+        encoding="utf-8",
+    )
+    results = record_bindings(tmp_path)
+
+    assert results["clarion"] == "wired (discovered URL)"
+    text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
+    assert "# clarion:" not in text
+    assert text.count("wardline-install:clarion") == 1
+    assert 'clarion:\n  url: "http://127.0.0.1:9111"' in text
 
 
 def test_record_bindings_rejects_symlinked_wardline_yaml(tmp_path: Path, monkeypatch) -> None:

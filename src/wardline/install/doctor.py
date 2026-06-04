@@ -15,7 +15,14 @@ from wardline.clarion.config import load_clarion_token
 from wardline.core.config import load
 from wardline.core.errors import ConfigError
 from wardline.install.block import inject_block
-from wardline.install.detect import _already_recorded, _detect_clarion, _detect_filigree, record_bindings
+from wardline.install.detect import (
+    _already_recorded,
+    _detect_clarion,
+    _detect_filigree,
+    _has_install_marker,
+    _has_live_key,
+    record_bindings,
+)
 from wardline.install.mcp_json import (
     _codex_config_path,
     _codex_mcp_entry,
@@ -100,8 +107,15 @@ def _check_bindings(root: Path) -> CheckResult:
     text = cfg.read_text(encoding="utf-8", errors="replace") if cfg.is_file() else ""
     missing: list[str] = []
     for key, detector in (("clarion", _detect_clarion), ("filigree", _detect_filigree)):
-        present, _url, _source = detector(root)
-        if present and not _already_recorded(text, key):
+        present, url, _source = detector(root)
+        if not present:
+            continue
+        if _has_live_key(text, key):
+            continue
+        if url and _has_install_marker(text, key):
+            missing.append(key)
+            continue
+        if not _already_recorded(text, key):
             missing.append(key)
     if missing:
         return CheckResult("bindings", False, "missing " + ", ".join(missing))

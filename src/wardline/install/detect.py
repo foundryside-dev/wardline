@@ -105,7 +105,7 @@ def _detect_filigree(root: Path) -> tuple[bool, str | None, str | None]:
 def _live_stanza(key: str, url: str, source: str) -> str:
     # json.dumps yields a YAML-valid, properly escaped double-quoted scalar
     # (so a URL containing a quote/backslash can't corrupt wardline.yaml).
-    origin = "from env at install time" if source == "env" else "discovered at install time"
+    origin = "from env during install" if source == "env" else "discovered during install"
     return f"{key}:\n  url: {json.dumps(url)}  # wardline-install:{key} ({origin})\n"
 
 
@@ -125,9 +125,21 @@ _COMMENTED = {
 }
 
 
+def _has_live_key(text: str, key: str) -> bool:
+    return bool(re.search(rf"(?m)^{key}:", text))
+
+
+def _has_install_marker(text: str, key: str) -> bool:
+    return f"wardline-install:{key}" in text
+
+
 def _already_recorded(text: str, key: str) -> bool:
     # Live key at column 0, or our sentinel from a previous commented write.
-    return bool(re.search(rf"(?m)^{key}:", text)) or f"wardline-install:{key}" in text
+    return _has_live_key(text, key) or _has_install_marker(text, key)
+
+
+def _replace_commented_binding(text: str, key: str, url: str, source: str) -> str:
+    return text.replace(_COMMENTED[key], _live_stanza(key, url, source), 1)
 
 
 def record_bindings(root: Path) -> dict[str, str]:
@@ -137,12 +149,26 @@ def record_bindings(root: Path) -> dict[str, str]:
     detections = {"clarion": _detect_clarion(root), "filigree": _detect_filigree(root)}
     additions: list[str] = []
     results: dict[str, str] = {}
+    changed = False
     for key, (present, url, source) in detections.items():
         if not present:
             results[key] = "absent"
             continue
-        if _already_recorded(text + "".join(additions), key):
+        current = text + "".join(additions)
+        if _has_live_key(current, key):
             results[key] = "present (left untouched)"
+            continue
+        if _has_install_marker(current, key):
+            if url:
+                replaced = _replace_commented_binding(text, key, url, source or "discovered")
+                if replaced == text:
+                    additions.append(_live_stanza(key, url, source or "discovered"))
+                else:
+                    text = replaced
+                changed = True
+                results[key] = "wired (env URL)" if source == "env" else "wired (discovered URL)"
+            else:
+                results[key] = "present (left untouched)"
             continue
         if url:
             additions.append(_live_stanza(key, url, source or "discovered"))
@@ -153,5 +179,8 @@ def record_bindings(root: Path) -> dict[str, str]:
     if additions:
         sep = "" if (not text or text.endswith("\n")) else "\n"
         lead = "\n" if text else ""
-        cfg.write_text(text + sep + lead + "\n".join(additions), encoding="utf-8")
+        text = text + sep + lead + "\n".join(additions)
+        changed = True
+    if changed:
+        cfg.write_text(text, encoding="utf-8")
     return results

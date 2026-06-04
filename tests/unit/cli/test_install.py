@@ -147,6 +147,52 @@ def test_install_auto_wires_filigree_from_ephemeral_port(tmp_path: Path, monkeyp
     )
 
 
+def test_install_rerun_wires_filigree_when_port_appears_after_initial_install(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    (tmp_path / ".filigree.conf").write_text("{}", encoding="utf-8")
+
+    initial = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
+    assert initial.exit_code == 0, initial.output
+    assert "filigree: detected (commented)" in initial.output
+    assert "# filigree:" in (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
+
+    filigree_dir = tmp_path / ".filigree"
+    filigree_dir.mkdir()
+    (filigree_dir / "ephemeral.port").write_text("8628", encoding="utf-8")
+    wired = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
+
+    assert wired.exit_code == 0, wired.output
+    assert "filigree: wired (discovered URL)" in wired.output
+    text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
+    assert "# filigree:" not in text
+    assert 'filigree:\n  url: "http://localhost:8628/api/loom/scan-results"' in text
+
+    captured: dict[str, object] = {}
+
+    class _FakeEmitter:
+        def __init__(self, url: str) -> None:
+            captured["url"] = url
+
+        def emit(self, findings, *, scanned_paths=()):  # noqa: ANN001
+            from wardline.core.filigree_emit import EmitResult
+
+            captured["scanned_paths"] = tuple(scanned_paths)
+            return EmitResult(reachable=True)
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _FakeEmitter)
+    (tmp_path / "m.py").write_text("x = 1\n", encoding="utf-8")
+    scan = CliRunner().invoke(cli, ["scan", str(tmp_path)])
+
+    assert scan.exit_code == 0, scan.output
+    assert captured["url"] == "http://localhost:8628/api/loom/scan-results"
+    assert captured["scanned_paths"] == ("m.py",)
+
+
 def test_install_fails_2_on_malformed_mcp_json(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "home"
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
