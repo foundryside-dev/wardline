@@ -211,9 +211,10 @@ $ wardline mcp --root .
 
 Tools: `scan` (structured findings + suppression summary + gate), `explain_taint`
 (the tainted callee and originating boundary for one finding — call it right
-after a scan and before editing), `fix` (mechanical autofixes for supported
-findings), `judge` (opt-in, network), and the loud suppression tools
-`baseline_create` / `baseline_update` / `waiver_add` (each requires a reason).
+after a scan and before editing), `file_finding` (promote one emitted finding to
+a Filigree issue), `fix` (mechanical autofixes for supported findings), `judge`
+(opt-in, network), and the loud suppression tools `baseline_create` /
+`baseline_update` / `waiver_add` (each requires a reason).
 Resources expose the trust vocabulary, rule catalog, config, and config schema.
 The `wardline:loop` prompt documents the intended
 scan → explain → fix-at-the-boundary → rescan cycle.
@@ -230,6 +231,16 @@ builds taint facts (a blake3 hash per file) and POSTs them to Clarion — this i
 fail-soft, but a real per-scan cost in the agent loop. See the
 [Clarion taint store guide](clarion-taint-store.md) for the full
 opt-in, auth, and fail-soft details.
+
+`file_finding` can also opt into Clarion identity attachment with
+`attach_clarion_identity: true`. Wardline promotes the finding first, then
+re-runs the scan to find the fingerprint's qualname, resolves that qualname
+through Clarion, and attaches a Filigree entity association when it has both an
+entity id and a current content hash. The returned `identity_attach` block
+reports `attempted`, `attached`, `entity_id`, `content_hash`, `binding_kind`, and
+`reason`. If only a legacy locator is available and no current hash can be read,
+the tool says so and leaves the promoted issue intact rather than fabricating a
+binding.
 
 The server is stateless — no session state is carried between calls; the
 read-only tools (`scan`, `explain_taint`) are pure functions of your code on disk

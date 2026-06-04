@@ -2,7 +2,7 @@
 
 import pytest
 
-from wardline.core.filigree_issue import FileResult
+from wardline.core.filigree_issue import FileResult, IdentityAttachResult
 from wardline.mcp.server import ToolError, WardlineMCPServer, _file_finding
 
 
@@ -46,6 +46,36 @@ def test_file_finding_no_filer_is_toolerror(tmp_path):
 def test_file_finding_not_found_surfaces(tmp_path):
     out = _file_finding({"fingerprint": "ghost"}, tmp_path, FakeFiler(FileResult(reachable=True, not_found=True)))
     assert out["not_found"] is True and out["issue_id"] is None
+
+
+def test_file_finding_can_attach_clarion_identity(tmp_path, monkeypatch):
+    from wardline.core import filigree_issue as mod
+
+    monkeypatch.setattr(
+        mod,
+        "attach_clarion_identity_for_finding",
+        lambda **kw: IdentityAttachResult.success(
+            entity_id="clarion:eid:abc",
+            content_hash="hash-v1",
+            binding_kind="sei",
+        ),
+    )
+
+    out = _file_finding(
+        {"fingerprint": "fp1", "attach_clarion_identity": True},
+        tmp_path,
+        FakeFiler(FileResult(reachable=True, issue_id="wardline-abc", created=True)),
+        clarion=object(),
+    )
+
+    assert out["identity_attach"] == {
+        "attempted": True,
+        "attached": True,
+        "entity_id": "clarion:eid:abc",
+        "content_hash": "hash-v1",
+        "binding_kind": "sei",
+        "reason": None,
+    }
 
 
 def test_server_filer_none_without_url(tmp_path):

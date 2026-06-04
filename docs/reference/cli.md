@@ -42,6 +42,8 @@ Options:
 
 Commands:
   baseline  Manage the finding baseline (.wardline/baseline.yaml).
+  file-finding
+            File the finding identified by FINGERPRINT into a tracked...
   judge     Triage active DEFECTs with the opt-in LLM judge.
   scan      Scan PATH for findings.
   vocab     Emit the NG-25 trust-vocabulary descriptor as YAML...
@@ -106,6 +108,41 @@ $ wardline scan src/ --cache-dir .wardline/cache
 
 See the [getting-started guide](../getting-started.md) for a first end-to-end
 scan and how to read the findings.
+
+## `wardline file-finding`
+
+**Purpose:** promote one already-emitted finding, keyed by fingerprint, into a
+tracked Filigree issue. Requires a Filigree Loom scan-results URL.
+
+```text
+Usage: wardline file-finding [OPTIONS] FINGERPRINT [PATH]
+
+  File the finding identified by FINGERPRINT into a tracked Filigree issue.
+
+Options:
+  --config FILE
+  --filigree-url TEXT        Filigree Loom URL (else env/wardline.yaml).
+  --clarion-url TEXT         Clarion URL used with --attach-clarion-identity.
+  --attach-clarion-identity  After filing, resolve the finding qualname
+                             through Clarion and attach a Filigree entity
+                             association.
+  --priority TEXT            Filigree priority, e.g. P2.
+  --label TEXT               Label to attach (repeatable).
+  --help                     Show this message and exit.
+```
+
+Without `--attach-clarion-identity`, the JSON result is the promotion result:
+`reachable`, `issue_id`, `created`, `not_found`, `fingerprint`, and
+`disabled_reason`.
+
+With `--attach-clarion-identity`, Wardline re-runs the scan locally to find the
+matching finding qualname, resolves it through Clarion, and attempts a Filigree
+entity association only after promotion returns an `issue_id`. The response adds
+an `identity_attach` block with `attempted`, `attached`, `entity_id`,
+`content_hash`, `binding_kind`, and `reason`. SEI bindings are preferred. If
+Clarion can only resolve a legacy locator and no current content hash is
+available, Wardline reports that explicitly and does not attach a false hash;
+the promoted issue is still returned.
 
 ## `wardline judge`
 

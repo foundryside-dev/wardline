@@ -88,7 +88,7 @@ def _clarion_write_status(block: dict[str, Any] | None) -> dict[str, Any]:
     return {"configured": True, **block}
 
 
-def _file_finding(args: dict[str, Any], root: Path, filer: Any) -> dict[str, Any]:
+def _file_finding(args: dict[str, Any], root: Path, filer: Any, clarion: Any = None) -> dict[str, Any]:
     """File ONE finding (by fingerprint) into a tracked Filigree issue, returning its
     id. Fail-soft on reachability; a 404 (unknown fingerprint) surfaces as not_found."""
     if filer is None:
@@ -98,7 +98,7 @@ def _file_finding(args: dict[str, Any], root: Path, filer: Any) -> dict[str, Any
     if labels is not None and not isinstance(labels, list):
         raise ToolError("labels must be an array of strings")
     res = filer.file(fp, priority=args.get("priority"), labels=labels)
-    return {
+    payload = {
         "reachable": res.reachable,
         "issue_id": res.issue_id,
         "created": res.created,
@@ -106,6 +106,20 @@ def _file_finding(args: dict[str, Any], root: Path, filer: Any) -> dict[str, Any
         "fingerprint": fp,
         "disabled_reason": res.disabled_reason,
     }
+    if bool(args.get("attach_clarion_identity") or False):
+        from wardline.core.filigree_issue import attach_clarion_identity_for_finding, identity_attach_result_to_json
+
+        payload["identity_attach"] = identity_attach_result_to_json(
+            attach_clarion_identity_for_finding(
+                fingerprint=fp,
+                issue_id=res.issue_id,
+                root=root,
+                filer=filer,
+                clarion_client=clarion,
+                config_path=_cfg(args, root),
+            )
+        )
+    return payload
 
 
 def _trusted_packs_arg(args: dict[str, Any]) -> tuple[str, ...]:
@@ -819,9 +833,24 @@ class WardlineMCPServer:
                         "fingerprint": {"type": "string"},
                         "priority": {"type": "string", "description": "Filigree priority, e.g. P2"},
                         "labels": {"type": "array", "items": {"type": "string"}},
+                        "attach_clarion_identity": {
+                            "type": "boolean",
+                            "description": (
+                                "Opt in to resolving the finding qualname through Clarion and attaching "
+                                "a Filigree entity association."
+                            ),
+                        },
+                        "config": {"type": "string"},
                     },
                 },
-                handler=lambda args, root: _file_finding(args, root, self._filigree_filer()),
+                handler=lambda args, root: _file_finding(
+                    args,
+                    root,
+                    self._filigree_filer(_cfg(args, root)),
+                    self._clarion_client(_cfg(args, root))
+                    if bool(args.get("attach_clarion_identity") or False)
+                    else None,
+                ),
             )
         )
         self.add_tool(
