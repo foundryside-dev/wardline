@@ -65,11 +65,25 @@ def _capture(name: str) -> dict:
 def test_corpus_surface_non_vacuous(name: str) -> None:
     d = _capture(name)
     assert d["findings"], f"{name}: no identity-bearing findings captured"
+    assert d["entity_spans"], f"{name}: no entity spans captured"
     assert d["facts"], f"{name}: no taint facts captured"
     assert d["sarif"]["runs"][0]["results"], f"{name}: empty SARIF results"
     assert d["explain"], f"{name}: no explain captured"
     rules = {f["rule_id"] for f in d["findings"]}
     assert "PY-WL-101" in rules, f"{name}: PY-WL-101 not present (rules={sorted(rules)})"
+    # Every frozen span carries real line/col coordinates (the cross-engine risk).
+    for span in d["entity_spans"]:
+        loc = span["location"]
+        assert loc["line_start"] is not None and loc["col_start"] is not None, f"{name}: null span {span['qualname']!r}"
+
+
+def test_stress_freezes_span_edge_construct_spans() -> None:
+    # The whole point of the stress fixture: its span-edge constructs (which
+    # produce no finding) must have their spans frozen via entity_spans, so a
+    # Rust parser rendering them differently is caught.
+    qns = {s["qualname"] for s in _capture("stress")["entity_spans"]}
+    for needle in ("func_with_unicode_café", "outer.<locals>.nested", "overloaded", "Service.make"):
+        assert any(needle in q for q in qns), f"stress entity_spans missing span-edge construct {needle!r}"
 
 
 def test_stress_covers_multiple_rules() -> None:

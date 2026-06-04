@@ -1,4 +1,546 @@
 {
+  "entity_spans": [
+    {
+      "location": {
+        "col_end": 88,
+        "col_start": 4,
+        "line_end": 22,
+        "line_start": 20,
+        "path": "cli.py"
+      },
+      "qualname": "cli.App.__init__"
+    },
+    {
+      "location": {
+        "col_end": 23,
+        "col_start": 4,
+        "line_end": 32,
+        "line_start": 25,
+        "path": "cli.py"
+      },
+      "qualname": "cli.App.command"
+    },
+    {
+      "location": {
+        "col_end": 21,
+        "col_start": 8,
+        "line_end": 30,
+        "line_start": 28,
+        "path": "cli.py"
+      },
+      "qualname": "cli.App.command.<locals>.register"
+    },
+    {
+      "location": {
+        "col_end": 34,
+        "col_start": 4,
+        "line_end": 41,
+        "line_start": 34,
+        "path": "cli.py"
+      },
+      "qualname": "cli.App.run"
+    },
+    {
+      "location": {
+        "col_end": 28,
+        "col_start": 0,
+        "line_end": 48,
+        "line_start": 45,
+        "path": "cli.py"
+      },
+      "qualname": "cli._add_book"
+    },
+    {
+      "location": {
+        "col_end": 33,
+        "col_start": 0,
+        "line_end": 54,
+        "line_start": 52,
+        "path": "cli.py"
+      },
+      "qualname": "cli._register"
+    },
+    {
+      "location": {
+        "col_end": 12,
+        "col_start": 0,
+        "line_end": 61,
+        "line_start": 57,
+        "path": "cli.py"
+      },
+      "qualname": "cli.main"
+    },
+    {
+      "location": {
+        "col_end": 26,
+        "col_start": 4,
+        "line_end": 76,
+        "line_start": 71,
+        "path": "models.py"
+      },
+      "qualname": "models.Book.__init__"
+    },
+    {
+      "location": {
+        "col_end": 24,
+        "col_start": 4,
+        "line_end": 80,
+        "line_start": 79,
+        "path": "models.py"
+      },
+      "qualname": "models.Book.key"
+    },
+    {
+      "location": {
+        "col_end": 66,
+        "col_start": 4,
+        "line_end": 42,
+        "line_start": 41,
+        "path": "models.py"
+      },
+      "qualname": "models.Entity.__eq__"
+    },
+    {
+      "location": {
+        "col_end": 29,
+        "col_start": 4,
+        "line_end": 45,
+        "line_start": 44,
+        "path": "models.py"
+      },
+      "qualname": "models.Entity.__hash__"
+    },
+    {
+      "location": {
+        "col_end": 39,
+        "col_start": 4,
+        "line_end": 34,
+        "line_start": 33,
+        "path": "models.py"
+      },
+      "qualname": "models.Entity.__init__"
+    },
+    {
+      "location": {
+        "col_end": 53,
+        "col_start": 4,
+        "line_end": 48,
+        "line_start": 47,
+        "path": "models.py"
+      },
+      "qualname": "models.Entity.__repr__"
+    },
+    {
+      "location": {
+        "col_end": 54,
+        "col_start": 4,
+        "line_end": 39,
+        "line_start": 38,
+        "path": "models.py"
+      },
+      "qualname": "models.Entity.key"
+    },
+    {
+      "location": {
+        "col_end": 29,
+        "col_start": 4,
+        "line_end": 25,
+        "line_start": 25,
+        "path": "models.py"
+      },
+      "qualname": "models.Identifiable.key"
+    },
+    {
+      "location": {
+        "col_end": 20,
+        "col_start": 4,
+        "line_end": 107,
+        "line_start": 103,
+        "path": "models.py"
+      },
+      "qualname": "models.Loan.overdue_fee"
+    },
+    {
+      "location": {
+        "col_end": 61,
+        "col_start": 4,
+        "line_end": 61,
+        "line_start": 58,
+        "path": "models.py"
+      },
+      "qualname": "models.Money.__add__"
+    },
+    {
+      "location": {
+        "col_end": 39,
+        "col_start": 4,
+        "line_end": 64,
+        "line_start": 63,
+        "path": "models.py"
+      },
+      "qualname": "models.Money.__lt__"
+    },
+    {
+      "location": {
+        "col_end": 56,
+        "col_start": 4,
+        "line_end": 67,
+        "line_start": 66,
+        "path": "models.py"
+      },
+      "qualname": "models.Money.__str__"
+    },
+    {
+      "location": {
+        "col_end": 24,
+        "col_start": 4,
+        "line_end": 87,
+        "line_start": 84,
+        "path": "models.py"
+      },
+      "qualname": "models.User.__init__"
+    },
+    {
+      "location": {
+        "col_end": 28,
+        "col_start": 4,
+        "line_end": 91,
+        "line_start": 90,
+        "path": "models.py"
+      },
+      "qualname": "models.User.key"
+    },
+    {
+      "location": {
+        "col_end": 63,
+        "col_start": 4,
+        "line_end": 72,
+        "line_start": 71,
+        "path": "repository.py"
+      },
+      "qualname": "repository.BookRepository.by_author"
+    },
+    {
+      "location": {
+        "col_end": 21,
+        "col_start": 4,
+        "line_end": 67,
+        "line_start": 64,
+        "path": "repository.py"
+      },
+      "qualname": "repository.InMemoryRepository.add"
+    },
+    {
+      "location": {
+        "col_end": 60,
+        "col_start": 4,
+        "line_end": 62,
+        "line_start": 60,
+        "path": "repository.py"
+      },
+      "qualname": "repository.InMemoryRepository.validate"
+    },
+    {
+      "location": {
+        "col_end": 33,
+        "col_start": 4,
+        "line_end": 54,
+        "line_start": 53,
+        "path": "repository.py"
+      },
+      "qualname": "repository.Repository.__contains__"
+    },
+    {
+      "location": {
+        "col_end": 31,
+        "col_start": 4,
+        "line_end": 51,
+        "line_start": 50,
+        "path": "repository.py"
+      },
+      "qualname": "repository.Repository.__getitem__"
+    },
+    {
+      "location": {
+        "col_end": 38,
+        "col_start": 4,
+        "line_end": 30,
+        "line_start": 29,
+        "path": "repository.py"
+      },
+      "qualname": "repository.Repository.__init__"
+    },
+    {
+      "location": {
+        "col_end": 41,
+        "col_start": 4,
+        "line_end": 48,
+        "line_start": 47,
+        "path": "repository.py"
+      },
+      "qualname": "repository.Repository.__iter__"
+    },
+    {
+      "location": {
+        "col_end": 31,
+        "col_start": 4,
+        "line_end": 45,
+        "line_start": 44,
+        "path": "repository.py"
+      },
+      "qualname": "repository.Repository.__len__"
+    },
+    {
+      "location": {
+        "col_end": 19,
+        "col_start": 4,
+        "line_end": 39,
+        "line_start": 36,
+        "path": "repository.py"
+      },
+      "qualname": "repository.Repository.add"
+    },
+    {
+      "location": {
+        "col_end": 35,
+        "col_start": 4,
+        "line_end": 42,
+        "line_start": 41,
+        "path": "repository.py"
+      },
+      "qualname": "repository.Repository.get"
+    },
+    {
+      "location": {
+        "col_end": 61,
+        "col_start": 4,
+        "line_end": 34,
+        "line_start": 33,
+        "path": "repository.py"
+      },
+      "qualname": "repository.Repository.validate"
+    },
+    {
+      "location": {
+        "col_end": 44,
+        "col_start": 4,
+        "line_end": 23,
+        "line_start": 22,
+        "path": "repository.py"
+      },
+      "qualname": "repository.TimestampMixin.last_modified"
+    },
+    {
+      "location": {
+        "col_end": 48,
+        "col_start": 4,
+        "line_end": 19,
+        "line_start": 18,
+        "path": "repository.py"
+      },
+      "qualname": "repository.TimestampMixin.touch"
+    },
+    {
+      "location": {
+        "col_end": 33,
+        "col_start": 4,
+        "line_end": 77,
+        "line_start": 76,
+        "path": "repository.py"
+      },
+      "qualname": "repository.UserRepository.by_username"
+    },
+    {
+      "location": {
+        "col_end": 44,
+        "col_start": 4,
+        "line_end": 64,
+        "line_start": 55,
+        "path": "service.py"
+      },
+      "qualname": "service.LibraryService.__init__"
+    },
+    {
+      "location": {
+        "col_end": 27,
+        "col_start": 4,
+        "line_end": 75,
+        "line_start": 73,
+        "path": "service.py"
+      },
+      "qualname": "service.LibraryService._emit"
+    },
+    {
+      "location": {
+        "col_end": 36,
+        "col_start": 4,
+        "line_end": 83,
+        "line_start": 82,
+        "path": "service.py"
+      },
+      "qualname": "service.LibraryService.add_book"
+    },
+    {
+      "location": {
+        "col_end": 19,
+        "col_start": 4,
+        "line_end": 93,
+        "line_start": 85,
+        "path": "service.py"
+      },
+      "qualname": "service.LibraryService.checkout"
+    },
+    {
+      "location": {
+        "col_end": 54,
+        "col_start": 4,
+        "line_end": 68,
+        "line_start": 67,
+        "path": "service.py"
+      },
+      "qualname": "service.LibraryService.in_memory"
+    },
+    {
+      "location": {
+        "col_end": 52,
+        "col_start": 4,
+        "line_end": 79,
+        "line_start": 78,
+        "path": "service.py"
+      },
+      "qualname": "service.LibraryService.register_user"
+    },
+    {
+      "location": {
+        "col_end": 40,
+        "col_start": 4,
+        "line_end": 71,
+        "line_start": 70,
+        "path": "service.py"
+      },
+      "qualname": "service.LibraryService.subscribe"
+    },
+    {
+      "location": {
+        "col_end": 59,
+        "col_start": 4,
+        "line_end": 34,
+        "line_start": 34,
+        "path": "service.py"
+      },
+      "qualname": "service.LoanPolicy.loan_days"
+    },
+    {
+      "location": {
+        "col_end": 25,
+        "col_start": 4,
+        "line_end": 46,
+        "line_start": 45,
+        "path": "service.py"
+      },
+      "qualname": "service.PremiumPolicy.__init__"
+    },
+    {
+      "location": {
+        "col_end": 51,
+        "col_start": 4,
+        "line_end": 49,
+        "line_start": 48,
+        "path": "service.py"
+      },
+      "qualname": "service.PremiumPolicy.loan_days"
+    },
+    {
+      "location": {
+        "col_end": 17,
+        "col_start": 4,
+        "line_end": 39,
+        "line_start": 38,
+        "path": "service.py"
+      },
+      "qualname": "service.StandardPolicy.loan_days"
+    },
+    {
+      "location": {
+        "col_end": 20,
+        "col_start": 0,
+        "line_end": 28,
+        "line_start": 16,
+        "path": "service.py"
+      },
+      "qualname": "service.audited"
+    },
+    {
+      "location": {
+        "col_end": 22,
+        "col_start": 4,
+        "line_end": 26,
+        "line_start": 19,
+        "path": "service.py"
+      },
+      "qualname": "service.audited.<locals>.decorator"
+    },
+    {
+      "location": {
+        "col_end": 25,
+        "col_start": 8,
+        "line_end": 24,
+        "line_start": 21,
+        "path": "service.py"
+      },
+      "qualname": "service.audited.<locals>.decorator.<locals>.wrapper"
+    },
+    {
+      "location": {
+        "col_end": 29,
+        "col_start": 0,
+        "line_end": 31,
+        "line_start": 28,
+        "path": "trust_flow.py"
+      },
+      "qualname": "trust_flow.build_account_key"
+    },
+    {
+      "location": {
+        "col_end": 34,
+        "col_start": 0,
+        "line_end": 14,
+        "line_start": 11,
+        "path": "trust_flow.py"
+      },
+      "qualname": "trust_flow.read_raw_username"
+    },
+    {
+      "location": {
+        "col_end": 72,
+        "col_start": 0,
+        "line_end": 37,
+        "line_start": 34,
+        "path": "trust_flow.py"
+      },
+      "qualname": "trust_flow.safe_account_key"
+    },
+    {
+      "location": {
+        "col_end": 34,
+        "col_start": 0,
+        "line_end": 44,
+        "line_start": 41,
+        "path": "trust_flow.py"
+      },
+      "qualname": "trust_flow.unsafe_account_key"
+    },
+    {
+      "location": {
+        "col_end": 16,
+        "col_start": 0,
+        "line_end": 24,
+        "line_start": 18,
+        "path": "trust_flow.py"
+      },
+      "qualname": "trust_flow.validate_username"
+    }
+  ],
   "explain": {
     "explanation": {
       "fingerprint": "67252346d2858a1b6546cc6178f0582604a77fab1b429e4b9a36f650c8dbdd2a",

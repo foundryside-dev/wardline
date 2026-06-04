@@ -8,7 +8,7 @@ Wardline is about to migrate its analysis **core** to Rust (PyO3 + maturin abi3 
 - **Task B (SECOND):** promote the on-disk NG-25 descriptor (`vocabulary.yaml`) to *the* versioned cross-product contract (add a self-describing `schema` field, ADR, federation-doc retirement note, Clarion hand-off) so once `wardline.core` is native, nothing outside Wardline imports it.
 - **Task C (THIRD):** a declarative native-module allowlist so a compiled `wardline.core` (no Python AST) doesn't light up `WLN-ENGINE-UNKNOWN-IMPORT` on the self-scan.
 
-This plan was reviewed by a 4-reviewer panel (reality / architecture / quality / systems); their convergent findings are folded in below. A companion bite-sized TDD task doc was drafted at `docs/superpowers/plans/2026-06-05-wardline-pre-rust-core-hardening.md` (predates the review fixes — **re-sync it as execution step 0**).
+This plan was reviewed by a 4-reviewer panel (reality / architecture / quality / systems) and a round-2 panel (reality / quality / synthesis); their convergent findings are folded in below. This is the authoritative, as-implemented plan of record.
 
 **Process constraints (all tasks):** TDD (failing test first); attribute filigree events `--actor wardline`; each external-contract change gets an ADR under `docs/decisions/` (date-slug, **no** ADR-NNN; the brief's `docs/architecture/decisions/` does not exist here); behaviour-preserving except Task B's additive `schema` field; do not touch `packages/loom-markers/` except to confirm zero-dep; subagents NEVER run git.
 

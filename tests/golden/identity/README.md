@@ -13,6 +13,9 @@ only (`PY-WL-* ∧ Kind.DEFECT`) plus the peer-consumed payloads:
 
 - **findings** — the real wire format (`Finding.to_jsonl()`): fingerprint,
   rule_id, qualname, location spans, properties, suppression, …
+- **entity_spans** — qualname + full span (`line_start`/`line_end`/`col_start`/
+  `col_end`) of **every** analyzed entity, so the parser's span rendering is
+  frozen even for constructs that produce no finding (the brief's #1 risk).
 - **taint facts** — `build_taint_facts(result, root)`, the exact Clarion payload
   (sorted by `qualname`; inner findings sorted).
 - **SARIF** — `build_sarif(...)` with the mutable `driver.version` normalised to
@@ -47,9 +50,12 @@ gate runs on every CI interpreter with no skip.
 
 The corpus changes only via a deliberate, reviewed rekey — never to silence an
 accidental drift (that is a real regression; the failure dumps
-`/tmp/corpus_actual_<name>.json` + a unified diff). Enforcement is this parity
-test + CODEOWNERS on `corpus/**`; the `--reason` flag is the accountability
-record stamped into `corpus/META.json`.
+`/tmp/corpus_actual_<name>.json` + a unified diff). **Enforcement is this parity
+test in CI** — it fails any PR that changes `corpus/*` without a matching
+production change. The `--reason` flag is the accountability record stamped into
+`corpus/META.json`. *Recommended complement* (not yet wired): a `.github/CODEOWNERS`
+entry `tests/golden/identity/corpus/ @<maintainer>` so a rekey also requires
+maintainer review.
 
 ```bash
 cd tests && PYTHONPATH=. python -m golden.identity.regen --reason "<why>"

@@ -1,4 +1,4 @@
 {
   "corpus_version": 1,
-  "reason": "Initial freeze: Task A identity oracle (pre-Rust-core hardening)"
+  "reason": "Harness hardening (code review): add total sort-key tiebreaker, freeze entity_spans for all entities (brief #1 span-divergence risk), float caveat"
 }
