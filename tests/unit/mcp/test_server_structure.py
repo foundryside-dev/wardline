@@ -32,8 +32,7 @@ def test_mcp_advertisement_snapshot() -> None:
         "verify_attestation",
         "file_finding",
         "judge",
-        "baseline_create",
-        "baseline_update",
+        "baseline",
         "waiver_add",
         "fix",
     ]

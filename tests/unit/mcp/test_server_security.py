@@ -56,7 +56,7 @@ def test_explain_taint_out_of_root_path_is_iserror(tmp_path: Path) -> None:
 
 def test_baseline_create_config_escape_is_iserror(tmp_path: Path) -> None:
     server = WardlineMCPServer(root=tmp_path)
-    resp = _dispatch(server, "baseline_create", {"reason": "x", "config": "../../outside.yaml"})
+    resp = _dispatch(server, "baseline", {"reason": "x", "config": "../../outside.yaml"})
     _assert_iserror(resp, "within the project root")
 
 

@@ -213,8 +213,9 @@ Tools: `scan` (structured findings + suppression summary + gate), `explain_taint
 (the tainted callee and originating boundary for one finding — call it right
 after a scan and before editing), `file_finding` (promote one emitted finding to
 a Filigree issue), `fix` (mechanical autofixes for supported findings), `judge`
-(opt-in, network), and the loud suppression tools `baseline_create` /
-`baseline_update` / `waiver_add` (each requires a reason).
+(opt-in, network), and the loud suppression tools `baseline` / `waiver_add`
+(each requires a reason; `baseline` defaults to no-clobber and accepts
+`overwrite: true` to re-derive).
 Resources expose the trust vocabulary, rule catalog, config, and config schema.
 The `wardline:loop` prompt documents the intended
 scan → explain → fix-at-the-boundary → rescan cycle.
@@ -245,6 +246,5 @@ binding.
 The server is stateless — no session state is carried between calls; the
 read-only tools (`scan`, `explain_taint`) are pure functions of your code on disk
 and your config, and the analysis core stays zero-dependency. Only `judge`
-touches the network; `fix`, the suppression tools (`baseline_create` /
-`baseline_update` / `waiver_add`), and `judge` with `write` write to your project
-files as requested.
+touches the network; `fix`, the suppression tools (`baseline` / `waiver_add`),
+and `judge` with `write` write to your project files as requested.

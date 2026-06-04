@@ -2,7 +2,7 @@
 
 Stateless (no server-side session carried between calls). The read-only tools
 (scan, explain_taint) are pure functions of (disk + config); fix, the suppression
-tools (baseline_create/baseline_update, waiver_add), and judge --write mutate
+tools (baseline, waiver_add), and judge --write mutate
 project files on disk. Rooted at a project path (launch cwd by default)."""
 
 from __future__ import annotations
@@ -401,13 +401,14 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
     }
 
 
-def _baseline_create(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def _baseline(args: dict[str, Any], root: Path) -> dict[str, Any]:
     reason = args.get("reason")
     baseline_path = root / ".wardline" / "baseline.yaml"
+    overwrite = bool(args.get("overwrite", False))
     try:
         count = generate_baseline(
             root,
-            overwrite=False,
+            overwrite=overwrite,
             config_path=_cfg(args, root),
             cache_dir=_cache_dir_arg(args, root),
             confine_to_root=True,
@@ -416,6 +417,8 @@ def _baseline_create(args: dict[str, Any], root: Path) -> dict[str, Any]:
             strict_defaults=bool(args.get("strict_defaults", False)),
         )
     except FileExistsError:
+        if overwrite:
+            raise
         existing = load_baseline(baseline_path)
         return {
             "baselined_count": len(existing.fingerprints),
@@ -423,22 +426,10 @@ def _baseline_create(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "reason": reason,
             "already_exists": True,
         }
-    return {"baselined_count": count, "path": str(baseline_path), "reason": reason, "already_exists": False}
-
-
-def _baseline_update(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    reason = args.get("reason")
-    count = generate_baseline(
-        root,
-        overwrite=True,
-        config_path=_cfg(args, root),
-        cache_dir=_cache_dir_arg(args, root),
-        confine_to_root=True,
-        trust_local_packs=bool(args.get("trust_local_packs", False)),
-        trusted_packs=_trusted_packs_arg(args),
-        strict_defaults=bool(args.get("strict_defaults", False)),
-    )
-    return {"baselined_count": count, "path": str(root / ".wardline" / "baseline.yaml"), "reason": reason}
+    payload = {"baselined_count": count, "path": str(baseline_path), "reason": reason}
+    if not overwrite:
+        payload["already_exists"] = False
+    return payload
 
 
 def _waiver_add(args: dict[str, Any], root: Path) -> dict[str, Any]:
@@ -880,14 +871,17 @@ class WardlineMCPServer:
         )
         self.add_tool(
             Tool(
-                name="baseline_create",
+                name="baseline",
                 capabilities=frozenset({ToolCapability.READ, ToolCapability.WRITE}),
                 description="Snapshot current defects as the baseline so only NEW findings surface. "
+                "Default overwrite=false refuses to clobber and returns already_exists=true. "
+                "Set overwrite=true to re-derive and overwrite the baseline. "
                 "Prefer FIXING a finding over baselining it. Optional reason.",
                 input_schema={
                     "type": "object",
                     "properties": {
                         "reason": {"type": "string"},
+                        "overwrite": {"type": "boolean"},
                         "config": {"type": "string"},
                         "cache_dir": {
                             "type": "string",
@@ -898,29 +892,7 @@ class WardlineMCPServer:
                         "strict_defaults": {"type": "boolean"},
                     },
                 },
-                handler=_baseline_create,
-            )
-        )
-        self.add_tool(
-            Tool(
-                name="baseline_update",
-                capabilities=frozenset({ToolCapability.READ, ToolCapability.WRITE}),
-                description="Re-derive and OVERWRITE the baseline. Optional reason.",
-                input_schema={
-                    "type": "object",
-                    "properties": {
-                        "reason": {"type": "string"},
-                        "config": {"type": "string"},
-                        "cache_dir": {
-                            "type": "string",
-                            "description": "subdir relative to project root for summary cache",
-                        },
-                        "trust_packs": {"type": "array", "items": {"type": "string"}},
-                        "trust_local_packs": {"type": "boolean"},
-                        "strict_defaults": {"type": "boolean"},
-                    },
-                },
-                handler=_baseline_update,
+                handler=_baseline,
             )
         )
         self.add_tool(
