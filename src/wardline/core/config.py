@@ -16,11 +16,7 @@ from wardline.core.optional_deps import require_jsonschema, require_yaml
 
 def validate_boundary_exception_name(value: str) -> str:
     parts = value.split(".")
-    if (
-        not value
-        or not parts
-        or any(not part or not part.isidentifier() or keyword.iskeyword(part) for part in parts)
-    ):
+    if not value or not parts or any(not part or not part.isidentifier() or keyword.iskeyword(part) for part in parts):
         raise ConfigError(
             "autofix.boundary_exception must be an identifier or dotted identifier, "
             "for example ValueError or mypkg.ValidationError"

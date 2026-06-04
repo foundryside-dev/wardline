@@ -22,14 +22,18 @@ _EXPECTED_ARGS = {
     "trust_boundary": {"to_level"},
     "trusted": {"level"},
 }
+_EXPECTED_PREFIXES = ("wardline.decorators", "loom_markers")
 
 
-def test_default_grammar_has_three_builtins_and_all_rules() -> None:
+def test_default_grammar_has_builtin_marker_namespaces_and_all_rules() -> None:
     g = default_grammar()
-    assert tuple(bt.canonical_name for bt in g.boundary_types) == (
-        "external_boundary",
-        "trust_boundary",
-        "trusted",
+    assert tuple((bt.module_prefix, bt.canonical_name) for bt in g.boundary_types) == (
+        ("wardline.decorators", "external_boundary"),
+        ("wardline.decorators", "trust_boundary"),
+        ("wardline.decorators", "trusted"),
+        ("loom_markers", "external_boundary"),
+        ("loom_markers", "trust_boundary"),
+        ("loom_markers", "trusted"),
     )
     assert [r.rule_id for r in g.rules] == [
         "PY-WL-101",
@@ -58,33 +62,36 @@ def test_default_grammar_has_three_builtins_and_all_rules() -> None:
 def test_builtin_boundary_types_align_with_registry() -> None:
     # One source of truth: builtin names + group mirror REGISTRY; arg names are the
     # known per-decorator set. Drift in either is caught here (and at import time).
-    by_name = {bt.canonical_name: bt for bt in BUILTIN_BOUNDARY_TYPES}
-    assert set(by_name) == set(REGISTRY)
-    for name, entry in REGISTRY.items():
-        bt = by_name[name]
-        assert bt.group == entry.group
-        assert bt.builtin is True
-        assert {la.arg_name for la in bt.level_args} == _EXPECTED_ARGS[name]
+    by_prefix_name = {(bt.module_prefix, bt.canonical_name): bt for bt in BUILTIN_BOUNDARY_TYPES}
+    assert set(by_prefix_name) == {(prefix, name) for prefix in _EXPECTED_PREFIXES for name in REGISTRY}
+    for prefix in _EXPECTED_PREFIXES:
+        for name, entry in REGISTRY.items():
+            bt = by_prefix_name[(prefix, name)]
+            assert bt.group == entry.group
+            assert bt.builtin is True
+            assert {la.arg_name for la in bt.level_args} == _EXPECTED_ARGS[name]
 
 
 def test_seed_semantics_round_trip() -> None:
-    by_name = {bt.canonical_name: bt for bt in BUILTIN_BOUNDARY_TYPES}
-    assert by_name["external_boundary"].seed({}) == FunctionTaint(TaintState.EXTERNAL_RAW, TaintState.EXTERNAL_RAW)
-    assert by_name["trust_boundary"].seed({"to_level": TaintState.ASSURED}) == FunctionTaint(
-        TaintState.EXTERNAL_RAW, TaintState.ASSURED
-    )
-    assert by_name["trusted"].seed({"level": TaintState.INTEGRAL}) == FunctionTaint(
-        TaintState.INTEGRAL, TaintState.INTEGRAL
-    )
+    for prefix in _EXPECTED_PREFIXES:
+        by_name = {bt.canonical_name: bt for bt in BUILTIN_BOUNDARY_TYPES if bt.module_prefix == prefix}
+        assert by_name["external_boundary"].seed({}) == FunctionTaint(TaintState.EXTERNAL_RAW, TaintState.EXTERNAL_RAW)
+        assert by_name["trust_boundary"].seed({"to_level": TaintState.ASSURED}) == FunctionTaint(
+            TaintState.EXTERNAL_RAW, TaintState.ASSURED
+        )
+        assert by_name["trusted"].seed({"level": TaintState.INTEGRAL}) == FunctionTaint(
+            TaintState.INTEGRAL, TaintState.INTEGRAL
+        )
 
 
 def test_trusted_default_level_is_integral() -> None:
-    by_name = {bt.canonical_name: bt for bt in BUILTIN_BOUNDARY_TYPES}
-    (level_arg,) = by_name["trusted"].level_args
-    assert level_arg.default == TaintState.INTEGRAL
-    # trust_boundary's to_level is REQUIRED (no default => fail-closed when unreadable)
-    (to_level_arg,) = by_name["trust_boundary"].level_args
-    assert to_level_arg.default is None
+    for prefix in _EXPECTED_PREFIXES:
+        by_name = {bt.canonical_name: bt for bt in BUILTIN_BOUNDARY_TYPES if bt.module_prefix == prefix}
+        (level_arg,) = by_name["trusted"].level_args
+        assert level_arg.default == TaintState.INTEGRAL
+        # trust_boundary's to_level is REQUIRED (no default => fail-closed when unreadable)
+        (to_level_arg,) = by_name["trust_boundary"].level_args
+        assert to_level_arg.default is None
 
 
 def test_extend_appends_never_replaces() -> None:

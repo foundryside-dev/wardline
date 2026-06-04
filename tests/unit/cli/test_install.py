@@ -51,9 +51,12 @@ def test_mcp_resolves_clarion_url_from_config(tmp_path: Path, monkeypatch) -> No
 
 
 def test_install_writes_all_artifacts(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
     monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
     result = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert (tmp_path / "CLAUDE.md").is_file()
@@ -61,22 +64,30 @@ def test_install_writes_all_artifacts(tmp_path: Path, monkeypatch) -> None:
     assert (tmp_path / ".claude" / "skills" / "wardline-gate" / "SKILL.md").is_file()
     assert (tmp_path / ".agents" / "skills" / "wardline-gate" / "SKILL.md").is_file()
     assert (tmp_path / ".mcp.json").is_file()
+    assert (home / ".codex" / "config.toml").is_file()
     assert "CLAUDE.md" in result.output
+    assert "runtime markers: install `loom-markers` and import from `loom_markers`" in result.output
 
 
 def test_install_is_idempotent(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
     monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
     CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
     result = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert "CLAUDE.md: unchanged" in result.output
     assert ".mcp.json (wardline entry): unchanged" in result.output
+    assert "Codex MCP (wardline entry): unchanged" in result.output
 
 
 def test_install_opt_outs(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
     result = CliRunner().invoke(
         cli,
         ["install", "--root", str(tmp_path), "--no-agents-md", "--no-skill", "--no-mcp", "--no-bindings"],
@@ -86,12 +97,16 @@ def test_install_opt_outs(tmp_path: Path, monkeypatch) -> None:
     assert not (tmp_path / "AGENTS.md").exists()
     assert not (tmp_path / ".claude").exists()
     assert not (tmp_path / ".mcp.json").exists()
+    assert not (home / ".codex" / "config.toml").exists()
 
 
 def test_install_no_claude_md_still_writes_agents(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
     monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
     result = CliRunner().invoke(cli, ["install", "--root", str(tmp_path), "--no-claude-md"])
     assert result.exit_code == 0, result.output
     assert not (tmp_path / "CLAUDE.md").exists()
@@ -99,17 +114,44 @@ def test_install_no_claude_md_still_writes_agents(tmp_path: Path, monkeypatch) -
 
 
 def test_install_summary_includes_binding_lines(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
     monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
     result = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert "clarion:" in result.output
     assert "filigree:" in result.output
 
 
-def test_install_fails_2_on_malformed_mcp_json(tmp_path: Path, monkeypatch) -> None:
+def test_install_auto_wires_filigree_from_ephemeral_port(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    (tmp_path / ".filigree.conf").write_text("{}", encoding="utf-8")
+    filigree_dir = tmp_path / ".filigree"
+    filigree_dir.mkdir()
+    (filigree_dir / "ephemeral.port").write_text("8628", encoding="utf-8")
+
+    result = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
+
+    assert result.exit_code == 0, result.output
+    assert "filigree: wired (discovered URL)" in result.output
+    assert 'filigree:\n  url: "http://localhost:8628/api/loom/scan-results"' in (tmp_path / "wardline.yaml").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_install_fails_2_on_malformed_mcp_json(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
     (tmp_path / ".mcp.json").write_text("{bad", encoding="utf-8")
     result = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
     assert result.exit_code == 2
@@ -117,6 +159,9 @@ def test_install_fails_2_on_malformed_mcp_json(tmp_path: Path, monkeypatch) -> N
 
 
 def test_install_pre_commit_hook(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
     # 1. No pre-commit config: should skip
     result = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
     assert result.exit_code == 0, result.output

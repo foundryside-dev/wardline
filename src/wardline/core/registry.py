@@ -19,7 +19,7 @@ from wardline.core.taints import TaintState
 # Version line for the generic rebuild's vocabulary (distinct from wardline.old's
 # "1.1"). Bumped when the vocabulary's declaration surface changes; the taint
 # provider derives its cache-key fingerprint from this (SP2b).
-REGISTRY_VERSION = "wardline-generic-1"
+REGISTRY_VERSION = "wardline-generic-2"
 
 
 @dataclass(frozen=True)

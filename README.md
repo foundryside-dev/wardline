@@ -9,7 +9,7 @@ Generic, lightweight semantic-tainting static analyzer for Python — track untr
 
 ```python
 # demo.py
-from wardline.decorators import trusted, external_boundary
+from loom_markers import trusted, external_boundary
 
 @external_boundary
 def read_request(req):
@@ -82,7 +82,7 @@ pip install 'wardline[scanner]'   # quote the extras for zsh
 
 ```python
 # app.py
-from wardline.decorators import trusted, external_boundary
+from loom_markers import trusted, external_boundary
 
 @external_boundary
 def read_request(req):
@@ -102,9 +102,14 @@ Fix findings at the **boundary** (validate before returning), not at the sink.
 ## Installation
 
 ```bash
+pip install loom-markers          # tiny runtime marker package for application code
 pip install wardline              # zero-dependency base (library + decorators)
 pip install 'wardline[scanner]'   # the scan/judge/baseline CLI + MCP server (quote for zsh)
 ```
+
+Prefer `loom_markers` in application code. Wardline still recognizes
+`wardline.decorators` for backward compatibility and direct Wardline users, but
+`loom-markers` is the neutral marker-only runtime dependency.
 
 | Extra | Pulls | Enables |
 |-------|-------|---------|
@@ -123,10 +128,20 @@ wardline install
 
 This injects a hash-fenced instruction block into `CLAUDE.md`/`AGENTS.md`,
 installs the `wardline-gate` skill, merges a `wardline` entry into `.mcp.json`,
-and records Clarion/Filigree bindings if present. Agents then run the
+writes Codex's `~/.codex/config.toml` MCP entry, and records Clarion/Filigree
+bindings if present. When local sibling config exposes a URL, `install` wires it
+directly; otherwise it leaves a commented stanza to fill in. Agents then run the
 scan → explain → fix-at-boundary → rescan loop natively. The `wardline mcp`
 server exposes `scan`, `explain_taint`, `fix`, `judge`, baseline, and waiver
 tools over JSON-RPC with no SDK.
+
+`wardline install` also reminds application projects to install `loom-markers`
+and import from `loom_markers` when they want runtime-importable trust markers
+without depending on the full Wardline scanner package.
+
+Run `wardline doctor` to check those artifacts later, or `wardline doctor
+--repair` to refresh stale/missing wiring after moving tools or starting a
+Filigree dashboard.
 
 ## Where Wardline fits
 

@@ -31,10 +31,12 @@ If you have not installed Wardline yet, start with
   the agent at the gate and the loop;
 - installs the `wardline-gate` skill into `.claude/skills/` and `.agents/skills/`;
 - merges a `wardline` entry into `.mcp.json` (preserving any existing servers);
+- writes a global Codex MCP entry in `~/.codex/config.toml`;
 - detects a Clarion taint store (`clarion` on `PATH` or `WARDLINE_CLARION_URL`)
   and a Filigree project (`.filigree.conf`), recording a `clarion:`/`filigree:`
-  binding in `wardline.yaml` — live when a URL env var is set, otherwise a
-  commented stanza for you to fill.
+  binding in `wardline.yaml` — live when a URL env var, Filigree
+  `.filigree/ephemeral.port`, or HTTP-enabled `clarion.yaml` exposes a URL;
+  otherwise a commented stanza for you to fill.
 
 ```console
 $ wardline install
@@ -44,8 +46,10 @@ wardline install:
   skill .claude/skills/wardline-gate: created
   skill .agents/skills/wardline-gate: created
   .mcp.json (wardline entry): created
+  Codex MCP (wardline entry): created
   clarion: detected (commented)
   filigree: detected (commented)
+  runtime markers: install `loom-markers` and import from `loom_markers`
 ```
 
 It is idempotent (re-run to refresh after upgrading wardline) and non-interactive
@@ -54,11 +58,25 @@ It is idempotent (re-run to refresh after upgrading wardline) and non-interactiv
 freshness is enforced only when you re-run `wardline install`.
 
 Once installed, the MCP server resolves the Clarion URL from `wardline.yaml`, so
-the `.mcp.json` entry stays a bare `wardline mcp --root .` with no URL in its args.
+the `.mcp.json` entry stays a stdio `wardline mcp --root .` command with no URL
+in its args.
+The Codex entry is global, so it runs `wardline mcp` without `--root` and lets
+Codex launch it from the active workspace.
+
+Check the wiring later with:
+
+```console
+$ wardline doctor
+```
+
+Use `wardline doctor --repair` after moving binaries, starting a Filigree
+dashboard, or changing sibling tool config. It refreshes the instruction blocks,
+skills, MCP entries, and `wardline.yaml` bindings using the same discovery rules
+as `wardline install`.
 
 ## Gate the agent's work with `wardline scan`
 
-Wardline marks trust boundaries with two decorators from `wardline.decorators`:
+Wardline marks trust boundaries with marker decorators from `loom_markers`:
 `@external_boundary` (data arriving from outside the trust boundary —
 untrusted) and `@trusted` (a producer that is supposed to receive validated data
 only). When untrusted data reaches a trusted producer, Wardline raises
@@ -67,7 +85,7 @@ only). When untrusted data reaches a trusted producer, Wardline raises
 Here is a self-contained example (`handlers.py`):
 
 ```python
-from wardline.decorators import external_boundary, trusted
+from loom_markers import external_boundary, trusted
 
 
 @external_boundary

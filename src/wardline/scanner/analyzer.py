@@ -195,9 +195,7 @@ class WardlineAnalyzer:
                 elif positional_params:
                     positional_params = positional_params[1:]
 
-            explicit_keyword_names = {
-                key for key in arg_taints if isinstance(key, str) and not key.startswith("*")
-            }
+            explicit_keyword_names = {key for key in arg_taints if isinstance(key, str) and not key.startswith("*")}
             filled_args: set[str] = set()
             positional_slots = [*posonly_params, *positional_params]
             pos_idx = 0

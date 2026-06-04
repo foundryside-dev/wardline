@@ -22,7 +22,7 @@ def test_ci_exposes_scheduled_and_manual_live_oracles() -> None:
         "WARDLINE_FILIGREE_URL",
     ):
         assert f"{key}: ${{{{ secrets.{key} }}}}" in workflow
-    assert f"{LIVE_ORACLE_REQUIRED_ENV}: \"1\"" in workflow
+    assert f'{LIVE_ORACLE_REQUIRED_ENV}: "1"' in workflow
     assert "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'" in workflow
     for marker in ("clarion_e2e", "legis_e2e", "filigree_e2e"):
         assert "-m ${{ matrix.marker }}" in workflow

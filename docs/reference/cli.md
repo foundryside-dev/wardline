@@ -175,7 +175,7 @@ It takes no arguments. The output is the canonical descriptor:
 
 ```text
 $ wardline vocab
-version: wardline-generic-1
+version: wardline-generic-2
 entries:
 - canonical_name: external_boundary
   group: 1
@@ -194,7 +194,10 @@ Each entry names a decorator, its group (`1`), and the marker attribute it
 stamps (`trust_boundary` carries `_wardline_to_level`, `trusted` carries
 `_wardline_level`, and `external_boundary` carries none). Tooling that wants to
 recognise Wardline decorations without taking a dependency on Wardline can parse
-this YAML. For what the three decorators actually declare, see the
+this YAML. Application code that needs runtime imports should depend on the tiny
+`loom-markers` package and import `loom_markers.*`; Wardline recognizes that
+namespace and the backward-compatible `wardline.decorators.*` namespace. For
+what the three decorators actually declare, see the
 [trust vocabulary reference](vocabulary.md).
 
 ## `wardline baseline`
