@@ -10,10 +10,28 @@ both siblings absent. The three output paths below are enrichment you opt into.
 | **Native Filigree emitter** | `--filigree-url URL` | Filigree's Loom scan-results lifecycle |
 | **Clarion producer conformance** | automatic in `metadata.wardline.qualname` | Clarion entity reconciliation |
 
+## Which path should agents use?
+
+Use **native Filigree emission** (`wardline scan --filigree-url ...`) when the
+goal is lifecycle work: deduplicating findings across scans, promoting a
+fingerprint to a tracked Filigree issue, reconciling fixed/regressed findings,
+or joining open work into a Loom dossier. Native emission sends Wardline's
+top-level fingerprint and Wardline metadata directly to Filigree's Loom
+scan-results endpoint, so Filigree can preserve the finding identity it uses for
+promotion and lifecycle state.
+
+Use **SARIF** when the goal is generic interchange: GitHub code scanning, CI
+dashboards, archival evidence, or a tool that only speaks SARIF. SARIF can carry
+Wardline identity, but downstream lifecycle behavior depends on the importer
+preserving Wardline's fingerprint fields. If an importer drops or rewrites those
+fingerprints, later promotion/dedup in Filigree will be weaker than native
+emission.
+
 ## SARIF
 
 SARIF 2.1.0 is a standard interchange format, so this path works with **any**
-SARIF consumer — it is not Filigree-specific.
+SARIF consumer. Treat it as interchange, not the preferred Filigree lifecycle
+path.
 
 ```console
 $ wardline scan src/wardline --format sarif --output results.sarif
@@ -28,6 +46,13 @@ location, and `partialFingerprints` carrying Wardline's stable fingerprint.
 Suppressed findings (baseline / waiver / judged) emit a SARIF
 `suppressions` entry (`kind: external`, `status: accepted`), with the waiver
 reason as the justification.
+
+Downstream importers should preserve
+`partialFingerprints["wardlineFingerprint/v1"]` as the finding's lifecycle
+identity. If that field arrives empty or is discarded, the imported finding may
+still be visible as a generic SARIF result, but Filigree promotion,
+deduplication, and close/reopen behavior cannot rely on the same stable identity
+as native Wardline emission.
 
 The `--fail-on` gate and suppression annotation run on the findings regardless of
 output format, so SARIF output and CI gating compose.

@@ -42,7 +42,10 @@ scanned 2 file(s); 4 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judg
     for SARIF. The summary itself is printed to standard output.
 
 The other format is SARIF (`--format sarif`), for tools that consume the SARIF
-standard.
+standard. If you are sending findings to Filigree for promotion, deduplication,
+or close/reopen lifecycle tracking, prefer native emission with
+`--filigree-url`; SARIF import is a generic interchange path and depends on the
+importer preserving Wardline's SARIF fingerprint field.
 
 ## 3. Read one finding
 

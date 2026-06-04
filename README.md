@@ -65,8 +65,8 @@ lets it scan a large untouched codebase (including its own) with zero noise.
   broad exception handler, and silently-swallowed exception.
 - **Zero-dependency base** — `pip install wardline` pulls nothing; functionality
   lives behind small extras.
-- **Structured output** — JSONL, SARIF (GitHub code-scanning), and native
-  Filigree emit.
+- **Structured output** — JSONL, SARIF (generic interchange/GitHub
+  code-scanning), and native Filigree emit for finding lifecycle work.
 - **Agent-native** — `wardline mcp` is a dependency-free MCP-over-stdio server;
   `wardline install` wires Wardline into your coding agent in one command.
 - **Opt-in LLM triage** — `wardline judge` labels findings TRUE/FALSE positive

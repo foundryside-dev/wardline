@@ -85,11 +85,11 @@ it at a package root, not a single file.
 | Option | Effect |
 | --- | --- |
 | `--config PATH` | Path to a `wardline.yaml` config file; controls rule enable/severity and judge settings (defaults to `wardline.yaml` in the scan path). |
-| `--format [jsonl\|sarif]` | Output shape. `jsonl` is one finding per line; `sarif` is SARIF 2.1.0 for GitHub code-scanning and other SARIF consumers. |
+| `--format [jsonl\|sarif]` | Output shape. `jsonl` is one finding per line; `sarif` is SARIF 2.1.0 for GitHub code-scanning and other generic SARIF consumers. SARIF carries Wardline identity in `partialFingerprints["wardlineFingerprint/v1"]`; downstream Filigree lifecycle quality depends on importers preserving that field. |
 | `--output PATH` | Write findings to a file instead of stdout. |
 | `--fail-on [CRITICAL\|ERROR\|WARN\|INFO]` | Exit non-zero when any finding at or above this severity survives the baseline. Use this as your CI gate. |
 | `--cache-dir PATH` | Persist the L3 inter-procedural summary cache here so the next scan reuses unchanged summaries. |
-| `--filigree-url TEXT` | Opt-in: POST findings to a Filigree Loom scan-results endpoint as well as emitting them locally. |
+| `--filigree-url TEXT` | Opt-in: POST findings to a Filigree Loom scan-results endpoint as well as emitting them locally. Prefer this native path when agents need Filigree promotion, deduplication, or close/reopen lifecycle state. |
 
 Realistic invocation — scan the source tree, emit SARIF to a file, and fail the
 build on any `ERROR`-or-worse finding:
