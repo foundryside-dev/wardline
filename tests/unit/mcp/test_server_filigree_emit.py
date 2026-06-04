@@ -39,6 +39,13 @@ class RaisingEmitter:
         raise FiligreeEmitError("Filigree rejected scan-results (400) at http://x: bad payload")
 
 
+class FakeClarion:
+    def write_taint_facts(self, facts):
+        from wardline.clarion.client import WriteResult
+
+        return WriteResult(reachable=True, written=len(facts))
+
+
 def test_scan_emits_to_filigree_when_emitter_present(tmp_path):
     (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
     emitter = FakeEmitter(EmitResult(reachable=True, created=2, updated=1))
@@ -47,13 +54,46 @@ def test_scan_emits_to_filigree_when_emitter_present(tmp_path):
     assert out["filigree"]["created"] == 2
     assert out["filigree"]["updated"] == 1
     assert out["filigree"]["failed"] == 0
+    assert out["filigree_emit"] == {
+        "configured": True,
+        "reachable": True,
+        "created": 2,
+        "updated": 1,
+        "failed": 0,
+        "warnings": [],
+    }
     assert emitter.scanned_paths == ("svc.py",)
+
+
+def test_scan_reports_both_integrations_successful(tmp_path):
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    out = _scan({}, tmp_path, FakeClarion(), FakeEmitter(EmitResult(reachable=True, created=2, updated=1)))
+    assert out["clarion_write"]["configured"] is True
+    assert out["clarion_write"]["reachable"] is True
+    assert out["clarion_write"]["written"] >= 2
+    assert out["filigree_emit"] == {
+        "configured": True,
+        "reachable": True,
+        "created": 2,
+        "updated": 1,
+        "failed": 0,
+        "warnings": [],
+    }
 
 
 def test_scan_filigree_block_null_when_no_emitter(tmp_path):
     (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
     out = _scan({}, tmp_path, None, None)
     assert out["filigree"] is None
+    assert out["filigree_emit"] == {
+        "configured": False,
+        "reachable": None,
+        "created": 0,
+        "updated": 0,
+        "failed": 0,
+        "warnings": [],
+        "disabled_reason": "not configured",
+    }
 
 
 def test_scan_propagates_filigree_emit_error(tmp_path):
@@ -80,4 +120,6 @@ def test_scan_unreachable_filigree_is_soft(tmp_path):
     (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
     out = _scan({}, tmp_path, None, FakeEmitter(EmitResult(reachable=False)))
     assert out["filigree"]["reachable"] is False
+    assert out["filigree_emit"]["configured"] is True
+    assert out["filigree_emit"]["reachable"] is False
     assert out["summary"]["total"] >= 1

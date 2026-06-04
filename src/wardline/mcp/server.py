@@ -62,6 +62,32 @@ def _emit_filigree(
     }
 
 
+def _filigree_emit_status(block: dict[str, Any] | None) -> dict[str, Any]:
+    if block is None:
+        return {
+            "configured": False,
+            "reachable": None,
+            "created": 0,
+            "updated": 0,
+            "failed": 0,
+            "warnings": [],
+            "disabled_reason": "not configured",
+        }
+    return {"configured": True, **block}
+
+
+def _clarion_write_status(block: dict[str, Any] | None) -> dict[str, Any]:
+    if block is None:
+        return {
+            "configured": False,
+            "reachable": None,
+            "written": 0,
+            "unresolved_qualnames": [],
+            "disabled_reason": "not configured",
+        }
+    return {"configured": True, **block}
+
+
 def _file_finding(args: dict[str, Any], root: Path, filer: Any) -> dict[str, Any]:
     """File ONE finding (by fingerprint) into a tracked Filigree issue, returning its
     id. Fail-soft on reachability; a 404 (unknown fingerprint) surfaces as not_found."""
@@ -184,6 +210,8 @@ def _scan(
         "gate": {"tripped": decision.tripped, "fail_on": decision.fail_on, "exit_class": decision.exit_class},
         "clarion": clarion_block,
         "filigree": filigree_block,
+        "clarion_write": _clarion_write_status(clarion_block),
+        "filigree_emit": _filigree_emit_status(filigree_block),
     }
 
 

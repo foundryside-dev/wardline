@@ -234,7 +234,7 @@ def scan(
         if not clarion_result.reachable:
             reason = clarion_result.disabled_reason or "unreachable"
             click.echo(
-                f"warning: Clarion taint store not written ({reason}); scan unaffected.",
+                f"warning: Clarion taint store not written at {clarion_url} ({reason}); scan unaffected.",
                 err=True,
             )
         else:
