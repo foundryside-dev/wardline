@@ -135,6 +135,30 @@ test. In Clarion 1.0.0 the reconciliation *consumer* is not yet built, so this
 is producer-pinning today; emitting the correct qualname now is what makes future
 reconciliation lossless.
 
+## Trust-vocabulary descriptor (the cross-product contract)
+
+Wardline's trust-decorator vocabulary (`external_boundary` / `trust_boundary` /
+`trusted`) is published as a **versioned, on-disk descriptor** — the canonical
+*read-instead-of-import* contract for peers. It is generated from the in-process
+`REGISTRY` and shipped in the wheel at `wardline/core/vocabulary.yaml` (emit it
+with `wardline vocab`, or read `wardline://vocab` over MCP). The envelope carries
+two version axes: `schema` (`wardline.vocabulary/v1`, the descriptor *format*)
+and `version` (`wardline-generic-2`, the vocabulary *content*); a byte-identity
+drift test keeps the committed file in lock-step with `REGISTRY`.
+
+**Retirement note (Wardline side complete).** Clarion historically imported
+`wardline.core.registry.REGISTRY` in-process (Clarion ADR-018). Because
+`wardline.core` is becoming a **native (compiled) module**, no peer may import
+it — the descriptor is the only supported external surface, and reading it needs
+no Wardline import. The Wardline side of that retirement is **done**: the
+descriptor is the contract, with a `schema` field, a documented location, and a
+test proving the vocabulary is consumable from the file's bytes alone. The
+remaining half — Clarion switching its plugin from `import REGISTRY` to reading
+the descriptor — is **Clarion's** change (`clarion-1f6241b329`; the reader
+already exists in Clarion's tree). See
+[ADR: vocabulary descriptor cross-product contract](../decisions/2026-06-05-wardline-vocabulary-descriptor-cross-product-contract.md)
+and the [Clarion hand-off](../integration/2026-06-05-wardline-descriptor-clarion-handoff.md).
+
 ## See also
 
 - [Configuration](configuration.md) — `wardline.yaml` keys.

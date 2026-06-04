@@ -3,7 +3,9 @@
 export of the trust-decorator ``REGISTRY``.
 
 ``build_vocabulary_descriptor()`` returns a plain, JSON/YAML-serializable dict
-``{"version": REGISTRY_VERSION, "entries": [...]}``. Each entry mirrors REGISTRY's
+``{"schema": DESCRIPTOR_SCHEMA, "version": REGISTRY_VERSION, "entries": [...]}``.
+``schema`` is the descriptor's FORMAT version (the cross-product contract shape);
+``version`` is the vocabulary CONTENT version (which decorators exist). Each entry mirrors REGISTRY's
 three fields — ``canonical_name``, ``group``, and ``attrs`` (the attr-name →
 taint-type mapping, serialized as ``{name: type.__name__}``). The §2 FunctionTaint
 mapping is parametric and provider-owned (``DecoratorTaintSourceProvider`` reads
@@ -27,10 +29,20 @@ from typing import Any, cast
 from wardline.core.optional_deps import require_yaml
 from wardline.core.registry import REGISTRY, REGISTRY_VERSION
 
+# Descriptor-FORMAT identity — the cross-product contract surface version. This
+# is DISTINCT from REGISTRY_VERSION (the vocabulary CONTENT version): `schema`
+# names the shape (envelope/entry fields + their semantics), `version` names the
+# decorator set. A consumer (Clarion) gates expectations on `schema` and may
+# tolerate unknown future entry fields within the same schema. Bump `schema`
+# only on a breaking shape change, with a coordinated consumer migration — one
+# self-describing string, no version negotiation.
+DESCRIPTOR_SCHEMA = "wardline.vocabulary/v1"
+
 
 def build_vocabulary_descriptor() -> dict[str, Any]:
     """Export REGISTRY as the NG-25 descriptor dict (entries in REGISTRY order)."""
     return {
+        "schema": DESCRIPTOR_SCHEMA,
         "version": REGISTRY_VERSION,
         "entries": [
             {
