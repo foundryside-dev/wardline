@@ -25,24 +25,28 @@ class FakeEmitter:
     def __init__(self, result):
         self._result = result
         self.seen = None
+        self.scanned_paths = None
 
-    def emit(self, findings):
+    def emit(self, findings, *, scanned_paths=()):
         self.seen = list(findings)
+        self.scanned_paths = tuple(scanned_paths)
         return self._result
 
 
 class RaisingEmitter:
-    def emit(self, findings):
+    def emit(self, findings, *, scanned_paths=()):
         raise FiligreeEmitError("Filigree rejected scan-results (400) at http://x: bad payload")
 
 
 def test_scan_emits_to_filigree_when_emitter_present(tmp_path):
     (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
-    out = _scan({}, tmp_path, None, FakeEmitter(EmitResult(reachable=True, created=2, updated=1)))
+    emitter = FakeEmitter(EmitResult(reachable=True, created=2, updated=1))
+    out = _scan({}, tmp_path, None, emitter)
     assert out["filigree"]["reachable"] is True
     assert out["filigree"]["created"] == 2
     assert out["filigree"]["updated"] == 1
     assert out["filigree"]["failed"] == 0
+    assert emitter.scanned_paths == ("svc.py",)
 
 
 def test_scan_filigree_block_null_when_no_emitter(tmp_path):

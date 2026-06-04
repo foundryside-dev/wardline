@@ -151,6 +151,22 @@ def _can_fall_through(stmts: list[ast.stmt]) -> bool:
                 else_falls = _can_fall_through(stmt.orelse)
                 if not body_falls and not else_falls:
                     return False
+        if isinstance(stmt, ast.Try):
+            if stmt.finalbody and not _can_fall_through(stmt.finalbody):
+                return False
+            normal_falls = _can_fall_through(stmt.body)
+            normal_terminal = not normal_falls or (bool(stmt.orelse) and not _can_fall_through(stmt.orelse))
+            handlers_terminal = all(not _can_fall_through(handler.body) for handler in stmt.handlers)
+            if normal_terminal and handlers_terminal:
+                return False
+        if isinstance(stmt, ast.Match):
+            has_wildcard = any(
+                isinstance(case.pattern, ast.MatchAs) and case.pattern.pattern is None and case.pattern.name is None
+                and case.guard is None
+                for case in stmt.cases
+            )
+            if has_wildcard and all(not _can_fall_through(case.body) for case in stmt.cases):
+                return False
     return True
 
 

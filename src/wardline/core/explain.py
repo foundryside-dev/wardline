@@ -11,7 +11,6 @@ counts.
 
 from __future__ import annotations
 
-import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -149,7 +148,52 @@ def _callee_leaf(callee_qualname: str | None) -> str | None:
     return None if callee_qualname is None else callee_qualname.rsplit(".", 1)[-1]
 
 
-def _explanation_from_blob(view: Any) -> TaintExplanation:
+def _blob_finding_matches(
+    finding: dict[str, Any],
+    *,
+    fingerprint: str | None,
+    path: str | None,
+    line: int | None,
+    rule_id: str | None,
+) -> bool:
+    if fingerprint is not None and finding.get("fingerprint") != fingerprint:
+        return False
+    if rule_id is not None and finding.get("rule_id") != rule_id:
+        return False
+    if path is not None and finding.get("path") != path:
+        return False
+    return not (line is not None and finding.get("line_start") != line)
+
+
+def _select_blob_finding(
+    findings: list[dict[str, Any]],
+    *,
+    fingerprint: str | None,
+    path: str | None,
+    line: int | None,
+    rule_id: str | None,
+) -> dict[str, Any] | None:
+    requested_specific = fingerprint is not None or path is not None or line is not None or rule_id is not None
+    if requested_specific:
+        return next(
+            (
+                finding
+                for finding in findings
+                if _blob_finding_matches(finding, fingerprint=fingerprint, path=path, line=line, rule_id=rule_id)
+            ),
+            None,
+        )
+    return findings[0] if findings else {}
+
+
+def _explanation_from_blob(
+    view: Any,
+    *,
+    fingerprint: str | None = None,
+    path: str | None = None,
+    line: int | None = None,
+    rule_id: str | None = None,
+) -> TaintExplanation | None:
     """Project a fresh stored blob into the SP8 TaintExplanation shape (no analysis).
     The store is entity-scoped, so per-finding location comes from the blob's findings[]
     when present (else blank/None — the entity is known, the specific finding is not)."""
@@ -160,14 +204,22 @@ def _explanation_from_blob(view: Any) -> TaintExplanation:
     findings = blob.get("findings")
     if not isinstance(findings, list):
         findings = []
-    first = findings[0] if findings and isinstance(findings[0], dict) else {}
+    finding_rows = [f for f in findings if isinstance(f, dict)]
+    first = _select_blob_finding(finding_rows, fingerprint=fingerprint, path=path, line=line, rule_id=rule_id)
+    if first is None:
+        return None
     callee_q = taint.get("contributing_callee_qualname")
+    stored_fingerprint = first.get("fingerprint")
+    stored_rule_id = first.get("rule_id")
+    stored_path = first.get("path")
+    stored_line = first.get("line_start")
+    qualname = blob.get("qualname")
     return TaintExplanation(
-        fingerprint=str(first.get("fingerprint", "")),
-        rule_id=str(first.get("rule_id", "")),
-        sink_qualname=blob.get("qualname"),
-        path="",
-        line=first.get("line_start"),
+        fingerprint=stored_fingerprint if isinstance(stored_fingerprint, str) else "",
+        rule_id=stored_rule_id if isinstance(stored_rule_id, str) else "",
+        sink_qualname=qualname if isinstance(qualname, str) else None,
+        path=stored_path if isinstance(stored_path, str) else "",
+        line=stored_line if isinstance(stored_line, int) else None,
         tier_in=taint.get("actual_return"),
         tier_out=taint.get("declared_return"),
         immediate_tainted_callee=_callee_leaf(callee_q),
@@ -271,13 +323,9 @@ def explain_finding(
             # store read is optional enrichment; only the WRITE path surfaces a 4xx.)
             views = None
         if views and views[0].qualname == sink_qualname and _is_fresh(views[0]):
-            served = _explanation_from_blob(views[0])
-            return dataclasses.replace(
-                served,
-                fingerprint=fingerprint or served.fingerprint,
-                path=path or served.path,
-                line=line if line is not None else served.line,
-            )
+            served = _explanation_from_blob(views[0], fingerprint=fingerprint, path=path, line=line)
+            if served is not None:
+                return served
         # miss/stale/outage → fall through to the re-run
     return _explain_local(
         root,

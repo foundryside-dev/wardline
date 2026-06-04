@@ -19,6 +19,16 @@ def test_respects_exclude_globs() -> None:
     assert all(p.name != "mod.py" for p in files)
 
 
+def test_skip_dirs_are_relative_to_source_root_not_absolute_parents(tmp_path: Path) -> None:
+    root = tmp_path / ".venv" / "proj"
+    root.mkdir(parents=True)
+    (root / "m.py").write_text("x = 1\n", encoding="utf-8")
+
+    files = discover(root, WardlineConfig(source_roots=(".",)))
+
+    assert [p.name for p in files] == ["m.py"]
+
+
 def test_skips_pycache_and_warns_on_missing_root() -> None:
     cfg = WardlineConfig(source_roots=("does_not_exist",))
     import pytest

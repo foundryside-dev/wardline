@@ -16,8 +16,8 @@ Design invariants (from the dossier design spec §5 + SEI conformance §2.1):
   carries an identity axis (``IdentityStatus``: alive / orphaned / unavailable —
   "is this the same entity?") AND a content axis (``ContentStatus``: fresh / stale
   / unknown — "has its code changed?"). Neither is ever inferred from the other.
-  These are reused verbatim from :mod:`wardline.clarion.identity` (Track 3) so the
-  dossier keys on the same SEI types the SEI-client produces.
+  These live in :mod:`wardline.core.identity` so the dossier keys on a neutral
+  cross-tool model rather than on one provider's package.
 * **SEI is opaque.** It is carried verbatim as the binding key, never parsed.
 * **No false-green.** An absent/unreachable source yields an *honest partial*
   section (``available=False`` + reason), never fabricated data and never a crash.
@@ -36,9 +36,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from wardline.clarion.identity import ContentStatus, EntityBinding, IdentityStatus
 from wardline.core.errors import DossierError
 from wardline.core.finding import UNANALYZED_RULE_IDS, Kind, SuppressionState
+from wardline.core.identity import ContentStatus, EntityBinding, IdentityStatus
 from wardline.core.run import run_scan
 from wardline.core.taints import TaintState
 

@@ -95,6 +95,12 @@ from wardline.core.sarif import SarifSink
     default=False,
     help="Ignore repository-supplied custom configuration overrides (wardline.yaml).",
 )
+@click.option(
+    "--allow-source-root-escape",
+    is_flag=True,
+    default=False,
+    help="Allow wardline.yaml source_roots to resolve outside PATH.",
+)
 def scan(
     path: Path,
     config_path: Path | None,
@@ -111,6 +117,7 @@ def scan(
     fix: bool,
     yes: bool,
     strict_defaults: bool,
+    allow_source_root_escape: bool,
 ) -> None:
     """Scan PATH for findings."""
     default_name = "findings.sarif" if fmt == "sarif" else "findings.jsonl"
@@ -142,6 +149,7 @@ def scan(
             trust_local_packs=trust_local_packs,
             trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,
+            confine_to_root=not allow_source_root_escape,
         )
         findings = result.findings
         if fix:
@@ -175,6 +183,8 @@ def scan(
                         new_since=new_since,
                         trust_local_packs=trust_local_packs,
                         trusted_packs=trusted_packs,
+                        strict_defaults=strict_defaults,
+                        confine_to_root=not allow_source_root_escape,
                     )
                     findings = result.findings
         if fmt == "sarif":
@@ -186,7 +196,7 @@ def scan(
         # Loom emission is additive: a FiligreeEmitError (HTTP >= 400) is a Wardline
         # payload bug -> caught below -> exit 2; an unreachable sibling warns + continues.
         if filigree_url is not None:
-            emit_result = FiligreeEmitter(filigree_url).emit(findings)
+            emit_result = FiligreeEmitter(filigree_url).emit(findings, scanned_paths=result.scanned_paths)
         # Clarion taint-store write is fail-soft: an outage/403 returns a not-reachable
         # WriteResult (reported below); a ClarionError (missing extra, 4xx, bad scheme)
         # is a WardlineError → caught here → exit 2, exactly as Filigree errors do.

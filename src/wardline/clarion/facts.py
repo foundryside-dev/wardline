@@ -61,7 +61,12 @@ def build_taint_facts(result: ScanResult, root: Path) -> list[dict[str, Any]]:
         if f.qualname is None:
             continue
         findings_by_qualname.setdefault(f.qualname, []).append(
-            {"rule_id": f.rule_id, "fingerprint": f.fingerprint, "line_start": f.location.line_start}
+            {
+                "rule_id": f.rule_id,
+                "fingerprint": f.fingerprint,
+                "path": f.location.path,
+                "line_start": f.location.line_start,
+            }
         )
 
     facts: list[dict[str, Any]] = []

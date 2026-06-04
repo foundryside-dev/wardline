@@ -136,6 +136,20 @@ class SummaryCache:
         self._hits += 1
         return entry
 
+    def has_current(self, cache_key: str) -> bool:
+        """Return True iff ``cache_key`` has a current-schema entry.
+
+        Unlike :meth:`get`, this is a freshness probe for orchestration and does not
+        update hit/miss counters.
+        """
+        entry = self._entries.get(cache_key)
+        if entry is None:
+            return False
+        if any(s.schema_version != SUMMARY_SCHEMA_VERSION for s in entry):
+            del self._entries[cache_key]
+            return False
+        return True
+
     def put(self, cache_key: str, summaries: tuple[FunctionSummary, ...]) -> None:
         """Store ``summaries`` under ``cache_key``.
 

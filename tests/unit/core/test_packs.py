@@ -1,19 +1,12 @@
 # tests/unit/core/test_packs.py
 """Tests for trust-grammar packs config merging and analyzer integration."""
 
-# ruff: noqa: E402
 from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import patch
-
-# Ensure project root (which contains 'tests') is in sys.path
-project_root = Path(__file__).resolve().parents[3]
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
 from types import ModuleType
+from unittest.mock import patch
 
 import pytest
 
@@ -24,6 +17,11 @@ from wardline.core.run import run_scan
 from wardline.scanner.analyzer import build_analyzer
 from wardline.scanner.grammar import default_grammar
 from wardline.scanner.taint.decorator_provider import DecoratorTaintSourceProvider
+
+
+@pytest.fixture(autouse=True)
+def _project_root_on_syspath(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[3]))
 
 
 def test_config_load_and_deep_merge_pack(tmp_path: Path) -> None:

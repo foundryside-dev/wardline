@@ -20,7 +20,7 @@ from typing import Any, Protocol
 
 from wardline.clarion.client import LinkageResult
 from wardline.clarion.dossier_sources import ClarionLinkageProvider, resolve_entity_binding
-from wardline.clarion.identity import ContentStatus, EntityBinding, IdentityStatus, SeiCapability, SeiResolver
+from wardline.clarion.identity import SeiCapability, SeiResolver
 from wardline.core.dossier import (
     DOSSIER_TOKEN_BUDGET,
     EntityDossier,
@@ -29,6 +29,7 @@ from wardline.core.dossier import (
     build_dossier,
 )
 from wardline.core.errors import DossierError
+from wardline.core.identity import ContentStatus, EntityBinding, IdentityStatus
 from wardline.core.sei_resolution import locator_to_qualname
 from wardline.filigree.dossier_client import FiligreeWorkProvider
 from wardline.filigree.dossier_client import Transport as FiligreeTransport

@@ -153,3 +153,28 @@ def test_class_method_resolved_via_instance_tracking() -> None:
     assert edges["m.make"] == frozenset({"m.C.run"})
     assert resolved["m.make"] == 1
     assert implicit == {next(iter(callees)): "instance"}
+
+
+def test_nested_scope_assignment_does_not_pollute_receiver_tracking() -> None:
+    src = (
+        "class C:\n"
+        "    def run(self):\n"
+        "        return 1\n"
+        "def outer():\n"
+        "    def inner():\n"
+        "        obj = C()\n"
+        "    return obj.run()\n"
+    )
+    tree, entities, classes, aliases = _module(src, module="m")
+    project_fqns = frozenset(e.qualname for e in entities)
+    edges, resolved, unresolved, callees, implicit = build_call_edges(
+        entities=entities,
+        class_qualnames=classes,
+        alias_map=aliases,
+        module_prefix="m",
+        project_fqns=project_fqns,
+    )
+    assert edges["m.outer"] == frozenset()
+    assert resolved["m.outer"] == 0
+    assert unresolved["m.outer"] == 1
+    assert implicit == {}

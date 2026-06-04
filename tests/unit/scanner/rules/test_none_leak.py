@@ -118,6 +118,54 @@ def test_all_value_returns_do_not_fire(tmp_path) -> None:
     assert _ids(ctx) == []
 
 
+def test_try_except_all_value_returns_do_not_fire(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def always(flag) -> int:
+            try:
+                if flag:
+                    return 1
+                return 2
+            except ValueError:
+                return 3
+        """,
+    )
+    assert _ids(ctx) == []
+
+
+def test_guarded_wildcard_match_can_fall_through(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def maybe(value) -> int:
+            match value:
+                case _ if value > 0:
+                    return 1
+        """,
+    )
+    assert _ids(ctx) == [("PY-WL-109", "m.maybe")]
+
+
+def test_unguarded_wildcard_match_all_value_returns_do_not_fire(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def always(value) -> int:
+            match value:
+                case _:
+                    return 1
+        """,
+    )
+    assert _ids(ctx) == []
+
+
 def test_generator_does_not_fire(tmp_path) -> None:
     ctx = _analyze(
         tmp_path,

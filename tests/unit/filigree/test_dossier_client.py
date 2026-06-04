@@ -56,6 +56,14 @@ def test_associations_become_tickets_fresh_when_hash_matches() -> None:
     assert url.startswith("http://filigree.example/api/entity-associations?")
 
 
+def test_scan_results_url_is_normalized_to_api_origin_for_associations() -> None:
+    t = FakeTransport(Response(status=200, body=_rows()))
+
+    FiligreeWorkProvider("http://filigree.example/api/loom/scan-results", transport=t).work(_BINDING)
+
+    assert t.calls[0][0].startswith("http://filigree.example/api/entity-associations?")
+
+
 def test_drifted_association_is_flagged_per_ticket_and_section_stale() -> None:
     body = _rows(
         {"issue_id": "wardline-1", "content_hash_at_attach": "OLD-hash"},

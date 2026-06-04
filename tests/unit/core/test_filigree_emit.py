@@ -48,6 +48,13 @@ def test_scan_results_body_sets_mark_unseen() -> None:
     assert empty["scan_source"] == "wardline"
 
 
+def test_scan_results_body_can_reconcile_clean_scanned_files() -> None:
+    body = build_scan_results_body([], scanned_paths=("src/m.py",))
+    assert body["mark_unseen"] is True
+    assert body["scanned_paths"] == ["src/m.py"]
+    assert body["findings"] == []
+
+
 def test_finding_uses_path_not_file_path() -> None:
     wire = build_scan_results_body([_f()])["findings"][0]
     assert wire["path"] == "src/m.py"

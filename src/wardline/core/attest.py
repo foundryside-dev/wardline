@@ -299,7 +299,13 @@ def verify_attestation(
     """
     recorded_payload: dict[str, Any] = bundle["payload"]
     expected = _sign(recorded_payload, key)["value"]
-    signature_valid = hmac.compare_digest(expected, bundle["signature"]["value"])
+    signature = bundle.get("signature") or {}
+    signature_valid = (
+        isinstance(signature, dict)
+        and signature.get("alg") == "HMAC-SHA256"
+        and signature.get("key_id") == key_id(key)
+        and hmac.compare_digest(expected, str(signature.get("value") or ""))
+    )
 
     note = "reproducibility holds against the RECORDED commit; a mismatch may mean the tree moved, not tamper."
 

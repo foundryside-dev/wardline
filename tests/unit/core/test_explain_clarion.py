@@ -2,6 +2,8 @@ import blake3
 
 from wardline.clarion.client import TaintFactView
 from wardline.core.explain import explain_finding
+from wardline.core.finding import Kind, SuppressionState
+from wardline.core.run import run_scan
 
 _LEAKY = (
     "from wardline.decorators import external_boundary, trusted\n"
@@ -43,7 +45,7 @@ def _fresh_blob(proj, qualname):
             "resolved_call_count": 1,
             "unresolved_call_count": 0,
         },
-        "findings": [{"rule_id": "PY-WL-101", "fingerprint": "fp-leaky-1", "line_start": 6}],
+        "findings": [{"rule_id": "PY-WL-101", "fingerprint": "fp-leaky-1", "path": "svc.py", "line_start": 6}],
     }, h
 
 
@@ -74,6 +76,62 @@ def test_fresh_fact_is_served_without_reanalysis(tmp_path, monkeypatch):
     assert exp.fingerprint == "fp-leaky-1"  # served from the blob (no fingerprint passed by caller)
     assert calls["n"] == 0
     assert client.batch_get_calls == 1
+
+
+def test_fresh_fact_selects_requested_fingerprint_from_multiple_blob_findings(tmp_path, monkeypatch):
+    proj = _proj(tmp_path)
+    blob, h = _fresh_blob(proj, "svc.leaky")
+    blob["findings"] = [
+        {"rule_id": "PY-WL-999", "fingerprint": "fp-other", "path": "svc.py", "line_start": 2},
+        {"rule_id": "PY-WL-101", "fingerprint": "fp-target", "path": "svc.py", "line_start": 6},
+    ]
+    view = TaintFactView(qualname="svc.leaky", exists=True, wardline_json=blob, current_content_hash=h)
+
+    import wardline.core.explain as explain_mod
+
+    monkeypatch.setattr(explain_mod, "run_scan", lambda *a, **k: (_ for _ in ()).throw(AssertionError("reanalyzed")))
+
+    exp = explain_finding(proj, fingerprint="fp-target", clarion=SpyClient([view]), sink_qualname="svc.leaky")
+
+    assert exp is not None
+    assert exp.fingerprint == "fp-target"
+    assert exp.rule_id == "PY-WL-101"
+    assert exp.path == "svc.py"
+    assert exp.line == 6
+
+
+def test_fresh_fact_missing_requested_fingerprint_falls_back_to_reanalysis(tmp_path, monkeypatch):
+    proj = _proj(tmp_path)
+    local_finding = next(
+        f
+        for f in run_scan(proj).findings
+        if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE and f.rule_id == "PY-WL-101"
+    )
+    blob, h = _fresh_blob(proj, "svc.leaky")
+    blob["findings"] = [{"rule_id": "PY-WL-999", "fingerprint": "fp-other", "path": "svc.py", "line_start": 2}]
+    view = TaintFactView(qualname="svc.leaky", exists=True, wardline_json=blob, current_content_hash=h)
+
+    import wardline.core.explain as explain_mod
+
+    calls = {"n": 0}
+    real = explain_mod.run_scan
+
+    def counting(*a, **k):
+        calls["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(explain_mod, "run_scan", counting)
+
+    exp = explain_finding(
+        proj,
+        fingerprint=local_finding.fingerprint,
+        clarion=SpyClient([view]),
+        sink_qualname="svc.leaky",
+    )
+
+    assert exp is not None
+    assert exp.fingerprint == local_finding.fingerprint
+    assert calls["n"] == 1
 
 
 def test_stale_hash_falls_back_to_reanalysis(tmp_path):

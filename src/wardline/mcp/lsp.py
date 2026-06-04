@@ -13,6 +13,9 @@ from typing import Any, TextIO
 from wardline.core.errors import WardlineError
 from wardline.core.finding import ENGINE_PATH, UNANALYZED_RULE_IDS, Finding, Kind, Severity, SuppressionState
 
+MAX_LSP_CONTENT_LENGTH = 10 * 1024 * 1024
+_DRAIN_CHUNK_SIZE = 64 * 1024
+
 
 def run_scan(*args: Any, **kwargs: Any) -> Any:
     from wardline.core.run import run_scan as _run_scan
@@ -79,6 +82,12 @@ class LspServer:
 
             if content_length is None:
                 continue
+            if content_length < 0:
+                continue
+            if content_length > MAX_LSP_CONTENT_LENGTH:
+                if not self._drain_body(stdin_binary, content_length):
+                    return
+                continue
 
             body_bytes = b""
             while len(body_bytes) < content_length:
@@ -96,6 +105,18 @@ class LspServer:
                 continue
 
             self.handle_message(message)
+
+    @staticmethod
+    def _drain_body(stream: Any, length: int) -> bool:
+        remaining = length
+        while remaining > 0:
+            chunk = stream.read(min(remaining, _DRAIN_CHUNK_SIZE))
+            if not chunk:
+                return False
+            if isinstance(chunk, str):
+                chunk = chunk.encode("utf-8")
+            remaining -= len(chunk)
+        return True
 
     def handle_message(self, message: dict[str, Any]) -> None:
         msg_id = message.get("id")

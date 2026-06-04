@@ -14,6 +14,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Protocol
 
 from wardline.core.finding import Maturity
+from wardline.core.protocols import Rule
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -114,12 +115,6 @@ class AnalysisContext:
         )
 
 
-class _Rule(Protocol):
-    rule_id: str
-
-    def check(self, context: AnalysisContext) -> list[Finding]: ...
-
-
 class _RuleClass(Protocol):
     """A rule *class*: a ``rule_id`` classvar plus a ``base_severity``-taking
     constructor that yields a :class:`_Rule`. This is what a ``TrustGrammar``
@@ -128,20 +123,20 @@ class _RuleClass(Protocol):
 
     rule_id: str
 
-    def __call__(self, base_severity: Severity | None = ...) -> _Rule: ...
+    def __call__(self, base_severity: Severity | None = ...) -> Rule: ...
 
 
 class RuleRegistry:
     """Ordered rule set. Empty in SP1 — SP2 registers the policy vocabulary."""
 
     def __init__(self) -> None:
-        self._rules: list[_Rule] = []
+        self._rules: list[Rule] = []
 
-    def register(self, rule: _Rule) -> None:
+    def register(self, rule: Rule) -> None:
         self._rules.append(rule)
 
     @property
-    def rules(self) -> tuple[_Rule, ...]:
+    def rules(self) -> tuple[Rule, ...]:
         return tuple(self._rules)
 
     def run(self, context: AnalysisContext) -> list[Finding]:

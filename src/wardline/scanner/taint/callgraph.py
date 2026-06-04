@@ -21,7 +21,7 @@ decorator call's taint does not flow into the decorated body.
 from __future__ import annotations
 
 import ast
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 
 from wardline.scanner.ast_primitives import (
     iter_calls_in_function_body,
@@ -29,6 +29,14 @@ from wardline.scanner.ast_primitives import (
     resolve_self_method_fqn,
 )
 from wardline.scanner.index import Entity
+
+
+def _own_scope_nodes(node: ast.AST) -> Iterator[ast.AST]:
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue
+        yield child
+        yield from _own_scope_nodes(child)
 
 
 def build_call_edges(
@@ -88,12 +96,7 @@ def build_call_edges(
 
         # Collect local variable type definitions via constructor calls
         local_var_types: dict[str, str] = {}
-        for node in ast.walk(entity.node):
-            if (
-                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda))
-                and node is not entity.node
-            ):
-                continue
+        for node in _own_scope_nodes(entity.node):
             targets: list[ast.expr] = []
             value: ast.expr | None = None
             if isinstance(node, ast.Assign):

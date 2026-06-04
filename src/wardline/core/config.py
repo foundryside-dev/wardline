@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import keyword
 import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -11,6 +12,20 @@ from typing import Any
 from wardline.core.config_schema import WARDLINE_SCHEMA
 from wardline.core.errors import ConfigError
 from wardline.core.optional_deps import require_jsonschema, require_yaml
+
+
+def validate_boundary_exception_name(value: str) -> str:
+    parts = value.split(".")
+    if (
+        not value
+        or not parts
+        or any(not part or not part.isidentifier() or keyword.iskeyword(part) for part in parts)
+    ):
+        raise ConfigError(
+            "autofix.boundary_exception must be an identifier or dotted identifier, "
+            "for example ValueError or mypkg.ValidationError"
+        )
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,7 +50,7 @@ class WardlineConfig:
     @property
     def boundary_exception(self) -> str:
         value = self.autofix.get("boundary_exception")
-        return value if isinstance(value, str) else "ValueError"
+        return validate_boundary_exception_name(value) if isinstance(value, str) else "ValueError"
 
     @property
     def clarion_url(self) -> str | None:
@@ -163,10 +178,21 @@ def load(
                 raise ConfigError(f"pack {pack_name!r} attribute 'config' must be a dictionary")
             merged_raw = _deep_merge(merged_raw, pack_config)
 
+    autofix_raw = merged_raw.get("autofix") or {}
+    if isinstance(autofix_raw, Mapping):
+        boundary_exception = autofix_raw.get("boundary_exception")
+        if isinstance(boundary_exception, str):
+            validate_boundary_exception_name(boundary_exception)
+
     try:
         jsonschema.validate(merged_raw, WARDLINE_SCHEMA)
     except jsonschema.ValidationError as exc:
         raise ConfigError(f"invalid {path.name} (after merging packs): {exc.message}") from exc
+
+    autofix = dict(autofix_raw)
+    boundary_exception = autofix.get("boundary_exception")
+    if isinstance(boundary_exception, str):
+        validate_boundary_exception_name(boundary_exception)
 
     rules = merged_raw.get("rules") or {}
     return WardlineConfig(
@@ -184,7 +210,7 @@ def load(
         untrusted_sources=tuple(merged_raw.get("untrusted_sources") or ()),
         sanitisers=tuple(merged_raw.get("sanitisers") or ()),
         provenance_clash=bool(merged_raw.get("provenance_clash") or False),
-        autofix=dict(merged_raw.get("autofix") or {}),
+        autofix=autofix,
     )
 
 

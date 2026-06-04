@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
-from wardline.clarion.identity import ContentStatus, EntityBinding
 from wardline.core.dossier import LinkagesSection
+from wardline.core.identity import ContentStatus, EntityBinding
 
 if TYPE_CHECKING:
     from wardline.clarion.client import LinkageResult, ResolveResult

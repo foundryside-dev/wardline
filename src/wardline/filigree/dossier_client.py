@@ -24,8 +24,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from wardline.clarion.identity import ContentStatus, EntityBinding, content_status
 from wardline.core.dossier import TicketRef, WorkSection
+from wardline.core.identity import ContentStatus, EntityBinding, content_status
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,18 +72,29 @@ def _rows_of(parsed: Any) -> list[dict[str, Any]]:
     return [r for r in candidate if isinstance(r, dict)]
 
 
+def _api_base_url(url: str) -> str:
+    """Normalize an origin/API/scan-results URL to the Filigree API base."""
+    parsed = urllib.parse.urlsplit(url.rstrip("/"))
+    path = parsed.path.rstrip("/")
+    if path.endswith("/api/loom/scan-results"):
+        path = path[: -len("/loom/scan-results")]
+    elif not path.endswith("/api"):
+        path = f"{path}/api" if path else "/api"
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", "")).rstrip("/")
+
+
 class FiligreeWorkProvider:
     """A ``WorkProvider`` (``core/dossier.py``) backed by a live Filigree HTTP server."""
 
     def __init__(self, base_url: str, *, transport: Transport | None = None) -> None:
-        self._base = base_url.rstrip("/")
+        self._base = _api_base_url(base_url)
         self._transport: Transport = transport if transport is not None else UrllibTransport()
 
     def work(self, binding: EntityBinding) -> WorkSection:
         if binding.sei is None:
             return WorkSection.unavailable("no SEI: cannot key Filigree associations")
         query = urllib.parse.urlencode({"entity_id": binding.sei})
-        url = f"{self._base}/api/entity-associations?{query}"
+        url = f"{self._base}/entity-associations?{query}"
         try:
             resp = self._transport.get(url, {"Accept": "application/json"})
         except (urllib.error.URLError, OSError) as exc:

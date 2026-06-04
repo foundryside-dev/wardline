@@ -80,17 +80,16 @@ def canonical_call_name(dotted: str, alias_map: Mapping[str, str]) -> str:
 
 def _own_calls(node: ast.AST) -> Iterator[ast.Call]:
     """Yield every ``ast.Call`` in *node*'s own scope (never descending into nested
-    def/class — those are separate scopes / separate entities). Lambda bodies are traversed."""
+    def/class/lambda — those are separate scopes / separate entities)."""
     for child in ast.iter_child_nodes(node):
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
         if isinstance(child, ast.Lambda):
-            yield from _own_calls(child.body)
-            for default in child.args.defaults:
-                yield from _own_calls(default)
-            for kw_default in child.args.kw_defaults:
-                if kw_default is not None:
-                    yield from _own_calls(kw_default)
+            for default in (*child.args.defaults, *child.args.kw_defaults):
+                if default is not None:
+                    if isinstance(default, ast.Call):
+                        yield default
+                    yield from _own_calls(default)
             continue
         if isinstance(child, ast.Call):
             yield child

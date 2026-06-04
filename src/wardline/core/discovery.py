@@ -30,7 +30,8 @@ def discover(root: Path, config: WardlineConfig, *, confine_to_root: bool = Fals
             warnings.warn(f"source root does not exist: {base}", stacklevel=2)
             continue
         for path in sorted(base.rglob("*.py")):
-            if any(part in _ALWAYS_SKIP for part in path.parts):
+            rel_parts = path.relative_to(base).parts if path.is_relative_to(base) else path.parts
+            if any(part in _ALWAYS_SKIP for part in rel_parts):
                 continue
             if confine_to_root and not path.resolve().is_relative_to(root):
                 # A *.py symlink inside a legitimate source_root can point at an

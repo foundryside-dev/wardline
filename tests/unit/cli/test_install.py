@@ -16,15 +16,17 @@ def test_scan_reads_filigree_url_from_config(tmp_path: Path, monkeypatch) -> Non
         def __init__(self, url: str) -> None:
             captured["url"] = url
 
-        def emit(self, findings):  # noqa: ANN001
+        def emit(self, findings, *, scanned_paths=()):  # noqa: ANN001
             from wardline.core.filigree_emit import EmitResult
 
+            captured["scanned_paths"] = tuple(scanned_paths)
             return EmitResult(reachable=False)
 
     monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _FakeEmitter)
     result = CliRunner().invoke(cli, ["scan", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert captured["url"] == "http://localhost:8080/configured-filigree"
+    assert captured["scanned_paths"] == ("m.py",)
 
 
 def test_mcp_resolves_clarion_url_from_config(tmp_path: Path, monkeypatch) -> None:

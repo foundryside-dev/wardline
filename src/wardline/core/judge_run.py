@@ -78,6 +78,12 @@ def resolve_policy_block(root: Path, settings: JudgeSettings) -> str:
     return _STATIC_POLICY_BLOCK
 
 
+def effective_judge_settings(settings: JudgeSettings, *, trust_judge_config: bool) -> JudgeSettings:
+    if trust_judge_config:
+        return settings
+    return JudgeSettings(policy_file=settings.policy_file)
+
+
 def resolve_project_policy(root: Path, settings: JudgeSettings, *, trust_judge_policy: bool) -> str | None:
     if settings.policy_file is None:
         return None
@@ -130,6 +136,7 @@ def run_judge(
     confine_to_root: bool = False,
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
+    trust_judge_config: bool = False,
     trust_judge_policy: bool = False,
     strict_defaults: bool = False,
     judge_caller: Callable[[JudgeRequest], JudgeResponse] | None = None,
@@ -146,7 +153,7 @@ def run_judge(
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
     )
-    settings = parse_judge_settings(cfg.judge)
+    settings = effective_judge_settings(parse_judge_settings(cfg.judge), trust_judge_config=trust_judge_config)
     model_id = model or settings.model
     ctx_lines = context_lines if context_lines is not None else settings.context_lines
     cap = max_findings if max_findings is not None else settings.max_findings

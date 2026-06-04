@@ -14,9 +14,11 @@ _LEAKY = (
 class CapturingEmitter:
     def __init__(self):
         self.seen = None
+        self.scanned_paths = None
 
-    def emit(self, findings):
+    def emit(self, findings, *, scanned_paths=()):
         self.seen = list(findings)
+        self.scanned_paths = tuple(scanned_paths)
         return EmitResult(reachable=True, created=len(self.seen))
 
 
@@ -40,3 +42,4 @@ def test_scan_handler_threads_filigree_emitter(tmp_path, monkeypatch):
     out = srv._tools["scan"].handler({}, tmp_path)
     assert out["filigree"]["reachable"] is True
     assert cap.seen is not None and len(cap.seen) >= 1
+    assert cap.scanned_paths == ("svc.py",)

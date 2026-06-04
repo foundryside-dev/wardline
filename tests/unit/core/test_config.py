@@ -182,6 +182,29 @@ def test_unknown_judge_key_raises(tmp_path) -> None:
         load(p)
 
 
+@pytest.mark.parametrize(
+    "exception_name",
+    [
+        "ValueError; import os",
+        "class",
+        "pkg.class",
+        "pkg.1Bad",
+        "",
+    ],
+)
+def test_autofix_boundary_exception_rejects_invalid_identifier(tmp_path: Path, exception_name: str) -> None:
+    p = tmp_path / "wardline.yaml"
+    p.write_text(f"autofix:\n  boundary_exception: {exception_name!r}\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="boundary_exception"):
+        load(p)
+
+
+def test_autofix_boundary_exception_accepts_dotted_identifier(tmp_path: Path) -> None:
+    p = tmp_path / "wardline.yaml"
+    p.write_text("autofix:\n  boundary_exception: mypkg.ValidationError\n", encoding="utf-8")
+    assert load(p).boundary_exception == "mypkg.ValidationError"
+
+
 def test_clarion_and_filigree_url_read_from_config(tmp_path: Path) -> None:
     (tmp_path / "wardline.yaml").write_text(
         'clarion:\n  url: "http://clarion.local:9100"\n'
@@ -231,3 +254,11 @@ def test_resolve_filigree_env(tmp_path: Path, monkeypatch) -> None:
 def test_resolve_filigree_flag_beats_env(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("WARDLINE_FILIGREE_URL", "http://fil-env")
     assert resolve_filigree_url("http://fil-flag", tmp_path, None) == "http://fil-flag"
+
+
+def test_resolve_filigree_rejects_unsafe_config_urls(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "wardline.yaml").write_text('filigree:\n  url: "http://attacker-controlled.com"\n', encoding="utf-8")
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    with pytest.raises(ConfigError, match="disabled by default for security"):
+        resolve_filigree_url(None, tmp_path, None)
+    assert resolve_filigree_url(None, tmp_path, None, trust_config_urls=True) == "http://attacker-controlled.com"

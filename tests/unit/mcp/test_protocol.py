@@ -105,6 +105,21 @@ def test_id_null_is_a_request_not_a_notification() -> None:
     assert srv.dispatch({"jsonrpc": "2.0", "method": "ping", "params": {"n": 1}}) is None
 
 
+def test_notifications_do_not_invoke_registered_handlers() -> None:
+    srv = _server()
+    calls: list[dict] = []
+
+    def _mutate(params: dict) -> dict[str, bool]:
+        calls.append(params)
+        return {"ok": True}
+
+    srv.register("mutate", _mutate)
+
+    assert srv.dispatch({"jsonrpc": "2.0", "method": "mutate", "params": {"x": 1}}) is None
+
+    assert calls == []
+
+
 def test_run_stdio_rejects_non_object_json() -> None:
     # Valid JSON but not an object: the `not isinstance(message, dict)` branch
     # plus the id fallback (id: null since there is no dict to read id from).

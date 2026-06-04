@@ -55,19 +55,27 @@ def _finding_to_wire(finding: Finding) -> dict[str, Any]:
     return wire
 
 
-def build_scan_results_body(findings: Sequence[Finding], *, scan_source: str = "wardline") -> dict[str, Any]:
+def build_scan_results_body(
+    findings: Sequence[Finding],
+    *,
+    scan_source: str = "wardline",
+    scanned_paths: Sequence[str] = (),
+) -> dict[str, Any]:
     """Build the ``POST /api/loom/scan-results`` request body. Emits ALL finding kinds.
     ``mark_unseen`` opts into Filigree's per-(file, scan_source) absent-fingerprint sweep:
-    a fingerprint seen before but absent now (in a file still in this batch) enters
-    ``unseen_in_latest``. Set only when there ARE findings — Filigree rejects
-    ``mark_unseen=True`` on an empty batch (it cannot identify which file/scan_source
-    pairs to sweep), and an empty scan has nothing to reconcile."""
+    a fingerprint seen before but absent now in a scanned file enters
+    ``unseen_in_latest``. Clean files are represented by ``scanned_paths`` so
+    close-on-fixed can reconcile a file whose last finding disappeared."""
     findings_wire = [_finding_to_wire(f) for f in findings]
-    return {
+    scanned = list(dict.fromkeys(p for p in scanned_paths if p))
+    body = {
         "scan_source": scan_source,
-        "mark_unseen": bool(findings_wire),
+        "mark_unseen": bool(findings_wire or scanned),
         "findings": findings_wire,
     }
+    if scanned:
+        body["scanned_paths"] = scanned
+    return body
 
 
 # --- transport + emitter -----------------------------------------------------
@@ -121,8 +129,8 @@ class FiligreeEmitter:
         self._url = url
         self._transport: Transport = transport if transport is not None else UrllibTransport()
 
-    def emit(self, findings: Sequence[Finding]) -> EmitResult:
-        body = json.dumps(build_scan_results_body(findings)).encode("utf-8")
+    def emit(self, findings: Sequence[Finding], *, scanned_paths: Sequence[str] = ()) -> EmitResult:
+        body = json.dumps(build_scan_results_body(findings, scanned_paths=scanned_paths)).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         try:
             resp = self._transport.post(self._url, body, headers)

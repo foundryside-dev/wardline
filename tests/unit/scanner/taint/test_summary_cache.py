@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from wardline.core.taints import TaintState as T
@@ -69,6 +71,25 @@ def test_get_drops_stale_schema_entry() -> None:
     assert c.get(_KEY) is None
     assert c.misses == 1
     assert len(c) == 0  # stale entry evicted
+
+
+def test_has_current_checks_freshness_without_counting_hits_or_misses() -> None:
+    c = SummaryCache()
+    c.put(_KEY, (_summary("m.a"),))
+    assert c.has_current(_KEY) is True
+    assert c.hits == 0 and c.misses == 0
+
+    stale = _summary("m.b")
+    object.__setattr__(stale, "schema_version", SUMMARY_SCHEMA_VERSION + 99)
+    c._entries[_KEY2] = (stale,)  # type: ignore[attr-defined]  # simulate stale store
+    assert c.has_current(_KEY2) is False
+    assert c.hits == 0 and c.misses == 0
+    assert _KEY2 not in c._entries  # type: ignore[attr-defined]
+
+
+def test_analyzer_uses_summary_cache_public_api() -> None:
+    analyzer = Path("src/wardline/scanner/analyzer.py").read_text(encoding="utf-8")
+    assert "._entries" not in analyzer
 
 
 def test_put_rejects_stale_schema_summary() -> None:

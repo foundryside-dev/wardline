@@ -31,6 +31,10 @@ def _lsp_messages(output: str) -> list[dict]:
     return messages
 
 
+def _frame(body: str) -> str:
+    return f"Content-Length: {len(body)}\r\n\r\n{body}"
+
+
 def test_lsp_handshake() -> None:
     req = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"rootUri": "file:///my/project"}}
     body = json.dumps(req)
@@ -55,6 +59,32 @@ def test_lsp_handshake() -> None:
     assert res["result"]["capabilities"]["textDocumentSync"]["openClose"] is True
     assert res["result"]["capabilities"]["textDocumentSync"]["change"] == 0
     assert res["result"]["capabilities"]["textDocumentSync"]["save"] == {"includeText": True}
+
+
+def test_lsp_accepts_frame_at_content_length_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    req = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+    body = json.dumps(req)
+    monkeypatch.setattr("wardline.mcp.lsp.MAX_LSP_CONTENT_LENGTH", len(body))
+
+    stdout = io.StringIO()
+    LspServer(root=Path("/my/project"), stdin=io.StringIO(_frame(body)), stdout=stdout).run()
+
+    messages = _lsp_messages(stdout.getvalue())
+    assert messages[0]["id"] == 1
+
+
+def test_lsp_oversized_frame_is_drained_and_next_message_processed(monkeypatch: pytest.MonkeyPatch) -> None:
+    oversized = json.dumps(
+        {"jsonrpc": "2.0", "id": 99, "method": "initialize", "params": {"rootUri": "file:///too-large"}}
+    )
+    shutdown = json.dumps({"jsonrpc": "2.0", "id": 2, "method": "shutdown"})
+    monkeypatch.setattr("wardline.mcp.lsp.MAX_LSP_CONTENT_LENGTH", len(oversized) - 1)
+
+    stdout = io.StringIO()
+    LspServer(root=Path("/my/project"), stdin=io.StringIO(_frame(oversized) + _frame(shutdown)), stdout=stdout).run()
+
+    messages = _lsp_messages(stdout.getvalue())
+    assert [message["id"] for message in messages] == [2]
 
 
 def test_lsp_diagnostics_flow(tmp_path: Path) -> None:

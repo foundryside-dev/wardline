@@ -6,6 +6,7 @@ on:
   pull_request:
   schedule:
     - cron: "0 2 * * 0"
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -95,6 +96,43 @@ jobs:
         run: uv run pytest -m network -v
         env:
           WARDLINE_OPENROUTER_API_KEY: ${{ secrets.WARDLINE_OPENROUTER_API_KEY }}
+
+  live-oracles:
+    name: Live ${{ matrix.name }} e2e (weekly/manual)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Clarion
+            marker: clarion_e2e
+          - name: Legis
+            marker: legis_e2e
+          - name: Filigree
+            marker: filigree_e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.13"
+      - run: uv sync --all-extras --group dev
+      - name: Run live oracle
+        run: uv run pytest -m ${{ matrix.marker }} -v
+        env:
+          WARDLINE_CLARION_BIN: ${{ secrets.WARDLINE_CLARION_BIN }}
+          WARDLINE_LEGIS_URL: ${{ secrets.WARDLINE_LEGIS_URL }}
+          WARDLINE_FILIGREE_URL: ${{ secrets.WARDLINE_FILIGREE_URL }}
+      - name: Summarize live oracle
+        if: always()
+        run: |
+          {
+            echo "### Live ${{ matrix.name }} oracle"
+            echo "- Marker: \`${{ matrix.marker }}\`"
+            echo "- Trigger: \`${{ github.event_name }}\`"
+            echo "- Missing local services or secrets are reported by pytest as skipped tests."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   docs:
     name: Docs (build + deploy)

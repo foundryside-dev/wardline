@@ -19,6 +19,7 @@ from wardline.core.errors import JudgeContractError, WardlineError
 from wardline.core.judge import JudgeRequest, JudgeResponse, JudgeVerdict, call_judge
 from wardline.core.judge_run import (
     JudgeOutcome,
+    effective_judge_settings,
     resolve_policy_block,
     run_judge,
 )
@@ -53,6 +54,12 @@ from wardline.core.triage import TriageResult
     help="Allow loading judge.policy_file from the scanned project as untrusted judge context.",
 )
 @click.option(
+    "--trust-judge-config",
+    is_flag=True,
+    default=False,
+    help="Allow project judge config to select model, context, cap, and write confidence floor.",
+)
+@click.option(
     "--trust-pack",
     "trusted_packs",
     multiple=True,
@@ -79,6 +86,7 @@ def judge(
     max_findings: int | None,
     do_write: bool,
     trust_judge_policy: bool,
+    trust_judge_config: bool,
     trusted_packs: tuple[str, ...],
     trust_local_packs: bool,
     strict_defaults: bool,
@@ -91,7 +99,7 @@ def judge(
             trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,
         )
-        settings = parse_judge_settings(cfg.judge)
+        settings = effective_judge_settings(parse_judge_settings(cfg.judge), trust_judge_config=trust_judge_config)
         model_id = model or settings.model
         # Build the real network caller here so test monkeypatching of this module's
         # `call_judge` still intercepts, and so run_judge never takes its own default
@@ -114,6 +122,7 @@ def judge(
             write=do_write,
             trust_local_packs=trust_local_packs,
             trusted_packs=trusted_packs,
+            trust_judge_config=trust_judge_config,
             trust_judge_policy=trust_judge_policy,
             strict_defaults=strict_defaults,
             judge_caller=_caller,

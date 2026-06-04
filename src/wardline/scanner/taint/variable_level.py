@@ -317,6 +317,11 @@ def _resolve_expr(
         return _resolve_expr(node.value, function_taint, taint_map, var_taints)
     if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
         return _resolve_comprehension(node, function_taint, taint_map, var_taints)
+    if isinstance(node, ast.Lambda):
+        for default in (*node.args.defaults, *node.args.kw_defaults):
+            if default is not None:
+                _resolve_expr(default, function_taint, taint_map, var_taints)
+        return function_taint
     # Fallback: unmodelled Call shapes (str()/format()/.get()), lambdas, etc.
     return function_taint
 

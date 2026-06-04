@@ -44,6 +44,30 @@ def test_tools_list_advertises_scan_and_explain() -> None:
         assert "inputSchema" in t
 
 
+def test_tool_call_rejects_unknown_arguments(tmp_path: Path) -> None:
+    server = WardlineMCPServer(root=tmp_path)
+    resp = server.rpc.dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "waiver_add",
+                "arguments": {
+                    "fingerprint": "a" * 64,
+                    "reason": "ok",
+                    "expires": "2026-12-31",
+                    "apply": True,
+                },
+            },
+        }
+    )
+
+    assert "error" not in resp, resp
+    assert resp["result"]["isError"] is True
+    assert "additional properties" in resp["result"]["content"][0]["text"].lower()
+
+
 def test_scan_tool_returns_summary_and_gate(tmp_path: Path) -> None:
     # Exercise the MCP _scan gate wiring + Finding.to_jsonl() serialization through
     # the envelope on a project that actually trips the gate (the prior assertion,
@@ -207,7 +231,7 @@ def test_unknown_prompt_is_invalid_params() -> None:
     assert "unknown prompt" in resp["error"]["message"]
 
 
-def test_fix_tool_applied(tmp_path: Path) -> None:
+def test_fix_tool_requires_explicit_apply(tmp_path: Path) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "wardline.yaml").write_text("autofix:\n  boundary_exception: ValueError\n", encoding="utf-8")
@@ -223,11 +247,15 @@ def test_fix_tool_applied(tmp_path: Path) -> None:
 
     server = WardlineMCPServer(root=proj)
 
+    out_default = _call(server, "fix", {"path": ""})
+    assert "svc.py" in out_default["fixed"]
+    assert "assert val is not None" in (proj / "svc.py").read_text(encoding="utf-8")
+
     out_dry = _call(server, "fix", {"path": "", "dry_run": True})
     assert "svc.py" in out_dry["fixed"]
     assert "assert val is not None" in (proj / "svc.py").read_text(encoding="utf-8")
 
-    out_apply = _call(server, "fix", {"path": ""})
+    out_apply = _call(server, "fix", {"path": "", "apply": True})
     assert "svc.py" in out_apply["fixed"]
     modified_src = (proj / "svc.py").read_text(encoding="utf-8")
     assert "assert val is not None" not in modified_src

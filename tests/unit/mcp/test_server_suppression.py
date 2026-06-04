@@ -60,12 +60,10 @@ def test_baseline_create_then_update(tmp_path: Path) -> None:
     assert out2["baselined_count"] >= 1
 
 
-def test_baseline_create_refuses_when_exists(tmp_path: Path) -> None:
+def test_baseline_create_retry_is_idempotent(tmp_path: Path) -> None:
     proj = _leaky_project(tmp_path)
     server = WardlineMCPServer(root=proj)
-    _call(server, "baseline_create", {"reason": "accept current debt"})
-    # A second create must not clobber: refuse path -> agent-actionable isError, not
-    # an opaque JSON-RPC fault with a bare file path.
+    first = _call(server, "baseline_create", {"reason": "accept current debt"})
     resp = server.rpc.dispatch(
         {
             "jsonrpc": "2.0",
@@ -75,8 +73,10 @@ def test_baseline_create_refuses_when_exists(tmp_path: Path) -> None:
         }
     )
     assert "error" not in resp, resp
-    assert resp["result"]["isError"] is True
-    assert "baseline_update" in resp["result"]["content"][0]["text"]
+    assert not resp["result"].get("isError"), resp
+    out = json.loads(resp["result"]["content"][0]["text"])
+    assert out["already_exists"] is True
+    assert out["baselined_count"] == first["baselined_count"]
 
 
 def test_waiver_add_requires_reason_and_expires(tmp_path: Path) -> None:
@@ -95,6 +95,17 @@ def test_waiver_add_requires_reason_and_expires(tmp_path: Path) -> None:
     assert resp["result"]["isError"] is True
     out = _call(server, "waiver_add", {"fingerprint": fp, "reason": "validated upstream", "expires": "2026-12-31"})
     assert out["fingerprint"] == fp
+
+
+def test_waiver_add_retry_is_idempotent(tmp_path: Path) -> None:
+    proj = _leaky_project(tmp_path)
+    server = WardlineMCPServer(root=proj)
+    fp = "d" * 64
+    args = {"fingerprint": fp, "reason": "validated upstream", "expires": "2026-12-31"}
+    first = _call(server, "waiver_add", args)
+    second = _call(server, "waiver_add", args)
+    assert first["fingerprint"] == second["fingerprint"] == fp
+    assert second["already_exists"] is True
 
 
 def test_waiver_add_bad_date_is_iserror(tmp_path: Path) -> None:

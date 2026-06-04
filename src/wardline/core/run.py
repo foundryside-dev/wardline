@@ -28,6 +28,7 @@ from wardline.core.finding import (
     SuppressionState,
 )
 from wardline.core.judged import load_judged
+from wardline.core.protocols import Analyzer
 from wardline.core.suppression import apply_suppressions, gate_trips
 from wardline.core.waivers import WaiverSet, parse_waivers
 
@@ -64,6 +65,7 @@ class ScanResult:
     # The analysis context is retained in-process so explain_finding can reuse
     # this exact run instead of re-deriving. Never serialised over MCP.
     context: AnalysisContext | None
+    scanned_paths: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,7 +80,7 @@ def run_scan(
     *,
     config_path: Path | None = None,
     cache_dir: Path | None = None,
-    confine_to_root: bool = False,
+    confine_to_root: bool = True,
     new_since: str | None = None,
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
@@ -89,9 +91,9 @@ def run_scan(
     Raises ``WardlineError`` subclasses on bad config / unreadable paths; the
     caller (CLI or MCP server) maps those to its own error channel.
 
-    ``confine_to_root`` (default False, preserving CLI behaviour) makes
-    ``discover`` reject any ``source_root`` that resolves outside ``root`` — the
-    MCP server passes True so a poisoned config cannot read out-of-root source.
+    ``confine_to_root`` (default True) makes ``discover`` reject any
+    ``source_root`` that resolves outside ``root``. Callers that intentionally
+    scan outside the project root must opt out explicitly.
     """
     from wardline.scanner.analyzer import build_analyzer
     from wardline.scanner.grammar import TrustGrammar, default_grammar
@@ -146,7 +148,7 @@ def run_scan(
                 rules=pack_grammar.rules,
             )
 
-    analyzer = build_analyzer(grammar=grammar, summary_cache=cache)
+    analyzer: Analyzer = build_analyzer(grammar=grammar, summary_cache=cache)
     raw = list(analyzer.analyze(files, cfg, root=root))
     for warn in captured_warnings:
         msg = str(warn.message)
@@ -215,11 +217,16 @@ def run_scan(
         judged=sum(1 for f in defects if f.suppressed is SuppressionState.JUDGED),
         unanalyzed=sum(1 for f in findings if f.rule_id in UNANALYZED_RULE_IDS),
     )
+    resolved_root = root.resolve()
     return ScanResult(
         findings=findings,
         summary=summary,
         files_scanned=len(files),
         context=analyzer.last_context,
+        scanned_paths=tuple(
+            path.relative_to(resolved_root).as_posix() if path.is_relative_to(resolved_root) else path.as_posix()
+            for path in files
+        ),
     )
 
 

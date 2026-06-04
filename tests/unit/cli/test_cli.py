@@ -102,6 +102,41 @@ def test_scan_config_error_exits_2(tmp_path: Path) -> None:
     assert result.exit_code == 2
 
 
+def test_scan_refuses_escaping_source_roots_by_default(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    _write(project, "svc.py", _LEAKY)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    _write(outside, "secret.py", "SECRET = 'do not scan by default'\n")
+    (project / "wardline.yaml").write_text('source_roots: ["../outside"]\n', encoding="utf-8")
+
+    out = tmp_path / "findings.jsonl"
+    result = CliRunner().invoke(cli, ["scan", str(project), "--output", str(out)])
+
+    assert result.exit_code == 2
+    assert "outside the project root" in result.output
+    assert not out.exists()
+
+
+def test_scan_allow_source_root_escape_flag_opt_in(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    _write(outside, "secret.py", "def allowed_escape():\n    return 1\n")
+    (project / "wardline.yaml").write_text('source_roots: ["../outside"]\n', encoding="utf-8")
+
+    out = tmp_path / "findings.jsonl"
+    result = CliRunner().invoke(
+        cli,
+        ["scan", str(project), "--output", str(out), "--allow-source-root-escape"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "scanned 1 file(s)" in result.output
+
+
 def test_scan_new_since_option_like_ref_exits_2(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     project.mkdir()
@@ -111,10 +146,9 @@ def test_scan_new_since_option_like_ref_exits_2(tmp_path: Path) -> None:
     assert "must not begin with '-'" in result.output
 
 
-def test_scan_pack_requires_trust_pack_flag(tmp_path: Path) -> None:
+def test_scan_pack_requires_trust_pack_flag(tmp_path: Path, monkeypatch) -> None:
     project_root = Path(__file__).resolve().parents[3]
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
+    monkeypatch.syspath_prepend(str(project_root))
     from tests.unit.install.mock_pack import grammar as mock_grammar
 
     fake_pack = ModuleType("cli_trusted_pack")
@@ -143,13 +177,13 @@ def test_scan_pack_requires_trust_pack_flag(tmp_path: Path) -> None:
         sys.modules.pop("cli_trusted_pack", None)
 
 
-def test_scan_local_pack_requires_allow_custom_packs(tmp_path: Path) -> None:
+def test_scan_local_pack_requires_allow_custom_packs(tmp_path: Path, monkeypatch) -> None:
     project = tmp_path / "proj"
     project.mkdir()
     pack_dir = project / "my_local_pack"
     pack_dir.mkdir()
     (pack_dir / "__init__.py").write_text("config = {}\ngrammar = None\n", encoding="utf-8")
-    sys.path.insert(0, str(project))
+    monkeypatch.syspath_prepend(str(project))
     try:
         (project / "wardline.yaml").write_text("packs:\n  - my_local_pack\n", encoding="utf-8")
         (project / "m.py").write_text("def f(): pass\n", encoding="utf-8")
@@ -164,7 +198,6 @@ def test_scan_local_pack_requires_allow_custom_packs(tmp_path: Path) -> None:
         )
         assert result2.exit_code == 0, result2.output
     finally:
-        sys.path.remove(str(project))
         sys.modules.pop("my_local_pack", None)
 
 
@@ -191,7 +224,18 @@ def test_vocab_emits_descriptor_as_yaml() -> None:
 def test_scan_cache_dir_persists_warm_taints_equal_cold(tmp_path) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
-    (proj / "m.py").write_text("def f(p):\n    return p\n", encoding="utf-8")
+    (proj / "m.py").write_text(
+        "from wardline.decorators import external_boundary, trusted\n"
+        "@external_boundary\n"
+        "def read_raw(p):\n"
+        "    return p\n"
+        "@trusted(level='ASSURED')\n"
+        "def f(p):\n"
+        "    x = 'safe'\n"
+        "    eval(x)\n"
+        "    x = read_raw(p)\n",
+        encoding="utf-8",
+    )
     cache = tmp_path / "cache"
     out1 = tmp_path / "f1.jsonl"
     out2 = tmp_path / "f2.jsonl"
@@ -461,10 +505,11 @@ def test_scan_filigree_emit_success(tmp_path, monkeypatch) -> None:
         def __init__(self, url, **kw):
             captured["url"] = url
 
-        def emit(self, findings):
+        def emit(self, findings, *, scanned_paths=()):
             from wardline.core.filigree_emit import EmitResult
 
             captured["n"] = len(findings)
+            captured["scanned_paths"] = tuple(scanned_paths)
             return EmitResult(reachable=True, created=len(findings), warnings=())
 
     monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _StubEmitter)
@@ -474,6 +519,7 @@ def test_scan_filigree_emit_success(tmp_path, monkeypatch) -> None:
     )
     assert result.exit_code == 0, result.output
     assert captured["url"] == "http://x/api/loom/scan-results"
+    assert captured["scanned_paths"] == ("svc.py",)
     assert "emitted" in result.output and "warning" not in result.output  # stats surfaced, no warning
 
 
@@ -487,7 +533,7 @@ def test_scan_filigree_protocol_error_exits_2(tmp_path, monkeypatch) -> None:
         def __init__(self, url, **kw):
             pass
 
-        def emit(self, findings):
+        def emit(self, findings, *, scanned_paths=()):
             raise FiligreeEmitError("Filigree rejected (400): bad path")
 
     monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _BadEmitter)
@@ -506,7 +552,7 @@ def test_scan_filigree_absent_continues(tmp_path, monkeypatch) -> None:
         def __init__(self, url, **kw):
             pass
 
-        def emit(self, findings):
+        def emit(self, findings, *, scanned_paths=()):
             from wardline.core.filigree_emit import EmitResult
 
             return EmitResult(reachable=False)
@@ -650,6 +696,51 @@ def test_judge_dry_run_reports_without_writing(monkeypatch, tmp_path) -> None:
     assert "over-taint" in result.output  # the model's rationale is surfaced
     assert "1 false" in result.output  # summary line present
     assert not (proj / ".wardline" / "judged.yaml").exists()
+
+
+def test_judge_ignores_project_model_without_trust(monkeypatch, tmp_path) -> None:
+    from click.testing import CliRunner
+
+    import wardline.cli.judge as judge_cli
+    from wardline.cli.main import cli
+    from wardline.core.config import parse_judge_settings
+
+    proj = _make_judge_proj(tmp_path)
+    (proj / "wardline.yaml").write_text("judge:\n  model: attacker/model\n", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def _capture(req, **kw):  # noqa: ANN001, ANN202
+        captured.update(kw)
+        return _fake_fp_response()
+
+    monkeypatch.setattr(judge_cli, "call_judge", _capture)
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+
+    result = CliRunner().invoke(cli, ["judge", str(proj)])
+    assert result.exit_code == 0, result.output
+    assert captured["model_id"] == parse_judge_settings({}).model
+
+
+def test_judge_trust_judge_config_uses_project_model(monkeypatch, tmp_path) -> None:
+    from click.testing import CliRunner
+
+    import wardline.cli.judge as judge_cli
+    from wardline.cli.main import cli
+
+    proj = _make_judge_proj(tmp_path)
+    (proj / "wardline.yaml").write_text("judge:\n  model: attacker/model\n", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def _capture(req, **kw):  # noqa: ANN001, ANN202
+        captured.update(kw)
+        return _fake_fp_response()
+
+    monkeypatch.setattr(judge_cli, "call_judge", _capture)
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+
+    result = CliRunner().invoke(cli, ["judge", str(proj), "--trust-judge-config"])
+    assert result.exit_code == 0, result.output
+    assert captured["model_id"] == "attacker/model"
 
 
 def test_judge_policy_file_requires_trust_flag(monkeypatch, tmp_path) -> None:
@@ -857,6 +948,38 @@ def v(p):
     assert "raise ValueError" in m_py.read_text(encoding="utf-8")
 
 
+def test_scan_with_fix_rescan_preserves_strict_defaults(tmp_path: Path, monkeypatch) -> None:
+    src = """from wardline.decorators import trust_boundary, external_boundary
+
+@external_boundary
+def read_raw(p):
+    return p
+
+@trust_boundary(to_level='ASSURED')
+def v(p):
+    assert p
+    return read_raw(p)
+"""
+    (tmp_path / "m.py").write_text(src, encoding="utf-8")
+
+    import wardline.cli.scan as scan_mod
+
+    calls: list[dict] = []
+    real_run_scan = scan_mod.run_scan
+
+    def spy_run_scan(*args, **kwargs):
+        calls.append(dict(kwargs))
+        return real_run_scan(*args, **kwargs)
+
+    monkeypatch.setattr(scan_mod, "run_scan", spy_run_scan)
+
+    res = CliRunner().invoke(cli, ["scan", str(tmp_path), "--fix", "--yes", "--strict-defaults"])
+
+    assert res.exit_code == 0, res.output
+    assert len(calls) >= 2
+    assert all(call.get("strict_defaults") is True for call in calls)
+
+
 def test_fix_command_no_findings(tmp_path: Path) -> None:
     (tmp_path / "wardline.yaml").write_text("source_roots:\n  - .\n", encoding="utf-8")
     src = "def v(p):\n    return p\n"
@@ -939,7 +1062,7 @@ def test_scan_filigree_emit_with_failed_and_warnings(tmp_path, monkeypatch) -> N
         def __init__(self, url, **kw):
             pass
 
-        def emit(self, findings):
+        def emit(self, findings, *, scanned_paths=()):
             from wardline.core.filigree_emit import EmitResult
 
             return EmitResult(reachable=True, created=0, updated=0, failed=1, warnings=("w1", "w2"))

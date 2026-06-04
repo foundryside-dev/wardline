@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import ast
 import textwrap
+import warnings
 from pathlib import Path
 
 from wardline.core.config import WardlineConfig
 from wardline.core.finding import Kind, Severity
 from wardline.scanner.analyzer import WardlineAnalyzer
+from wardline.scanner.rules._sink_helpers import _own_calls, sink_calls
 from wardline.scanner.rules.untrusted_to_command import UntrustedToCommand
 from wardline.scanner.rules.untrusted_to_deserialization import UntrustedToDeserialization
 from wardline.scanner.rules.untrusted_to_exec import UntrustedToExec
@@ -27,6 +30,18 @@ def _analyze(tmp_path: Path, src: str):
     analyzer.analyze([p], WardlineConfig(), root=tmp_path)
     assert analyzer.last_context is not None
     return analyzer.last_context
+
+
+def test_sink_calls_do_not_enter_lambda_body() -> None:
+    func = ast.parse("def f():\n    cb = lambda: wrapper(eval('1 + 1'))\n    return cb\n").body[0]
+    assert list(_own_calls(func)) == []
+    assert list(sink_calls(func, frozenset({"eval"}), {}, "m")) == []
+
+
+def test_own_calls_preserve_lambda_default_calls() -> None:
+    func = ast.parse("def f(raw):\n    cb = lambda value=eval(raw): wrapper(raw)\n    return cb\n").body[0]
+    calls = list(sink_calls(func, frozenset({"eval", "wrapper"}), {}, "m"))
+    assert [(call.lineno, sink) for call, sink in calls] == [(2, "eval")]
 
 
 def test_106_raw_reaches_pickle_loads(tmp_path) -> None:
@@ -96,6 +111,37 @@ def test_107_raw_reaches_eval(tmp_path) -> None:
         """,
     )
     assert [(x.rule_id, x.qualname) for x in UntrustedToExec().check(ctx)] == [("PY-WL-107", "m.f")]
+
+
+def test_107_raw_reaches_eval_in_lambda_default(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            src = read_raw(p)
+            cb = lambda value=eval(src): value
+            return cb()
+        """,
+    )
+    assert [(x.rule_id, x.qualname) for x in UntrustedToExec().check(ctx)] == [("PY-WL-107", "m.f")]
+
+
+def test_107_safe_eval_in_lambda_default_does_not_fallback_or_fire(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f():
+            cb = lambda value=eval('1 + 1'): value
+            return cb()
+        """,
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        findings = UntrustedToExec().check(ctx)
+    assert findings == []
+    assert not any(str(w.message).startswith("WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK") for w in caught)
 
 
 def test_108_raw_reaches_os_system(tmp_path) -> None:

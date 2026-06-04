@@ -56,7 +56,10 @@ WARDLINE_SCHEMA: dict[str, Any] = {
             "type": "object",
             "additionalProperties": False,
             "properties": {
-                "boundary_exception": {"type": "string"},
+                "boundary_exception": {
+                    "type": "string",
+                    "pattern": r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$",
+                },
             },
         },
     },

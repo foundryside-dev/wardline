@@ -93,10 +93,33 @@ def test_run_judge_write_holds_back_low_confidence_fp(tmp_path: Path) -> None:
     assert not (root / ".wardline" / "judged.yaml").exists()
 
 
-def test_run_judge_triages_same_active_defect_fingerprints_as_scan_with_packs(tmp_path: Path) -> None:
+def test_run_judge_ignores_project_floor_without_trust(tmp_path: Path) -> None:
+    root = _leaky_project(tmp_path)
+    (root / "wardline.yaml").write_text("judge:\n  write_confidence_floor: 0.0\n", encoding="utf-8")
+
+    outcome = run_judge(root, judge_caller=_fp_caller(0.3), write=True)
+
+    assert outcome.wrote == 0
+    assert outcome.held_back >= 1
+    assert not (root / ".wardline" / "judged.yaml").exists()
+
+
+def test_run_judge_trusted_project_floor_can_lower_write_threshold(tmp_path: Path) -> None:
+    root = _leaky_project(tmp_path)
+    (root / "wardline.yaml").write_text("judge:\n  write_confidence_floor: 0.0\n", encoding="utf-8")
+
+    outcome = run_judge(root, judge_caller=_fp_caller(0.3), write=True, trust_judge_config=True)
+
+    assert outcome.wrote >= 1
+    assert outcome.held_back == 0
+    assert (root / ".wardline" / "judged.yaml").exists()
+
+
+def test_run_judge_triages_same_active_defect_fingerprints_as_scan_with_packs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     project_root = Path(__file__).resolve().parents[3]
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
+    monkeypatch.syspath_prepend(str(project_root))
 
     from tests.unit.install.mock_pack import grammar as mock_grammar
 

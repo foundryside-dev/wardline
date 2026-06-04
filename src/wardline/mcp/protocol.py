@@ -82,6 +82,9 @@ class JsonRpcServer:
                 return None
             return self._err(msg_id, _INVALID_REQUEST, "server not initialized")
 
+        if is_notification:
+            return None
+
         handler = self._handlers.get(method)
         if handler is None:
             if is_notification:

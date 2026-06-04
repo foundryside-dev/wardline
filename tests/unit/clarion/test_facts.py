@@ -34,6 +34,8 @@ def test_leaky_fact_carries_the_taint_projection(tmp_path):
     assert blob["qualname"] == "svc.leaky"
     assert blob["taint"]["actual_return"] == "EXTERNAL_RAW"
     assert blob["taint"]["contributing_callee_qualname"] == "svc.read_raw"
+    leaky_finding = next(f for f in blob["findings"] if f["rule_id"] == "PY-WL-101")
+    assert leaky_finding["path"] == "svc.py"
     read_raw = facts["svc.read_raw"]["wardline_json"]
     assert read_raw["taint"]["contributing_callee_qualname"] is None
 

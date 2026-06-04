@@ -60,6 +60,26 @@ def test_baseline_create_config_escape_is_iserror(tmp_path: Path) -> None:
     _assert_iserror(resp, "within the project root")
 
 
+def test_waiver_add_default_config_symlink_escape_is_iserror(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.yaml"
+    outside.write_text("", encoding="utf-8")
+    (tmp_path / "wardline.yaml").symlink_to(outside)
+    server = WardlineMCPServer(root=tmp_path)
+
+    resp = _dispatch(
+        server,
+        "waiver_add",
+        {
+            "fingerprint": "a" * 64,
+            "reason": "validated upstream",
+            "expires": "2026-12-31",
+        },
+    )
+
+    _assert_iserror(resp, "symlink")
+    assert outside.read_text(encoding="utf-8") == ""
+
+
 def test_scan_bad_fail_on_enum_is_actionable_iserror(tmp_path: Path) -> None:
     # A bad fail_on used to surface as an opaque -32603; now it is an actionable
     # isError naming the valid set.
@@ -71,11 +91,11 @@ def test_scan_bad_fail_on_enum_is_actionable_iserror(tmp_path: Path) -> None:
         assert w in text
 
 
-def test_poisoned_source_roots_refused_by_mcp_but_allowed_by_cli(tmp_path: Path) -> None:
+def test_poisoned_source_roots_refused_by_mcp_and_core_by_default(tmp_path: Path) -> None:
     # The deeper exfil vector: an IN-ROOT wardline.yaml whose source_roots escape
     # the root. config is confined, but the config itself points out. discover()
-    # behind confine_to_root=True refuses it; the CLI path (confine_to_root=False)
-    # is unchanged.
+    # behind confine_to_root=True refuses it. The shared core default is now
+    # confined too; legacy escape requires an explicit opt-out.
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "svc.py").write_text(_LEAKY, encoding="utf-8")
@@ -90,10 +110,12 @@ def test_poisoned_source_roots_refused_by_mcp_but_allowed_by_cli(tmp_path: Path)
     _assert_iserror(resp, "outside the project root")
     assert "findings" not in resp["result"]
 
-    # Discriminator (advisor trap #4): prove the config is ACCEPTED first by
-    # confirming the unconfined CLI path does not raise — so the only thing raising
-    # under confine_to_root=True is the new source_roots check.
-    result = run_scan(proj, confine_to_root=False)  # unchanged CLI behaviour
+    with pytest.raises(ConfigError, match="outside the project root"):
+        run_scan(proj)
+
+    # Discriminator (advisor trap #4): prove the config can still be accepted by
+    # an explicit unconfined opt-out, so the raising condition is confinement.
+    result = run_scan(proj, confine_to_root=False)
     assert result.files_scanned >= 1  # the out-of-root file is scanned, as before
     with pytest.raises(ConfigError, match="outside the project root"):
         run_scan(proj, confine_to_root=True)

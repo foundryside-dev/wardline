@@ -8,19 +8,18 @@ project files on disk. Rooted at a project path (launch cwd by default)."""
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from wardline._version import __version__
 from wardline.core import config as config_mod
 from wardline.core.assure import build_posture
 from wardline.core.attest import build_attestation, verify_attestation
 from wardline.core.attest_key import load_attest_key
-from wardline.core.baseline import generate_baseline
-from wardline.core.config_schema import WARDLINE_SCHEMA
+from wardline.core.baseline import generate_baseline, load_baseline
 from wardline.core.errors import FiligreeEmitError, WardlineError
 from wardline.core.explain import explain_chain, explain_finding, explanation_from_context
 from wardline.core.filigree_emit import EmitResult, FiligreeEmitter
@@ -28,67 +27,23 @@ from wardline.core.finding import Finding, Kind, Severity, SuppressionState
 from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
 from wardline.core.run import gate_decision, run_scan
+from wardline.core.safe_paths import safe_project_file
 from wardline.core.sei_resolution import resolve_query_filters
-from wardline.core.waivers import add_waiver
+from wardline.core.waivers import add_waiver, parse_waivers
+from wardline.mcp.prompts import get_prompt, list_prompts
 from wardline.mcp.protocol import _INVALID_PARAMS, JsonRpcServer, McpError
-
-if TYPE_CHECKING:
-    from wardline.core.explain import TaintExplanation
-
-
-class ToolError(Exception):
-    """Raised by a tool handler for a tool-EXECUTION error the agent must read
-    and act on. Returned as an ``isError`` result (content the client reliably
-    surfaces to the model), NOT a JSON-RPC error. Tasks 8/9 reuse it (e.g. the
-    judge tool's missing-API-key remediation)."""
-
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
-        self.message = message
+from wardline.mcp.resources import list_resources, read_resource
+from wardline.mcp.tooling import Tool, ToolError
+from wardline.mcp.tooling import cfg as _cfg
+from wardline.mcp.tooling import explanation_to_dict as _explanation_to_dict
+from wardline.mcp.tooling import finding_to_dict as _finding_to_dict
+from wardline.mcp.tooling import require as _require
+from wardline.mcp.tooling import resolve_under_root as _resolve_under_root
 
 
-@dataclass(frozen=True, slots=True)
-class Tool:
-    name: str
-    description: str
-    input_schema: dict[str, Any]
-    handler: Callable[[dict[str, Any], Path], Any]
-    network: bool = False  # advertised in description for the judge tool
-
-
-def _finding_to_dict(f: Finding) -> dict[str, Any]:
-    parsed: dict[str, Any] = json.loads(f.to_jsonl())
-    return parsed
-
-
-def _explanation_to_dict(exp: TaintExplanation) -> dict[str, Any]:
-    """The 6-key provenance projection shared by `scan(explain=true)`'s inliner and
-    `explain_taint`'s return dict — identical BY CONSTRUCTION, not by test."""
-    return {
-        "tier_in": exp.tier_in,
-        "tier_out": exp.tier_out,
-        "immediate_tainted_callee": exp.immediate_tainted_callee,
-        "source_boundary_qualname": exp.source_boundary_qualname,
-        "resolved_call_count": exp.resolved_call_count,
-        "unresolved_call_count": exp.unresolved_call_count,
-    }
-
-
-def _resolve_under_root(root: Path, arg: str) -> Path:
-    """Resolve a caller-supplied path/config arg against root, refusing any
-    escape (absolute path, .., or symlink out). The MCP server is rooted; a
-    tool arg must never read or write outside the project."""
-    candidate = (root / arg).resolve()
-    if not candidate.is_relative_to(root.resolve()):
-        raise ToolError(f"path must be within the project root: {arg!r}")
-    return candidate
-
-
-def _cfg(args: dict[str, Any], root: Path) -> Path | None:
-    return _resolve_under_root(root, args["config"]) if args.get("config") else None
-
-
-def _emit_filigree(findings: list[Finding], filigree: Any) -> dict[str, Any] | None:
+def _emit_filigree(
+    findings: list[Finding], filigree: Any, *, scanned_paths: tuple[str, ...] = ()
+) -> dict[str, Any] | None:
     """Fail-soft Filigree emission for the MCP `scan`. Returns None when no emitter
     is injected (no URL). Mirrors the Clarion block's deliberate asymmetry: the CLI
     is LOUD on a FiligreeEmitError (4xx -> exit 2), but the MCP scan must SURVIVE an
@@ -97,7 +52,7 @@ def _emit_filigree(findings: list[Finding], filigree: Any) -> dict[str, Any] | N
     if filigree is None:
         return None
     try:
-        er = filigree.emit(findings)
+        er = filigree.emit(findings, scanned_paths=scanned_paths)
     except FiligreeEmitError as exc:
         er = EmitResult(reachable=False, warnings=(str(exc),))
     return {
@@ -184,7 +139,7 @@ def _scan(
             "disabled_reason": wr.disabled_reason,
         }
     decision = gate_decision(result, threshold)
-    filigree_block = _emit_filigree(result.findings, filigree)
+    filigree_block = _emit_filigree(result.findings, filigree, scanned_paths=result.scanned_paths)
     where = args.get("where")
     try:
         resolved_where = resolve_query_filters(where, root, _cfg(args, root), clarion)
@@ -352,15 +307,6 @@ def _verify_attestation(args: dict[str, Any], root: Path, clarion: Any = None) -
     )
 
 
-def _require(args: dict[str, Any], key: str) -> Any:
-    """Mandatory tool argument. A missing/blank value is agent-actionable ("you must
-    supply a reason/expiry") → ``ToolError`` → isError result, NOT a JSON-RPC fault."""
-    val = args.get(key)
-    if val is None or (isinstance(val, str) and not val.strip()):
-        raise ToolError(f"{key} is required")
-    return val
-
-
 def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
     # No key/.env → run_judge's default caller raises JudgeConfigurationError (a
     # WardlineError) naming WARDLINE_OPENROUTER_API_KEY; _tools_call turns that into
@@ -376,6 +322,7 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
         confine_to_root=True,
         trust_local_packs=bool(args.get("trust_local_packs", False)),
         trusted_packs=tuple(args.get("trust_packs") or []),
+        trust_judge_config=bool(args.get("trust_judge_config", False)),
         trust_judge_policy=bool(args.get("trust_judge_policy", False)),
         strict_defaults=bool(args.get("strict_defaults", False)),
         context_lines=int(context_lines) if context_lines is not None else None,
@@ -400,12 +347,18 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 def _baseline_create(args: dict[str, Any], root: Path) -> dict[str, Any]:
     reason = args.get("reason")
+    baseline_path = root / ".wardline" / "baseline.yaml"
     try:
         count = generate_baseline(root, overwrite=False, config_path=_cfg(args, root), confine_to_root=True)
-    except FileExistsError as exc:
-        # No-clobber refuse path: agent-actionable — point at baseline_update.
-        raise ToolError("a baseline already exists; call baseline_update to overwrite it") from exc
-    return {"baselined_count": count, "path": str(root / ".wardline" / "baseline.yaml"), "reason": reason}
+    except FileExistsError:
+        existing = load_baseline(baseline_path)
+        return {
+            "baselined_count": len(existing.fingerprints),
+            "path": str(baseline_path),
+            "reason": reason,
+            "already_exists": True,
+        }
+    return {"baselined_count": count, "path": str(baseline_path), "reason": reason, "already_exists": False}
 
 
 def _baseline_update(args: dict[str, Any], root: Path) -> dict[str, Any]:
@@ -426,11 +379,22 @@ def _waiver_add(args: dict[str, Any], root: Path) -> dict[str, Any]:
         # A malformed date is something the agent can fix and should see.
         raise ToolError("expires must be an ISO date (YYYY-MM-DD)") from exc
     cfg_path = _cfg(args, root) or (root / "wardline.yaml")
-    waiver = add_waiver(cfg_path, fingerprint=fp, reason=reason, expires=expires)
+    safe_cfg_path = safe_project_file(root, cfg_path, label=cfg_path.name)
+    if safe_cfg_path.exists():
+        for existing in parse_waivers(config_mod.load(safe_cfg_path).waivers):
+            if existing.fingerprint == fp:
+                return {
+                    "fingerprint": existing.fingerprint,
+                    "reason": existing.reason,
+                    "expires": existing.expires.isoformat() if existing.expires else None,
+                    "already_exists": True,
+                }
+    waiver = add_waiver(cfg_path, fingerprint=fp, reason=reason, expires=expires, root=root)
     return {
         "fingerprint": waiver.fingerprint,
         "reason": waiver.reason,
         "expires": waiver.expires.isoformat() if waiver.expires else None,
+        "already_exists": False,
     }
 
 
@@ -452,11 +416,13 @@ def _fix(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
     from wardline.core.autofix import run_autofix
 
-    dry_run = bool(args.get("dry_run", False))
+    dry_run = not bool(args.get("apply", False)) or bool(args.get("dry_run", False))
     applied = run_autofix(findings, cfg, path, dry_run=dry_run)
+    action = "Previewed" if dry_run else "Applied"
     return {
         "fixed": applied,
-        "message": f"Applied fixes to {len(applied)} files." if applied else "No fixes applied.",
+        "applied": not dry_run,
+        "message": f"{action} fixes for {len(applied)} files." if applied else "No fixes applied.",
     }
 
 
@@ -770,6 +736,7 @@ class WardlineMCPServer:
                         "model": {"type": "string"},
                         "max_findings": {"type": "integer"},
                         "write": {"type": "boolean", "description": "append above-floor FPs to judged.yaml"},
+                        "trust_judge_config": {"type": "boolean"},
                         "trust_judge_policy": {"type": "boolean"},
                         "trust_packs": {"type": "array", "items": {"type": "string"}},
                         "trust_local_packs": {"type": "boolean"},
@@ -831,6 +798,7 @@ class WardlineMCPServer:
                         "path": {"type": "string", "description": "subdir relative to project root to scan and fix"},
                         "config": {"type": "string"},
                         "dry_run": {"type": "boolean", "description": "preview changes without modifying files"},
+                        "apply": {"type": "boolean", "description": "must be true to modify files"},
                     },
                 },
                 handler=_fix,
@@ -838,58 +806,11 @@ class WardlineMCPServer:
         )
 
     def add_tool(self, tool: Tool) -> None:
+        schema = dict(tool.input_schema)
+        if schema.get("type") == "object":
+            schema.setdefault("additionalProperties", False)
+            tool = replace(tool, input_schema=schema)
         self._tools[tool.name] = tool
-
-    # Four STABLE resources: their content is a pure function of (vocab + rule
-    # catalog + effective config + schema), so it does NOT drift as the agent
-    # edits code. Findings are deliberately excluded — they go stale on every
-    # edit and come back only from a fresh `scan` tool call.
-    _RESOURCES = (
-        ("wardline://vocab", "Trust vocabulary descriptor", "text/yaml"),
-        ("wardline://rules", "Rule catalog", "application/json"),
-        ("wardline://config", "Effective project config", "application/json"),
-        ("wardline://config-schema", "Config JSON Schema", "application/json"),
-    )
-
-    def _read_resource(self, uri: str | None) -> tuple[str, str]:
-        """Return (text, mime_type) for a resource URI."""
-        if uri == "wardline://vocab":
-            from wardline.core.descriptor import descriptor_to_yaml
-
-            return descriptor_to_yaml(), "text/yaml"
-        if uri == "wardline://config-schema":
-            return json.dumps(WARDLINE_SCHEMA, ensure_ascii=False), "application/json"
-        if uri == "wardline://rules":
-            from wardline.scanner.rules import _ALL_RULE_CLASSES
-
-            # rule_id is a class attr; base_severity is set in __init__, so
-            # instantiate cls() (its default base_severity = METADATA.base_severity).
-            rules: list[dict[str, Any]] = []
-            for cls in _ALL_RULE_CLASSES:
-                inst = cls()
-                # The human-meaningful description lives on the rule's METADATA, not
-                # the class docstring (the rule classes carry module-level docstrings,
-                # so cls.__doc__ is None) — use the real metadata field.
-                rules.append(
-                    {
-                        "rule_id": inst.rule_id,
-                        "base_severity": inst.base_severity.value,
-                        "description": cls.metadata.description,
-                    }
-                )
-            return json.dumps({"rules": rules}, ensure_ascii=False), "application/json"
-        if uri == "wardline://config":
-            cfg = config_mod.load(self.root / "wardline.yaml")
-            return json.dumps(
-                {
-                    "source_roots": list(cfg.source_roots),
-                    "exclude": list(cfg.exclude),
-                    "rules_enable": list(cfg.rules_enable),
-                    "rules_severity": dict(cfg.rules_severity),
-                },
-                ensure_ascii=False,
-            ), "application/json"
-        raise McpError(f"unknown resource: {uri}", code=_INVALID_PARAMS)
 
     def _wire(self) -> None:
         self.rpc.capabilities["tools"] = {"listChanged": False}
@@ -956,35 +877,18 @@ class WardlineMCPServer:
         return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}]}
 
     def _resources_list(self, params: dict[str, Any]) -> dict[str, Any]:
-        return {"resources": [{"uri": uri, "name": name, "mimeType": mime} for uri, name, mime in self._RESOURCES]}
+        return {"resources": list_resources()}
 
     def _resources_read(self, params: dict[str, Any]) -> dict[str, Any]:
         uri = params.get("uri")
-        text, mime = self._read_resource(uri)
+        text, mime = read_resource(self.root, uri)
         return {"contents": [{"uri": uri, "mimeType": mime, "text": text}]}
 
-    _LOOP_PROMPT = (
-        "Wardline is whole-program and on-disk. The loop:\n"
-        "1. Call `scan` with `explain: true` (whole project). Each active defect carries an "
-        "inline `explanation` (immediate tainted callee, source boundary, trust tiers) — no "
-        "per-finding round-trip. Read `summary.active` and `gate.tripped`.\n"
-        "2. For the FULL N-hop chain to the originating boundary (needs a configured Clarion "
-        "store), call `explain_taint` with the finding's `qualname` as `sink_qualname` and "
-        "`chain: true`.\n"
-        "3. Fix at the BOUNDARY, not the sink — add validation/rejection at the right hop.\n"
-        "4. Re-`scan`. Only baseline/waiver a finding you have judged a true non-issue, with a reason."
-    )
-
     def _prompts_list(self, params: dict[str, Any]) -> dict[str, Any]:
-        return {"prompts": [{"name": "wardline:loop", "description": "The intended scan→explain→fix→rescan loop."}]}
+        return {"prompts": list_prompts()}
 
     def _prompts_get(self, params: dict[str, Any]) -> dict[str, Any]:
-        if params.get("name") != "wardline:loop":
-            raise McpError(f"unknown prompt: {params.get('name')}", code=_INVALID_PARAMS)
-        return {
-            "description": "The intended scan→explain→fix→rescan loop.",
-            "messages": [{"role": "user", "content": {"type": "text", "text": self._LOOP_PROMPT}}],
-        }
+        return get_prompt(params.get("name"))
 
     @staticmethod
     def _is_error(text: str) -> dict[str, Any]:

@@ -25,24 +25,20 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import Enum
 from typing import Any, Protocol
 
+from wardline.core.identity import ContentStatus, EntityBinding, IdentityStatus, content_status
 
-class IdentityStatus(Enum):
-    """Identity axis — 'is this the same entity?' Never inferred from content."""
-
-    ALIVE = "alive"  # SEI resolves to a live binding
-    ORPHANED = "orphaned"  # SEI exists but is orphaned/superseded (resolve_sei alive:false)
-    UNAVAILABLE = "unavailable"  # no SEI obtainable — capability absent, or locator does not resolve
-
-
-class ContentStatus(Enum):
-    """Content axis — 'has its code changed?' Never inferred from identity."""
-
-    FRESH = "fresh"
-    STALE = "stale"
-    UNKNOWN = "unknown"
+__all__ = [
+    "ContentStatus",
+    "EntityBinding",
+    "IdentityStatus",
+    "SeiCapability",
+    "SeiClient",
+    "SeiResolver",
+    "TaintStoreCapability",
+    "content_status",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,66 +84,6 @@ class TaintStoreCapability:
         if not isinstance(ts, Mapping) or ts.get("read_by_sei") is not True:
             return cls(read_by_sei=False)
         return cls(read_by_sei=True)
-
-
-@dataclass(frozen=True, slots=True)
-class EntityBinding:
-    """A cross-tool binding handle for one entity, carrying both status axes.
-
-    The SEI (when present) is the durable identity and the PREFERRED binding key;
-    the locator is the mutable address. When no SEI is available the binding degrades
-    honestly (``identity=UNAVAILABLE``) and the consumer keeps working on the locator —
-    but the fallback is EXPLICIT (``keyed_on_sei`` is False), never a silent treatment
-    of a locator as a stable identity.
-
-    ``content_hash`` (when set) is Clarion's ENTITY-BODY hash from resolve. It is NOT
-    the same granularity as Wardline's whole-file ``content_hash_at_compute``; never
-    compare across the two (see :func:`content_status`)."""
-
-    locator: str
-    sei: str | None = None
-    identity: IdentityStatus = IdentityStatus.UNAVAILABLE
-    # `content` is the content axis. It stays UNKNOWN unless a caller evaluates it
-    # against a same-granularity hash and rebinds it, e.g.
-    # `dataclasses.replace(binding, content=content_status(stored, current))`
-    # (see `content_status`). The resolver does NOT set it (cross-source freshness is
-    # T4.3) — leaving it UNKNOWN is the honest default, never a guessed FRESH.
-    content: ContentStatus = ContentStatus.UNKNOWN
-    content_hash: str | None = None  # Clarion entity-body granularity
-
-    def __post_init__(self) -> None:
-        # The type must not represent an impossible state: an empty-string SEI would
-        # make `keyed_on_sei` True and `binding_key` "" (a silent broken key).
-        if self.sei is not None and not self.sei:
-            raise ValueError("sei must be None or a non-empty opaque string")
-
-    @property
-    def keyed_on_sei(self) -> bool:
-        """True iff the stable identity (SEI) is the binding key."""
-        return self.sei is not None
-
-    @property
-    def binding_key(self) -> str:
-        """The key to bind on: the SEI when present (the stable identity), else the
-        locator. Prefer-SEI per SEI standard §4 / REQ-C-04. When this returns the
-        locator, ``keyed_on_sei`` is False and ``identity`` is UNAVAILABLE — the caller
-        must surface that the binding is on a mutable address, not an identity."""
-        return self.sei if self.sei is not None else self.locator
-
-
-def content_status(stored_hash: str | None, current_hash: str | None) -> ContentStatus:
-    """Compare two content hashes OF THE SAME GRANULARITY.
-
-    The caller GUARANTEES both hashes are the same granularity (both entity-body, OR
-    both whole-file). Do NOT pass Clarion's entity-body ``content_hash`` against
-    Wardline's whole-file ``content_hash_at_compute`` — different spans hash differently
-    and the result would be a permanent false-STALE. Cross-granularity harmonisation
-    is out of scope here (SEI standard §2 note; deferred to T4.3).
-
-    Unknown on either side → UNKNOWN (honest; never guess FRESH)."""
-    if stored_hash is None or current_hash is None:
-        return ContentStatus.UNKNOWN
-    return ContentStatus.FRESH if stored_hash == current_hash else ContentStatus.STALE
 
 
 class SeiClient(Protocol):
