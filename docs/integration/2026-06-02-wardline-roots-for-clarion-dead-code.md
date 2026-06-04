@@ -3,7 +3,7 @@
 **From:** Wardline maintainer (John, with Claude)
 **To:** Clarion maintainers
 **Date:** 2026-06-02
-**Status:** Proposal / dependent enhancement — **must not block** Clarion's dead-code WP
+**Status:** Wardline signal shipped; Clarion consumption remains additive / non-blocking
 **Relates to:** Clarion `find_dead_code` plan (Part B), the "Root categorisation
 tag-emission pipeline" follow-up WP, the shipped SP9 Wardline→Clarion taint-store
 channel (`docs/integration/2026-05-30-wardline-clarion-taint-store-requirements.md`,
@@ -11,9 +11,16 @@ channel (`docs/integration/2026-05-30-wardline-clarion-taint-store-requirements.
 
 ---
 
-## 1. Context (verified against Clarion `main`, 2026-06-02)
+## 1. Context
 
-Clarion's planned `find_dead_code` (forward reachability over `calls`/`imports`
+Original verification against Clarion `main` on 2026-06-02 found the root-tag
+pipeline absent. Re-checking Clarion on 2026-06-04 showed the generic dependency
+has moved: plugin-emitted `tags` are now a typed field, normalized and persisted
+into `entity_tags`, and `find_dead_code` consumes the root tag set
+(`entry-point`, `http-route`, `test`, `data-model`, `cli-command`,
+`exported-api`).
+
+Clarion's `find_dead_code` (forward reachability over `calls`/`imports`
 edges; candidates = `all_entities − reachable`, intersected with scope) is
 **technically sound and idiomatic** — it mirrors `find_circular_imports`
 (`crates/clarion-mcp/src/catalogue/shortcuts.rs:59`), reuses the honest-empty
@@ -22,20 +29,11 @@ edges; candidates = `all_entities − reachable`, intersected with scope) is
 critically — guards the catastrophic empty-root-set case so it can never flag a
 whole repo as dead.
 
-But the tool is **born inert**: its root set comes entirely from `entity_tags`,
-and **no production code emits any categorisation tag today**. There is no
-`INSERT INTO entity_tags` outside the test fixtures
-(`crates/clarion-mcp/tests/catalogue_tools.rs:98`), and no `tags` field on the
-plugin/scanner entity protocol record. The entire catalogue-shortcuts family
-(`find_entry_points`, `find_http_routes`, `find_data_models`, `find_tests`, …)
-is already born-inert for the same reason (each carries a "…not emitted by the
-active plugins" honest-empty note, `shortcuts.rs:249–330`).
-
-So the real unlock is Clarion's **root/barrier tag-emission pipeline**
-(plugin detectors → protocol `tags` field → host validation → `entity_tags`
-write), not `find_dead_code` itself. **That pipeline is wholly Clarion's
-engineering work; Wardline has no role in building it.** This document is about
-one *additive* signal Wardline can contribute once that pipeline exists.
+Wardline still does **not** write Clarion's `entity_tags` table. Its shipped
+contribution is an opaque `dead_code_root` block inside each
+`wardline-taint-1` fact written through the existing Wardline taint-store
+channel. Clarion can either consult this store directly when assembling roots or
+ingest the hint through its own tag pipeline.
 
 ## 2. The Wardline angle: trust boundaries are high-confidence roots
 
@@ -61,9 +59,11 @@ findings (the costly error mode for a reachability tool).
 
 **Would contribute (opt-in, additive, off the critical path):**
 
-- A per-entity signal that an entity is a Wardline trust boundary
-  (`external_boundary` / `trusted`), suitable for inclusion in Clarion's
-  reachability **root** set.
+- A per-entity `dead_code_root` signal inside the existing `wardline-taint-1`
+  blob. Trust-decorated entities carry:
+  `{"is_root": true, "source": "wardline_trust_decorator", "tags":
+  ["entry-point"], ...}`. Undecorated entities carry an explicit false/empty
+  block.
 
 **Explicitly out of scope (non-goals — guard against mission creep):**
 
@@ -82,8 +82,8 @@ findings (the costly error mode for a reachability tool).
 A channel already exists: SP9 has `wardline scan --clarion-url` writing
 per-entity, HMAC-signed, blake3-freshness-gated facts into Clarion's
 **`wardline_taint`** store (`crates/clarion-storage/src/wardline_taint.rs`) —
-a table **distinct from `entity_tags`**. Two plausible paths, both Clarion-side
-decisions:
+a table **distinct from `entity_tags`**. Wardline now emits the root hint over
+that channel. Two Clarion-side consumption paths remain possible:
 
 1. **`find_dead_code` also consults `wardline_taint`** when assembling roots —
    treat entities with a boundary fact as roots. No new Wardline write surface;
@@ -110,7 +110,6 @@ stale boundary fact must not resurrect a since-deleted entity as a root.
 
 ## 6. Ask of Clarion
 
-Confirm whether the Wardline boundary signal is wanted as a root source, and if
-so which mechanism (§4.1 vs §4.2). No Wardline-side work begins until that's
-confirmed — this doc is the standing offer, tracked on the Wardline side as a
-dependent issue.
+Consume the shipped Wardline `dead_code_root` hint as a root source if wanted,
+either directly from `wardline_taint` (§4.1) or by validated ingestion into
+`entity_tags` (§4.2). Wardline's side remains additive and freshness-gated.

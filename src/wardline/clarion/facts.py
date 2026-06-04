@@ -8,6 +8,9 @@ fact per function entity. Each fact carries:
   - top-level `content_hash_at_compute` (Clarion's queryable column) — REPEATED inside
     the blob because Clarion's read never returns the column, only the blob (the
     freshness gate reads the in-blob copy).
+  - `dead_code_root`: a Wardline-owned reachability-root hint for Clarion dead-code
+    analysis. Wardline emits the signal in its taint facts; it never writes Clarion's
+    `entity_tags` table directly.
 
 `content_hash_at_compute` = blake3 of the entity's containing file, WHOLE FILE, RAW
 BYTES (binary read — no LF translation), lowercase hex. This matches Clarion's
@@ -28,6 +31,7 @@ if TYPE_CHECKING:
     from wardline.scanner.context import AnalysisContext
 
 SCHEMA_VERSION = "wardline-taint-1"
+_ROOT_REASON = "Wardline trust-decorated entity is externally reachable or trust-significant."
 
 
 def _read_bytes(path: Path) -> bytes:
@@ -85,6 +89,7 @@ def build_taint_facts(result: ScanResult, root: Path) -> list[dict[str, Any]]:
             "schema_version": SCHEMA_VERSION,
             "qualname": qualname,
             "content_hash_at_compute": content_hash,
+            "dead_code_root": _dead_code_root_blob(qualname in context.declared_qualnames),
             "taint": {
                 "declared_return": declared.value if declared is not None else None,
                 "actual_return": actual.value if actual is not None else None,
@@ -103,3 +108,14 @@ def build_taint_facts(result: ScanResult, root: Path) -> list[dict[str, Any]]:
             }
         )
     return facts
+
+
+def _dead_code_root_blob(is_declared: bool) -> dict[str, Any]:
+    if not is_declared:
+        return {"is_root": False, "source": None, "tags": [], "reason": None}
+    return {
+        "is_root": True,
+        "source": "wardline_trust_decorator",
+        "tags": ["entry-point"],
+        "reason": _ROOT_REASON,
+    }
