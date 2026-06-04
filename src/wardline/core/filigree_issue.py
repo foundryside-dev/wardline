@@ -263,7 +263,25 @@ def attach_clarion_identity_for_finding(
     qualname = getattr(finding, "qualname", None)
     if not isinstance(qualname, str) or not qualname:
         return IdentityAttachResult.skipped("finding has no qualname")
+    return attach_clarion_identity_for_qualname(
+        qualname=qualname,
+        issue_id=issue_id,
+        filer=filer,
+        clarion_client=clarion_client,
+    )
 
+
+def attach_clarion_identity_for_qualname(
+    *,
+    qualname: str,
+    issue_id: str | None,
+    filer: FiligreeIssueFiler,
+    clarion_client: Any,
+) -> IdentityAttachResult:
+    if not issue_id:
+        return IdentityAttachResult.not_attempted("no issue_id from Filigree promote")
+    if clarion_client is None:
+        return IdentityAttachResult.not_attempted("no Clarion URL configured")
     locator = _locator_for_finding_qualname(qualname)
     try:
         resolver = SeiResolver.detect(clarion_client)

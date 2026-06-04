@@ -144,6 +144,45 @@ Clarion can only resolve a legacy locator and no current content hash is
 available, Wardline reports that explicitly and does not attach a false hash;
 the promoted issue is still returned.
 
+## `wardline scan-file-findings`
+
+**Purpose:** run the common agent workflow in one call: scan, list active defects
+with explanation summaries, optionally emit to Filigree, promote selected
+findings, and attach Clarion identity when available.
+
+```text
+Usage: wardline scan-file-findings [OPTIONS] [PATH]
+
+  Run the agent workflow from scan to optionally filed Filigree issues.
+
+Options:
+  --config FILE
+  --fail-on [CRITICAL|ERROR|WARN|INFO]
+  --cache-dir PATH
+  --filigree-url TEXT             Filigree Loom URL (else env/wardline.yaml).
+  --clarion-url TEXT              Clarion URL for optional identity
+                                  attachment.
+  --fingerprint TEXT              Active finding fingerprint to promote.
+  --all-active                    Promote every active defect from this scan.
+  --dry-run                       Only summarize active defects; do not emit
+                                  or promote.
+  --priority TEXT                 Filigree priority for promoted findings,
+                                  e.g. P2.
+  --label TEXT                    Label to attach to promoted findings.
+  --trust-pack TEXT
+  --allow-custom-packs
+  --strict-defaults
+  --help                          Show this message and exit.
+```
+
+With no selection flags, the command is a dry run. It returns `active_defects`
+first; each entry includes fingerprint, rule, qualname, path/line, an
+`explanation` summary, `promotion` status, and `identity_attach` status. Use
+`--fingerprint` to promote specific active findings, or `--all-active` for the
+whole active set. Partial failures stay visible in the JSON: Filigree emission,
+per-finding promotion, unknown fingerprints, and Clarion identity attachment are
+reported independently.
+
 ## `wardline judge`
 
 **Purpose:** run the opt-in LLM triage judge over the *active* DEFECT findings

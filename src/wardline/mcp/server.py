@@ -122,6 +122,42 @@ def _file_finding(args: dict[str, Any], root: Path, filer: Any, clarion: Any = N
     return payload
 
 
+def _scan_file_findings(
+    args: dict[str, Any],
+    root: Path,
+    filigree_emitter: Any = None,
+    filigree_filer: Any = None,
+    clarion: Any = None,
+) -> dict[str, Any]:
+    fingerprints_raw = args.get("fingerprints") or []
+    if not isinstance(fingerprints_raw, list) or not all(isinstance(fp, str) for fp in fingerprints_raw):
+        raise ToolError("fingerprints must be an array of strings")
+    labels_raw = args.get("labels") or []
+    if not isinstance(labels_raw, list) or not all(isinstance(label, str) for label in labels_raw):
+        raise ToolError("labels must be an array of strings")
+    dry_run = bool(args.get("dry_run", not (bool(args.get("all_active")) or bool(fingerprints_raw))))
+    path = _resolve_under_root(root, args["path"]) if args.get("path") else root
+    from wardline.core.scan_file_workflow import scan_file_findings
+
+    return scan_file_findings(
+        root=path,
+        config_path=_cfg(args, root),
+        cache_dir=_cache_dir_arg(args, root),
+        fail_on=args.get("fail_on"),
+        trust_local_packs=bool(args.get("trust_local_packs", False)),
+        trusted_packs=_trusted_packs_arg(args),
+        strict_defaults=bool(args.get("strict_defaults", False)),
+        fingerprints=tuple(fingerprints_raw),
+        all_active=bool(args.get("all_active", False)),
+        dry_run=dry_run,
+        priority=args.get("priority"),
+        labels=tuple(labels_raw),
+        filigree_emitter=filigree_emitter,
+        filigree_filer=filigree_filer,
+        clarion_client=clarion,
+    )
+
+
 def _trusted_packs_arg(args: dict[str, Any]) -> tuple[str, ...]:
     trusted_packs_raw = args.get("trust_packs") or []
     if not isinstance(trusted_packs_raw, list) or not all(isinstance(p, str) for p in trusted_packs_raw):
@@ -841,6 +877,58 @@ class WardlineMCPServer:
                     self._clarion_client(_cfg(args, root))
                     if bool(args.get("attach_clarion_identity") or False)
                     else None,
+                ),
+            )
+        )
+        self.add_tool(
+            Tool(
+                name="scan_file_findings",
+                capabilities=frozenset({ToolCapability.READ, ToolCapability.WRITE, ToolCapability.NETWORK}),
+                description="One-shot agent workflow: run a scan, list active defects first with "
+                "inline explanation summaries, optionally emit to Filigree, promote selected "
+                "fingerprints or all active defects, and attach Clarion identity when available. "
+                "Defaults to dry-run unless fingerprints or all_active are supplied.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "subdir relative to project root"},
+                        "fail_on": {"type": "string", "enum": _SEVERITY_ENUM},
+                        "config": {"type": "string"},
+                        "cache_dir": {
+                            "type": "string",
+                            "description": "subdir relative to project root for summary cache",
+                        },
+                        "fingerprints": {"type": "array", "items": {"type": "string"}},
+                        "all_active": {"type": "boolean"},
+                        "dry_run": {"type": "boolean"},
+                        "priority": {"type": "string", "description": "Filigree priority, e.g. P2"},
+                        "labels": {"type": "array", "items": {"type": "string"}},
+                        "trust_packs": {"type": "array", "items": {"type": "string"}},
+                        "trust_local_packs": {"type": "boolean"},
+                        "strict_defaults": {"type": "boolean"},
+                    },
+                },
+                handler=lambda args, root: _scan_file_findings(
+                    args,
+                    root,
+                    self._filigree_emitter(
+                        _cfg(args, root),
+                        trust_local_packs=bool(args.get("trust_local_packs") or False),
+                        trusted_packs=tuple(args.get("trust_packs") or []),
+                        strict_defaults=bool(args.get("strict_defaults") or False),
+                    ),
+                    self._filigree_filer(
+                        _cfg(args, root),
+                        trust_local_packs=bool(args.get("trust_local_packs") or False),
+                        trusted_packs=tuple(args.get("trust_packs") or []),
+                        strict_defaults=bool(args.get("strict_defaults") or False),
+                    ),
+                    self._clarion_client(
+                        _cfg(args, root),
+                        trust_local_packs=bool(args.get("trust_local_packs") or False),
+                        trusted_packs=tuple(args.get("trust_packs") or []),
+                        strict_defaults=bool(args.get("strict_defaults") or False),
+                    ),
                 ),
             )
         )

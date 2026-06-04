@@ -31,6 +31,7 @@ def test_mcp_advertisement_snapshot() -> None:
         "attest",
         "verify_attestation",
         "file_finding",
+        "scan_file_findings",
         "judge",
         "baseline",
         "waiver_add",

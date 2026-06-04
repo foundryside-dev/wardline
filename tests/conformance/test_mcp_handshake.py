@@ -63,6 +63,7 @@ def test_full_client_handshake_and_every_surface() -> None:
         "attest",
         "verify_attestation",
         "file_finding",
+        "scan_file_findings",
         "judge",
         "baseline",
         "fix",

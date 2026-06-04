@@ -212,10 +212,11 @@ $ wardline mcp --root .
 Tools: `scan` (structured findings + suppression summary + gate), `explain_taint`
 (the tainted callee and originating boundary for one finding — call it right
 after a scan and before editing), `file_finding` (promote one emitted finding to
-a Filigree issue), `fix` (mechanical autofixes for supported findings), `judge`
-(opt-in, network), and the loud suppression tools `baseline` / `waiver_add`
-(each requires a reason; `baseline` defaults to no-clobber and accepts
-`overwrite: true` to re-derive).
+a Filigree issue), `scan_file_findings` (one-shot scan, explain, emit, promote,
+and identity-attach workflow), `fix` (mechanical autofixes for supported
+findings), `judge` (opt-in, network), and the loud suppression tools `baseline`
+/ `waiver_add` (each requires a reason; `baseline` defaults to no-clobber and
+accepts `overwrite: true` to re-derive).
 Resources expose the trust vocabulary, rule catalog, config, and config schema.
 The `wardline:loop` prompt documents the intended
 scan → explain → fix-at-the-boundary → rescan cycle.
@@ -242,6 +243,12 @@ reports `attempted`, `attached`, `entity_id`, `content_hash`, `binding_kind`, an
 `reason`. If only a legacy locator is available and no current hash can be read,
 the tool says so and leaves the promoted issue intact rather than fabricating a
 binding.
+
+For the usual agent loop, prefer `scan_file_findings`: it defaults to a dry-run
+summary of active defects, including explanation summaries, then promotes only
+when you pass explicit `fingerprints` or `all_active: true`. Filigree emission,
+per-finding promotion, unknown fingerprints, and Clarion identity attachment are
+reported as separate status blocks so partial failure is not hidden.
 
 The server is stateless — no session state is carried between calls; the
 read-only tools (`scan`, `explain_taint`) are pure functions of your code on disk
