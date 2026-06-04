@@ -222,6 +222,8 @@ def _scan(
         }
     decision = gate_decision(result, threshold)
     filigree_block = _emit_filigree(result.findings, filigree, scanned_paths=result.scanned_paths)
+    filigree_status = _filigree_emit_status(filigree_block)
+    clarion_status = _clarion_write_status(clarion_block)
     where = args.get("where")
     try:
         resolved_where = resolve_query_filters(where, root, _cfg(args, root), clarion)
@@ -243,6 +245,8 @@ def _scan(
             exp = explanation_from_context(f, result.context)
             d["explanation"] = _explanation_to_dict(exp)
         findings_out.append(d)
+    from wardline.core.agent_summary import build_agent_summary
+
     return {
         "files_scanned": result.files_scanned,
         "findings": findings_out,
@@ -260,8 +264,14 @@ def _scan(
         "gate": {"tripped": decision.tripped, "fail_on": decision.fail_on, "exit_class": decision.exit_class},
         "clarion": clarion_block,
         "filigree": filigree_block,
-        "clarion_write": _clarion_write_status(clarion_block),
-        "filigree_emit": _filigree_emit_status(filigree_block),
+        "clarion_write": clarion_status,
+        "filigree_emit": filigree_status,
+        "agent_summary": build_agent_summary(
+            result,
+            decision,
+            filigree_emit=filigree_status,
+            clarion_write=clarion_status,
+        ).to_dict(),
     }
 
 

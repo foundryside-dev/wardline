@@ -209,7 +209,8 @@ tools instead of shelling out. Launch it over stdio:
 $ wardline mcp --root .
 ```
 
-Tools: `scan` (structured findings + suppression summary + gate), `explain_taint`
+Tools: `scan` (structured findings + suppression summary + gate, including the
+stable `agent_summary` block for compact handoff), `explain_taint`
 (the tainted callee and originating boundary for one finding — call it right
 after a scan and before editing), `decorator_coverage` (stable JSON inventory of
 every trust-decorated entity with declared/actual tiers, verdicts, SEI/content
@@ -257,3 +258,8 @@ read-only tools (`scan`, `explain_taint`) are pure functions of your code on dis
 and your config, and the analysis core stays zero-dependency. Only `judge`
 touches the network; `fix`, the suppression tools (`baseline` / `waiver_add`),
 and `judge` with `write` write to your project files as requested.
+
+For shell workflows, `wardline scan --format agent-summary` writes the same
+versioned handoff shape (`wardline-agent-summary-1`) to disk: active defects
+first with fingerprints and next tool calls, plus suppressed findings, engine
+facts, and Clarion/Filigree write status when configured.
