@@ -24,6 +24,7 @@ from typing import Any, Protocol
 
 from wardline.clarion._hmac import sign_request
 from wardline.core.errors import ClarionError
+from wardline.core.http import read_response_text
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +54,10 @@ class UrllibTransport:
         req = urllib.request.Request(url, data=data, headers=dict(headers), method=method)
         try:
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:  # noqa: S310
-                return Response(status=resp.status, body=resp.read().decode("utf-8", "replace"))
+                return Response(status=resp.status, body=read_response_text(resp))
         except urllib.error.HTTPError as exc:
             with exc:
-                return Response(status=exc.code, body=exc.read().decode("utf-8", "replace"))
+                return Response(status=exc.code, body=read_response_text(exc))
 
 
 @dataclass(frozen=True, slots=True)

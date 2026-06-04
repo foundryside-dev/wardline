@@ -234,7 +234,7 @@ def build_posture(
     root: Path,
     *,
     config_path: Path | None = None,
-    confine_to_root: bool = False,
+    confine_to_root: bool = True,
     today: date | None = None,
 ) -> AssurancePosture:
     """Run a scan under ``root`` and return its trust-surface coverage posture — the

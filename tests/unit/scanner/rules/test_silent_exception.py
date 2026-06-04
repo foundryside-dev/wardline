@@ -39,6 +39,17 @@ def test_silent_handler_in_trusted_fires(tmp_path) -> None:
     assert findings[0].severity == Severity.WARN  # base, trusted tier unchanged
 
 
+def test_except_star_silent_handler_in_trusted_fires(tmp_path) -> None:
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": "from wardline.decorators import trusted\n"
+            "@trusted\ndef f():\n    try:\n        g()\n    except* ValueError:\n        pass\n",
+        },
+    )
+    assert [(f.rule_id, f.qualname) for f in _run(ctx)] == [("PY-WL-104", "m.f")]
+
+
 def test_silent_handler_in_undecorated_is_suppressed(tmp_path) -> None:
     ctx, _ = _analyze(
         tmp_path,

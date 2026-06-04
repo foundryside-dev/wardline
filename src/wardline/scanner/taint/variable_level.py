@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import ast
 import contextvars
+from dataclasses import dataclass
 
 from wardline.core.taints import _PROVENANCE_CLASH, TaintState, combine
 
@@ -99,6 +100,63 @@ _CONTEXT_ENCODERS: frozenset[str] = frozenset(
         "urllib.parse.quote_plus",
     }
 )
+
+
+@dataclass(frozen=True, slots=True)
+class VariableTaintContext:
+    """Explicit inputs that used to be threaded through analyzer-owned contextvars."""
+
+    alias_map: dict[str, str]
+    module_prefix: str | None = None
+    param_meets: dict[str, TaintState] | None = None
+    provenance_clash: bool | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class VariableTaintResult:
+    call_site_taints: dict[int, dict[str, TaintState]]
+    call_site_arg_taints: dict[int, dict[int | str | None, TaintState]]
+    variable_taints: dict[str, TaintState]
+    return_taint: TaintState | None
+    return_callee: str | None
+
+
+def analyze_function_variables(
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    context: VariableTaintContext,
+) -> VariableTaintResult:
+    """Run variable, call-site, and return taint analysis for one function."""
+    call_site_taints: dict[int, dict[str, TaintState]] = {}
+    call_site_arg_taints: dict[int, dict[int | str | None, TaintState]] = {}
+    token_alias = _CURRENT_ALIAS_MAP.set(context.alias_map)
+    token_args = _CURRENT_CALL_SITE_ARG_TAINTS.set(call_site_arg_taints)
+    token_module = _CURRENT_MODULE_PREFIX.set(context.module_prefix)
+    try:
+        variable_taints = compute_variable_taints(
+            func_node,
+            function_taint,
+            dict(taint_map),
+            call_site_taints,
+            alias_map=context.alias_map,
+            call_site_arg_taints=call_site_arg_taints,
+            param_meets=context.param_meets,
+            provenance_clash=context.provenance_clash,
+        )
+        return_taint = compute_return_taint(func_node, function_taint, dict(taint_map), variable_taints)
+        return_callee = compute_return_callee(func_node, function_taint, dict(taint_map), dict(variable_taints))
+        return VariableTaintResult(
+            call_site_taints=call_site_taints,
+            call_site_arg_taints=call_site_arg_taints,
+            variable_taints=variable_taints,
+            return_taint=return_taint,
+            return_callee=return_callee,
+        )
+    finally:
+        _CURRENT_ALIAS_MAP.reset(token_alias)
+        _CURRENT_CALL_SITE_ARG_TAINTS.reset(token_args)
+        _CURRENT_MODULE_PREFIX.reset(token_module)
 
 
 def compute_variable_taints(
@@ -399,7 +457,7 @@ def _resolve_comprehension(
         result = _resolve_expr(node.elt, function_taint, taint_map, local)
     # Walrus targets bound by the element (PEP 572) leak to the enclosing scope.
     for name, taint in local.items():
-        if name not in var_taints and _name_bound_by_walrus(node, name):
+        if _name_bound_by_walrus(node, name):
             var_taints[name] = taint
     return result
 
@@ -439,7 +497,10 @@ def _resolve_call(
     for kw in node.keywords:
         t = _resolve_expr(kw.value, function_taint, taint_map, var_taints)
         kw_taints.append(t)
-        resolved_args[kw.arg] = t
+        if kw.arg in resolved_args:
+            resolved_args[kw.arg] = combine(resolved_args[kw.arg], t)
+        else:
+            resolved_args[kw.arg] = t
     arg_taints = pos_taints + kw_taints
 
     call_site_arg_taints = _CURRENT_CALL_SITE_ARG_TAINTS.get()
@@ -599,7 +660,7 @@ def _process_stmt(
             # defensive fall-through (resolve for walrus side-effects).
             _resolve_expr(value, function_taint, taint_map, var_taints)
 
-    elif isinstance(stmt, ast.For):
+    elif isinstance(stmt, (ast.For, ast.AsyncFor)):
         _handle_for(stmt, function_taint, taint_map, var_taints, call_site_taints)
 
     elif isinstance(stmt, ast.While):
@@ -611,7 +672,7 @@ def _process_stmt(
     elif isinstance(stmt, (ast.With, ast.AsyncWith)):
         _handle_with(stmt, function_taint, taint_map, var_taints, call_site_taints)
 
-    elif isinstance(stmt, ast.Try):
+    elif isinstance(stmt, (ast.Try, ast.TryStar)):
         _handle_try(stmt, function_taint, taint_map, var_taints, call_site_taints)
 
     elif isinstance(stmt, ast.Match):
@@ -729,19 +790,13 @@ def _handle_unpack(
     var_taints: dict[str, TaintState],
 ) -> None:
     """Handle tuple/list unpacking assignment."""
-    # If value is a Tuple/List with matching length, do element-wise.
-    if isinstance(value, (ast.Tuple, ast.List)) and len(value.elts) == len(target.elts):
-        for tgt, val in zip(target.elts, value.elts, strict=False):
-            if isinstance(tgt, ast.Name):
-                taint = _resolve_expr(
-                    val,
-                    function_taint,
-                    taint_map,
-                    var_taints,
-                )
-                var_taints[tgt.id] = taint
-            elif isinstance(tgt, (ast.Tuple, ast.List)):
-                _handle_unpack(tgt, val, function_taint, taint_map, var_taints)
+    # If value is a Tuple/List with compatible arity, do element-wise. A single
+    # starred target captures the middle slice, so bind it to that slice's
+    # weakest-link taint instead of silently skipping it.
+    if isinstance(value, (ast.Tuple, ast.List)) and _handle_literal_unpack(
+        target, value, function_taint, taint_map, var_taints
+    ):
+        return
     else:
         # RHS is not a matching literal tuple — all targets get RHS taint.
         rhs_taint = _resolve_expr(
@@ -755,6 +810,63 @@ def _handle_unpack(
                 var_taints[tgt.id] = rhs_taint
             elif isinstance(tgt, ast.Starred) and isinstance(tgt.value, ast.Name):
                 var_taints[tgt.value.id] = rhs_taint
+
+
+def _handle_literal_unpack(
+    target: ast.Tuple | ast.List,
+    value: ast.Tuple | ast.List,
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    var_taints: dict[str, TaintState],
+) -> bool:
+    starred_idx = next((i for i, elt in enumerate(target.elts) if isinstance(elt, ast.Starred)), None)
+    if starred_idx is None:
+        if len(value.elts) != len(target.elts):
+            return False
+        for tgt, val in zip(target.elts, value.elts, strict=False):
+            if isinstance(tgt, ast.Name):
+                taint = _resolve_expr(
+                    val,
+                    function_taint,
+                    taint_map,
+                    var_taints,
+                )
+                var_taints[tgt.id] = taint
+            elif isinstance(tgt, (ast.Tuple, ast.List)):
+                _handle_unpack(tgt, val, function_taint, taint_map, var_taints)
+        return True
+
+    fixed_targets = len(target.elts) - 1
+    if len(value.elts) < fixed_targets:
+        return False
+
+    suffix_count = len(target.elts) - starred_idx - 1
+    for tgt, val in zip(target.elts[:starred_idx], value.elts[:starred_idx], strict=False):
+        if isinstance(tgt, ast.Name):
+            var_taints[tgt.id] = _resolve_expr(val, function_taint, taint_map, var_taints)
+        elif isinstance(tgt, (ast.Tuple, ast.List)):
+            _handle_unpack(tgt, val, function_taint, taint_map, var_taints)
+
+    slice_end = len(value.elts) - suffix_count if suffix_count else len(value.elts)
+    captured = value.elts[starred_idx:slice_end]
+    if captured:
+        star_taint = _resolve_expr(captured[0], function_taint, taint_map, var_taints)
+        for val in captured[1:]:
+            star_taint = combine(star_taint, _resolve_expr(val, function_taint, taint_map, var_taints))
+    else:
+        star_taint = TaintState.INTEGRAL
+    starred = target.elts[starred_idx]
+    assert isinstance(starred, ast.Starred)
+    _assign_target(starred.value, star_taint, var_taints)
+
+    for offset in range(suffix_count):
+        tgt = target.elts[starred_idx + 1 + offset]
+        val = value.elts[len(value.elts) - suffix_count + offset]
+        if isinstance(tgt, ast.Name):
+            var_taints[tgt.id] = _resolve_expr(val, function_taint, taint_map, var_taints)
+        elif isinstance(tgt, (ast.Tuple, ast.List)):
+            _handle_unpack(tgt, val, function_taint, taint_map, var_taints)
+    return True
 
 
 def _handle_augassign(
@@ -865,7 +977,7 @@ def _handle_if(
 
 
 def _handle_for(
-    stmt: ast.For,
+    stmt: ast.For | ast.AsyncFor,
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
@@ -945,7 +1057,7 @@ def _handle_with(
 
 
 def _handle_try(
-    stmt: ast.Try,
+    stmt: ast.Try | ast.TryStar,
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],

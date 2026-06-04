@@ -17,6 +17,9 @@ from __future__ import annotations
 import subprocess
 from datetime import date
 from pathlib import Path
+from types import ModuleType
+
+import pytest
 
 from wardline.core import config as config_mod
 from wardline.core.assure import build_posture
@@ -27,7 +30,11 @@ from wardline.core.attest import (
     ruleset_hash,
     verify_attestation,
 )
+from wardline.core.config import WardlineConfig
 from wardline.core.errors import AttestError, WardlineError
+from wardline.core.taints import TaintState
+from wardline.scanner.grammar import BoundaryType, TrustGrammar
+from wardline.scanner.taint.provider import FunctionTaint
 
 _KEY = "0" * 64
 _PINNED = date(2026, 6, 3)
@@ -88,6 +95,86 @@ def test_ruleset_hash_deterministic_and_severity_sensitive(tmp_path: Path) -> No
     assert h_a1.startswith("sha256:")
     assert h_a1 == h_a2, "same config must hash identically"
     assert h_a1 != h_b, "a changed severity must change the ruleset hash"
+
+
+@pytest.mark.parametrize(
+    ("field", "base", "changed"),
+    [
+        ("source_roots", WardlineConfig(), WardlineConfig(source_roots=("src",))),
+        ("exclude", WardlineConfig(), WardlineConfig(exclude=("vendor/**",))),
+        ("rules_enable", WardlineConfig(), WardlineConfig(rules_enable=("PY-WL-101",))),
+        ("rules_severity", WardlineConfig(), WardlineConfig(rules_severity={"PY-WL-101": "CRITICAL"})),
+        ("untrusted_sources", WardlineConfig(), WardlineConfig(untrusted_sources=("pkg.io.read_raw",))),
+        ("sanitisers", WardlineConfig(), WardlineConfig(sanitisers=("pkg.clean.safe",))),
+        ("provenance_clash", WardlineConfig(), WardlineConfig(provenance_clash=True)),
+    ],
+)
+def test_ruleset_hash_changes_for_effective_scan_policy_fields(
+    field: str,
+    base: WardlineConfig,
+    changed: WardlineConfig,
+) -> None:
+    assert ruleset_hash(base) != ruleset_hash(changed), f"{field} must be signed policy identity"
+
+
+def test_ruleset_hash_changes_for_trusted_pack_identity_and_grammar() -> None:
+    def seed(levels: object) -> FunctionTaint:
+        return FunctionTaint(TaintState.EXTERNAL_RAW, TaintState.GUARDED)
+
+    class RuleA:
+        rule_id = "PY-WL-950"
+
+    class RuleB:
+        rule_id = "PY-WL-951"
+
+    boundary = BoundaryType("policy_boundary", "policy_pack", 1, (), seed)
+    pack_a = ModuleType("policy_pack")
+    pack_a.__version__ = "1.0"
+    pack_a.config = {"rules": {"severity": {"PY-WL-950": "WARN"}}}  # type: ignore[attr-defined]
+    pack_a.grammar = TrustGrammar(boundary_types=(boundary,), rules=(RuleA,))  # type: ignore[attr-defined]
+
+    pack_b = ModuleType("policy_pack")
+    pack_b.__version__ = "1.1"
+    pack_b.config = {"rules": {"severity": {"PY-WL-951": "ERROR"}}}  # type: ignore[attr-defined]
+    pack_b.grammar = TrustGrammar(boundary_types=(boundary,), rules=(RuleB,))  # type: ignore[attr-defined]
+
+    cfg_a = WardlineConfig(packs=("policy_pack",), pack_modules={"policy_pack": pack_a})
+    cfg_b = WardlineConfig(packs=("policy_pack",), pack_modules={"policy_pack": pack_b})
+
+    assert ruleset_hash(cfg_a) != ruleset_hash(cfg_b)
+
+
+def test_attestation_reproduce_threads_trusted_pack_policy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project_root = Path(__file__).resolve().parents[3]
+    monkeypatch.syspath_prepend(str(project_root))
+    tree = tmp_path / "proj"
+    tree.mkdir()
+    (tree / "wardline.yaml").write_text("packs:\n  - tests.unit.install.mock_pack\n", encoding="utf-8")
+    (tree / "m.py").write_text(
+        "from tests.unit.install.mock_pack import mock_boundary\n\n@mock_boundary\ndef violator():\n    pass\n",
+        encoding="utf-8",
+    )
+
+    bundle = build_attestation(
+        tree,
+        _KEY,
+        today=_PINNED,
+        trust_local_packs=True,
+        trusted_packs=("tests.unit.install.mock_pack",),
+    )
+    assert bundle["payload"]["posture"]["defect_total"] >= 1
+
+    verified = verify_attestation(
+        bundle,
+        _KEY,
+        root=tree,
+        reproduce=True,
+        trust_local_packs=True,
+        trusted_packs=("tests.unit.install.mock_pack",),
+    )
+    assert verified["signature_valid"] is True
+    assert verified["reproduced"] is True
+    assert verified["mismatches"] == []
 
 
 # --------------------------------------------------------------------------- #

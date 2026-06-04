@@ -62,9 +62,9 @@ def test_confine_excludes_symlink_escaping_root(tmp_path: Path) -> None:
     assert all(p.name != "evil.py" for p in files)
 
 
-def test_no_confine_keeps_symlink_escape_cli_behavior(tmp_path: Path) -> None:
-    # With confine_to_root=False (the released CLI default), behavior is
-    # unchanged: the escaping symlink is still discovered.
+def test_no_confine_keeps_low_level_symlink_escape_behavior(tmp_path: Path) -> None:
+    # With the low-level discovery opt-out, behavior is unchanged: the escaping
+    # symlink is still discovered.
     outside = tmp_path / "outside"
     outside.mkdir()
     secret = outside / "secret.py"

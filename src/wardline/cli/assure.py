@@ -37,7 +37,7 @@ def assure(path: Path, config_path: Path | None, output_format: str) -> None:
     from wardline.core.assure import build_posture
 
     try:
-        posture = build_posture(path, config_path=config_path)
+        posture = build_posture(path, config_path=config_path, confine_to_root=True)
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc

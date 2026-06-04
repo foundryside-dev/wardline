@@ -93,16 +93,46 @@ def test_mcp_error_custom_code_propagates() -> None:
     assert resp["error"]["message"] == "stale"
 
 
-def test_id_null_is_a_request_not_a_notification() -> None:
-    # Detection is presence-keyed ("id" not in message), not truthiness:
-    # id:null is still a request and MUST get a response.
+def test_id_null_is_rejected_by_mcp_request_contract() -> None:
+    # MCP tightens JSON-RPC: request IDs must be string/integer and MUST NOT be null.
     srv = _server()
     resp = srv.dispatch({"jsonrpc": "2.0", "id": None, "method": "ping", "params": {"n": 1}})
     assert resp is not None
     assert resp["id"] is None
-    assert resp["result"] == {"pong": 2}
+    assert resp["error"]["code"] == -32600
+    assert "id" in resp["error"]["message"]
     # Contrast: a message with NO id key is a notification -> no response.
     assert srv.dispatch({"jsonrpc": "2.0", "method": "ping", "params": {"n": 1}}) is None
+
+
+def test_non_string_integer_request_ids_are_rejected() -> None:
+    srv = _server()
+    for bad_id in (1.5, True, ["abc"]):
+        resp = srv.dispatch({"jsonrpc": "2.0", "id": bad_id, "method": "ping", "params": {"n": 1}})
+        assert resp is not None
+        assert resp["id"] is None
+        assert resp["error"]["code"] == -32600
+        assert "id" in resp["error"]["message"]
+
+
+def test_initialize_without_id_is_a_notification() -> None:
+    srv = _server()
+    resp = srv.dispatch(
+        {
+            "jsonrpc": "2.0",
+            "method": "initialize",
+            "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {}},
+        }
+    )
+    assert resp is None
+
+
+def test_non_object_params_are_invalid_params_not_internal_error() -> None:
+    srv = _server()
+    resp = srv.dispatch({"jsonrpc": "2.0", "id": 8, "method": "ping", "params": ["not", "an", "object"]})
+    assert resp["id"] == 8
+    assert resp["error"]["code"] == -32602
+    assert "params" in resp["error"]["message"]
 
 
 def test_notifications_do_not_invoke_registered_handlers() -> None:

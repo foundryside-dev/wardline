@@ -19,6 +19,7 @@ from typing import Any, Protocol
 
 from wardline.core.errors import FiligreeEmitError
 from wardline.core.finding import Finding, severity_to_filigree, to_filigree_metadata
+from wardline.core.http import read_response_text
 
 _SUGGESTION_LIMIT = 10000
 _ALLOWED_SCHEMES = ("http", "https")
@@ -113,13 +114,13 @@ class UrllibTransport:
         request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")
         try:
             with urllib.request.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
-                return Response(status=resp.status, body=resp.read().decode("utf-8", "replace"))
+                return Response(status=resp.status, body=read_response_text(resp))
         except urllib.error.HTTPError as exc:
             # An HTTP status reached us — a protocol-level outcome, not an outage. Convert it
             # to a Response so emit() classifies by status (4xx loud / 5xx soft), and close
             # the underlying socket.
             with exc:
-                return Response(status=exc.code, body=exc.read().decode("utf-8", "replace"))
+                return Response(status=exc.code, body=read_response_text(exc))
 
 
 class FiligreeEmitter:

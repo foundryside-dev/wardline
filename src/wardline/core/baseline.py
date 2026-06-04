@@ -11,17 +11,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
 from typing import Any
 
-from wardline.core import config as _config_mod
-from wardline.core.discovery import discover
 from wardline.core.errors import ConfigError
-from wardline.core.finding import Finding, Kind, Severity
+from wardline.core.finding import Finding, Kind, Severity, SuppressionState
 from wardline.core.optional_deps import require_yaml
 from wardline.core.safe_paths import safe_project_file
-from wardline.core.waivers import WaiverSet, parse_waivers
 
 BASELINE_VERSION: int = 1
 """Bumped on a format change; validated on load (mirrors STDLIB_TAINT_VERSION)."""
@@ -79,7 +75,11 @@ def collect_and_write_baseline(
     *,
     overwrite: bool,
     config_path: Path | None = None,
-    confine_to_root: bool = False,
+    cache_dir: Path | None = None,
+    confine_to_root: bool = True,
+    trust_local_packs: bool = False,
+    trusted_packs: tuple[str, ...] = (),
+    strict_defaults: bool = False,
 ) -> list[Finding]:
     """Derive the baselineable findings for ``root`` and write them to
     ``.wardline/baseline.yaml``. Returns the findings that were baselined.
@@ -94,18 +94,22 @@ def collect_and_write_baseline(
     runs *before* config load so a stale-but-present baseline is reported as
     such even when the config is broken.
     """
-    # Lazy import to avoid an import cycle (analyzer imports core.finding/types).
-    from wardline.scanner.analyzer import WardlineAnalyzer
+    # Lazy import to avoid an import cycle (run imports baseline loading helpers).
+    from wardline.core.run import run_scan
 
     baseline_path = root / ".wardline" / "baseline.yaml"
     if baseline_path.exists() and not overwrite:
         raise FileExistsError(str(baseline_path))
-    cfg = _config_mod.load(config_path or (root / "wardline.yaml"))
-    waivers = WaiverSet(parse_waivers(cfg.waivers))
-    today = date.today()
-    files = discover(root, cfg, confine_to_root=confine_to_root)
-    findings = WardlineAnalyzer().analyze(files, cfg, root=root)
-    to_baseline = [f for f in findings if f.kind is Kind.DEFECT and waivers.match(f.fingerprint, today) is None]
+    result = run_scan(
+        root,
+        config_path=config_path,
+        cache_dir=cache_dir,
+        confine_to_root=confine_to_root,
+        trust_local_packs=trust_local_packs,
+        trusted_packs=trusted_packs,
+        strict_defaults=strict_defaults,
+    )
+    to_baseline = [f for f in result.findings if f.kind is Kind.DEFECT and f.suppressed is not SuppressionState.WAIVED]
     write_baseline(baseline_path, to_baseline, root=root)
     return to_baseline
 
@@ -115,7 +119,11 @@ def generate_baseline(
     *,
     overwrite: bool,
     config_path: Path | None = None,
-    confine_to_root: bool = False,
+    cache_dir: Path | None = None,
+    confine_to_root: bool = True,
+    trust_local_packs: bool = False,
+    trusted_packs: tuple[str, ...] = (),
+    strict_defaults: bool = False,
 ) -> int:
     """Derive a baseline from current findings and write it. Returns the number
     of fingerprints baselined. Raises ``FileExistsError`` if a baseline already
@@ -126,7 +134,11 @@ def generate_baseline(
             root,
             overwrite=overwrite,
             config_path=config_path,
+            cache_dir=cache_dir,
             confine_to_root=confine_to_root,
+            trust_local_packs=trust_local_packs,
+            trusted_packs=trusted_packs,
+            strict_defaults=strict_defaults,
         )
     )
 

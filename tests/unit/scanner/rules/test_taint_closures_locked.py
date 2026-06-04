@@ -52,6 +52,44 @@ def test_walrus_propagates_raw_to_trusted_return(tmp_path: Path) -> None:
     )
 
 
+def test_starred_unpack_raw_slice_propagates_to_trusted_return(tmp_path: Path) -> None:
+    assert "PY-WL-101" in _defects(
+        tmp_path,
+        "@trusted(level='ASSURED')\ndef f(p):\n    (a, *rest, c) = (1, read_raw(p), 2)\n    return rest",
+    )
+
+
+def test_existing_comprehension_walrus_target_propagates_to_trusted_return(tmp_path: Path) -> None:
+    assert "PY-WL-101" in _defects(
+        tmp_path,
+        "@trusted(level='ASSURED')\ndef f(p):\n    x = 1\n    [(x := read_raw(p)) for _ in items]\n    return x",
+    )
+
+
+def test_async_for_body_propagates_to_trusted_return(tmp_path: Path) -> None:
+    assert "PY-WL-101" in _defects(
+        tmp_path,
+        "@trusted(level='ASSURED')\n"
+        "async def f(p):\n"
+        "    async for item in read_raw(p):\n"
+        "        x = item\n"
+        "    return x",
+    )
+
+
+def test_trystar_handler_propagates_to_trusted_return(tmp_path: Path) -> None:
+    assert "PY-WL-101" in _defects(
+        tmp_path,
+        "@trusted(level='ASSURED')\ndef f(p):\n"
+        "    x = 1\n"
+        "    try:\n"
+        "        risky()\n"
+        "    except* ValueError:\n"
+        "        x = read_raw(p)\n"
+        "    return x",
+    )
+
+
 # ── Closure B: *args / **kwargs at call sites ────────────────────────────────
 
 

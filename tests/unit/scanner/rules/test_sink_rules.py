@@ -113,6 +113,20 @@ def test_107_raw_reaches_eval(tmp_path) -> None:
     assert [(x.rule_id, x.qualname) for x in UntrustedToExec().check(ctx)] == [("PY-WL-107", "m.f")]
 
 
+def test_107_multiple_kwargs_unpacking_combines_raw_before_clean(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            raw_kwargs = {"source": read_raw(p)}
+            clean_kwargs = {"source": "safe"}
+            eval(**raw_kwargs, **clean_kwargs)
+        """,
+    )
+    assert [(x.rule_id, x.qualname) for x in UntrustedToExec().check(ctx)] == [("PY-WL-107", "m.f")]
+
+
 def test_107_raw_reaches_eval_in_lambda_default(tmp_path) -> None:
     ctx = _analyze(
         tmp_path,

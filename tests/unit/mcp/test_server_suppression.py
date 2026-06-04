@@ -5,10 +5,13 @@ fake caller by monkeypatching the caller the default path imports."""
 from __future__ import annotations
 
 import json
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from types import ModuleType
 
 import pytest
+import yaml
 
 from wardline.core.judge import JudgeResponse, JudgeVerdict
 from wardline.mcp.server import WardlineMCPServer
@@ -58,6 +61,42 @@ def test_baseline_create_then_update(tmp_path: Path) -> None:
     assert out["baselined_count"] >= 1
     out2 = _call(server, "baseline_update", {"reason": "re-derive"})
     assert out2["baselined_count"] >= 1
+
+
+def test_baseline_create_trusted_pack_matches_scan_mcp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project_root = Path(__file__).resolve().parents[3]
+    monkeypatch.syspath_prepend(str(project_root))
+    from tests.unit.install.mock_pack import grammar as mock_grammar
+
+    fake_pack = ModuleType("baseline_mcp_pack")
+    fake_pack.grammar = mock_grammar  # type: ignore[attr-defined]
+    sys.modules["baseline_mcp_pack"] = fake_pack
+
+    try:
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "wardline.yaml").write_text("packs:\n  - baseline_mcp_pack\n", encoding="utf-8")
+        (proj / "m.py").write_text("def violator():\n    pass\n", encoding="utf-8")
+        server = WardlineMCPServer(root=proj)
+
+        scan = _call(server, "scan", {"trust_packs": ["baseline_mcp_pack"], "trust_local_packs": True})
+        assert any(f["rule_id"] == "PY-WL-901" for f in scan["findings"])
+
+        baseline = _call(
+            server,
+            "baseline_create",
+            {
+                "reason": "accept custom rule debt",
+                "trust_packs": ["baseline_mcp_pack"],
+                "trust_local_packs": True,
+                "cache_dir": ".wardline/cache",
+            },
+        )
+        assert baseline["baselined_count"] >= 1
+        baseline_doc = yaml.safe_load((proj / ".wardline" / "baseline.yaml").read_text(encoding="utf-8"))
+        assert any(entry["rule_id"] == "PY-WL-901" for entry in baseline_doc["entries"])
+    finally:
+        sys.modules.pop("baseline_mcp_pack", None)
 
 
 def test_baseline_create_retry_is_idempotent(tmp_path: Path) -> None:

@@ -200,6 +200,55 @@ def test_urllib_transport_converts_httperror_to_response(monkeypatch) -> None:
     assert "path required" in resp.body
 
 
+def test_urllib_transport_bounds_success_body(monkeypatch) -> None:
+    import io
+    import urllib.request
+
+    from wardline.core.filigree_emit import UrllibTransport
+    from wardline.core.http import MAX_RESPONSE_BODY_BYTES
+
+    class _Resp(io.BytesIO):
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            self.close()
+
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _Resp(b"x" * (MAX_RESPONSE_BODY_BYTES + 9)),
+    )
+    resp = UrllibTransport().post("http://x/api/loom/scan-results", b"{}", {"Content-Type": "application/json"})
+    assert len(resp.body) < MAX_RESPONSE_BODY_BYTES + 128
+    assert resp.body.endswith("[truncated]")
+
+
+def test_urllib_transport_bounds_http_error_body(monkeypatch) -> None:
+    import io
+    import urllib.error
+    import urllib.request
+
+    from wardline.core.filigree_emit import UrllibTransport
+    from wardline.core.http import MAX_RESPONSE_BODY_BYTES
+
+    def _raise_http_error(req, timeout=None):  # noqa: ARG001
+        raise urllib.error.HTTPError(
+            url="http://x/api/loom/scan-results",
+            code=400,
+            msg="Bad Request",
+            hdrs=None,
+            fp=io.BytesIO(b"x" * (MAX_RESPONSE_BODY_BYTES + 9)),
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", _raise_http_error)
+    resp = UrllibTransport().post("http://x/api/loom/scan-results", b"{}", {"Content-Type": "application/json"})
+    assert len(resp.body) < MAX_RESPONSE_BODY_BYTES + 128
+    assert resp.body.endswith("[truncated]")
+
+
 def test_urllib_transport_rejects_non_http_scheme() -> None:
     from wardline.core.filigree_emit import UrllibTransport
 

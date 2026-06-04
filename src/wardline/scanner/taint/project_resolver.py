@@ -55,6 +55,20 @@ class ModuleInput:
     source_bytes: bytes
 
 
+def _cached_summaries_match_module(
+    module: ModuleInput,
+    cache_key: str,
+    summaries: tuple[FunctionSummary, ...],
+) -> bool:
+    if any(s.cache_key != cache_key for s in summaries):
+        return False
+    actual = tuple(s.fqn for s in summaries)
+    if len(set(actual)) != len(actual):
+        return False
+    expected = frozenset(e.qualname for e in module.entities)
+    return frozenset(actual) == expected
+
+
 def resolve_project_taints(
     *,
     modules: Sequence[ModuleInput],
@@ -123,6 +137,9 @@ def resolve_project_taints(
         cached: tuple[FunctionSummary, ...] | None = None
         if summary_cache is not None and m.module_path not in frontier:
             cached = summary_cache.get(cache_key)
+            if cached is not None and not _cached_summaries_match_module(m, cache_key, cached):
+                summary_cache.invalidate(cache_key)
+                cached = None
         if cached is not None:
             summaries.extend(cached)
             continue

@@ -39,6 +39,31 @@ from wardline.core.errors import WardlineError
     default=None,
     help="Clarion URL to SEI-key the boundaries (opt-in, fail-soft).",
 )
+@click.option(
+    "--cache-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Persist L3 summary cache here for faster reproducible scans.",
+)
+@click.option(
+    "--trust-pack",
+    "trusted_packs",
+    multiple=True,
+    help="Allow importing this trust-grammar pack from wardline.yaml. May be repeated.",
+)
+@click.option(
+    "--allow-custom-packs",
+    "trust_local_packs",
+    is_flag=True,
+    default=False,
+    help="Allow loading custom trust-grammar packs from the local project directory.",
+)
+@click.option(
+    "--strict-defaults",
+    is_flag=True,
+    default=False,
+    help="Ignore repository-supplied custom configuration overrides (wardline.yaml).",
+)
 @click.option("--allow-dirty", is_flag=True, help="Attest even with uncommitted changes (records dirty: true).")
 @click.option(
     "--verify",
@@ -61,6 +86,10 @@ def attest(
     path: Path,
     config_path: Path | None,
     clarion_url: str | None,
+    cache_dir: Path | None,
+    trusted_packs: tuple[str, ...],
+    trust_local_packs: bool,
+    strict_defaults: bool,
     allow_dirty: bool,
     verify_path: Path | None,
     reproduce: bool,
@@ -75,7 +104,14 @@ def attest(
         )
         raise SystemExit(2)
 
-    clarion_url = resolve_clarion_url(clarion_url, path, config_path)
+    clarion_url = resolve_clarion_url(
+        clarion_url,
+        path,
+        config_path,
+        trust_local_packs=trust_local_packs,
+        trusted_packs=trusted_packs,
+        strict_defaults=strict_defaults,
+    )
     clarion_client = None
     if clarion_url is not None:
         from wardline.clarion.client import ClarionClient
@@ -98,8 +134,12 @@ def attest(
                 root=path,
                 reproduce=reproduce,
                 config_path=config_path,
+                cache_dir=cache_dir,
                 clarion_client=clarion_client,
-                confine_to_root=False,
+                confine_to_root=True,
+                trust_local_packs=trust_local_packs,
+                trusted_packs=trusted_packs,
+                strict_defaults=strict_defaults,
             )
         except (json.JSONDecodeError, KeyError, ValueError, TypeError, WardlineError) as exc:
             click.echo(f"error: invalid attestation bundle: {exc}", err=True)
@@ -114,7 +154,12 @@ def attest(
             path,
             key,
             config_path=config_path,
+            cache_dir=cache_dir,
             clarion_client=clarion_client,
+            confine_to_root=True,
+            trust_local_packs=trust_local_packs,
+            trusted_packs=trusted_packs,
+            strict_defaults=strict_defaults,
             allow_dirty=allow_dirty,
         )
     except WardlineError as exc:

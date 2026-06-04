@@ -71,6 +71,36 @@ def test_optional_annotation_does_not_fire(tmp_path) -> None:
     assert _ids(ctx) == []
 
 
+def test_any_annotation_does_not_fire(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        from typing import Any
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def maybe(flag) -> Any:
+            if flag:
+                return 1
+            return None
+        """,
+    )
+    assert _ids(ctx) == []
+
+    ctx2 = _analyze(
+        tmp_path,
+        """
+        import typing
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def maybe(flag) -> typing.Any:
+            if flag:
+                return 1
+            return None
+        """,
+    )
+    assert _ids(ctx2) == []
+
+
 def test_optional_subscript_does_not_fire(tmp_path) -> None:
     ctx = _analyze(
         tmp_path,
@@ -241,6 +271,20 @@ def test_string_literal_annotations(tmp_path) -> None:
         """,
     )
     assert _ids(ctx2) == [("PY-WL-109", "m.maybe_not")]
+
+    ctx3 = _analyze(
+        tmp_path,
+        """
+        from typing import Any
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def maybe(flag) -> "Any":
+            if flag:
+                return 1
+            return None
+        """,
+    )
+    assert _ids(ctx3) == []
 
 
 def test_none_leak_with_imported_aliases(tmp_path) -> None:

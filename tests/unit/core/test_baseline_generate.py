@@ -1,6 +1,10 @@
 from pathlib import Path
 
+import pytest
+import yaml
+
 from wardline.core.baseline import generate_baseline, load_baseline
+from wardline.core.run import run_scan
 
 # A trusted boundary returning an external-tainted value: PY-WL-101 ERROR defect.
 # sample_project itself is CLEAN (zero defects), so we build a leaky project here.
@@ -44,3 +48,37 @@ def test_generate_baseline_overwrite_succeeds(tmp_path: Path) -> None:
     generate_baseline(proj, overwrite=False)
     count = generate_baseline(proj, overwrite=True)
     assert count >= 1
+
+
+def test_generate_baseline_uses_scan_pipeline_for_trusted_packs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = Path(__file__).resolve().parents[3]
+    monkeypatch.syspath_prepend(str(project_root))
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "wardline.yaml").write_text("packs:\n  - tests.unit.install.mock_pack\n", encoding="utf-8")
+    (proj / "m.py").write_text("def violator():\n    pass\n", encoding="utf-8")
+
+    scan = run_scan(
+        proj,
+        trust_local_packs=True,
+        trusted_packs=("tests.unit.install.mock_pack",),
+    )
+    scan_fingerprints = {f.fingerprint for f in scan.findings if f.rule_id == "PY-WL-901"}
+    assert scan_fingerprints
+
+    count = generate_baseline(
+        proj,
+        overwrite=False,
+        trust_local_packs=True,
+        trusted_packs=("tests.unit.install.mock_pack",),
+    )
+
+    baseline_doc = yaml.safe_load((proj / ".wardline" / "baseline.yaml").read_text(encoding="utf-8"))
+    baseline_entries = baseline_doc["entries"]
+    assert count >= 1
+    assert any(
+        entry["rule_id"] == "PY-WL-901" and entry["fingerprint"] in scan_fingerprints for entry in baseline_entries
+    )

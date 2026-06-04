@@ -54,6 +54,7 @@ def test_missing_pack_raises_config_error(tmp_path: Path) -> None:
 def test_pack_config_is_rejected_by_default_without_importing(tmp_path: Path) -> None:
     p = tmp_path / "wardline.yaml"
     p.write_text("packs:\n  - import_side_effect_pack\n", encoding="utf-8")
+    pytest.importorskip("jsonschema")
 
     with patch("importlib.import_module") as mock_import, pytest.raises(ConfigError, match="not trusted"):
         load(p)

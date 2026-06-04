@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
 import yaml as _yaml
 from click.testing import CliRunner
 
@@ -135,6 +136,52 @@ def test_scan_allow_source_root_escape_flag_opt_in(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert "scanned 1 file(s)" in result.output
+
+
+def _poisoned_source_root_project(tmp_path: Path) -> Path:
+    project = tmp_path / "proj"
+    project.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.py").write_text(_LEAKY_FOR_BASELINE, encoding="utf-8")
+    (project / "wardline.yaml").write_text('source_roots: ["../outside"]\n', encoding="utf-8")
+    return project
+
+
+def test_assure_refuses_escaping_source_roots_by_default(tmp_path: Path) -> None:
+    result = CliRunner().invoke(cli, ["assure", str(_poisoned_source_root_project(tmp_path))])
+
+    assert result.exit_code == 2
+    assert "outside the project root" in result.output
+
+
+def test_dossier_refuses_escaping_source_roots_by_default(tmp_path: Path) -> None:
+    result = CliRunner().invoke(cli, ["dossier", "secret.leaky", str(_poisoned_source_root_project(tmp_path))])
+
+    assert result.exit_code == 2
+    assert "outside the project root" in result.output
+
+
+def test_judge_refuses_escaping_source_roots_before_triage(monkeypatch, tmp_path: Path) -> None:
+    import wardline.cli.judge as judge_cli
+
+    monkeypatch.setattr(judge_cli, "call_judge", lambda req, **kw: _fake_fp_response())
+    monkeypatch.setenv("WARDLINE_OPENROUTER_API_KEY", "k")
+
+    result = CliRunner().invoke(cli, ["judge", str(_poisoned_source_root_project(tmp_path))])
+
+    assert result.exit_code == 2
+    assert "outside the project root" in result.output
+
+
+@pytest.mark.parametrize("subcommand", ["create", "update"])
+def test_baseline_refuses_escaping_source_roots_by_default(tmp_path: Path, subcommand: str) -> None:
+    project = _poisoned_source_root_project(tmp_path)
+    result = CliRunner().invoke(cli, ["baseline", subcommand, str(project)])
+
+    assert result.exit_code == 2
+    assert "outside the project root" in result.output
+    assert not (project / ".wardline" / "baseline.yaml").exists()
 
 
 def test_scan_new_since_option_like_ref_exits_2(tmp_path: Path) -> None:
@@ -443,6 +490,50 @@ def test_baseline_update_overwrites(tmp_path) -> None:
     runner.invoke(_cli, ["baseline", "create", str(proj)])
     res = runner.invoke(_cli, ["baseline", "update", str(proj)])
     assert res.exit_code == 0, res.output
+
+
+def test_baseline_create_trusted_pack_matches_scan_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project_root = Path(__file__).resolve().parents[3]
+    monkeypatch.syspath_prepend(str(project_root))
+    from tests.unit.install.mock_pack import grammar as mock_grammar
+
+    fake_pack = ModuleType("baseline_cli_pack")
+    fake_pack.grammar = mock_grammar  # type: ignore[attr-defined]
+    sys.modules["baseline_cli_pack"] = fake_pack
+
+    try:
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        (proj / "wardline.yaml").write_text("packs:\n  - baseline_cli_pack\n", encoding="utf-8")
+        (proj / "m.py").write_text("def violator():\n    pass\n", encoding="utf-8")
+
+        scan_out = tmp_path / "scan.jsonl"
+        scan_result = CliRunner().invoke(
+            scan,
+            [str(proj), "--trust-pack", "baseline_cli_pack", "--output", str(scan_out)],
+        )
+        assert scan_result.exit_code == 0, scan_result.output
+        scan_findings = [
+            _json.loads(line) for line in scan_out.read_text(encoding="utf-8").splitlines() if line.strip()
+        ]
+        assert any(f["rule_id"] == "PY-WL-901" for f in scan_findings)
+
+        result = CliRunner().invoke(
+            _cli,
+            [
+                "baseline",
+                "create",
+                str(proj),
+                "--trust-pack",
+                "baseline_cli_pack",
+                "--allow-custom-packs",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        baseline_doc = _yaml.safe_load((proj / ".wardline" / "baseline.yaml").read_text(encoding="utf-8"))
+        assert any(entry["rule_id"] == "PY-WL-901" for entry in baseline_doc["entries"])
+    finally:
+        sys.modules.pop("baseline_cli_pack", None)
 
 
 def test_baseline_create_excludes_active_waivers(tmp_path) -> None:

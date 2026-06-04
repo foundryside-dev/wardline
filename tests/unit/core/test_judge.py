@@ -169,6 +169,24 @@ def test_urllib_transport_converts_httperror_to_response(monkeypatch) -> None:
     assert resp.status == 401 and "bad key" in resp.body
 
 
+def test_urllib_transport_bounds_http_error_body(monkeypatch) -> None:
+    from wardline.core.http import MAX_RESPONSE_BODY_BYTES
+
+    def _raise(req, timeout=None):  # noqa: ARG001
+        raise urllib.error.HTTPError(
+            url=_url(),
+            code=401,
+            msg="Unauthorized",
+            hdrs=None,
+            fp=io.BytesIO(b"x" * (MAX_RESPONSE_BODY_BYTES + 9)),
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", _raise)
+    resp = UrllibTransport().post(_url(), b"{}", {"Content-Type": "application/json"})
+    assert len(resp.body) < MAX_RESPONSE_BODY_BYTES + 128
+    assert resp.body.endswith("[truncated]")
+
+
 def test_urllib_transport_rejects_non_http_scheme() -> None:
     with pytest.raises(JudgeConfigurationError):
         UrllibTransport().post("file:///etc/passwd", b"{}", {})

@@ -14,7 +14,7 @@ prove the stored fact is reachable and fresh."""
 from __future__ import annotations
 
 import os
-import socket
+import re
 import subprocess
 import time
 import urllib.error
@@ -36,21 +36,13 @@ _LEAKY = (
 )
 
 
-def _has_wardline_routes(binary: str) -> bool:
-    """True iff the binary advertises the SP9 `/api/wardline/*` routes. The 1.0.0
-    release on PATH predates these routes (it 404s them before auth); the 1.0.1
-    build does mount them. Discriminate by the route string baked into the binary."""
-    try:
-        out = subprocess.run(["strings", binary], capture_output=True, text=True, timeout=30).stdout
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return "/api/wardline/taint-facts" in out
-
-
 def _resolve_clarion() -> str | None:
-    """Pick the first clarion binary that actually carries the SP9 wardline routes:
-    explicit override, then PATH, then the repo's local release/debug build. PATH
-    first would pick the stale 1.0.0 binary (no routes), so capability-filter."""
+    """Pick an explicit binary first, then PATH, then local builds.
+
+    Route support is proven by launching and probing the HTTP API, not by scraping
+    implementation strings out of the binary. That keeps valid builds from being
+    skipped because their route literals were optimized or renamed internally.
+    """
     candidates: list[str | None] = [
         os.environ.get("WARDLINE_CLARION_BIN"),
         which("clarion"),
@@ -58,36 +50,70 @@ def _resolve_clarion() -> str | None:
         str(Path.home() / "clarion" / "target" / "debug" / "clarion"),
     ]
     for cand in candidates:
-        if cand and Path(cand).is_file() and _has_wardline_routes(cand):
+        if cand and Path(cand).is_file():
             return cand
     return None
 
 
-def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
+def _write_clarion_config(config: Path) -> None:
+    config.write_text(
+        "version: 1\n"
+        "serve:\n"
+        "  http:\n"
+        "    enabled: true\n"
+        "    bind: 127.0.0.1:0\n"
+        f"    identity_token_env: {_IDENTITY_ENV}\n"
+        "    wardline_taint_write: true\n",
+        encoding="utf-8",
+    )
 
 
-def _wait_for_capabilities(base_url: str, proc: subprocess.Popen[bytes], log: Path) -> None:
+def _base_url_from_clarion_log(text: str) -> str | None:
+    match = re.search(r"\bbind=127\.0\.0\.1:(?P<port>[1-9][0-9]*)\b", text)
+    return f"http://127.0.0.1:{match.group('port')}" if match else None
+
+
+def _wardline_taint_route_live(base_url: str) -> bool:
+    req = urllib.request.Request(
+        base_url.rstrip("/") + "/api/wardline/taint-facts",
+        data=b"{}",
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        urllib.request.urlopen(req, timeout=5)  # noqa: S310 — loopback route probe
+        return True
+    except urllib.error.HTTPError as exc:
+        return exc.code != 404
+    except OSError:
+        return False
+
+
+def _wait_for_capabilities(proc: subprocess.Popen[bytes], log: Path) -> str:
     """Poll the unauthenticated capabilities probe until it answers 200, or raise
     with the server log tail so the caller can skip with a specific reason."""
     deadline = time.monotonic() + 20.0
-    url = f"{base_url}/api/v1/_capabilities"
-    last_err = "no response"
+    base_url: str | None = None
+    last_err = "waiting for Clarion to report HTTP bind address"
     while time.monotonic() < deadline:
         if proc.poll() is not None:
             raise RuntimeError(
                 f"clarion serve exited early (rc={proc.returncode}). Log tail:\n"
                 f"{log.read_text(encoding='utf-8', errors='replace')[-2000:]}"
             )
+        log_text = log.read_text(encoding="utf-8", errors="replace")
+        base_url = base_url or _base_url_from_clarion_log(log_text)
+        if base_url is None:
+            time.sleep(0.1)
+            continue
+        url = f"{base_url}/api/v1/_capabilities"
         try:
             with urllib.request.urlopen(url, timeout=1.0) as resp:  # noqa: S310 — loopback probe
                 if resp.status == 200:
-                    return
+                    return base_url
         except urllib.error.HTTPError as exc:  # bound but rejecting — still "up"
             if exc.code < 500:
-                return
+                return base_url
             last_err = f"HTTP {exc.code}"
         except (urllib.error.URLError, OSError) as exc:
             last_err = str(exc)
@@ -139,18 +165,8 @@ def clarion_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> object:
     # 2) write a clarion.yaml enabling serve.http + the wardline write path + HMAC identity.
     #    Keys confirmed against clarion-mcp/src/config.rs (HttpReadConfig: enabled, bind,
     #    identity_token_env, wardline_taint_write) and docs/operator/clarion-http-read-api.md.
-    port = _free_port()
     config = proj / "clarion.yaml"
-    config.write_text(
-        "version: 1\n"
-        "serve:\n"
-        "  http:\n"
-        "    enabled: true\n"
-        f"    bind: 127.0.0.1:{port}\n"
-        f"    identity_token_env: {_IDENTITY_ENV}\n"
-        "    wardline_taint_write: true\n",
-        encoding="utf-8",
-    )
+    _write_clarion_config(config)
 
     # 3) start `clarion serve`. It is primarily an MCP stdio server: keep stdin open
     #    (a PIPE we never close until teardown) so the stdio loop does not hit EOF and
@@ -158,7 +174,6 @@ def clarion_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> object:
     #    PIPE would deadlock a chatty server, and the log gives the skip/failure reason).
     log_path = proj / "serve.log"
     server_env = {**os.environ, _IDENTITY_ENV: _SECRET}
-    base_url = f"http://127.0.0.1:{port}"
     with log_path.open("wb") as log_fh:
         proc = subprocess.Popen(  # noqa: S603
             [clarion_bin, "serve", "--path", str(proj), "--config", str(config)],
@@ -169,9 +184,11 @@ def clarion_server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> object:
         )
         try:
             try:
-                _wait_for_capabilities(base_url, proc, log_path)
+                base_url = _wait_for_capabilities(proc, log_path)
             except RuntimeError as exc:
                 pytest.skip(str(exc))
+            if not _wardline_taint_route_live(base_url):
+                pytest.skip("live clarion does not serve /api/wardline/taint-facts")
             # Client side: the secret VALUE must equal what Clarion read from the env
             # var named by identity_token_env.
             monkeypatch.setenv("WARDLINE_CLARION_TOKEN", _SECRET)

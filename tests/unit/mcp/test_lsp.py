@@ -10,7 +10,7 @@ import pytest
 from wardline.core.errors import ConfigError
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.run import ScanResult, ScanSummary
-from wardline.mcp.lsp import LspServer
+from wardline.lsp import LspServer
 
 
 class MockBytesIO(io.BytesIO):
@@ -64,7 +64,7 @@ def test_lsp_handshake() -> None:
 def test_lsp_accepts_frame_at_content_length_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     req = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
     body = json.dumps(req)
-    monkeypatch.setattr("wardline.mcp.lsp.MAX_LSP_CONTENT_LENGTH", len(body))
+    monkeypatch.setattr("wardline.lsp.MAX_LSP_CONTENT_LENGTH", len(body))
 
     stdout = io.StringIO()
     LspServer(root=Path("/my/project"), stdin=io.StringIO(_frame(body)), stdout=stdout).run()
@@ -78,7 +78,7 @@ def test_lsp_oversized_frame_is_drained_and_next_message_processed(monkeypatch: 
         {"jsonrpc": "2.0", "id": 99, "method": "initialize", "params": {"rootUri": "file:///too-large"}}
     )
     shutdown = json.dumps({"jsonrpc": "2.0", "id": 2, "method": "shutdown"})
-    monkeypatch.setattr("wardline.mcp.lsp.MAX_LSP_CONTENT_LENGTH", len(oversized) - 1)
+    monkeypatch.setattr("wardline.lsp.MAX_LSP_CONTENT_LENGTH", len(oversized) - 1)
 
     stdout = io.StringIO()
     LspServer(root=Path("/my/project"), stdin=io.StringIO(_frame(oversized) + _frame(shutdown)), stdout=stdout).run()
@@ -123,7 +123,7 @@ def test_lsp_diagnostics_flow(tmp_path: Path) -> None:
 
     server = LspServer(root=tmp_path, stdin=stdin, stdout=stdout)
 
-    with patch("wardline.mcp.lsp.run_scan", return_value=scan_res) as mock_run:
+    with patch("wardline.lsp.run_scan", return_value=scan_res) as mock_run:
         server.run()
         mock_run.assert_called_once_with(tmp_path, confine_to_root=True)
 
@@ -171,7 +171,7 @@ def test_lsp_scan_config_error_publishes_visible_diagnostic(tmp_path: Path) -> N
     stdout = io.StringIO()
     server = LspServer(root=tmp_path, stdin=io.StringIO(raw_input), stdout=stdout)
 
-    with patch("wardline.mcp.lsp.run_scan", side_effect=ConfigError("bad wardline.yaml")):
+    with patch("wardline.lsp.run_scan", side_effect=ConfigError("bad wardline.yaml")):
         server.run()
 
     messages = _lsp_messages(stdout.getvalue())
@@ -201,7 +201,7 @@ def test_lsp_unexpected_scan_error_is_not_silent(tmp_path: Path) -> None:
     stdout = io.StringIO()
     server = LspServer(root=tmp_path, stdin=io.StringIO(raw_input), stdout=stdout)
 
-    with patch("wardline.mcp.lsp.run_scan", side_effect=RuntimeError("engine broke")):
+    with patch("wardline.lsp.run_scan", side_effect=RuntimeError("engine broke")):
         server.run()
 
     messages = _lsp_messages(stdout.getvalue())
@@ -245,7 +245,7 @@ def test_lsp_publishes_under_scan_engine_facts_as_info_diagnostics(tmp_path: Pat
     stdout = io.StringIO()
     server = LspServer(root=tmp_path, stdin=io.StringIO(raw_input), stdout=stdout)
 
-    with patch("wardline.mcp.lsp.run_scan", return_value=scan_res):
+    with patch("wardline.lsp.run_scan", return_value=scan_res):
         server.run()
 
     messages = _lsp_messages(stdout.getvalue())
@@ -291,7 +291,7 @@ def test_lsp_did_change_does_not_rescan_unsaved_buffers(tmp_path: Path) -> None:
 
     server = LspServer(root=tmp_path, stdin=io.StringIO(raw_input), stdout=io.StringIO())
 
-    with patch("wardline.mcp.lsp.run_scan", return_value=scan_res) as mock_run:
+    with patch("wardline.lsp.run_scan", return_value=scan_res) as mock_run:
         server.run()
 
     mock_run.assert_called_once_with(tmp_path, confine_to_root=True)
@@ -326,7 +326,7 @@ def test_lsp_did_save_triggers_rescan(tmp_path: Path) -> None:
 
     server = LspServer(root=tmp_path, stdin=io.StringIO(raw_input), stdout=io.StringIO())
 
-    with patch("wardline.mcp.lsp.run_scan", return_value=scan_res) as mock_run:
+    with patch("wardline.lsp.run_scan", return_value=scan_res) as mock_run:
         server.run()
 
     assert mock_run.call_count == 2
@@ -379,7 +379,7 @@ def test_lsp_did_open_outside_launch_root_is_ignored(tmp_path: Path) -> None:
     outside_file.write_text("print('outside')\n", encoding="utf-8")
 
     server = LspServer(root=launch_root, stdin=io.StringIO(), stdout=io.StringIO())
-    with patch("wardline.mcp.lsp.run_scan") as mock_run:
+    with patch("wardline.lsp.run_scan") as mock_run:
         server.handle_message(
             {
                 "jsonrpc": "2.0",
@@ -442,7 +442,7 @@ def test_lsp_did_close_clears_diagnostics(tmp_path: Path) -> None:
 
     server = LspServer(root=tmp_path, stdin=stdin, stdout=stdout)
 
-    with patch("wardline.mcp.lsp.run_scan", return_value=scan_res):
+    with patch("wardline.lsp.run_scan", return_value=scan_res):
         server.run()
 
     output = stdout.getvalue()
@@ -516,7 +516,7 @@ def test_lsp_ignores_suppressed_findings(tmp_path: Path) -> None:
 
     server = LspServer(root=tmp_path, stdin=stdin, stdout=stdout)
 
-    with patch("wardline.mcp.lsp.run_scan", return_value=scan_res):
+    with patch("wardline.lsp.run_scan", return_value=scan_res):
         server.run()
 
     output = stdout.getvalue()

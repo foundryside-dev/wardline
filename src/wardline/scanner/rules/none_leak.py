@@ -8,10 +8,10 @@ value-bearing return — a PROVABLE contract violation: the function declares ``
 
 Declaration-gated (base WARN). FP-guarded — the annotation is the load-bearing guard:
   - **requires an explicit non-None return annotation** (``-> T``). A function with NO
-    annotation, or one declaring ``Optional[T]`` / ``T | None`` / ``-> None``, does NOT
-    fire — that is a deliberately-nullable (or unstated) contract, not a leak. This is
-    what keeps the rule off the single most common legitimate pattern (``Optional``
-    returns), per the FP-economics review;
+    annotation, or one declaring ``Optional[T]`` / ``T | None`` / ``-> None`` /
+    ``-> Any``, does NOT fire — that is a deliberately-nullable, dynamic, or unstated
+    contract, not a leak. This is what keeps the rule off the single most common
+    legitimate pattern (``Optional`` returns), per the FP-economics review;
   - requires BOTH a value-bearing return AND a None-yielding return in scope;
   - **skips generators** (a bare ``return`` ends iteration — not a None value leak);
   - skips the trust-RAISING shape (body less trusted than declared — ``@trust_boundary``'s
@@ -64,8 +64,8 @@ def _is_none_return(stmt: ast.Return) -> bool:
 
 
 def _annotation_allows_none(ann: ast.expr, alias_map: Mapping[str, str] | None = None) -> bool:
-    """True if a return annotation permits ``None``: bare ``None``, ``Optional[...]``,
-    or a ``... | None`` union (recursively)."""
+    """True if a return annotation does not promise non-None: bare ``None``,
+    ``Any``, ``Optional[...]``, or a ``... | None`` union (recursively)."""
     if isinstance(ann, ast.Constant) and ann.value is None:
         return True
     if isinstance(ann, ast.Constant) and isinstance(ann.value, str):
@@ -86,6 +86,8 @@ def _annotation_allows_none(ann: ast.expr, alias_map: Mapping[str, str] | None =
         base = alias_map.get(ann.value.id) if alias_map else None
         fqn = f"{base}.{ann.attr}" if base else f"{ann.value.id}.{ann.attr}"
 
+    if fqn in ("typing.Any", "Any"):
+        return True
     if fqn in ("typing.Optional", "Optional"):
         return True
 

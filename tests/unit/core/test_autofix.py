@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from wardline.core.autofix import run_autofix
 from wardline.core.config import WardlineConfig
+from wardline.core.errors import WardlineError
 from wardline.core.finding import Finding, Kind, Location, Severity
 
 
@@ -258,6 +262,41 @@ def test_autofix_file_read_failure(tmp_path: Path) -> None:
     config = WardlineConfig(autofix={"boundary_exception": "ValueError"})
     result = run_autofix(findings, config, tmp_path)
     assert not result
+
+
+def test_autofix_write_failure_raises_and_reports_no_success(tmp_path: Path, monkeypatch) -> None:
+    content = """def my_func(x):
+    assert x > 0
+    return x
+"""
+    file_path = tmp_path / "test_file.py"
+    file_path.write_text(content, encoding="utf-8")
+
+    findings = [
+        Finding(
+            rule_id="PY-WL-111",
+            message="assert-only boundary check",
+            severity=Severity.ERROR,
+            kind=Kind.DEFECT,
+            location=Location(path="test_file.py", line_start=1),
+            fingerprint="test_fp",
+        )
+    ]
+    config = WardlineConfig(autofix={"boundary_exception": "ValueError"})
+
+    original_write_text = Path.write_text
+
+    def _fail_write(path: Path, data: str, *args: Any, **kwargs: Any) -> int:
+        if path == file_path:
+            raise OSError("disk full")
+        return original_write_text(path, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", _fail_write)
+
+    with pytest.raises(WardlineError, match="Failed to write autofix"):
+        run_autofix(findings, config, tmp_path)
+
+    assert file_path.read_text(encoding="utf-8") == content
 
 
 def test_autofix_syntax_error(tmp_path: Path) -> None:

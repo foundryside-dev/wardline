@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ast
 
+import pytest
+
 from wardline.core.taints import TaintState
 from wardline.scanner.taint.variable_level import compute_variable_taints
 
@@ -1054,6 +1056,30 @@ def test_nested_walrus_in_comprehension_element_binds_outer_scope() -> None:
     assert out["y"] == T.EXTERNAL_RAW
 
 
+def test_comprehension_walrus_rebinds_existing_outer_name() -> None:
+    # PEP 572 writes a comprehension walrus target into the enclosing function
+    # scope even when the name already exists. A clean initializer must not mask
+    # the later raw assignment.
+    src = "def f(p):\n    x = 1\n    z = [(x := read_raw(p)) for _ in items]\n    y = x\n"
+    out = _vt(src, function_taint=T.INTEGRAL, taint_map={"read_raw": T.EXTERNAL_RAW})
+    assert out["y"] == T.EXTERNAL_RAW
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        "[(x := read_raw(p)) for _ in items]",
+        "{(x := read_raw(p)) for _ in items}",
+        "{_: (x := read_raw(p)) for _ in items}",
+        "((x := read_raw(p)) for _ in items)",
+    ],
+)
+def test_comprehension_walrus_rebinds_existing_outer_name_for_all_forms(expr: str) -> None:
+    src = f"def f(p):\n    x = 1\n    z = {expr}\n    y = x\n"
+    out = _vt(src, function_taint=T.INTEGRAL, taint_map={"read_raw": T.EXTERNAL_RAW})
+    assert out["y"] == T.EXTERNAL_RAW
+
+
 def test_propagating_builtin_multi_arg_combines_via_least_trusted() -> None:
     # format(value, spec) is a curated propagating builtin: it combines ALL arg taints
     # via least_trusted (the loop over arg_taints[1:]), so a raw arg taints the result
@@ -1088,12 +1114,21 @@ def test_nested_tuple_unpack_elementwise() -> None:
 
 def test_matching_unpack_with_starred_middle_element() -> None:
     # ``(a, *b, c) = (1, 2, p)`` — element-wise matching unpack. The middle target is
-    # a Starred (neither Name nor Tuple/List), so the loop must skip it and continue
-    # to the trailing Name c. c gets p's taint; a and b are clean literals.
+    # a Starred that captures the literal middle slice, while c gets p's taint.
     src = "def f(p):\n    (a, *b, c) = (1, 2, p)\n"
     out = _vt(src, function_taint=T.EXTERNAL_RAW)
     assert out["a"] == T.INTEGRAL
+    assert out["b"] == T.INTEGRAL
     assert out["c"] == T.EXTERNAL_RAW  # the literal p element
+
+
+def test_matching_unpack_starred_middle_captures_raw_slice() -> None:
+    # ``rest`` captures the raw middle element. Skipping the Starred target would
+    # leave later reads of rest at the trusted function seed.
+    src = "def f(p):\n    (a, *rest, c) = (1, read_raw(p), 2)\n    y = rest\n"
+    out = _vt(src, function_taint=T.INTEGRAL, taint_map={"read_raw": T.EXTERNAL_RAW})
+    assert out["rest"] == T.EXTERNAL_RAW
+    assert out["y"] == T.EXTERNAL_RAW
 
 
 def test_nonmatching_unpack_with_nested_list_target_skipped() -> None:

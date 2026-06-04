@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from wardline.mcp.lsp import LspServer
+from wardline.lsp import LspServer
 
 
 @click.command()

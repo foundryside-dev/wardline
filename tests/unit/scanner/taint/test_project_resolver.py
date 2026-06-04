@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 
 import pytest
 
@@ -8,14 +9,15 @@ from wardline.core.taints import TaintState as T
 from wardline.scanner.ast_primitives import build_import_alias_map
 from wardline.scanner.index import discover_class_qualnames, discover_file_entities
 from wardline.scanner.taint.function_level import seed_function_taints
-from wardline.scanner.taint.project_resolver import ModuleInput, resolve_project_taints
+from wardline.scanner.taint.project_resolver import _RESOLVER_VERSION, ModuleInput, resolve_project_taints
 from wardline.scanner.taint.provider import (
     DefaultTaintSourceProvider,
     FunctionTaint,
     SeedContext,
     SeedResult,
 )
-from wardline.scanner.taint.summary_cache import SummaryCache
+from wardline.scanner.taint.summary import SUMMARY_SCHEMA_VERSION, FunctionSummary, compute_cache_key
+from wardline.scanner.taint.summary_cache import SummaryCache, _serialise_summary
 
 
 class _RawLeafProvider:
@@ -297,3 +299,65 @@ def test_cache_miss_on_changed_source_recomputes() -> None:
     assert dict(warm.taint_map) == dict(cold_v2.taint_map)
     # The changed module added a new key (old one is still present, unused).
     assert len(cache) == len_after_v1 + 1
+
+
+def _io_layer_cache_key(provider: _RawLeafProvider) -> str:
+    return compute_cache_key(
+        module_path="pkg.io_layer",
+        source_bytes=_IO.encode("utf-8"),
+        schema_version=SUMMARY_SCHEMA_VERSION,
+        resolver_version=_RESOLVER_VERSION,
+        provider_fingerprint=provider.fingerprint(),
+    )
+
+
+def test_persistent_cache_mismatched_internal_key_falls_back_to_fresh_summary(tmp_path) -> None:
+    provider = _RawLeafProvider()
+    expected_key = _io_layer_cache_key(provider)
+    poisoned = FunctionSummary(
+        fqn="pkg.io_layer.read_raw",
+        body_taint=T.INTEGRAL,
+        return_taint=T.INTEGRAL,
+        taint_source="anchored",
+        unresolved_calls=0,
+        schema_version=SUMMARY_SCHEMA_VERSION,
+        cache_key="b" * 64,
+    )
+    (tmp_path / f"{expected_key}.json").write_text(json.dumps([_serialise_summary(poisoned)]), encoding="utf-8")
+    cache = SummaryCache(cache_dir=tmp_path)
+    cache.load()
+
+    result = resolve_project_taints(
+        modules=[_module_input("pkg.io_layer", _IO, provider)],
+        provider_fingerprint=provider.fingerprint(),
+        summary_cache=cache,
+        dirty_modules=frozenset(),
+    )
+
+    assert result.taint_map["pkg.io_layer.read_raw"] == T.MIXED_RAW
+
+
+def test_persistent_cache_wrong_fqn_set_falls_back_to_fresh_summary(tmp_path) -> None:
+    provider = _RawLeafProvider()
+    expected_key = _io_layer_cache_key(provider)
+    poisoned = FunctionSummary(
+        fqn="pkg.other.read_raw",
+        body_taint=T.INTEGRAL,
+        return_taint=T.INTEGRAL,
+        taint_source="anchored",
+        unresolved_calls=0,
+        schema_version=SUMMARY_SCHEMA_VERSION,
+        cache_key=expected_key,
+    )
+    (tmp_path / f"{expected_key}.json").write_text(json.dumps([_serialise_summary(poisoned)]), encoding="utf-8")
+    cache = SummaryCache(cache_dir=tmp_path)
+    cache.load()
+
+    result = resolve_project_taints(
+        modules=[_module_input("pkg.io_layer", _IO, provider)],
+        provider_fingerprint=provider.fingerprint(),
+        summary_cache=cache,
+        dirty_modules=frozenset(),
+    )
+
+    assert result.taint_map["pkg.io_layer.read_raw"] == T.MIXED_RAW

@@ -9,9 +9,10 @@ rules, so ``run`` returns nothing; SP2 supplies the rule set.
 
 from __future__ import annotations
 
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from wardline.core.finding import Maturity
 from wardline.core.protocols import Rule
@@ -25,14 +26,25 @@ if TYPE_CHECKING:
     from wardline.scanner.taint.propagation import TaintProvenance
 
 
+def _freeze_mapping(mapping: MappingABC[Any, Any]) -> MappingABC[Any, Any]:
+    return MappingProxyType({key: _freeze_value(value) for key, value in mapping.items()})
+
+
+def _freeze_value(value: Any) -> Any:
+    if isinstance(value, MappingABC):
+        return _freeze_mapping(value)
+    if isinstance(value, set):
+        return frozenset(value)
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class AnalysisContext:
     """Engine output handed to SP2 rules (and to SP1f's own diagnostics).
 
-    Inner mappings are wrapped in ``MappingProxyType`` at construction so the
+    Nested mappings are wrapped in ``MappingProxyType`` at construction so the
     context is a genuinely read-only view — a consumer (or a retained reference
-    to a source dict) cannot mutate engine output. ``function_var_taints``'s
-    inner dicts are left as-is (cheap; rules treat them read-only by convention).
+    to a source dict) cannot mutate engine output.
 
     ``project_return_taints`` is the effective return tier per function (anchored:
     declared; non-anchored: refined body). ``function_return_taints`` is the actual
@@ -83,35 +95,35 @@ class AnalysisContext:
     alias_maps: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "project_taints", MappingProxyType(dict(self.project_taints)))
-        object.__setattr__(self, "project_return_taints", MappingProxyType(dict(self.project_return_taints)))
-        object.__setattr__(self, "function_var_taints", MappingProxyType(dict(self.function_var_taints)))
-        object.__setattr__(self, "function_return_taints", MappingProxyType(dict(self.function_return_taints)))
-        object.__setattr__(self, "function_return_callee", MappingProxyType(dict(self.function_return_callee)))
-        object.__setattr__(self, "entities", MappingProxyType(dict(self.entities)))
-        object.__setattr__(self, "taint_provenance", MappingProxyType(dict(self.taint_provenance)))
-        object.__setattr__(self, "function_call_site_taints", MappingProxyType(dict(self.function_call_site_taints)))
+        object.__setattr__(self, "project_taints", _freeze_mapping(self.project_taints))
+        object.__setattr__(self, "project_return_taints", _freeze_mapping(self.project_return_taints))
+        object.__setattr__(self, "function_var_taints", _freeze_mapping(self.function_var_taints))
+        object.__setattr__(self, "function_return_taints", _freeze_mapping(self.function_return_taints))
+        object.__setattr__(self, "function_return_callee", _freeze_mapping(self.function_return_callee))
+        object.__setattr__(self, "entities", _freeze_mapping(self.entities))
+        object.__setattr__(self, "taint_provenance", _freeze_mapping(self.taint_provenance))
+        object.__setattr__(self, "function_call_site_taints", _freeze_mapping(self.function_call_site_taints))
         object.__setattr__(
             self,
             "function_call_site_arg_taints",
-            MappingProxyType(dict(self.function_call_site_arg_taints)),
+            _freeze_mapping(self.function_call_site_arg_taints),
         )
-        object.__setattr__(self, "call_site_callees", MappingProxyType(dict(self.call_site_callees)))
+        object.__setattr__(self, "call_site_callees", _freeze_mapping(self.call_site_callees))
         object.__setattr__(
             self,
             "call_site_implicit_receivers",
-            MappingProxyType(dict(self.call_site_implicit_receivers)),
+            _freeze_mapping(self.call_site_implicit_receivers),
         )
-        object.__setattr__(self, "class_attr_taints", MappingProxyType(dict(self.class_attr_taints)))
+        object.__setattr__(self, "class_attr_taints", _freeze_mapping(self.class_attr_taints))
         object.__setattr__(
             self,
             "project_edges",
-            MappingProxyType({k: frozenset(v) for k, v in self.project_edges.items()}),
+            _freeze_mapping({k: frozenset(v) for k, v in self.project_edges.items()}),
         )
         object.__setattr__(
             self,
             "alias_maps",
-            MappingProxyType({k: MappingProxyType(dict(v)) for k, v in self.alias_maps.items()}),
+            _freeze_mapping(self.alias_maps),
         )
 
 

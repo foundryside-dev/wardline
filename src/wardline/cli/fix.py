@@ -61,7 +61,11 @@ def fix(path: Path, config_path: Path | None, yes: bool, dry_run: bool) -> None:
         click.echo(f"  + {click.style(replacement, fg='green')}")
         return click.confirm("Apply this fix?", default=True)
 
-    applied = run_autofix(findings, cfg, path, dry_run=dry_run, confirm_cb=confirm_cb)
+    try:
+        applied = run_autofix(findings, cfg, path, dry_run=dry_run, confirm_cb=confirm_cb)
+    except WardlineError as exc:
+        click.echo(f"error: {exc}", err=True)
+        raise SystemExit(2) from exc
 
     if not applied:
         click.echo("No fixes applied.")

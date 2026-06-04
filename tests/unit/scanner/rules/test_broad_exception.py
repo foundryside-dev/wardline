@@ -62,6 +62,17 @@ def test_bare_except_fires(tmp_path) -> None:
     assert [f.rule_id for f in _run(ctx)] == ["PY-WL-103"]
 
 
+def test_except_star_broad_exception_fires(tmp_path) -> None:
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": "from wardline.decorators import trusted\n"
+            "@trusted\ndef f():\n    try:\n        g()\n    except* Exception:\n        h()\n",
+        },
+    )
+    assert [f.rule_id for f in _run(ctx)] == ["PY-WL-103"]
+
+
 def test_specific_except_is_clean(tmp_path) -> None:
     ctx, _ = _analyze(
         tmp_path,

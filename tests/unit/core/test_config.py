@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -244,6 +245,35 @@ def test_resolve_urls_rejects_unsafe_config_urls(tmp_path: Path, monkeypatch) ->
         resolve_clarion_url(None, tmp_path, None)
     # Passing trust_config_urls=True bypasses the block
     assert resolve_clarion_url(None, tmp_path, None, trust_config_urls=True) == "http://attacker-controlled.com"
+
+
+@pytest.mark.parametrize(
+    ("block", "resolver"),
+    [
+        ("clarion", resolve_clarion_url),
+        ("filigree", resolve_filigree_url),
+    ],
+)
+@pytest.mark.parametrize(
+    "url",
+    [
+        "file://localhost/tmp/wardline.json",
+        "ftp://localhost/api/wardline",
+        "localhost:8628/api/loom/scan-results",
+    ],
+)
+def test_config_urls_must_be_http_or_https_even_for_localhost(
+    tmp_path: Path,
+    monkeypatch,
+    block: str,
+    resolver: Callable[[str | None, Path, Path | None], str | None],
+    url: str,
+) -> None:
+    (tmp_path / "wardline.yaml").write_text(f'{block}:\n  url: "{url}"\n', encoding="utf-8")
+    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    with pytest.raises(ConfigError, match="disabled by default for security"):
+        resolver(None, tmp_path, None)
 
 
 def test_resolve_filigree_env(tmp_path: Path, monkeypatch) -> None:

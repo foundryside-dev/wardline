@@ -65,7 +65,7 @@ def build_loom_dossier(
     filigree_url: str | None = None,
     filigree_transport: FiligreeTransport | None = None,
     config_path: Path | None = None,
-    confine_to_root: bool = False,
+    confine_to_root: bool = True,
     budget: int = DOSSIER_TOKEN_BUDGET,
 ) -> EntityDossier:
     """Assemble the one-call Loom dossier for ``entity`` against live sources.

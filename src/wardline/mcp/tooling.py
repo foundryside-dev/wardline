@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -22,6 +23,29 @@ class ToolError(Exception):
         self.message = message
 
 
+class ToolCapability(StrEnum):
+    """Capability classes enforced centrally before MCP tool handlers run."""
+
+    READ = "read"
+    WRITE = "write"
+    NETWORK = "network"
+
+
+@dataclass(frozen=True, slots=True)
+class ToolPolicy:
+    """Server-side policy for tool side effects."""
+
+    allow_write: bool = True
+    allow_network: bool = True
+
+    def denial(self, tool_name: str, capabilities: frozenset[ToolCapability]) -> str | None:
+        if ToolCapability.NETWORK in capabilities and not self.allow_network:
+            return f"tool {tool_name!r} requires network capability, but network tools are disabled"
+        if ToolCapability.WRITE in capabilities and not self.allow_write:
+            return f"tool {tool_name!r} requires write capability, but write tools are disabled"
+        return None
+
+
 @dataclass(frozen=True, slots=True)
 class Tool:
     name: str
@@ -29,6 +53,13 @@ class Tool:
     input_schema: dict[str, Any]
     handler: Callable[[dict[str, Any], Path], Any]
     network: bool = False
+    capabilities: frozenset[ToolCapability] = frozenset({ToolCapability.READ})
+
+    def __post_init__(self) -> None:
+        capabilities = set(self.capabilities) or {ToolCapability.READ}
+        if self.network:
+            capabilities.add(ToolCapability.NETWORK)
+        object.__setattr__(self, "capabilities", frozenset(capabilities))
 
 
 def finding_to_dict(finding: Finding) -> dict[str, Any]:

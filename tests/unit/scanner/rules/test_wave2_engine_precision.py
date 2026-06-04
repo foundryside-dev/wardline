@@ -68,7 +68,8 @@ def test_flow_sensitive_args_resolves_sinks_correctly(tmp_path: Path) -> None:
 
 
 def test_starred_args_and_kwargs_resolution_flow_sensitive(tmp_path: Path) -> None:
-    # Test that `*args` and `**kwargs` are resolved and mapped in flow-sensitive call-site argument taints.
+    # Test that `*args` and `**kwargs` are resolved without contaminating
+    # parameters that Python's call binding already filled explicitly.
     findings = _analyze_files(
         tmp_path,
         {
@@ -76,27 +77,52 @@ def test_starred_args_and_kwargs_resolution_flow_sensitive(tmp_path: Path) -> No
             @trusted(level='ASSURED')
             def target(a, b, c=None):
                 eval(a)  # Should FIRE (line 13)
-                eval(b)  # Should FIRE (line 14) - under-tainting resolved, *args propagates to all positional params
+                eval(b)  # Should NOT fire; *args is clean and cannot rebind a
                 if c:
-                    eval(c)  # Should FIRE (line 16) - *args propagates to all positional params
+                    eval(c)  # Should NOT fire; c is explicitly keyword-filled
                 return 1
 
             def test_starred(p):
-                args = (read_raw(p), 'safe')
-                kwargs = {'c': 'safe_c'}
-                target(*args, **kwargs)
+                args = ('safe_b',)
+                target(read_raw(p), *args, c='safe_c')
             """
         },
     )
     defects = [f for f in findings if f.kind is Kind.DEFECT]
-    # Under sound starred-argument propagation, all positional parameters (a, b, c)
-    # get contaminated because the exact index mapping of elements inside the tuple
-    # is not statically traced.
     py_wl_107_findings = [f for f in defects if f.rule_id == "PY-WL-107"]
-    assert len(py_wl_107_findings) == 3
+    assert len(py_wl_107_findings) == 1
     assert all(f.qualname == "m.target" for f in py_wl_107_findings)
     lines = sorted((f.location.line_start or 0) for f in py_wl_107_findings)
-    assert lines == [13, 14, 16]
+    assert lines == [13]
+
+
+def test_kwargs_unpack_only_taints_unfilled_keyword_capable_parameters(tmp_path: Path) -> None:
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @trusted(level='ASSURED')
+            def target(a, b, *rest, c=None, **extra):
+                eval(a)  # Should NOT fire; explicitly safe positional
+                eval(b)  # Should NOT fire; explicitly safe keyword
+                if rest:
+                    eval(rest)  # Should NOT fire; **kwargs cannot populate *rest
+                if c:
+                    eval(c)  # Should FIRE; **kwargs may populate c
+                if extra:
+                    eval(extra)  # Should FIRE; leftover **kwargs may populate extra
+                return 1
+
+            def test_kwargs(p):
+                kwargs = {'c': read_raw(p)}
+                target('safe_a', b='safe_b', **kwargs)
+            """
+        },
+    )
+    defects = [f for f in findings if f.kind is Kind.DEFECT]
+    py_wl_107_findings = [f for f in defects if f.rule_id == "PY-WL-107" and f.qualname == "m.target"]
+    lines = sorted((f.location.line_start or 0) for f in py_wl_107_findings)
+    assert lines == [18, 20]
 
 
 # ── WP8: Cross-Module Call-Argument Taint ──────────────────────────────────

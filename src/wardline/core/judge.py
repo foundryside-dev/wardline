@@ -27,6 +27,7 @@ from wardline.core.errors import (
     JudgeContractError,
     JudgeTransportError,
 )
+from wardline.core.http import read_response_text
 
 DEFAULT_JUDGE_MODEL: str = "anthropic/claude-opus-4-8"
 DEFAULT_JUDGE_MAX_TOKENS: int = 1024
@@ -280,10 +281,10 @@ class UrllibTransport:
         request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")
         try:
             with urllib.request.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
-                return Response(status=resp.status, body=resp.read().decode("utf-8", "replace"))
+                return Response(status=resp.status, body=read_response_text(resp))
         except urllib.error.HTTPError as exc:
             with exc:
-                return Response(status=exc.code, body=exc.read().decode("utf-8", "replace"))
+                return Response(status=exc.code, body=read_response_text(exc))
 
 
 # --- orchestration -----------------------------------------------------------

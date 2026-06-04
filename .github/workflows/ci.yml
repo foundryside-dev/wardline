@@ -95,6 +95,7 @@ jobs:
       - name: Network tests
         run: uv run pytest -m network -v
         env:
+          WARDLINE_LIVE_ORACLE_REQUIRED: "1"
           WARDLINE_OPENROUTER_API_KEY: ${{ secrets.WARDLINE_OPENROUTER_API_KEY }}
 
   live-oracles:
@@ -121,6 +122,7 @@ jobs:
       - name: Run live oracle
         run: uv run pytest -m ${{ matrix.marker }} -v
         env:
+          WARDLINE_LIVE_ORACLE_REQUIRED: "1"
           WARDLINE_CLARION_BIN: ${{ secrets.WARDLINE_CLARION_BIN }}
           WARDLINE_LEGIS_URL: ${{ secrets.WARDLINE_LEGIS_URL }}
           WARDLINE_FILIGREE_URL: ${{ secrets.WARDLINE_FILIGREE_URL }}
@@ -131,7 +133,7 @@ jobs:
             echo "### Live ${{ matrix.name }} oracle"
             echo "- Marker: \`${{ matrix.marker }}\`"
             echo "- Trigger: \`${{ github.event_name }}\`"
-            echo "- Missing local services or secrets are reported by pytest as skipped tests."
+            echo "- Missing local services, secrets, or capabilities fail this required oracle run."
           } >> "$GITHUB_STEP_SUMMARY"
 
   docs:

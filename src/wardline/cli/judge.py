@@ -120,6 +120,7 @@ def judge(
             context_lines=context_lines,
             max_findings=max_findings,
             write=do_write,
+            confine_to_root=True,
             trust_local_packs=trust_local_packs,
             trusted_packs=trusted_packs,
             trust_judge_config=trust_judge_config,

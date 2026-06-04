@@ -1,4 +1,6 @@
 import json
+import urllib.error
+import urllib.request
 
 import pytest
 
@@ -89,6 +91,27 @@ def test_4xx_invalid_path_is_loud():
     t = FakeTransport([Response(status=400, body='{"code":"INVALID_PATH"}')])
     with pytest.raises(ClarionError, match="INVALID_PATH"):
         _client(t).resolve(["a.b"])
+
+
+def test_urllib_transport_bounds_http_error_body(monkeypatch) -> None:
+    import io
+
+    from wardline.clarion.client import UrllibTransport
+    from wardline.core.http import MAX_RESPONSE_BODY_BYTES
+
+    def _raise(req, timeout=None):  # noqa: ARG001
+        raise urllib.error.HTTPError(
+            url="http://clarion.example/api/wardline/resolve",
+            code=400,
+            msg="Bad Request",
+            hdrs=None,
+            fp=io.BytesIO(b"x" * (MAX_RESPONSE_BODY_BYTES + 9)),
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", _raise)
+    resp = UrllibTransport().request("POST", "http://clarion.example/api/wardline/resolve", b"{}", {})
+    assert len(resp.body) < MAX_RESPONSE_BODY_BYTES + 128
+    assert resp.body.endswith("[truncated]")
 
 
 def test_connection_error_is_soft():

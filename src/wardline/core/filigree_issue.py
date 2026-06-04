@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from wardline.core.errors import FiligreeEmitError
+from wardline.core.http import read_response_text
 
 _ALLOWED_SCHEMES = ("http", "https")
 _LOOM_MARKER = "/api/loom/"
@@ -81,10 +82,10 @@ class UrllibTransport:
         request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")
         try:
             with urllib.request.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
-                return Response(status=resp.status, body=resp.read().decode("utf-8", "replace"))
+                return Response(status=resp.status, body=read_response_text(resp))
         except urllib.error.HTTPError as exc:
             with exc:
-                return Response(status=exc.code, body=exc.read().decode("utf-8", "replace"))
+                return Response(status=exc.code, body=read_response_text(exc))
 
 
 class FiligreeIssueFiler:

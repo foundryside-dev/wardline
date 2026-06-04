@@ -1,15 +1,16 @@
-"""WS-A1: MCP `scan` emits to Filigree when an emitter is injected, fail-soft.
+"""WS-A1: MCP `scan` emits to Filigree when an emitter is injected.
 
 Mirrors test_server_clarion_write.py: inject a duck-typed emitter into `_scan`
-and assert on the `filigree` block. The MCP surface is fail-soft — a rejected
-payload (FiligreeEmitError) or an unreachable sibling is REPORTED in the block,
-never allowed to discard the scan payload (the deliberate asymmetry from the
-Clarion block at server.py:91-95).
+and assert on the `filigree` block. Sibling-unreachable responses remain
+fail-soft, but Filigree protocol/client rejections (FiligreeEmitError) are loud:
+the MCP scan must not return a successful payload that hides tracker drift.
 """
+
+import pytest
 
 from wardline.core.errors import FiligreeEmitError
 from wardline.core.filigree_emit import EmitResult
-from wardline.mcp.server import _scan
+from wardline.mcp.server import WardlineMCPServer, _scan
 
 _LEAKY = (
     "from wardline.decorators import external_boundary, trusted\n"
@@ -55,14 +56,24 @@ def test_scan_filigree_block_null_when_no_emitter(tmp_path):
     assert out["filigree"] is None
 
 
-def test_scan_survives_filigree_emit_error(tmp_path):
+def test_scan_propagates_filigree_emit_error(tmp_path):
     (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
-    out = _scan({}, tmp_path, None, RaisingEmitter())
-    assert out["filigree"]["reachable"] is False
-    assert out["filigree"]["warnings"]  # carries the rejection text
-    # The scan payload is intact, NOT discarded — assert keys _scan always returns.
-    assert "summary" in out and "findings" in out and "gate" in out
-    assert out["summary"]["total"] >= 1  # PY-WL-101 fires on _LEAKY
+    with pytest.raises(FiligreeEmitError, match="rejected scan-results"):
+        _scan({}, tmp_path, None, RaisingEmitter())
+
+
+def test_mcp_scan_filigree_emit_error_is_not_a_success_payload(tmp_path, monkeypatch):
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    server = WardlineMCPServer(root=tmp_path)
+    monkeypatch.setattr(server, "_filigree_emitter", lambda *args, **kwargs: RaisingEmitter())
+
+    resp = server.rpc.dispatch(
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "scan", "arguments": {}}}
+    )
+
+    assert "error" not in resp, resp
+    assert resp["result"]["isError"] is True
+    assert "Filigree rejected scan-results" in resp["result"]["content"][0]["text"]
 
 
 def test_scan_unreachable_filigree_is_soft(tmp_path):

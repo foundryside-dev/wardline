@@ -78,6 +78,29 @@ def test_file_4xx_other_than_404_is_loud():
         FiligreeIssueFiler("http://h/api/loom/scan-results", transport=t).file("fp")
 
 
+def test_urllib_transport_bounds_http_error_body(monkeypatch):
+    import io
+    import urllib.error
+    import urllib.request
+
+    from wardline.core.filigree_issue import UrllibTransport
+    from wardline.core.http import MAX_RESPONSE_BODY_BYTES
+
+    def _raise(req, timeout=None):
+        raise urllib.error.HTTPError(
+            "http://h/api/loom/findings/promote",
+            400,
+            "Bad Request",
+            {},
+            io.BytesIO(b"x" * (MAX_RESPONSE_BODY_BYTES + 9)),
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", _raise)
+    resp = UrllibTransport().post("http://h/api/loom/findings/promote", b"{}", {})
+    assert len(resp.body) < MAX_RESPONSE_BODY_BYTES + 128
+    assert resp.body.endswith("[truncated]")
+
+
 def test_file_2xx_non_json_body_does_not_crash():
     # A 2xx with an unparseable body: accepted but unreadable — no issue id, never crash.
     t = FakeTransport(200, "not json")

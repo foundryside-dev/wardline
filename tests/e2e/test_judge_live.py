@@ -11,7 +11,7 @@ pytestmark = pytest.mark.network
 
 @pytest.mark.skipif(not os.environ.get("WARDLINE_OPENROUTER_API_KEY"), reason="no API key")
 def test_live_triage_round_trip() -> None:
-    """One real OpenRouter call returns a schema-valid verdict; a second call hits cache."""
+    """One real OpenRouter call returns a schema-valid verdict."""
     req = JudgeRequest(
         rule_id="PY-WL-101",
         message="untrusted reaches trusted",
@@ -33,6 +33,3 @@ def test_live_triage_round_trip() -> None:
     assert 0.0 <= first.confidence <= 1.0
     assert first.rationale.strip()
     assert first.policy_hash.startswith("sha256:")
-    # a second identical call within the TTL should report cached prompt tokens (or None)
-    second = call_judge(req)
-    assert second.prompt_tokens_cached is None or second.prompt_tokens_cached >= 0

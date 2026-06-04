@@ -6,13 +6,10 @@ the MCP server must produce the same findings and the same gate decision. That
 is asserted by design today but not *guarded* — ``test_mcp_cli.py`` only
 exercises the protocol loop, not finding-parity.
 
-This pins it: the same fixture tree, run the way the CLI invokes ``run_scan``
-(``confine_to_root=False``) and the way the MCP ``_scan`` tool invokes it
-(``confine_to_root=True``, via the real handler), must yield identical findings
-+ gate. The deliberate ``confine_to_root`` difference is a no-op here because the
-tree has no source root escaping ``root`` — which is exactly the point: the only
-sanctioned divergence doesn't touch results for an in-root scan. If a future
-MCP-only code path leaks into the findings, this differential fails.
+This pins it: the same fixture tree, run through the shared default ``run_scan``
+path and through the MCP ``_scan`` tool (which also passes ``confine_to_root=True``),
+must yield identical findings + gate. If a future MCP-only code path leaks into
+the findings, this differential fails.
 """
 
 from __future__ import annotations
@@ -27,7 +24,7 @@ _CORPUS = Path(__file__).resolve().parents[3] / "tests" / "corpus" / "fixtures"
 
 
 def test_cli_and_mcp_scan_agree_on_findings_and_gate() -> None:
-    # CLI parameterization: confine_to_root defaults to False.
+    # Shared scan default: confine_to_root=True.
     cli_result = run_scan(_CORPUS)
     cli_findings = [_finding_to_dict(f) for f in cli_result.findings]
     cli_gate = gate_decision(cli_result, Severity.ERROR)

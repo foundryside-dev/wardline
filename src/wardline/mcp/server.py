@@ -20,9 +20,9 @@ from wardline.core.assure import build_posture
 from wardline.core.attest import build_attestation, verify_attestation
 from wardline.core.attest_key import load_attest_key
 from wardline.core.baseline import generate_baseline, load_baseline
-from wardline.core.errors import FiligreeEmitError, WardlineError
+from wardline.core.errors import WardlineError
 from wardline.core.explain import explain_chain, explain_finding, explanation_from_context
-from wardline.core.filigree_emit import EmitResult, FiligreeEmitter
+from wardline.core.filigree_emit import FiligreeEmitter
 from wardline.core.finding import Finding, Kind, Severity, SuppressionState
 from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
@@ -33,7 +33,7 @@ from wardline.core.waivers import add_waiver, parse_waivers
 from wardline.mcp.prompts import get_prompt, list_prompts
 from wardline.mcp.protocol import _INVALID_PARAMS, JsonRpcServer, McpError
 from wardline.mcp.resources import list_resources, read_resource
-from wardline.mcp.tooling import Tool, ToolError
+from wardline.mcp.tooling import Tool, ToolCapability, ToolError, ToolPolicy
 from wardline.mcp.tooling import cfg as _cfg
 from wardline.mcp.tooling import explanation_to_dict as _explanation_to_dict
 from wardline.mcp.tooling import finding_to_dict as _finding_to_dict
@@ -44,17 +44,15 @@ from wardline.mcp.tooling import resolve_under_root as _resolve_under_root
 def _emit_filigree(
     findings: list[Finding], filigree: Any, *, scanned_paths: tuple[str, ...] = ()
 ) -> dict[str, Any] | None:
-    """Fail-soft Filigree emission for the MCP `scan`. Returns None when no emitter
-    is injected (no URL). Mirrors the Clarion block's deliberate asymmetry: the CLI
-    is LOUD on a FiligreeEmitError (4xx -> exit 2), but the MCP scan must SURVIVE an
-    optional-write failure and report it, never discard the scan payload. An
-    unreachable sibling / 5xx already returns a soft EmitResult(reachable=False)."""
+    """Emit to Filigree for the MCP `scan`, returning None when no emitter is injected.
+
+    Sibling-unreachable / 5xx results are already soft in FiligreeEmitter as
+    ``reachable=False``. Protocol/client rejections stay loud by letting
+    ``FiligreeEmitError`` propagate into the tool's isError result.
+    """
     if filigree is None:
         return None
-    try:
-        er = filigree.emit(findings, scanned_paths=scanned_paths)
-    except FiligreeEmitError as exc:
-        er = EmitResult(reachable=False, warnings=(str(exc),))
+    er = filigree.emit(findings, scanned_paths=scanned_paths)
     return {
         "reachable": er.reachable,
         "created": er.created,
@@ -84,6 +82,17 @@ def _file_finding(args: dict[str, Any], root: Path, filer: Any) -> dict[str, Any
     }
 
 
+def _trusted_packs_arg(args: dict[str, Any]) -> tuple[str, ...]:
+    trusted_packs_raw = args.get("trust_packs") or []
+    if not isinstance(trusted_packs_raw, list) or not all(isinstance(p, str) for p in trusted_packs_raw):
+        raise ToolError("trust_packs must be an array of strings")
+    return tuple(trusted_packs_raw)
+
+
+def _cache_dir_arg(args: dict[str, Any], root: Path) -> Path | None:
+    return _resolve_under_root(root, args["cache_dir"]) if args.get("cache_dir") else None
+
+
 def _scan(
     args: dict[str, Any],
     root: Path,
@@ -102,11 +111,8 @@ def _scan(
         # letting it surface as an opaque generic JSON-RPC -32603.
         raise ToolError("fail_on must be one of CRITICAL/ERROR/WARN/INFO") from exc
     new_since = args.get("new_since")
-    trusted_packs_raw = args.get("trust_packs") or []
-    if not isinstance(trusted_packs_raw, list) or not all(isinstance(p, str) for p in trusted_packs_raw):
-        raise ToolError("trust_packs must be an array of strings")
-    trusted_packs = tuple(trusted_packs_raw)
-    cache_dir = _resolve_under_root(root, args["cache_dir"]) if args.get("cache_dir") else None
+    trusted_packs = _trusted_packs_arg(args)
+    cache_dir = _cache_dir_arg(args, root)
     result = run_scan(
         path,
         config_path=_cfg(args, root),
@@ -278,7 +284,11 @@ def _attest(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, 
         resolved_root,
         key,
         config_path=_cfg(args, root),
+        cache_dir=_cache_dir_arg(args, root),
         confine_to_root=True,
+        trust_local_packs=bool(args.get("trust_local_packs", False)),
+        trusted_packs=_trusted_packs_arg(args),
+        strict_defaults=bool(args.get("strict_defaults", False)),
         clarion_client=clarion,
         allow_dirty=allow_dirty,
     )
@@ -302,8 +312,12 @@ def _verify_attestation(args: dict[str, Any], root: Path, clarion: Any = None) -
         root=resolved_root,
         reproduce=reproduce,
         config_path=_cfg(args, root),
+        cache_dir=_cache_dir_arg(args, root),
         clarion_client=clarion,
         confine_to_root=True,
+        trust_local_packs=bool(args.get("trust_local_packs", False)),
+        trusted_packs=_trusted_packs_arg(args),
+        strict_defaults=bool(args.get("strict_defaults", False)),
     )
 
 
@@ -349,7 +363,16 @@ def _baseline_create(args: dict[str, Any], root: Path) -> dict[str, Any]:
     reason = args.get("reason")
     baseline_path = root / ".wardline" / "baseline.yaml"
     try:
-        count = generate_baseline(root, overwrite=False, config_path=_cfg(args, root), confine_to_root=True)
+        count = generate_baseline(
+            root,
+            overwrite=False,
+            config_path=_cfg(args, root),
+            cache_dir=_cache_dir_arg(args, root),
+            confine_to_root=True,
+            trust_local_packs=bool(args.get("trust_local_packs", False)),
+            trusted_packs=_trusted_packs_arg(args),
+            strict_defaults=bool(args.get("strict_defaults", False)),
+        )
     except FileExistsError:
         existing = load_baseline(baseline_path)
         return {
@@ -363,7 +386,16 @@ def _baseline_create(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 def _baseline_update(args: dict[str, Any], root: Path) -> dict[str, Any]:
     reason = args.get("reason")
-    count = generate_baseline(root, overwrite=True, config_path=_cfg(args, root), confine_to_root=True)
+    count = generate_baseline(
+        root,
+        overwrite=True,
+        config_path=_cfg(args, root),
+        cache_dir=_cache_dir_arg(args, root),
+        confine_to_root=True,
+        trust_local_packs=bool(args.get("trust_local_packs", False)),
+        trusted_packs=_trusted_packs_arg(args),
+        strict_defaults=bool(args.get("strict_defaults", False)),
+    )
     return {"baselined_count": count, "path": str(root / ".wardline" / "baseline.yaml"), "reason": reason}
 
 
@@ -433,10 +465,19 @@ _SEVERITY_ENUM = ["CRITICAL", "ERROR", "WARN", "INFO"]
 
 
 class WardlineMCPServer:
-    def __init__(self, *, root: Path, clarion_url: str | None = None, filigree_url: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        root: Path,
+        clarion_url: str | None = None,
+        filigree_url: str | None = None,
+        allow_write: bool = True,
+        allow_network: bool = True,
+    ) -> None:
         self.root = Path(root)
         self.clarion_url = clarion_url
         self.filigree_url = filigree_url
+        self._tool_policy = ToolPolicy(allow_write=allow_write, allow_network=allow_network)
         self.rpc = JsonRpcServer(server_name="wardline", server_version=__version__)
         self._tools: dict[str, Tool] = {}
         self._register_tools()
@@ -678,9 +719,25 @@ class WardlineMCPServer:
                         "path": {"type": "string"},
                         "config": {"type": "string"},
                         "allow_dirty": {"type": "boolean"},
+                        "cache_dir": {
+                            "type": "string",
+                            "description": "subdir relative to project root for summary cache",
+                        },
+                        "trust_packs": {"type": "array", "items": {"type": "string"}},
+                        "trust_local_packs": {"type": "boolean"},
+                        "strict_defaults": {"type": "boolean"},
                     },
                 },
-                handler=lambda args, root: _attest(args, root, self._clarion_client(_cfg(args, root))),
+                handler=lambda args, root: _attest(
+                    args,
+                    root,
+                    self._clarion_client(
+                        _cfg(args, root),
+                        trust_local_packs=bool(args.get("trust_local_packs") or False),
+                        trusted_packs=_trusted_packs_arg(args),
+                        strict_defaults=bool(args.get("strict_defaults") or False),
+                    ),
+                ),
             )
         )
         self.add_tool(
@@ -697,14 +754,31 @@ class WardlineMCPServer:
                         "reproduce": {"type": "boolean"},
                         "config": {"type": "string"},
                         "path": {"type": "string"},
+                        "cache_dir": {
+                            "type": "string",
+                            "description": "subdir relative to project root for summary cache",
+                        },
+                        "trust_packs": {"type": "array", "items": {"type": "string"}},
+                        "trust_local_packs": {"type": "boolean"},
+                        "strict_defaults": {"type": "boolean"},
                     },
                 },
-                handler=lambda args, root: _verify_attestation(args, root, self._clarion_client(_cfg(args, root))),
+                handler=lambda args, root: _verify_attestation(
+                    args,
+                    root,
+                    self._clarion_client(
+                        _cfg(args, root),
+                        trust_local_packs=bool(args.get("trust_local_packs") or False),
+                        trusted_packs=_trusted_packs_arg(args),
+                        strict_defaults=bool(args.get("strict_defaults") or False),
+                    ),
+                ),
             )
         )
         self.add_tool(
             Tool(
                 name="file_finding",
+                capabilities=frozenset({ToolCapability.READ, ToolCapability.WRITE, ToolCapability.NETWORK}),
                 description="File ONE finding (by `fingerprint`) into a tracked Filigree issue and "
                 "return its `issue_id`. Idempotent (re-filing returns the same issue). Emit findings "
                 "to Filigree first (scan with a configured Filigree URL) so the fingerprint is known; "
@@ -725,7 +799,7 @@ class WardlineMCPServer:
         self.add_tool(
             Tool(
                 name="judge",
-                network=True,
+                capabilities=frozenset({ToolCapability.READ, ToolCapability.NETWORK}),
                 description="NETWORK: opt-in LLM triage of active defects via OpenRouter "
                 "(needs WARDLINE_OPENROUTER_API_KEY). Labels each TRUE/FALSE positive. "
                 "Never run automatically; never folded into scan.",
@@ -750,11 +824,22 @@ class WardlineMCPServer:
         self.add_tool(
             Tool(
                 name="baseline_create",
+                capabilities=frozenset({ToolCapability.READ, ToolCapability.WRITE}),
                 description="Snapshot current defects as the baseline so only NEW findings surface. "
                 "Prefer FIXING a finding over baselining it. Optional reason.",
                 input_schema={
                     "type": "object",
-                    "properties": {"reason": {"type": "string"}, "config": {"type": "string"}},
+                    "properties": {
+                        "reason": {"type": "string"},
+                        "config": {"type": "string"},
+                        "cache_dir": {
+                            "type": "string",
+                            "description": "subdir relative to project root for summary cache",
+                        },
+                        "trust_packs": {"type": "array", "items": {"type": "string"}},
+                        "trust_local_packs": {"type": "boolean"},
+                        "strict_defaults": {"type": "boolean"},
+                    },
                 },
                 handler=_baseline_create,
             )
@@ -762,10 +847,21 @@ class WardlineMCPServer:
         self.add_tool(
             Tool(
                 name="baseline_update",
+                capabilities=frozenset({ToolCapability.READ, ToolCapability.WRITE}),
                 description="Re-derive and OVERWRITE the baseline. Optional reason.",
                 input_schema={
                     "type": "object",
-                    "properties": {"reason": {"type": "string"}, "config": {"type": "string"}},
+                    "properties": {
+                        "reason": {"type": "string"},
+                        "config": {"type": "string"},
+                        "cache_dir": {
+                            "type": "string",
+                            "description": "subdir relative to project root for summary cache",
+                        },
+                        "trust_packs": {"type": "array", "items": {"type": "string"}},
+                        "trust_local_packs": {"type": "boolean"},
+                        "strict_defaults": {"type": "boolean"},
+                    },
                 },
                 handler=_baseline_update,
             )
@@ -773,6 +869,7 @@ class WardlineMCPServer:
         self.add_tool(
             Tool(
                 name="waiver_add",
+                capabilities=frozenset({ToolCapability.READ, ToolCapability.WRITE}),
                 description="Waive ONE finding by fingerprint with a mandatory reason and expiry. "
                 "Prefer fixing; a waiver is an audited, time-boxed exception.",
                 input_schema={
@@ -791,6 +888,7 @@ class WardlineMCPServer:
         self.add_tool(
             Tool(
                 name="fix",
+                capabilities=frozenset({ToolCapability.READ, ToolCapability.WRITE}),
                 description="Scan and apply mechanical autofixes to findings (currently only PY-WL-111 is supported).",
                 input_schema={
                     "type": "object",
@@ -826,15 +924,70 @@ class WardlineMCPServer:
     def _tools_list(self, params: dict[str, Any]) -> dict[str, Any]:
         return {
             "tools": [
-                {"name": t.name, "description": t.description, "inputSchema": t.input_schema}
+                {
+                    "name": t.name,
+                    "description": t.description,
+                    "inputSchema": t.input_schema,
+                    "capabilities": [cap.value for cap in sorted(t.capabilities, key=lambda c: c.value)],
+                }
                 for t in self._tools.values()
             ]
         }
 
+    def _resolved_clarion_url_for_policy(self, arguments: dict[str, Any]) -> str | None:
+        return config_mod.resolve_clarion_url(
+            self.clarion_url,
+            self.root,
+            _cfg(arguments, self.root),
+            trust_local_packs=bool(arguments.get("trust_local_packs") or False),
+            trusted_packs=_trusted_packs_arg(arguments),
+            strict_defaults=bool(arguments.get("strict_defaults") or False),
+        )
+
+    def _resolved_filigree_url_for_policy(self, arguments: dict[str, Any]) -> str | None:
+        return config_mod.resolve_filigree_url(
+            self.filigree_url,
+            self.root,
+            _cfg(arguments, self.root),
+            trust_local_packs=bool(arguments.get("trust_local_packs") or False),
+            trusted_packs=_trusted_packs_arg(arguments),
+            strict_defaults=bool(arguments.get("strict_defaults") or False),
+        )
+
+    def _effective_tool_capabilities(self, tool: Tool, arguments: dict[str, Any]) -> frozenset[ToolCapability]:
+        capabilities = set(tool.capabilities)
+        if tool.name == "scan" and (
+            self._resolved_clarion_url_for_policy(arguments) is not None
+            or self._resolved_filigree_url_for_policy(arguments) is not None
+        ):
+            capabilities.update({ToolCapability.NETWORK, ToolCapability.WRITE})
+        if (
+            tool.name in {"explain_taint", "attest", "verify_attestation"}
+            and self._resolved_clarion_url_for_policy(arguments) is not None
+        ):
+            capabilities.add(ToolCapability.NETWORK)
+        if tool.name == "dossier" and (
+            self._resolved_clarion_url_for_policy(arguments) is not None
+            or self._resolved_filigree_url_for_policy(arguments) is not None
+        ):
+            capabilities.add(ToolCapability.NETWORK)
+        if tool.name == "judge" and bool(arguments.get("write", False)):
+            capabilities.add(ToolCapability.WRITE)
+        return frozenset(capabilities)
+
     def _tools_call(self, params: dict[str, Any]) -> dict[str, Any]:
         name = params.get("name")
-        arguments = params.get("arguments") or {}
-        tool = self._tools.get(name) if name is not None else None
+        if not isinstance(name, str):
+            raise McpError("tools/call params.name must be a string", code=_INVALID_PARAMS)
+        raw_arguments = params.get("arguments", {})
+        arguments: dict[str, Any]
+        if raw_arguments is None:
+            arguments = {}
+        elif isinstance(raw_arguments, dict):
+            arguments = raw_arguments
+        else:
+            raise McpError("tools/call params.arguments must be an object", code=_INVALID_PARAMS)
+        tool = self._tools.get(name)
         if tool is None:
             # Protocol fault (caller bug) → JSON-RPC error, not an agent-actionable
             # tool-execution outcome.
@@ -851,6 +1004,17 @@ class WardlineMCPServer:
                 print("Warning: jsonschema is missing; skipping MCP tool argument validation.", file=sys.stderr)
             except jsonschema.ValidationError as exc:
                 return self._is_error(f"invalid arguments: {exc.message}")
+
+        try:
+            effective_capabilities = self._effective_tool_capabilities(tool, arguments)
+        except ToolError as exc:
+            return self._is_error(exc.message)
+        except WardlineError as exc:
+            return self._is_error(str(exc))
+
+        denial = self._tool_policy.denial(name, effective_capabilities)
+        if denial is not None:
+            return self._is_error(denial)
 
         try:
             payload = tool.handler(arguments, self.root)

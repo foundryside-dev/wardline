@@ -55,8 +55,11 @@ class JsonRpcServer:
     def dispatch(self, message: dict[str, Any]) -> dict[str, Any] | None:
         """Handle one parsed JSON-RPC message. Returns the response object, or
         None for notifications (messages without an ``id``)."""
-        msg_id = message.get("id")
-        is_notification = "id" not in message
+        has_id = "id" in message
+        msg_id = message.get("id") if has_id else None
+        is_notification = not has_id
+        if has_id and (msg_id is None or isinstance(msg_id, bool) or not isinstance(msg_id, (str, int))):
+            return self._err(None, _INVALID_REQUEST, "invalid request: id must be a string or integer")
 
         if "method" not in message or not isinstance(message["method"], str):
             if is_notification:
@@ -64,42 +67,44 @@ class JsonRpcServer:
             return self._err(msg_id, _INVALID_REQUEST, "invalid request: missing or invalid method")
 
         method = message["method"]
-        params = message.get("params") or {}
+        if "params" not in message:
+            params: dict[str, Any] = {}
+        elif isinstance(message["params"], dict):
+            params = message["params"]
+        else:
+            if is_notification:
+                return None
+            return self._err(msg_id, _INVALID_PARAMS, "invalid params: params must be an object")
+
+        if is_notification:
+            if method in ("notifications/initialized", "initialized") and (
+                getattr(self, "_initializing", False) or getattr(self, "_initialized", False)
+            ):
+                self._initialized = True
+            return None
 
         if method == "initialize":
             self._initializing = True
             return self._ok(msg_id, self._initialize(params))
         if method in ("notifications/initialized", "initialized"):
-            if not getattr(self, "_initializing", False) and not getattr(self, "_initialized", False):
-                if is_notification:
-                    return None
-                return self._err(msg_id, _INVALID_REQUEST, "initialize must be called first")
-            self._initialized = True
-            return None  # handshake completion notification
+            return self._err(msg_id, _INVALID_REQUEST, "notifications must not include an id")
 
         if not getattr(self, "_initialized", False):
-            if is_notification:
-                return None
             return self._err(msg_id, _INVALID_REQUEST, "server not initialized")
-
-        if is_notification:
-            return None
 
         handler = self._handlers.get(method)
         if handler is None:
-            if is_notification:
-                return None
             return self._err(msg_id, _METHOD_NOT_FOUND, f"method not found: {method}")
         try:
             result = handler(params)
         except McpError as exc:
-            return None if is_notification else self._err(msg_id, exc.code, exc.message)
+            return self._err(msg_id, exc.code, exc.message)
         except Exception as exc:  # noqa: BLE001 — surface any handler crash as -32603
             import traceback
 
             traceback.print_exc(file=sys.stderr)
-            return None if is_notification else self._err(msg_id, _INTERNAL_ERROR, str(exc))
-        return None if is_notification else self._ok(msg_id, result)
+            return self._err(msg_id, _INTERNAL_ERROR, str(exc))
+        return self._ok(msg_id, result)
 
     @staticmethod
     def _ok(msg_id: Any, result: Any) -> dict[str, Any]:

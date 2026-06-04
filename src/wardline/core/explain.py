@@ -98,7 +98,7 @@ def _explain_local(
     path: str | None = None,
     line: int | None = None,
     config_path: Path | None = None,
-    confine_to_root: bool = False,
+    confine_to_root: bool = True,
 ) -> TaintExplanation | None:
     """Return the taint explanation for one finding, or None if it is not in the
     current scan (the caller's code changed since the scan that produced the
@@ -295,7 +295,7 @@ def explain_finding(
     path: str | None = None,
     line: int | None = None,
     config_path: Path | None = None,
-    confine_to_root: bool = False,
+    confine_to_root: bool = True,
     clarion: Any | None = None,
     sink_qualname: str | None = None,
 ) -> TaintExplanation | None:

@@ -630,7 +630,7 @@ def build_dossier(
     *,
     root: Path,
     config_path: Path | None = None,
-    confine_to_root: bool = False,
+    confine_to_root: bool = True,
     binding: EntityBinding | None = None,
     linkage_provider: LinkageProvider | None = None,
     work_provider: WorkProvider | None = None,

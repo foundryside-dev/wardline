@@ -135,3 +135,16 @@ def test_kwargs_unpacking_fires(tmp_path) -> None:
         """,
     )
     assert _ids(ctx) == [("PY-WL-105", "m.h")]
+
+
+def test_multiple_kwargs_unpacking_combines_raw_before_clean(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        def h(p):
+            raw_kwargs = {"x": read_raw(p)}
+            clean_kwargs = {"x": 1}
+            store(**raw_kwargs, **clean_kwargs)
+        """,
+    )
+    assert _ids(ctx) == [("PY-WL-105", "m.h")]

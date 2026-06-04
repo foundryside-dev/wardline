@@ -130,6 +130,35 @@ def test_save_and_load_roundtrip(tmp_path) -> None:
     assert c2.get(_KEY) == summaries
 
 
+def test_load_drops_file_when_internal_cache_key_mismatches_filename(tmp_path) -> None:
+    import json
+
+    payload = [_serialise_summary(_summary("m.a", key=_KEY2))]
+    (tmp_path / f"{_KEY}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    c = SummaryCache(cache_dir=tmp_path)
+    c.load()
+
+    assert len(c) == 0
+    assert c.get(_KEY) is None
+
+
+def test_load_drops_file_when_records_mix_cache_keys(tmp_path) -> None:
+    import json
+
+    payload = [
+        _serialise_summary(_summary("m.a", key=_KEY)),
+        _serialise_summary(_summary("m.b", key=_KEY2)),
+    ]
+    (tmp_path / f"{_KEY}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    c = SummaryCache(cache_dir=tmp_path)
+    c.load()
+
+    assert len(c) == 0
+    assert c.get(_KEY) is None
+
+
 def test_load_drops_malformed_json(tmp_path) -> None:
     (tmp_path / f"{_KEY}.json").write_text("{not json", encoding="utf-8")
     c = SummaryCache(cache_dir=tmp_path)

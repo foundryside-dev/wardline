@@ -154,7 +154,8 @@ class SummaryCache:
         """Store ``summaries`` under ``cache_key``.
 
         Raises ValueError if ``cache_key`` is not a 64-char lowercase hex
-        sha256 digest, or if any summary has a stale ``schema_version``.
+        sha256 digest, if any summary has a stale ``schema_version``, or if
+        any summary's embedded cache key differs from the store key.
         """
         if not self._CACHE_KEY_PATTERN.fullmatch(cache_key):
             raise ValueError(
@@ -166,6 +167,11 @@ class SummaryCache:
                     f"SummaryCache.put rejected a summary with "
                     f"schema_version={s.schema_version} (current: "
                     f"{SUMMARY_SCHEMA_VERSION})"
+                )
+            if s.cache_key != cache_key:
+                raise ValueError(
+                    f"SummaryCache.put rejected summary {s.fqn!r}: embedded cache_key={s.cache_key!r} "
+                    f"does not match store key {cache_key!r}"
                 )
         self._entries[cache_key] = summaries
 
@@ -230,6 +236,7 @@ class SummaryCache:
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
                 summaries = tuple(_deserialise_summary(d) for d in payload)
+                _validate_loaded_entry(cache_key, summaries)
             except (json.JSONDecodeError, ValueError, KeyError, TypeError) as exc:
                 _logger.warning("SummaryCache.load: dropping malformed entry %s: %s", path, exc)
                 continue
@@ -241,6 +248,14 @@ class SummaryCache:
             if any(s.schema_version != SUMMARY_SCHEMA_VERSION for s in summaries):  # pragma: no cover
                 continue
             self._entries[cache_key] = summaries
+
+
+def _validate_loaded_entry(cache_key: str, summaries: tuple[FunctionSummary, ...]) -> None:
+    mismatched = [s.fqn for s in summaries if s.cache_key != cache_key]
+    if mismatched:
+        raise ValueError(
+            f"embedded cache_key does not match filename key {cache_key!r} for summaries: {', '.join(mismatched)}"
+        )
 
 
 def _serialise_summary(s: FunctionSummary) -> dict[str, object]:

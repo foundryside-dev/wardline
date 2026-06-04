@@ -211,6 +211,21 @@ def test_unknown_tool_name_is_a_jsonrpc_error() -> None:
     assert "does_not_exist" in resp["error"]["message"]
 
 
+def test_malformed_tool_call_envelope_is_a_jsonrpc_invalid_params_error(tmp_path: Path) -> None:
+    server = WardlineMCPServer(root=tmp_path)
+    cases = [
+        (["not", "an", "object"], "params"),
+        ({"arguments": {}}, "name"),
+        ({"name": 123, "arguments": {}}, "name"),
+        ({"name": "scan", "arguments": ["not", "an", "object"]}, "arguments"),
+    ]
+    for params, expected in cases:
+        resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 22, "method": "tools/call", "params": params})
+        assert "result" not in resp, resp
+        assert resp["error"]["code"] == -32602
+        assert expected in resp["error"]["message"]
+
+
 def test_unknown_resource_is_invalid_params() -> None:
     server = WardlineMCPServer(root=FIXTURE)
     resp = server.rpc.dispatch(

@@ -56,10 +56,28 @@ def vocab() -> None:
 _SEV_PRINT_ORDER: dict[str, int] = {s.value: i for i, s in enumerate(Severity)}
 
 
-def _generate_baseline(path: Path, *, overwrite: bool, config_path: Path | None) -> None:
+def _generate_baseline(
+    path: Path,
+    *,
+    overwrite: bool,
+    config_path: Path | None,
+    cache_dir: Path | None,
+    trusted_packs: tuple[str, ...],
+    trust_local_packs: bool,
+    strict_defaults: bool,
+) -> None:
     baseline_path = path / ".wardline" / "baseline.yaml"
     try:
-        to_baseline = collect_and_write_baseline(path, overwrite=overwrite, config_path=config_path)
+        to_baseline = collect_and_write_baseline(
+            path,
+            overwrite=overwrite,
+            config_path=config_path,
+            cache_dir=cache_dir,
+            confine_to_root=True,
+            trust_local_packs=trust_local_packs,
+            trusted_packs=trusted_packs,
+            strict_defaults=strict_defaults,
+        )
     except FileExistsError:
         click.echo(f"{baseline_path} already exists; use `wardline baseline update` to overwrite.", err=True)
         raise SystemExit(2) from None
@@ -87,9 +105,49 @@ def baseline(ctx: click.Context) -> None:
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     default=None,
 )
-def baseline_create(path: Path, config_path: Path | None) -> None:
+@click.option(
+    "--cache-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Persist L3 summary cache here for faster incremental scans.",
+)
+@click.option(
+    "--trust-pack",
+    "trusted_packs",
+    multiple=True,
+    help="Allow importing this trust-grammar pack from wardline.yaml. May be repeated.",
+)
+@click.option(
+    "--allow-custom-packs",
+    "trust_local_packs",
+    is_flag=True,
+    default=False,
+    help="Allow loading custom trust-grammar packs from the local project directory.",
+)
+@click.option(
+    "--strict-defaults",
+    is_flag=True,
+    default=False,
+    help="Ignore repository-supplied custom configuration overrides (wardline.yaml).",
+)
+def baseline_create(
+    path: Path,
+    config_path: Path | None,
+    cache_dir: Path | None,
+    trusted_packs: tuple[str, ...],
+    trust_local_packs: bool,
+    strict_defaults: bool,
+) -> None:
     """Write a new baseline from current findings (refuses if one exists)."""
-    _generate_baseline(path, overwrite=False, config_path=config_path)
+    _generate_baseline(
+        path,
+        overwrite=False,
+        config_path=config_path,
+        cache_dir=cache_dir,
+        trusted_packs=trusted_packs,
+        trust_local_packs=trust_local_packs,
+        strict_defaults=strict_defaults,
+    )
 
 
 @baseline.command("update")
@@ -100,6 +158,46 @@ def baseline_create(path: Path, config_path: Path | None) -> None:
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     default=None,
 )
-def baseline_update(path: Path, config_path: Path | None) -> None:
+@click.option(
+    "--cache-dir",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Persist L3 summary cache here for faster incremental scans.",
+)
+@click.option(
+    "--trust-pack",
+    "trusted_packs",
+    multiple=True,
+    help="Allow importing this trust-grammar pack from wardline.yaml. May be repeated.",
+)
+@click.option(
+    "--allow-custom-packs",
+    "trust_local_packs",
+    is_flag=True,
+    default=False,
+    help="Allow loading custom trust-grammar packs from the local project directory.",
+)
+@click.option(
+    "--strict-defaults",
+    is_flag=True,
+    default=False,
+    help="Ignore repository-supplied custom configuration overrides (wardline.yaml).",
+)
+def baseline_update(
+    path: Path,
+    config_path: Path | None,
+    cache_dir: Path | None,
+    trusted_packs: tuple[str, ...],
+    trust_local_packs: bool,
+    strict_defaults: bool,
+) -> None:
     """Re-derive and overwrite the baseline from current findings."""
-    _generate_baseline(path, overwrite=True, config_path=config_path)
+    _generate_baseline(
+        path,
+        overwrite=True,
+        config_path=config_path,
+        cache_dir=cache_dir,
+        trusted_packs=trusted_packs,
+        trust_local_packs=trust_local_packs,
+        strict_defaults=strict_defaults,
+    )

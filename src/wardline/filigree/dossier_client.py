@@ -25,7 +25,11 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from wardline.core.dossier import TicketRef, WorkSection
+from wardline.core.errors import FiligreeEmitError
+from wardline.core.http import read_response_text
 from wardline.core.identity import ContentStatus, EntityBinding, content_status
+
+_ALLOWED_SCHEMES = ("http", "https")
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,17 +47,20 @@ class UrllibTransport:
         self._timeout = timeout
 
     def get(self, url: str, headers: Mapping[str, str]) -> Response:
+        scheme = urllib.parse.urlsplit(url).scheme.lower()
+        if scheme not in _ALLOWED_SCHEMES:
+            raise FiligreeEmitError(f"filigree dossier URL must use http or https; got scheme {scheme!r} in {url!r}")
         req = urllib.request.Request(url, headers=dict(headers), method="GET")
         try:
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:  # noqa: S310
-                return Response(status=resp.status, body=resp.read().decode("utf-8", "replace"))
+                return Response(status=resp.status, body=read_response_text(resp))
         except urllib.error.HTTPError as exc:
             # Mirror clarion/client.UrllibTransport: surface the HTTP status to the
             # caller (a >=400 band) rather than letting HTTPError (a URLError subclass)
             # collapse into the "unreachable" branch — so a 4xx/5xx is classified, not
             # mistaken for an outage.
             with exc:
-                return Response(status=exc.code, body=exc.read().decode("utf-8", "replace"))
+                return Response(status=exc.code, body=read_response_text(exc))
 
 
 def _rows_of(parsed: Any) -> list[dict[str, Any]]:
@@ -75,6 +82,9 @@ def _rows_of(parsed: Any) -> list[dict[str, Any]]:
 def _api_base_url(url: str) -> str:
     """Normalize an origin/API/scan-results URL to the Filigree API base."""
     parsed = urllib.parse.urlsplit(url.rstrip("/"))
+    scheme = parsed.scheme.lower()
+    if scheme not in _ALLOWED_SCHEMES:
+        raise FiligreeEmitError(f"filigree dossier URL must use http or https; got scheme {scheme!r} in {url!r}")
     path = parsed.path.rstrip("/")
     if path.endswith("/api/loom/scan-results"):
         path = path[: -len("/loom/scan-results")]

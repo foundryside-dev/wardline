@@ -121,6 +121,28 @@ def test_mcp_attest_then_verify_round_trips(monkeypatch, tmp_path: Path) -> None
     assert verified["reproduced"] is None  # reproduce defaults False
 
 
+def test_mcp_attest_reproduce_with_trusted_pack(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv(WARDLINE_ATTEST_KEY_ENV, raising=False)
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[3]))
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "wardline.yaml").write_text("packs:\n  - tests.unit.install.mock_pack\n", encoding="utf-8")
+    (proj / "m.py").write_text(
+        "from tests.unit.install.mock_pack import mock_boundary\n\n@mock_boundary\ndef violator():\n    pass\n",
+        encoding="utf-8",
+    )
+    mint_attest_key(proj)
+    server = WardlineMCPServer(root=proj)
+    trust_args = {"trust_packs": ["tests.unit.install.mock_pack"], "trust_local_packs": True}
+
+    bundle = _payload(_call(server, "attest", trust_args))
+    assert bundle["payload"]["posture"]["defect_total"] >= 1
+
+    verified = _payload(_call(server, "verify_attestation", {"bundle": bundle, "reproduce": True, **trust_args}))
+    assert verified["signature_valid"] is True
+    assert verified["reproduced"] is True
+
+
 def test_mcp_attest_no_key_is_iserror(monkeypatch, tmp_path: Path) -> None:
     # No key (env unset, no .env) → tool-EXECUTION isError result, NOT a crash.
     monkeypatch.delenv(WARDLINE_ATTEST_KEY_ENV, raising=False)

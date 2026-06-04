@@ -133,7 +133,7 @@ def run_judge(
     context_lines: int | None = None,
     max_findings: int | None = None,
     write: bool = False,
-    confine_to_root: bool = False,
+    confine_to_root: bool = True,
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
     trust_judge_config: bool = False,

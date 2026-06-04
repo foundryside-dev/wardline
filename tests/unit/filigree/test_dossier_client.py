@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from wardline.clarion.identity import ContentStatus, EntityBinding, IdentityStatus
+from wardline.core.errors import FiligreeEmitError
 from wardline.filigree.dossier_client import FiligreeWorkProvider, Response
 
 
@@ -62,6 +65,19 @@ def test_scan_results_url_is_normalized_to_api_origin_for_associations() -> None
     FiligreeWorkProvider("http://filigree.example/api/loom/scan-results", transport=t).work(_BINDING)
 
     assert t.calls[0][0].startswith("http://filigree.example/api/entity-associations?")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "file://localhost/tmp/associations.json",
+        "ftp://localhost/api",
+        "localhost:8628/api",
+    ],
+)
+def test_work_provider_rejects_non_http_urls(url: str) -> None:
+    with pytest.raises(FiligreeEmitError, match="http or https"):
+        FiligreeWorkProvider(url, transport=FakeTransport(Response(status=200, body=_rows())))
 
 
 def test_drifted_association_is_flagged_per_ticket_and_section_stale() -> None:
@@ -203,3 +219,26 @@ def test_urllib_transport_get_surfaces_http_error_status(monkeypatch) -> None:
     monkeypatch.setattr(urllib.request, "urlopen", _raise)
     resp = UrllibTransport().get("http://f/api/entity-associations?entity_id=x", {})
     assert resp.status == 503
+
+
+def test_urllib_transport_get_bounds_http_error_body(monkeypatch) -> None:
+    import io
+    import urllib.error
+    import urllib.request
+
+    from wardline.core.http import MAX_RESPONSE_BODY_BYTES
+    from wardline.filigree.dossier_client import UrllibTransport
+
+    def _raise(req, timeout=None):
+        raise urllib.error.HTTPError(
+            "http://f",
+            503,
+            "Service Unavailable",
+            {},
+            io.BytesIO(b"x" * (MAX_RESPONSE_BODY_BYTES + 9)),
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", _raise)
+    resp = UrllibTransport().get("http://f/api/entity-associations?entity_id=x", {})
+    assert len(resp.body) < MAX_RESPONSE_BODY_BYTES + 128
+    assert resp.body.endswith("[truncated]")

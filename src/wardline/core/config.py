@@ -241,6 +241,8 @@ def _is_safe_url(url: str | None) -> bool:
         from urllib.parse import urlsplit
 
         parsed = urlsplit(url)
+        if parsed.scheme.lower() not in ("http", "https"):
+            return False
         hostname = parsed.hostname
         if hostname in ("localhost", "127.0.0.1", "::1"):
             return True

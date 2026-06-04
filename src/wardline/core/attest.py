@@ -42,8 +42,12 @@ import hashlib
 import hmac
 import json
 import subprocess
+from collections.abc import Mapping
+from dataclasses import fields, is_dataclass
 from datetime import date
+from enum import Enum
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 from wardline._version import __version__
@@ -97,19 +101,124 @@ def git_state(root: Path) -> tuple[str | None, bool]:
     return commit, dirty
 
 
-def ruleset_hash(config: WardlineConfig) -> str:
-    """A deterministic ``"sha256:<hex>"`` over the config's rule surface.
+def _file_sha256(path: Path | None) -> str | None:
+    if path is None or not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return None
+    return digest.hexdigest()
 
-    Canonicalises ``sorted(rules_enable)``, ``sorted(rules_severity.items())`` and the
-    Wardline ``__version__`` into a stable JSON string, then SHA-256s it. The same config
-    always hashes identically; changing any enabled rule, any severity override, or the
-    analyzer version changes the hash — so a bundle's ruleset is pinned to the policy that
-    produced it.
+
+def _module_origin(module: ModuleType) -> Path | None:
+    spec = getattr(module, "__spec__", None)
+    origin = getattr(spec, "origin", None) or getattr(module, "__file__", None)
+    if not isinstance(origin, str) or origin in {"built-in", "frozen"}:
+        return None
+    return Path(origin)
+
+
+def _callable_policy_identity(value: Any) -> dict[str, Any]:
+    code = getattr(value, "__code__", None)
+    code_hash = None
+    if code is not None:
+        digest = hashlib.sha256()
+        digest.update(code.co_code)
+        digest.update(repr(code.co_consts).encode("utf-8", "backslashreplace"))
+        digest.update(repr(code.co_names).encode("utf-8", "backslashreplace"))
+        digest.update(repr(code.co_varnames).encode("utf-8", "backslashreplace"))
+        code_hash = digest.hexdigest()
+    return {
+        "module": getattr(value, "__module__", None),
+        "qualname": getattr(value, "__qualname__", getattr(value, "__name__", repr(value))),
+        "code_sha256": code_hash,
+    }
+
+
+def _class_policy_identity(value: type) -> dict[str, Any]:
+    source_path = None
+    try:
+        import inspect
+
+        source = inspect.getsourcefile(value)
+        source_path = Path(source) if source is not None else None
+    except (OSError, TypeError):
+        source_path = None
+    return {
+        "module": getattr(value, "__module__", None),
+        "qualname": getattr(value, "__qualname__", value.__name__),
+        "rule_id": getattr(value, "rule_id", None),
+        "source_sha256": _file_sha256(source_path),
+    }
+
+
+def _jsonable_policy_value(value: Any) -> Any:
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, Mapping):
+        return {str(k): _jsonable_policy_value(v) for k, v in sorted(value.items(), key=lambda item: str(item[0]))}
+    if isinstance(value, tuple | list):
+        return [_jsonable_policy_value(v) for v in value]
+    if isinstance(value, set | frozenset):
+        rendered = [_jsonable_policy_value(v) for v in value]
+        return sorted(rendered, key=lambda item: json.dumps(item, sort_keys=True, default=str))
+    if isinstance(value, type):
+        return _class_policy_identity(value)
+    if is_dataclass(value) and not isinstance(value, type):
+        return {field.name: _jsonable_policy_value(getattr(value, field.name)) for field in fields(value)}
+    if callable(value):
+        return _callable_policy_identity(value)
+    return repr(value)
+
+
+def _pack_policy_identity(name: str, module: Any) -> dict[str, Any]:
+    if not isinstance(module, ModuleType):
+        return {"name": name, "loaded": False, "module_repr": repr(module)}
+    origin = _module_origin(module)
+    return {
+        "name": name,
+        "loaded": True,
+        "module": getattr(module, "__name__", name),
+        "version": getattr(module, "__version__", None),
+        "source_sha256": _file_sha256(origin),
+        "config": _jsonable_policy_value(getattr(module, "config", None)),
+        "grammar": _jsonable_policy_value(getattr(module, "grammar", None)),
+    }
+
+
+def _effective_scan_policy(config: WardlineConfig) -> dict[str, Any]:
+    return {
+        "schema": "wardline-effective-scan-policy-v1",
+        "wardline_version": __version__,
+        "source_roots": list(config.source_roots),
+        "exclude": list(config.exclude),
+        "rules": {
+            "enable": sorted(config.rules_enable),
+            "severity": {str(k): str(v) for k, v in sorted(config.rules_severity.items())},
+        },
+        "provenance_clash": config.provenance_clash,
+        "untrusted_sources": sorted(config.untrusted_sources),
+        "sanitisers": sorted(config.sanitisers),
+        "packs": [_pack_policy_identity(name, config.pack_modules.get(name)) for name in config.packs],
+    }
+
+
+def ruleset_hash(config: WardlineConfig) -> str:
+    """A deterministic ``"sha256:<hex>"`` over the effective scan policy.
+
+    The signed identity covers the analyzer version, source scope, excludes, rule
+    enablement/severity, provenance policy, custom source/sanitiser trust semantics,
+    and trusted pack identity/config/grammar. Two attestations with the same hash are
+    therefore comparable evidence bundles under the policy inputs that materially shape
+    scan results.
     """
-    canonical = json.dumps(
-        [sorted(config.rules_enable), sorted(config.rules_severity.items()), __version__],
-        sort_keys=True,
-    )
+    canonical = json.dumps(_effective_scan_policy(config), sort_keys=True, separators=(",", ":"))
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return f"sha256:{digest}"
 
@@ -174,7 +283,11 @@ def _build_payload(
     root: Path,
     *,
     config_path: Path | None,
-    confine_to_root: bool = False,
+    cache_dir: Path | None = None,
+    confine_to_root: bool = True,
+    trust_local_packs: bool = False,
+    trusted_packs: tuple[str, ...] = (),
+    strict_defaults: bool = False,
     today: date,
     clarion_client: Any = None,
 ) -> dict[str, Any]:
@@ -186,10 +299,23 @@ def _build_payload(
     :func:`build_attestation`, never here — verify must not raise on a dirty tree).
     """
     cfg_path = config_path or (root / "wardline.yaml")
-    config = config_mod.load(cfg_path)
+    config = config_mod.load(
+        cfg_path,
+        trust_local_packs=trust_local_packs,
+        trusted_packs=trusted_packs,
+        strict_defaults=strict_defaults,
+    )
     waivers = parse_waivers(config.waivers)
 
-    result = run_scan(root, config_path=config_path, confine_to_root=confine_to_root)
+    result = run_scan(
+        root,
+        config_path=config_path,
+        cache_dir=cache_dir,
+        confine_to_root=confine_to_root,
+        trust_local_packs=trust_local_packs,
+        trusted_packs=trusted_packs,
+        strict_defaults=strict_defaults,
+    )
     commit, dirty = git_state(root)
 
     if result.context is None:
@@ -228,7 +354,11 @@ def build_attestation(
     key: str,
     *,
     config_path: Path | None = None,
-    confine_to_root: bool = False,
+    cache_dir: Path | None = None,
+    confine_to_root: bool = True,
+    trust_local_packs: bool = False,
+    trusted_packs: tuple[str, ...] = (),
+    strict_defaults: bool = False,
     clarion_client: Any = None,
     allow_dirty: bool = True,
     today: date | None = None,
@@ -252,7 +382,11 @@ def build_attestation(
     payload = _build_payload(
         root,
         config_path=config_path,
+        cache_dir=cache_dir,
         confine_to_root=confine_to_root,
+        trust_local_packs=trust_local_packs,
+        trusted_packs=trusted_packs,
+        strict_defaults=strict_defaults,
         today=today,
         clarion_client=clarion_client,
     )
@@ -270,8 +404,12 @@ def verify_attestation(
     root: Path | None = None,
     reproduce: bool = False,
     config_path: Path | None = None,
+    cache_dir: Path | None = None,
     clarion_client: Any = None,
-    confine_to_root: bool = False,
+    confine_to_root: bool = True,
+    trust_local_packs: bool = False,
+    trusted_packs: tuple[str, ...] = (),
+    strict_defaults: bool = False,
 ) -> dict[str, Any]:
     """Verify a bundle's signature (always, offline) and optionally its reproducibility.
 
@@ -321,7 +459,11 @@ def verify_attestation(
     rederived = _build_payload(
         root,
         config_path=config_path,
+        cache_dir=cache_dir,
         confine_to_root=confine_to_root,
+        trust_local_packs=trust_local_packs,
+        trusted_packs=trusted_packs,
+        strict_defaults=strict_defaults,
         today=today,
         clarion_client=clarion_client,
     )

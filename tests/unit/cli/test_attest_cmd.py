@@ -84,6 +84,53 @@ def test_build_round_trips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert verify_attestation(bundle, key)["signature_valid"] is True
 
 
+def test_build_and_verify_reproduce_with_trusted_pack(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("WARDLINE_ATTEST_KEY", raising=False)
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[3]))
+    (tmp_path / "wardline.yaml").write_text("packs:\n  - tests.unit.install.mock_pack\n", encoding="utf-8")
+    (tmp_path / "m.py").write_text(
+        "from tests.unit.install.mock_pack import mock_boundary\n\n@mock_boundary\ndef violator():\n    pass\n",
+        encoding="utf-8",
+    )
+    mint_attest_key(tmp_path)
+
+    runner = CliRunner()
+    bundle_path = tmp_path / "attest.json"
+    built = runner.invoke(
+        cli,
+        [
+            "attest",
+            str(tmp_path),
+            "--trust-pack",
+            "tests.unit.install.mock_pack",
+            "--allow-custom-packs",
+            "--out",
+            str(bundle_path),
+        ],
+    )
+    assert built.exit_code == 0, built.output
+    bundle = json.loads(built.output)
+    assert bundle["payload"]["posture"]["defect_total"] >= 1
+
+    verified = runner.invoke(
+        cli,
+        [
+            "attest",
+            str(tmp_path),
+            "--verify",
+            str(bundle_path),
+            "--reproduce",
+            "--trust-pack",
+            "tests.unit.install.mock_pack",
+            "--allow-custom-packs",
+        ],
+    )
+    assert verified.exit_code == 0, verified.output
+    result = json.loads(verified.output)
+    assert result["signature_valid"] is True
+    assert result["reproduced"] is True
+
+
 def test_no_key_exits_2_with_install_hint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A tree with no minted key and no env value → exit 2 with a ``wardline install`` hint."""
     monkeypatch.delenv("WARDLINE_ATTEST_KEY", raising=False)
@@ -138,6 +185,35 @@ def test_verify_mode_valid_and_tampered(tmp_path: Path, monkeypatch: pytest.Monk
     bad = runner.invoke(cli, ["attest", str(tmp_path), "--verify", str(bundle_path)])
     assert bad.exit_code == 1
     assert json.loads(bad.output)["signature_valid"] is False
+
+
+def test_verify_reproduce_refuses_escaping_source_roots_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("WARDLINE_ATTEST_KEY", raising=False)
+    project = tmp_path / "proj"
+    project.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.py").write_text(_MODULE, encoding="utf-8")
+    (project / "wardline.yaml").write_text('source_roots: ["../outside"]\n', encoding="utf-8")
+    _git(["init"], project)
+    _git(["config", "user.email", "test@example.com"], project)
+    _git(["config", "user.name", "Test"], project)
+    key, _ = mint_attest_key(project)
+    _git(["add", "-A"], project)
+    _git(["commit", "-m", "init"], project)
+
+    from wardline.core.attest import build_attestation
+
+    bundle = build_attestation(project, key, confine_to_root=False)
+    bundle_path = tmp_path / "legacy-attest.json"
+    bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+
+    result = CliRunner().invoke(cli, ["attest", str(project), "--verify", str(bundle_path), "--reproduce"])
+
+    assert result.exit_code == 2
+    assert "outside the project root" in result.output
 
 
 def test_verify_malformed_bundle_exits_2_no_traceback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

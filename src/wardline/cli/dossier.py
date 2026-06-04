@@ -69,6 +69,7 @@ def dossier(
             clarion_client=clarion_client,
             filigree_url=filigree_url,
             config_path=config_path,
+            confine_to_root=True,
         )
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)

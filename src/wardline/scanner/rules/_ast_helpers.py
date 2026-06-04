@@ -32,7 +32,7 @@ def _own_statements(node: ast.AST) -> Iterator[ast.stmt]:
 def own_except_handlers(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.ExceptHandler]:
     """Yield the ``except`` handlers in *node*'s own scope (excludes nested defs)."""
     for stmt in _own_statements(node):
-        if isinstance(stmt, ast.Try):
+        if isinstance(stmt, (ast.Try, ast.TryStar)):
             yield from stmt.handlers
 
 

@@ -80,19 +80,19 @@ def test_analyzer_pathological_deep_expression_skips_file_not_scan(tmp_path) -> 
 
 
 def test_analyzer_l2_recursion_boundary_contains_per_function(monkeypatch) -> None:
-    # Directly exercise the per-function L2 boundary: if compute_variable_taints
+    # Directly exercise the per-function L2 boundary: if the L2 pipeline stage
     # raises RecursionError for one function, the analyzer contains it (that
     # function -> empty var-taints) and still produces a context.
     import wardline.scanner.analyzer as analyzer_mod
 
-    real = analyzer_mod.compute_variable_taints
+    real = analyzer_mod.run_l2_function_stage
 
-    def _boom(func_node, function_taint, taint_map, *args, **kwargs):  # noqa: ANN001, ANN202
-        if any(isinstance(n, ast.Name) and n.id == "boom" for n in ast.walk(func_node)):
+    def _boom(stage_input):  # noqa: ANN001, ANN202
+        if any(isinstance(n, ast.Name) and n.id == "boom" for n in ast.walk(stage_input.node)):
             raise RecursionError("simulated deep L2")
-        return real(func_node, function_taint, taint_map, *args, **kwargs)
+        return real(stage_input)
 
-    monkeypatch.setattr(analyzer_mod, "compute_variable_taints", _boom)
+    monkeypatch.setattr(analyzer_mod, "run_l2_function_stage", _boom)
 
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)

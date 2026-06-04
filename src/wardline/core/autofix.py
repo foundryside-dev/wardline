@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import ast
-import contextlib
 import io
 import logging
 import tokenize
@@ -13,6 +12,7 @@ from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 
 from wardline.core.config import WardlineConfig
+from wardline.core.errors import WardlineError
 from wardline.core.finding import Finding
 
 logger = logging.getLogger(__name__)
@@ -148,6 +148,7 @@ def run_autofix(
 
         modified = False
         new_lines = list(source_lines)
+        pending_fixes: list[str] = []
 
         for node, f in to_replace:
             # Ensure line bounds are valid
@@ -213,10 +214,14 @@ def run_autofix(
             # Replace the lines array
             new_lines = before_lines + [middle_text] + after_lines
             modified = True
-            applied[rel_path].append(f"L{lineno}: replaced assert with `raise {exception_name}`")
+            pending_fixes.append(f"L{lineno}: replaced assert with `raise {exception_name}`")
 
-        if modified and not dry_run:
-            with contextlib.suppress(Exception):
-                file_path.write_text("".join(new_lines), encoding="utf-8")
+        if modified:
+            if not dry_run:
+                try:
+                    file_path.write_text("".join(new_lines), encoding="utf-8")
+                except OSError as exc:
+                    raise WardlineError(f"Failed to write autofix changes to {rel_path}: {exc}") from exc
+            applied[rel_path].extend(pending_fixes)
 
     return dict(applied)

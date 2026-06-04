@@ -17,9 +17,7 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity
-from wardline.core.qualname import module_dotted_name
 from wardline.core.taints import TaintState, combine
-from wardline.scanner.ast_primitives import build_import_alias_map
 from wardline.scanner.context import AnalysisContext, RuleRegistry
 from wardline.scanner.diagnostics import (
     build_diagnostic_findings,
@@ -27,21 +25,16 @@ from wardline.scanner.diagnostics import (
     build_unknown_import_findings,
 )
 from wardline.scanner.grammar import TrustGrammar, default_grammar
-from wardline.scanner.index import Entity, discover_class_qualnames, discover_file_entities
+from wardline.scanner.index import Entity
+from wardline.scanner.pipeline import L2FunctionInput, ParseProjectInput, run_l2_function_stage, run_parse_project_stage
 from wardline.scanner.rules import build_default_registry
 from wardline.scanner.taint.call_taint_map import build_call_taint_map
 from wardline.scanner.taint.decorator_provider import (
     DecoratorTaintSourceProvider,
     vocabulary_star_exports,
 )
-from wardline.scanner.taint.function_level import seed_function_taints
-from wardline.scanner.taint.project_resolver import ModuleInput, resolve_project_taints
-from wardline.scanner.taint.provider import SeedContext, TaintSourceProvider
-from wardline.scanner.taint.variable_level import (
-    compute_return_callee,
-    compute_return_taint,
-    compute_variable_taints,
-)
+from wardline.scanner.taint.project_resolver import resolve_project_taints
+from wardline.scanner.taint.provider import TaintSourceProvider
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -105,10 +98,6 @@ class WardlineAnalyzer:
             _PROVENANCE_CLASH.reset(token_clash)
 
     def _analyze_inner(self, files: Sequence[Path], config: WardlineConfig, *, root: Path) -> Sequence[Finding]:
-        modules: list[ModuleInput] = []
-        # (relpath, module_path, tree, entities, alias_map, class_qualnames)
-        file_meta: list[tuple[str, str, ast.Module, tuple[Entity, ...], dict[str, str], frozenset[str]]] = []
-        parse_findings: list[Finding] = []
         # Statically-known star-import exports (the trust vocabulary, T1.2). A REGISTRY-
         # derived constant for the whole scan — compute once and reuse at both seam points.
         star_exports = vocabulary_star_exports()
@@ -124,146 +113,20 @@ class WardlineAnalyzer:
         # Filigree's project-relative-path validation.
         root = root.resolve()
 
-        dirty_modules: set[str] = set()
-        for path in files:
-            relpath = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
-            module = module_dotted_name(relpath)
-            if module is None:
-                # The file was discovered but maps to no module (e.g. a top-level
-                # __init__.py). Emit a FACT making the skip OBSERVABLE — a silent
-                # ``continue`` here was a false-green (the file counted as scanned yet
-                # produced zero findings). This is its OWN rule_id, distinct from
-                # WLN-ENGINE-FILE-SKIPPED: a benign layout artifact (nothing to
-                # analyze), NOT a "tried and failed" signal — so it is deliberately
-                # NOT in UNANALYZED_RULE_IDS and must not dilute the unanalyzed count.
-                parse_findings.append(
-                    Finding(
-                        rule_id="WLN-ENGINE-NO-MODULE",
-                        message=f"{relpath}: maps to no module (nothing to analyze)",
-                        severity=Severity.NONE,
-                        kind=Kind.FACT,
-                        location=Location(path=relpath),
-                        fingerprint=_fp("WLN-ENGINE-NO-MODULE", relpath),
-                        properties={"reason": "no_module_mapping"},
-                    )
-                )
-                continue
-            # File-level fail-closed boundary. A read/decode error, a SyntaxError
-            # (unparseable), or a RecursionError (pathological depth — a generated
-            # mega-expression recurses not only in L2 but in entity discovery's
-            # tree walk, which happens first) skips the file with a FACT rather
-            # than aborting the whole scan. The per-function L2 boundary below is
-            # finer-grained defense for the case where parse + discovery succeed.
-            try:
-                source = path.read_text(encoding="utf-8")  # universal-newline -> LF
-                source_bytes = source.encode("utf-8")
-
-                # WLN-MED-10: Check cache before parsing and L2
-                provider_fingerprint = self._provider.fingerprint()
-                from wardline.scanner.taint.project_resolver import _RESOLVER_VERSION
-                from wardline.scanner.taint.summary import SUMMARY_SCHEMA_VERSION, compute_cache_key
-
-                cache_key = compute_cache_key(
-                    module_path=module,
-                    source_bytes=source_bytes,
-                    schema_version=SUMMARY_SCHEMA_VERSION,
-                    resolver_version=_RESOLVER_VERSION,
-                    provider_fingerprint=provider_fingerprint,
-                )
-                if self._cache is None or not self._cache.has_current(cache_key):
-                    dirty_modules.add(module)
-
-                tree = ast.parse(source)
-                entities = tuple(discover_file_entities(tree, module=module, path=relpath))
-                classes = frozenset(discover_class_qualnames(tree, module=module))
-                is_pkg_file = path.name == "__init__.py"
-                alias_map = build_import_alias_map(
-                    tree, module_path=module, is_package=is_pkg_file, star_exports=star_exports
-                )
-                seeds = seed_function_taints(
-                    entities,
-                    ctx=SeedContext(module=module, alias_map=alias_map),
-                    provider=self._provider,
-                )
-                for ent in entities:
-                    if ent.qualname in config.untrusted_sources:
-                        from wardline.scanner.taint.function_level import FunctionSeed
-
-                        seeds[ent.qualname] = FunctionSeed(
-                            qualname=ent.qualname,
-                            body_taint=TaintState.EXTERNAL_RAW,
-                            return_taint=TaintState.EXTERNAL_RAW,
-                            source="provider",
-                            unprovable_boundaries=(),
-                        )
-            except (SyntaxError, UnicodeDecodeError, OSError) as exc:
-                msg = getattr(exc, "msg", None) or str(exc)
-                lineno = exc.lineno if isinstance(exc, SyntaxError) else None
-                parse_findings.append(
-                    Finding(
-                        rule_id="WLN-ENGINE-PARSE-ERROR",
-                        message=f"{relpath}: could not read/parse ({msg})",
-                        severity=Severity.NONE,
-                        kind=Kind.FACT,
-                        location=Location(path=relpath, line_start=lineno),
-                        fingerprint=_fp("WLN-ENGINE-PARSE-ERROR", relpath),
-                        properties={"module": module},
-                    )
-                )
-                continue
-            except RecursionError:
-                parse_findings.append(
-                    Finding(
-                        rule_id="WLN-ENGINE-FILE-SKIPPED",
-                        message=f"{relpath}: skipped — expression too deep to analyze safely",
-                        severity=Severity.NONE,
-                        kind=Kind.FACT,
-                        location=Location(path=relpath),
-                        fingerprint=_fp("WLN-ENGINE-FILE-SKIPPED", relpath),
-                        properties={"module": module, "reason": "recursion_limit"},
-                    )
-                )
-                continue
-            modules.append(
-                ModuleInput(
-                    module_path=module,
-                    entities=entities,
-                    class_qualnames=classes,
-                    alias_map=alias_map,
-                    seeds=seeds,
-                    source_bytes=source.encode("utf-8"),
-                )
+        parse_stage = run_parse_project_stage(
+            ParseProjectInput(
+                files=files,
+                root=root,
+                provider=self._provider,
+                config=config,
+                star_exports=star_exports,
+                summary_cache=self._cache,
             )
-            file_meta.append((relpath, module, tree, entities, alias_map, classes))
-            # T2.4 soundness inheritance: a CUSTOM boundary type that matched but
-            # could not be proven (a required level unreadable) seeded the fail-closed
-            # UNKNOWN_RAW. Surface it as an observable FACT so the extension plane
-            # cannot silently false-green. Builtins never set this (the provider keeps
-            # them silent), so the byte-identity oracle holds. NOT in
-            # UNANALYZED_RULE_IDS: the function WAS scanned — only its annotation was
-            # unreadable (an honest under-seed, not a file/function under-scan).
-            for ent in entities:
-                fn_seed = seeds.get(ent.qualname)
-                if fn_seed is None:
-                    continue
-                for boundary in fn_seed.unprovable_boundaries:
-                    parse_findings.append(
-                        Finding(
-                            rule_id="WLN-ENGINE-UNPROVABLE-BOUNDARY",
-                            message=(
-                                f"{ent.qualname}: custom boundary @{boundary} could not be "
-                                f"proven (argument unreadable) — seeded UNKNOWN_RAW"
-                            ),
-                            severity=Severity.NONE,
-                            kind=Kind.FACT,
-                            location=ent.location,
-                            # Keyed on (qualname, boundary) so two unprovable customs on
-                            # one function produce two distinct FACTs (no collision).
-                            fingerprint=_fp("WLN-ENGINE-UNPROVABLE-BOUNDARY", ent.qualname, boundary),
-                            qualname=ent.qualname,
-                            properties={"boundary": boundary, "reason": "arg_unreadable"},
-                        )
-                    )
+        )
+        modules = parse_stage.modules
+        file_meta = parse_stage.files
+        parse_findings = list(parse_stage.parse_findings)
+        dirty_modules = set(parse_stage.dirty_modules)
 
         if self._cache is not None:
             result = resolve_project_taints(
@@ -294,10 +157,11 @@ class WardlineAnalyzer:
         # mis-read validated output as raw (over-taint -> PY-WL-101 false positive).
         project_return_taints = dict(result.return_taint_map)
         project_by_module: dict[str, dict[str, TaintState]] = {}
-        for _relpath, module, _tree, entities, _alias_map, _classes in file_meta:
+        for parsed in file_meta:
+            module = parsed.module
             prefix = module + "."
             bucket = project_by_module.setdefault(module, {})
-            for ent in entities:
+            for ent in parsed.entities:
                 rest = ent.qualname[len(prefix) :] if ent.qualname.startswith(prefix) else ent.qualname
                 if "." not in rest:  # top-level function (methods aren't bare-callable)
                     bucket[rest] = project_return_taints.get(ent.qualname, TaintState.UNKNOWN_RAW)
@@ -331,27 +195,26 @@ class WardlineAnalyzer:
                 elif positional_params:
                     positional_params = positional_params[1:]
 
-            pos_args: list[TaintState] = []
-            i = 0
-            while i in arg_taints:
-                pos_args.append(arg_taints[i])
-                i += 1
+            explicit_keyword_names = {
+                key for key in arg_taints if isinstance(key, str) and not key.startswith("*")
+            }
+            filled_args: set[str] = set()
+            positional_slots = [*posonly_params, *positional_params]
             pos_idx = 0
-            for param in posonly_params:
-                if pos_idx < len(pos_args):
-                    bound.setdefault(param.arg, []).append(pos_args[pos_idx])
-                    pos_idx += 1
-            filled_args = set()
-            for param in positional_params:
-                if pos_idx < len(pos_args):
-                    bound.setdefault(param.arg, []).append(pos_args[pos_idx])
+            for pos_key in sorted(k for k in arg_taints if isinstance(k, int)):
+                if f"*{pos_key}" in arg_taints:
+                    continue
+                taint = arg_taints[pos_key]
+                if pos_idx < len(positional_slots):
+                    param = positional_slots[pos_idx]
+                    bound.setdefault(param.arg, []).append(taint)
                     filled_args.add(param.arg)
-                    pos_idx += 1
-            if args_node.vararg and pos_idx < len(pos_args):
-                for taint in pos_args[pos_idx:]:
+                elif args_node.vararg:
                     bound.setdefault(args_node.vararg.arg, []).append(taint)
+                pos_idx += 1
 
-            # Handle *args unpacking
+            # Handle *args unpacking. Starred arguments can only bind still-open
+            # positional slots or *varargs; they cannot rebind explicit keywords.
             starred_taints = [
                 taint for key, taint in arg_taints.items() if isinstance(key, str) and key.startswith("*")
             ]
@@ -359,9 +222,9 @@ class WardlineAnalyzer:
                 star_meet = starred_taints[0]
                 for st in starred_taints[1:]:
                     star_meet = combine(star_meet, st)
-                for param in posonly_params:
-                    bound.setdefault(param.arg, []).append(star_meet)
-                for param in positional_params:
+                for param in positional_slots[pos_idx:]:
+                    if param.arg in explicit_keyword_names:
+                        continue
                     bound.setdefault(param.arg, []).append(star_meet)
                 if args_node.vararg:
                     bound.setdefault(args_node.vararg.arg, []).append(star_meet)
@@ -372,18 +235,21 @@ class WardlineAnalyzer:
                 if any(p.arg == key for p in positional_params):
                     if key not in filled_args:
                         bound.setdefault(key, []).append(taint)
+                        filled_args.add(key)
                 elif any(p.arg == key for p in args_node.kwonlyargs):
                     bound.setdefault(key, []).append(taint)
+                    filled_args.add(key)
                 elif args_node.kwarg:
                     bound.setdefault(args_node.kwarg.arg, []).append(taint)
 
-            # Handle **kwargs unpacking
+            # Handle **kwargs unpacking. It cannot bind positional-only params,
+            # already-filled params, or *varargs; it can bind unfilled
+            # positional-or-keyword, keyword-only, and **kwargs slots.
             if None in arg_taints:
                 unpack_taint = arg_taints[None]
-                for arg in (*args_node.posonlyargs, *args_node.args, *args_node.kwonlyargs):
-                    bound.setdefault(arg.arg, []).append(unpack_taint)
-                if args_node.vararg:
-                    bound.setdefault(args_node.vararg.arg, []).append(unpack_taint)
+                for arg in (*positional_params, *args_node.kwonlyargs):
+                    if arg.arg not in filled_args:
+                        bound.setdefault(arg.arg, []).append(unpack_taint)
                 if args_node.kwarg:
                     bound.setdefault(args_node.kwarg.arg, []).append(unpack_taint)
 
@@ -455,34 +321,23 @@ class WardlineAnalyzer:
             TaintState | None,
             str | None,
         ]:
-            from wardline.scanner.taint.variable_level import (
-                _CURRENT_ALIAS_MAP,
-                _CURRENT_CALL_SITE_ARG_TAINTS,
-                _CURRENT_MODULE_PREFIX,
-            )
-
-            token = _CURRENT_ALIAS_MAP.set(alias_map)
-            call_args: dict[int, dict[int | str | None, TaintState]] = {}
-            token_args = _CURRENT_CALL_SITE_ARG_TAINTS.set(call_args)
-            token_module = _CURRENT_MODULE_PREFIX.set(module_prefix)
-            try:
-                call_sites: dict[int, dict[str, TaintState]] = {}
-                var_taints = compute_variable_taints(
-                    node,
-                    seed,
-                    dict(tm),
-                    call_sites,
+            result = run_l2_function_stage(
+                L2FunctionInput(
+                    node=node,
+                    function_taint=seed,
+                    taint_map=dict(tm),
                     alias_map=alias_map,
-                    call_site_arg_taints=call_args,
                     param_meets=param_meets,
+                    module_prefix=module_prefix,
                 )
-                ret_taint = compute_return_taint(node, seed, dict(tm), var_taints)
-                ret_callee = compute_return_callee(node, seed, dict(tm), dict(var_taints))
-                return call_sites, call_args, var_taints, ret_taint, ret_callee
-            finally:
-                _CURRENT_ALIAS_MAP.reset(token)
-                _CURRENT_CALL_SITE_ARG_TAINTS.reset(token_args)
-                _CURRENT_MODULE_PREFIX.reset(token_module)
+            )
+            return (
+                result.call_site_taints,
+                result.call_site_arg_taints,
+                result.variable_taints,
+                result.return_taint,
+                result.return_callee,
+            )
 
         def _store(
             qn: str,
@@ -502,8 +357,12 @@ class WardlineAnalyzer:
             function_return_callee[qn] = ret_callee
 
         # ── L2 pass 1 — per-method var/return taints + per-class attribute summary ──
-        all_classes = frozenset(c for m in modules for c in m.class_qualnames)
-        for _relpath, module, _tree, entities, alias_map, classes in file_meta:
+        all_classes = frozenset(c for parsed in file_meta for c in parsed.class_qualnames)
+        for parsed in file_meta:
+            module = parsed.module
+            entities = parsed.entities
+            alias_map = parsed.alias_map
+            classes = parsed.class_qualnames
             # SummaryCache stores interprocedural summaries only. L2 rebuilds
             # flow-sensitive local/call-site maps consumed by sink rules and
             # PY-WL-105, so warm scans must not bypass this pass.
@@ -729,8 +588,8 @@ class WardlineAnalyzer:
         findings.extend(build_diagnostic_findings(list(result.diagnostics)))
         findings.extend(
             build_unknown_import_findings(
-                [(rp, mp, tr) for rp, mp, tr, _e, _a, _c in file_meta],
-                project_modules=frozenset(mp for _rp, mp, _tr, _e, _a, _c in file_meta),
+                [(parsed.relpath, parsed.module, parsed.tree) for parsed in file_meta],
+                project_modules=frozenset(parsed.module for parsed in file_meta),
                 resolvable_star_modules=frozenset(star_exports.keys()),
             )
         )
