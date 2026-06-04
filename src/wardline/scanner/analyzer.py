@@ -201,10 +201,16 @@ class WardlineAnalyzer:
             filled_args: set[str] = set()
             positional_slots = [*posonly_params, *positional_params]
             pos_idx = 0
+            post_star_positional_taints: list[TaintState] = []
+            seen_starred_unpack = False
             for pos_key in sorted(k for k in arg_taints if isinstance(k, int)):
                 if f"*{pos_key}" in arg_taints:
+                    seen_starred_unpack = True
                     continue
                 taint = arg_taints[pos_key]
+                if seen_starred_unpack:
+                    post_star_positional_taints.append(taint)
+                    continue
                 if pos_idx < len(positional_slots):
                     param = positional_slots[pos_idx]
                     bound.setdefault(param.arg, []).append(taint)
@@ -228,6 +234,14 @@ class WardlineAnalyzer:
                     bound.setdefault(param.arg, []).append(star_meet)
                 if args_node.vararg:
                     bound.setdefault(args_node.vararg.arg, []).append(star_meet)
+
+            for taint in post_star_positional_taints:
+                for param in positional_slots[pos_idx:]:
+                    if param.arg in explicit_keyword_names:
+                        continue
+                    bound.setdefault(param.arg, []).append(taint)
+                if args_node.vararg:
+                    bound.setdefault(args_node.vararg.arg, []).append(taint)
 
             for key, taint in arg_taints.items():
                 if isinstance(key, int) or key is None or (isinstance(key, str) and key.startswith("*")):

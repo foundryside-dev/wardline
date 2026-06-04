@@ -247,6 +247,29 @@ def test_bound_classmethod_binds_explicit_arg_after_cls(tmp_path) -> None:
     assert ("PY-WL-101", "svc.S.helper") in ids
 
 
+def test_post_star_positional_argument_taints_actual_later_parameter(tmp_path) -> None:
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "svc.py": "from wardline.decorators import trusted, external_boundary\n"
+            "@external_boundary\n"
+            "def read_raw(p):\n"
+            "    return p\n"
+            "@trusted(level='ASSURED')\n"
+            "def target(first, tail):\n"
+            "    return tail\n"
+            "@trusted(level='ASSURED')\n"
+            "def entry(p):\n"
+            "    safe_args = ('clean',)\n"
+            "    return target(*safe_args, read_raw(p))\n",
+        },
+    )
+
+    assert ctx.function_var_taints["svc.target"]["tail"] == TaintState.EXTERNAL_RAW
+    ids = {(f.rule_id, f.qualname) for f in _run(ctx)}
+    assert ("PY-WL-101", "svc.target") in ids
+
+
 def test_long_parameter_chain_converges_past_ten_l2_iterations(tmp_path) -> None:
     chain_len = 13
     funcs = []
