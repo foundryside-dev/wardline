@@ -1,0 +1,5 @@
+# Identity golden-corpus stability (Task A): pin fixture line endings to LF so
+# blake3 whole-file content hashes in taint facts are reproducible across OSes,
+# and treat the frozen corpus as binary so no autocrlf/normalization rewrites it.
+tests/golden/identity/fixtures/** text eol=lf
+tests/golden/identity/corpus/** -text

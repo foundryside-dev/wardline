@@ -1,0 +1,26 @@
+{
+  "sampleapp": {
+    "baselined_total": 0,
+    "boundaries_total": 4,
+    "coverage_pct": 100.0,
+    "defect_total": 1,
+    "engine_limited": 0,
+    "judged_total": 0,
+    "proven": 3,
+    "unanalyzed_rule_ids": [],
+    "unknown": [],
+    "waiver_debt": []
+  },
+  "stress": {
+    "baselined_total": 0,
+    "boundaries_total": 5,
+    "coverage_pct": 100.0,
+    "defect_total": 2,
+    "engine_limited": 0,
+    "judged_total": 0,
+    "proven": 3,
+    "unanalyzed_rule_ids": [],
+    "unknown": [],
+    "waiver_debt": []
+  }
+}

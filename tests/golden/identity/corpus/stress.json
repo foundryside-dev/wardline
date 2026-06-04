@@ -1,0 +1,549 @@
+{
+  "explain": {
+    "explanation": {
+      "fingerprint": "991cb740809062defefa229ba05a79d04570d46399c846be38224d4cb0f51f9b",
+      "immediate_tainted_callee": null,
+      "line": 43,
+      "path": "identity_stress.py",
+      "resolved_call_count": 0,
+      "rule_id": "PY-WL-111",
+      "sink_qualname": "identity_stress.assert_only_boundary",
+      "source_boundary_qualname": null,
+      "tier_in": null,
+      "tier_out": null,
+      "unresolved_call_count": 0
+    },
+    "fingerprint": "991cb740809062defefa229ba05a79d04570d46399c846be38224d4cb0f51f9b"
+  },
+  "facts": [
+    {
+      "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+      "qualname": "identity_stress.Service.make",
+      "wardline_json": {
+        "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+        "dead_code_root": {
+          "is_root": false,
+          "reason": null,
+          "source": null,
+          "tags": []
+        },
+        "findings": [],
+        "qualname": "identity_stress.Service.make",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "UNKNOWN_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "UNKNOWN_RAW",
+          "resolved_call_count": 0,
+          "source": "fallback",
+          "unresolved_call_count": 1
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+      "qualname": "identity_stress.Service.method",
+      "wardline_json": {
+        "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+        "dead_code_root": {
+          "is_root": false,
+          "reason": null,
+          "source": null,
+          "tags": []
+        },
+        "findings": [],
+        "qualname": "identity_stress.Service.method",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "UNKNOWN_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "UNKNOWN_RAW",
+          "resolved_call_count": 0,
+          "source": "fallback",
+          "unresolved_call_count": 0
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+      "qualname": "identity_stress.assert_only_boundary",
+      "wardline_json": {
+        "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+        "dead_code_root": {
+          "is_root": true,
+          "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
+          "source": "wardline_trust_decorator",
+          "tags": [
+            "entry-point"
+          ]
+        },
+        "findings": [
+          {
+            "fingerprint": "991cb740809062defefa229ba05a79d04570d46399c846be38224d4cb0f51f9b",
+            "line_start": 43,
+            "path": "identity_stress.py",
+            "rule_id": "PY-WL-111"
+          }
+        ],
+        "qualname": "identity_stress.assert_only_boundary",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "EXTERNAL_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "ASSURED",
+          "resolved_call_count": 0,
+          "source": "anchored",
+          "unresolved_call_count": 0
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+      "qualname": "identity_stress.async_boundary",
+      "wardline_json": {
+        "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+        "dead_code_root": {
+          "is_root": false,
+          "reason": null,
+          "source": null,
+          "tags": []
+        },
+        "findings": [],
+        "qualname": "identity_stress.async_boundary",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "UNKNOWN_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "UNKNOWN_RAW",
+          "resolved_call_count": 0,
+          "source": "fallback",
+          "unresolved_call_count": 0
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+      "qualname": "identity_stress.comprehensions",
+      "wardline_json": {
+        "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+        "dead_code_root": {
+          "is_root": false,
+          "reason": null,
+          "source": null,
+          "tags": []
+        },
+        "findings": [],
+        "qualname": "identity_stress.comprehensions",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "UNKNOWN_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "UNKNOWN_RAW",
+          "resolved_call_count": 0,
+          "source": "fallback",
+          "unresolved_call_count": 1
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+      "qualname": "identity_stress.func_with_unicode_café",
+      "wardline_json": {
+        "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+        "dead_code_root": {
+          "is_root": false,
+          "reason": null,
+          "source": null,
+          "tags": []
+        },
+        "findings": [],
+        "qualname": "identity_stress.func_with_unicode_café",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "UNKNOWN_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "UNKNOWN_RAW",
+          "resolved_call_count": 0,
+          "source": "fallback",
+          "unresolved_call_count": 0
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+      "qualname": "identity_stress.ingest",
+      "wardline_json": {
+        "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+        "dead_code_root": {
+          "is_root": true,
+          "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
+          "source": "wardline_trust_decorator",
+          "tags": [
+            "entry-point"
+          ]
+        },
+        "findings": [],
+        "qualname": "identity_stress.ingest",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "EXTERNAL_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "EXTERNAL_RAW",
+          "resolved_call_count": 0,
+          "source": "anchored",
+          "unresolved_call_count": 0
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+      "qualname": "identity_stress.outer",
+      "wardline_json": {
+        "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+        "dead_code_root": {
+          "is_root": false,
+          "reason": null,
+          "source": null,
+          "tags": []
+        },
+        "findings": [],
+        "qualname": "identity_stress.outer",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "UNKNOWN_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "UNKNOWN_RAW",
+          "resolved_call_count": 0,
+          "source": "fallback",
+          "unresolved_call_count": 1
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+      "qualname": "identity_stress.outer.<locals>.nested",
+      "wardline_json": {
+        "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+        "dead_code_root": {
+          "is_root": false,
+          "reason": null,
+          "source": null,
+          "tags": []
+        },
+        "findings": [],
+        "qualname": "identity_stress.outer.<locals>.nested",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "INTEGRAL",
+          "contributing_callee_qualname": null,
+          "declared_return": "UNKNOWN_RAW",
+          "resolved_call_count": 0,
+          "source": "fallback",
+          "unresolved_call_count": 0
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+      "qualname": "identity_stress.overloaded",
+      "wardline_json": {
+        "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+        "dead_code_root": {
+          "is_root": false,
+          "reason": null,
+          "source": null,
+          "tags": []
+        },
+        "findings": [],
+        "qualname": "identity_stress.overloaded",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "UNKNOWN_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "UNKNOWN_RAW",
+          "resolved_call_count": 0,
+          "source": "fallback",
+          "unresolved_call_count": 0
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+      "qualname": "identity_stress.privileged_producer",
+      "wardline_json": {
+        "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+        "dead_code_root": {
+          "is_root": true,
+          "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
+          "source": "wardline_trust_decorator",
+          "tags": [
+            "entry-point"
+          ]
+        },
+        "findings": [],
+        "qualname": "identity_stress.privileged_producer",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "ASSURED",
+          "contributing_callee_qualname": null,
+          "declared_return": "ASSURED",
+          "resolved_call_count": 0,
+          "source": "anchored",
+          "unresolved_call_count": 0
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+      "qualname": "identity_stress.sanitize",
+      "wardline_json": {
+        "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+        "dead_code_root": {
+          "is_root": true,
+          "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
+          "source": "wardline_trust_decorator",
+          "tags": [
+            "entry-point"
+          ]
+        },
+        "findings": [],
+        "qualname": "identity_stress.sanitize",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "EXTERNAL_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "ASSURED",
+          "resolved_call_count": 0,
+          "source": "anchored",
+          "unresolved_call_count": 2
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+      "qualname": "identity_stress.untrusted_reaches_trusted",
+      "wardline_json": {
+        "content_hash_at_compute": "645aac4b804eb22cad9295e2f28c50c4b8c46d61f437250fbc10079290ed8c14",
+        "dead_code_root": {
+          "is_root": true,
+          "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
+          "source": "wardline_trust_decorator",
+          "tags": [
+            "entry-point"
+          ]
+        },
+        "findings": [
+          {
+            "fingerprint": "3db67626b9bcad79c89a95e905a7691cd87c31f8cfe6dd2e0f992edab5819a69",
+            "line_start": 56,
+            "path": "identity_stress.py",
+            "rule_id": "PY-WL-101"
+          }
+        ],
+        "qualname": "identity_stress.untrusted_reaches_trusted",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "EXTERNAL_RAW",
+          "contributing_callee_qualname": "identity_stress.ingest",
+          "declared_return": "ASSURED",
+          "resolved_call_count": 1,
+          "source": "anchored",
+          "unresolved_call_count": 0
+        }
+      }
+    }
+  ],
+  "findings": [
+    {
+      "confidence": null,
+      "fingerprint": "991cb740809062defefa229ba05a79d04570d46399c846be38224d4cb0f51f9b",
+      "kind": "defect",
+      "location": {
+        "col_end": 16,
+        "col_start": 0,
+        "line_end": 46,
+        "line_start": 43,
+        "path": "identity_stress.py"
+      },
+      "maturity": "stable",
+      "message": "identity_stress.assert_only_boundary declares a trust boundary (EXTERNAL_RAW -> ASSURED) but its only rejection path is assert — stripped under python -O, so the validation vanishes in production",
+      "properties": {
+        "body_taint": "EXTERNAL_RAW",
+        "return_taint": "ASSURED"
+      },
+      "qualname": "identity_stress.assert_only_boundary",
+      "related_entities": [],
+      "rule_id": "PY-WL-111",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppressed": "active",
+      "suppression_reason": null
+    },
+    {
+      "confidence": null,
+      "fingerprint": "3db67626b9bcad79c89a95e905a7691cd87c31f8cfe6dd2e0f992edab5819a69",
+      "kind": "defect",
+      "location": {
+        "col_end": 22,
+        "col_start": 0,
+        "line_end": 58,
+        "line_start": 56,
+        "path": "identity_stress.py"
+      },
+      "maturity": "stable",
+      "message": "identity_stress.untrusted_reaches_trusted declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer",
+      "properties": {
+        "actual_return": "EXTERNAL_RAW",
+        "declared_return": "ASSURED"
+      },
+      "qualname": "identity_stress.untrusted_reaches_trusted",
+      "related_entities": [],
+      "rule_id": "PY-WL-101",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppressed": "active",
+      "suppression_reason": null
+    }
+  ],
+  "sarif": {
+    "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+    "runs": [
+      {
+        "results": [
+          {
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "identity_stress.py"
+                  },
+                  "region": {
+                    "endColumn": 16,
+                    "endLine": 46,
+                    "startColumn": 0,
+                    "startLine": 43
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "identity_stress.assert_only_boundary declares a trust boundary (EXTERNAL_RAW -> ASSURED) but its only rejection path is assert — stripped under python -O, so the validation vanishes in production"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "991cb740809062defefa229ba05a79d04570d46399c846be38224d4cb0f51f9b"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "identity_stress.assert_only_boundary",
+              "wardlineProperties": {
+                "body_taint": "EXTERNAL_RAW",
+                "return_taint": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-111"
+          },
+          {
+            "codeFlows": [
+              {
+                "threadFlows": [
+                  {
+                    "locations": [
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "Taint source: identity_stress.ingest"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "identity_stress.py"
+                            },
+                            "region": {
+                              "endColumn": 14,
+                              "endLine": 26,
+                              "startColumn": 0,
+                              "startLine": 24
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "identity_stress.untrusted_reaches_trusted declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "identity_stress.py"
+                            },
+                            "region": {
+                              "endColumn": 22,
+                              "endLine": 58,
+                              "startColumn": 0,
+                              "startLine": 56
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "identity_stress.py"
+                  },
+                  "region": {
+                    "endColumn": 22,
+                    "endLine": 58,
+                    "startColumn": 0,
+                    "startLine": 56
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "identity_stress.untrusted_reaches_trusted declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "3db67626b9bcad79c89a95e905a7691cd87c31f8cfe6dd2e0f992edab5819a69"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "identity_stress.untrusted_reaches_trusted",
+              "wardlineProperties": {
+                "actual_return": "EXTERNAL_RAW",
+                "declared_return": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-101"
+          }
+        ],
+        "tool": {
+          "driver": {
+            "informationUri": "https://github.com/foundryside/wardline",
+            "name": "wardline",
+            "rules": [
+              {
+                "id": "PY-WL-101"
+              },
+              {
+                "id": "PY-WL-111"
+              }
+            ],
+            "version": "<normalized>"
+          }
+        }
+      }
+    ],
+    "version": "2.1.0"
+  }
+}

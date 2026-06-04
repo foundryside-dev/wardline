@@ -1,0 +1,4 @@
+{
+  "corpus_version": 1,
+  "reason": "Initial freeze: Task A identity oracle (pre-Rust-core hardening)"
+}
