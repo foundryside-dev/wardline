@@ -4,6 +4,10 @@ Wardline is a citizen of the Loom suite, but integration is **additive, never
 load-bearing**: `wardline scan` boots, analyzes, writes findings, and gates with
 both siblings absent. The three output paths below are enrichment you opt into.
 
+This "additive, never load-bearing" rule is the federation's enrich-only axiom,
+which is defined authoritatively in the Loom hub (`~/loom/doctrine.md` §5) — the
+canonical source for the suite's roster and composition doctrine.
+
 | Path | How | Consumer |
 |---|---|---|
 | **SARIF 2.1.0** | `--format sarif --output FILE` | any SARIF tool (GitHub code scanning, CI dashboards) |

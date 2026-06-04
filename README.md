@@ -46,9 +46,11 @@ value and propagates it across the whole project, flagging the places where
 untrusted data reaches a trusted producer with no validation in between.
 
 Wardline is part of **Loom** — an agent-first suite of small, local-first
-developer tools (Wardline analysis, **Clarion** code intelligence, **Filigree**
-issue tracking). Every tool is built to be driven by a coding agent as much as a
-person, giving small teams capable tooling without enterprise weight.
+developer tools, each driven by a coding agent as much as a person, giving small
+teams capable tooling without enterprise weight. The authoritative federation
+hub, roster, and composition doctrine live at `~/loom` (see
+`~/loom/doctrine.md`); rather than restate membership here, refer to the hub for
+the current roster and the enrich-only axiom that governs how the tools compose.
 
 **Opt-in by design.** Wardline is silent until you opt in. Undecorated code sits
 in the developer-freedom zone — unknown-trust, no findings. You declare trust on
