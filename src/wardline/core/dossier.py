@@ -624,7 +624,8 @@ def _synthesize(identity: IdentitySection, trust: TrustSection, linkages: Linkag
         else:
             bits.append("no open work found.")
     else:
-        bits.append("open-work unavailable (no Filigree).")
+        reason = work.reason or "source unavailable"
+        bits.append(f"open-work unavailable ({reason}).")
     return " ".join(bits)
 
 

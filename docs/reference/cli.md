@@ -13,6 +13,7 @@ the base CLI.
 | Command | Requires | Why |
 | --- | --- | --- |
 | `scan` | `wardline[scanner]` | Runs the analyzer engine; needs `pyyaml`, `jsonschema`, `click`. |
+| `decorator-coverage` | `wardline[scanner]` | Re-derives trust-decorator coverage rows from the analyzer context. |
 | `baseline create` / `baseline update` | `wardline[scanner]` | Re-derives findings from a scan, so it pulls in the full scanner stack. |
 | `vocab` | `wardline[scanner]` | Ships with the CLI (`click`), which arrives via the `scanner` extra. |
 | `judge` | no extra | The SP5 LLM triage judge talks to OpenRouter over stdlib `urllib`; no third-party dependency is needed beyond the base CLI. |
@@ -42,6 +43,8 @@ Options:
 
 Commands:
   baseline  Manage the finding baseline (.wardline/baseline.yaml).
+  decorator-coverage
+            List every Wardline trust-decorated entity under PATH.
   file-finding
             File the finding identified by FINGERPRINT into a tracked...
   judge     Triage active DEFECTs with the opt-in LLM judge.
@@ -143,6 +146,35 @@ an `identity_attach` block with `attempted`, `attached`, `entity_id`,
 Clarion can only resolve a legacy locator and no current content hash is
 available, Wardline reports that explicitly and does not attach a false hash;
 the promoted issue is still returned.
+
+## `wardline decorator-coverage`
+
+**Purpose:** list every Wardline trust-decorated entity with declared tier,
+actual tier, gate verdict, active/suppressed finding fingerprints, optional
+Clarion SEI/content status, and optional Filigree linked-work status.
+
+```text
+Usage: wardline decorator-coverage [OPTIONS] [PATH]
+
+  List every Wardline trust-decorated entity under PATH.
+
+Options:
+  --config FILE
+  --clarion-url TEXT       Clarion URL for optional SEI/content status.
+  --filigree-url TEXT      Filigree URL for optional linked issue/open-work
+                           status.
+  --format [json|human]    Output format: json (default) or human-readable
+                           table.
+  --help                   Show this message and exit.
+```
+
+JSON output is stable for agents: `summary` plus `rows`. Each row includes
+`qualname`, `path`, `line`, `decorators`, `declared_tier`, `actual_tier`,
+`verdict`, `finding_state`, `active_finding_fingerprints`,
+`suppressed_finding_fingerprints`, `identity`, and `work`. Optional integrations
+degrade explicitly: no Clarion reports `identity.available=false`; no Filigree
+reports `work.available=false`. A configured Filigree with zero linked tickets
+reports `work.available=true` and an empty `tickets` list.
 
 ## `wardline scan-file-findings`
 

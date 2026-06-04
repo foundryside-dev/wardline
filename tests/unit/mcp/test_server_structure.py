@@ -28,6 +28,7 @@ def test_mcp_advertisement_snapshot() -> None:
         "explain_taint",
         "dossier",
         "assure",
+        "decorator_coverage",
         "attest",
         "verify_attestation",
         "file_finding",

@@ -11,6 +11,7 @@ import click
 from wardline._version import __version__
 from wardline.cli.assure import assure
 from wardline.cli.attest import attest
+from wardline.cli.decorator_coverage import decorator_coverage
 from wardline.cli.doctor import doctor
 from wardline.cli.dossier import dossier
 from wardline.cli.file_finding import file_finding
@@ -47,6 +48,7 @@ cli.add_command(findings)
 cli.add_command(file_finding)
 cli.add_command(assure)
 cli.add_command(attest)
+cli.add_command(decorator_coverage)
 
 
 @cli.command()

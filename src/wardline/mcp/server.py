@@ -346,6 +346,26 @@ def _assure(args: dict[str, Any], root: Path) -> dict[str, Any]:
     return posture.to_dict()
 
 
+def _decorator_coverage(
+    args: dict[str, Any],
+    root: Path,
+    clarion: Any = None,
+    filigree_url: str | None = None,
+) -> dict[str, Any]:
+    """Row-level inventory of every trust-decorated entity under the project."""
+    from wardline.loom_decorator_coverage import build_loom_decorator_coverage
+
+    path = _resolve_under_root(root, args["path"]) if args.get("path") else root
+    report = build_loom_decorator_coverage(
+        path,
+        clarion_client=clarion,
+        filigree_url=filigree_url,
+        config_path=_cfg(args, root),
+        confine_to_root=True,
+    )
+    return report.to_dict()
+
+
 def _attest(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, Any]:
     """Build a SIGNED, reproducible evidence bundle for the project — identical to the
     CLI `attest` by construction (both call ``build_attestation``). Path/config confined
@@ -773,6 +793,29 @@ class WardlineMCPServer:
                     },
                 },
                 handler=lambda args, root: _assure(args, root),
+            )
+        )
+        self.add_tool(
+            Tool(
+                name="decorator_coverage",
+                capabilities=frozenset({ToolCapability.READ, ToolCapability.NETWORK}),
+                description="Stable JSON inventory of every Wardline trust-decorated entity: "
+                "qualname, path/line, decorators, declared/actual tier, gate verdict, "
+                "active/suppressed finding fingerprints, optional SEI/content status, and "
+                "optional Filigree linked work status. Optional sources degrade explicitly.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "config": {"type": "string"},
+                    },
+                },
+                handler=lambda args, root: _decorator_coverage(
+                    args,
+                    root,
+                    self._clarion_client(_cfg(args, root)),
+                    config_mod.resolve_filigree_url(self.filigree_url, root, _cfg(args, root)),
+                ),
             )
         )
         self.add_tool(

@@ -60,6 +60,7 @@ def test_full_client_handshake_and_every_surface() -> None:
         "explain_taint",
         "dossier",
         "assure",
+        "decorator_coverage",
         "attest",
         "verify_attestation",
         "file_finding",
