@@ -114,6 +114,20 @@ def test_diagnose_resolved_star_module_emits_no_fact() -> None:
     assert out == []
 
 
+def test_diagnose_builtin_marker_named_imports_emit_no_fact() -> None:
+    tree = ast.parse("from wardline.decorators import trusted\nfrom wardline.decorators.trust import trust_boundary\n")
+
+    out = diagnose_unknown_imports(
+        tree=tree,
+        module_path="proj.m",
+        project_modules=frozenset(),
+        stdlib_keys=frozenset(),
+        resolvable_star_modules=frozenset({"wardline.decorators"}),
+    )
+
+    assert out == []
+
+
 def test_diagnose_unresolved_star_module_still_emits_fact() -> None:
     # Fail-closed preserved: any star import we cannot materialise stays an honest FACT.
     tree = ast.parse("from somethirdparty.plugins import *\n")

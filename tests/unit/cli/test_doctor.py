@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -60,3 +61,38 @@ def test_doctor_passes_after_repair(tmp_path: Path, monkeypatch) -> None:
 
     assert result.exit_code == 0, result.output
     assert "wardline doctor: ok" in result.output
+
+
+def test_doctor_fix_emits_shared_machine_readable_shape(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_CLARION_TOKEN", raising=False)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    (tmp_path / ".filigree.conf").write_text("{}", encoding="utf-8")
+    filigree_dir = tmp_path / ".filigree"
+    filigree_dir.mkdir()
+    (filigree_dir / "ephemeral.port").write_text("8628", encoding="utf-8")
+
+    result = CliRunner().invoke(cli, ["doctor", "--root", str(tmp_path), "--fix"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["next_actions"] == []
+    checks = {check["id"]: check for check in payload["checks"]}
+    for check_id in (
+        "wardline.config",
+        "mcp.registration",
+        "marker_package",
+        "clarion.url",
+        "filigree.url",
+        "decorator_grammar",
+        "scan.output_path",
+        "auth.token",
+    ):
+        assert checks[check_id]["status"] == "ok"
+        assert isinstance(checks[check_id]["fixed"], bool)
+    assert checks["mcp.registration"]["fixed"] is True

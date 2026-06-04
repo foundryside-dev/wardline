@@ -1136,10 +1136,12 @@ def leaky(p):
 """
     m_py = tmp_path / "m.py"
     m_py.write_text(src, encoding="utf-8")
-    # This generates PY-WL-101 finding, which is not fixable via autofix.
+    # This generates PY-WL-101 finding, which is not fixable via autofix. The
+    # wardline.decorators import is builtin vocabulary and should not add an
+    # unknown-import fact.
     res = CliRunner().invoke(cli, ["scan", str(tmp_path), "--fix"])
     assert res.exit_code == 0
-    assert "3 finding(s)" in res.output
+    assert "2 finding(s)" in res.output
     # Source file must be unchanged
     assert m_py.read_text(encoding="utf-8") == src
 

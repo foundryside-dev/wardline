@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
 import tomllib
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit
 
+from wardline.clarion.config import load_clarion_token
+from wardline.core.config import load
+from wardline.core.errors import ConfigError
 from wardline.install.block import inject_block
 from wardline.install.detect import _already_recorded, _detect_clarion, _detect_filigree, record_bindings
 from wardline.install.mcp_json import (
@@ -24,6 +31,24 @@ class CheckResult:
     name: str
     ok: bool
     message: str
+
+
+@dataclass(frozen=True, slots=True)
+class DoctorCheck:
+    id: str
+    status: str
+    fixed: bool = False
+    message: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.status == "ok"
+
+    def to_dict(self) -> dict[str, Any]:
+        data: dict[str, Any] = {"id": self.id, "status": self.status, "fixed": self.fixed}
+        if self.message:
+            data["message"] = self.message
+        return data
 
 
 def _has_instruction_block(path: Path) -> bool:
@@ -81,6 +106,130 @@ def _check_bindings(root: Path) -> CheckResult:
     if missing:
         return CheckResult("bindings", False, "missing " + ", ".join(missing))
     return CheckResult("bindings", True, "configured" if cfg.is_file() else "no siblings detected")
+
+
+def _check_config(root: Path, *, fixed: bool) -> DoctorCheck:
+    try:
+        load(root / "wardline.yaml")
+    except ConfigError as exc:
+        return DoctorCheck("wardline.config", "error", fixed=False, message=str(exc))
+    return DoctorCheck("wardline.config", "ok", fixed=fixed)
+
+
+def _check_mcp_registration(root: Path, *, before: dict[str, CheckResult]) -> DoctorCheck:
+    project = _check_project_mcp(root)
+    codex = _check_codex_mcp()
+    fixed = any(not before.get(name, CheckResult(name, True, "")).ok for name in (".mcp.json", "Codex MCP")) and (
+        project.ok and codex.ok
+    )
+    if project.ok and codex.ok:
+        return DoctorCheck("mcp.registration", "ok", fixed=fixed)
+    missing = ", ".join(f"{c.name}: {c.message}" for c in (project, codex) if not c.ok)
+    return DoctorCheck("mcp.registration", "error", fixed=False, message=missing)
+
+
+def _check_marker_package() -> DoctorCheck:
+    try:
+        decorators = import_module("wardline.decorators")
+    except Exception as exc:
+        return DoctorCheck("marker_package", "error", message=f"wardline.decorators not importable: {exc}")
+    missing = [name for name in ("external_boundary", "trust_boundary", "trusted") if not hasattr(decorators, name)]
+    if missing:
+        return DoctorCheck("marker_package", "error", message="missing " + ", ".join(missing))
+    return DoctorCheck("marker_package", "ok")
+
+
+def _valid_http_url(url: str) -> bool:
+    try:
+        parsed = urlsplit(url)
+    except Exception:
+        return False
+    return parsed.scheme.lower() in {"http", "https"} and bool(parsed.netloc)
+
+
+def _config_url(root: Path, key: str) -> str | None:
+    cfg = load(root / "wardline.yaml")
+    value = cfg.clarion_url if key == "clarion" else cfg.filigree_url
+    return value
+
+
+def _check_url(root: Path, key: str, *, fixed: bool) -> DoctorCheck:
+    env_key = "WARDLINE_CLARION_URL" if key == "clarion" else "WARDLINE_FILIGREE_URL"
+    url = os.environ.get(env_key) or _config_url(root, key)
+    check_id = f"{key}.url"
+    if not url:
+        return DoctorCheck(check_id, "ok", fixed=fixed, message="not configured")
+    if _valid_http_url(url):
+        return DoctorCheck(check_id, "ok", fixed=fixed)
+    return DoctorCheck(check_id, "error", fixed=False, message=f"invalid URL: {url!r}")
+
+
+def _check_decorator_grammar() -> DoctorCheck:
+    try:
+        from wardline.core.registry import REGISTRY
+        from wardline.scanner.grammar import BUILTIN_BOUNDARY_TYPES
+    except Exception as exc:
+        return DoctorCheck("decorator_grammar", "error", message=f"cannot load grammar: {exc}")
+
+    expected = {("wardline.decorators", name) for name in REGISTRY} | {("loom_markers", name) for name in REGISTRY}
+    actual = {(bt.module_prefix, bt.canonical_name) for bt in BUILTIN_BOUNDARY_TYPES}
+    missing = sorted(expected - actual)
+    if missing:
+        return DoctorCheck("decorator_grammar", "error", message=f"missing builtin boundary types: {missing}")
+    return DoctorCheck("decorator_grammar", "ok")
+
+
+def _check_scan_output_path(root: Path) -> DoctorCheck:
+    output = root / "findings.jsonl"
+    if output.exists() and output.is_dir():
+        return DoctorCheck("scan.output_path", "error", message=f"{output} is a directory")
+    if not root.exists() or not root.is_dir():
+        return DoctorCheck("scan.output_path", "error", message=f"{root} is not a directory")
+    if not os.access(root, os.W_OK):
+        return DoctorCheck("scan.output_path", "error", message=f"{root} is not writable")
+    return DoctorCheck("scan.output_path", "ok")
+
+
+def _check_auth_token(root: Path) -> DoctorCheck:
+    try:
+        token = load_clarion_token(root)
+    except OSError as exc:
+        return DoctorCheck("auth.token", "error", message=f"cannot read auth token wiring: {exc}")
+    if token:
+        return DoctorCheck("auth.token", "ok")
+    return DoctorCheck("auth.token", "ok", message="optional Clarion token not configured")
+
+
+def machine_readable_doctor(root: Path, *, fix: bool = False) -> dict[str, Any]:
+    """Return the shared machine-readable doctor shape, optionally repairing install bindings."""
+    before = {check.name: check for check in check_install(root)}
+    bindings_fixed = False
+    if fix:
+        repair_install(root)
+        bindings_fixed = not before.get("bindings", CheckResult("bindings", True, "")).ok
+
+    checks: list[DoctorCheck] = []
+    checks.append(_check_config(root, fixed=fix and not (root / "wardline.yaml").exists()))
+    checks.append(_check_mcp_registration(root, before=before))
+    checks.append(_check_marker_package())
+    try:
+        checks.append(_check_url(root, "clarion", fixed=bindings_fixed))
+    except ConfigError as exc:
+        checks.append(DoctorCheck("clarion.url", "error", message=str(exc)))
+    try:
+        checks.append(_check_url(root, "filigree", fixed=bindings_fixed))
+    except ConfigError as exc:
+        checks.append(DoctorCheck("filigree.url", "error", message=str(exc)))
+    checks.append(_check_decorator_grammar())
+    checks.append(_check_scan_output_path(root))
+    checks.append(_check_auth_token(root))
+
+    next_actions = [f"{check.id}: {check.message}" for check in checks if not check.ok and check.message]
+    return {
+        "ok": all(check.ok for check in checks),
+        "checks": [check.to_dict() for check in checks],
+        "next_actions": next_actions,
+    }
 
 
 def check_install(root: Path) -> list[CheckResult]:

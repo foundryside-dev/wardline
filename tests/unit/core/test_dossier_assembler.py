@@ -19,6 +19,7 @@ from wardline.clarion.identity import ContentStatus, EntityBinding, IdentityStat
 from wardline.core.dossier import (
     DOSSIER_TOKEN_BUDGET,
     LinkagesSection,
+    TicketRef,
     WorkSection,
     build_dossier,
     estimate_tokens,
@@ -219,6 +220,40 @@ def test_work_provider_failure_degrades_to_unavailable(tmp_path: Path) -> None:
     assert d.work.available is False
     assert "filigree unreachable" in (d.work.reason or "")
     assert d.trust.gate_verdict == "defect"  # rest of envelope intact
+    assert "open-work unavailable" in (d.synthesis or "")
+
+
+def test_synthesis_distinguishes_available_empty_work_from_unavailable(tmp_path: Path) -> None:
+    class _EmptyWork:
+        def work(self, binding: EntityBinding) -> WorkSection:
+            return WorkSection(
+                available=True,
+                tickets=[],
+                identity_status=IdentityStatus.ALIVE,
+                content_status=ContentStatus.FRESH,
+            )
+
+    d = build_dossier("svc.leaky", root=_proj(tmp_path), binding=_BINDING, work_provider=_EmptyWork())
+
+    assert d.work.available is True
+    assert d.work.tickets == []
+    assert "no open work found" in (d.synthesis or "")
+    assert "no Filigree" not in (d.synthesis or "")
+
+
+def test_synthesis_reports_available_work_ticket_count(tmp_path: Path) -> None:
+    class _TicketWork:
+        def work(self, binding: EntityBinding) -> WorkSection:
+            return WorkSection(
+                available=True,
+                tickets=[TicketRef(issue_id="wardline-1")],
+                identity_status=IdentityStatus.ALIVE,
+                content_status=ContentStatus.FRESH,
+            )
+
+    d = build_dossier("svc.leaky", root=_proj(tmp_path), binding=_BINDING, work_provider=_TicketWork())
+
+    assert "1 open ticket(s) touch it" in (d.synthesis or "")
 
 
 def test_work_provider_no_opinion_and_no_binding(tmp_path: Path) -> None:

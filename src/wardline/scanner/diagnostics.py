@@ -22,6 +22,12 @@ from wardline.scanner.taint.stdlib_taint import stdlib_taint_keys
 if TYPE_CHECKING:
     from wardline.scanner.taint.resolver_metadata import ResolverRunMetadata
 
+_BUILTIN_MARKER_IMPORTS: dict[str, frozenset[str]] = {
+    "wardline.decorators": frozenset({"external_boundary", "trust_boundary", "trusted"}),
+    "wardline.decorators.trust": frozenset({"external_boundary", "trust_boundary", "trusted"}),
+    "loom_markers": frozenset({"external_boundary", "trust_boundary", "trusted"}),
+}
+
 # code -> (rule_id, severity, kind)
 _DIAG_MAP: dict[str, tuple[str, Severity, Kind]] = {
     "L3_CONVERGENCE_BOUND": ("WLN-L3-CONVERGENCE-BOUND", Severity.WARN, Kind.METRIC),
@@ -173,6 +179,12 @@ def _is_stdlib_module(dotted: str) -> bool:
     return _top_level_module(dotted) in sys.stdlib_module_names
 
 
+def _is_builtin_marker_import(mod: str, alias: str) -> bool:
+    """Return True for Wardline-owned marker imports the scanner resolves statically."""
+    names = _BUILTIN_MARKER_IMPORTS.get(mod)
+    return names is not None and alias in names
+
+
 def diagnose_unknown_imports(
     *,
     tree: ast.Module,
@@ -251,6 +263,8 @@ def diagnose_unknown_imports(
         # Named-import branch — dedupe by (module_path, mod).
         unresolved_aliases: list[str] = []
         for alias in node.names:
+            if _is_builtin_marker_import(mod, alias.name):
+                continue
             if (mod, alias.name) in stdlib_keys:
                 continue
             unresolved_aliases.append(alias.name)
