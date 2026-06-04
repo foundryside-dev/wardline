@@ -139,3 +139,64 @@ def test_diagnose_unresolved_star_module_still_emits_fact() -> None:
         resolvable_star_modules=frozenset({"wardline.decorators"}),
     )
     assert any("somethirdparty.plugins" in d[2] for d in out)
+
+
+# --- Native / first-party module resolution (Task C) -------------------------
+# When wardline.core becomes a compiled (PyO3) module it has NO Python AST in the
+# scanned tree, so it drops out of project_modules and would fire UNKNOWN-IMPORT.
+# The declarative native-prefix allowlist resolves it. These tests SIMULATE the
+# native case by passing an empty project_modules (the obvious "scan self" test
+# is green today because the .py files are still present, so it would gate
+# nothing).
+
+
+def test_native_first_party_core_import_resolves_without_project_module() -> None:
+    # Post-Rust: wardline.core.registry has no .py in the tree -> absent from
+    # project_modules. It must still resolve via the native allowlist.
+    tree = ast.parse("from wardline.core.registry import REGISTRY\n")
+    out = diagnose_unknown_imports(
+        tree=tree,
+        module_path="wardline.scanner.grammar",
+        project_modules=frozenset(),  # native module NOT present
+        stdlib_keys=frozenset(),
+    )
+    assert out == [], f"native first-party import wrongly flagged: {out}"
+
+
+def test_native_first_party_decorators_import_resolves() -> None:
+    tree = ast.parse("from wardline.decorators import trust_boundary\n")
+    out = diagnose_unknown_imports(
+        tree=tree, module_path="x", project_modules=frozenset(), stdlib_keys=frozenset()
+    )
+    assert out == []
+
+
+def test_native_allowlist_does_not_suppress_genuine_third_party() -> None:
+    # Over-suppression guard: a real unknown third-party import MUST still fire.
+    tree = ast.parse("from acme_totally_unknown_pkg import thing\n")
+    out = diagnose_unknown_imports(
+        tree=tree, module_path="x", project_modules=frozenset(), stdlib_keys=frozenset()
+    )
+    assert len(out) == 1 and "acme_totally_unknown_pkg" in out[0][2]
+
+
+def test_native_allowlist_does_not_suppress_undeclared_wardline_submodule() -> None:
+    # Precision: only DECLARED native prefixes resolve. A wardline.* module that is
+    # neither a project module nor a declared native prefix must still report, so
+    # the allowlist can't silently swallow a real gap.
+    tree = ast.parse("from wardline.experimental.zzz import q\n")
+    out = diagnose_unknown_imports(
+        tree=tree, module_path="x", project_modules=frozenset(), stdlib_keys=frozenset()
+    )
+    assert len(out) == 1
+
+
+def test_native_allowlist_prefix_boundary_is_dotted() -> None:
+    # An adjacent prefix that shares a string-prefix but is NOT under the package
+    # (wardline.core_helpers vs wardline.core) must NOT be suppressed — guards the
+    # ``mod == p or mod.startswith(p + ".")`` boundary against a future ``+ "."`` drop.
+    tree = ast.parse("from wardline.core_helpers import q\n")
+    out = diagnose_unknown_imports(
+        tree=tree, module_path="x", project_modules=frozenset(), stdlib_keys=frozenset()
+    )
+    assert len(out) == 1

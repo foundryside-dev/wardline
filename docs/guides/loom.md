@@ -159,6 +159,12 @@ already exists in Clarion's tree). See
 [ADR: vocabulary descriptor cross-product contract](../decisions/2026-06-05-wardline-vocabulary-descriptor-cross-product-contract.md)
 and the [Clarion hand-off](../integration/2026-06-05-wardline-descriptor-clarion-handoff.md).
 
+The self-scan side of the native-module migration is handled by a declarative
+allowlist, `_NATIVE_FIRST_PARTY_PREFIXES` in `scanner/diagnostics.py` — the
+**seam the Rust migration extends** so a compiled `wardline.core` (no Python AST)
+doesn't light up `WLN-ENGINE-UNKNOWN-IMPORT`. See
+[ADR: native-module import resolution](../decisions/2026-06-05-wardline-native-module-import-resolution.md).
+
 ## See also
 
 - [Configuration](configuration.md) — `wardline.yaml` keys.

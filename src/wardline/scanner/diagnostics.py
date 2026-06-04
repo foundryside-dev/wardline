@@ -28,6 +28,27 @@ _BUILTIN_MARKER_IMPORTS: dict[str, frozenset[str]] = {
     "loom_markers": frozenset({"external_boundary", "trust_boundary", "trusted"}),
 }
 
+# Declarative native / first-party module prefixes. An import whose dotted module
+# equals one of these or sits under it resolves cleanly EVEN WHEN it has no Python
+# AST in the scanned tree — e.g. a compiled ``wardline.core`` extension after the
+# Rust migration, which is definitionally unresolvable to an AST import analyzer.
+# This is the SEAM the Rust migration extends: add the compiled submodule's dotted
+# prefix here. Distinct from _BUILTIN_MARKER_IMPORTS (alias-specific, for the
+# statically-modelled marker decorators); this is "any import from this prefix is
+# first-party, resolve it". Matching is on dotted-component boundaries, so
+# ``wardline.core`` does NOT swallow an unrelated ``wardline.core_helpers``.
+_NATIVE_FIRST_PARTY_PREFIXES: frozenset[str] = frozenset(
+    {
+        "wardline.core",
+        "wardline.decorators",
+    }
+)
+
+
+def _is_native_first_party(mod: str) -> bool:
+    """True if ``mod`` is, or is under, a declared native/first-party prefix."""
+    return any(mod == prefix or mod.startswith(prefix + ".") for prefix in _NATIVE_FIRST_PARTY_PREFIXES)
+
 # code -> (rule_id, severity, kind)
 _DIAG_MAP: dict[str, tuple[str, Severity, Kind]] = {
     "L3_CONVERGENCE_BOUND": ("WLN-L3-CONVERGENCE-BOUND", Severity.WARN, Kind.METRIC),
@@ -234,6 +255,13 @@ def diagnose_unknown_imports(
         if not mod:
             continue
         if mod in project_modules:
+            continue
+        # Skip declared native / first-party modules. A compiled wardline.core
+        # extension has no Python AST so it is absent from project_modules, but it
+        # is first-party, not an external precision gap — resolve it via the
+        # declarative allowlist. (Only DECLARED prefixes; a genuine unknown
+        # third-party import still falls through to a FACT below.)
+        if _is_native_first_party(mod):
             continue
         # Skip Python stdlib modules — any import whose top-level name
         # appears in ``sys.stdlib_module_names`` is resolvable at runtime
