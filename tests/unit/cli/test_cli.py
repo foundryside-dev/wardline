@@ -957,9 +957,9 @@ def test_judge_low_confidence_fp_held_back_from_write(monkeypatch, tmp_path) -> 
     assert not (proj / ".wardline" / "judged.yaml").exists()
 
 
-def test_judge_write_then_scan_gate_is_cleared(monkeypatch, tmp_path) -> None:
-    # The regression that pins the headline panel finding: a JUDGED FP written by
-    # `judge --write` must suppress the finding for `scan --fail-on` too.
+def test_judge_write_then_scan_gate_requires_trust_flag(monkeypatch, tmp_path) -> None:
+    # judged.yaml is repository-controlled input, so scan ignores it unless the
+    # operator explicitly trusts judged suppressions for this checkout.
     import wardline.cli.judge as judge_cli
     from wardline.cli.main import cli
 
@@ -974,10 +974,18 @@ def test_judge_write_then_scan_gate_is_cleared(monkeypatch, tmp_path) -> None:
     jres = CliRunner().invoke(cli, ["judge", str(proj), "--write"])
     assert jres.exit_code == 0, jres.output
     assert (proj / ".wardline" / "judged.yaml").exists()
-    # 3) scan now sees the JUDGED suppression -> gate cleared, summary shows it
-    after = CliRunner().invoke(cli, ["scan", str(proj), "--output", str(out), "--fail-on", "INFO"])
-    assert after.exit_code == 0, after.output
-    assert "judged" in after.output
+    # 3) default scan does not trust repository-controlled judged.yaml, so the
+    # active defect still trips the gate.
+    untrusted = CliRunner().invoke(cli, ["scan", str(proj), "--output", str(out), "--fail-on", "INFO"])
+    assert untrusted.exit_code == 1, untrusted.output
+    assert "0 judged" in untrusted.output
+    # 4) an explicit local trust decision preserves the judged-suppression flow.
+    trusted = CliRunner().invoke(
+        cli,
+        ["scan", str(proj), "--output", str(out), "--fail-on", "INFO", "--trust-judged-suppressions"],
+    )
+    assert trusted.exit_code == 0, trusted.output
+    assert "1 judged" in trusted.output
 
 
 def test_scan_fix_and_fix_command(tmp_path: Path) -> None:

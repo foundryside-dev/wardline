@@ -87,3 +87,20 @@ def test_out_of_range_confidence_raises(tmp_path: Path) -> None:
     )
     with pytest.raises(ConfigError):
         load_judged(path)
+
+
+def test_non_false_positive_verdict_raises(tmp_path: Path) -> None:
+    path = tmp_path / "judged.yaml"
+    path.write_text(
+        "version: 1\nfindings:\n"
+        f"  - fingerprint: {'a' * 64}\n"
+        "    verdict: TRUE_POSITIVE\n"
+        "    rationale: x\n"
+        "    model_id: m\n"
+        "    policy_hash: sha256:x\n"
+        "    confidence: 0.9\n"
+        "    recorded_at: 2026-05-30T00:00:00+00:00\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="verdict must be FALSE_POSITIVE"):
+        load_judged(path)

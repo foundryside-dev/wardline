@@ -179,6 +179,7 @@ def run_judge(
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
+        trust_judged_suppressions=True,
     )
     judged_set = load_judged(root / ".wardline" / "judged.yaml")
 

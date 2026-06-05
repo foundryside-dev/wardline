@@ -85,6 +85,7 @@ def run_scan(
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
     strict_defaults: bool = False,
+    trust_judged_suppressions: bool = False,
 ) -> ScanResult:
     """Discover → analyze → apply suppressions. Pure function of (disk + config).
 
@@ -94,6 +95,11 @@ def run_scan(
     ``confine_to_root`` (default True) makes ``discover`` reject any
     ``source_root`` that resolves outside ``root``. Callers that intentionally
     scan outside the project root must opt out explicitly.
+
+    ``trust_judged_suppressions`` is deliberately false by default because
+    ``.wardline/judged.yaml`` is repository-controlled input. Enabling it is an
+    operator trust decision suitable for local scans of a trusted checkout, not
+    enforcement on untrusted pull-request contents.
     """
     from wardline.scanner.analyzer import build_analyzer
     from wardline.scanner.grammar import TrustGrammar, default_grammar
@@ -184,7 +190,7 @@ def run_scan(
         cache.save()
     baseline = load_baseline(root / ".wardline" / "baseline.yaml")
     waivers = WaiverSet(parse_waivers(cfg.waivers))
-    judged = load_judged(root / ".wardline" / "judged.yaml")
+    judged = load_judged(root / ".wardline" / "judged.yaml") if trust_judged_suppressions else None
     findings = apply_suppressions(raw, baseline, waivers, today=date.today(), judged=judged)
 
     if new_since is not None:

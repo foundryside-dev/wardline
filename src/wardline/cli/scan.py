@@ -101,6 +101,15 @@ from wardline.core.sarif import SarifSink
     default=False,
     help="Allow wardline.yaml source_roots to resolve outside PATH.",
 )
+@click.option(
+    "--trust-judged-suppressions",
+    is_flag=True,
+    default=False,
+    help=(
+        "Trust repository .wardline/judged.yaml records for scan suppression. "
+        "Do not enable for untrusted pull-request contents."
+    ),
+)
 def scan(
     path: Path,
     config_path: Path | None,
@@ -118,6 +127,7 @@ def scan(
     yes: bool,
     strict_defaults: bool,
     allow_source_root_escape: bool,
+    trust_judged_suppressions: bool,
 ) -> None:
     """Scan PATH for findings."""
     default_name = "findings.sarif" if fmt == "sarif" else "findings.jsonl"
@@ -150,6 +160,7 @@ def scan(
             trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,
             confine_to_root=not allow_source_root_escape,
+            trust_judged_suppressions=trust_judged_suppressions,
         )
         findings = result.findings
         if fix:
@@ -185,6 +196,7 @@ def scan(
                         trusted_packs=trusted_packs,
                         strict_defaults=strict_defaults,
                         confine_to_root=not allow_source_root_escape,
+                        trust_judged_suppressions=trust_judged_suppressions,
                     )
                     findings = result.findings
         if fmt == "sarif":

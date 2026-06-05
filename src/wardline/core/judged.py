@@ -110,6 +110,9 @@ def load_judged(path: Path) -> JudgedSet:
         if fp in seen:
             raise ConfigError(f"{path.name} findings[{idx}]: duplicate fingerprint {fp!r}")
         seen.add(fp)
+        verdict = _require_str(e, "verdict", idx, path.name)
+        if verdict != "FALSE_POSITIVE":
+            raise ConfigError(f"{path.name} findings[{idx}].verdict must be FALSE_POSITIVE")
         rationale = _require_str(e, "rationale", idx, path.name)
         # Provenance is the audit primitive — never default it. A judged record with
         # no attributable model / policy / confidence is an unauditable suppression.
