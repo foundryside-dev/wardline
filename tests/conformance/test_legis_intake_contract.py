@@ -52,9 +52,7 @@ _TRUST_TIERS: frozenset[str] = frozenset(
         "MIXED_RAW",
     }
 )
-_SUPPRESSION_PROOF_KEYS: frozenset[str] = frozenset(
-    {"suppression_proof", "suppression_ticket", "suppression_reason"}
-)
+_SUPPRESSION_PROOF_KEYS: frozenset[str] = frozenset({"suppression_proof", "suppression_ticket", "suppression_reason"})
 _SEVERITY_NAMES: frozenset[str] = frozenset({"CRITICAL", "ERROR", "WARN", "INFO", "NONE"})
 _MAX_FINDINGS = 500
 _ARTIFACT_SIGNATURE_FIELD = "artifact_signature"
@@ -93,8 +91,7 @@ def _validate_trust_properties(properties: Mapping[str, Any]) -> None:
 
 def _has_suppression_proof(properties: Mapping[str, Any]) -> bool:
     return any(
-        isinstance(properties.get(key), str) and bool(properties[key].strip())
-        for key in _SUPPRESSION_PROOF_KEYS
+        isinstance(properties.get(key), str) and bool(properties[key].strip()) for key in _SUPPRESSION_PROOF_KEYS
     )
 
 

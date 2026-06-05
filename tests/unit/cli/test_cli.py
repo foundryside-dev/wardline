@@ -384,9 +384,7 @@ def test_scan_baseline_clears_gate_with_trust_suppressions(tmp_path) -> None:
         "version: 1\nentries:\n  - fingerprint: " + fp + "\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
         encoding="utf-8",
     )
-    res = CliRunner().invoke(
-        scan, [str(proj), "--output", str(out), "--fail-on", "ERROR", "--trust-suppressions"]
-    )
+    res = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--fail-on", "ERROR", "--trust-suppressions"])
     assert res.exit_code == 0, res.output
 
 
