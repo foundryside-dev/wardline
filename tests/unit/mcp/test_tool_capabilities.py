@@ -30,7 +30,7 @@ def test_tools_list_exposes_tool_capability_classes() -> None:
 
     assert "read" in tools["scan"]["capabilities"]
     assert "network" in tools["judge"]["capabilities"]
-    assert "write" in tools["baseline_create"]["capabilities"]
+    assert "write" in tools["baseline"]["capabilities"]
     assert {"network", "write"} <= set(tools["file_finding"]["capabilities"])
 
 
@@ -98,11 +98,11 @@ def test_builtin_judge_is_denied_by_no_network_policy(tmp_path: Path) -> None:
 
 def test_builtin_baseline_is_denied_by_no_write_policy(tmp_path: Path) -> None:
     server = WardlineMCPServer(root=tmp_path, allow_write=False)
-    result = _tool_call(server, "baseline_create")
+    result = _tool_call(server, "baseline")
 
     assert result["isError"] is True
     text = result["content"][0]["text"].lower()
-    assert "baseline_create" in text
+    assert "baseline" in text
     assert "write" in text
 
 

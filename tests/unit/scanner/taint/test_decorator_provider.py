@@ -28,6 +28,45 @@ def test_external_boundary_from_import() -> None:
     assert out["m.read"] == FunctionTaint(T.EXTERNAL_RAW, T.EXTERNAL_RAW)
 
 
+def test_loom_markers_external_boundary_from_import() -> None:
+    out = _seed("from loom_markers import external_boundary\n@external_boundary\ndef read(p):\n    return p\n")
+    assert out["m.read"] == FunctionTaint(T.EXTERNAL_RAW, T.EXTERNAL_RAW)
+
+
+def test_loom_markers_trust_boundary_from_import() -> None:
+    out = _seed(
+        "from loom_markers import trust_boundary\n@trust_boundary(to_level='ASSURED')\ndef v(x):\n    return x\n"
+    )
+    assert out["m.v"] == FunctionTaint(T.EXTERNAL_RAW, T.ASSURED)
+
+
+def test_loom_markers_trusted_from_import() -> None:
+    out = _seed("from loom_markers import trusted\n@trusted\ndef f():\n    return 1\n")
+    assert out["m.f"] == FunctionTaint(T.INTEGRAL, T.INTEGRAL)
+
+
+def test_loom_markers_fires_end_to_end(tmp_path) -> None:
+    from wardline.core.run import run_scan
+
+    (tmp_path / "m.py").write_text(
+        "from loom_markers import external_boundary, trusted\n"
+        "\n"
+        "@external_boundary\n"
+        "def read_raw(p):\n"
+        "    return p\n"
+        "\n"
+        "@trusted(level='ASSURED')\n"
+        "def build_record(p):\n"
+        "    return read_raw(p)\n",
+        encoding="utf-8",
+    )
+
+    result = run_scan(tmp_path)
+
+    active = {f.rule_id for f in result.findings if f.suppressed.value == "active"}
+    assert "PY-WL-101" in active
+
+
 def test_external_boundary_aliased_from_import() -> None:
     out = _seed("from wardline.decorators import external_boundary as eb\n@eb\ndef read(p):\n    return p\n")
     assert out["m.read"] == FunctionTaint(T.EXTERNAL_RAW, T.EXTERNAL_RAW)

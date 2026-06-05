@@ -4,7 +4,7 @@
 **From:** Wardline (generic build, in flight)
 **To:** Filigree and Clarion maintainers
 **Status:** request-for-adaptation — sibling-side changes that let the generic Wardline emit findings natively into the suite
-**Charter:** [`loom.md`](../../) §5 — integration is *additive, not load-bearing*. Every ask below is enrichment; Wardline boots, self-tests, and analyzes with both siblings absent.
+**Charter:** the federation enrich-only axiom — integration is *additive, not load-bearing*. Every ask below is enrichment; Wardline boots, self-tests, and analyzes with both siblings absent. (The axiom is now authoritative in the Loom hub at `~/loom/doctrine.md` §5; the citation below to "`loom.md` §5" predates the promotion and resolves there.)
 
 ---
 
@@ -69,7 +69,7 @@ All Wardline-specific richness lands under a single namespaced key, preserved ve
 
 Please call which you'd rather implement.
 
-**C. (confirm) Standalone `file_path` → `file_id` resolution.** Confirm path-anchored ingest resolves `file_id` in **standalone Filigree** (no Clarion registry backend), so the (Wardline, Filigree) pair composes without Clarion present — pairwise composability per `loom.md` §4.
+**C. (confirm) Standalone `file_path` → `file_id` resolution.** Confirm path-anchored ingest resolves `file_id` in **standalone Filigree** (no Clarion registry backend), so the (Wardline, Filigree) pair composes without Clarion present — pairwise composability per the composition law (now authoritative at `~/loom/doctrine.md` §4).
 
 **D. (confirm) `scan_source = "wardline"`** and the `WLN-*` `rule_id` namespace are accepted and stored byte-for-byte (no normalization).
 
@@ -81,7 +81,7 @@ Please call which you'd rather implement.
 
 **A. (confirm) qualname → entity-ID reconciliation.** Wardline emits `metadata.wardline.qualname` as the **combined dotted `module.qualified_name`** (e.g. `auth.tokens.TokenManager.issue`) — deliberately matching Clarion's L7 form to resolve the [ADR-018](../../clarion/adr/ADR-018-identity-reconciliation.md) deferred clash in Clarion's favor. Confirm Clarion reconciles this to an `EntityId` at ingest/enrichment and that the dotted form is what you want (vs. the old `(module, qualified_name)` tuple).
 
-**B. (decision) Transport role under "native" emission.** [ADR-015](../../clarion/adr/ADR-015-wardline-filigree-emission.md) scoped Wardline→Filigree through Clarion's `clarion sarif import` for v0.1, with a native Wardline emitter as the v0.2 retirement. Wardline now intends to ship the **native Filigree emitter directly** (it's the ~1-day path the ADR-015 spike already costed). Consequence: **Clarion is no longer on the transport path** for the (Wardline, Filigree) pair, and `loom.md` §5 asterisk 1 can retire. Clarion's role becomes pure **enrichment** (entity reconciliation), not a bridge. Please confirm you're happy to (a) keep the SARIF translator as a general-purpose path for *other* SARIF tools, and (b) treat Wardline as a native emitter. This likely warrants an ADR-015 "Revision 2".
+**B. (decision) Transport role under "native" emission.** [ADR-015](../../clarion/adr/ADR-015-wardline-filigree-emission.md) scoped Wardline→Filigree through Clarion's `clarion sarif import` for v0.1, with a native Wardline emitter as the v0.2 retirement. Wardline now intends to ship the **native Filigree emitter directly** (it's the ~1-day path the ADR-015 spike already costed). Consequence: **Clarion is no longer on the transport path** for the (Wardline, Filigree) pair, and the Wardline→Filigree pipeline asterisk can retire. (That asterisk is now tracked authoritatively as **A-1** in `~/loom/asterisk-register.md`, where it remains **LIVE** as of 2026-06-05 pending the native emitter shipping and verified Clarion-absent composition.) Clarion's role becomes pure **enrichment** (entity reconciliation), not a bridge. Please confirm you're happy to (a) keep the SARIF translator as a general-purpose path for *other* SARIF tools, and (b) treat Wardline as a native emitter. This likely warrants an ADR-015 "Revision 2".
 
 **C. (optional, later) Entity associations.** If Wardline later binds findings to Clarion entities directly (beyond qualname reconciliation), it would use [ADR-029](../../clarion/adr/ADR-029-entity-associations-binding.md) `add_entity_association` with `content_hash_at_attach`. Not needed for the first cut — flagged so it's not a surprise.
 

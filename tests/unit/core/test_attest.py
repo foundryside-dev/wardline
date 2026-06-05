@@ -283,6 +283,10 @@ def test_build_attestation_shape_and_signature(tmp_path: Path) -> None:
     tampered_key_id["signature"]["key_id"] = "deadbeef"
     assert verify_attestation(tampered_key_id, _KEY)["signature_valid"] is False
 
+    tampered_schema = copy.deepcopy(bundle)
+    tampered_schema["schema"] = "wardline-attest-2"
+    assert verify_attestation(tampered_schema, _KEY)["signature_valid"] is False
+
 
 # --------------------------------------------------------------------------- #
 # 4. Reproducibility / determinism (waiver-free tree → date-independent payload)

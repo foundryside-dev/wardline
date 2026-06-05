@@ -1,24 +1,31 @@
 # Trust vocabulary
 
-Wardline ships exactly three importable decorators. They are the only way you
-declare trust in your own code; everything else in the lattice is *inferred* by
-the engine. This page documents each one precisely — what it declares, its exact
-signature and allowed arguments, and a usage example.
+Wardline recognizes exactly three trust marker decorators. Application code
+should import them from the tiny `loom-markers` package; `wardline.decorators`
+remains a backward-compatible alias for direct Wardline users. Everything else
+in the lattice is *inferred* by the engine. This page documents each marker
+precisely — what it declares, its exact signature and allowed arguments, and a
+usage example.
 
 ## The three decorators
 
-Import all three from one module:
+Prefer the neutral marker-only package in application code:
 
-```python
-from wardline.decorators import trusted, trust_boundary, external_boundary
+```bash
+pip install loom-markers
 ```
 
-These are the exact names exported by `wardline.decorators`. The canonical names
-are also discoverable without importing Wardline at all, via
+```python
+from loom_markers import trusted, trust_boundary, external_boundary
+```
+
+Wardline recognizes both `loom_markers.*` and the older
+`wardline.decorators.*` forms with the same static semantics. The canonical
+names are also discoverable without importing Wardline at all, via
 `wardline vocab`, which prints:
 
 ```text
-version: wardline-generic-1
+version: wardline-generic-2
 entries:
 - canonical_name: external_boundary
   group: 1
@@ -49,7 +56,8 @@ no level attribute.
 ## The four declarable tiers
 
 You only ever write four of the eight lattice tiers directly. The decorators
-accept these names (as a `TaintState` enum member or its string form):
+accept these names as strings. The `wardline.decorators` compatibility aliases
+also accept Wardline's `TaintState` enum members.
 
 | Tier | Declared by | Meaning |
 | --- | --- | --- |
@@ -84,7 +92,7 @@ the return tier is always `EXTERNAL_RAW`.
 **Usage:**
 
 ```python
-from wardline.decorators import external_boundary
+from loom_markers import external_boundary
 
 @external_boundary
 def read_request_body(request) -> str:
@@ -124,7 +132,7 @@ integral and not to a raw tier.
 **Usage:**
 
 ```python
-from wardline.decorators import trust_boundary
+from loom_markers import trust_boundary
 
 @trust_boundary(to_level="GUARDED")
 def parse_user_id(raw: str) -> int:
@@ -169,7 +177,7 @@ merely guarded and never raw.
 **Usage — both forms:**
 
 ```python
-from wardline.decorators import trusted
+from loom_markers import trusted
 
 @trusted
 def build_audit_record(event) -> dict:
@@ -196,7 +204,7 @@ enters, `trust_boundary` marks where it is validated and its trust is raised, an
 `trusted` marks the code downstream that is entitled to assume trusted input.
 
 ```python
-from wardline.decorators import external_boundary, trust_boundary, trusted
+from loom_markers import external_boundary, trust_boundary, trusted
 
 @external_boundary
 def read_id(request) -> str:

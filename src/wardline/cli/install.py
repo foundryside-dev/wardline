@@ -10,7 +10,7 @@ import click
 from wardline.core.errors import WardlineError
 from wardline.install.block import inject_block
 from wardline.install.detect import record_bindings
-from wardline.install.mcp_json import merge_mcp_entry
+from wardline.install.mcp_json import install_codex_mcp, merge_mcp_entry
 from wardline.install.pack import activate_pack
 from wardline.install.skill import install_skill
 
@@ -26,7 +26,7 @@ from wardline.install.skill import install_skill
 @click.option("--no-claude-md", is_flag=True, help="Skip the CLAUDE.md instruction block.")
 @click.option("--no-agents-md", is_flag=True, help="Skip the AGENTS.md instruction block.")
 @click.option("--no-skill", is_flag=True, help="Skip the wardline-gate skill.")
-@click.option("--no-mcp", is_flag=True, help="Skip wiring .mcp.json.")
+@click.option("--no-mcp", is_flag=True, help="Skip wiring .mcp.json and Codex MCP config.")
 @click.option("--no-bindings", is_flag=True, help="Skip Clarion/Filigree detection.")
 @click.option("--no-attest-key", is_flag=True, help="Skip minting the attest signing key.")
 @click.option("--no-pre-commit", is_flag=True, help="Skip adding pre-commit hook config.")
@@ -58,6 +58,7 @@ def install(
                 lines.append(f"skill {base}/skills/wardline-gate: {status}")
         if not no_mcp:
             lines.append(f".mcp.json (wardline entry): {merge_mcp_entry(root)}")
+            lines.append(f"Codex MCP (wardline entry): {install_codex_mcp(root)}")
         if not no_bindings:
             for name, status in record_bindings(root).items():
                 lines.append(f"{name}: {status}")
@@ -83,6 +84,7 @@ def install(
                 click.echo(f"warning: trust-grammar pack {pack!r} is not installed or importable locally", err=True)
             status = activate_pack(root, pack)
             lines.append(f"packs: {status}")
+        lines.append("runtime markers: install `loom-markers` and import from `loom_markers`")
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc

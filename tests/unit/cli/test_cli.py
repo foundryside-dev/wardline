@@ -693,7 +693,50 @@ def test_scan_clarion_soft_outage_does_not_change_exit(tmp_path, monkeypatch) ->
     result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--clarion-url", "http://x/api/taint"])
     assert result.exit_code == 0, result.output
     assert "Clarion taint store not written" in result.output
+    assert "http://x/api/taint" in result.output
     assert "scan unaffected" in result.output
+
+
+def test_scan_reports_filigree_success_and_clarion_unreachable_independently(tmp_path, monkeypatch) -> None:
+    from wardline.clarion.client import WriteResult
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+
+    class _OkEmitter:
+        def __init__(self, url, **kw):
+            pass
+
+        def emit(self, findings, *, scanned_paths=()):
+            from wardline.core.filigree_emit import EmitResult
+
+            return EmitResult(reachable=True, created=1, updated=2)
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _OkEmitter)
+    monkeypatch.setattr(
+        "wardline.clarion.write.write_facts_to_clarion",
+        lambda *a, **k: WriteResult(reachable=False, disabled_reason="connection refused"),
+    )
+    out = tmp_path / "f.jsonl"
+    result = CliRunner().invoke(
+        scan,
+        [
+            str(proj),
+            "--output",
+            str(out),
+            "--filigree-url",
+            "http://filigree/api/loom/scan-results",
+            "--clarion-url",
+            "http://clarion/api/wardline/taint-facts",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "emitted" in result.output
+    assert "http://filigree/api/loom/scan-results" in result.output
+    assert "Clarion taint store not written at http://clarion/api/wardline/taint-facts" in result.output
+    assert "connection refused" in result.output
 
 
 def test_scan_clarion_loud_error_exits_2(tmp_path, monkeypatch) -> None:
@@ -1136,10 +1179,12 @@ def leaky(p):
 """
     m_py = tmp_path / "m.py"
     m_py.write_text(src, encoding="utf-8")
-    # This generates PY-WL-101 finding, which is not fixable via autofix.
+    # This generates PY-WL-101 finding, which is not fixable via autofix. The
+    # wardline.decorators import is builtin vocabulary and should not add an
+    # unknown-import fact.
     res = CliRunner().invoke(cli, ["scan", str(tmp_path), "--fix"])
     assert res.exit_code == 0
-    assert "3 finding(s)" in res.output
+    assert "2 finding(s)" in res.output
     # Source file must be unchanged
     assert m_py.read_text(encoding="utf-8") == src
 

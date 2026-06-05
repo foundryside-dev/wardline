@@ -127,8 +127,8 @@ def generate_baseline(
 ) -> int:
     """Derive a baseline from current findings and write it. Returns the number
     of fingerprints baselined. Raises ``FileExistsError`` if a baseline already
-    exists and ``overwrite`` is False (shared by the CLI and the MCP
-    ``baseline_create``/``baseline_update`` tools)."""
+    exists and ``overwrite`` is False (shared by the CLI and MCP baseline
+    surfaces)."""
     return len(
         collect_and_write_baseline(
             root,

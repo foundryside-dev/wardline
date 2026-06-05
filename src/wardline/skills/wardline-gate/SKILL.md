@@ -44,8 +44,9 @@ leak.
 Prefer FIXING a finding. Suppress only a finding you have judged a true
 non-issue, always with a reason:
 
-- `baseline_create` / `baseline_update` — snapshot current defects so only NEW
-  findings surface. A coarse, whole-set tool; requires a reason.
+- MCP `baseline` — snapshot current defects so only NEW findings surface.
+  `overwrite: false` (default) refuses to clobber an existing baseline;
+  `overwrite: true` re-derives it. A coarse, whole-set tool; requires a reason.
 - `waiver_add` — waive ONE finding by fingerprint with a mandatory reason and an
   expiry date. An audited, time-boxed exception.
 - `wardline judge` (opt-in, network) — an LLM pass that labels each defect
@@ -58,7 +59,7 @@ non-issue, always with a reason:
 - **CLI:** `wardline scan`, `wardline judge`, `wardline baseline create/update`.
   Branch on the exit code; read the findings file it writes.
 - **MCP:** `wardline mcp` exposes `scan`, `explain_taint`, `fix`, `judge`
-  (network), `baseline_create`, `baseline_update`, `waiver_add`; resources
+  (network), `baseline`, `waiver_add`; resources
   `wardline://vocab|rules|config|config-schema`; and the `wardline:loop` prompt.
   The server is stateless — the read-only tools are pure functions of your code
   on disk and your config.

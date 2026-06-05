@@ -2,7 +2,7 @@
 
 Stateless (no server-side session carried between calls). The read-only tools
 (scan, explain_taint) are pure functions of (disk + config); fix, the suppression
-tools (baseline_create/baseline_update, waiver_add), and judge --write mutate
+tools (baseline, waiver_add), and judge --write mutate
 project files on disk. Rooted at a project path (launch cwd by default)."""
 
 from __future__ import annotations
@@ -62,7 +62,33 @@ def _emit_filigree(
     }
 
 
-def _file_finding(args: dict[str, Any], root: Path, filer: Any) -> dict[str, Any]:
+def _filigree_emit_status(block: dict[str, Any] | None) -> dict[str, Any]:
+    if block is None:
+        return {
+            "configured": False,
+            "reachable": None,
+            "created": 0,
+            "updated": 0,
+            "failed": 0,
+            "warnings": [],
+            "disabled_reason": "not configured",
+        }
+    return {"configured": True, **block}
+
+
+def _clarion_write_status(block: dict[str, Any] | None) -> dict[str, Any]:
+    if block is None:
+        return {
+            "configured": False,
+            "reachable": None,
+            "written": 0,
+            "unresolved_qualnames": [],
+            "disabled_reason": "not configured",
+        }
+    return {"configured": True, **block}
+
+
+def _file_finding(args: dict[str, Any], root: Path, filer: Any, clarion: Any = None) -> dict[str, Any]:
     """File ONE finding (by fingerprint) into a tracked Filigree issue, returning its
     id. Fail-soft on reachability; a 404 (unknown fingerprint) surfaces as not_found."""
     if filer is None:
@@ -72,7 +98,7 @@ def _file_finding(args: dict[str, Any], root: Path, filer: Any) -> dict[str, Any
     if labels is not None and not isinstance(labels, list):
         raise ToolError("labels must be an array of strings")
     res = filer.file(fp, priority=args.get("priority"), labels=labels)
-    return {
+    payload = {
         "reachable": res.reachable,
         "issue_id": res.issue_id,
         "created": res.created,
@@ -80,6 +106,56 @@ def _file_finding(args: dict[str, Any], root: Path, filer: Any) -> dict[str, Any
         "fingerprint": fp,
         "disabled_reason": res.disabled_reason,
     }
+    if bool(args.get("attach_clarion_identity") or False):
+        from wardline.core.filigree_issue import attach_clarion_identity_for_finding, identity_attach_result_to_json
+
+        payload["identity_attach"] = identity_attach_result_to_json(
+            attach_clarion_identity_for_finding(
+                fingerprint=fp,
+                issue_id=res.issue_id,
+                root=root,
+                filer=filer,
+                clarion_client=clarion,
+                config_path=_cfg(args, root),
+            )
+        )
+    return payload
+
+
+def _scan_file_findings(
+    args: dict[str, Any],
+    root: Path,
+    filigree_emitter: Any = None,
+    filigree_filer: Any = None,
+    clarion: Any = None,
+) -> dict[str, Any]:
+    fingerprints_raw = args.get("fingerprints") or []
+    if not isinstance(fingerprints_raw, list) or not all(isinstance(fp, str) for fp in fingerprints_raw):
+        raise ToolError("fingerprints must be an array of strings")
+    labels_raw = args.get("labels") or []
+    if not isinstance(labels_raw, list) or not all(isinstance(label, str) for label in labels_raw):
+        raise ToolError("labels must be an array of strings")
+    dry_run = bool(args.get("dry_run", not (bool(args.get("all_active")) or bool(fingerprints_raw))))
+    path = _resolve_under_root(root, args["path"]) if args.get("path") else root
+    from wardline.core.scan_file_workflow import scan_file_findings
+
+    return scan_file_findings(
+        root=path,
+        config_path=_cfg(args, root),
+        cache_dir=_cache_dir_arg(args, root),
+        fail_on=args.get("fail_on"),
+        trust_local_packs=bool(args.get("trust_local_packs", False)),
+        trusted_packs=_trusted_packs_arg(args),
+        strict_defaults=bool(args.get("strict_defaults", False)),
+        fingerprints=tuple(fingerprints_raw),
+        all_active=bool(args.get("all_active", False)),
+        dry_run=dry_run,
+        priority=args.get("priority"),
+        labels=tuple(labels_raw),
+        filigree_emitter=filigree_emitter,
+        filigree_filer=filigree_filer,
+        clarion_client=clarion,
+    )
 
 
 def _trusted_packs_arg(args: dict[str, Any]) -> tuple[str, ...]:
@@ -146,6 +222,8 @@ def _scan(
         }
     decision = gate_decision(result, threshold)
     filigree_block = _emit_filigree(result.findings, filigree, scanned_paths=result.scanned_paths)
+    filigree_status = _filigree_emit_status(filigree_block)
+    clarion_status = _clarion_write_status(clarion_block)
     where = args.get("where")
     try:
         resolved_where = resolve_query_filters(where, root, _cfg(args, root), clarion)
@@ -167,6 +245,8 @@ def _scan(
             exp = explanation_from_context(f, result.context)
             d["explanation"] = _explanation_to_dict(exp)
         findings_out.append(d)
+    from wardline.core.agent_summary import build_agent_summary
+
     return {
         "files_scanned": result.files_scanned,
         "findings": findings_out,
@@ -184,6 +264,14 @@ def _scan(
         "gate": {"tripped": decision.tripped, "fail_on": decision.fail_on, "exit_class": decision.exit_class},
         "clarion": clarion_block,
         "filigree": filigree_block,
+        "clarion_write": clarion_status,
+        "filigree_emit": filigree_status,
+        "agent_summary": build_agent_summary(
+            result,
+            decision,
+            filigree_emit=filigree_status,
+            clarion_write=clarion_status,
+        ).to_dict(),
     }
 
 
@@ -266,6 +354,26 @@ def _assure(args: dict[str, Any], root: Path) -> dict[str, Any]:
     path = _resolve_under_root(root, args["path"]) if args.get("path") else root
     posture = build_posture(path, config_path=_cfg(args, root), confine_to_root=True)
     return posture.to_dict()
+
+
+def _decorator_coverage(
+    args: dict[str, Any],
+    root: Path,
+    clarion: Any = None,
+    filigree_url: str | None = None,
+) -> dict[str, Any]:
+    """Row-level inventory of every trust-decorated entity under the project."""
+    from wardline.loom_decorator_coverage import build_loom_decorator_coverage
+
+    path = _resolve_under_root(root, args["path"]) if args.get("path") else root
+    report = build_loom_decorator_coverage(
+        path,
+        clarion_client=clarion,
+        filigree_url=filigree_url,
+        config_path=_cfg(args, root),
+        confine_to_root=True,
+    )
+    return report.to_dict()
 
 
 def _attest(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, Any]:
@@ -359,13 +467,14 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
     }
 
 
-def _baseline_create(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def _baseline(args: dict[str, Any], root: Path) -> dict[str, Any]:
     reason = args.get("reason")
     baseline_path = root / ".wardline" / "baseline.yaml"
+    overwrite = bool(args.get("overwrite", False))
     try:
         count = generate_baseline(
             root,
-            overwrite=False,
+            overwrite=overwrite,
             config_path=_cfg(args, root),
             cache_dir=_cache_dir_arg(args, root),
             confine_to_root=True,
@@ -374,6 +483,8 @@ def _baseline_create(args: dict[str, Any], root: Path) -> dict[str, Any]:
             strict_defaults=bool(args.get("strict_defaults", False)),
         )
     except FileExistsError:
+        if overwrite:
+            raise
         existing = load_baseline(baseline_path)
         return {
             "baselined_count": len(existing.fingerprints),
@@ -381,22 +492,10 @@ def _baseline_create(args: dict[str, Any], root: Path) -> dict[str, Any]:
             "reason": reason,
             "already_exists": True,
         }
-    return {"baselined_count": count, "path": str(baseline_path), "reason": reason, "already_exists": False}
-
-
-def _baseline_update(args: dict[str, Any], root: Path) -> dict[str, Any]:
-    reason = args.get("reason")
-    count = generate_baseline(
-        root,
-        overwrite=True,
-        config_path=_cfg(args, root),
-        cache_dir=_cache_dir_arg(args, root),
-        confine_to_root=True,
-        trust_local_packs=bool(args.get("trust_local_packs", False)),
-        trusted_packs=_trusted_packs_arg(args),
-        strict_defaults=bool(args.get("strict_defaults", False)),
-    )
-    return {"baselined_count": count, "path": str(root / ".wardline" / "baseline.yaml"), "reason": reason}
+    payload = {"baselined_count": count, "path": str(baseline_path), "reason": reason}
+    if not overwrite:
+        payload["already_exists"] = False
+    return payload
 
 
 def _waiver_add(args: dict[str, Any], root: Path) -> dict[str, Any]:
@@ -708,6 +807,29 @@ class WardlineMCPServer:
         )
         self.add_tool(
             Tool(
+                name="decorator_coverage",
+                capabilities=frozenset({ToolCapability.READ, ToolCapability.NETWORK}),
+                description="Stable JSON inventory of every Wardline trust-decorated entity: "
+                "qualname, path/line, decorators, declared/actual tier, gate verdict, "
+                "active/suppressed finding fingerprints, optional SEI/content status, and "
+                "optional Filigree linked work status. Optional sources degrade explicitly.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "config": {"type": "string"},
+                    },
+                },
+                handler=lambda args, root: _decorator_coverage(
+                    args,
+                    root,
+                    self._clarion_client(_cfg(args, root)),
+                    config_mod.resolve_filigree_url(self.filigree_url, root, _cfg(args, root)),
+                ),
+            )
+        )
+        self.add_tool(
+            Tool(
                 name="attest",
                 description="Build a SIGNED, reproducible evidence bundle (commit, ruleset hash, "
                 "trust-surface posture, boundaries) for the project. HMAC-signed with the "
@@ -791,9 +913,76 @@ class WardlineMCPServer:
                         "fingerprint": {"type": "string"},
                         "priority": {"type": "string", "description": "Filigree priority, e.g. P2"},
                         "labels": {"type": "array", "items": {"type": "string"}},
+                        "attach_clarion_identity": {
+                            "type": "boolean",
+                            "description": (
+                                "Opt in to resolving the finding qualname through Clarion and attaching "
+                                "a Filigree entity association."
+                            ),
+                        },
+                        "config": {"type": "string"},
                     },
                 },
-                handler=lambda args, root: _file_finding(args, root, self._filigree_filer()),
+                handler=lambda args, root: _file_finding(
+                    args,
+                    root,
+                    self._filigree_filer(_cfg(args, root)),
+                    self._clarion_client(_cfg(args, root))
+                    if bool(args.get("attach_clarion_identity") or False)
+                    else None,
+                ),
+            )
+        )
+        self.add_tool(
+            Tool(
+                name="scan_file_findings",
+                capabilities=frozenset({ToolCapability.READ, ToolCapability.WRITE, ToolCapability.NETWORK}),
+                description="One-shot agent workflow: run a scan, list active defects first with "
+                "inline explanation summaries, optionally emit to Filigree, promote selected "
+                "fingerprints or all active defects, and attach Clarion identity when available. "
+                "Defaults to dry-run unless fingerprints or all_active are supplied.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "subdir relative to project root"},
+                        "fail_on": {"type": "string", "enum": _SEVERITY_ENUM},
+                        "config": {"type": "string"},
+                        "cache_dir": {
+                            "type": "string",
+                            "description": "subdir relative to project root for summary cache",
+                        },
+                        "fingerprints": {"type": "array", "items": {"type": "string"}},
+                        "all_active": {"type": "boolean"},
+                        "dry_run": {"type": "boolean"},
+                        "priority": {"type": "string", "description": "Filigree priority, e.g. P2"},
+                        "labels": {"type": "array", "items": {"type": "string"}},
+                        "trust_packs": {"type": "array", "items": {"type": "string"}},
+                        "trust_local_packs": {"type": "boolean"},
+                        "strict_defaults": {"type": "boolean"},
+                    },
+                },
+                handler=lambda args, root: _scan_file_findings(
+                    args,
+                    root,
+                    self._filigree_emitter(
+                        _cfg(args, root),
+                        trust_local_packs=bool(args.get("trust_local_packs") or False),
+                        trusted_packs=tuple(args.get("trust_packs") or []),
+                        strict_defaults=bool(args.get("strict_defaults") or False),
+                    ),
+                    self._filigree_filer(
+                        _cfg(args, root),
+                        trust_local_packs=bool(args.get("trust_local_packs") or False),
+                        trusted_packs=tuple(args.get("trust_packs") or []),
+                        strict_defaults=bool(args.get("strict_defaults") or False),
+                    ),
+                    self._clarion_client(
+                        _cfg(args, root),
+                        trust_local_packs=bool(args.get("trust_local_packs") or False),
+                        trusted_packs=tuple(args.get("trust_packs") or []),
+                        strict_defaults=bool(args.get("strict_defaults") or False),
+                    ),
+                ),
             )
         )
         self.add_tool(
@@ -823,14 +1012,17 @@ class WardlineMCPServer:
         )
         self.add_tool(
             Tool(
-                name="baseline_create",
+                name="baseline",
                 capabilities=frozenset({ToolCapability.READ, ToolCapability.WRITE}),
                 description="Snapshot current defects as the baseline so only NEW findings surface. "
+                "Default overwrite=false refuses to clobber and returns already_exists=true. "
+                "Set overwrite=true to re-derive and overwrite the baseline. "
                 "Prefer FIXING a finding over baselining it. Optional reason.",
                 input_schema={
                     "type": "object",
                     "properties": {
                         "reason": {"type": "string"},
+                        "overwrite": {"type": "boolean"},
                         "config": {"type": "string"},
                         "cache_dir": {
                             "type": "string",
@@ -841,29 +1033,7 @@ class WardlineMCPServer:
                         "strict_defaults": {"type": "boolean"},
                     },
                 },
-                handler=_baseline_create,
-            )
-        )
-        self.add_tool(
-            Tool(
-                name="baseline_update",
-                capabilities=frozenset({ToolCapability.READ, ToolCapability.WRITE}),
-                description="Re-derive and OVERWRITE the baseline. Optional reason.",
-                input_schema={
-                    "type": "object",
-                    "properties": {
-                        "reason": {"type": "string"},
-                        "config": {"type": "string"},
-                        "cache_dir": {
-                            "type": "string",
-                            "description": "subdir relative to project root for summary cache",
-                        },
-                        "trust_packs": {"type": "array", "items": {"type": "string"}},
-                        "trust_local_packs": {"type": "boolean"},
-                        "strict_defaults": {"type": "boolean"},
-                    },
-                },
-                handler=_baseline_update,
+                handler=_baseline,
             )
         )
         self.add_tool(

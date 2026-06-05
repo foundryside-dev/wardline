@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import click
@@ -28,7 +29,7 @@ from wardline.core.sarif import SarifSink
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     default=None,
 )
-@click.option("--format", "fmt", type=click.Choice(["jsonl", "sarif"]), default="jsonl")
+@click.option("--format", "fmt", type=click.Choice(["jsonl", "sarif", "agent-summary"]), default="jsonl")
 @click.option("--output", type=click.Path(path_type=Path), default=None)
 # exit 1 if any non-suppressed DEFECT has severity >= this threshold (SP3b)
 @click.option("--fail-on", type=click.Choice(["CRITICAL", "ERROR", "WARN", "INFO"]), default=None)
@@ -120,7 +121,12 @@ def scan(
     allow_source_root_escape: bool,
 ) -> None:
     """Scan PATH for findings."""
-    default_name = "findings.sarif" if fmt == "sarif" else "findings.jsonl"
+    if fmt == "sarif":
+        default_name = "findings.sarif"
+    elif fmt == "agent-summary":
+        default_name = "findings.agent-summary.json"
+    else:
+        default_name = "findings.jsonl"
     output = output if output is not None else (path / default_name)
     emit_result: EmitResult | None = None
     clarion_result = None
@@ -190,7 +196,7 @@ def scan(
         if fmt == "sarif":
             sarif_sink = SarifSink(output)
             sarif_sink.write(findings, result.context)
-        else:
+        elif fmt == "jsonl":
             jsonl_sink = JsonlSink(output)
             jsonl_sink.write(findings)
         # Loom emission is additive: a FiligreeEmitError (HTTP >= 400) is a Wardline
@@ -211,6 +217,23 @@ def scan(
                 project=resolve_project_name(path),
             )
             clarion_result = write_facts_to_clarion(result, path, client)
+        if fmt == "agent-summary":
+            from wardline.core.agent_summary import build_agent_summary
+
+            decision = gate_decision(result, Severity(fail_on)) if fail_on is not None else gate_decision(result, None)
+            output.write_text(
+                json.dumps(
+                    build_agent_summary(
+                        result,
+                        decision,
+                        filigree_emit=_filigree_status(emit_result),
+                        clarion_write=_clarion_status(clarion_result),
+                    ).to_dict(),
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
@@ -234,7 +257,7 @@ def scan(
         if not clarion_result.reachable:
             reason = clarion_result.disabled_reason or "unreachable"
             click.echo(
-                f"warning: Clarion taint store not written ({reason}); scan unaffected.",
+                f"warning: Clarion taint store not written at {clarion_url} ({reason}); scan unaffected.",
                 err=True,
             )
         else:
@@ -261,3 +284,43 @@ def scan(
     # Independent of the severity gate: opt-in enforcement of "everything analysed".
     if gate_tripped or (fail_on_unanalyzed and s.unanalyzed):
         raise SystemExit(1)
+
+
+def _filigree_status(result: EmitResult | None) -> dict[str, object]:
+    if result is None:
+        return {
+            "configured": False,
+            "reachable": None,
+            "created": 0,
+            "updated": 0,
+            "failed": 0,
+            "warnings": [],
+            "disabled_reason": "not configured",
+        }
+    return {
+        "configured": True,
+        "reachable": result.reachable,
+        "created": result.created,
+        "updated": result.updated,
+        "failed": result.failed,
+        "warnings": list(result.warnings),
+        "disabled_reason": None if result.reachable else "filigree unreachable",
+    }
+
+
+def _clarion_status(result: object | None) -> dict[str, object]:
+    if result is None:
+        return {
+            "configured": False,
+            "reachable": None,
+            "written": 0,
+            "unresolved_qualnames": [],
+            "disabled_reason": "not configured",
+        }
+    return {
+        "configured": True,
+        "reachable": getattr(result, "reachable", False),
+        "written": getattr(result, "written", 0),
+        "unresolved_qualnames": list(getattr(result, "unresolved_qualnames", ())),
+        "disabled_reason": getattr(result, "disabled_reason", None),
+    }

@@ -35,6 +35,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provenance — killing the scan-then-N-explains round-trips. New read-only `wardline findings`
   CLI verb shares the same filter core. (WS-B1, WS-B2)
 
+### Security
+- **Local trust-pack guard no longer executes repository code while deciding.**
+  `_is_local_pack()` resolved a `wardline.yaml` `packs:` entry with
+  `importlib.util.find_spec()`, which imports (and runs) the parent of a dotted
+  name (`evil.sub` → `evil/__init__.py`) — so the very guard meant to refuse
+  executing a *local* pack executed it as a side effect of the check. Locality is
+  now decided by pure filesystem inspection (stat only, never import), and the
+  guard fails closed (malformed-but-importable names fall through to the walk
+  rather than skipping it). Residual vector closed: a trusted published pack name
+  shadowed by an attacker-committed local package on `sys.path`. (The pre-existing
+  `--trust-pack` allowlist already gates this code path, so a default scan never
+  reached it.)
+
 ## [1.0.0rc1] - 2026-06-02
 
 ### Changed

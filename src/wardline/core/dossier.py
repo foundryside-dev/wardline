@@ -618,10 +618,14 @@ def _synthesize(identity: IdentitySection, trust: TrustSection, linkages: Linkag
         bits.append(f"{len(linkages.callers)} caller(s), {len(linkages.callees)} callee(s) in the call graph.")
     else:
         bits.append("call-graph locus unavailable (no Clarion linkages).")
-    if work.available and work.tickets:
-        bits.append(f"{len(work.tickets)} open ticket(s) touch it.")
+    if work.available:
+        if work.tickets:
+            bits.append(f"{len(work.tickets)} open ticket(s) touch it.")
+        else:
+            bits.append("no open work found.")
     else:
-        bits.append("open-work unavailable (no Filigree).")
+        reason = work.reason or "source unavailable"
+        bits.append(f"open-work unavailable ({reason}).")
     return " ".join(bits)
 
 

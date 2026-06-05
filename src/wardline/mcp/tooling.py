@@ -75,6 +75,52 @@ def explanation_to_dict(exp: TaintExplanation) -> dict[str, Any]:
         "source_boundary_qualname": exp.source_boundary_qualname,
         "resolved_call_count": exp.resolved_call_count,
         "unresolved_call_count": exp.unresolved_call_count,
+        "remediation": remediation_to_dict(exp),
+    }
+
+
+def remediation_to_dict(exp: TaintExplanation) -> dict[str, Any]:
+    if exp.rule_id != "PY-WL-101":
+        return {
+            "kind": "review_required",
+            "rule_id": exp.rule_id,
+            "summary": (
+                "Review the finding and apply the rule-specific fix; no automated remediation hint is available."
+            ),
+            "sink_qualname": exp.sink_qualname,
+            "source_qualname": exp.source_boundary_qualname,
+            "caveat": "This hint is advisory and does not replace the factual taint explanation.",
+        }
+
+    source = exp.source_boundary_qualname or exp.immediate_tainted_callee
+    sink = exp.sink_qualname
+    if source and sink:
+        summary = (
+            f"Validate or normalize data from {source} before it reaches trusted producer {sink}. "
+            "Add or repair a @trust_boundary only on the function that actually rejects invalid data."
+        )
+    elif sink:
+        summary = (
+            f"Validate or normalize the raw input before it reaches trusted producer {sink}; "
+            "the taint source is unresolved in this explanation. Add or repair a @trust_boundary only where "
+            "the code actually rejects invalid data."
+        )
+    else:
+        summary = (
+            "Validate or normalize the raw input before it reaches the trusted producer; the taint source is "
+            "unresolved in this explanation. Add or repair a @trust_boundary only where the code actually "
+            "rejects invalid data."
+        )
+    return {
+        "kind": "boundary_placement",
+        "rule_id": exp.rule_id,
+        "summary": summary,
+        "sink_qualname": sink,
+        "source_qualname": source,
+        "caveat": (
+            "Do not use blind decorator insertion; mark a trust boundary only on code that validates "
+            "and rejects invalid data."
+        ),
     }
 
 

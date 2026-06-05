@@ -41,11 +41,11 @@ def _call(server: WardlineMCPServer, name: str, arguments: dict) -> dict:
     return json.loads(resp["result"]["content"][0]["text"])
 
 
-def test_baseline_create_optional_reason(tmp_path: Path) -> None:
+def test_baseline_optional_reason(tmp_path: Path) -> None:
     proj = _leaky_project(tmp_path)
     server = WardlineMCPServer(root=proj)
     resp = server.rpc.dispatch(
-        {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "baseline_create", "arguments": {}}}
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "baseline", "arguments": {}}}
     )
     assert "error" not in resp, resp
     assert not resp["result"].get("isError"), resp
@@ -54,12 +54,12 @@ def test_baseline_create_optional_reason(tmp_path: Path) -> None:
     assert out["reason"] is None
 
 
-def test_baseline_create_then_update(tmp_path: Path) -> None:
+def test_baseline_create_then_overwrite(tmp_path: Path) -> None:
     proj = _leaky_project(tmp_path)
     server = WardlineMCPServer(root=proj)
-    out = _call(server, "baseline_create", {"reason": "accept current debt"})
+    out = _call(server, "baseline", {"reason": "accept current debt"})
     assert out["baselined_count"] >= 1
-    out2 = _call(server, "baseline_update", {"reason": "re-derive"})
+    out2 = _call(server, "baseline", {"reason": "re-derive", "overwrite": True})
     assert out2["baselined_count"] >= 1
 
 
@@ -84,7 +84,7 @@ def test_baseline_create_trusted_pack_matches_scan_mcp(tmp_path: Path, monkeypat
 
         baseline = _call(
             server,
-            "baseline_create",
+            "baseline",
             {
                 "reason": "accept custom rule debt",
                 "trust_packs": ["baseline_mcp_pack"],
@@ -99,16 +99,16 @@ def test_baseline_create_trusted_pack_matches_scan_mcp(tmp_path: Path, monkeypat
         sys.modules.pop("baseline_mcp_pack", None)
 
 
-def test_baseline_create_retry_is_idempotent(tmp_path: Path) -> None:
+def test_baseline_retry_is_idempotent(tmp_path: Path) -> None:
     proj = _leaky_project(tmp_path)
     server = WardlineMCPServer(root=proj)
-    first = _call(server, "baseline_create", {"reason": "accept current debt"})
+    first = _call(server, "baseline", {"reason": "accept current debt"})
     resp = server.rpc.dispatch(
         {
             "jsonrpc": "2.0",
             "id": 1,
             "method": "tools/call",
-            "params": {"name": "baseline_create", "arguments": {"reason": "again"}},
+            "params": {"name": "baseline", "arguments": {"reason": "again"}},
         }
     )
     assert "error" not in resp, resp

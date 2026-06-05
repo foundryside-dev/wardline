@@ -11,12 +11,7 @@ T = TaintState
 
 
 def test_l2_function_stage_returns_explicit_typed_output() -> None:
-    tree = ast.parse(
-        "def f(p):\n"
-        "    x = read_raw(p)\n"
-        "    sink(x)\n"
-        "    return x\n"
-    )
+    tree = ast.parse("def f(p):\n    x = read_raw(p)\n    sink(x)\n    return x\n")
     node = tree.body[0]
     assert isinstance(node, ast.FunctionDef)
     sink_call = next(
@@ -44,10 +39,7 @@ def test_l2_function_stage_returns_explicit_typed_output() -> None:
 def test_parse_project_stage_returns_typed_modules_and_dirty_scope(tmp_path) -> None:
     path = tmp_path / "m.py"
     path.write_text(
-        "from wardline.decorators import external_boundary\n"
-        "@external_boundary\n"
-        "def read_raw(p):\n"
-        "    return p\n",
+        "from wardline.decorators import external_boundary\n@external_boundary\ndef read_raw(p):\n    return p\n",
         encoding="utf-8",
     )
 

@@ -1,4 +1,5 @@
-version: wardline-generic-1
+schema: wardline.vocabulary/v1
+version: wardline-generic-2
 entries:
 - canonical_name: external_boundary
   group: 1

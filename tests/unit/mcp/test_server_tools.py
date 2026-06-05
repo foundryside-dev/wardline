@@ -135,6 +135,11 @@ def test_explain_taint_success_through_mcp(tmp_path: Path) -> None:
     assert out["immediate_tainted_callee"] == "read_raw"
     assert out["source_boundary_qualname"] == "svc.read_raw"
     assert "tier_in" in out and "tier_out" in out
+    assert out["remediation"]["kind"] == "boundary_placement"
+    assert out["remediation"]["sink_qualname"] == "svc.leaky"
+    assert out["remediation"]["source_qualname"] == "svc.read_raw"
+    assert "Validate" in out["remediation"]["summary"]
+    assert "@trust_boundary" in out["remediation"]["summary"]
 
     # path+line success case: the path is a MATCH KEY (relative posix), confined
     # for escape-rejection but passed through unmodified to match the finding.

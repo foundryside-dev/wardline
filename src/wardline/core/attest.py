@@ -13,12 +13,14 @@ bundle as cryptographic proof of *who* produced it; it proves only that the hold
 the project key has not been tampered with since signing.
 
 DETERMINISM is a hard requirement. The canonical bytes of ``payload``
-(:func:`_canonical_bytes`) are BOTH the signed material and the reproducibility target.
-Two builds of the same unchanged tree at the same ``today`` must produce byte-identical
-canonical payloads — the only date-sensitive field is the posture's waiver-debt
-``days_left``, so a waiver-free tree's payload is fully date-independent. Every list in
-the payload is sorted on a stable key (boundaries by qualname; the posture sorts its own
-lists) so the suite's ``pytest-randomly`` ordering cannot perturb the bytes.
+(:func:`_canonical_bytes`) are the reproducibility target; the HMAC additionally binds
+the outer envelope ``schema`` so a future schema relabel cannot verify against the wrong
+wire contract. Two builds of the same unchanged tree at the same ``today`` must produce
+byte-identical canonical payloads — the only date-sensitive field is the posture's
+waiver-debt ``days_left``, so a waiver-free tree's payload is fully date-independent.
+Every list in the payload is sorted on a stable key (boundaries by qualname; the posture
+sorts its own lists) so the suite's ``pytest-randomly`` ordering cannot perturb the
+bytes.
 
 Zero-dependency: stdlib ``hmac`` / ``hashlib`` / ``subprocess`` / ``json`` only. This
 module never imports a third-party EXTRA package (e.g. ``blake3``) at module level —
@@ -59,6 +61,8 @@ from wardline.core.dossier import classify_entity_trust
 from wardline.core.errors import AttestError
 from wardline.core.run import run_scan
 from wardline.core.waivers import parse_waivers
+
+ATTEST_SCHEMA = "wardline-attest-1"
 
 
 def git_state(root: Path) -> tuple[str | None, bool]:
@@ -224,23 +228,24 @@ def ruleset_hash(config: WardlineConfig) -> str:
 
 
 def _canonical_bytes(payload: dict[str, Any]) -> bytes:
-    """THE canonical serialization of a payload — used for signing AND reproducibility.
+    """THE canonical serialization used for payload reproducibility.
 
-    Compact, key-sorted UTF-8 JSON. Any change to this function silently invalidates
-    every previously signed bundle, so treat it as a wire contract.
+    Compact, key-sorted UTF-8 JSON. The signer wraps the payload with the outer schema
+    before calling this function so the schema tag is bound too.
     """
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def _sign(payload: dict[str, Any], key: str) -> dict[str, str]:
-    """HMAC-SHA256 the canonical payload bytes under the shared ``key``.
+def _sign(payload: dict[str, Any], key: str, *, schema: str = ATTEST_SCHEMA) -> dict[str, str]:
+    """HMAC-SHA256 the canonical envelope bytes under the shared ``key``.
 
     Returns ``{"alg", "value", "key_id"}``. ``key_id`` is a non-secret 8-hex short id
     (see :func:`wardline.core.attest_key.key_id`) that lets bundles signed with different
     keys be told apart without revealing the key. See the module threat model: this is
     shared-secret tamper-evidence, not asymmetric proof.
     """
-    value = hmac.new(key.encode(), _canonical_bytes(payload), hashlib.sha256).hexdigest()
+    signed_material = {"schema": schema, "payload": payload}
+    value = hmac.new(key.encode(), _canonical_bytes(signed_material), hashlib.sha256).hexdigest()
     return {"alg": "HMAC-SHA256", "value": value, "key_id": key_id(key)}
 
 
@@ -393,8 +398,8 @@ def build_attestation(
     if payload["dirty"] and not allow_dirty:
         raise AttestError("refusing to attest a dirty working tree (uncommitted changes); pass allow_dirty to override")
 
-    signature = _sign(payload, key)
-    return {"schema": "wardline-attest-1", "payload": payload, "signature": signature}
+    signature = _sign(payload, key, schema=ATTEST_SCHEMA)
+    return {"schema": ATTEST_SCHEMA, "payload": payload, "signature": signature}
 
 
 def verify_attestation(
@@ -435,11 +440,18 @@ def verify_attestation(
     with ``sei=None`` and honestly reports ``reproduced=False`` (the binding cannot be
     reproduced), while ``signature_valid`` is unaffected (it is over the recorded bytes).
     """
-    recorded_payload: dict[str, Any] = bundle["payload"]
-    expected = _sign(recorded_payload, key)["value"]
+    if not isinstance(bundle, dict):
+        raise AttestError("attestation bundle must be a JSON object")
+    schema = bundle.get("schema")
+    recorded_payload_raw = bundle["payload"]
+    if not isinstance(recorded_payload_raw, dict):
+        raise AttestError("attestation payload must be a JSON object")
+    recorded_payload: dict[str, Any] = recorded_payload_raw
+    expected = _sign(recorded_payload, key, schema=schema if isinstance(schema, str) else "")["value"]
     signature = bundle.get("signature") or {}
     signature_valid = (
         isinstance(signature, dict)
+        and schema == ATTEST_SCHEMA
         and signature.get("alg") == "HMAC-SHA256"
         and signature.get("key_id") == key_id(key)
         and hmac.compare_digest(expected, str(signature.get("value") or ""))

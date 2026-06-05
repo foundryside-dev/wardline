@@ -4,16 +4,38 @@ Wardline is a citizen of the Loom suite, but integration is **additive, never
 load-bearing**: `wardline scan` boots, analyzes, writes findings, and gates with
 both siblings absent. The three output paths below are enrichment you opt into.
 
+This "additive, never load-bearing" rule is the federation's enrich-only axiom,
+which is defined authoritatively in the Loom hub (`~/loom/doctrine.md` §5) — the
+canonical source for the suite's roster and composition doctrine.
+
 | Path | How | Consumer |
 |---|---|---|
 | **SARIF 2.1.0** | `--format sarif --output FILE` | any SARIF tool (GitHub code scanning, CI dashboards) |
 | **Native Filigree emitter** | `--filigree-url URL` | Filigree's Loom scan-results lifecycle |
 | **Clarion producer conformance** | automatic in `metadata.wardline.qualname` | Clarion entity reconciliation |
 
+## Which path should agents use?
+
+Use **native Filigree emission** (`wardline scan --filigree-url ...`) when the
+goal is lifecycle work: deduplicating findings across scans, promoting a
+fingerprint to a tracked Filigree issue, reconciling fixed/regressed findings,
+or joining open work into a Loom dossier. Native emission sends Wardline's
+top-level fingerprint and Wardline metadata directly to Filigree's Loom
+scan-results endpoint, so Filigree can preserve the finding identity it uses for
+promotion and lifecycle state.
+
+Use **SARIF** when the goal is generic interchange: GitHub code scanning, CI
+dashboards, archival evidence, or a tool that only speaks SARIF. SARIF can carry
+Wardline identity, but downstream lifecycle behavior depends on the importer
+preserving Wardline's fingerprint fields. If an importer drops or rewrites those
+fingerprints, later promotion/dedup in Filigree will be weaker than native
+emission.
+
 ## SARIF
 
 SARIF 2.1.0 is a standard interchange format, so this path works with **any**
-SARIF consumer — it is not Filigree-specific.
+SARIF consumer. Treat it as interchange, not the preferred Filigree lifecycle
+path.
 
 ```console
 $ wardline scan src/wardline --format sarif --output results.sarif
@@ -28,6 +50,13 @@ location, and `partialFingerprints` carrying Wardline's stable fingerprint.
 Suppressed findings (baseline / waiver / judged) emit a SARIF
 `suppressions` entry (`kind: external`, `status: accepted`), with the waiver
 reason as the justification.
+
+Downstream importers should preserve
+`partialFingerprints["wardlineFingerprint/v1"]` as the finding's lifecycle
+identity. If that field arrives empty or is discarded, the imported finding may
+still be visible as a generic SARIF result, but Filigree promotion,
+deduplication, and close/reopen behavior cannot rely on the same stable identity
+as native Wardline emission.
 
 The `--fail-on` gate and suppression annotation run on the findings regardless of
 output format, so SARIF output and CI gating compose.
@@ -105,6 +134,36 @@ normalization vectors in CI, converting byte-equality from an assumption into a
 test. In Clarion 1.0.0 the reconciliation *consumer* is not yet built, so this
 is producer-pinning today; emitting the correct qualname now is what makes future
 reconciliation lossless.
+
+## Trust-vocabulary descriptor (the cross-product contract)
+
+Wardline's trust-decorator vocabulary (`external_boundary` / `trust_boundary` /
+`trusted`) is published as a **versioned, on-disk descriptor** — the canonical
+*read-instead-of-import* contract for peers. It is generated from the in-process
+`REGISTRY` and shipped in the wheel at `wardline/core/vocabulary.yaml` (emit it
+with `wardline vocab`, or read `wardline://vocab` over MCP). The envelope carries
+two version axes: `schema` (`wardline.vocabulary/v1`, the descriptor *format*)
+and `version` (`wardline-generic-2`, the vocabulary *content*); a byte-identity
+drift test keeps the committed file in lock-step with `REGISTRY`.
+
+**Retirement note (Wardline side complete).** Clarion historically imported
+`wardline.core.registry.REGISTRY` in-process (Clarion ADR-018). Because
+`wardline.core` is becoming a **native (compiled) module**, no peer may import
+it — the descriptor is the only supported external surface, and reading it needs
+no Wardline import. The Wardline side of that retirement is **done**: the
+descriptor is the contract, with a `schema` field, a documented location, and a
+test proving the vocabulary is consumable from the file's bytes alone. The
+remaining half — Clarion switching its plugin from `import REGISTRY` to reading
+the descriptor — is **Clarion's** change (`clarion-1f6241b329`; the reader
+already exists in Clarion's tree). See
+[ADR: vocabulary descriptor cross-product contract](../decisions/2026-06-05-wardline-vocabulary-descriptor-cross-product-contract.md)
+and the [Clarion hand-off](../integration/2026-06-05-wardline-descriptor-clarion-handoff.md).
+
+The self-scan side of the native-module migration is handled by a declarative
+allowlist, `_NATIVE_FIRST_PARTY_PREFIXES` in `scanner/diagnostics.py` — the
+**seam the Rust migration extends** so a compiled `wardline.core` (no Python AST)
+doesn't light up `WLN-ENGINE-UNKNOWN-IMPORT`. See
+[ADR: native-module import resolution](../decisions/2026-06-05-wardline-native-module-import-resolution.md).
 
 ## See also
 

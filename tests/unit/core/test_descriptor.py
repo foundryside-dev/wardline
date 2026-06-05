@@ -25,10 +25,16 @@ def test_descriptor_entry_order_follows_registry() -> None:
     assert names == list(REGISTRY)
 
 
-def test_descriptor_envelope_carries_exactly_two_fields() -> None:
+def test_descriptor_envelope_carries_schema_version_entries() -> None:
     # Pin the top-level contract surface: a future stray key (e.g. a signature
-    # field) would silently expand the descriptor without this guard.
-    assert set(build_vocabulary_descriptor()) == {"version", "entries"}
+    # field) would silently expand the descriptor without this guard. `schema`
+    # (the descriptor FORMAT version) is distinct from `version` (the REGISTRY
+    # CONTENT version) — both are required cross-product contract fields.
+    assert set(build_vocabulary_descriptor()) == {"schema", "version", "entries"}
+
+
+def test_descriptor_carries_schema_identifier() -> None:
+    assert build_vocabulary_descriptor()["schema"] == "wardline.vocabulary/v1"
 
 
 def test_descriptor_entries_carry_exactly_three_fields() -> None:
@@ -63,3 +69,17 @@ def test_committed_vocabulary_yaml_matches_registry() -> None:
     assert yaml.safe_load(file_text) == build_vocabulary_descriptor(), regen_hint
     # ...and byte-identity (catches a reformat / emitter drift the parse misses).
     assert file_text == descriptor_to_yaml(), regen_hint
+
+
+def test_committed_yaml_is_consumable_as_pure_data() -> None:
+    # The whole point of the descriptor: a peer (Clarion) reads the file's BYTES
+    # and gates on `schema` — WITHOUT importing wardline.core.registry. This test
+    # consumes only the committed YAML + stdlib/yaml, never touching REGISTRY.
+    from importlib.resources import files
+
+    text = files("wardline.core").joinpath("vocabulary.yaml").read_text(encoding="utf-8")
+    data = yaml.safe_load(text)
+    assert data["schema"] == "wardline.vocabulary/v1"
+    assert isinstance(data["version"], str) and data["version"]
+    names = {e["canonical_name"] for e in data["entries"]}
+    assert {"external_boundary", "trust_boundary", "trusted"} <= names

@@ -31,10 +31,12 @@ If you have not installed Wardline yet, start with
   the agent at the gate and the loop;
 - installs the `wardline-gate` skill into `.claude/skills/` and `.agents/skills/`;
 - merges a `wardline` entry into `.mcp.json` (preserving any existing servers);
+- writes a global Codex MCP entry in `~/.codex/config.toml`;
 - detects a Clarion taint store (`clarion` on `PATH` or `WARDLINE_CLARION_URL`)
   and a Filigree project (`.filigree.conf`), recording a `clarion:`/`filigree:`
-  binding in `wardline.yaml` — live when a URL env var is set, otherwise a
-  commented stanza for you to fill.
+  binding in `wardline.yaml` — live when a URL env var, Filigree
+  `.filigree/ephemeral.port`, or HTTP-enabled `clarion.yaml` exposes a URL;
+  otherwise a commented stanza for you to fill.
 
 ```console
 $ wardline install
@@ -44,8 +46,10 @@ wardline install:
   skill .claude/skills/wardline-gate: created
   skill .agents/skills/wardline-gate: created
   .mcp.json (wardline entry): created
+  Codex MCP (wardline entry): created
   clarion: detected (commented)
   filigree: detected (commented)
+  runtime markers: install `loom-markers` and import from `loom_markers`
 ```
 
 It is idempotent (re-run to refresh after upgrading wardline) and non-interactive
@@ -54,11 +58,25 @@ It is idempotent (re-run to refresh after upgrading wardline) and non-interactiv
 freshness is enforced only when you re-run `wardline install`.
 
 Once installed, the MCP server resolves the Clarion URL from `wardline.yaml`, so
-the `.mcp.json` entry stays a bare `wardline mcp --root .` with no URL in its args.
+the `.mcp.json` entry stays a stdio `wardline mcp --root .` command with no URL
+in its args.
+The Codex entry is global, so it runs `wardline mcp` without `--root` and lets
+Codex launch it from the active workspace.
+
+Check the wiring later with:
+
+```console
+$ wardline doctor
+```
+
+Use `wardline doctor --repair` after moving binaries, starting a Filigree
+dashboard, or changing sibling tool config. It refreshes the instruction blocks,
+skills, MCP entries, and `wardline.yaml` bindings using the same discovery rules
+as `wardline install`.
 
 ## Gate the agent's work with `wardline scan`
 
-Wardline marks trust boundaries with two decorators from `wardline.decorators`:
+Wardline marks trust boundaries with marker decorators from `loom_markers`:
 `@external_boundary` (data arriving from outside the trust boundary —
 untrusted) and `@trusted` (a producer that is supposed to receive validated data
 only). When untrusted data reaches a trusted producer, Wardline raises
@@ -67,7 +85,7 @@ only). When untrusted data reaches a trusted producer, Wardline raises
 Here is a self-contained example (`handlers.py`):
 
 ```python
-from wardline.decorators import external_boundary, trusted
+from loom_markers import external_boundary, trusted
 
 
 @external_boundary
@@ -191,11 +209,17 @@ tools instead of shelling out. Launch it over stdio:
 $ wardline mcp --root .
 ```
 
-Tools: `scan` (structured findings + suppression summary + gate), `explain_taint`
+Tools: `scan` (structured findings + suppression summary + gate, including the
+stable `agent_summary` block for compact handoff), `explain_taint`
 (the tainted callee and originating boundary for one finding — call it right
-after a scan and before editing), `fix` (mechanical autofixes for supported
-findings), `judge` (opt-in, network), and the loud suppression tools
-`baseline_create` / `baseline_update` / `waiver_add` (each requires a reason).
+after a scan and before editing), `decorator_coverage` (stable JSON inventory of
+every trust-decorated entity with declared/actual tiers, verdicts, SEI/content
+status, and linked work when configured), `file_finding` (promote one emitted
+finding to a Filigree issue), `scan_file_findings` (one-shot scan, explain,
+emit, promote, and identity-attach workflow), `fix` (mechanical autofixes for
+supported findings), `judge` (opt-in, network), and the loud suppression tools
+`baseline` / `waiver_add` (each requires a reason; `baseline` defaults to
+no-clobber and accepts `overwrite: true` to re-derive).
 Resources expose the trust vocabulary, rule catalog, config, and config schema.
 The `wardline:loop` prompt documents the intended
 scan → explain → fix-at-the-boundary → rescan cycle.
@@ -213,9 +237,29 @@ fail-soft, but a real per-scan cost in the agent loop. See the
 [Clarion taint store guide](clarion-taint-store.md) for the full
 opt-in, auth, and fail-soft details.
 
+`file_finding` can also opt into Clarion identity attachment with
+`attach_clarion_identity: true`. Wardline promotes the finding first, then
+re-runs the scan to find the fingerprint's qualname, resolves that qualname
+through Clarion, and attaches a Filigree entity association when it has both an
+entity id and a current content hash. The returned `identity_attach` block
+reports `attempted`, `attached`, `entity_id`, `content_hash`, `binding_kind`, and
+`reason`. If only a legacy locator is available and no current hash can be read,
+the tool says so and leaves the promoted issue intact rather than fabricating a
+binding.
+
+For the usual agent loop, prefer `scan_file_findings`: it defaults to a dry-run
+summary of active defects, including explanation summaries, then promotes only
+when you pass explicit `fingerprints` or `all_active: true`. Filigree emission,
+per-finding promotion, unknown fingerprints, and Clarion identity attachment are
+reported as separate status blocks so partial failure is not hidden.
+
 The server is stateless — no session state is carried between calls; the
 read-only tools (`scan`, `explain_taint`) are pure functions of your code on disk
 and your config, and the analysis core stays zero-dependency. Only `judge`
-touches the network; `fix`, the suppression tools (`baseline_create` /
-`baseline_update` / `waiver_add`), and `judge` with `write` write to your project
-files as requested.
+touches the network; `fix`, the suppression tools (`baseline` / `waiver_add`),
+and `judge` with `write` write to your project files as requested.
+
+For shell workflows, `wardline scan --format agent-summary` writes the same
+versioned handoff shape (`wardline-agent-summary-1`) to disk: active defects
+first with fingerprints and next tool calls, plus suppressed findings, engine
+facts, and Clarion/Filigree write status when configured.

@@ -163,7 +163,9 @@ def _can_fall_through(stmts: list[ast.stmt]) -> bool:
                 return False
         if isinstance(stmt, ast.Match):
             has_wildcard = any(
-                isinstance(case.pattern, ast.MatchAs) and case.pattern.pattern is None and case.pattern.name is None
+                isinstance(case.pattern, ast.MatchAs)
+                and case.pattern.pattern is None
+                and case.pattern.name is None
                 and case.guard is None
                 for case in stmt.cases
             )

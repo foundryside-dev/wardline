@@ -59,13 +59,14 @@ for you.
     combined." You never write these — they are the engine's honest record of
     what it could and couldn't prove.
 
-You declare trust with three decorators. They are runtime no-ops (markers);
-Wardline reads them from the source. Run `wardline vocab` to emit the canonical
-list:
+You declare trust with three runtime no-op marker decorators. Prefer importing
+them from the tiny `loom-markers` package as `loom_markers.*`; Wardline also
+recognizes the older `wardline.decorators.*` namespace. Run `wardline vocab` to
+emit the canonical list:
 
 ```console
 $ wardline vocab
-version: wardline-generic-1
+version: wardline-generic-2
 entries:
 - canonical_name: external_boundary
   group: 1
@@ -101,7 +102,7 @@ between by following the calls.
 Consider this (the exact code Wardline was run against):
 
 ```python
-from wardline.decorators import trusted, external_boundary
+from loom_markers import trusted, external_boundary
 
 @external_boundary
 def read_request(req):

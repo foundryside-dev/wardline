@@ -27,12 +27,22 @@ def test_scan_tool_writes_facts_when_client_present(tmp_path):
     out = _scan({}, tmp_path, FakeClient())
     assert out["clarion"]["reachable"] is True
     assert out["clarion"]["written"] >= 2
+    assert out["clarion_write"]["configured"] is True
+    assert out["clarion_write"]["reachable"] is True
+    assert out["clarion_write"]["written"] >= 2
 
 
 def test_scan_tool_clarion_block_is_null_when_no_client(tmp_path):
     (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
     out = _scan({}, tmp_path, None)
     assert out["clarion"] is None
+    assert out["clarion_write"] == {
+        "configured": False,
+        "reachable": None,
+        "written": 0,
+        "unresolved_qualnames": [],
+        "disabled_reason": "not configured",
+    }
 
 
 def test_scan_tool_survives_clarion_write_error(tmp_path):
@@ -40,6 +50,9 @@ def test_scan_tool_survives_clarion_write_error(tmp_path):
     out = _scan({}, tmp_path, RaisingClient())
     assert out["clarion"]["reachable"] is False
     assert out["clarion"]["disabled_reason"]  # carries the error text
+    assert out["clarion_write"]["configured"] is True
+    assert out["clarion_write"]["reachable"] is False
+    assert out["clarion_write"]["disabled_reason"]  # carries the error text
     # The scan payload itself is intact, NOT discarded — assert on real scan keys
     # that _scan always returns.
     assert "summary" in out

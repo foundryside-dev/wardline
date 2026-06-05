@@ -9,7 +9,7 @@ Generic, lightweight semantic-tainting static analyzer for Python — track untr
 
 ```python
 # demo.py
-from wardline.decorators import trusted, external_boundary
+from loom_markers import trusted, external_boundary
 
 @external_boundary
 def read_request(req):
@@ -46,9 +46,11 @@ value and propagates it across the whole project, flagging the places where
 untrusted data reaches a trusted producer with no validation in between.
 
 Wardline is part of **Loom** — an agent-first suite of small, local-first
-developer tools (Wardline analysis, **Clarion** code intelligence, **Filigree**
-issue tracking). Every tool is built to be driven by a coding agent as much as a
-person, giving small teams capable tooling without enterprise weight.
+developer tools, each driven by a coding agent as much as a person, giving small
+teams capable tooling without enterprise weight. The authoritative federation
+hub, roster, and composition doctrine live at `~/loom` (see
+`~/loom/doctrine.md`); rather than restate membership here, refer to the hub for
+the current roster and the enrich-only axiom that governs how the tools compose.
 
 **Opt-in by design.** Wardline is silent until you opt in. Undecorated code sits
 in the developer-freedom zone — unknown-trust, no findings. You declare trust on
@@ -65,8 +67,8 @@ lets it scan a large untouched codebase (including its own) with zero noise.
   broad exception handler, and silently-swallowed exception.
 - **Zero-dependency base** — `pip install wardline` pulls nothing; functionality
   lives behind small extras.
-- **Structured output** — JSONL, SARIF (GitHub code-scanning), and native
-  Filigree emit.
+- **Structured output** — JSONL, SARIF (generic interchange/GitHub
+  code-scanning), and native Filigree emit for finding lifecycle work.
 - **Agent-native** — `wardline mcp` is a dependency-free MCP-over-stdio server;
   `wardline install` wires Wardline into your coding agent in one command.
 - **Opt-in LLM triage** — `wardline judge` labels findings TRUE/FALSE positive
@@ -82,7 +84,7 @@ pip install 'wardline[scanner]'   # quote the extras for zsh
 
 ```python
 # app.py
-from wardline.decorators import trusted, external_boundary
+from loom_markers import trusted, external_boundary
 
 @external_boundary
 def read_request(req):
@@ -102,9 +104,14 @@ Fix findings at the **boundary** (validate before returning), not at the sink.
 ## Installation
 
 ```bash
+pip install loom-markers          # tiny runtime marker package for application code
 pip install wardline              # zero-dependency base (library + decorators)
 pip install 'wardline[scanner]'   # the scan/judge/baseline CLI + MCP server (quote for zsh)
 ```
+
+Prefer `loom_markers` in application code. Wardline still recognizes
+`wardline.decorators` for backward compatibility and direct Wardline users, but
+`loom-markers` is the neutral marker-only runtime dependency.
 
 | Extra | Pulls | Enables |
 |-------|-------|---------|
@@ -123,10 +130,20 @@ wardline install
 
 This injects a hash-fenced instruction block into `CLAUDE.md`/`AGENTS.md`,
 installs the `wardline-gate` skill, merges a `wardline` entry into `.mcp.json`,
-and records Clarion/Filigree bindings if present. Agents then run the
+writes Codex's `~/.codex/config.toml` MCP entry, and records Clarion/Filigree
+bindings if present. When local sibling config exposes a URL, `install` wires it
+directly; otherwise it leaves a commented stanza to fill in. Agents then run the
 scan → explain → fix-at-boundary → rescan loop natively. The `wardline mcp`
 server exposes `scan`, `explain_taint`, `fix`, `judge`, baseline, and waiver
 tools over JSON-RPC with no SDK.
+
+`wardline install` also reminds application projects to install `loom-markers`
+and import from `loom_markers` when they want runtime-importable trust markers
+without depending on the full Wardline scanner package.
+
+Run `wardline doctor` to check those artifacts later, or `wardline doctor
+--repair` to refresh stale/missing wiring after moving tools or starting a
+Filigree dashboard.
 
 ## Where Wardline fits
 

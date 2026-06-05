@@ -5,7 +5,7 @@ import json
 from click.testing import CliRunner
 
 from wardline.core.errors import FiligreeEmitError
-from wardline.core.filigree_issue import FileResult
+from wardline.core.filigree_issue import FileResult, IdentityAttachResult
 
 
 def test_file_finding_prints_issue_id(tmp_path, monkeypatch):
@@ -54,3 +54,41 @@ def test_file_finding_loud_4xx_exits_2_no_traceback(tmp_path, monkeypatch):
     # No traceback leaked: the surfaced exception is the clean SystemExit, not the raw error.
     assert isinstance(res.exception, SystemExit)
     assert not isinstance(res.exception, FiligreeEmitError)
+
+
+def test_file_finding_can_attach_clarion_identity(tmp_path, monkeypatch):
+    from wardline.cli import file_finding as mod
+
+    class FakeFiler:
+        def __init__(self, url, **kw):
+            pass
+
+        def file(self, fingerprint, *, scan_source="wardline", priority=None, labels=None):
+            return FileResult(reachable=True, issue_id="wardline-xyz", created=True)
+
+    monkeypatch.setattr(mod, "FiligreeIssueFiler", FakeFiler)
+    monkeypatch.setattr(mod, "resolve_filigree_url", lambda flag, root, cfg: "http://h/api/loom/scan-results")
+    monkeypatch.setattr(mod, "resolve_clarion_url", lambda flag, root, cfg: "http://clarion")
+    monkeypatch.setattr(
+        mod,
+        "attach_clarion_identity_for_finding",
+        lambda **kw: IdentityAttachResult.success(
+            entity_id="clarion:eid:abc",
+            content_hash="hash-v1",
+            binding_kind="sei",
+        ),
+    )
+
+    res = CliRunner().invoke(mod.file_finding, ["fp1", str(tmp_path), "--attach-clarion-identity"])
+
+    assert res.exit_code == 0
+    payload = json.loads(res.output)
+    assert payload["issue_id"] == "wardline-xyz"
+    assert payload["identity_attach"] == {
+        "attempted": True,
+        "attached": True,
+        "entity_id": "clarion:eid:abc",
+        "content_hash": "hash-v1",
+        "binding_kind": "sei",
+        "reason": None,
+    }

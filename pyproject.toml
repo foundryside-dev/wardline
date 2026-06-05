@@ -64,6 +64,9 @@ packages = ["src/wardline"]
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+# Frozen identity-oracle fixtures are parsed-not-imported corpus inputs; never
+# let lint/format rewrite them (that would silently drift the golden corpus).
+extend-exclude = ["tests/golden/identity/fixtures"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
@@ -75,6 +78,7 @@ files = ["src/wardline", "tests"]
 exclude = [
     '^tests/grammar/fixtures/',
     '^tests/unit/install/mock_pack/',
+    '^tests/golden/identity/fixtures/',
 ]
 mypy_path = ["src", "."]
 explicit_package_bases = true

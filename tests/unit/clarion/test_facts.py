@@ -6,6 +6,7 @@ from wardline.core.run import run_scan
 _LEAKY = (
     "from wardline.decorators import external_boundary, trusted\n"
     "@external_boundary\ndef read_raw(p):\n    return p\n"
+    "def helper(p):\n    return p\n"
     "@trusted\ndef leaky(p):\n    return read_raw(p)\n"
 )
 
@@ -22,6 +23,7 @@ def test_builds_one_fact_per_function_entity(tmp_path):
     facts = build_taint_facts(result, proj)
     quals = {f["qualname"] for f in facts}
     assert "svc.read_raw" in quals
+    assert "svc.helper" in quals
     assert "svc.leaky" in quals
 
 
@@ -65,3 +67,28 @@ def test_per_file_hash_is_memoized(tmp_path, monkeypatch):
     monkeypatch.setattr(facts_mod, "_read_bytes", counting)
     build_taint_facts(result, proj)
     assert calls["n"] == 1
+
+
+def test_trust_decorated_entities_emit_dead_code_root_signal(tmp_path):
+    proj, result = _scan_leaky(tmp_path)
+    facts = {f["qualname"]: f["wardline_json"] for f in build_taint_facts(result, proj)}
+
+    assert facts["svc.read_raw"]["dead_code_root"] == {
+        "is_root": True,
+        "source": "wardline_trust_decorator",
+        "tags": ["entry-point"],
+        "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
+    }
+    assert facts["svc.leaky"]["dead_code_root"]["is_root"] is True
+
+
+def test_undecorated_entities_do_not_emit_dead_code_root_signal(tmp_path):
+    proj, result = _scan_leaky(tmp_path)
+    facts = {f["qualname"]: f["wardline_json"] for f in build_taint_facts(result, proj)}
+
+    assert facts["svc.helper"]["dead_code_root"] == {
+        "is_root": False,
+        "source": None,
+        "tags": [],
+        "reason": None,
+    }
