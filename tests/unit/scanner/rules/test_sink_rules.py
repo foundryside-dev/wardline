@@ -38,9 +38,7 @@ def test_sink_calls_include_lambda_body() -> None:
         (2, "wrapper"),
         (2, "eval"),
     ]
-    assert [(call.lineno, sink) for call, sink in sink_calls(func, frozenset({"eval"}), {}, "m")] == [
-        (2, "eval")
-    ]
+    assert [(call.lineno, sink) for call, sink in sink_calls(func, frozenset({"eval"}), {}, "m")] == [(2, "eval")]
 
 
 def test_own_calls_preserve_lambda_default_calls() -> None:
