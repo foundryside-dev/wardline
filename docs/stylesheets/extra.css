@@ -1,49 +1,32 @@
 /* ==========================================================================
-   Wardline — Loom design system + Wardline identity, layered on Material.
+   Wardline — thin identity layer over the shared Loom docs theme.
 
-   Identity: "Technical & confident." Dark-first, monospace accents, a real
-   trust-boundary finding as the hero, and a taint-flow visual motif.
+   This file is layered ON TOP OF the vendored `loom-mkdocs.css` (loaded first
+   in mkdocs.yml). loom-mkdocs.css owns the base chrome: Material --md-* surface/
+   text/code/footer tokens per scheme, the JetBrains Mono / Space Grotesk faces,
+   headings, links, admonitions, tables, radii. We do NOT re-declare any of that.
 
-   Strategy:
-   - Material owns the light/dark toggle. We do NOT add a custom toggle and we
-     do NOT use light-dark()/[data-theme]; we map semantic tokens under
-     Material's own scheme selectors ([data-md-color-scheme="default"|"slate"])
-     and override Material's --md-* variables there.
-   - palette: custom (mkdocs.yml) means Material emits no built-in primary/accent
-     rules — the teal below fully owns the palette, no indigo war.
-   - The header is deliberately neutral near-black (both schemes) with teal as
-     an accent, for a serious dev-tool feel rather than a saturated colour bar.
-   - OKLCH primitives are a shared Loom ramp; Wardline's accent is teal.
+   What stays here is purely Wardline's bespoke landing-page identity:
+   - The Wardline thread accent: CORAL (#F4845F), the federation's trust-boundary
+     strand — a deliberate change from the previous teal. It repaints the hero
+     CTA, eyebrow, links inside the landing, decorator names, section eyebrows,
+     and the "you are here" badge. (In the LIGHT scheme it deepens to #C2410C so
+     coral-as-text clears WCAG AA on white — mirroring how loom-mkdocs deepens
+     its sky accent for light.)
+   - The .wl-* landing components (hero, finding panel, feature cards, the
+     eight-state trust lattice, the Loom suite grid), recolored onto the Loom
+     dark-teal surface ramp + 3/6/8 radii.
+   - The eight-state lattice swatches are SEMANTIC, not brand: they ride the
+     design-system semantic ramp — most-trusted (INTEGRAL) = --ready emerald,
+     least-trusted (MIXED_RAW) = --stale red, midpoints through --aging amber.
+
+   Strategy (unchanged from before): Material owns the light/dark toggle. We do
+   NOT add a custom toggle and do NOT use light-dark()/[data-theme]; the --wl-*
+   semantic tokens are redefined under Material's own scheme selectors so they
+   resolve against the body-level scheme — the same hook loom-mkdocs uses.
    ========================================================================== */
 
 :root {
-  /* ---- Loom primitive ramp (OKLCH, perceptually uniform) ---- */
-  /* Slate/ink — shared Loom neutral hue (~255) */
-  --loom-ink-50:  oklch(0.97 0.010 255);
-  --loom-ink-100: oklch(0.93 0.018 255);
-  --loom-ink-200: oklch(0.86 0.028 255);
-  --loom-ink-700: oklch(0.40 0.060 255);
-  --loom-ink-900: oklch(0.22 0.040 255);
-  --loom-ink-950: oklch(0.16 0.028 255);
-  --loom-ink-980: oklch(0.13 0.022 255);
-
-  /* Wardline accent — teal (~195) */
-  --wl-teal-200: oklch(0.85 0.080 195);
-  --wl-teal-300: oklch(0.78 0.095 195);
-  --wl-teal-400: oklch(0.70 0.110 195);
-  --wl-teal-500: oklch(0.62 0.115 195);
-  --wl-teal-600: oklch(0.55 0.110 195);
-  --wl-teal-700: oklch(0.47 0.095 195);
-
-  /* Signal hues — danger (verdict ✗) and success (verdict ✓) */
-  --wl-danger-300: oklch(0.74 0.150 25);
-  --wl-danger-400: oklch(0.66 0.180 25);
-  --wl-danger-600: oklch(0.55 0.190 25);
-  --wl-danger-700: oklch(0.48 0.165 25);
-  --wl-ok-400:     oklch(0.72 0.130 150);
-  --wl-ok-600:     oklch(0.56 0.120 150);
-  --wl-ok-700:     oklch(0.48 0.105 150);
-
   /* ---- Spacing scale (4px base) ---- */
   --wl-space-1: 0.25rem;
   --wl-space-2: 0.5rem;
@@ -54,355 +37,119 @@
   --wl-space-8: 3rem;
   --wl-space-10: 4rem;
 
-  /* ---- Fluid type ---- */
+  /* ---- Fluid type (landing hero) ---- */
   --wl-text-hero: clamp(2.5rem, 1.7rem + 3.6vw, 4rem);
   --wl-text-lead: clamp(1.1rem, 1rem + 0.6vw, 1.375rem);
 
-  --wl-radius: 10px;
-  --wl-radius-sm: 6px;
+  /* ---- Radii — the Loom 3 / 6 / 8 system ---- */
+  --wl-radius-sm: 3px;   /* chips, pills, small surfaces  */
+  --wl-radius:    6px;   /* buttons, cards                */
+  --wl-radius-lg: 8px;   /* large panels                  */
+
   --wl-content-width: 52rem;
 
-  --wl-font-mono: var(--md-code-font-family, "JetBrains Mono", ui-monospace,
-    SFMono-Regular, "SF Mono", Menlo, Consolas, monospace);
+  /* Body face = JetBrains Mono (from loom-mkdocs); display = Space Grotesk for
+     the big landing headlines (matches the design system's brand-display rule). */
+  --wl-font-mono: var(--md-code-font-family, 'JetBrains Mono', 'Fira Code',
+    ui-monospace, 'SF Mono', Menlo, monospace);
+  --wl-font-display: 'Space Grotesk', 'JetBrains Mono', ui-sans-serif,
+    system-ui, sans-serif;
+
+  /* ---- Loom design-system primitives used by the lattice (theme-agnostic) ---
+     The eight-state trust lattice is SEMANTIC, not brand: most-trusted end rides
+     the --ready emerald, least-trusted end the --stale red, gradient through the
+     --aging amber. Pinned here (not per-scheme) so the ramp reads identically in
+     both light and dark — it is a fixed semantic legend, not a chrome surface. */
+  --ds-ready: #10B981;  /* emerald — most trusted   */
+  --ds-aging: #F59E0B;  /* amber   — intermediate   */
+  --ds-stale: #EF4444;  /* red     — least trusted  */
 }
 
 /* ==========================================================================
-   Material variable overrides — semantic tokens per scheme
+   Wardline semantic tokens — redefined per Material scheme, mapped onto the
+   shared Loom surface ramp + the coral thread accent. These MUST live inside
+   the scheme selectors (which Material sets on <body>): a custom property set
+   on <body> overrides one inherited from :root for every descendant, so an
+   accent declared in :root would silently lose to loom-mkdocs's body-level
+   --md-accent-fg-color. Declaring them here keeps coral authoritative.
    ========================================================================== */
 
-/* ---- LIGHT scheme ---- */
-[data-md-color-scheme="default"] {
-  /* Teal-700 on white = strong contrast; drives links/typeset accents */
-  --md-primary-fg-color:        var(--wl-teal-700);
-  --md-primary-fg-color--light: var(--wl-teal-500);
-  --md-primary-fg-color--dark:  var(--wl-teal-700);
-  --md-accent-fg-color:         var(--wl-teal-600);
-
-  /* Neutral near-black header (NOT teal) — confident, not a colour bar */
-  --wl-header-bg:   var(--loom-ink-950);
-  --wl-header-fg:   oklch(0.96 0.010 255);
-  --wl-header-accent: var(--wl-teal-300);
-
-  /* Semantic tokens for landing + chrome */
-  --wl-bg:          oklch(0.99 0.003 255);
-  --wl-bg-subtle:   oklch(0.975 0.006 255);
-  --wl-bg-card:     oklch(1 0 0);
-  --wl-bg-code:     var(--loom-ink-980);   /* code surfaces stay dark, both schemes */
-  --wl-fg-code:     oklch(0.93 0.012 255);
-  --wl-text:        var(--loom-ink-900);
-  --wl-text-muted:  oklch(0.46 0.020 255);
-  --wl-border:      var(--loom-ink-200);
-  --wl-border-strong: oklch(0.78 0.030 255);
-  --wl-accent:      var(--wl-teal-700);
-  --wl-accent-soft: oklch(0.95 0.030 195);
-  --wl-on-accent:   oklch(0.99 0.005 195);
-
-  --wl-danger:      var(--wl-danger-700);
-  --wl-danger-soft: oklch(0.95 0.035 25);
-  --wl-ok:          var(--wl-ok-700);
-  --wl-ok-soft:     oklch(0.95 0.035 150);
-
-  --wl-grid-line:   oklch(0.92 0.012 255);
-}
-
-/* ---- DARK (slate) scheme — the default ---- */
+/* ---- DARK (slate) scheme — the canonical default ---- */
 [data-md-color-scheme="slate"] {
-  --md-primary-fg-color:        var(--wl-teal-400);
-  --md-primary-fg-color--light: var(--wl-teal-300);
-  --md-primary-fg-color--dark:  var(--wl-teal-500);
-  --md-accent-fg-color:         var(--wl-teal-300);
+  /* Repaint Material's interactive accent to the Wardline coral thread so the
+     chrome loom-mkdocs styles (links, nav active rail, TOC marker, headerlinks)
+     read in Wardline's identity colour rather than the suite's default sky. */
+  --md-accent-fg-color:  var(--thread-wardline);  /* #F4845F coral */
+  --md-typeset-a-color:  var(--thread-wardline);
 
-  /* Tune Material's slate base to the Loom ink ramp */
-  --md-default-bg-color:        var(--loom-ink-950);
-  --md-default-bg-color--light: var(--loom-ink-900);
+  /* Loom dark surface ramp (design-system: base / raised / overlay / hover) */
+  --wl-bg:           #0B1215;  /* surface-base    */
+  --wl-bg-subtle:    #131E24;  /* surface-raised  */
+  --wl-bg-card:      #1A2B34;  /* surface-overlay */
+  --wl-bg-hover:     #243A45;  /* surface-hover   */
 
-  --wl-header-bg:   var(--loom-ink-980);
-  --wl-header-fg:   oklch(0.94 0.012 255);
-  --wl-header-accent: var(--wl-teal-300);
+  /* Code surfaces stay dark in both schemes (editor-screenshot motif) */
+  --wl-bg-code:      #0B1215;
+  --wl-fg-code:      #E2EEF2;
 
-  --wl-bg:          var(--loom-ink-950);
-  --wl-bg-subtle:   oklch(0.20 0.022 255);
-  --wl-bg-card:     oklch(0.22 0.024 255);
-  --wl-bg-code:     var(--loom-ink-980);
-  --wl-fg-code:     oklch(0.93 0.012 255);
-  --wl-text:        oklch(0.94 0.012 255);
-  --wl-text-muted:  oklch(0.78 0.018 255);
-  --wl-border:      oklch(0.34 0.024 255);
-  --wl-border-strong: oklch(0.46 0.030 255);
-  --wl-accent:      var(--wl-teal-300);
-  --wl-accent-soft: oklch(0.30 0.050 195);
-  --wl-on-accent:   oklch(0.16 0.030 195);
+  /* Text ramp */
+  --wl-text:         #E2EEF2;  /* text-primary    */
+  --wl-text-muted:   #8FAAB8;  /* text-secondary  */
 
-  --wl-danger:      var(--wl-danger-300);
-  --wl-danger-soft: oklch(0.28 0.060 25);
-  --wl-ok:          var(--wl-ok-400);
-  --wl-ok-soft:     oklch(0.28 0.050 150);
+  /* Borders — Loom hairlines */
+  --wl-border:        #1E3340;  /* border-default  */
+  --wl-border-strong: #2A4454;  /* border-strong   */
 
-  --wl-grid-line:   oklch(0.26 0.022 255);
+  /* Coral accent (the Wardline thread) + a soft tint for chips/pills */
+  --wl-accent:       var(--thread-wardline);             /* #F4845F */
+  --wl-accent-soft:  rgba(244, 132, 95, 0.14);
+  --wl-on-accent:    #0B1215;                            /* text on coral fill */
+
+  /* Semantic signal colours (verdict ✓/✗) from the design-system ramp */
+  --wl-danger:       var(--ds-stale);   /* #EF4444 */
+  --wl-danger-soft:  rgba(239, 68, 68, 0.14);
+  --wl-ok:           var(--ds-ready);   /* #10B981 */
+  --wl-ok-soft:      rgba(16, 185, 129, 0.14);
 }
 
-/* ==========================================================================
-   Header — neutral, confident, monospace wordmark accent
-   ========================================================================== */
+/* ---- LIGHT (default) scheme — the documented alternate ---- */
+[data-md-color-scheme="default"] {
+  /* Coral-as-text fails AA on white; deepen to #C2410C (the same darker coral
+     loom-mkdocs uses for the light-scheme code-constant colour) so links and
+     the eyebrow clear 4.5:1. Brand reads coral; contrast holds. */
+  --md-accent-fg-color:  #C2410C;
+  --md-typeset-a-color:  #C2410C;
 
-.md-header {
-  background-color: var(--wl-header-bg);
-  color: var(--wl-header-fg);
-  box-shadow: 0 1px 0 oklch(1 0 0 / 0.06), 0 2px 12px oklch(0 0 0 / 0.35);
-}
+  /* Loom light surface ramp */
+  --wl-bg:           #F0F6F8;  /* surface-base    */
+  --wl-bg-subtle:    #E8F1F4;  /* surface-overlay */
+  --wl-bg-card:      #FFFFFF;  /* surface-raised  */
+  --wl-bg-hover:     #DCE9EE;  /* surface-hover   */
 
-.md-header__title,
-.md-header__topic {
-  color: var(--wl-header-fg);
-}
+  /* Code surfaces deliberately stay dark in both schemes */
+  --wl-bg-code:      #0B1215;
+  --wl-fg-code:      #E2EEF2;
 
-/* Wordmark gets a mono treatment + a teal accent underscore */
-.md-header__topic .md-ellipsis {
-  font-family: var(--wl-font-mono);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
+  --wl-text:         #0F2027;  /* text-primary (light) */
+  --wl-text-muted:   #3D6070;  /* text-secondary       */
 
-.md-header .md-source,
-.md-header__button.md-icon {
-  color: var(--wl-header-fg);
-}
+  --wl-border:        #C5D8E0;  /* border-default (light) */
+  --wl-border-strong: #9BBBC8;  /* border-strong          */
 
-/* Tabs bar (if ever enabled) + search input sit on the dark header cleanly */
-.md-search__form {
-  background-color: oklch(1 0 0 / 0.08);
-  border-radius: var(--wl-radius-sm);
-}
-.md-search__form:hover {
-  background-color: oklch(1 0 0 / 0.14);
-}
-[data-md-toggle="search"]:checked ~ .md-header .md-search__form {
-  background-color: var(--wl-bg-card);
-}
-.md-search__input,
-.md-search__input::placeholder {
-  color: var(--wl-header-fg);
-}
-[data-md-toggle="search"]:checked ~ .md-header .md-search__input {
-  color: var(--wl-text);
+  --wl-accent:       #C2410C;                            /* deepened coral */
+  --wl-accent-soft:  rgba(194, 65, 12, 0.10);
+  --wl-on-accent:    #FFFFFF;                            /* text on coral fill */
+
+  --wl-danger:       #B91C1C;   /* deepened red for AA on light */
+  --wl-danger-soft:  rgba(239, 68, 68, 0.10);
+  --wl-ok:           #047857;   /* deepened emerald for AA on light */
+  --wl-ok-soft:      rgba(16, 185, 129, 0.12);
 }
 
 /* ==========================================================================
-   Sidebars / navigation
+   Footer — Loom suite links (.wl-* component; loom-mkdocs owns the rest of
+   the footer chrome, this only styles the bespoke suite strip).
    ========================================================================== */
-
-.md-nav {
-  font-size: 0.74rem;
-}
-
-.md-nav__title {
-  color: var(--wl-text-muted);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-/* Section labels (navigation.sections) read as quiet eyebrow text */
-.md-nav__item--section > .md-nav__link,
-.md-nav--primary .md-nav__item--section > .md-nav__link {
-  font-family: var(--wl-font-mono);
-  font-size: 0.68rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--wl-text-muted);
-  font-weight: 700;
-}
-
-.md-nav__link {
-  color: var(--wl-text-muted);
-  border-radius: var(--wl-radius-sm);
-  transition: color 120ms ease, background-color 120ms ease;
-}
-.md-nav__link:hover,
-.md-nav__link:focus {
-  color: var(--wl-accent);
-}
-
-/* Active page: teal rail + emphasis */
-.md-nav__link.md-nav__link--active,
-.md-nav__item .md-nav__link--active {
-  color: var(--wl-accent);
-  font-weight: 600;
-}
-
-/* Table-of-contents (secondary nav) active marker */
-.md-nav--secondary .md-nav__link--active {
-  color: var(--wl-accent);
-}
-.md-nav--secondary .md-nav__link:has(+ .md-nav),
-.md-nav--secondary {
-  border-left-color: var(--wl-border);
-}
-
-/* ==========================================================================
-   Typeset content — headings, links, rules
-   ========================================================================== */
-
-.md-typeset {
-  color: var(--wl-text);
-}
-
-.md-typeset h1 {
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--wl-text);
-}
-
-.md-typeset h2 {
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  margin-top: var(--wl-space-8);
-  padding-top: var(--wl-space-3);
-  border-top: 1px solid var(--wl-border);
-}
-
-.md-typeset h3 {
-  font-weight: 600;
-}
-
-/* Heading anchor permalinks pick up the accent on hover */
-.md-typeset .headerlink {
-  color: var(--wl-border-strong);
-}
-.md-typeset .headerlink:hover {
-  color: var(--wl-accent);
-}
-
-.md-typeset a {
-  color: var(--wl-accent);
-  text-decoration-color: color-mix(in oklch, var(--wl-accent) 40%, transparent);
-  text-underline-offset: 0.15em;
-}
-.md-typeset a:hover {
-  color: var(--md-accent-fg-color);
-}
-
-/* ==========================================================================
-   Code blocks + inline code — dark surfaces in both schemes, mono everywhere
-   ========================================================================== */
-
-.md-typeset code,
-.md-typeset pre > code {
-  font-family: var(--wl-font-mono);
-}
-
-/* Inline code: subtle teal-tinted chip */
-.md-typeset :not(pre) > code {
-  background-color: var(--wl-accent-soft);
-  color: var(--wl-accent);
-  border-radius: 4px;
-  padding: 0.15em 0.4em;
-  font-size: 0.85em;
-}
-
-/* Fenced code blocks: always-dark surface with a thin teal top accent */
-.md-typeset pre > code {
-  background-color: var(--wl-bg-code);
-  color: var(--wl-fg-code);
-}
-.md-typeset .highlight,
-.md-typeset pre {
-  border-radius: var(--wl-radius-sm);
-}
-.md-typeset .highlight {
-  border: 1px solid var(--wl-border);
-  border-top: 2px solid var(--wl-accent);
-  overflow: hidden;
-}
-[data-md-color-scheme="default"] .md-typeset .highlight {
-  /* On light pages, keep the dark code surface but soften the frame */
-  border-color: var(--loom-ink-200);
-}
-
-/* Copy button sits on the dark surface in both schemes */
-.md-typeset .md-clipboard {
-  color: oklch(0.70 0.015 255);
-}
-.md-typeset .md-clipboard:hover,
-.md-typeset code:hover + .md-clipboard {
-  color: var(--wl-teal-300);
-}
-
-/* ==========================================================================
-   Admonitions — flat, identity-consistent (note/tip/warning/danger/...)
-   ========================================================================== */
-
-.md-typeset .admonition,
-.md-typeset details {
-  border-radius: var(--wl-radius-sm);
-  border-width: 1px;
-  border-left-width: 4px;
-  box-shadow: none;
-  background-color: var(--wl-bg-subtle);
-  font-size: 0.78rem;
-}
-
-.md-typeset .admonition-title,
-.md-typeset summary {
-  font-weight: 650;
-  background-color: transparent;
-}
-
-/* Note / info → teal (the house accent) */
-.md-typeset .admonition.note,
-.md-typeset .admonition.info,
-.md-typeset .admonition.abstract {
-  border-color: var(--wl-accent);
-}
-.md-typeset .note > .admonition-title::before,
-.md-typeset .info > .admonition-title::before,
-.md-typeset .abstract > .admonition-title::before {
-  background-color: var(--wl-accent);
-}
-
-/* Tip / success → green */
-.md-typeset .admonition.tip,
-.md-typeset .admonition.success {
-  border-color: var(--wl-ok);
-}
-
-/* Warning → amber stays Material's default hue (already AA) */
-
-/* Danger / failure → the verdict red */
-.md-typeset .admonition.danger,
-.md-typeset .admonition.failure,
-.md-typeset .admonition.bug {
-  border-color: var(--wl-danger);
-}
-
-/* ==========================================================================
-   Tables — clean, scannable, mono headers
-   ========================================================================== */
-
-.md-typeset table:not([class]) {
-  border: 1px solid var(--wl-border);
-  border-radius: var(--wl-radius-sm);
-  overflow: hidden;
-  font-size: 0.78rem;
-}
-.md-typeset table:not([class]) th {
-  background-color: var(--wl-bg-subtle);
-  color: var(--wl-text);
-  font-family: var(--wl-font-mono);
-  font-weight: 600;
-  font-size: 0.92em;
-  letter-spacing: -0.01em;
-}
-.md-typeset table:not([class]) tr:hover {
-  background-color: var(--wl-bg-subtle);
-}
-
-/* ==========================================================================
-   Footer — Loom suite links
-   ========================================================================== */
-
-.md-footer-meta {
-  background-color: var(--wl-header-bg);
-}
 
 .wl-footer-suite {
   display: flex;
@@ -431,7 +178,7 @@
 .wl-footer-suite a:hover,
 .wl-footer-suite a:focus-visible {
   text-decoration: underline;
-  text-decoration-color: var(--wl-header-accent);
+  text-decoration-color: var(--wl-accent);
   opacity: 1;
 }
 
@@ -478,11 +225,12 @@
 }
 
 .wl-hero__title {
+  font-family: var(--wl-font-display);
   font-size: var(--wl-text-hero);
   line-height: 1.02;
   margin: 0 0 var(--wl-space-4);
   letter-spacing: -0.03em;
-  font-weight: 750;
+  font-weight: 700;
   color: var(--wl-text);
 }
 
@@ -524,12 +272,13 @@
 }
 .wl-btn--primary:hover,
 .wl-btn--primary:focus-visible {
-  background: var(--wl-teal-600);
+  background: color-mix(in oklch, var(--wl-accent) 82%, #000 18%);
   color: var(--wl-on-accent);
 }
 [data-md-color-scheme="slate"] .wl-btn--primary:hover,
 [data-md-color-scheme="slate"] .wl-btn--primary:focus-visible {
-  background: var(--wl-teal-200);
+  /* Lighten the coral on hover against the dark base */
+  background: color-mix(in oklch, var(--wl-accent) 82%, #fff 18%);
 }
 
 .wl-btn--secondary {
@@ -548,7 +297,10 @@
   outline-offset: 2px;
 }
 
-/* ---- Hero finding panel (hand-marked-up, NOT Material-highlighted) ---- */
+/* ---- Hero finding panel (hand-marked-up, NOT Material-highlighted) ----
+   Pinned to the dark editor surface in BOTH schemes so the bright syntax
+   tokens stay legible — this is a screenshot-of-an-editor motif, not page
+   chrome. */
 .wl-finding {
   background: var(--wl-bg-code);
   border: 1px solid var(--wl-border);
@@ -557,7 +309,7 @@
   font-family: var(--wl-font-mono);
   font-size: 0.82rem;
   line-height: 1.6;
-  box-shadow: 0 8px 30px oklch(0 0 0 / 0.25);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
 }
 
 .wl-finding__bar {
@@ -565,9 +317,9 @@
   align-items: center;
   gap: var(--wl-space-2);
   padding: var(--wl-space-3) var(--wl-space-4);
-  background: oklch(0.18 0.022 255);
+  background: #131E24;             /* surface-raised — one step up from base */
   border-bottom: 1px solid var(--wl-border);
-  color: oklch(0.70 0.015 255);
+  color: #8FAAB8;
   font-size: 0.72rem;
 }
 .wl-finding__dot {
@@ -593,7 +345,7 @@
   display: inline-block;
   width: 1.4rem;
   text-align: right;
-  color: oklch(0.55 0.015 255);
+  color: #5A7D8C;                  /* text-muted */
   user-select: none;
   margin-right: var(--wl-space-3);
 }
@@ -603,12 +355,15 @@
 .wl-finding .md-clipboard,
 .wl-finding .md-code__nav,
 .wl-finding .md-code__button { display: none; }
-.wl-tok-kw   { color: var(--wl-teal-300); }
-.wl-tok-dec  { color: oklch(0.80 0.090 80); }   /* decorator — warm */
-.wl-tok-fn   { color: oklch(0.82 0.080 255); }
-.wl-tok-str  { color: oklch(0.80 0.090 150); }
-.wl-tok-cmt  { color: oklch(0.62 0.015 255); font-style: italic; }
-.wl-tok-raw  { color: var(--wl-danger-300); font-weight: 600; }
+
+/* Syntax tokens — terminal-grade, tuned to the design-system code-highlight
+   palette (sky / violet / aqua / gold / coral). */
+.wl-tok-kw   { color: #38BDF8; }                 /* keyword — sky          */
+.wl-tok-dec  { color: #E3B341; }                 /* decorator — gold       */
+.wl-tok-fn   { color: #4ECDC4; }                 /* function — aqua        */
+.wl-tok-str  { color: #10B981; }                 /* string — emerald       */
+.wl-tok-cmt  { color: #5A7D8C; font-style: italic; }  /* comment — muted   */
+.wl-tok-raw  { color: #EF4444; font-weight: 600; }    /* the raw leak — red */
 
 /* The verdict strip under the code */
 .wl-verdict {
@@ -617,12 +372,12 @@
   gap: var(--wl-space-3);
   padding: var(--wl-space-3) var(--wl-space-4);
   border-top: 1px solid var(--wl-border);
-  background: var(--wl-danger-soft);
+  background: rgba(239, 68, 68, 0.12);   /* stale-red wash, on the dark panel */
 }
 .wl-verdict__mark {
   flex: none;
   font-weight: 700;
-  color: var(--wl-danger);
+  color: #EF4444;
   font-size: 1rem;
   line-height: 1.5;
 }
@@ -630,15 +385,17 @@
   font-family: var(--wl-font-mono);
   font-size: 0.74rem;
   line-height: 1.5;
-  color: var(--wl-text);
+  color: #E2EEF2;                 /* always on the dark panel */
   text-align: left;
 }
 .wl-verdict__rule {
-  color: var(--wl-danger);
+  color: #EF4444;
   font-weight: 700;
 }
-.wl-verdict__body .wl-tier-bad { color: var(--wl-danger); font-weight: 600; }
-.wl-verdict__body .wl-tier-good { color: var(--wl-ok); font-weight: 600; }
+/* INTEGRAL (claimed, trusted) reads green; EXTERNAL_RAW (actual, untrusted)
+   reads red — the same most→least-trusted semantics as the lattice. */
+.wl-verdict__body .wl-tier-bad  { color: #EF4444; font-weight: 600; }
+.wl-verdict__body .wl-tier-good { color: #10B981; font-weight: 600; }
 
 /* ---- Trust-flow motif: EXTERNAL_RAW flowing into a trusted producer ---- */
 .wl-flow {
@@ -657,10 +414,10 @@
   border: 1px solid currentColor;
   white-space: nowrap;
 }
-.wl-flow__node--raw   { color: var(--wl-danger-300); }
-.wl-flow__node--claim { color: var(--wl-teal-300); }
+.wl-flow__node--raw   { color: #EF4444; }   /* untrusted — stale red   */
+.wl-flow__node--claim { color: #10B981; }   /* claimed trusted — green */
 .wl-flow__arrow {
-  color: oklch(0.62 0.015 255);
+  color: #5A7D8C;
   flex: none;
 }
 
@@ -709,7 +466,7 @@
   background: var(--wl-accent-soft);
   color: var(--wl-accent);
   padding: 0.1em 0.35em;
-  border-radius: 4px;
+  border-radius: var(--wl-radius-sm);
   font-size: 0.85em;
   font-family: var(--wl-font-mono);
 }
@@ -736,8 +493,9 @@
 }
 
 .wl-model h2 {
+  font-family: var(--wl-font-display);
   margin: 0 0 var(--wl-space-2);
-  font-weight: 650;
+  font-weight: 600;
   letter-spacing: -0.01em;
 }
 .wl-model__intro {
@@ -775,7 +533,9 @@
   line-height: 1.55;
 }
 
-/* The lattice ramp — eight ordered states, most → least trusted */
+/* The lattice ramp — eight ordered states, most → least trusted.
+   SEMANTIC ramp (not brand): emerald (--ready) → amber (--aging) → red
+   (--stale), so the most-trusted state reads green and the least-trusted red. */
 .wl-lattice {
   border: 1px solid var(--wl-border);
   border-radius: var(--wl-radius);
@@ -815,7 +575,7 @@
   width: 0.85rem;
   height: 0.85rem;
   border-radius: 3px;
-  border: 1px solid oklch(0 0 0 / 0.2);
+  border: 1px solid rgba(0, 0, 0, 0.25);
 }
 .wl-tier__name {
   font-weight: 600;
@@ -849,15 +609,18 @@
 .wl-tier__tag--decl { color: var(--wl-accent); }
 .wl-tier__tag--inf  { color: var(--wl-text-muted); }
 
-/* Swatch hues — green (trusted) → amber (unknown) → red (untrusted) */
-.wl-sw-1 { background: var(--wl-ok-400); }
-.wl-sw-2 { background: oklch(0.74 0.115 165); }
-.wl-sw-3 { background: oklch(0.78 0.110 130); }
-.wl-sw-4 { background: oklch(0.80 0.100 95); }
-.wl-sw-5 { background: oklch(0.78 0.115 70); }
-.wl-sw-6 { background: oklch(0.70 0.150 40); }
-.wl-sw-7 { background: var(--wl-danger-400); }
-.wl-sw-8 { background: oklch(0.55 0.170 10); }
+/* Swatch hues — SEMANTIC ramp most→least trusted, anchored on the design-system
+   triplet: --ready emerald (#10B981) → --aging amber (#F59E0B) → --stale red
+   (#EF4444). The endpoints are the exact tokens; the interior steps interpolate
+   in hue so the eight ordered states stay distinguishable. */
+.wl-sw-1 { background: #10B981; }   /* INTEGRAL        — --ready emerald     */
+.wl-sw-2 { background: #34C77E; }   /* ASSURED                                */
+.wl-sw-3 { background: #74C66A; }   /* GUARDED                                */
+.wl-sw-4 { background: #C2BE4A; }   /* UNKNOWN_ASSURED — nearing --aging      */
+.wl-sw-5 { background: #F59E0B; }   /* UNKNOWN_GUARDED — --aging amber        */
+.wl-sw-6 { background: #F4762A; }   /* EXTERNAL_RAW                           */
+.wl-sw-7 { background: #EF4444; }   /* UNKNOWN_RAW     — --stale red          */
+.wl-sw-8 { background: #C0303A; }   /* MIXED_RAW       — deepest (most stale)  */
 
 /* ==========================================================================
    Embedded markdown body (install table + quick example)
@@ -889,8 +652,9 @@
 }
 
 .wl-suite h2 {
+  font-family: var(--wl-font-display);
   margin: 0 0 var(--wl-space-2);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .wl-suite__intro {
@@ -967,8 +731,7 @@
 @media (prefers-reduced-motion: reduce) {
   .wl-btn,
   .wl-suite-card,
-  .wl-feature-card,
-  .md-nav__link {
+  .wl-feature-card {
     transition: none;
   }
 }
