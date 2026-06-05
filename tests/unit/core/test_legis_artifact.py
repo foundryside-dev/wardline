@@ -172,7 +172,7 @@ _LEAKY = (
 
 
 def _git(repo: object, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)  # type: ignore[arg-type]
+    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)  # type: ignore[call-overload]
 
 
 def _committed_repo(tmp_path: object, source: str = _LEAKY):

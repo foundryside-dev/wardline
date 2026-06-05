@@ -116,9 +116,7 @@ def load_judged(path: Path) -> JudgedSet:
         # always emits verdict: FALSE_POSITIVE, so machine round-trips stay valid.
         verdict = _require_str(e, "verdict", idx, path.name)
         if verdict != "FALSE_POSITIVE":
-            raise ConfigError(
-                f"{path.name} findings[{idx}].verdict must be FALSE_POSITIVE, got {verdict!r}"
-            )
+            raise ConfigError(f"{path.name} findings[{idx}].verdict must be FALSE_POSITIVE, got {verdict!r}")
         rationale = _require_str(e, "rationale", idx, path.name)
         # Provenance is the audit primitive — never default it. A judged record with
         # no attributable model / policy / confidence is an unauditable suppression.

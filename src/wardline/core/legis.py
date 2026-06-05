@@ -231,8 +231,7 @@ def build_legis_artifact(
     if key is not None:
         if commit is None:
             raise LegisArtifactError(
-                "cannot sign legis artifact: not a git repository, so commit/tree "
-                "provenance is unavailable"
+                "cannot sign legis artifact: not a git repository, so commit/tree provenance is unavailable"
             )
         if dirty and not allow_dirty:
             raise LegisArtifactError(
