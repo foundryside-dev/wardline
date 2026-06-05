@@ -27,7 +27,7 @@ from wardline.install.skill import install_skill
 @click.option("--no-agents-md", is_flag=True, help="Skip the AGENTS.md instruction block.")
 @click.option("--no-skill", is_flag=True, help="Skip the wardline-gate skill.")
 @click.option("--no-mcp", is_flag=True, help="Skip wiring .mcp.json and Codex MCP config.")
-@click.option("--no-bindings", is_flag=True, help="Skip Clarion/Filigree detection.")
+@click.option("--no-bindings", is_flag=True, help="Skip Loomweave/Filigree detection.")
 @click.option("--no-attest-key", is_flag=True, help="Skip minting the attest signing key.")
 @click.option("--no-pre-commit", is_flag=True, help="Skip adding pre-commit hook config.")
 def install(
@@ -84,7 +84,7 @@ def install(
                 click.echo(f"warning: trust-grammar pack {pack!r} is not installed or importable locally", err=True)
             status = activate_pack(root, pack)
             lines.append(f"packs: {status}")
-        lines.append("runtime markers: install `loom-markers` and import from `loom_markers`")
+        lines.append("runtime markers: install `weft-markers` and import from `weft_markers`")
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc

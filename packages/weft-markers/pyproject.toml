@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "weft-markers"
+version = "0.1.0"
+description = "Tiny runtime marker decorators for Weft/Wardline trust annotations"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+dependencies = []
+authors = [{ name = "John Morrissey" }]
+keywords = ["static-analysis", "trust-boundaries", "markers"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Typing :: Typed",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/weft_markers"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"

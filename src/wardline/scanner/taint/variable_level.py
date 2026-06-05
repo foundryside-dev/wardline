@@ -1572,7 +1572,7 @@ def compute_return_callee(
     name the callee of the assignment that gave ``<var>`` its worst-taint value. This
     is provenance/explainability only and never changes a fire/no-fire decision — the
     taint VALUE (:func:`compute_return_taint`) is unaffected. Deeper / aliased chains
-    beyond one hop stay ``None`` (the N-hop walk lives in the Clarion stored-fact path).
+    beyond one hop stay ``None`` (the N-hop walk lives in the Loomweave stored-fact path).
     """
     returns: list[tuple[TaintState, str | None, ast.expr]] = []
     _collect_return_paths(list(func_node.body), function_taint, taint_map, var_taints, returns)

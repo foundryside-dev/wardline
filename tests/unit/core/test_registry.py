@@ -10,7 +10,7 @@ from wardline.core.taints import TaintState
 
 
 def test_public_import_surface_present() -> None:
-    # The Loom contract: Clarion's plugin imports these three names.
+    # The Weft contract: Loomweave's plugin imports these three names.
     assert isinstance(REGISTRY_VERSION, str) and REGISTRY_VERSION
     assert isinstance(REGISTRY, Mapping)
     assert RegistryEntry.__name__ == "RegistryEntry"

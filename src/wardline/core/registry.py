@@ -1,6 +1,6 @@
 # src/wardline/core/registry.py
 """Canonical decorator registry — the single source of truth for Wardline's
-trust vocabulary, and the import surface Clarion's plugin depends on.
+trust vocabulary, and the import surface Loomweave's plugin depends on.
 
 Public surface (do not break — integration brief §Round 1, asterisk 2):
 ``wardline.core.registry.{REGISTRY, REGISTRY_VERSION, RegistryEntry}``.

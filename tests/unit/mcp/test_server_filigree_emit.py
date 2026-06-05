@@ -1,6 +1,6 @@
 """WS-A1: MCP `scan` emits to Filigree when an emitter is injected.
 
-Mirrors test_server_clarion_write.py: inject a duck-typed emitter into `_scan`
+Mirrors test_server_loomweave_write.py: inject a duck-typed emitter into `_scan`
 and assert on the `filigree` block. Sibling-unreachable responses remain
 fail-soft, but Filigree protocol/client rejections (FiligreeEmitError) are loud:
 the MCP scan must not return a successful payload that hides tracker drift.
@@ -39,9 +39,9 @@ class RaisingEmitter:
         raise FiligreeEmitError("Filigree rejected scan-results (400) at http://x: bad payload")
 
 
-class FakeClarion:
+class FakeLoomweave:
     def write_taint_facts(self, facts):
-        from wardline.clarion.client import WriteResult
+        from wardline.loomweave.client import WriteResult
 
         return WriteResult(reachable=True, written=len(facts))
 
@@ -67,10 +67,10 @@ def test_scan_emits_to_filigree_when_emitter_present(tmp_path):
 
 def test_scan_reports_both_integrations_successful(tmp_path):
     (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
-    out = _scan({}, tmp_path, FakeClarion(), FakeEmitter(EmitResult(reachable=True, created=2, updated=1)))
-    assert out["clarion_write"]["configured"] is True
-    assert out["clarion_write"]["reachable"] is True
-    assert out["clarion_write"]["written"] >= 2
+    out = _scan({}, tmp_path, FakeLoomweave(), FakeEmitter(EmitResult(reachable=True, created=2, updated=1)))
+    assert out["loomweave_write"]["configured"] is True
+    assert out["loomweave_write"]["reachable"] is True
+    assert out["loomweave_write"]["written"] >= 2
     assert out["filigree_emit"] == {
         "configured": True,
         "reachable": True,

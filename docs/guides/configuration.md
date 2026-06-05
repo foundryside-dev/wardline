@@ -31,7 +31,7 @@ file. With no config, Wardline scans `.` with all rules enabled.
 | `waivers` | array of objects | Fingerprint-keyed suppressions with optional expiry. |
 | `judge` | object | Settings for the opt-in LLM triage judge. |
 | `filigree` | object | Reserved; inert. |
-| `clarion` | object | Reserved; inert. |
+| `loomweave` | object | Reserved; inert. |
 
 ### `source_roots` / `exclude`
 
@@ -107,7 +107,7 @@ error: invalid wardline.yaml: 2.0 is greater than the maximum of 1.0
 
 See [LLM triage judge](judge.md) for what each setting does.
 
-### Reserved keys: `baseline`, `filigree`, `clarion`
+### Reserved keys: `baseline`, `filigree`, `loomweave`
 
 These three keys are accepted as objects but are **reserved and currently
 inert**. They do not validate their internal shape, so do not add sub-keys
@@ -147,4 +147,4 @@ judge:
 
 - [Suppressing findings](suppression.md) — baseline, waivers, judged FPs.
 - [LLM triage judge](judge.md) — the `judge:` section in depth.
-- [Loom integration](loom.md) — emitting findings to SARIF / Filigree.
+- [Weft integration](weft.md) — emitting findings to SARIF / Filigree.

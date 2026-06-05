@@ -1,5 +1,5 @@
 """WS-A1: the server builds a FiligreeEmitter from its URL and threads it into
-the scan handler — mirroring _clarion_client()."""
+the scan handler — mirroring _loomweave_client()."""
 
 from wardline.core.filigree_emit import EmitResult, FiligreeEmitter
 from wardline.mcp.server import WardlineMCPServer
@@ -28,7 +28,7 @@ def test_filigree_emitter_none_without_url(tmp_path):
 
 
 def test_filigree_emitter_built_with_url(tmp_path):
-    srv = WardlineMCPServer(root=tmp_path, filigree_url="http://filigree.local/api/loom/scan-results")
+    srv = WardlineMCPServer(root=tmp_path, filigree_url="http://filigree.local/api/weft/scan-results")
     assert isinstance(srv._filigree_emitter(), FiligreeEmitter)
 
 

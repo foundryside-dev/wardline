@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def locator_to_qualname(locator: str) -> str:
-    """Extract a Wardline qualname from a Clarion locator string.
+    """Extract a Wardline qualname from a Loomweave locator string.
 
     A locator looks like 'python:function:pkg.mod.func' or 'python:class:pkg.mod.Class'.
     """
@@ -25,7 +25,7 @@ def resolve_query_filters(
     where: dict[str, Any] | None,
     root: Path,
     config_path: Path | None,
-    clarion_client: Any = None,
+    loomweave_client: Any = None,
 ) -> dict[str, Any] | None:
     """Resolve a `qualname` filter starting with `sei:` in findings queries to its resolved qualname."""
     if not where or "qualname" not in where:
@@ -35,30 +35,30 @@ def resolve_query_filters(
     if not isinstance(qval, str) or not qval.startswith("sei:"):
         return where
 
-    if clarion_client is None:
-        from wardline.core.config import resolve_clarion_url
+    if loomweave_client is None:
+        from wardline.core.config import resolve_loomweave_url
 
-        clarion_url = resolve_clarion_url(None, root, config_path)
-        if clarion_url is not None:
-            from wardline.clarion.client import ClarionClient
-            from wardline.clarion.config import load_clarion_token, resolve_project_name
+        loomweave_url = resolve_loomweave_url(None, root, config_path)
+        if loomweave_url is not None:
+            from wardline.loomweave.client import LoomweaveClient
+            from wardline.loomweave.config import load_loomweave_token, resolve_project_name
 
-            clarion_client = ClarionClient(
-                clarion_url,
-                secret=load_clarion_token(root),
+            loomweave_client = LoomweaveClient(
+                loomweave_url,
+                secret=load_loomweave_token(root),
                 project=resolve_project_name(root),
             )
 
-    if clarion_client is None:
-        raise WardlineError(f"no Clarion URL configured; cannot resolve SEI filter {qval}")
+    if loomweave_client is None:
+        raise WardlineError(f"no Loomweave URL configured; cannot resolve SEI filter {qval}")
 
-    from wardline.clarion.identity import SeiCapability, SeiResolver
+    from wardline.loomweave.identity import SeiCapability, SeiResolver
 
-    resolver = SeiResolver(clarion_client, SeiCapability.from_capabilities(clarion_client.capabilities()))
+    resolver = SeiResolver(loomweave_client, SeiCapability.from_capabilities(loomweave_client.capabilities()))
     if not resolver.capability.supported:
-        raise WardlineError(f"Clarion instance does not support SEI; cannot resolve filter {qval}")
+        raise WardlineError(f"Loomweave instance does not support SEI; cannot resolve filter {qval}")
 
-    data = clarion_client.resolve_sei(qval)
+    data = loomweave_client.resolve_sei(qval)
     if data is None or "current_locator" not in data:
         raise WardlineError(f"cannot resolve SEI to a qualname: {qval}")
 

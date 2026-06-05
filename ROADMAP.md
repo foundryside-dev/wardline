@@ -15,7 +15,7 @@ a direction sketch, not a commitment — dates are deliberately omitted.
 - Dependency-free MCP-over-stdio server (`wardline mcp`).
 - Opt-in LLM triage judge (`wardline judge`).
 - `wardline install` agent enablement.
-- Opt-in Clarion taint-store integration.
+- Opt-in Loomweave taint-store integration.
 - Published to PyPI; docs site live; CI dogfoods Wardline on its own source.
 
 ## Scope

@@ -1,4 +1,4 @@
-"""Detect sibling tools (Clarion, Filigree) and record bindings in wardline.yaml.
+"""Detect sibling tools (Loomweave, Filigree) and record bindings in wardline.yaml.
 
 Presence is detectable (a marker file, local config, binary on PATH, or env URL).
 Known local URL conventions are discoverable from sibling project files; otherwise
@@ -41,8 +41,8 @@ def _http_url_from_bind(bind: str) -> str | None:
     return f"http://{host}:{port}"
 
 
-def _clarion_url_from_config(root: Path) -> str | None:
-    path = root / "clarion.yaml"
+def _loomweave_url_from_config(root: Path) -> str | None:
+    path = root / "loomweave.yaml"
     if not path.is_file():
         return None
     enabled = False
@@ -81,15 +81,15 @@ def _filigree_url_from_project(root: Path) -> str | None:
     port = int(text)
     if not 1 <= port <= 65535:
         return None
-    return f"http://localhost:{port}/api/loom/scan-results"
+    return f"http://localhost:{port}/api/weft/scan-results"
 
 
-def _detect_clarion(root: Path) -> tuple[bool, str | None, str | None]:
-    url = os.environ.get("WARDLINE_CLARION_URL") or None
+def _detect_loomweave(root: Path) -> tuple[bool, str | None, str | None]:
+    url = os.environ.get("WARDLINE_LOOMWEAVE_URL") or None
     if url:
         return True, url, "env"
-    discovered = _clarion_url_from_config(root)
-    present = discovered is not None or (root / "clarion.yaml").is_file() or shutil.which("clarion") is not None
+    discovered = _loomweave_url_from_config(root)
+    present = discovered is not None or (root / "loomweave.yaml").is_file() or shutil.which("loomweave") is not None
     return present, discovered, "discovered" if discovered else None
 
 
@@ -110,17 +110,17 @@ def _live_stanza(key: str, url: str, source: str) -> str:
 
 
 _COMMENTED = {
-    "clarion": (
-        "# wardline-install:clarion — Clarion taint store detected, no URL configured.\n"
+    "loomweave": (
+        "# wardline-install:loomweave — Loomweave taint store detected, no URL configured.\n"
         "# Set the taint-store URL to enable per-entity taint-fact enrichment:\n"
-        "# clarion:\n"
+        "# loomweave:\n"
         '#   url: "http://localhost:PORT"\n'
     ),
     "filigree": (
         "# wardline-install:filigree — Filigree detected (.filigree.conf), no URL configured.\n"
-        "# Set the Loom scan-results URL to POST findings into Filigree:\n"
+        "# Set the Weft scan-results URL to POST findings into Filigree:\n"
         "# filigree:\n"
-        '#   url: "http://localhost:PORT/api/loom/scan-results"\n'
+        '#   url: "http://localhost:PORT/api/weft/scan-results"\n'
     ),
 }
 
@@ -146,7 +146,7 @@ def record_bindings(root: Path) -> dict[str, str]:
     """Detect siblings and append stanzas to wardline.yaml. Returns per-key status."""
     cfg = safe_project_file(root, root / "wardline.yaml", label="wardline.yaml")
     text = cfg.read_text(encoding="utf-8") if cfg.exists() else ""
-    detections = {"clarion": _detect_clarion(root), "filigree": _detect_filigree(root)}
+    detections = {"loomweave": _detect_loomweave(root), "filigree": _detect_filigree(root)}
     additions: list[str] = []
     results: dict[str, str] = {}
     changed = False

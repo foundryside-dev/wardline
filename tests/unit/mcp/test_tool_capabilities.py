@@ -114,17 +114,17 @@ def test_scan_with_resolved_filigree_url_is_denied_by_no_write_policy(
     args: dict[str, Any] = {}
     if source == "wardline.yaml":
         (tmp_path / "wardline.yaml").write_text(
-            'filigree:\n  url: "http://localhost:8628/api/loom/scan-results"\n',
+            'filigree:\n  url: "http://localhost:8628/api/weft/scan-results"\n',
             encoding="utf-8",
         )
     elif source == "config argument":
         (tmp_path / "mcp-urls.yaml").write_text(
-            'filigree:\n  url: "http://localhost:8628/api/loom/scan-results"\n',
+            'filigree:\n  url: "http://localhost:8628/api/weft/scan-results"\n',
             encoding="utf-8",
         )
         args["config"] = "mcp-urls.yaml"
     else:
-        monkeypatch.setenv("WARDLINE_FILIGREE_URL", "http://localhost:8628/api/loom/scan-results")
+        monkeypatch.setenv("WARDLINE_FILIGREE_URL", "http://localhost:8628/api/weft/scan-results")
 
     called = False
 
@@ -143,18 +143,18 @@ def test_scan_with_resolved_filigree_url_is_denied_by_no_write_policy(
 
 
 @pytest.mark.parametrize("source", ["wardline.yaml", "config argument", "environment"])
-def test_dossier_with_resolved_clarion_url_is_denied_by_no_network_policy(
+def test_dossier_with_resolved_loomweave_url_is_denied_by_no_network_policy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str
 ) -> None:
-    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     args: dict[str, Any] = {"entity": "pkg.mod.func"}
     if source == "wardline.yaml":
-        (tmp_path / "wardline.yaml").write_text('clarion:\n  url: "http://localhost:9100"\n', encoding="utf-8")
+        (tmp_path / "wardline.yaml").write_text('loomweave:\n  url: "http://localhost:9100"\n', encoding="utf-8")
     elif source == "config argument":
-        (tmp_path / "mcp-urls.yaml").write_text('clarion:\n  url: "http://localhost:9100"\n', encoding="utf-8")
+        (tmp_path / "mcp-urls.yaml").write_text('loomweave:\n  url: "http://localhost:9100"\n', encoding="utf-8")
         args["config"] = "mcp-urls.yaml"
     else:
-        monkeypatch.setenv("WARDLINE_CLARION_URL", "http://localhost:9100")
+        monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", "http://localhost:9100")
 
     called = False
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import click
 
-from wardline.core.config import resolve_clarion_url, resolve_filigree_url
+from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
 from wardline.core.emit import JsonlSink
 from wardline.core.errors import WardlineError
 from wardline.core.filigree_emit import EmitResult, FiligreeEmitter
@@ -52,13 +52,13 @@ from wardline.core.sarif import SarifSink
     "--filigree-url",
     "filigree_url",
     default=None,
-    help="POST findings to this Filigree Loom scan-results URL (opt-in).",
+    help="POST findings to this Filigree Weft scan-results URL (opt-in).",
 )
 @click.option(
-    "--clarion-url",
-    "clarion_url",
+    "--loomweave-url",
+    "loomweave_url",
     default=None,
-    help="Persist per-entity taint facts to this Clarion taint-store URL (opt-in, fail-soft).",
+    help="Persist per-entity taint facts to this Loomweave taint-store URL (opt-in, fail-soft).",
 )
 @click.option(
     "--new-since",
@@ -122,7 +122,7 @@ def scan(
     fail_on_unanalyzed: bool,
     cache_dir: Path | None,
     filigree_url: str | None,
-    clarion_url: str | None,
+    loomweave_url: str | None,
     new_since: str | None,
     trusted_packs: tuple[str, ...],
     trust_local_packs: bool,
@@ -143,7 +143,7 @@ def scan(
         default_name = "findings.jsonl"
     output = output if output is not None else (path / default_name)
     emit_result: EmitResult | None = None
-    clarion_result = None
+    loomweave_result = None
     try:
         filigree_url = resolve_filigree_url(
             filigree_url,
@@ -153,8 +153,8 @@ def scan(
             trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,
         )
-        clarion_url = resolve_clarion_url(
-            clarion_url,
+        loomweave_url = resolve_loomweave_url(
+            loomweave_url,
             path,
             config_path,
             trust_local_packs=trust_local_packs,
@@ -237,24 +237,24 @@ def scan(
                 key=legis_key.encode("utf-8") if legis_key else None,
             )
             output.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        # Loom emission is additive: a FiligreeEmitError (HTTP >= 400) is a Wardline
+        # Weft emission is additive: a FiligreeEmitError (HTTP >= 400) is a Wardline
         # payload bug -> caught below -> exit 2; an unreachable sibling warns + continues.
         if filigree_url is not None:
             emit_result = FiligreeEmitter(filigree_url).emit(findings, scanned_paths=result.scanned_paths)
-        # Clarion taint-store write is fail-soft: an outage/403 returns a not-reachable
-        # WriteResult (reported below); a ClarionError (missing extra, 4xx, bad scheme)
+        # Loomweave taint-store write is fail-soft: an outage/403 returns a not-reachable
+        # WriteResult (reported below); a LoomweaveError (missing extra, 4xx, bad scheme)
         # is a WardlineError → caught here → exit 2, exactly as Filigree errors do.
-        if clarion_url is not None:
-            from wardline.clarion.client import ClarionClient
-            from wardline.clarion.config import load_clarion_token, resolve_project_name
-            from wardline.clarion.write import write_facts_to_clarion
+        if loomweave_url is not None:
+            from wardline.loomweave.client import LoomweaveClient
+            from wardline.loomweave.config import load_loomweave_token, resolve_project_name
+            from wardline.loomweave.write import write_facts_to_loomweave
 
-            client = ClarionClient(
-                clarion_url,
-                secret=load_clarion_token(path),
+            client = LoomweaveClient(
+                loomweave_url,
+                secret=load_loomweave_token(path),
                 project=resolve_project_name(path),
             )
-            clarion_result = write_facts_to_clarion(result, path, client)
+            loomweave_result = write_facts_to_loomweave(result, path, client)
         if fmt == "agent-summary":
             from wardline.core.agent_summary import build_agent_summary
 
@@ -265,7 +265,7 @@ def scan(
                         result,
                         decision,
                         filigree_emit=_filigree_status(emit_result),
-                        clarion_write=_clarion_status(clarion_result),
+                        loomweave_write=_loomweave_status(loomweave_result),
                     ).to_dict(),
                     sort_keys=True,
                 )
@@ -291,17 +291,19 @@ def scan(
             if emit_result.warnings:
                 line += f"; {len(emit_result.warnings)} warning(s): " + "; ".join(emit_result.warnings)
             click.echo(line)
-    if clarion_result is not None:
-        if not clarion_result.reachable:
-            reason = clarion_result.disabled_reason or "unreachable"
+    if loomweave_result is not None:
+        if not loomweave_result.reachable:
+            reason = loomweave_result.disabled_reason or "unreachable"
             click.echo(
-                f"warning: Clarion taint store not written at {clarion_url} ({reason}); scan unaffected.",
+                f"warning: Loomweave taint store not written at {loomweave_url} ({reason}); scan unaffected.",
                 err=True,
             )
         else:
-            line = f"wrote {clarion_result.written} taint fact(s) to {clarion_url}"
-            if clarion_result.unresolved_qualnames:
-                line += f"; {len(clarion_result.unresolved_qualnames)} qualname(s) unresolved (not indexed by Clarion)"
+            line = f"wrote {loomweave_result.written} taint fact(s) to {loomweave_url}"
+            if loomweave_result.unresolved_qualnames:
+                line += (
+                    f"; {len(loomweave_result.unresolved_qualnames)} qualname(s) unresolved (not indexed by Loomweave)"
+                )
             click.echo(line)
     s = result.summary
     unanalyzed_segment = f"; {s.unanalyzed} file(s) could not be analyzed" if s.unanalyzed else ""
@@ -346,7 +348,7 @@ def _filigree_status(result: EmitResult | None) -> dict[str, object]:
     }
 
 
-def _clarion_status(result: object | None) -> dict[str, object]:
+def _loomweave_status(result: object | None) -> dict[str, object]:
     if result is None:
         return {
             "configured": False,

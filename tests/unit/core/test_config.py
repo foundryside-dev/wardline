@@ -6,8 +6,8 @@ import pytest
 from wardline.core.config import (
     WardlineConfig,
     load,
-    resolve_clarion_url,
     resolve_filigree_url,
+    resolve_loomweave_url,
 )
 from wardline.core.errors import ConfigError
 
@@ -139,7 +139,7 @@ def test_full_valid_config_passes(tmp_path) -> None:
         "judge:\n  model: anthropic/claude-opus-4-8\n  context_lines: 10\n"
         "  max_findings: 50\n  write_confidence_floor: 0.7\n"
         "filigree: {url: http://x}\n"
-        "clarion: {url: http://clarion.local:9100}\n",
+        "loomweave: {url: http://loomweave.local:9100}\n",
         encoding="utf-8",
     )
     cfg = load(p)
@@ -206,51 +206,51 @@ def test_autofix_boundary_exception_accepts_dotted_identifier(tmp_path: Path) ->
     assert load(p).boundary_exception == "mypkg.ValidationError"
 
 
-def test_clarion_and_filigree_url_read_from_config(tmp_path: Path) -> None:
+def test_loomweave_and_filigree_url_read_from_config(tmp_path: Path) -> None:
     (tmp_path / "wardline.yaml").write_text(
-        'clarion:\n  url: "http://clarion.local:9100"\n'
-        'filigree:\n  url: "http://filigree.local/api/loom/scan-results"\n',
+        'loomweave:\n  url: "http://loomweave.local:9100"\n'
+        'filigree:\n  url: "http://filigree.local/api/weft/scan-results"\n',
         encoding="utf-8",
     )
     cfg = load(tmp_path / "wardline.yaml")
-    assert cfg.clarion_url == "http://clarion.local:9100"
-    assert cfg.filigree_url == "http://filigree.local/api/loom/scan-results"
+    assert cfg.loomweave_url == "http://loomweave.local:9100"
+    assert cfg.filigree_url == "http://filigree.local/api/weft/scan-results"
 
 
 def test_urls_default_to_none() -> None:
     cfg = WardlineConfig()
-    assert cfg.clarion_url is None
+    assert cfg.loomweave_url is None
     assert cfg.filigree_url is None
 
 
-def test_unknown_clarion_key_is_rejected(tmp_path: Path) -> None:
-    (tmp_path / "wardline.yaml").write_text("clarion:\n  bogus: 1\n", encoding="utf-8")
+def test_unknown_loomweave_key_is_rejected(tmp_path: Path) -> None:
+    (tmp_path / "wardline.yaml").write_text("loomweave:\n  bogus: 1\n", encoding="utf-8")
     with pytest.raises(ConfigError):
         load(tmp_path / "wardline.yaml")
 
 
 def test_resolve_precedence_flag_beats_env_beats_config(tmp_path: Path, monkeypatch) -> None:
-    (tmp_path / "wardline.yaml").write_text('clarion:\n  url: "http://localhost:9100"\n', encoding="utf-8")
-    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
-    assert resolve_clarion_url(None, tmp_path, None) == "http://localhost:9100"
-    monkeypatch.setenv("WARDLINE_CLARION_URL", "http://from-env")
-    assert resolve_clarion_url(None, tmp_path, None) == "http://from-env"
-    assert resolve_clarion_url("http://from-flag", tmp_path, None) == "http://from-flag"
+    (tmp_path / "wardline.yaml").write_text('loomweave:\n  url: "http://localhost:9100"\n', encoding="utf-8")
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    assert resolve_loomweave_url(None, tmp_path, None) == "http://localhost:9100"
+    monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", "http://from-env")
+    assert resolve_loomweave_url(None, tmp_path, None) == "http://from-env"
+    assert resolve_loomweave_url("http://from-flag", tmp_path, None) == "http://from-flag"
 
 
 def test_resolve_urls_rejects_unsafe_config_urls(tmp_path: Path, monkeypatch) -> None:
-    (tmp_path / "wardline.yaml").write_text('clarion:\n  url: "http://attacker-controlled.com"\n', encoding="utf-8")
-    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    (tmp_path / "wardline.yaml").write_text('loomweave:\n  url: "http://attacker-controlled.com"\n', encoding="utf-8")
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     with pytest.raises(ConfigError, match="disabled by default for security"):
-        resolve_clarion_url(None, tmp_path, None)
+        resolve_loomweave_url(None, tmp_path, None)
     # Passing trust_config_urls=True bypasses the block
-    assert resolve_clarion_url(None, tmp_path, None, trust_config_urls=True) == "http://attacker-controlled.com"
+    assert resolve_loomweave_url(None, tmp_path, None, trust_config_urls=True) == "http://attacker-controlled.com"
 
 
 @pytest.mark.parametrize(
     ("block", "resolver"),
     [
-        ("clarion", resolve_clarion_url),
+        ("loomweave", resolve_loomweave_url),
         ("filigree", resolve_filigree_url),
     ],
 )
@@ -259,7 +259,7 @@ def test_resolve_urls_rejects_unsafe_config_urls(tmp_path: Path, monkeypatch) ->
     [
         "file://localhost/tmp/wardline.json",
         "ftp://localhost/api/wardline",
-        "localhost:8628/api/loom/scan-results",
+        "localhost:8628/api/weft/scan-results",
     ],
 )
 def test_config_urls_must_be_http_or_https_even_for_localhost(
@@ -270,7 +270,7 @@ def test_config_urls_must_be_http_or_https_even_for_localhost(
     url: str,
 ) -> None:
     (tmp_path / "wardline.yaml").write_text(f'{block}:\n  url: "{url}"\n', encoding="utf-8")
-    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     with pytest.raises(ConfigError, match="disabled by default for security"):
         resolver(None, tmp_path, None)

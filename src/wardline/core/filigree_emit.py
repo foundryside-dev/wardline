@@ -62,7 +62,7 @@ def build_scan_results_body(
     scan_source: str = "wardline",
     scanned_paths: Sequence[str] = (),
 ) -> dict[str, Any]:
-    """Build the ``POST /api/loom/scan-results`` request body. Emits ALL finding kinds.
+    """Build the ``POST /api/weft/scan-results`` request body. Emits ALL finding kinds.
     ``mark_unseen`` opts into Filigree's per-(file, scan_source) absent-fingerprint sweep:
     a fingerprint seen before but absent now in a scanned file enters
     ``unseen_in_latest``. Clean files are represented by ``scanned_paths`` so
@@ -124,7 +124,7 @@ class UrllibTransport:
 
 
 class FiligreeEmitter:
-    """POST findings to a Filigree Loom scan-results URL with an injectable transport."""
+    """POST findings to a Filigree Weft scan-results URL with an injectable transport."""
 
     def __init__(self, url: str, *, transport: Transport | None = None) -> None:
         self._url = url

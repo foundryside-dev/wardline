@@ -25,14 +25,14 @@ bytes.
 Zero-dependency: stdlib ``hmac`` / ``hashlib`` / ``subprocess`` / ``json`` only. This
 module never imports a third-party EXTRA package (e.g. ``blake3``) at module level —
 ``import wardline.core.attest`` pulls in no extra dependency. (It DOES reach
-``wardline.clarion.identity`` transitively via ``core.dossier``, but that module is
-stdlib-only, so the zero-dependency base holds.) The live Clarion CLIENT used for SEI
-enrichment of the ``boundaries`` entries is opt-in via a ``clarion_client`` and is
+``wardline.loomweave.identity`` transitively via ``core.dossier``, but that module is
+stdlib-only, so the zero-dependency base holds.) The live Loomweave CLIENT used for SEI
+enrichment of the ``boundaries`` entries is opt-in via a ``loomweave_client`` and is
 LAZY-imported inside :func:`_enrich_seis`. Without a client every ``sei`` stays None and
 ``sei_source`` is ``"unavailable"``.
 
 SEI values live in the SIGNED payload, so reproducibility threads the same
-``clarion_client`` through BOTH build and verify: re-verifying a SEI-keyed bundle WITH
+``loomweave_client`` through BOTH build and verify: re-verifying a SEI-keyed bundle WITH
 the same client (and unchanged tree) reproduces; re-verifying WITHOUT a client honestly
 reports ``reproduced=False`` (the SEIs cannot be re-derived) while the signature — which
 is over the recorded payload — stays valid.
@@ -249,30 +249,30 @@ def _sign(payload: dict[str, Any], key: str, *, schema: str = ATTEST_SCHEMA) -> 
     return {"alg": "HMAC-SHA256", "value": value, "key_id": key_id(key)}
 
 
-def _enrich_seis(boundaries: list[dict[str, Any]], clarion_client: Any) -> str:
-    """Fill each boundary's ``sei`` from Clarion, fail-soft per boundary.
+def _enrich_seis(boundaries: list[dict[str, Any]], loomweave_client: Any) -> str:
+    """Fill each boundary's ``sei`` from Loomweave, fail-soft per boundary.
 
-    Returns the ``sei_source``: ``"clarion"`` if a client was supplied AND at least one
-    SEI resolved, else ``"unavailable"``. The Clarion seam is an optional extra, so it is
+    Returns the ``sei_source``: ``"loomweave"`` if a client was supplied AND at least one
+    SEI resolved, else ``"unavailable"``. The Loomweave seam is an optional extra, so it is
     imported LAZILY here (the module base stays zero-dependency). Any failure leaves
     ``sei=None`` and never crashes attestation: an outer ``try`` degrades the WHOLE
     enrichment (a capabilities / resolver-construction outage → ``"unavailable"``), and a
     per-qualname ``try`` keeps one unresolvable boundary from aborting the rest.
     """
-    if clarion_client is None:
+    if loomweave_client is None:
         return "unavailable"
 
     try:
-        from wardline.clarion.dossier_sources import resolve_entity_binding
-        from wardline.clarion.identity import SeiCapability, SeiResolver
+        from wardline.loomweave.dossier_sources import resolve_entity_binding
+        from wardline.loomweave.identity import SeiCapability, SeiResolver
 
-        capabilities = clarion_client.capabilities()
-        resolver = SeiResolver(clarion_client, SeiCapability.from_capabilities(capabilities))
+        capabilities = loomweave_client.capabilities()
+        resolver = SeiResolver(loomweave_client, SeiCapability.from_capabilities(capabilities))
 
         resolved_any = False
         for boundary in boundaries:
             try:
-                binding = resolve_entity_binding(clarion_client, resolver, boundary["qualname"])
+                binding = resolve_entity_binding(loomweave_client, resolver, boundary["qualname"])
             except Exception:  # noqa: BLE001 — per-boundary fail-soft, see docstring
                 continue
             if binding is not None and binding.sei:
@@ -281,7 +281,7 @@ def _enrich_seis(boundaries: list[dict[str, Any]], clarion_client: Any) -> str:
     except Exception:  # noqa: BLE001 — whole-enrichment fail-soft, see docstring
         return "unavailable"
 
-    return "clarion" if resolved_any else "unavailable"
+    return "loomweave" if resolved_any else "unavailable"
 
 
 def _build_payload(
@@ -294,7 +294,7 @@ def _build_payload(
     trusted_packs: tuple[str, ...] = (),
     strict_defaults: bool = False,
     today: date,
-    clarion_client: Any = None,
+    loomweave_client: Any = None,
 ) -> dict[str, Any]:
     """Derive the (unsigned) attestation payload from the tree at ``root``.
 
@@ -335,12 +335,12 @@ def _build_payload(
             boundaries.append(
                 {
                     "qualname": qualname,
-                    "sei": None,  # filled by _enrich_seis below behind a lazy Clarion import
+                    "sei": None,  # filled by _enrich_seis below behind a lazy Loomweave import
                     "verdict": verdict.verdict,
                     "tier": verdict.declared_tier,
                 }
             )
-        sei_source = _enrich_seis(boundaries, clarion_client)
+        sei_source = _enrich_seis(boundaries, loomweave_client)
 
     return {
         "wardline_version": __version__,
@@ -364,7 +364,7 @@ def build_attestation(
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
     strict_defaults: bool = False,
-    clarion_client: Any = None,
+    loomweave_client: Any = None,
     allow_dirty: bool = True,
     today: date | None = None,
 ) -> dict[str, Any]:
@@ -375,9 +375,9 @@ def build_attestation(
     with uncommitted changes is refused (:class:`AttestError`) so a bundle's ``commit``
     truthfully pins its source.
 
-    With a ``clarion_client``, each boundary's ``sei`` is resolved from Clarion (opt-in,
+    With a ``loomweave_client``, each boundary's ``sei`` is resolved from Loomweave (opt-in,
     fail-soft, behind a lazy import — see :func:`_enrich_seis`) and ``sei_source`` becomes
-    ``"clarion"`` if any SEI resolved; without one every ``sei`` stays None and
+    ``"loomweave"`` if any SEI resolved; without one every ``sei`` stays None and
     ``sei_source`` is ``"unavailable"``. See the module threat model: the signature is
     shared-secret tamper-evidence, not asymmetric proof.
     """
@@ -393,7 +393,7 @@ def build_attestation(
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
         today=today,
-        clarion_client=clarion_client,
+        loomweave_client=loomweave_client,
     )
     if payload["dirty"] and not allow_dirty:
         raise AttestError("refusing to attest a dirty working tree (uncommitted changes); pass allow_dirty to override")
@@ -410,7 +410,7 @@ def verify_attestation(
     reproduce: bool = False,
     config_path: Path | None = None,
     cache_dir: Path | None = None,
-    clarion_client: Any = None,
+    loomweave_client: Any = None,
     confine_to_root: bool = True,
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
@@ -435,7 +435,7 @@ def verify_attestation(
     re-derives under that same config rather than silently defaulting to ``None``).
 
     Since SEI values are part of the signed payload, reproducing a SEI-keyed bundle
-    requires the SAME ``clarion_client`` used to build it: pass it here so the
+    requires the SAME ``loomweave_client`` used to build it: pass it here so the
     re-derivation resolves SEIs identically. Without it, a SEI-keyed bundle re-derives
     with ``sei=None`` and honestly reports ``reproduced=False`` (the binding cannot be
     reproduced), while ``signature_valid`` is unaffected (it is over the recorded bytes).
@@ -477,7 +477,7 @@ def verify_attestation(
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
         today=today,
-        clarion_client=clarion_client,
+        loomweave_client=loomweave_client,
     )
     if _canonical_bytes(rederived) == _canonical_bytes(recorded_payload):
         return {

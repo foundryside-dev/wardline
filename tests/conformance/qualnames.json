@@ -1,5 +1,5 @@
 {
-  "_doc": "Shared qualname conformance corpus (Wardline <-> Clarion). Both tools test against this. 'module_dotted_name' cases assert the path->module rule; 'entities' cases assert per-file function/method qualnames+kinds (classes are scope only and not emitted). Nesting-shape expectations were generated from CPython co_qualname. Seeded by Wardline (SP1a); Clarion vendors a copy. Nothing imports this file at runtime.",
+  "_doc": "Shared qualname conformance corpus (Wardline <-> Loomweave). Both tools test against this. 'module_dotted_name' cases assert the path->module rule; 'entities' cases assert per-file function/method qualnames+kinds (classes are scope only and not emitted). Nesting-shape expectations were generated from CPython co_qualname. Seeded by Wardline (SP1a); Loomweave vendors a copy. Nothing imports this file at runtime.",
   "module_dotted_name": [
     {"rel_path": "demo.py", "expected": "demo"},
     {"rel_path": "src/demo.py", "expected": "demo"},

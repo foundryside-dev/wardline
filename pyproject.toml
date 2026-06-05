@@ -23,12 +23,12 @@ classifiers = [
 [project.optional-dependencies]
 scanner = ["pyyaml>=6.0", "jsonschema>=4.0", "click>=8.0"]
 docs = ["mkdocs>=1.6", "mkdocs-material>=9.5"]
-clarion = ["blake3>=1.0"]
+loomweave = ["blake3>=1.0"]
 # The SP5 LLM triage judge is dependency-free (stdlib urllib -> OpenRouter); no extra needed.
 
 [dependency-groups]
 # Tooling only. Runtime deps live in the extras above; `uv sync --all-extras
-# --group dev` installs base + scanner + clarion + docs + this group, which is
+# --group dev` installs base + scanner + loomweave + docs + this group, which is
 # the canonical dev sync used by the Makefile, CI, and CONTRIBUTING.
 dev = [
     "pytest>=8.0",
@@ -108,10 +108,10 @@ disable_error_code = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not network and not clarion_e2e and not legis_e2e and not filigree_e2e'"
+addopts = "-m 'not network and not loomweave_e2e and not legis_e2e and not filigree_e2e'"
 markers = [
     "network: tests that need network (live OpenRouter judge e2e — SP5)",
-    "clarion_e2e: tests that need a real `clarion serve` binary (SP9 round-trip)",
+    "loomweave_e2e: tests that need a real `loomweave serve` binary (SP9 round-trip)",
     "legis_e2e: tests that need a real `legis` server (Track 5 intake round-trip)",
     "filigree_e2e: tests that need a real Filigree with the promote route (WS-A2 round-trip)",
 ]

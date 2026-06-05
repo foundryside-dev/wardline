@@ -47,7 +47,7 @@ WARDLINE_SCHEMA: dict[str, Any] = {
             "additionalProperties": False,
             "properties": {"url": {"type": "string"}},
         },
-        "clarion": {
+        "loomweave": {
             "type": "object",
             "additionalProperties": False,
             "properties": {"url": {"type": "string"}},

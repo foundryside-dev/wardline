@@ -4,7 +4,7 @@ import os
 from collections.abc import Iterable
 
 LIVE_ORACLE_REQUIRED_ENV = "WARDLINE_LIVE_ORACLE_REQUIRED"
-LIVE_ORACLE_MARKERS = frozenset({"network", "clarion_e2e", "legis_e2e", "filigree_e2e"})
+LIVE_ORACLE_MARKERS = frozenset({"network", "loomweave_e2e", "legis_e2e", "filigree_e2e"})
 
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 

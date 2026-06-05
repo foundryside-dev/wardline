@@ -1,4 +1,4 @@
-"""Wardline trust-boundary corpus for the Loom integration sandbox."""
+"""Wardline trust-boundary corpus for the Weft integration sandbox."""
 
 from __future__ import annotations
 

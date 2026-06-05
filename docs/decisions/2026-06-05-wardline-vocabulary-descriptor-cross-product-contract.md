@@ -4,13 +4,13 @@
 - **Date:** 2026-06-05
 - **Resolves:** Pre-Rust core hardening Task B (milestone `wardline-53412b86bc`,
   task `wardline-5877e31767`); retires the in-process-import coupling of
-  Clarion ADR-018 on the Wardline side. Clarion-side switch tracked at
-  `clarion-1f6241b329`.
+  Loomweave ADR-018 on the Wardline side. Loomweave-side switch tracked at
+  `loomweave-1f6241b329`.
 
 ## Context
 
-Clarion's Python plugin historically imported `wardline.core.registry.REGISTRY`
-in-process to learn Wardline's trust-decorator vocabulary (Clarion ADR-018) — a
+Loomweave's Python plugin historically imported `wardline.core.registry.REGISTRY`
+in-process to learn Wardline's trust-decorator vocabulary (Loomweave ADR-018) — a
 cross-process import of a sibling's internals. Wardline's core is about to become
 a **native (compiled) module** (PyO3 + maturin abi3); a Rust-backed
 `wardline.core.registry` imported cross-process by a sibling's Python plugin is
@@ -24,8 +24,8 @@ Wardline already emits an NG-25 descriptor (`build_vocabulary_descriptor()`,
 *the* contract: a self-describing format-version field, a documented file
 location, and the explicit retirement statement.
 
-Clarion has already built the read side (`plugins/python/.../wardline_descriptor.py`,
-spec `clarion/.../2026-06-05-descriptor-backed-wardline-annotation-metadata-design.md`):
+Loomweave has already built the read side (`plugins/python/.../wardline_descriptor.py`,
+spec `loomweave/.../2026-06-05-descriptor-backed-wardline-annotation-metadata-design.md`):
 it reads the descriptor **without importing Wardline**, ignores unknown top-level
 keys, and gates on `version == "wardline-generic-2"`. It left two assumptions
 "pending Wardline Task B" — the canonical file location and the `schema` field.
@@ -70,8 +70,8 @@ external consumers read the descriptor.**
    suffices for external consumers — `test_committed_yaml_is_consumable_as_pure_data`
    proves the vocabulary is recoverable from the file's bytes without importing
    `wardline.core.registry`. `wardline.core` will become native; **no peer may
-   import it.** The remaining half (Clarion switching `import REGISTRY` → reading
-   the descriptor) is `clarion-1f6241b329`, out of Wardline's scope.
+   import it.** The remaining half (Loomweave switching `import REGISTRY` → reading
+   the descriptor) is `loomweave-1f6241b329`, out of Wardline's scope.
 
 6. **Corpus-neutral.** The descriptor / `vocabulary.yaml` is **not** part of the
    Task A identity oracle, so adding `schema` triggers no corpus re-baseline (the
@@ -81,10 +81,10 @@ external consumers read the descriptor.**
 
 - **No cross-process import of a soon-to-be-native module.** The contract is a
   plain versioned file, stable across Wardline's Python→Rust core migration.
-- **Additive, non-breaking.** Adding `schema` does not break Clarion's current
-  reader (it ignores unknown top-level keys — verified live: Clarion's
+- **Additive, non-breaking.** Adding `schema` does not break Loomweave's current
+  reader (it ignores unknown top-level keys — verified live: Loomweave's
   `wardline_descriptor` parses the schema'd file as `status=enabled`,
-  `version=wardline-generic-2`, all three entries). Clarion's two pending
+  `version=wardline-generic-2`, all three entries). Loomweave's two pending
   assumptions are now resolved (see the hand-off doc).
 - **Backward-compatible drift guard.** The existing byte-identity test keeps the
   committed file honest; the new `schema` field is folded into it.
@@ -97,6 +97,6 @@ external consumers read the descriptor.**
 - `src/wardline/core/descriptor.py` — `DESCRIPTOR_SCHEMA`, `build_vocabulary_descriptor`.
 - `src/wardline/core/vocabulary.yaml` — the committed, wheel-shipped descriptor.
 - `tests/unit/core/test_descriptor.py` — envelope/schema/pure-data-read + byte-identity drift tests.
-- `docs/integration/2026-06-05-wardline-descriptor-clarion-handoff.md` — Clarion hand-off.
-- Clarion: `plugins/python/src/clarion_plugin_python/wardline_descriptor.py`,
-  `scripts/check-wardline-version-bounds.py`, `clarion-1f6241b329`.
+- `docs/integration/2026-06-05-wardline-descriptor-loomweave-handoff.md` — Loomweave hand-off.
+- Loomweave: `plugins/python/src/loomweave_plugin_python/wardline_descriptor.py`,
+  `scripts/check-wardline-version-bounds.py`, `loomweave-1f6241b329`.

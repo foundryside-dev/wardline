@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Signed scan handoff to **legis** (the Loom governance plugin): `wardline scan
+- Signed scan handoff to **legis** (the Weft governance plugin): `wardline scan
   --format legis` (CLI) and an opt-in `legis_artifact` block on the MCP `scan` result
   produce the verbatim-postable `scan` for legis's `POST /wardline/scan-results`. The
   artifact carries four provenance fields (`scanner_identity`, `rule_set_version`,
@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provenance); the MCP block is fail-soft, the CLI is loud (exit 2). The artifact carries
   the **whole scan**, each finding projected onto legis's accepted vocabulary — `properties`
   filtered to the eight trust tiers (diagnostics like `sink`/`callee`/`markers`
-  dropped; the rich MCP/SARIF/Clarion wire is unchanged), suppression proof carried in
+  dropped; the rich MCP/SARIF/Loomweave wire is unchanged), suppression proof carried in
   `properties`, and `baselined`/`judged` mapped onto legis's `suppressed`. `active`
   stays `active`, so legis reproduces Wardline's gate population exactly (one judge);
   legis enforces its own 500-finding cap (a larger scan is rejected loudly, never silently truncated).
@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default to refusing a dirty working tree (`--allow-dirty` / `allow_dirty: true` to
   override, records `dirty: true` honestly). `verify_attestation` checks signature (offline)
   and optionally re-derives the payload at the current tree (`--reproduce` / `reproduce:
-  true`). SEI-keyed boundaries opt-in via `--clarion-url` (fail-soft).
+  true`). SEI-keyed boundaries opt-in via `--loomweave-url` (fail-soft).
 - `file_finding` (MCP tool + `wardline file-finding` CLI): file ONE finding by fingerprint
   into a tracked Filigree issue, returning its id (idempotent, fail-soft). Scan emission now
   sets `mark_unseen=True` (non-empty scans) so a fixed finding enters Filigree's
@@ -60,14 +60,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trusted ANY FQN whose prefix was a builtin marker module and whose final segment
   was a known marker name, without verifying the decorator resolved to Wardline's
   real package. A scanned project could ship its own `wardline/decorators/__init__.py`
-  (or `loom_markers/__init__.py`) defining a no-op `trusted`/`trust_boundary`, apply
+  (or `weft_markers/__init__.py`) defining a no-op `trusted`/`trust_boundary`, apply
   it to a leaky function, and have the analyzer anchor it as TRUSTED — suppressing
   real taint→sink flows (a false GREEN that hides defects). Nested spoof paths
-  (`wardline.decorators.evil.trusted`, `loom_markers.evil.trusted`) were also accepted.
+  (`wardline.decorators.evil.trusted`, `weft_markers.evil.trusted`) were also accepted.
   Builtin markers now match ONLY their exact public re-export (`P.<name>`) or
   implementation-module export (`P.trust.<name>`), and the provider FAILS CLOSED for a
   builtin marker root the scanned project shadows (defines its own top-level `wardline`
-  / `loom_markers` package). The shadowed-root set is derived dynamically from the
+  / `weft_markers` package). The shadowed-root set is derived dynamically from the
   grammar (`{bt.module_prefix.split('.')[0] for bt in BUILTIN_BOUNDARY_TYPES if
   bt.builtin}`), so every builtin marker root is covered, not just `wardline`. Custom
   (non-builtin) grammar markers keep the documented prefix + canonical-name behavior —
@@ -76,15 +76,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider fingerprint threaded through BOTH the pipeline dirty-detection key and the
   resolver's summary cache, so a TRUSTED summary computed under one shadow state can
   never be reused under another (cross-root cache poisoning). The fingerprint stays
-  byte-identical to today's value when nothing is shadowed. **Clarion residual
-  (documented, not threaded):** the opt-in `--clarion-url` taint-fact
+  byte-identical to today's value when nothing is shadowed. **Loomweave residual
+  (documented, not threaded):** the opt-in `--loomweave-url` taint-fact
   `content_hash_at_compute` is whole-file raw-byte blake3 only — it cannot observe
   shadow state, so identical file bytes scanned once unshadowed then under a shadow
-  could serve a stale TRUSTED fact via the MCP `explain_taint` / Clarion read path. The
+  could serve a stale TRUSTED fact via the MCP `explain_taint` / Loomweave read path. The
   shadow bit is deliberately NOT mixed into this hash because it is a cross-tool
-  contract value Clarion's read path independently recomputes and compares; mixing in a
+  contract value Loomweave's read path independently recomputes and compares; mixing in a
   Wardline-private bit would break fact reconciliation entirely. Closing it fully needs
-  a Clarion read-path contract change; the keying site carries an explicit comment. This
+  a Loomweave read-path contract change; the keying site carries an explicit comment. This
   path is opt-in and not the scan gate, so impact is lower.
 - **The `--fail-on` gate no longer honours repository-controlled suppressions by
   default (closes a CI-gate bypass).** `.wardline/baseline.yaml`, `wardline.yaml`
@@ -216,7 +216,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   substantially true*, so this track is proof + documentation that locks it in.
   - **T5.1 — vocabulary convergence (gap-check):** `docs/concepts/trust-vocabulary-convergence.md`
     records a keep/adopt/drop sweep of the trust effects elspeth pioneered against
-    the Loom mechanisms that already deliver them — fabrication test ≈ PY-WL-102,
+    the Weft mechanisms that already deliver them — fabrication test ≈ PY-WL-102,
     custody ≈ the lattice + `taint_provenance`, fail-closed ≈ `UNKNOWN_*` +
     `WLN-ENGINE-*` FACTs (incl. `WLN-ENGINE-UNPROVABLE-BOUNDARY`), tiered boundary ≈
     `@trust_boundary(to_level=…)`, one-judge ≈ legis carrying Wardline's 8 tiers
@@ -235,13 +235,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **T5.3 — hash-granularity harmonisation:** an ADR
     (`docs/decisions/2026-06-02-wardline-hash-granularity-two-model.md`) formalizes
     the two-granularity model — whole-file (taint-store freshness,
-    `content_hash_at_compute` ↔ Clarion `current_file_hash`) vs entity-body
-    (identity/association drift, Clarion resolve `content_hash` ↔ Filigree
+    `content_hash_at_compute` ↔ Loomweave `current_file_hash`) vs entity-body
+    (identity/association drift, Loomweave resolve `content_hash` ↔ Filigree
     `content_hash_at_attach`) — and the never-cross-compare rule. Discipline tests
     (`tests/conformance/test_hash_granularity.py`) lock the false-STALE-never
     property and guard that `content_status` is only called from the entity-body
     surface. No new hashing, no store change.
-- **Track 4 — the Loom entity dossier (assembler + live wiring, T4.1–T4.3).** One
+- **Track 4 — the Weft entity dossier (assembler + live wiring, T4.1–T4.3).** One
   freshness-honest call returns everything an agent needs to reason about a function
   without reading its source. Wardline is the **assembler** (composes each tool's
   slice; it does not become the store).
@@ -253,28 +253,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (shown-of-total), and an untrimmable core is reported as EXCEEDS-budget — never a
     silent cap. `build_dossier` composes Wardline's OWN trust posture for real (re-scan
     → FRESH) with a **three-valued honest verdict** (defect / clean / **unknown** — an
-    undeclared or under-scanned entity is never reported "clean"), and reads Clarion
+    undeclared or under-scanned entity is never reported "clean"), and reads Loomweave
     linkages + Filigree work through injected `LinkageProvider`/`WorkProvider` seams.
     An absent / no-opinion / unreachable source degrades to an honest `unavailable`
     section — never fabricated, never a crash.
-  - `clarion/client.py` — `get_callers`/`get_callees` (HMAC-gated call-graph reads,
-    fail-soft); `clarion/dossier_sources.py` — `ClarionLinkageProvider` (live linkages,
+  - `loomweave/client.py` — `get_callers`/`get_callees` (HMAC-gated call-graph reads,
+    fail-soft); `loomweave/dossier_sources.py` — `LoomweaveLinkageProvider` (live linkages,
     SEI identity axis + FRESH live-read content axis, one-sided outages named) and
     `resolve_entity_binding` (qualname → locator → opaque SEI binding via the Track-3
     `SeiResolver`; never mints or parses the SEI).
   - `filigree/dossier_client.py` — a dep-free urllib `FiligreeWorkProvider` reading
     ADR-029 entity-associations keyed on the SEI; compares `content_hash_at_attach`
-    (same entity-body granularity as Clarion's resolve) to set per-ticket **DRIFT** and
+    (same entity-body granularity as Loomweave's resolve) to set per-ticket **DRIFT** and
     a three-valued section content axis (STALE / UNKNOWN / FRESH — never guesses FRESH).
-  - `loom_dossier.py` — `build_loom_dossier`, the orchestrator: probe Clarion
+  - `weft_dossier.py` — `build_weft_dossier`, the orchestrator: probe Loomweave
     capabilities once, resolve the SEI binding, wire both providers, call the
     source-agnostic core assembler. Degrades honestly with whatever sources are present.
   - **Surface:** `wardline dossier <qualname>` (CLI) and a `dossier` MCP tool, both thin
-    delegators to `build_loom_dossier` (CLI and MCP identical by construction — a parity
+    delegators to `build_weft_dossier` (CLI and MCP identical by construction — a parity
     test asserts byte-identical envelopes). `wardline mcp` gains `--filigree-url`.
   - The base package stays **zero-dependency** (the Filigree reader is stdlib urllib;
-    Clarion-consuming code lives behind the existing `wardline[clarion]` extra). Verified
-    by a live `clarion_e2e` one-call dossier round-trip against a real `clarion serve`.
+    Loomweave-consuming code lives behind the existing `wardline[loomweave]` extra). Verified
+    by a live `loomweave_e2e` one-call dossier round-trip against a real `loomweave serve`.
 - **Track 1.5 — rule-set breadth (4 → 10 curated rules).** Six new trust-taint rules,
   authored on the Track 2 grammar, each fail-closed/opt-in with violation+clean examples
   and labeled corpus fixtures (corpus FP rate stays 0%):
@@ -287,26 +287,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **PY-WL-110** — contradictory trust declaration (≥2 distinct trust markers on one entity).
   105–108 are call-site rules; 106/107/108 are tier-modulated (silent in the developer-freedom
   zone). All toggle via `wardline.yaml` `rules.enable`/`rules.severity` like the existing four.
-- **Track 3 — SEI-client groundwork (T3.1–T3.3).** An opt-in `wardline[clarion]`
-  SEI abstraction (`wardline.clarion.identity`) carries Clarion's Stable Entity
+- **Track 3 — SEI-client groundwork (T3.1–T3.3).** An opt-in `wardline[loomweave]`
+  SEI abstraction (`wardline.loomweave.identity`) carries Loomweave's Stable Entity
   Identity as the **opaque, preferred** cross-tool binding handle, with an honest
   **two-axis** status (identity alive/orphaned/unavailable × content fresh/stale/unknown,
-  never collapsed). `SeiResolver` reads Clarion's `_capabilities` and **degrades
+  never collapsed). `SeiResolver` reads Loomweave's `_capabilities` and **degrades
   gracefully** — when no `sei` capability is advertised it reports "identity
   unavailable" and keeps working on the locator, never guessing or crashing. The SEI
   is **never parsed** and **never enters Wardline finding fingerprints** (a golden-digest
   guard locks the fingerprint input set; the warm/cold byte-identical guarantee holds).
-  Built against the spec'd wire contract (SEI standard §4 + Clarion ADR-038, pinned
-  `/api/v1/identity/*` routes) and verified live against a real SEI-serving `clarion
+  Built against the spec'd wire contract (SEI standard §4 + Loomweave ADR-038, pinned
+  `/api/v1/identity/*` routes) and verified live against a real SEI-serving `loomweave
   serve`. The base package stays zero-dependency (the module is stdlib-only).
-- **Track 3 — rename-stable taint read-by-SEI (T3.4).** Consumes Clarion's additive
+- **Track 3 — rename-stable taint read-by-SEI (T3.4).** Consumes Loomweave's additive
   migration 0006 (a nullable `sei` column + `POST /api/wardline/taint-facts/by-sei`
   route + discrete `taint_store.read_by_sei` capability). `TaintStoreCapability`
   detects the route **gated separately from `sei.supported`** (an older SEI-capable
-  Clarion predates the route), fail-closed. `ClarionClient.batch_get_by_sei` reads
+  Loomweave predates the route), fail-closed. `LoomweaveClient.batch_get_by_sei` reads
   taint facts by their stable **opaque SEI** — the surface by which a fact written
   under a former locator survives a rename — fail-soft like `batch_get` (outage/403 →
-  None; route-absent 404 → loud read-skew). The write path is unchanged: Clarion
+  None; route-absent 404 → loud read-skew). The write path is unchanged: Loomweave
   **stamps each fact's SEI server-side** from its alive `sei_bindings` row, so facts
   become SEI-tagged with no Wardline change. Verified live (write → resolve →
   read-by-SEI round-trip + bogus-SEI honest miss) and at the unit level (the
@@ -355,8 +355,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`wardline install`** — one-command agent enablement. Injects a hash-fenced
   instruction block into `CLAUDE.md`/`AGENTS.md`, installs the `wardline-gate`
   skill into `.claude/`/`.agents/`, merges a `wardline` entry into `.mcp.json`,
-  and detects Clarion/Filigree to record bindings in `wardline.yaml`.
-  `clarion.url`/`filigree.url` are now runtime-read config fields (precedence:
+  and detects Loomweave/Filigree to record bindings in `wardline.yaml`.
+  `loomweave.url`/`filigree.url` are now runtime-read config fields (precedence:
   CLI flag > env var > `wardline.yaml`). Opt-out flags `--no-claude-md`,
   `--no-agents-md`, `--no-skill`, `--no-mcp`, `--no-bindings`; no SessionStart
   hook (re-run to refresh).
@@ -441,10 +441,10 @@ hardening fixes. The base package stays zero-dependency.
   resource); one `wardline:loop` prompt. Tool-execution errors surface as
   `isError` results; protocol faults are JSON-RPC errors.
 - **`explain_taint` provenance** — projects the real contributing return-taint
-  callee for an anchored `PY-WL-101`, and (with the Clarion store) walks the
+  callee for an anchored `PY-WL-101`, and (with the Loomweave store) walks the
   full N-hop taint chain (`chain: true`, explicit truncation via `max_hops`).
-- **Clarion taint store** — opt-in Clarion-backed persistent taint store
-  (`wardline[clarion]` extra). `wardline scan --clarion-url` persists per-entity
+- **Loomweave taint store** — opt-in Loomweave-backed persistent taint store
+  (`wardline[loomweave]` extra). `wardline scan --loomweave-url` persists per-entity
   taint facts; `explain_taint` serves a fresh fact from the store behind a
   never-serve-stale `blake3` freshness gate, falling back to a local re-scan.
   HMAC auth is stdlib; `blake3` is the sole (lazy) extra dependency.
@@ -486,8 +486,8 @@ hardening fixes. The base package stays zero-dependency.
 
 ### Removed
 
-- Dropped the unused `loom` optional-dependency extra (`httpx`). The Filigree
-  emitter and Clarion producer-conformance support ship in `scanner` and use
+- Dropped the unused `weft` optional-dependency extra (`httpx`). The Filigree
+  emitter and Loomweave producer-conformance support ship in `scanner` and use
   only the standard library (`urllib`), so the extra pulled in a dependency
   nothing imported.
 
@@ -508,7 +508,7 @@ for Python — enterprise-class trust-boundary analysis at small-team weight.
   (boundary-without-rejection), `PY-WL-103` (broad-except), `PY-WL-104`
   (silent-except), with per-rule severity overrides.
 - **Outputs** — `wardline scan` emits findings as JSONL or SARIF, with a native
-  Filigree emitter and Clarion producer-conformance support for Loom
+  Filigree emitter and Loomweave producer-conformance support for Weft
   integration.
 - **Suppression model** — baseline files and waivers (with expiry), plus an
   opt-in LLM triage layer.
@@ -519,7 +519,7 @@ for Python — enterprise-class trust-boundary analysis at small-team weight.
 - **Configuration** — `wardline.yaml`, validated fail-loud against a JSON
   Schema (unknown or mistyped keys are hard errors).
 - **Packaging** — MIT-licensed; optional extras `scanner` (config + CLI) and
-  `loom` (HTTP integrations).
+  `weft` (HTTP integrations).
 
 [Unreleased]: https://github.com/foundryside-dev/wardline/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/foundryside-dev/wardline/compare/v0.2.1...v0.3.0

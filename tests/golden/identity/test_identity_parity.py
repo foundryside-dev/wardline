@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("blake3", reason="identity facts capture needs wardline[clarion] (blake3)")
+pytest.importorskip("blake3", reason="identity facts capture needs wardline[loomweave] (blake3)")
 
 from golden.identity import _capture as c  # type: ignore[import-not-found]  # noqa: E402  (after importorskip)
 

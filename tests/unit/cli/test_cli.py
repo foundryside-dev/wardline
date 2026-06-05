@@ -597,7 +597,7 @@ def test_scan_relative_root_emits_relative_path_and_qualname(tmp_path) -> None:
     # Regression: a RELATIVE scan-root arg must still yield repo-relative location.path
     # and an uncorrupted qualname. discover() resolves to absolute paths; if the analyzer
     # doesn't resolve root to the same base, is_relative_to fails and findings carry an
-    # absolute path -> Filigree 400 + a garbage dotted qualname (broken Clarion reconcile).
+    # absolute path -> Filigree 400 + a garbage dotted qualname (broken Loomweave reconcile).
     runner = CliRunner()
     with runner.isolated_filesystem(temp_dir=tmp_path):
         Path("proj").mkdir()
@@ -630,10 +630,10 @@ def test_scan_filigree_emit_success(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _StubEmitter)
     out = tmp_path / "f.jsonl"
     result = CliRunner().invoke(
-        scan, [str(proj), "--output", str(out), "--filigree-url", "http://x/api/loom/scan-results"]
+        scan, [str(proj), "--output", str(out), "--filigree-url", "http://x/api/weft/scan-results"]
     )
     assert result.exit_code == 0, result.output
-    assert captured["url"] == "http://x/api/loom/scan-results"
+    assert captured["url"] == "http://x/api/weft/scan-results"
     assert captured["scanned_paths"] == ("svc.py",)
     assert "emitted" in result.output and "warning" not in result.output  # stats surfaced, no warning
 
@@ -680,49 +680,49 @@ def test_scan_filigree_absent_continues(tmp_path, monkeypatch) -> None:
     assert "could not reach" in result.output.lower()
 
 
-# --- SP9: wardline scan --clarion-url ---------------------------------------
-# scan.py imports write_facts_to_clarion lazily inside the `if clarion_url` block
-# (`from wardline.clarion.write import write_facts_to_clarion`), so the binding
-# that takes effect is the module-level one — patch wardline.clarion.write.*.
+# --- SP9: wardline scan --loomweave-url ---------------------------------------
+# scan.py imports write_facts_to_loomweave lazily inside the `if loomweave_url` block
+# (`from wardline.loomweave.write import write_facts_to_loomweave`), so the binding
+# that takes effect is the module-level one — patch wardline.loomweave.write.*.
 
 
-def test_scan_clarion_write_success(tmp_path, monkeypatch) -> None:
-    from wardline.clarion.client import WriteResult
+def test_scan_loomweave_write_success(tmp_path, monkeypatch) -> None:
+    from wardline.loomweave.client import WriteResult
 
     proj = tmp_path / "proj"
     proj.mkdir()
     _write(proj, "svc.py", _LEAKY)
     monkeypatch.setattr(
-        "wardline.clarion.write.write_facts_to_clarion",
+        "wardline.loomweave.write.write_facts_to_loomweave",
         lambda *a, **k: WriteResult(reachable=True, written=2),
     )
     out = tmp_path / "f.jsonl"
-    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--clarion-url", "http://x/api/taint"])
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--loomweave-url", "http://x/api/taint"])
     assert result.exit_code == 0, result.output
     assert "wrote 2 taint fact(s) to http://x/api/taint" in result.output
 
 
-def test_scan_clarion_soft_outage_does_not_change_exit(tmp_path, monkeypatch) -> None:
-    from wardline.clarion.client import WriteResult
+def test_scan_loomweave_soft_outage_does_not_change_exit(tmp_path, monkeypatch) -> None:
+    from wardline.loomweave.client import WriteResult
 
     proj = tmp_path / "proj"
     proj.mkdir()
     _write(proj, "svc.py", _LEAKY)
     monkeypatch.setattr(
-        "wardline.clarion.write.write_facts_to_clarion",
+        "wardline.loomweave.write.write_facts_to_loomweave",
         lambda *a, **k: WriteResult(reachable=False),
     )
     out = tmp_path / "f.jsonl"
     # No --fail-on: a normal scan of _LEAKY exits 0. A soft outage must NOT bump it to 2.
-    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--clarion-url", "http://x/api/taint"])
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--loomweave-url", "http://x/api/taint"])
     assert result.exit_code == 0, result.output
-    assert "Clarion taint store not written" in result.output
+    assert "Loomweave taint store not written" in result.output
     assert "http://x/api/taint" in result.output
     assert "scan unaffected" in result.output
 
 
-def test_scan_reports_filigree_success_and_clarion_unreachable_independently(tmp_path, monkeypatch) -> None:
-    from wardline.clarion.client import WriteResult
+def test_scan_reports_filigree_success_and_loomweave_unreachable_independently(tmp_path, monkeypatch) -> None:
+    from wardline.loomweave.client import WriteResult
 
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -739,7 +739,7 @@ def test_scan_reports_filigree_success_and_clarion_unreachable_independently(tmp
 
     monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _OkEmitter)
     monkeypatch.setattr(
-        "wardline.clarion.write.write_facts_to_clarion",
+        "wardline.loomweave.write.write_facts_to_loomweave",
         lambda *a, **k: WriteResult(reachable=False, disabled_reason="connection refused"),
     )
     out = tmp_path / "f.jsonl"
@@ -750,32 +750,32 @@ def test_scan_reports_filigree_success_and_clarion_unreachable_independently(tmp
             "--output",
             str(out),
             "--filigree-url",
-            "http://filigree/api/loom/scan-results",
-            "--clarion-url",
-            "http://clarion/api/wardline/taint-facts",
+            "http://filigree/api/weft/scan-results",
+            "--loomweave-url",
+            "http://loomweave/api/wardline/taint-facts",
         ],
     )
 
     assert result.exit_code == 0, result.output
     assert "emitted" in result.output
-    assert "http://filigree/api/loom/scan-results" in result.output
-    assert "Clarion taint store not written at http://clarion/api/wardline/taint-facts" in result.output
+    assert "http://filigree/api/weft/scan-results" in result.output
+    assert "Loomweave taint store not written at http://loomweave/api/wardline/taint-facts" in result.output
     assert "connection refused" in result.output
 
 
-def test_scan_clarion_loud_error_exits_2(tmp_path, monkeypatch) -> None:
-    from wardline.core.errors import ClarionError
+def test_scan_loomweave_loud_error_exits_2(tmp_path, monkeypatch) -> None:
+    from wardline.core.errors import LoomweaveError
 
     proj = tmp_path / "proj"
     proj.mkdir()
     _write(proj, "svc.py", _LEAKY)
 
     def _raise(*a, **k):
-        raise ClarionError("Clarion rejected (400): bad request")
+        raise LoomweaveError("Loomweave rejected (400): bad request")
 
-    monkeypatch.setattr("wardline.clarion.write.write_facts_to_clarion", _raise)
+    monkeypatch.setattr("wardline.loomweave.write.write_facts_to_loomweave", _raise)
     out = tmp_path / "f.jsonl"
-    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--clarion-url", "http://x/api/taint"])
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--loomweave-url", "http://x/api/taint"])
     assert result.exit_code == 2, result.output
     assert "bad request" in result.output
 
@@ -1242,18 +1242,18 @@ def test_scan_filigree_emit_with_failed_and_warnings(tmp_path, monkeypatch) -> N
     assert "warning(s): w1; w2" in result.output
 
 
-def test_scan_clarion_with_unresolved_qualnames(tmp_path, monkeypatch) -> None:
-    from wardline.clarion.client import WriteResult
+def test_scan_loomweave_with_unresolved_qualnames(tmp_path, monkeypatch) -> None:
+    from wardline.loomweave.client import WriteResult
 
     proj = tmp_path / "proj"
     proj.mkdir()
     _write(proj, "svc.py", _LEAKY)
     monkeypatch.setattr(
-        "wardline.clarion.write.write_facts_to_clarion",
+        "wardline.loomweave.write.write_facts_to_loomweave",
         lambda *a, **k: WriteResult(reachable=True, written=1, unresolved_qualnames=("svc.leaky",)),
     )
     out = tmp_path / "f.jsonl"
-    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--clarion-url", "http://x/api/taint"])
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--loomweave-url", "http://x/api/taint"])
     assert result.exit_code == 0, result.output
     assert "wrote 1 taint fact(s)" in result.output
     assert "unresolved" in result.output

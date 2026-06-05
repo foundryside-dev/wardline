@@ -12,7 +12,6 @@ import json
 
 import pytest
 
-from wardline.clarion.identity import ContentStatus, IdentityStatus
 from wardline.core.dossier import (
     DOSSIER_TOKEN_BUDGET,
     ElidedSection,
@@ -28,6 +27,7 @@ from wardline.core.dossier import (
     bound_to_budget,
     estimate_tokens,
 )
+from wardline.loomweave.identity import ContentStatus, IdentityStatus
 
 
 def _identity(**over: object) -> IdentitySection:
@@ -37,7 +37,7 @@ def _identity(**over: object) -> IdentitySection:
         path="src/mod.py",
         line_start=10,
         line_end=20,
-        sei="clarion:eid:abc123",
+        sei="loomweave:eid:abc123",
         keyed_on_sei=True,
         identity_status=IdentityStatus.ALIVE,
         content_status=ContentStatus.FRESH,
@@ -57,7 +57,7 @@ def _minimal_dossier(**over: object) -> EntityDossier:
             gate_verdict="defect",
             active_findings=[FindingRef(rule_id="PY-WL-101", severity="ERROR", message="leak", line=12)],
         ),
-        linkages=LinkagesSection.unavailable("clarion not configured"),
+        linkages=LinkagesSection.unavailable("loomweave not configured"),
         work=WorkSection.unavailable("filigree not configured"),
         synthesis=None,
         truncation=Truncation.none(),
@@ -81,9 +81,9 @@ def test_envelope_is_json_serialisable_via_to_dict() -> None:
 
 def test_envelope_is_keyed_on_the_opaque_sei() -> None:
     d = _minimal_dossier()
-    assert d.identity.sei == "clarion:eid:abc123"
+    assert d.identity.sei == "loomweave:eid:abc123"
     assert d.identity.keyed_on_sei is True
-    assert d.to_dict()["identity"]["sei"] == "clarion:eid:abc123"
+    assert d.to_dict()["identity"]["sei"] == "loomweave:eid:abc123"
 
 
 # --- two orthogonal freshness axes -----------------------------------------
@@ -111,9 +111,9 @@ def test_both_freshness_axes_are_independent_and_surfaced(ident: IdentityStatus,
 
 
 def test_unavailable_section_carries_a_reason_and_marks_both_axes_unknown() -> None:
-    sec = LinkagesSection.unavailable("clarion not configured")
+    sec = LinkagesSection.unavailable("loomweave not configured")
     assert sec.available is False
-    assert sec.reason == "clarion not configured"
+    assert sec.reason == "loomweave not configured"
     assert sec.identity_status is IdentityStatus.UNAVAILABLE
     assert sec.content_status is ContentStatus.UNKNOWN
 
@@ -195,7 +195,7 @@ def test_budget_never_drops_the_identity_section() -> None:
     # lists, never the entity's identity. A huge synthesis string must not erase it.
     big = _minimal_dossier(synthesis="z" * 50_000)
     bounded = bound_to_budget(big)
-    assert bounded.identity.sei == "clarion:eid:abc123"
+    assert bounded.identity.sei == "loomweave:eid:abc123"
     assert bounded.identity.qualname == "mod.fn"
     assert estimate_tokens(json.dumps(bounded.to_dict(), sort_keys=True)) <= DOSSIER_TOKEN_BUDGET
     assert bounded.truncation.truncated is True

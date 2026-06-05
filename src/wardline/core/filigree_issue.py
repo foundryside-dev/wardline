@@ -3,7 +3,7 @@
 
 Sibling of core/filigree_emit.py: same injectable-transport, same fail-soft charter
 (sibling-absent / 5xx warn-and-continue; a 4xx other than 404 is a Wardline-bad-payload
-bug and is loud). Talks the Loom HTTP promote-by-fingerprint route; imports no Filigree
+bug and is loud). Talks the Weft HTTP promote-by-fingerprint route; imports no Filigree
 package. A 404 means the fingerprint was never ingested for this scan_source (the agent
 should emit findings to Filigree first) — surfaced as `not_found`, not an exception."""
 
@@ -18,31 +18,31 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from wardline.clarion.identity import SeiResolver
 from wardline.core.errors import FiligreeEmitError
 from wardline.core.http import read_response_text
+from wardline.loomweave.identity import SeiResolver
 
 _ALLOWED_SCHEMES = ("http", "https")
-_LOOM_MARKER = "/api/loom/"
+_WEFT_MARKER = "/api/weft/"
 
 
-def promote_url_from_loom(loom_url: str) -> str:
-    """Derive the promote route from the configured Loom scan-results URL — both
-    live under /api/loom/. Reject a URL that isn't a Loom endpoint (a clear config
+def promote_url_from_weft(weft_url: str) -> str:
+    """Derive the promote route from the configured Weft scan-results URL — both
+    live under /api/weft/. Reject a URL that isn't a Weft endpoint (a clear config
     error rather than a 404 against a wrong host)."""
-    idx = loom_url.find(_LOOM_MARKER)
+    idx = weft_url.find(_WEFT_MARKER)
     if idx == -1:
-        raise FiligreeEmitError(f"filigree URL must be a Loom endpoint containing {_LOOM_MARKER!r}: {loom_url!r}")
-    base = loom_url[: idx + len(_LOOM_MARKER)]
+        raise FiligreeEmitError(f"filigree URL must be a Weft endpoint containing {_WEFT_MARKER!r}: {weft_url!r}")
+    base = weft_url[: idx + len(_WEFT_MARKER)]
     return base + "findings/promote"
 
 
-def api_base_url_from_loom(loom_url: str) -> str:
-    """Normalize a Loom scan-results URL to Filigree's ``/api`` base."""
-    idx = loom_url.find(_LOOM_MARKER)
+def api_base_url_from_weft(weft_url: str) -> str:
+    """Normalize a Weft scan-results URL to Filigree's ``/api`` base."""
+    idx = weft_url.find(_WEFT_MARKER)
     if idx == -1:
-        raise FiligreeEmitError(f"filigree URL must be a Loom endpoint containing {_LOOM_MARKER!r}: {loom_url!r}")
-    return loom_url[:idx].rstrip("/") + "/api"
+        raise FiligreeEmitError(f"filigree URL must be a Weft endpoint containing {_WEFT_MARKER!r}: {weft_url!r}")
+    return weft_url[:idx].rstrip("/") + "/api"
 
 
 def build_promote_body(
@@ -141,11 +141,11 @@ class UrllibTransport:
 
 
 class FiligreeIssueFiler:
-    """POST a single fingerprint to the Loom promote route; return the issue id."""
+    """POST a single fingerprint to the Weft promote route; return the issue id."""
 
-    def __init__(self, loom_url: str, *, transport: Transport | None = None) -> None:
-        self._url = promote_url_from_loom(loom_url)
-        self._api_base = api_base_url_from_loom(loom_url)
+    def __init__(self, weft_url: str, *, transport: Transport | None = None) -> None:
+        self._url = promote_url_from_weft(weft_url)
+        self._api_base = api_base_url_from_weft(weft_url)
         self._transport: Transport = transport if transport is not None else UrllibTransport()
 
     def file(
@@ -202,19 +202,19 @@ class FiligreeIssueFiler:
                 f"filigree association unreachable: {exc}",
                 entity_id=entity_id,
                 content_hash=content_hash,
-                binding_kind="sei" if entity_id.startswith("clarion:eid:") else "locator",
+                binding_kind="sei" if entity_id.startswith("loomweave:eid:") else "locator",
             )
         if not 200 <= resp.status < 300:
             return IdentityAttachResult.skipped(
                 f"filigree association returned HTTP {resp.status}",
                 entity_id=entity_id,
                 content_hash=content_hash,
-                binding_kind="sei" if entity_id.startswith("clarion:eid:") else "locator",
+                binding_kind="sei" if entity_id.startswith("loomweave:eid:") else "locator",
             )
         return IdentityAttachResult.success(
             entity_id=entity_id,
             content_hash=content_hash,
-            binding_kind="sei" if entity_id.startswith("clarion:eid:") else "locator",
+            binding_kind="sei" if entity_id.startswith("loomweave:eid:") else "locator",
         )
 
 
@@ -240,19 +240,19 @@ def _finding_for_fingerprint(fingerprint: str, root: Path, config_path: Path | N
     return next((finding for finding in result.findings if finding.fingerprint == fingerprint), None)
 
 
-def attach_clarion_identity_for_finding(
+def attach_loomweave_identity_for_finding(
     *,
     fingerprint: str,
     issue_id: str | None,
     root: Path,
     filer: FiligreeIssueFiler,
-    clarion_client: Any,
+    loomweave_client: Any,
     config_path: Path | None = None,
 ) -> IdentityAttachResult:
     if not issue_id:
         return IdentityAttachResult.not_attempted("no issue_id from Filigree promote")
-    if clarion_client is None:
-        return IdentityAttachResult.not_attempted("no Clarion URL configured")
+    if loomweave_client is None:
+        return IdentityAttachResult.not_attempted("no Loomweave URL configured")
 
     try:
         finding = _finding_for_fingerprint(fingerprint, root, config_path)
@@ -263,31 +263,31 @@ def attach_clarion_identity_for_finding(
     qualname = getattr(finding, "qualname", None)
     if not isinstance(qualname, str) or not qualname:
         return IdentityAttachResult.skipped("finding has no qualname")
-    return attach_clarion_identity_for_qualname(
+    return attach_loomweave_identity_for_qualname(
         qualname=qualname,
         issue_id=issue_id,
         filer=filer,
-        clarion_client=clarion_client,
+        loomweave_client=loomweave_client,
     )
 
 
-def attach_clarion_identity_for_qualname(
+def attach_loomweave_identity_for_qualname(
     *,
     qualname: str,
     issue_id: str | None,
     filer: FiligreeIssueFiler,
-    clarion_client: Any,
+    loomweave_client: Any,
 ) -> IdentityAttachResult:
     if not issue_id:
         return IdentityAttachResult.not_attempted("no issue_id from Filigree promote")
-    if clarion_client is None:
-        return IdentityAttachResult.not_attempted("no Clarion URL configured")
+    if loomweave_client is None:
+        return IdentityAttachResult.not_attempted("no Loomweave URL configured")
     locator = _locator_for_finding_qualname(qualname)
     try:
-        resolver = SeiResolver.detect(clarion_client)
+        resolver = SeiResolver.detect(loomweave_client)
         binding = resolver.resolve_locator(locator)
     except Exception as exc:
-        return IdentityAttachResult.skipped(f"Clarion identity resolve failed: {exc}", entity_id=locator)
+        return IdentityAttachResult.skipped(f"Loomweave identity resolve failed: {exc}", entity_id=locator)
 
     if binding.sei and binding.content_hash:
         return filer.attach_entity_association(
@@ -297,7 +297,7 @@ def attach_clarion_identity_for_qualname(
             entity_kind="python:function",
         )
 
-    legacy = _legacy_locator_binding(clarion_client, qualname, fallback_locator=binding.locator or locator)
+    legacy = _legacy_locator_binding(loomweave_client, qualname, fallback_locator=binding.locator or locator)
     if legacy.entity_id and legacy.content_hash:
         return filer.attach_entity_association(
             issue_id=issue_id,
@@ -308,20 +308,20 @@ def attach_clarion_identity_for_qualname(
     return legacy
 
 
-def _legacy_locator_binding(clarion_client: Any, qualname: str, *, fallback_locator: str) -> IdentityAttachResult:
+def _legacy_locator_binding(loomweave_client: Any, qualname: str, *, fallback_locator: str) -> IdentityAttachResult:
     entity_id: str | None = fallback_locator
     content_hash: str | None = None
     try:
-        resolved = clarion_client.resolve([qualname])
+        resolved = loomweave_client.resolve([qualname])
     except Exception as exc:
         return IdentityAttachResult.skipped(
-            f"Clarion legacy locator resolve failed: {exc}",
+            f"Loomweave legacy locator resolve failed: {exc}",
             entity_id=entity_id,
             binding_kind="locator",
         )
     if resolved is None:
         return IdentityAttachResult.skipped(
-            "Clarion unavailable while resolving legacy locator",
+            "Loomweave unavailable while resolving legacy locator",
             entity_id=entity_id,
             binding_kind="locator",
         )
@@ -332,10 +332,10 @@ def _legacy_locator_binding(clarion_client: Any, qualname: str, *, fallback_loca
             entity_id = resolved_value
 
     try:
-        fact = clarion_client.get_taint_fact(qualname)
+        fact = loomweave_client.get_taint_fact(qualname)
     except Exception as exc:
         return IdentityAttachResult.skipped(
-            f"Clarion legacy content hash lookup failed: {exc}",
+            f"Loomweave legacy content hash lookup failed: {exc}",
             entity_id=entity_id,
             binding_kind="locator",
         )
@@ -345,9 +345,9 @@ def _legacy_locator_binding(clarion_client: Any, qualname: str, *, fallback_loca
             content_hash = fact_hash
 
     return IdentityAttachResult.skipped(
-        "Clarion resolved only a legacy locator without a current content hash; association not attached"
+        "Loomweave resolved only a legacy locator without a current content hash; association not attached"
         if content_hash is None
-        else "Clarion resolved legacy locator binding",
+        else "Loomweave resolved legacy locator binding",
         entity_id=entity_id,
         content_hash=content_hash,
         binding_kind="locator",

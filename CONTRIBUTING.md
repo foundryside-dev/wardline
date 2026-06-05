@@ -28,7 +28,7 @@ cd wardline
 uv sync --all-extras --group dev
 ```
 
-This installs the base package, every runtime extra (`scanner`, `clarion`,
+This installs the base package, every runtime extra (`scanner`, `loomweave`,
 `docs`), and the dev tooling (ruff, mypy, pytest) into `.venv`.
 
 ## Code style
@@ -54,9 +54,9 @@ make test        # quick run
 make test-cov    # with coverage; CI enforces a 90% floor
 ```
 
-The `network` (live OpenRouter judge) and `clarion_e2e` (real `clarion serve`)
+The `network` (live OpenRouter judge) and `loomweave_e2e` (real `loomweave serve`)
 suites are deselected by default. Opt in with `uv run pytest -m network` /
-`uv run pytest -m clarion_e2e` (the latter needs a route-capable Clarion binary —
+`uv run pytest -m loomweave_e2e` (the latter needs a route-capable Loomweave binary —
 see `CLAUDE.md`).
 
 ## Conventions

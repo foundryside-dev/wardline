@@ -18,10 +18,10 @@ from wardline.mcp.server import WardlineMCPServer
     help="Project root the server scans (default: cwd).",
 )
 @click.option(
-    "--clarion-url",
-    "clarion_url",
+    "--loomweave-url",
+    "loomweave_url",
     default=None,
-    help="Clarion taint-store URL: `scan` writes facts; `explain_taint`/`dossier` query it.",
+    help="Loomweave taint-store URL: `scan` writes facts; `explain_taint`/`dossier` query it.",
 )
 @click.option(
     "--filigree-url",
@@ -32,10 +32,10 @@ from wardline.mcp.server import WardlineMCPServer
         "`dossier` reads entity-associations (open work) from it."
     ),
 )
-def mcp(root: Path, clarion_url: str | None, filigree_url: str | None) -> None:
+def mcp(root: Path, loomweave_url: str | None, filigree_url: str | None) -> None:
     """Run the Wardline MCP server over stdio (JSON-RPC 2.0)."""
-    from wardline.core.config import resolve_clarion_url, resolve_filigree_url
+    from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
 
-    clarion_url = resolve_clarion_url(clarion_url, root, None)
+    loomweave_url = resolve_loomweave_url(loomweave_url, root, None)
     filigree_url = resolve_filigree_url(filigree_url, root, None)
-    WardlineMCPServer(root=root, clarion_url=clarion_url, filigree_url=filigree_url).rpc.run_stdio()
+    WardlineMCPServer(root=root, loomweave_url=loomweave_url, filigree_url=filigree_url).rpc.run_stdio()

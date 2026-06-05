@@ -23,7 +23,7 @@ theme:
         icon: material/brightness-7
         name: Switch to dark mode
   # Bundled JetBrains Mono + Space Grotesk (vendored in stylesheets/fonts/ via
-  # loom-mkdocs.css) own typography now — disable Material's Google Fonts.
+  # weft-mkdocs.css) own typography now — disable Material's Google Fonts.
   font: false
   features:
     - navigation.sections
@@ -42,9 +42,9 @@ markdown_extensions:
   - pymdownx.details
 
 extra_css:
-  # Shared Loom Federation docs theme (vendored) first, Wardline identity layer
+  # Shared Weft Federation docs theme (vendored) first, Wardline identity layer
   # on top.
-  - stylesheets/loom-mkdocs.css
+  - stylesheets/weft-mkdocs.css
   - stylesheets/extra.css
 
 exclude_docs: |
@@ -67,9 +67,9 @@ nav:
       - Configuration: guides/configuration.md
       - Suppressing findings: guides/suppression.md
       - LLM triage judge: guides/judge.md
-      - Loom integration: guides/loom.md
+      - Weft integration: guides/weft.md
       - Signed scan handoff to legis: guides/legis-handoff.md
-      - Clarion taint store: guides/clarion-taint-store.md
+      - Loomweave taint store: guides/loomweave-taint-store.md
       - Assurance posture: guides/assurance-posture.md
       - Attestation: guides/attestation.md
       - Using Wardline with your coding agent: guides/agents.md

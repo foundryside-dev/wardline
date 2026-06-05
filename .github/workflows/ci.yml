@@ -106,8 +106,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Clarion
-            marker: clarion_e2e
+          - name: Loomweave
+            marker: loomweave_e2e
           - name: Legis
             marker: legis_e2e
           - name: Filigree
@@ -123,7 +123,7 @@ jobs:
         run: uv run pytest -m ${{ matrix.marker }} -v
         env:
           WARDLINE_LIVE_ORACLE_REQUIRED: "1"
-          WARDLINE_CLARION_BIN: ${{ secrets.WARDLINE_CLARION_BIN }}
+          WARDLINE_LOOMWEAVE_BIN: ${{ secrets.WARDLINE_LOOMWEAVE_BIN }}
           WARDLINE_LEGIS_URL: ${{ secrets.WARDLINE_LEGIS_URL }}
           WARDLINE_FILIGREE_URL: ${{ secrets.WARDLINE_FILIGREE_URL }}
       - name: Summarize live oracle

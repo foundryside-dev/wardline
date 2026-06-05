@@ -42,7 +42,7 @@ def test_scan_file_findings_selected_wires_dependencies(tmp_path, monkeypatch):
         tmp_path,
         filigree_emitter=object(),
         filigree_filer=object(),
-        clarion=object(),
+        loomweave=object(),
     )
 
     assert out["mode"] == "fingerprints"

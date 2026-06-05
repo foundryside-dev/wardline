@@ -98,10 +98,10 @@ def test_parse_project_stage_fails_closed_for_shadowed_wardline_decorators(tmp_p
     assert "wardline" in result.provider_fingerprint
 
 
-def test_parse_project_stage_fails_closed_for_shadowed_loom_markers(tmp_path) -> None:
-    # The generalization the codex PR left open: shadowing ``loom_markers`` must also
+def test_parse_project_stage_fails_closed_for_shadowed_weft_markers(tmp_path) -> None:
+    # The generalization the codex PR left open: shadowing ``weft_markers`` must also
     # fail closed and the shadow bit must reach the provider fingerprint.
-    _app, files = _shadow_project(tmp_path, "loom_markers")
+    _app, files = _shadow_project(tmp_path, "weft_markers")
     result = run_parse_project_stage(
         ParseProjectInput(
             files=files,
@@ -115,7 +115,7 @@ def test_parse_project_stage_fails_closed_for_shadowed_loom_markers(tmp_path) ->
     seed = app_module.seeds["app.unsafe"]
     assert seed.source == "default"
     assert seed.body_taint == T.UNKNOWN_RAW
-    assert "loom_markers" in result.provider_fingerprint
+    assert "weft_markers" in result.provider_fingerprint
 
 
 def test_parse_project_stage_unshadowed_fingerprint_is_bare(tmp_path) -> None:

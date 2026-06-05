@@ -1,10 +1,10 @@
 # src/wardline/core/dossier.py
-"""Track 4 — the Loom entity dossier: envelope + assembler.
+"""Track 4 — the Weft entity dossier: envelope + assembler.
 
 Wardline is the dossier **assembler** (it composes each tool's slice; it does NOT
 become the store). One freshness-honest call returns everything an agent needs to
 reason about a function without reading its source: trust posture (Wardline's own,
-re-derived FRESH), structure/linkages (Clarion), and open work (Filigree), joined
+re-derived FRESH), structure/linkages (Loomweave), and open work (Filigree), joined
 on a single entity identity — the opaque SEI when available.
 
 This module (T4.1) defines the ``EntityDossier`` envelope and its token discipline;
@@ -194,7 +194,7 @@ class TrustSection:
 
 @dataclass(frozen=True, slots=True)
 class LinkagesSection:
-    """Call-graph neighbourhood from Clarion. Both freshness axes surfaced."""
+    """Call-graph neighbourhood from Loomweave. Both freshness axes surfaced."""
 
     available: bool
     callers: list[str]
@@ -426,8 +426,8 @@ def bound_to_budget(dossier: EntityDossier, *, budget: int = DOSSIER_TOKEN_BUDGE
 
 
 class LinkageProvider(Protocol):
-    """The Clarion call-graph read seam. T4.2 ships stubs only; T4.3 supplies a live
-    provider (HTTP linkages / a Clarion-MCP path) keyed on the binding's SEI. A
+    """The Loomweave call-graph read seam. T4.2 ships stubs only; T4.3 supplies a live
+    provider (HTTP linkages / a Loomweave-MCP path) keyed on the binding's SEI. A
     provider may return ``None`` (no opinion) or raise (unreachable) — the assembler
     turns either into an honest ``unavailable`` section, never a crash."""
 
@@ -566,13 +566,13 @@ def _build_trust(result: ScanResult, context: AnalysisContext, qualname: str) ->
 
 
 def _linkages_from(provider: LinkageProvider | None, binding: EntityBinding | None) -> LinkagesSection:
-    """Read the Clarion linkages section fail-soft. No provider → not-configured; no
+    """Read the Loomweave linkages section fail-soft. No provider → not-configured; no
     binding → cannot key a cross-tool lookup; a raise → unreachable; a ``None`` return
     → no-opinion. The dossier never fails wholesale on an optional source (§8.1).
     Typed against the Protocol so a method-name typo is a mypy error, not a swallowed
     AttributeError masquerading as an outage."""
     if provider is None:
-        return LinkagesSection.unavailable("clarion linkages not configured")
+        return LinkagesSection.unavailable("loomweave linkages not configured")
     if binding is None:
         return LinkagesSection.unavailable("no entity binding: cannot resolve linkages")
     try:
@@ -617,7 +617,7 @@ def _synthesize(identity: IdentitySection, trust: TrustSection, linkages: Linkag
     if linkages.available and (linkages.callers or linkages.callees):
         bits.append(f"{len(linkages.callers)} caller(s), {len(linkages.callees)} callee(s) in the call graph.")
     else:
-        bits.append("call-graph locus unavailable (no Clarion linkages).")
+        bits.append("call-graph locus unavailable (no Loomweave linkages).")
     if work.available:
         if work.tickets:
             bits.append(f"{len(work.tickets)} open ticket(s) touch it.")
@@ -642,7 +642,7 @@ def build_dossier(
 ) -> EntityDossier:
     """Assemble the one-call dossier for ``entity`` (a qualname).
 
-    Composes Wardline's OWN trust posture for real (re-scan → FRESH) with Clarion
+    Composes Wardline's OWN trust posture for real (re-scan → FRESH) with Loomweave
     linkages and Filigree open work read through optional provider seams. Absent /
     unreachable sources degrade to an honest ``unavailable`` (the call still
     succeeds); the SEI is an OPAQUE input the envelope is keyed on. The result is

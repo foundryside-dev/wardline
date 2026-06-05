@@ -19,7 +19,7 @@ from wardline.core.qualname import is_overload_stub, reconstruct_qualname
 
 @dataclass(frozen=True, slots=True)
 class Entity:
-    """A discovered function/method with its Clarion-aligned identity."""
+    """A discovered function/method with its Loomweave-aligned identity."""
 
     qualname: str  # full dotted ``module.__qualname__`` (reconciliation key)
     kind: str  # "function" | "method"

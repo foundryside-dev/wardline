@@ -35,7 +35,7 @@ always wins, so CI injects the key as a secret env var without touching `.env`.
 !!! note "The key never goes in `.wardline/`"
     `.wardline/` holds committed state (baseline, waivers). Writing a secret
     there would let anyone with repo read access forge bundles. `.env` is the
-    correct home — it mirrors where `WARDLINE_CLARION_TOKEN` lives.
+    correct home — it mirrors where `WARDLINE_LOOMWEAVE_TOKEN` lives.
 
 ## The bundle shape
 
@@ -54,12 +54,12 @@ A bundle is a JSON object with schema `"wardline-attest-1"`:
     "boundaries": [
       {
         "qualname": "myapp.ingestion.parse_payload",
-        "sei": "clarion:eid:0123456789abcdef0123456789abcdef",
+        "sei": "loomweave:eid:0123456789abcdef0123456789abcdef",
         "verdict": "clean",
         "tier": "ASSURED"
       }
     ],
-    "sei_source": "clarion"
+    "sei_source": "loomweave"
   },
   "signature": {
     "alg": "HMAC-SHA256",
@@ -80,14 +80,14 @@ A bundle is a JSON object with schema `"wardline-attest-1"`:
 | `ruleset_hash` | string | `"sha256:<hex>"` over the enabled rules, severity overrides, and Wardline version — pinning the policy that produced the bundle |
 | `posture` | object | The full [assurance posture](assurance-posture.md) object from `wardline assure` |
 | `boundaries` | list | One entry per declared trust boundary, sorted by qualname |
-| `sei_source` | string | `"clarion"` if a Clarion store resolved ≥1 SEI; `"unavailable"` otherwise |
+| `sei_source` | string | `"loomweave"` if a Loomweave store resolved ≥1 SEI; `"unavailable"` otherwise |
 
 ### Boundary fields
 
 | Field | Type | Meaning |
 |---|---|---|
 | `qualname` | string | Fully-qualified function name of the trust boundary |
-| `sei` | string \| null | Clarion SEI (stable, rename-resistant entity identifier) if resolved; `null` otherwise |
+| `sei` | string \| null | Loomweave SEI (stable, rename-resistant entity identifier) if resolved; `null` otherwise |
 | `verdict` | string | `"clean"` / `"defect"` / `"unknown"` — the engine's three-valued verdict for this boundary |
 | `tier` | string \| null | Declared trust tier (`"INTEGRAL"`, `"ASSURED"`, `"GUARDED"`, `"EXTERNAL_RAW"`) or `null` |
 
@@ -115,7 +115,7 @@ any consumer can see that the scan was not at a clean commit.
 ### MCP (agent-first)
 
 The primary consumer is an agent using the MCP `attest` tool. The MCP server must
-be started with `--clarion-url` to enable SEI-keying (optional); otherwise all
+be started with `--loomweave-url` to enable SEI-keying (optional); otherwise all
 `sei` fields are `null`.
 
 ```json
@@ -147,7 +147,7 @@ $ wardline attest src/myapp --out bundle.json
 With SEI-keying:
 
 ```console
-$ wardline attest src/myapp --clarion-url http://localhost:9100 --out bundle.json
+$ wardline attest src/myapp --loomweave-url http://localhost:9100 --out bundle.json
 ```
 
 ## Verifying a bundle
@@ -205,22 +205,22 @@ $ wardline attest --verify bundle.json --reproduce
 
 ## SEI-keying (opt-in, fail-soft)
 
-With a Clarion store configured (`--clarion-url` / the server's `--clarion-url`
-flag), each boundary's `sei` is resolved to a Clarion SEI — an opaque,
+With a Loomweave store configured (`--loomweave-url` / the server's `--loomweave-url`
+flag), each boundary's `sei` is resolved to a Loomweave SEI — an opaque,
 rename-stable entity identifier. This makes boundaries resilient to function
 renames: a verifier can locate the boundary in the current tree even if its
 `qualname` has changed.
 
-`sei_source` is `"clarion"` only when a client was supplied **and** at least one
-SEI resolved. If Clarion is unreachable or returns no matches, every `sei` is
+`sei_source` is `"loomweave"` only when a client was supplied **and** at least one
+SEI resolved. If Loomweave is unreachable or returns no matches, every `sei` is
 `null` and `sei_source` is `"unavailable"` — attestation never fails because
-Clarion is unreachable.
+Loomweave is unreachable.
 
-Reproducibility of a SEI-keyed bundle requires the same Clarion store: without it,
+Reproducibility of a SEI-keyed bundle requires the same Loomweave store: without it,
 `reproduce: true` re-derives with `sei: null` for every boundary and correctly
 reports `reproduced: false` while leaving `signature_valid` unaffected.
 
-See [Clarion taint store](clarion-taint-store.md) for store setup.
+See [Loomweave taint store](loomweave-taint-store.md) for store setup.
 
 ## Agent-first: CI workflow example
 
@@ -263,7 +263,7 @@ if posture["coverage_pct"] is not None and posture["coverage_pct"] < 80.0:
     block_deploy(reason=f"trust-surface coverage {posture['coverage_pct']}% below threshold")
 ```
 
-**legis as a consumer.** The Loom governance plugin (legis) reads attestation
+**legis as a consumer.** The Weft governance plugin (legis) reads attestation
 bundles as part of its policy pipeline — the bundle's `posture`, `boundaries`, and
 `ruleset_hash` feed legis's trust-gate decisions without requiring legis to
 re-scan.
@@ -284,5 +284,5 @@ of the same unchanged tree produce byte-identical canonical payloads because:
 
 - [Assurance posture](assurance-posture.md) — the `posture` embedded in every
   bundle; understand coverage and the honesty gap before reading attestation numbers.
-- [Clarion taint store](clarion-taint-store.md) — enabling SEI-keyed boundaries.
+- [Loomweave taint store](loomweave-taint-store.md) — enabling SEI-keyed boundaries.
 - [Using Wardline with your coding agent](agents.md) — the full MCP tool surface.

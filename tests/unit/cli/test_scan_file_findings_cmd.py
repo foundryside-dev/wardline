@@ -18,7 +18,7 @@ def test_scan_file_findings_cli_defaults_to_dry_run(tmp_path, monkeypatch):
         lambda **kw: {"mode": "dry_run", "summary": {"active": 1}, "active_defects": [], "selected_count": 0},
     )
     monkeypatch.setattr(mod, "resolve_filigree_url", lambda *args, **kwargs: None)
-    monkeypatch.setattr(mod, "resolve_clarion_url", lambda *args, **kwargs: None)
+    monkeypatch.setattr(mod, "resolve_loomweave_url", lambda *args, **kwargs: None)
 
     res = CliRunner().invoke(cli, ["scan-file-findings", str(tmp_path)])
 
@@ -36,17 +36,17 @@ def test_scan_file_findings_cli_selected_fingerprint_wires_urls(tmp_path, monkey
         return {"mode": "fingerprints", "summary": {"active": 1}, "active_defects": [], "selected_count": 1}
 
     monkeypatch.setattr(mod, "scan_file_findings_core", fake_workflow)
-    monkeypatch.setattr(mod, "resolve_filigree_url", lambda *args, **kwargs: "http://f/api/loom/scan-results")
-    monkeypatch.setattr(mod, "resolve_clarion_url", lambda *args, **kwargs: "http://c")
+    monkeypatch.setattr(mod, "resolve_filigree_url", lambda *args, **kwargs: "http://f/api/weft/scan-results")
+    monkeypatch.setattr(mod, "resolve_loomweave_url", lambda *args, **kwargs: "http://c")
     monkeypatch.setattr(mod, "FiligreeEmitter", lambda url: ("emitter", url))
     monkeypatch.setattr(mod, "FiligreeIssueFiler", lambda url: ("filer", url))
 
-    class FakeClarion:
+    class FakeLoomweave:
         def __init__(self, url, *, secret, project):
             self.url = url
 
-    monkeypatch.setattr(mod, "ClarionClient", FakeClarion)
-    monkeypatch.setattr(mod, "load_clarion_token", lambda root: None)
+    monkeypatch.setattr(mod, "LoomweaveClient", FakeLoomweave)
+    monkeypatch.setattr(mod, "load_loomweave_token", lambda root: None)
     monkeypatch.setattr(mod, "resolve_project_name", lambda root: "proj")
 
     res = CliRunner().invoke(cli, ["scan-file-findings", str(tmp_path), "--fingerprint", "f" * 64])
@@ -54,5 +54,5 @@ def test_scan_file_findings_cli_selected_fingerprint_wires_urls(tmp_path, monkey
     assert res.exit_code == 0
     assert seen["fingerprints"] == ("f" * 64,)
     assert seen["dry_run"] is False
-    assert seen["filigree_emitter"] == ("emitter", "http://f/api/loom/scan-results")
-    assert isinstance(seen["clarion_client"], FakeClarion)
+    assert seen["filigree_emitter"] == ("emitter", "http://f/api/weft/scan-results")
+    assert isinstance(seen["loomweave_client"], FakeLoomweave)

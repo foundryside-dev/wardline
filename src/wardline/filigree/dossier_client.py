@@ -5,7 +5,7 @@ A small, dep-free urllib reader for ADR-029 entity-associations, behind the
 ``WorkProvider`` seam (``core/dossier.py``). Filigree is ``done``/frozen and
 deliberately computes NO drift — the consumer does — so this provider IS that
 consumer: it reads each association's ``content_hash_at_attach`` and compares it
-(same entity-body granularity as Clarion's ``resolve`` content hash, SEI conformance
+(same entity-body granularity as Loomweave's ``resolve`` content hash, SEI conformance
 §2 note) against the binding's current content hash to set per-ticket DRIFT and the
 section's content axis. Fail-soft: an outage / a no-SEI binding yields an honest
 ``unavailable`` section, never a crash and never fabricated work.
@@ -55,7 +55,7 @@ class UrllibTransport:
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:  # noqa: S310
                 return Response(status=resp.status, body=read_response_text(resp))
         except urllib.error.HTTPError as exc:
-            # Mirror clarion/client.UrllibTransport: surface the HTTP status to the
+            # Mirror loomweave/client.UrllibTransport: surface the HTTP status to the
             # caller (a >=400 band) rather than letting HTTPError (a URLError subclass)
             # collapse into the "unreachable" branch — so a 4xx/5xx is classified, not
             # mistaken for an outage.
@@ -86,8 +86,8 @@ def _api_base_url(url: str) -> str:
     if scheme not in _ALLOWED_SCHEMES:
         raise FiligreeEmitError(f"filigree dossier URL must use http or https; got scheme {scheme!r} in {url!r}")
     path = parsed.path.rstrip("/")
-    if path.endswith("/api/loom/scan-results"):
-        path = path[: -len("/loom/scan-results")]
+    if path.endswith("/api/weft/scan-results"):
+        path = path[: -len("/weft/scan-results")]
     elif not path.endswith("/api"):
         path = f"{path}/api" if path else "/api"
     return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", "")).rstrip("/")

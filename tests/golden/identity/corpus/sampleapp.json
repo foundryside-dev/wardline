@@ -1735,10 +1735,10 @@
       }
     },
     {
-      "content_hash_at_compute": "0e36bf112d58dbb40d13ac46d36208928e7dff818c8c37a6c48c341fde5e301d",
+      "content_hash_at_compute": "8199f59f3947ed60ad4561a45543dc4e93b02a36e857cb0d2b1896ae020f1b53",
       "qualname": "trust_flow.build_account_key",
       "wardline_json": {
-        "content_hash_at_compute": "0e36bf112d58dbb40d13ac46d36208928e7dff818c8c37a6c48c341fde5e301d",
+        "content_hash_at_compute": "8199f59f3947ed60ad4561a45543dc4e93b02a36e857cb0d2b1896ae020f1b53",
         "dead_code_root": {
           "is_root": true,
           "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
@@ -1761,10 +1761,10 @@
       }
     },
     {
-      "content_hash_at_compute": "0e36bf112d58dbb40d13ac46d36208928e7dff818c8c37a6c48c341fde5e301d",
+      "content_hash_at_compute": "8199f59f3947ed60ad4561a45543dc4e93b02a36e857cb0d2b1896ae020f1b53",
       "qualname": "trust_flow.read_raw_username",
       "wardline_json": {
-        "content_hash_at_compute": "0e36bf112d58dbb40d13ac46d36208928e7dff818c8c37a6c48c341fde5e301d",
+        "content_hash_at_compute": "8199f59f3947ed60ad4561a45543dc4e93b02a36e857cb0d2b1896ae020f1b53",
         "dead_code_root": {
           "is_root": true,
           "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
@@ -1787,10 +1787,10 @@
       }
     },
     {
-      "content_hash_at_compute": "0e36bf112d58dbb40d13ac46d36208928e7dff818c8c37a6c48c341fde5e301d",
+      "content_hash_at_compute": "8199f59f3947ed60ad4561a45543dc4e93b02a36e857cb0d2b1896ae020f1b53",
       "qualname": "trust_flow.safe_account_key",
       "wardline_json": {
-        "content_hash_at_compute": "0e36bf112d58dbb40d13ac46d36208928e7dff818c8c37a6c48c341fde5e301d",
+        "content_hash_at_compute": "8199f59f3947ed60ad4561a45543dc4e93b02a36e857cb0d2b1896ae020f1b53",
         "dead_code_root": {
           "is_root": false,
           "reason": null,
@@ -1811,10 +1811,10 @@
       }
     },
     {
-      "content_hash_at_compute": "0e36bf112d58dbb40d13ac46d36208928e7dff818c8c37a6c48c341fde5e301d",
+      "content_hash_at_compute": "8199f59f3947ed60ad4561a45543dc4e93b02a36e857cb0d2b1896ae020f1b53",
       "qualname": "trust_flow.unsafe_account_key",
       "wardline_json": {
-        "content_hash_at_compute": "0e36bf112d58dbb40d13ac46d36208928e7dff818c8c37a6c48c341fde5e301d",
+        "content_hash_at_compute": "8199f59f3947ed60ad4561a45543dc4e93b02a36e857cb0d2b1896ae020f1b53",
         "dead_code_root": {
           "is_root": true,
           "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
@@ -1844,10 +1844,10 @@
       }
     },
     {
-      "content_hash_at_compute": "0e36bf112d58dbb40d13ac46d36208928e7dff818c8c37a6c48c341fde5e301d",
+      "content_hash_at_compute": "8199f59f3947ed60ad4561a45543dc4e93b02a36e857cb0d2b1896ae020f1b53",
       "qualname": "trust_flow.validate_username",
       "wardline_json": {
-        "content_hash_at_compute": "0e36bf112d58dbb40d13ac46d36208928e7dff818c8c37a6c48c341fde5e301d",
+        "content_hash_at_compute": "8199f59f3947ed60ad4561a45543dc4e93b02a36e857cb0d2b1896ae020f1b53",
         "dead_code_root": {
           "is_root": true,
           "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",

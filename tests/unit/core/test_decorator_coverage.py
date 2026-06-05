@@ -31,7 +31,7 @@ class _Bindings:
     def binding_for(self, qualname: str) -> EntityBinding:
         return EntityBinding(
             locator=f"python:function:{qualname}",
-            sei=f"clarion:eid:{qualname}",
+            sei=f"loomweave:eid:{qualname}",
             identity=IdentityStatus.ALIVE,
             content=ContentStatus.FRESH,
             content_hash=f"hash:{qualname}",
@@ -72,7 +72,7 @@ def test_decorator_coverage_lists_all_trust_decorated_entities(tmp_path: Path) -
     assert clean["verdict"] == "clean"
     assert clean["finding_state"] == "clean"
     assert clean["active_finding_fingerprints"] == []
-    assert clean["identity"]["sei"] == "clarion:eid:svc.clean"
+    assert clean["identity"]["sei"] == "loomweave:eid:svc.clean"
     assert clean["identity"]["content_status"] == "fresh"
     assert clean["work"]["available"] is True
     assert clean["work"]["tickets"] == []
@@ -95,7 +95,7 @@ def test_decorator_coverage_reports_unavailable_integrations_explicitly(tmp_path
         "identity_status": "unavailable",
         "content_status": "unknown",
         "content_hash": None,
-        "reason": "clarion not configured",
+        "reason": "loomweave not configured",
     }
     assert row["work"]["available"] is False
     assert row["work"]["reason"] == "filigree not configured"

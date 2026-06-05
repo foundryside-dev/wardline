@@ -79,7 +79,7 @@ Options:
   --fail-on [CRITICAL|ERROR|WARN|INFO]
   --cache-dir PATH                Persist L3 summary cache here for faster
                                   incremental scans.
-  --filigree-url TEXT             POST findings to this Filigree Loom scan-
+  --filigree-url TEXT             POST findings to this Filigree Weft scan-
                                   results URL (opt-in).
   --help                          Show this message and exit.
 ```
@@ -94,7 +94,7 @@ it at a package root, not a single file.
 | `--output PATH` | Write findings to a file instead of stdout. |
 | `--fail-on [CRITICAL\|ERROR\|WARN\|INFO]` | Exit non-zero when any finding at or above this severity survives the baseline. Use this as your CI gate. |
 | `--cache-dir PATH` | Persist the L3 inter-procedural summary cache here so the next scan reuses unchanged summaries. |
-| `--filigree-url TEXT` | Opt-in: POST findings to a Filigree Loom scan-results endpoint as well as emitting them locally. Prefer this native path when agents need Filigree promotion, deduplication, or close/reopen lifecycle state. |
+| `--filigree-url TEXT` | Opt-in: POST findings to a Filigree Weft scan-results endpoint as well as emitting them locally. Prefer this native path when agents need Filigree promotion, deduplication, or close/reopen lifecycle state. |
 
 Realistic invocation — scan the source tree, emit SARIF to a file, and fail the
 build on any `ERROR`-or-worse finding:
@@ -121,7 +121,7 @@ scan and how to read the findings.
 ## `wardline file-finding`
 
 **Purpose:** promote one already-emitted finding, keyed by fingerprint, into a
-tracked Filigree issue. Requires a Filigree Loom scan-results URL.
+tracked Filigree issue. Requires a Filigree Weft scan-results URL.
 
 ```text
 Usage: wardline file-finding [OPTIONS] FINGERPRINT [PATH]
@@ -130,26 +130,26 @@ Usage: wardline file-finding [OPTIONS] FINGERPRINT [PATH]
 
 Options:
   --config FILE
-  --filigree-url TEXT        Filigree Loom URL (else env/wardline.yaml).
-  --clarion-url TEXT         Clarion URL used with --attach-clarion-identity.
-  --attach-clarion-identity  After filing, resolve the finding qualname
-                             through Clarion and attach a Filigree entity
+  --filigree-url TEXT        Filigree Weft URL (else env/wardline.yaml).
+  --loomweave-url TEXT         Loomweave URL used with --attach-loomweave-identity.
+  --attach-loomweave-identity  After filing, resolve the finding qualname
+                             through Loomweave and attach a Filigree entity
                              association.
   --priority TEXT            Filigree priority, e.g. P2.
   --label TEXT               Label to attach (repeatable).
   --help                     Show this message and exit.
 ```
 
-Without `--attach-clarion-identity`, the JSON result is the promotion result:
+Without `--attach-loomweave-identity`, the JSON result is the promotion result:
 `reachable`, `issue_id`, `created`, `not_found`, `fingerprint`, and
 `disabled_reason`.
 
-With `--attach-clarion-identity`, Wardline re-runs the scan locally to find the
-matching finding qualname, resolves it through Clarion, and attempts a Filigree
+With `--attach-loomweave-identity`, Wardline re-runs the scan locally to find the
+matching finding qualname, resolves it through Loomweave, and attempts a Filigree
 entity association only after promotion returns an `issue_id`. The response adds
 an `identity_attach` block with `attempted`, `attached`, `entity_id`,
 `content_hash`, `binding_kind`, and `reason`. SEI bindings are preferred. If
-Clarion can only resolve a legacy locator and no current content hash is
+Loomweave can only resolve a legacy locator and no current content hash is
 available, Wardline reports that explicitly and does not attach a false hash;
 the promoted issue is still returned.
 
@@ -157,7 +157,7 @@ the promoted issue is still returned.
 
 **Purpose:** list every Wardline trust-decorated entity with declared tier,
 actual tier, gate verdict, active/suppressed finding fingerprints, optional
-Clarion SEI/content status, and optional Filigree linked-work status.
+Loomweave SEI/content status, and optional Filigree linked-work status.
 
 ```text
 Usage: wardline decorator-coverage [OPTIONS] [PATH]
@@ -166,7 +166,7 @@ Usage: wardline decorator-coverage [OPTIONS] [PATH]
 
 Options:
   --config FILE
-  --clarion-url TEXT       Clarion URL for optional SEI/content status.
+  --loomweave-url TEXT       Loomweave URL for optional SEI/content status.
   --filigree-url TEXT      Filigree URL for optional linked issue/open-work
                            status.
   --format [json|human]    Output format: json (default) or human-readable
@@ -178,7 +178,7 @@ JSON output is stable for agents: `summary` plus `rows`. Each row includes
 `qualname`, `path`, `line`, `decorators`, `declared_tier`, `actual_tier`,
 `verdict`, `finding_state`, `active_finding_fingerprints`,
 `suppressed_finding_fingerprints`, `identity`, and `work`. Optional integrations
-degrade explicitly: no Clarion reports `identity.available=false`; no Filigree
+degrade explicitly: no Loomweave reports `identity.available=false`; no Filigree
 reports `work.available=false`. A configured Filigree with zero linked tickets
 reports `work.available=true` and an empty `tickets` list.
 
@@ -186,7 +186,7 @@ reports `work.available=true` and an empty `tickets` list.
 
 **Purpose:** run the common agent workflow in one call: scan, list active defects
 with explanation summaries, optionally emit to Filigree, promote selected
-findings, and attach Clarion identity when available.
+findings, and attach Loomweave identity when available.
 
 ```text
 Usage: wardline scan-file-findings [OPTIONS] [PATH]
@@ -197,8 +197,8 @@ Options:
   --config FILE
   --fail-on [CRITICAL|ERROR|WARN|INFO]
   --cache-dir PATH
-  --filigree-url TEXT             Filigree Loom URL (else env/wardline.yaml).
-  --clarion-url TEXT              Clarion URL for optional identity
+  --filigree-url TEXT             Filigree Weft URL (else env/wardline.yaml).
+  --loomweave-url TEXT              Loomweave URL for optional identity
                                   attachment.
   --fingerprint TEXT              Active finding fingerprint to promote.
   --all-active                    Promote every active defect from this scan.
@@ -218,7 +218,7 @@ first; each entry includes fingerprint, rule, qualname, path/line, an
 `explanation` summary, `promotion` status, and `identity_attach` status. Use
 `--fingerprint` to promote specific active findings, or `--all-active` for the
 whole active set. Partial failures stay visible in the JSON: Filigree emission,
-per-finding promotion, unknown fingerprints, and Clarion identity attachment are
+per-finding promotion, unknown fingerprints, and Loomweave identity attachment are
 reported independently.
 
 ## `wardline judge`
@@ -309,7 +309,7 @@ stamps (`trust_boundary` carries `_wardline_to_level`, `trusted` carries
 `_wardline_level`, and `external_boundary` carries none). Tooling that wants to
 recognise Wardline decorations without taking a dependency on Wardline can parse
 this YAML. Application code that needs runtime imports should depend on the tiny
-`loom-markers` package and import `loom_markers.*`; Wardline recognizes that
+`weft-markers` package and import `weft_markers.*`; Wardline recognizes that
 namespace and the backward-compatible `wardline.decorators.*` namespace. For
 what the three decorators actually declare, see the
 [trust vocabulary reference](vocabulary.md).

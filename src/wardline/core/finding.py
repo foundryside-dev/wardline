@@ -94,7 +94,7 @@ class Finding:
     location: Location
     fingerprint: str  # stable cross-run identity (SP1 folds in taint-path identity)
     suggestion: str | None = None
-    qualname: str | None = None  # dotted module.qualified_name (Clarion reconciliation key)
+    qualname: str | None = None  # dotted module.qualified_name (Loomweave reconciliation key)
     confidence: float | None = None
     related_entities: tuple[str, ...] = ()
     # Immutability is shallow: the contained mapping is not deep-frozen and must
@@ -151,7 +151,7 @@ def compute_finding_fingerprint(
     return digest.hexdigest()
 
 
-# --- Loom wire mapping (pure; SP4 uses these to build the scan-results body) -
+# --- Weft wire mapping (pure; SP4 uses these to build the scan-results body) -
 _SEVERITY_TO_FILIGREE: dict[Severity, str] = {
     Severity.CRITICAL: "critical",
     Severity.ERROR: "high",

@@ -22,7 +22,7 @@ def test_doctor_reports_missing_install_artifacts(tmp_path: Path, monkeypatch) -
 
 def test_doctor_repair_installs_artifacts_and_discovers_bindings(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "home"
-    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
     monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
@@ -41,14 +41,14 @@ def test_doctor_repair_installs_artifacts_and_discovers_bindings(tmp_path: Path,
     assert "bindings: repaired" in result.output
     assert (tmp_path / ".mcp.json").is_file()
     assert (home / ".codex" / "config.toml").is_file()
-    assert 'filigree:\n  url: "http://localhost:8628/api/loom/scan-results"' in (tmp_path / "wardline.yaml").read_text(
+    assert 'filigree:\n  url: "http://localhost:8628/api/weft/scan-results"' in (tmp_path / "wardline.yaml").read_text(
         encoding="utf-8"
     )
 
 
 def test_doctor_passes_after_repair(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "home"
-    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
     monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
@@ -65,9 +65,9 @@ def test_doctor_passes_after_repair(tmp_path: Path, monkeypatch) -> None:
 
 def test_doctor_fix_emits_shared_machine_readable_shape(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "home"
-    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
-    monkeypatch.delenv("WARDLINE_CLARION_TOKEN", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_TOKEN", raising=False)
     monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
     monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
@@ -87,7 +87,7 @@ def test_doctor_fix_emits_shared_machine_readable_shape(tmp_path: Path, monkeypa
         "wardline.config",
         "mcp.registration",
         "marker_package",
-        "clarion.url",
+        "loomweave.url",
         "filigree.url",
         "decorator_grammar",
         "scan.output_path",
@@ -100,9 +100,9 @@ def test_doctor_fix_emits_shared_machine_readable_shape(tmp_path: Path, monkeypa
 
 def test_doctor_fix_upgrades_commented_filigree_binding_when_port_appears(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "home"
-    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
-    monkeypatch.delenv("WARDLINE_CLARION_TOKEN", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_TOKEN", raising=False)
     monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
     monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
@@ -123,4 +123,4 @@ def test_doctor_fix_upgrades_commented_filigree_binding_when_port_appears(tmp_pa
     assert checks["filigree.url"]["fixed"] is True
     text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
     assert "# filigree:" not in text
-    assert 'filigree:\n  url: "http://localhost:8628/api/loom/scan-results"' in text
+    assert 'filigree:\n  url: "http://localhost:8628/api/weft/scan-results"' in text

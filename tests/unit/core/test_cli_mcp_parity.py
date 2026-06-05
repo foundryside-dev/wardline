@@ -29,7 +29,7 @@ def test_cli_and_mcp_scan_agree_on_findings_and_gate() -> None:
     cli_findings = [_finding_to_dict(f) for f in cli_result.findings]
     cli_gate = gate_decision(cli_result, Severity.ERROR)
 
-    # MCP parameterization: the real _scan handler (confine_to_root=True, no clarion).
+    # MCP parameterization: the real _scan handler (confine_to_root=True, no loomweave).
     mcp = _scan({"fail_on": "ERROR"}, root=_CORPUS)
 
     assert mcp["findings"] == cli_findings

@@ -1,10 +1,10 @@
 # src/wardline/cli/dossier.py
 """`wardline dossier` — the one-call entity dossier (Track 4).
 
-Thin delegator to ``loom_dossier.build_loom_dossier`` (the same function the MCP
+Thin delegator to ``weft_dossier.build_weft_dossier`` (the same function the MCP
 ``dossier`` tool calls — CLI and MCP identical by construction). Prints the
 freshness-honest, SEI-keyed envelope as JSON: Wardline's own trust posture plus
-Clarion linkages and Filigree open work, each degrading to an honest ``unavailable``
+Loomweave linkages and Filigree open work, each degrading to an honest ``unavailable``
 when its source is absent.
 """
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import click
 
-from wardline.core.config import resolve_clarion_url, resolve_filigree_url
+from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
 from wardline.core.errors import WardlineError
 
 
@@ -29,10 +29,10 @@ from wardline.core.errors import WardlineError
     default=None,
 )
 @click.option(
-    "--clarion-url",
-    "clarion_url",
+    "--loomweave-url",
+    "loomweave_url",
     default=None,
-    help="Clarion URL: resolve the entity's SEI + read call-graph linkages (opt-in, fail-soft).",
+    help="Loomweave URL: resolve the entity's SEI + read call-graph linkages (opt-in, fail-soft).",
 )
 @click.option(
     "--filigree-url",
@@ -44,29 +44,29 @@ def dossier(
     entity: str,
     path: Path,
     config_path: Path | None,
-    clarion_url: str | None,
+    loomweave_url: str | None,
     filigree_url: str | None,
 ) -> None:
     """Assemble the one-call dossier for ENTITY (a function qualname) under PATH."""
-    from wardline.loom_dossier import build_loom_dossier
+    from wardline.weft_dossier import build_weft_dossier
 
     try:
-        clarion_url = resolve_clarion_url(clarion_url, path, config_path)
+        loomweave_url = resolve_loomweave_url(loomweave_url, path, config_path)
         filigree_url = resolve_filigree_url(filigree_url, path, config_path)
-        clarion_client = None
-        if clarion_url is not None:
-            from wardline.clarion.client import ClarionClient
-            from wardline.clarion.config import load_clarion_token, resolve_project_name
+        loomweave_client = None
+        if loomweave_url is not None:
+            from wardline.loomweave.client import LoomweaveClient
+            from wardline.loomweave.config import load_loomweave_token, resolve_project_name
 
-            clarion_client = ClarionClient(
-                clarion_url,
-                secret=load_clarion_token(path),
+            loomweave_client = LoomweaveClient(
+                loomweave_url,
+                secret=load_loomweave_token(path),
                 project=resolve_project_name(path),
             )
-        result = build_loom_dossier(
+        result = build_weft_dossier(
             entity,
             root=path,
-            clarion_client=clarion_client,
+            loomweave_client=loomweave_client,
             filigree_url=filigree_url,
             config_path=config_path,
             confine_to_root=True,

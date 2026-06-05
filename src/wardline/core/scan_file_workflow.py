@@ -11,7 +11,7 @@ from wardline.core.filigree_emit import EmitResult
 from wardline.core.filigree_issue import (
     FileResult,
     IdentityAttachResult,
-    attach_clarion_identity_for_qualname,
+    attach_loomweave_identity_for_qualname,
     identity_attach_result_to_json,
 )
 from wardline.core.finding import Finding, Kind, Severity, SuppressionState
@@ -120,7 +120,7 @@ def scan_file_findings(
     labels: tuple[str, ...] = (),
     filigree_emitter: Any = None,
     filigree_filer: Any = None,
-    clarion_client: Any = None,
+    loomweave_client: Any = None,
 ) -> dict[str, Any]:
     threshold = Severity(fail_on) if fail_on else None
     result = run_scan(
@@ -169,11 +169,11 @@ def scan_file_findings(
                     labels=list(labels) or None,
                 )
                 if finding.qualname:
-                    identity_result = attach_clarion_identity_for_qualname(
+                    identity_result = attach_loomweave_identity_for_qualname(
                         qualname=finding.qualname,
                         issue_id=file_result.issue_id,
                         filer=filigree_filer,
-                        clarion_client=clarion_client,
+                        loomweave_client=loomweave_client,
                     )
                 else:
                     identity_result = IdentityAttachResult.skipped("finding has no qualname")

@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from wardline.scanner.context import _RuleClass
 
 _VOCAB_PREFIX = "wardline.decorators"
-_LOOM_MARKERS_PREFIX = "loom_markers"
+_WEFT_MARKERS_PREFIX = "weft_markers"
 _BOUNDARY_LEVELS = frozenset({TaintState.GUARDED, TaintState.ASSURED})
 _TRUSTED_LEVELS = frozenset({TaintState.INTEGRAL, TaintState.ASSURED})
 
@@ -113,10 +113,10 @@ BUILTIN_BOUNDARY_TYPES: tuple[BoundaryType, ...] = (
         _seed_trusted,
         builtin=True,
     ),
-    BoundaryType("external_boundary", _LOOM_MARKERS_PREFIX, 1, (), _seed_external, builtin=True),
+    BoundaryType("external_boundary", _WEFT_MARKERS_PREFIX, 1, (), _seed_external, builtin=True),
     BoundaryType(
         "trust_boundary",
-        _LOOM_MARKERS_PREFIX,
+        _WEFT_MARKERS_PREFIX,
         1,
         (LevelArg("to_level", _BOUNDARY_LEVELS, default=None),),
         _seed_boundary,
@@ -124,7 +124,7 @@ BUILTIN_BOUNDARY_TYPES: tuple[BoundaryType, ...] = (
     ),
     BoundaryType(
         "trusted",
-        _LOOM_MARKERS_PREFIX,
+        _WEFT_MARKERS_PREFIX,
         1,
         (LevelArg("level", _TRUSTED_LEVELS, default=TaintState.INTEGRAL),),
         _seed_trusted,
@@ -135,7 +135,7 @@ BUILTIN_BOUNDARY_TYPES: tuple[BoundaryType, ...] = (
 # Consistency tripwire: builtin names/group must mirror the released REGISTRY so the
 # two views (REGISTRY = declaration contract; grammar = + seed semantics) cannot drift.
 for _bt in BUILTIN_BOUNDARY_TYPES:
-    if _bt.module_prefix == _LOOM_MARKERS_PREFIX:
+    if _bt.module_prefix == _WEFT_MARKERS_PREFIX:
         continue
     _entry = REGISTRY.get(_bt.canonical_name)
     if _entry is None or _entry.group != _bt.group:  # pragma: no cover

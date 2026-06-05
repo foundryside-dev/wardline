@@ -1,17 +1,17 @@
 """T5.3 — content-hash granularity discipline (the two-granularity invariant).
 
-Loom uses two content-hash granularities for two purposes and NEVER compares
+Weft uses two content-hash granularities for two purposes and NEVER compares
 across them (see `docs/decisions/2026-06-02-wardline-hash-granularity-two-model.md`):
 
-  - whole-file   — taint-store freshness (`content_hash_at_compute` <-> Clarion
+  - whole-file   — taint-store freshness (`content_hash_at_compute` <-> Loomweave
                    `current_file_hash`);
-  - entity-body  — identity / association drift (Clarion resolve `content_hash`
+  - entity-body  — identity / association drift (Loomweave resolve `content_hash`
                    <-> Filigree `content_hash_at_attach`).
 
 The behavioral pieces are pinned elsewhere (the whole-file taint hash in
-`tests/unit/clarion/test_facts.py`; the entity-body drift compare in
+`tests/unit/loomweave/test_facts.py`; the entity-body drift compare in
 `tests/unit/filigree/test_dossier_client.py`; the FRESH/STALE/UNKNOWN truth table
-in `tests/unit/clarion/test_sei_identity.py`). This module locks the two
+in `tests/unit/loomweave/test_sei_identity.py`). This module locks the two
 cross-cutting INVARIANTS that keep them honest:
 
   1. `content_status` never fabricates a verdict — a missing hash is UNKNOWN, never
@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from wardline.clarion.identity import ContentStatus, content_status
+from wardline.loomweave.identity import ContentStatus, content_status
 
 _SRC = Path(__file__).resolve().parents[2] / "src" / "wardline"
 
@@ -49,7 +49,7 @@ def test_content_status_is_only_called_from_the_entity_body_surface() -> None:
     # type level stops a caller passing a WHOLE-FILE hash where an entity-body hash
     # is expected. The only sanctioned live call site is the Filigree drift compare
     # (entity-body vs entity-body). If a new caller appears — especially in a
-    # whole-file context like clarion/facts.py — this reds, forcing a granularity
+    # whole-file context like loomweave/facts.py — this reds, forcing a granularity
     # review (per the T5.3 ADR).
     sanctioned = {"dossier_client.py"}
     offenders: list[str] = []

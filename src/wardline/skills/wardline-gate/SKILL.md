@@ -23,7 +23,7 @@ receive validated data). When untrusted data reaches a trusted producer it raise
 2. **Explain.** For each active defect, call `explain_taint` with the finding's
    `fingerprint`, `path`+`line`, and its `qualname` as `sink_qualname`. Do this
    right after the scan and before editing — a stale fingerprint returns an error.
-   With a Clarion store configured, pass `chain: true` to walk the full taint
+   With a Loomweave store configured, pass `chain: true` to walk the full taint
    chain back to the originating boundary.
 3. **Fix at the BOUNDARY, not the sink.** Add validation or rejection at the hop
    where untrusted data should have been checked — not a band-aid at the sink.

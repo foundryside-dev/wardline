@@ -29,15 +29,15 @@ def test_scan_reads_filigree_url_from_config(tmp_path: Path, monkeypatch) -> Non
     assert captured["scanned_paths"] == ("m.py",)
 
 
-def test_mcp_resolves_clarion_url_from_config(tmp_path: Path, monkeypatch) -> None:
+def test_mcp_resolves_loomweave_url_from_config(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / "wardline.yaml").write_text(
-        'clarion:\n  url: "http://localhost:9000/configured-clarion"\n', encoding="utf-8"
+        'loomweave:\n  url: "http://localhost:9000/configured-loomweave"\n', encoding="utf-8"
     )
     captured: dict[str, object] = {}
 
     class _FakeServer:
-        def __init__(self, *, root: Path, clarion_url: str | None = None, filigree_url: str | None = None) -> None:
-            captured["clarion_url"] = clarion_url
+        def __init__(self, *, root: Path, loomweave_url: str | None = None, filigree_url: str | None = None) -> None:
+            captured["loomweave_url"] = loomweave_url
             captured["filigree_url"] = filigree_url
             self.rpc = self
 
@@ -47,12 +47,12 @@ def test_mcp_resolves_clarion_url_from_config(tmp_path: Path, monkeypatch) -> No
     monkeypatch.setattr("wardline.cli.mcp.WardlineMCPServer", _FakeServer)
     result = CliRunner().invoke(cli, ["mcp", "--root", str(tmp_path)])
     assert result.exit_code == 0, result.output
-    assert captured["clarion_url"] == "http://localhost:9000/configured-clarion"
+    assert captured["loomweave_url"] == "http://localhost:9000/configured-loomweave"
 
 
 def test_install_writes_all_artifacts(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "home"
-    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
     monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
@@ -66,12 +66,12 @@ def test_install_writes_all_artifacts(tmp_path: Path, monkeypatch) -> None:
     assert (tmp_path / ".mcp.json").is_file()
     assert (home / ".codex" / "config.toml").is_file()
     assert "CLAUDE.md" in result.output
-    assert "runtime markers: install `loom-markers` and import from `loom_markers`" in result.output
+    assert "runtime markers: install `weft-markers` and import from `weft_markers`" in result.output
 
 
 def test_install_is_idempotent(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "home"
-    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
     monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
@@ -102,7 +102,7 @@ def test_install_opt_outs(tmp_path: Path, monkeypatch) -> None:
 
 def test_install_no_claude_md_still_writes_agents(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "home"
-    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
     monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
@@ -115,20 +115,20 @@ def test_install_no_claude_md_still_writes_agents(tmp_path: Path, monkeypatch) -
 
 def test_install_summary_includes_binding_lines(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "home"
-    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
     monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
     monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
     result = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
     assert result.exit_code == 0, result.output
-    assert "clarion:" in result.output
+    assert "loomweave:" in result.output
     assert "filigree:" in result.output
 
 
 def test_install_auto_wires_filigree_from_ephemeral_port(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "home"
-    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
     monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
@@ -142,14 +142,14 @@ def test_install_auto_wires_filigree_from_ephemeral_port(tmp_path: Path, monkeyp
 
     assert result.exit_code == 0, result.output
     assert "filigree: wired (discovered URL)" in result.output
-    assert 'filigree:\n  url: "http://localhost:8628/api/loom/scan-results"' in (tmp_path / "wardline.yaml").read_text(
+    assert 'filigree:\n  url: "http://localhost:8628/api/weft/scan-results"' in (tmp_path / "wardline.yaml").read_text(
         encoding="utf-8"
     )
 
 
 def test_install_rerun_wires_filigree_when_port_appears_after_initial_install(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "home"
-    monkeypatch.delenv("WARDLINE_CLARION_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
     monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
@@ -170,7 +170,7 @@ def test_install_rerun_wires_filigree_when_port_appears_after_initial_install(tm
     assert "filigree: wired (discovered URL)" in wired.output
     text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
     assert "# filigree:" not in text
-    assert 'filigree:\n  url: "http://localhost:8628/api/loom/scan-results"' in text
+    assert 'filigree:\n  url: "http://localhost:8628/api/weft/scan-results"' in text
 
     captured: dict[str, object] = {}
 
@@ -189,7 +189,7 @@ def test_install_rerun_wires_filigree_when_port_appears_after_initial_install(tm
     scan = CliRunner().invoke(cli, ["scan", str(tmp_path)])
 
     assert scan.exit_code == 0, scan.output
-    assert captured["url"] == "http://localhost:8628/api/loom/scan-results"
+    assert captured["url"] == "http://localhost:8628/api/weft/scan-results"
     assert captured["scanned_paths"] == ("m.py",)
 
 

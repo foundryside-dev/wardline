@@ -11,11 +11,11 @@ from typing import Any
 
 import click
 
-from wardline.core.config import resolve_clarion_url, resolve_filigree_url
+from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
 from wardline.core.errors import WardlineError
 from wardline.core.filigree_issue import (
     FiligreeIssueFiler,
-    attach_clarion_identity_for_finding,
+    attach_loomweave_identity_for_finding,
     identity_attach_result_to_json,
 )
 
@@ -29,12 +29,17 @@ from wardline.core.filigree_issue import (
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     default=None,
 )
-@click.option("--filigree-url", "filigree_url", default=None, help="Filigree Loom URL (else env/wardline.yaml).")
-@click.option("--clarion-url", "clarion_url", default=None, help="Clarion URL used with --attach-clarion-identity.")
+@click.option("--filigree-url", "filigree_url", default=None, help="Filigree Weft URL (else env/wardline.yaml).")
 @click.option(
-    "--attach-clarion-identity",
+    "--loomweave-url",
+    "loomweave_url",
+    default=None,
+    help="Loomweave URL used with --attach-loomweave-identity.",
+)
+@click.option(
+    "--attach-loomweave-identity",
     is_flag=True,
-    help="After filing, resolve the finding qualname through Clarion and attach a Filigree entity association.",
+    help="After filing, resolve the finding qualname through Loomweave and attach a Filigree entity association.",
 )
 @click.option("--priority", default=None, help="Filigree priority, e.g. P2.")
 @click.option("--label", "labels", multiple=True, help="Label to attach (repeatable).")
@@ -43,8 +48,8 @@ def file_finding(
     path: Path,
     config_path: Path | None,
     filigree_url: str | None,
-    clarion_url: str | None,
-    attach_clarion_identity: bool,
+    loomweave_url: str | None,
+    attach_loomweave_identity: bool,
     priority: str | None,
     labels: tuple[str, ...],
 ) -> None:
@@ -60,25 +65,25 @@ def file_finding(
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
     identity_attach = None
-    if attach_clarion_identity:
+    if attach_loomweave_identity:
         try:
-            resolved_clarion_url = resolve_clarion_url(clarion_url, path, config_path)
-            clarion_client = None
-            if resolved_clarion_url is not None:
-                from wardline.clarion.client import ClarionClient
-                from wardline.clarion.config import load_clarion_token, resolve_project_name
+            resolved_loomweave_url = resolve_loomweave_url(loomweave_url, path, config_path)
+            loomweave_client = None
+            if resolved_loomweave_url is not None:
+                from wardline.loomweave.client import LoomweaveClient
+                from wardline.loomweave.config import load_loomweave_token, resolve_project_name
 
-                clarion_client = ClarionClient(
-                    resolved_clarion_url,
-                    secret=load_clarion_token(path),
+                loomweave_client = LoomweaveClient(
+                    resolved_loomweave_url,
+                    secret=load_loomweave_token(path),
                     project=resolve_project_name(path),
                 )
-            identity_attach = attach_clarion_identity_for_finding(
+            identity_attach = attach_loomweave_identity_for_finding(
                 fingerprint=fingerprint,
                 issue_id=res.issue_id,
                 root=path,
                 filer=filer,
-                clarion_client=clarion_client,
+                loomweave_client=loomweave_client,
                 config_path=config_path,
             )
         except WardlineError as exc:

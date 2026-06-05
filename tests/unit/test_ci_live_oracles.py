@@ -17,14 +17,14 @@ def test_ci_exposes_scheduled_and_manual_live_oracles() -> None:
     assert "run: uv run pytest -m network -v" in workflow
     for key in (
         "WARDLINE_OPENROUTER_API_KEY",
-        "WARDLINE_CLARION_BIN",
+        "WARDLINE_LOOMWEAVE_BIN",
         "WARDLINE_LEGIS_URL",
         "WARDLINE_FILIGREE_URL",
     ):
         assert f"{key}: ${{{{ secrets.{key} }}}}" in workflow
     assert f'{LIVE_ORACLE_REQUIRED_ENV}: "1"' in workflow
     assert "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'" in workflow
-    for marker in ("clarion_e2e", "legis_e2e", "filigree_e2e"):
+    for marker in ("loomweave_e2e", "legis_e2e", "filigree_e2e"):
         assert "-m ${{ matrix.marker }}" in workflow
         assert marker in workflow
     assert "GITHUB_STEP_SUMMARY" in workflow

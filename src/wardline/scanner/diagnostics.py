@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 _BUILTIN_MARKER_IMPORTS: dict[str, frozenset[str]] = {
     "wardline.decorators": frozenset({"external_boundary", "trust_boundary", "trusted"}),
     "wardline.decorators.trust": frozenset({"external_boundary", "trust_boundary", "trusted"}),
-    "loom_markers": frozenset({"external_boundary", "trust_boundary", "trusted"}),
+    "weft_markers": frozenset({"external_boundary", "trust_boundary", "trusted"}),
 }
 
 # Declarative native / first-party module prefixes. An import whose dotted module

@@ -2,7 +2,7 @@
 """`wardline findings` — read-only: scan and print filtered findings as JSONL.
 
 The CLI counterpart of the MCP `scan(where=)` query, sharing core/finding_query
-so the capability is identical across surfaces. No file output, no Filigree/Clarion
+so the capability is identical across surfaces. No file output, no Filigree/Loomweave
 emission — a pure read lens for an agent driving the CLI."""
 
 from __future__ import annotations

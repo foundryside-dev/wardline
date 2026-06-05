@@ -9,11 +9,11 @@
 ## Context
 
 Wardline is about to migrate its analysis **core** to a Rust implementation
-(likely parsing with `ruff_python_ast`). Downstream Loom peers key on Wardline's
+(likely parsing with `ruff_python_ast`). Downstream Weft peers key on Wardline's
 externally-observable *identity*:
 
 - **Filigree** associates issues to findings by `fingerprint`.
-- **Clarion** binds taint facts to entities by `qualname` (and consumes the
+- **Loomweave** binds taint facts to entities by `qualname` (and consumes the
   whole taint-fact payload byte-wise).
 - SARIF consumers (GitHub Code Scanning) dedupe on
   `partialFingerprints.wardlineFingerprint/v1`.
@@ -126,6 +126,6 @@ pass unchanged.** Concretely:
 - `tests/golden/identity/` — `_capture.py` (harness), `corpus/` (frozen),
   `test_identity_parity.py` (gate + non-vacuity + hygiene), `regen.py`, `README.md`.
 - `src/wardline/core/finding.py` — `compute_finding_fingerprint`, `Finding.to_jsonl`.
-- `src/wardline/core/{run,sarif,assure,explain}.py`, `src/wardline/clarion/facts.py`
+- `src/wardline/core/{run,sarif,assure,explain}.py`, `src/wardline/loomweave/facts.py`
   — the reused capture entry points.
 - `.gitattributes` — fixture LF pinning / corpus binary treatment.

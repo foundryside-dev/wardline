@@ -1,6 +1,6 @@
 """legis intake conformance (hermetic, always-on) — the FAITHFUL contract guard.
 
-legis (the Loom governance plugin) ingests a Wardline scan and governs; it NEVER
+legis (the Weft governance plugin) ingests a Wardline scan and governs; it NEVER
 re-analyses, and it is a FIXED external contract. This test pins the wire Wardline
 *emits* against legis's documented ingest — `legis/src/legis/wardline/ingest.py` and
 `enforcement/signing.py` / `canonical.py`, faithfully **vendored below** so this test

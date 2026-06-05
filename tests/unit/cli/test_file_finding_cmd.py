@@ -19,7 +19,7 @@ def test_file_finding_prints_issue_id(tmp_path, monkeypatch):
             return FileResult(reachable=True, issue_id="wardline-xyz", created=True)
 
     monkeypatch.setattr(mod, "FiligreeIssueFiler", FakeFiler)
-    monkeypatch.setattr(mod, "resolve_filigree_url", lambda flag, root, cfg: "http://h/api/loom/scan-results")
+    monkeypatch.setattr(mod, "resolve_filigree_url", lambda flag, root, cfg: "http://h/api/weft/scan-results")
     res = CliRunner().invoke(mod.file_finding, ["fp1", str(tmp_path)])
     assert res.exit_code == 0
     assert json.loads(res.output)["issue_id"] == "wardline-xyz"
@@ -47,7 +47,7 @@ def test_file_finding_loud_4xx_exits_2_no_traceback(tmp_path, monkeypatch):
             raise FiligreeEmitError("Filigree rejected promote (400) at ...: bad payload")
 
     monkeypatch.setattr(mod, "FiligreeIssueFiler", FakeFiler)
-    monkeypatch.setattr(mod, "resolve_filigree_url", lambda flag, root, cfg: "http://h/api/loom/scan-results")
+    monkeypatch.setattr(mod, "resolve_filigree_url", lambda flag, root, cfg: "http://h/api/weft/scan-results")
     res = CliRunner().invoke(mod.file_finding, ["fp1", str(tmp_path)])
     assert res.exit_code == 2
     assert "error:" in res.output
@@ -56,7 +56,7 @@ def test_file_finding_loud_4xx_exits_2_no_traceback(tmp_path, monkeypatch):
     assert not isinstance(res.exception, FiligreeEmitError)
 
 
-def test_file_finding_can_attach_clarion_identity(tmp_path, monkeypatch):
+def test_file_finding_can_attach_loomweave_identity(tmp_path, monkeypatch):
     from wardline.cli import file_finding as mod
 
     class FakeFiler:
@@ -67,19 +67,19 @@ def test_file_finding_can_attach_clarion_identity(tmp_path, monkeypatch):
             return FileResult(reachable=True, issue_id="wardline-xyz", created=True)
 
     monkeypatch.setattr(mod, "FiligreeIssueFiler", FakeFiler)
-    monkeypatch.setattr(mod, "resolve_filigree_url", lambda flag, root, cfg: "http://h/api/loom/scan-results")
-    monkeypatch.setattr(mod, "resolve_clarion_url", lambda flag, root, cfg: "http://clarion")
+    monkeypatch.setattr(mod, "resolve_filigree_url", lambda flag, root, cfg: "http://h/api/weft/scan-results")
+    monkeypatch.setattr(mod, "resolve_loomweave_url", lambda flag, root, cfg: "http://loomweave")
     monkeypatch.setattr(
         mod,
-        "attach_clarion_identity_for_finding",
+        "attach_loomweave_identity_for_finding",
         lambda **kw: IdentityAttachResult.success(
-            entity_id="clarion:eid:abc",
+            entity_id="loomweave:eid:abc",
             content_hash="hash-v1",
             binding_kind="sei",
         ),
     )
 
-    res = CliRunner().invoke(mod.file_finding, ["fp1", str(tmp_path), "--attach-clarion-identity"])
+    res = CliRunner().invoke(mod.file_finding, ["fp1", str(tmp_path), "--attach-loomweave-identity"])
 
     assert res.exit_code == 0
     payload = json.loads(res.output)
@@ -87,7 +87,7 @@ def test_file_finding_can_attach_clarion_identity(tmp_path, monkeypatch):
     assert payload["identity_attach"] == {
         "attempted": True,
         "attached": True,
-        "entity_id": "clarion:eid:abc",
+        "entity_id": "loomweave:eid:abc",
         "content_hash": "hash-v1",
         "binding_kind": "sei",
         "reason": None,

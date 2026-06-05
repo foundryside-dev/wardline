@@ -1,6 +1,6 @@
 # Signed scan handoff to legis
 
-[legis](loom.md) is the Loom suite's governance plugin. An agent runs a Wardline
+[legis](weft.md) is the Weft suite's governance plugin. An agent runs a Wardline
 scan and hands the result to legis at `POST /wardline/scan-results`; legis
 **governs** that scan — routes its active defects into the enforcement model — and
 **never re-analyses**. Wardline is the one judge; legis carries the verdict.
@@ -147,7 +147,7 @@ the wire strictly where Wardline's rich finding shape is loose:
   `UNKNOWN_GUARDED`, `UNKNOWN_ASSURED`, `MIXED_RAW`) and rejects any property value
   that is not one of them. Wardline also stores analysis diagnostics in `properties`
   (`sink`, `callee`, `markers`, …); those are **not** part of the trust grammar and
-  are dropped from the legis wire. The rich MCP / SARIF / Clarion output keeps them.
+  are dropped from the legis wire. The rich MCP / SARIF / Loomweave output keeps them.
 * **Suppression proof travels in `properties`.** A non-active defect carries its
   `suppression_reason` (synthesised if absent) as a proof entry legis requires.
 * **Suppression states are mapped.** Wardline's `baselined` and `judged` both ride

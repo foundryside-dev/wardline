@@ -30,7 +30,7 @@ def _default_filigree_status() -> dict[str, Any]:
     }
 
 
-def _default_clarion_status() -> dict[str, Any]:
+def _default_loomweave_status() -> dict[str, Any]:
     return {
         "configured": False,
         "reachable": None,
@@ -45,7 +45,7 @@ class AgentSummary:
     result: ScanResult
     gate: GateDecision
     filigree_emit: dict[str, Any] = field(default_factory=_default_filigree_status)
-    clarion_write: dict[str, Any] = field(default_factory=_default_clarion_status)
+    loomweave_write: dict[str, Any] = field(default_factory=_default_loomweave_status)
 
     def to_dict(self) -> dict[str, Any]:
         active_defects = [_finding_entry(f, include_next=True) for f in _active_defects(self.result.findings)]
@@ -71,7 +71,7 @@ class AgentSummary:
             },
             "integrations": {
                 "filigree_emit": dict(self.filigree_emit),
-                "clarion_write": dict(self.clarion_write),
+                "loomweave_write": dict(self.loomweave_write),
             },
             "active_defects": active_defects,
             "suppressed_findings": suppressed,
@@ -161,11 +161,11 @@ def build_agent_summary(
     gate: GateDecision,
     *,
     filigree_emit: dict[str, Any] | None = None,
-    clarion_write: dict[str, Any] | None = None,
+    loomweave_write: dict[str, Any] | None = None,
 ) -> AgentSummary:
     return AgentSummary(
         result=result,
         gate=gate,
         filigree_emit=filigree_emit or _default_filigree_status(),
-        clarion_write=clarion_write or _default_clarion_status(),
+        loomweave_write=loomweave_write or _default_loomweave_status(),
     )

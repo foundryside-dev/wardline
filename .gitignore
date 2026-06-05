@@ -16,7 +16,7 @@ site/
 # Wardline runtime output
 findings.jsonl
 .wardline-cache/
-.clarion
+.loomweave
 
 # Filigree issue tracker
 .filigree/

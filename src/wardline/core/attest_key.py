@@ -1,7 +1,7 @@
 # src/wardline/core/attest_key.py
 """Attest signing-key mint and load.  The secret lives in ``.env`` (conventionally
 gitignored) and is never written into any committed file under ``.wardline/``.
-Mirrors the discipline of :mod:`wardline.clarion.config.load_clarion_token`.
+Mirrors the discipline of :mod:`wardline.loomweave.config.load_loomweave_token`.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ def load_attest_key(root: Path) -> str | None:
     """Return the attest signing secret from the environment, or a
     ``WARDLINE_ATTEST_KEY=<value>`` line in ``root/.env``, or None.
     An already-set environment value always wins.  Mirrors
-    :func:`wardline.clarion.config.load_clarion_token`."""
+    :func:`wardline.loomweave.config.load_loomweave_token`."""
     value = os.environ.get(WARDLINE_ATTEST_KEY_ENV)
     if value:
         return value

@@ -1,6 +1,6 @@
 """Deterministic identity-capture harness for the parity oracle (Task A).
 
-Captures every *identity-bearing* output a Loom peer keys on, canonicalized so
+Captures every *identity-bearing* output a Weft peer keys on, canonicalized so
 re-running yields byte-identical JSON: stable named-array sorts, ``sort_keys``,
 no absolute paths / timestamps / host data. Scans are rooted AT the fixture dir
 so a finding ``path`` (and thus its fingerprint) is relative and
@@ -27,12 +27,12 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from wardline.clarion.facts import build_taint_facts
 from wardline.core.assure import build_posture
 from wardline.core.explain import explanation_from_context
 from wardline.core.finding import Finding, Kind
 from wardline.core.run import run_scan
 from wardline.core.sarif import build_sarif
+from wardline.loomweave.facts import build_taint_facts
 
 _VERSION_SENTINEL = "<normalized>"
 
@@ -72,7 +72,7 @@ def _capture_findings(result: Any) -> list[dict[str, Any]]:
 
 
 def _capture_facts(result: Any, root: Path) -> list[dict[str, Any]]:
-    # build_taint_facts is the exact Clarion payload; freeze it whole, but impose
+    # build_taint_facts is the exact Loomweave payload; freeze it whole, but impose
     # a total order it does not guarantee (it emits in analyzer entity-insertion
     # order, a Python-walker artifact a Rust engine won't reproduce).
     facts = build_taint_facts(result, root)

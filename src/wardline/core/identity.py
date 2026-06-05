@@ -1,6 +1,6 @@
 """Neutral cross-tool identity and freshness types.
 
-These types are provider-agnostic: Clarion may resolve them, Filigree may bind work
+These types are provider-agnostic: Loomweave may resolve them, Filigree may bind work
 to them, and the dossier core may report them, but none of those consumers owns the
 model.
 """

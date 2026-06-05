@@ -1,12 +1,12 @@
 # Trust-vocabulary convergence
 
-Loom has **one trust vocabulary and one judge**: Wardline *analyses* trust;
-**legis** (the Loom governance plugin) *governs* it. This page records a deliberate
+Weft has **one trust vocabulary and one judge**: Wardline *analyses* trust;
+**legis** (the Weft governance plugin) *governs* it. This page records a deliberate
 common-sense sweep (Track 5, T5.1) of the trust ideas that inspired Wardline's
 model — chiefly the *effects* of a tiered `@trust_boundary` discipline — checking
 that the suite delivers the useful ones and explicitly declining the rest. It is
 a gap-check, not a feature: the conclusion is that the useful effects are already
-delivered, in Loom's own terms.
+delivered, in Weft's own terms.
 
 ## One judge, one vocabulary
 
@@ -25,16 +25,16 @@ Wardline's; legis reasons about governance on top of them.
 ## The sweep: keep / adopt / drop
 
 Each row is an effect from the tiered-trust-boundary lineage, with a verdict and
-the Loom mechanism that delivers it (or the reason it is declined).
+the Weft mechanism that delivers it (or the reason it is declined).
 
-| Effect / idea | Verdict | Loom mechanism (or reason) |
+| Effect / idea | Verdict | Weft mechanism (or reason) |
 |---|---|---|
 | **Fabrication test** — a trust boundary must be able to say *no* (reject), or it isn't a boundary | **Covered** | **PY-WL-102** (`boundary_without_rejection`): a `@trust_boundary` with no rejection path is flagged — it cannot say no, so it cannot be trusted to raise trust |
 | **Custody / provenance** — trust is earned and tracked, never assumed | **Covered** | the trust **lattice** (a value is only as trusted as its least-trusted contributor; `least_trusted` weakest-link meet) + `taint_provenance` (source + contributing callee), carried on every finding and in the dossier |
 | **Fail-closed boundaries** — what cannot be proven is not trusted | **Covered** | the `UNKNOWN_*` states + observable `WLN-ENGINE-*` FACTs; a custom boundary the engine cannot prove seeds `UNKNOWN_RAW` and emits `WLN-ENGINE-UNPROVABLE-BOUNDARY` (T2.4) — the extension plane inherits the no-false-green guarantee |
-| **Tiered boundary** — a validated boundary *raises* trust to a named tier | **Covered** | `@trust_boundary(to_level=GUARDED\|ASSURED)` — named Loom levels rather than integer tiers, the same "raise trust at a validated boundary" effect expressed in the lattice |
+| **Tiered boundary** — a validated boundary *raises* trust to a named tier | **Covered** | `@trust_boundary(to_level=GUARDED\|ASSURED)` — named Weft levels rather than integer tiers, the same "raise trust at a validated boundary" effect expressed in the lattice |
 | **One judge** — governance reads the analyzer's verdict, it does not re-judge | **Covered** | legis ingests Wardline findings/gate and governs; the conformance tests prove legis's gate population reproduces Wardline's own `active` count without re-derivation |
-| **A separate `tier=` integer decorator** | **Dropped** | redundant with named levels; adding a second spelling would fork the one vocabulary. Loom uses named tiers (`to_level=`), full stop |
+| **A separate `tier=` integer decorator** | **Dropped** | redundant with named levels; adding a second spelling would fork the one vocabulary. Weft uses named tiers (`to_level=`), full stop |
 | **A new worked custom-boundary example for this page** | **Dropped (cite existing)** | the T2 extension plane already ships one — see below — so a second would be duplicate apparatus |
 
 Nothing in the sweep is **Adopt** (useful + genuinely missing): the useful
@@ -62,7 +62,7 @@ SANITIZED = BoundaryType(
 GRAMMAR = default_grammar().extend(boundary_types=(SANITIZED,), rules=(SanitizerReturnsRaw,))
 ```
 
-A custom `@myproj.trust.sanitized(to_level=ASSURED)` raises trust to a Loom tier,
+A custom `@myproj.trust.sanitized(to_level=ASSURED)` raises trust to a Weft tier,
 is policed by a custom rule (`MYPROJ-001`), and — if its required level cannot be
 proven — fails closed with `WLN-ENGINE-UNPROVABLE-BOUNDARY`. The builtins remain
 byte-identical (a corpus golden enforces it). This is the convergence in

@@ -11,14 +11,13 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from wardline.clarion.config import load_clarion_token
 from wardline.core.config import load
 from wardline.core.errors import ConfigError
 from wardline.install.block import inject_block
 from wardline.install.detect import (
     _already_recorded,
-    _detect_clarion,
     _detect_filigree,
+    _detect_loomweave,
     _has_install_marker,
     _has_live_key,
     record_bindings,
@@ -31,6 +30,7 @@ from wardline.install.mcp_json import (
     merge_mcp_entry,
 )
 from wardline.install.skill import install_skill
+from wardline.loomweave.config import load_loomweave_token
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,7 +106,7 @@ def _check_bindings(root: Path) -> CheckResult:
     cfg = root / "wardline.yaml"
     text = cfg.read_text(encoding="utf-8", errors="replace") if cfg.is_file() else ""
     missing: list[str] = []
-    for key, detector in (("clarion", _detect_clarion), ("filigree", _detect_filigree)):
+    for key, detector in (("loomweave", _detect_loomweave), ("filigree", _detect_filigree)):
         present, url, _source = detector(root)
         if not present:
             continue
@@ -163,12 +163,12 @@ def _valid_http_url(url: str) -> bool:
 
 def _config_url(root: Path, key: str) -> str | None:
     cfg = load(root / "wardline.yaml")
-    value = cfg.clarion_url if key == "clarion" else cfg.filigree_url
+    value = cfg.loomweave_url if key == "loomweave" else cfg.filigree_url
     return value
 
 
 def _check_url(root: Path, key: str, *, fixed: bool) -> DoctorCheck:
-    env_key = "WARDLINE_CLARION_URL" if key == "clarion" else "WARDLINE_FILIGREE_URL"
+    env_key = "WARDLINE_LOOMWEAVE_URL" if key == "loomweave" else "WARDLINE_FILIGREE_URL"
     url = os.environ.get(env_key) or _config_url(root, key)
     check_id = f"{key}.url"
     if not url:
@@ -185,7 +185,7 @@ def _check_decorator_grammar() -> DoctorCheck:
     except Exception as exc:
         return DoctorCheck("decorator_grammar", "error", message=f"cannot load grammar: {exc}")
 
-    expected = {("wardline.decorators", name) for name in REGISTRY} | {("loom_markers", name) for name in REGISTRY}
+    expected = {("wardline.decorators", name) for name in REGISTRY} | {("weft_markers", name) for name in REGISTRY}
     actual = {(bt.module_prefix, bt.canonical_name) for bt in BUILTIN_BOUNDARY_TYPES}
     missing = sorted(expected - actual)
     if missing:
@@ -206,12 +206,12 @@ def _check_scan_output_path(root: Path) -> DoctorCheck:
 
 def _check_auth_token(root: Path) -> DoctorCheck:
     try:
-        token = load_clarion_token(root)
+        token = load_loomweave_token(root)
     except OSError as exc:
         return DoctorCheck("auth.token", "error", message=f"cannot read auth token wiring: {exc}")
     if token:
         return DoctorCheck("auth.token", "ok")
-    return DoctorCheck("auth.token", "ok", message="optional Clarion token not configured")
+    return DoctorCheck("auth.token", "ok", message="optional Loomweave token not configured")
 
 
 def machine_readable_doctor(root: Path, *, fix: bool = False) -> dict[str, Any]:
@@ -227,9 +227,9 @@ def machine_readable_doctor(root: Path, *, fix: bool = False) -> dict[str, Any]:
     checks.append(_check_mcp_registration(root, before=before))
     checks.append(_check_marker_package())
     try:
-        checks.append(_check_url(root, "clarion", fixed=bindings_fixed))
+        checks.append(_check_url(root, "loomweave", fixed=bindings_fixed))
     except ConfigError as exc:
-        checks.append(DoctorCheck("clarion.url", "error", message=str(exc)))
+        checks.append(DoctorCheck("loomweave.url", "error", message=str(exc)))
     try:
         checks.append(_check_url(root, "filigree", fixed=bindings_fixed))
     except ConfigError as exc:

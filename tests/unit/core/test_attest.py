@@ -429,17 +429,17 @@ def test_dirty_tree_refusal(tmp_path: Path) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 6. SEI enrichment (optional, behind a lazy Clarion import)
+# 6. SEI enrichment (optional, behind a lazy Loomweave import)
 # --------------------------------------------------------------------------- #
-from wardline.clarion.client import ResolveResult  # noqa: E402 — kept with the SEI tests it serves
+from wardline.loomweave.client import ResolveResult  # noqa: E402 — kept with the SEI tests it serves
 
-_SEI = "clarion:eid:00112233445566778899aabbccddeeff"
+_SEI = "loomweave:eid:00112233445566778899aabbccddeeff"
 
 
-class _FakeClarion:
-    """A Clarion double that resolves exactly ONE qualname to an SEI.
+class _FakeLoomweave:
+    """A Loomweave double that resolves exactly ONE qualname to an SEI.
 
-    Mirrors ``tests/unit/core/test_loom_dossier.py``'s fake but is SELECTIVE: only the
+    Mirrors ``tests/unit/core/test_weft_dossier.py``'s fake but is SELECTIVE: only the
     ``hit`` qualname resolves to a locator (others land in ``unresolved`` → no binding →
     ``sei=None``), so the "other boundaries stay None" assertion is real."""
 
@@ -462,19 +462,19 @@ class _FakeClarion:
         return {"alive": True}
 
 
-class _RaisingClarion(_FakeClarion):
+class _RaisingLoomweave(_FakeLoomweave):
     """capabilities() raises → the WHOLE enrichment degrades to unavailable, never crashes."""
 
     def capabilities(self) -> dict[str, object]:
-        raise RuntimeError("clarion unreachable")
+        raise RuntimeError("loomweave unreachable")
 
 
 def test_sei_keyed_bundle_fills_resolved_boundary_only(tmp_path: Path) -> None:
     tree = _annotated_tree(tmp_path)
-    bundle = build_attestation(tree, _KEY, clarion_client=_FakeClarion(hit="m.leak"), today=_PINNED)
+    bundle = build_attestation(tree, _KEY, loomweave_client=_FakeLoomweave(hit="m.leak"), today=_PINNED)
 
     payload = bundle["payload"]
-    assert payload["sei_source"] == "clarion"
+    assert payload["sei_source"] == "loomweave"
     by_qn = {b["qualname"]: b for b in payload["boundaries"]}
     assert by_qn["m.leak"]["sei"] == _SEI  # the one resolvable qualname is keyed
     assert by_qn["m.clean"]["sei"] is None  # unresolved → honestly None
@@ -483,10 +483,10 @@ def test_sei_keyed_bundle_fills_resolved_boundary_only(tmp_path: Path) -> None:
 
 
 def test_sei_enrichment_is_fail_soft(tmp_path: Path) -> None:
-    """Attestation must never fail because Clarion is unreachable: a raising client
+    """Attestation must never fail because Loomweave is unreachable: a raising client
     degrades to every ``sei=None`` and ``sei_source == "unavailable"``."""
     tree = _annotated_tree(tmp_path)
-    bundle = build_attestation(tree, _KEY, clarion_client=_RaisingClarion(), today=_PINNED)
+    bundle = build_attestation(tree, _KEY, loomweave_client=_RaisingLoomweave(), today=_PINNED)
 
     payload = bundle["payload"]
     assert payload["sei_source"] == "unavailable"
@@ -494,7 +494,7 @@ def test_sei_enrichment_is_fail_soft(tmp_path: Path) -> None:
     assert verify_attestation(bundle, _KEY)["signature_valid"] is True
 
 
-def test_no_clarion_client_is_unavailable(tmp_path: Path) -> None:
+def test_no_loomweave_client_is_unavailable(tmp_path: Path) -> None:
     tree = _annotated_tree(tmp_path)
     bundle = build_attestation(tree, _KEY, today=_PINNED)
 
@@ -508,9 +508,11 @@ def test_sei_keyed_bundle_reproducibility(tmp_path: Path) -> None:
     a client the boundaries re-derive with ``sei=None`` so ``reproduced`` is honestly False,
     while ``signature_valid`` stays True (the signature is over the recorded payload)."""
     tree = _annotated_tree(tmp_path)
-    bundle = build_attestation(tree, _KEY, clarion_client=_FakeClarion(hit="m.leak"), today=_PINNED)
+    bundle = build_attestation(tree, _KEY, loomweave_client=_FakeLoomweave(hit="m.leak"), today=_PINNED)
 
-    with_client = verify_attestation(bundle, _KEY, root=tree, reproduce=True, clarion_client=_FakeClarion(hit="m.leak"))
+    with_client = verify_attestation(
+        bundle, _KEY, root=tree, reproduce=True, loomweave_client=_FakeLoomweave(hit="m.leak")
+    )
     assert with_client["signature_valid"] is True
     assert with_client["reproduced"] is True
     assert with_client["mismatches"] == []

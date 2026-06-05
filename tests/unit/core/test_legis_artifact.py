@@ -16,7 +16,7 @@ finding wire violates:
 All three were reproduced against the real legis before this test was written
 (``unsupported suppression state``, ``invalid trust tier``, ``must carry
 suppression proof``). The signed artifact is therefore a *typed projection* of the
-defect population onto legis's accepted vocabulary; the rich MCP/SARIF/Clarion wire
+defect population onto legis's accepted vocabulary; the rich MCP/SARIF/Loomweave wire
 is unchanged. This module pins the projection and the byte-exact signature.
 """
 

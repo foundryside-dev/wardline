@@ -1,16 +1,16 @@
 # src/wardline/core/qualname.py
-"""Clarion-aligned qualname computation (stdlib-only).
+"""Loomweave-aligned qualname computation (stdlib-only).
 
-Implements the qualname PRODUCER contract from the Loom integration brief
-(§"Clarion (Python plugin) — qualname PRODUCER contract"). Wardline emits
+Implements the qualname PRODUCER contract from the Weft integration brief
+(§"Loomweave (Python plugin) — qualname PRODUCER contract"). Wardline emits
 ``metadata.wardline.qualname`` as ``f"{module_dotted_name(path)}.{__qualname__}"``;
-this module is the single source of truth for both halves so finding-to-Clarion
+this module is the single source of truth for both halves so finding-to-Loomweave
 entity reconciliation stays lossless. A shared conformance corpus
 (``tests/conformance/qualnames.json``) pins the behavior on both sides.
 
 This deliberately does NOT match ``wardline.old``'s ``_qualnames.py``: that
 emits ``outer.inner`` (no ``<locals>``), lacks overload/property-dedup handling,
-and adds descriptor-accessor suffixing that Clarion does not. Do not port it.
+and adds descriptor-accessor suffixing that Loomweave does not. Do not port it.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ def module_dotted_name(rel_path: str) -> str | None:
     None means the path maps to no module (a top-level ``__init__.py``); callers
     must emit no entities for such a file.
 
-    Rules (byte-for-byte with Clarion's ``extractor.module_dotted_name``):
+    Rules (byte-for-byte with Loomweave's ``extractor.module_dotted_name``):
       1. Strip exactly one leading ``src/`` *component* (not a ``src`` prefix of
          a filename).
       2. Drop the ``.py`` suffix.

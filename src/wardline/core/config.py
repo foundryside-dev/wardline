@@ -35,7 +35,7 @@ class WardlineConfig:
     waivers: tuple[Mapping[str, Any], ...] = ()
     judge: Mapping[str, Any] = field(default_factory=dict)
     filigree: Mapping[str, Any] = field(default_factory=dict)
-    clarion: Mapping[str, Any] = field(default_factory=dict)
+    loomweave: Mapping[str, Any] = field(default_factory=dict)
     packs: tuple[str, ...] = ()
     pack_modules: Mapping[str, Any] = field(default_factory=dict)
     untrusted_sources: tuple[str, ...] = ()
@@ -49,8 +49,8 @@ class WardlineConfig:
         return validate_boundary_exception_name(value) if isinstance(value, str) else "ValueError"
 
     @property
-    def clarion_url(self) -> str | None:
-        value = self.clarion.get("url")
+    def loomweave_url(self) -> str | None:
+        value = self.loomweave.get("url")
         return value if isinstance(value, str) else None
 
     @property
@@ -221,7 +221,7 @@ def load(
         waivers=tuple(merged_raw.get("waivers") or ()),
         judge=dict(merged_raw.get("judge") or {}),
         filigree=dict(merged_raw.get("filigree") or {}),
-        clarion=dict(merged_raw.get("clarion") or {}),
+        loomweave=dict(merged_raw.get("loomweave") or {}),
         packs=tuple(packs),
         pack_modules=pack_modules,
         untrusted_sources=tuple(merged_raw.get("untrusted_sources") or ()),
@@ -231,7 +231,7 @@ def load(
     )
 
 
-_CLARION_URL_ENV = "WARDLINE_CLARION_URL"
+_LOOMWEAVE_URL_ENV = "WARDLINE_LOOMWEAVE_URL"
 _FILIGREE_URL_ENV = "WARDLINE_FILIGREE_URL"
 
 
@@ -268,7 +268,7 @@ def _is_safe_url(url: str | None) -> bool:
     return False
 
 
-def resolve_clarion_url(
+def resolve_loomweave_url(
     flag: str | None,
     root: Path,
     config_path: Path | None = None,
@@ -278,10 +278,10 @@ def resolve_clarion_url(
     trust_config_urls: bool = False,
     strict_defaults: bool = False,
 ) -> str | None:
-    """Clarion URL by precedence: explicit flag > env var > wardline.yaml."""
+    """Loomweave URL by precedence: explicit flag > env var > wardline.yaml."""
     if flag is not None:
         return flag
-    env = os.environ.get(_CLARION_URL_ENV)
+    env = os.environ.get(_LOOMWEAVE_URL_ENV)
     if env:
         return env
     url = _config_for(
@@ -290,10 +290,10 @@ def resolve_clarion_url(
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
-    ).clarion_url
+    ).loomweave_url
     if url and not trust_config_urls and not _is_safe_url(url):
         raise ConfigError(
-            f"Loading Clarion URL {url!r} from project config is disabled by default for security. "
+            f"Loading Loomweave URL {url!r} from project config is disabled by default for security. "
             "Specify the URL via command-line flags, environment variables, or allow local config URLs."
         )
     return url
@@ -309,7 +309,7 @@ def resolve_filigree_url(
     trust_config_urls: bool = False,
     strict_defaults: bool = False,
 ) -> str | None:
-    """Filigree Loom URL by precedence: explicit flag > env var > wardline.yaml."""
+    """Filigree Weft URL by precedence: explicit flag > env var > wardline.yaml."""
     if flag is not None:
         return flag
     env = os.environ.get(_FILIGREE_URL_ENV)

@@ -1,4 +1,4 @@
 {
   "corpus_version": 1,
-  "reason": "Harness hardening (code review): add total sort-key tiebreaker, freeze entity_spans for all entities (brief #1 span-divergence risk), float caveat"
+  "reason": "Federation rebrand: corpus docstring brand text changed the whole-file content_hash (no identity/structure change)"
 }

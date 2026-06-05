@@ -16,7 +16,7 @@ only (`PY-WL-* ∧ Kind.DEFECT`) plus the peer-consumed payloads:
 - **entity_spans** — qualname + full span (`line_start`/`line_end`/`col_start`/
   `col_end`) of **every** analyzed entity, so the parser's span rendering is
   frozen even for constructs that produce no finding (the brief's #1 risk).
-- **taint facts** — `build_taint_facts(result, root)`, the exact Clarion payload
+- **taint facts** — `build_taint_facts(result, root)`, the exact Loomweave payload
   (sorted by `qualname`; inner findings sorted).
 - **SARIF** — `build_sarif(...)` with the mutable `driver.version` normalised to
   `<normalized>` and `ruleIndex` dropped (recoverable from `ruleId`); `codeFlows`

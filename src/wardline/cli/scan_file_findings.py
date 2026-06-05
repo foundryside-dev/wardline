@@ -7,13 +7,13 @@ from pathlib import Path
 
 import click
 
-from wardline.clarion.client import ClarionClient
-from wardline.clarion.config import load_clarion_token, resolve_project_name
-from wardline.core.config import resolve_clarion_url, resolve_filigree_url
+from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
 from wardline.core.errors import WardlineError
 from wardline.core.filigree_emit import FiligreeEmitter
 from wardline.core.filigree_issue import FiligreeIssueFiler
 from wardline.core.scan_file_workflow import scan_file_findings as scan_file_findings_core
+from wardline.loomweave.client import LoomweaveClient
+from wardline.loomweave.config import load_loomweave_token, resolve_project_name
 
 
 @click.command(name="scan-file-findings")
@@ -21,8 +21,8 @@ from wardline.core.scan_file_workflow import scan_file_findings as scan_file_fin
 @click.option("--config", "config_path", type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
 @click.option("--fail-on", type=click.Choice(["CRITICAL", "ERROR", "WARN", "INFO"]), default=None)
 @click.option("--cache-dir", type=click.Path(path_type=Path), default=None)
-@click.option("--filigree-url", "filigree_url", default=None, help="Filigree Loom URL (else env/wardline.yaml).")
-@click.option("--clarion-url", "clarion_url", default=None, help="Clarion URL for optional identity attachment.")
+@click.option("--filigree-url", "filigree_url", default=None, help="Filigree Weft URL (else env/wardline.yaml).")
+@click.option("--loomweave-url", "loomweave_url", default=None, help="Loomweave URL for optional identity attachment.")
 @click.option("--fingerprint", "fingerprints", multiple=True, help="Active finding fingerprint to promote.")
 @click.option("--all-active", is_flag=True, help="Promote every active defect from this scan.")
 @click.option("--dry-run", is_flag=True, help="Only summarize active defects; do not emit or promote.")
@@ -37,7 +37,7 @@ def scan_file_findings(
     fail_on: str | None,
     cache_dir: Path | None,
     filigree_url: str | None,
-    clarion_url: str | None,
+    loomweave_url: str | None,
     fingerprints: tuple[str, ...],
     all_active: bool,
     dry_run: bool,
@@ -58,8 +58,8 @@ def scan_file_findings(
             trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,
         )
-        resolved_clarion_url = resolve_clarion_url(
-            clarion_url,
+        resolved_loomweave_url = resolve_loomweave_url(
+            loomweave_url,
             path,
             config_path,
             trust_local_packs=trust_local_packs,
@@ -72,11 +72,11 @@ def scan_file_findings(
             filigree_emitter = FiligreeEmitter(resolved_filigree_url)
             filigree_filer = FiligreeIssueFiler(resolved_filigree_url)
 
-        clarion_client = None
-        if resolved_clarion_url is not None:
-            clarion_client = ClarionClient(
-                resolved_clarion_url,
-                secret=load_clarion_token(path),
+        loomweave_client = None
+        if resolved_loomweave_url is not None:
+            loomweave_client = LoomweaveClient(
+                resolved_loomweave_url,
+                secret=load_loomweave_token(path),
                 project=resolve_project_name(path),
             )
         result = scan_file_findings_core(
@@ -94,7 +94,7 @@ def scan_file_findings(
             labels=labels,
             filigree_emitter=filigree_emitter,
             filigree_filer=filigree_filer,
-            clarion_client=clarion_client,
+            loomweave_client=loomweave_client,
         )
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)

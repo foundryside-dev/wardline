@@ -1,7 +1,7 @@
 import blake3
 
-from wardline.clarion.client import TaintFactView
 from wardline.core.explain import explain_chain
+from wardline.loomweave.client import TaintFactView
 
 # A 3-hop leaky chain: leaky -> mid -> read_raw (boundary leaf).
 _CHAIN = (
@@ -55,7 +55,7 @@ def test_chain_walks_to_the_boundary(tmp_path):
             "svc.read_raw": _fresh_view(proj, "svc.read_raw", None),  # boundary leaf
         }
     )
-    chain = explain_chain(proj, sink_qualname="svc.leaky", clarion=client, max_hops=10)
+    chain = explain_chain(proj, sink_qualname="svc.leaky", loomweave=client, max_hops=10)
     assert [hop.qualname for hop in chain.hops] == ["svc.leaky", "svc.mid", "svc.read_raw"]
     assert chain.truncated_at is None  # reached the leaf cleanly
 
@@ -70,7 +70,7 @@ def test_chain_truncates_explicitly_on_stale_hop(tmp_path):
             "svc.mid": stale,
         }
     )
-    chain = explain_chain(proj, sink_qualname="svc.leaky", clarion=client, max_hops=10)
+    chain = explain_chain(proj, sink_qualname="svc.leaky", loomweave=client, max_hops=10)
     assert [hop.qualname for hop in chain.hops] == ["svc.leaky"]
     assert chain.truncated_at == "svc.mid"  # explicit, never a silent stop
 
@@ -84,7 +84,7 @@ def test_chain_respects_max_hops(tmp_path):
             "svc.read_raw": _fresh_view(proj, "svc.read_raw", None),
         }
     )
-    chain = explain_chain(proj, sink_qualname="svc.leaky", clarion=client, max_hops=2)
+    chain = explain_chain(proj, sink_qualname="svc.leaky", loomweave=client, max_hops=2)
     assert len(chain.hops) == 2
     assert chain.truncated_at == "svc.read_raw"  # the unwalked next hop
 
@@ -92,14 +92,14 @@ def test_chain_respects_max_hops(tmp_path):
 def test_chain_truncates_on_loud_read_error(tmp_path):
     # A loud read error (bad token / route-skew) mid-walk must truncate EXPLICITLY,
     # never propagate, so a misconfigured store degrades to a partial chain.
-    from wardline.core.errors import ClarionError
+    from wardline.core.errors import LoomweaveError
 
     proj = _proj(tmp_path)
 
     class RaisingClient:
         def batch_get(self, qualnames):
-            raise ClarionError("Clarion rejected batch-get (401; code=PERMISSION)")
+            raise LoomweaveError("Loomweave rejected batch-get (401; code=PERMISSION)")
 
-    chain = explain_chain(proj, sink_qualname="svc.leaky", clarion=RaisingClient(), max_hops=10)
+    chain = explain_chain(proj, sink_qualname="svc.leaky", loomweave=RaisingClient(), max_hops=10)
     assert chain.hops == []
     assert chain.truncated_at == "svc.leaky"

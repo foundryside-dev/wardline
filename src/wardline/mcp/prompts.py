@@ -11,7 +11,7 @@ LOOP_PROMPT = (
     "1. Call `scan` with `explain: true` (whole project). Each active defect carries an "
     "inline `explanation` (immediate tainted callee, source boundary, trust tiers) - no "
     "per-finding round-trip. Read `summary.active` and `gate.tripped`.\n"
-    "2. For the FULL N-hop chain to the originating boundary (needs a configured Clarion "
+    "2. For the FULL N-hop chain to the originating boundary (needs a configured Loomweave "
     "store), call `explain_taint` with the finding's `qualname` as `sink_qualname` and "
     "`chain: true`.\n"
     "3. Fix at the BOUNDARY, not the sink - add validation/rejection at the right hop.\n"

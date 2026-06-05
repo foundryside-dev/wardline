@@ -3,32 +3,32 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 
 
-def test_dossier_core_and_filigree_do_not_depend_on_clarion_identity() -> None:
+def test_dossier_core_and_filigree_do_not_depend_on_loomweave_identity() -> None:
     for rel in (
         "src/wardline/core/dossier.py",
         "src/wardline/filigree/dossier_client.py",
     ):
         text = (ROOT / rel).read_text(encoding="utf-8")
-        assert "wardline.clarion.identity" not in text
+        assert "wardline.loomweave.identity" not in text
 
 
-def test_loom_dossier_uses_neutral_identity_types() -> None:
-    text = (ROOT / "src/wardline/loom_dossier.py").read_text(encoding="utf-8")
+def test_weft_dossier_uses_neutral_identity_types() -> None:
+    text = (ROOT / "src/wardline/weft_dossier.py").read_text(encoding="utf-8")
     assert "from wardline.core.identity import ContentStatus, EntityBinding, IdentityStatus" in text
-    assert "from wardline.clarion.identity import ContentStatus" not in text
-    assert "from wardline.clarion.identity import EntityBinding" not in text
-    assert "from wardline.clarion.identity import IdentityStatus" not in text
+    assert "from wardline.loomweave.identity import ContentStatus" not in text
+    assert "from wardline.loomweave.identity import EntityBinding" not in text
+    assert "from wardline.loomweave.identity import IdentityStatus" not in text
 
 
-def test_clarion_identity_reexports_neutral_core_identity_types() -> None:
-    from wardline.clarion.identity import ContentStatus as ClarionContentStatus
-    from wardline.clarion.identity import EntityBinding as ClarionEntityBinding
-    from wardline.clarion.identity import IdentityStatus as ClarionIdentityStatus
+def test_loomweave_identity_reexports_neutral_core_identity_types() -> None:
     from wardline.core.identity import ContentStatus, EntityBinding, IdentityStatus
+    from wardline.loomweave.identity import ContentStatus as LoomweaveContentStatus
+    from wardline.loomweave.identity import EntityBinding as LoomweaveEntityBinding
+    from wardline.loomweave.identity import IdentityStatus as LoomweaveIdentityStatus
 
-    assert ClarionContentStatus is ContentStatus
-    assert ClarionEntityBinding is EntityBinding
-    assert ClarionIdentityStatus is IdentityStatus
+    assert LoomweaveContentStatus is ContentStatus
+    assert LoomweaveEntityBinding is EntityBinding
+    assert LoomweaveIdentityStatus is IdentityStatus
 
 
 def test_core_protocols_are_wired_into_orchestration_and_rule_registry() -> None:

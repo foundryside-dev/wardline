@@ -56,7 +56,7 @@ def test_descriptor_to_yaml_round_trips_through_safe_load() -> None:
 
 def test_committed_vocabulary_yaml_matches_registry() -> None:
     # The committed, wheel-shipped vocabulary.yaml must be BYTE-identical to the
-    # serializer output — not merely parse-equal. Clarion consumes the file's
+    # serializer output — not merely parse-equal. Loomweave consumes the file's
     # bytes via the read-instead-of-import path, and the regen one-liner promises
     # byte-reproducibility, so byte-identity (not just content) is the contract.
     # If this fails, regenerate with:
@@ -72,7 +72,7 @@ def test_committed_vocabulary_yaml_matches_registry() -> None:
 
 
 def test_committed_yaml_is_consumable_as_pure_data() -> None:
-    # The whole point of the descriptor: a peer (Clarion) reads the file's BYTES
+    # The whole point of the descriptor: a peer (Loomweave) reads the file's BYTES
     # and gates on `schema` — WITHOUT importing wardline.core.registry. This test
     # consumes only the committed YAML + stdlib/yaml, never touching REGISTRY.
     from importlib.resources import files

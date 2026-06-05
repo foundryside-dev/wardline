@@ -32,7 +32,7 @@ from wardline.core.registry import REGISTRY, REGISTRY_VERSION
 # Descriptor-FORMAT identity — the cross-product contract surface version. This
 # is DISTINCT from REGISTRY_VERSION (the vocabulary CONTENT version): `schema`
 # names the shape (envelope/entry fields + their semantics), `version` names the
-# decorator set. A consumer (Clarion) gates expectations on `schema` and may
+# decorator set. A consumer (Loomweave) gates expectations on `schema` and may
 # tolerate unknown future entry fields within the same schema. Bump `schema`
 # only on a breaking shape change, with a coordinated consumer migration — one
 # self-describing string, no version negotiation.

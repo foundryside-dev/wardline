@@ -91,7 +91,9 @@ class DecoratorCoverageRow:
     work: WorkSection | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        identity = self.identity or IdentityCoverage.unavailable(_locator_for(self.qualname), "clarion not configured")
+        identity = self.identity or IdentityCoverage.unavailable(
+            _locator_for(self.qualname), "loomweave not configured"
+        )
         work = self.work or WorkSection.unavailable("filigree not configured")
         return {
             "qualname": self.qualname,
@@ -143,13 +145,13 @@ def _decorators_of(entity: Entity) -> list[str]:
 def _identity_for(provider: BindingProvider | None, qualname: str) -> tuple[IdentityCoverage, EntityBinding | None]:
     locator = _locator_for(qualname)
     if provider is None:
-        return IdentityCoverage.unavailable(locator, "clarion not configured"), None
+        return IdentityCoverage.unavailable(locator, "loomweave not configured"), None
     try:
         binding = provider.binding_for(qualname)
     except Exception as exc:
-        return IdentityCoverage.unavailable(locator, f"clarion unreachable: {exc}"), None
+        return IdentityCoverage.unavailable(locator, f"loomweave unreachable: {exc}"), None
     if binding is None:
-        return IdentityCoverage.unavailable(locator, "clarion returned no identity"), None
+        return IdentityCoverage.unavailable(locator, "loomweave returned no identity"), None
     return IdentityCoverage.from_binding(binding), binding
 
 

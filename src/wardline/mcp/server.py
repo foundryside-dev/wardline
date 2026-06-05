@@ -76,7 +76,7 @@ def _filigree_emit_status(block: dict[str, Any] | None) -> dict[str, Any]:
     return {"configured": True, **block}
 
 
-def _clarion_write_status(block: dict[str, Any] | None) -> dict[str, Any]:
+def _loomweave_write_status(block: dict[str, Any] | None) -> dict[str, Any]:
     if block is None:
         return {
             "configured": False,
@@ -88,7 +88,7 @@ def _clarion_write_status(block: dict[str, Any] | None) -> dict[str, Any]:
     return {"configured": True, **block}
 
 
-def _file_finding(args: dict[str, Any], root: Path, filer: Any, clarion: Any = None) -> dict[str, Any]:
+def _file_finding(args: dict[str, Any], root: Path, filer: Any, loomweave: Any = None) -> dict[str, Any]:
     """File ONE finding (by fingerprint) into a tracked Filigree issue, returning its
     id. Fail-soft on reachability; a 404 (unknown fingerprint) surfaces as not_found."""
     if filer is None:
@@ -106,16 +106,16 @@ def _file_finding(args: dict[str, Any], root: Path, filer: Any, clarion: Any = N
         "fingerprint": fp,
         "disabled_reason": res.disabled_reason,
     }
-    if bool(args.get("attach_clarion_identity") or False):
-        from wardline.core.filigree_issue import attach_clarion_identity_for_finding, identity_attach_result_to_json
+    if bool(args.get("attach_loomweave_identity") or False):
+        from wardline.core.filigree_issue import attach_loomweave_identity_for_finding, identity_attach_result_to_json
 
         payload["identity_attach"] = identity_attach_result_to_json(
-            attach_clarion_identity_for_finding(
+            attach_loomweave_identity_for_finding(
                 fingerprint=fp,
                 issue_id=res.issue_id,
                 root=root,
                 filer=filer,
-                clarion_client=clarion,
+                loomweave_client=loomweave,
                 config_path=_cfg(args, root),
             )
         )
@@ -127,7 +127,7 @@ def _scan_file_findings(
     root: Path,
     filigree_emitter: Any = None,
     filigree_filer: Any = None,
-    clarion: Any = None,
+    loomweave: Any = None,
 ) -> dict[str, Any]:
     fingerprints_raw = args.get("fingerprints") or []
     if not isinstance(fingerprints_raw, list) or not all(isinstance(fp, str) for fp in fingerprints_raw):
@@ -154,7 +154,7 @@ def _scan_file_findings(
         labels=tuple(labels_raw),
         filigree_emitter=filigree_emitter,
         filigree_filer=filigree_filer,
-        clarion_client=clarion,
+        loomweave_client=loomweave,
     )
 
 
@@ -172,7 +172,7 @@ def _cache_dir_arg(args: dict[str, Any], root: Path) -> Path | None:
 def _scan(
     args: dict[str, Any],
     root: Path,
-    clarion: Any = None,
+    loomweave: Any = None,
     filigree: Any = None,
     *,
     trust_local_packs: bool = False,
@@ -201,22 +201,22 @@ def _scan(
         strict_defaults=strict_defaults,
         trust_suppressions=trust_suppressions,
     )
-    # Fail-soft Clarion write: only when a client was injected (server has a URL).
+    # Fail-soft Loomweave write: only when a client was injected (server has a URL).
     # An outage/403 yields a not-reachable WriteResult; never raises here.
-    clarion_block: dict[str, Any] | None = None
-    if clarion is not None:
-        from wardline.clarion.client import WriteResult
-        from wardline.clarion.write import write_facts_to_clarion
-        from wardline.core.errors import ClarionError
+    loomweave_block: dict[str, Any] | None = None
+    if loomweave is not None:
+        from wardline.core.errors import LoomweaveError
+        from wardline.loomweave.client import WriteResult
+        from wardline.loomweave.write import write_facts_to_loomweave
 
         try:
-            wr = write_facts_to_clarion(result, path, clarion)
-        except ClarionError as exc:
+            wr = write_facts_to_loomweave(result, path, loomweave)
+        except LoomweaveError as exc:
             # Non-load-bearing enrichment: the MCP loop's scan payload must survive
             # an optional-write failure (bad config / missing extra / 4xx). Report,
             # don't discard the scan.
             wr = WriteResult(reachable=False, disabled_reason=str(exc))
-        clarion_block = {
+        loomweave_block = {
             "reachable": wr.reachable,
             "written": wr.written,
             "unresolved_qualnames": list(wr.unresolved_qualnames),
@@ -225,10 +225,10 @@ def _scan(
     decision = gate_decision(result, threshold)
     filigree_block = _emit_filigree(result.findings, filigree, scanned_paths=result.scanned_paths)
     filigree_status = _filigree_emit_status(filigree_block)
-    clarion_status = _clarion_write_status(clarion_block)
+    loomweave_status = _loomweave_write_status(loomweave_block)
     where = args.get("where")
     try:
-        resolved_where = resolve_query_filters(where, root, _cfg(args, root), clarion)
+        resolved_where = resolve_query_filters(where, root, _cfg(args, root), loomweave)
         selected = filter_findings(result.findings, resolved_where)
     except (ValueError, WardlineError) as exc:
         # An unknown filter key or SEI resolution failure is agent-actionable -> isError result.
@@ -264,15 +264,15 @@ def _scan(
             "unanalyzed": result.summary.unanalyzed,
         },
         "gate": {"tripped": decision.tripped, "fail_on": decision.fail_on, "exit_class": decision.exit_class},
-        "clarion": clarion_block,
+        "loomweave": loomweave_block,
         "filigree": filigree_block,
-        "clarion_write": clarion_status,
+        "loomweave_write": loomweave_status,
         "filigree_emit": filigree_status,
         "agent_summary": build_agent_summary(
             result,
             decision,
             filigree_emit=filigree_status,
-            clarion_write=clarion_status,
+            loomweave_write=loomweave_status,
         ).to_dict(),
     }
     _attach_legis_artifact(
@@ -304,7 +304,7 @@ def _attach_legis_artifact(
     ``legis_artifact: true`` (unsigned, for legis's optional-verify posture). When
     neither is requested the response is byte-unchanged from the released shape.
 
-    Fail-soft like the Clarion/Filigree blocks: a signing refusal (dirty tree /
+    Fail-soft like the Loomweave/Filigree blocks: a signing refusal (dirty tree /
     non-repo) reports ``signed: false`` with the reason and omits the postable
     artifact — it never fails the scan itself. The agent posts ``legis_artifact``
     verbatim as the ``scan`` field of ``POST /wardline/scan-results``.
@@ -340,11 +340,11 @@ def _attach_legis_artifact(
     response["legis_artifact_status"] = status
 
 
-def _explain_taint(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, Any]:
-    # The store-backed read path: when a Clarion store is configured and the caller
+def _explain_taint(args: dict[str, Any], root: Path, loomweave: Any = None) -> dict[str, Any]:
+    # The store-backed read path: when a Loomweave store is configured and the caller
     # passes the finding's qualname as `sink_qualname`, explain_finding serves a FRESH
     # fact straight from the store with no re-scan; otherwise it falls back to the SP8
-    # re-run. clarion=None reproduces SP8 behavior exactly. With chain=true it also walks
+    # re-run. loomweave=None reproduces SP8 behavior exactly. With chain=true it also walks
     # the full taint chain to the originating boundary.
     # path+line identify a source location of an existing finding (not a scan
     # subdir): pass path through only when a line is also given. The path is a
@@ -360,7 +360,7 @@ def _explain_taint(args: dict[str, Any], root: Path, clarion: Any = None) -> dic
         line=args.get("line"),
         config_path=_cfg(args, root),
         confine_to_root=True,
-        clarion=clarion,
+        loomweave=loomweave,
         sink_qualname=args.get("sink_qualname"),
     )
     if exp is None:
@@ -374,10 +374,10 @@ def _explain_taint(args: dict[str, Any], root: Path, clarion: Any = None) -> dic
         "location": {"path": exp.path, "line": exp.line},
         **_explanation_to_dict(exp),
     }
-    if args.get("chain") and clarion is not None and exp.sink_qualname:
+    if args.get("chain") and loomweave is not None and exp.sink_qualname:
         max_hops_raw = args.get("max_hops")
         max_hops = int(max_hops_raw) if max_hops_raw is not None else 20
-        ch = explain_chain(root, sink_qualname=exp.sink_qualname, clarion=clarion, max_hops=max_hops)
+        ch = explain_chain(root, sink_qualname=exp.sink_qualname, loomweave=loomweave, max_hops=max_hops)
         result_dict["chain"] = {
             "hops": [
                 {
@@ -393,17 +393,19 @@ def _explain_taint(args: dict[str, Any], root: Path, clarion: Any = None) -> dic
     return result_dict
 
 
-def _dossier(args: dict[str, Any], root: Path, clarion: Any = None, filigree_url: str | None = None) -> dict[str, Any]:
+def _dossier(
+    args: dict[str, Any], root: Path, loomweave: Any = None, filigree_url: str | None = None
+) -> dict[str, Any]:
     """Assemble the one-call entity dossier. The SEI-keyed, freshness-honest read:
-    Wardline's own trust posture (always real) + Clarion linkages + Filigree open work,
+    Wardline's own trust posture (always real) + Loomweave linkages + Filigree open work,
     each section degrading to an honest `unavailable` when its source is absent."""
-    from wardline.loom_dossier import build_loom_dossier
+    from wardline.weft_dossier import build_weft_dossier
 
     entity = _require(args, "entity")
-    dossier = build_loom_dossier(
+    dossier = build_weft_dossier(
         entity,
         root=root,
-        clarion_client=clarion,
+        loomweave_client=loomweave,
         filigree_url=filigree_url,
         config_path=_cfg(args, root),
         confine_to_root=True,
@@ -424,16 +426,16 @@ def _assure(args: dict[str, Any], root: Path) -> dict[str, Any]:
 def _decorator_coverage(
     args: dict[str, Any],
     root: Path,
-    clarion: Any = None,
+    loomweave: Any = None,
     filigree_url: str | None = None,
 ) -> dict[str, Any]:
     """Row-level inventory of every trust-decorated entity under the project."""
-    from wardline.loom_decorator_coverage import build_loom_decorator_coverage
+    from wardline.weft_decorator_coverage import build_weft_decorator_coverage
 
     path = _resolve_under_root(root, args["path"]) if args.get("path") else root
-    report = build_loom_decorator_coverage(
+    report = build_weft_decorator_coverage(
         path,
-        clarion_client=clarion,
+        loomweave_client=loomweave,
         filigree_url=filigree_url,
         config_path=_cfg(args, root),
         confine_to_root=True,
@@ -441,7 +443,7 @@ def _decorator_coverage(
     return report.to_dict()
 
 
-def _attest(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, Any]:
+def _attest(args: dict[str, Any], root: Path, loomweave: Any = None) -> dict[str, Any]:
     """Build a SIGNED, reproducible evidence bundle for the project — identical to the
     CLI `attest` by construction (both call ``build_attestation``). Path/config confined
     under root. DEFAULTS to strict on a dirty tree (`allow_dirty=False`): an agent must
@@ -462,12 +464,12 @@ def _attest(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, 
         trust_local_packs=bool(args.get("trust_local_packs", False)),
         trusted_packs=_trusted_packs_arg(args),
         strict_defaults=bool(args.get("strict_defaults", False)),
-        clarion_client=clarion,
+        loomweave_client=loomweave,
         allow_dirty=allow_dirty,
     )
 
 
-def _verify_attestation(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, Any]:
+def _verify_attestation(args: dict[str, Any], root: Path, loomweave: Any = None) -> dict[str, Any]:
     """Verify an attestation bundle's signature (offline, needs the project key) and
     optionally re-derive it at the current tree (`reproduce=true`). Identical to the CLI
     `attest --verify` by construction."""
@@ -486,7 +488,7 @@ def _verify_attestation(args: dict[str, Any], root: Path, clarion: Any = None) -
         reproduce=reproduce,
         config_path=_cfg(args, root),
         cache_dir=_cache_dir_arg(args, root),
-        clarion_client=clarion,
+        loomweave_client=loomweave,
         confine_to_root=True,
         trust_local_packs=bool(args.get("trust_local_packs", False)),
         trusted_packs=_trusted_packs_arg(args),
@@ -633,13 +635,13 @@ class WardlineMCPServer:
         self,
         *,
         root: Path,
-        clarion_url: str | None = None,
+        loomweave_url: str | None = None,
         filigree_url: str | None = None,
         allow_write: bool = True,
         allow_network: bool = True,
     ) -> None:
         self.root = Path(root)
-        self.clarion_url = clarion_url
+        self.loomweave_url = loomweave_url
         self.filigree_url = filigree_url
         self._tool_policy = ToolPolicy(allow_write=allow_write, allow_network=allow_network)
         self.rpc = JsonRpcServer(server_name="wardline", server_version=__version__)
@@ -647,7 +649,7 @@ class WardlineMCPServer:
         self._register_tools()
         self._wire()
 
-    def _clarion_client(
+    def _loomweave_client(
         self,
         config_path: Path | None = None,
         *,
@@ -655,9 +657,9 @@ class WardlineMCPServer:
         trusted_packs: Iterable[str] = (),
         strict_defaults: bool = False,
     ) -> Any:
-        """Build a ClarionClient for this server's root, or None when no URL is set."""
-        url = config_mod.resolve_clarion_url(
-            self.clarion_url,
+        """Build a LoomweaveClient for this server's root, or None when no URL is set."""
+        url = config_mod.resolve_loomweave_url(
+            self.loomweave_url,
             self.root,
             config_path,
             trust_local_packs=trust_local_packs,
@@ -666,12 +668,12 @@ class WardlineMCPServer:
         )
         if url is None:
             return None
-        from wardline.clarion.client import ClarionClient
-        from wardline.clarion.config import load_clarion_token, resolve_project_name
+        from wardline.loomweave.client import LoomweaveClient
+        from wardline.loomweave.config import load_loomweave_token, resolve_project_name
 
-        return ClarionClient(
+        return LoomweaveClient(
             url,
-            secret=load_clarion_token(self.root),
+            secret=load_loomweave_token(self.root),
             project=resolve_project_name(self.root),
         )
 
@@ -704,7 +706,7 @@ class WardlineMCPServer:
         trusted_packs: Iterable[str] = (),
         strict_defaults: bool = False,
     ) -> Any:
-        """Build a FiligreeIssueFiler from this server's Loom URL, or None when unset."""
+        """Build a FiligreeIssueFiler from this server's Weft URL, or None when unset."""
         url = config_mod.resolve_filigree_url(
             self.filigree_url,
             self.root,
@@ -795,7 +797,7 @@ class WardlineMCPServer:
                 handler=lambda args, root: _scan(
                     args,
                     root,
-                    self._clarion_client(
+                    self._loomweave_client(
                         _cfg(args, root),
                         trust_local_packs=bool(args.get("trust_local_packs") or False),
                         trusted_packs=tuple(args.get("trust_packs") or []),
@@ -818,9 +820,9 @@ class WardlineMCPServer:
                 description="Explain ONE finding's taint: the immediate tainted callee, the "
                 "originating boundary, and the trust tiers at the sink. Call right "
                 "after scan and before editing — a stale fingerprint returns an error. "
-                "Pass the finding's `qualname` as `sink_qualname`: when a Clarion store "
+                "Pass the finding's `qualname` as `sink_qualname`: when a Loomweave store "
                 "is configured this serves the explanation from the store instead of "
-                "re-scanning. Pass `chain: true` (needs a configured Clarion store) to "
+                "re-scanning. Pass `chain: true` (needs a configured Loomweave store) to "
                 "also walk the full taint chain from the sink to the originating boundary; "
                 "without a store it degrades to the single-hop explanation (no `chain` block).",
                 input_schema={
@@ -835,7 +837,7 @@ class WardlineMCPServer:
                         "config": {"type": "string"},
                     },
                 },
-                handler=lambda args, root: _explain_taint(args, root, self._clarion_client(_cfg(args, root))),
+                handler=lambda args, root: _explain_taint(args, root, self._loomweave_client(_cfg(args, root))),
             )
         )
         self.add_tool(
@@ -843,7 +845,7 @@ class WardlineMCPServer:
                 name="dossier",
                 description="One-call entity dossier for a function `entity` (a qualname): its "
                 "trust posture (declared vs actual taint, gate verdict, active findings — always "
-                "computed fresh), plus Clarion call-graph linkages and Filigree open work joined on "
+                "computed fresh), plus Loomweave call-graph linkages and Filigree open work joined on "
                 "the entity's opaque SEI. Every cross-tool section is freshness-stamped on BOTH axes "
                 "(identity alive/orphaned/unavailable + content fresh/stale/unknown) and degrades to "
                 "an honest `unavailable` when its source is absent. Token-bounded (~2k) with an "
@@ -859,7 +861,7 @@ class WardlineMCPServer:
                 handler=lambda args, root: _dossier(
                     args,
                     root,
-                    self._clarion_client(_cfg(args, root)),
+                    self._loomweave_client(_cfg(args, root)),
                     config_mod.resolve_filigree_url(self.filigree_url, root, _cfg(args, root)),
                 ),
             )
@@ -898,7 +900,7 @@ class WardlineMCPServer:
                 handler=lambda args, root: _decorator_coverage(
                     args,
                     root,
-                    self._clarion_client(_cfg(args, root)),
+                    self._loomweave_client(_cfg(args, root)),
                     config_mod.resolve_filigree_url(self.filigree_url, root, _cfg(args, root)),
                 ),
             )
@@ -909,7 +911,7 @@ class WardlineMCPServer:
                 description="Build a SIGNED, reproducible evidence bundle (commit, ruleset hash, "
                 "trust-surface posture, boundaries) for the project. HMAC-signed with the "
                 "install-minted project key. Refuses a dirty working tree unless allow_dirty=true. "
-                "SEI-keyed when a Clarion store is configured.",
+                "SEI-keyed when a Loomweave store is configured.",
                 input_schema={
                     "type": "object",
                     "properties": {
@@ -928,7 +930,7 @@ class WardlineMCPServer:
                 handler=lambda args, root: _attest(
                     args,
                     root,
-                    self._clarion_client(
+                    self._loomweave_client(
                         _cfg(args, root),
                         trust_local_packs=bool(args.get("trust_local_packs") or False),
                         trusted_packs=_trusted_packs_arg(args),
@@ -963,7 +965,7 @@ class WardlineMCPServer:
                 handler=lambda args, root: _verify_attestation(
                     args,
                     root,
-                    self._clarion_client(
+                    self._loomweave_client(
                         _cfg(args, root),
                         trust_local_packs=bool(args.get("trust_local_packs") or False),
                         trusted_packs=_trusted_packs_arg(args),
@@ -988,10 +990,10 @@ class WardlineMCPServer:
                         "fingerprint": {"type": "string"},
                         "priority": {"type": "string", "description": "Filigree priority, e.g. P2"},
                         "labels": {"type": "array", "items": {"type": "string"}},
-                        "attach_clarion_identity": {
+                        "attach_loomweave_identity": {
                             "type": "boolean",
                             "description": (
-                                "Opt in to resolving the finding qualname through Clarion and attaching "
+                                "Opt in to resolving the finding qualname through Loomweave and attaching "
                                 "a Filigree entity association."
                             ),
                         },
@@ -1002,8 +1004,8 @@ class WardlineMCPServer:
                     args,
                     root,
                     self._filigree_filer(_cfg(args, root)),
-                    self._clarion_client(_cfg(args, root))
-                    if bool(args.get("attach_clarion_identity") or False)
+                    self._loomweave_client(_cfg(args, root))
+                    if bool(args.get("attach_loomweave_identity") or False)
                     else None,
                 ),
             )
@@ -1014,7 +1016,7 @@ class WardlineMCPServer:
                 capabilities=frozenset({ToolCapability.READ, ToolCapability.WRITE, ToolCapability.NETWORK}),
                 description="One-shot agent workflow: run a scan, list active defects first with "
                 "inline explanation summaries, optionally emit to Filigree, promote selected "
-                "fingerprints or all active defects, and attach Clarion identity when available. "
+                "fingerprints or all active defects, and attach Loomweave identity when available. "
                 "Defaults to dry-run unless fingerprints or all_active are supplied.",
                 input_schema={
                     "type": "object",
@@ -1051,7 +1053,7 @@ class WardlineMCPServer:
                         trusted_packs=tuple(args.get("trust_packs") or []),
                         strict_defaults=bool(args.get("strict_defaults") or False),
                     ),
-                    self._clarion_client(
+                    self._loomweave_client(
                         _cfg(args, root),
                         trust_local_packs=bool(args.get("trust_local_packs") or False),
                         trusted_packs=tuple(args.get("trust_packs") or []),
@@ -1179,9 +1181,9 @@ class WardlineMCPServer:
             ]
         }
 
-    def _resolved_clarion_url_for_policy(self, arguments: dict[str, Any]) -> str | None:
-        return config_mod.resolve_clarion_url(
-            self.clarion_url,
+    def _resolved_loomweave_url_for_policy(self, arguments: dict[str, Any]) -> str | None:
+        return config_mod.resolve_loomweave_url(
+            self.loomweave_url,
             self.root,
             _cfg(arguments, self.root),
             trust_local_packs=bool(arguments.get("trust_local_packs") or False),
@@ -1202,17 +1204,17 @@ class WardlineMCPServer:
     def _effective_tool_capabilities(self, tool: Tool, arguments: dict[str, Any]) -> frozenset[ToolCapability]:
         capabilities = set(tool.capabilities)
         if tool.name == "scan" and (
-            self._resolved_clarion_url_for_policy(arguments) is not None
+            self._resolved_loomweave_url_for_policy(arguments) is not None
             or self._resolved_filigree_url_for_policy(arguments) is not None
         ):
             capabilities.update({ToolCapability.NETWORK, ToolCapability.WRITE})
         if (
             tool.name in {"explain_taint", "attest", "verify_attestation"}
-            and self._resolved_clarion_url_for_policy(arguments) is not None
+            and self._resolved_loomweave_url_for_policy(arguments) is not None
         ):
             capabilities.add(ToolCapability.NETWORK)
         if tool.name == "dossier" and (
-            self._resolved_clarion_url_for_policy(arguments) is not None
+            self._resolved_loomweave_url_for_policy(arguments) is not None
             or self._resolved_filigree_url_for_policy(arguments) is not None
         ):
             capabilities.add(ToolCapability.NETWORK)

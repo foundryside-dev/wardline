@@ -16,7 +16,7 @@ def test_locator_to_qualname() -> None:
     assert locator_to_qualname("barename") == "barename"
 
 
-class _FakeClarion:
+class _FakeLoomweave:
     def __init__(self, *, supported=True, alive=True, locator="python:function:svc.leaky"):
         self._supported = supported
         self._alive = alive
@@ -47,25 +47,25 @@ def test_resolve_query_filters_no_sei() -> None:
 
 
 def test_resolve_query_filters_missing_url() -> None:
-    # No clarion client and WARDLINE_CLARION_URL is not set
-    with pytest.raises(WardlineError, match="no Clarion URL configured"):
-        resolve_query_filters({"qualname": "sei:clarion:eid:abc"}, Path("."), None)
+    # No loomweave client and WARDLINE_LOOMWEAVE_URL is not set
+    with pytest.raises(WardlineError, match="no Loomweave URL configured"):
+        resolve_query_filters({"qualname": "sei:loomweave:eid:abc"}, Path("."), None)
 
 
 def test_resolve_query_filters_unsupported_sei() -> None:
-    client = _FakeClarion(supported=False)
-    with pytest.raises(WardlineError, match="Clarion instance does not support SEI"):
-        resolve_query_filters({"qualname": "sei:clarion:eid:abc"}, Path("."), None, clarion_client=client)
+    client = _FakeLoomweave(supported=False)
+    with pytest.raises(WardlineError, match="Loomweave instance does not support SEI"):
+        resolve_query_filters({"qualname": "sei:loomweave:eid:abc"}, Path("."), None, loomweave_client=client)
 
 
 def test_resolve_query_filters_failed_to_resolve() -> None:
-    client = _FakeClarion(alive=False)
+    client = _FakeLoomweave(alive=False)
     with pytest.raises(WardlineError, match="cannot resolve SEI to a qualname"):
-        resolve_query_filters({"qualname": "sei:clarion:eid:abc"}, Path("."), None, clarion_client=client)
+        resolve_query_filters({"qualname": "sei:loomweave:eid:abc"}, Path("."), None, loomweave_client=client)
 
 
 def test_resolve_query_filters_success() -> None:
-    client = _FakeClarion()
-    where = {"qualname": "sei:clarion:eid:abc", "rule_id": "PY-WL-101"}
-    resolved = resolve_query_filters(where, Path("."), None, clarion_client=client)
+    client = _FakeLoomweave()
+    where = {"qualname": "sei:loomweave:eid:abc", "rule_id": "PY-WL-101"}
+    resolved = resolve_query_filters(where, Path("."), None, loomweave_client=client)
     assert resolved == {"qualname": "svc.leaky", "rule_id": "PY-WL-101"}

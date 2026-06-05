@@ -9,7 +9,7 @@ Generic, lightweight semantic-tainting static analyzer for Python — track untr
 
 ```python
 # demo.py
-from loom_markers import trusted, external_boundary
+from weft_markers import trusted, external_boundary
 
 @external_boundary
 def read_request(req):
@@ -45,11 +45,11 @@ with as trusted as it claims?** It tracks a *taint* (a trust level) for every
 value and propagates it across the whole project, flagging the places where
 untrusted data reaches a trusted producer with no validation in between.
 
-Wardline is part of **Loom** — an agent-first suite of small, local-first
+Wardline is part of **Weft** — an agent-first suite of small, local-first
 developer tools, each driven by a coding agent as much as a person, giving small
 teams capable tooling without enterprise weight. The authoritative federation
-hub, roster, and composition doctrine live at `~/loom` (see
-`~/loom/doctrine.md`); rather than restate membership here, refer to the hub for
+hub, roster, and composition doctrine live at `~/weft` (see
+`~/weft/doctrine.md`); rather than restate membership here, refer to the hub for
 the current roster and the enrich-only axiom that governs how the tools compose.
 
 **Opt-in by design.** Wardline is silent until you opt in. Undecorated code sits
@@ -74,7 +74,7 @@ lets it scan a large untouched codebase (including its own) with zero noise.
 - **Opt-in LLM triage** — `wardline judge` labels findings TRUE/FALSE positive
   (dependency-free; never runs automatically).
 - **Light-touch suppression** — baselines and time-boxed, reasoned waivers.
-- **Clarion integration** — persist per-entity taint facts to a Clarion store.
+- **Loomweave integration** — persist per-entity taint facts to a Loomweave store.
 
 ## Quick Start
 
@@ -84,7 +84,7 @@ pip install 'wardline[scanner]'   # quote the extras for zsh
 
 ```python
 # app.py
-from loom_markers import trusted, external_boundary
+from weft_markers import trusted, external_boundary
 
 @external_boundary
 def read_request(req):
@@ -104,19 +104,19 @@ Fix findings at the **boundary** (validate before returning), not at the sink.
 ## Installation
 
 ```bash
-pip install loom-markers          # tiny runtime marker package for application code
+pip install weft-markers          # tiny runtime marker package for application code
 pip install wardline              # zero-dependency base (library + decorators)
 pip install 'wardline[scanner]'   # the scan/judge/baseline CLI + MCP server (quote for zsh)
 ```
 
-Prefer `loom_markers` in application code. Wardline still recognizes
+Prefer `weft_markers` in application code. Wardline still recognizes
 `wardline.decorators` for backward compatibility and direct Wardline users, but
-`loom-markers` is the neutral marker-only runtime dependency.
+`weft-markers` is the neutral marker-only runtime dependency.
 
 | Extra | Pulls | Enables |
 |-------|-------|---------|
 | `scanner` | pyyaml, jsonschema, click | the `wardline` CLI and `wardline mcp` server |
-| `clarion` | blake3 | persisting taint facts to a Clarion store |
+| `loomweave` | blake3 | persisting taint facts to a Loomweave store |
 | `docs` | mkdocs, mkdocs-material | building the documentation site |
 
 The LLM triage judge (`wardline judge`) is dependency-free (stdlib `urllib` →
@@ -130,15 +130,15 @@ wardline install
 
 This injects a hash-fenced instruction block into `CLAUDE.md`/`AGENTS.md`,
 installs the `wardline-gate` skill, merges a `wardline` entry into `.mcp.json`,
-writes Codex's `~/.codex/config.toml` MCP entry, and records Clarion/Filigree
+writes Codex's `~/.codex/config.toml` MCP entry, and records Loomweave/Filigree
 bindings if present. When local sibling config exposes a URL, `install` wires it
 directly; otherwise it leaves a commented stanza to fill in. Agents then run the
 scan → explain → fix-at-boundary → rescan loop natively. The `wardline mcp`
 server exposes `scan`, `explain_taint`, `fix`, `judge`, baseline, and waiver
 tools over JSON-RPC with no SDK.
 
-`wardline install` also reminds application projects to install `loom-markers`
-and import from `loom_markers` when they want runtime-importable trust markers
+`wardline install` also reminds application projects to install `weft-markers`
+and import from `weft_markers` when they want runtime-importable trust markers
 without depending on the full Wardline scanner package.
 
 Run `wardline doctor` to check those artifacts later, or `wardline doctor
@@ -174,7 +174,7 @@ Full documentation lives at **<https://foundryside-dev.github.io/wardline/>**.
 | [Configuration](https://foundryside-dev.github.io/wardline/guides/configuration/) | `wardline.yaml`: rules, severity, excludes |
 | [Suppression](https://foundryside-dev.github.io/wardline/guides/suppression/) | Baselines and waivers |
 | [LLM Triage Judge](https://foundryside-dev.github.io/wardline/guides/judge/) | Opt-in TRUE/FALSE-positive labelling |
-| [Clarion Taint Store](https://foundryside-dev.github.io/wardline/guides/clarion-taint-store/) | Persisting taint facts |
+| [Loomweave Taint Store](https://foundryside-dev.github.io/wardline/guides/loomweave-taint-store/) | Persisting taint facts |
 | [CLI Reference](https://foundryside-dev.github.io/wardline/reference/cli/) | Every command and flag |
 | [Trust Vocabulary](https://foundryside-dev.github.io/wardline/reference/vocabulary/) | The decorators and their arguments |
 | [Agent Integration](https://foundryside-dev.github.io/wardline/guides/agents/) | Using Wardline from a coding agent |
@@ -201,7 +201,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow and
 
 ## Acknowledgements
 
-Wardline is one of the **Loom** tools (with Clarion and Filigree) — an
+Wardline is one of the **Weft** tools (with Loomweave and Filigree) — an
 agent-first, local-first developer tooling suite for small teams.
 
 ## License

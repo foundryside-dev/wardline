@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from wardline.core.errors import ClarionError
+from wardline.core.errors import LoomweaveError
 from wardline.core.run import run_scan
 
 if TYPE_CHECKING:
@@ -43,7 +43,7 @@ def explanation_from_context(finding: Finding, context: AnalysisContext) -> Tain
     analysis context (no re-analysis). Shared by `_explain_local` (single-finding
     re-run) and the MCP `scan(explain=true)` inliner, so both produce identical
     provenance. Resolves the source boundary ONE hop only (full N-hop chain is the
-    Clarion-backed `explain_chain`)."""
+    Loomweave-backed `explain_chain`)."""
     qualname = finding.qualname
     immediate_tainted_callee = context.function_return_callee.get(qualname) if qualname is not None else None
     source_boundary_qualname: str | None = None
@@ -129,7 +129,7 @@ def _is_fresh(view: Any) -> bool:
     """Fresh iff: exists, a live current_content_hash is present, the blob is a
     structurally sound dict (with a dict ``taint``), and the in-blob
     content_hash_at_compute equals that live hash. Wardline decides freshness by
-    comparing the stamp IT wrote against the hash Clarion read live; Clarion never
+    comparing the stamp IT wrote against the hash Loomweave read live; Loomweave never
     asserts a verdict. Missing hash (file deleted/unreadable), exists:false, or a
     malformed/skewed blob (wrong types after the HTTP round-trip) ⇒ stale, so the
     caller falls through to the SP8 re-run rather than serving a broken fact."""
@@ -247,13 +247,13 @@ def explain_chain(
     root: Path,
     *,
     sink_qualname: str,
-    clarion: Any,
+    loomweave: Any,
     max_hops: int = 20,
 ) -> TaintChain:
     """Walk contributing_callee_qualname from the sink to the boundary, batch_getting
     each hop's fresh fact. Truncate EXPLICITLY (never silently) on a stale/absent hop,
     a loud read error, an unresolvable callee, or max_hops. Entirely client-side;
-    Clarion never parses."""
+    Loomweave never parses."""
     hops: list[ChainHop] = []
     current: str | None = sink_qualname
     seen: set[str] = set()
@@ -264,8 +264,8 @@ def explain_chain(
             return TaintChain(hops=hops, truncated_at=current)
         seen.add(current)
         try:
-            views = clarion.batch_get([current])
-        except ClarionError:
+            views = loomweave.batch_get([current])
+        except LoomweaveError:
             views = None  # loud read error (bad token/route-skew) → explicit truncation
         if not views:
             return TaintChain(hops=hops, truncated_at=current)  # outage/read-error
@@ -296,12 +296,12 @@ def explain_finding(
     line: int | None = None,
     config_path: Path | None = None,
     confine_to_root: bool = True,
-    clarion: Any | None = None,
+    loomweave: Any | None = None,
     sink_qualname: str | None = None,
 ) -> TaintExplanation | None:
-    """Explain ONE finding's taint. Standalone (clarion=None) ⇒ identical to SP8.
+    """Explain ONE finding's taint. Standalone (loomweave=None) ⇒ identical to SP8.
 
-    Fast path: when ``clarion`` and ``sink_qualname`` are both given (the MCP loop just
+    Fast path: when ``loomweave`` and ``sink_qualname`` are both given (the MCP loop just
     scanned, so it knows the sink's qualname), consult the store FIRST — a FRESH fact
     is served from the blob with NO re-analysis. On a miss/stale/outage, or when no
     ``sink_qualname`` is available, fall back to the SP8 re-run (``_explain_local``)."""
@@ -314,10 +314,10 @@ def explain_finding(
                 path = (root / p).resolve().relative_to(root.resolve()).as_posix()
         except ValueError:
             pass
-    if clarion is not None and sink_qualname is not None:
+    if loomweave is not None and sink_qualname is not None:
         try:
-            views = clarion.batch_get([sink_qualname])
-        except ClarionError:
+            views = loomweave.batch_get([sink_qualname])
+        except LoomweaveError:
             # A loud read-side error (bad token → 401, 400, route-skew → 404) is NOT
             # load-bearing for explain: degrade to the SP8 re-run, never raise. (The
             # store read is optional enrichment; only the WRITE path surfaces a 4xx.)

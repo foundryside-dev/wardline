@@ -33,28 +33,28 @@ def test_external_boundary_from_import() -> None:
     assert out["m.read"] == FunctionTaint(T.EXTERNAL_RAW, T.EXTERNAL_RAW)
 
 
-def test_loom_markers_external_boundary_from_import() -> None:
-    out = _seed("from loom_markers import external_boundary\n@external_boundary\ndef read(p):\n    return p\n")
+def test_weft_markers_external_boundary_from_import() -> None:
+    out = _seed("from weft_markers import external_boundary\n@external_boundary\ndef read(p):\n    return p\n")
     assert out["m.read"] == FunctionTaint(T.EXTERNAL_RAW, T.EXTERNAL_RAW)
 
 
-def test_loom_markers_trust_boundary_from_import() -> None:
+def test_weft_markers_trust_boundary_from_import() -> None:
     out = _seed(
-        "from loom_markers import trust_boundary\n@trust_boundary(to_level='ASSURED')\ndef v(x):\n    return x\n"
+        "from weft_markers import trust_boundary\n@trust_boundary(to_level='ASSURED')\ndef v(x):\n    return x\n"
     )
     assert out["m.v"] == FunctionTaint(T.EXTERNAL_RAW, T.ASSURED)
 
 
-def test_loom_markers_trusted_from_import() -> None:
-    out = _seed("from loom_markers import trusted\n@trusted\ndef f():\n    return 1\n")
+def test_weft_markers_trusted_from_import() -> None:
+    out = _seed("from weft_markers import trusted\n@trusted\ndef f():\n    return 1\n")
     assert out["m.f"] == FunctionTaint(T.INTEGRAL, T.INTEGRAL)
 
 
-def test_loom_markers_fires_end_to_end(tmp_path) -> None:
+def test_weft_markers_fires_end_to_end(tmp_path) -> None:
     from wardline.core.run import run_scan
 
     (tmp_path / "m.py").write_text(
-        "from loom_markers import external_boundary, trusted\n"
+        "from weft_markers import external_boundary, trusted\n"
         "\n"
         "@external_boundary\n"
         "def read_raw(p):\n"
@@ -281,7 +281,7 @@ def test_wardline_prefixed_but_unknown_decorator_is_no_opinion() -> None:
 
 # ── Security: builtin marker decorators must resolve to the REAL exports only.
 # A scanned project shipping a no-op ``trusted``/``trust_boundary`` under a builtin
-# marker root (``wardline``/``loom_markers``) must NOT anchor trust — that would
+# marker root (``wardline``/``weft_markers``) must NOT anchor trust — that would
 # suppress real taint→sink flows (false GREEN). ──
 
 
@@ -293,9 +293,9 @@ def test_builtin_decorator_requires_exact_known_export() -> None:
     assert out["m.f"] is None
 
 
-def test_loom_markers_nested_path_spoof_rejected() -> None:
-    # Same nested-path spoof under the loom_markers root.
-    out = _seed("from loom_markers import evil\n@evil.trusted\ndef f():\n    return 1\n")
+def test_weft_markers_nested_path_spoof_rejected() -> None:
+    # Same nested-path spoof under the weft_markers root.
+    out = _seed("from weft_markers import evil\n@evil.trusted\ndef f():\n    return 1\n")
     assert out["m.f"] is None
 
 
@@ -310,21 +310,21 @@ def test_builtin_decorator_fails_closed_when_project_shadows_wardline() -> None:
     assert out["m.f"] is None
 
 
-def test_builtin_decorator_fails_closed_when_project_shadows_loom_markers() -> None:
+def test_builtin_decorator_fails_closed_when_project_shadows_weft_markers() -> None:
     # GENERALIZATION (the gap the codex PR left open): a project shadowing
-    # ``loom_markers`` must also fail closed for loom_markers builtin markers.
+    # ``weft_markers`` must also fail closed for weft_markers builtin markers.
     out = _seed(
-        "from loom_markers import trusted\n@trusted\ndef f():\n    return 1\n",
-        project_modules=frozenset({"app", "loom_markers"}),
+        "from weft_markers import trusted\n@trusted\ndef f():\n    return 1\n",
+        project_modules=frozenset({"app", "weft_markers"}),
     )
     assert out["m.f"] is None
 
 
 def test_shadowing_one_root_does_not_disable_the_other() -> None:
     # Per-root, not a global bool: shadowing ``wardline`` must NOT stop a legitimate
-    # ``loom_markers`` builtin marker from anchoring (and vice versa).
+    # ``weft_markers`` builtin marker from anchoring (and vice versa).
     out = _seed(
-        "from loom_markers import trusted\n@trusted\ndef f():\n    return 1\n",
+        "from weft_markers import trusted\n@trusted\ndef f():\n    return 1\n",
         project_modules=frozenset({"app", "wardline"}),
     )
     assert out["m.f"] == FunctionTaint(T.INTEGRAL, T.INTEGRAL)
@@ -337,17 +337,17 @@ def test_builtin_decorator_accepts_implementation_module_export() -> None:
     assert out["m.f"] == FunctionTaint(T.INTEGRAL, T.INTEGRAL)
 
 
-def test_builtin_decorator_accepts_loom_markers_implementation_module_export() -> None:
-    out = _seed("from loom_markers.trust import trusted\n@trusted\ndef f():\n    return 1\n")
+def test_builtin_decorator_accepts_weft_markers_implementation_module_export() -> None:
+    out = _seed("from weft_markers.trust import trusted\n@trusted\ndef f():\n    return 1\n")
     assert out["m.f"] == FunctionTaint(T.INTEGRAL, T.INTEGRAL)
 
 
 def test_unrelated_nested_module_does_not_trip_shadow() -> None:
     # Scoping: only TOP-LEVEL module names trigger a shadow. ``app.wardline_helper``
-    # and ``myloom.wardline`` are NOT the builtin roots, so a legit @trusted anchors.
+    # and ``myweft.wardline`` are NOT the builtin roots, so a legit @trusted anchors.
     out = _seed(
         "from wardline.decorators import trusted\n@trusted\ndef f():\n    return 1\n",
-        project_modules=frozenset({"app.wardline_helper", "myloom.wardline"}),
+        project_modules=frozenset({"app.wardline_helper", "myweft.wardline"}),
     )
     assert out["m.f"] == FunctionTaint(T.INTEGRAL, T.INTEGRAL)
 
@@ -360,8 +360,8 @@ def test_fingerprint_for_project_differs_between_shadowed_and_unshadowed() -> No
     bare = provider.fingerprint()
     unshadowed = provider.fingerprint_for_project(frozenset({"app"}))
     shadow_wardline = provider.fingerprint_for_project(frozenset({"app", "wardline"}))
-    shadow_loom = provider.fingerprint_for_project(frozenset({"app", "loom_markers"}))
+    shadow_weft = provider.fingerprint_for_project(frozenset({"app", "weft_markers"}))
     assert unshadowed == bare
     assert shadow_wardline != bare
-    assert shadow_loom != bare
-    assert shadow_wardline != shadow_loom  # per-root, not a single bool
+    assert shadow_weft != bare
+    assert shadow_wardline != shadow_weft  # per-root, not a single bool

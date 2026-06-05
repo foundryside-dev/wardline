@@ -1,7 +1,7 @@
 # tests/unit/core/test_dossier_assembler.py
 """T4.2 — the dossier assembler skeleton.
 
-Composes Wardline's OWN taint posture for REAL, plus Clarion structure/linkages
+Composes Wardline's OWN taint posture for REAL, plus Loomweave structure/linkages
 and Filigree open work via STUBS behind clean source-provider seams. When a source
 is absent/unreachable it emits an HONEST PARTIAL envelope (that section marked
 unavailable) — never fabricated, never a crash. The SEI is an OPAQUE input the
@@ -15,7 +15,6 @@ from pathlib import Path
 
 import pytest
 
-from wardline.clarion.identity import ContentStatus, EntityBinding, IdentityStatus
 from wardline.core.dossier import (
     DOSSIER_TOKEN_BUDGET,
     LinkagesSection,
@@ -25,6 +24,7 @@ from wardline.core.dossier import (
     estimate_tokens,
 )
 from wardline.core.errors import DossierError
+from wardline.loomweave.identity import ContentStatus, EntityBinding, IdentityStatus
 
 # A @trusted producer that leaks an external-boundary value → PY-WL-101 fires.
 _LEAKY = (
@@ -97,7 +97,7 @@ def test_signature_includes_return_annotation_when_declared(tmp_path: Path) -> N
 
 
 def test_default_assembly_is_honest_partial(tmp_path: Path) -> None:
-    # No Clarion / Filigree providers configured → those sections are unavailable
+    # No Loomweave / Filigree providers configured → those sections are unavailable
     # WITH a reason, while self/shape/trust are intact. No crash, no fabrication.
     d = build_dossier("svc.leaky", root=_proj(tmp_path))
     assert d.linkages.available is False
@@ -114,7 +114,7 @@ def test_default_assembly_is_honest_partial(tmp_path: Path) -> None:
 
 
 def test_sei_is_carried_verbatim_as_the_opaque_key(tmp_path: Path) -> None:
-    weird = "clarion:eid:UNUSUAL-Token_With.Punct/0xFF"
+    weird = "loomweave:eid:UNUSUAL-Token_With.Punct/0xFF"
     binding = EntityBinding(
         locator="svc.leaky",
         sei=weird,
@@ -167,7 +167,7 @@ def test_unknown_entity_raises_dossier_error(tmp_path: Path) -> None:
 
 class _BoomLinkages:
     def linkages(self, binding: EntityBinding) -> LinkagesSection:
-        raise RuntimeError("clarion unreachable: connection refused")
+        raise RuntimeError("loomweave unreachable: connection refused")
 
 
 class _SilentLinkages:
@@ -175,7 +175,7 @@ class _SilentLinkages:
         return None  # the provider has no opinion for this entity
 
 
-_BINDING = EntityBinding(locator="svc.leaky", sei="clarion:eid:x", identity=IdentityStatus.ALIVE)
+_BINDING = EntityBinding(locator="svc.leaky", sei="loomweave:eid:x", identity=IdentityStatus.ALIVE)
 
 
 def test_provider_no_opinion_degrades_to_unavailable(tmp_path: Path) -> None:
@@ -188,7 +188,7 @@ def test_provider_failure_degrades_to_unavailable(tmp_path: Path) -> None:
     d = build_dossier("svc.leaky", root=_proj(tmp_path), binding=_BINDING, linkage_provider=_BoomLinkages())
     assert d.linkages.available is False
     assert d.linkages.reason is not None
-    assert "clarion unreachable" in d.linkages.reason
+    assert "loomweave unreachable" in d.linkages.reason
     # the rest of the envelope is intact — the call SUCCEEDED
     assert d.trust.gate_verdict == "defect"
 
@@ -340,7 +340,7 @@ class _FakeWork:
 
 
 def test_stub_providers_fill_their_sections(tmp_path: Path) -> None:
-    binding = EntityBinding(locator="svc.leaky", sei="clarion:eid:x", identity=IdentityStatus.ALIVE)
+    binding = EntityBinding(locator="svc.leaky", sei="loomweave:eid:x", identity=IdentityStatus.ALIVE)
     d = build_dossier(
         "svc.leaky",
         root=_proj(tmp_path),

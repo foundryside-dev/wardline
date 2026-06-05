@@ -60,7 +60,7 @@ for you.
     what it could and couldn't prove.
 
 You declare trust with three runtime no-op marker decorators. Prefer importing
-them from the tiny `loom-markers` package as `loom_markers.*`; Wardline also
+them from the tiny `weft-markers` package as `weft_markers.*`; Wardline also
 recognizes the older `wardline.decorators.*` namespace. Run `wardline vocab` to
 emit the canonical list:
 
@@ -102,7 +102,7 @@ between by following the calls.
 Consider this (the exact code Wardline was run against):
 
 ```python
-from loom_markers import trusted, external_boundary
+from weft_markers import trusted, external_boundary
 
 @external_boundary
 def read_request(req):

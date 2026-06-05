@@ -29,9 +29,9 @@ class JudgeContractError(WardlineError):
     """The judge returned data violating the response contract — crash, never coerce."""
 
 
-class ClarionError(WardlineError):
-    """A Clarion-integration error the user must act on (missing extra, a 4xx
-    bad request, a bad --clarion-url). Soft Clarion conditions — outage, 5xx,
+class LoomweaveError(WardlineError):
+    """A Loomweave-integration error the user must act on (missing extra, a 4xx
+    bad request, a bad --loomweave-url). Soft Loomweave conditions — outage, 5xx,
     403 WRITE_DISABLED/PROJECT_MISMATCH — are NOT this; they warn and continue."""
 
 
@@ -52,5 +52,5 @@ class LegisArtifactError(WardlineError):
 class DossierError(WardlineError):
     """A dossier tool-execution fault the agent must act on: the requested entity is
     not in the scanned set, or its module could not be analysed. Optional-source
-    faults (Clarion/Filigree unreachable) are NOT this — those degrade to an
+    faults (Loomweave/Filigree unreachable) are NOT this — those degrade to an
     ``unavailable`` section so the call still succeeds (dossier design §8.2)."""

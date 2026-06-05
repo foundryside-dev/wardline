@@ -123,11 +123,11 @@ def _ok_body() -> str:
 
 def test_success_surfaces_stats_and_warnings() -> None:
     t = _FakeTransport(response=Response(status=200, body=_ok_body()))
-    res = FiligreeEmitter("http://x/api/loom/scan-results", transport=t).emit([_f()])
+    res = FiligreeEmitter("http://x/api/weft/scan-results", transport=t).emit([_f()])
     assert res.reachable is True
     assert res.created == 1
     assert res.warnings == ("severity coerced",)
-    assert t.calls[0][0] == "http://x/api/loom/scan-results"
+    assert t.calls[0][0] == "http://x/api/weft/scan-results"
     assert json.loads(t.calls[0][1])["scan_source"] == "wardline"
 
 
@@ -187,7 +187,7 @@ def test_urllib_transport_converts_httperror_to_response(monkeypatch) -> None:
 
     def _raise_http_error(req, timeout=None):  # noqa: ARG001
         raise urllib.error.HTTPError(
-            url="http://x/api/loom/scan-results",
+            url="http://x/api/weft/scan-results",
             code=400,
             msg="Bad Request",
             hdrs=None,
@@ -195,7 +195,7 @@ def test_urllib_transport_converts_httperror_to_response(monkeypatch) -> None:
         )
 
     monkeypatch.setattr(urllib.request, "urlopen", _raise_http_error)
-    resp = UrllibTransport().post("http://x/api/loom/scan-results", b"{}", {"Content-Type": "application/json"})
+    resp = UrllibTransport().post("http://x/api/weft/scan-results", b"{}", {"Content-Type": "application/json"})
     assert resp.status == 400
     assert "path required" in resp.body
 
@@ -221,7 +221,7 @@ def test_urllib_transport_bounds_success_body(monkeypatch) -> None:
         "urlopen",
         lambda req, timeout=None: _Resp(b"x" * (MAX_RESPONSE_BODY_BYTES + 9)),
     )
-    resp = UrllibTransport().post("http://x/api/loom/scan-results", b"{}", {"Content-Type": "application/json"})
+    resp = UrllibTransport().post("http://x/api/weft/scan-results", b"{}", {"Content-Type": "application/json"})
     assert len(resp.body) < MAX_RESPONSE_BODY_BYTES + 128
     assert resp.body.endswith("[truncated]")
 
@@ -236,7 +236,7 @@ def test_urllib_transport_bounds_http_error_body(monkeypatch) -> None:
 
     def _raise_http_error(req, timeout=None):  # noqa: ARG001
         raise urllib.error.HTTPError(
-            url="http://x/api/loom/scan-results",
+            url="http://x/api/weft/scan-results",
             code=400,
             msg="Bad Request",
             hdrs=None,
@@ -244,7 +244,7 @@ def test_urllib_transport_bounds_http_error_body(monkeypatch) -> None:
         )
 
     monkeypatch.setattr(urllib.request, "urlopen", _raise_http_error)
-    resp = UrllibTransport().post("http://x/api/loom/scan-results", b"{}", {"Content-Type": "application/json"})
+    resp = UrllibTransport().post("http://x/api/weft/scan-results", b"{}", {"Content-Type": "application/json"})
     assert len(resp.body) < MAX_RESPONSE_BODY_BYTES + 128
     assert resp.body.endswith("[truncated]")
 

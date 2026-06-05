@@ -47,5 +47,5 @@ def test_fingerprint_rejects_sei_keyword() -> None:
     # Belt-and-braces: passing an SEI keyword is a TypeError (no such input exists).
     with pytest.raises(TypeError):
         compute_finding_fingerprint(  # type: ignore[call-arg]
-            rule_id="PY-WL-101", path="p.py", line_start=1, sei="clarion:eid:deadbeef"
+            rule_id="PY-WL-101", path="p.py", line_start=1, sei="loomweave:eid:deadbeef"
         )

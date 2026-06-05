@@ -86,7 +86,7 @@ def test_agent_summary_includes_integration_status_blocks(tmp_path: Path) -> Non
             "warnings": [],
             "disabled_reason": "filigree unreachable",
         },
-        clarion_write={
+        loomweave_write={
             "configured": True,
             "reachable": False,
             "written": 0,
@@ -96,4 +96,4 @@ def test_agent_summary_includes_integration_status_blocks(tmp_path: Path) -> Non
     ).to_dict()
 
     assert out["integrations"]["filigree_emit"]["reachable"] is False
-    assert out["integrations"]["clarion_write"]["disabled_reason"] == "403"
+    assert out["integrations"]["loomweave_write"]["disabled_reason"] == "403"

@@ -22,7 +22,7 @@ _EXPECTED_ARGS = {
     "trust_boundary": {"to_level"},
     "trusted": {"level"},
 }
-_EXPECTED_PREFIXES = ("wardline.decorators", "loom_markers")
+_EXPECTED_PREFIXES = ("wardline.decorators", "weft_markers")
 
 
 def test_default_grammar_has_builtin_marker_namespaces_and_all_rules() -> None:
@@ -31,9 +31,9 @@ def test_default_grammar_has_builtin_marker_namespaces_and_all_rules() -> None:
         ("wardline.decorators", "external_boundary"),
         ("wardline.decorators", "trust_boundary"),
         ("wardline.decorators", "trusted"),
-        ("loom_markers", "external_boundary"),
-        ("loom_markers", "trust_boundary"),
-        ("loom_markers", "trusted"),
+        ("weft_markers", "external_boundary"),
+        ("weft_markers", "trust_boundary"),
+        ("weft_markers", "trusted"),
     )
     assert [r.rule_id for r in g.rules] == [
         "PY-WL-101",

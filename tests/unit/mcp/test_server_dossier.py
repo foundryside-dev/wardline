@@ -46,7 +46,7 @@ def test_mcp_dossier_tool_returns_real_trust_posture(tmp_path: Path) -> None:
     out = _mcp_call(WardlineMCPServer(root=proj), "dossier", {"entity": "svc.leaky"})
     assert out["identity"]["qualname"] == "svc.leaky"
     assert out["trust"]["gate_verdict"] == "defect"
-    # self-only (no clarion/filigree configured) → honest unavailable sources
+    # self-only (no loomweave/filigree configured) → honest unavailable sources
     assert out["linkages"]["available"] is False
     assert out["work"]["available"] is False
 
@@ -82,8 +82,8 @@ def test_cli_dossier_unknown_entity_exits_2(tmp_path: Path) -> None:
     assert "error:" in res.output
 
 
-def test_cli_dossier_with_clarion_url_degrades_soft(tmp_path: Path, monkeypatch) -> None:
-    # exercise the --clarion-url wiring branch without a live Clarion: a fake client
+def test_cli_dossier_with_loomweave_url_degrades_soft(tmp_path: Path, monkeypatch) -> None:
+    # exercise the --loomweave-url wiring branch without a live Loomweave: a fake client
     # whose capability probe returns None → honest self-only degrade, no crash.
     proj = _proj(tmp_path)
 
@@ -97,10 +97,10 @@ def test_cli_dossier_with_clarion_url_degrades_soft(tmp_path: Path, monkeypatch)
         def resolve(self, qualnames):
             return None
 
-    monkeypatch.setattr("wardline.clarion.client.ClarionClient", _FakeClient)
-    monkeypatch.setattr("wardline.clarion.config.load_clarion_token", lambda p: None)
-    monkeypatch.setattr("wardline.clarion.config.resolve_project_name", lambda p: "proj")
-    res = CliRunner().invoke(cli, ["dossier", "svc.leaky", str(proj), "--clarion-url", "http://x"])
+    monkeypatch.setattr("wardline.loomweave.client.LoomweaveClient", _FakeClient)
+    monkeypatch.setattr("wardline.loomweave.config.load_loomweave_token", lambda p: None)
+    monkeypatch.setattr("wardline.loomweave.config.resolve_project_name", lambda p: "proj")
+    res = CliRunner().invoke(cli, ["dossier", "svc.leaky", str(proj), "--loomweave-url", "http://x"])
     assert res.exit_code == 0, res.output
     payload = json.loads(res.output)
     assert payload["identity"]["identity_status"] == "unavailable"
@@ -109,7 +109,7 @@ def test_cli_dossier_with_clarion_url_degrades_soft(tmp_path: Path, monkeypatch)
 
 def test_cli_and_mcp_dossier_are_identical(tmp_path: Path) -> None:
     # The tenet: CLI and MCP are identical by construction (both delegate to
-    # build_loom_dossier). Same input → byte-identical envelope.
+    # build_weft_dossier). Same input → byte-identical envelope.
     proj = _proj(tmp_path)
     cli_res = CliRunner().invoke(cli, ["dossier", "svc.leaky", str(proj)])
     assert cli_res.exit_code == 0, cli_res.output

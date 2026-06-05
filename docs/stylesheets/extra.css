@@ -1,8 +1,8 @@
 /* ==========================================================================
-   Wardline — thin identity layer over the shared Loom docs theme.
+   Wardline — thin identity layer over the shared Weft docs theme.
 
-   This file is layered ON TOP OF the vendored `loom-mkdocs.css` (loaded first
-   in mkdocs.yml). loom-mkdocs.css owns the base chrome: Material --md-* surface/
+   This file is layered ON TOP OF the vendored `weft-mkdocs.css` (loaded first
+   in mkdocs.yml). weft-mkdocs.css owns the base chrome: Material --md-* surface/
    text/code/footer tokens per scheme, the JetBrains Mono / Space Grotesk faces,
    headings, links, admonitions, tables, radii. We do NOT re-declare any of that.
 
@@ -11,10 +11,10 @@
      strand — a deliberate change from the previous teal. It repaints the hero
      CTA, eyebrow, links inside the landing, decorator names, section eyebrows,
      and the "you are here" badge. (In the LIGHT scheme it deepens to #C2410C so
-     coral-as-text clears WCAG AA on white — mirroring how loom-mkdocs deepens
+     coral-as-text clears WCAG AA on white — mirroring how weft-mkdocs deepens
      its sky accent for light.)
    - The .wl-* landing components (hero, finding panel, feature cards, the
-     eight-state trust lattice, the Loom suite grid), recolored onto the Loom
+     eight-state trust lattice, the Weft suite grid), recolored onto the Weft
      dark-teal surface ramp + 3/6/8 radii.
    - The eight-state lattice swatches are SEMANTIC, not brand: they ride the
      design-system semantic ramp — most-trusted (INTEGRAL) = --ready emerald,
@@ -23,7 +23,7 @@
    Strategy (unchanged from before): Material owns the light/dark toggle. We do
    NOT add a custom toggle and do NOT use light-dark()/[data-theme]; the --wl-*
    semantic tokens are redefined under Material's own scheme selectors so they
-   resolve against the body-level scheme — the same hook loom-mkdocs uses.
+   resolve against the body-level scheme — the same hook weft-mkdocs uses.
    ========================================================================== */
 
 :root {
@@ -41,21 +41,21 @@
   --wl-text-hero: clamp(2.5rem, 1.7rem + 3.6vw, 4rem);
   --wl-text-lead: clamp(1.1rem, 1rem + 0.6vw, 1.375rem);
 
-  /* ---- Radii — the Loom 3 / 6 / 8 system ---- */
+  /* ---- Radii — the Weft 3 / 6 / 8 system ---- */
   --wl-radius-sm: 3px;   /* chips, pills, small surfaces  */
   --wl-radius:    6px;   /* buttons, cards                */
   --wl-radius-lg: 8px;   /* large panels                  */
 
   --wl-content-width: 52rem;
 
-  /* Body face = JetBrains Mono (from loom-mkdocs); display = Space Grotesk for
+  /* Body face = JetBrains Mono (from weft-mkdocs); display = Space Grotesk for
      the big landing headlines (matches the design system's brand-display rule). */
   --wl-font-mono: var(--md-code-font-family, 'JetBrains Mono', 'Fira Code',
     ui-monospace, 'SF Mono', Menlo, monospace);
   --wl-font-display: 'Space Grotesk', 'JetBrains Mono', ui-sans-serif,
     system-ui, sans-serif;
 
-  /* ---- Loom design-system primitives used by the lattice (theme-agnostic) ---
+  /* ---- Weft design-system primitives used by the lattice (theme-agnostic) ---
      The eight-state trust lattice is SEMANTIC, not brand: most-trusted end rides
      the --ready emerald, least-trusted end the --stale red, gradient through the
      --aging amber. Pinned here (not per-scheme) so the ramp reads identically in
@@ -67,22 +67,22 @@
 
 /* ==========================================================================
    Wardline semantic tokens — redefined per Material scheme, mapped onto the
-   shared Loom surface ramp + the coral thread accent. These MUST live inside
+   shared Weft surface ramp + the coral thread accent. These MUST live inside
    the scheme selectors (which Material sets on <body>): a custom property set
    on <body> overrides one inherited from :root for every descendant, so an
-   accent declared in :root would silently lose to loom-mkdocs's body-level
+   accent declared in :root would silently lose to weft-mkdocs's body-level
    --md-accent-fg-color. Declaring them here keeps coral authoritative.
    ========================================================================== */
 
 /* ---- DARK (slate) scheme — the canonical default ---- */
 [data-md-color-scheme="slate"] {
   /* Repaint Material's interactive accent to the Wardline coral thread so the
-     chrome loom-mkdocs styles (links, nav active rail, TOC marker, headerlinks)
+     chrome weft-mkdocs styles (links, nav active rail, TOC marker, headerlinks)
      read in Wardline's identity colour rather than the suite's default sky. */
   --md-accent-fg-color:  var(--thread-wardline);  /* #F4845F coral */
   --md-typeset-a-color:  var(--thread-wardline);
 
-  /* Loom dark surface ramp (design-system: base / raised / overlay / hover) */
+  /* Weft dark surface ramp (design-system: base / raised / overlay / hover) */
   --wl-bg:           #0B1215;  /* surface-base    */
   --wl-bg-subtle:    #131E24;  /* surface-raised  */
   --wl-bg-card:      #1A2B34;  /* surface-overlay */
@@ -96,7 +96,7 @@
   --wl-text:         #E2EEF2;  /* text-primary    */
   --wl-text-muted:   #8FAAB8;  /* text-secondary  */
 
-  /* Borders — Loom hairlines */
+  /* Borders — Weft hairlines */
   --wl-border:        #1E3340;  /* border-default  */
   --wl-border-strong: #2A4454;  /* border-strong   */
 
@@ -115,12 +115,12 @@
 /* ---- LIGHT (default) scheme — the documented alternate ---- */
 [data-md-color-scheme="default"] {
   /* Coral-as-text fails AA on white; deepen to #C2410C (the same darker coral
-     loom-mkdocs uses for the light-scheme code-constant colour) so links and
+     weft-mkdocs uses for the light-scheme code-constant colour) so links and
      the eyebrow clear 4.5:1. Brand reads coral; contrast holds. */
   --md-accent-fg-color:  #C2410C;
   --md-typeset-a-color:  #C2410C;
 
-  /* Loom light surface ramp */
+  /* Weft light surface ramp */
   --wl-bg:           #F0F6F8;  /* surface-base    */
   --wl-bg-subtle:    #E8F1F4;  /* surface-overlay */
   --wl-bg-card:      #FFFFFF;  /* surface-raised  */
@@ -147,7 +147,7 @@
 }
 
 /* ==========================================================================
-   Footer — Loom suite links (.wl-* component; loom-mkdocs owns the rest of
+   Footer — Weft suite links (.wl-* component; weft-mkdocs owns the rest of
    the footer chrome, this only styles the bespoke suite strip).
    ========================================================================== */
 
@@ -643,7 +643,7 @@
 }
 
 /* ==========================================================================
-   Loom suite
+   Weft suite
    ========================================================================== */
 .wl-suite {
   margin-top: var(--wl-space-10);

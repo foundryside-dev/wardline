@@ -48,30 +48,30 @@ def test_file_finding_not_found_surfaces(tmp_path):
     assert out["not_found"] is True and out["issue_id"] is None
 
 
-def test_file_finding_can_attach_clarion_identity(tmp_path, monkeypatch):
+def test_file_finding_can_attach_loomweave_identity(tmp_path, monkeypatch):
     from wardline.core import filigree_issue as mod
 
     monkeypatch.setattr(
         mod,
-        "attach_clarion_identity_for_finding",
+        "attach_loomweave_identity_for_finding",
         lambda **kw: IdentityAttachResult.success(
-            entity_id="clarion:eid:abc",
+            entity_id="loomweave:eid:abc",
             content_hash="hash-v1",
             binding_kind="sei",
         ),
     )
 
     out = _file_finding(
-        {"fingerprint": "fp1", "attach_clarion_identity": True},
+        {"fingerprint": "fp1", "attach_loomweave_identity": True},
         tmp_path,
         FakeFiler(FileResult(reachable=True, issue_id="wardline-abc", created=True)),
-        clarion=object(),
+        loomweave=object(),
     )
 
     assert out["identity_attach"] == {
         "attempted": True,
         "attached": True,
-        "entity_id": "clarion:eid:abc",
+        "entity_id": "loomweave:eid:abc",
         "content_hash": "hash-v1",
         "binding_kind": "sei",
         "reason": None,
@@ -85,5 +85,5 @@ def test_server_filer_none_without_url(tmp_path):
 def test_server_filer_built_with_url(tmp_path):
     from wardline.core.filigree_issue import FiligreeIssueFiler
 
-    srv = WardlineMCPServer(root=tmp_path, filigree_url="http://h/api/loom/scan-results")
+    srv = WardlineMCPServer(root=tmp_path, filigree_url="http://h/api/weft/scan-results")
     assert isinstance(srv._filigree_filer(), FiligreeIssueFiler)

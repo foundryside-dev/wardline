@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from wardline.core.config import resolve_clarion_url, resolve_filigree_url
+from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
 from wardline.core.errors import WardlineError
 
 
@@ -19,7 +19,7 @@ from wardline.core.errors import WardlineError
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     default=None,
 )
-@click.option("--clarion-url", default=None, help="Clarion URL for optional SEI/content status.")
+@click.option("--loomweave-url", default=None, help="Loomweave URL for optional SEI/content status.")
 @click.option("--filigree-url", default=None, help="Filigree URL for optional linked issue/open-work status.")
 @click.option(
     "--format",
@@ -31,29 +31,29 @@ from wardline.core.errors import WardlineError
 def decorator_coverage(
     path: Path,
     config_path: Path | None,
-    clarion_url: str | None,
+    loomweave_url: str | None,
     filigree_url: str | None,
     output_format: str,
 ) -> None:
     """List every Wardline trust-decorated entity under PATH."""
-    from wardline.loom_decorator_coverage import build_loom_decorator_coverage
+    from wardline.weft_decorator_coverage import build_weft_decorator_coverage
 
     try:
-        clarion_url = resolve_clarion_url(clarion_url, path, config_path)
+        loomweave_url = resolve_loomweave_url(loomweave_url, path, config_path)
         filigree_url = resolve_filigree_url(filigree_url, path, config_path)
-        clarion_client = None
-        if clarion_url is not None:
-            from wardline.clarion.client import ClarionClient
-            from wardline.clarion.config import load_clarion_token, resolve_project_name
+        loomweave_client = None
+        if loomweave_url is not None:
+            from wardline.loomweave.client import LoomweaveClient
+            from wardline.loomweave.config import load_loomweave_token, resolve_project_name
 
-            clarion_client = ClarionClient(
-                clarion_url,
-                secret=load_clarion_token(path),
+            loomweave_client = LoomweaveClient(
+                loomweave_url,
+                secret=load_loomweave_token(path),
                 project=resolve_project_name(path),
             )
-        report = build_loom_decorator_coverage(
+        report = build_weft_decorator_coverage(
             path,
-            clarion_client=clarion_client,
+            loomweave_client=loomweave_client,
             filigree_url=filigree_url,
             config_path=config_path,
             confine_to_root=True,

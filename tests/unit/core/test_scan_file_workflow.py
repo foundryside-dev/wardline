@@ -37,7 +37,7 @@ class FakeFiler:
         return self.result
 
 
-class DownClarion:
+class DownLoomweave:
     def capabilities(self):
         return None
 
@@ -105,7 +105,7 @@ def test_scan_file_findings_surfaces_partial_failures(tmp_path):
         fingerprints=(fp, "0" * 64),
         filigree_emitter=emitter,
         filigree_filer=filer,
-        clarion_client=DownClarion(),
+        loomweave_client=DownLoomweave(),
         dry_run=False,
     )
 

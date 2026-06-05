@@ -28,14 +28,14 @@ if TYPE_CHECKING:
     from wardline.scanner.taint.provider import SeedContext
 
 _VOCAB_PREFIX = "wardline.decorators"
-_LOOM_MARKERS_PREFIX = "loom_markers"
+_WEFT_MARKERS_PREFIX = "weft_markers"
 _TAINTSTATE_FQN = "wardline.core.taints.TaintState"
 
 # The top-level import roots of every BUILTIN marker module — derived dynamically
-# from the grammar so adding a builtin marker root (e.g. a future ``loom_markers``
+# from the grammar so adding a builtin marker root (e.g. a future ``weft_markers``
 # sibling) automatically participates in shadow fail-closed + exact-export matching.
-# A ``loom_markers`` boundary type has module_prefix ``loom_markers`` (root
-# ``loom_markers``); a ``wardline.decorators`` one has root ``wardline``.
+# A ``weft_markers`` boundary type has module_prefix ``weft_markers`` (root
+# ``weft_markers``); a ``wardline.decorators`` one has root ``wardline``.
 _BUILTIN_MARKER_ROOTS: frozenset[str] = frozenset(
     bt.module_prefix.split(".")[0] for bt in BUILTIN_BOUNDARY_TYPES if getattr(bt, "builtin", False)
 )
@@ -44,7 +44,7 @@ _BUILTIN_MARKER_ROOTS: frozenset[str] = frozenset(
 def vocabulary_star_exports() -> dict[str, dict[str, str]]:
     """Statically-known star-export map for builtin trust-marker modules.
 
-    ``from wardline.decorators import *`` and ``from loom_markers import *`` bring
+    ``from wardline.decorators import *`` and ``from weft_markers import *`` bring
     the :data:`REGISTRY` decorator names into the importing module's namespace.
     Wardline knows these names a priori (they are the REGISTRY keys), so it can
     materialise them WITHOUT importing or executing the target module — the
@@ -57,7 +57,7 @@ def vocabulary_star_exports() -> dict[str, dict[str, str]]:
     """
     return {
         _VOCAB_PREFIX: {name: f"{_VOCAB_PREFIX}.{name}" for name in REGISTRY},
-        _LOOM_MARKERS_PREFIX: {name: f"{_LOOM_MARKERS_PREFIX}.{name}" for name in REGISTRY},
+        _WEFT_MARKERS_PREFIX: {name: f"{_WEFT_MARKERS_PREFIX}.{name}" for name in REGISTRY},
     }
 
 
@@ -99,12 +99,12 @@ def _shadowed_builtin_roots(project_modules: frozenset[str]) -> frozenset[str]:
     Builtin marker declarations must refer to the installed marker package, not a
     module supplied by the scanned project. A root is shadowed when the project
     itself defines a TOP-LEVEL module/package equal to that root (e.g. its own
-    ``wardline`` or ``loom_markers`` package): Python import resolution can then
-    bind ``wardline.decorators`` / ``loom_markers`` to attacker-controlled code, so
+    ``wardline`` or ``weft_markers`` package): Python import resolution can then
+    bind ``wardline.decorators`` / ``weft_markers`` to attacker-controlled code, so
     builtin matching fails closed for markers under that root.
 
     Only the FIRST dotted component is compared, so an unrelated nested module such
-    as ``app.wardline_helper`` or ``myloom.wardline`` does NOT trip a shadow.
+    as ``app.wardline_helper`` or ``myweft.wardline`` does NOT trip a shadow.
     """
     project_roots = {module.split(".", 1)[0] for module in project_modules}
     return frozenset(project_roots & _BUILTIN_MARKER_ROOTS)
@@ -269,7 +269,7 @@ class DecoratorTaintSourceProvider:
         warm cache cannot reuse a TRUSTED summary across scans with different
         shadow states (cross-root cache poisoning). Crucially this is per-root: a
         scan that shadows only ``wardline`` and one that shadows only
-        ``loom_markers`` must NOT collide on the cache key. When nothing is
+        ``weft_markers`` must NOT collide on the cache key. When nothing is
         shadowed (the common case), returns the bare :meth:`fingerprint` string,
         preserving today's exact cache/baseline-stable value.
         """
@@ -297,7 +297,7 @@ class DecoratorTaintSourceProvider:
         if fqn is None:
             return None, None
         # Builtin markers are security-sensitive defaults: a scanned project could
-        # ship its own ``wardline/decorators`` (or ``loom_markers``) no-op shadowing
+        # ship its own ``wardline/decorators`` (or ``weft_markers``) no-op shadowing
         # the real package, spoof @trusted, and suppress real taint→sink flows (a
         # false GREEN). So a builtin matches ONLY an EXACT known export
         # (``P.<name>`` or ``P.trust.<name>``), and is rejected entirely when its

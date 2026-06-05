@@ -1,7 +1,7 @@
 # tests/conformance/test_qualname_conformance.py
 """Drive the shared qualname conformance corpus through Wardline's producer.
 
-The corpus (qualnames.json) is the cross-tool design-review artifact; Clarion
+The corpus (qualnames.json) is the cross-tool design-review artifact; Loomweave
 vendors a copy and runs the same assertions. Keep them in lockstep.
 """
 

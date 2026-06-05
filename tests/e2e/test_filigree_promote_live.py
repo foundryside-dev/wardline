@@ -1,7 +1,7 @@
 """WS-A2 live oracle (opt-in): scan->emit->file_finding against a real Filigree with
-the /api/loom/findings/promote route. Skips cleanly until that route exists.
+the /api/weft/findings/promote route. Skips cleanly until that route exists.
 
-Run: WARDLINE_FILIGREE_URL=http://localhost:PORT/api/loom/scan-results \
+Run: WARDLINE_FILIGREE_URL=http://localhost:PORT/api/weft/scan-results \
      uv run pytest -m filigree_e2e
 """
 
@@ -25,10 +25,10 @@ def _promote_route_live(url: str) -> bool:
     import urllib.error
     import urllib.request
 
-    from wardline.core.filigree_issue import promote_url_from_loom
+    from wardline.core.filigree_issue import promote_url_from_weft
 
     req = urllib.request.Request(
-        promote_url_from_loom(url),
+        promote_url_from_weft(url),
         data=b"{}",
         method="POST",
         headers={"Content-Type": "application/json"},
@@ -45,7 +45,7 @@ def _promote_route_live(url: str) -> bool:
 @pytest.mark.skipif(not _URL, reason="set WARDLINE_FILIGREE_URL to run the live promote oracle")
 def test_scan_emit_then_file_finding(tmp_path):
     if not _promote_route_live(_URL):
-        pytest.skip("Filigree promote route /api/loom/findings/promote not available (ask #1 not shipped)")
+        pytest.skip("Filigree promote route /api/weft/findings/promote not available (ask #1 not shipped)")
     from wardline.core.filigree_emit import FiligreeEmitter
     from wardline.core.filigree_issue import FiligreeIssueFiler
     from wardline.core.run import run_scan
@@ -93,15 +93,15 @@ def _clean_src(token: str) -> str:
     )
 
 
-def _issue_status_category(loom_url: str, issue_id: str) -> str | None:
+def _issue_status_category(weft_url: str, issue_id: str) -> str | None:
     """GET the issue's status_category from the live Filigree (None if absent)."""
     import json
     import urllib.parse
     import urllib.request
 
-    from wardline.core.filigree_issue import api_base_url_from_loom
+    from wardline.core.filigree_issue import api_base_url_from_weft
 
-    base = api_base_url_from_loom(loom_url)
+    base = api_base_url_from_weft(weft_url)
     url = f"{base}/issue/{urllib.parse.quote(issue_id, safe='')}"
     req = urllib.request.Request(url, method="GET")
     with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
@@ -140,7 +140,7 @@ def _open_tainted_issue(tmp_path: Path) -> tuple[Path, str, str]:
 def test_close_on_fixed_then_reopen(tmp_path):
     """file -> open; fix + re-scan -> CLOSE; regress -> REOPEN (no clean-stale)."""
     if not _promote_route_live(_URL):
-        pytest.skip("Filigree promote route /api/loom/findings/promote not available (ask #1 not shipped)")
+        pytest.skip("Filigree promote route /api/weft/findings/promote not available (ask #1 not shipped)")
     from wardline.core.filigree_emit import FiligreeEmitter
     from wardline.core.run import run_scan
 
@@ -166,7 +166,7 @@ def test_close_on_fixed_then_reopen(tmp_path):
 def test_close_on_fixed_via_cli(tmp_path):
     """The real `wardline scan --filigree-url` command closes the issue on fix."""
     if not _promote_route_live(_URL):
-        pytest.skip("Filigree promote route /api/loom/findings/promote not available (ask #1 not shipped)")
+        pytest.skip("Filigree promote route /api/weft/findings/promote not available (ask #1 not shipped)")
     from click.testing import CliRunner
 
     from wardline.cli.scan import scan
@@ -182,7 +182,7 @@ def test_close_on_fixed_via_cli(tmp_path):
 def test_close_on_fixed_via_mcp(tmp_path):
     """The MCP `scan` tool closes the issue on fix (same emit path as the CLI)."""
     if not _promote_route_live(_URL):
-        pytest.skip("Filigree promote route /api/loom/findings/promote not available (ask #1 not shipped)")
+        pytest.skip("Filigree promote route /api/weft/findings/promote not available (ask #1 not shipped)")
     from wardline.core.filigree_emit import FiligreeEmitter
     from wardline.mcp.server import _scan
 

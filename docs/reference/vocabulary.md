@@ -1,7 +1,7 @@
 # Trust vocabulary
 
 Wardline recognizes exactly three trust marker decorators. Application code
-should import them from the tiny `loom-markers` package; `wardline.decorators`
+should import them from the tiny `weft-markers` package; `wardline.decorators`
 remains a backward-compatible alias for direct Wardline users. Everything else
 in the lattice is *inferred* by the engine. This page documents each marker
 precisely — what it declares, its exact signature and allowed arguments, and a
@@ -12,14 +12,14 @@ usage example.
 Prefer the neutral marker-only package in application code:
 
 ```bash
-pip install loom-markers
+pip install weft-markers
 ```
 
 ```python
-from loom_markers import trusted, trust_boundary, external_boundary
+from weft_markers import trusted, trust_boundary, external_boundary
 ```
 
-Wardline recognizes both `loom_markers.*` and the older
+Wardline recognizes both `weft_markers.*` and the older
 `wardline.decorators.*` forms with the same static semantics. The canonical
 names are also discoverable without importing Wardline at all, via
 `wardline vocab`, which prints:
@@ -92,7 +92,7 @@ the return tier is always `EXTERNAL_RAW`.
 **Usage:**
 
 ```python
-from loom_markers import external_boundary
+from weft_markers import external_boundary
 
 @external_boundary
 def read_request_body(request) -> str:
@@ -132,7 +132,7 @@ integral and not to a raw tier.
 **Usage:**
 
 ```python
-from loom_markers import trust_boundary
+from weft_markers import trust_boundary
 
 @trust_boundary(to_level="GUARDED")
 def parse_user_id(raw: str) -> int:
@@ -177,7 +177,7 @@ merely guarded and never raw.
 **Usage — both forms:**
 
 ```python
-from loom_markers import trusted
+from weft_markers import trusted
 
 @trusted
 def build_audit_record(event) -> dict:
@@ -204,7 +204,7 @@ enters, `trust_boundary` marks where it is validated and its trust is raised, an
 `trusted` marks the code downstream that is entitled to assume trusted input.
 
 ```python
-from loom_markers import external_boundary, trust_boundary, trusted
+from weft_markers import external_boundary, trust_boundary, trusted
 
 @external_boundary
 def read_id(request) -> str:

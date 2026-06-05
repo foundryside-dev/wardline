@@ -8,8 +8,8 @@ module's threat model — it is tamper-evidence within a key-holding trust domai
 asymmetric proof of authorship.
 
 The CLI default is fail-closed on a dirty tree (``--allow-dirty`` to override), which
-flips the *core* default so a bundle's ``commit`` truthfully pins its source. Clarion
-SEI enrichment is opt-in (``--clarion-url``) and fail-soft; its client is lazy-imported
+flips the *core* default so a bundle's ``commit`` truthfully pins its source. Loomweave
+SEI enrichment is opt-in (``--loomweave-url``) and fail-soft; its client is lazy-imported
 only when the flag is set, so the zero-dependency base is untouched.
 """
 
@@ -21,7 +21,7 @@ from pathlib import Path
 import click
 
 from wardline.core.attest_key import load_attest_key
-from wardline.core.config import resolve_clarion_url
+from wardline.core.config import resolve_loomweave_url
 from wardline.core.errors import WardlineError
 
 
@@ -34,10 +34,10 @@ from wardline.core.errors import WardlineError
     default=None,
 )
 @click.option(
-    "--clarion-url",
-    "clarion_url",
+    "--loomweave-url",
+    "loomweave_url",
     default=None,
-    help="Clarion URL to SEI-key the boundaries (opt-in, fail-soft).",
+    help="Loomweave URL to SEI-key the boundaries (opt-in, fail-soft).",
 )
 @click.option(
     "--cache-dir",
@@ -85,7 +85,7 @@ from wardline.core.errors import WardlineError
 def attest(
     path: Path,
     config_path: Path | None,
-    clarion_url: str | None,
+    loomweave_url: str | None,
     cache_dir: Path | None,
     trusted_packs: tuple[str, ...],
     trust_local_packs: bool,
@@ -104,22 +104,22 @@ def attest(
         )
         raise SystemExit(2)
 
-    clarion_url = resolve_clarion_url(
-        clarion_url,
+    loomweave_url = resolve_loomweave_url(
+        loomweave_url,
         path,
         config_path,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
     )
-    clarion_client = None
-    if clarion_url is not None:
-        from wardline.clarion.client import ClarionClient
-        from wardline.clarion.config import load_clarion_token, resolve_project_name
+    loomweave_client = None
+    if loomweave_url is not None:
+        from wardline.loomweave.client import LoomweaveClient
+        from wardline.loomweave.config import load_loomweave_token, resolve_project_name
 
-        clarion_client = ClarionClient(
-            clarion_url,
-            secret=load_clarion_token(path),
+        loomweave_client = LoomweaveClient(
+            loomweave_url,
+            secret=load_loomweave_token(path),
             project=resolve_project_name(path),
         )
 
@@ -135,7 +135,7 @@ def attest(
                 reproduce=reproduce,
                 config_path=config_path,
                 cache_dir=cache_dir,
-                clarion_client=clarion_client,
+                loomweave_client=loomweave_client,
                 confine_to_root=True,
                 trust_local_packs=trust_local_packs,
                 trusted_packs=trusted_packs,
@@ -155,7 +155,7 @@ def attest(
             key,
             config_path=config_path,
             cache_dir=cache_dir,
-            clarion_client=clarion_client,
+            loomweave_client=loomweave_client,
             confine_to_root=True,
             trust_local_packs=trust_local_packs,
             trusted_packs=trusted_packs,

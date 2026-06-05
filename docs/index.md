@@ -20,8 +20,8 @@ Wardline ships in layers, so you only pull what you use:
 
 The `wardline scan` CLI lives in the `scanner` extra, so install
 `wardline[scanner]` to run the examples below. Everything in the
-[Loom integration](guides/loom.md) guide — SARIF output, the Filigree emitter,
-Clarion conformance — also ships in `scanner` (the Filigree emitter uses only
+[Weft integration](guides/weft.md) guide — SARIF output, the Filigree emitter,
+Loomweave conformance — also ships in `scanner` (the Filigree emitter uses only
 the standard library), so no further extra is required.
 
 ## 30-second example

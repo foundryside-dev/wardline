@@ -1,7 +1,7 @@
 # src/wardline/core/legis.py
 """B4 — the signed Wardline→legis scan-artifact (the cross-repo authenticated hop).
 
-An agent posts a Wardline scan to legis (the Loom governance plugin) at
+An agent posts a Wardline scan to legis (the Weft governance plugin) at
 ``POST /wardline/scan-results``; legis governs it and NEVER re-analyses. legis is a
 FIXED external contract: when its deployment sets ``LEGIS_WARDLINE_ARTIFACT_KEY`` it
 *requires* a valid ``artifact_signature`` plus signed provenance and rejects unsigned
@@ -21,7 +21,7 @@ Two things have to be exact for the hop to hold in production:
   legis knows are ``waived``/``suppressed`` (Wardline also emits ``baselined``/
   ``judged``). So the legis wire is a *typed projection* of the whole scan onto
   legis's accepted vocabulary — the trust grammar carried verbatim, the diagnostics
-  dropped. The rich MCP/SARIF/Clarion finding wire is unchanged.
+  dropped. The rich MCP/SARIF/Loomweave finding wire is unchanged.
 
 Wardline never calls legis (it has no HTTP client to it); it produces the signed scan
 and the agent posts it. ``build_legis_artifact`` returns the single, verbatim-postable

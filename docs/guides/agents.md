@@ -32,10 +32,10 @@ If you have not installed Wardline yet, start with
 - installs the `wardline-gate` skill into `.claude/skills/` and `.agents/skills/`;
 - merges a `wardline` entry into `.mcp.json` (preserving any existing servers);
 - writes a global Codex MCP entry in `~/.codex/config.toml`;
-- detects a Clarion taint store (`clarion` on `PATH` or `WARDLINE_CLARION_URL`)
-  and a Filigree project (`.filigree.conf`), recording a `clarion:`/`filigree:`
+- detects a Loomweave taint store (`loomweave` on `PATH` or `WARDLINE_LOOMWEAVE_URL`)
+  and a Filigree project (`.filigree.conf`), recording a `loomweave:`/`filigree:`
   binding in `wardline.yaml` — live when a URL env var, Filigree
-  `.filigree/ephemeral.port`, or HTTP-enabled `clarion.yaml` exposes a URL;
+  `.filigree/ephemeral.port`, or HTTP-enabled `loomweave.yaml` exposes a URL;
   otherwise a commented stanza for you to fill.
 
 ```console
@@ -47,9 +47,9 @@ wardline install:
   skill .agents/skills/wardline-gate: created
   .mcp.json (wardline entry): created
   Codex MCP (wardline entry): created
-  clarion: detected (commented)
+  loomweave: detected (commented)
   filigree: detected (commented)
-  runtime markers: install `loom-markers` and import from `loom_markers`
+  runtime markers: install `weft-markers` and import from `weft_markers`
 ```
 
 It is idempotent (re-run to refresh after upgrading wardline) and non-interactive
@@ -57,7 +57,7 @@ It is idempotent (re-run to refresh after upgrading wardline) and non-interactiv
 `--no-skill`, `--no-mcp`, or `--no-bindings`. There is no SessionStart hook —
 freshness is enforced only when you re-run `wardline install`.
 
-Once installed, the MCP server resolves the Clarion URL from `wardline.yaml`, so
+Once installed, the MCP server resolves the Loomweave URL from `wardline.yaml`, so
 the `.mcp.json` entry stays a stdio `wardline mcp --root .` command with no URL
 in its args.
 The Codex entry is global, so it runs `wardline mcp` without `--root` and lets
@@ -76,7 +76,7 @@ as `wardline install`.
 
 ## Gate the agent's work with `wardline scan`
 
-Wardline marks trust boundaries with marker decorators from `loom_markers`:
+Wardline marks trust boundaries with marker decorators from `weft_markers`:
 `@external_boundary` (data arriving from outside the trust boundary —
 untrusted) and `@trusted` (a producer that is supposed to receive validated data
 only). When untrusted data reaches a trusted producer, Wardline raises
@@ -85,7 +85,7 @@ only). When untrusted data reaches a trusted producer, Wardline raises
 Here is a self-contained example (`handlers.py`):
 
 ```python
-from loom_markers import external_boundary, trusted
+from weft_markers import external_boundary, trusted
 
 
 @external_boundary
@@ -186,7 +186,7 @@ for the verdict format, the floor, and the `judged.yaml` record shape.
 ## Hand off via SARIF
 
 For handing findings to another tool — GitHub code scanning, a CI dashboard, or
-a sibling Loom tool — emit SARIF 2.1.0:
+a sibling Weft tool — emit SARIF 2.1.0:
 
 ```console
 $ wardline scan . --format sarif --output results.sarif --fail-on ERROR
@@ -197,7 +197,7 @@ The log is standard SARIF 2.1.0 with a `wardline` driver and one result per
 finding (the defect alongside engine metric/fact entries), so it is not
 Filigree-specific — any SARIF consumer can read it. `--fail-on` still gates while
 the file is written, so the same command both publishes the report and blocks the
-agent's change. See the [Loom integration guide](loom.md) for the full
+agent's change. See the [Weft integration guide](weft.md) for the full
 output matrix, including the native Filigree emitter.
 
 ## Call Wardline as MCP tools
@@ -224,7 +224,7 @@ Resources expose the trust vocabulary, rule catalog, config, and config schema.
 The `wardline:loop` prompt documents the intended
 scan → explain → fix-at-the-boundary → rescan cycle.
 
-With an opt-in Clarion taint store configured (`wardline mcp --clarion-url
+With an opt-in Loomweave taint store configured (`wardline mcp --loomweave-url
 <URL>`), `explain_taint` becomes a query when you pass the finding's `qualname`
 as `sink_qualname`: a fresh fact is served from the store without re-scanning
 the file. Pass `chain: true` (with an optional `max_hops`), again alongside
@@ -232,15 +232,15 @@ the file. Pass `chain: true` (with an optional `max_hops`), again alongside
 boundary. Without a store, or without
 `sink_qualname`, `explain_taint` returns the single-hop SP8 explanation from a
 local re-scan. Known cost: with a store configured, each `scan` additionally
-builds taint facts (a blake3 hash per file) and POSTs them to Clarion — this is
+builds taint facts (a blake3 hash per file) and POSTs them to Loomweave — this is
 fail-soft, but a real per-scan cost in the agent loop. See the
-[Clarion taint store guide](clarion-taint-store.md) for the full
+[Loomweave taint store guide](loomweave-taint-store.md) for the full
 opt-in, auth, and fail-soft details.
 
-`file_finding` can also opt into Clarion identity attachment with
-`attach_clarion_identity: true`. Wardline promotes the finding first, then
+`file_finding` can also opt into Loomweave identity attachment with
+`attach_loomweave_identity: true`. Wardline promotes the finding first, then
 re-runs the scan to find the fingerprint's qualname, resolves that qualname
-through Clarion, and attaches a Filigree entity association when it has both an
+through Loomweave, and attaches a Filigree entity association when it has both an
 entity id and a current content hash. The returned `identity_attach` block
 reports `attempted`, `attached`, `entity_id`, `content_hash`, `binding_kind`, and
 `reason`. If only a legacy locator is available and no current hash can be read,
@@ -250,7 +250,7 @@ binding.
 For the usual agent loop, prefer `scan_file_findings`: it defaults to a dry-run
 summary of active defects, including explanation summaries, then promotes only
 when you pass explicit `fingerprints` or `all_active: true`. Filigree emission,
-per-finding promotion, unknown fingerprints, and Clarion identity attachment are
+per-finding promotion, unknown fingerprints, and Loomweave identity attachment are
 reported as separate status blocks so partial failure is not hidden.
 
 The server is stateless — no session state is carried between calls; the
@@ -262,4 +262,4 @@ and `judge` with `write` write to your project files as requested.
 For shell workflows, `wardline scan --format agent-summary` writes the same
 versioned handoff shape (`wardline-agent-summary-1`) to disk: active defects
 first with fingerprints and next tool calls, plus suppressed findings, engine
-facts, and Clarion/Filigree write status when configured.
+facts, and Loomweave/Filigree write status when configured.
