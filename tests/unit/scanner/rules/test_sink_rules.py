@@ -235,6 +235,28 @@ def test_107_lambda_param_shadowing_enclosing_raw_does_not_fire(tmp_path) -> Non
     assert not any(str(w.message).startswith("WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK") for w in caught)
 
 
+def test_107_lambda_called_before_later_clean_assignment_still_fires(tmp_path) -> None:
+    # Direct lambda calls must use the taints visible at the call statement, not
+    # only the enclosing function's final state. Here eval() executes before the
+    # cleanup assignment, so the raw argument must remain visible to PY-WL-107.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            src = read_raw(p)
+            cb = lambda: eval(src)
+            cb()
+            src = "clean"
+        """,
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        findings = UntrustedToExec().check(ctx)
+    assert [(x.rule_id, x.qualname) for x in findings] == [("PY-WL-107", "m.f")]
+    assert not any(str(w.message).startswith("WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK") for w in caught)
+
+
 def test_107_raw_assigned_after_lambda_def_still_fires(tmp_path) -> None:
     # Closure-by-reference soundness: the lambda is DEFINED while ``src`` is clean,
     # but ``src`` is reassigned raw before the lambda is called — at runtime eval()
