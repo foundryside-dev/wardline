@@ -92,6 +92,10 @@ _CURRENT_VAR_TYPES: contextvars.ContextVar[dict[str, str] | None] = contextvars.
     "_CURRENT_VAR_TYPES", default=None
 )
 
+_CURRENT_LAMBDA_BINDINGS: contextvars.ContextVar[dict[str, ast.Lambda] | None] = contextvars.ContextVar(
+    "_CURRENT_LAMBDA_BINDINGS", default=None
+)
+
 _CURRENT_MODULE_PREFIX: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "_CURRENT_MODULE_PREFIX", default=None
 )
@@ -232,6 +236,47 @@ def _resolve_lambda_bodies(
         _resolve_expr(lam.body, function_taint, taint_map, scope)
 
 
+def _resolve_lambda_body_at_call(
+    lam: ast.Lambda,
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    var_taints: dict[str, TaintState],
+    pos_taints: list[TaintState],
+    kw_taints: dict[str | None, TaintState],
+) -> None:
+    """Record a bound lambda body's call-site arg taints at a direct call site.
+
+    The final lambda-body pass is deliberately conservative for escaping/deferred
+    lambdas, but direct ``cb()`` calls have stronger ordering information: the
+    lambda executes with the current enclosing variable taints at this statement.
+    Recording the body here prevents a later clean assignment from laundering a
+    raw value that was captured when the direct call actually ran.
+    """
+    scope = dict(var_taints)
+    args = lam.args
+    positional_params = [*args.posonlyargs, *args.args]
+    for param, taint in zip(positional_params, pos_taints, strict=False):
+        scope[param.arg] = taint
+    for param in positional_params[len(pos_taints) :]:
+        scope[param.arg] = function_taint
+    if args.vararg is not None:
+        extra = pos_taints[len(positional_params) :]
+        scope[args.vararg.arg] = extra[0] if extra else function_taint
+        for taint in extra[1:]:
+            scope[args.vararg.arg] = combine(scope[args.vararg.arg], taint)
+    for param in args.kwonlyargs:
+        scope[param.arg] = kw_taints.get(param.arg, function_taint)
+    for param in positional_params:
+        if param.arg in kw_taints:
+            scope[param.arg] = combine(scope.get(param.arg, function_taint), kw_taints[param.arg])
+    if args.kwarg is not None:
+        keyword_values = [taint for name, taint in kw_taints.items() if name is not None]
+        scope[args.kwarg.arg] = keyword_values[0] if keyword_values else function_taint
+        for taint in keyword_values[1:]:
+            scope[args.kwarg.arg] = combine(scope[args.kwarg.arg], taint)
+    _resolve_expr(lam.body, function_taint, taint_map, scope)
+
+
 def compute_variable_taints(
     func_node: ast.FunctionDef | ast.AsyncFunctionDef,
     function_taint: TaintState,
@@ -278,6 +323,7 @@ def compute_variable_taints(
     if provenance_clash is not None:
         token_clash = _PROVENANCE_CLASH.set(provenance_clash)
     token_types = _CURRENT_VAR_TYPES.set({})
+    token_lambdas = _CURRENT_LAMBDA_BINDINGS.set({})
     if alias_map is not None:
         token = _CURRENT_ALIAS_MAP.set(alias_map)
     if call_site_arg_taints is not None:
@@ -303,6 +349,7 @@ def compute_variable_taints(
         if token_clash is not None:
             _PROVENANCE_CLASH.reset(token_clash)
         _CURRENT_VAR_TYPES.reset(token_types)
+        _CURRENT_LAMBDA_BINDINGS.reset(token_lambdas)
         if token is not None:
             _CURRENT_ALIAS_MAP.reset(token)
         if token_args is not None:
@@ -585,9 +632,14 @@ def _resolve_call(
         if isinstance(arg, ast.Starred):
             resolved_args[f"*{i}"] = t
     kw_taints = []
+    kw_arg_taints: dict[str | None, TaintState] = {}
     for kw in node.keywords:
         t = _resolve_expr(kw.value, function_taint, taint_map, var_taints)
         kw_taints.append(t)
+        if kw.arg in kw_arg_taints:
+            kw_arg_taints[kw.arg] = combine(kw_arg_taints[kw.arg], t)
+        else:
+            kw_arg_taints[kw.arg] = t
         if kw.arg in resolved_args:
             resolved_args[kw.arg] = combine(resolved_args[kw.arg], t)
         else:
@@ -596,7 +648,32 @@ def _resolve_call(
 
     call_site_arg_taints = _CURRENT_CALL_SITE_ARG_TAINTS.get()
     if call_site_arg_taints is not None:
-        call_site_arg_taints[id(node)] = resolved_args
+        existing = call_site_arg_taints.get(id(node))
+        if existing is None:
+            call_site_arg_taints[id(node)] = resolved_args
+        else:
+            for key, taint in resolved_args.items():
+                existing[key] = combine(existing[key], taint) if key in existing else taint
+
+    lambda_bindings = _CURRENT_LAMBDA_BINDINGS.get()
+    if isinstance(node.func, ast.Name) and lambda_bindings is not None and node.func.id in lambda_bindings:
+        _resolve_lambda_body_at_call(
+            lambda_bindings[node.func.id],
+            function_taint,
+            taint_map,
+            var_taints,
+            pos_taints,
+            kw_arg_taints,
+        )
+    elif isinstance(node.func, ast.Lambda):
+        _resolve_lambda_body_at_call(
+            node.func,
+            function_taint,
+            taint_map,
+            var_taints,
+            pos_taints,
+            kw_arg_taints,
+        )
 
     alias_map = _CURRENT_ALIAS_MAP.get()
     imported_fqn: str | None = None
@@ -739,6 +816,13 @@ def _process_stmt(
         if isinstance(stmt.target, ast.Name):
             taint = _resolve_expr(value, function_taint, taint_map, var_taints)
             var_taints[stmt.target.id] = taint
+
+            lambda_bindings = _CURRENT_LAMBDA_BINDINGS.get()
+            if lambda_bindings is not None:
+                if isinstance(value, ast.Lambda):
+                    lambda_bindings[stmt.target.id] = value
+                else:
+                    lambda_bindings.pop(stmt.target.id, None)
         elif isinstance(stmt.target, (ast.Subscript, ast.Attribute)):
             # Annotated container/attribute write (``self.x: str = expr``,
             # ``d['k']: T = expr``) — same fail-open shape as the plain-Assign Part
@@ -838,6 +922,13 @@ def _handle_assign(
                 var_taints,
             )
             var_taints[target.id] = taint
+
+            lambda_bindings = _CURRENT_LAMBDA_BINDINGS.get()
+            if lambda_bindings is not None:
+                if isinstance(stmt.value, ast.Lambda):
+                    lambda_bindings[target.id] = stmt.value
+                else:
+                    lambda_bindings.pop(target.id, None)
 
             var_types = _CURRENT_VAR_TYPES.get()
             if var_types is not None:
