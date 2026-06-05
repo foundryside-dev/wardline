@@ -247,7 +247,7 @@ def _scan(
         findings_out.append(d)
     from wardline.core.agent_summary import build_agent_summary
 
-    return {
+    response: dict[str, Any] = {
         "files_scanned": result.files_scanned,
         "findings": findings_out,
         "summary": {
@@ -273,6 +273,69 @@ def _scan(
             clarion_write=clarion_status,
         ).to_dict(),
     }
+    _attach_legis_artifact(
+        response,
+        result,
+        path,
+        args,
+        trust_local_packs=trust_local_packs,
+        trusted_packs=trusted_packs,
+        strict_defaults=strict_defaults,
+    )
+    return response
+
+
+def _attach_legis_artifact(
+    response: dict[str, Any],
+    result: Any,
+    path: Path,
+    args: dict[str, Any],
+    *,
+    trust_local_packs: bool,
+    trusted_packs: tuple[str, ...],
+    strict_defaults: bool,
+) -> None:
+    """Opt-in: attach the signed, verbatim-postable legis scan-artifact.
+
+    Activated only when a shared HMAC secret is provisioned
+    (``WARDLINE_LEGIS_ARTIFACT_KEY`` env or ``.env``) OR the caller passes
+    ``legis_artifact: true`` (unsigned, for legis's optional-verify posture). When
+    neither is requested the response is byte-unchanged from the released shape.
+
+    Fail-soft like the Clarion/Filigree blocks: a signing refusal (dirty tree /
+    non-repo) reports ``signed: false`` with the reason and omits the postable
+    artifact — it never fails the scan itself. The agent posts ``legis_artifact``
+    verbatim as the ``scan`` field of ``POST /wardline/scan-results``.
+    """
+    from wardline.core.errors import LegisArtifactError
+    from wardline.core.legis import build_legis_artifact, key_id, load_legis_artifact_key
+
+    key_str = load_legis_artifact_key(path)
+    if key_str is None and not bool(args.get("legis_artifact")):
+        return  # not requested — default response unchanged
+
+    cfg = config_mod.load(
+        _cfg(args, path) or (path / "wardline.yaml"),
+        trust_local_packs=trust_local_packs,
+        trusted_packs=trusted_packs,
+        strict_defaults=strict_defaults,
+    )
+    key_bytes = key_str.encode("utf-8") if key_str else None
+    status: dict[str, Any] = {
+        "configured": True,
+        "signed": False,
+        "key_id": key_id(key_str) if key_str else None,
+        "reason": None,
+    }
+    try:
+        artifact = build_legis_artifact(result, root=path, config=cfg, key=key_bytes)
+    except LegisArtifactError as exc:
+        status["reason"] = str(exc)
+        response["legis_artifact_status"] = status
+        return
+    status["signed"] = key_bytes is not None
+    response["legis_artifact"] = artifact
+    response["legis_artifact_status"] = status
 
 
 def _explain_taint(args: dict[str, Any], root: Path, clarion: Any = None) -> dict[str, Any]:

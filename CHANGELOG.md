@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Signed scan handoff to **legis** (the Loom governance plugin): `wardline scan
+  --format legis` (CLI) and an opt-in `legis_artifact` block on the MCP `scan` result
+  produce the verbatim-postable `scan` for legis's `POST /wardline/scan-results`. The
+  artifact carries four provenance fields (`scanner_identity`, `rule_set_version`,
+  `commit_sha`, `tree_sha`) and an `artifact_signature` — `hmac-sha256:v2:<hex>` over
+  legis-canonical JSON (sorted-key, tight-separator, non-ASCII-preserved), byte-exact
+  with legis's signer (pinned by a golden vector captured from real legis). The shared
+  secret is read from `WARDLINE_LEGIS_ARTIFACT_KEY` (env or `.env`); unset → unsigned
+  with `unverified` provenance. Signing refuses a dirty / non-git tree (false
+  provenance); the MCP block is fail-soft, the CLI is loud (exit 2). The artifact carries
+  the **whole scan**, each finding projected onto legis's accepted vocabulary — `properties`
+  filtered to the eight trust tiers (diagnostics like `sink`/`callee`/`markers`
+  dropped; the rich MCP/SARIF/Clarion wire is unchanged), suppression proof carried in
+  `properties`, and `baselined`/`judged` mapped onto legis's `suppressed`. `active`
+  stays `active`, so legis reproduces Wardline's gate population exactly (one judge);
+  legis enforces its own 500-finding cap (a larger scan is rejected loudly, never silently truncated).
+  The hermetic conformance test now mirrors legis's *full* ingest validation (trust
+  tiers, suppression proof, supported states), closing the prior false-green. See
+  [Signed scan handoff to legis](guides/legis-handoff.md).
 - `wardline assure` CLI and MCP `assure` tool: trust-surface COVERAGE posture — how many
   declared trust boundaries (`@external_boundary` / `@trust_boundary` / `@trusted`) the
   engine reached a definite verdict on vs. how many are honestly unknown (`unknown` list),

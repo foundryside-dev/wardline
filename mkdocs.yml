@@ -68,6 +68,7 @@ nav:
       - Suppressing findings: guides/suppression.md
       - LLM triage judge: guides/judge.md
       - Loom integration: guides/loom.md
+      - Signed scan handoff to legis: guides/legis-handoff.md
       - Clarion taint store: guides/clarion-taint-store.md
       - Assurance posture: guides/assurance-posture.md
       - Attestation: guides/attestation.md
