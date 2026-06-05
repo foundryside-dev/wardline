@@ -33,7 +33,6 @@ from wardline.core.taints import TaintState
 from wardline.scanner.rules._sink_helpers import (
     RAW_ZONE,
     _own_calls,
-    call_site_var_taints,
     dotted_name,
     worst_arg_taint,
 )
@@ -102,8 +101,6 @@ class UntrustedReachesTrustedCallee:
         findings: list[Finding] = []
         for qualname, entity in context.entities.items():
             module = module_dotted_name(entity.location.path) or ""
-            site_taints = call_site_var_taints(entity.node, qualname, context)
-            final = context.function_var_taints.get(qualname, {})
             for call in _own_calls(entity.node):
                 callee = _resolve_callee(call, module, context, caller_qualname=qualname)
                 if callee is None:
@@ -114,7 +111,7 @@ class UntrustedReachesTrustedCallee:
                 callee_body = context.project_taints.get(callee)
                 if callee_body is None or callee_body in RAW_ZONE:
                     continue  # @external_boundary / @trust_boundary body is raw — raw input expected
-                worst = worst_arg_taint(call, qualname, context, site_taints.get(id(call), final))
+                worst = worst_arg_taint(call, qualname, context)
                 if worst is None or worst not in _PROVABLY_UNTRUSTED:
                     continue
                 line = call.lineno

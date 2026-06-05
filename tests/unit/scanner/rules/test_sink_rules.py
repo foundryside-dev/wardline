@@ -559,7 +559,7 @@ def test_fallback_flow_insensitive_warnings() -> None:
 
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        res = worst_arg_taint(call, "m.f", context, {})
+        res = worst_arg_taint(call, "m.f", context)
         assert len(w) == 1
         assert "WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK" in str(w[0].message)
         assert res == TaintState.UNKNOWN_RAW
