@@ -32,16 +32,21 @@ def _analyze(tmp_path: Path, src: str):
     return analyzer.last_context
 
 
-def test_sink_calls_do_not_enter_lambda_body() -> None:
+def test_sink_calls_include_lambda_body() -> None:
     func = ast.parse("def f():\n    cb = lambda: wrapper(eval('1 + 1'))\n    return cb\n").body[0]
-    assert list(_own_calls(func)) == []
-    assert list(sink_calls(func, frozenset({"eval"}), {}, "m")) == []
+    assert [(call.lineno, ast.unparse(call.func)) for call in _own_calls(func)] == [
+        (2, "wrapper"),
+        (2, "eval"),
+    ]
+    assert [(call.lineno, sink) for call, sink in sink_calls(func, frozenset({"eval"}), {}, "m")] == [
+        (2, "eval")
+    ]
 
 
 def test_own_calls_preserve_lambda_default_calls() -> None:
     func = ast.parse("def f(raw):\n    cb = lambda value=eval(raw): wrapper(raw)\n    return cb\n").body[0]
     calls = list(sink_calls(func, frozenset({"eval", "wrapper"}), {}, "m"))
-    assert [(call.lineno, sink) for call, sink in calls] == [(2, "eval")]
+    assert [(call.lineno, sink) for call, sink in calls] == [(2, "eval"), (2, "wrapper")]
 
 
 def test_106_raw_reaches_pickle_loads(tmp_path) -> None:
@@ -135,6 +140,20 @@ def test_107_raw_reaches_eval_in_lambda_default(tmp_path) -> None:
         def f(p):
             src = read_raw(p)
             cb = lambda value=eval(src): value
+            return cb()
+        """,
+    )
+    assert [(x.rule_id, x.qualname) for x in UntrustedToExec().check(ctx)] == [("PY-WL-107", "m.f")]
+
+
+def test_107_raw_reaches_eval_in_lambda_body(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            src = read_raw(p)
+            cb = lambda: eval(src)
             return cb()
         """,
     )
