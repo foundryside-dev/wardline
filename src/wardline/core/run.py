@@ -9,7 +9,7 @@ identical by construction — same findings, same ``active`` count, same gate.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -45,7 +45,7 @@ def _fp(*parts: str) -> str:
 @dataclass(frozen=True, slots=True)
 class ScanSummary:
     total: int  # every finding (defects + facts/metrics)
-    active: int  # non-suppressed DEFECTs — the gate population
+    active: int  # non-suppressed DEFECTs in the emitted findings
     baselined: int
     waived: int
     judged: int
@@ -66,6 +66,10 @@ class ScanResult:
     # this exact run instead of re-deriving. Never serialised over MCP.
     context: AnalysisContext | None
     scanned_paths: tuple[str, ...] = ()
+    # Unsuppressed findings used by fail-on gates. Repository-controlled baseline,
+    # waiver, and judged files annotate emitted findings, but must not be able to
+    # hide defects from CI gates that run on untrusted pull-request content.
+    gate_findings: list[Finding] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,6 +190,9 @@ def run_scan(
     waivers = WaiverSet(parse_waivers(cfg.waivers))
     judged = load_judged(root / ".wardline" / "judged.yaml")
     findings = apply_suppressions(raw, baseline, waivers, today=date.today(), judged=judged)
+    # Keep a separate gate population that applies only operator-supplied scan
+    # scoping (for example --new-since), not repository-controlled suppressions.
+    gate_findings = list(raw)
 
     if new_since is not None:
         changed_files = get_changed_files_since(new_since, root)
@@ -195,18 +202,22 @@ def run_scan(
         else:
             affected = set()
 
-        new_findings = []
-        for f in findings:
-            if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE:
-                is_new = (f.location.path in changed_files) or (f.qualname is not None and f.qualname in affected)
-                if not is_new:
-                    f = replace(
-                        f,
-                        suppressed=SuppressionState.BASELINED,
-                        suppression_reason=f"delta: unchanged since {new_since}",
-                    )
-            new_findings.append(f)
-        findings = new_findings
+        def apply_delta_scope(candidates: list[Finding]) -> list[Finding]:
+            scoped = []
+            for f in candidates:
+                if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE:
+                    is_new = (f.location.path in changed_files) or (f.qualname is not None and f.qualname in affected)
+                    if not is_new:
+                        f = replace(
+                            f,
+                            suppressed=SuppressionState.BASELINED,
+                            suppression_reason=f"delta: unchanged since {new_since}",
+                        )
+                scoped.append(f)
+            return scoped
+
+        findings = apply_delta_scope(findings)
+        gate_findings = apply_delta_scope(gate_findings)
 
     defects = [f for f in findings if f.kind is Kind.DEFECT]
     summary = ScanSummary(
@@ -227,6 +238,7 @@ def run_scan(
             path.relative_to(resolved_root).as_posix() if path.is_relative_to(resolved_root) else path.as_posix()
             for path in files
         ),
+        gate_findings=gate_findings,
     )
 
 
@@ -234,5 +246,6 @@ def gate_decision(result: ScanResult, fail_on: Severity | None) -> GateDecision:
     """Translate a scan into a pass/fail verdict. A trip is data, not an error."""
     if fail_on is None:
         return GateDecision(tripped=False, fail_on=None, exit_class=0)
-    tripped = gate_trips(result.findings, fail_on)
+    gate_findings = result.gate_findings or result.findings
+    tripped = gate_trips(gate_findings, fail_on)
     return GateDecision(tripped=tripped, fail_on=fail_on.value, exit_class=1 if tripped else 0)

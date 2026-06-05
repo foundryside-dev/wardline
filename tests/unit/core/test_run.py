@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from wardline.core.errors import ConfigError
-from wardline.core.finding import Kind, Severity, SuppressionState
+from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.run import ScanResult, ScanSummary, gate_decision, run_scan
 
 FIXTURE = Path("tests/fixtures/sample_project")
@@ -28,7 +28,7 @@ def test_run_scan_returns_findings_summary_and_context() -> None:
     # invariants (total == len(findings); active == active-defect count), which
     # hold for any fixture regardless of finding count.
     assert result.summary.total == len(result.findings)
-    # active is the count of non-suppressed DEFECTs (the gate population)
+    # active is the count of non-suppressed DEFECTs in the emitted findings
     active = sum(1 for f in result.findings if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE)
     assert result.summary.active == active
     # context is carried for explain_finding to reuse
@@ -46,6 +46,34 @@ def test_gate_decision_trips_on_active_error(tmp_path: Path) -> None:
     assert decision.exit_class == 1
     assert decision.fail_on == "ERROR"
 
+
+def test_gate_decision_uses_unsuppressed_gate_population() -> None:
+    suppressed = Finding(
+        rule_id="PY-WL-101",
+        message="m",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path="svc.py", line_start=1),
+        fingerprint="a" * 64,
+        suppressed=SuppressionState.BASELINED,
+    )
+    active_gate_copy = Finding(
+        rule_id="PY-WL-101",
+        message="m",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path="svc.py", line_start=1),
+        fingerprint="a" * 64,
+    )
+    result = ScanResult(
+        findings=[suppressed],
+        summary=ScanSummary(total=1, active=0, baselined=1, waived=0, judged=0),
+        files_scanned=1,
+        context=None,
+        gate_findings=[active_gate_copy],
+    )
+
+    assert gate_decision(result, Severity.ERROR).tripped is True
 
 def test_gate_decision_none_threshold_never_trips() -> None:
     result = run_scan(FIXTURE)
@@ -111,9 +139,29 @@ def test_run_scan_baselined_count_distinguishes_categories(tmp_path: Path) -> No
     assert result.summary.waived == 0
     assert result.summary.judged == 0
     assert result.summary.active == 0
-    # And the gate clears now that the only ERROR defect is suppressed.
-    assert gate_decision(result, Severity.ERROR).tripped is False
+    # The emitted finding is suppressed, but fail-on gates over the unsuppressed
+    # population so repository-controlled baselines cannot hide defects in CI.
+    assert gate_decision(result, Severity.ERROR).tripped is True
 
+
+def test_gate_decision_ignores_repo_controlled_waivers(tmp_path: Path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(_LEAKY, encoding="utf-8")
+
+    first = run_scan(proj)
+    leak = next(f for f in first.findings if f.rule_id == "PY-WL-101")
+    (proj / "wardline.yaml").write_text(
+        "waivers:\n"
+        f"  - fingerprint: {leak.fingerprint}\n"
+        "    reason: attacker-controlled waiver\n",
+        encoding="utf-8",
+    )
+
+    result = run_scan(proj)
+    assert result.summary.waived == 1
+    assert result.summary.active == 0
+    assert gate_decision(result, Severity.ERROR).tripped is True
 
 def test_run_scan_counts_unanalyzed_parse_error(tmp_path: Path) -> None:
     # (b) A file that cannot be parsed is discovered-but-not-analysed: a
