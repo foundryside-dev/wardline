@@ -62,6 +62,33 @@ def test_pack_config_is_rejected_by_default_without_importing(tmp_path: Path) ->
     mock_import.assert_not_called()
 
 
+
+def test_local_dotted_pack_guard_does_not_execute_parent_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    marker = project / "PARENT_INIT_EXECUTED.txt"
+    package_dir = project / "evil"
+    package_dir.mkdir()
+    (package_dir / "__init__.py").write_text(
+        "from pathlib import Path\n"
+        "Path(__file__).parent.parent.joinpath('PARENT_INIT_EXECUTED.txt').write_text('executed')\n",
+        encoding="utf-8",
+    )
+    (package_dir / "sub.py").write_text("config = {}\n", encoding="utf-8")
+    config_path = project / "wardline.yaml"
+    config_path.write_text("packs:\n  - evil.sub\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(project))
+
+    with pytest.raises(
+        ConfigError, match="loading trust-grammar pack 'evil.sub' from local project directory is disabled"
+    ):
+        load(config_path, trusted_packs=("evil.sub",))
+
+    assert not marker.exists()
+
+
 def test_invalid_grammar_attribute_raises_config_error(tmp_path: Path) -> None:
     fake_module = ModuleType("invalid_grammar_pack")
     fake_module.grammar = "not a TrustGrammar"  # type: ignore
