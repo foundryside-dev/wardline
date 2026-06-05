@@ -74,7 +74,7 @@ Usage: wardline scan [OPTIONS] [PATH]
 
 Options:
   --config PATH
-  --format [jsonl|sarif|agent-summary]
+  --format [jsonl|sarif|agent-summary|legis]
   --output PATH
   --fail-on [CRITICAL|ERROR|WARN|INFO]
   --cache-dir PATH                Persist L3 summary cache here for faster
@@ -90,7 +90,7 @@ it at a package root, not a single file.
 | Option | Effect |
 | --- | --- |
 | `--config PATH` | Path to a `wardline.yaml` config file; controls rule enable/severity and judge settings (defaults to `wardline.yaml` in the scan path). |
-| `--format [jsonl\|sarif\|agent-summary]` | Output shape. `jsonl` is one finding per line; `sarif` is SARIF 2.1.0 for GitHub code-scanning and other generic SARIF consumers; `agent-summary` is stable versioned JSON for agents (`schema: wardline-agent-summary-1`) with active defects first, suppressed findings, engine facts, integration status, and suggested next tool calls. SARIF carries Wardline identity in `partialFingerprints["wardlineFingerprint/v1"]`; downstream Filigree lifecycle quality depends on importers preserving that field. |
+| `--format [jsonl\|sarif\|agent-summary\|legis]` | Output shape. `jsonl` is one finding per line; `sarif` is SARIF 2.1.0 for GitHub code-scanning and other generic SARIF consumers; `agent-summary` is stable versioned JSON for agents (`schema: wardline-agent-summary-1`) with active defects first, suppressed findings, engine facts, integration status, and suggested next tool calls; `legis` is the signed, verbatim-postable `scan` for legis's `POST /wardline/scan-results` (signed when `WARDLINE_LEGIS_ARTIFACT_KEY` is provisioned — write it **outside** the working tree, see the [legis handoff guide](../guides/legis-handoff.md)). SARIF carries Wardline identity in `partialFingerprints["wardlineFingerprint/v1"]`; downstream Filigree lifecycle quality depends on importers preserving that field. |
 | `--output PATH` | Write findings to a file instead of stdout. |
 | `--fail-on [CRITICAL\|ERROR\|WARN\|INFO]` | Exit non-zero when any finding at or above this severity survives the baseline. Use this as your CI gate. |
 | `--cache-dir PATH` | Persist the L3 inter-procedural summary cache here so the next scan reuses unchanged summaries. |

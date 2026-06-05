@@ -29,7 +29,7 @@ from wardline.core.sarif import SarifSink
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     default=None,
 )
-@click.option("--format", "fmt", type=click.Choice(["jsonl", "sarif", "agent-summary"]), default="jsonl")
+@click.option("--format", "fmt", type=click.Choice(["jsonl", "sarif", "agent-summary", "legis"]), default="jsonl")
 @click.option("--output", type=click.Path(path_type=Path), default=None)
 # exit 1 if any non-suppressed DEFECT has severity >= this threshold (SP3b)
 @click.option("--fail-on", type=click.Choice(["CRITICAL", "ERROR", "WARN", "INFO"]), default=None)
@@ -125,6 +125,8 @@ def scan(
         default_name = "findings.sarif"
     elif fmt == "agent-summary":
         default_name = "findings.agent-summary.json"
+    elif fmt == "legis":
+        default_name = "scan.legis.json"
     else:
         default_name = "findings.jsonl"
     output = output if output is not None else (path / default_name)
@@ -199,6 +201,28 @@ def scan(
         elif fmt == "jsonl":
             jsonl_sink = JsonlSink(output)
             jsonl_sink.write(findings)
+        elif fmt == "legis":
+            # The signed, verbatim-postable scan for legis's POST /wardline/scan-results.
+            # Signs when WARDLINE_LEGIS_ARTIFACT_KEY is provisioned (env/.env); else emits
+            # unsigned provenance (legis records it unverified). A dirty/non-repo tree under
+            # signing raises LegisArtifactError -> exit 2 (CLI is loud by design).
+            from wardline.core.config import load as load_cfg
+            from wardline.core.legis import build_legis_artifact, load_legis_artifact_key
+
+            legis_cfg = load_cfg(
+                config_path or (path / "wardline.yaml"),
+                trust_local_packs=trust_local_packs,
+                trusted_packs=trusted_packs,
+                strict_defaults=strict_defaults,
+            )
+            legis_key = load_legis_artifact_key(path)
+            artifact = build_legis_artifact(
+                result,
+                root=path,
+                config=legis_cfg,
+                key=legis_key.encode("utf-8") if legis_key else None,
+            )
+            output.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         # Loom emission is additive: a FiligreeEmitError (HTTP >= 400) is a Wardline
         # payload bug -> caught below -> exit 2; an unreachable sibling warns + continues.
         if filigree_url is not None:

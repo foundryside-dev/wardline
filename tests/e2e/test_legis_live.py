@@ -26,17 +26,23 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 import pytest
 
+from wardline.core.config import load as load_config
+from wardline.core.legis import build_legis_artifact
 from wardline.core.run import run_scan
 
 pytestmark = pytest.mark.legis_e2e
 
 _LEGIS_URL = os.environ.get("WARDLINE_LEGIS_URL")
+# Set to the SAME secret legis was launched with (LEGIS_WARDLINE_ARTIFACT_KEY) to
+# exercise the signed-required hop; the signed test skips cleanly when it is unset.
+_ARTIFACT_KEY = os.environ.get("WARDLINE_LEGIS_ARTIFACT_KEY")
 
 _LEAKY = (
     "from wardline.decorators import external_boundary, trusted\n"
@@ -48,8 +54,15 @@ _LEAKY = (
 def _post(url: str, payload: dict) -> tuple[int, dict]:
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 — test-local URL
-        return resp.status, json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 — test-local URL
+            return resp.status, json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:  # 4xx/5xx carry a JSON body we want to assert on
+        raw = exc.read().decode("utf-8")
+        try:
+            return exc.code, json.loads(raw)
+        except json.JSONDecodeError:
+            return exc.code, {"detail": raw}
 
 
 def _require_reachable_legis() -> str:
@@ -65,9 +78,14 @@ def _require_reachable_legis() -> str:
     return base
 
 
-def _scan_response(root: Path) -> dict:
+def _scan_artifact(root: Path, *, key: bytes | None = None) -> tuple[dict, set[str]]:
+    """The signed (or unsigned) verbatim-postable scan via build_legis_artifact, plus
+    the expected active-defect fingerprints for the one-judge cross-check."""
     result = run_scan(root)
-    return {"findings": [json.loads(f.to_jsonl()) for f in result.findings]}
+    cfg = load_config(root / "wardline.yaml")
+    scan = build_legis_artifact(result, root=root, config=cfg, key=key)
+    active_fps = {f.fingerprint for f in result.findings if f.kind.value == "defect" and f.suppressed.value == "active"}
+    return scan, active_fps
 
 
 def _proj(tmp_path: Path) -> Path:
@@ -77,12 +95,20 @@ def _proj(tmp_path: Path) -> Path:
     return proj
 
 
+def _commit(root: Path) -> None:
+    for cmd in (
+        ["git", "init", "-q"],
+        ["git", "config", "user.email", "t@example.com"],
+        ["git", "config", "user.name", "t"],
+        ["git", "add", "-A"],
+        ["git", "commit", "-qm", "init"],
+    ):
+        subprocess.run(cmd, cwd=root, check=True, capture_output=True)
+
+
 def test_legis_routes_wardline_active_defects(tmp_path: Path) -> None:
     base = _require_reachable_legis()
-    proj = _proj(tmp_path)
-    result = run_scan(proj)
-    scan = {"findings": [json.loads(f.to_jsonl()) for f in result.findings]}
-    active_fps = {f.fingerprint for f in result.findings if f.kind.value == "defect" and f.suppressed.value == "active"}
+    scan, active_fps = _scan_artifact(_proj(tmp_path))
     assert active_fps  # svc.leaky is an active PY-WL-101 defect
 
     status, body = _post(
@@ -94,6 +120,27 @@ def test_legis_routes_wardline_active_defects(tmp_path: Path) -> None:
     assert isinstance(routed, list)
     # legis governs: one routed entry per active defect — Wardline never re-judged.
     assert {r["fingerprint"] for r in routed} == active_fps
+
+
+def test_legis_accepts_signed_artifact(tmp_path: Path) -> None:
+    # The signed-required hop: with the shared key provisioned on BOTH sides, a
+    # Wardline-signed scan verifies and routes. Skips cleanly unless the operator
+    # launched legis with LEGIS_WARDLINE_ARTIFACT_KEY and set the same value here.
+    base = _require_reachable_legis()
+    if not _ARTIFACT_KEY:
+        pytest.skip("WARDLINE_LEGIS_ARTIFACT_KEY not set — launch legis with the matching key to run this")
+    proj = _proj(tmp_path)
+    _commit(proj)  # signing requires a clean, committed tree
+    scan, active_fps = _scan_artifact(proj, key=_ARTIFACT_KEY.encode("utf-8"))
+    assert scan["artifact_signature"].startswith("hmac-sha256:v2:")
+    assert active_fps
+
+    status, body = _post(
+        base + "/wardline/scan-results",
+        {"cell": "surface_override", "agent_id": "wardline-e2e", "scan": scan},
+    )
+    assert status == 200, body  # signature verified server-side
+    assert {r["fingerprint"] for r in body.get("routed", [])} == active_fps
 
 
 def test_legis_routes_nothing_for_a_clean_scan(tmp_path: Path) -> None:

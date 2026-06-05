@@ -40,6 +40,15 @@ class AttestError(WardlineError):
     ``allow_dirty``. A tool-execution fault the operator must act on."""
 
 
+class LegisArtifactError(WardlineError):
+    """A signed legis scan-artifact could not be built honestly: signing was
+    requested but git provenance is unavailable (non-repo / no tree) or the
+    working tree is dirty without ``allow_dirty``. Signing a ``commit_sha`` /
+    ``tree_sha`` that does not match the scanned content would be false
+    provenance, so it is refused rather than emitted. A tool-execution fault the
+    operator must act on (CLI → exit 2; MCP → isError result)."""
+
+
 class DossierError(WardlineError):
     """A dossier tool-execution fault the agent must act on: the requested entity is
     not in the scanned set, or its module could not be analysed. Optional-source
