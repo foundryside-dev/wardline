@@ -175,6 +175,131 @@ def test_107_safe_eval_in_lambda_default_does_not_fallback_or_fire(tmp_path) -> 
     assert not any(str(w.message).startswith("WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK") for w in caught)
 
 
+def test_107_raw_reaches_eval_in_lambda_body_is_flow_sensitive(tmp_path) -> None:
+    # The lambda-body sink is resolved flow-sensitively (real taint), NOT via the
+    # pessimistic flow-insensitive fallback — so it still fires, but emits no warning.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            src = read_raw(p)
+            cb = lambda: eval(src)
+            return cb()
+        """,
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        findings = UntrustedToExec().check(ctx)
+    assert [(x.rule_id, x.qualname) for x in findings] == [("PY-WL-107", "m.f")]
+    assert not any(str(w.message).startswith("WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK") for w in caught)
+
+
+def test_107_clean_local_in_lambda_body_does_not_fire(tmp_path) -> None:
+    # A clean (INTEGRAL) value reaching eval inside a lambda body must NOT fire:
+    # the engine now resolves the body's args instead of blanket-pessimistic UNKNOWN_RAW.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            safe = "harmless"
+            cb = lambda: eval(safe)
+            return cb()
+        """,
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        findings = UntrustedToExec().check(ctx)
+    assert findings == []
+    assert not any(str(w.message).startswith("WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK") for w in caught)
+
+
+def test_107_lambda_param_shadowing_enclosing_raw_does_not_fire(tmp_path) -> None:
+    # The lambda's own parameter SHADOWS the enclosing raw ``cmd``: it is a fresh
+    # binding, not the captured raw value, so ``eval(cmd)`` must NOT fire.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            cmd = read_raw(p)
+            cb = lambda cmd: eval(cmd)
+            return cb('ls')
+        """,
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        findings = UntrustedToExec().check(ctx)
+    assert findings == []
+    assert not any(str(w.message).startswith("WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK") for w in caught)
+
+
+def test_107_raw_assigned_after_lambda_def_still_fires(tmp_path) -> None:
+    # Closure-by-reference soundness: the lambda is DEFINED while ``src`` is clean,
+    # but ``src`` is reassigned raw before the lambda is called — at runtime eval()
+    # executes on raw data. Resolving the body against the FINAL var taint (not the
+    # definition-site value) keeps this real deferred sink visible.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            src = "safe"
+            cb = lambda: eval(src)
+            src = read_raw(p)
+            return cb()
+        """,
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        findings = UntrustedToExec().check(ctx)
+    assert [(x.rule_id, x.qualname) for x in findings] == [("PY-WL-107", "m.f")]
+    assert not any(str(w.message).startswith("WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK") for w in caught)
+
+
+def test_107_value_clean_in_final_state_in_lambda_body_does_not_fire(tmp_path) -> None:
+    # The reverse: raw is overwritten clean BEFORE the lambda is defined, so the
+    # final state of ``x`` is clean — the lambda body must NOT fire (final-state, not
+    # worst-ever, resolution).
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            x = read_raw(p)
+            x = "clean"
+            cb = lambda: eval(x)
+            return cb()
+        """,
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        findings = UntrustedToExec().check(ctx)
+    assert findings == []
+    assert not any(str(w.message).startswith("WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK") for w in caught)
+
+
+def test_108_raw_reaches_os_system_in_lambda_body(tmp_path) -> None:
+    # The engine fix is sink-agnostic (shared _resolve_expr / worst_arg_taint): a
+    # command sink in a lambda body fires flow-sensitively on real taint too.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            cmd = read_raw(p)
+            cb = lambda: os.system(cmd)
+            return cb()
+        """,
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        findings = UntrustedToCommand().check(ctx)
+    assert [(x.rule_id, x.qualname) for x in findings] == [("PY-WL-108", "m.f")]
+    assert not any(str(w.message).startswith("WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK") for w in caught)
+
+
 def test_108_raw_reaches_os_system(tmp_path) -> None:
     ctx = _analyze(
         tmp_path,
