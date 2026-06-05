@@ -235,19 +235,20 @@ def test_107_lambda_param_shadowing_enclosing_raw_does_not_fire(tmp_path) -> Non
     assert not any(str(w.message).startswith("WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK") for w in caught)
 
 
-def test_107_lambda_called_before_later_clean_assignment_still_fires(tmp_path) -> None:
-    # Direct lambda calls must use the taints visible at the call statement, not
-    # only the enclosing function's final state. Here eval() executes before the
-    # cleanup assignment, so the raw argument must remain visible to PY-WL-107.
+def test_107_lambda_called_with_raw_arg_fires(tmp_path) -> None:
+    # The load-bearing case this change fixes: a raw value is passed as a CALL
+    # ARGUMENT bound to the lambda's parameter, and the sink consumes the param.
+    # The worst-ever pass resets lambda params to neutral, so it cannot see the
+    # argument taint — only call-time resolution can. Silent false-negative on
+    # the prior engine (no fallback warning), so this test genuinely guards it.
     ctx = _analyze(
         tmp_path,
         """
         @trusted(level='ASSURED')
         def f(p):
-            src = read_raw(p)
-            cb = lambda: eval(src)
-            cb()
-            src = "clean"
+            raw = read_raw(p)
+            cb = lambda x: eval(x)
+            cb(raw)
         """,
     )
     with warnings.catch_warnings(record=True) as caught:
@@ -255,6 +256,41 @@ def test_107_lambda_called_before_later_clean_assignment_still_fires(tmp_path) -
         findings = UntrustedToExec().check(ctx)
     assert [(x.rule_id, x.qualname) for x in findings] == [("PY-WL-107", "m.f")]
     assert not any(str(w.message).startswith("WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK") for w in caught)
+
+
+def test_107_inline_lambda_call_with_raw_arg_fires(tmp_path) -> None:
+    # Same defect via an inline (un-named) lambda invoked immediately with a raw
+    # argument: ``(lambda x: eval(x))(raw)``. Also a silent FN on the prior engine.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            raw = read_raw(p)
+            (lambda x: eval(x))(raw)
+        """,
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        findings = UntrustedToExec().check(ctx)
+    assert [(x.rule_id, x.qualname) for x in findings] == [("PY-WL-107", "m.f")]
+    assert not any(str(w.message).startswith("WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK") for w in caught)
+
+
+def test_107_lambda_called_with_clean_arg_does_not_fire(tmp_path) -> None:
+    # Negative guard: call-time argument binding must NOT manufacture a finding
+    # when the argument is a clean literal. Protects against the call-time path
+    # over-firing (false positive).
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            cb = lambda x: eval(x)
+            cb('ls -la')
+        """,
+    )
+    assert UntrustedToExec().check(ctx) == []
 
 
 def test_107_raw_assigned_after_lambda_def_still_fires(tmp_path) -> None:
