@@ -110,6 +110,15 @@ def load_judged(path: Path) -> JudgedSet:
         if fp in seen:
             raise ConfigError(f"{path.name} findings[{idx}]: duplicate fingerprint {fp!r}")
         seen.add(fp)
+        # A judged record suppresses a finding ONLY as a FALSE_POSITIVE verdict. Require
+        # the field and reject any other value so a hand-edited TRUE_POSITIVE (or a
+        # missing verdict) cannot be smuggled in as a silent suppression. write_judged
+        # always emits verdict: FALSE_POSITIVE, so machine round-trips stay valid.
+        verdict = _require_str(e, "verdict", idx, path.name)
+        if verdict != "FALSE_POSITIVE":
+            raise ConfigError(
+                f"{path.name} findings[{idx}].verdict must be FALSE_POSITIVE, got {verdict!r}"
+            )
         rationale = _require_str(e, "rationale", idx, path.name)
         # Provenance is the audit primitive — never default it. A judged record with
         # no attributable model / policy / confidence is an unauditable suppression.

@@ -93,6 +93,24 @@ def test_run_judge_write_holds_back_low_confidence_fp(tmp_path: Path) -> None:
     assert not (root / ".wardline" / "judged.yaml").exists()
 
 
+def test_judge_workflow_still_consults_judged_after_write(tmp_path: Path) -> None:
+    # The judge flow is the TRUSTED local path: judged.yaml records are still consulted
+    # after `judge --write`, unchanged by the suppression-trust default. run_judge calls
+    # run_scan(trust_suppressions=True), and the emitted findings always carry the JUDGED
+    # annotation regardless of the flag — so the prior FP stays suppressed for the judge.
+    root = _leaky_project(tmp_path)
+    # 1) write a high-confidence FP for the active defect
+    first = run_judge(root, judge_caller=_fp_caller(0.95), write=True)
+    assert first.wrote >= 1
+    assert (root / ".wardline" / "judged.yaml").exists()
+    # 2) the scan run_judge builds (trust_suppressions=True) now sees that defect as JUDGED
+    rescanned = run_scan(root, trust_suppressions=True)
+    judged_defects = [
+        f for f in rescanned.findings if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.JUDGED
+    ]
+    assert judged_defects, "the judged FP must remain consulted on the judge re-run"
+
+
 def test_run_judge_ignores_project_floor_without_trust(tmp_path: Path) -> None:
     root = _leaky_project(tmp_path)
     (root / "wardline.yaml").write_text("judge:\n  write_confidence_floor: 0.0\n", encoding="utf-8")

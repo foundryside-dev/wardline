@@ -189,6 +189,7 @@ def _scan(
     new_since = args.get("new_since")
     trusted_packs = _trusted_packs_arg(args)
     cache_dir = _cache_dir_arg(args, root)
+    trust_suppressions = bool(args.get("trust_suppressions") or False)
     result = run_scan(
         path,
         config_path=_cfg(args, root),
@@ -198,6 +199,7 @@ def _scan(
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
+        trust_suppressions=trust_suppressions,
     )
     # Fail-soft Clarion write: only when a client was injected (server has a URL).
     # An outage/403 yields a not-reachable WriteResult; never raises here.
@@ -722,7 +724,10 @@ class WardlineMCPServer:
             Tool(
                 name="scan",
                 description="Whole-program taint scan of the project. Returns structured "
-                "findings, the suppression summary (active = the gate population), "
+                "findings, the suppression summary (active = unsuppressed defects; "
+                "by default the --fail-on gate evaluates the UNSUPPRESSED population so "
+                "repo-controlled baseline/waiver/judged annotate but do not clear it — "
+                "pass `trust_suppressions: true` for the trusted-local behaviour), "
                 "and the gate verdict. Pass `where` to filter the returned findings "
                 "(conjunctive; summary/gate stay whole-project) and `explain: true` to inline "
                 "each active defect's taint provenance — one call, no per-finding explain_taint. "
@@ -777,6 +782,13 @@ class WardlineMCPServer:
                         "strict_defaults": {
                             "type": "boolean",
                             "description": "Ignore repository-supplied custom configuration overrides (wardline.yaml)",
+                        },
+                        "trust_suppressions": {
+                            "type": "boolean",
+                            "description": "Let repository-controlled baseline/waiver/judged clear the gate "
+                            "(they always annotate findings regardless). Default false — the gate "
+                            "evaluates the unsuppressed population so a PR cannot self-suppress its "
+                            "own defect. Use only on a trusted checkout; in CI prefer new_since.",
                         },
                     },
                 },

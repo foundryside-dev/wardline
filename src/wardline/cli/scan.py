@@ -102,6 +102,17 @@ from wardline.core.sarif import SarifSink
     default=False,
     help="Allow wardline.yaml source_roots to resolve outside PATH.",
 )
+@click.option(
+    "--trust-suppressions",
+    is_flag=True,
+    default=False,
+    help=(
+        "Let repository-controlled baseline/waiver/judged files clear the --fail-on gate "
+        "(they always annotate findings regardless). Use ONLY for trusted local checkouts; "
+        "in CI prefer the unforgeable --new-since <merge-base> ratchet. Default off: by "
+        "default the gate evaluates the unsuppressed population so a PR cannot self-suppress."
+    ),
+)
 def scan(
     path: Path,
     config_path: Path | None,
@@ -119,6 +130,7 @@ def scan(
     yes: bool,
     strict_defaults: bool,
     allow_source_root_escape: bool,
+    trust_suppressions: bool,
 ) -> None:
     """Scan PATH for findings."""
     if fmt == "sarif":
@@ -158,6 +170,7 @@ def scan(
             trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,
             confine_to_root=not allow_source_root_escape,
+            trust_suppressions=trust_suppressions,
         )
         findings = result.findings
         if fix:
@@ -193,6 +206,7 @@ def scan(
                         trusted_packs=trusted_packs,
                         strict_defaults=strict_defaults,
                         confine_to_root=not allow_source_root_escape,
+                        trust_suppressions=trust_suppressions,
                     )
                     findings = result.findings
         if fmt == "sarif":
