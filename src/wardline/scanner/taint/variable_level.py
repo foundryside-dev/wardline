@@ -26,7 +26,7 @@ import contextvars
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from wardline.core.taints import _PROVENANCE_CLASH, TaintState, combine
+from wardline.core.taints import _PROVENANCE_CLASH, TRUST_RANK, TaintState, combine
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -175,30 +175,53 @@ def _own_scope_lambdas(node: ast.AST) -> Iterator[ast.Lambda]:
         yield from _own_scope_lambdas(child)
 
 
+def _worst_ever_var_taints(
+    call_site_taints: dict[int, dict[str, TaintState]],
+    final_var_taints: dict[str, TaintState],
+) -> dict[str, TaintState]:
+    """The least-trusted (highest ``TRUST_RANK``) taint each variable holds ANYWHERE in
+    the function — joined over every per-statement snapshot plus the final state.
+
+    This is the sound capture taint for a closure free variable: a lambda defers
+    execution to an unknown call time and captures the variable by reference, so it may
+    observe ANY value the variable holds. Picking a single program point is unsound —
+    the definition-site value misses a later raw assignment, and the final value misses
+    a raw value that was cleaned up after the lambda already ran. The whole-function
+    worst guarantees no false-negative (at the cost of a conservative over-approximation
+    when a raw value existed only *before* the capture — the safe direction)."""
+    worst = dict(final_var_taints)
+    for snapshot in call_site_taints.values():
+        for name, taint in snapshot.items():
+            current = worst.get(name)
+            if current is None or TRUST_RANK[taint] > TRUST_RANK[current]:
+                worst[name] = taint
+    return worst
+
+
 def _resolve_lambda_bodies(
     func_node: ast.FunctionDef | ast.AsyncFunctionDef,
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
-    final_var_taints: dict[str, TaintState],
+    worst_var_taints: dict[str, TaintState],
 ) -> None:
     """Record call-site arg taints for calls inside lambda BODIES (sink-rule input).
 
-    Runs AFTER the forward walk has finalised ``final_var_taints``. A lambda defers
-    execution and captures free variables by reference, so the sound static taint for
-    a free variable read in the body is its FINAL function-scope taint — the closest
-    proxy for its value when the lambda is later called. Resolving here (not at the
-    definition site) catches a variable assigned raw *after* the lambda is defined (a
-    real deferred sink) that a definition-site pass would silently miss, while a value
-    that is clean in the final state does not over-fire.
+    Runs AFTER the forward walk, against ``worst_var_taints`` — the worst (least-trusted)
+    taint each variable holds anywhere in the function (see :func:`_worst_ever_var_taints`).
+    A lambda defers execution and captures free variables by reference, so the body's
+    free variables must be resolved against the worst value they could carry at call
+    time, not any single program-point snapshot — that is what keeps both a variable
+    tainted *after* the lambda is defined and a variable still raw *when the lambda is
+    called* (cleaned only later) visible to the sink rules.
 
     Each lambda body is resolved in an isolated scope copy so lambda-local bindings
     (params, walrus) never leak; the lambda's own parameters are reset to the neutral
     seed (``function_taint``) so they SHADOW enclosing names of the same id rather than
-    inheriting their taint. Free variables resolve against ``final_var_taints``. The
-    recording itself happens via the ``_CURRENT_CALL_SITE_ARG_TAINTS`` contextvar set
-    by the caller, keyed by ``id(call)`` (matching what the sink rules look up)."""
+    inheriting their taint. The recording itself happens via the
+    ``_CURRENT_CALL_SITE_ARG_TAINTS`` contextvar set by the caller, keyed by ``id(call)``
+    (matching what the sink rules look up)."""
     for lam in _own_scope_lambdas(func_node):
-        scope = dict(final_var_taints)
+        scope = dict(worst_var_taints)
         args = lam.args
         for param in (*args.posonlyargs, *args.args, *args.kwonlyargs):
             scope[param.arg] = function_taint
@@ -263,10 +286,18 @@ def compute_variable_taints(
         var_taints: dict[str, TaintState] = {}
         _seed_parameters(func_node, function_taint, var_taints, param_meets, taint_map)
         _walk_body(func_node.body, function_taint, taint_map, var_taints, call_site_taints)
-        # Second pass: resolve lambda BODIES against the now-final var_taints so a
-        # deferred lambda that captures a variable tainted AFTER its definition is
-        # still seen by the sink rules (closure-by-reference soundness).
-        _resolve_lambda_bodies(func_node, function_taint, taint_map, var_taints)
+        # Second pass: resolve lambda BODIES against the worst taint each variable holds
+        # anywhere in the function, so a deferred lambda that captures a variable tainted
+        # at ANY point — before OR after its definition, or still raw when it is called
+        # and cleaned only afterwards — stays visible to the sink rules
+        # (closure-by-reference soundness; see _worst_ever_var_taints). Requires the
+        # per-statement snapshots; without them (a degraded caller that does not request
+        # flow-sensitive recording) the bodies are left unrecorded so the sink rules fall
+        # back to their pessimistic UNKNOWN_RAW default rather than to a possibly-clean
+        # final value — never silently masking a sink.
+        if call_site_taints is not None:
+            worst = _worst_ever_var_taints(call_site_taints, var_taints)
+            _resolve_lambda_bodies(func_node, function_taint, taint_map, worst)
         return var_taints
     finally:
         if token_clash is not None:

@@ -44,24 +44,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Lambda bodies are now traversed as part of the enclosing analyzable scope (lambdas
   are not indexed as separate entities, unlike `def`/`class`) — on **both** sides:
   sink *discovery* (`_own_calls`) and the L2 taint *walk*. The walk resolves each
-  lambda body in a second pass, after the forward walk has finalised the function's
-  variable taints, against those **final** taints (in an isolated scope copy —
-  lambda-local params/walrus never leak, and the lambda's own parameters shadow
-  enclosing names of the same id). Final-state resolution is the sound choice for a
-  closure: a lambda defers execution and captures free variables by reference, so a
-  variable assigned raw *after* the lambda is defined (`src = "safe"; cb = lambda:
-  eval(src); src = read_raw(p)`) is a real deferred sink and still fires — a
-  definition-site pass would silently miss it. The change is a strict improvement: it
-  closes the false-negative (raw→`eval`/`exec`/`pickle.loads`/`subprocess` in a lambda
-  body now fires, including the deferred case) **and** removes the prior over-report
-  where *any* lambda-body sink in a trusted function fell to the pessimistic
-  flow-insensitive fallback and fired `UNKNOWN_RAW` regardless of the actual argument
-  (`lambda: eval("safe")`, a `lambda cmd: eval(cmd)` whose param shadows an enclosing
-  raw `cmd`, and a value clean in the final state no longer false-fire). No
-  `WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK` warning is emitted for lambda-body sinks.
-  Regression tests cover discovery (`_own_calls`), flow-sensitive `PY-WL-107`/`108`
-  fires on real and deferred taint, and no-fire on a clean local, a final-state-clean
-  reassignment, and a shadowing lambda parameter.
+  lambda body in a second pass (after the forward walk) against the **worst**
+  (least-trusted) taint each captured variable holds *anywhere* in the function, in an
+  isolated scope copy (lambda-local params/walrus never leak, and the lambda's own
+  parameters shadow enclosing names of the same id). Whole-function-worst is the
+  fail-closed choice for a closure, which defers execution to an unknown call time and
+  captures free variables by reference: no single program-point snapshot is sound —
+  the definition-site value misses a variable tainted *after* the lambda is defined
+  (`src = "safe"; cb = lambda: eval(src); src = read_raw(p)`), and the final value
+  misses a variable still raw *when the lambda is called* and cleaned only afterwards
+  (`src = read_raw(p); cb = lambda: eval(src); cb(); src = "clean"`). Both are real
+  deferred sinks and now fire. This closes the false-negative (raw →
+  `eval`/`exec`/`pickle.loads`/`subprocess` in a lambda body now fires, including both
+  deferred orderings) and removes the gross over-report where *any* lambda-body sink in
+  a trusted function previously fell to the pessimistic flow-insensitive fallback and
+  fired `UNKNOWN_RAW` regardless of the argument (`lambda: eval("safe")` and a
+  `lambda cmd: eval(cmd)` whose param shadows an enclosing raw `cmd` no longer fire; no
+  `WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK` warning is emitted). The remaining imprecision
+  is a documented, conservative, waivable **false positive**: a variable raw only
+  *before* the lambda captures it (e.g. `x = read_raw(p); x = "clean"; cb = lambda:
+  eval(x)`) is treated tainted, because the analysis joins over the whole function
+  rather than tracking the capture point — the safe direction for a security analyzer,
+  and verified not to fire on wardline's own source (dogfood: 0 new). Regression tests
+  cover discovery (`_own_calls`), both deferred orderings on `PY-WL-107`/`108`, no-fire
+  on a clean local and a shadowing lambda parameter, and the documented conservative FP.
 - **Local trust-pack guard no longer executes repository code while deciding.**
   `_is_local_pack()` resolved a `wardline.yaml` `packs:` entry with
   `importlib.util.find_spec()`, which imports (and runs) the parent of a dotted
