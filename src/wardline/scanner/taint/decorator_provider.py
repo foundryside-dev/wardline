@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from wardline.scanner.taint.provider import SeedContext
 
 _VOCAB_PREFIX = "wardline.decorators"
+_WARDLINE_ROOT = "wardline"
 _TAINTSTATE_FQN = "wardline.core.taints.TaintState"
 
 
@@ -76,6 +77,26 @@ def _resolve_decorator_fqn(deco: ast.expr, alias_map: Mapping[str, str]) -> str 
     """
     func = deco.func if isinstance(deco, ast.Call) else deco
     return _resolve_dotted_fqn(func, alias_map)
+
+
+def _project_shadows_wardline(project_modules: frozenset[str]) -> bool:
+    """Return whether the scan target defines a local ``wardline`` package/module.
+
+    Builtin Wardline decorator declarations must refer to the installed marker
+    package, not a module supplied by the scanned project. If the project itself
+    contains ``wardline`` or anything below it, Python import resolution can bind
+    ``wardline.decorators`` to attacker-controlled code, so builtin matching fails
+    closed for the scan.
+    """
+    return any(module == _WARDLINE_ROOT or module.startswith(_WARDLINE_ROOT + ".") for module in project_modules)
+
+
+def _is_builtin_decorator_fqn(fqn: str, canonical_name: str, module_prefix: str) -> bool:
+    """Return whether *fqn* is one of Wardline's exact builtin decorator exports."""
+    return fqn in {
+        f"{module_prefix}.{canonical_name}",
+        f"{module_prefix}.trust.{canonical_name}",
+    }
 
 
 def _level_token(value: ast.expr, alias_map: Mapping[str, str]) -> str | None:
@@ -179,7 +200,7 @@ class DecoratorTaintSourceProvider:
         candidates: list[FunctionTaint] = []
         unprovable: list[str] = []
         for deco in entity.node.decorator_list:
-            ft, unprov = self._match(deco, ctx.alias_map)
+            ft, unprov = self._match(deco, ctx.alias_map, ctx.project_modules)
             if ft is not None:
                 candidates.append(ft)
             elif unprov is not None:
@@ -213,7 +234,21 @@ class DecoratorTaintSourceProvider:
             return f"decorator-vocab:{REGISTRY_VERSION}"
         return f"decorator-vocab:{REGISTRY_VERSION}+grammar:{_grammar_digest(self._boundary_types)}"
 
-    def _match(self, deco: ast.expr, alias_map: Mapping[str, str]) -> tuple[FunctionTaint | None, str | None]:
+    def fingerprint_for_project(self, project_modules: frozenset[str]) -> str:
+        """Fingerprint declaration inputs that are external to a single module.
+
+        Builtin seeds depend on whether the scanned project shadows ``wardline``;
+        bind that fact into summary-cache keys so a warm cache cannot reuse trusted
+        summaries across shadowed and unshadowed scan roots.
+        """
+        return f"{self.fingerprint()}:wardline-shadowed={int(_project_shadows_wardline(project_modules))}"
+
+    def _match(
+        self,
+        deco: ast.expr,
+        alias_map: Mapping[str, str],
+        project_modules: frozenset[str],
+    ) -> tuple[FunctionTaint | None, str | None]:
         """Match one decorator against the loaded boundary types. Returns:
 
         ``(seed, None)``   — a boundary type matched and its levels proved;
@@ -225,15 +260,18 @@ class DecoratorTaintSourceProvider:
         fqn = _resolve_decorator_fqn(deco, alias_map)
         if fqn is None:
             return None, None
-        # A decorator matches a boundary type when its FQN is UNDER the type's module
-        # prefix and its final segment is the canonical name. This accepts BOTH the
-        # package re-export (``wardline.decorators.trusted``) and the submodule path
-        # (``wardline.decorators.trust.trusted``) — preserving the pre-Track-2 matcher
-        # exactly (it used the same prefix + last-segment rule), and generalizing it
-        # consistently for custom types.
+        # Builtin Wardline markers are security-sensitive defaults. Match only the
+        # exact public re-export or implementation-module export, and reject them
+        # when the scanned project itself defines ``wardline`` (which would shadow
+        # the real marker package under normal import resolution). Custom grammar
+        # markers keep the documented prefix + canonical-name matching behavior.
         last = fqn.rsplit(".", 1)[-1]
+        wardline_shadowed = _project_shadows_wardline(project_modules)
         for bt in self._boundary_types:
-            if last != bt.canonical_name or not fqn.startswith(bt.module_prefix + "."):
+            if bt.builtin:
+                if wardline_shadowed or not _is_builtin_decorator_fqn(fqn, bt.canonical_name, bt.module_prefix):
+                    continue
+            elif last != bt.canonical_name or not fqn.startswith(bt.module_prefix + "."):
                 continue
             levels: dict[str, TaintState] = {}
             unreadable = False

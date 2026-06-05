@@ -67,3 +67,38 @@ def test_parse_project_stage_returns_typed_modules_and_dirty_scope(tmp_path) -> 
     assert result.files[0].relpath == "m.py"
     assert result.files[0].module == "m"
     assert result.files[0].entities[0].qualname == "m.read_raw"
+
+
+def test_parse_project_stage_fails_closed_for_shadowed_wardline_decorators(tmp_path) -> None:
+    app = tmp_path / "app.py"
+    app.write_text(
+        "from wardline.decorators import trusted\n"
+        "@trusted\n"
+        "def unsafe(p):\n"
+        "    return p\n",
+        encoding="utf-8",
+    )
+    shadow_pkg = tmp_path / "wardline" / "decorators"
+    shadow_pkg.mkdir(parents=True)
+    (tmp_path / "wardline" / "__init__.py").write_text("", encoding="utf-8")
+    (shadow_pkg / "__init__.py").write_text(
+        "def trusted(fn):\n"
+        "    return fn\n",
+        encoding="utf-8",
+    )
+
+    result = run_parse_project_stage(
+        ParseProjectInput(
+            files=(app, tmp_path / "wardline" / "__init__.py", shadow_pkg / "__init__.py"),
+            root=tmp_path,
+            provider=DecoratorTaintSourceProvider(),
+            config=WardlineConfig(),
+            star_exports=vocabulary_star_exports(),
+        )
+    )
+
+    app_module = next(module for module in result.modules if module.module_path == "app")
+    seed = app_module.seeds["app.unsafe"]
+    assert seed.source == "default"
+    assert seed.body_taint == T.UNKNOWN_RAW
+    assert "wardline-shadowed=1" in result.provider_fingerprint

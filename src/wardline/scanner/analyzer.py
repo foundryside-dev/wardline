@@ -131,7 +131,7 @@ class WardlineAnalyzer:
         if self._cache is not None:
             result = resolve_project_taints(
                 modules=modules,
-                provider_fingerprint=self._provider.fingerprint(),
+                provider_fingerprint=parse_stage.provider_fingerprint,
                 summary_cache=self._cache,
                 dirty_modules=frozenset(dirty_modules),
                 config=config,
@@ -139,7 +139,7 @@ class WardlineAnalyzer:
         else:
             result = resolve_project_taints(
                 modules=modules,
-                provider_fingerprint=self._provider.fingerprint(),
+                provider_fingerprint=parse_stage.provider_fingerprint,
                 config=config,
             )
 

@@ -11,12 +11,17 @@ from wardline.scanner.taint.decorator_provider import DecoratorTaintSourceProvid
 from wardline.scanner.taint.provider import FunctionTaint, SeedContext
 
 
-def _seed(src: str, *, module: str = "m") -> dict[str, FunctionTaint | None]:
+def _seed(
+    src: str,
+    *,
+    module: str = "m",
+    project_modules: frozenset[str] = frozenset(),
+) -> dict[str, FunctionTaint | None]:
     """Run the provider over every function entity in *src*; map qualname -> result."""
     tree = ast.parse(src)
     alias_map = build_import_alias_map(tree, module_path=module)
     entities = discover_file_entities(tree, module=module, path="m.py")
-    ctx = SeedContext(module=module, alias_map=alias_map)
+    ctx = SeedContext(module=module, alias_map=alias_map, project_modules=project_modules)
     provider = DecoratorTaintSourceProvider()
     # .taint: assertions here compare the declared FunctionTaint; the unprovable-
     # boundary signal (Track 2 T2.4) is exercised separately in tests/grammar/.
@@ -233,3 +238,26 @@ def test_wardline_prefixed_but_unknown_decorator_is_no_opinion() -> None:
     # (``wardline.decorators.bogus``) — canonical not in REGISTRY -> no opinion.
     out = _seed("import wardline.decorators\n@wardline.decorators.bogus\ndef f():\n    return 1\n")
     assert out["m.f"] is None
+
+
+def test_builtin_decorator_requires_exact_known_export() -> None:
+    # Prefix + final-component matching would accept this spoofable nested path.
+    # Builtin Wardline markers must be exact public/implementation exports.
+    out = _seed("from wardline.decorators import evil\n@evil.trusted\ndef f():\n    return 1\n")
+    assert out["m.f"] is None
+
+
+def test_builtin_decorator_fails_closed_when_project_shadows_wardline() -> None:
+    # A scanned project that defines wardline.decorators controls what this import
+    # means at runtime, so the default provider must not anchor it as Wardline's real
+    # marker package.
+    out = _seed(
+        "from wardline.decorators import trusted\n@trusted\ndef f():\n    return 1\n",
+        project_modules=frozenset({"app", "wardline", "wardline.decorators"}),
+    )
+    assert out["m.f"] is None
+
+
+def test_builtin_decorator_accepts_implementation_module_export() -> None:
+    out = _seed("from wardline.decorators.trust import trusted\n@trusted\ndef f():\n    return 1\n")
+    assert out["m.f"] == FunctionTaint(T.INTEGRAL, T.INTEGRAL)

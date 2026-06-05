@@ -30,13 +30,15 @@ class SeedContext:
 
     ``alias_map`` is the file's ``{local_name: fully_qualified_name}`` import
     map (from ``build_import_alias_map``); a provider uses it to resolve aliased
-    decorator names against the trust vocabulary. Defaults to empty so callers
-    that do not seed from decorators (e.g. the trivial default provider's tests)
-    need not supply it.
+    decorator names against the trust vocabulary. ``project_modules`` contains the
+    modules discovered in the scanned project, allowing providers to fail closed
+    when a declaration package would be shadowed by project-local code. Defaults
+    keep callers that do not seed from decorators lightweight.
     """
 
     module: str
     alias_map: Mapping[str, str] = field(default_factory=dict)
+    project_modules: frozenset[str] = field(default_factory=frozenset)
 
 
 @dataclass(frozen=True, slots=True)
