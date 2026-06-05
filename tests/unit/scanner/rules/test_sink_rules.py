@@ -238,8 +238,8 @@ def test_107_lambda_param_shadowing_enclosing_raw_does_not_fire(tmp_path) -> Non
 def test_107_raw_assigned_after_lambda_def_still_fires(tmp_path) -> None:
     # Closure-by-reference soundness: the lambda is DEFINED while ``src`` is clean,
     # but ``src`` is reassigned raw before the lambda is called — at runtime eval()
-    # executes on raw data. Resolving the body against the FINAL var taint (not the
-    # definition-site value) keeps this real deferred sink visible.
+    # executes on raw data. The body is resolved against the WORST taint ``src`` holds
+    # anywhere in the function (here: raw), so this real deferred sink stays visible.
     ctx = _analyze(
         tmp_path,
         """
@@ -258,10 +258,40 @@ def test_107_raw_assigned_after_lambda_def_still_fires(tmp_path) -> None:
     assert not any(str(w.message).startswith("WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK") for w in caught)
 
 
-def test_107_value_clean_in_final_state_in_lambda_body_does_not_fire(tmp_path) -> None:
-    # The reverse: raw is overwritten clean BEFORE the lambda is defined, so the
-    # final state of ``x`` is clean — the lambda body must NOT fire (final-state, not
-    # worst-ever, resolution).
+def test_107_lambda_called_before_clean_reassignment_still_fires(tmp_path) -> None:
+    # The symmetric deferred case (the one final-state resolution missed): the lambda
+    # is CALLED while ``src`` is still raw, and the clean reassignment happens AFTER.
+    # At runtime eval() executes on raw data — this MUST fire. Resolving against the
+    # worst taint ``src`` holds anywhere keeps it visible even though the final state
+    # is clean.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            src = read_raw(p)
+            cb = lambda: eval(src)
+            cb()
+            src = "clean"
+            return 1
+        """,
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        findings = UntrustedToExec().check(ctx)
+    assert [(x.rule_id, x.qualname) for x in findings] == [("PY-WL-107", "m.f")]
+    assert not any(str(w.message).startswith("WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK") for w in caught)
+
+
+def test_107_lambda_captures_var_raw_earlier_conservatively_fires(tmp_path) -> None:
+    # DOCUMENTED conservative over-approximation (a known, waivable false positive):
+    # ``x`` is raw, then overwritten clean BEFORE the lambda is defined, so the closure
+    # can never actually observe the raw value. A precise (def-point) analysis would
+    # not fire here. But a lambda defers execution to an unknown call time, and the
+    # engine resolves its body against the worst taint ``x`` holds ANYWHERE in the
+    # function — the fail-closed choice that guarantees no false-NEGATIVE for the
+    # deferred-sink cases above. So this fires. The safe direction for a security
+    # analyzer; pin it so the behaviour is intentional, not accidental.
     ctx = _analyze(
         tmp_path,
         """
@@ -273,11 +303,8 @@ def test_107_value_clean_in_final_state_in_lambda_body_does_not_fire(tmp_path) -
             return cb()
         """,
     )
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        findings = UntrustedToExec().check(ctx)
-    assert findings == []
-    assert not any(str(w.message).startswith("WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK") for w in caught)
+    findings = UntrustedToExec().check(ctx)
+    assert [(x.rule_id, x.qualname) for x in findings] == [("PY-WL-107", "m.f")]
 
 
 def test_108_raw_reaches_os_system_in_lambda_body(tmp_path) -> None:
