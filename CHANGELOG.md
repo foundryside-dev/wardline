@@ -55,6 +55,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI verb shares the same filter core. (WS-B1, WS-B2)
 
 ### Security
+- **Builtin trust-marker decorators are now trusted only when they resolve to the
+  real exports — closes a spoofable false-green.** The default decorator seeding
+  trusted ANY FQN whose prefix was a builtin marker module and whose final segment
+  was a known marker name, without verifying the decorator resolved to Wardline's
+  real package. A scanned project could ship its own `wardline/decorators/__init__.py`
+  (or `loom_markers/__init__.py`) defining a no-op `trusted`/`trust_boundary`, apply
+  it to a leaky function, and have the analyzer anchor it as TRUSTED — suppressing
+  real taint→sink flows (a false GREEN that hides defects). Nested spoof paths
+  (`wardline.decorators.evil.trusted`, `loom_markers.evil.trusted`) were also accepted.
+  Builtin markers now match ONLY their exact public re-export (`P.<name>`) or
+  implementation-module export (`P.trust.<name>`), and the provider FAILS CLOSED for a
+  builtin marker root the scanned project shadows (defines its own top-level `wardline`
+  / `loom_markers` package). The shadowed-root set is derived dynamically from the
+  grammar (`{bt.module_prefix.split('.')[0] for bt in BUILTIN_BOUNDARY_TYPES if
+  bt.builtin}`), so every builtin marker root is covered, not just `wardline`. Custom
+  (non-builtin) grammar markers keep the documented prefix + canonical-name behavior —
+  a project defining its own custom marker package is the intended extension use.
+  **Cache-key hardening:** the per-root shadow state is folded into a shadow-aware
+  provider fingerprint threaded through BOTH the pipeline dirty-detection key and the
+  resolver's summary cache, so a TRUSTED summary computed under one shadow state can
+  never be reused under another (cross-root cache poisoning). The fingerprint stays
+  byte-identical to today's value when nothing is shadowed. **Clarion residual
+  (documented, not threaded):** the opt-in `--clarion-url` taint-fact
+  `content_hash_at_compute` is whole-file raw-byte blake3 only — it cannot observe
+  shadow state, so identical file bytes scanned once unshadowed then under a shadow
+  could serve a stale TRUSTED fact via the MCP `explain_taint` / Clarion read path. The
+  shadow bit is deliberately NOT mixed into this hash because it is a cross-tool
+  contract value Clarion's read path independently recomputes and compares; mixing in a
+  Wardline-private bit would break fact reconciliation entirely. Closing it fully needs
+  a Clarion read-path contract change; the keying site carries an explicit comment. This
+  path is opt-in and not the scan gate, so impact is lower.
 - **Dangerous-sink rules now see lambda bodies (closes a false-green).** `_own_calls`
   treated `ast.Lambda` as a separate scope and only inspected lambda *default*
   expressions, so a sink reached inside a lambda *body* — `cb = lambda: eval(src)`,

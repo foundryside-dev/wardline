@@ -31,6 +31,15 @@ _VOCAB_PREFIX = "wardline.decorators"
 _LOOM_MARKERS_PREFIX = "loom_markers"
 _TAINTSTATE_FQN = "wardline.core.taints.TaintState"
 
+# The top-level import roots of every BUILTIN marker module — derived dynamically
+# from the grammar so adding a builtin marker root (e.g. a future ``loom_markers``
+# sibling) automatically participates in shadow fail-closed + exact-export matching.
+# A ``loom_markers`` boundary type has module_prefix ``loom_markers`` (root
+# ``loom_markers``); a ``wardline.decorators`` one has root ``wardline``.
+_BUILTIN_MARKER_ROOTS: frozenset[str] = frozenset(
+    bt.module_prefix.split(".")[0] for bt in BUILTIN_BOUNDARY_TYPES if getattr(bt, "builtin", False)
+)
+
 
 def vocabulary_star_exports() -> dict[str, dict[str, str]]:
     """Statically-known star-export map for builtin trust-marker modules.
@@ -82,6 +91,38 @@ def _resolve_decorator_fqn(deco: ast.expr, alias_map: Mapping[str, str]) -> str 
     """
     func = deco.func if isinstance(deco, ast.Call) else deco
     return _resolve_dotted_fqn(func, alias_map)
+
+
+def _shadowed_builtin_roots(project_modules: frozenset[str]) -> frozenset[str]:
+    """Return the builtin marker roots the scanned project SHADOWS.
+
+    Builtin marker declarations must refer to the installed marker package, not a
+    module supplied by the scanned project. A root is shadowed when the project
+    itself defines a TOP-LEVEL module/package equal to that root (e.g. its own
+    ``wardline`` or ``loom_markers`` package): Python import resolution can then
+    bind ``wardline.decorators`` / ``loom_markers`` to attacker-controlled code, so
+    builtin matching fails closed for markers under that root.
+
+    Only the FIRST dotted component is compared, so an unrelated nested module such
+    as ``app.wardline_helper`` or ``myloom.wardline`` does NOT trip a shadow.
+    """
+    project_roots = {module.split(".", 1)[0] for module in project_modules}
+    return frozenset(project_roots & _BUILTIN_MARKER_ROOTS)
+
+
+def _is_builtin_decorator_fqn(fqn: str, canonical_name: str, module_prefix: str) -> bool:
+    """Return whether *fqn* is one of the exact builtin decorator exports.
+
+    For a builtin boundary type with prefix ``P``, only the public re-export
+    ``P.<name>`` and the implementation-module export ``P.trust.<name>`` are
+    accepted (mirroring ``wardline/decorators/__init__.py`` and
+    ``wardline/decorators/trust.py``). Prefix + arbitrary-nested + final-segment
+    paths (e.g. ``wardline.decorators.evil.trusted``) are rejected for builtins.
+    """
+    return fqn in {
+        f"{module_prefix}.{canonical_name}",
+        f"{module_prefix}.trust.{canonical_name}",
+    }
 
 
 def _level_token(value: ast.expr, alias_map: Mapping[str, str]) -> str | None:
@@ -184,8 +225,9 @@ class DecoratorTaintSourceProvider:
     def taint_for(self, entity: Entity, ctx: SeedContext) -> SeedResult:
         candidates: list[FunctionTaint] = []
         unprovable: list[str] = []
+        shadowed_roots = _shadowed_builtin_roots(ctx.project_modules)
         for deco in entity.node.decorator_list:
-            ft, unprov = self._match(deco, ctx.alias_map)
+            ft, unprov = self._match(deco, ctx.alias_map, shadowed_roots)
             if ft is not None:
                 candidates.append(ft)
             elif unprov is not None:
@@ -219,7 +261,30 @@ class DecoratorTaintSourceProvider:
             return f"decorator-vocab:{REGISTRY_VERSION}"
         return f"decorator-vocab:{REGISTRY_VERSION}+grammar:{_grammar_digest(self._boundary_types)}"
 
-    def _match(self, deco: ast.expr, alias_map: Mapping[str, str]) -> tuple[FunctionTaint | None, str | None]:
+    def fingerprint_for_project(self, project_modules: frozenset[str]) -> str:
+        """Fingerprint declaration inputs that are external to a single module.
+
+        Builtin seeding depends on WHICH builtin marker roots the scanned project
+        shadows; bind the EXACT shadowed-root SET into the summary-cache key so a
+        warm cache cannot reuse a TRUSTED summary across scans with different
+        shadow states (cross-root cache poisoning). Crucially this is per-root: a
+        scan that shadows only ``wardline`` and one that shadows only
+        ``loom_markers`` must NOT collide on the cache key. When nothing is
+        shadowed (the common case), returns the bare :meth:`fingerprint` string,
+        preserving today's exact cache/baseline-stable value.
+        """
+        shadowed = _shadowed_builtin_roots(project_modules)
+        base = self.fingerprint()
+        if not shadowed:
+            return base
+        return f"{base}:shadowed-roots={','.join(sorted(shadowed))}"
+
+    def _match(
+        self,
+        deco: ast.expr,
+        alias_map: Mapping[str, str],
+        shadowed_roots: frozenset[str],
+    ) -> tuple[FunctionTaint | None, str | None]:
         """Match one decorator against the loaded boundary types. Returns:
 
         ``(seed, None)``   — a boundary type matched and its levels proved;
@@ -231,15 +296,22 @@ class DecoratorTaintSourceProvider:
         fqn = _resolve_decorator_fqn(deco, alias_map)
         if fqn is None:
             return None, None
-        # A decorator matches a boundary type when its FQN is UNDER the type's module
-        # prefix and its final segment is the canonical name. This accepts BOTH the
-        # package re-export (``wardline.decorators.trusted``) and the submodule path
-        # (``wardline.decorators.trust.trusted``) — preserving the pre-Track-2 matcher
-        # exactly (it used the same prefix + last-segment rule), and generalizing it
-        # consistently for custom types.
+        # Builtin markers are security-sensitive defaults: a scanned project could
+        # ship its own ``wardline/decorators`` (or ``loom_markers``) no-op shadowing
+        # the real package, spoof @trusted, and suppress real taint→sink flows (a
+        # false GREEN). So a builtin matches ONLY an EXACT known export
+        # (``P.<name>`` or ``P.trust.<name>``), and is rejected entirely when its
+        # marker ROOT is shadowed by a project-local top-level module. Custom
+        # (non-builtin) grammar markers keep the documented prefix + canonical-name
+        # rule — a project defining its OWN custom marker package is the intended
+        # extension use, and its root is not a builtin we ship.
         last = fqn.rsplit(".", 1)[-1]
         for bt in self._boundary_types:
-            if last != bt.canonical_name or not fqn.startswith(bt.module_prefix + "."):
+            if bt.builtin:
+                root = bt.module_prefix.split(".")[0]
+                if root in shadowed_roots or not _is_builtin_decorator_fqn(fqn, bt.canonical_name, bt.module_prefix):
+                    continue
+            elif last != bt.canonical_name or not fqn.startswith(bt.module_prefix + "."):
                 continue
             levels: dict[str, TaintState] = {}
             unreadable = False

@@ -11,12 +11,17 @@ from wardline.scanner.taint.decorator_provider import DecoratorTaintSourceProvid
 from wardline.scanner.taint.provider import FunctionTaint, SeedContext
 
 
-def _seed(src: str, *, module: str = "m") -> dict[str, FunctionTaint | None]:
+def _seed(
+    src: str,
+    *,
+    module: str = "m",
+    project_modules: frozenset[str] = frozenset(),
+) -> dict[str, FunctionTaint | None]:
     """Run the provider over every function entity in *src*; map qualname -> result."""
     tree = ast.parse(src)
     alias_map = build_import_alias_map(tree, module_path=module)
     entities = discover_file_entities(tree, module=module, path="m.py")
-    ctx = SeedContext(module=module, alias_map=alias_map)
+    ctx = SeedContext(module=module, alias_map=alias_map, project_modules=project_modules)
     provider = DecoratorTaintSourceProvider()
     # .taint: assertions here compare the declared FunctionTaint; the unprovable-
     # boundary signal (Track 2 T2.4) is exercised separately in tests/grammar/.
@@ -272,3 +277,91 @@ def test_wardline_prefixed_but_unknown_decorator_is_no_opinion() -> None:
     # (``wardline.decorators.bogus``) — canonical not in REGISTRY -> no opinion.
     out = _seed("import wardline.decorators\n@wardline.decorators.bogus\ndef f():\n    return 1\n")
     assert out["m.f"] is None
+
+
+# ── Security: builtin marker decorators must resolve to the REAL exports only.
+# A scanned project shipping a no-op ``trusted``/``trust_boundary`` under a builtin
+# marker root (``wardline``/``loom_markers``) must NOT anchor trust — that would
+# suppress real taint→sink flows (false GREEN). ──
+
+
+def test_builtin_decorator_requires_exact_known_export() -> None:
+    # Nested-path spoof: prefix + final-segment matching would accept this. Builtins
+    # must be EXACT public/implementation exports, so a wardline.decorators.evil.trusted
+    # path is rejected → no opinion (the @trusted spoof does not anchor trust).
+    out = _seed("from wardline.decorators import evil\n@evil.trusted\ndef f():\n    return 1\n")
+    assert out["m.f"] is None
+
+
+def test_loom_markers_nested_path_spoof_rejected() -> None:
+    # Same nested-path spoof under the loom_markers root.
+    out = _seed("from loom_markers import evil\n@evil.trusted\ndef f():\n    return 1\n")
+    assert out["m.f"] is None
+
+
+def test_builtin_decorator_fails_closed_when_project_shadows_wardline() -> None:
+    # A scanned project that defines its own ``wardline.decorators`` controls what
+    # this import means at runtime, so the default provider must NOT anchor it as the
+    # real marker package — fail closed (no opinion) for the spoofed @trusted.
+    out = _seed(
+        "from wardline.decorators import trusted\n@trusted\ndef f():\n    return 1\n",
+        project_modules=frozenset({"app", "wardline", "wardline.decorators"}),
+    )
+    assert out["m.f"] is None
+
+
+def test_builtin_decorator_fails_closed_when_project_shadows_loom_markers() -> None:
+    # GENERALIZATION (the gap the codex PR left open): a project shadowing
+    # ``loom_markers`` must also fail closed for loom_markers builtin markers.
+    out = _seed(
+        "from loom_markers import trusted\n@trusted\ndef f():\n    return 1\n",
+        project_modules=frozenset({"app", "loom_markers"}),
+    )
+    assert out["m.f"] is None
+
+
+def test_shadowing_one_root_does_not_disable_the_other() -> None:
+    # Per-root, not a global bool: shadowing ``wardline`` must NOT stop a legitimate
+    # ``loom_markers`` builtin marker from anchoring (and vice versa).
+    out = _seed(
+        "from loom_markers import trusted\n@trusted\ndef f():\n    return 1\n",
+        project_modules=frozenset({"app", "wardline"}),
+    )
+    assert out["m.f"] == FunctionTaint(T.INTEGRAL, T.INTEGRAL)
+
+
+def test_builtin_decorator_accepts_implementation_module_export() -> None:
+    # Legit impl-module form: ``from wardline.decorators.trust import trusted`` still
+    # anchors (one of the two exact accepted exports).
+    out = _seed("from wardline.decorators.trust import trusted\n@trusted\ndef f():\n    return 1\n")
+    assert out["m.f"] == FunctionTaint(T.INTEGRAL, T.INTEGRAL)
+
+
+def test_builtin_decorator_accepts_loom_markers_implementation_module_export() -> None:
+    out = _seed("from loom_markers.trust import trusted\n@trusted\ndef f():\n    return 1\n")
+    assert out["m.f"] == FunctionTaint(T.INTEGRAL, T.INTEGRAL)
+
+
+def test_unrelated_nested_module_does_not_trip_shadow() -> None:
+    # Scoping: only TOP-LEVEL module names trigger a shadow. ``app.wardline_helper``
+    # and ``myloom.wardline`` are NOT the builtin roots, so a legit @trusted anchors.
+    out = _seed(
+        "from wardline.decorators import trusted\n@trusted\ndef f():\n    return 1\n",
+        project_modules=frozenset({"app.wardline_helper", "myloom.wardline"}),
+    )
+    assert out["m.f"] == FunctionTaint(T.INTEGRAL, T.INTEGRAL)
+
+
+def test_fingerprint_for_project_differs_between_shadowed_and_unshadowed() -> None:
+    # Cache-key hardening: the project-aware fingerprint must differ across shadow
+    # states (so a TRUSTED summary is never reused across them), and per-root so the
+    # two roots do not collide. Unshadowed returns the bare (stability-preserving) value.
+    provider = DecoratorTaintSourceProvider()
+    bare = provider.fingerprint()
+    unshadowed = provider.fingerprint_for_project(frozenset({"app"}))
+    shadow_wardline = provider.fingerprint_for_project(frozenset({"app", "wardline"}))
+    shadow_loom = provider.fingerprint_for_project(frozenset({"app", "loom_markers"}))
+    assert unshadowed == bare
+    assert shadow_wardline != bare
+    assert shadow_loom != bare
+    assert shadow_wardline != shadow_loom  # per-root, not a single bool
