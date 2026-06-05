@@ -86,6 +86,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Wardline-private bit would break fact reconciliation entirely. Closing it fully needs
   a Clarion read-path contract change; the keying site carries an explicit comment. This
   path is opt-in and not the scan gate, so impact is lower.
+- **The `--fail-on` gate no longer honours repository-controlled suppressions by
+  default (closes a CI-gate bypass).** `.wardline/baseline.yaml`, `wardline.yaml`
+  waivers, and `.wardline/judged.yaml` are all committed repository content, so a
+  malicious pull request could add a suppression entry keyed to its own new defect's
+  fingerprint and clear the gate. The gate now evaluates the **unsuppressed**
+  population by default; baseline / waiver / judged still **annotate** the emitted
+  findings (`suppressed: baselined | waived | judged`) but cannot clear the gate. The
+  secure CI ratchet is the operator-supplied, unforgeable `--new-since <merge-base>`,
+  which scopes **both** the emitted findings and the gate. A new `--trust-suppressions`
+  flag (CLI) / `trust_suppressions` arg (MCP `scan`), default false, restores the old
+  post-suppression gate for **trusted local checkouts** (and is what the `judge`
+  workflow uses internally). `.wardline/judged.yaml` records now also **require**
+  `verdict: FALSE_POSITIVE` on load — a missing or non-FP verdict is rejected, so a
+  hand-edited judged entry cannot be smuggled in as a silent suppression
+  (`build_judged_document` always emits it, so machine round-trips stay valid). New
+  `ScanResult.gate_findings` field carries the unsuppressed gate population (None
+  sentinel = trust suppressions / fall back to `findings`).
+
+  > **BREAKING (acceptable at 0.x):** a CI job that relies on a committed baseline
+  > (or waiver / judged file) to keep `wardline scan --fail-on=…` green will now go
+  > **red** on upgrade, because the baselined defects re-enter the gate population. Add
+  > `--new-since <merge-base>` (recommended for CI) or `--trust-suppressions` (trusted
+  > checkouts only) to restore a passing gate. Note: legis's scan artifact and the
+  > "one judge / reproduces Wardline's gate population exactly" property are derived
+  > from the annotated `findings`, so they continue to reflect the suppressed view;
+  > only the local `--fail-on` exit code changed.
 - **Dangerous-sink rules now see lambda bodies (closes a false-green).** `_own_calls`
   treated `ast.Lambda` as a separate scope and only inspected lambda *default*
   expressions, so a sink reached inside a lambda *body* — `cb = lambda: eval(src)`,

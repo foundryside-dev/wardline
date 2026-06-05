@@ -343,7 +343,7 @@ def test_scan_fail_on_inert_without_flag(tmp_path) -> None:
     assert res.exit_code == 0, res.output  # no --fail-on -> never gates
 
 
-def test_scan_baseline_suppresses_and_clears_gate(tmp_path) -> None:
+def test_scan_baseline_annotates_but_does_not_clear_gate(tmp_path) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
     _write(proj, "svc.py", _LEAKY)
@@ -359,13 +359,35 @@ def test_scan_baseline_suppresses_and_clears_gate(tmp_path) -> None:
         "version: 1\nentries:\n  - fingerprint: " + fp + "\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
         encoding="utf-8",
     )
-    # Second scan: the defect is baselined -> annotated + gate clears.
+    # SECURITY default: the defect is baselined for REPORTING (annotated), but the
+    # repository-controlled baseline must NOT clear the --fail-on gate.
     res = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--fail-on", "ERROR"])
-    assert res.exit_code == 0, res.output
+    assert res.exit_code == 1, res.output
     findings2 = [_json.loads(ln) for ln in out.read_text().splitlines() if ln.strip()]
     leak = next(f for f in findings2 if f["rule_id"] == "PY-WL-101")
     assert leak["suppressed"] == "baselined"  # annotate-and-keep
     assert "1 suppressed" in res.output
+
+
+def test_scan_baseline_clears_gate_with_trust_suppressions(tmp_path) -> None:
+    # --trust-suppressions restores the local ratchet: a baselined defect clears the gate.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    out = tmp_path / "f.jsonl"
+    CliRunner().invoke(scan, [str(proj), "--output", str(out)])
+    findings = [_json.loads(ln) for ln in out.read_text().splitlines() if ln.strip()]
+    fp = next(f["fingerprint"] for f in findings if f["rule_id"] == "PY-WL-101")
+    bl = proj / ".wardline" / "baseline.yaml"
+    bl.parent.mkdir(parents=True, exist_ok=True)
+    bl.write_text(
+        "version: 1\nentries:\n  - fingerprint: " + fp + "\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
+        encoding="utf-8",
+    )
+    res = CliRunner().invoke(
+        scan, [str(proj), "--output", str(out), "--fail-on", "ERROR", "--trust-suppressions"]
+    )
+    assert res.exit_code == 0, res.output
 
 
 _UNPARSEABLE = "def f(:\n"  # syntax error -> WLN-ENGINE-PARSE-ERROR FACT
@@ -466,10 +488,14 @@ def test_baseline_create_writes_file_and_suppresses_next_scan(tmp_path) -> None:
     doc = _yaml.safe_load(bl.read_text())
     assert doc["version"] == 1 and len(doc["entries"]) >= 1
     assert "baselined" in res.output
-    # Next scan: the captured defect is now baselined, gate clears.
+    # SECURITY default: the captured defect is now baselined for reporting, but the
+    # untrusted repository baseline must NOT clear the fail-on gate.
     out = tmp_path / "f.jsonl"
     res2 = runner.invoke(scan, [str(proj), "--output", str(out), "--fail-on", "ERROR"])
-    assert res2.exit_code == 0, res2.output
+    assert res2.exit_code == 1, res2.output
+    # ...and --trust-suppressions restores the local ratchet (gate clears).
+    res3 = runner.invoke(scan, [str(proj), "--output", str(out), "--fail-on", "ERROR", "--trust-suppressions"])
+    assert res3.exit_code == 0, res3.output
 
 
 def test_baseline_create_refuses_if_exists(tmp_path) -> None:
@@ -1000,9 +1026,10 @@ def test_judge_low_confidence_fp_held_back_from_write(monkeypatch, tmp_path) -> 
     assert not (proj / ".wardline" / "judged.yaml").exists()
 
 
-def test_judge_write_then_scan_gate_is_cleared(monkeypatch, tmp_path) -> None:
-    # The regression that pins the headline panel finding: a JUDGED FP written by
-    # `judge --write` must suppress the finding for `scan --fail-on` too.
+def test_judge_write_then_scan_still_trips_gate_by_default(monkeypatch, tmp_path) -> None:
+    # SECURITY: judged.yaml is repository-controlled input. A judged FP written by
+    # `judge --write` still ANNOTATES the finding (summary shows it) but must NOT clear
+    # the `scan --fail-on` gate by default. --trust-suppressions restores the old behaviour.
     import wardline.cli.judge as judge_cli
     from wardline.cli.main import cli
 
@@ -1017,10 +1044,16 @@ def test_judge_write_then_scan_gate_is_cleared(monkeypatch, tmp_path) -> None:
     jres = CliRunner().invoke(cli, ["judge", str(proj), "--write"])
     assert jres.exit_code == 0, jres.output
     assert (proj / ".wardline" / "judged.yaml").exists()
-    # 3) scan now sees the JUDGED suppression -> gate cleared, summary shows it
+    # 3) scan now sees the JUDGED suppression as an annotation, but the gate STILL trips.
     after = CliRunner().invoke(cli, ["scan", str(proj), "--output", str(out), "--fail-on", "INFO"])
-    assert after.exit_code == 0, after.output
+    assert after.exit_code == 1, after.output
     assert "judged" in after.output
+    # 4) ...and --trust-suppressions clears the gate (trusted local checkout).
+    trusted = CliRunner().invoke(
+        cli, ["scan", str(proj), "--output", str(out), "--fail-on", "INFO", "--trust-suppressions"]
+    )
+    assert trusted.exit_code == 0, trusted.output
+    assert "judged" in trusted.output
 
 
 def test_scan_fix_and_fix_command(tmp_path: Path) -> None:

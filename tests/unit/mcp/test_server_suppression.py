@@ -41,6 +41,29 @@ def _call(server: WardlineMCPServer, name: str, arguments: dict) -> dict:
     return json.loads(resp["result"]["content"][0]["text"])
 
 
+def test_mcp_scan_gate_trips_on_baselined_defect_by_default(tmp_path: Path) -> None:
+    # SECURITY parity with the CLI: a repository-controlled baseline annotates the defect
+    # but the MCP scan gate evaluates the unsuppressed population by default.
+    proj = _leaky_project(tmp_path)
+    server = WardlineMCPServer(root=proj)
+    first = _call(server, "scan", {})
+    fp = next(f["fingerprint"] for f in first["findings"] if f["rule_id"] == "PY-WL-101")
+    bl = proj / ".wardline" / "baseline.yaml"
+    bl.parent.mkdir(parents=True, exist_ok=True)
+    bl.write_text(
+        f"version: 1\nentries:\n  - fingerprint: {fp}\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
+        encoding="utf-8",
+    )
+    # Default: annotated baselined, but the gate trips.
+    default = _call(server, "scan", {"fail_on": "ERROR"})
+    leak = next(f for f in default["findings"] if f["rule_id"] == "PY-WL-101")
+    assert leak["suppressed"] == "baselined"
+    assert default["gate"]["tripped"] is True
+    # trust_suppressions restores the trusted-local behaviour: the gate clears.
+    trusted = _call(server, "scan", {"fail_on": "ERROR", "trust_suppressions": True})
+    assert trusted["gate"]["tripped"] is False
+
+
 def test_baseline_optional_reason(tmp_path: Path) -> None:
     proj = _leaky_project(tmp_path)
     server = WardlineMCPServer(root=proj)

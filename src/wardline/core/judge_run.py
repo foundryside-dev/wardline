@@ -179,6 +179,10 @@ def run_judge(
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
+        # The judge flow is the trusted local path: it consults judged records. The
+        # emitted ``findings`` are always judged-annotated regardless of this flag;
+        # passing True keeps the gate (if any consumer reads it) on the trusted set too.
+        trust_suppressions=True,
     )
     judged_set = load_judged(root / ".wardline" / "judged.yaml")
 

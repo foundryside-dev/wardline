@@ -71,19 +71,61 @@ def test_rejudge_updates_existing_record(tmp_path: Path) -> None:
 
 def test_missing_provenance_raises(tmp_path: Path) -> None:
     # model_id / policy_hash / confidence are the audit primitive — never defaulted.
+    # verdict is present so this exercises the PROVENANCE guard, not the verdict guard.
     path = tmp_path / "judged.yaml"
-    path.write_text(f"version: 1\nfindings:\n  - fingerprint: {'a' * 64}\n    rationale: x\n", encoding="utf-8")
+    path.write_text(
+        f"version: 1\nfindings:\n  - fingerprint: {'a' * 64}\n    verdict: FALSE_POSITIVE\n    rationale: x\n",
+        encoding="utf-8",
+    )
     with pytest.raises(ConfigError):
         load_judged(path)
 
 
 def test_out_of_range_confidence_raises(tmp_path: Path) -> None:
+    # verdict is present so this reaches the confidence range check, not the verdict guard.
     path = tmp_path / "judged.yaml"
     path.write_text(
         "version: 1\nfindings:\n"
-        f"  - fingerprint: {'a' * 64}\n    rationale: x\n    model_id: m\n"
+        f"  - fingerprint: {'a' * 64}\n    verdict: FALSE_POSITIVE\n    rationale: x\n    model_id: m\n"
         "    policy_hash: sha256:x\n    confidence: 1.5\n",
         encoding="utf-8",
     )
     with pytest.raises(ConfigError):
         load_judged(path)
+
+
+def test_missing_verdict_raises(tmp_path: Path) -> None:
+    # A judged record with no verdict cannot be trusted as a FALSE_POSITIVE suppression.
+    path = tmp_path / "judged.yaml"
+    path.write_text(
+        "version: 1\nfindings:\n"
+        f"  - fingerprint: {'a' * 64}\n    rationale: x\n    model_id: m\n"
+        "    policy_hash: sha256:x\n    confidence: 0.9\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="verdict"):
+        load_judged(path)
+
+
+def test_non_false_positive_verdict_rejected(tmp_path: Path) -> None:
+    # A hand-edited TRUE_POSITIVE (or any non-FP) verdict must not be smuggled in as a
+    # silent suppression — judged.yaml only ever records FALSE_POSITIVE.
+    path = tmp_path / "judged.yaml"
+    path.write_text(
+        "version: 1\nfindings:\n"
+        f"  - fingerprint: {'a' * 64}\n    verdict: TRUE_POSITIVE\n    rationale: x\n    model_id: m\n"
+        "    policy_hash: sha256:x\n    confidence: 0.9\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="FALSE_POSITIVE"):
+        load_judged(path)
+
+
+def test_write_judged_roundtrip_loads_with_verdict(tmp_path: Path) -> None:
+    # build_judged_document always emits verdict: FALSE_POSITIVE, so a machine round-trip
+    # stays valid under the new verdict requirement.
+    path = tmp_path / ".wardline" / "judged.yaml"
+    write_judged(path, [_fp()])
+    doc = yaml.safe_load(path.read_text())
+    assert doc["findings"][0]["verdict"] == "FALSE_POSITIVE"
+    assert load_judged(path).match("a" * 64) is not None

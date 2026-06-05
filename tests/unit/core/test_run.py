@@ -1,9 +1,13 @@
+import textwrap
+from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from wardline.core.errors import ConfigError
-from wardline.core.finding import Kind, Severity, SuppressionState
+from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
+from wardline.core.judged import JudgedFP, write_judged
 from wardline.core.run import ScanResult, ScanSummary, gate_decision, run_scan
 
 FIXTURE = Path("tests/fixtures/sample_project")
@@ -28,7 +32,8 @@ def test_run_scan_returns_findings_summary_and_context() -> None:
     # invariants (total == len(findings); active == active-defect count), which
     # hold for any fixture regardless of finding count.
     assert result.summary.total == len(result.findings)
-    # active is the count of non-suppressed DEFECTs (the gate population)
+    # active is the count of non-suppressed DEFECTs in the emitted findings (the gate
+    # evaluates ScanResult.gate_findings, a separate unsuppressed population)
     active = sum(1 for f in result.findings if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE)
     assert result.summary.active == active
     # context is carried for explain_finding to reuse
@@ -111,8 +116,218 @@ def test_run_scan_baselined_count_distinguishes_categories(tmp_path: Path) -> No
     assert result.summary.waived == 0
     assert result.summary.judged == 0
     assert result.summary.active == 0
-    # And the gate clears now that the only ERROR defect is suppressed.
+    # SECURITY default: a repository-controlled baseline ANNOTATES the defect but does
+    # NOT clear the --fail-on gate — the gate evaluates the unsuppressed population.
+    assert gate_decision(result, Severity.ERROR).tripped is True
+    # ...and --trust-suppressions restores the local ratchet: the baselined defect clears.
+    trusted = run_scan(proj, trust_suppressions=True)
+    assert trusted.summary.baselined == 1
+    assert gate_decision(trusted, Severity.ERROR).tripped is False
+
+
+def _leaky_proj(tmp_path: Path) -> tuple[Path, str]:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    fp = next(f for f in run_scan(proj).findings if f.rule_id == "PY-WL-101").fingerprint
+    return proj, fp
+
+
+def _write_baseline(proj: Path, fp: str) -> None:
+    bl = proj / ".wardline" / "baseline.yaml"
+    bl.parent.mkdir(parents=True, exist_ok=True)
+    bl.write_text(
+        f"version: 1\nentries:\n  - fingerprint: {fp}\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
+        encoding="utf-8",
+    )
+
+
+def _write_waiver(proj: Path, fp: str) -> None:
+    (proj / "wardline.yaml").write_text(
+        f"waivers:\n  - fingerprint: {fp}\n    reason: validated downstream\n", encoding="utf-8"
+    )
+
+
+def _write_judged(proj: Path, fp: str) -> None:
+    write_judged(
+        proj / ".wardline" / "judged.yaml",
+        [
+            JudgedFP(
+                fingerprint=fp,
+                rule_id="PY-WL-101",
+                path="svc.py",
+                message="m",
+                rationale="model ruled FP",
+                model_id="anthropic/claude-opus-4-8",
+                confidence=0.95,
+                recorded_at=datetime(2026, 5, 30, tzinfo=UTC),
+                policy_hash="sha256:abc",
+            )
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    "writer,state",
+    [
+        (_write_baseline, SuppressionState.BASELINED),
+        (_write_waiver, SuppressionState.WAIVED),
+        (_write_judged, SuppressionState.JUDGED),
+    ],
+)
+def test_gate_trips_by_default_on_suppressed_defect(tmp_path: Path, writer, state) -> None:
+    # SECURITY: a repository-controlled suppression (baseline / waiver / judged) ANNOTATES
+    # the defect but must NOT clear the --fail-on gate by default, so a malicious PR cannot
+    # self-suppress its own new defect.
+    proj, fp = _leaky_proj(tmp_path)
+    writer(proj, fp)
+    result = run_scan(proj)
+    # Annotated in the emitted findings...
+    leak = next(f for f in result.findings if f.rule_id == "PY-WL-101")
+    assert leak.suppressed is state
+    # ...but the gate still trips on the unsuppressed gate population.
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
+@pytest.mark.parametrize("writer", [_write_baseline, _write_waiver, _write_judged])
+def test_trust_suppressions_restores_old_gate_clearing(tmp_path: Path, writer) -> None:
+    proj, fp = _leaky_proj(tmp_path)
+    writer(proj, fp)
+    result = run_scan(proj, trust_suppressions=True)
+    # gate_findings is the None sentinel -> gate falls back to the suppressed findings.
+    assert result.gate_findings is None
     assert gate_decision(result, Severity.ERROR).tripped is False
+
+
+def test_gate_findings_is_unsuppressed_population(tmp_path: Path) -> None:
+    proj, fp = _leaky_proj(tmp_path)
+    _write_baseline(proj, fp)
+    result = run_scan(proj)
+    assert result.gate_findings is not None
+    gate_leak = next(f for f in result.gate_findings if f.rule_id == "PY-WL-101")
+    assert gate_leak.suppressed is SuppressionState.ACTIVE  # gate sees it active
+
+
+def test_directly_constructed_scanresult_falls_back_to_findings() -> None:
+    # The None sentinel: a ScanResult built without gate_findings (e.g. in a test) must
+    # gate on its findings, never silently pass because gate_findings defaulted empty.
+    leak = Finding(
+        rule_id="PY-WL-101",
+        message="m",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path="svc.py", line_start=1),
+        fingerprint="a" * 64,
+        suppressed=SuppressionState.ACTIVE,
+    )
+    result = ScanResult(
+        findings=[leak],
+        summary=ScanSummary(total=1, active=1, baselined=0, waived=0, judged=0),
+        files_scanned=1,
+        context=None,
+    )
+    assert result.gate_findings is None
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
+def test_lineless_defect_does_not_trip_gate(tmp_path: Path) -> None:
+    # Regression guard for the bug PR #25 had (gate_findings = list(raw)): a lineless
+    # DEFECT must be downgraded to a non-gating FACT in the gate population, exactly as
+    # apply_suppressions does for the emitted findings — so it never trips the gate.
+    from wardline.core.baseline import Baseline
+    from wardline.core.finding import ENGINE_PATH  # noqa: F401  (documents the carve-out)
+    from wardline.core.suppression import apply_suppressions, gate_trips
+    from wardline.core.waivers import WaiverSet
+
+    lineless = Finding(
+        rule_id="PY-WL-101",
+        message="m",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path="svc.py", line_start=None),
+        fingerprint="b" * 64,
+        suppressed=SuppressionState.ACTIVE,
+    )
+    # This is the EXACT empty-suppression transform run_scan applies to build gate_findings.
+    gate_pop = apply_suppressions([lineless], Baseline(frozenset()), WaiverSet([]), today=datetime.now(UTC).date())
+    downgraded = next(f for f in gate_pop if f.location.path == "svc.py")
+    assert downgraded.kind is Kind.FACT  # DEFECT -> FACT, no longer gating
+    assert gate_trips(gate_pop, Severity.ERROR) is False
+
+
+def test_new_since_scopes_both_populations_and_resists_suppression(tmp_path: Path) -> None:
+    # --new-since is the SECURE CI ratchet: it scopes BOTH the emitted findings and the
+    # gate population. A pre-existing defect OUTSIDE the delta does not trip; a new one
+    # INSIDE the delta does, and a repo suppression cannot clear it.
+    callee_src = """
+    from wardline.decorators import external_boundary
+    @external_boundary
+    def read_raw(p):
+        return p
+    """
+    caller_src = """
+    from callee import read_raw
+    from wardline.decorators import trusted
+    @trusted(level='ASSURED')
+    def f(p):
+        return read_raw(p)
+    """
+    unrelated_src = """
+    from wardline.decorators import external_boundary, trusted
+    @external_boundary
+    def read_raw_unrelated(p):
+        return p
+    @trusted(level='ASSURED')
+    def h(p):
+        return read_raw_unrelated(p)
+    """
+    (tmp_path / "callee.py").write_text(textwrap.dedent(callee_src), encoding="utf-8")
+    (tmp_path / "caller.py").write_text(textwrap.dedent(caller_src), encoding="utf-8")
+    (tmp_path / "unrelated.py").write_text(textwrap.dedent(unrelated_src), encoding="utf-8")
+
+    # Try to suppress the NEW (in-delta) defect via a committed baseline — must not help.
+    first = run_scan(tmp_path)
+    new_fp = next(f for f in first.findings if f.qualname == "caller.f").fingerprint
+    bl = tmp_path / ".wardline" / "baseline.yaml"
+    bl.parent.mkdir(parents=True, exist_ok=True)
+    bl.write_text(
+        f"version: 1\nentries:\n  - fingerprint: {new_fp}\n    rule_id: PY-WL-101\n    path: caller.py\n"
+        "    message: m\n",
+        encoding="utf-8",
+    )
+
+    with patch("subprocess.run") as mock_run:
+
+        def run_dispatch(args, **kwargs):
+            if "rev-parse" in args and "--show-toplevel" in args:
+                m = MagicMock(returncode=0)
+                m.stdout = f"{tmp_path.resolve()}\n"
+                return m
+            if "rev-parse" in args and "--verify" in args:
+                m = MagicMock(returncode=0)
+                m.stdout = "abc123\n"
+                return m
+            if "diff" in args and "--name-only" in args:
+                m = MagicMock(returncode=0)
+                m.stdout = "callee.py\n"
+                return m
+            if "ls-files" in args:
+                m = MagicMock(returncode=0)
+                m.stdout = ""
+                return m
+            raise ValueError(f"Unexpected git command: {args}")
+
+        mock_run.side_effect = run_dispatch
+        result = run_scan(tmp_path, new_since="HEAD~1")
+
+    # The in-delta caller.f stays ACTIVE in the gate population despite the baseline entry.
+    assert result.gate_findings is not None
+    gate_by_qn = {f.qualname: f for f in result.gate_findings if f.kind is Kind.DEFECT}
+    assert gate_by_qn["caller.f"].suppressed is SuppressionState.ACTIVE
+    # The out-of-delta unrelated.h is scoped OUT of the gate (delta: unchanged).
+    assert gate_by_qn["unrelated.h"].suppressed is SuppressionState.BASELINED
+    # Net: the gate trips on the new defect, and the repo baseline did not clear it.
+    assert gate_decision(result, Severity.ERROR).tripped is True
 
 
 def test_run_scan_counts_unanalyzed_parse_error(tmp_path: Path) -> None:

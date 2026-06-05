@@ -21,11 +21,45 @@ $ wardline scan .
 scanned 2 file(s); 4 finding(s) — 1 suppressed (1 baseline / 0 waiver / 0 judged), 0 new -> findings.jsonl
 ```
 
+## Suppressions and the `--fail-on` gate (read this first)
+
+All three layers — baseline, waiver, judged — live in **committed repository
+content** (`.wardline/baseline.yaml`, `wardline.yaml`, `.wardline/judged.yaml`).
+That makes them attacker-controllable in an untrusted pull request: a PR can add a
+suppression entry keyed to its own new defect's fingerprint.
+
+So, **by default the `--fail-on` gate evaluates the *unsuppressed* population.**
+Baseline / waiver / judged still **annotate** every emitted finding (you see
+`suppressed: baselined | waived | judged` in the output) — they just do **not**
+clear the gate. A self-suppressing PR therefore still goes red.
+
+Two ways to scope or relax the gate, depending on trust:
+
+- **`--new-since <merge-base>` — the secure CI ratchet.** The git ref is supplied
+  by the operator (the pipeline), not by repository content, so it is unforgeable.
+  It scopes **both** the emitted findings and the gate to findings new since the
+  ref: a pre-existing defect outside the delta does not trip; a new one inside it
+  does, and no committed suppression can clear it. This is the recommended adopt-an-
+  existing-codebase pattern in CI.
+- **`--trust-suppressions` — trusted local checkouts only.** Restores the old
+  behaviour: baseline / waiver / judged clear the gate. Use it when you are running
+  Wardline on a checkout you trust (your own working tree, the judge DX loop). **Do
+  not** enable it in CI on untrusted PR content.
+
+The MCP `scan` tool mirrors this exactly: `new_since` and a `trust_suppressions`
+boolean (default false).
+
 ## Baseline
 
 A baseline is a git-committable snapshot of findings you accept as-is. It is the
-fast on-ramp for an existing project: capture everything once, then let the
-`--fail-on` gate fire only on findings that appear *after* the snapshot.
+fast on-ramp for an existing project: capture everything once so they are
+annotated as `baselined` in scan output.
+
+Note (changed): a baseline **annotates** but no longer clears the `--fail-on`
+gate by default — see [Suppressions and the `--fail-on` gate](#suppressions-and-the-fail-on-gate-read-this-first)
+above. To make the gate "fire only on findings that appear after the snapshot",
+use the unforgeable `--new-since <merge-base>` ratchet in CI, or
+`--trust-suppressions` on a trusted local checkout.
 
 ```
 wardline baseline [OPTIONS] COMMAND [ARGS]...
@@ -136,8 +170,13 @@ findings:
 
 Commit `.wardline/judged.yaml` like the baseline. A judged suppression is
 advisory — the rationale is recorded precisely so a human can audit it and revert
-by deleting the entry. See the [LLM triage judge](judge.md) guide for how
-verdicts are produced and the `--write` confidence floor.
+by deleting the entry. Like the other layers it **annotates** but does not clear
+the `--fail-on` gate by default (see [the gate section](#suppressions-and-the-fail-on-gate-read-this-first));
+the `judge` workflow itself always consults judged records. Each record must carry
+`verdict: FALSE_POSITIVE` — a record without it, or with any other verdict, is
+rejected on load so a hand-edited entry cannot become a silent suppression. See the
+[LLM triage judge](judge.md) guide for how verdicts are produced and the `--write`
+confidence floor.
 
 ## A note on line sensitivity
 

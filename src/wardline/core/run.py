@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from wardline.core import config as config_mod
-from wardline.core.baseline import load_baseline
+from wardline.core.baseline import Baseline, load_baseline
 from wardline.core.delta import get_affected_entities, get_changed_files_since
 from wardline.core.discovery import discover, missing_source_roots
 from wardline.core.errors import ConfigError
@@ -45,7 +45,8 @@ def _fp(*parts: str) -> str:
 @dataclass(frozen=True, slots=True)
 class ScanSummary:
     total: int  # every finding (defects + facts/metrics)
-    active: int  # non-suppressed DEFECTs — the gate population
+    active: int  # non-suppressed DEFECTs in the emitted findings (NOT the gate population —
+    # the gate evaluates ScanResult.gate_findings unless --trust-suppressions)
     baselined: int
     waived: int
     judged: int
@@ -66,6 +67,14 @@ class ScanResult:
     # this exact run instead of re-deriving. Never serialised over MCP.
     context: AnalysisContext | None
     scanned_paths: tuple[str, ...] = ()
+    # The UNSUPPRESSED gate population (None SENTINEL — never a falsy-empty fallback).
+    # Repository-controlled baseline/waiver/judged still ANNOTATE ``findings`` (visible
+    # as ``suppressed=…``), but a malicious PR must not be able to clear the ``--fail-on``
+    # gate by committing a suppression keyed to its own new defect. ``gate_decision``
+    # evaluates this when it is not None, else falls back to ``findings`` (the trusted,
+    # local ``--trust-suppressions`` / directly-constructed-ScanResult behaviour). It is
+    # scoped by ``--new-since`` identically to ``findings``.
+    gate_findings: list[Finding] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +94,7 @@ def run_scan(
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
     strict_defaults: bool = False,
+    trust_suppressions: bool = False,
 ) -> ScanResult:
     """Discover → analyze → apply suppressions. Pure function of (disk + config).
 
@@ -94,6 +104,16 @@ def run_scan(
     ``confine_to_root`` (default True) makes ``discover`` reject any
     ``source_root`` that resolves outside ``root``. Callers that intentionally
     scan outside the project root must opt out explicitly.
+
+    ``trust_suppressions`` (default False) is the SECURITY default. When False the
+    ``--fail-on`` gate evaluates a separately-built UNSUPPRESSED population
+    (``ScanResult.gate_findings``): repository-controlled baseline/waiver/judged
+    files still annotate the emitted ``findings`` but cannot clear the gate, so a
+    malicious PR cannot self-suppress its own new defect. When True the gate falls
+    back to the suppressed ``findings`` (``gate_findings`` is set to None) — the
+    trusted local / judge-DX behaviour, an explicit operator trust decision suitable
+    only for a trusted checkout, never for enforcement on untrusted PR content. The
+    secure CI ratchet is the operator-supplied, unforgeable ``--new-since`` instead.
     """
     from wardline.scanner.analyzer import build_analyzer
     from wardline.scanner.grammar import TrustGrammar, default_grammar
@@ -185,7 +205,21 @@ def run_scan(
     baseline = load_baseline(root / ".wardline" / "baseline.yaml")
     waivers = WaiverSet(parse_waivers(cfg.waivers))
     judged = load_judged(root / ".wardline" / "judged.yaml")
-    findings = apply_suppressions(raw, baseline, waivers, today=date.today(), judged=judged)
+    today = date.today()
+    # The emitted findings ALWAYS carry the full suppression annotations (baseline,
+    # waiver, judged) so ``suppressed=…`` is visible in output regardless of trust.
+    findings = apply_suppressions(raw, baseline, waivers, today=today, judged=judged)
+    # The gate population applies ZERO suppression but runs the SAME structural
+    # transforms apply_suppressions does (esp. the lineless-DEFECT→non-gating-FACT
+    # downgrade), so the only difference vs ``findings`` is the suppression sources —
+    # NOT ``list(raw)``, which would let a lineless DEFECT trip the gate. When the
+    # operator trusts repo suppressions, gate_findings is None and the gate falls back
+    # to the suppressed ``findings`` (None SENTINEL, never an accidental falsy-empty).
+    gate_findings: list[Finding] | None
+    if trust_suppressions:
+        gate_findings = None
+    else:
+        gate_findings = apply_suppressions(raw, Baseline(frozenset()), WaiverSet([]), today=today, judged=None)
 
     if new_since is not None:
         changed_files = get_changed_files_since(new_since, root)
@@ -195,18 +229,26 @@ def run_scan(
         else:
             affected = set()
 
-        new_findings = []
-        for f in findings:
-            if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE:
-                is_new = (f.location.path in changed_files) or (f.qualname is not None and f.qualname in affected)
-                if not is_new:
-                    f = replace(
-                        f,
-                        suppressed=SuppressionState.BASELINED,
-                        suppression_reason=f"delta: unchanged since {new_since}",
-                    )
-            new_findings.append(f)
-        findings = new_findings
+        def apply_delta_scope(candidates: list[Finding]) -> list[Finding]:
+            # Suppress any ACTIVE defect outside the delta so the gate only fires on
+            # findings new since ``new_since``. Applied to BOTH emitted and gate
+            # populations so the operator-supplied (unforgeable) ratchet scopes the gate.
+            scoped: list[Finding] = []
+            for f in candidates:
+                if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE:
+                    is_new = (f.location.path in changed_files) or (f.qualname is not None and f.qualname in affected)
+                    if not is_new:
+                        f = replace(
+                            f,
+                            suppressed=SuppressionState.BASELINED,
+                            suppression_reason=f"delta: unchanged since {new_since}",
+                        )
+                scoped.append(f)
+            return scoped
+
+        findings = apply_delta_scope(findings)
+        if gate_findings is not None:
+            gate_findings = apply_delta_scope(gate_findings)
 
     defects = [f for f in findings if f.kind is Kind.DEFECT]
     summary = ScanSummary(
@@ -227,6 +269,7 @@ def run_scan(
             path.relative_to(resolved_root).as_posix() if path.is_relative_to(resolved_root) else path.as_posix()
             for path in files
         ),
+        gate_findings=gate_findings,
     )
 
 
@@ -234,5 +277,9 @@ def gate_decision(result: ScanResult, fail_on: Severity | None) -> GateDecision:
     """Translate a scan into a pass/fail verdict. A trip is data, not an error."""
     if fail_on is None:
         return GateDecision(tripped=False, fail_on=None, exit_class=0)
-    tripped = gate_trips(result.findings, fail_on)
+    # None SENTINEL: evaluate the unsuppressed gate population when present (secure
+    # default), else the suppressed ``findings`` (trusted ``--trust-suppressions`` /
+    # a directly-constructed ScanResult with no gate_findings).
+    gate_population = result.gate_findings if result.gate_findings is not None else result.findings
+    tripped = gate_trips(gate_population, fail_on)
     return GateDecision(tripped=tripped, fail_on=fail_on.value, exit_class=1 if tripped else 0)
