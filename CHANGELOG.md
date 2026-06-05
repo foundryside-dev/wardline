@@ -42,12 +42,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and likewise `exec` / `pickle.loads` / `subprocess` / dynamic `import` — was never
   handed to the sink rules (`PY-WL-106/107/108`), producing a silent false-negative.
   Lambda bodies are now traversed as part of the enclosing analyzable scope (lambdas
-  are not indexed as separate entities, unlike `def`/`class`). This strictly improves
-  coverage — such sinks go invisible→visible; their argument-taint resolution then
-  follows the engine's documented flow-insensitive limitation (a lambda-body sink
-  resolves against the pessimistic flow-insensitive fallback, which warns rather than
-  silently degrading). Regression tests cover both `_own_calls` and a `PY-WL-107` fire
-  on `lambda: eval(src)`.
+  are not indexed as separate entities, unlike `def`/`class`) — on **both** sides:
+  sink *discovery* (`_own_calls`) and the L2 taint *walk*. The walk resolves each
+  lambda body in a second pass, after the forward walk has finalised the function's
+  variable taints, against those **final** taints (in an isolated scope copy —
+  lambda-local params/walrus never leak, and the lambda's own parameters shadow
+  enclosing names of the same id). Final-state resolution is the sound choice for a
+  closure: a lambda defers execution and captures free variables by reference, so a
+  variable assigned raw *after* the lambda is defined (`src = "safe"; cb = lambda:
+  eval(src); src = read_raw(p)`) is a real deferred sink and still fires — a
+  definition-site pass would silently miss it. The change is a strict improvement: it
+  closes the false-negative (raw→`eval`/`exec`/`pickle.loads`/`subprocess` in a lambda
+  body now fires, including the deferred case) **and** removes the prior over-report
+  where *any* lambda-body sink in a trusted function fell to the pessimistic
+  flow-insensitive fallback and fired `UNKNOWN_RAW` regardless of the actual argument
+  (`lambda: eval("safe")`, a `lambda cmd: eval(cmd)` whose param shadows an enclosing
+  raw `cmd`, and a value clean in the final state no longer false-fire). No
+  `WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK` warning is emitted for lambda-body sinks.
+  Regression tests cover discovery (`_own_calls`), flow-sensitive `PY-WL-107`/`108`
+  fires on real and deferred taint, and no-fire on a clean local, a final-state-clean
+  reassignment, and a shadowing lambda parameter.
 - **Local trust-pack guard no longer executes repository code while deciding.**
   `_is_local_pack()` resolved a `wardline.yaml` `packs:` entry with
   `importlib.util.find_spec()`, which imports (and runs) the parent of a dotted

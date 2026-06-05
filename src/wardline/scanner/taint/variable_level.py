@@ -24,8 +24,12 @@ from __future__ import annotations
 import ast
 import contextvars
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from wardline.core.taints import _PROVENANCE_CLASH, TaintState, combine
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 # Serialisation sinks — calls that cross the representation boundary. Their
 # output sheds validation provenance (raw bytes/str), so → UNKNOWN_RAW. This is
@@ -159,6 +163,52 @@ def analyze_function_variables(
         _CURRENT_MODULE_PREFIX.reset(token_module)
 
 
+def _own_scope_lambdas(node: ast.AST) -> Iterator[ast.Lambda]:
+    """Yield every ``ast.Lambda`` in *node*'s own scope (descends into lambdas, which
+    are not separate entities, but NOT into nested ``def``/``class`` — those are
+    analyzed as their own entities)."""
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if isinstance(child, ast.Lambda):
+            yield child
+        yield from _own_scope_lambdas(child)
+
+
+def _resolve_lambda_bodies(
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    final_var_taints: dict[str, TaintState],
+) -> None:
+    """Record call-site arg taints for calls inside lambda BODIES (sink-rule input).
+
+    Runs AFTER the forward walk has finalised ``final_var_taints``. A lambda defers
+    execution and captures free variables by reference, so the sound static taint for
+    a free variable read in the body is its FINAL function-scope taint — the closest
+    proxy for its value when the lambda is later called. Resolving here (not at the
+    definition site) catches a variable assigned raw *after* the lambda is defined (a
+    real deferred sink) that a definition-site pass would silently miss, while a value
+    that is clean in the final state does not over-fire.
+
+    Each lambda body is resolved in an isolated scope copy so lambda-local bindings
+    (params, walrus) never leak; the lambda's own parameters are reset to the neutral
+    seed (``function_taint``) so they SHADOW enclosing names of the same id rather than
+    inheriting their taint. Free variables resolve against ``final_var_taints``. The
+    recording itself happens via the ``_CURRENT_CALL_SITE_ARG_TAINTS`` contextvar set
+    by the caller, keyed by ``id(call)`` (matching what the sink rules look up)."""
+    for lam in _own_scope_lambdas(func_node):
+        scope = dict(final_var_taints)
+        args = lam.args
+        for param in (*args.posonlyargs, *args.args, *args.kwonlyargs):
+            scope[param.arg] = function_taint
+        if args.vararg is not None:
+            scope[args.vararg.arg] = function_taint
+        if args.kwarg is not None:
+            scope[args.kwarg.arg] = function_taint
+        _resolve_expr(lam.body, function_taint, taint_map, scope)
+
+
 def compute_variable_taints(
     func_node: ast.FunctionDef | ast.AsyncFunctionDef,
     function_taint: TaintState,
@@ -213,6 +263,10 @@ def compute_variable_taints(
         var_taints: dict[str, TaintState] = {}
         _seed_parameters(func_node, function_taint, var_taints, param_meets, taint_map)
         _walk_body(func_node.body, function_taint, taint_map, var_taints, call_site_taints)
+        # Second pass: resolve lambda BODIES against the now-final var_taints so a
+        # deferred lambda that captures a variable tainted AFTER its definition is
+        # still seen by the sink rules (closure-by-reference soundness).
+        _resolve_lambda_bodies(func_node, function_taint, taint_map, var_taints)
         return var_taints
     finally:
         if token_clash is not None:
@@ -376,11 +430,17 @@ def _resolve_expr(
     if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
         return _resolve_comprehension(node, function_taint, taint_map, var_taints)
     if isinstance(node, ast.Lambda):
+        # Defaults evaluate in the ENCLOSING scope at definition time — resolve them
+        # against var_taints (and bind any walrus side-effects there). The lambda
+        # BODY is resolved separately, AFTER the forward walk, against the final
+        # var_taints (see _resolve_lambda_bodies): a lambda defers execution and
+        # captures free variables by reference, so the sound taint for a free var
+        # read in the body is its FINAL function-scope taint, not its def-site value.
         for default in (*node.args.defaults, *node.args.kw_defaults):
             if default is not None:
                 _resolve_expr(default, function_taint, taint_map, var_taints)
         return function_taint
-    # Fallback: unmodelled Call shapes (str()/format()/.get()), lambdas, etc.
+    # Fallback: unmodelled Call shapes (str()/format()/.get()), etc.
     return function_taint
 
 
