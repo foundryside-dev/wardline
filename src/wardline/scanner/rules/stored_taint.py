@@ -16,7 +16,7 @@ from wardline.core.finding import Finding, Kind, Location, Maturity, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import RAW_ZONE, TaintState
 from wardline.scanner.rules._ast_helpers import own_nodes
-from wardline.scanner.rules._sink_helpers import call_site_var_taints, worst_arg_taint
+from wardline.scanner.rules._sink_helpers import worst_arg_taint
 from wardline.scanner.rules.metadata import RuleMetadata
 from wardline.scanner.rules.severity_model import modulate
 
@@ -123,9 +123,6 @@ class StoredTaint:
                 if not has_direct_read:
                     continue
 
-            site_taints = call_site_var_taints(entity.node, qualname, context)
-            final = context.function_var_taints.get(qualname, {})
-
             # 1. Check return statements
             for node in own_nodes(entity.node):
                 if isinstance(node, ast.Return) and node.value is not None:
@@ -188,7 +185,7 @@ class StoredTaint:
                             callee_tier = context.project_taints.get(callee_qn)
                             # Only flag if callee is a trusted producer or boundary
                             if callee_tier is not None and callee_tier not in RAW_ZONE:
-                                worst = worst_arg_taint(node, qualname, context, site_taints.get(id(node), final))
+                                worst = worst_arg_taint(node, qualname, context)
                                 if worst is not None and worst in RAW_ZONE:
                                     findings.append(
                                         Finding(

@@ -15,7 +15,7 @@ from wardline.core.finding import Finding, Kind, Location, Maturity, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import RAW_ZONE, TaintState
 from wardline.scanner.rules._ast_helpers import own_nodes
-from wardline.scanner.rules._sink_helpers import TaintedSinkRule, call_site_var_taints, worst_arg_taint
+from wardline.scanner.rules._sink_helpers import TaintedSinkRule, worst_arg_taint
 from wardline.scanner.rules.metadata import RuleMetadata
 from wardline.scanner.rules.severity_model import modulate
 
@@ -53,12 +53,9 @@ class SQLInjection(TaintedSinkRule):
             severity = modulate(self.base_severity, tier)
             if severity == Severity.NONE:
                 continue  # freedom / fail-closed zone — suppressed
-            site_taints = call_site_var_taints(entity.node, qualname, context)
-            final = context.function_var_taints.get(qualname, {})
-
             for node in own_nodes(entity.node):
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in self.SINKS:
-                    worst = worst_arg_taint(node, qualname, context, site_taints.get(id(node), final))
+                    worst = worst_arg_taint(node, qualname, context)
                     if worst is not None and worst in RAW_ZONE:
                         line = node.lineno
                         findings.append(
