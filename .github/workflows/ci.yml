@@ -136,11 +136,30 @@ jobs:
             echo "- Missing local services, secrets, or capabilities fail this required oracle run."
           } >> "$GITHUB_STEP_SUMMARY"
 
-  docs:
-    name: Docs (build + deploy)
+  docs-build:
+    name: Docs (build)
     runs-on: ubuntu-latest
     needs: test
     if: github.event_name != 'schedule'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.13"
+      - run: uv sync --extra docs
+      - name: Build (strict)
+        run: uv run mkdocs build --strict
+
+  docs-deploy:
+    name: Docs (deploy)
+    runs-on: ubuntu-latest
+    needs: docs-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
     steps:
@@ -150,8 +169,5 @@ jobs:
           enable-cache: true
           python-version: "3.13"
       - run: uv sync --extra docs
-      - name: Build (strict)
-        run: uv run mkdocs build --strict
-      - name: Deploy (main only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Deploy
         run: uv run mkdocs gh-deploy --force
