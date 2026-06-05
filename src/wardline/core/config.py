@@ -74,50 +74,71 @@ def _deep_merge(local: dict[str, Any], default: dict[str, Any]) -> dict[str, Any
     return res
 
 
+def _local_module_path_exists(import_root: Path, parts: list[str]) -> bool:
+    """Stat-only check: would importing ``parts`` resolve to a file under ``import_root``?
+
+    Pure filesystem inspection — never imports anything. Intermediate components
+    of a dotted import must be packages (directories); only the final component
+    may be a module file. This is the safe replacement for ``find_spec``, which
+    executes parent ``__init__.py`` while resolving a dotted name.
+    """
+    target = import_root
+    for index, part in enumerate(parts):
+        module_file = target / f"{part}.py"
+        package_dir = target / part
+        is_last = index == len(parts) - 1
+
+        if is_last:
+            return module_file.is_file() or package_dir.is_dir()
+        if not package_dir.is_dir():
+            return False
+        target = package_dir
+    return False
+
+
 def _is_local_pack(pack_name: str, config_path: Path | None) -> bool:
-    import importlib.util
+    """Would ``pack_name`` import from the scanned project directory?
+
+    Determined by pure filesystem inspection so that scanning untrusted
+    source/config never executes repository code. Earlier revisions called
+    ``importlib.util.find_spec`` here, which imports (and runs) the parent
+    package of a dotted name — defeating the guard's own purpose. We refuse
+    only genuinely-empty components (which can never name an importable module)
+    and let every other name fall through to the stat-only walk: a guard whose
+    job is to block local execution must fail *closed*, not skip names that
+    ``import_module`` could still load (e.g. hyphenated package directories).
+    """
     import sys
 
-    try:
-        spec = importlib.util.find_spec(pack_name)
-    except Exception:
+    parts = pack_name.split(".")
+    if not parts or any(not part for part in parts):
         return False
+
     roots: list[Path] = []
-    if spec and spec.origin and spec.origin not in ("built-in", "frozen"):
-        roots.append(Path(spec.origin).parent.resolve())
     if config_path is not None:
         roots.append(config_path.parent.resolve())
     roots.append(Path.cwd().resolve())
 
-    parts = pack_name.split(".")
-
     for p_str in sys.path:
-        p_path = Path.cwd().resolve() if not p_str else Path(p_str).resolve()
+        try:
+            p_path = Path.cwd().resolve() if not p_str else Path(p_str).resolve()
+        except Exception:
+            continue
 
         if "site-packages" in p_path.parts or "dist-packages" in p_path.parts:
             continue
 
         is_local = False
-        for r in roots:
+        for root in roots:
             try:
-                if p_path == r or p_path.is_relative_to(r):
+                if p_path == root or p_path.is_relative_to(root):
                     is_local = True
                     break
             except Exception:
                 continue
 
-        if is_local:
-            target = p_path
-            exists = True
-            for part in parts[:-1]:
-                target = target / part
-                if not (target.is_dir() or (target.parent / f"{part}.py").is_file()):
-                    exists = False
-                    break
-            if exists:
-                last = parts[-1]
-                if (target / last).is_dir() or (target / f"{last}.py").is_file():
-                    return True
+        if is_local and _local_module_path_exists(p_path, parts):
+            return True
     return False
 
 
