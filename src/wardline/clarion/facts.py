@@ -78,6 +78,19 @@ def build_taint_facts(result: ScanResult, root: Path) -> list[dict[str, Any]]:
         rel_path = entity.location.path
         if rel_path not in hash_cache:
             hash_cache[rel_path] = blake3.blake3(_read_bytes(root / rel_path)).hexdigest()
+        # RESIDUAL (builtin-marker shadow false-green): ``content_hash_at_compute``
+        # is whole-file raw-byte blake3 ONLY — it cannot observe the shadow state of
+        # a builtin marker root. So identical file bytes scanned once UNSHADOWED then
+        # under a project that shadows ``wardline``/``loom_markers`` could serve a
+        # stale TRUSTED fact via the MCP explain_taint / Clarion read path. We do NOT
+        # fold the shadow bit / provider fingerprint into this hash: it is a
+        # CROSS-TOOL contract value — Clarion's read path INDEPENDENTLY recomputes
+        # the whole-file blake3 (clarion_storage::current_file_hash) and compares it
+        # against the in-blob copy. Mixing in a Wardline-private bit would make every
+        # comparison mismatch and break fact reconciliation entirely; there is no
+        # separate Wardline-owned compute-key the freshness gate consults. Closing
+        # this fully needs a Clarion read-path contract change. Lower impact: this
+        # path is opt-in (--clarion-url) and not the scan gate. See CHANGELOG.
         content_hash = hash_cache[rel_path]
 
         declared = context.project_return_taints.get(qualname)

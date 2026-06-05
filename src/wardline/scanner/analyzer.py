@@ -128,10 +128,15 @@ class WardlineAnalyzer:
         parse_findings = list(parse_stage.parse_findings)
         dirty_modules = set(parse_stage.dirty_modules)
 
+        # Use the SHADOW-AWARE provider fingerprint computed during the parse stage
+        # for BOTH the dirty-detection key (above, inside the parse stage) AND the
+        # resolver's summary cache here. They MUST agree, or a summary computed under
+        # a non-shadowed root could be served when re-scanning a shadowed one
+        # (cross-root cache poisoning → a spoofed-trust false GREEN survives).
         if self._cache is not None:
             result = resolve_project_taints(
                 modules=modules,
-                provider_fingerprint=self._provider.fingerprint(),
+                provider_fingerprint=parse_stage.provider_fingerprint,
                 summary_cache=self._cache,
                 dirty_modules=frozenset(dirty_modules),
                 config=config,
@@ -139,7 +144,7 @@ class WardlineAnalyzer:
         else:
             result = resolve_project_taints(
                 modules=modules,
-                provider_fingerprint=self._provider.fingerprint(),
+                provider_fingerprint=parse_stage.provider_fingerprint,
                 config=config,
             )
 

@@ -7,7 +7,7 @@ import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from wardline.core.finding import Finding, Kind, Location, Severity
 from wardline.core.qualname import module_dotted_name
@@ -59,6 +59,23 @@ class ParseProjectOutput:
     files: list[ParsedFile]
     parse_findings: list[Finding]
     dirty_modules: frozenset[str]
+    provider_fingerprint: str
+
+
+def _provider_fingerprint_for_project(provider: TaintSourceProvider, project_modules: frozenset[str]) -> str:
+    """Project-aware provider fingerprint, falling back to the bare one.
+
+    A provider may expose ``fingerprint_for_project(project_modules)`` to fold
+    project-shadow state (which builtin marker roots the scan shadows) into the
+    summary-cache key — preventing a warm cache from serving a TRUSTED summary
+    computed under a non-shadowed root when re-scanning a shadowed one. Providers
+    that do not (the trivial default) fall back to the plain ``fingerprint()``.
+    """
+    project_fingerprint = getattr(provider, "fingerprint_for_project", None)
+    if callable(project_fingerprint):
+        typed_project_fingerprint = cast(Any, project_fingerprint)
+        return str(typed_project_fingerprint(project_modules))
+    return provider.fingerprint()
 
 
 def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutput:
@@ -68,6 +85,22 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
     parse_findings: list[Finding] = []
     dirty_modules: set[str] = set()
     root = stage_input.root.resolve()
+
+    # The set of dotted module names in the scan. Used to fail closed for builtin
+    # markers when the project shadows a builtin marker root, AND to compute the
+    # shadow-aware provider fingerprint threaded into BOTH the dirty-detection key
+    # below and the resolver's summary cache (see analyzer.py).
+    project_modules = frozenset(
+        module
+        for path in stage_input.files
+        if (
+            module := module_dotted_name(
+                path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
+            )
+        )
+        is not None
+    )
+    provider_fingerprint = _provider_fingerprint_for_project(stage_input.provider, project_modules)
 
     for path in stage_input.files:
         relpath = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.as_posix()
@@ -90,7 +123,6 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
             source = path.read_text(encoding="utf-8")
             source_bytes = source.encode("utf-8")
 
-            provider_fingerprint = stage_input.provider.fingerprint()
             from wardline.scanner.taint.project_resolver import _RESOLVER_VERSION
             from wardline.scanner.taint.summary import SUMMARY_SCHEMA_VERSION, compute_cache_key
 
@@ -116,7 +148,7 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
             )
             seeds = seed_function_taints(
                 entities,
-                ctx=SeedContext(module=module, alias_map=alias_map),
+                ctx=SeedContext(module=module, alias_map=alias_map, project_modules=project_modules),
                 provider=stage_input.provider,
             )
             for ent in entities:
@@ -205,6 +237,7 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
         files=parsed_files,
         parse_findings=parse_findings,
         dirty_modules=frozenset(dirty_modules),
+        provider_fingerprint=provider_fingerprint,
     )
 
 
