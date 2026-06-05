@@ -49,6 +49,7 @@ def _is_native_first_party(mod: str) -> bool:
     """True if ``mod`` is, or is under, a declared native/first-party prefix."""
     return any(mod == prefix or mod.startswith(prefix + ".") for prefix in _NATIVE_FIRST_PARTY_PREFIXES)
 
+
 # code -> (rule_id, severity, kind)
 _DIAG_MAP: dict[str, tuple[str, Severity, Kind]] = {
     "L3_CONVERGENCE_BOUND": ("WLN-L3-CONVERGENCE-BOUND", Severity.WARN, Kind.METRIC),

@@ -36,6 +36,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI verb shares the same filter core. (WS-B1, WS-B2)
 
 ### Security
+- **Dangerous-sink rules now see lambda bodies (closes a false-green).** `_own_calls`
+  treated `ast.Lambda` as a separate scope and only inspected lambda *default*
+  expressions, so a sink reached inside a lambda *body* — `cb = lambda: eval(src)`,
+  and likewise `exec` / `pickle.loads` / `subprocess` / dynamic `import` — was never
+  handed to the sink rules (`PY-WL-106/107/108`), producing a silent false-negative.
+  Lambda bodies are now traversed as part of the enclosing analyzable scope (lambdas
+  are not indexed as separate entities, unlike `def`/`class`). This strictly improves
+  coverage — such sinks go invisible→visible; their argument-taint resolution then
+  follows the engine's documented flow-insensitive limitation (a lambda-body sink
+  resolves against the pessimistic flow-insensitive fallback, which warns rather than
+  silently degrading). Regression tests cover both `_own_calls` and a `PY-WL-107` fire
+  on `lambda: eval(src)`.
 - **Local trust-pack guard no longer executes repository code while deciding.**
   `_is_local_pack()` resolved a `wardline.yaml` `packs:` entry with
   `importlib.util.find_spec()`, which imports (and runs) the parent of a dotted

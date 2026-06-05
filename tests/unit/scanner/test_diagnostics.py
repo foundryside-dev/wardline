@@ -165,18 +165,14 @@ def test_native_first_party_core_import_resolves_without_project_module() -> Non
 
 def test_native_first_party_decorators_import_resolves() -> None:
     tree = ast.parse("from wardline.decorators import trust_boundary\n")
-    out = diagnose_unknown_imports(
-        tree=tree, module_path="x", project_modules=frozenset(), stdlib_keys=frozenset()
-    )
+    out = diagnose_unknown_imports(tree=tree, module_path="x", project_modules=frozenset(), stdlib_keys=frozenset())
     assert out == []
 
 
 def test_native_allowlist_does_not_suppress_genuine_third_party() -> None:
     # Over-suppression guard: a real unknown third-party import MUST still fire.
     tree = ast.parse("from acme_totally_unknown_pkg import thing\n")
-    out = diagnose_unknown_imports(
-        tree=tree, module_path="x", project_modules=frozenset(), stdlib_keys=frozenset()
-    )
+    out = diagnose_unknown_imports(tree=tree, module_path="x", project_modules=frozenset(), stdlib_keys=frozenset())
     assert len(out) == 1 and "acme_totally_unknown_pkg" in out[0][2]
 
 
@@ -185,9 +181,7 @@ def test_native_allowlist_does_not_suppress_undeclared_wardline_submodule() -> N
     # neither a project module nor a declared native prefix must still report, so
     # the allowlist can't silently swallow a real gap.
     tree = ast.parse("from wardline.experimental.zzz import q\n")
-    out = diagnose_unknown_imports(
-        tree=tree, module_path="x", project_modules=frozenset(), stdlib_keys=frozenset()
-    )
+    out = diagnose_unknown_imports(tree=tree, module_path="x", project_modules=frozenset(), stdlib_keys=frozenset())
     assert len(out) == 1
 
 
@@ -196,7 +190,5 @@ def test_native_allowlist_prefix_boundary_is_dotted() -> None:
     # (wardline.core_helpers vs wardline.core) must NOT be suppressed — guards the
     # ``mod == p or mod.startswith(p + ".")`` boundary against a future ``+ "."`` drop.
     tree = ast.parse("from wardline.core_helpers import q\n")
-    out = diagnose_unknown_imports(
-        tree=tree, module_path="x", project_modules=frozenset(), stdlib_keys=frozenset()
-    )
+    out = diagnose_unknown_imports(tree=tree, module_path="x", project_modules=frozenset(), stdlib_keys=frozenset())
     assert len(out) == 1

@@ -79,17 +79,15 @@ def canonical_call_name(dotted: str, alias_map: Mapping[str, str]) -> str:
 
 
 def _own_calls(node: ast.AST) -> Iterator[ast.Call]:
-    """Yield every ``ast.Call`` in *node*'s own scope (never descending into nested
-    def/class/lambda — those are separate scopes / separate entities)."""
+    """Yield every ``ast.Call`` in *node*'s own analyzable scope.
+
+    Function, async-function, and class bodies are indexed as their own entities, so
+    they are not traversed here. Lambda bodies are intentionally traversed because
+    the entity index does not emit separate lambda entities; skipping them would hide
+    dangerous calls from sink rules.
+    """
     for child in ast.iter_child_nodes(node):
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            continue
-        if isinstance(child, ast.Lambda):
-            for default in (*child.args.defaults, *child.args.kw_defaults):
-                if default is not None:
-                    if isinstance(default, ast.Call):
-                        yield default
-                    yield from _own_calls(default)
             continue
         if isinstance(child, ast.Call):
             yield child
