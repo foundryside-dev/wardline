@@ -37,6 +37,8 @@ def test_cli_and_mcp_scan_agree_on_findings_and_gate() -> None:
         "tripped": cli_gate.tripped,
         "fail_on": cli_gate.fail_on,
         "exit_class": cli_gate.exit_class,
+        "reason": cli_gate.reason,
+        "evaluated": cli_gate.evaluated,
     }
     assert mcp["summary"]["total"] == cli_result.summary.total
     assert mcp["summary"]["active"] == cli_result.summary.active

@@ -199,6 +199,43 @@ def test_trust_suppressions_restores_old_gate_clearing(tmp_path: Path, writer) -
     assert gate_decision(result, Severity.ERROR).tripped is False
 
 
+def test_gate_decision_reason_names_suppressed_population_on_default_trip(tmp_path: Path) -> None:
+    # The dogfood #2 confusion: summary.active:0 + gate.tripped:true. The verdict must
+    # SAY why — name the suppressed-but-gated count and the escape hatches — and name the
+    # population it judged, so the agent does not have to run scan twice to infer it.
+    proj, fp = _leaky_proj(tmp_path)
+    _write_baseline(proj, fp)
+    decision = gate_decision(run_scan(proj), Severity.ERROR)
+    assert decision.tripped is True
+    assert decision.reason is not None
+    assert "1 suppressed" in decision.reason
+    assert "--trust-suppressions" in decision.reason and "--new-since" in decision.reason
+    assert decision.evaluated is not None and "unsuppressed" in decision.evaluated
+
+
+def test_gate_decision_reason_names_active_defect_on_genuine_trip(tmp_path: Path) -> None:
+    proj, _ = _leaky_proj(tmp_path)  # no suppression -> a genuinely active defect
+    decision = gate_decision(run_scan(proj), Severity.ERROR)
+    assert decision.tripped is True
+    assert decision.reason is not None and "1 active" in decision.reason
+    # a genuine active trip should NOT misdirect the agent to the suppression flags
+    assert "--trust-suppressions" not in decision.reason
+
+
+def test_gate_decision_evaluated_reflects_trust_suppressions(tmp_path: Path) -> None:
+    proj, fp = _leaky_proj(tmp_path)
+    _write_baseline(proj, fp)
+    decision = gate_decision(run_scan(proj, trust_suppressions=True), Severity.ERROR)
+    assert decision.tripped is False
+    assert decision.evaluated is not None and "honored" in decision.evaluated
+
+
+def test_gate_decision_no_threshold_has_no_reason() -> None:
+    result = ScanResult(findings=[], summary=ScanSummary(0, 0, 0, 0, 0), files_scanned=0, context=None)
+    decision = gate_decision(result, None)
+    assert decision.reason is None and decision.evaluated is None
+
+
 def test_gate_findings_is_unsuppressed_population(tmp_path: Path) -> None:
     proj, fp = _leaky_proj(tmp_path)
     _write_baseline(proj, fp)

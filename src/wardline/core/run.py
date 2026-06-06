@@ -82,6 +82,13 @@ class GateDecision:
     tripped: bool
     fail_on: str | None
     exit_class: int  # 0 clean, 1 gate tripped, 2 reserved for tool errors (CLI layer)
+    # A human-readable verdict so "summary.active:0 + gate.tripped:true" never reads as
+    # a bug: ``reason`` names the count and class of defects that decided it (and the
+    # escape hatches when the trip is solely from suppressed-but-gated findings);
+    # ``evaluated`` names the population it judged (unsuppressed by default vs honored
+    # under --trust-suppressions). Both None when no threshold is set (no gate).
+    reason: str | None = None
+    evaluated: str | None = None
 
 
 def run_scan(
@@ -280,6 +287,42 @@ def gate_decision(result: ScanResult, fail_on: Severity | None) -> GateDecision:
     # None SENTINEL: evaluate the unsuppressed gate population when present (secure
     # default), else the suppressed ``findings`` (trusted ``--trust-suppressions`` /
     # a directly-constructed ScanResult with no gate_findings).
-    gate_population = result.gate_findings if result.gate_findings is not None else result.findings
+    honors_suppressions = result.gate_findings is None
+    gate_population = result.findings if honors_suppressions else result.gate_findings
+    assert gate_population is not None  # narrow for mypy; the sentinel branch set findings
     tripped = gate_trips(gate_population, fail_on)
-    return GateDecision(tripped=tripped, fail_on=fail_on.value, exit_class=1 if tripped else 0)
+    sev = fail_on.value
+    evaluated = (
+        "post-suppression (repository baseline/waiver/judged honored — trusted-local)"
+        if honors_suppressions
+        else "unsuppressed (repository baseline/waiver/judged ignored)"
+    )
+    reason = _gate_reason(result, fail_on, tripped=tripped, honors_suppressions=honors_suppressions)
+    return GateDecision(
+        tripped=tripped,
+        fail_on=sev,
+        exit_class=1 if tripped else 0,
+        reason=reason,
+        evaluated=evaluated,
+    )
+
+
+def _gate_reason(result: ScanResult, fail_on: Severity, *, tripped: bool, honors_suppressions: bool) -> str:
+    """The human verdict string. Counts the ANNOTATED population (``result.findings``)
+    so the numbers match what the agent reads in ``summary``."""
+    from wardline.core.suppression import gate_breakdown
+
+    sev = fail_on.value
+    active, suppressed = gate_breakdown(result.findings, fail_on)
+    if not tripped:
+        return f"no {sev}+ defects in the evaluated population"
+    # Under --trust-suppressions the suppressed defects are honored (cleared), so only
+    # active ones can have tripped the gate; never misdirect to the suppression flags.
+    if honors_suppressions:
+        return f"{active} active {sev}+ defect(s) at or above {sev}"
+    escape = "pass --trust-suppressions (trusted checkout) or --new-since <ref> (PR)"
+    if active and suppressed:
+        return f"{active} active + {suppressed} suppressed {sev}+ defect(s) gate by default; {escape}"
+    if suppressed:
+        return f"{suppressed} suppressed {sev}+ defect(s) (baseline/waiver/judged) not cleared; {escape}"
+    return f"{active} active {sev}+ defect(s) at or above {sev}"

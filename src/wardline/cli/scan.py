@@ -344,7 +344,12 @@ def scan(
             f"(see WLN-ENGINE-* facts in {output}).",
             err=True,
         )
-    gate_tripped = fail_on is not None and gate_decision(result, Severity(fail_on)).tripped
+    decision = gate_decision(result, Severity(fail_on)) if fail_on is not None else None
+    gate_tripped = decision is not None and decision.tripped
+    if decision is not None and decision.tripped:
+        # Never let "0 active + gate FAILED" read as a bug: say why and which population.
+        click.echo(f"gate: FAILED (--fail-on {decision.fail_on}) — {decision.reason}", err=True)
+        click.echo(f"gate: evaluated {decision.evaluated}", err=True)
     # Independent of the severity gate: opt-in enforcement of "everything analysed".
     if gate_tripped or (fail_on_unanalyzed and s.unanalyzed):
         raise SystemExit(1)

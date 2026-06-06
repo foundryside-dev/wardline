@@ -48,6 +48,22 @@ def test_agent_summary_active_defects_first_and_stable(tmp_path: Path) -> None:
     assert defect["next_tool_calls"][0]["tool"] == "explain_taint"
 
 
+def test_agent_summary_gate_block_carries_reason_and_evaluated(tmp_path: Path) -> None:
+    # The dogfood #2 fix must reach the agent_summary gate block, not just the MCP scan
+    # top-level: a baselined-only scan that trips must SAY why and which population.
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    scan = run_scan(tmp_path)
+    fp = next(f.fingerprint for f in scan.findings if f.rule_id == "PY-WL-101")
+    bl = tmp_path / ".wardline" / "baseline.yaml"
+    bl.parent.mkdir(parents=True, exist_ok=True)
+    write_baseline(bl, [next(f for f in scan.findings if f.fingerprint == fp)])
+    rescan = run_scan(tmp_path)
+    out = build_agent_summary(rescan, gate_decision(rescan, Severity.ERROR)).to_dict()
+    assert out["gate"]["tripped"] is True
+    assert "suppressed" in out["gate"]["reason"]
+    assert "unsuppressed" in out["gate"]["evaluated"]
+
+
 def test_agent_summary_no_active_defects_still_has_next_actions(tmp_path: Path) -> None:
     (tmp_path / "svc.py").write_text("def f():\n    return 1\n", encoding="utf-8")
     scan = run_scan(tmp_path)

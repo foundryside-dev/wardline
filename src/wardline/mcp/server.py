@@ -263,7 +263,13 @@ def _scan(
             # silent under-scan reaches the agent, not just the human-facing stderr.
             "unanalyzed": result.summary.unanalyzed,
         },
-        "gate": {"tripped": decision.tripped, "fail_on": decision.fail_on, "exit_class": decision.exit_class},
+        "gate": {
+            "tripped": decision.tripped,
+            "fail_on": decision.fail_on,
+            "exit_class": decision.exit_class,
+            "reason": decision.reason,
+            "evaluated": decision.evaluated,
+        },
         "loomweave": loomweave_block,
         "filigree": filigree_block,
         "loomweave_write": loomweave_status,

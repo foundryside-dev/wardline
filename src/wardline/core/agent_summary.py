@@ -68,6 +68,8 @@ class AgentSummary:
                 "tripped": self.gate.tripped,
                 "fail_on": self.gate.fail_on,
                 "exit_class": self.gate.exit_class,
+                "reason": self.gate.reason,
+                "evaluated": self.gate.evaluated,
             },
             "integrations": {
                 "filigree_emit": dict(self.filigree_emit),

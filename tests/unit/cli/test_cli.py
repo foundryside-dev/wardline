@@ -144,6 +144,26 @@ def test_scan_format_legis_allow_dirty_emits_unsigned_marked_artifact(tmp_path: 
     assert "UNSIGNED legis dev artifact" in result.output
 
 
+_LEAKY_SRC = (
+    "from wardline.decorators import external_boundary, trusted\n"
+    "@external_boundary\ndef raw(p):\n    return p\n"
+    "@trusted\ndef leaky(p):\n    return raw(p)\n"
+)
+
+
+def test_scan_gate_trip_prints_reason_and_population(tmp_path: Path) -> None:
+    # A tripped gate must say WHY on stderr — never just exit 1 silently (dogfood #2).
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "svc.py").write_text(_LEAKY_SRC, encoding="utf-8")
+    out = tmp_path / "o.jsonl"
+    result = CliRunner().invoke(cli, ["scan", str(project), "--fail-on", "ERROR", "--output", str(out)])
+    assert result.exit_code == 1
+    assert "gate: FAILED (--fail-on ERROR)" in result.output
+    assert "1 active" in result.output
+    assert "gate: evaluated" in result.output
+
+
 def test_scan_config_error_exits_2(tmp_path: Path) -> None:
     import shutil
 
