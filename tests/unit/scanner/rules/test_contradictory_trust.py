@@ -140,6 +140,50 @@ def test_weft_markers_namespace_fires(tmp_path) -> None:
     assert [(f.rule_id, f.qualname) for f in findings] == [("PY-WL-110", "m.conflicting")]
 
 
+def test_user_own_trust_named_decorators_do_not_fire(tmp_path) -> None:
+    # A user's OWN @trusted / @external_boundary imported from a NON-grammar module must
+    # not be mistaken for the builtin trust vocabulary. Here the engine never anchors the
+    # entity (provenance source = "fallback", not "anchored"), so the rule's opt-in gate
+    # (prov.source == "anchored") filters it before marker-counting. This guards the
+    # system-level behaviour: foreign trust-named decorators don't trip PY-WL-110 at all.
+    ctx = _analyze(
+        tmp_path,
+        """
+        from myapp.security import trusted, external_boundary
+        @trusted
+        @external_boundary
+        def f(p):
+            return p
+        """,
+    )
+    assert _run(ctx) == []
+
+
+def test_anchored_entity_ignores_foreign_module_marker(tmp_path) -> None:
+    # The isolating guard for the `_MARKER_MODULE_PREFIXES` check (contradictory_trust.py
+    # line ~81). This entity DOES anchor (via the real `wardline.decorators.trust_boundary`
+    # validator), so it passes the prov.source=="anchored" gate — but the coincidentally
+    # named `myapp.security.trusted` must NOT be counted as a second marker, because its
+    # module prefix is not in the grammar. Only `trust_boundary` counts, so len(markers) < 2
+    # and nothing fires. If the prefix check regressed (keying on the bare name), the foreign
+    # `trusted` would be counted, yielding a FALSE PY-WL-110 on legitimate user code.
+    # (Verified empirically: without this guard the foreign marker is counted and it fires.)
+    ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trust_boundary
+        from myapp.security import trusted
+        @trust_boundary(to_level='ASSURED')
+        @trusted
+        def f(p):
+            if not p:
+                raise ValueError
+            return p
+        """,
+    )
+    assert _run(ctx) == []
+
+
 def test_weft_markers_call_form_fires(tmp_path) -> None:
     # The called form (@trusted(level=...) + @external_boundary) over weft_markers.
     ctx = _analyze(

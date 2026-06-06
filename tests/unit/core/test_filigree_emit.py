@@ -179,6 +179,29 @@ def test_http_5xx_carries_status_but_is_not_auth_rejected() -> None:
     assert res.auth_rejected is False
 
 
+def test_emit_result_auth_rejected_is_derived_from_status() -> None:
+    # ``auth_rejected`` is not an independent axis — it is exactly ``status in (401, 403)``.
+    # Deriving it makes "auth-rejected (200)" and "auth-rejected with a 5xx" unrepresentable.
+    assert EmitResult(reachable=False, status=401).auth_rejected is True
+    assert EmitResult(reachable=False, status=403).auth_rejected is True
+    assert EmitResult(reachable=False, status=503).auth_rejected is False
+    assert EmitResult(reachable=False).auth_rejected is False
+    assert EmitResult(reachable=True, created=1).auth_rejected is False
+
+
+def test_emit_result_rejects_contradictory_states() -> None:
+    # The redundant ``auth_rejected`` axis is gone: it can no longer be set independently
+    # (so it can never disagree with ``status``).
+    with pytest.raises(TypeError):
+        EmitResult(reachable=False, status=200, auth_rejected=True)  # type: ignore[call-arg]
+    # Mirror GateDecision's construction guard: a reached/success result carries no error
+    # status, and a soft-failure created/updated nothing.
+    with pytest.raises(ValueError):
+        EmitResult(reachable=True, status=503)
+    with pytest.raises(ValueError):
+        EmitResult(reachable=False, created=1)
+
+
 def test_bearer_token_carried_when_provided() -> None:
     t = _FakeTransport(response=Response(status=200, body=_ok_body()))
     FiligreeEmitter("http://x/api/weft/scan-results", transport=t, token="sekret").emit([_f()])

@@ -98,13 +98,28 @@ class EmitResult:
     failed: int = 0
     warnings: tuple[str, ...] = ()
     # Discriminate WHY enrichment was unavailable so the caller can say the actionable
-    # thing instead of a flat "could not reach" (dogfood #5). ``status`` is the HTTP
-    # status when one reached us (401/403 auth-refused, 5xx outage) and None when the
-    # transport itself failed (connection refused / DNS / timeout — genuinely unreachable).
-    # ``auth_rejected`` is the 401/403 case: present-but-refusing-bearer-auth. All of these
-    # stay SOFT (reachable=False); only the message differs.
+    # thing instead of a flat "could not reach" (dogfood #5). ``status`` is the HTTP status
+    # for the SOFT-failure sub-cases — 401/403 (auth refused) or 5xx (outage) — and None for
+    # both a transport failure (connection refused / DNS / timeout — genuinely unreachable)
+    # and a 2xx success. It is the *error* status: a reached/success result carries none.
+    # All of these stay SOFT (reachable=False); only the message differs.
     status: int | None = None
-    auth_rejected: bool = False
+
+    @property
+    def auth_rejected(self) -> bool:
+        # The 401/403 case: present-but-refusing-bearer-auth. Derived from ``status`` rather
+        # than stored as an independent field so the two can never disagree (an
+        # "auth-rejected (200)" is unrepresentable, not merely unbuilt by the producer).
+        return self.status in (401, 403)
+
+    def __post_init__(self) -> None:
+        # Mirror GateDecision's construction-time guard so a second constructor cannot
+        # express a contradictory outcome: a reached/success result carries no error status,
+        # and a soft-failure (unreachable) created/updated/failed nothing.
+        if self.reachable and self.status is not None:
+            raise ValueError(f"a reachable EmitResult carries no error status (got {self.status})")
+        if not self.reachable and (self.created or self.updated or self.failed):
+            raise ValueError("an unreachable EmitResult must have zero created/updated/failed")
 
 
 def filigree_disabled_reason(*, reachable: bool, auth_rejected: bool, status: int | None) -> str | None:
@@ -177,7 +192,7 @@ class FiligreeEmitter:
             # Filigree is present but its opt-in bearer auth is on and refusing us. Stays
             # SOFT (enrichment unavailable, never exit-2) — but distinguished as auth so the
             # caller can say "401 (set WARDLINE_FILIGREE_TOKEN)" instead of "could not reach".
-            return EmitResult(reachable=False, status=resp.status, auth_rejected=True)
+            return EmitResult(reachable=False, status=resp.status)
         if resp.status >= 500:
             # Server-side outage (5xx) — the sibling is degraded, not a Wardline payload bug.
             # Treat like absent (warn + continue), carrying the status for an honest message.

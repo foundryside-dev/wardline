@@ -787,7 +787,7 @@ def test_scan_filigree_401_says_auth_not_unreachable(tmp_path, monkeypatch) -> N
         def emit(self, findings, *, scanned_paths=()):
             from wardline.core.filigree_emit import EmitResult
 
-            return EmitResult(reachable=False, status=401, auth_rejected=True)
+            return EmitResult(reachable=False, status=401)  # auth_rejected derived from status
 
     monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _AuthRejectedEmitter)
     out = tmp_path / "f.jsonl"
@@ -799,8 +799,12 @@ def test_scan_filigree_401_says_auth_not_unreachable(tmp_path, monkeypatch) -> N
     assert "wardline_filigree_token" in low
 
 
-def _emitter_returning(status, *, auth_rejected):
-    """A FiligreeEmitter stand-in that always returns a canned soft EmitResult."""
+def _emitter_returning(status):
+    """A FiligreeEmitter stand-in that always returns a canned soft EmitResult.
+
+    ``auth_rejected`` is derived from ``status`` (401/403), so the caller need only pin the
+    status the soft path reports.
+    """
 
     class _E:
         def __init__(self, url, **kw):
@@ -809,7 +813,7 @@ def _emitter_returning(status, *, auth_rejected):
         def emit(self, findings, *, scanned_paths=()):
             from wardline.core.filigree_emit import EmitResult
 
-            return EmitResult(reachable=False, status=status, auth_rejected=auth_rejected)
+            return EmitResult(reachable=False, status=status)
 
     return _E
 
@@ -820,7 +824,7 @@ def test_scan_filigree_403_says_forbidden_not_set_a_token(tmp_path, monkeypatch)
     proj = tmp_path / "proj"
     proj.mkdir()
     _write(proj, "svc.py", _LEAKY)
-    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _emitter_returning(403, auth_rejected=True))
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _emitter_returning(403))
     out = tmp_path / "f.jsonl"
     result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--filigree-url", "http://x"])
     assert result.exit_code == 0, result.output
@@ -836,7 +840,7 @@ def test_scan_filigree_5xx_says_server_error_not_unreachable(tmp_path, monkeypat
     proj = tmp_path / "proj"
     proj.mkdir()
     _write(proj, "svc.py", _LEAKY)
-    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _emitter_returning(503, auth_rejected=False))
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _emitter_returning(503))
     out = tmp_path / "f.jsonl"
     result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--filigree-url", "http://x"])
     assert result.exit_code == 0, result.output

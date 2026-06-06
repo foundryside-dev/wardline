@@ -136,7 +136,7 @@ def test_scan_filigree_401_surfaces_auth_reason_to_agent(tmp_path):
     # Dogfood #5 (MCP parity): a 401 stays soft but the agent must read an actionable
     # disabled_reason naming the token, not a flat "unreachable".
     (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
-    out = _scan({}, tmp_path, None, FakeEmitter(EmitResult(reachable=False, status=401, auth_rejected=True)))
+    out = _scan({}, tmp_path, None, FakeEmitter(EmitResult(reachable=False, status=401)))
     assert out["filigree"]["reachable"] is False  # still soft
     reason = out["filigree_emit"]["disabled_reason"]
     assert "401" in reason and "WARDLINE_FILIGREE_TOKEN" in reason
@@ -148,7 +148,7 @@ def test_scan_filigree_403_says_forbidden_not_set_a_token(tmp_path):
     # (the token is present and lacks access / is blocked). The reason must say forbidden,
     # not point at the env var.
     (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
-    out = _scan({}, tmp_path, None, FakeEmitter(EmitResult(reachable=False, status=403, auth_rejected=True)))
+    out = _scan({}, tmp_path, None, FakeEmitter(EmitResult(reachable=False, status=403)))
     assert out["filigree"]["reachable"] is False  # still soft
     reason = out["filigree_emit"]["disabled_reason"]
     assert "403" in reason and "forbidden" in reason
