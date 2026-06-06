@@ -113,6 +113,16 @@ from wardline.core.sarif import SarifSink
         "default the gate evaluates the unsuppressed population so a PR cannot self-suppress."
     ),
 )
+@click.option(
+    "--allow-dirty",
+    is_flag=True,
+    default=False,
+    help=(
+        "For --format legis only: on a dirty working tree, emit an UNSIGNED, clearly-marked "
+        "(dirty: true) dev artifact instead of refusing. Signing stays clean-tree-only; this "
+        "lets the dev/tour loop exercise the Wardline->legis handshake without a commit."
+    ),
+)
 def scan(
     path: Path,
     config_path: Path | None,
@@ -131,6 +141,7 @@ def scan(
     strict_defaults: bool,
     allow_source_root_escape: bool,
     trust_suppressions: bool,
+    allow_dirty: bool,
 ) -> None:
     """Scan PATH for findings."""
     if fmt == "sarif":
@@ -235,8 +246,17 @@ def scan(
                 root=path,
                 config=legis_cfg,
                 key=legis_key.encode("utf-8") if legis_key else None,
+                allow_dirty=allow_dirty,
             )
             output.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            # Loud signal: an artifact marked dirty is UNSIGNED (dev/tour only). legis
+            # records it `unverified`; never gate CI on it.
+            if artifact.get("dirty"):
+                click.echo(
+                    "warning: dirty working tree — emitted an UNSIGNED legis dev artifact "
+                    "(dirty: true, legis records it unverified). Commit for a signed artifact.",
+                    err=True,
+                )
         # Weft emission is additive: a FiligreeEmitError (HTTP >= 400) is a Wardline
         # payload bug -> caught below -> exit 2; an unreachable sibling warns + continues.
         if filigree_url is not None:

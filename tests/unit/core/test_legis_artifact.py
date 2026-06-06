@@ -259,10 +259,25 @@ def test_signing_refuses_dirty_tree(tmp_path) -> None:
         _build(repo, key=b"k")
 
 
-def test_allow_dirty_signs_anyway(tmp_path) -> None:
+def test_allow_dirty_emits_unsigned_marked_artifact(tmp_path) -> None:
+    # The honest fix for the dogfood #1 friction: a dirty tree with allow_dirty does
+    # NOT sign (signing the committed tree_sha for dirty working content is false
+    # provenance — see _git_tree_sha). It emits an UNSIGNED, clearly-marked dev
+    # artifact instead: no signature, dirty:true, legis records it `unverified`.
     repo = _committed_repo(tmp_path)
     (repo / "svc.py").write_text(_LEAKY + "\n# dirty\n", encoding="utf-8")
     scan = _build(repo, key=b"k", allow_dirty=True)
+    assert "artifact_signature" not in scan
+    assert scan["dirty"] is True
+    # best-effort provenance (HEAD commit) is still honestly recorded
+    assert scan["commit_sha"]
+
+
+def test_clean_signed_artifact_has_no_dirty_marker(tmp_path) -> None:
+    # A clean tree signs as before and carries no dirty marker — the signed wire is
+    # byte-unchanged (guards the golden-signature contract).
+    scan = _build(_committed_repo(tmp_path), key=b"k")
+    assert "dirty" not in scan
     assert scan["artifact_signature"].startswith("hmac-sha256:v2:")
 
 

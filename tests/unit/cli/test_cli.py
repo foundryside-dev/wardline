@@ -92,6 +92,58 @@ def test_scan_default_output_lands_in_scanned_path(tmp_path: Path) -> None:
     assert (project / "findings.jsonl").exists()
 
 
+def _git(repo: Path, *args: str) -> None:
+    import subprocess
+
+    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+
+
+def _legis_committed_repo(tmp_path: Path) -> Path:
+    import shutil
+
+    repo = tmp_path / "proj"
+    shutil.copytree(FIXTURE, repo)
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "t")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "init")
+    return repo
+
+
+def test_scan_format_legis_dirty_tree_refuses_without_allow_dirty(tmp_path: Path) -> None:
+    # With a signing key + dirty tree and NO --allow-dirty, the CLI is loud (exit 2):
+    # this is the friction the dogfood report flagged, kept as the default.
+    repo = _legis_committed_repo(tmp_path)
+    (repo / "svc.py").write_text("# dirty edit\n", encoding="utf-8")
+    out = tmp_path / "scan.legis.json"
+    result = CliRunner().invoke(
+        cli,
+        ["scan", str(repo), "--format", "legis", "--output", str(out)],
+        env={"WARDLINE_LEGIS_ARTIFACT_KEY": "devkey"},
+    )
+    assert result.exit_code == 2
+    assert "dirty working tree" in result.output
+
+
+def test_scan_format_legis_allow_dirty_emits_unsigned_marked_artifact(tmp_path: Path) -> None:
+    # --allow-dirty turns the refusal into an UNSIGNED, clearly-marked dev artifact so
+    # the dev/tour loop can exercise the Wardline->legis handshake without a commit.
+    repo = _legis_committed_repo(tmp_path)
+    (repo / "svc.py").write_text("# dirty edit\n", encoding="utf-8")
+    out = tmp_path / "scan.legis.json"
+    result = CliRunner().invoke(
+        cli,
+        ["scan", str(repo), "--format", "legis", "--output", str(out), "--allow-dirty"],
+        env={"WARDLINE_LEGIS_ARTIFACT_KEY": "devkey"},
+    )
+    assert result.exit_code == 0
+    artifact = _json.loads(out.read_text(encoding="utf-8"))
+    assert "artifact_signature" not in artifact
+    assert artifact["dirty"] is True
+    assert "UNSIGNED legis dev artifact" in result.output
+
+
 def test_scan_config_error_exits_2(tmp_path: Path) -> None:
     import shutil
 

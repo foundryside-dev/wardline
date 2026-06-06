@@ -323,6 +323,7 @@ def _attach_legis_artifact(
         strict_defaults=strict_defaults,
     )
     key_bytes = key_str.encode("utf-8") if key_str else None
+    allow_dirty = bool(args.get("allow_dirty") or False)
     status: dict[str, Any] = {
         "configured": True,
         "signed": False,
@@ -330,12 +331,17 @@ def _attach_legis_artifact(
         "reason": None,
     }
     try:
-        artifact = build_legis_artifact(result, root=path, config=cfg, key=key_bytes)
+        artifact = build_legis_artifact(result, root=path, config=cfg, key=key_bytes, allow_dirty=allow_dirty)
     except LegisArtifactError as exc:
         status["reason"] = str(exc)
         response["legis_artifact_status"] = status
         return
-    status["signed"] = key_bytes is not None
+    # A dirty tree under allow_dirty falls through to the unsigned dev artifact: it is
+    # never signed even with a key present (false-provenance guard), and legis records
+    # it `unverified`. Report signed honestly from the artifact, not from key presence.
+    dirty = bool(artifact.get("dirty"))
+    status["signed"] = key_bytes is not None and not dirty
+    status["dirty"] = dirty
     response["legis_artifact"] = artifact
     response["legis_artifact_status"] = status
 
@@ -794,6 +800,18 @@ class WardlineMCPServer:
                             "(they always annotate findings regardless). Default false — the gate "
                             "evaluates the unsuppressed population so a PR cannot self-suppress its "
                             "own defect. Use only on a trusted checkout; in CI prefer new_since.",
+                        },
+                        "legis_artifact": {
+                            "type": "boolean",
+                            "description": "Attach the verbatim-postable legis scan-artifact "
+                            "(`legis_artifact` block) even when no signing key is provisioned "
+                            "(unsigned, for legis's optional-verify posture).",
+                        },
+                        "allow_dirty": {
+                            "type": "boolean",
+                            "description": "For the legis artifact only: on a dirty tree emit an UNSIGNED, "
+                            "clearly-marked (dirty: true) dev artifact instead of refusing to sign. "
+                            "Signing stays clean-tree-only; legis records it unverified.",
                         },
                     },
                 },
