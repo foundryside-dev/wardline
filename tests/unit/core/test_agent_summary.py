@@ -64,6 +64,28 @@ def test_agent_summary_gate_block_carries_reason_and_evaluated(tmp_path: Path) -
     assert "unsuppressed" in out["gate"]["evaluated"]
 
 
+def test_agent_summary_gate_block_carries_migration_hint(tmp_path: Path) -> None:
+    # The "see gate.migration_hint" pointer in next_actions must resolve on THIS surface:
+    # the agent_summary gate block carries the rollout hint too, not only the MCP scan
+    # top-level gate block (the dangling-pointer fix).
+    from wardline.core.run import baseline_migration_hint
+
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    scan = run_scan(tmp_path)
+    bl = tmp_path / ".wardline" / "baseline.yaml"
+    bl.parent.mkdir(parents=True, exist_ok=True)
+    write_baseline(bl, [next(f for f in scan.findings if f.rule_id == "PY-WL-101")])
+    rescan = run_scan(tmp_path)
+    decision = gate_decision(rescan, Severity.ERROR)
+    hint = baseline_migration_hint(rescan, decision, root=tmp_path, new_since=None)
+    assert hint is not None  # baselined-only trip with a committed baseline -> a hint
+    out = build_agent_summary(rescan, decision, migration_hint=hint).to_dict()
+    assert out["gate"]["migration_hint"] == hint
+    # The field is present (and None) when no hint is threaded — the key never disappears.
+    out_default = build_agent_summary(rescan, decision).to_dict()
+    assert out_default["gate"]["migration_hint"] is None
+
+
 def test_agent_summary_no_active_defects_still_has_next_actions(tmp_path: Path) -> None:
     (tmp_path / "svc.py").write_text("def f():\n    return 1\n", encoding="utf-8")
     scan = run_scan(tmp_path)

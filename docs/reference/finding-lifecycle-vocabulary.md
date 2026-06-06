@@ -37,8 +37,8 @@ values. Every emitted `DEFECT` carries exactly one:
 | --- | --- | --- |
 | `active` | Not suppressed — the default. A live defect. | default (`src/wardline/core/finding.py:68`, `src/wardline/core/finding.py:103`) |
 | `baselined` | Matched a fingerprint in `.wardline/baseline.yaml`. | `src/wardline/core/suppression.py:70` |
-| `waived` | Matched an unexpired waiver in `wardline.yaml`. | `src/wardline/core/suppression.py:65-66` |
-| `judged` | The LLM triage judge ruled it a false positive (`.wardline/judged.yaml`). | `src/wardline/core/suppression.py:67-68` |
+| `waived` | Matched an unexpired waiver in `wardline.yaml`. | `src/wardline/core/suppression.py:66` |
+| `judged` | The LLM triage judge ruled it a false positive (`.wardline/judged.yaml`). | `src/wardline/core/suppression.py:68` |
 
 When more than one layer matches a finding, **precedence is
 waiver > judged > baseline** — explicit human intent wins, then the LLM verdict

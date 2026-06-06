@@ -9,6 +9,7 @@ from wardline.core.errors import ConfigError
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.judged import JudgedFP, write_judged
 from wardline.core.run import (
+    GateDecision,
     ScanResult,
     ScanSummary,
     baseline_migration_hint,
@@ -226,6 +227,43 @@ def test_gate_decision_reason_names_active_defect_on_genuine_trip(tmp_path: Path
     assert decision.reason is not None and "1 active" in decision.reason
     # a genuine active trip should NOT misdirect the agent to the suppression flags
     assert "--trust-suppressions" not in decision.reason
+
+
+def test_gate_decision_reason_names_both_active_and_suppressed_on_mixed_trip(tmp_path: Path) -> None:
+    # The mixed branch of _gate_reason: one genuinely-active defect AND one baselined
+    # defect both gate by default. The verdict must name BOTH counts (not collapse to
+    # one), so the agent sees the real composition of the trip.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "a.py").write_text(_LEAKY, encoding="utf-8")
+    (proj / "b.py").write_text(_LEAKY, encoding="utf-8")
+    # Baseline ONLY a.py's finding (fingerprint match); b.py stays active.
+    fp_a = next(
+        f.fingerprint
+        for f in run_scan(proj).findings
+        if f.rule_id == "PY-WL-101" and f.location.path == "a.py"
+    )
+    _write_baseline(proj, fp_a)
+    decision = gate_decision(run_scan(proj), Severity.ERROR)
+    assert decision.tripped is True
+    assert decision.reason is not None
+    assert "1 active + 1 suppressed" in decision.reason
+    assert "--trust-suppressions" in decision.reason
+
+
+def test_gate_decision_rejects_contradictory_construction() -> None:
+    # The __post_init__ invariant guard: GateDecision must make "tripped gate that reads
+    # as passed" (dogfood #2) unconstructible, not merely avoided by the factory.
+    with pytest.raises(ValueError, match="exit_class"):
+        GateDecision(tripped=True, fail_on="error", exit_class=0, reason="x", evaluated="y")
+    with pytest.raises(ValueError, match="reason"):
+        GateDecision(tripped=True, fail_on="error", exit_class=1, reason=None, evaluated="y")
+    with pytest.raises(ValueError, match="reason"):
+        # fail_on set but no verdict — the no-gate shape leaking into a gated decision.
+        GateDecision(tripped=False, fail_on="error", exit_class=0, reason=None, evaluated=None)
+    # The two legitimate shapes the factory produces still construct cleanly.
+    GateDecision(tripped=False, fail_on=None, exit_class=0)
+    GateDecision(tripped=True, fail_on="error", exit_class=1, reason="1 active", evaluated="unsuppressed")
 
 
 def test_gate_decision_evaluated_reflects_trust_suppressions(tmp_path: Path) -> None:

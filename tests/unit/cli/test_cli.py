@@ -799,6 +799,52 @@ def test_scan_filigree_401_says_auth_not_unreachable(tmp_path, monkeypatch) -> N
     assert "wardline_filigree_token" in low
 
 
+def _emitter_returning(status, *, auth_rejected):
+    """A FiligreeEmitter stand-in that always returns a canned soft EmitResult."""
+
+    class _E:
+        def __init__(self, url, **kw):
+            pass
+
+        def emit(self, findings, *, scanned_paths=()):
+            from wardline.core.filigree_emit import EmitResult
+
+            return EmitResult(reachable=False, status=status, auth_rejected=auth_rejected)
+
+    return _E
+
+
+def test_scan_filigree_403_says_forbidden_not_set_a_token(tmp_path, monkeypatch) -> None:
+    # A 403 is reachable-but-refused like a 401, but "set WARDLINE_FILIGREE_TOKEN" is the
+    # wrong remedy — the token is present and lacks access. Say "forbidden", not the env var.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _emitter_returning(403, auth_rejected=True))
+    out = tmp_path / "f.jsonl"
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--filigree-url", "http://x"])
+    assert result.exit_code == 0, result.output
+    low = result.output.lower()
+    assert "403" in result.output and "forbidden" in low
+    assert "wardline_filigree_token" not in low
+    assert "could not reach" not in low
+
+
+def test_scan_filigree_5xx_says_server_error_not_unreachable(tmp_path, monkeypatch) -> None:
+    # A 5xx outage reached us: distinct from the 401 auth case and the genuine
+    # transport-unreachable case. Must say "server error", never "could not reach".
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _emitter_returning(503, auth_rejected=False))
+    out = tmp_path / "f.jsonl"
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--filigree-url", "http://x"])
+    assert result.exit_code == 0, result.output
+    low = result.output.lower()
+    assert "503" in result.output and "server error" in low
+    assert "could not reach" not in low
+
+
 # --- SP9: wardline scan --loomweave-url ---------------------------------------
 # scan.py imports write_facts_to_loomweave lazily inside the `if loomweave_url` block
 # (`from wardline.loomweave.write import write_facts_to_loomweave`), so the binding

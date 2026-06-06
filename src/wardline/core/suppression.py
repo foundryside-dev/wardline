@@ -73,13 +73,20 @@ def apply_suppressions(
     return out
 
 
+def severity_gates(severity: Severity, fail_on: Severity) -> bool:
+    """True iff ``severity`` is a known gate severity at or above the ``fail_on``
+    threshold. NONE (facts/metrics, absent from ``_RANK``) never gates."""
+    rank = _RANK.get(severity)
+    return rank is not None and rank >= _RANK[fail_on]
+
+
 def gate_trips(findings: Iterable[Finding], fail_on: Severity) -> bool:
     """True iff any ACTIVE Kind.DEFECT finding has severity >= fail_on."""
     threshold = _RANK[fail_on]
     for f in findings:
         if f.kind is not Kind.DEFECT or f.suppressed is not SuppressionState.ACTIVE:
             continue
-        if f.maturity == Maturity.PREVIEW:
+        if f.maturity is Maturity.PREVIEW:
             continue
         rank = _RANK.get(f.severity)
         if rank is not None and rank >= threshold:
@@ -102,7 +109,7 @@ def gate_breakdown(findings: Iterable[Finding], fail_on: Severity) -> tuple[int,
     active = 0
     suppressed = 0
     for f in findings:
-        if f.kind is not Kind.DEFECT or f.maturity == Maturity.PREVIEW:
+        if f.kind is not Kind.DEFECT or f.maturity is Maturity.PREVIEW:
             continue
         rank = _RANK.get(f.severity)
         if rank is None or rank < threshold:

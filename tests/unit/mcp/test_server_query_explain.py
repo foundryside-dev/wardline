@@ -159,3 +159,21 @@ def test_max_findings_caps_and_marks(tmp_path):
     assert out["truncation"]["findings_truncated"] is True
     assert out["truncation"]["findings_returned"] == 3
     assert out["truncation"]["findings_total"] >= 10
+
+
+@pytest.mark.parametrize("bad", [-1, 1.5, "3", True])
+def test_max_findings_rejects_non_negative_integer(tmp_path, bad):
+    # Agent-actionable validation: a negative / non-int / bool max_findings is a loud
+    # ToolError, never a silent negative-slice that drops the last finding.
+    (tmp_path / "svc.py").write_text(_SRC, encoding="utf-8")
+    with pytest.raises(ToolError, match="max_findings"):
+        _scan({"max_findings": bad}, tmp_path)
+
+
+@pytest.mark.parametrize("name", ["summary_only", "include_suppressed"])
+def test_boolean_payload_controls_reject_non_bool(tmp_path, name):
+    # The string "false" must NOT silently coerce to True (the bug the strict _bool_arg
+    # closes) — a non-bool is rejected loudly, matching max_findings' strictness.
+    (tmp_path / "svc.py").write_text(_SRC, encoding="utf-8")
+    with pytest.raises(ToolError, match=name):
+        _scan({name: "false"}, tmp_path)

@@ -54,6 +54,10 @@ class AgentSummary:
     summary_only: bool = False
     max_findings: int | None = None
     include_suppressed: bool = True
+    # The secure-gate-default rollout hint (or None), surfaced in the gate block so the
+    # "see gate.migration_hint" pointer in next_actions resolves on this surface too — the
+    # MCP scan response carries the same value at its top-level gate block.
+    migration_hint: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         # Counts are whole-project (summary describes the whole project, per the `where`
@@ -97,6 +101,7 @@ class AgentSummary:
                 "exit_class": self.gate.exit_class,
                 "reason": self.gate.reason,
                 "evaluated": self.gate.evaluated,
+                "migration_hint": self.migration_hint,
             },
             "integrations": {
                 "filigree_emit": dict(self.filigree_emit),
@@ -213,6 +218,7 @@ def build_agent_summary(
     summary_only: bool = False,
     max_findings: int | None = None,
     include_suppressed: bool = True,
+    migration_hint: str | None = None,
 ) -> AgentSummary:
     return AgentSummary(
         result=result,
@@ -223,4 +229,5 @@ def build_agent_summary(
         summary_only=summary_only,
         max_findings=max_findings,
         include_suppressed=include_suppressed,
+        migration_hint=migration_hint,
     )

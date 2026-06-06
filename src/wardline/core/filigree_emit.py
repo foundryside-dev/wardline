@@ -107,6 +107,26 @@ class EmitResult:
     auth_rejected: bool = False
 
 
+def filigree_disabled_reason(*, reachable: bool, auth_rejected: bool, status: int | None) -> str | None:
+    """The ``disabled_reason`` for an emit attempt, or None when Filigree was reached.
+
+    Single source of the auth-rejected (401/403) vs server-error (5xx) vs unreachable
+    (transport failure) ladder (dogfood #5), shared by the CLI and MCP status blocks so
+    the two surfaces can never drift. The CLI's human stderr wording (which embeds the
+    URL and ".env" hint) is intentionally separate.
+    """
+    if reachable:
+        return None
+    if auth_rejected:
+        # 401 → set a token; 403 → token present but lacks access (a token won't help).
+        if status == 403:
+            return "filigree forbidden (403); token present but lacks access / blocked"
+        return f"filigree auth-rejected ({status}); set WARDLINE_FILIGREE_TOKEN"
+    if status is not None:
+        return f"filigree server error ({status})"
+    return "filigree unreachable"
+
+
 class Transport(Protocol):
     def post(self, url: str, body: bytes, headers: Mapping[str, str]) -> Response: ...
 

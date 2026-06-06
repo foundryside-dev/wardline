@@ -30,7 +30,7 @@ from wardline.core.finding import (
 )
 from wardline.core.judged import load_judged
 from wardline.core.protocols import Analyzer
-from wardline.core.suppression import apply_suppressions, gate_trips
+from wardline.core.suppression import apply_suppressions, gate_trips, severity_gates
 from wardline.core.waivers import WaiverSet, parse_waivers
 
 if TYPE_CHECKING:
@@ -90,6 +90,22 @@ class GateDecision:
     # under --trust-suppressions). Both None when no threshold is set (no gate).
     reason: str | None = None
     evaluated: str | None = None
+
+    def __post_init__(self) -> None:
+        # Enforce the invariants the ``gate_decision`` factory upholds so a *second*
+        # constructor cannot reintroduce dogfood #2 (a tripped gate that reads as passed).
+        # exit_class mirrors tripped (0/1); the reserved 2 is a CLI SystemExit, never a
+        # GateDecision value.
+        if self.exit_class != (1 if self.tripped else 0):
+            raise ValueError(f"exit_class {self.exit_class} contradicts tripped={self.tripped}")
+        # A tripped gate must always carry its verdict — never silently None.
+        if self.tripped and self.reason is None:
+            raise ValueError("a tripped gate must carry a reason")
+        # No threshold (fail_on None) ⟺ no verdict; a threshold always produces both.
+        if (self.fail_on is None) != (self.reason is None):
+            raise ValueError("reason must be present iff fail_on is set")
+        if (self.fail_on is None) != (self.evaluated is None):
+            raise ValueError("evaluated must be present iff fail_on is set")
 
 
 def run_scan(
@@ -343,7 +359,7 @@ def baseline_migration_hint(
         if f.kind is Kind.DEFECT
         and f.suppressed is SuppressionState.BASELINED
         and f.maturity is not Maturity.PREVIEW
-        and _gates(f.severity, fail_on)
+        and severity_gates(f.severity, fail_on)
     )
     if not baselined:
         return None  # tripped by waived/judged only — different escape, not this hint
@@ -353,13 +369,6 @@ def baseline_migration_hint(
         f"{baselined} baselined {sev}+ defect(s) re-enter the gate. Pass --trust-suppressions for a "
         f"trusted local checkout or --new-since <merge-base> in CI. See UPGRADING.md."
     )
-
-
-def _gates(severity: Severity, fail_on: Severity) -> bool:
-    from wardline.core.suppression import _RANK
-
-    rank = _RANK.get(severity)
-    return rank is not None and rank >= _RANK[fail_on]
 
 
 def _gate_reason(result: ScanResult, fail_on: Severity, *, tripped: bool, honors_suppressions: bool) -> str:
@@ -388,7 +397,7 @@ def _gate_reason(result: ScanResult, fail_on: Severity, *, tripped: bool, honors
     for f in gate_pop:
         if f.kind is not Kind.DEFECT or f.maturity is Maturity.PREVIEW:
             continue
-        if f.suppressed is not SuppressionState.ACTIVE or not _gates(f.severity, fail_on):
+        if f.suppressed is not SuppressionState.ACTIVE or not severity_gates(f.severity, fail_on):
             continue
         if emitted_state.get(f.fingerprint, SuppressionState.ACTIVE) is SuppressionState.ACTIVE:
             active += 1

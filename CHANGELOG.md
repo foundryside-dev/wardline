@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **MCP `scan` payload controls — `where` now shrinks the payload, plus
   `summary_only` / `max_findings` / `include_suppressed` and a default explain cap
-  (dogfood friction #5).** `where` previously filtered only the top-level `findings`
+  (dogfood friction #4).** `where` previously filtered only the top-level `findings`
   list; the `agent_summary` arrays still inlined every suppressed finding, so a filter
   matching zero findings still returned dozens. `where` now filters the `agent_summary`
   arrays too. New args: `summary_only: true` (counts + gate, no finding bodies — the
@@ -28,8 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gate block (CLI stderr, MCP `scan` result, and the agent-summary) carries a human
   `reason` — e.g. `"34 suppressed ERROR+ defect(s) (baseline/waiver/judged) not cleared;
   pass --trust-suppressions (trusted checkout) or --new-since <ref> (PR)"` for a
-  suppressed-only trip, `"N active ERROR+ defect(s)"` for a genuine one (no misdirection
-  to the suppression flags) — and an `evaluated` string naming the judged population
+  suppressed-only trip, `"N active ERROR+ defect(s) at or above ERROR"` for a genuine one
+  (no misdirection to the suppression flags) — and an `evaluated` string naming the judged population
   (`unsuppressed …` by default vs `post-suppression … honored` under
   `--trust-suppressions`). Counts come from the annotated findings, so they match
   `summary`.
@@ -37,9 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   When a committed `.wardline/baseline.yaml` exists, the gate trips **solely** because
   baselined defects re-enter the unsuppressed population, and neither
   `--trust-suppressions` nor `--new-since` was passed, Wardline now prints a one-line
-  `migration:` hint (CLI stderr; MCP `scan` `gate.migration_hint`) pointing at the
-  escape hatches and the new **`UPGRADING.md`**. This is the "my repo went red with no
-  code change" case made self-explaining; the secure default itself is unchanged.
+  `migration:` hint (CLI stderr; MCP `scan` `gate.migration_hint`; and the agent-summary
+  `gate.migration_hint`) pointing at the escape hatches and the new **`UPGRADING.md`**.
+  This is the "my repo went red with no code change" case made self-explaining; the
+  secure default itself is unchanged.
 
 ### Fixed
 - **`next_actions` is gate-aware — never reads as "passed" when the gate failed
@@ -55,8 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `status` + `auth_rejected`; the CLI prints *"Filigree returned 401 (auth rejected) …
   set WARDLINE_FILIGREE_TOKEN"* (and a distinct `5xx` "server error" vs the genuine
   "could not reach"), and the MCP `scan` `filigree_emit` block / agent-summary carry the
-  same discriminated `disabled_reason`. `401`/`403` stays **soft** (non-load-bearing,
-  never exit-2) — only the message changed.
+  same discriminated `disabled_reason`. A `403` is reported as *"forbidden (token present
+  but lacks access)"* rather than telling the agent to set a token that won't help.
+  `401`/`403` stays **soft** (non-load-bearing, never exit-2) — only the message changed.
 - **`scan --format legis --allow-dirty` emits an unsigned dev artifact instead of
   refusing (dogfood friction #1).** On a dirty working tree `scan --format legis`
   failed `exit 2` naming an `allow_dirty` flag that was never exposed — presenting

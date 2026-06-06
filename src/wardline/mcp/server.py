@@ -22,7 +22,7 @@ from wardline.core.attest_key import load_attest_key
 from wardline.core.baseline import generate_baseline, load_baseline
 from wardline.core.errors import WardlineError
 from wardline.core.explain import explain_chain, explain_finding, explanation_from_context
-from wardline.core.filigree_emit import FiligreeEmitter
+from wardline.core.filigree_emit import FiligreeEmitter, filigree_disabled_reason
 from wardline.core.finding import Finding, Kind, Severity, SuppressionState
 from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
@@ -77,15 +77,11 @@ def _filigree_emit_status(block: dict[str, Any] | None) -> dict[str, Any]:
             "warnings": [],
             "disabled_reason": "not configured",
         }
-    reachable = block.get("reachable")
-    if reachable:
-        disabled_reason = None
-    elif block.get("auth_rejected"):
-        disabled_reason = f"filigree auth-rejected ({block.get('status')}); set WARDLINE_FILIGREE_TOKEN"
-    elif block.get("status") is not None:
-        disabled_reason = f"filigree server error ({block.get('status')})"
-    else:
-        disabled_reason = "filigree unreachable"
+    disabled_reason = filigree_disabled_reason(
+        reachable=bool(block.get("reachable")),
+        auth_rejected=bool(block.get("auth_rejected")),
+        status=block.get("status"),
+    )
     return {"configured": True, "disabled_reason": disabled_reason, **block}
 
 
@@ -182,6 +178,18 @@ def _cache_dir_arg(args: dict[str, Any], root: Path) -> Path | None:
     return _resolve_under_root(root, args["cache_dir"]) if args.get("cache_dir") else None
 
 
+def _bool_arg(args: dict[str, Any], name: str, default: bool) -> bool:
+    # Reject non-bool values loudly rather than ``bool(...)``-coercing them: a JSON string
+    # like "false" would otherwise coerce to True, silently inverting intent. Matches the
+    # strict (agent-actionable) validation max_findings already gets.
+    val = args.get(name)
+    if val is None:
+        return default
+    if not isinstance(val, bool):
+        raise ToolError(f"{name} must be a boolean")
+    return val
+
+
 def _scan(
     args: dict[str, Any],
     root: Path,
@@ -250,15 +258,14 @@ def _scan(
 
     # Payload-shrinking controls (dogfood #4). The `summary`/`gate` blocks always
     # describe the WHOLE project; these only bound the returned finding bodies.
-    summary_only = bool(args.get("summary_only") or False)
-    raw_include = args.get("include_suppressed")
-    include_suppressed = True if raw_include is None else bool(raw_include)
+    summary_only = _bool_arg(args, "summary_only", False)
+    include_suppressed = _bool_arg(args, "include_suppressed", True)
     max_findings = args.get("max_findings")
     if max_findings is not None and (
         not isinstance(max_findings, int) or isinstance(max_findings, bool) or max_findings < 0
     ):
         raise ToolError("max_findings must be a non-negative integer")
-    explain = bool(args.get("explain"))
+    explain = _bool_arg(args, "explain", False)
 
     # include_suppressed:false drops the suppressed DEFECT bodies (counts stay whole).
     if not include_suppressed:
@@ -344,6 +351,7 @@ def _scan(
             summary_only=summary_only,
             max_findings=max_findings,
             include_suppressed=include_suppressed,
+            migration_hint=migration_hint,
         ).to_dict(),
     }
     _attach_legis_artifact(
@@ -394,7 +402,7 @@ def _attach_legis_artifact(
         strict_defaults=strict_defaults,
     )
     key_bytes = key_str.encode("utf-8") if key_str else None
-    allow_dirty = bool(args.get("allow_dirty") or False)
+    allow_dirty = _bool_arg(args, "allow_dirty", False)
     status: dict[str, Any] = {
         "configured": True,
         "signed": False,
@@ -413,6 +421,14 @@ def _attach_legis_artifact(
     dirty = bool(artifact.get("dirty"))
     status["signed"] = key_bytes is not None and not dirty
     status["dirty"] = dirty
+    if dirty:
+        # Match the CLI's loudness on the agent surface: the artifact is UNSIGNED and legis
+        # records it unverified — say so and say "never gate CI on it" rather than leaving
+        # the agent to infer it from signed:false / dirty:true alone (agent-first).
+        status["reason"] = (
+            "dirty working tree — emitted an UNSIGNED legis dev artifact (legis records it "
+            "unverified); never gate CI on it. Commit for a signed artifact."
+        )
     response["legis_artifact"] = artifact
     response["legis_artifact_status"] = status
 
@@ -861,9 +877,10 @@ class WardlineMCPServer:
                         },
                         "max_findings": {
                             "type": "integer",
+                            "minimum": 0,
                             "description": "Cap the number of returned finding bodies (and inlined "
-                            "explanations). The cut is reported in the truncation block; summary counts "
-                            "stay whole-project.",
+                            "explanations). Must be a non-negative integer. The cut is reported in the "
+                            "truncation block; summary counts stay whole-project.",
                         },
                         "include_suppressed": {
                             "type": "boolean",

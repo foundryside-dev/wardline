@@ -11,7 +11,7 @@ import click
 from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
 from wardline.core.emit import JsonlSink
 from wardline.core.errors import WardlineError
-from wardline.core.filigree_emit import EmitResult, FiligreeEmitter
+from wardline.core.filigree_emit import EmitResult, FiligreeEmitter, filigree_disabled_reason
 from wardline.core.finding import Severity
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
 from wardline.core.sarif import SarifSink
@@ -290,6 +290,7 @@ def scan(
                         decision,
                         filigree_emit=_filigree_status(emit_result),
                         loomweave_write=_loomweave_status(loomweave_result),
+                        migration_hint=baseline_migration_hint(result, decision, root=path, new_since=new_since),
                     ).to_dict(),
                     sort_keys=True,
                 )
@@ -303,11 +304,21 @@ def scan(
         if not emit_result.reachable:
             if emit_result.auth_rejected:
                 # Reachable but refused — actionable, NOT "could not reach" (dogfood #5).
-                click.echo(
-                    f"warning: Filigree returned {emit_result.status} (auth rejected) at {filigree_url}; "
-                    "set WARDLINE_FILIGREE_TOKEN (or .env) to the project token. Findings written locally only.",
-                    err=True,
-                )
+                # Split 401 (no/bad token → set one) from 403 (token present but lacks
+                # access / blocked → setting a token won't help) so the remedy fits.
+                if emit_result.status == 403:
+                    click.echo(
+                        f"warning: Filigree returned 403 (forbidden) at {filigree_url}; the token is "
+                        "present but lacks access (scope/permission) or the request is blocked. "
+                        "Findings written locally only.",
+                        err=True,
+                    )
+                else:
+                    click.echo(
+                        f"warning: Filigree returned {emit_result.status} (auth rejected) at {filigree_url}; "
+                        "set WARDLINE_FILIGREE_TOKEN (or .env) to the project token. Findings written locally only.",
+                        err=True,
+                    )
             elif emit_result.status is not None:
                 click.echo(
                     f"warning: Filigree returned {emit_result.status} (server error) at {filigree_url}; "
@@ -397,18 +408,12 @@ def _filigree_status(result: EmitResult | None) -> dict[str, object]:
         "updated": result.updated,
         "failed": result.failed,
         "warnings": list(result.warnings),
-        "disabled_reason": _filigree_unreachable_reason(result),
+        "disabled_reason": filigree_disabled_reason(
+            reachable=result.reachable,
+            auth_rejected=result.auth_rejected,
+            status=result.status,
+        ),
     }
-
-
-def _filigree_unreachable_reason(result: EmitResult) -> str | None:
-    if result.reachable:
-        return None
-    if result.auth_rejected:
-        return f"filigree auth-rejected ({result.status}); set WARDLINE_FILIGREE_TOKEN"
-    if result.status is not None:
-        return f"filigree server error ({result.status})"
-    return "filigree unreachable"
 
 
 def _loomweave_status(result: object | None) -> dict[str, object]:
