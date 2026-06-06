@@ -106,23 +106,20 @@ def test_builtin_baseline_is_denied_by_no_write_policy(tmp_path: Path) -> None:
     assert "write" in text
 
 
-@pytest.mark.parametrize("source", ["wardline.yaml", "config argument", "environment"])
+# Sibling URL config keys (`[wardline.filigree].url`) were removed: URLs resolve only
+# via flag / env var / published `<root>/.weft/<sibling>/ephemeral.port`. The intent —
+# a resolved sibling URL is denied by the no-write policy — is preserved via the
+# surviving resolution rungs (env var + published port).
+@pytest.mark.parametrize("source", ["environment", "published_port"])
 def test_scan_with_resolved_filigree_url_is_denied_by_no_write_policy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str
 ) -> None:
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     args: dict[str, Any] = {}
-    if source == "wardline.yaml":
-        (tmp_path / "wardline.yaml").write_text(
-            'filigree:\n  url: "http://localhost:8628/api/weft/scan-results"\n',
-            encoding="utf-8",
-        )
-    elif source == "config argument":
-        (tmp_path / "mcp-urls.yaml").write_text(
-            'filigree:\n  url: "http://localhost:8628/api/weft/scan-results"\n',
-            encoding="utf-8",
-        )
-        args["config"] = "mcp-urls.yaml"
+    if source == "published_port":
+        port_file = tmp_path / ".weft" / "filigree" / "ephemeral.port"
+        port_file.parent.mkdir(parents=True, exist_ok=True)
+        port_file.write_text("8628", encoding="utf-8")
     else:
         monkeypatch.setenv("WARDLINE_FILIGREE_URL", "http://localhost:8628/api/weft/scan-results")
 
@@ -142,17 +139,16 @@ def test_scan_with_resolved_filigree_url_is_denied_by_no_write_policy(
     assert called is False
 
 
-@pytest.mark.parametrize("source", ["wardline.yaml", "config argument", "environment"])
+@pytest.mark.parametrize("source", ["environment", "published_port"])
 def test_dossier_with_resolved_loomweave_url_is_denied_by_no_network_policy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str
 ) -> None:
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     args: dict[str, Any] = {"entity": "pkg.mod.func"}
-    if source == "wardline.yaml":
-        (tmp_path / "wardline.yaml").write_text('loomweave:\n  url: "http://localhost:9100"\n', encoding="utf-8")
-    elif source == "config argument":
-        (tmp_path / "mcp-urls.yaml").write_text('loomweave:\n  url: "http://localhost:9100"\n', encoding="utf-8")
-        args["config"] = "mcp-urls.yaml"
+    if source == "published_port":
+        port_file = tmp_path / ".weft" / "loomweave" / "ephemeral.port"
+        port_file.parent.mkdir(parents=True, exist_ok=True)
+        port_file.write_text("9100", encoding="utf-8")
     else:
         monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", "http://localhost:9100")
 

@@ -14,11 +14,12 @@ def _many_leaks(n: int) -> str:
 def _baseline_all(tmp_path) -> None:
     # Baseline every PY-WL-101 finding so they all become suppressed=baselined.
     from wardline.core.baseline import write_baseline
+    from wardline.core.paths import baseline_path
     from wardline.core.run import run_scan
 
     scan = run_scan(tmp_path)
     defects = [f for f in scan.findings if f.rule_id == "PY-WL-101"]
-    bl = tmp_path / ".wardline" / "baseline.yaml"
+    bl = baseline_path(tmp_path)
     bl.parent.mkdir(parents=True, exist_ok=True)
     write_baseline(bl, defects)
 

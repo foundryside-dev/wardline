@@ -80,8 +80,19 @@ def test_human_lapsed_waiver_wording(tmp_path: Path) -> None:
     # to inspect waiver_debt directly, and human to check the wording.
     (tmp_path / "m.py").write_text(_MODULE, encoding="utf-8")
     # Waiver with an expiry in the past (2026-01-01 is well before today 2026-06-03).
-    waiver_yaml = 'waivers:\n  - fingerprint: "' + "a" * 64 + '"\n    reason: "old"\n    expires: "2026-01-01"\n'
-    (tmp_path / "wardline.yaml").write_text(waiver_yaml, encoding="utf-8")
+    # Waivers are now project-root state under .weft/wardline/waivers.yaml, not config.
+    from datetime import date
+
+    from wardline.core.paths import waivers_path
+    from wardline.core.waivers import add_waiver
+
+    add_waiver(
+        waivers_path(tmp_path),
+        fingerprint="a" * 64,
+        reason="old",
+        expires=date(2026, 1, 1),
+        root=tmp_path,
+    )
 
     runner = CliRunner()
     result = runner.invoke(cli, ["assure", str(tmp_path), "--format", "human"])

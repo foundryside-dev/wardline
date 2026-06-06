@@ -8,6 +8,7 @@ import pytest
 from wardline.core.errors import ConfigError
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.judged import JudgedFP, write_judged
+from wardline.core.paths import baseline_path, judged_path, waivers_path
 from wardline.core.run import (
     GateDecision,
     ScanResult,
@@ -16,6 +17,7 @@ from wardline.core.run import (
     gate_decision,
     run_scan,
 )
+from wardline.core.waivers import add_waiver
 
 FIXTURE = Path("tests/fixtures/sample_project")
 
@@ -70,7 +72,7 @@ def test_run_scan_unknown_rule_enable_is_gate_relevant(tmp_path: Path) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
-    (proj / "wardline.yaml").write_text("rules:\n  enable:\n    - NO_SUCH_RULE\n", encoding="utf-8")
+    (proj / "weft.toml").write_text('[wardline.rules]\nenable = ["NO_SUCH_RULE"]\n', encoding="utf-8")
 
     result = run_scan(proj)
     policy_findings = [f for f in result.findings if f.rule_id == "WLN-ENGINE-POLICY-CONFIG"]
@@ -83,7 +85,7 @@ def test_run_scan_none_severity_override_is_gate_relevant(tmp_path: Path) -> Non
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
-    (proj / "wardline.yaml").write_text("rules:\n  severity:\n    PY-WL-101: NONE\n", encoding="utf-8")
+    (proj / "weft.toml").write_text('[wardline.rules]\nseverity = { "PY-WL-101" = "NONE" }\n', encoding="utf-8")
 
     result = run_scan(proj)
     policy_findings = [f for f in result.findings if f.rule_id == "WLN-ENGINE-POLICY-CONFIG"]
@@ -108,7 +110,7 @@ def test_run_scan_baselined_count_distinguishes_categories(tmp_path: Path) -> No
     leak = next(f for f in first.findings if f.rule_id == "PY-WL-101")
 
     # Write a baseline accepting exactly that fingerprint (CLI test YAML shape).
-    bl = proj / ".wardline" / "baseline.yaml"
+    bl = baseline_path(proj)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
         "version: 1\nentries:\n"
@@ -141,7 +143,7 @@ def _leaky_proj(tmp_path: Path) -> tuple[Path, str]:
 
 
 def _write_baseline(proj: Path, fp: str) -> None:
-    bl = proj / ".wardline" / "baseline.yaml"
+    bl = baseline_path(proj)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
         f"version: 1\nentries:\n  - fingerprint: {fp}\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
@@ -150,14 +152,12 @@ def _write_baseline(proj: Path, fp: str) -> None:
 
 
 def _write_waiver(proj: Path, fp: str) -> None:
-    (proj / "wardline.yaml").write_text(
-        f"waivers:\n  - fingerprint: {fp}\n    reason: validated downstream\n", encoding="utf-8"
-    )
+    add_waiver(waivers_path(proj), fingerprint=fp, reason="validated downstream", expires=None, root=proj)
 
 
 def _write_judged(proj: Path, fp: str) -> None:
     write_judged(
-        proj / ".wardline" / "judged.yaml",
+        judged_path(proj),
         [
             JudgedFP(
                 fingerprint=fp,
@@ -416,7 +416,7 @@ def test_new_since_scopes_both_populations_and_resists_suppression(tmp_path: Pat
     # Try to suppress the NEW (in-delta) defect via a committed baseline — must not help.
     first = run_scan(tmp_path)
     new_fp = next(f for f in first.findings if f.qualname == "caller.f").fingerprint
-    bl = tmp_path / ".wardline" / "baseline.yaml"
+    bl = baseline_path(tmp_path)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
         f"version: 1\nentries:\n  - fingerprint: {new_fp}\n    rule_id: PY-WL-101\n    path: caller.py\n"
@@ -498,7 +498,7 @@ def test_run_scan_missing_source_root_yields_finding(tmp_path: Path) -> None:
     # both the CLI summary and the MCP result) and count toward unanalyzed.
     proj = tmp_path / "proj"
     proj.mkdir()
-    (proj / "wardline.yaml").write_text("source_roots:\n  - does_not_exist\n", encoding="utf-8")
+    (proj / "weft.toml").write_text('[wardline]\nsource_roots = ["does_not_exist"]\n', encoding="utf-8")
     # discover still warns on a missing root (by design — the CLI keeps the stderr
     # signal); the NEW contract is that it ALSO becomes a structured finding.
     with pytest.warns(UserWarning, match="source root does not exist"):
@@ -515,11 +515,11 @@ def test_run_scan_explicit_missing_config_raises(tmp_path: Path) -> None:
     proj.mkdir()
     (proj / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
     with pytest.raises(ConfigError):
-        run_scan(proj, config_path=proj / "nope.yaml")
+        run_scan(proj, config_path=proj / "nope.toml")
 
 
 def test_run_scan_implicit_missing_config_uses_defaults(tmp_path: Path) -> None:
-    # (d) The IMPLICIT default path (root/wardline.yaml) may legitimately be absent;
+    # (d) The IMPLICIT default path (root/weft.toml) may legitimately be absent;
     # run_scan returns defaults without raising.
     proj = tmp_path / "proj"
     proj.mkdir()

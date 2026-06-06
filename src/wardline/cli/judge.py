@@ -26,6 +26,7 @@ from wardline.core.judge_run import (
 from wardline.core.judge_run import (
     load_env_key as _load_env_key,  # re-exported: tests import _load_env_key from here
 )
+from wardline.core.paths import weft_config_path
 from wardline.core.triage import TriageResult
 
 
@@ -94,7 +95,7 @@ def judge(
     """Triage active DEFECTs with the opt-in LLM judge."""
     try:
         cfg = config_mod.load(
-            config_path or (path / "wardline.yaml"),
+            config_path or weft_config_path(path),
             trust_local_packs=trust_local_packs,
             trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,

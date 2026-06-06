@@ -5,10 +5,14 @@ from click.testing import CliRunner
 from wardline.cli.main import cli
 
 
-def test_scan_reads_filigree_url_from_config(tmp_path: Path, monkeypatch) -> None:
-    (tmp_path / "wardline.yaml").write_text(
-        'filigree:\n  url: "http://localhost:8080/configured-filigree"\n', encoding="utf-8"
-    )
+def test_scan_resolves_filigree_url_from_published_port(tmp_path: Path, monkeypatch) -> None:
+    # Sibling-URL config keys were removed: the live URL now resolves from the
+    # published .weft/filigree/ephemeral.port rung.
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    port_dir = tmp_path / ".weft" / "filigree"
+    port_dir.mkdir(parents=True)
+    (port_dir / "ephemeral.port").write_text("8628", encoding="utf-8")
     (tmp_path / "m.py").write_text("x = 1\n", encoding="utf-8")
     captured: dict[str, object] = {}
 
@@ -25,14 +29,14 @@ def test_scan_reads_filigree_url_from_config(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _FakeEmitter)
     result = CliRunner().invoke(cli, ["scan", str(tmp_path)])
     assert result.exit_code == 0, result.output
-    assert captured["url"] == "http://localhost:8080/configured-filigree"
+    assert captured["url"] == "http://localhost:8628/api/weft/scan-results"
     assert captured["scanned_paths"] == ("m.py",)
 
 
-def test_mcp_resolves_loomweave_url_from_config(tmp_path: Path, monkeypatch) -> None:
-    (tmp_path / "wardline.yaml").write_text(
-        'loomweave:\n  url: "http://localhost:9000/configured-loomweave"\n', encoding="utf-8"
-    )
+def test_mcp_resolves_loomweave_url_from_env(tmp_path: Path, monkeypatch) -> None:
+    # Sibling-URL config keys were removed: the URL now resolves from the env var
+    # (or the published .weft/loomweave/ephemeral.port rung).
+    monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", "http://localhost:9000/configured-loomweave")
     captured: dict[str, object] = {}
 
     class _FakeServer:
@@ -126,7 +130,9 @@ def test_install_summary_includes_binding_lines(tmp_path: Path, monkeypatch) -> 
     assert "filigree:" in result.output
 
 
-def test_install_auto_wires_filigree_from_ephemeral_port(tmp_path: Path, monkeypatch) -> None:
+def test_install_detects_filigree_from_ephemeral_port(tmp_path: Path, monkeypatch) -> None:
+    # The "wire config" feature was removed: install DETECTS the sibling from its
+    # published port and REPORTS it, writing no config file.
     home = tmp_path / "home"
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
@@ -141,13 +147,14 @@ def test_install_auto_wires_filigree_from_ephemeral_port(tmp_path: Path, monkeyp
     result = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
 
     assert result.exit_code == 0, result.output
-    assert "filigree: wired (discovered URL)" in result.output
-    assert 'filigree:\n  url: "http://localhost:8628/api/weft/scan-results"' in (tmp_path / "wardline.yaml").read_text(
-        encoding="utf-8"
-    )
+    assert "filigree: detected (discovered URL)" in result.output
+    assert not (tmp_path / "wardline.yaml").exists()
+    assert not (tmp_path / "weft.toml").exists()
 
 
-def test_install_rerun_wires_filigree_when_port_appears_after_initial_install(tmp_path: Path, monkeypatch) -> None:
+def test_install_rerun_detects_filigree_when_port_appears_after_initial_install(tmp_path: Path, monkeypatch) -> None:
+    # No config is written either before or after the port appears; only the
+    # reported detection status changes (no URL → discovered URL).
     home = tmp_path / "home"
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
@@ -158,19 +165,18 @@ def test_install_rerun_wires_filigree_when_port_appears_after_initial_install(tm
 
     initial = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
     assert initial.exit_code == 0, initial.output
-    assert "filigree: detected (commented)" in initial.output
-    assert "# filigree:" in (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
+    assert "filigree: detected (no URL" in initial.output
+    assert not (tmp_path / "wardline.yaml").exists()
 
     filigree_dir = tmp_path / ".filigree"
     filigree_dir.mkdir()
     (filigree_dir / "ephemeral.port").write_text("8628", encoding="utf-8")
-    wired = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
+    rerun = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
 
-    assert wired.exit_code == 0, wired.output
-    assert "filigree: wired (discovered URL)" in wired.output
-    text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
-    assert "# filigree:" not in text
-    assert 'filigree:\n  url: "http://localhost:8628/api/weft/scan-results"' in text
+    assert rerun.exit_code == 0, rerun.output
+    assert "filigree: detected (discovered URL)" in rerun.output
+    assert not (tmp_path / "wardline.yaml").exists()
+    assert not (tmp_path / "weft.toml").exists()
 
     captured: dict[str, object] = {}
 

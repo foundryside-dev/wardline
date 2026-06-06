@@ -142,11 +142,12 @@ def test_suppressed_defect_is_surfaced_not_hidden(tmp_path: Path) -> None:
     # A baselined (accepted) PY-WL-101 must not silently read as a pristine "clean":
     # surface the accepted-debt count so the dossier never hides known findings.
     from wardline.core.baseline import write_baseline
+    from wardline.core.paths import baseline_path
     from wardline.core.run import run_scan
 
     proj = _proj(tmp_path)
     leak = next(f for f in run_scan(proj).findings if f.rule_id == "PY-WL-101")
-    write_baseline(proj / ".wardline" / "baseline.yaml", [leak])
+    write_baseline(baseline_path(proj), [leak], root=proj)
 
     d = build_dossier("svc.leaky", root=proj)
     assert d.trust.active_findings == []  # the leak is no longer active

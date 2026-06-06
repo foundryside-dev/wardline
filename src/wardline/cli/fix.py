@@ -39,8 +39,9 @@ from wardline.core.run import run_scan
 def fix(path: Path, config_path: Path | None, yes: bool, dry_run: bool) -> None:
     """Scan PATH and apply autofixes interactively."""
     from wardline.core.config import load
+    from wardline.core.paths import weft_config_path
 
-    cfg_path = config_path or (path / "wardline.yaml")
+    cfg_path = config_path or weft_config_path(path)
     try:
         cfg = load(cfg_path)
         result = run_scan(path, config_path=config_path)

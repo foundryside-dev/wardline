@@ -13,6 +13,7 @@ from wardline.core.emit import JsonlSink
 from wardline.core.errors import WardlineError
 from wardline.core.filigree_emit import EmitResult, FiligreeEmitter, filigree_disabled_reason
 from wardline.core.finding import Severity
+from wardline.core.paths import weft_config_path
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
 from wardline.core.sarif import SarifSink
 
@@ -190,7 +191,7 @@ def scan(
             from wardline.core.finding import Finding
 
             cfg = load(
-                config_path or (path / "wardline.yaml"),
+                config_path or weft_config_path(path),
                 trust_local_packs=trust_local_packs,
                 trusted_packs=trusted_packs,
                 strict_defaults=strict_defaults,
@@ -235,7 +236,7 @@ def scan(
             from wardline.core.legis import build_legis_artifact, load_legis_artifact_key
 
             legis_cfg = load_cfg(
-                config_path or (path / "wardline.yaml"),
+                config_path or weft_config_path(path),
                 trust_local_packs=trust_local_packs,
                 trusted_packs=trusted_packs,
                 strict_defaults=strict_defaults,

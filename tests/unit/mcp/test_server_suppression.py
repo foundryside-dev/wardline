@@ -14,6 +14,7 @@ import pytest
 import yaml
 
 from wardline.core.judge import JudgeResponse, JudgeVerdict
+from wardline.core.paths import baseline_path
 from wardline.mcp.server import WardlineMCPServer
 
 FIXTURE = Path("tests/fixtures/sample_project")
@@ -48,7 +49,7 @@ def test_mcp_scan_gate_trips_on_baselined_defect_by_default(tmp_path: Path) -> N
     server = WardlineMCPServer(root=proj)
     first = _call(server, "scan", {})
     fp = next(f["fingerprint"] for f in first["findings"] if f["rule_id"] == "PY-WL-101")
-    bl = proj / ".wardline" / "baseline.yaml"
+    bl = baseline_path(proj)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
         f"version: 1\nentries:\n  - fingerprint: {fp}\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
@@ -98,7 +99,7 @@ def test_baseline_create_trusted_pack_matches_scan_mcp(tmp_path: Path, monkeypat
     try:
         proj = tmp_path / "proj"
         proj.mkdir()
-        (proj / "wardline.yaml").write_text("packs:\n  - baseline_mcp_pack\n", encoding="utf-8")
+        (proj / "weft.toml").write_text('[wardline]\npacks = ["baseline_mcp_pack"]\n', encoding="utf-8")
         (proj / "m.py").write_text("def violator():\n    pass\n", encoding="utf-8")
         server = WardlineMCPServer(root=proj)
 
@@ -116,7 +117,7 @@ def test_baseline_create_trusted_pack_matches_scan_mcp(tmp_path: Path, monkeypat
             },
         )
         assert baseline["baselined_count"] >= 1
-        baseline_doc = yaml.safe_load((proj / ".wardline" / "baseline.yaml").read_text(encoding="utf-8"))
+        baseline_doc = yaml.safe_load(baseline_path(proj).read_text(encoding="utf-8"))
         assert any(entry["rule_id"] == "PY-WL-901" for entry in baseline_doc["entries"])
     finally:
         sys.modules.pop("baseline_mcp_pack", None)

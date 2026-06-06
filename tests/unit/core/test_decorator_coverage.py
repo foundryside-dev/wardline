@@ -6,6 +6,7 @@ from wardline.core.baseline import write_baseline
 from wardline.core.decorator_coverage import build_decorator_coverage
 from wardline.core.dossier import TicketRef, WorkSection
 from wardline.core.identity import ContentStatus, EntityBinding, IdentityStatus
+from wardline.core.paths import baseline_path
 from wardline.core.run import run_scan
 
 _SRC = (
@@ -104,7 +105,7 @@ def test_decorator_coverage_reports_unavailable_integrations_explicitly(tmp_path
 def test_decorator_coverage_surfaces_suppressed_defects(tmp_path: Path) -> None:
     root = _project(tmp_path)
     leak = next(f for f in run_scan(root).findings if f.rule_id == "PY-WL-101")
-    write_baseline(root / ".wardline" / "baseline.yaml", [leak])
+    write_baseline(baseline_path(root), [leak], root=root)
 
     rows = {row.qualname: row for row in build_decorator_coverage(root).rows}
 

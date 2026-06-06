@@ -29,7 +29,7 @@ from wardline.core.finding import (
     SuppressionState,
 )
 from wardline.core.judged import load_judged
-from wardline.core.paths import baseline_path, judged_path
+from wardline.core.paths import baseline_path, judged_path, weft_config_path
 from wardline.core.protocols import Analyzer
 from wardline.core.suppression import apply_suppressions, gate_trips, severity_gates
 from wardline.core.waivers import WaiverSet, load_project_waivers
@@ -146,11 +146,11 @@ def run_scan(
 
     # An EXPLICIT --config path that doesn't exist must NOT silently fall back to
     # default policy (dropping the operator's severity overrides/excludes) — that
-    # is a false-green. The IMPLICIT default (root/wardline.yaml) may legitimately
+    # is a false-green. The IMPLICIT default (root/weft.toml) may legitimately
     # be absent; config_mod.load tolerates that.
     if config_path is not None and not config_path.exists():
         raise ConfigError(f"config file does not exist: {config_path}")
-    cfg_path = config_path or (root / "wardline.yaml")
+    cfg_path = config_path or weft_config_path(root)
     cfg = config_mod.load(
         cfg_path,
         trust_local_packs=trust_local_packs,

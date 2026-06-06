@@ -32,7 +32,9 @@ from wardline.core.attest import (
 )
 from wardline.core.config import WardlineConfig
 from wardline.core.errors import AttestError, WardlineError
+from wardline.core.paths import waivers_path
 from wardline.core.taints import TaintState
+from wardline.core.waivers import add_waiver
 from wardline.scanner.grammar import BoundaryType, TrustGrammar
 from wardline.scanner.taint.provider import FunctionTaint
 
@@ -70,7 +72,7 @@ def _annotated_tree(tmp_path: Path) -> Path:
 
 def _write_config(path: Path, *, severity: str) -> None:
     path.write_text(
-        f"rules:\n  enable:\n    - PY-WL-101\n  severity:\n    PY-WL-101: {severity}\n",
+        f'[wardline.rules]\nenable = ["PY-WL-101"]\nseverity = {{ "PY-WL-101" = "{severity}" }}\n',
         encoding="utf-8",
     )
 
@@ -149,7 +151,7 @@ def test_attestation_reproduce_threads_trusted_pack_policy(tmp_path: Path, monke
     monkeypatch.syspath_prepend(str(project_root))
     tree = tmp_path / "proj"
     tree.mkdir()
-    (tree / "wardline.yaml").write_text("packs:\n  - tests.unit.install.mock_pack\n", encoding="utf-8")
+    (tree / "weft.toml").write_text('[wardline]\npacks = ["tests.unit.install.mock_pack"]\n', encoding="utf-8")
     (tree / "m.py").write_text(
         "from tests.unit.install.mock_pack import mock_boundary\n\n@mock_boundary\ndef violator():\n    pass\n",
         encoding="utf-8",
@@ -346,9 +348,12 @@ def _waiver_tree(tmp_path: Path) -> Path:
     posture carries a date-sensitive ``days_left``, so re-derivation on a different day
     diverges UNLESS verify reads the recorded ``attested_at``."""
     (tmp_path / "m.py").write_text(_MODULE, encoding="utf-8")
-    (tmp_path / "wardline.yaml").write_text(
-        f'waivers:\n  - fingerprint: "{"a" * 64}"\n    reason: "third-party shim"\n    expires: "2026-12-31"\n',
-        encoding="utf-8",
+    add_waiver(
+        waivers_path(tmp_path),
+        fingerprint="a" * 64,
+        reason="third-party shim",
+        expires=date(2026, 12, 31),
+        root=tmp_path,
     )
     return tmp_path
 

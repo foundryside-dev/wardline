@@ -9,9 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from wardline.core import config as config_mod
 from wardline.core.errors import ConfigError
-from wardline.core.waivers import parse_waivers
+from wardline.core.waivers import load_project_waivers, parse_waivers
 from wardline.scanner.rules import _ALL_RULE_CLASSES
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -29,10 +28,9 @@ def test_waiver_with_reason_accepted():
 
 
 def _repo_waivers() -> tuple:
-    cfg_path = REPO_ROOT / "wardline.yaml"
-    cfg = config_mod.load(cfg_path if cfg_path.exists() else None)
-    # parse_waivers re-validates: a reasonless or malformed waiver raises here.
-    return parse_waivers(cfg.waivers)
+    # Waivers live in <root>/.weft/wardline/waivers.yaml; absent → empty tuple.
+    # load_project_waivers re-validates: a reasonless or malformed waiver raises here.
+    return load_project_waivers(REPO_ROOT)
 
 
 def test_repo_waivers_all_have_reasons():

@@ -16,8 +16,10 @@ from types import MappingProxyType
 
 from wardline.core.assure import _empty_posture, build_posture, posture_from_scan
 from wardline.core.finding import Finding, Kind, Location, Severity
+from wardline.core.paths import waivers_path
 from wardline.core.run import ScanResult, ScanSummary
 from wardline.core.taints import TaintState
+from wardline.core.waivers import add_waiver
 from wardline.scanner.context import AnalysisContext
 from wardline.scanner.index import Entity
 
@@ -49,12 +51,15 @@ _MODULE = (
     "    return src()\n"
 )
 
-_CONFIG = f'waivers:\n  - fingerprint: "{_WAIVER_FP}"\n    reason: "third-party shim"\n    expires: "2026-07-01"\n'
-
-
 def test_coverage_denominator_end_to_end(tmp_path: Path) -> None:
     (tmp_path / "m.py").write_text(_MODULE, encoding="utf-8")
-    (tmp_path / "wardline.yaml").write_text(_CONFIG, encoding="utf-8")
+    add_waiver(
+        waivers_path(tmp_path),
+        fingerprint=_WAIVER_FP,
+        reason="third-party shim",
+        expires=date(2026, 7, 1),
+        root=tmp_path,
+    )
 
     posture = build_posture(tmp_path, today=date(2026, 6, 3))
     got = posture.to_dict()
