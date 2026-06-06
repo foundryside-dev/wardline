@@ -36,8 +36,12 @@ def test_capabilities_gets_route_and_parses() -> None:
     assert url == "http://loomweave.example/api/v1/_capabilities"
     # GET routes are signed too (empty body) — the shared _send path signs everything.
     expected = sign_request(
-        "s3cr3t", "GET", "/api/v1/_capabilities", sent_body,
-        timestamp=headers["X-Weft-Timestamp"], nonce=headers["X-Weft-Nonce"],
+        "s3cr3t",
+        "GET",
+        "/api/v1/_capabilities",
+        sent_body,
+        timestamp=headers["X-Weft-Timestamp"],
+        nonce=headers["X-Weft-Nonce"],
     )
     assert headers["X-Weft-Component"] == f"loomweave:{expected}"
 
@@ -65,8 +69,12 @@ def test_resolve_identity_posts_locator_and_signs() -> None:
     assert url == "http://loomweave.example/api/v1/identity/resolve"
     assert json.loads(sent_body) == {"locator": "python:function:m.f"}
     expected = sign_request(
-        "s3cr3t", "POST", "/api/v1/identity/resolve", sent_body,
-        timestamp=headers["X-Weft-Timestamp"], nonce=headers["X-Weft-Nonce"],
+        "s3cr3t",
+        "POST",
+        "/api/v1/identity/resolve",
+        sent_body,
+        timestamp=headers["X-Weft-Timestamp"],
+        nonce=headers["X-Weft-Nonce"],
     )
     assert headers["X-Weft-Component"] == f"loomweave:{expected}"
 

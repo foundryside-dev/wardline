@@ -247,9 +247,7 @@ def test_legis_gate_population_equals_wardline_gate_active_count(tmp_path: Path)
     # summary.active, which counts active in the (possibly suppressed) emitted findings.
     scan, result = _artifact(_proj(tmp_path))
     gate_population = result.gate_findings if result.gate_findings is not None else result.findings
-    gate_active = sum(
-        1 for f in gate_population if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE
-    )
+    gate_active = sum(1 for f in gate_population if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE)
     assert len(active_defects(scan)) == gate_active
     assert gate_active >= 1
 

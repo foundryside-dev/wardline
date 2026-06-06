@@ -22,6 +22,7 @@ def _baseline_all(tmp_path) -> None:
     bl.parent.mkdir(parents=True, exist_ok=True)
     write_baseline(bl, defects)
 
+
 # Two boundaries + two trusted leaks → PY-WL-101 fires on both leaks.
 _SRC = (
     "from wardline.decorators import external_boundary, trusted\n"

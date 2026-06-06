@@ -239,9 +239,7 @@ def test_gate_decision_reason_names_both_active_and_suppressed_on_mixed_trip(tmp
     (proj / "b.py").write_text(_LEAKY, encoding="utf-8")
     # Baseline ONLY a.py's finding (fingerprint match); b.py stays active.
     fp_a = next(
-        f.fingerprint
-        for f in run_scan(proj).findings
-        if f.rule_id == "PY-WL-101" and f.location.path == "a.py"
+        f.fingerprint for f in run_scan(proj).findings if f.rule_id == "PY-WL-101" and f.location.path == "a.py"
     )
     _write_baseline(proj, fp_a)
     decision = gate_decision(run_scan(proj), Severity.ERROR)

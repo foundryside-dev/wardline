@@ -309,13 +309,7 @@ def test_lambda_rebinding_survives_no_else_if_for_post_branch_call() -> None:
     # (conservative). A clear-then-union merge that let the implicit (no-else)
     # fall-through arm win last reverted ``cb`` to the safe lambda and dropped the
     # detection — a false negative the pre-branch-local engine did not have.
-    src = (
-        "def handler(raw):\n"
-        "    cb = lambda c: c\n"
-        "    if flag:\n"
-        "        cb = lambda c: sink(c)\n"
-        "    cb(raw)\n"
-    )
+    src = "def handler(raw):\n    cb = lambda c: c\n    if flag:\n        cb = lambda c: sink(c)\n    cb(raw)\n"
     assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
 
 
