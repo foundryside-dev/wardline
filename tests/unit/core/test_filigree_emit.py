@@ -154,6 +154,29 @@ def test_http_auth_refused_is_soft_not_loud(status: int) -> None:
     t = _FakeTransport(response=Response(status=status, body='{"error":"unauthorized"}'))
     res = FiligreeEmitter("http://x", transport=t).emit([_f()])
     assert res.reachable is False
+    # ...but the RESULT must distinguish auth-rejected from transport-unreachable so the
+    # caller can say "401 (set WARDLINE_FILIGREE_TOKEN)" instead of "could not reach"
+    # (dogfood #5). 401/403 stays SOFT — only the message changes.
+    assert res.status == status
+    assert res.auth_rejected is True
+
+
+def test_transport_unreachable_has_no_status_and_is_not_auth_rejected() -> None:
+    import urllib.error
+
+    t = _FakeTransport(exc=urllib.error.URLError("connection refused"))
+    res = FiligreeEmitter("http://x", transport=t).emit([_f()])
+    assert res.reachable is False
+    assert res.status is None  # genuinely could-not-reach
+    assert res.auth_rejected is False
+
+
+def test_http_5xx_carries_status_but_is_not_auth_rejected() -> None:
+    t = _FakeTransport(response=Response(status=503, body="upstream down"))
+    res = FiligreeEmitter("http://x", transport=t).emit([_f()])
+    assert res.reachable is False
+    assert res.status == 503
+    assert res.auth_rejected is False
 
 
 def test_bearer_token_carried_when_provided() -> None:

@@ -61,6 +61,9 @@ def test_scan_emits_to_filigree_when_emitter_present(tmp_path):
         "updated": 1,
         "failed": 0,
         "warnings": [],
+        "status": None,
+        "auth_rejected": False,
+        "disabled_reason": None,
     }
     assert emitter.scanned_paths == ("svc.py",)
 
@@ -78,6 +81,9 @@ def test_scan_reports_both_integrations_successful(tmp_path):
         "updated": 1,
         "failed": 0,
         "warnings": [],
+        "status": None,
+        "auth_rejected": False,
+        "disabled_reason": None,
     }
 
 
@@ -122,4 +128,16 @@ def test_scan_unreachable_filigree_is_soft(tmp_path):
     assert out["filigree"]["reachable"] is False
     assert out["filigree_emit"]["configured"] is True
     assert out["filigree_emit"]["reachable"] is False
+    assert out["filigree_emit"]["disabled_reason"] == "filigree unreachable"
     assert out["summary"]["total"] >= 1
+
+
+def test_scan_filigree_401_surfaces_auth_reason_to_agent(tmp_path):
+    # Dogfood #5 (MCP parity): a 401 stays soft but the agent must read an actionable
+    # disabled_reason naming the token, not a flat "unreachable".
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    out = _scan({}, tmp_path, None, FakeEmitter(EmitResult(reachable=False, status=401, auth_rejected=True)))
+    assert out["filigree"]["reachable"] is False  # still soft
+    reason = out["filigree_emit"]["disabled_reason"]
+    assert "401" in reason and "WARDLINE_FILIGREE_TOKEN" in reason
+    assert "unreachable" not in reason

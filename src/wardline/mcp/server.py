@@ -59,6 +59,10 @@ def _emit_filigree(
         "updated": er.updated,
         "failed": er.failed,
         "warnings": list(er.warnings),
+        # Distinguish auth-rejected (401/403) from transport-unreachable so the agent reads
+        # an actionable reason, not a flat "unreachable" (dogfood #5).
+        "status": er.status,
+        "auth_rejected": er.auth_rejected,
     }
 
 
@@ -73,7 +77,16 @@ def _filigree_emit_status(block: dict[str, Any] | None) -> dict[str, Any]:
             "warnings": [],
             "disabled_reason": "not configured",
         }
-    return {"configured": True, **block}
+    reachable = block.get("reachable")
+    if reachable:
+        disabled_reason = None
+    elif block.get("auth_rejected"):
+        disabled_reason = f"filigree auth-rejected ({block.get('status')}); set WARDLINE_FILIGREE_TOKEN"
+    elif block.get("status") is not None:
+        disabled_reason = f"filigree server error ({block.get('status')})"
+    else:
+        disabled_reason = "filigree unreachable"
+    return {"configured": True, "disabled_reason": disabled_reason, **block}
 
 
 def _loomweave_write_status(block: dict[str, Any] | None) -> dict[str, Any]:

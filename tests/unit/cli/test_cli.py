@@ -773,6 +773,32 @@ def test_scan_filigree_absent_continues(tmp_path, monkeypatch) -> None:
     assert "could not reach" in result.output.lower()
 
 
+def test_scan_filigree_401_says_auth_not_unreachable(tmp_path, monkeypatch) -> None:
+    # Dogfood #5: a 401 (token absent) is reachable-but-refused, NOT transport-unreachable.
+    # The message must name the auth cause + the env var, never "could not reach".
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+
+    class _AuthRejectedEmitter:
+        def __init__(self, url, **kw):
+            pass
+
+        def emit(self, findings, *, scanned_paths=()):
+            from wardline.core.filigree_emit import EmitResult
+
+            return EmitResult(reachable=False, status=401, auth_rejected=True)
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _AuthRejectedEmitter)
+    out = tmp_path / "f.jsonl"
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--filigree-url", "http://x"])
+    assert result.exit_code == 0, result.output
+    low = result.output.lower()
+    assert "401" in result.output
+    assert "could not reach" not in low  # the precise distinction the report asked for
+    assert "wardline_filigree_token" in low
+
+
 # --- SP9: wardline scan --loomweave-url ---------------------------------------
 # scan.py imports write_facts_to_loomweave lazily inside the `if loomweave_url` block
 # (`from wardline.loomweave.write import write_facts_to_loomweave`), so the binding

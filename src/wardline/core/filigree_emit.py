@@ -97,6 +97,14 @@ class EmitResult:
     updated: int = 0
     failed: int = 0
     warnings: tuple[str, ...] = ()
+    # Discriminate WHY enrichment was unavailable so the caller can say the actionable
+    # thing instead of a flat "could not reach" (dogfood #5). ``status`` is the HTTP
+    # status when one reached us (401/403 auth-refused, 5xx outage) and None when the
+    # transport itself failed (connection refused / DNS / timeout — genuinely unreachable).
+    # ``auth_rejected`` is the 401/403 case: present-but-refusing-bearer-auth. All of these
+    # stay SOFT (reachable=False); only the message differs.
+    status: int | None = None
+    auth_rejected: bool = False
 
 
 class Transport(Protocol):
@@ -142,14 +150,18 @@ class FiligreeEmitter:
             resp = self._transport.post(self._url, body, headers)
         except (urllib.error.URLError, OSError):
             # Connection refused / DNS / timeout — sibling absent. Enrichment is
-            # non-load-bearing: warn (at the CLI) and continue.
+            # non-load-bearing: warn (at the CLI) and continue. No status reached us, so
+            # this is the genuine "could not reach" case (status=None).
             return EmitResult(reachable=False)
-        if resp.status >= 500 or resp.status in (401, 403):
-            # Server-side outage (5xx) or auth refusal (401/403, Filigree present but its
-            # opt-in bearer auth is on and rejecting us) — the sibling is degraded/refusing,
-            # not a Wardline payload bug. Treat like absent (warn + continue) so a Filigree
-            # 503 or 401 never makes the gate load-bearing.
-            return EmitResult(reachable=False)
+        if resp.status in (401, 403):
+            # Filigree is present but its opt-in bearer auth is on and refusing us. Stays
+            # SOFT (enrichment unavailable, never exit-2) — but distinguished as auth so the
+            # caller can say "401 (set WARDLINE_FILIGREE_TOKEN)" instead of "could not reach".
+            return EmitResult(reachable=False, status=resp.status, auth_rejected=True)
+        if resp.status >= 500:
+            # Server-side outage (5xx) — the sibling is degraded, not a Wardline payload bug.
+            # Treat like absent (warn + continue), carrying the status for an honest message.
+            return EmitResult(reachable=False, status=resp.status)
         if not 200 <= resp.status < 300:
             # 3xx (a redirect reached the client) or any remaining 4xx (notably 400): Wardline
             # sent a request the server would not accept — bad payload / wrong endpoint. Loud.

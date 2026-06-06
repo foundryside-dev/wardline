@@ -301,10 +301,24 @@ def scan(
         raise SystemExit(2) from exc
     if emit_result is not None:
         if not emit_result.reachable:
-            click.echo(
-                f"warning: could not reach Filigree at {filigree_url}; findings written locally only.",
-                err=True,
-            )
+            if emit_result.auth_rejected:
+                # Reachable but refused — actionable, NOT "could not reach" (dogfood #5).
+                click.echo(
+                    f"warning: Filigree returned {emit_result.status} (auth rejected) at {filigree_url}; "
+                    "set WARDLINE_FILIGREE_TOKEN (or .env) to the project token. Findings written locally only.",
+                    err=True,
+                )
+            elif emit_result.status is not None:
+                click.echo(
+                    f"warning: Filigree returned {emit_result.status} (server error) at {filigree_url}; "
+                    "findings written locally only.",
+                    err=True,
+                )
+            else:
+                click.echo(
+                    f"warning: could not reach Filigree at {filigree_url}; findings written locally only.",
+                    err=True,
+                )
         else:
             line = (
                 f"emitted {len(findings)} finding(s) to {filigree_url} — "
@@ -378,8 +392,18 @@ def _filigree_status(result: EmitResult | None) -> dict[str, object]:
         "updated": result.updated,
         "failed": result.failed,
         "warnings": list(result.warnings),
-        "disabled_reason": None if result.reachable else "filigree unreachable",
+        "disabled_reason": _filigree_unreachable_reason(result),
     }
+
+
+def _filigree_unreachable_reason(result: EmitResult) -> str | None:
+    if result.reachable:
+        return None
+    if result.auth_rejected:
+        return f"filigree auth-rejected ({result.status}); set WARDLINE_FILIGREE_TOKEN"
+    if result.status is not None:
+        return f"filigree server error ({result.status})"
+    return "filigree unreachable"
 
 
 def _loomweave_status(result: object | None) -> dict[str, object]:
