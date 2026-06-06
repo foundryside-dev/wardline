@@ -122,7 +122,7 @@ def baseline(ctx: click.Context) -> None:
     "--trust-pack",
     "trusted_packs",
     multiple=True,
-    help="Allow importing this trust-grammar pack from wardline.yaml. May be repeated.",
+    help="Allow importing this trust-grammar pack from weft.toml [wardline]. May be repeated.",
 )
 @click.option(
     "--allow-custom-packs",
@@ -135,7 +135,7 @@ def baseline(ctx: click.Context) -> None:
     "--strict-defaults",
     is_flag=True,
     default=False,
-    help="Ignore repository-supplied custom configuration overrides (wardline.yaml).",
+    help="Ignore repository-supplied custom configuration overrides (weft.toml).",
 )
 def baseline_create(
     path: Path,
@@ -175,7 +175,7 @@ def baseline_create(
     "--trust-pack",
     "trusted_packs",
     multiple=True,
-    help="Allow importing this trust-grammar pack from wardline.yaml. May be repeated.",
+    help="Allow importing this trust-grammar pack from weft.toml [wardline]. May be repeated.",
 )
 @click.option(
     "--allow-custom-packs",
@@ -188,7 +188,7 @@ def baseline_create(
     "--strict-defaults",
     is_flag=True,
     default=False,
-    help="Ignore repository-supplied custom configuration overrides (wardline.yaml).",
+    help="Ignore repository-supplied custom configuration overrides (weft.toml).",
 )
 def baseline_update(
     path: Path,

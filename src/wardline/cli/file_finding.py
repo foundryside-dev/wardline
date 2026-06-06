@@ -29,7 +29,7 @@ from wardline.core.filigree_issue import (
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     default=None,
 )
-@click.option("--filigree-url", "filigree_url", default=None, help="Filigree Weft URL (else env/wardline.yaml).")
+@click.option("--filigree-url", "filigree_url", default=None, help="Filigree Weft URL (else flag/env).")
 @click.option(
     "--loomweave-url",
     "loomweave_url",
@@ -56,7 +56,7 @@ def file_finding(
     """File the finding identified by FINGERPRINT into a tracked Filigree issue."""
     url = resolve_filigree_url(filigree_url, path, config_path)
     if url is None:
-        click.echo("error: no Filigree URL (pass --filigree-url, set the env var, or wardline.yaml)", err=True)
+        click.echo("error: no Filigree URL (pass --filigree-url or set the env var)", err=True)
         raise SystemExit(2)
     try:
         from wardline.filigree.config import load_filigree_token

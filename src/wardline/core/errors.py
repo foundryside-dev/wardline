@@ -6,7 +6,7 @@ class WardlineError(Exception):
 
 
 class ConfigError(WardlineError):
-    """Raised when wardline.yaml is malformed or invalid."""
+    """Raised when weft.toml [wardline] is malformed or invalid."""
 
 
 class DiscoveryError(WardlineError):

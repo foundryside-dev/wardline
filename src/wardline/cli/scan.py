@@ -71,7 +71,7 @@ from wardline.core.sarif import SarifSink
     "--trust-pack",
     "trusted_packs",
     multiple=True,
-    help="Allow importing this trust-grammar pack from wardline.yaml. May be repeated.",
+    help="Allow importing this trust-grammar pack from weft.toml [wardline]. May be repeated.",
 )
 @click.option(
     "--allow-custom-packs",
@@ -95,13 +95,13 @@ from wardline.core.sarif import SarifSink
     "--strict-defaults",
     is_flag=True,
     default=False,
-    help="Ignore repository-supplied custom configuration overrides (wardline.yaml).",
+    help="Ignore repository-supplied custom configuration overrides (weft.toml).",
 )
 @click.option(
     "--allow-source-root-escape",
     is_flag=True,
     default=False,
-    help="Allow wardline.yaml source_roots to resolve outside PATH.",
+    help="Allow weft.toml [wardline] source_roots to resolve outside PATH.",
 )
 @click.option(
     "--trust-suppressions",

@@ -7,9 +7,14 @@ suppression survives across runs but is re-keyed if the finding's line moves
 
 | Layer | Where it lives | Authored by | Use it when |
 |---|---|---|---|
-| **Baseline** | `.wardline/baseline.yaml` | `wardline baseline create/update` | Adopting Wardline on an existing codebase: accept today's findings wholesale and gate only on new ones. |
-| **Waiver** | `wardline.yaml` (`waivers:`) | a human | One specific finding is a known false positive or accepted risk; you want a recorded reason and (optionally) an expiry. |
-| **Judged FP** | `.wardline/judged.yaml` | the LLM judge (`wardline judge --write`) | The opt-in judge ruled a finding a false positive and you accept that verdict. |
+| **Baseline** | `.weft/wardline/baseline.yaml` | `wardline baseline create/update` | Adopting Wardline on an existing codebase: accept today's findings wholesale and gate only on new ones. |
+| **Waiver** | `.weft/wardline/waivers.yaml` | the MCP `waiver_add` tool, or a human editing the file | One specific finding is a known false positive or accepted risk; you want a recorded reason and (optionally) an expiry. |
+| **Judged FP** | `.weft/wardline/judged.yaml` | the LLM judge (`wardline judge --write`) | The opt-in judge ruled a finding a false positive and you accept that verdict. |
+
+All three live under `.weft/wardline/` — Wardline's machine-state subtree (an
+operator may relocate it with `[wardline].store_dir`; see
+[Configuration](configuration.md#store_dir)). None of them is a `weft.toml` config
+key.
 
 When more than one layer matches a finding, **precedence is waiver > judged >
 baseline** — explicit human intent wins, and an LLM verdict wins over a silent
@@ -29,9 +34,10 @@ and the three distinct meanings of "new" — see
 ## Suppressions and the `--fail-on` gate (read this first)
 
 All three layers — baseline, waiver, judged — live in **committed repository
-content** (`.wardline/baseline.yaml`, `wardline.yaml`, `.wardline/judged.yaml`).
-That makes them attacker-controllable in an untrusted pull request: a PR can add a
-suppression entry keyed to its own new defect's fingerprint.
+content** (`.weft/wardline/baseline.yaml`, `.weft/wardline/waivers.yaml`,
+`.weft/wardline/judged.yaml`). That makes them attacker-controllable in an
+untrusted pull request: a PR can add a suppression entry keyed to its own new
+defect's fingerprint.
 
 So, **by default the `--fail-on` gate evaluates the *unsuppressed* population.**
 Baseline / waiver / judged still **annotate** every emitted finding (you see
@@ -69,7 +75,7 @@ use the unforgeable `--new-since <merge-base>` ratchet in CI, or
 ```
 wardline baseline [OPTIONS] COMMAND [ARGS]...
 
-  Manage the finding baseline (.wardline/baseline.yaml).
+  Manage the finding baseline (.weft/wardline/baseline.yaml).
 
 Commands:
   create  Write a new baseline from current findings (refuses if one exists).
@@ -86,19 +92,19 @@ Options:
   --help         Show this message and exit.
 ```
 
-`create` writes `.wardline/baseline.yaml` and refuses to clobber an existing one;
-`update` re-derives and overwrites. Only DEFECT findings are baselined, and any
-finding with an active waiver is excluded (so its waiver expiry still resurfaces
-it later).
+`create` writes `.weft/wardline/baseline.yaml` and refuses to clobber an existing
+one; `update` re-derives and overwrites. Only DEFECT findings are baselined, and
+any finding with an active waiver is excluded (so its waiver expiry still
+resurfaces it later).
 
 ```console
 $ wardline baseline create .
-baselined 1 finding(s) -> .wardline/baseline.yaml: 1 ERROR
+baselined 1 finding(s) -> .weft/wardline/baseline.yaml: 1 ERROR
 ```
 
 ```console
 $ wardline baseline create .
-.wardline/baseline.yaml already exists; use `wardline baseline update` to overwrite.
+.weft/wardline/baseline.yaml already exists; use `wardline baseline update` to overwrite.
 ```
 
 The file carries `rule_id` / `path` / `message` per entry purely for human
@@ -114,13 +120,19 @@ entries:
     (less trusted) — untrusted data reaches a trusted producer
 ```
 
-Commit `.wardline/baseline.yaml`. Re-run `wardline baseline update` whenever you
-intentionally accept a new batch of findings, then commit the diff.
+Commit `.weft/wardline/baseline.yaml`. Re-run `wardline baseline update` whenever
+you intentionally accept a new batch of findings, then commit the diff.
 
 ## Waivers
 
 A waiver suppresses one finding by fingerprint, with a **required reason** and an
-**optional ISO expiry**. Waivers are hand-authored inline in `wardline.yaml`:
+**optional ISO expiry**. Waivers are machine/CLI-written state, not config — they
+live in `.weft/wardline/waivers.yaml`.
+
+The agent-first way to add one is the MCP `waiver_add` tool: pass the
+`fingerprint` and a `reason` (and an optional `expires`), and Wardline appends the
+entry to `.weft/wardline/waivers.yaml`, creating the subtree if needed. You can
+also hand-author the file directly:
 
 ```yaml
 waivers:
@@ -150,9 +162,9 @@ waivers are surgical and self-documenting.
 
 When you run the opt-in [LLM triage judge](judge.md) with `--write`, its
 FALSE_POSITIVE verdicts (at or above the configured confidence floor) are
-appended to `.wardline/judged.yaml`. This is the same machine-vs-human split as
-the baseline: hand-authored waivers stay clean in `wardline.yaml`, while
-machine-judged FPs live in their own file with full provenance.
+appended to `.weft/wardline/judged.yaml`. Each suppression layer keeps its own
+state file under `.weft/wardline/`: waivers in `waivers.yaml`, machine-judged FPs
+in `judged.yaml` with full provenance.
 
 Each record carries the model's verbatim `rationale` — the audit primitive — plus
 `model_id`, `confidence`, `recorded_at`, and a `policy_hash` so a re-run under a
@@ -173,7 +185,7 @@ findings:
   policy_hash: sha256:<...>
 ```
 
-Commit `.wardline/judged.yaml` like the baseline. A judged suppression is
+Commit `.weft/wardline/judged.yaml` like the baseline. A judged suppression is
 advisory — the rationale is recorded precisely so a human can audit it and revert
 by deleting the entry. Like the other layers it **annotates** but does not clear
 the `--fail-on` gate by default (see [the gate section](#suppressions-and-the-fail-on-gate-read-this-first));

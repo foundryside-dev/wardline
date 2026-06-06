@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **BREAKING: Weft config/store consolidation.** Operator config moved from
+  `wardline.yaml` (YAML) to the `[wardline]` table of a shared, operator-authored
+  `weft.toml` (TOML), read via stdlib `tomllib` (zero new dependency). A missing,
+  unreadable, or unparseable `weft.toml` silently falls back to built-in defaults
+  (never hard-fails); unknown/out-of-range keys in a *present* `[wardline]` table
+  still fail loud. `--config` now points at a TOML file. Machine/CLI-written state
+  moved from `.wardline/` to `.weft/wardline/` — `baseline.yaml`, `judged.yaml`,
+  and the newly relocated `waivers.yaml` all live there (no fallback to the old
+  path; the attest signing key stays in `.env`). Waivers are **no longer a config
+  key** — they are machine state in `.weft/wardline/waivers.yaml` (written by the
+  MCP `waiver_add` tool / `add_waiver`). Sibling endpoint URL config keys were
+  **removed** (`[wardline.filigree].url` / `[wardline.loomweave].url` are not
+  valid); sibling URLs resolve only via the `--filigree-url`/`--loomweave-url`
+  flag, the `WARDLINE_FILIGREE_URL`/`WARDLINE_LOOMWEAVE_URL` env var, or the
+  published `<root>/.weft/<sibling>/ephemeral.port` file (legacy
+  `<root>/.<sibling>/ephemeral.port` tolerated). Binding auto-wiring was dropped:
+  `wardline install`/`doctor` now only **detect** siblings and write no config.
+  `wardline install <pack>` is **guidance-only** — it emits the snippet to add
+  `packs = [...]` to `weft.toml` `[wardline]` rather than writing config (packs
+  stay operator-authored). An operator may relocate the state subtree with
+  `[wardline].store_dir`. No automatic migration — see UPGRADING.md for operator
+  steps.
 - **Filigree bearer credential now read from the federation-scoped
   `WEFT_FEDERATION_TOKEN`.** The federation loopback token was renamed
   `WEFT_FEDERATION_TOKEN` (deconfliction plumbing across the Weft federation). The

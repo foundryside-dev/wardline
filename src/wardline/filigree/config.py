@@ -2,7 +2,7 @@
 """Filigree bearer credential loader. Filigree's auth is opt-in bearer-token over
 loopback (no HMAC); when the operator sets a token, every ``/api/weft/*`` call needs
 ``Authorization: Bearer <token>``. Like the Loomweave secret, the token comes from
-env / ``.env`` ONLY, never from wardline.yaml — the same discipline as the OpenRouter
+env / ``.env`` ONLY, never from weft.toml — the same discipline as the OpenRouter
 judge key.
 
 The credential is read from the federation-scoped ``WEFT_FEDERATION_TOKEN`` (adopted

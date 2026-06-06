@@ -20,7 +20,7 @@ def discover(root: Path, config: WardlineConfig, *, confine_to_root: bool = Fals
     for src in config.source_roots:
         base = (root / src).resolve()
         if confine_to_root and not base.is_relative_to(root):
-            # A poisoned in-root wardline.yaml whose source_roots escape the root
+            # A poisoned in-root weft.toml whose source_roots escape the root
             # would otherwise read out-of-root source. Reject (do NOT silently
             # skip — a silent skip under-scans and gives a false all-clear).
             raise ConfigError(

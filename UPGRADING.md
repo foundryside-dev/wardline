@@ -2,10 +2,114 @@
 
 Migration notes for changes that can alter a previously-green run. Newest first.
 
+## To v1.0 — Weft config/store consolidation (BREAKING)
+
+Wardline's operator config and machine state moved onto the Weft federation
+convention. **There is no automatic migration** — an operator with an existing
+`wardline.yaml` and `.wardline/` must move both by hand. The changes:
+
+**1. Config moved `wardline.yaml` (YAML) → `weft.toml` `[wardline]` table (TOML).**
+Wardline now reads its settings from the `[wardline]` table of a shared,
+operator-authored `weft.toml` at the scan root, parsed with stdlib `tomllib` (no
+new dependency). A missing, unreadable, or unparseable `weft.toml` silently falls
+back to built-in defaults — it never hard-fails. (Unknown keys or out-of-range
+values inside a *present* `[wardline]` table still fail loud, as before.)
+`--config` now points at a TOML file.
+
+**2. State moved `.wardline/` → `.weft/wardline/` (no fallback).** `baseline.yaml`,
+`judged.yaml`, and the newly relocated `waivers.yaml` all live under
+`.weft/wardline/` now. Wardline does **not** read the old `.wardline/` location —
+re-create the baseline, or `git mv` the directory (the file contents and keys are
+unchanged). An operator may relocate this subtree with `[wardline].store_dir` in
+`weft.toml`. The attest signing key still lives in `.env` (unchanged).
+
+**3. Waivers are no longer a config key.** They are machine/CLI-written
+suppression state in `.weft/wardline/waivers.yaml` (written by the MCP
+`waiver_add` tool, or hand-edited). The `waivers:` config block is gone.
+
+**4. Sibling endpoint URL config keys were removed.** `[wardline.filigree].url`
+and `[wardline.loomweave].url` are no longer valid. Sibling URLs resolve only via
+the `--filigree-url` / `--loomweave-url` flag, the `WARDLINE_FILIGREE_URL` /
+`WARDLINE_LOOMWEAVE_URL` env var, or the published
+`<root>/.weft/<sibling>/ephemeral.port` file (legacy `<root>/.<sibling>/ephemeral.port`
+tolerated). Binding auto-wiring was dropped: `wardline install` / `wardline doctor`
+now only **detect** siblings and write no config.
+
+**5. `wardline install <pack>` is guidance-only.** It no longer writes config to
+activate a trust-grammar pack; it prints the snippet to add `packs = [...]` to
+`weft.toml` `[wardline]` by hand (packs import and execute code, so they stay
+operator-authored). Assert the pack at scan/judge time with `--trust-pack`.
+
+### Operator migration steps
+
+1. **Create `weft.toml`.** Translate your `wardline.yaml` keys into TOML under a
+   `[wardline]` table (YAML → TOML; everything nests under `[wardline]`). For
+   example:
+
+   ```yaml
+   # OLD wardline.yaml
+   source_roots: [src]
+   exclude: ["build/**"]
+   rules:
+     enable: ["PY-WL-101"]
+     severity:
+       PY-WL-101: ERROR
+   judge:
+     model: anthropic/claude-opus-4-8
+     context_lines: 30
+   ```
+
+   ```toml
+   # NEW weft.toml
+   [wardline]
+   source_roots = ["src"]
+   exclude = ["build/**"]
+
+   [wardline.rules]
+   enable = ["PY-WL-101"]
+   severity = { "PY-WL-101" = "ERROR" }
+
+   [wardline.judge]
+   model = "anthropic/claude-opus-4-8"
+   context_lines = 30
+   ```
+
+   Drop any `filigree:` / `loomweave:` URL blocks (removed) and any `waivers:`
+   block (now state — see step 3). Delete the old `wardline.yaml`.
+
+2. **Move the state directory.** Either re-create the baseline at the new
+   location:
+
+   ```console
+   $ wardline baseline create .   # writes .weft/wardline/baseline.yaml
+   ```
+
+   or move the existing files in place (contents and keys are unchanged):
+
+   ```console
+   $ mkdir -p .weft && git mv .wardline .weft/wardline
+   ```
+
+   Commit `.weft/wardline/` like you committed `.wardline/`.
+
+3. **Move waivers.** Any `waivers:` you had in `wardline.yaml` become the
+   `waivers:` list of `.weft/wardline/waivers.yaml` (same entry shape:
+   `fingerprint` / `reason` / optional `expires`). Add new ones with the MCP
+   `waiver_add` tool or by hand-editing that file.
+
+4. **Pin sibling URLs out of config.** If you relied on a `filigree:`/`loomweave:`
+   config URL, set it instead via the `--filigree-url`/`--loomweave-url` flag, the
+   `WARDLINE_FILIGREE_URL`/`WARDLINE_LOOMWEAVE_URL` env var, or let live discovery
+   read the published `.weft/<sibling>/ephemeral.port`.
+
+5. **Activate packs by hand.** If you used `wardline install <pack>` to enable a
+   pack, add `packs = ["<pack>"]` to `weft.toml` `[wardline]` yourself, then pass
+   `--trust-pack <pack>` at scan/judge time.
+
 ## To v1.0 — the `--fail-on` gate no longer honors committed suppressions by default
 
-**What changed.** `.wardline/baseline.yaml`, `wardline.yaml` waivers, and
-`.wardline/judged.yaml` are all committed repository content, so a malicious pull
+**What changed.** `.weft/wardline/baseline.yaml`, `.weft/wardline/waivers.yaml`, and
+`.weft/wardline/judged.yaml` are all committed repository content, so a malicious pull
 request could add a suppression entry keyed to its own new defect's fingerprint and
 clear the gate. The `--fail-on` gate now evaluates the **unsuppressed** population by
 default: baseline / waiver / judged still **annotate** the emitted findings

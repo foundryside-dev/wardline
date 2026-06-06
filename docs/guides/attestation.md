@@ -32,10 +32,10 @@ The key lookup order at run time: environment variable `WARDLINE_ATTEST_KEY` →
 `root/.env` line `WARDLINE_ATTEST_KEY=<value>`. An already-set environment value
 always wins, so CI injects the key as a secret env var without touching `.env`.
 
-!!! note "The key never goes in `.wardline/`"
-    `.wardline/` holds committed state (baseline, waivers). Writing a secret
-    there would let anyone with repo read access forge bundles. `.env` is the
-    correct home — it mirrors where `WARDLINE_LOOMWEAVE_TOKEN` lives.
+!!! note "The key never goes in `.weft/wardline/`"
+    `.weft/wardline/` holds committed state (baseline, waivers, judged). Writing a
+    secret there would let anyone with repo read access forge bundles. `.env` is
+    the correct home — it mirrors where `WARDLINE_LOOMWEAVE_TOKEN` lives.
 
 ## The bundle shape
 

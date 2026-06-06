@@ -46,7 +46,7 @@ from wardline.core.triage import TriageResult
     "do_write",
     is_flag=True,
     default=False,
-    help="Append FALSE_POSITIVE verdicts to .wardline/judged.yaml (default: dry-run).",
+    help="Append FALSE_POSITIVE verdicts to .weft/wardline/judged.yaml (default: dry-run).",
 )
 @click.option(
     "--trust-judge-policy",
@@ -64,7 +64,7 @@ from wardline.core.triage import TriageResult
     "--trust-pack",
     "trusted_packs",
     multiple=True,
-    help="Allow importing this trust-grammar pack from wardline.yaml. May be repeated.",
+    help="Allow importing this trust-grammar pack from weft.toml [wardline]. May be repeated.",
 )
 @click.option(
     "--allow-custom-packs",
@@ -77,7 +77,7 @@ from wardline.core.triage import TriageResult
     "--strict-defaults",
     is_flag=True,
     default=False,
-    help="Ignore repository-supplied custom configuration overrides (wardline.yaml).",
+    help="Ignore repository-supplied custom configuration overrides (weft.toml).",
 )
 def judge(
     path: Path,

@@ -1,6 +1,6 @@
 # src/wardline/loomweave/config.py
 """SP9 credentials + project guard. The HMAC secret comes from env / `.env` ONLY,
-never from wardline.yaml — the same discipline as the OpenRouter judge key. The
+never from weft.toml — the same discipline as the OpenRouter judge key. The
 env var name is independent of Loomweave's server-side name; only the secret VALUE
 must match the value the Loomweave operator put in `serve.http.identity_token_env`.
 """

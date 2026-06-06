@@ -1,10 +1,10 @@
 # src/wardline/core/judged.py
 """Machine-managed judged-FALSE_POSITIVE records (SP5).
 
-``.wardline/judged.yaml`` is the SP3 baseline pattern applied to LLM-judge output:
+``.weft/wardline/judged.yaml`` is the SP3 baseline pattern applied to LLM-judge output:
 a committed, human-readable, provenance-carrying snapshot of findings the triage
 judge ruled FALSE_POSITIVE. Keyed on the full ``Finding.fingerprint`` (strict
-match). Hand-authored waivers stay in ``wardline.yaml``; these are machine-written.
+match). Hand-authored waivers live in ``.weft/wardline/waivers.yaml``; these are machine-written.
 No governance — the model's verbatim rationale is the audit primitive.
 """
 

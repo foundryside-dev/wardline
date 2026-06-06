@@ -119,5 +119,5 @@ def detect_siblings(root: Path) -> dict[str, str]:
         elif url:
             results[key] = f"detected ({source} URL)"
         else:
-            results[key] = f"detected (no URL — set weft.toml [wardline.{key}].url or rely on live discovery)"
+            results[key] = f"detected (no URL — set WARDLINE_{key.upper()}_URL or rely on live .weft/{key}/ discovery)"
     return results

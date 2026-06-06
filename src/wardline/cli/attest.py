@@ -49,7 +49,7 @@ from wardline.core.errors import WardlineError
     "--trust-pack",
     "trusted_packs",
     multiple=True,
-    help="Allow importing this trust-grammar pack from wardline.yaml. May be repeated.",
+    help="Allow importing this trust-grammar pack from weft.toml [wardline]. May be repeated.",
 )
 @click.option(
     "--allow-custom-packs",
@@ -62,7 +62,7 @@ from wardline.core.errors import WardlineError
     "--strict-defaults",
     is_flag=True,
     default=False,
-    help="Ignore repository-supplied custom configuration overrides (wardline.yaml).",
+    help="Ignore repository-supplied custom configuration overrides (weft.toml).",
 )
 @click.option("--allow-dirty", is_flag=True, help="Attest even with uncommitted changes (records dirty: true).")
 @click.option(

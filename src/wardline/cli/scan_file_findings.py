@@ -22,7 +22,7 @@ from wardline.loomweave.config import load_loomweave_token, resolve_project_name
 @click.option("--config", "config_path", type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
 @click.option("--fail-on", type=click.Choice(["CRITICAL", "ERROR", "WARN", "INFO"]), default=None)
 @click.option("--cache-dir", type=click.Path(path_type=Path), default=None)
-@click.option("--filigree-url", "filigree_url", default=None, help="Filigree Weft URL (else env/wardline.yaml).")
+@click.option("--filigree-url", "filigree_url", default=None, help="Filigree Weft URL (else flag/env).")
 @click.option("--loomweave-url", "loomweave_url", default=None, help="Loomweave URL for optional identity attachment.")
 @click.option("--fingerprint", "fingerprints", multiple=True, help="Active finding fingerprint to promote.")
 @click.option("--all-active", is_flag=True, help="Promote every active defect from this scan.")
