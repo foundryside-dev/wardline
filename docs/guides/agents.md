@@ -235,8 +235,8 @@ project — these only bound the returned finding bodies):
 - `include_suppressed: false` — drop suppressed (baselined/waived/judged) bodies;
   the suppression counts stay in `summary`.
 - `max_findings: N` — cap the returned bodies (and inlined explanations).
-- `explain: true` — inline each active defect's provenance; capped at 25 by
-  default (tighten with `max_findings`).
+- `explain: true` — inline each active defect's provenance; capped at 10 by
+  default (raise/lower with `max_findings`).
 
 Every cut is reported in the response `truncation` block (`findings_total`,
 `findings_returned`, `findings_truncated`, `explanations_truncated`) so a bounded

@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   smallest "did the gate pass?" payload), `include_suppressed: false` (drop suppressed
   bodies; counts stay in `summary`), and `max_findings: N` (cap the returned bodies).
   `explain: true` no longer inlines provenance for *every* active defect — the one-shot
-  blowup that returned 56,820 chars on one line — it is capped at 25 by default
-  (tighten with `max_findings`). Every cut is reported in a new `truncation` block
+  blowup that returned 56,820 chars on one line — it is capped at 10 by default
+  (raise/lower with `max_findings`). Every cut is reported in a new `truncation` block
   (`findings_total` / `findings_returned` / `findings_truncated` /
   `explanations_truncated`) so a bounded payload never reads as "covered everything."
   `summary`/`gate` always describe the whole project; the CLI `--format agent-summary`

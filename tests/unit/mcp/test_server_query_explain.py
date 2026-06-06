@@ -111,10 +111,20 @@ def test_explain_true_has_default_cap(tmp_path):
     (tmp_path / "svc.py").write_text(_many_leaks(40), encoding="utf-8")
     out = _scan({"explain": True}, tmp_path)
     explained = [f for f in out["findings"] if "explanation" in f]
-    assert 0 < len(explained) <= 25  # default cap
+    assert 0 < len(explained) <= 10  # default cap
     assert out["truncation"]["explanations_truncated"] is True
     # the true total is still reported, so nothing is silently hidden
     assert out["summary"]["active"] == 40
+
+
+def test_max_findings_can_raise_explain_cap_above_default(tmp_path):
+    # max_findings is the explicit knob: it can RAISE the inlined-explanation count above
+    # the conservative default (10) when the agent accepts the larger payload.
+    (tmp_path / "svc.py").write_text(_many_leaks(20), encoding="utf-8")
+    out = _scan({"explain": True, "max_findings": 20}, tmp_path)
+    explained = [f for f in out["findings"] if "explanation" in f]
+    assert len(explained) > 10  # exceeded the default cap
+    assert out["truncation"]["explanations_truncated"] is False
 
 
 def test_summary_only_omits_finding_arrays(tmp_path):

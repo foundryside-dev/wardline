@@ -696,7 +696,7 @@ _SEVERITY_ENUM = ["CRITICAL", "ERROR", "WARN", "INFO"]
 # Default ceiling on the number of active-defect provenances inlined by `explain: true`
 # on the MCP `scan`. Bounds the one-shot payload (the dogfood report hit 56,820 chars on
 # one line over a whole repo); an explicit `max_findings` tightens it further.
-_EXPLAIN_DEFAULT_CAP = 25
+_EXPLAIN_DEFAULT_CAP = 10
 
 
 class WardlineMCPServer:
@@ -838,7 +838,7 @@ class WardlineMCPServer:
                             "description": "Inline each active defect's taint provenance "
                             "(immediate tainted callee, source boundary, trust tiers, resolution "
                             "counts) — one call instead of an explain_taint per finding. Inlining is "
-                            "capped at 25 provenances by default (tighten with max_findings); the cut "
+                            "capped at 10 provenances by default (raise/lower with max_findings); the cut "
                             "is reported at truncation.explanations_truncated.",
                         },
                         "summary_only": {
