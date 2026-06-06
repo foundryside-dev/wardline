@@ -42,6 +42,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code change" case made self-explaining; the secure default itself is unchanged.
 
 ### Fixed
+- **`next_actions` is gate-aware — never reads as "passed" when the gate failed
+  (dogfood re-test, #2).** When the gate trips solely on baselined findings,
+  `summary.active` is 0, so the agent-summary's `next_actions` used to say
+  *"no active defects; rescan after edits"* — telling the agent it passed while the
+  gate FAILED. It now emits a scan action naming the gate failure and the escape
+  hatches (trust_suppressions / new_since / clear the baseline; see `gate.reason` /
+  `gate.migration_hint`). The active-defects and genuinely-clean paths are unchanged.
+- **CLI/MCP distinguish a Filigree `401` (auth-rejected) from transport-unreachable
+  (dogfood friction #5).** A `401` (token absent) was reported as *"could not reach
+  Filigree"*, sending agents to chase a broken-bridge theory. `EmitResult` now carries
+  `status` + `auth_rejected`; the CLI prints *"Filigree returned 401 (auth rejected) …
+  set WARDLINE_FILIGREE_TOKEN"* (and a distinct `5xx` "server error" vs the genuine
+  "could not reach"), and the MCP `scan` `filigree_emit` block / agent-summary carry the
+  same discriminated `disabled_reason`. `401`/`403` stays **soft** (non-load-bearing,
+  never exit-2) — only the message changed.
 - **`scan --format legis --allow-dirty` emits an unsigned dev artifact instead of
   refusing (dogfood friction #1).** On a dirty working tree `scan --format legis`
   failed `exit 2` naming an `allow_dirty` flag that was never exposed — presenting
