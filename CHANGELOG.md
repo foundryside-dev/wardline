@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0rc2] - 2026-06-06
+
 ### Added
 - **MCP `scan` payload controls — `where` now shrinks the payload, plus
   `summary_only` / `max_findings` / `include_suppressed` and a default explain cap
@@ -41,6 +43,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `gate.migration_hint`) pointing at the escape hatches and the new **`UPGRADING.md`**.
   This is the "my repo went red with no code change" case made self-explaining; the
   secure default itself is unchanged.
+- Live Loomweave port resolution (consumer half of Loomweave **ADR-044**): Wardline
+  now reads Loomweave's published read-API port from `<project>/.loomweave/ephemeral.port`
+  and inserts it into `resolve_loomweave_url` precedence as `flag > env > published
+  port > wardline.yaml`. A live serve's real port self-heals over a stale/default
+  literal in `wardline.yaml`, so a mis-pinned URL no longer silently strands
+  federation for a second project (the failure ADR-034's instance-ID guard catches
+  as `PROJECT_MISMATCH`). Read-never-compute, loopback-by-construction, fail-soft
+  (missing / malformed / out-of-range / unreadable → fall through to config); skipped
+  under `strict_defaults`. A deliberate `--loomweave-url` flag or env var still always
+  wins. No change to wire behaviour or the HMAC signer.
+- Signed scan handoff to **legis** (the Weft governance plugin): `wardline scan
+  --format legis` (CLI) and an opt-in `legis_artifact` block on the MCP `scan` result
+  produce the verbatim-postable `scan` for legis's `POST /wardline/scan-results`. The
+  artifact carries four provenance fields (`scanner_identity`, `rule_set_version`,
+  `commit_sha`, `tree_sha`) and an `artifact_signature` — `hmac-sha256:v2:<hex>` over
+  legis-canonical JSON (sorted-key, tight-separator, non-ASCII-preserved), byte-exact
+  with legis's signer (pinned by a golden vector captured from real legis). The shared
+  secret is read from `WARDLINE_LEGIS_ARTIFACT_KEY` (env or `.env`); unset → unsigned
+  with `unverified` provenance. Signing refuses a dirty / non-git tree (false
+  provenance); the MCP block is fail-soft, the CLI is loud (exit 2). The artifact carries
+  the **whole scan**, each finding projected onto legis's accepted vocabulary — `properties`
+  filtered to the eight trust tiers (diagnostics like `sink`/`callee`/`markers`
+  dropped; the rich MCP/SARIF/Loomweave wire is unchanged), suppression proof carried in
+  `properties`, and `baselined`/`judged` mapped onto legis's `suppressed`. `active`
+  stays `active`, so legis reproduces Wardline's gate population exactly (one judge);
+  legis enforces its own 500-finding cap (a larger scan is rejected loudly, never silently truncated).
+  The hermetic conformance test now mirrors legis's *full* ingest validation (trust
+  tiers, suppression proof, supported states), closing the prior false-green. See
+  [Signed scan handoff to legis](guides/legis-handoff.md).
+- `wardline assure` CLI and MCP `assure` tool: trust-surface COVERAGE posture — how many
+  declared trust boundaries (`@external_boundary` / `@trust_boundary` / `@trusted`) the
+  engine reached a definite verdict on vs. how many are honestly unknown (`unknown` list),
+  plus a `waiver_debt` rollup (days-to-expiry per configured waiver, lapsed entries
+  surfaced not dropped). Zero-config — reads what every scan already computes.
+- `wardline attest` CLI and MCP `attest` / `verify_attestation` tools: signed, reproducible
+  evidence bundle (`schema: wardline-attest-1`) capturing commit, ruleset hash, the full
+  assurance posture, and per-boundary verdicts. HMAC-SHA256 signed with an install-minted
+  project key (`wardline install` appends `WARDLINE_ATTEST_KEY` to `.env`). The CLI and MCP
+  default to refusing a dirty working tree (`--allow-dirty` / `allow_dirty: true` to
+  override, records `dirty: true` honestly). `verify_attestation` checks signature (offline)
+  and optionally re-derives the payload at the current tree (`--reproduce` / `reproduce:
+  true`). SEI-keyed boundaries opt-in via `--loomweave-url` (fail-soft).
+- `file_finding` (MCP tool + `wardline file-finding` CLI): file ONE finding by fingerprint
+  into a tracked Filigree issue, returning its id (idempotent, fail-soft). Scan emission now
+  sets `mark_unseen=True` (non-empty scans) so a fixed finding enters Filigree's
+  `unseen_in_latest` state and a regressed one reopens its linked issue on the next scan.
+  (Issue close-on-fixed is gated on Filigree's clean-stale sweep.) (WS-A2)
+- MCP `scan` now emits findings to Filigree when a `--filigree-url` is configured, at
+  parity with the CLI (a `filigree` block in the scan result; fail-soft — an unreachable
+  sibling or rejected payload is reported, never fails the scan). Closes the CLI/MCP
+  finding-emission asymmetry. (WS-A1)
+- MCP `scan` gains a server-side `where` filter (rule_id/qualname/severity/suppression/kind/
+  path_glob/sink/tier) and an `explain: true` mode that inlines each active defect's taint
+  provenance — killing the scan-then-N-explains round-trips. New read-only `wardline findings`
+  CLI verb shares the same filter core. (WS-B1, WS-B2)
 
 ### Fixed
 - **`next_actions` is gate-aware — never reads as "passed" when the gate failed
@@ -131,63 +188,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (precedence `flag > env > published > wardline.yaml`, skipped under `strict_defaults`),
   returning `http://localhost:<port>/api/weft/scan-results` to match `install/detect.py`'s
   writer. A live dashboard on a new port self-heals over a stale install-stamped literal.
-
-### Added
-- Live Loomweave port resolution (consumer half of Loomweave **ADR-044**): Wardline
-  now reads Loomweave's published read-API port from `<project>/.loomweave/ephemeral.port`
-  and inserts it into `resolve_loomweave_url` precedence as `flag > env > published
-  port > wardline.yaml`. A live serve's real port self-heals over a stale/default
-  literal in `wardline.yaml`, so a mis-pinned URL no longer silently strands
-  federation for a second project (the failure ADR-034's instance-ID guard catches
-  as `PROJECT_MISMATCH`). Read-never-compute, loopback-by-construction, fail-soft
-  (missing / malformed / out-of-range / unreadable → fall through to config); skipped
-  under `strict_defaults`. A deliberate `--loomweave-url` flag or env var still always
-  wins. No change to wire behaviour or the HMAC signer.
-- Signed scan handoff to **legis** (the Weft governance plugin): `wardline scan
-  --format legis` (CLI) and an opt-in `legis_artifact` block on the MCP `scan` result
-  produce the verbatim-postable `scan` for legis's `POST /wardline/scan-results`. The
-  artifact carries four provenance fields (`scanner_identity`, `rule_set_version`,
-  `commit_sha`, `tree_sha`) and an `artifact_signature` — `hmac-sha256:v2:<hex>` over
-  legis-canonical JSON (sorted-key, tight-separator, non-ASCII-preserved), byte-exact
-  with legis's signer (pinned by a golden vector captured from real legis). The shared
-  secret is read from `WARDLINE_LEGIS_ARTIFACT_KEY` (env or `.env`); unset → unsigned
-  with `unverified` provenance. Signing refuses a dirty / non-git tree (false
-  provenance); the MCP block is fail-soft, the CLI is loud (exit 2). The artifact carries
-  the **whole scan**, each finding projected onto legis's accepted vocabulary — `properties`
-  filtered to the eight trust tiers (diagnostics like `sink`/`callee`/`markers`
-  dropped; the rich MCP/SARIF/Loomweave wire is unchanged), suppression proof carried in
-  `properties`, and `baselined`/`judged` mapped onto legis's `suppressed`. `active`
-  stays `active`, so legis reproduces Wardline's gate population exactly (one judge);
-  legis enforces its own 500-finding cap (a larger scan is rejected loudly, never silently truncated).
-  The hermetic conformance test now mirrors legis's *full* ingest validation (trust
-  tiers, suppression proof, supported states), closing the prior false-green. See
-  [Signed scan handoff to legis](guides/legis-handoff.md).
-- `wardline assure` CLI and MCP `assure` tool: trust-surface COVERAGE posture — how many
-  declared trust boundaries (`@external_boundary` / `@trust_boundary` / `@trusted`) the
-  engine reached a definite verdict on vs. how many are honestly unknown (`unknown` list),
-  plus a `waiver_debt` rollup (days-to-expiry per configured waiver, lapsed entries
-  surfaced not dropped). Zero-config — reads what every scan already computes.
-- `wardline attest` CLI and MCP `attest` / `verify_attestation` tools: signed, reproducible
-  evidence bundle (`schema: wardline-attest-1`) capturing commit, ruleset hash, the full
-  assurance posture, and per-boundary verdicts. HMAC-SHA256 signed with an install-minted
-  project key (`wardline install` appends `WARDLINE_ATTEST_KEY` to `.env`). The CLI and MCP
-  default to refusing a dirty working tree (`--allow-dirty` / `allow_dirty: true` to
-  override, records `dirty: true` honestly). `verify_attestation` checks signature (offline)
-  and optionally re-derives the payload at the current tree (`--reproduce` / `reproduce:
-  true`). SEI-keyed boundaries opt-in via `--loomweave-url` (fail-soft).
-- `file_finding` (MCP tool + `wardline file-finding` CLI): file ONE finding by fingerprint
-  into a tracked Filigree issue, returning its id (idempotent, fail-soft). Scan emission now
-  sets `mark_unseen=True` (non-empty scans) so a fixed finding enters Filigree's
-  `unseen_in_latest` state and a regressed one reopens its linked issue on the next scan.
-  (Issue close-on-fixed is gated on Filigree's clean-stale sweep.) (WS-A2)
-- MCP `scan` now emits findings to Filigree when a `--filigree-url` is configured, at
-  parity with the CLI (a `filigree` block in the scan result; fail-soft — an unreachable
-  sibling or rejected payload is reported, never fails the scan). Closes the CLI/MCP
-  finding-emission asymmetry. (WS-A1)
-- MCP `scan` gains a server-side `where` filter (rule_id/qualname/severity/suppression/kind/
-  path_glob/sink/tier) and an `explain: true` mode that inlines each active defect's taint
-  provenance — killing the scan-then-N-explains round-trips. New read-only `wardline findings`
-  CLI verb shares the same filter core. (WS-B1, WS-B2)
 
 ### Security
 - **Builtin trust-marker decorators are now trusted only when they resolve to the

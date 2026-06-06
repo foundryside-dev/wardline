@@ -22,7 +22,7 @@ def build_record(req):
 
 ```console
 $ wardline scan . --fail-on ERROR
-scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 new -> findings.jsonl
+scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> findings.jsonl
 $ echo $?
 1
 ```
