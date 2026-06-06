@@ -46,10 +46,13 @@ def test_resolve_query_filters_no_sei() -> None:
     assert resolve_query_filters(where3, Path("."), None) == where3
 
 
-def test_resolve_query_filters_missing_url() -> None:
-    # No loomweave client and WARDLINE_LOOMWEAVE_URL is not set
+def test_resolve_query_filters_missing_url(tmp_path: Path, monkeypatch) -> None:
+    # No loomweave client, no env var, and a hermetic root with no wardline.yaml /
+    # published port file — so nothing resolves a URL. (Must be an isolated root,
+    # not Path("."), which would read the developer's cwd config.)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     with pytest.raises(WardlineError, match="no Loomweave URL configured"):
-        resolve_query_filters({"qualname": "sei:loomweave:eid:abc"}, Path("."), None)
+        resolve_query_filters({"qualname": "sei:loomweave:eid:abc"}, tmp_path, None)
 
 
 def test_resolve_query_filters_unsupported_sei() -> None:

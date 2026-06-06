@@ -7,6 +7,7 @@ from typing import Any
 
 from wardline.core.decorator_coverage import BindingProvider, DecoratorCoverageReport, build_decorator_coverage
 from wardline.core.identity import EntityBinding
+from wardline.filigree.config import load_filigree_token
 from wardline.filigree.dossier_client import FiligreeWorkProvider
 from wardline.filigree.dossier_client import Transport as FiligreeTransport
 from wardline.loomweave.dossier_sources import resolve_entity_binding
@@ -35,7 +36,11 @@ def build_weft_decorator_coverage(
     binding_provider: BindingProvider | None = None
     if loomweave_client is not None:
         binding_provider = LoomweaveBindingProvider(loomweave_client)
-    work_provider = FiligreeWorkProvider(filigree_url, transport=filigree_transport) if filigree_url else None
+    work_provider = (
+        FiligreeWorkProvider(filigree_url, transport=filigree_transport, token=load_filigree_token(root))
+        if filigree_url
+        else None
+    )
     return build_decorator_coverage(
         root,
         config_path=config_path,

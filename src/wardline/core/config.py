@@ -251,6 +251,63 @@ def _config_for(
     )
 
 
+def _loomweave_published_url(root: Path) -> str | None:
+    """Read Loomweave's live read-API port from ``<root>/.loomweave/ephemeral.port``.
+
+    Consumer half of Loomweave **ADR-044** (Read-API Ephemeral Port Publication).
+    Loomweave writes its live bound port to this file on a successful loopback
+    bind (atomically; removed on clean shutdown; present only while serving). We
+    *read* it — never derive or guess a port from any band formula. Returns
+    ``http://127.0.0.1:<port>`` or ``None`` (missing / unreadable / malformed /
+    out-of-range). Fail-soft: any defect falls through to the configured URL.
+
+    The host is loopback by construction: ADR-034's ``allow_non_loopback`` bind
+    publishes *no* file, so a port-only value can never under-specify the host.
+    """
+    port_file = root / ".loomweave" / "ephemeral.port"
+    try:
+        raw = port_file.read_text(encoding="ascii").strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    if not raw.isdigit():
+        return None
+    port = int(raw)
+    if not (1 <= port <= 65535):
+        return None
+    return f"http://127.0.0.1:{port}"
+
+
+def _filigree_published_url(root: Path) -> str | None:
+    """Read Filigree's live Weft port from ``<root>/.filigree/ephemeral.port``.
+
+    Twin of :func:`_loomweave_published_url` (Loomweave **ADR-044**, Read-API
+    Ephemeral Port Publication): Filigree writes its live bound port to this file
+    on a successful loopback bind (same single-ASCII-integer format). We *read*
+    it — never derive or guess a port. Fail-soft: any defect (missing /
+    unreadable / malformed / out-of-range) falls through to the configured URL.
+
+    Unlike Loomweave's bare-origin contract, Filigree's URL carries the full
+    Weft route: ``install/detect.py`` writes ``filigree.url`` as
+    ``…/api/weft/scan-results`` and ``core/filigree_issue.py`` derives sibling
+    routes (promote, api-base) from it, so this returns the route-suffixed
+    ``http://localhost:<port>/api/weft/scan-results`` (loopback by construction).
+    The host matches ``install/detect.py``'s writer (``localhost``), so a live
+    published port self-heals transparently over the install-stamped literal —
+    Filigree's loopback spelling, distinct from Loomweave's ``127.0.0.1``.
+    """
+    port_file = root / ".filigree" / "ephemeral.port"
+    try:
+        raw = port_file.read_text(encoding="ascii").strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    if not raw.isdigit():
+        return None
+    port = int(raw)
+    if not (1 <= port <= 65535):
+        return None
+    return f"http://localhost:{port}/api/weft/scan-results"
+
+
 def _is_safe_url(url: str | None) -> bool:
     if not url:
         return True
@@ -278,12 +335,22 @@ def resolve_loomweave_url(
     trust_config_urls: bool = False,
     strict_defaults: bool = False,
 ) -> str | None:
-    """Loomweave URL by precedence: explicit flag > env var > wardline.yaml."""
+    """Loomweave URL by precedence: explicit flag > env var > published port > wardline.yaml.
+
+    The published ``.loomweave/ephemeral.port`` rung (ADR-044) lets a live serve's
+    real port beat a stale/default literal in ``wardline.yaml`` (self-heal), while
+    a deliberate flag or env target always wins. Skipped under ``strict_defaults``,
+    which asks for hermetic defaults with no project-derived discovery.
+    """
     if flag is not None:
         return flag
     env = os.environ.get(_LOOMWEAVE_URL_ENV)
     if env:
         return env
+    if not strict_defaults:
+        published = _loomweave_published_url(root)
+        if published is not None:
+            return published
     url = _config_for(
         root,
         config_path,
@@ -309,12 +376,24 @@ def resolve_filigree_url(
     trust_config_urls: bool = False,
     strict_defaults: bool = False,
 ) -> str | None:
-    """Filigree Weft URL by precedence: explicit flag > env var > wardline.yaml."""
+    """Filigree Weft URL by precedence: explicit flag > env var > published port > wardline.yaml.
+
+    The published ``.filigree/ephemeral.port`` rung (ADR-044 twin) lets a live
+    dashboard's real port beat a stale/default literal in ``wardline.yaml``
+    (self-heal), while a deliberate flag or env target always wins. The published
+    value carries the full Weft scan-results route. Skipped under
+    ``strict_defaults``, which asks for hermetic defaults with no project-derived
+    discovery.
+    """
     if flag is not None:
         return flag
     env = os.environ.get(_FILIGREE_URL_ENV)
     if env:
         return env
+    if not strict_defaults:
+        published = _filigree_published_url(root)
+        if published is not None:
+            return published
     url = _config_for(
         root,
         config_path,

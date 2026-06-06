@@ -240,7 +240,11 @@ def scan(
         # Weft emission is additive: a FiligreeEmitError (HTTP >= 400) is a Wardline
         # payload bug -> caught below -> exit 2; an unreachable sibling warns + continues.
         if filigree_url is not None:
-            emit_result = FiligreeEmitter(filigree_url).emit(findings, scanned_paths=result.scanned_paths)
+            from wardline.filigree.config import load_filigree_token
+
+            emit_result = FiligreeEmitter(filigree_url, token=load_filigree_token(path)).emit(
+                findings, scanned_paths=result.scanned_paths
+            )
         # Loomweave taint-store write is fail-soft: an outage/403 returns a not-reachable
         # WriteResult (reported below); a LoomweaveError (missing extra, 4xx, bad scheme)
         # is a WardlineError → caught here → exit 2, exactly as Filigree errors do.

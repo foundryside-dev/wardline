@@ -7,7 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Loomweave HMAC signer resync (auth path was 401ing every signed request).**
+  Wardline's request signature drifted from Loomweave's verifier (ADR-042): the
+  canonical message is now `METHOD\nPATH\nSHA256HEX(body)\nTIMESTAMP\nNONCE` (the
+  body-hash and timestamp were transposed) and every signed request now carries a
+  fresh high-entropy `X-Weft-Nonce` (`secrets.token_hex(16)`) — Loomweave hard-requires
+  the nonce (300s freshness window + replay cache) and 401s without it. The HMAC unit
+  test is no longer self-referential: it pins the canonical message as a literal,
+  Loomweave's HMAC known-answer vector (`auth.rs`), a frozen signature, and the
+  three-header/fresh-nonce wire shape. Affects only the authenticated Loomweave path
+  (reads against an unauthenticated serve were already fine).
+- **legis one-judge property (P1 `wardline-48a5a8d062`).** `build_legis_artifact` now
+  projects the **gate** population (`result.gate_findings`, the unsuppressed view the
+  `--fail-on` gate evaluates) instead of the suppressed `result.findings`, mirroring
+  `gate_decision`'s exact `is not None` fallback. A defect a committed
+  baseline/waiver/judged self-suppresses now reaches legis as `active` (legis enforces
+  it), so legis and Wardline's own gate judge the same population. `--trust-suppressions`
+  (gate_findings is None) still projects the suppressed view. `finding_count` stays
+  honest (both populations are the same length).
+
+### Changed
+- **Filigree clients no longer crash the scan loop when Filigree auth is enabled.**
+  `401`/`403` from `/api/weft/*` are now treated as **soft** (enrichment unavailable,
+  like a 5xx/outage) across the emit and promote/file clients — previously a loud
+  `FiligreeEmitError` while the dossier client degraded softly (now coherent). `400`
+  (a Wardline payload bug) stays loud. Wardline can also now **send** a bearer token:
+  a new `WARDLINE_FILIGREE_TOKEN` loader threads `Authorization: Bearer` through all
+  three Filigree clients (emit, issue/promote, dossier work-provider) at every call
+  boundary; absent a token, no header is sent (default-off loopback-trust posture,
+  unchanged). No HMAC on this seam — it is bearer-only by design (ADR-018).
+- Filigree gained the same consume-time published-port self-heal as Loomweave
+  (ADR-044 twin): `resolve_filigree_url` now reads `<root>/.filigree/ephemeral.port`
+  (precedence `flag > env > published > wardline.yaml`, skipped under `strict_defaults`),
+  returning `http://localhost:<port>/api/weft/scan-results` to match `install/detect.py`'s
+  writer. A live dashboard on a new port self-heals over a stale install-stamped literal.
+
 ### Added
+- Live Loomweave port resolution (consumer half of Loomweave **ADR-044**): Wardline
+  now reads Loomweave's published read-API port from `<project>/.loomweave/ephemeral.port`
+  and inserts it into `resolve_loomweave_url` precedence as `flag > env > published
+  port > wardline.yaml`. A live serve's real port self-heals over a stale/default
+  literal in `wardline.yaml`, so a mis-pinned URL no longer silently strands
+  federation for a second project (the failure ADR-034's instance-ID guard catches
+  as `PROJECT_MISMATCH`). Read-never-compute, loopback-by-construction, fail-soft
+  (missing / malformed / out-of-range / unreadable → fall through to config); skipped
+  under `strict_defaults`. A deliberate `--loomweave-url` flag or env var still always
+  wins. No change to wire behaviour or the HMAC signer.
 - Signed scan handoff to **legis** (the Weft governance plugin): `wardline scan
   --format legis` (CLI) and an opt-in `legis_artifact` block on the MCP `scan` result
   produce the verbatim-postable `scan` for legis's `POST /wardline/scan-results`. The

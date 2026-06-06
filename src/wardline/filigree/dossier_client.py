@@ -96,17 +96,21 @@ def _api_base_url(url: str) -> str:
 class FiligreeWorkProvider:
     """A ``WorkProvider`` (``core/dossier.py``) backed by a live Filigree HTTP server."""
 
-    def __init__(self, base_url: str, *, transport: Transport | None = None) -> None:
+    def __init__(self, base_url: str, *, transport: Transport | None = None, token: str | None = None) -> None:
         self._base = _api_base_url(base_url)
         self._transport: Transport = transport if transport is not None else UrllibTransport()
+        self._token = token
 
     def work(self, binding: EntityBinding) -> WorkSection:
         if binding.sei is None:
             return WorkSection.unavailable("no SEI: cannot key Filigree associations")
         query = urllib.parse.urlencode({"entity_id": binding.sei})
         url = f"{self._base}/entity-associations?{query}"
+        headers = {"Accept": "application/json"}
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
         try:
-            resp = self._transport.get(url, {"Accept": "application/json"})
+            resp = self._transport.get(url, headers)
         except (urllib.error.URLError, OSError) as exc:
             return WorkSection.unavailable(f"filigree unreachable: {exc}")
         if not 200 <= resp.status < 300:

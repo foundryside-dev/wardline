@@ -43,7 +43,10 @@ def test_resolve_signs_and_parses():
     assert method == "POST"
     assert url == "http://loomweave.example/api/wardline/resolve"
     assert json.loads(sent_body)["project"] == "proj"
-    expected = sign_request("s3cr3t", "POST", "/api/wardline/resolve", sent_body, timestamp=headers["X-Weft-Timestamp"])
+    expected = sign_request(
+        "s3cr3t", "POST", "/api/wardline/resolve", sent_body,
+        timestamp=headers["X-Weft-Timestamp"], nonce=headers["X-Weft-Nonce"],
+    )
     assert headers["X-Weft-Component"] == f"loomweave:{expected}"
 
 

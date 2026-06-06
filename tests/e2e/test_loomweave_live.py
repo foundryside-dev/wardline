@@ -396,3 +396,27 @@ def test_taint_read_by_sei_against_live_loomweave(loomweave_server: tuple[Path, 
     bogus = client.batch_get_by_sei(["loomweave:eid:0000000000000000000000000000dead"])
     assert bogus is not None and len(bogus) == 1
     assert bogus[0].exists is False
+
+
+def test_published_ephemeral_port_resolves_live_url(loomweave_server: tuple[Path, str]) -> None:
+    """ADR-044 (consumer half, live wire): a running serve publishes
+    ``.loomweave/ephemeral.port``, and ``resolve_loomweave_url`` self-heals to it.
+
+    Tolerant of the in-flight publisher: if the live build does not yet write the
+    file, skip (the contract proves once both halves land) rather than fail. When
+    the file IS present, it must agree byte-for-byte with the bound port the serve
+    log reported, and the resolver must return exactly that loopback URL — with a
+    deliberately stale ``wardline.yaml`` literal present, to prove the override."""
+    proj, url = loomweave_server
+    from wardline.core.config import resolve_loomweave_url
+
+    port_file = proj / ".loomweave" / "ephemeral.port"
+    if not port_file.exists():
+        pytest.skip("live loomweave does not publish .loomweave/ephemeral.port yet (pre-ADR-044 build)")
+
+    bound_port = url.rsplit(":", 1)[1]
+    assert port_file.read_text(encoding="ascii").strip() == bound_port
+
+    # A stale pin in project config must be overridden by the live published port.
+    (proj / "wardline.yaml").write_text('loomweave:\n  url: "http://127.0.0.1:9111"\n', encoding="utf-8")
+    assert resolve_loomweave_url(None, proj, None) == f"http://127.0.0.1:{bound_port}"

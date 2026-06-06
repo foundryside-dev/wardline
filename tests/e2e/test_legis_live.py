@@ -84,7 +84,12 @@ def _scan_artifact(root: Path, *, key: bytes | None = None) -> tuple[dict, set[s
     result = run_scan(root)
     cfg = load_config(root / "wardline.yaml")
     scan = build_legis_artifact(result, root=root, config=cfg, key=key)
-    active_fps = {f.fingerprint for f in result.findings if f.kind.value == "defect" and f.suppressed.value == "active"}
+    # The one-judge cross-check must mirror the population the artifact carries, which
+    # mirrors gate_decision: the gate (unsuppressed) view, not the suppressed findings.
+    # Otherwise a committed baseline/waiver/judged would make this oracle assert the
+    # wrong population (it is green today only because _LEAKY has no committed suppression).
+    gate_population = result.gate_findings if result.gate_findings is not None else result.findings
+    active_fps = {f.fingerprint for f in gate_population if f.kind.value == "defect" and f.suppressed.value == "active"}
     return scan, active_fps
 
 

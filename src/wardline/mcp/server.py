@@ -696,7 +696,9 @@ class WardlineMCPServer:
         )
         if url is None:
             return None
-        return FiligreeEmitter(url)
+        from wardline.filigree.config import load_filigree_token
+
+        return FiligreeEmitter(url, token=load_filigree_token(self.root))
 
     def _filigree_filer(
         self,
@@ -718,8 +720,9 @@ class WardlineMCPServer:
         if url is None:
             return None
         from wardline.core.filigree_issue import FiligreeIssueFiler
+        from wardline.filigree.config import load_filigree_token
 
-        return FiligreeIssueFiler(url)
+        return FiligreeIssueFiler(url, token=load_filigree_token(self.root))
 
     def _register_tools(self) -> None:
         self.add_tool(

@@ -51,7 +51,9 @@ def test_get_callers_parses_neighbours_and_signs():
     # the locator is URL-escaped into the path segment, never parsed
     assert url == "http://loomweave.example/api/v1/entities/python%3Afunction%3Asvc.leaky/callers?limit=50"
     paq = "/api/v1/entities/python%3Afunction%3Asvc.leaky/callers?limit=50"
-    expected = sign_request("s3cr3t", "GET", paq, b"", timestamp=headers["X-Weft-Timestamp"])
+    expected = sign_request(
+        "s3cr3t", "GET", paq, b"", timestamp=headers["X-Weft-Timestamp"], nonce=headers["X-Weft-Nonce"]
+    )
     assert headers["X-Weft-Component"] == f"loomweave:{expected}"
 
 

@@ -28,6 +28,7 @@ from wardline.core.dossier import (
 from wardline.core.errors import DossierError
 from wardline.core.identity import ContentStatus, EntityBinding, IdentityStatus
 from wardline.core.sei_resolution import locator_to_qualname
+from wardline.filigree.config import load_filigree_token
 from wardline.filigree.dossier_client import FiligreeWorkProvider
 from wardline.filigree.dossier_client import Transport as FiligreeTransport
 from wardline.loomweave.client import LinkageResult
@@ -107,7 +108,9 @@ def build_weft_dossier(
         linkage_provider = LoomweaveLinkageProvider(loomweave_client, linkages_http=_linkages_http(capabilities))
 
     if filigree_url is not None:
-        work_provider = FiligreeWorkProvider(filigree_url, transport=filigree_transport)
+        work_provider = FiligreeWorkProvider(
+            filigree_url, transport=filigree_transport, token=load_filigree_token(root)
+        )
 
     return build_dossier(
         entity,

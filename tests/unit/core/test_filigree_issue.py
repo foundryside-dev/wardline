@@ -100,6 +100,26 @@ def test_file_4xx_other_than_404_is_loud():
         FiligreeIssueFiler("http://h/api/weft/scan-results", transport=t).file("fp")
 
 
+@pytest.mark.parametrize("status", [401, 403])
+def test_file_auth_refused_is_soft(status):
+    # Filigree's opt-in bearer auth is on and refusing us (401/403): enrichment
+    # unavailable, like a 5xx outage — soft (reachable=False), never loud.
+    res = FiligreeIssueFiler("http://h/api/weft/scan-results", transport=FakeTransport(status, "")).file("fp")
+    assert res.reachable is False and res.disabled_reason == f"filigree {status}"
+
+
+def test_file_carries_bearer_token_when_provided():
+    t = FakeTransport(200, '{"issue_id": "wardline-abc", "created": true}')
+    FiligreeIssueFiler("http://h/api/weft/scan-results", transport=t, token="sekret").file("fp")
+    assert t.last["headers"]["Authorization"] == "Bearer sekret"
+
+
+def test_file_sends_no_authorization_header_when_no_token():
+    t = FakeTransport(200, '{"issue_id": "wardline-abc", "created": true}')
+    FiligreeIssueFiler("http://h/api/weft/scan-results", transport=t).file("fp")
+    assert "Authorization" not in t.last["headers"]
+
+
 def test_urllib_transport_bounds_http_error_body(monkeypatch):
     import io
     import urllib.error

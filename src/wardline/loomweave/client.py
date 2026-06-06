@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -162,9 +163,11 @@ class LoomweaveClient:
             headers["Content-Type"] = "application/json"
         if self._secret:
             timestamp = str(int(time.time()))
-            sig = sign_request(self._secret, method, path_and_query, body, timestamp=timestamp)
+            nonce = secrets.token_hex(16)  # 32 hex chars, fresh per request, well under the 128 cap
+            sig = sign_request(self._secret, method, path_and_query, body, timestamp=timestamp, nonce=nonce)
             headers["X-Weft-Component"] = f"loomweave:{sig}"
             headers["X-Weft-Timestamp"] = timestamp
+            headers["X-Weft-Nonce"] = nonce
         url = f"{self._base}{path_and_query}"
         try:
             resp = self._transport.request(method, url, body, headers)

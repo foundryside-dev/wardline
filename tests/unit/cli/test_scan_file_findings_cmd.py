@@ -38,8 +38,8 @@ def test_scan_file_findings_cli_selected_fingerprint_wires_urls(tmp_path, monkey
     monkeypatch.setattr(mod, "scan_file_findings_core", fake_workflow)
     monkeypatch.setattr(mod, "resolve_filigree_url", lambda *args, **kwargs: "http://f/api/weft/scan-results")
     monkeypatch.setattr(mod, "resolve_loomweave_url", lambda *args, **kwargs: "http://c")
-    monkeypatch.setattr(mod, "FiligreeEmitter", lambda url: ("emitter", url))
-    monkeypatch.setattr(mod, "FiligreeIssueFiler", lambda url: ("filer", url))
+    monkeypatch.setattr(mod, "FiligreeEmitter", lambda url, *, token=None: ("emitter", url))
+    monkeypatch.setattr(mod, "FiligreeIssueFiler", lambda url, *, token=None: ("filer", url))
 
     class FakeLoomweave:
         def __init__(self, url, *, secret, project):

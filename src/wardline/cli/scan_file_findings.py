@@ -12,6 +12,7 @@ from wardline.core.errors import WardlineError
 from wardline.core.filigree_emit import FiligreeEmitter
 from wardline.core.filigree_issue import FiligreeIssueFiler
 from wardline.core.scan_file_workflow import scan_file_findings as scan_file_findings_core
+from wardline.filigree.config import load_filigree_token
 from wardline.loomweave.client import LoomweaveClient
 from wardline.loomweave.config import load_loomweave_token, resolve_project_name
 
@@ -69,8 +70,9 @@ def scan_file_findings(
         filigree_emitter = None
         filigree_filer = None
         if resolved_filigree_url is not None:
-            filigree_emitter = FiligreeEmitter(resolved_filigree_url)
-            filigree_filer = FiligreeIssueFiler(resolved_filigree_url)
+            filigree_token = load_filigree_token(path)
+            filigree_emitter = FiligreeEmitter(resolved_filigree_url, token=filigree_token)
+            filigree_filer = FiligreeIssueFiler(resolved_filigree_url, token=filigree_token)
 
         loomweave_client = None
         if resolved_loomweave_url is not None:

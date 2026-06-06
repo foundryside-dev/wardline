@@ -13,7 +13,7 @@ def test_scan_reads_filigree_url_from_config(tmp_path: Path, monkeypatch) -> Non
     captured: dict[str, object] = {}
 
     class _FakeEmitter:
-        def __init__(self, url: str) -> None:
+        def __init__(self, url: str, *, token: str | None = None) -> None:
             captured["url"] = url
 
         def emit(self, findings, *, scanned_paths=()):  # noqa: ANN001
@@ -175,7 +175,7 @@ def test_install_rerun_wires_filigree_when_port_appears_after_initial_install(tm
     captured: dict[str, object] = {}
 
     class _FakeEmitter:
-        def __init__(self, url: str) -> None:
+        def __init__(self, url: str, *, token: str | None = None) -> None:
             captured["url"] = url
 
         def emit(self, findings, *, scanned_paths=()):  # noqa: ANN001
@@ -191,6 +191,33 @@ def test_install_rerun_wires_filigree_when_port_appears_after_initial_install(tm
     assert scan.exit_code == 0, scan.output
     assert captured["url"] == "http://localhost:8628/api/weft/scan-results"
     assert captured["scanned_paths"] == ("m.py",)
+
+
+def test_scan_threads_filigree_bearer_token_from_env(tmp_path: Path, monkeypatch) -> None:
+    # End-to-end: a set WARDLINE_FILIGREE_TOKEN reaches the FiligreeEmitter through
+    # the scan CLI boundary (item 5 — Wardline actually SENDS the bearer token).
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    monkeypatch.setenv("WARDLINE_FILIGREE_TOKEN", "s3cr3t-bearer")
+    captured: dict[str, object] = {}
+
+    class _FakeEmitter:
+        def __init__(self, url: str, *, token: str | None = None) -> None:
+            captured["url"] = url
+            captured["token"] = token
+
+        def emit(self, findings, *, scanned_paths=()):  # noqa: ANN001
+            from wardline.core.filigree_emit import EmitResult
+
+            return EmitResult(reachable=True)
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _FakeEmitter)
+    (tmp_path / "m.py").write_text("x = 1\n", encoding="utf-8")
+    scan = CliRunner().invoke(
+        cli, ["scan", str(tmp_path), "--filigree-url", "http://localhost:8628/api/weft/scan-results"]
+    )
+
+    assert scan.exit_code == 0, scan.output
+    assert captured["token"] == "s3cr3t-bearer"
 
 
 def test_install_fails_2_on_malformed_mcp_json(tmp_path: Path, monkeypatch) -> None:

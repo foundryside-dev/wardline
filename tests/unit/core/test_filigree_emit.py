@@ -100,10 +100,10 @@ def test_all_kinds_emitted() -> None:
 class _FakeTransport:
     def __init__(self, response: Response | None = None, exc: Exception | None = None) -> None:
         self._response, self._exc = response, exc
-        self.calls: list[tuple[str, bytes]] = []
+        self.calls: list[tuple[str, bytes, dict[str, str]]] = []
 
     def post(self, url: str, body: bytes, headers: dict[str, str]) -> Response:
-        self.calls.append((url, body))
+        self.calls.append((url, body, dict(headers)))
         if self._exc is not None:
             raise self._exc
         assert self._response is not None
@@ -144,6 +144,28 @@ def test_http_5xx_is_sibling_degraded_not_loud() -> None:
     t = _FakeTransport(response=Response(status=503, body="upstream down"))
     res = FiligreeEmitter("http://x", transport=t).emit([_f()])
     assert res.reachable is False
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_http_auth_refused_is_soft_not_loud(status: int) -> None:
+    # Filigree's opt-in bearer auth is on and refusing us (401/403). A sibling that is
+    # present-but-refusing-auth is "enrichment unavailable", like a 5xx outage — warn +
+    # continue (reachable=False), never exit-2. (Charter: non-load-bearing.)
+    t = _FakeTransport(response=Response(status=status, body='{"error":"unauthorized"}'))
+    res = FiligreeEmitter("http://x", transport=t).emit([_f()])
+    assert res.reachable is False
+
+
+def test_bearer_token_carried_when_provided() -> None:
+    t = _FakeTransport(response=Response(status=200, body=_ok_body()))
+    FiligreeEmitter("http://x/api/weft/scan-results", transport=t, token="sekret").emit([_f()])
+    assert t.calls[0][2]["Authorization"] == "Bearer sekret"
+
+
+def test_no_authorization_header_when_no_token() -> None:
+    t = _FakeTransport(response=Response(status=200, body=_ok_body()))
+    FiligreeEmitter("http://x/api/weft/scan-results", transport=t).emit([_f()])
+    assert "Authorization" not in t.calls[0][2]
 
 
 def test_2xx_with_unparseable_body_warns_not_crashes() -> None:

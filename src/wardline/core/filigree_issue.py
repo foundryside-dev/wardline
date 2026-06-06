@@ -2,10 +2,12 @@
 """WS-A2: file ONE finding (by fingerprint) into a tracked Filigree issue, fail-soft.
 
 Sibling of core/filigree_emit.py: same injectable-transport, same fail-soft charter
-(sibling-absent / 5xx warn-and-continue; a 4xx other than 404 is a Wardline-bad-payload
-bug and is loud). Talks the Weft HTTP promote-by-fingerprint route; imports no Filigree
+(sibling-absent / 5xx / 401 / 403 warn-and-continue; a 400 is a Wardline-bad-payload bug
+and is loud). Talks the Weft HTTP promote-by-fingerprint route; imports no Filigree
 package. A 404 means the fingerprint was never ingested for this scan_source (the agent
-should emit findings to Filigree first) — surfaced as `not_found`, not an exception."""
+should emit findings to Filigree first) — surfaced as `not_found`, not an exception. A
+401/403 means Filigree's opt-in bearer auth is on and refusing us — enrichment is
+unavailable (like an outage), surfaced as not-reachable, not an exception."""
 
 from __future__ import annotations
 
@@ -143,10 +145,17 @@ class UrllibTransport:
 class FiligreeIssueFiler:
     """POST a single fingerprint to the Weft promote route; return the issue id."""
 
-    def __init__(self, weft_url: str, *, transport: Transport | None = None) -> None:
+    def __init__(self, weft_url: str, *, transport: Transport | None = None, token: str | None = None) -> None:
         self._url = promote_url_from_weft(weft_url)
         self._api_base = api_base_url_from_weft(weft_url)
         self._transport: Transport = transport if transport is not None else UrllibTransport()
+        self._token = token
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
+        return headers
 
     def file(
         self,
@@ -160,10 +169,12 @@ class FiligreeIssueFiler:
             build_promote_body(fingerprint=fingerprint, scan_source=scan_source, priority=priority, labels=labels)
         ).encode("utf-8")
         try:
-            resp = self._transport.post(self._url, body, {"Content-Type": "application/json"})
+            resp = self._transport.post(self._url, body, self._headers())
         except (urllib.error.URLError, OSError):
             return FileResult(reachable=False, disabled_reason="filigree unreachable")
-        if resp.status >= 500:
+        if resp.status >= 500 or resp.status in (401, 403):
+            # 5xx outage or 401/403 auth refusal (Filigree's opt-in bearer auth is on and
+            # rejecting us): enrichment unavailable, not a Wardline payload bug. Soft.
             return FileResult(reachable=False, disabled_reason=f"filigree {resp.status}")
         if resp.status == 404:
             return FileResult(reachable=True, not_found=True)
@@ -196,7 +207,7 @@ class FiligreeIssueFiler:
             body_dict["entity_kind"] = entity_kind
         body = json.dumps(body_dict).encode("utf-8")
         try:
-            resp = self._transport.post(url, body, {"Content-Type": "application/json"})
+            resp = self._transport.post(url, body, self._headers())
         except (urllib.error.URLError, OSError) as exc:
             return IdentityAttachResult.skipped(
                 f"filigree association unreachable: {exc}",

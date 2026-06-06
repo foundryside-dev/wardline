@@ -3,8 +3,10 @@
 
 A pure body builder (``build_scan_results_body``) plus an injectable-transport
 HTTP emitter (``FiligreeEmitter``). stdlib-only; no runtime dependency on Filigree.
-Federation discipline: a *sibling-absent* network failure warns and continues; an
-HTTP *protocol error* (4xx/5xx) is a Wardline-built-a-bad-payload bug and fails loud.
+Federation discipline: a *sibling-absent* network failure warns and continues; a 5xx
+outage and a 401/403 (Filigree present but refusing bearer auth) are likewise treated
+as *enrichment unavailable* (warn + continue). A 400 (Wardline built a bad payload) is
+the one loud band — that is our own bug, not the sibling's posture.
 """
 
 from __future__ import annotations
@@ -126,26 +128,31 @@ class UrllibTransport:
 class FiligreeEmitter:
     """POST findings to a Filigree Weft scan-results URL with an injectable transport."""
 
-    def __init__(self, url: str, *, transport: Transport | None = None) -> None:
+    def __init__(self, url: str, *, transport: Transport | None = None, token: str | None = None) -> None:
         self._url = url
         self._transport: Transport = transport if transport is not None else UrllibTransport()
+        self._token = token
 
     def emit(self, findings: Sequence[Finding], *, scanned_paths: Sequence[str] = ()) -> EmitResult:
         body = json.dumps(build_scan_results_body(findings, scanned_paths=scanned_paths)).encode("utf-8")
         headers = {"Content-Type": "application/json"}
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
         try:
             resp = self._transport.post(self._url, body, headers)
         except (urllib.error.URLError, OSError):
             # Connection refused / DNS / timeout — sibling absent. Enrichment is
             # non-load-bearing: warn (at the CLI) and continue.
             return EmitResult(reachable=False)
-        if resp.status >= 500:
-            # Server-side outage — the sibling is degraded, not a Wardline bug. Treat like
-            # absent (warn + continue) so a Filigree 503 never makes the gate load-bearing.
+        if resp.status >= 500 or resp.status in (401, 403):
+            # Server-side outage (5xx) or auth refusal (401/403, Filigree present but its
+            # opt-in bearer auth is on and rejecting us) — the sibling is degraded/refusing,
+            # not a Wardline payload bug. Treat like absent (warn + continue) so a Filigree
+            # 503 or 401 never makes the gate load-bearing.
             return EmitResult(reachable=False)
         if not 200 <= resp.status < 300:
-            # 3xx (a redirect reached the client) or 4xx (request rejected): Wardline sent a
-            # request the server would not accept — bad payload / wrong endpoint / auth. Loud.
+            # 3xx (a redirect reached the client) or any remaining 4xx (notably 400): Wardline
+            # sent a request the server would not accept — bad payload / wrong endpoint. Loud.
             raise FiligreeEmitError(f"Filigree rejected scan-results ({resp.status}) at {self._url}: {resp.body}")
         # 2xx success. Parse defensively: a 2xx with an unreadable body means the POST was
         # accepted but the report is unparseable — surface a warning, never crash (charter).

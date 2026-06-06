@@ -182,6 +182,18 @@ def test_rows_without_issue_id_are_skipped_and_detail_fields_carried() -> None:
     assert (tk.status, tk.priority, tk.title) == ("open", "P1", "fix the leak")
 
 
+def test_bearer_token_carried_when_provided() -> None:
+    t = FakeTransport(Response(status=200, body=_rows()))
+    FiligreeWorkProvider("http://f", transport=t, token="sekret").work(_BINDING)
+    assert t.calls[0][1]["Authorization"] == "Bearer sekret"
+
+
+def test_no_authorization_header_when_no_token() -> None:
+    t = FakeTransport(Response(status=200, body=_rows()))
+    FiligreeWorkProvider("http://f", transport=t).work(_BINDING)
+    assert "Authorization" not in t.calls[0][1]
+
+
 def test_urllib_transport_get_round_trips(monkeypatch) -> None:
     # exercise the real stdlib transport (mirrors the filigree_emit UrllibTransport test)
     import io

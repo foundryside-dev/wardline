@@ -202,13 +202,23 @@ def build_legis_artifact(
 ) -> dict[str, Any]:
     """Build the verbatim-postable ``scan`` object for ``POST /wardline/scan-results``.
 
-    The findings are the FULL scan population, each projected onto legis's accepted
-    vocabulary. legis routes only the active defects but records ``finding_count`` over
-    the whole list (``service/wardline.py``), so sending all findings keeps that count
-    honest and matches the original unsigned handshake; the projection makes facts and
-    diagnostics ingest cleanly (non-tier properties filtered, non-defect kinds simply
-    not routed). Wardline does NOT cap the list — legis enforces its own 500-finding
-    limit and a larger scan is rejected loudly rather than silently truncated.
+    The findings are the GATE population — the SAME population Wardline's own
+    ``--fail-on`` gate evaluates (``gate_decision``), each projected onto legis's
+    accepted vocabulary. Under the secure default that is ``result.gate_findings``
+    (the unsuppressed population: a committed baseline/waiver/judged annotates the
+    emitted ``findings`` but does NOT clear the gate), so a defect a malicious PR
+    self-suppresses still rides as ``active`` and legis enforces it — the one-judge
+    property. Under ``--trust-suppressions`` ``gate_findings`` is None and the
+    artifact honours the repo suppressions (``result.findings``), exactly as the
+    gate does. Both populations are ``apply_suppressions`` over the same raw list, so
+    ``len(gate_findings) == len(findings)`` and the ``finding_count`` legis records
+    over the whole list (``service/wardline.py``) stays honest.
+
+    legis routes only the active defects but records ``finding_count`` over the whole
+    list; the projection makes facts and diagnostics ingest cleanly (non-tier
+    properties filtered, non-defect kinds simply not routed). Wardline does NOT cap
+    the list — legis enforces its own 500-finding limit and a larger scan is rejected
+    loudly rather than silently truncated.
 
     When ``key`` is given the scan is signed and MUST carry honest provenance
     (``scanner_identity``, ``rule_set_version``, ``commit_sha``, ``tree_sha``); signing
@@ -220,7 +230,12 @@ def build_legis_artifact(
     Sign last, over the otherwise-complete scan: ``artifact_signature`` is added after
     the rest is in place, exactly as legis verifies (scan-minus-signature).
     """
-    findings = [project_finding(f) for f in result.findings]
+    # Mirror gate_decision's exact fallback so the artifact tracks the operator's
+    # posture: secure-default -> gate_findings (baselined/judged/waived ride as
+    # active -> legis enforces them, the one-judge property); --trust-suppressions
+    # -> gate_findings is None -> honour the repo suppressions in ``findings``.
+    gate_population = result.gate_findings if result.gate_findings is not None else result.findings
+    findings = [project_finding(f) for f in gate_population]
     scan: dict[str, Any] = {
         "scanner_identity": f"wardline@{__version__}",
         "rule_set_version": ruleset_hash(config),

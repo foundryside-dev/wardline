@@ -14,10 +14,14 @@ false-green. The mirror below is now faithful to legis's actual `from_wire` /
 `active_defects`, so it reds on exactly the drift the live server would reject.
 
 The Wardline side emits the signed artifact via `build_legis_artifact`, which projects
-the whole scan onto legis's accepted vocabulary (tier-only properties, mapped
+the GATE population (`ScanResult.gate_findings` under the secure default, else
+`result.findings`) onto legis's accepted vocabulary (tier-only properties, mapped
 suppression states, proof in `properties`). The conformance equality
-`len(active_defects(scan)) == result.summary.active` proves legis reproduces
-Wardline's OWN gate population without re-deriving it.
+`len(active_defects(scan)) == <active defects in the gate population>` proves legis
+reproduces Wardline's OWN gate population — the same one `--fail-on` evaluates —
+without re-deriving it. Projecting `result.findings` instead would let a committed
+baseline self-suppress a gate-tripping defect out of legis (wardline-48a5a8d062),
+making legis a second, weaker judge.
 """
 
 from __future__ import annotations
@@ -26,15 +30,16 @@ import hashlib
 import hmac
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from wardline.core import legis as wl_legis
+from wardline.core.config import load as load_config
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
-from wardline.core.run import run_scan
+from wardline.core.run import ScanResult, ScanSummary, run_scan
 
 # ---------------------------------------------------------------------------
 # Vendored legis contract — faithful copies of legis/src/legis/{canonical.py,
@@ -201,8 +206,6 @@ def _proj(tmp_path: Path, source: str = _LEAKY) -> Path:
 
 
 def _artifact(root: Path, *, key: bytes | None = None) -> tuple[dict[str, Any], Any]:
-    from wardline.core.config import load as load_config
-
     result = run_scan(root)
     cfg = load_config(root / "wardline.yaml")
     scan = wl_legis.build_legis_artifact(result, root=root, config=cfg, key=key)
@@ -236,12 +239,19 @@ def test_contradictory_defect_nontier_property_is_projected_away(tmp_path: Path)
         _LegisFinding.from_wire(raw)
 
 
-def test_legis_gate_population_equals_wardline_active_count(tmp_path: Path) -> None:
+def test_legis_gate_population_equals_wardline_gate_active_count(tmp_path: Path) -> None:
     # One judge: legis's independently-applied active-defect selection reproduces
-    # Wardline's OWN gate population (summary.active) exactly.
+    # Wardline's OWN gate population exactly. The gate evaluates ScanResult.gate_findings
+    # under the secure default (else result.findings under --trust-suppressions), so the
+    # invariant is pinned to the count of ACTIVE defects in THAT population — NOT
+    # summary.active, which counts active in the (possibly suppressed) emitted findings.
     scan, result = _artifact(_proj(tmp_path))
-    assert len(active_defects(scan)) == result.summary.active
-    assert result.summary.active >= 1
+    gate_population = result.gate_findings if result.gate_findings is not None else result.findings
+    gate_active = sum(
+        1 for f in gate_population if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE
+    )
+    assert len(active_defects(scan)) == gate_active
+    assert gate_active >= 1
 
 
 def test_signed_artifact_verifies_against_legis(tmp_path: Path) -> None:
@@ -268,11 +278,12 @@ def test_signed_artifact_verifies_against_legis(tmp_path: Path) -> None:
         verify_wardline_artifact(tampered, key)
 
 
-def test_baselined_defect_ingests_after_projection() -> None:
-    # A hand-built BASELINED defect: legis has no `baselined` state and would 422
-    # the raw finding; the projection maps it to `suppressed` + injects proof.
+def _gate_active_defect() -> tuple[Finding, Finding]:
+    # The SAME defect (same fingerprint) in two suppression states: ACTIVE in the
+    # gate population, BASELINED in the emitted findings — the exact divergence the
+    # secure-default gate creates when a committed baseline self-suppresses a defect.
     loc = Location(path="svc.py", line_start=6, line_end=7, col_start=0, col_end=0)
-    baselined = Finding(
+    active = Finding(
         rule_id="PY-WL-101",
         message="leak",
         severity=Severity.ERROR,
@@ -280,14 +291,62 @@ def test_baselined_defect_ingests_after_projection() -> None:
         location=loc,
         fingerprint="b" * 64,
         qualname="svc.other",
-        suppressed=SuppressionState.BASELINED,
+        suppressed=SuppressionState.ACTIVE,
     )
-    raw = json.loads(baselined.to_jsonl())
-    with pytest.raises(_LegisPayloadError):  # raw baselined → unsupported state
-        active_defects({"findings": [raw]})
-    projected = wl_legis.project_finding(baselined)
-    # projected → ingests, and is NOT in the active gate population
-    assert active_defects({"findings": [projected]}) == []
+    baselined = replace(
+        active,
+        suppressed=SuppressionState.BASELINED,
+        suppression_reason="baselined: matched a baseline fingerprint",
+    )
+    return active, baselined
+
+
+def test_secure_default_gate_defect_is_enforced_by_legis(tmp_path: Path) -> None:
+    # The one-judge fix: under the secure default a defect that the emitted findings
+    # mark BASELINED is ACTIVE in gate_findings (trips Wardline's gate). The artifact
+    # now projects the GATE population, so legis sees it as `active` and enforces it —
+    # closing the second, weaker-judge gap (wardline-48a5a8d062).
+    active, baselined = _gate_active_defect()
+    result = ScanResult(
+        findings=[baselined],
+        summary=ScanSummary(total=1, active=0, baselined=1, waived=0, judged=0, unanalyzed=0),
+        files_scanned=1,
+        context=None,
+        gate_findings=[active],  # the unsuppressed gate population — the defect is live here
+    )
+    repo = tmp_path / "norepo"
+    repo.mkdir()
+    cfg = load_config(repo / "wardline.yaml")
+    scan = wl_legis.build_legis_artifact(result, root=repo, config=cfg, key=None)
+    # gate_findings != findings here (active vs baselined) — that asymmetry is the point.
+    (projected,) = scan["findings"]
+    assert projected["suppressed"] == "active"
+    legis_active = active_defects(scan)
+    assert len(legis_active) == 1
+    assert legis_active[0].fingerprint == "b" * 64
+
+
+def test_trust_suppressions_path_projects_the_suppressed_view(tmp_path: Path) -> None:
+    # The --trust-suppressions / directly-constructed-ScanResult path: gate_findings is
+    # None, so the artifact honours the emitted (suppressed) findings exactly as the gate
+    # falls back to them. The baselined defect maps to `suppressed` (legis has no
+    # `baselined` state) + injects proof, and is NOT in legis's active population.
+    _, baselined = _gate_active_defect()
+    result = ScanResult(
+        findings=[baselined],
+        summary=ScanSummary(total=1, active=0, baselined=1, waived=0, judged=0, unanalyzed=0),
+        files_scanned=1,
+        context=None,
+        gate_findings=None,  # --trust-suppressions: honour the repo suppressions
+    )
+    repo = tmp_path / "norepo"
+    repo.mkdir()
+    cfg = load_config(repo / "wardline.yaml")
+    scan = wl_legis.build_legis_artifact(result, root=repo, config=cfg, key=None)
+    (projected,) = scan["findings"]
+    assert projected["suppressed"] == "suppressed"
+    assert _has_suppression_proof(projected["properties"])
+    assert active_defects(scan) == []
 
 
 def test_wardline_trust_tiers_match_legis_vocabulary() -> None:

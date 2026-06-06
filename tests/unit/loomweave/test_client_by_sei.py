@@ -63,7 +63,9 @@ def test_batch_get_by_sei_parses_views_and_signs():
     # the SEI is carried verbatim in the JSON body, opaque
     assert json.loads(body) == {"project": "proj", "seis": [_SEI]}
     paq = "/api/wardline/taint-facts/by-sei"
-    expected = sign_request("s3cr3t", "POST", paq, body, timestamp=headers["X-Weft-Timestamp"])
+    expected = sign_request(
+        "s3cr3t", "POST", paq, body, timestamp=headers["X-Weft-Timestamp"], nonce=headers["X-Weft-Nonce"]
+    )
     assert headers["X-Weft-Component"] == f"loomweave:{expected}"
 
 

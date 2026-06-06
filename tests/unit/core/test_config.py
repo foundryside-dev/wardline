@@ -292,3 +292,149 @@ def test_resolve_filigree_rejects_unsafe_config_urls(tmp_path: Path, monkeypatch
     with pytest.raises(ConfigError, match="disabled by default for security"):
         resolve_filigree_url(None, tmp_path, None)
     assert resolve_filigree_url(None, tmp_path, None, trust_config_urls=True) == "http://attacker-controlled.com"
+
+
+# --- ADR-044: published .loomweave/ephemeral.port resolution (consumer half) ---
+
+
+def _publish_port(root: Path, raw: str) -> None:
+    """Write a raw .loomweave/ephemeral.port payload (as Loomweave's publisher would)."""
+    d = root / ".loomweave"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "ephemeral.port").write_text(raw, encoding="ascii")
+
+
+def test_published_port_overrides_stale_config(tmp_path: Path, monkeypatch) -> None:
+    # A stale literal in wardline.yaml self-heals to the live published port.
+    (tmp_path / "wardline.yaml").write_text('loomweave:\n  url: "http://127.0.0.1:9111"\n', encoding="utf-8")
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    _publish_port(tmp_path, "54321\n")
+    assert resolve_loomweave_url(None, tmp_path, None) == "http://127.0.0.1:54321"
+
+
+def test_published_port_loses_to_flag_and_env(tmp_path: Path, monkeypatch) -> None:
+    _publish_port(tmp_path, "54321")
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    assert resolve_loomweave_url("http://from-flag", tmp_path, None) == "http://from-flag"
+    monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", "http://from-env")
+    assert resolve_loomweave_url(None, tmp_path, None) == "http://from-env"
+
+
+@pytest.mark.parametrize("raw", ["abc", "", "  ", "99999", "0", "-1", "65536", "80x", "+80", "9111 9112"])
+def test_published_port_malformed_falls_through_to_config(tmp_path: Path, monkeypatch, raw: str) -> None:
+    (tmp_path / "wardline.yaml").write_text('loomweave:\n  url: "http://localhost:9100"\n', encoding="utf-8")
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    _publish_port(tmp_path, raw)
+    assert resolve_loomweave_url(None, tmp_path, None) == "http://localhost:9100"
+
+
+def test_published_port_boundaries_accepted(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    _publish_port(tmp_path, "1")
+    assert resolve_loomweave_url(None, tmp_path, None) == "http://127.0.0.1:1"
+    _publish_port(tmp_path, "65535")
+    assert resolve_loomweave_url(None, tmp_path, None) == "http://127.0.0.1:65535"
+
+
+def test_missing_published_port_falls_through(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    # No file, with config -> config; no file, no config -> None.
+    (tmp_path / "wardline.yaml").write_text('loomweave:\n  url: "http://localhost:9100"\n', encoding="utf-8")
+    assert resolve_loomweave_url(None, tmp_path, None) == "http://localhost:9100"
+    (tmp_path / "wardline.yaml").unlink()
+    assert resolve_loomweave_url(None, tmp_path, None) is None
+
+
+def test_published_port_skipped_under_strict_defaults(tmp_path: Path, monkeypatch) -> None:
+    # Hermetic defaults: no project-derived discovery (the published file is ignored).
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    _publish_port(tmp_path, "54321")
+    assert resolve_loomweave_url(None, tmp_path, None, strict_defaults=True) is None
+    # ...but flag/env still win even under strict_defaults.
+    assert resolve_loomweave_url("http://from-flag", tmp_path, None, strict_defaults=True) == "http://from-flag"
+
+
+def test_published_port_unreadable_is_soft(tmp_path: Path, monkeypatch) -> None:
+    # A directory where the port file is expected -> OSError on read -> None, no raise.
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    (tmp_path / ".loomweave").mkdir()
+    (tmp_path / ".loomweave" / "ephemeral.port").mkdir()
+    assert resolve_loomweave_url(None, tmp_path, None) is None
+
+
+# --- ADR-044 twin: published .filigree/ephemeral.port resolution (consumer half) ---
+#
+# Filigree's URL contract carries the FULL Weft route, so the published value is
+# http://localhost:<port>/api/weft/scan-results (localhost to match install/detect.py's
+# writer; not a bare origin like Loomweave's, and not Loomweave's 127.0.0.1 spelling).
+
+
+def _publish_filigree_port(root: Path, raw: str) -> None:
+    """Write a raw .filigree/ephemeral.port payload (as Filigree's publisher would)."""
+    d = root / ".filigree"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "ephemeral.port").write_text(raw, encoding="ascii")
+
+
+def test_filigree_published_port_overrides_stale_config(tmp_path: Path, monkeypatch) -> None:
+    # A stale literal in wardline.yaml self-heals to the live published port.
+    (tmp_path / "wardline.yaml").write_text(
+        'filigree:\n  url: "http://127.0.0.1:9111/api/weft/scan-results"\n', encoding="utf-8"
+    )
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    _publish_filigree_port(tmp_path, "54321\n")
+    assert resolve_filigree_url(None, tmp_path, None) == "http://localhost:54321/api/weft/scan-results"
+
+
+def test_filigree_published_port_loses_to_flag_and_env(tmp_path: Path, monkeypatch) -> None:
+    _publish_filigree_port(tmp_path, "54321")
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    assert resolve_filigree_url("http://from-flag", tmp_path, None) == "http://from-flag"
+    monkeypatch.setenv("WARDLINE_FILIGREE_URL", "http://from-env")
+    assert resolve_filigree_url(None, tmp_path, None) == "http://from-env"
+
+
+@pytest.mark.parametrize("raw", ["abc", "", "  ", "99999", "0", "-1", "65536", "80x", "+80", "9111 9112"])
+def test_filigree_published_port_malformed_falls_through_to_config(tmp_path: Path, monkeypatch, raw: str) -> None:
+    (tmp_path / "wardline.yaml").write_text(
+        'filigree:\n  url: "http://localhost:9100/api/weft/scan-results"\n', encoding="utf-8"
+    )
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    _publish_filigree_port(tmp_path, raw)
+    assert resolve_filigree_url(None, tmp_path, None) == "http://localhost:9100/api/weft/scan-results"
+
+
+def test_filigree_published_port_boundaries_accepted(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    _publish_filigree_port(tmp_path, "1")
+    assert resolve_filigree_url(None, tmp_path, None) == "http://localhost:1/api/weft/scan-results"
+    _publish_filigree_port(tmp_path, "65535")
+    assert resolve_filigree_url(None, tmp_path, None) == "http://localhost:65535/api/weft/scan-results"
+
+
+def test_missing_filigree_published_port_falls_through(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    # No file, with config -> config; no file, no config -> None.
+    (tmp_path / "wardline.yaml").write_text(
+        'filigree:\n  url: "http://localhost:9100/api/weft/scan-results"\n', encoding="utf-8"
+    )
+    assert resolve_filigree_url(None, tmp_path, None) == "http://localhost:9100/api/weft/scan-results"
+    (tmp_path / "wardline.yaml").unlink()
+    assert resolve_filigree_url(None, tmp_path, None) is None
+
+
+def test_filigree_published_port_skipped_under_strict_defaults(tmp_path: Path, monkeypatch) -> None:
+    # Hermetic defaults: no project-derived discovery (the published file is ignored).
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    _publish_filigree_port(tmp_path, "54321")
+    assert resolve_filigree_url(None, tmp_path, None, strict_defaults=True) is None
+    # ...but flag/env still win even under strict_defaults.
+    assert resolve_filigree_url("http://from-flag", tmp_path, None, strict_defaults=True) == "http://from-flag"
+
+
+def test_filigree_published_port_unreadable_is_soft(tmp_path: Path, monkeypatch) -> None:
+    # A directory where the port file is expected -> OSError on read -> None, no raise.
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    (tmp_path / ".filigree").mkdir()
+    (tmp_path / ".filigree" / "ephemeral.port").mkdir()
+    assert resolve_filigree_url(None, tmp_path, None) is None

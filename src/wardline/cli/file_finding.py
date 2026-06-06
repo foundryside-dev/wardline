@@ -59,7 +59,9 @@ def file_finding(
         click.echo("error: no Filigree URL (pass --filigree-url, set the env var, or wardline.yaml)", err=True)
         raise SystemExit(2)
     try:
-        filer = FiligreeIssueFiler(url)
+        from wardline.filigree.config import load_filigree_token
+
+        filer = FiligreeIssueFiler(url, token=load_filigree_token(path))
         res = filer.file(fingerprint, priority=priority, labels=list(labels) or None)
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
