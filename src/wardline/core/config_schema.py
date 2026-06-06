@@ -1,4 +1,4 @@
-"""JSON Schema (draft 2020-12) for ``wardline.yaml``.
+"""JSON Schema (draft 2020-12) for the ``[wardline]`` table of ``weft.toml``.
 
 Single source of truth for the config shape. ``additionalProperties: false`` at
 the top level turns a typo'd key into a hard ``ConfigError`` (fail-loud), and the
@@ -29,8 +29,6 @@ WARDLINE_SCHEMA: dict[str, Any] = {
                 "severity": {"type": "object", "additionalProperties": {"type": "string"}},
             },
         },
-        "baseline": {"type": "object"},
-        "waivers": {"type": "array", "items": {"type": "object"}},
         "judge": {
             "type": "object",
             "additionalProperties": False,

@@ -1,9 +1,11 @@
-"""wardline.yaml loader. Uses the `scanner` extra (pyyaml + jsonschema)."""
+"""``weft.toml [wardline]`` config loader. Reads TOML via stdlib ``tomllib`` (so the
+base package stays zero-dep); validation still uses the `scanner` extra (jsonschema)."""
 
 from __future__ import annotations
 
 import keyword
 import os
+import tomllib
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -11,7 +13,12 @@ from typing import Any
 
 from wardline.core.config_schema import WARDLINE_SCHEMA
 from wardline.core.errors import ConfigError
-from wardline.core.optional_deps import require_jsonschema, require_yaml
+from wardline.core.optional_deps import require_jsonschema
+from wardline.core.paths import (
+    legacy_sibling_dir,
+    sibling_state_dir,
+    weft_config_path,
+)
 
 
 def validate_boundary_exception_name(value: str) -> str:
@@ -31,8 +38,6 @@ class WardlineConfig:
     rules_enable: tuple[str, ...] = ("*",)
     rules_severity: Mapping[str, str] = field(default_factory=dict)
     # reserved (declared so the shape is visible; inert in SP0)
-    baseline: Mapping[str, Any] = field(default_factory=dict)
-    waivers: tuple[Mapping[str, Any], ...] = ()
     judge: Mapping[str, Any] = field(default_factory=dict)
     filigree: Mapping[str, Any] = field(default_factory=dict)
     loomweave: Mapping[str, Any] = field(default_factory=dict)
@@ -151,15 +156,20 @@ def load(
 ) -> WardlineConfig:
     if strict_defaults or path is None or not path.exists():
         return WardlineConfig()
-    yaml = require_yaml("loading wardline.yaml")
-    jsonschema = require_jsonschema("validating wardline.yaml")
+    jsonschema = require_jsonschema("validating weft.toml [wardline]")
 
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError as exc:
+        parsed = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"malformed {path.name}: {exc}") from exc
-    if not isinstance(raw, dict):
-        raise ConfigError(f"{path.name} must be a mapping at top level")
+    except OSError as exc:
+        raise ConfigError(f"cannot read {path.name}: {exc}") from exc
+    table = parsed.get("wardline")
+    if table is None:
+        return WardlineConfig()
+    if not isinstance(table, dict):
+        raise ConfigError(f"[wardline] in {path.name} must be a table")
+    raw = table
 
     # Load and merge packs config
     packs = raw.get("packs") or []
@@ -217,8 +227,6 @@ def load(
         exclude=tuple(merged_raw.get("exclude") or ()),
         rules_enable=tuple(rules.get("enable") or ("*",)),
         rules_severity=dict(rules.get("severity") or {}),
-        baseline=dict(merged_raw.get("baseline") or {}),
-        waivers=tuple(merged_raw.get("waivers") or ()),
         judge=dict(merged_raw.get("judge") or {}),
         filigree=dict(merged_raw.get("filigree") or {}),
         loomweave=dict(merged_raw.get("loomweave") or {}),
@@ -244,68 +252,61 @@ def _config_for(
     strict_defaults: bool = False,
 ) -> WardlineConfig:
     return load(
-        config_path if config_path is not None else root / "wardline.yaml",
+        config_path if config_path is not None else weft_config_path(root),
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
     )
 
 
+def _read_published_port(root: Path, sibling: str) -> int | None:
+    """Read a sibling's live ``ephemeral.port``, preferring the consolidated
+    ``.weft/<sibling>/`` location and tolerating the legacy ``.<sibling>/`` dot-dir
+    during the federation transition window. Returns a valid port or ``None``
+    (missing / unreadable / malformed / out-of-range) — fail-soft."""
+    for base in (sibling_state_dir(root, sibling), legacy_sibling_dir(root, sibling)):
+        try:
+            raw = (base / "ephemeral.port").read_text(encoding="ascii").strip()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if raw.isdigit() and 1 <= (port := int(raw)) <= 65535:
+            return port
+    return None
+
+
 def _loomweave_published_url(root: Path) -> str | None:
-    """Read Loomweave's live read-API port from ``<root>/.loomweave/ephemeral.port``.
+    """Loomweave's live read-API origin from its published ``ephemeral.port``.
 
     Consumer half of Loomweave **ADR-044** (Read-API Ephemeral Port Publication).
-    Loomweave writes its live bound port to this file on a successful loopback
-    bind (atomically; removed on clean shutdown; present only while serving). We
-    *read* it — never derive or guess a port from any band formula. Returns
-    ``http://127.0.0.1:<port>`` or ``None`` (missing / unreadable / malformed /
-    out-of-range). Fail-soft: any defect falls through to the configured URL.
+    Loomweave writes its live bound port on a successful loopback bind (atomically;
+    removed on clean shutdown; present only while serving). We *read* it — never
+    derive or guess a port. Prefers ``.weft/loomweave/ephemeral.port`` and falls
+    back to the legacy ``.loomweave/ephemeral.port``. Returns
+    ``http://127.0.0.1:<port>`` or ``None``; fail-soft falls through to config.
 
     The host is loopback by construction: ADR-034's ``allow_non_loopback`` bind
     publishes *no* file, so a port-only value can never under-specify the host.
     """
-    port_file = root / ".loomweave" / "ephemeral.port"
-    try:
-        raw = port_file.read_text(encoding="ascii").strip()
-    except (OSError, UnicodeDecodeError):
-        return None
-    if not raw.isdigit():
-        return None
-    port = int(raw)
-    if not (1 <= port <= 65535):
-        return None
-    return f"http://127.0.0.1:{port}"
+    port = _read_published_port(root, "loomweave")
+    return f"http://127.0.0.1:{port}" if port is not None else None
 
 
 def _filigree_published_url(root: Path) -> str | None:
-    """Read Filigree's live Weft port from ``<root>/.filigree/ephemeral.port``.
+    """Filigree's live Weft scan-results URL from its published ``ephemeral.port``.
 
-    Twin of :func:`_loomweave_published_url` (Loomweave **ADR-044**, Read-API
-    Ephemeral Port Publication): Filigree writes its live bound port to this file
-    on a successful loopback bind (same single-ASCII-integer format). We *read*
-    it — never derive or guess a port. Fail-soft: any defect (missing /
-    unreadable / malformed / out-of-range) falls through to the configured URL.
+    Twin of :func:`_loomweave_published_url` (Loomweave **ADR-044**): Filigree
+    writes its live bound port on a successful loopback bind. We *read* it — never
+    derive or guess. Prefers ``.weft/filigree/ephemeral.port`` and falls back to
+    the legacy ``.filigree/ephemeral.port``. Fail-soft on any defect.
 
-    Unlike Loomweave's bare-origin contract, Filigree's URL carries the full
-    Weft route: ``install/detect.py`` writes ``filigree.url`` as
-    ``…/api/weft/scan-results`` and ``core/filigree_issue.py`` derives sibling
-    routes (promote, api-base) from it, so this returns the route-suffixed
+    Unlike Loomweave's bare-origin contract, Filigree's URL carries the full Weft
+    route, so this returns the route-suffixed
     ``http://localhost:<port>/api/weft/scan-results`` (loopback by construction).
-    The host matches ``install/detect.py``'s writer (``localhost``), so a live
-    published port self-heals transparently over the install-stamped literal —
-    Filigree's loopback spelling, distinct from Loomweave's ``127.0.0.1``.
+    The ``localhost`` host self-heals transparently over an install-stamped literal
+    — Filigree's loopback spelling, distinct from Loomweave's ``127.0.0.1``.
     """
-    port_file = root / ".filigree" / "ephemeral.port"
-    try:
-        raw = port_file.read_text(encoding="ascii").strip()
-    except (OSError, UnicodeDecodeError):
-        return None
-    if not raw.isdigit():
-        return None
-    port = int(raw)
-    if not (1 <= port <= 65535):
-        return None
-    return f"http://localhost:{port}/api/weft/scan-results"
+    port = _read_published_port(root, "filigree")
+    return f"http://localhost:{port}/api/weft/scan-results" if port is not None else None
 
 
 def _is_safe_url(url: str | None) -> bool:
@@ -335,10 +336,11 @@ def resolve_loomweave_url(
     trust_config_urls: bool = False,
     strict_defaults: bool = False,
 ) -> str | None:
-    """Loomweave URL by precedence: explicit flag > env var > published port > wardline.yaml.
+    """Loomweave URL by precedence: explicit flag > env var > published port > weft.toml.
 
-    The published ``.loomweave/ephemeral.port`` rung (ADR-044) lets a live serve's
-    real port beat a stale/default literal in ``wardline.yaml`` (self-heal), while
+    The published-port rung (ADR-044, preferring ``.weft/loomweave/ephemeral.port``)
+    lets a live serve's real port beat a stale/default literal in ``weft.toml``
+    ``[wardline.loomweave].url`` (self-heal), while
     a deliberate flag or env target always wins. Skipped under ``strict_defaults``,
     which asks for hermetic defaults with no project-derived discovery.
     """
@@ -376,11 +378,12 @@ def resolve_filigree_url(
     trust_config_urls: bool = False,
     strict_defaults: bool = False,
 ) -> str | None:
-    """Filigree Weft URL by precedence: explicit flag > env var > published port > wardline.yaml.
+    """Filigree Weft URL by precedence: explicit flag > env var > published port > weft.toml.
 
-    The published ``.filigree/ephemeral.port`` rung (ADR-044 twin) lets a live
-    dashboard's real port beat a stale/default literal in ``wardline.yaml``
-    (self-heal), while a deliberate flag or env target always wins. The published
+    The published-port rung (ADR-044 twin, preferring ``.weft/filigree/ephemeral.port``)
+    lets a live dashboard's real port beat a stale/default literal in ``weft.toml``
+    ``[wardline.filigree].url`` (self-heal), while a deliberate flag or env target
+    always wins. The published
     value carries the full Weft scan-results route. Skipped under
     ``strict_defaults``, which asks for hermetic defaults with no project-derived
     discovery.
@@ -424,7 +427,7 @@ class JudgeSettings:
 def parse_judge_settings(raw: Mapping[str, Any]) -> JudgeSettings:
     """Parse the ``judge:`` config section, fail-loud on bad types.
 
-    ``wardline.yaml`` is project-supplied input. ``judge.policy_file`` is parsed
+    ``weft.toml [wardline]`` is project-supplied input. ``judge.policy_file`` is parsed
     here as a string only; loading its contents requires an explicit trusted
     caller flag in the judge runner.
     """
