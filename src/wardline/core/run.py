@@ -363,18 +363,37 @@ def _gates(severity: Severity, fail_on: Severity) -> bool:
 
 
 def _gate_reason(result: ScanResult, fail_on: Severity, *, tripped: bool, honors_suppressions: bool) -> str:
-    """The human verdict string. Counts the ANNOTATED population (``result.findings``)
-    so the numbers match what the agent reads in ``summary``."""
+    """The human verdict string, counted over the ACTUAL gate population so the numbers
+    are exactly what tripped it."""
     from wardline.core.suppression import gate_breakdown
 
     sev = fail_on.value
-    active, suppressed = gate_breakdown(result.findings, fail_on)
     if not tripped:
         return f"no {sev}+ defects in the evaluated population"
-    # Under --trust-suppressions the suppressed defects are honored (cleared), so only
-    # active ones can have tripped the gate; never misdirect to the suppression flags.
+    # Under --trust-suppressions the gate IS the annotated findings (suppressions
+    # honored), so only genuinely-active defects can have tripped it; never misdirect to
+    # the suppression flags.
     if honors_suppressions:
+        active, _ = gate_breakdown(result.findings, fail_on)
         return f"{active} active {sev}+ defect(s) at or above {sev}"
+    # Secure default: classify the defects that ACTUALLY gate (the unsuppressed gate
+    # population) by their state in the emitted findings. A ``--new-since`` delta scopes
+    # out-of-delta defects to BASELINED in the gate population too, so they are not ACTIVE
+    # here and are correctly NOT counted — the reason never inflates with scoped-out
+    # findings nor points at a flag that was already supplied.
+    gate_pop = result.gate_findings or []
+    emitted_state = {f.fingerprint: f.suppressed for f in result.findings}
+    active = 0
+    suppressed = 0
+    for f in gate_pop:
+        if f.kind is not Kind.DEFECT or f.maturity is Maturity.PREVIEW:
+            continue
+        if f.suppressed is not SuppressionState.ACTIVE or not _gates(f.severity, fail_on):
+            continue
+        if emitted_state.get(f.fingerprint, SuppressionState.ACTIVE) is SuppressionState.ACTIVE:
+            active += 1
+        else:
+            suppressed += 1
     escape = "pass --trust-suppressions (trusted checkout) or --new-since <ref> (PR)"
     if active and suppressed:
         return f"{active} active + {suppressed} suppressed {sev}+ defect(s) gate by default; {escape}"

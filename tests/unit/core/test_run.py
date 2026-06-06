@@ -419,7 +419,13 @@ def test_new_since_scopes_both_populations_and_resists_suppression(tmp_path: Pat
     # The out-of-delta unrelated.h is scoped OUT of the gate (delta: unchanged).
     assert gate_by_qn["unrelated.h"].suppressed is SuppressionState.BASELINED
     # Net: the gate trips on the new defect, and the repo baseline did not clear it.
-    assert gate_decision(result, Severity.ERROR).tripped is True
+    decision = gate_decision(result, Severity.ERROR)
+    assert decision.tripped is True
+    # The verdict reason counts only what ACTUALLY gates: caller.f (in-delta, repo-baselined
+    # -> 1 suppressed). unrelated.h is delta-scoped-out (BASELINED in the gate population),
+    # so it must NOT inflate the count — exactly 1, not 2.
+    assert decision.reason is not None
+    assert "1 suppressed" in decision.reason and "2 suppressed" not in decision.reason
 
 
 def test_run_scan_counts_unanalyzed_parse_error(tmp_path: Path) -> None:
