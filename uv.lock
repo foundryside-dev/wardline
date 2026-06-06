@@ -1081,12 +1081,12 @@ name = "wardline"
 source = { editable = "." }
 
 [package.optional-dependencies]
-clarion = [
-    { name = "blake3" },
-]
 docs = [
     { name = "mkdocs" },
     { name = "mkdocs-material" },
+]
+loomweave = [
+    { name = "blake3" },
 ]
 scanner = [
     { name = "click" },
@@ -1108,14 +1108,14 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "blake3", marker = "extra == 'clarion'", specifier = ">=1.0" },
+    { name = "blake3", marker = "extra == 'loomweave'", specifier = ">=1.0" },
     { name = "click", marker = "extra == 'scanner'", specifier = ">=8.0" },
     { name = "jsonschema", marker = "extra == 'scanner'", specifier = ">=4.0" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6" },
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5" },
     { name = "pyyaml", marker = "extra == 'scanner'", specifier = ">=6.0" },
 ]
-provides-extras = ["clarion", "docs", "scanner"]
+provides-extras = ["docs", "loomweave", "scanner"]
 
 [package.metadata.requires-dev]
 dev = [
