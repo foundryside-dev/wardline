@@ -139,12 +139,12 @@ def test_scan_filigree_401_surfaces_auth_reason_to_agent(tmp_path):
     out = _scan({}, tmp_path, None, FakeEmitter(EmitResult(reachable=False, status=401)))
     assert out["filigree"]["reachable"] is False  # still soft
     reason = out["filigree_emit"]["disabled_reason"]
-    assert "401" in reason and "WARDLINE_FILIGREE_TOKEN" in reason
+    assert "401" in reason and "WEFT_FEDERATION_TOKEN" in reason
     assert "unreachable" not in reason
 
 
 def test_scan_filigree_403_says_forbidden_not_set_a_token(tmp_path):
-    # A 403 is auth-rejected too, but "set WARDLINE_FILIGREE_TOKEN" is the wrong remedy
+    # A 403 is auth-rejected too, but "set WEFT_FEDERATION_TOKEN" is the wrong remedy
     # (the token is present and lacks access / is blocked). The reason must say forbidden,
     # not point at the env var.
     (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
@@ -152,7 +152,7 @@ def test_scan_filigree_403_says_forbidden_not_set_a_token(tmp_path):
     assert out["filigree"]["reachable"] is False  # still soft
     reason = out["filigree_emit"]["disabled_reason"]
     assert "403" in reason and "forbidden" in reason
-    assert "WARDLINE_FILIGREE_TOKEN" not in reason
+    assert "WEFT_FEDERATION_TOKEN" not in reason
     assert "unreachable" not in reason
 
 
@@ -166,4 +166,4 @@ def test_scan_filigree_5xx_says_server_error_not_unreachable(tmp_path):
     reason = out["filigree_emit"]["disabled_reason"]
     assert "503" in reason and "server error" in reason
     assert "unreachable" not in reason
-    assert "WARDLINE_FILIGREE_TOKEN" not in reason
+    assert "WEFT_FEDERATION_TOKEN" not in reason

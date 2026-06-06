@@ -155,7 +155,7 @@ def test_http_auth_refused_is_soft_not_loud(status: int) -> None:
     res = FiligreeEmitter("http://x", transport=t).emit([_f()])
     assert res.reachable is False
     # ...but the RESULT must distinguish auth-rejected from transport-unreachable so the
-    # caller can say "401 (set WARDLINE_FILIGREE_TOKEN)" instead of "could not reach"
+    # caller can say "401 (set WEFT_FEDERATION_TOKEN)" instead of "could not reach"
     # (dogfood #5). 401/403 stays SOFT — only the message changes.
     assert res.status == status
     assert res.auth_rejected is True

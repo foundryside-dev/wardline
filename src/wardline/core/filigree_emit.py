@@ -136,7 +136,7 @@ def filigree_disabled_reason(*, reachable: bool, auth_rejected: bool, status: in
         # 401 → set a token; 403 → token present but lacks access (a token won't help).
         if status == 403:
             return "filigree forbidden (403); token present but lacks access / blocked"
-        return f"filigree auth-rejected ({status}); set WARDLINE_FILIGREE_TOKEN"
+        return f"filigree auth-rejected ({status}); set WEFT_FEDERATION_TOKEN"
     if status is not None:
         return f"filigree server error ({status})"
     return "filigree unreachable"
@@ -191,7 +191,7 @@ class FiligreeEmitter:
         if resp.status in (401, 403):
             # Filigree is present but its opt-in bearer auth is on and refusing us. Stays
             # SOFT (enrichment unavailable, never exit-2) — but distinguished as auth so the
-            # caller can say "401 (set WARDLINE_FILIGREE_TOKEN)" instead of "could not reach".
+            # caller can say "401 (set WEFT_FEDERATION_TOKEN)" instead of "could not reach".
             return EmitResult(reachable=False, status=resp.status)
         if resp.status >= 500:
             # Server-side outage (5xx) — the sibling is degraded, not a Wardline payload bug.

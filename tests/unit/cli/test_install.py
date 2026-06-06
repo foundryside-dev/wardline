@@ -194,10 +194,11 @@ def test_install_rerun_wires_filigree_when_port_appears_after_initial_install(tm
 
 
 def test_scan_threads_filigree_bearer_token_from_env(tmp_path: Path, monkeypatch) -> None:
-    # End-to-end: a set WARDLINE_FILIGREE_TOKEN reaches the FiligreeEmitter through
+    # End-to-end: a set WEFT_FEDERATION_TOKEN reaches the FiligreeEmitter through
     # the scan CLI boundary (item 5 — Wardline actually SENDS the bearer token).
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
-    monkeypatch.setenv("WARDLINE_FILIGREE_TOKEN", "s3cr3t-bearer")
+    monkeypatch.delenv("WARDLINE_FILIGREE_TOKEN", raising=False)
+    monkeypatch.setenv("WEFT_FEDERATION_TOKEN", "s3cr3t-bearer")
     captured: dict[str, object] = {}
 
     class _FakeEmitter:
@@ -218,6 +219,34 @@ def test_scan_threads_filigree_bearer_token_from_env(tmp_path: Path, monkeypatch
 
     assert scan.exit_code == 0, scan.output
     assert captured["token"] == "s3cr3t-bearer"
+
+
+def test_scan_threads_filigree_bearer_token_from_deprecated_env(tmp_path: Path, monkeypatch) -> None:
+    # The deprecated WARDLINE_FILIGREE_TOKEN still threads through when the
+    # federation-scoped name is absent — existing deployments keep working.
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    monkeypatch.delenv("WEFT_FEDERATION_TOKEN", raising=False)
+    monkeypatch.setenv("WARDLINE_FILIGREE_TOKEN", "legacy-bearer")
+    captured: dict[str, object] = {}
+
+    class _FakeEmitter:
+        def __init__(self, url: str, *, token: str | None = None) -> None:
+            captured["url"] = url
+            captured["token"] = token
+
+        def emit(self, findings, *, scanned_paths=()):  # noqa: ANN001
+            from wardline.core.filigree_emit import EmitResult
+
+            return EmitResult(reachable=True)
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _FakeEmitter)
+    (tmp_path / "m.py").write_text("x = 1\n", encoding="utf-8")
+    scan = CliRunner().invoke(
+        cli, ["scan", str(tmp_path), "--filigree-url", "http://localhost:8628/api/weft/scan-results"]
+    )
+
+    assert scan.exit_code == 0, scan.output
+    assert captured["token"] == "legacy-bearer"
 
 
 def test_install_fails_2_on_malformed_mcp_json(tmp_path: Path, monkeypatch) -> None:

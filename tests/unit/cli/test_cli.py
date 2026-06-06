@@ -796,7 +796,7 @@ def test_scan_filigree_401_says_auth_not_unreachable(tmp_path, monkeypatch) -> N
     low = result.output.lower()
     assert "401" in result.output
     assert "could not reach" not in low  # the precise distinction the report asked for
-    assert "wardline_filigree_token" in low
+    assert "weft_federation_token" in low
 
 
 def _emitter_returning(status):
@@ -819,7 +819,7 @@ def _emitter_returning(status):
 
 
 def test_scan_filigree_403_says_forbidden_not_set_a_token(tmp_path, monkeypatch) -> None:
-    # A 403 is reachable-but-refused like a 401, but "set WARDLINE_FILIGREE_TOKEN" is the
+    # A 403 is reachable-but-refused like a 401, but "set WEFT_FEDERATION_TOKEN" is the
     # wrong remedy — the token is present and lacks access. Say "forbidden", not the env var.
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -830,7 +830,7 @@ def test_scan_filigree_403_says_forbidden_not_set_a_token(tmp_path, monkeypatch)
     assert result.exit_code == 0, result.output
     low = result.output.lower()
     assert "403" in result.output and "forbidden" in low
-    assert "wardline_filigree_token" not in low
+    assert "weft_federation_token" not in low
     assert "could not reach" not in low
 
 

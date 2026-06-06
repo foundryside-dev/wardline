@@ -316,7 +316,7 @@ def scan(
                 else:
                     click.echo(
                         f"warning: Filigree returned {emit_result.status} (auth rejected) at {filigree_url}; "
-                        "set WARDLINE_FILIGREE_TOKEN (or .env) to the project token. Findings written locally only.",
+                        "set WEFT_FEDERATION_TOKEN (or .env) to the project token. Findings written locally only.",
                         err=True,
                     )
             elif emit_result.status is not None:

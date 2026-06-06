@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Filigree bearer credential now read from the federation-scoped
+  `WEFT_FEDERATION_TOKEN`.** The federation loopback token was renamed
+  `WEFT_FEDERATION_TOKEN` (deconfliction plumbing across the Weft federation). The
+  loader now prefers it — checking env then `.env` — and the operator-facing
+  auth-rejected messages point at the new name. The previous `WARDLINE_FILIGREE_TOKEN`
+  is honored as a **deprecated fallback** (read after the new name), so existing
+  deployments keep working with no change; migrate at leisure. Only the token *value*
+  must match what the Filigree operator configured.
+
 ## [1.0.0rc2] - 2026-06-06
 
 ### Added
