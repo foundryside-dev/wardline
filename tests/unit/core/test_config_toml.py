@@ -29,9 +29,6 @@ exclude = ["build"]
 [wardline.rules]
 enable = ["PY-WL-101"]
 severity = { "PY-WL-101" = "ERROR" }
-
-[wardline.filigree]
-url = "http://localhost:8377/api/weft/scan-results"
 """,
     )
     cfg = config_mod.load(p)
@@ -39,7 +36,6 @@ url = "http://localhost:8377/api/weft/scan-results"
     assert cfg.exclude == ("build",)
     assert cfg.rules_enable == ("PY-WL-101",)
     assert cfg.rules_severity == {"PY-WL-101": "ERROR"}
-    assert cfg.filigree_url == "http://localhost:8377/api/weft/scan-results"
 
 
 def test_no_wardline_table_is_defaults(tmp_path):
@@ -48,10 +44,18 @@ def test_no_wardline_table_is_defaults(tmp_path):
     assert cfg.source_roots == (".",)
 
 
-def test_malformed_toml_raises_configerror(tmp_path):
+def test_malformed_toml_falls_back_to_defaults_silently(tmp_path):
+    # C-9c: a malformed shared weft.toml is treated as absent — silent defaults,
+    # never a hard fail (it could be another member's section that broke parsing).
     p = _write(tmp_path, "[wardline]\nsource_roots = [")
-    with pytest.raises(ConfigError):
-        config_mod.load(p)
+    cfg = config_mod.load(p)
+    assert cfg.source_roots == (".",)
+
+
+def test_non_table_wardline_falls_back_to_defaults(tmp_path):
+    p = _write(tmp_path, 'wardline = "oops"\n')
+    cfg = config_mod.load(p)
+    assert cfg.source_roots == (".",)
 
 
 def test_unknown_key_rejected(tmp_path):

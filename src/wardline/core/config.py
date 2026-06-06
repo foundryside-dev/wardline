@@ -17,7 +17,6 @@ from wardline.core.optional_deps import require_jsonschema
 from wardline.core.paths import (
     legacy_sibling_dir,
     sibling_state_dir,
-    weft_config_path,
 )
 
 
@@ -39,8 +38,6 @@ class WardlineConfig:
     rules_severity: Mapping[str, str] = field(default_factory=dict)
     # reserved (declared so the shape is visible; inert in SP0)
     judge: Mapping[str, Any] = field(default_factory=dict)
-    filigree: Mapping[str, Any] = field(default_factory=dict)
-    loomweave: Mapping[str, Any] = field(default_factory=dict)
     packs: tuple[str, ...] = ()
     pack_modules: Mapping[str, Any] = field(default_factory=dict)
     untrusted_sources: tuple[str, ...] = ()
@@ -52,16 +49,6 @@ class WardlineConfig:
     def boundary_exception(self) -> str:
         value = self.autofix.get("boundary_exception")
         return validate_boundary_exception_name(value) if isinstance(value, str) else "ValueError"
-
-    @property
-    def loomweave_url(self) -> str | None:
-        value = self.loomweave.get("url")
-        return value if isinstance(value, str) else None
-
-    @property
-    def filigree_url(self) -> str | None:
-        value = self.filigree.get("url")
-        return value if isinstance(value, str) else None
 
 
 def _deep_merge(local: dict[str, Any], default: dict[str, Any]) -> dict[str, Any]:
@@ -158,17 +145,19 @@ def load(
         return WardlineConfig()
     jsonschema = require_jsonschema("validating weft.toml [wardline]")
 
+    # C-9c (normative): a missing OR malformed shared weft.toml is treated as ABSENT —
+    # silent fallback to built-in defaults, never a hard fail. weft.toml is shared
+    # across the federation, so a parse error (possibly from another member's section,
+    # or a structurally-broken [wardline]) must not crash wardline. A WELL-FORMED
+    # [wardline] table with bad keys/values still fails loud below (actionable,
+    # wardline-specific config feedback — not a "malformed file").
     try:
         parsed = tomllib.loads(path.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"malformed {path.name}: {exc}") from exc
-    except OSError as exc:
-        raise ConfigError(f"cannot read {path.name}: {exc}") from exc
-    table = parsed.get("wardline")
-    if table is None:
+    except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError):
         return WardlineConfig()
+    table = parsed.get("wardline")
     if not isinstance(table, dict):
-        raise ConfigError(f"[wardline] in {path.name} must be a table")
+        return WardlineConfig()
     raw = table
 
     # Load and merge packs config
@@ -228,8 +217,6 @@ def load(
         rules_enable=tuple(rules.get("enable") or ("*",)),
         rules_severity=dict(rules.get("severity") or {}),
         judge=dict(merged_raw.get("judge") or {}),
-        filigree=dict(merged_raw.get("filigree") or {}),
-        loomweave=dict(merged_raw.get("loomweave") or {}),
         packs=tuple(packs),
         pack_modules=pack_modules,
         untrusted_sources=tuple(merged_raw.get("untrusted_sources") or ()),
@@ -241,22 +228,6 @@ def load(
 
 _LOOMWEAVE_URL_ENV = "WARDLINE_LOOMWEAVE_URL"
 _FILIGREE_URL_ENV = "WARDLINE_FILIGREE_URL"
-
-
-def _config_for(
-    root: Path,
-    config_path: Path | None,
-    *,
-    trust_local_packs: bool = False,
-    trusted_packs: Iterable[str] = (),
-    strict_defaults: bool = False,
-) -> WardlineConfig:
-    return load(
-        config_path if config_path is not None else weft_config_path(root),
-        trust_local_packs=trust_local_packs,
-        trusted_packs=trusted_packs,
-        strict_defaults=strict_defaults,
-    )
 
 
 def _read_published_port(root: Path, sibling: str) -> int | None:
@@ -309,23 +280,6 @@ def _filigree_published_url(root: Path) -> str | None:
     return f"http://localhost:{port}/api/weft/scan-results" if port is not None else None
 
 
-def _is_safe_url(url: str | None) -> bool:
-    if not url:
-        return True
-    try:
-        from urllib.parse import urlsplit
-
-        parsed = urlsplit(url)
-        if parsed.scheme.lower() not in ("http", "https"):
-            return False
-        hostname = parsed.hostname
-        if hostname in ("localhost", "127.0.0.1", "::1"):
-            return True
-    except Exception:
-        pass
-    return False
-
-
 def resolve_loomweave_url(
     flag: str | None,
     root: Path,
@@ -333,16 +287,22 @@ def resolve_loomweave_url(
     *,
     trust_local_packs: bool = False,
     trusted_packs: Iterable[str] = (),
-    trust_config_urls: bool = False,
     strict_defaults: bool = False,
 ) -> str | None:
-    """Loomweave URL by precedence: explicit flag > env var > published port > weft.toml.
+    """Loomweave URL by precedence: explicit flag > env var > published port.
 
-    The published-port rung (ADR-044, preferring ``.weft/loomweave/ephemeral.port``)
-    lets a live serve's real port beat a stale/default literal in ``weft.toml``
-    ``[wardline.loomweave].url`` (self-heal), while
-    a deliberate flag or env target always wins. Skipped under ``strict_defaults``,
-    which asks for hermetic defaults with no project-derived discovery.
+    Sibling-endpoint *config keys* are NOT read here: a persisted operator-declared
+    endpoint is an instance of the still-pending Weft shared-endpoint fact
+    (``weft-a2f4cf95c7``), so wardline does not bake a ``[wardline.loomweave].url``
+    key. The published-port rung (ADR-044, preferring ``.weft/loomweave/ephemeral.port``
+    and tolerating the legacy ``.loomweave/ephemeral.port``) supplies the zero-config
+    local case; a flag or env var is the interim escape hatch for a fixed remote.
+    Skipped under ``strict_defaults`` (hermetic, no project-derived discovery).
+
+    ``config_path`` / ``trust_local_packs`` / ``trusted_packs`` are accepted for
+    caller-shape compatibility (the same surface ``run_scan`` consumes) and reserved
+    for the canonical hub endpoint key once its layout is pinned; they are not read
+    today, since no sibling-endpoint config rung exists.
     """
     if flag is not None:
         return flag
@@ -350,22 +310,8 @@ def resolve_loomweave_url(
     if env:
         return env
     if not strict_defaults:
-        published = _loomweave_published_url(root)
-        if published is not None:
-            return published
-    url = _config_for(
-        root,
-        config_path,
-        trust_local_packs=trust_local_packs,
-        trusted_packs=trusted_packs,
-        strict_defaults=strict_defaults,
-    ).loomweave_url
-    if url and not trust_config_urls and not _is_safe_url(url):
-        raise ConfigError(
-            f"Loading Loomweave URL {url!r} from project config is disabled by default for security. "
-            "Specify the URL via command-line flags, environment variables, or allow local config URLs."
-        )
-    return url
+        return _loomweave_published_url(root)
+    return None
 
 
 def resolve_filigree_url(
@@ -375,18 +321,19 @@ def resolve_filigree_url(
     *,
     trust_local_packs: bool = False,
     trusted_packs: Iterable[str] = (),
-    trust_config_urls: bool = False,
     strict_defaults: bool = False,
 ) -> str | None:
-    """Filigree Weft URL by precedence: explicit flag > env var > published port > weft.toml.
+    """Filigree Weft URL by precedence: explicit flag > env var > published port.
 
-    The published-port rung (ADR-044 twin, preferring ``.weft/filigree/ephemeral.port``)
-    lets a live dashboard's real port beat a stale/default literal in ``weft.toml``
-    ``[wardline.filigree].url`` (self-heal), while a deliberate flag or env target
-    always wins. The published
-    value carries the full Weft scan-results route. Skipped under
-    ``strict_defaults``, which asks for hermetic defaults with no project-derived
-    discovery.
+    Twin of :func:`resolve_loomweave_url`: no ``[wardline.filigree].url`` config key
+    is read (pending the hub shared-endpoint schema ``weft-a2f4cf95c7``). The
+    published-port rung (ADR-044 twin, preferring ``.weft/filigree/ephemeral.port``,
+    tolerating the legacy ``.filigree/ephemeral.port``) carries the full Weft
+    scan-results route; flag/env override. Skipped under ``strict_defaults``.
+
+    ``config_path`` / ``trust_local_packs`` / ``trusted_packs`` are accepted for
+    caller-shape compatibility and reserved for the canonical hub endpoint key once
+    its layout is pinned; they are not read today.
     """
     if flag is not None:
         return flag
@@ -394,22 +341,8 @@ def resolve_filigree_url(
     if env:
         return env
     if not strict_defaults:
-        published = _filigree_published_url(root)
-        if published is not None:
-            return published
-    url = _config_for(
-        root,
-        config_path,
-        trust_local_packs=trust_local_packs,
-        trusted_packs=trusted_packs,
-        strict_defaults=strict_defaults,
-    ).filigree_url
-    if url and not trust_config_urls and not _is_safe_url(url):
-        raise ConfigError(
-            f"Loading Filigree URL {url!r} from project config is disabled by default for security. "
-            "Specify the URL via command-line flags, environment variables, or allow local config URLs."
-        )
-    return url
+        return _filigree_published_url(root)
+    return None
 
 
 @dataclass(frozen=True, slots=True)

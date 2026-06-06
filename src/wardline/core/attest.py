@@ -59,8 +59,9 @@ from wardline.core.attest_key import key_id
 from wardline.core.config import WardlineConfig
 from wardline.core.dossier import classify_entity_trust
 from wardline.core.errors import AttestError
+from wardline.core.paths import weft_config_path
 from wardline.core.run import run_scan
-from wardline.core.waivers import parse_waivers
+from wardline.core.waivers import load_project_waivers
 
 ATTEST_SCHEMA = "wardline-attest-1"
 
@@ -303,14 +304,14 @@ def _build_payload(
     ``run_scan`` exactly ONCE and applies NO policy (the dirty-tree refusal lives in
     :func:`build_attestation`, never here — verify must not raise on a dirty tree).
     """
-    cfg_path = config_path or (root / "wardline.yaml")
+    cfg_path = config_path or weft_config_path(root)
     config = config_mod.load(
         cfg_path,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
     )
-    waivers = parse_waivers(config.waivers)
+    waivers = load_project_waivers(root)
 
     result = run_scan(
         root,

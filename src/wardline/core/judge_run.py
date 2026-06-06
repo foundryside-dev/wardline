@@ -25,6 +25,8 @@ from wardline.core.judge import (
     call_judge,
 )
 from wardline.core.judged import JudgedFP, JudgedSet, load_judged, write_judged
+from wardline.core.paths import judged_path as judged_file
+from wardline.core.paths import weft_config_path
 from wardline.core.run import run_scan
 from wardline.core.source_excerpt import extract_excerpt
 from wardline.core.triage import TriageResult, run_triage
@@ -104,7 +106,7 @@ def _persist(root: Path, existing: JudgedSet, result: TriageResult, *, floor: fl
     held_back = len(result.false_positives()) - len(writable)
     if not writable:
         return 0, held_back
-    judged_path = root / ".wardline" / "judged.yaml"
+    judged_path = judged_file(root)
     new: list[JudgedFP] = [e for fp in existing.fingerprints() if (e := existing.match(fp)) is not None]
     for tv in writable:
         f, r = tv.finding, tv.response
@@ -148,7 +150,7 @@ def run_judge(
     network is touched only when the default caller is actually invoked on a finding.
     """
     cfg = config_mod.load(
-        config_path or (root / "wardline.yaml"),
+        config_path or weft_config_path(root),
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
@@ -184,7 +186,7 @@ def run_judge(
         # passing True keeps the gate (if any consumer reads it) on the trusted set too.
         trust_suppressions=True,
     )
-    judged_set = load_judged(root / ".wardline" / "judged.yaml")
+    judged_set = load_judged(judged_file(root))
 
     result = run_triage(
         scan.findings,

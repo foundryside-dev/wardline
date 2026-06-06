@@ -15,6 +15,7 @@ transition-window fallback to the legacy ``.{sibling}/`` dot-dir.
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 WEFT_MEMBER = "wardline"
@@ -27,8 +28,34 @@ def weft_config_path(root: Path) -> Path:
     return root / WEFT_CONFIG_FILE
 
 
+def _store_dir_override(root: Path) -> str | None:
+    """Read the operator's ``[wardline].store_dir`` override from weft.toml, or None.
+
+    Read defensively and silently (C-9c): a missing/malformed weft.toml, a non-table
+    ``[wardline]``, or a non-string ``store_dir`` all fall through to None so the
+    default location is used. This never raises — store-dir resolution must not be
+    load-bearing on the shared file parsing cleanly."""
+    try:
+        parsed = tomllib.loads(weft_config_path(root).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return None
+    table = parsed.get("wardline")
+    if not isinstance(table, dict):
+        return None
+    value = table.get("store_dir")
+    return value if isinstance(value, str) and value.strip() else None
+
+
 def weft_state_dir(root: Path) -> Path:
-    """Wardline's exclusively-owned machine-state subtree."""
+    """Wardline's exclusively-owned machine-state subtree.
+
+    Honors an operator ``[wardline].store_dir`` override in weft.toml (canonical key,
+    legis reference): a relative override resolves under ``root``, an absolute one is
+    used verbatim. Defaults to ``root/.weft/wardline``."""
+    override = _store_dir_override(root)
+    if override is not None:
+        candidate = Path(override)
+        return candidate if candidate.is_absolute() else root / candidate
     return root / _WEFT_DIR / WEFT_MEMBER
 
 

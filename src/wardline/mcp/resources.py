@@ -8,6 +8,7 @@ from typing import Any
 
 from wardline.core import config as config_mod
 from wardline.core.config_schema import WARDLINE_SCHEMA
+from wardline.core.paths import weft_config_path
 from wardline.mcp.protocol import _INVALID_PARAMS, McpError
 
 ResourceDef = tuple[str, str, str]
@@ -47,7 +48,7 @@ def read_resource(root: Path, uri: str | None) -> tuple[str, str]:
             )
         return json.dumps({"rules": rules}, ensure_ascii=False), "application/json"
     if uri == "wardline://config":
-        cfg = config_mod.load(root / "wardline.yaml")
+        cfg = config_mod.load(weft_config_path(root))
         return json.dumps(
             {
                 "source_roots": list(cfg.source_roots),

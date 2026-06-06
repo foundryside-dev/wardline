@@ -35,10 +35,9 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from wardline.core import config as config_mod
 from wardline.core.dossier import UNDER_SCAN_RULE_IDS, classify_entity_trust
 from wardline.core.run import run_scan
-from wardline.core.waivers import Waiver, parse_waivers
+from wardline.core.waivers import Waiver, load_project_waivers
 
 if TYPE_CHECKING:
     from wardline.core.run import ScanResult
@@ -240,14 +239,13 @@ def build_posture(
     """Run a scan under ``root`` and return its trust-surface coverage posture — the
     I/O shell over :func:`posture_from_scan`.
 
-    Loads config + waivers from the SAME path the scan uses (``config_path`` or
-    ``root / "wardline.yaml"``) so the waiver rollup and the scan agree. When the scan
-    yields no analysis context (nothing analysable), returns an honest empty posture
-    rather than crashing."""
+    Loads config from the SAME path the scan uses (``config_path`` or
+    ``root / "weft.toml"``); waivers come from wardline's ``.weft/wardline/waivers.yaml``
+    state so the waiver rollup and the scan agree. When the scan yields no analysis
+    context (nothing analysable), returns an honest empty posture rather than crashing."""
     if today is None:
         today = date.today()
-    cfg_path = config_path or (root / "wardline.yaml")
-    waivers = parse_waivers(config_mod.load(cfg_path).waivers)
+    waivers = load_project_waivers(root)
     result = run_scan(root, config_path=config_path, confine_to_root=confine_to_root)
     if result.context is None:
         return _empty_posture(waivers, today)

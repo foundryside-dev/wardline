@@ -9,7 +9,7 @@ import click
 
 from wardline.core.errors import WardlineError
 from wardline.install.block import inject_block
-from wardline.install.detect import record_bindings
+from wardline.install.detect import detect_siblings
 from wardline.install.mcp_json import install_codex_mcp, merge_mcp_entry
 from wardline.install.pack import activate_pack
 from wardline.install.skill import install_skill
@@ -60,7 +60,7 @@ def install(
             lines.append(f".mcp.json (wardline entry): {merge_mcp_entry(root)}")
             lines.append(f"Codex MCP (wardline entry): {install_codex_mcp(root)}")
         if not no_bindings:
-            for name, status in record_bindings(root).items():
+            for name, status in detect_siblings(root).items():
                 lines.append(f"{name}: {status}")
         if not no_attest_key:
             from wardline.core.attest_key import mint_attest_key
@@ -82,8 +82,7 @@ def install(
                 importlib.import_module(pack)
             except ImportError:
                 click.echo(f"warning: trust-grammar pack {pack!r} is not installed or importable locally", err=True)
-            status = activate_pack(root, pack)
-            lines.append(f"packs: {status}")
+            lines.append(f"packs: {activate_pack(root, pack)}")
         lines.append("runtime markers: install `weft-markers` and import from `weft_markers`")
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)

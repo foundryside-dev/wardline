@@ -29,9 +29,10 @@ from wardline.core.finding import (
     SuppressionState,
 )
 from wardline.core.judged import load_judged
+from wardline.core.paths import baseline_path, judged_path
 from wardline.core.protocols import Analyzer
 from wardline.core.suppression import apply_suppressions, gate_trips, severity_gates
-from wardline.core.waivers import WaiverSet, parse_waivers
+from wardline.core.waivers import WaiverSet, load_project_waivers
 
 if TYPE_CHECKING:
     from wardline.scanner.context import AnalysisContext
@@ -226,9 +227,9 @@ def run_scan(
         )
     if cache is not None:
         cache.save()
-    baseline = load_baseline(root / ".wardline" / "baseline.yaml")
-    waivers = WaiverSet(parse_waivers(cfg.waivers))
-    judged = load_judged(root / ".wardline" / "judged.yaml")
+    baseline = load_baseline(baseline_path(root))
+    waivers = WaiverSet(load_project_waivers(root))
+    judged = load_judged(judged_path(root))
     today = date.today()
     # The emitted findings ALWAYS carry the full suppression annotations (baseline,
     # waiver, judged) so ``suppressed=…`` is visible in output regardless of trust.
@@ -334,7 +335,7 @@ def baseline_migration_hint(
     """A LOUD one-line migration signal for the secure gate-default rollout, or None.
 
     Returns the hint ONLY in the exact 'my repo went red with no code change' case:
-    a committed ``.wardline/baseline.yaml`` exists, the gate tripped, the trip is
+    a committed ``.weft/wardline/baseline.yaml`` exists, the gate tripped, the trip is
     driven SOLELY by baselined defects re-entering the unsuppressed population (no
     genuinely-active defect), and the operator passed neither ``--trust-suppressions``
     nor ``--new-since``. Otherwise None — a genuine active trip, a waiver/judged-only
@@ -345,7 +346,7 @@ def baseline_migration_hint(
     # --trust-suppressions honors the baseline, so there is no surprise to migrate from.
     if result.gate_findings is None:
         return None
-    if not (root / ".wardline" / "baseline.yaml").is_file():
+    if not baseline_path(root).is_file():
         return None
     from wardline.core.suppression import gate_breakdown
 

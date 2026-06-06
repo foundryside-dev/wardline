@@ -27,6 +27,7 @@ from wardline.core.baseline import collect_and_write_baseline
 from wardline.core.descriptor import descriptor_to_yaml
 from wardline.core.errors import WardlineError
 from wardline.core.finding import Severity
+from wardline.core.paths import baseline_path as baseline_file
 
 
 @click.group()
@@ -72,7 +73,7 @@ def _generate_baseline(
     trust_local_packs: bool,
     strict_defaults: bool,
 ) -> None:
-    baseline_path = path / ".wardline" / "baseline.yaml"
+    baseline_path = baseline_file(path)
     try:
         to_baseline = collect_and_write_baseline(
             path,
@@ -98,7 +99,7 @@ def _generate_baseline(
 @cli.group(invoke_without_command=True)
 @click.pass_context
 def baseline(ctx: click.Context) -> None:
-    """Manage the finding baseline (.wardline/baseline.yaml)."""
+    """Manage the finding baseline (.weft/wardline/baseline.yaml)."""
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 

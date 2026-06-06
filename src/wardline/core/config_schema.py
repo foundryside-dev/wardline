@@ -15,6 +15,9 @@ WARDLINE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
+        # Operator override for wardline's machine-state subtree location (default
+        # .weft/wardline). Read by core.paths.weft_state_dir; relative resolves under root.
+        "store_dir": {"type": "string"},
         "source_roots": {"type": "array", "items": {"type": "string"}},
         "exclude": {"type": "array", "items": {"type": "string"}},
         "packs": {"type": "array", "items": {"type": "string"}},
@@ -39,16 +42,6 @@ WARDLINE_SCHEMA: dict[str, Any] = {
                 "policy_file": {"type": "string"},
                 "write_confidence_floor": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             },
-        },
-        "filigree": {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {"url": {"type": "string"}},
-        },
-        "loomweave": {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {"url": {"type": "string"}},
         },
         "autofix": {
             "type": "object",

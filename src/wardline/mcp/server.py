@@ -26,10 +26,11 @@ from wardline.core.filigree_emit import FiligreeEmitter, filigree_disabled_reaso
 from wardline.core.finding import Finding, Kind, Severity, SuppressionState
 from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
+from wardline.core.paths import baseline_path as baseline_file
+from wardline.core.paths import waivers_path, weft_config_path
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
-from wardline.core.safe_paths import safe_project_file
 from wardline.core.sei_resolution import resolve_query_filters
-from wardline.core.waivers import add_waiver, parse_waivers
+from wardline.core.waivers import add_waiver, load_project_waivers
 from wardline.mcp.prompts import get_prompt, list_prompts
 from wardline.mcp.protocol import _INVALID_PARAMS, JsonRpcServer, McpError
 from wardline.mcp.resources import list_resources, read_resource
@@ -396,7 +397,7 @@ def _attach_legis_artifact(
         return  # not requested — default response unchanged
 
     cfg = config_mod.load(
-        _cfg(args, path) or (path / "wardline.yaml"),
+        _cfg(args, path) or weft_config_path(path),
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
@@ -629,7 +630,7 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 def _baseline(args: dict[str, Any], root: Path) -> dict[str, Any]:
     reason = args.get("reason")
-    baseline_path = root / ".wardline" / "baseline.yaml"
+    baseline_path = baseline_file(root)
     overwrite = bool(args.get("overwrite", False))
     try:
         count = generate_baseline(
@@ -669,18 +670,15 @@ def _waiver_add(args: dict[str, Any], root: Path) -> dict[str, Any]:
     except ValueError as exc:
         # A malformed date is something the agent can fix and should see.
         raise ToolError("expires must be an ISO date (YYYY-MM-DD)") from exc
-    cfg_path = _cfg(args, root) or (root / "wardline.yaml")
-    safe_cfg_path = safe_project_file(root, cfg_path, label=cfg_path.name)
-    if safe_cfg_path.exists():
-        for existing in parse_waivers(config_mod.load(safe_cfg_path).waivers):
-            if existing.fingerprint == fp:
-                return {
-                    "fingerprint": existing.fingerprint,
-                    "reason": existing.reason,
-                    "expires": existing.expires.isoformat() if existing.expires else None,
-                    "already_exists": True,
-                }
-    waiver = add_waiver(cfg_path, fingerprint=fp, reason=reason, expires=expires, root=root)
+    for existing in load_project_waivers(root):
+        if existing.fingerprint == fp:
+            return {
+                "fingerprint": existing.fingerprint,
+                "reason": existing.reason,
+                "expires": existing.expires.isoformat() if existing.expires else None,
+                "already_exists": True,
+            }
+    waiver = add_waiver(waivers_path(root), fingerprint=fp, reason=reason, expires=expires, root=root)
     return {
         "fingerprint": waiver.fingerprint,
         "reason": waiver.reason,
@@ -696,7 +694,7 @@ def _fix(args: dict[str, Any], root: Path) -> dict[str, Any]:
     try:
         from wardline.core.config import load
 
-        cfg = load(cfg_path or (path / "wardline.yaml"))
+        cfg = load(cfg_path or weft_config_path(path))
         result = run_scan(path, config_path=cfg_path, confine_to_root=True)
     except WardlineError as exc:
         raise ToolError(str(exc)) from exc
@@ -904,7 +902,7 @@ class WardlineMCPServer:
                         },
                         "strict_defaults": {
                             "type": "boolean",
-                            "description": "Ignore repository-supplied custom configuration overrides (wardline.yaml)",
+                            "description": "Ignore repository-supplied custom configuration overrides (weft.toml)",
                         },
                         "trust_suppressions": {
                             "type": "boolean",
