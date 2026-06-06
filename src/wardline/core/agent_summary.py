@@ -46,19 +46,46 @@ class AgentSummary:
     gate: GateDecision
     filigree_emit: dict[str, Any] = field(default_factory=_default_filigree_status)
     loomweave_write: dict[str, Any] = field(default_factory=_default_loomweave_status)
+    # Payload-shrinking controls (dogfood #4). The summary COUNTS always describe the
+    # whole project; these govern only the inline finding ARRAYS. ``display_findings``
+    # is the (already ``where``-filtered) view the arrays are built from — None means the
+    # whole result, the back-compat default used by the CLI ``--format agent-summary``.
+    display_findings: list[Finding] | None = None
+    summary_only: bool = False
+    max_findings: int | None = None
+    include_suppressed: bool = True
 
     def to_dict(self) -> dict[str, Any]:
-        active_defects = [_finding_entry(f, include_next=True) for f in _active_defects(self.result.findings)]
-        suppressed = [_finding_entry(f, include_next=False) for f in _suppressed_defects(self.result.findings)]
-        engine_facts = [_finding_entry(f, include_next=False) for f in _engine_facts(self.result.findings)]
+        # Counts are whole-project (summary describes the whole project, per the `where`
+        # contract); arrays come from the displayed/filtered view, then bounded.
+        count_active = len(_active_defects(self.result.findings))
+        count_suppressed = len(_suppressed_defects(self.result.findings))
+        count_facts = len(_engine_facts(self.result.findings))
+
+        base = self.result.findings if self.display_findings is None else self.display_findings
+        if self.summary_only:
+            shown_active: list[Finding] = []
+            shown_suppressed: list[Finding] = []
+            shown_facts: list[Finding] = []
+        else:
+            shown_active = _active_defects(base)
+            shown_suppressed = _suppressed_defects(base) if self.include_suppressed else []
+            shown_facts = _engine_facts(base)
+            if self.max_findings is not None:
+                shown_active = shown_active[: self.max_findings]
+                shown_suppressed = shown_suppressed[: self.max_findings]
+                shown_facts = shown_facts[: self.max_findings]
+        active_defects = [_finding_entry(f, include_next=True) for f in shown_active]
+        suppressed = [_finding_entry(f, include_next=False) for f in shown_suppressed]
+        engine_facts = [_finding_entry(f, include_next=False) for f in shown_facts]
         return {
             "schema": SCHEMA,
             "summary": {
                 "files_scanned": self.result.files_scanned,
                 "total_findings": self.result.summary.total,
-                "active_defects": len(active_defects),
-                "suppressed_findings": len(suppressed),
-                "engine_facts": len(engine_facts),
+                "active_defects": count_active,
+                "suppressed_findings": count_suppressed,
+                "engine_facts": count_facts,
                 "baselined": self.result.summary.baselined,
                 "waived": self.result.summary.waived,
                 "judged": self.result.summary.judged,
@@ -78,7 +105,9 @@ class AgentSummary:
             "active_defects": active_defects,
             "suppressed_findings": suppressed,
             "engine_facts": engine_facts,
-            "next_actions": _next_actions(active_defects),
+            # next_actions follow the whole-project active count, not the displayed slice,
+            # so a summary_only/filtered view does not falsely say "no active defects".
+            "next_actions": _next_actions_for(count_active),
         }
 
 
@@ -148,8 +177,8 @@ def _finding_entry(finding: Finding, *, include_next: bool) -> dict[str, Any]:
     return entry
 
 
-def _next_actions(active_defects: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    if not active_defects:
+def _next_actions_for(active_count: int) -> list[dict[str, Any]]:
+    if active_count == 0:
         return [{"tool": "scan", "reason": "no active defects; rescan after edits"}]
     return [
         {"tool": "explain_taint", "reason": "inspect each active defect before editing"},
@@ -164,10 +193,18 @@ def build_agent_summary(
     *,
     filigree_emit: dict[str, Any] | None = None,
     loomweave_write: dict[str, Any] | None = None,
+    display_findings: list[Finding] | None = None,
+    summary_only: bool = False,
+    max_findings: int | None = None,
+    include_suppressed: bool = True,
 ) -> AgentSummary:
     return AgentSummary(
         result=result,
         gate=gate,
         filigree_emit=filigree_emit or _default_filigree_status(),
         loomweave_write=loomweave_write or _default_loomweave_status(),
+        display_findings=display_findings,
+        summary_only=summary_only,
+        max_findings=max_findings,
+        include_suppressed=include_suppressed,
     )

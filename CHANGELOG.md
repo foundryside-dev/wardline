@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **MCP `scan` payload controls — `where` now shrinks the payload, plus
+  `summary_only` / `max_findings` / `include_suppressed` and a default explain cap
+  (dogfood friction #5).** `where` previously filtered only the top-level `findings`
+  list; the `agent_summary` arrays still inlined every suppressed finding, so a filter
+  matching zero findings still returned dozens. `where` now filters the `agent_summary`
+  arrays too. New args: `summary_only: true` (counts + gate, no finding bodies — the
+  smallest "did the gate pass?" payload), `include_suppressed: false` (drop suppressed
+  bodies; counts stay in `summary`), and `max_findings: N` (cap the returned bodies).
+  `explain: true` no longer inlines provenance for *every* active defect — the one-shot
+  blowup that returned 56,820 chars on one line — it is capped at 25 by default
+  (tighten with `max_findings`). Every cut is reported in a new `truncation` block
+  (`findings_total` / `findings_returned` / `findings_truncated` /
+  `explanations_truncated`) so a bounded payload never reads as "covered everything."
+  `summary`/`gate` always describe the whole project; the CLI `--format agent-summary`
+  output is unchanged.
 - **The `--fail-on` gate verdict now explains itself (dogfood friction #2/#3).** A scan
   reporting `summary.active: 0` while `gate.tripped: true` no longer reads as a bug. The
   gate block (CLI stderr, MCP `scan` result, and the agent-summary) carries a human

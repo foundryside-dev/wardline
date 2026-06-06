@@ -234,9 +234,41 @@ def _scan(
     except (ValueError, WardlineError) as exc:
         # An unknown filter key or SEI resolution failure is agent-actionable -> isError result.
         raise ToolError(str(exc)) from exc
+
+    # Payload-shrinking controls (dogfood #4). The `summary`/`gate` blocks always
+    # describe the WHOLE project; these only bound the returned finding bodies.
+    summary_only = bool(args.get("summary_only") or False)
+    raw_include = args.get("include_suppressed")
+    include_suppressed = True if raw_include is None else bool(raw_include)
+    max_findings = args.get("max_findings")
+    if max_findings is not None and (
+        not isinstance(max_findings, int) or isinstance(max_findings, bool) or max_findings < 0
+    ):
+        raise ToolError("max_findings must be a non-negative integer")
     explain = bool(args.get("explain"))
+
+    # include_suppressed:false drops the suppressed DEFECT bodies (counts stay whole).
+    if not include_suppressed:
+        selected = [f for f in selected if not (f.kind is Kind.DEFECT and f.suppressed is not SuppressionState.ACTIVE)]
+    findings_total = len(selected)
+
+    # summary_only returns no finding bodies at all (the smallest "did the gate pass?"
+    # payload); otherwise an explicit max_findings bounds the list (default: uncapped).
+    display = [] if summary_only else selected
+    findings_truncated = False
+    if max_findings is not None and len(display) > max_findings:
+        display = display[:max_findings]
+        findings_truncated = True
+
+    # explain has a DEFAULT ceiling: inlining EVERY active defect's provenance is the
+    # 56KB-on-one-line blowup the dogfood report hit. Cap the number of explanations (an
+    # explicit max_findings tightens it further); findings past the cap are still
+    # returned, just without inline provenance. The cut is announced, never silent.
+    explain_cap = max_findings if max_findings is not None else _EXPLAIN_DEFAULT_CAP
+    explanations_attached = 0
+    explanations_truncated = False
     findings_out: list[dict[str, Any]] = []
-    for f in selected:
+    for f in display:
         d = _finding_to_dict(f)
         if (
             explain
@@ -245,8 +277,12 @@ def _scan(
             and f.qualname is not None
             and result.context is not None
         ):
-            exp = explanation_from_context(f, result.context)
-            d["explanation"] = _explanation_to_dict(exp)
+            if explanations_attached < explain_cap:
+                exp = explanation_from_context(f, result.context)
+                d["explanation"] = _explanation_to_dict(exp)
+                explanations_attached += 1
+            else:
+                explanations_truncated = True
         findings_out.append(d)
     from wardline.core.agent_summary import build_agent_summary
 
@@ -263,6 +299,16 @@ def _scan(
             # source root — benign no-module skips are excluded). Surfaced so the
             # silent under-scan reaches the agent, not just the human-facing stderr.
             "unanalyzed": result.summary.unanalyzed,
+        },
+        # Make every cut explicit so a bounded payload never reads as "covered all".
+        "truncation": {
+            "summary_only": summary_only,
+            "include_suppressed": include_suppressed,
+            "max_findings": max_findings,
+            "findings_total": findings_total,
+            "findings_returned": len(findings_out),
+            "findings_truncated": findings_truncated,
+            "explanations_truncated": explanations_truncated,
         },
         "gate": {
             "tripped": decision.tripped,
@@ -281,6 +327,10 @@ def _scan(
             decision,
             filigree_emit=filigree_status,
             loomweave_write=loomweave_status,
+            display_findings=selected,
+            summary_only=summary_only,
+            max_findings=max_findings,
+            include_suppressed=include_suppressed,
         ).to_dict(),
     }
     _attach_legis_artifact(
@@ -643,6 +693,11 @@ def _fix(args: dict[str, Any], root: Path) -> dict[str, Any]:
 # fail_on=NONE is not a meaningful gate threshold.
 _SEVERITY_ENUM = ["CRITICAL", "ERROR", "WARN", "INFO"]
 
+# Default ceiling on the number of active-defect provenances inlined by `explain: true`
+# on the MCP `scan`. Bounds the one-shot payload (the dogfood report hit 56,820 chars on
+# one line over a whole repo); an explicit `max_findings` tightens it further.
+_EXPLAIN_DEFAULT_CAP = 25
+
 
 class WardlineMCPServer:
     def __init__(
@@ -782,7 +837,26 @@ class WardlineMCPServer:
                             "type": "boolean",
                             "description": "Inline each active defect's taint provenance "
                             "(immediate tainted callee, source boundary, trust tiers, resolution "
-                            "counts) — one call instead of an explain_taint per finding.",
+                            "counts) — one call instead of an explain_taint per finding. Inlining is "
+                            "capped at 25 provenances by default (tighten with max_findings); the cut "
+                            "is reported at truncation.explanations_truncated.",
+                        },
+                        "summary_only": {
+                            "type": "boolean",
+                            "description": "Return counts + gate only, no finding bodies — the smallest "
+                            "'did the gate pass?' payload. summary/gate still describe the whole project.",
+                        },
+                        "max_findings": {
+                            "type": "integer",
+                            "description": "Cap the number of returned finding bodies (and inlined "
+                            "explanations). The cut is reported in the truncation block; summary counts "
+                            "stay whole-project.",
+                        },
+                        "include_suppressed": {
+                            "type": "boolean",
+                            "description": "Default true. Set false to drop suppressed (baselined/waived/"
+                            "judged) finding bodies from the response; the suppression counts stay in "
+                            "summary.",
                         },
                         "new_since": {
                             "type": "string",

@@ -224,6 +224,24 @@ Resources expose the trust vocabulary, rule catalog, config, and config schema.
 The `wardline:loop` prompt documents the intended
 scan → explain → fix-at-the-boundary → rescan cycle.
 
+`scan` payload controls (the `summary`/`gate` blocks always describe the whole
+project — these only bound the returned finding bodies):
+
+- `where` — a conjunctive read-lens (keys: `rule_id`, `qualname`, `severity`,
+  `suppression`, `kind`, `path_glob`, `sink`, `tier`) that filters **both** the
+  `findings` list and the `agent_summary` arrays.
+- `summary_only: true` — counts + gate only, no finding bodies. The smallest
+  "did the gate pass?" payload.
+- `include_suppressed: false` — drop suppressed (baselined/waived/judged) bodies;
+  the suppression counts stay in `summary`.
+- `max_findings: N` — cap the returned bodies (and inlined explanations).
+- `explain: true` — inline each active defect's provenance; capped at 25 by
+  default (tighten with `max_findings`).
+
+Every cut is reported in the response `truncation` block (`findings_total`,
+`findings_returned`, `findings_truncated`, `explanations_truncated`) so a bounded
+payload never reads as "covered everything."
+
 With an opt-in Loomweave taint store configured (`wardline mcp --loomweave-url
 <URL>`), `explain_taint` becomes a query when you pass the finding's `qualname`
 as `sink_qualname`: a fresh fact is served from the store without re-scanning
