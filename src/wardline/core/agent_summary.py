@@ -106,8 +106,10 @@ class AgentSummary:
             "suppressed_findings": suppressed,
             "engine_facts": engine_facts,
             # next_actions follow the whole-project active count, not the displayed slice,
-            # so a summary_only/filtered view does not falsely say "no active defects".
-            "next_actions": _next_actions_for(count_active),
+            # so a summary_only/filtered view does not falsely say "no active defects" — and
+            # they are GATE-AWARE so a baselined-only trip (0 active + gate FAILED) never
+            # reads as "rescan after edits" / passed (dogfood #2, the "Worse" half).
+            "next_actions": _next_actions_for(count_active, self.gate),
         }
 
 
@@ -177,14 +179,28 @@ def _finding_entry(finding: Finding, *, include_next: bool) -> dict[str, Any]:
     return entry
 
 
-def _next_actions_for(active_count: int) -> list[dict[str, Any]]:
-    if active_count == 0:
-        return [{"tool": "scan", "reason": "no active defects; rescan after edits"}]
-    return [
-        {"tool": "explain_taint", "reason": "inspect each active defect before editing"},
-        {"tool": "file_finding", "reason": "promote confirmed true positives after Filigree emission"},
-        {"tool": "scan", "reason": "rescan after fixes to verify closure"},
-    ]
+def _next_actions_for(active_count: int, gate: GateDecision) -> list[dict[str, Any]]:
+    if active_count > 0:
+        return [
+            {"tool": "explain_taint", "reason": "inspect each active defect before editing"},
+            {"tool": "file_finding", "reason": "promote confirmed true positives after Filigree emission"},
+            {"tool": "scan", "reason": "rescan after fixes to verify closure"},
+        ]
+    if gate.tripped:
+        # 0 active defects but the gate FAILED — it tripped on suppressed/baselined findings.
+        # Do NOT say "rescan after edits" (which reads as passed); point at the gate verdict.
+        detail = gate.reason or "the gate tripped on suppressed (baselined/waived/judged) findings"
+        return [
+            {
+                "tool": "scan",
+                "reason": (
+                    f"gate FAILED with 0 active defects — {detail}. To clear: pass "
+                    "trust_suppressions (trusted checkout) or new_since <ref> (PR), or remove the "
+                    "baseline/waiver/judged entries; see gate.reason / gate.migration_hint."
+                ),
+            }
+        ]
+    return [{"tool": "scan", "reason": "no active defects; rescan after edits"}]
 
 
 def build_agent_summary(
