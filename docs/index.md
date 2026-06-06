@@ -33,7 +33,7 @@ wardline scan . --format jsonl
 ```
 
 ```text
-scanned 2 file(s); 4 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 new -> findings.jsonl
+scanned 2 file(s); 4 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> findings.jsonl
 ```
 
 In JSONL mode the findings are written to `findings.jsonl` in the current

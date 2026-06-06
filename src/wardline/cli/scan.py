@@ -345,10 +345,15 @@ def scan(
             click.echo(line)
     s = result.summary
     unanalyzed_segment = f"; {s.unanalyzed} file(s) could not be analyzed" if s.unanalyzed else ""
+    # "active" = non-suppressed DEFECTs in the EMITTED findings — the canonical term
+    # used by SuppressionState.ACTIVE, ScanSummary.active, the MCP summary key, the
+    # agent-summary active_defects, and the wardline:loop prompt. It is NOT Filigree's
+    # first-seen "new" (unseen fingerprint) nor the --fail-on gate population
+    # (ScanResult.gate_findings). See docs/reference/finding-lifecycle-vocabulary.md.
     click.echo(
         f"scanned {result.files_scanned} file(s); {s.total} finding(s) — "
         f"{s.baselined + s.waived + s.judged} suppressed "
-        f"({s.baselined} baseline / {s.waived} waiver / {s.judged} judged), {s.active} new"
+        f"({s.baselined} baseline / {s.waived} waiver / {s.judged} judged), {s.active} active"
         f"{unanalyzed_segment} -> {output}"
     )
     # A discovered-but-not-analysed file is a silent under-scan; never hide it.

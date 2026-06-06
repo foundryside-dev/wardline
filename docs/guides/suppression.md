@@ -18,8 +18,13 @@ breakdown:
 
 ```console
 $ wardline scan .
-scanned 2 file(s); 4 finding(s) — 1 suppressed (1 baseline / 0 waiver / 0 judged), 0 new -> findings.jsonl
+scanned 2 file(s); 4 finding(s) — 1 suppressed (1 baseline / 0 waiver / 0 judged), 0 active -> findings.jsonl
 ```
+
+The trailing count is the number of **active** (non-suppressed) defects. For the
+precise meaning of every state word — `active`, `baselined`, `waived`, `judged`,
+and the three distinct meanings of "new" — see
+[Finding lifecycle & gate vocabulary](../reference/finding-lifecycle-vocabulary.md).
 
 ## Suppressions and the `--fail-on` gate (read this first)
 
@@ -129,7 +134,7 @@ non-empty string; a duplicate fingerprint or a non-ISO `expires` is a hard error
 
 ```console
 $ wardline scan .
-scanned 2 file(s); 4 finding(s) — 1 suppressed (0 baseline / 1 waiver / 0 judged), 0 new -> findings.jsonl
+scanned 2 file(s); 4 finding(s) — 1 suppressed (0 baseline / 1 waiver / 0 judged), 0 active -> findings.jsonl
 ```
 
 Expiry is **inclusive**: a waiver is active through its `expires` day and lapses

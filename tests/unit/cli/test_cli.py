@@ -1227,8 +1227,8 @@ def v(p):
     # Run scan with --fix and --yes
     res = CliRunner().invoke(cli, ["scan", str(tmp_path), "--fix", "--yes"])
     assert res.exit_code == 0, res.output
-    # The scan output should show that the findings were fixed, and the re-run has 0 new defects
-    assert "0 new" in res.output
+    # The scan output should show that the findings were fixed, and the re-run has 0 active defects
+    assert "0 active" in res.output
     assert "raise ValueError" in m_py.read_text(encoding="utf-8")
 
 

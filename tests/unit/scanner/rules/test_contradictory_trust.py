@@ -120,3 +120,37 @@ def test_aliased_decorators_fire(tmp_path) -> None:
     )
     findings = _run(ctx)
     assert [(f.rule_id, f.qualname) for f in findings] == [("PY-WL-110", "m.f")]
+
+
+def test_weft_markers_namespace_fires(tmp_path) -> None:
+    # wardline-d62845bb18: a contradictory stack imported from the renamed
+    # `weft_markers` shim must fire identically to `wardline.decorators` — it is
+    # a recognised boundary namespace in the builtin grammar (BUILTIN_BOUNDARY_TYPES).
+    ctx = _analyze(
+        tmp_path,
+        """
+        from weft_markers import external_boundary, trusted
+        @trusted
+        @external_boundary
+        def conflicting(p):
+            return p
+        """,
+    )
+    findings = _run(ctx)
+    assert [(f.rule_id, f.qualname) for f in findings] == [("PY-WL-110", "m.conflicting")]
+
+
+def test_weft_markers_call_form_fires(tmp_path) -> None:
+    # The called form (@trusted(level=...) + @external_boundary) over weft_markers.
+    ctx = _analyze(
+        tmp_path,
+        """
+        from weft_markers import external_boundary, trusted
+        @trusted(level='ASSURED')
+        @external_boundary
+        def conflicting(p):
+            return p
+        """,
+    )
+    findings = _run(ctx)
+    assert [(f.rule_id, f.qualname) for f in findings] == [("PY-WL-110", "m.conflicting")]

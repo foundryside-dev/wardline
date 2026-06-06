@@ -105,7 +105,7 @@ By default a scan reports but never fails — the gate is opt-in:
 
 ```console
 $ wardline scan .
-scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 new -> findings.jsonl
+scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> findings.jsonl
 ```
 
 ```console
@@ -118,7 +118,7 @@ at or above the threshold drives a non-zero exit:
 
 ```console
 $ wardline scan . --fail-on ERROR
-scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 new -> findings.jsonl
+scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> findings.jsonl
 ```
 
 ```console
@@ -190,7 +190,7 @@ a sibling Weft tool — emit SARIF 2.1.0:
 
 ```console
 $ wardline scan . --format sarif --output results.sarif --fail-on ERROR
-scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 new -> results.sarif
+scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> results.sarif
 ```
 
 The log is standard SARIF 2.1.0 with a `wardline` driver and one result per

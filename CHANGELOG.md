@@ -68,6 +68,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   marked `dirty: true` (legis records it `unverified`). Signing stays clean-tree-only;
   the loud refusal without `--allow-dirty` is unchanged. Lets the dev/tour loop exercise
   the Wardline→legis handshake without a commit.
+- **PY-WL-110 (contradictory-trust) now fires for the `weft_markers` namespace
+  (soundness; `wardline-d62845bb18`).** The rule hardcoded
+  `wardline.decorators.*` as the only recognised marker prefix, so a contradictory
+  `@trusted` + `@external_boundary` stack imported from the renamed `weft_markers`
+  shim (the namespace authors are steered toward post-rebrand) was silently *not*
+  flagged. The prefix set is now derived from `BUILTIN_BOUNDARY_TYPES`
+  (`{wardline.decorators, weft_markers}`) so the rule cannot drift from the grammar
+  that seeds provenance. The other boundary rules read resolved provenance and never
+  had this gap.
+- **Taint: lambda bindings are now branch-local (`wardline-36016d26f3`).** The
+  `_CURRENT_LAMBDA_BINDINGS` map was shared across `if`/`else`, `try`/`except`, and
+  `match` arms (unlike `var_taints`), so a lambda bound in one arm leaked into a
+  mutually-exclusive sibling and could over-fire (false positive) in adversarial
+  branch layouts. Each arm is now walked against an arm-local copy and re-converged by
+  layering each arm's *delta* onto the pre-branch state in source order — which both
+  removes the cross-arm leak and preserves a rebinding made in a no-`else` / no-catch-all
+  arm for a call after the branch (so no new false negative is introduced).
 - **Loomweave HMAC signer resync (auth path was 401ing every signed request).**
   Wardline's request signature drifted from Loomweave's verifier (ADR-042): the
   canonical message is now `METHOD\nPATH\nSHA256HEX(body)\nTIMESTAMP\nNONCE` (the
@@ -88,6 +105,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   honest (both populations are the same length).
 
 ### Changed
+- **CLI scan summary now labels the non-suppressed count `active`, not `new`**
+  (`wardline-26e84dbd44`). The human summary line previously printed
+  `… N new`, but every other surface — the `SuppressionState.ACTIVE` enum, the
+  `ScanSummary.active` field, the MCP `summary.active` key, the agent-summary
+  `active_defects` key, and the `wardline:loop` prompt — already said `active`.
+  The CLI now matches, so an agent never reconciles a CLI "N new" against an MCP
+  "active". Text-only (the count value is unchanged); no JSON/SARIF/wire field
+  renamed. The new [Finding lifecycle & gate vocabulary](https://github.com/foundryside-dev/wardline/blob/main/docs/reference/finding-lifecycle-vocabulary.md)
+  reference page is the single source of truth for these state words (and the
+  three distinct meanings of "new" across the suite).
 - **Filigree clients no longer crash the scan loop when Filigree auth is enabled.**
   `401`/`403` from `/api/weft/*` are now treated as **soft** (enrichment unavailable,
   like a 5xx/outage) across the emit and promote/file clients — previously a loud

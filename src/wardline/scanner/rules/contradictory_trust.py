@@ -30,10 +30,16 @@ from wardline.scanner.rules.metadata import RuleMetadata
 if TYPE_CHECKING:
     from wardline.scanner.context import AnalysisContext
 
-# The recognised trust-marker names (the grammar boundary types' canonical names).
-# A custom grammar's markers are the agent's own concern; the builtin rule keys on
-# the builtin vocabulary, which is the contract Wardline ships.
+# The recognised trust-marker names (the grammar boundary types' canonical names)
+# and the module prefixes they may be imported from. A custom grammar's markers are
+# the agent's own concern; the builtin rule keys on the builtin vocabulary, which is
+# the contract Wardline ships. Both names AND prefixes are derived from
+# BUILTIN_BOUNDARY_TYPES so the rule cannot drift from the grammar — the prefix set
+# is how ``wardline.decorators`` and the renamed ``weft_markers`` shim are BOTH
+# recognised (wardline-d62845bb18: hardcoding only ``wardline.decorators`` silently
+# missed contradictory stacks written against the recommended ``weft_markers`` shim).
 _MARKER_NAMES: frozenset[str] = frozenset(bt.canonical_name for bt in BUILTIN_BOUNDARY_TYPES)
+_MARKER_MODULE_PREFIXES: frozenset[str] = frozenset(bt.module_prefix for bt in BUILTIN_BOUNDARY_TYPES)
 
 METADATA = RuleMetadata(
     rule_id="PY-WL-110",
@@ -72,9 +78,7 @@ def _marker_canonical_name(deco: ast.expr, alias_map: Mapping[str, str]) -> str 
     if fqn is None:
         return None
     last = fqn.rsplit(".", 1)[-1]
-    if last in {"external_boundary", "trust_boundary", "trusted"} and (
-        fqn.startswith("wardline.decorators.") or fqn.startswith("wardline.decorators.trust.")
-    ):
+    if last in _MARKER_NAMES and any(fqn.startswith(prefix + ".") for prefix in _MARKER_MODULE_PREFIXES):
         return last
     return None
 

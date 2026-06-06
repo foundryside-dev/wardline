@@ -365,6 +365,71 @@ def test_107_lambda_captures_var_raw_earlier_conservatively_fires(tmp_path) -> N
     assert [(x.rule_id, x.qualname) for x in findings] == [("PY-WL-107", "m.f")]
 
 
+def test_107_lambda_bound_in_sibling_if_arm_does_not_leak(tmp_path) -> None:
+    # Branch-locality regression (wardline-36016d26f3): a lambda bound in the
+    # if-arm must NOT leak into the mutually-exclusive else-arm. The else-arm
+    # calls ``cb(raw)`` — if the if-arm binding leaks, the at-call path binds
+    # x=raw into eval(x) and over-fires (false positive). Branch-local bindings
+    # mean the else-arm has no binding for ``cb``, so only the worst-ever second
+    # pass records eval(x) with x reset to function_taint (ASSURED) → clean.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p, cond):
+            raw = read_raw(p)
+            if cond:
+                cb = lambda x: eval(x)
+            else:
+                cb(raw)
+        """,
+    )
+    assert UntrustedToExec().check(ctx) == []
+
+
+def test_107_lambda_bound_in_try_arm_does_not_leak_to_handler(tmp_path) -> None:
+    # Branch-locality regression (wardline-36016d26f3) for try/except: a lambda
+    # bound in the try body must NOT leak into the except handler (a mutually
+    # exclusive arm). The handler calls ``cb(raw)``; a leaked binding would bind
+    # x=raw into eval(x) and over-fire. Branch-local try/handler bindings mean
+    # the handler has no binding for ``cb``.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            raw = read_raw(p)
+            try:
+                cb = lambda x: eval(x)
+            except Exception:
+                cb(raw)
+        """,
+    )
+    assert UntrustedToExec().check(ctx) == []
+
+
+def test_107_lambda_bound_in_match_arm_does_not_leak_to_sibling(tmp_path) -> None:
+    # Branch-locality regression (wardline-36016d26f3) for match/case: a lambda
+    # bound in the first case-arm must NOT leak into a sibling case-arm. The
+    # second arm calls ``cb(raw)``; a leaked binding would bind x=raw into
+    # eval(x) and over-fire. Branch-local case bindings mean the second arm has
+    # no binding for ``cb``.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p, kind):
+            raw = read_raw(p)
+            match kind:
+                case "a":
+                    cb = lambda x: eval(x)
+                case _:
+                    cb(raw)
+        """,
+    )
+    assert UntrustedToExec().check(ctx) == []
+
+
 def test_108_raw_reaches_os_system_in_lambda_body(tmp_path) -> None:
     # The engine fix is sink-agnostic (shared _resolve_expr / worst_arg_taint): a
     # command sink in a lambda body fires flow-sensitively on real taint too.

@@ -227,6 +227,126 @@ def test_walrus_inside_lambda_does_not_leak_to_enclosing_scope() -> None:
     assert "z" not in out
 
 
+def _lambda_body_sink_arg(src: str) -> TaintState:
+    """Run the variable-taint pass over *src* (a function with a ``sink(c)`` call inside
+    a lambda body bound in one branch arm and a tainted ``cb(raw)`` call in a sibling
+    arm) and return the taint recorded for the lambda body's ``sink(c)`` argument.
+
+    Used by the wardline-36016d26f3 branch-locality regression tests: if the lambda
+    binding leaks into the sibling arm, the else/handler/case arm's ``raw`` reaches the
+    lambda body and the recorded arg becomes EXTERNAL_RAW (the over-fire). Branch-local,
+    it stays INTEGRAL (if-arm direct call + the floor pass, both neutral)."""
+    func = ast.parse(src).body[0]
+    assert isinstance(func, ast.FunctionDef)
+    csat: dict[int, dict[int | str | None, TaintState]] = {}
+    compute_variable_taints(
+        func,
+        T.INTEGRAL,
+        {},
+        call_site_taints={},
+        alias_map={},
+        call_site_arg_taints=csat,
+        param_meets={"raw": T.EXTERNAL_RAW},
+    )
+    sink_call = next(
+        n for n in ast.walk(func) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "sink"
+    )
+    return csat[id(sink_call)][0]
+
+
+def test_lambda_binding_is_branch_local_across_if_else() -> None:
+    # wardline-36016d26f3: a lambda bound in the if-arm must NOT leak into the sibling
+    # else-arm. _CURRENT_LAMBDA_BINDINGS was shared across branches (unlike var_taints,
+    # which is copied per arm), so `cb(raw)` in the else-arm — where `cb` is NOT bound
+    # to the lambda — spuriously resolved the if-arm's lambda body against the raw arg,
+    # over-tainting the body's inner `sink(c)` call. Over-fire only (the final
+    # worst-ever pass is the soundness floor), but a real false positive in adversarial
+    # branch layouts.
+    src = (
+        "def handler(raw):\n"
+        "    if flag:\n"
+        "        cb = lambda c: sink(c)\n"
+        "        cb('safe')\n"
+        "    else:\n"
+        "        cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.INTEGRAL
+
+
+def test_lambda_binding_is_branch_local_across_try_except() -> None:
+    # Same leak class for mutually-exclusive try-success vs except-handler arms.
+    src = (
+        "def handler(raw):\n"
+        "    try:\n"
+        "        cb = lambda c: sink(c)\n"
+        "        cb('safe')\n"
+        "    except Exception:\n"
+        "        cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.INTEGRAL
+
+
+def test_lambda_binding_is_branch_local_across_match() -> None:
+    # Same leak class for mutually-exclusive match case arms.
+    src = (
+        "def handler(raw, kind):\n"
+        "    match kind:\n"
+        "        case 'a':\n"
+        "            cb = lambda c: sink(c)\n"
+        "            cb('safe')\n"
+        "        case _:\n"
+        "            cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.INTEGRAL
+
+
+def test_lambda_rebinding_survives_no_else_if_for_post_branch_call() -> None:
+    # wardline-36016d26f3 (merge-OUT direction, no-false-negative guard): branch-local
+    # bindings must still re-converge so a rebinding made inside a no-`else` ``if``
+    # survives for a call AFTER the branch. ``cb`` is bound to a safe lambda, rebound to
+    # the sink lambda in the if-arm, then ``cb(raw)`` runs after the branch — ``cb`` MAY
+    # be the sink lambda, so the body's ``sink(c)`` arg must stay EXTERNAL_RAW
+    # (conservative). A clear-then-union merge that let the implicit (no-else)
+    # fall-through arm win last reverted ``cb`` to the safe lambda and dropped the
+    # detection — a false negative the pre-branch-local engine did not have.
+    src = (
+        "def handler(raw):\n"
+        "    cb = lambda c: c\n"
+        "    if flag:\n"
+        "        cb = lambda c: sink(c)\n"
+        "    cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
+
+
+def test_lambda_rebinding_survives_match_without_catch_all_for_post_branch_call() -> None:
+    # Same merge-out no-false-negative guard for a ``match`` with no catch-all case: the
+    # synthetic no-match fall-through arm must not revert a case-arm rebinding.
+    src = (
+        "def handler(raw, kind):\n"
+        "    cb = lambda c: c\n"
+        "    match kind:\n"
+        "        case 'a':\n"
+        "            cb = lambda c: sink(c)\n"
+        "    cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
+
+
+def test_lambda_rebinding_in_try_survives_into_finalbody() -> None:
+    # Same merge-out guard for try/finally: a rebinding in the try body must survive the
+    # branch join into the unconditionally-executed finalbody.
+    src = (
+        "def handler(raw):\n"
+        "    cb = lambda c: c\n"
+        "    try:\n"
+        "        cb = lambda c: sink(c)\n"
+        "    finally:\n"
+        "        cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
+
+
 def test_compute_return_taint_all_shapes() -> None:
     import ast
     import textwrap
