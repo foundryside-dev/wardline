@@ -17,7 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from wardline.core.finding import Severity
-from wardline.core.run import gate_decision, run_scan
+from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
 from wardline.mcp.server import _finding_to_dict, _scan
 
 _CORPUS = Path(__file__).resolve().parents[3] / "tests" / "corpus" / "fixtures"
@@ -33,12 +33,14 @@ def test_cli_and_mcp_scan_agree_on_findings_and_gate() -> None:
     mcp = _scan({"fail_on": "ERROR"}, root=_CORPUS)
 
     assert mcp["findings"] == cli_findings
+    cli_hint = baseline_migration_hint(cli_result, cli_gate, root=_CORPUS, new_since=None)
     assert mcp["gate"] == {
         "tripped": cli_gate.tripped,
         "fail_on": cli_gate.fail_on,
         "exit_class": cli_gate.exit_class,
         "reason": cli_gate.reason,
         "evaluated": cli_gate.evaluated,
+        "migration_hint": cli_hint,
     }
     assert mcp["summary"]["total"] == cli_result.summary.total
     assert mcp["summary"]["active"] == cli_result.summary.active

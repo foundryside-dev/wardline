@@ -24,6 +24,7 @@ from wardline.core.finding import (
     Finding,
     Kind,
     Location,
+    Maturity,
     Severity,
     SuppressionState,
 )
@@ -305,6 +306,60 @@ def gate_decision(result: ScanResult, fail_on: Severity | None) -> GateDecision:
         reason=reason,
         evaluated=evaluated,
     )
+
+
+def baseline_migration_hint(
+    result: ScanResult,
+    decision: GateDecision,
+    *,
+    root: Path,
+    new_since: str | None,
+) -> str | None:
+    """A LOUD one-line migration signal for the secure gate-default rollout, or None.
+
+    Returns the hint ONLY in the exact 'my repo went red with no code change' case:
+    a committed ``.wardline/baseline.yaml`` exists, the gate tripped, the trip is
+    driven SOLELY by baselined defects re-entering the unsuppressed population (no
+    genuinely-active defect), and the operator passed neither ``--trust-suppressions``
+    nor ``--new-since``. Otherwise None — a genuine active trip, a waiver/judged-only
+    trip, a trusted/PR-scoped run, or no baseline file are all NOT the rollout surprise.
+    """
+    if not decision.tripped or decision.fail_on is None or new_since is not None:
+        return None
+    # --trust-suppressions honors the baseline, so there is no surprise to migrate from.
+    if result.gate_findings is None:
+        return None
+    if not (root / ".wardline" / "baseline.yaml").is_file():
+        return None
+    from wardline.core.suppression import gate_breakdown
+
+    fail_on = Severity(decision.fail_on)
+    active, _suppressed = gate_breakdown(result.findings, fail_on)
+    if active:
+        return None  # a real active defect tripped it — not a migration artifact
+    baselined = sum(
+        1
+        for f in result.findings
+        if f.kind is Kind.DEFECT
+        and f.suppressed is SuppressionState.BASELINED
+        and f.maturity is not Maturity.PREVIEW
+        and _gates(f.severity, fail_on)
+    )
+    if not baselined:
+        return None  # tripped by waived/judged only — different escape, not this hint
+    sev = decision.fail_on
+    return (
+        f"migration: baseline present but not honored by default since v1.0 (secure gate default) — "
+        f"{baselined} baselined {sev}+ defect(s) re-enter the gate. Pass --trust-suppressions for a "
+        f"trusted local checkout or --new-since <merge-base> in CI. See UPGRADING.md."
+    )
+
+
+def _gates(severity: Severity, fail_on: Severity) -> bool:
+    from wardline.core.suppression import _RANK
+
+    rank = _RANK.get(severity)
+    return rank is not None and rank >= _RANK[fail_on]
 
 
 def _gate_reason(result: ScanResult, fail_on: Severity, *, tripped: bool, honors_suppressions: bool) -> str:

@@ -8,7 +8,13 @@ import pytest
 from wardline.core.errors import ConfigError
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.judged import JudgedFP, write_judged
-from wardline.core.run import ScanResult, ScanSummary, gate_decision, run_scan
+from wardline.core.run import (
+    ScanResult,
+    ScanSummary,
+    baseline_migration_hint,
+    gate_decision,
+    run_scan,
+)
 
 FIXTURE = Path("tests/fixtures/sample_project")
 
@@ -234,6 +240,55 @@ def test_gate_decision_no_threshold_has_no_reason() -> None:
     result = ScanResult(findings=[], summary=ScanSummary(0, 0, 0, 0, 0), files_scanned=0, context=None)
     decision = gate_decision(result, None)
     assert decision.reason is None and decision.evaluated is None
+
+
+def _hint(proj: Path, *, new_since=None, trust=False):
+    result = run_scan(proj, new_since=new_since, trust_suppressions=trust)
+    decision = gate_decision(result, Severity.ERROR)
+    return baseline_migration_hint(result, decision, root=proj, new_since=new_since)
+
+
+def test_migration_hint_fires_on_baselined_only_trip(tmp_path: Path) -> None:
+    # The dogfood #3 'my repo went red with no code change' case: a committed baseline
+    # that used to clear the gate now re-enters it. Emit a loud one-liner pointing at
+    # the escape hatches and the upgrade note.
+    proj, fp = _leaky_proj(tmp_path)
+    _write_baseline(proj, fp)
+    hint = _hint(proj)
+    assert hint is not None
+    assert "baseline" in hint
+    assert "--trust-suppressions" in hint and "--new-since" in hint
+    assert "UPGRADING" in hint
+
+
+def test_migration_hint_silent_under_trust_suppressions(tmp_path: Path) -> None:
+    proj, fp = _leaky_proj(tmp_path)
+    _write_baseline(proj, fp)
+    assert _hint(proj, trust=True) is None
+
+
+def test_migration_hint_silent_under_new_since(tmp_path: Path) -> None:
+    # new_since scopes the gate (operator-supplied ratchet); the surprise — and the hint —
+    # belongs to the unscoped run. Assert the helper short-circuits on a non-None ref
+    # (tested directly so it does not require a git repo for the delta walk).
+    proj, fp = _leaky_proj(tmp_path)
+    _write_baseline(proj, fp)
+    result = run_scan(proj)
+    decision = gate_decision(result, Severity.ERROR)
+    assert baseline_migration_hint(result, decision, root=proj, new_since="origin/main") is None
+
+
+def test_migration_hint_silent_on_genuine_active_trip(tmp_path: Path) -> None:
+    # An active (un-baselined) defect trips for a real reason — not a migration surprise.
+    proj, _ = _leaky_proj(tmp_path)
+    assert _hint(proj) is None
+
+
+def test_migration_hint_silent_without_baseline_file(tmp_path: Path) -> None:
+    # A waiver-only trip is real debt, not the baseline-rollout surprise this hint is for.
+    proj, fp = _leaky_proj(tmp_path)
+    _write_waiver(proj, fp)
+    assert _hint(proj) is None
 
 
 def test_gate_findings_is_unsuppressed_population(tmp_path: Path) -> None:

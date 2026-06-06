@@ -164,6 +164,27 @@ def test_scan_gate_trip_prints_reason_and_population(tmp_path: Path) -> None:
     assert "gate: evaluated" in result.output
 
 
+def test_scan_baselined_only_trip_prints_migration_hint(tmp_path: Path) -> None:
+    # Dogfood #3: a committed baseline that used to clear the gate now re-enters it.
+    # The CLI must emit the loud one-line migration signal, not just exit 1.
+    from wardline.core.baseline import write_baseline
+    from wardline.core.run import run_scan as _run_scan
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "svc.py").write_text(_LEAKY_SRC, encoding="utf-8")
+    scan = _run_scan(project)
+    leak = next(f for f in scan.findings if f.rule_id == "PY-WL-101")
+    bl = project / ".wardline" / "baseline.yaml"
+    bl.parent.mkdir(parents=True, exist_ok=True)
+    write_baseline(bl, [leak])
+    out = tmp_path / "o.jsonl"
+    result = CliRunner().invoke(cli, ["scan", str(project), "--fail-on", "ERROR", "--output", str(out)])
+    assert result.exit_code == 1
+    assert "migration: baseline present but not honored by default since v1.0" in result.output
+    assert "UPGRADING.md" in result.output
+
+
 def test_scan_config_error_exits_2(tmp_path: Path) -> None:
     import shutil
 

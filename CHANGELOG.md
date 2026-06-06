@@ -7,7 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The `--fail-on` gate verdict now explains itself (dogfood friction #2/#3).** A scan
+  reporting `summary.active: 0` while `gate.tripped: true` no longer reads as a bug. The
+  gate block (CLI stderr, MCP `scan` result, and the agent-summary) carries a human
+  `reason` — e.g. `"34 suppressed ERROR+ defect(s) (baseline/waiver/judged) not cleared;
+  pass --trust-suppressions (trusted checkout) or --new-since <ref> (PR)"` for a
+  suppressed-only trip, `"N active ERROR+ defect(s)"` for a genuine one (no misdirection
+  to the suppression flags) — and an `evaluated` string naming the judged population
+  (`unsuppressed …` by default vs `post-suppression … honored` under
+  `--trust-suppressions`). Counts come from the annotated findings, so they match
+  `summary`.
+- **Loud migration signal for the secure gate-default rollout (dogfood friction #3).**
+  When a committed `.wardline/baseline.yaml` exists, the gate trips **solely** because
+  baselined defects re-enter the unsuppressed population, and neither
+  `--trust-suppressions` nor `--new-since` was passed, Wardline now prints a one-line
+  `migration:` hint (CLI stderr; MCP `scan` `gate.migration_hint`) pointing at the
+  escape hatches and the new **`UPGRADING.md`**. This is the "my repo went red with no
+  code change" case made self-explaining; the secure default itself is unchanged.
+
 ### Fixed
+- **`scan --format legis --allow-dirty` emits an unsigned dev artifact instead of
+  refusing (dogfood friction #1).** On a dirty working tree `scan --format legis`
+  failed `exit 2` naming an `allow_dirty` flag that was never exposed — presenting
+  identically to "legis is broken," the session's single biggest rabbit hole. The flag
+  is now exposed (`--allow-dirty` CLI / `allow_dirty` MCP `scan`). The honest fix: a
+  dirty tree under `--allow-dirty` does **not** sign — the only readable `tree_sha` is
+  the *committed* one, which does not describe dirty working content, so signing it
+  would be false provenance. It falls through to the **unsigned** dev artifact, clearly
+  marked `dirty: true` (legis records it `unverified`). Signing stays clean-tree-only;
+  the loud refusal without `--allow-dirty` is unchanged. Lets the dev/tour loop exercise
+  the Wardline→legis handshake without a commit.
 - **Loomweave HMAC signer resync (auth path was 401ing every signed request).**
   Wardline's request signature drifted from Loomweave's verifier (ADR-042): the
   canonical message is now `METHOD\nPATH\nSHA256HEX(body)\nTIMESTAMP\nNONCE` (the

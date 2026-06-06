@@ -26,7 +26,7 @@ from wardline.core.filigree_emit import FiligreeEmitter
 from wardline.core.finding import Finding, Kind, Severity, SuppressionState
 from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
-from wardline.core.run import gate_decision, run_scan
+from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
 from wardline.core.safe_paths import safe_project_file
 from wardline.core.sei_resolution import resolve_query_filters
 from wardline.core.waivers import add_waiver, parse_waivers
@@ -223,6 +223,7 @@ def _scan(
             "disabled_reason": wr.disabled_reason,
         }
     decision = gate_decision(result, threshold)
+    migration_hint = baseline_migration_hint(result, decision, root=path, new_since=new_since)
     filigree_block = _emit_filigree(result.findings, filigree, scanned_paths=result.scanned_paths)
     filigree_status = _filigree_emit_status(filigree_block)
     loomweave_status = _loomweave_write_status(loomweave_block)
@@ -269,6 +270,7 @@ def _scan(
             "exit_class": decision.exit_class,
             "reason": decision.reason,
             "evaluated": decision.evaluated,
+            "migration_hint": migration_hint,
         },
         "loomweave": loomweave_block,
         "filigree": filigree_block,

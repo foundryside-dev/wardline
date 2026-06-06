@@ -13,7 +13,7 @@ from wardline.core.emit import JsonlSink
 from wardline.core.errors import WardlineError
 from wardline.core.filigree_emit import EmitResult, FiligreeEmitter
 from wardline.core.finding import Severity
-from wardline.core.run import gate_decision, run_scan
+from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
 from wardline.core.sarif import SarifSink
 
 
@@ -344,12 +344,17 @@ def scan(
             f"(see WLN-ENGINE-* facts in {output}).",
             err=True,
         )
-    decision = gate_decision(result, Severity(fail_on)) if fail_on is not None else None
-    gate_tripped = decision is not None and decision.tripped
-    if decision is not None and decision.tripped:
+    gate_dec = gate_decision(result, Severity(fail_on)) if fail_on is not None else None
+    gate_tripped = gate_dec is not None and gate_dec.tripped
+    if gate_dec is not None and gate_dec.tripped:
         # Never let "0 active + gate FAILED" read as a bug: say why and which population.
-        click.echo(f"gate: FAILED (--fail-on {decision.fail_on}) — {decision.reason}", err=True)
-        click.echo(f"gate: evaluated {decision.evaluated}", err=True)
+        click.echo(f"gate: FAILED (--fail-on {gate_dec.fail_on}) — {gate_dec.reason}", err=True)
+        click.echo(f"gate: evaluated {gate_dec.evaluated}", err=True)
+        # The secure-gate-default rollout signal: a committed baseline that used to clear
+        # the gate now re-enters it. Loud + separable from the generic reason above.
+        hint = baseline_migration_hint(result, gate_dec, root=path, new_since=new_since)
+        if hint is not None:
+            click.echo(hint, err=True)
     # Independent of the severity gate: opt-in enforcement of "everything analysed".
     if gate_tripped or (fail_on_unanalyzed and s.unanalyzed):
         raise SystemExit(1)
