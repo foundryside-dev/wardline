@@ -38,18 +38,18 @@ def test_filigree_published_port_is_detected(tmp_path: Path, monkeypatch) -> Non
 @pytest.mark.parametrize(
     "payload",
     [
-        # All-digit payload over CPython's 4300-digit int(str) cap.
+        # All-digit payload over CPython's 4300-digit int(str) cap: passes ascii
+        # decode and isdigit(), raises in int() -> caught by the int() guard.
         pytest.param("9" * 5000, id="over-4300-digit-cap"),
-        # Unicode "digit" chars (superscripts): isdigit() True but int() raises,
-        # and they are short — so a length bound alone would not catch them.
+        # Unicode "digit" chars (superscripts) pass str.isdigit() but raise in int();
+        # rejected at the ascii read (decode error) before isdigit() is reached.
         pytest.param("²³⁴", id="unicode-isdigit"),
     ],
 )
-def test_filigree_isdigit_but_unparseable_port_is_soft(
-    tmp_path: Path, monkeypatch, payload: str
-) -> None:
-    # A planted ephemeral.port whose payload passes str.isdigit() but raises in
-    # int(). Detection must stay fail-soft (treat as absent), never crash.
+def test_filigree_hostile_port_payload_is_soft(tmp_path: Path, monkeypatch, payload: str) -> None:
+    # A planted ephemeral.port whose payload passes str.isdigit() but is not a valid
+    # int() — via the 4300-digit cap or a Unicode digit. Detection must stay fail-soft
+    # (treat as absent), never crash, whichever layer (ascii decode or int()) rejects it.
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)

@@ -327,16 +327,26 @@ def test_lambda_rebinding_survives_match_without_catch_all_for_post_branch_call(
     assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
 
 
-def test_lambda_rebinding_in_try_survives_into_finalbody() -> None:
-    # Same merge-out guard for try/finally: a rebinding in the try body must survive the
-    # branch join into the unconditionally-executed finalbody.
+def test_lambda_rebinding_in_try_survives_for_post_block_call() -> None:
+    # Same merge-out no-false-negative guard for try/except. (The prior try->finally
+    # form was VACUOUS: the finalbody call runs linearly after the try body, so the
+    # rebinding is seen with no branch join to revert it — it passed even without the
+    # fix.) The genuine join: a rebinding in the try body must survive for a call AFTER
+    # the whole try/except. The except arm is a sibling fall-through that does NOT
+    # rebind ``cb``, so a clear-then-union merge letting that arm win last would revert
+    # ``cb`` to the safe lambda and drop the detection (the FN). ``cb`` MAY be the sink
+    # lambda, so the body's ``sink(c)`` arg must stay EXTERNAL_RAW. Non-vacuity is
+    # pinned by test_lambda_binding_is_branch_local_across_try_except: the same
+    # rebinding called INSIDE the except arm stays INTEGRAL (the try-body binding does
+    # not leak sideways), so this EXTERNAL_RAW comes from the post-block merge join.
     src = (
         "def handler(raw):\n"
         "    cb = lambda c: c\n"
         "    try:\n"
         "        cb = lambda c: sink(c)\n"
-        "    finally:\n"
-        "        cb(raw)\n"
+        "    except Exception:\n"
+        "        pass\n"
+        "    cb(raw)\n"
     )
     assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
 

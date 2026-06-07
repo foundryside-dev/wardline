@@ -99,6 +99,28 @@ def test_doctor_fix_emits_shared_machine_readable_shape(tmp_path: Path, monkeypa
     assert checks["mcp.registration"]["fixed"] is True
 
 
+def test_doctor_reports_present_but_broken_weft_toml_as_error(tmp_path: Path, monkeypatch) -> None:
+    # C-9c makes load() silently fall back to built-in defaults on an unparseable
+    # shared weft.toml; doctor is the only compensating operator-visibility signal.
+    # A PRESENT-but-broken weft.toml must surface as wardline.config status=="error"
+    # (never the silent-default "ok"), else a misconfigured operator gets default
+    # behavior with no diagnostic. Guards the _check_config present-but-broken arm.
+    home = tmp_path / "home"
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    (tmp_path / "weft.toml").write_text("[wardline]\nrules = \n", encoding="utf-8")  # invalid TOML
+
+    result = CliRunner().invoke(cli, ["doctor", "--root", str(tmp_path), "--fix"])
+
+    payload = json.loads(result.output)
+    checks = {check["id"]: check for check in payload["checks"]}
+    assert checks["wardline.config"]["status"] == "error"
+    assert "weft.toml" in checks["wardline.config"]["message"]
+
+
 def test_doctor_fix_reports_filigree_url_ok_from_env(tmp_path: Path, monkeypatch) -> None:
     # The "upgrade commented binding when a port appears" feature was removed: doctor
     # no longer writes config and the filigree.url check is now ENV-ONLY (a published

@@ -63,11 +63,13 @@ def weft_state_dir(root: Path) -> Path:
     if override is None:
         return default
     candidate = Path(override)
-    resolved = candidate if candidate.is_absolute() else root / candidate
+    resolved = (candidate if candidate.is_absolute() else root / candidate).resolve()
     try:
-        resolved.resolve().relative_to(root.resolve())
+        resolved.relative_to(root.resolve())
     except ValueError:
         return default  # escaping override → fall back to the in-root default
+    # Return the resolved form (not the pre-resolve candidate) so a ``..`` segment
+    # in store_dir never leaks into the user-printed state path.
     return resolved
 
 

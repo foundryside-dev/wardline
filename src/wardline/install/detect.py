@@ -77,14 +77,17 @@ def _filigree_url_from_project(root: Path) -> str | None:
     # Prefer the consolidated .weft/filigree/ location; tolerate the legacy
     # .filigree/ dot-dir during the federation transition window.
     for base in (sibling_state_dir(root, "filigree"), legacy_sibling_dir(root, "filigree")):
-        port_file = base / "ephemeral.port"
-        if not port_file.is_file():
+        # ascii read, mirroring core/config._read_published_port: ephemeral.port is
+        # an ASCII integer by protocol, so non-ASCII bytes (incl. Unicode "digit"
+        # chars that pass isdigit() but raise in int()) are rejected at decode time.
+        try:
+            text = (base / "ephemeral.port").read_text(encoding="ascii").strip()
+        except (OSError, UnicodeDecodeError):
             continue
-        text = port_file.read_text(encoding="utf-8", errors="replace").strip()
-        # Guard int(): isdigit() is a superset of what int() parses — Unicode
-        # digits (²³⁴) pass isdigit() but raise, as does an all-digit payload over
-        # CPython's 4300-digit cap. Length alone is insufficient (²³⁴ is 3 chars).
-        # Catch ValueError so a planted ephemeral.port stays fail-soft, never crashes.
+        # Guard int(): isdigit() is a superset of what int() parses, so an all-digit
+        # payload over CPython's 4300-digit cap raises ValueError (the ascii read
+        # above already excludes Unicode digits). Catch it so a planted ephemeral.port
+        # stays fail-soft and never crashes detection.
         if text.isdigit():
             try:
                 port = int(text)
