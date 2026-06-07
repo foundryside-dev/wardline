@@ -82,7 +82,7 @@ def _scan_artifact(root: Path, *, key: bytes | None = None) -> tuple[dict, set[s
     """The signed (or unsigned) verbatim-postable scan via build_legis_artifact, plus
     the expected active-defect fingerprints for the one-judge cross-check."""
     result = run_scan(root)
-    cfg = load_config(root / "wardline.yaml")
+    cfg = load_config(root / "weft.toml")
     scan = build_legis_artifact(result, root=root, config=cfg, key=key)
     # The one-judge cross-check must mirror the population the artifact carries, which
     # mirrors gate_decision: the gate (unsuppressed) view, not the suppressed findings.

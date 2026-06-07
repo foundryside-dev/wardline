@@ -47,7 +47,7 @@ def test_resolve_query_filters_no_sei() -> None:
 
 
 def test_resolve_query_filters_missing_url(tmp_path: Path, monkeypatch) -> None:
-    # No loomweave client, no env var, and a hermetic root with no wardline.yaml /
+    # No loomweave client, no env var, and a hermetic root with no weft.toml /
     # published port file — so nothing resolves a URL. (Must be an isolated root,
     # not Path("."), which would read the developer's cwd config.)
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)

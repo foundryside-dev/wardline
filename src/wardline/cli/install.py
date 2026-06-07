@@ -82,7 +82,7 @@ def install(
                 importlib.import_module(pack)
             except ImportError:
                 click.echo(f"warning: trust-grammar pack {pack!r} is not installed or importable locally", err=True)
-            lines.append(f"packs: {activate_pack(root, pack)}")
+            lines.append(f"packs: {activate_pack(pack)}")
         lines.append("runtime markers: install `weft-markers` and import from `weft_markers`")
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)

@@ -171,7 +171,7 @@ def test_lsp_scan_config_error_publishes_visible_diagnostic(tmp_path: Path) -> N
     stdout = io.StringIO()
     server = LspServer(root=tmp_path, stdin=io.StringIO(raw_input), stdout=stdout)
 
-    with patch("wardline.lsp.run_scan", side_effect=ConfigError("bad wardline.yaml")):
+    with patch("wardline.lsp.run_scan", side_effect=ConfigError("bad weft.toml")):
         server.run()
 
     messages = _lsp_messages(stdout.getvalue())
@@ -181,7 +181,7 @@ def test_lsp_scan_config_error_publishes_visible_diagnostic(tmp_path: Path) -> N
     diag = diagnostics[0]["params"]["diagnostics"][0]
     assert diag["code"] == "WLN-ENGINE-LSP-SCAN-FAILED"
     assert diag["severity"] == 1
-    assert "bad wardline.yaml" in diag["message"]
+    assert "bad weft.toml" in diag["message"]
 
 
 def test_lsp_unexpected_scan_error_is_not_silent(tmp_path: Path) -> None:

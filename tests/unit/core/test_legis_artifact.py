@@ -189,7 +189,7 @@ def _committed_repo(tmp_path: object, source: str = _LEAKY):
 
 def _build(repo, *, key: bytes | None = None, allow_dirty: bool = False) -> dict:
     result = run_scan(repo)
-    cfg = load_config(repo / "wardline.yaml")
+    cfg = load_config(repo / "weft.toml")
     return legis.build_legis_artifact(result, root=repo, config=cfg, key=key, allow_dirty=allow_dirty)
 
 
@@ -235,7 +235,7 @@ def test_artifact_includes_all_findings_projected(tmp_path) -> None:
     )
     repo = tmp_path / "norepo"
     repo.mkdir()
-    cfg = load_config(repo / "wardline.yaml")
+    cfg = load_config(repo / "weft.toml")
     scan = legis.build_legis_artifact(result, root=repo, config=cfg, key=None)
     assert {f["kind"] for f in scan["findings"]} == {"defect", "fact"}
     assert len(scan["findings"]) == 2
@@ -286,6 +286,6 @@ def test_signing_non_repo_refuses(tmp_path) -> None:
     repo.mkdir()
     (repo / "svc.py").write_text(_LEAKY, encoding="utf-8")
     result = run_scan(repo)
-    cfg = load_config(repo / "wardline.yaml")
+    cfg = load_config(repo / "weft.toml")
     with pytest.raises(LegisArtifactError):
         legis.build_legis_artifact(result, root=repo, config=cfg, key=b"k")

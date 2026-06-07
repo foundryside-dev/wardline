@@ -36,7 +36,7 @@ them and they are not what downstream associations key on.
   (decorated/nested/async/overloaded/methods/lambdas/comprehensions/unicode;
   fires `PY-WL-101` + `PY-WL-111`).
 
-Fixtures carry **no** `.wardline/` or `wardline.yaml` (a baseline/waiver would
+Fixtures carry **no** `.weft/` or `weft.toml` (a baseline/waiver would
 date-poison the corpus via `date.today()`); `.gitattributes` pins them to LF so
 `blake3` content hashes stay reproducible.
 

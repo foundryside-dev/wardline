@@ -21,7 +21,6 @@ def test_install_pack_emits_guidance(tmp_path: Path, monkeypatch) -> None:
     assert "weft.toml" in result.output
     assert "tests.unit.install.mock_pack" in result.output
     assert 'packs = ["tests.unit.install.mock_pack"]' in result.output
-    assert not (tmp_path / "wardline.yaml").exists()
     assert not (tmp_path / "weft.toml").exists()
 
 
@@ -37,5 +36,4 @@ def test_install_pack_warns_if_not_importable(tmp_path: Path, monkeypatch) -> No
     # Guidance is still emitted for the (non-importable) pack name; no config is written.
     assert "weft.toml" in result.output
     assert 'packs = ["non_existent_pack_xyz"]' in result.output
-    assert not (tmp_path / "wardline.yaml").exists()
     assert not (tmp_path / "weft.toml").exists()

@@ -3,17 +3,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 
-
-def activate_pack(root: Path, pack_name: str) -> str:
+def activate_pack(pack_name: str) -> str:
     """Return operator guidance for activating a trust-grammar pack.
 
     Packs import and execute code (see the ``_is_local_pack`` guard in
     ``core/config``), so they MUST be operator-authored — wardline never writes the
     shared, read-only ``weft.toml``. This emits the snippet for the operator to add
-    by hand; runtime trust is still asserted separately via ``--trust-pack``. The
-    ``root`` parameter is kept for the caller's call shape (no file is touched).
+    by hand; runtime trust is still asserted separately via ``--trust-pack``.
     """
     return (
         f"To activate trust-grammar pack {pack_name!r}, add it to weft.toml under "

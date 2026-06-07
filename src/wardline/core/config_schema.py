@@ -16,7 +16,11 @@ WARDLINE_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
     "properties": {
         # Operator override for wardline's machine-state subtree location (default
-        # .weft/wardline). Read by core.paths.weft_state_dir; relative resolves under root.
+        # .weft/wardline). Validated HERE at config.load() time, but CONSUMED ELSEWHERE:
+        # core.paths._store_dir_override re-reads it via a raw tomllib parse that bypasses
+        # this schema, so a schema-invalid weft.toml can still have its store_dir honored.
+        # That seam is safe because weft_state_dir CONFINES the value under root (it is the
+        # confinement, not this schema, that bounds it) — see core.paths.weft_state_dir.
         "store_dir": {"type": "string"},
         "source_roots": {"type": "array", "items": {"type": "string"}},
         "exclude": {"type": "array", "items": {"type": "string"}},

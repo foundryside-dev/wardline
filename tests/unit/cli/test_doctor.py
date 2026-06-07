@@ -44,7 +44,7 @@ def test_doctor_repair_installs_artifacts_and_discovers_bindings(tmp_path: Path,
     assert (tmp_path / ".mcp.json").is_file()
     assert (home / ".codex" / "config.toml").is_file()
     assert (tmp_path / ".weft" / "wardline").is_dir()
-    assert not (tmp_path / "wardline.yaml").exists()
+    assert not (tmp_path / "weft.toml").exists()
 
 
 def test_doctor_passes_after_repair(tmp_path: Path, monkeypatch) -> None:
@@ -141,5 +141,4 @@ def test_doctor_fix_reports_filigree_url_ok_from_env(tmp_path: Path, monkeypatch
     payload = json.loads(result.output)
     checks = {check["id"]: check for check in payload["checks"]}
     assert checks["filigree.url"]["status"] == "ok"
-    assert not (tmp_path / "wardline.yaml").exists()
     assert not (tmp_path / "weft.toml").exists()

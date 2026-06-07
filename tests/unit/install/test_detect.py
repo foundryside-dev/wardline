@@ -7,7 +7,6 @@ from wardline.install.detect import detect_siblings
 
 def _assert_no_config_written(root: Path) -> None:
     # detect_siblings is detection-only — it must never author config.
-    assert not (root / "wardline.yaml").exists()
     assert not (root / "weft.toml").exists()
 
 

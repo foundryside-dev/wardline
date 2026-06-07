@@ -263,7 +263,9 @@ def test_unknown_prompt_is_invalid_params() -> None:
 def test_fix_tool_requires_explicit_apply(tmp_path: Path) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
-    (proj / "wardline.yaml").write_text("autofix:\n  boundary_exception: ValueError\n", encoding="utf-8")
+    (proj / "weft.toml").write_text(
+        '[wardline.autofix]\nboundary_exception = "ValueError"\n', encoding="utf-8"
+    )
 
     src_content = (
         "from wardline.decorators import trust_boundary\n"

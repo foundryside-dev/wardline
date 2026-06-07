@@ -92,7 +92,7 @@ def test_stress_covers_multiple_rules() -> None:
 
 
 def test_assure_corpus_has_no_waiver_debt() -> None:
-    # Fixtures ship with no .wardline/ waivers, so waiver_debt must be empty —
+    # Fixtures ship with no .weft/ waivers, so waiver_debt must be empty —
     # otherwise build_posture's date.today() would date-poison the corpus.
     import json
 
@@ -107,8 +107,8 @@ def test_assure_corpus_has_no_waiver_debt() -> None:
 @pytest.mark.parametrize("name", sorted(_INPUTS))
 def test_fixture_has_no_local_config(name: str) -> None:
     root = _INPUTS[name]
-    assert not (root / ".wardline").exists(), f"{name}: fixture must not carry a .wardline/ dir"
-    assert not (root / "wardline.yaml").exists(), f"{name}: fixture must not carry a wardline.yaml"
+    assert not (root / ".weft").exists(), f"{name}: fixture must not carry a .weft/ dir"
+    assert not (root / "weft.toml").exists(), f"{name}: fixture must not carry a weft.toml"
 
 
 _ACTUAL_KEY = pytest.StashKey[tuple]()

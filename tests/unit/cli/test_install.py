@@ -148,7 +148,6 @@ def test_install_detects_filigree_from_ephemeral_port(tmp_path: Path, monkeypatc
 
     assert result.exit_code == 0, result.output
     assert "filigree: detected (discovered URL)" in result.output
-    assert not (tmp_path / "wardline.yaml").exists()
     assert not (tmp_path / "weft.toml").exists()
 
 
@@ -166,7 +165,7 @@ def test_install_rerun_detects_filigree_when_port_appears_after_initial_install(
     initial = CliRunner().invoke(cli, ["install", "--root", str(tmp_path)])
     assert initial.exit_code == 0, initial.output
     assert "filigree: detected (no URL" in initial.output
-    assert not (tmp_path / "wardline.yaml").exists()
+    assert not (tmp_path / "weft.toml").exists()
 
     filigree_dir = tmp_path / ".filigree"
     filigree_dir.mkdir()
@@ -175,7 +174,6 @@ def test_install_rerun_detects_filigree_when_port_appears_after_initial_install(
 
     assert rerun.exit_code == 0, rerun.output
     assert "filigree: detected (discovered URL)" in rerun.output
-    assert not (tmp_path / "wardline.yaml").exists()
     assert not (tmp_path / "weft.toml").exists()
 
     captured: dict[str, object] = {}

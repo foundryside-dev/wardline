@@ -379,7 +379,7 @@ def test_reproduce_threads_config_path(tmp_path: Path) -> None:
     ``config_path`` is threaded into verify. (Before this fix verify hardcoded
     ``config_path=None`` → it rediscovered the default config → ``ruleset_hash`` mismatch.)"""
     tree = _annotated_tree(tmp_path)
-    cfg = tmp_path / "custom" / "wardline.yaml"
+    cfg = tmp_path / "custom" / "weft.toml"
     cfg.parent.mkdir()
     _write_config(cfg, severity="WARN")  # non-default severity → distinct ruleset_hash
 
