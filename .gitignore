@@ -42,3 +42,11 @@ CLAUDE.md
 .coverage
 coverage.json
 loomweave.yaml
+
+# Filigree issue tracker
+.weft/
+.filigree.conf
+.agents/skills/loomweave-workflow/.fingerprint
+.agents/skills/loomweave-workflow/SKILL.md
+.claude/skills/loomweave-workflow/.fingerprint
+.claude/skills/loomweave-workflow/SKILL.md
