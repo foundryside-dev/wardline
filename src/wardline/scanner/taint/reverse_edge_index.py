@@ -66,15 +66,15 @@ class ReverseModuleIndex:
     def transitive_callers(self, seeds: frozenset[str]) -> frozenset[str]:
         """``seeds`` plus every transitively-reverse-reachable module."""
         closure: set[str] = set(seeds)
-        frontier: set[str] = set(seeds)
+        frontier: list[str] = list(seeds)
+        get_callers = self._reverse.get
+
         while frontier:
-            next_frontier: set[str] = set()
-            for mod in frontier:
-                if mod not in self._reverse:
-                    continue
-                for caller_mod in self._reverse[mod]:
-                    if caller_mod not in closure:
-                        closure.add(caller_mod)
-                        next_frontier.add(caller_mod)
-            frontier = next_frontier
+            mod = frontier.pop()
+            callers = get_callers(mod)
+            if callers:
+                new_callers = callers - closure
+                if new_callers:
+                    closure.update(new_callers)
+                    frontier.extend(new_callers)
         return frozenset(closure)
