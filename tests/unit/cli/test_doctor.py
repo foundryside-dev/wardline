@@ -142,3 +142,39 @@ def test_doctor_fix_reports_filigree_url_ok_from_env(tmp_path: Path, monkeypatch
     checks = {check["id"]: check for check in payload["checks"]}
     assert checks["filigree.url"]["status"] == "ok"
     assert not (tmp_path / "weft.toml").exists()
+
+
+def test_doctor_accepts_filigree_url_flag_and_reports_not_configured(tmp_path: Path, monkeypatch) -> None:
+    # No filigree wiring (no .mcp.json arg, no env, no port) => filigree.auth is ok/not-configured,
+    # so doctor does no network and the new flag is accepted.
+    home = tmp_path / "home"
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.delenv("WEFT_FEDERATION_TOKEN", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_TOKEN", raising=False)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+
+    repair = CliRunner().invoke(cli, ["doctor", "--root", str(tmp_path), "--repair"])
+    assert repair.exit_code == 0, repair.output
+
+    result = CliRunner().invoke(cli, ["doctor", "--root", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "filigree.auth" in result.output
+
+
+def test_doctor_fix_json_includes_filigree_auth_check(tmp_path: Path, monkeypatch) -> None:
+    import json as _json
+
+    home = tmp_path / "home"
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.delenv("WEFT_FEDERATION_TOKEN", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_TOKEN", raising=False)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+
+    result = CliRunner().invoke(cli, ["doctor", "--root", str(tmp_path), "--fix"])
+    payload = _json.loads(result.output)
+    ids = [c["id"] for c in payload["checks"]]
+    assert "filigree.auth" in ids

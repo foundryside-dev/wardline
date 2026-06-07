@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `wardline doctor` now verifies the Filigree federation token: it probes the
+  configured daemon (URL resolved from `.mcp.json`/env) with the token wardline
+  would emit and reports a `filigree.auth` check. `--repair` recovers the
+  daemon-accepted token from local mints and pins it as `WEFT_FEDERATION_TOKEN`
+  in `.env`, removing a stale `WARDLINE_FILIGREE_TOKEN` line.
+
 ### Changed
 - **BREAKING: Weft config/store consolidation.** Operator config moved from
   `wardline.yaml` (YAML) to the `[wardline]` table of a shared, operator-authored
@@ -43,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is honored as a **deprecated fallback** (read after the new name), so existing
   deployments keep working with no change; migrate at leisure. Only the token *value*
   must match what the Filigree operator configured.
+- **`wardline doctor --repair`/`install` now preserves operator-pinned
+  `--filigree-url`/`--loomweave-url` args** in the `.mcp.json` wardline server entry
+  (in the order the operator wrote them) instead of normalizing them away. Previously
+  every repair rewrote the entry to the bare canonical args, silently stripping a
+  fixed-port sibling emit/discovery target the published-port rung cannot reconstruct.
 
 ### Fixed
 - **Explicit `--config` pointing at a malformed (but existing) `weft.toml` no longer
