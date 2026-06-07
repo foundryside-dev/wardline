@@ -35,12 +35,57 @@ def _local_mcp_entry() -> dict[str, object]:
     return {"type": "stdio", "command": _find_wardline_command(), "args": ["mcp", "--root", "."]}
 
 
-def merge_mcp_entry(root: Path) -> str:
-    """Add/replace the `wardline` entry under mcpServers. Returns created|updated|unchanged."""
-    path = safe_project_file(root, root / ".mcp.json", label=".mcp.json")
+# Operator-pinned sibling-endpoint flags. When an existing .mcp.json entry carries
+# these (e.g. a fixed-port / server-mode filigree whose URL the published-port rung
+# cannot reconstruct), they ARE the runtime emit/discovery target — repair must keep
+# them, not normalize them away.
+_PRESERVED_ARG_FLAGS = ("--filigree-url", "--loomweave-url")
+
+
+def _preserved_sibling_args(entry: object) -> list[str]:
+    """Extract operator-pinned ``--filigree-url``/``--loomweave-url`` flag pairs from an
+    existing wardline entry's args, in the order the operator wrote them. Returns ``[]``
+    for any shape that isn't a list-of-args (a malformed entry contributes nothing to
+    preserve). Original order is kept so an already-correct entry is recognized as
+    ``unchanged`` and is never needlessly reordered on repair."""
+    if not isinstance(entry, dict):
+        return []
+    args = entry.get("args")
+    if not isinstance(args, list):
+        return []
+    preserved: list[str] = []
+    i = 0
+    while i < len(args):
+        flag = args[i]
+        if flag in _PRESERVED_ARG_FLAGS and i + 1 < len(args) and isinstance(args[i + 1], str):
+            preserved.extend((flag, args[i + 1]))
+            i += 2
+            continue
+        i += 1
+    return preserved
+
+
+def _desired_local_entry(existing: object) -> dict[str, object]:
+    """The canonical local entry, augmented with any operator-pinned sibling-URL args
+    carried by *existing*. Idempotent: re-running over the desired entry reproduces it."""
     entry = _local_mcp_entry()
+    preserved = _preserved_sibling_args(existing)
+    if preserved:
+        base_args = entry["args"]
+        assert isinstance(base_args, list)
+        entry["args"] = [*base_args, *preserved]
+    return entry
+
+
+def merge_mcp_entry(root: Path) -> str:
+    """Add/replace the `wardline` entry under mcpServers. Returns created|updated|unchanged.
+
+    An existing entry's operator-pinned ``--filigree-url``/``--loomweave-url`` args are
+    preserved (they are the runtime emit/discovery target when the published-port rung
+    cannot reconstruct it)."""
+    path = safe_project_file(root, root / ".mcp.json", label=".mcp.json")
     if not path.exists():
-        payload = {"mcpServers": {"wardline": entry}}
+        payload = {"mcpServers": {"wardline": _local_mcp_entry()}}
         path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         return "created"
     try:
@@ -55,6 +100,7 @@ def merge_mcp_entry(root: Path) -> str:
         data["mcpServers"] = servers
     if not isinstance(servers, dict):
         raise WardlineError(".mcp.json mcpServers must be an object")
+    entry = _desired_local_entry(servers.get("wardline"))
     if servers.get("wardline") == entry:
         return "unchanged"
     servers["wardline"] = entry

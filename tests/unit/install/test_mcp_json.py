@@ -68,6 +68,53 @@ def test_mcpservers_null_is_treated_as_absent(tmp_path: Path, monkeypatch: pytes
     assert data["other"] == 1  # unrelated top-level keys preserved
 
 
+def test_preserves_operator_pinned_sibling_url_args(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A fixed-port / server-mode emit target (e.g. lacuna) pins --filigree-url /
+    # --loomweave-url in the wardline entry's args. The published-port rung cannot
+    # reconstruct such a URL, so these args ARE the runtime emit/discovery target.
+    # merge_mcp_entry must keep them rather than normalizing to the bare canonical entry.
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {"mcpServers": {"wardline": {"type": "stdio", "command": "OLD", "args": [
+                "mcp", "--root", ".",
+                "--loomweave-url", "http://127.0.0.1:9730",
+                "--filigree-url", "http://127.0.0.1:8749/api/p/lacuna/weft/scan-results",
+            ]}}}
+        ),
+        encoding="utf-8",
+    )
+    # command is refreshed to canonical (OLD -> /bin/wardline), but the pinned
+    # sibling-URL args survive in the operator's ORIGINAL order (loomweave-first here).
+    assert merge_mcp_entry(tmp_path) == "updated"
+    entry = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["wardline"]
+    assert entry["command"] == "/bin/wardline"
+    assert entry["args"] == [
+        "mcp", "--root", ".",
+        "--loomweave-url", "http://127.0.0.1:9730",
+        "--filigree-url", "http://127.0.0.1:8749/api/p/lacuna/weft/scan-results",
+    ]
+    # idempotent: re-running over the already-preserved entry is a no-op (no reorder churn).
+    assert merge_mcp_entry(tmp_path) == "unchanged"
+
+
+def test_already_canonical_lacuna_entry_is_unchanged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The real lacuna ordering (loomweave-first) with the canonical command must be a
+    # no-op for merge_mcp_entry — no spurious reorder churn on every repair.
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {"mcpServers": {"wardline": {"type": "stdio", "command": "/bin/wardline", "args": [
+                "mcp", "--root", ".",
+                "--loomweave-url", "http://127.0.0.1:9730",
+                "--filigree-url", "http://127.0.0.1:8749/api/p/lacuna/weft/scan-results",
+            ]}}}
+        ),
+        encoding="utf-8",
+    )
+    assert merge_mcp_entry(tmp_path) == "unchanged"
+
+
 def test_replaces_stale_wardline_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
     (tmp_path / ".mcp.json").write_text(
