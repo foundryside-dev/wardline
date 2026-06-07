@@ -325,7 +325,14 @@ def test_repair_writes_project_store_candidate_when_config_store_rejected(tmp_pa
     # iteration: ~/.config/filigree holds a rejected mint, the project store
     # <root>/.weft/filigree/federation_token holds the accepted one. The project-store
     # value must be the one pinned in .env.
+    #
+    # Post-F1 (rung 3 reads <root>/.weft/filigree/federation_token directly) the
+    # resolver would otherwise pick up the valid project mint with no repair needed.
+    # To still drive the repair ITERATION we set a stale token via the CANONICAL name,
+    # which outranks the mint (rung 1/2 > rung 3): the probe of that stale token fails,
+    # and the doctor recovers by iterating the local mints.
     _setup_lacuna(tmp_path, monkeypatch, env_token="STALE")
+    (tmp_path / ".env").write_text("WEFT_FEDERATION_TOKEN=STALE\n", encoding="utf-8")
     cfg = tmp_path / "home" / ".config" / "filigree"
     cfg.mkdir(parents=True)
     (cfg / "federation_token").write_text("WRONG\n", encoding="utf-8")  # first rung: rejected

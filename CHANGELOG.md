@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   would emit and reports a `filigree.auth` check. `--repair` recovers the
   daemon-accepted token from local mints and pins it as `WEFT_FEDERATION_TOKEN`
   in `.env`, removing a stale `WARDLINE_FILIGREE_TOKEN` line.
+- **Zero-ceremony Filigree auth on a same-host install (F1).** The outbound token
+  resolver now reads Filigree's auto-minted `<root>/.weft/filigree/federation_token`
+  (the C-9e same-host cross-member read) as a middle rung — after the canonical
+  `WEFT_FEDERATION_TOKEN` (env then `.env`) and before the deprecated
+  `WARDLINE_FILIGREE_TOKEN` fallback. A fresh same-host install with no
+  env/`.env`/`.mcp.json` token now authenticates against the per-project daemon
+  with no operator config, mirroring filigree's own 3-tier resolution. The mint
+  file is read-only (wardline never mints it); a missing/unreadable file falls
+  through cleanly to the legacy/off rungs (emit stays soft-fail) (weft-23574069a1).
 
 ### Changed
 - **BREAKING (wire): per-finding `suppressed` key renamed to `suppression_state`.**
