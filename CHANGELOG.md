@@ -10,10 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **BREAKING: Weft config/store consolidation.** Operator config moved from
   `wardline.yaml` (YAML) to the `[wardline]` table of a shared, operator-authored
-  `weft.toml` (TOML), read via stdlib `tomllib` (zero new dependency). A missing,
-  unreadable, or unparseable `weft.toml` silently falls back to built-in defaults
-  (never hard-fails); unknown/out-of-range keys in a *present* `[wardline]` table
-  still fail loud. `--config` now points at a TOML file. Machine/CLI-written state
+  `weft.toml` (TOML), read via stdlib `tomllib` (zero new dependency). An
+  auto-discovered `weft.toml` that is missing falls back to built-in defaults
+  silently; one that is present-but-unparseable (or whose `[wardline]` is not a
+  table) falls back with a **warning** (a shared federation file may have another
+  member's broken section — wardline never crashes, but no longer downgrades policy
+  silently). An **explicit `--config`** that is missing OR present-but-malformed
+  **raises** (the operator named it; silently dropping their policy is a
+  false-green). Unknown/out-of-range keys in a *present, well-formed* `[wardline]`
+  table still fail loud. `--config` now points at a TOML file. Machine-written state
   moved from `.wardline/` to `.weft/wardline/` — `baseline.yaml`, `judged.yaml`,
   and the newly relocated `waivers.yaml` all live there (no fallback to the old
   path; the attest signing key stays in `.env`). Waivers are **no longer a config
@@ -38,6 +43,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is honored as a **deprecated fallback** (read after the new name), so existing
   deployments keep working with no change; migrate at leisure. Only the token *value*
   must match what the Filigree operator configured.
+
+### Fixed
+- **Explicit `--config` pointing at a malformed (but existing) `weft.toml` no longer
+  silently falls back to default policy.** The guard previously covered only a
+  *missing* explicit path; a present-but-unparseable one slipped through C-9c's
+  fail-soft and dropped the operator's severity overrides/excludes silently — a
+  false-green in the gate. An explicit path now raises `ConfigError` on a parse
+  error or non-table `[wardline]`; an auto-discovered `weft.toml` warns (instead of
+  failing silently) before falling back. (PR-review finding)
+- **PR-review polish (latent, no behavior change):** `GateDecision` now rejects a
+  `fail_on` that is not a valid `Severity` value at construction; `AgentSummary`
+  rejects a negative `max_findings`; `filigree_disabled_reason` derives
+  auth-rejection from `status` (the inconsistent `auth_rejected`/`status` triple is
+  no longer expressible); legis `signed`/`dirty` status is read through one shared
+  `legis_artifact_outcome` authority instead of being re-derived on each surface;
+  the dead `config` input was dropped from the MCP `waiver_add` schema.
 
 ## [1.0.0rc2] - 2026-06-06
 

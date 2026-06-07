@@ -151,6 +151,7 @@ def run_judge(
     """
     cfg = config_mod.load(
         config_path or weft_config_path(root),
+        explicit=config_path is not None,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,

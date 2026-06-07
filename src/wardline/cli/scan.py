@@ -178,6 +178,7 @@ def scan(
 
             cfg = load(
                 config_path or weft_config_path(path),
+                explicit=config_path is not None,
                 trust_local_packs=trust_local_packs,
                 trusted_packs=trusted_packs,
                 strict_defaults=strict_defaults,
@@ -219,10 +220,15 @@ def scan(
             # unsigned provenance (legis records it unverified). A dirty/non-repo tree under
             # signing raises LegisArtifactError -> exit 2 (CLI is loud by design).
             from wardline.core.config import load as load_cfg
-            from wardline.core.legis import build_legis_artifact, load_legis_artifact_key
+            from wardline.core.legis import (
+                build_legis_artifact,
+                legis_artifact_outcome,
+                load_legis_artifact_key,
+            )
 
             legis_cfg = load_cfg(
                 config_path or weft_config_path(path),
+                explicit=config_path is not None,
                 trust_local_packs=trust_local_packs,
                 trusted_packs=trusted_packs,
                 strict_defaults=strict_defaults,
@@ -237,8 +243,9 @@ def scan(
             )
             output.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
             # Loud signal: an artifact marked dirty is UNSIGNED (dev/tour only). legis
-            # records it `unverified`; never gate CI on it.
-            if artifact.get("dirty"):
+            # records it `unverified`; never gate CI on it. The dirty/signed status comes
+            # from the shared authority; the human stderr wording stays CLI-specific.
+            if legis_artifact_outcome(artifact).dirty:
                 click.echo(
                     "warning: dirty working tree — emitted an UNSIGNED legis dev artifact "
                     "(dirty: true, legis records it unverified). Commit for a signed artifact.",
@@ -397,7 +404,6 @@ def _filigree_status(result: EmitResult | None) -> dict[str, object]:
         "warnings": list(result.warnings),
         "disabled_reason": filigree_disabled_reason(
             reachable=result.reachable,
-            auth_rejected=result.auth_rejected,
             status=result.status,
         ),
     }

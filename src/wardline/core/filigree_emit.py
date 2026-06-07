@@ -122,17 +122,23 @@ class EmitResult:
             raise ValueError("an unreachable EmitResult must have zero created/updated/failed")
 
 
-def filigree_disabled_reason(*, reachable: bool, auth_rejected: bool, status: int | None) -> str | None:
+def filigree_disabled_reason(*, reachable: bool, status: int | None) -> str | None:
     """The ``disabled_reason`` for an emit attempt, or None when Filigree was reached.
 
     Single source of the auth-rejected (401/403) vs server-error (5xx) vs unreachable
     (transport failure) ladder (dogfood #5), shared by the CLI and MCP status blocks so
     the two surfaces can never drift. The CLI's human stderr wording (which embeds the
     URL and ".env" hint) is intentionally separate.
+
+    Auth-rejection is DERIVED from ``status`` here exactly as :attr:`EmitResult.auth_rejected`
+    derives it, so the helper cannot be handed a contradictory ``auth_rejected`` flag that
+    disagrees with the status (the inconsistent triple the standalone signature once allowed).
+    ``reachable`` remains an input because ``status is None`` is ambiguous on its own — it
+    means EITHER a 2xx success (reachable) OR a transport failure (unreachable).
     """
     if reachable:
         return None
-    if auth_rejected:
+    if status in (401, 403):
         # 401 → set a token; 403 → token present but lacks access (a token won't help).
         if status == 403:
             return "filigree forbidden (403); token present but lacks access / blocked"

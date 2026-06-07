@@ -36,6 +36,8 @@ import hmac
 import json
 import os
 import subprocess
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -285,3 +287,36 @@ def build_legis_artifact(
     if dirty:
         scan["dirty"] = True
     return scan
+
+
+@dataclass(frozen=True, slots=True)
+class LegisArtifactOutcome:
+    """The signed/dirty status of a built artifact, read from what the producer
+    actually emitted. ``signed`` ⟺ the artifact carries a signature field (so it can
+    never disagree with the producer); ``dirty`` ⟺ the ``dirty`` marker is set;
+    ``unverified_reason`` is the agent-facing note for the unsigned dev-artifact case."""
+
+    signed: bool
+    dirty: bool
+    unverified_reason: str | None
+
+
+_DIRTY_UNVERIFIED_REASON = (
+    "dirty working tree — emitted an UNSIGNED legis dev artifact (legis records it "
+    "unverified); never gate CI on it. Commit for a signed artifact."
+)
+
+
+def legis_artifact_outcome(artifact: Mapping[str, Any]) -> LegisArtifactOutcome:
+    """Single authority for an artifact's signed/dirty status, shared by the CLI and
+    MCP surfaces so neither re-derives it from raw keys (which could drift from the
+    producer). ``signed`` is read from the presence of the signature field — the
+    authoritative record of what :func:`build_legis_artifact` did — not re-computed
+    from key presence."""
+    dirty = bool(artifact.get("dirty"))
+    signed = ARTIFACT_SIGNATURE_FIELD in artifact
+    return LegisArtifactOutcome(
+        signed=signed,
+        dirty=dirty,
+        unverified_reason=_DIRTY_UNVERIFIED_REASON if dirty else None,
+    )

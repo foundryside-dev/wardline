@@ -44,18 +44,50 @@ def test_no_wardline_table_is_defaults(tmp_path):
     assert cfg.source_roots == (".",)
 
 
-def test_malformed_toml_falls_back_to_defaults_silently(tmp_path):
-    # C-9c: a malformed shared weft.toml is treated as absent — silent defaults,
-    # never a hard fail (it could be another member's section that broke parsing).
+def test_malformed_toml_implicit_warns_and_falls_back(tmp_path):
+    # C-9c: a malformed shared weft.toml is treated as absent — never a hard fail
+    # (it could be another member's section that broke parsing). But an IMPLICIT
+    # (auto-discovered) load now WARNS so the silent policy-downgrade is visible.
     p = _write(tmp_path, "[wardline]\nsource_roots = [")
-    cfg = config_mod.load(p)
+    with pytest.warns(UserWarning, match="weft.toml"):
+        cfg = config_mod.load(p)
     assert cfg.source_roots == (".",)
 
 
-def test_non_table_wardline_falls_back_to_defaults(tmp_path):
+def test_non_table_wardline_implicit_warns_and_falls_back(tmp_path):
     p = _write(tmp_path, 'wardline = "oops"\n')
+    with pytest.warns(UserWarning, match="must be a table"):
+        cfg = config_mod.load(p)
+    assert cfg.source_roots == (".",)
+
+
+def test_malformed_toml_explicit_raises(tmp_path):
+    # An EXPLICIT --config that the operator named must NOT silently drop their
+    # policy — a malformed (but existing) file raises ConfigError (false-green guard).
+    p = _write(tmp_path, "[wardline]\nsource_roots = [")
+    with pytest.raises(ConfigError):
+        config_mod.load(p, explicit=True)
+
+
+def test_non_table_wardline_explicit_raises(tmp_path):
+    p = _write(tmp_path, 'wardline = "oops"\n')
+    with pytest.raises(ConfigError):
+        config_mod.load(p, explicit=True)
+
+
+def test_explicit_missing_config_raises(tmp_path):
+    with pytest.raises(ConfigError):
+        config_mod.load(tmp_path / "nope.toml", explicit=True)
+
+
+def test_no_wardline_table_stays_silent_even_implicit(tmp_path, recwarn):
+    # A file with no [wardline] section at all is "no policy declared", not a
+    # broken file — defaults, NO warning, in both implicit and explicit modes.
+    p = _write(tmp_path, '[loomweave]\nurl = "http://x"\n')
     cfg = config_mod.load(p)
     assert cfg.source_roots == (".",)
+    assert config_mod.load(p, explicit=True).source_roots == (".",)
+    assert not recwarn.list
 
 
 def test_unknown_key_rejected(tmp_path):

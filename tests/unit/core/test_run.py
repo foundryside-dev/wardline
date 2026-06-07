@@ -253,15 +253,15 @@ def test_gate_decision_rejects_contradictory_construction() -> None:
     # The __post_init__ invariant guard: GateDecision must make "tripped gate that reads
     # as passed" (dogfood #2) unconstructible, not merely avoided by the factory.
     with pytest.raises(ValueError, match="exit_class"):
-        GateDecision(tripped=True, fail_on="error", exit_class=0, reason="x", evaluated="y")
+        GateDecision(tripped=True, fail_on="ERROR", exit_class=0, reason="x", evaluated="y")
     with pytest.raises(ValueError, match="reason"):
-        GateDecision(tripped=True, fail_on="error", exit_class=1, reason=None, evaluated="y")
+        GateDecision(tripped=True, fail_on="ERROR", exit_class=1, reason=None, evaluated="y")
     with pytest.raises(ValueError, match="reason"):
         # fail_on set but no verdict — the no-gate shape leaking into a gated decision.
-        GateDecision(tripped=False, fail_on="error", exit_class=0, reason=None, evaluated=None)
+        GateDecision(tripped=False, fail_on="ERROR", exit_class=0, reason=None, evaluated=None)
     # The two legitimate shapes the factory produces still construct cleanly.
     GateDecision(tripped=False, fail_on=None, exit_class=0)
-    GateDecision(tripped=True, fail_on="error", exit_class=1, reason="1 active", evaluated="unsuppressed")
+    GateDecision(tripped=True, fail_on="ERROR", exit_class=1, reason="1 active", evaluated="unsuppressed")
 
 
 def test_gate_decision_evaluated_reflects_trust_suppressions(tmp_path: Path) -> None:
@@ -516,6 +516,30 @@ def test_run_scan_explicit_missing_config_raises(tmp_path: Path) -> None:
     (proj / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
     with pytest.raises(ConfigError):
         run_scan(proj, config_path=proj / "nope.toml")
+
+
+def test_gate_decision_rejects_unknown_fail_on() -> None:
+    # fail_on is always a Severity value; an arbitrary string is an illegal state the
+    # other guards would otherwise let through (it satisfies "reason iff fail_on").
+    with pytest.raises(ValueError, match="fail_on"):
+        GateDecision(tripped=True, fail_on="banana", exit_class=1, reason="x", evaluated="y")
+
+
+def test_gate_decision_accepts_valid_severity_value() -> None:
+    dec = GateDecision(tripped=True, fail_on=Severity.ERROR.value, exit_class=1, reason="x", evaluated="y")
+    assert dec.fail_on == "ERROR"
+
+
+def test_run_scan_explicit_malformed_config_raises(tmp_path: Path) -> None:
+    # (d) An EXPLICIT --config that EXISTS but is malformed must NOT silently fall
+    # back to default policy either — that is the same false-green as a missing path.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
+    bad = proj / "bad.toml"
+    bad.write_text("[wardline]\nsource_roots = [\n", encoding="utf-8")
+    with pytest.raises(ConfigError):
+        run_scan(proj, config_path=bad)
 
 
 def test_run_scan_implicit_missing_config_uses_defaults(tmp_path: Path) -> None:

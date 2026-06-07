@@ -79,6 +79,9 @@ class ScanResult:
     gate_findings: list[Finding] | None = None
 
 
+_SEVERITY_VALUES: frozenset[str] = frozenset(s.value for s in Severity)
+
+
 @dataclass(frozen=True, slots=True)
 class GateDecision:
     tripped: bool
@@ -107,6 +110,10 @@ class GateDecision:
             raise ValueError("reason must be present iff fail_on is set")
         if (self.fail_on is None) != (self.evaluated is None):
             raise ValueError("evaluated must be present iff fail_on is set")
+        # fail_on is always a Severity value (the factory passes Severity.value); an
+        # arbitrary string satisfies the iff-guards above but is still an illegal state.
+        if self.fail_on is not None and self.fail_on not in _SEVERITY_VALUES:
+            raise ValueError(f"fail_on {self.fail_on!r} is not a valid Severity value")
 
 
 def run_scan(
@@ -144,15 +151,15 @@ def run_scan(
     from wardline.scanner.grammar import TrustGrammar, default_grammar
     from wardline.scanner.taint.summary_cache import SummaryCache
 
-    # An EXPLICIT --config path that doesn't exist must NOT silently fall back to
-    # default policy (dropping the operator's severity overrides/excludes) — that
-    # is a false-green. The IMPLICIT default (root/weft.toml) may legitimately
-    # be absent; config_mod.load tolerates that.
-    if config_path is not None and not config_path.exists():
-        raise ConfigError(f"config file does not exist: {config_path}")
+    # An EXPLICIT --config path must NOT silently fall back to default policy
+    # (dropping the operator's severity overrides/excludes) whether it is missing
+    # OR present-but-malformed — either way that is a false-green. The IMPLICIT
+    # default (root/weft.toml) may legitimately be absent and tolerates a broken
+    # shared file with a warning; config_mod.load enforces both via ``explicit``.
     cfg_path = config_path or weft_config_path(root)
     cfg = config_mod.load(
         cfg_path,
+        explicit=config_path is not None,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,

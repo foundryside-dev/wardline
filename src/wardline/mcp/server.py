@@ -79,7 +79,6 @@ def _filigree_emit_status(block: dict[str, Any] | None) -> dict[str, Any]:
         }
     disabled_reason = filigree_disabled_reason(
         reachable=bool(block.get("reachable")),
-        auth_rejected=bool(block.get("auth_rejected")),
         status=block.get("status"),
     )
     return {"configured": True, "disabled_reason": disabled_reason, **block}
@@ -389,7 +388,12 @@ def _attach_legis_artifact(
     verbatim as the ``scan`` field of ``POST /wardline/scan-results``.
     """
     from wardline.core.errors import LegisArtifactError
-    from wardline.core.legis import build_legis_artifact, key_id, load_legis_artifact_key
+    from wardline.core.legis import (
+        build_legis_artifact,
+        key_id,
+        legis_artifact_outcome,
+        load_legis_artifact_key,
+    )
 
     key_str = load_legis_artifact_key(path)
     if key_str is None and not bool(args.get("legis_artifact")):
@@ -397,6 +401,7 @@ def _attach_legis_artifact(
 
     cfg = config_mod.load(
         _cfg(args, path) or weft_config_path(path),
+        explicit=_cfg(args, path) is not None,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
@@ -417,18 +422,16 @@ def _attach_legis_artifact(
         return
     # A dirty tree under allow_dirty falls through to the unsigned dev artifact: it is
     # never signed even with a key present (false-provenance guard), and legis records
-    # it `unverified`. Report signed honestly from the artifact, not from key presence.
-    dirty = bool(artifact.get("dirty"))
-    status["signed"] = key_bytes is not None and not dirty
-    status["dirty"] = dirty
-    if dirty:
-        # Match the CLI's loudness on the agent surface: the artifact is UNSIGNED and legis
-        # records it unverified — say so and say "never gate CI on it" rather than leaving
-        # the agent to infer it from signed:false / dirty:true alone (agent-first).
-        status["reason"] = (
-            "dirty working tree — emitted an UNSIGNED legis dev artifact (legis records it "
-            "unverified); never gate CI on it. Commit for a signed artifact."
-        )
+    # it `unverified`. Read signed/dirty/reason from the single authority over what the
+    # producer emitted (legis_artifact_outcome), not by re-deriving from key presence.
+    outcome = legis_artifact_outcome(artifact)
+    status["signed"] = outcome.signed
+    status["dirty"] = outcome.dirty
+    if outcome.unverified_reason is not None:
+        # Match the CLI's loudness on the agent surface (agent-first): the artifact is
+        # UNSIGNED and legis records it unverified — say so rather than leaving the agent
+        # to infer it from signed:false / dirty:true alone.
+        status["reason"] = outcome.unverified_reason
     response["legis_artifact"] = artifact
     response["legis_artifact_status"] = status
 
@@ -693,7 +696,7 @@ def _fix(args: dict[str, Any], root: Path) -> dict[str, Any]:
     try:
         from wardline.core.config import load
 
-        cfg = load(cfg_path or weft_config_path(path))
+        cfg = load(cfg_path or weft_config_path(path), explicit=cfg_path is not None)
         result = run_scan(path, config_path=cfg_path, confine_to_root=True)
     except WardlineError as exc:
         raise ToolError(str(exc)) from exc
@@ -1221,7 +1224,6 @@ class WardlineMCPServer:
                         "fingerprint": {"type": "string"},
                         "reason": {"type": "string"},
                         "expires": {"type": "string", "description": "YYYY-MM-DD"},
-                        "config": {"type": "string"},
                     },
                 },
                 handler=_waiver_add,

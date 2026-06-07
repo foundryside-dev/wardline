@@ -1,7 +1,8 @@
 # src/wardline/core/waivers.py
 """Finding waivers (SP3).
 
-Waivers are machine/CLI-written state under ``.weft/wardline/waivers.yaml`` (the
+Waivers are machine-written state (via the MCP ``waiver_add`` tool) under
+``.weft/wardline/waivers.yaml`` (the
 member-owned subtree), a ``waivers:`` list each keyed on a finding's full
 ``fingerprint`` (copied from scan output), with a REQUIRED reason and an OPTIONAL
 ISO expiry date. They are fingerprint-keyed entries an operator never hand-authors,
@@ -73,7 +74,7 @@ def parse_waivers(raw: Sequence[Mapping[str, Any]]) -> tuple[Waiver, ...]:
 
 
 def load_project_waivers(root: Path) -> tuple[Waiver, ...]:
-    """Read wardline's machine/CLI-written waivers from ``.weft/wardline/waivers.yaml``.
+    """Read wardline's machine-written waivers from ``.weft/wardline/waivers.yaml``.
 
     Absent file → empty tuple. Validates via the same rules as :func:`parse_waivers`,
     so a malformed entry fails loud (a finding must not be silently suppressed by a

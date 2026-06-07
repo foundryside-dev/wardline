@@ -19,6 +19,21 @@ _LEAKY = (
 )
 
 
+def test_agent_summary_rejects_negative_max_findings(tmp_path: Path) -> None:
+    # max_findings slices the inline arrays; a negative value would silently DROP
+    # findings (e.g. [:-1]). Match the rigor of the sibling GateDecision/EmitResult
+    # guards and refuse the illegal value at construction.
+    import pytest
+
+    from wardline.core.agent_summary import AgentSummary
+
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    scan = run_scan(tmp_path)
+    gate = gate_decision(scan, Severity.ERROR)
+    with pytest.raises(ValueError, match="max_findings"):
+        AgentSummary(result=scan, gate=gate, max_findings=-1)
+
+
 def test_agent_summary_active_defects_first_and_stable(tmp_path: Path) -> None:
     (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
     scan = run_scan(tmp_path)

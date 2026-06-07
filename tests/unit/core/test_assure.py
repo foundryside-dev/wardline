@@ -51,6 +51,7 @@ _MODULE = (
     "    return src()\n"
 )
 
+
 def test_coverage_denominator_end_to_end(tmp_path: Path) -> None:
     (tmp_path / "m.py").write_text(_MODULE, encoding="utf-8")
     add_waiver(

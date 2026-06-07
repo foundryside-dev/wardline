@@ -59,6 +59,15 @@ class AgentSummary:
     # MCP scan response carries the same value at its top-level gate block.
     migration_hint: str | None = None
 
+    def __post_init__(self) -> None:
+        # max_findings bounds the inline arrays via a slice; a negative value would
+        # silently DROP findings ([:-1]). Refuse it at construction, matching the
+        # GateDecision/EmitResult guards. ``display_findings ⊆ result.findings`` remains
+        # a documented caller precondition (a full fingerprint subset-check every build
+        # is too costly for the hot scan path).
+        if self.max_findings is not None and self.max_findings < 0:
+            raise ValueError(f"max_findings must be >= 0, got {self.max_findings}")
+
     def to_dict(self) -> dict[str, Any]:
         # Counts are whole-project (summary describes the whole project, per the `where`
         # contract); arrays come from the displayed/filtered view, then bounded.

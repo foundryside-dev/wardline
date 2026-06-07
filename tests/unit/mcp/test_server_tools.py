@@ -260,12 +260,32 @@ def test_unknown_prompt_is_invalid_params() -> None:
     assert "unknown prompt" in resp["error"]["message"]
 
 
+def test_fix_tool_explicit_malformed_config_is_an_iserror_result(tmp_path: Path) -> None:
+    # An explicit `config` arg pointing at a present-but-malformed weft.toml must NOT
+    # silently fall back to default policy — same false-green class as the scan path.
+    # It surfaces as an isError result (a WardlineError → ToolError), not a silent run.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text("def f(): return 1\n", encoding="utf-8")
+    bad = proj / "bad.toml"
+    bad.write_text("[wardline]\nsource_roots = [\n", encoding="utf-8")
+    server = WardlineMCPServer(root=proj)
+    resp = server.rpc.dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "tools/call",
+            "params": {"name": "fix", "arguments": {"path": "", "config": "bad.toml"}},
+        }
+    )
+    assert "error" not in resp, resp
+    assert resp["result"]["isError"] is True
+
+
 def test_fix_tool_requires_explicit_apply(tmp_path: Path) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
-    (proj / "weft.toml").write_text(
-        '[wardline.autofix]\nboundary_exception = "ValueError"\n', encoding="utf-8"
-    )
+    (proj / "weft.toml").write_text('[wardline.autofix]\nboundary_exception = "ValueError"\n', encoding="utf-8")
 
     src_content = (
         "from wardline.decorators import trust_boundary\n"

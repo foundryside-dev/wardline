@@ -156,6 +156,32 @@ def test_active_finding_carries_no_suppression_proof() -> None:
 
 
 # ---------------------------------------------------------------------------
+# legis_artifact_outcome — single authority for signed/dirty status (read from the
+# artifact the producer actually emitted, not re-derived from key presence).
+# ---------------------------------------------------------------------------
+def test_outcome_signed_when_signature_present() -> None:
+    o = legis.legis_artifact_outcome({legis.ARTIFACT_SIGNATURE_FIELD: "sig", "commit_sha": "x"})
+    assert o.signed is True
+    assert o.dirty is False
+    assert o.unverified_reason is None
+
+
+def test_outcome_dirty_is_unsigned_with_reason() -> None:
+    o = legis.legis_artifact_outcome({"dirty": True, "commit_sha": "x"})
+    assert o.signed is False
+    assert o.dirty is True
+    assert o.unverified_reason is not None
+    assert "unverified" in o.unverified_reason
+
+
+def test_outcome_unsigned_clean_no_reason() -> None:
+    o = legis.legis_artifact_outcome({"commit_sha": "x"})
+    assert o.signed is False
+    assert o.dirty is False
+    assert o.unverified_reason is None
+
+
+# ---------------------------------------------------------------------------
 # build_legis_artifact — provenance, defect-only, signing, dirty-tree refusal
 # ---------------------------------------------------------------------------
 import subprocess  # noqa: E402

@@ -66,3 +66,14 @@ def test_new_name_in_dot_env_wins_over_legacy_in_dot_env(tmp_path: Path) -> None
         encoding="utf-8",
     )
     assert load_filigree_token(tmp_path) == "new-file"
+
+
+def test_new_name_in_dot_env_wins_over_legacy_in_environment(monkeypatch, tmp_path: Path) -> None:
+    # The migration-relevant cross-tier rung: the new name is resolved FULLY (env then
+    # .env) before the legacy name is consulted at all, so the new name in .env (rung 2)
+    # beats the legacy name in the actual environment (rung 3) — a file entry outranks an
+    # env var across the name boundary. This pins "new-name-first" where it could silently
+    # regress to legacy-first (relevant while lacuna still exports WARDLINE_FILIGREE_TOKEN).
+    monkeypatch.setenv(WARDLINE_FILIGREE_TOKEN_ENV, "legacy-env")
+    (tmp_path / ".env").write_text(f"{WEFT_FEDERATION_TOKEN_ENV}=new-file\n", encoding="utf-8")
+    assert load_filigree_token(tmp_path) == "new-file"

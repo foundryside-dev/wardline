@@ -6,6 +6,7 @@ from __future__ import annotations
 import keyword
 import os
 import tomllib
+import warnings
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -136,26 +137,56 @@ def _is_local_pack(pack_name: str, config_path: Path | None) -> bool:
 def load(
     path: Path | None,
     *,
+    explicit: bool = False,
     trust_local_packs: bool = False,
     trusted_packs: Iterable[str] = (),
     strict_defaults: bool = False,
 ) -> WardlineConfig:
-    if strict_defaults or path is None or not path.exists():
+    """Load the ``[wardline]`` policy from ``path``.
+
+    ``explicit`` distinguishes an operator-named ``--config`` path from the
+    auto-discovered default (``root/weft.toml``). The distinction governs the
+    failure mode of a present-but-broken file:
+
+    - IMPLICIT (``explicit=False``, the default): C-9c — a missing, unparseable,
+      or non-table ``[wardline]`` is treated as ABSENT and falls back to built-in
+      defaults, never crashing. ``weft.toml`` is shared across the federation, so
+      another member's broken section must not crash wardline. A present-but-broken
+      file now WARNS (visible policy-downgrade) rather than failing silently.
+    - EXPLICIT (``explicit=True``): the operator named this file, so silently
+      dropping their policy is a false-green. A missing, unparseable, or non-table
+      ``[wardline]`` raises :class:`ConfigError`.
+
+    In BOTH modes a *well-formed* ``[wardline]`` table with bad keys/values fails
+    loud (actionable, wardline-specific feedback — not a "malformed file"), and a
+    file with NO ``[wardline]`` section is "no policy declared" → silent defaults.
+    """
+    if strict_defaults or path is None:
+        return WardlineConfig()
+    if not path.exists():
+        if explicit:
+            raise ConfigError(f"config file does not exist: {path}")
         return WardlineConfig()
     jsonschema = require_jsonschema("validating weft.toml [wardline]")
 
-    # C-9c (normative): a missing OR malformed shared weft.toml is treated as ABSENT —
-    # silent fallback to built-in defaults, never a hard fail. weft.toml is shared
-    # across the federation, so a parse error (possibly from another member's section,
-    # or a structurally-broken [wardline]) must not crash wardline. A WELL-FORMED
-    # [wardline] table with bad keys/values still fails loud below (actionable,
-    # wardline-specific config feedback — not a "malformed file").
     try:
         parsed = tomllib.loads(path.read_text(encoding="utf-8"))
-    except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError):
+    except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as exc:
+        if explicit:
+            raise ConfigError(f"config file {path} is malformed: {exc}") from exc
+        warnings.warn(
+            f"weft.toml present but unparseable ([wardline] policy not applied; using built-in defaults): {exc}",
+            stacklevel=2,
+        )
         return WardlineConfig()
     table = parsed.get("wardline")
+    if table is None:
+        return WardlineConfig()  # no policy declared — defaults, no warning
     if not isinstance(table, dict):
+        msg = f"[wardline] in {path.name} must be a table, got {type(table).__name__}"
+        if explicit:
+            raise ConfigError(msg)
+        warnings.warn(f"{msg}; using built-in defaults", stacklevel=2)
         return WardlineConfig()
     raw = table
 

@@ -45,9 +45,11 @@ severity = { "WLN-001" = "WARN" }
 
 
 def test_malformed_toml_falls_back_to_defaults(tmp_path) -> None:
-    # C-9c: malformed weft.toml is treated as absent (silent defaults, never hard-fail).
+    # C-9c: malformed weft.toml is treated as absent (defaults, never hard-fail).
+    # An IMPLICIT load warns (visible policy-downgrade) but does not raise.
     p = _write_cfg(tmp_path, "[wardline]\nsource_roots = [1, 2\n")
-    assert load(p).source_roots == (".",)
+    with pytest.warns(UserWarning, match="weft.toml"):
+        assert load(p).source_roots == (".",)
 
 
 def test_judge_settings_defaults() -> None:

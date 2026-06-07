@@ -43,7 +43,7 @@ def fix(path: Path, config_path: Path | None, yes: bool, dry_run: bool) -> None:
 
     cfg_path = config_path or weft_config_path(path)
     try:
-        cfg = load(cfg_path)
+        cfg = load(cfg_path, explicit=config_path is not None)
         result = run_scan(path, config_path=config_path)
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
