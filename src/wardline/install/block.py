@@ -42,9 +42,12 @@ _END_MARKER = f"<!-- /{_OWN_NS}:instructions -->"
 
 # A complete, well-formed wardline block (open .. close). Own-namespace only, so
 # it can only ever match wardline's own spans (C-4 (b) own-namespace mutation).
+# IGNORECASE so an uppercase-namespaced own duplicate (e.g. ``WARDLINE``) is still
+# matched for canonicalisation, consistent with the case-insensitive namespace
+# comparison used for boundary detection (C-4 (e)+(h)).
 _FENCE_RE = re.compile(
     r"<!-- wardline:instructions:v\d+:[0-9a-f]+ -->.*?<!-- /wardline:instructions -->",
-    re.DOTALL,
+    re.DOTALL | re.IGNORECASE,
 )
 
 # Recognises ANY tool's instruction fence (open OR close, via the optional
@@ -65,15 +68,28 @@ def render_block() -> str:
     return f"<!-- {_OWN_NS}:instructions:v{_BLOCK_VERSION}:{_body_hash()} -->\n{_BODY}\n{_END_MARKER}"
 
 
-def _first_foreign_fence_pos(content: str, search_from: int) -> int:
-    """Index of the first non-wardline instruction fence at/after *search_from*.
+def _first_real_foreign_block_pos(content: str, search_from: int) -> int:
+    """Index of the first *real* foreign block at/after *search_from*, else EOF.
 
-    Own-namespace fences are absorbed — never treated as a boundary — so
-    duplicate or unclosed wardline blocks still collapse to one clean block. When
-    no foreign fence follows, returns ``len(content)`` (i.e. bound at EOF).
+    A real foreign block is a foreign-namespace OPEN fence that has a matching
+    foreign CLOSE fence somewhere after it — i.e. genuine co-resident sibling
+    content we must never delete or split. A *lone* foreign open (a marker quoted
+    in prose or inside wardline's own body) and a stray foreign close are NOT
+    boundaries: they are our own content, so a well-formed own block whose body
+    happens to mention a sibling's marker is replaced in place rather than
+    truncated at the quoted marker (C-4 (b)+(c)). Own-namespace fences are always
+    absorbed, so duplicate / unclosed wardline blocks still collapse.
+
+    Returns ``len(content)`` when no real foreign block follows (bound at EOF).
+    The namespace match is case-insensitive (C-4 (h)).
     """
-    for m in _INSTR_FENCE_RE.finditer(content, search_from):
-        if m.group("ns").lower() != _OWN_NS:
+    fences = list(_INSTR_FENCE_RE.finditer(content, search_from))
+    for i, m in enumerate(fences):
+        ns = m.group("ns").lower()
+        if ns == _OWN_NS or m.group("close"):
+            continue
+        # Foreign open: a boundary only if a matching foreign close follows it.
+        if any(n.group("ns").lower() == ns and n.group("close") for n in fences[i + 1 :]):
             return m.start()
     return len(content)
 
@@ -106,15 +122,15 @@ def _first_own_open_fence_pos(content: str) -> int:
 
 
 def _canonicalise_tail(tail: str) -> tuple[str, bool]:
-    """Collapse duplicate own blocks in *tail* that precede any foreign fence.
+    """Collapse duplicate own blocks in *tail* that precede any real foreign block.
 
     Returns ``(cleaned_tail, foreign_shielded_dup)``. Own blocks before the first
-    foreign fence are removed (own-duplicate canonicalisation, C-4 (e)).
-    Everything from the first foreign fence onward is preserved verbatim —
-    including any own duplicate beyond it, which foreign-safety forbids reaching
-    across; the bool flags such a shielded duplicate so the caller can surface it.
+    real foreign block are removed (own-duplicate canonicalisation, C-4 (e)).
+    Everything from that foreign block onward is preserved verbatim — including
+    any own duplicate beyond it, which foreign-safety forbids reaching across; the
+    bool flags such a shielded duplicate so the caller can surface it.
     """
-    foreign = _first_foreign_fence_pos(tail, 0)
+    foreign = _first_real_foreign_block_pos(tail, 0)
     head, rest = tail[:foreign], tail[foreign:]
     cleaned = _FENCE_RE.sub("", head)
     shielded_dup = _first_own_open_fence_pos(rest) != -1
@@ -195,19 +211,21 @@ def inject_block(file_path: Path) -> str:
         return "updated"
 
     # An own block exists with a close marker. Bound the span we rewrite so it
-    # never crosses a foreign fence (C-4 (c)).
-    foreign = _first_foreign_fence_pos(text, start)
+    # never crosses a *real* foreign block (C-4 (c)). A foreign marker merely
+    # quoted inside our own body is not a boundary (see
+    # _first_real_foreign_block_pos) — that block is replaced in place.
+    foreign = _first_real_foreign_block_pos(text, start)
     if own_end < foreign:
-        # Well-formed own block, closing before any foreign fence: replace it in
-        # place, then canonicalise duplicate own blocks in the tail up to (but
-        # never across) the first foreign fence (C-4 (e)).
+        # Well-formed own block, closing before any real foreign block: replace it
+        # in place, then canonicalise duplicate own blocks in the tail up to (but
+        # never across) the first real foreign block (C-4 (e)).
         bound = own_end + len(_END_MARKER)
         tail, shielded_dup = _canonicalise_tail(text[bound:])
         sep = ""
     else:
-        # Bounded recovery (C-4 (c)): the own open is malformed, or its close
-        # lies beyond a foreign fence (so a naive open..close match would swallow
-        # the foreign block). Cut at the foreign fence (or EOF) instead. Re-insert
+        # Bounded recovery (C-4 (c)): the own open is malformed, or its close lies
+        # beyond a real foreign block (so a naive open..close match would swallow
+        # the foreign block). Cut at the foreign block (or EOF) instead. Re-insert
         # the separating newline we may have eaten so our close marker is never
         # glued mid-line against a following foreign fence — keeping us
         # independent of whether a sibling's detector is line-anchored.

@@ -264,6 +264,69 @@ def test_foreign_block_before_own_is_preserved(tmp_path: Path) -> None:
     assert text.count("wardline:instructions:v") == 1
 
 
+def test_quoted_foreign_marker_in_own_body_is_replaced_in_place(
+    tmp_path: Path,
+) -> None:
+    """(b)+(c): a foreign marker merely quoted inside wardline's own well-formed
+    block body is OUR content, not a real foreign boundary — the block is replaced
+    in place, not truncated at the quoted marker (which would leave a dangling own
+    close + a stray foreign open that sticks as corruption)."""
+    f = tmp_path / "CLAUDE.md"
+    body = "Docs: the filigree marker is <!-- filigree:instructions -->"
+    f.write_text(
+        f"intro\n{_OPEN}\n{body}\nOLD BODY\n{_CLOSE}\ntail\n",
+        encoding="utf-8",
+    )
+    assert inject_block(f) == "updated"
+    text = f.read_text(encoding="utf-8")
+    # Exactly one own block, one own close — no dangling/orphaned markers.
+    assert text.count(_CLOSE) == 1
+    assert text.count("wardline:instructions:v") == 1
+    # The quoted foreign open (which was our body content) is gone with the old
+    # body; no stray foreign block left behind.
+    assert "<!-- filigree:instructions -->" not in text
+    assert "OLD BODY" not in text
+    assert "intro" in text and "tail" in text
+    # And it converges.
+    assert inject_block(f) == "unchanged"
+
+
+def test_genuinely_nested_foreign_block_is_preserved(tmp_path: Path) -> None:
+    """(c): a genuinely balanced foreign block nested inside the own span (own
+    open .. foreign open .. foreign close .. own close) is real foreign content —
+    bounded recovery must cut at it and preserve it, NOT replace across it."""
+    f = tmp_path / "CLAUDE.md"
+    f.write_text(
+        f"intro\n{_OPEN}\nOLD BODY\n{_FOREIGN}\nMORE OLD\n{_CLOSE}\ntail\n",
+        encoding="utf-8",
+    )
+    assert inject_block(f) == "updated"
+    text = f.read_text(encoding="utf-8")
+    # The nested foreign block survives intact.
+    assert _FOREIGN in text
+    assert "filigree body — DO NOT TOUCH" in text
+    assert "intro" in text and "tail" in text
+
+
+def test_uppercase_own_duplicate_is_canonicalised(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """(e)+(h): an uppercase-namespaced own duplicate (no foreign block between)
+    is collapsed, not silently left in place — own-block matching is
+    case-insensitive, consistent with the boundary comparison."""
+    block = render_block()
+    upper_dup = "<!-- WARDLINE:instructions:v1:deadbeef -->\nBODY2\n<!-- /WARDLINE:instructions -->"
+    f = tmp_path / "CLAUDE.md"
+    f.write_text(f"{block}\n\nmid\n\n{upper_dup}\n", encoding="utf-8")
+    with caplog.at_level(logging.WARNING):
+        assert inject_block(f) == "updated"
+    text = f.read_text(encoding="utf-8")
+    import re
+
+    # No own block remains uncollapsed (case-insensitive count).
+    assert len(re.findall(r"<!--\s*wardline:instructions", text, re.IGNORECASE)) == 1
+    assert "BODY2" not in text
+    assert "mid" in text
+
+
 def test_own_marker_shielded_in_unclosed_foreign_converges(tmp_path: Path) -> None:
     """(d)+idempotency: a wardline open marker shielded inside an UNCLOSED foreign
     block is not claimable (we must not invent the foreign close), so the first
