@@ -253,7 +253,25 @@ def test_published_port_loses_to_flag_and_env(tmp_path: Path, monkeypatch) -> No
     assert resolve_loomweave_url(None, tmp_path, None) == "http://from-env"
 
 
-@pytest.mark.parametrize("raw", ["abc", "", "  ", "99999", "0", "-1", "65536", "80x", "+80", "9111 9112"])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "abc",
+        "",
+        "  ",
+        "99999",
+        "0",
+        "-1",
+        "65536",
+        "80x",
+        "+80",
+        "9111 9112",
+        # An all-digit payload over CPython's 4300-digit int(str) cap: isdigit() is
+        # True but int() would raise ValueError. Must stay fail-soft -> None, never
+        # crash the scan (a planted ephemeral.port DoS).
+        pytest.param("9" * 5000, id="over-4300-digit-cap"),
+    ],
+)
 def test_published_port_malformed_returns_none(tmp_path: Path, monkeypatch, raw: str) -> None:
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     _publish_port(tmp_path, raw)
@@ -320,7 +338,23 @@ def test_filigree_published_port_loses_to_flag_and_env(tmp_path: Path, monkeypat
     assert resolve_filigree_url(None, tmp_path, None) == "http://from-env"
 
 
-@pytest.mark.parametrize("raw", ["abc", "", "  ", "99999", "0", "-1", "65536", "80x", "+80", "9111 9112"])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "abc",
+        "",
+        "  ",
+        "99999",
+        "0",
+        "-1",
+        "65536",
+        "80x",
+        "+80",
+        "9111 9112",
+        # Over CPython's 4300-digit int(str) cap: isdigit() True, int() would raise.
+        pytest.param("9" * 5000, id="over-4300-digit-cap"),
+    ],
+)
 def test_filigree_published_port_malformed_returns_none(tmp_path: Path, monkeypatch, raw: str) -> None:
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     _publish_filigree_port(tmp_path, raw)

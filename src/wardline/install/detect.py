@@ -81,8 +81,17 @@ def _filigree_url_from_project(root: Path) -> str | None:
         if not port_file.is_file():
             continue
         text = port_file.read_text(encoding="utf-8", errors="replace").strip()
-        if text.isdigit() and 1 <= (port := int(text)) <= 65535:
-            return f"http://localhost:{port}/api/weft/scan-results"
+        # Guard int(): isdigit() is a superset of what int() parses — Unicode
+        # digits (²³⁴) pass isdigit() but raise, as does an all-digit payload over
+        # CPython's 4300-digit cap. Length alone is insufficient (²³⁴ is 3 chars).
+        # Catch ValueError so a planted ephemeral.port stays fail-soft, never crashes.
+        if text.isdigit():
+            try:
+                port = int(text)
+            except ValueError:
+                continue
+            if 1 <= port <= 65535:
+                return f"http://localhost:{port}/api/weft/scan-results"
     return None
 
 

@@ -239,8 +239,17 @@ def _read_published_port(root: Path, sibling: str) -> int | None:
             raw = (base / "ephemeral.port").read_text(encoding="ascii").strip()
         except (OSError, UnicodeDecodeError):
             continue
-        if raw.isdigit() and 1 <= (port := int(raw)) <= 65535:
-            return port
+        # Guard int(): isdigit() is a superset of what int() parses, so an
+        # all-digit payload over CPython's 4300-digit cap raises ValueError (the
+        # ascii read above already excludes Unicode digits). Catch it so a planted
+        # ephemeral.port stays fail-soft and never DoSes the scan.
+        if raw.isdigit():
+            try:
+                port = int(raw)
+            except ValueError:
+                continue
+            if 1 <= port <= 65535:
+                return port
     return None
 
 

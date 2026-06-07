@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from wardline.install.detect import detect_siblings
 
 
@@ -30,6 +32,34 @@ def test_filigree_published_port_is_detected(tmp_path: Path, monkeypatch) -> Non
 
     assert results["filigree"] == "detected (discovered URL)"
     assert results["loomweave"] == "absent"
+    _assert_no_config_written(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        # All-digit payload over CPython's 4300-digit int(str) cap.
+        pytest.param("9" * 5000, id="over-4300-digit-cap"),
+        # Unicode "digit" chars (superscripts): isdigit() True but int() raises,
+        # and they are short — so a length bound alone would not catch them.
+        pytest.param("²³⁴", id="unicode-isdigit"),
+    ],
+)
+def test_filigree_isdigit_but_unparseable_port_is_soft(
+    tmp_path: Path, monkeypatch, payload: str
+) -> None:
+    # A planted ephemeral.port whose payload passes str.isdigit() but raises in
+    # int(). Detection must stay fail-soft (treat as absent), never crash.
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    port_dir = tmp_path / ".weft" / "filigree"
+    port_dir.mkdir(parents=True)
+    (port_dir / "ephemeral.port").write_text(payload, encoding="utf-8")
+
+    results = detect_siblings(tmp_path)
+
+    assert results["filigree"] == "absent"
     _assert_no_config_written(tmp_path)
 
 
