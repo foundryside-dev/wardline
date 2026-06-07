@@ -1,0 +1,1639 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Generic semantic-tainting static analyzer for Python">
+      
+      
+      
+        <link rel="canonical" href="https://wardline.foundryside.dev/guides/agents/">
+      
+      
+        <link rel="prev" href="../attestation/">
+      
+      
+        <link rel="next" href="../../reference/cli/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Using Wardline with your coding agent - Wardline</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/weft-mkdocs.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#using-wardline-with-your-coding-agent" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Wardline" class="md-header__button md-logo" aria-label="Wardline" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Wardline
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Using Wardline with your coding agent
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/foundryside-dev/wardline" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    foundryside-dev/wardline
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Wardline" class="md-nav__button md-logo" aria-label="Wardline" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Wardline
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/foundryside-dev/wardline" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    foundryside-dev/wardline
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Taint & trust model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/taint-algebra/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Taint algebra
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../concepts/trust-vocabulary-convergence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trust-vocabulary convergence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../suppression/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Suppressing findings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../judge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM triage judge
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../weft/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Weft integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../legis-handoff/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Signed scan handoff to legis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../loomweave-taint-store/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Loomweave taint store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../assurance-posture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Assurance posture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../attestation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Attestation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Using Wardline with your coding agent
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Using Wardline with your coding agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#why-this-fits-an-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why this fits an agent
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#one-command-setup-wardline-install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One-command setup: wardline install
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gate-the-agents-work-with-wardline-scan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gate the agent's work with wardline scan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Gate the agent&#39;s work with wardline scan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-pre-commit-hook" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A pre-commit hook
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#let-the-agent-triage-with-wardline-judge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Let the agent triage with wardline judge
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hand-off-via-sarif" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hand off via SARIF
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#call-wardline-as-mcp-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Call Wardline as MCP tools
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/vocabulary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trust vocabulary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/finding-lifecycle-vocabulary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Finding lifecycle & gate vocabulary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    About
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    About
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/foundryside-dev/wardline/blob/main/CHANGELOG.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/foundryside-dev/wardline/blob/main/CONTRIBUTING.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/foundryside-dev/wardline/blob/main/LICENSE" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#why-this-fits-an-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why this fits an agent
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#one-command-setup-wardline-install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One-command setup: wardline install
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#gate-the-agents-work-with-wardline-scan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gate the agent's work with wardline scan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Gate the agent&#39;s work with wardline scan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-pre-commit-hook" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A pre-commit hook
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#let-the-agent-triage-with-wardline-judge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Let the agent triage with wardline judge
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hand-off-via-sarif" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hand off via SARIF
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#call-wardline-as-mcp-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Call Wardline as MCP tools
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="using-wardline-with-your-coding-agent">Using Wardline with your coding agent<a class="headerlink" href="#using-wardline-with-your-coding-agent" title="Permanent link">&para;</a></h1>
+<p>Wardline is built for the one-to-two-developer team that has handed real work
+to a coding agent and now wants a trust-boundary gate the agent can run <em>itself</em>
+— and reason about — without standing up an enterprise security program.</p>
+<h2 id="why-this-fits-an-agent">Why this fits an agent<a class="headerlink" href="#why-this-fits-an-agent" title="Permanent link">&para;</a></h2>
+<p>An agent works best against a tool that is:</p>
+<ul>
+<li><strong>Deterministic</strong> — the same code produces the same findings, so the agent can
+  treat a verdict as ground truth rather than a roll of the dice.</li>
+<li><strong>Dependency-free at the core</strong> — the analyzer is plain standard-library
+  Python (the CLI adds only <code>click</code>, <code>pyyaml</code>, and <code>jsonschema</code>). Nothing to
+  provision, no service to reach. The agent runs it the way it runs <code>pytest</code>.</li>
+<li><strong>Fast and local</strong> — a scan is a process the agent spawns and reads, with a
+  machine-readable exit code and a structured report.</li>
+</ul>
+<p>That combination lets you wire Wardline into the loop the agent already runs: it
+edits code, runs the gate, reads the result, and corrects itself before it ever
+asks you to look.</p>
+<p>If you have not installed Wardline yet, start with
+<a href="../../getting-started/">Getting Started</a>.</p>
+<h2 id="one-command-setup-wardline-install">One-command setup: <code>wardline install</code><a class="headerlink" href="#one-command-setup-wardline-install" title="Permanent link">&para;</a></h2>
+<p><code>wardline install</code> wires wardline into a project's agent context in one step:</p>
+<ul>
+<li>injects a small, hash-fenced block into <code>CLAUDE.md</code> and <code>AGENTS.md</code> pointing
+  the agent at the gate and the loop;</li>
+<li>installs the <code>wardline-gate</code> skill into <code>.claude/skills/</code> and <code>.agents/skills/</code>;</li>
+<li>merges a <code>wardline</code> entry into <code>.mcp.json</code> (preserving any existing servers);</li>
+<li>writes a global Codex MCP entry in <code>~/.codex/config.toml</code>;</li>
+<li><strong>detects</strong> a Loomweave taint store (<code>loomweave</code> on <code>PATH</code> or
+  <code>WARDLINE_LOOMWEAVE_URL</code>) and a Filigree project (<code>.filigree.conf</code>) and reports
+  what it found — it writes <strong>no</strong> binding and persists <strong>no</strong> URL. <code>weft.toml</code>
+  stays operator-authored; live URLs come from the <code>--filigree-url</code> /
+  <code>--loomweave-url</code> flag, the <code>WARDLINE_FILIGREE_URL</code> / <code>WARDLINE_LOOMWEAVE_URL</code>
+  env var, or the published <code>.weft/&lt;sibling&gt;/ephemeral.port</code> rung (legacy
+  <code>.&lt;sibling&gt;/ephemeral.port</code> tolerated).</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>wardline<span class="w"> </span>install
+<span class="go">wardline install:</span>
+<span class="go">  CLAUDE.md: created</span>
+<span class="go">  AGENTS.md: created</span>
+<span class="go">  skill .claude/skills/wardline-gate: created</span>
+<span class="go">  skill .agents/skills/wardline-gate: created</span>
+<span class="go">  .mcp.json (wardline entry): created</span>
+<span class="go">  Codex MCP (wardline entry): created</span>
+<span class="go">  loomweave: detected (no URL — rely on flag/env/published port)</span>
+<span class="go">  filigree: detected (no URL — rely on flag/env/published port)</span>
+<span class="go">  runtime markers: install `weft-markers` and import from `weft_markers`</span>
+</code></pre></div>
+<p>It is idempotent (re-run to refresh after upgrading wardline) and non-interactive
+(safe in CI). Opt out of any piece with <code>--no-claude-md</code>, <code>--no-agents-md</code>,
+<code>--no-skill</code>, <code>--no-mcp</code>, or <code>--no-bindings</code>. There is no SessionStart hook —
+freshness is enforced only when you re-run <code>wardline install</code>.</p>
+<p>Once installed, the MCP server resolves a Loomweave/Filigree URL at runtime from
+the flag, env var, or published <code>.weft/&lt;sibling&gt;/ephemeral.port</code> rung — not from
+config — so the <code>.mcp.json</code> entry stays a stdio <code>wardline mcp --root .</code> command
+with no URL in its args.
+The Codex entry is global, so it runs <code>wardline mcp</code> without <code>--root</code> and lets
+Codex launch it from the active workspace.</p>
+<p>Check the wiring later with:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>wardline<span class="w"> </span>doctor
+</code></pre></div>
+<p>Use <code>wardline doctor --repair</code> after moving binaries, starting a Filigree
+dashboard, or changing sibling tool config. It refreshes the instruction blocks,
+skills, and MCP entries, and re-detects siblings using the same discovery rules
+as <code>wardline install</code> — it never writes <code>weft.toml</code> or a sibling binding.</p>
+<h2 id="gate-the-agents-work-with-wardline-scan">Gate the agent's work with <code>wardline scan</code><a class="headerlink" href="#gate-the-agents-work-with-wardline-scan" title="Permanent link">&para;</a></h2>
+<p>Wardline marks trust boundaries with marker decorators from <code>weft_markers</code>:
+<code>@external_boundary</code> (data arriving from outside the trust boundary —
+untrusted) and <code>@trusted</code> (a producer that is supposed to receive validated data
+only). When untrusted data reaches a trusted producer, Wardline raises
+<code>PY-WL-101</code> at <code>ERROR</code>.</p>
+<p>Here is a self-contained example (<code>handlers.py</code>):</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">weft_markers</span><span class="w"> </span><span class="kn">import</span> <span class="n">external_boundary</span><span class="p">,</span> <span class="n">trusted</span>
+
+
+<span class="nd">@external_boundary</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">read_request_body</span><span class="p">(</span><span class="n">req</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Untrusted: data arriving from the network.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">req</span><span class="o">.</span><span class="n">body</span>
+
+
+<span class="nd">@trusted</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">store_record</span><span class="p">(</span><span class="n">req</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Trusted sink: this is supposed to receive validated data only.&quot;&quot;&quot;</span>
+    <span class="n">payload</span> <span class="o">=</span> <span class="n">read_request_body</span><span class="p">(</span><span class="n">req</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">payload</span>
+</code></pre></div>
+<p>By default a scan reports but never fails — the gate is opt-in:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>wardline<span class="w"> </span>scan<span class="w"> </span>.
+<span class="go">scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -&gt; findings.jsonl</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span><span class="nb">echo</span><span class="w"> </span><span class="nv">$?</span>
+<span class="go">0</span>
+</code></pre></div>
+<p>Add <code>--fail-on ERROR</code> and the same scan becomes a gate — a non-suppressed defect
+at or above the threshold drives a non-zero exit:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>wardline<span class="w"> </span>scan<span class="w"> </span>.<span class="w"> </span>--fail-on<span class="w"> </span>ERROR
+<span class="go">scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -&gt; findings.jsonl</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span><span class="nb">echo</span><span class="w"> </span><span class="nv">$?</span>
+<span class="go">1</span>
+</code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Why the agent can self-correct</p>
+<p>Exit <code>1</code> is the gate tripping; exit <code>2</code> is a Wardline error (bad config,
+unreadable path). The agent branches on the code. On a trip it reads the
+structured report it just wrote — the line <code>handlers.store_record declares
+return trust INTEGRAL but actually returns EXTERNAL_RAW (less trusted) —
+untrusted data reaches a trusted producer</code> names the function, the file, and
+the lines. That is enough for the agent to locate the leak and add a
+validating boundary before handing the change back to you.</p>
+</div>
+<h3 id="a-pre-commit-hook">A pre-commit hook<a class="headerlink" href="#a-pre-commit-hook" title="Permanent link">&para;</a></h3>
+<p>To make the gate run on every commit, drop a <code>.git/hooks/pre-commit</code> script
+(make it executable with <code>chmod +x</code>):</p>
+<div class="highlight"><pre><span></span><code><span class="ch">#!/usr/bin/env sh</span>
+<span class="c1"># Block a commit if Wardline finds a new ERROR-or-worse defect.</span>
+<span class="c1"># Write the findings file outside the working tree so the commit stays clean.</span>
+wardline<span class="w"> </span>scan<span class="w"> </span>.<span class="w"> </span>--fail-on<span class="w"> </span>ERROR<span class="w"> </span>--output<span class="w"> </span>/tmp/wardline-findings.jsonl
+</code></pre></div>
+<p>A <code>scan</code> always writes a findings file (default <code>findings.jsonl</code> in the scan
+path), so point <code>--output</code> outside the tree — as above — or at a git-ignored
+path; otherwise the hook litters every commit. The script's exit code becomes
+the hook's exit code: a clean tree commits, a new defect aborts the commit with
+the finding already on screen for the agent to act on.</p>
+<h2 id="let-the-agent-triage-with-wardline-judge">Let the agent triage with <code>wardline judge</code><a class="headerlink" href="#let-the-agent-triage-with-wardline-judge" title="Permanent link">&para;</a></h2>
+<p>The taint engine is intentionally conservative and will sometimes over-report.
+<code>wardline judge</code> is an <strong>opt-in</strong> LLM pass that labels each active defect
+<code>TRUE_POSITIVE</code> or <code>FALSE_POSITIVE</code> with a calibrated confidence. It costs
+nothing by default — <code>wardline scan</code> never calls a model, and <code>judge</code> runs only
+when you invoke it.</p>
+<p>It also fails loud rather than guessing, which keeps an agent honest: with no
+API key configured it stops with remediation guidance and exit <code>2</code>, so the agent
+never mistakes "couldn't triage" for "nothing to triage".</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>wardline<span class="w"> </span>judge<span class="w"> </span>.
+<span class="go">error: WARDLINE_OPENROUTER_API_KEY is not set. `wardline judge` calls OpenRouter to triage findings. Export the key (`export WARDLINE_OPENROUTER_API_KEY=sk-or-...`) or place it in a .env in the scan root, then re-run.</span>
+</code></pre></div>
+<p>With a key, <code>judge</code> triages cold and prints one line per verdict. Pass <code>--write</code>
+to append <code>FALSE_POSITIVE</code> verdicts to <code>.weft/wardline/judged.yaml</code> — but only those
+at or above the <strong>confidence floor</strong> (<code>judge.write_confidence_floor</code>, default
+<code>0.5</code>); a low-confidence FP is reported and held back rather than silently
+suppressed. A subsequent <code>wardline scan</code> reads <code>.weft/wardline/judged.yaml</code> and treats
+those fingerprints as suppressed, so the gate stops tripping on triaged
+false positives while still flagging anything new.</p>
+<p>For an agent this closes the loop: scan flags a defect, judge classifies it,
+and an above-floor false positive is recorded as an audited suppression rather
+than left to nag every run. See the <a href="../judge/">LLM triage judge guide</a>
+for the verdict format, the floor, and the <code>judged.yaml</code> record shape.</p>
+<h2 id="hand-off-via-sarif">Hand off via SARIF<a class="headerlink" href="#hand-off-via-sarif" title="Permanent link">&para;</a></h2>
+<p>For handing findings to another tool — GitHub code scanning, a CI dashboard, or
+a sibling Weft tool — emit SARIF 2.1.0:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>wardline<span class="w"> </span>scan<span class="w"> </span>.<span class="w"> </span>--format<span class="w"> </span>sarif<span class="w"> </span>--output<span class="w"> </span>results.sarif<span class="w"> </span>--fail-on<span class="w"> </span>ERROR
+<span class="go">scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -&gt; results.sarif</span>
+</code></pre></div>
+<p>The log is standard SARIF 2.1.0 with a <code>wardline</code> driver and one result per
+finding (the defect alongside engine metric/fact entries), so it is not
+Filigree-specific — any SARIF consumer can read it. <code>--fail-on</code> still gates while
+the file is written, so the same command both publishes the report and blocks the
+agent's change. See the <a href="../weft/">Weft integration guide</a> for the full
+output matrix, including the native Filigree emitter.</p>
+<h2 id="call-wardline-as-mcp-tools">Call Wardline as MCP tools<a class="headerlink" href="#call-wardline-as-mcp-tools" title="Permanent link">&para;</a></h2>
+<p>Wardline ships a native, dependency-free MCP server so an agent can call it as
+tools instead of shelling out. Launch it over stdio:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>wardline<span class="w"> </span>mcp<span class="w"> </span>--root<span class="w"> </span>.
+</code></pre></div>
+<p>Tools: <code>scan</code> (structured findings + suppression summary + gate, including the
+stable <code>agent_summary</code> block for compact handoff), <code>explain_taint</code>
+(the tainted callee and originating boundary for one finding — call it right
+after a scan and before editing), <code>decorator_coverage</code> (stable JSON inventory of
+every trust-decorated entity with declared/actual tiers, verdicts, SEI/content
+status, and linked work when configured), <code>file_finding</code> (promote one emitted
+finding to a Filigree issue), <code>scan_file_findings</code> (one-shot scan, explain,
+emit, promote, and identity-attach workflow), <code>fix</code> (mechanical autofixes for
+supported findings), <code>judge</code> (opt-in, network), and the loud suppression tools
+<code>baseline</code> / <code>waiver_add</code> (each requires a reason; <code>baseline</code> defaults to
+no-clobber and accepts <code>overwrite: true</code> to re-derive).
+Resources expose the trust vocabulary, rule catalog, config, and config schema.
+The <code>wardline:loop</code> prompt documents the intended
+scan → explain → fix-at-the-boundary → rescan cycle.</p>
+<p><code>scan</code> payload controls (the <code>summary</code>/<code>gate</code> blocks always describe the whole
+project — these only bound the returned finding bodies):</p>
+<ul>
+<li><code>where</code> — a conjunctive read-lens (keys: <code>rule_id</code>, <code>qualname</code>, <code>severity</code>,
+  <code>suppression</code>, <code>kind</code>, <code>path_glob</code>, <code>sink</code>, <code>tier</code>) that filters <strong>both</strong> the
+  <code>findings</code> list and the <code>agent_summary</code> arrays.</li>
+<li><code>summary_only: true</code> — counts + gate only, no finding bodies. The smallest
+  "did the gate pass?" payload.</li>
+<li><code>include_suppressed: false</code> — drop suppressed (baselined/waived/judged) bodies;
+  the suppression counts stay in <code>summary</code>.</li>
+<li><code>max_findings: N</code> — cap the returned bodies (and inlined explanations).</li>
+<li><code>explain: true</code> — inline each active defect's provenance; capped at 10 by
+  default (raise/lower with <code>max_findings</code>).</li>
+</ul>
+<p>Every cut is reported in the response <code>truncation</code> block (<code>findings_total</code>,
+<code>findings_returned</code>, <code>findings_truncated</code>, <code>explanations_truncated</code>) so a bounded
+payload never reads as "covered everything."</p>
+<p>With an opt-in Loomweave taint store configured (<code>wardline mcp --loomweave-url
+&lt;URL&gt;</code>), <code>explain_taint</code> becomes a query when you pass the finding's <code>qualname</code>
+as <code>sink_qualname</code>: a fresh fact is served from the store without re-scanning
+the file. Pass <code>chain: true</code> (with an optional <code>max_hops</code>), again alongside
+<code>sink_qualname</code>, to walk the full N-hop taint chain back to the originating
+boundary. Without a store, or without
+<code>sink_qualname</code>, <code>explain_taint</code> returns the single-hop SP8 explanation from a
+local re-scan. Known cost: with a store configured, each <code>scan</code> additionally
+builds taint facts (a blake3 hash per file) and POSTs them to Loomweave — this is
+fail-soft, but a real per-scan cost in the agent loop. See the
+<a href="../loomweave-taint-store/">Loomweave taint store guide</a> for the full
+opt-in, auth, and fail-soft details.</p>
+<p><code>file_finding</code> can also opt into Loomweave identity attachment with
+<code>attach_loomweave_identity: true</code>. Wardline promotes the finding first, then
+re-runs the scan to find the fingerprint's qualname, resolves that qualname
+through Loomweave, and attaches a Filigree entity association when it has both an
+entity id and a current content hash. The returned <code>identity_attach</code> block
+reports <code>attempted</code>, <code>attached</code>, <code>entity_id</code>, <code>content_hash</code>, <code>binding_kind</code>, and
+<code>reason</code>. If only a legacy locator is available and no current hash can be read,
+the tool says so and leaves the promoted issue intact rather than fabricating a
+binding.</p>
+<p>For the usual agent loop, prefer <code>scan_file_findings</code>: it defaults to a dry-run
+summary of active defects, including explanation summaries, then promotes only
+when you pass explicit <code>fingerprints</code> or <code>all_active: true</code>. Filigree emission,
+per-finding promotion, unknown fingerprints, and Loomweave identity attachment are
+reported as separate status blocks so partial failure is not hidden.</p>
+<p>The server is stateless — no session state is carried between calls; the
+read-only tools (<code>scan</code>, <code>explain_taint</code>) are pure functions of your code on disk
+and your config, and the analysis core stays zero-dependency. Only <code>judge</code>
+touches the network; <code>fix</code>, the suppression tools (<code>baseline</code> / <code>waiver_add</code>),
+and <code>judge</code> with <code>write</code> write to your project files as requested.</p>
+<p>For shell workflows, <code>wardline scan --format agent-summary</code> writes the same
+versioned handoff shape (<code>wardline-agent-summary-1</code>) to disk: active defects
+first with fingerprints and next tool calls, plus suppressed findings, engine
+facts, and Loomweave/Filigree write status when configured.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  <nav class="wl-footer-suite" aria-label="Weft suite">
+    <span class="wl-footer-suite__label">Weft suite</span>
+    <a href="https://wardline.foundryside.dev" rel="noopener">Wardline</a>
+    <a href="https://loomweave.foundryside.dev" rel="noopener" target="_blank">Loomweave</a>
+    <a href="https://filigree.foundryside.dev" rel="noopener" target="_blank">Filigree</a>
+    <a href="https://legis.foundryside.dev" rel="noopener" target="_blank">Legis</a>
+  </nav>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "navigation.instant", "content.code.copy", "search.suggest"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

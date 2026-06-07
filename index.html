@@ -1,0 +1,1541 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Generic semantic-tainting static analyzer for Python">
+      
+      
+      
+        <link rel="canonical" href="https://wardline.foundryside.dev/">
+      
+      
+      
+        <link rel="next" href="getting-started/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Wardline</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="stylesheets/weft-mkdocs.css">
+    
+      <link rel="stylesheet" href="stylesheets/extra.css">
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#install" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="." title="Wardline" class="md-header__button md-logo" aria-label="Wardline" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Wardline
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Home
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/foundryside-dev/wardline" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    foundryside-dev/wardline
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+                
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" hidden>
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="." title="Wardline" class="md-nav__button md-logo" aria-label="Wardline" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Wardline
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/foundryside-dev/wardline" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    foundryside-dev/wardline
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="." class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#30-second-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        30-second example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="concepts/model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Taint & trust model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="concepts/taint-algebra/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Taint algebra
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="concepts/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="concepts/trust-vocabulary-convergence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trust-vocabulary convergence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guides/suppression/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Suppressing findings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guides/judge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM triage judge
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guides/weft/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Weft integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guides/legis-handoff/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Signed scan handoff to legis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guides/loomweave-taint-store/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Loomweave taint store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guides/assurance-posture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Assurance posture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guides/attestation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Attestation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guides/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Using Wardline with your coding agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="reference/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="reference/vocabulary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trust vocabulary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="reference/finding-lifecycle-vocabulary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Finding lifecycle & gate vocabulary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    About
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    About
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/foundryside-dev/wardline/blob/main/CHANGELOG.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/foundryside-dev/wardline/blob/main/CONTRIBUTING.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/foundryside-dev/wardline/blob/main/LICENSE" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+                
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" hidden>
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Install
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#30-second-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        30-second example
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+<div class="wl-landing">
+
+  <section class="wl-hero">
+    <div class="wl-hero__lede">
+      <span class="wl-hero__eyebrow">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"
+                stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        </svg>
+        Static analysis · zero runtime deps
+      </span>
+      <h1 class="wl-hero__title">See untrusted data<br>cross a trust boundary.</h1>
+      <p class="wl-hero__tagline">
+        Wardline is a <strong>semantic-tainting static analyzer for Python</strong>.
+        It reads your source &mdash; never runs it &mdash; and checks every
+        trust-annotated function against one question: <strong>is the data this
+        function works with as trusted as it claims?</strong>
+      </p>
+      <div class="wl-hero__cta">
+        <a class="wl-btn wl-btn--primary" href="getting-started/">
+          Get Started
+        </a>
+        <a class="wl-btn wl-btn--secondary" href="https://github.com/foundryside-dev/wardline"
+           rel="noopener" target="_blank">
+          View on GitHub
+        </a>
+      </div>
+    </div>
+
+    
+    <figure class="wl-finding" role="img"
+            aria-label="Wardline flagging PY-WL-101: service.current_user is
+            annotated as a trusted producer returning INTEGRAL, but actually
+            returns EXTERNAL_RAW — untrusted data reaching a trusted producer.">
+      <div class="wl-finding__bar" aria-hidden="true">
+        <span class="wl-finding__dot"></span>
+        <span class="wl-finding__dot"></span>
+        <span class="wl-finding__dot"></span>
+        <span class="wl-finding__file">service.py</span>
+      </div>
+      <pre class="wl-code" aria-hidden="true"><code><span class="ln">5</span><span class="wl-tok-dec">@trusted</span>(level=<span class="wl-tok-str">"INTEGRAL"</span>)
+<span class="ln">6</span><span class="wl-tok-kw">def</span> <span class="wl-tok-fn">current_user</span>(request):
+<span class="ln">7</span>    <span class="wl-tok-cmt"># claims trusted output…</span>
+<span class="ln">8</span>    <span class="wl-tok-kw">return</span> request.<span class="wl-tok-raw">headers</span>[<span class="wl-tok-str">"X-User"</span>]  <span class="wl-tok-cmt"># …returns EXTERNAL_RAW</span></code></pre>
+
+      <div class="wl-flow" aria-hidden="true">
+        <span class="wl-flow__node wl-flow__node--raw">EXTERNAL_RAW</span>
+        <span class="wl-flow__arrow">&rarr;&rarr;&rarr;</span>
+        <span class="wl-flow__node wl-flow__node--claim">@trusted INTEGRAL</span>
+        <span class="wl-flow__arrow">&times;</span>
+      </div>
+
+      <figcaption class="wl-verdict">
+        <span class="wl-verdict__mark" aria-hidden="true">&#10007;</span>
+        <span class="wl-verdict__body">
+          <span class="wl-verdict__rule">PY-WL-101</span>&nbsp; service.current_user
+          declares return trust <span class="wl-tier-good">INTEGRAL</span> but
+          actually returns <span class="wl-tier-bad">EXTERNAL_RAW</span> &mdash;
+          untrusted data reaches a trusted producer.
+        </span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="wl-features" aria-label="What Wardline does">
+    <div class="wl-feature-card">
+      <svg class="wl-feature-card__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M7 8l-4 4 4 4M17 8l4 4-4 4M14 4l-4 16"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <h3>Three trust decorators</h3>
+      <p>
+        Declare trust at the source with <code>@external_boundary</code>,
+        <code>@trust_boundary</code>, and <code>@trusted</code>. Undecorated
+        code stays in the developer-freedom zone &mdash; opt-in, fail-closed.
+      </p>
+    </div>
+    <div class="wl-feature-card">
+      <svg class="wl-feature-card__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M9 11l3 3 8-8M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <h3>Eleven policy rules</h3>
+      <p>
+        <code>PY-WL-101</code> through <code>PY-WL-111</code> catch trust-boundary
+        leaks, untrusted data reaching deserialization, exec, and shell sinks, and
+        validators that can&rsquo;t say &ldquo;no.&rdquo;
+      </p>
+    </div>
+    <div class="wl-feature-card">
+      <svg class="wl-feature-card__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M4 7h16M4 12h16M4 17h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <h3>SARIF &amp; JSONL output</h3>
+      <p>
+        Emit findings as SARIF for code-scanning dashboards or JSONL for tooling.
+        Gate CI with <code>wardline scan --fail-on ERROR</code>.
+      </p>
+    </div>
+    <div class="wl-feature-card">
+      <svg class="wl-feature-card__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 2a4 4 0 014 4v2a4 4 0 01-8 0V6a4 4 0 014-4zM5 21a7 7 0 0114 0"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <h3>Agent-ready: MCP &amp; LLM triage</h3>
+      <p>
+        A built-in MCP server lets coding agents scan and explain taint. An
+        opt-in LLM triage judge, baselines, and waivers keep the signal clean.
+      </p>
+    </div>
+  </section>
+
+  
+  <section class="wl-model" aria-labelledby="wl-model-heading">
+    <p class="wl-section-eyebrow">The trust model</p>
+    <h2 id="wl-model-heading">Eight ordered states. Four you declare.</h2>
+    <p class="wl-model__intro">
+      You annotate code with three decorators. Wardline propagates trust across
+      the call graph and grades every value on an eight-state lattice &mdash; a
+      function is only as trusted as the least-trusted value it returns. A leak
+      is the moment a less-trusted state reaches a producer that claims more.
+    </p>
+
+    <div class="wl-decorators">
+      <div class="wl-decorator">
+        <code class="wl-decorator__name">@external_boundary</code>
+        <p>Marks a source of raw, untrusted input &mdash; data starts at
+           <strong>EXTERNAL_RAW</strong>.</p>
+      </div>
+      <div class="wl-decorator">
+        <code class="wl-decorator__name">@trust_boundary</code>
+        <p>A validator that <em>raises</em> trust &mdash; and must have a path
+           that can say &ldquo;no.&rdquo;</p>
+      </div>
+      <div class="wl-decorator">
+        <code class="wl-decorator__name">@trusted</code>
+        <p>A producer that <em>claims</em> a trust level. Wardline checks the
+           claim against what it actually returns.</p>
+      </div>
+    </div>
+
+    <div class="wl-lattice" role="img"
+         aria-label="The eight-state trust lattice, most trusted to least
+         trusted: INTEGRAL, ASSURED, GUARDED (developer-declared), then
+         UNKNOWN_ASSURED, UNKNOWN_GUARDED (engine-inferred), then EXTERNAL_RAW
+         (developer-declared), then UNKNOWN_RAW and MIXED_RAW (engine-inferred).">
+      <div class="wl-lattice__caption" aria-hidden="true">
+        <span>&#9650; Most trusted</span>
+        <span>Least trusted &#9660;</span>
+      </div>
+      <div class="wl-lattice__track" aria-hidden="true">
+        <div class="wl-tier"><span class="wl-tier__swatch wl-sw-1"></span><span class="wl-tier__name">INTEGRAL</span><span class="wl-tier__tag wl-tier__tag--decl">declared</span><span class="wl-tier__note">trusted producer output</span></div>
+        <div class="wl-tier"><span class="wl-tier__swatch wl-sw-2"></span><span class="wl-tier__name">ASSURED</span><span class="wl-tier__tag wl-tier__tag--decl">declared</span><span class="wl-tier__note">validated, high trust</span></div>
+        <div class="wl-tier"><span class="wl-tier__swatch wl-sw-3"></span><span class="wl-tier__name">GUARDED</span><span class="wl-tier__tag wl-tier__tag--decl">declared</span><span class="wl-tier__note">checked, scoped trust</span></div>
+        <div class="wl-tier"><span class="wl-tier__swatch wl-sw-4"></span><span class="wl-tier__name">UNKNOWN_ASSURED</span><span class="wl-tier__tag wl-tier__tag--inf">inferred</span><span class="wl-tier__note">can&rsquo;t prove the claim</span></div>
+        <div class="wl-tier"><span class="wl-tier__swatch wl-sw-5"></span><span class="wl-tier__name">UNKNOWN_GUARDED</span><span class="wl-tier__tag wl-tier__tag--inf">inferred</span><span class="wl-tier__note">can&rsquo;t prove the claim</span></div>
+        <div class="wl-tier"><span class="wl-tier__swatch wl-sw-6"></span><span class="wl-tier__name">EXTERNAL_RAW</span><span class="wl-tier__tag wl-tier__tag--decl">declared</span><span class="wl-tier__note">raw external input</span></div>
+        <div class="wl-tier"><span class="wl-tier__swatch wl-sw-7"></span><span class="wl-tier__name">UNKNOWN_RAW</span><span class="wl-tier__tag wl-tier__tag--inf">inferred</span><span class="wl-tier__note">untracked &rarr; fail-closed</span></div>
+        <div class="wl-tier"><span class="wl-tier__swatch wl-sw-8"></span><span class="wl-tier__name">MIXED_RAW</span><span class="wl-tier__tag wl-tier__tag--inf">inferred</span><span class="wl-tier__note">clashing provenance</span></div>
+      </div>
+    </div>
+  </section>
+
+  
+  <section class="wl-body" aria-label="Install and quick example">
+    <h2 id="install">Install<a class="headerlink" href="#install" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">&quot;wardline[scanner]&quot;</span>
+</code></pre></div>
+<p>Wardline ships in layers, so you only pull what you use:</p>
+<table>
+<thead>
+<tr>
+<th>Install</th>
+<th>Pulls in</th>
+<th>Gives you</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>wardline</code> (base)</td>
+<td>nothing</td>
+<td>the analysis engine as a zero-dependency library</td>
+</tr>
+<tr>
+<td><code>wardline[scanner]</code></td>
+<td>pyyaml, jsonschema, click</td>
+<td>the <code>wardline scan</code> command-line tool</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>wardline scan</code> CLI lives in the <code>scanner</code> extra, so install
+<code>wardline[scanner]</code> to run the examples below. Everything in the
+<a href="guides/weft/">Weft integration</a> guide — SARIF output, the Filigree emitter,
+Loomweave conformance — also ships in <code>scanner</code> (the Filigree emitter uses only
+the standard library), so no further extra is required.</p>
+<h2 id="30-second-example">30-second example<a class="headerlink" href="#30-second-example" title="Permanent link">&para;</a></h2>
+<p>Point <code>wardline scan</code> at a directory:</p>
+<div class="highlight"><pre><span></span><code>wardline<span class="w"> </span>scan<span class="w"> </span>.<span class="w"> </span>--format<span class="w"> </span>jsonl
+</code></pre></div>
+<div class="highlight"><pre><span></span><code>scanned 2 file(s); 4 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -&gt; findings.jsonl
+</code></pre></div>
+<p>In JSONL mode the findings are written to <code>findings.jsonl</code> in the current
+directory; the line above is the run summary. One of those findings flags a
+trust-boundary violation:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">&quot;rule_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;PY-WL-101&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;severity&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ERROR&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;defect&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;qualname&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;service.current_user&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;location&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;service.py&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;line_start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">7</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;line_end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;col_start&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;col_end&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">26</span><span class="p">},</span><span class="w"> </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;service.current_user declares return trust INTEGRAL but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;properties&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;declared_return&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;INTEGRAL&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;actual_return&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;EXTERNAL_RAW&quot;</span><span class="p">},</span><span class="w"> </span><span class="nt">&quot;suppressed&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;active&quot;</span><span class="p">}</span>
+</code></pre></div>
+<p>That is Wardline reporting that a function annotated as a trusted producer
+actually returns raw, untrusted data — a trust-boundary leak. The
+<a href="getting-started/">Getting Started</a> guide walks through this finding field by
+field.</p>
+<h2 id="next-steps">Next steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="getting-started/">Getting Started</a> — install, run a first scan, and read a finding.</li>
+<li><a href="concepts/model/">The model</a> — trust tiers, boundaries, and how taint flows.</li>
+<li><a href="guides/agents/">Arming agents</a> — using Wardline to give coding agents a trust-boundary check.</li>
+</ul>
+  </section>
+
+  <section class="wl-suite" aria-labelledby="wl-suite-heading">
+    <p class="wl-section-eyebrow">Part of Weft Federation</p>
+    <h2 id="wl-suite-heading">Five citizens, one suite</h2>
+    <p class="wl-suite__intro">
+      Wardline is one of five Weft Federation citizens &mdash; agent-first tooling built on
+      &ldquo;humans on the loop, not in the loop.&rdquo; Each is zero-config and
+      opt-in: enterprise-class for one-to-two-developer teams, without enterprise
+      weight.
+    </p>
+    <div class="wl-suite__grid">
+      <a class="wl-suite-card wl-suite-card--current" href="https://wardline.foundryside.dev"
+         rel="noopener" target="_blank">
+        <h3>Wardline</h3>
+        <p>Semantic-tainting static analysis for Python.</p>
+        <span class="wl-suite-card__badge">You are here</span>
+      </a>
+      <a class="wl-suite-card" href="https://loomweave.foundryside.dev"
+         rel="noopener" target="_blank">
+        <h3>Loomweave</h3>
+        <p>Code intelligence &mdash; entity-level facts about your codebase.</p>
+      </a>
+      <a class="wl-suite-card" href="https://filigree.foundryside.dev"
+         rel="noopener" target="_blank">
+        <h3>Filigree</h3>
+        <p>Issue tracking built for agent-driven teams.</p>
+      </a>
+      <a class="wl-suite-card" href="https://legis.foundryside.dev"
+         rel="noopener" target="_blank">
+        <h3>Legis</h3>
+        <p>Opt-in governance for the development lifecycle.</p>
+      </a>
+      <a class="wl-suite-card" href="https://charter.foundryside.dev"
+         rel="noopener" target="_blank">
+        <h3>Charter</h3>
+        <p>Requirements, traceability, and verification evidence.</p>
+      </a>
+    </div>
+  </section>
+
+</div>
+
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  <nav class="wl-footer-suite" aria-label="Weft suite">
+    <span class="wl-footer-suite__label">Weft suite</span>
+    <a href="https://wardline.foundryside.dev" rel="noopener">Wardline</a>
+    <a href="https://loomweave.foundryside.dev" rel="noopener" target="_blank">Loomweave</a>
+    <a href="https://filigree.foundryside.dev" rel="noopener" target="_blank">Filigree</a>
+    <a href="https://legis.foundryside.dev" rel="noopener" target="_blank">Legis</a>
+  </nav>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.sections", "navigation.top", "navigation.instant", "content.code.copy", "search.suggest"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

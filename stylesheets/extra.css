@@ -1,0 +1,737 @@
+/* ==========================================================================
+   Wardline — thin identity layer over the shared Weft docs theme.
+
+   This file is layered ON TOP OF the vendored `weft-mkdocs.css` (loaded first
+   in mkdocs.yml). weft-mkdocs.css owns the base chrome: Material --md-* surface/
+   text/code/footer tokens per scheme, the JetBrains Mono / Space Grotesk faces,
+   headings, links, admonitions, tables, radii. We do NOT re-declare any of that.
+
+   What stays here is purely Wardline's bespoke landing-page identity:
+   - The Wardline thread accent: CORAL (#F4845F), the federation's trust-boundary
+     strand — a deliberate change from the previous teal. It repaints the hero
+     CTA, eyebrow, links inside the landing, decorator names, section eyebrows,
+     and the "you are here" badge. (In the LIGHT scheme it deepens to #C2410C so
+     coral-as-text clears WCAG AA on white — mirroring how weft-mkdocs deepens
+     its sky accent for light.)
+   - The .wl-* landing components (hero, finding panel, feature cards, the
+     eight-state trust lattice, the Weft suite grid), recolored onto the Weft
+     dark-teal surface ramp + 3/6/8 radii.
+   - The eight-state lattice swatches are SEMANTIC, not brand: they ride the
+     design-system semantic ramp — most-trusted (INTEGRAL) = --ready emerald,
+     least-trusted (MIXED_RAW) = --stale red, midpoints through --aging amber.
+
+   Strategy (unchanged from before): Material owns the light/dark toggle. We do
+   NOT add a custom toggle and do NOT use light-dark()/[data-theme]; the --wl-*
+   semantic tokens are redefined under Material's own scheme selectors so they
+   resolve against the body-level scheme — the same hook weft-mkdocs uses.
+   ========================================================================== */
+
+:root {
+  /* ---- Spacing scale (4px base) ---- */
+  --wl-space-1: 0.25rem;
+  --wl-space-2: 0.5rem;
+  --wl-space-3: 0.75rem;
+  --wl-space-4: 1rem;
+  --wl-space-5: 1.5rem;
+  --wl-space-6: 2rem;
+  --wl-space-8: 3rem;
+  --wl-space-10: 4rem;
+
+  /* ---- Fluid type (landing hero) ---- */
+  --wl-text-hero: clamp(2.5rem, 1.7rem + 3.6vw, 4rem);
+  --wl-text-lead: clamp(1.1rem, 1rem + 0.6vw, 1.375rem);
+
+  /* ---- Radii — the Weft 3 / 6 / 8 system ---- */
+  --wl-radius-sm: 3px;   /* chips, pills, small surfaces  */
+  --wl-radius:    6px;   /* buttons, cards                */
+  --wl-radius-lg: 8px;   /* large panels                  */
+
+  --wl-content-width: 52rem;
+
+  /* Body face = JetBrains Mono (from weft-mkdocs); display = Space Grotesk for
+     the big landing headlines (matches the design system's brand-display rule). */
+  --wl-font-mono: var(--md-code-font-family, 'JetBrains Mono', 'Fira Code',
+    ui-monospace, 'SF Mono', Menlo, monospace);
+  --wl-font-display: 'Space Grotesk', 'JetBrains Mono', ui-sans-serif,
+    system-ui, sans-serif;
+
+  /* ---- Weft design-system primitives used by the lattice (theme-agnostic) ---
+     The eight-state trust lattice is SEMANTIC, not brand: most-trusted end rides
+     the --ready emerald, least-trusted end the --stale red, gradient through the
+     --aging amber. Pinned here (not per-scheme) so the ramp reads identically in
+     both light and dark — it is a fixed semantic legend, not a chrome surface. */
+  --ds-ready: #10B981;  /* emerald — most trusted   */
+  --ds-aging: #F59E0B;  /* amber   — intermediate   */
+  --ds-stale: #EF4444;  /* red     — least trusted  */
+}
+
+/* ==========================================================================
+   Wardline semantic tokens — redefined per Material scheme, mapped onto the
+   shared Weft surface ramp + the coral thread accent. These MUST live inside
+   the scheme selectors (which Material sets on <body>): a custom property set
+   on <body> overrides one inherited from :root for every descendant, so an
+   accent declared in :root would silently lose to weft-mkdocs's body-level
+   --md-accent-fg-color. Declaring them here keeps coral authoritative.
+   ========================================================================== */
+
+/* ---- DARK (slate) scheme — the canonical default ---- */
+[data-md-color-scheme="slate"] {
+  /* Repaint Material's interactive accent to the Wardline coral thread so the
+     chrome weft-mkdocs styles (links, nav active rail, TOC marker, headerlinks)
+     read in Wardline's identity colour rather than the suite's default sky. */
+  --md-accent-fg-color:  var(--thread-wardline);  /* #F4845F coral */
+  --md-typeset-a-color:  var(--thread-wardline);
+
+  /* Weft dark surface ramp (design-system: base / raised / overlay / hover) */
+  --wl-bg:           #0B1215;  /* surface-base    */
+  --wl-bg-subtle:    #131E24;  /* surface-raised  */
+  --wl-bg-card:      #1A2B34;  /* surface-overlay */
+  --wl-bg-hover:     #243A45;  /* surface-hover   */
+
+  /* Code surfaces stay dark in both schemes (editor-screenshot motif) */
+  --wl-bg-code:      #0B1215;
+  --wl-fg-code:      #E2EEF2;
+
+  /* Text ramp */
+  --wl-text:         #E2EEF2;  /* text-primary    */
+  --wl-text-muted:   #8FAAB8;  /* text-secondary  */
+
+  /* Borders — Weft hairlines */
+  --wl-border:        #1E3340;  /* border-default  */
+  --wl-border-strong: #2A4454;  /* border-strong   */
+
+  /* Coral accent (the Wardline thread) + a soft tint for chips/pills */
+  --wl-accent:       var(--thread-wardline);             /* #F4845F */
+  --wl-accent-soft:  rgba(244, 132, 95, 0.14);
+  --wl-on-accent:    #0B1215;                            /* text on coral fill */
+
+  /* Semantic signal colours (verdict ✓/✗) from the design-system ramp */
+  --wl-danger:       var(--ds-stale);   /* #EF4444 */
+  --wl-danger-soft:  rgba(239, 68, 68, 0.14);
+  --wl-ok:           var(--ds-ready);   /* #10B981 */
+  --wl-ok-soft:      rgba(16, 185, 129, 0.14);
+}
+
+/* ---- LIGHT (default) scheme — the documented alternate ---- */
+[data-md-color-scheme="default"] {
+  /* Coral-as-text fails AA on white; deepen to #C2410C (the same darker coral
+     weft-mkdocs uses for the light-scheme code-constant colour) so links and
+     the eyebrow clear 4.5:1. Brand reads coral; contrast holds. */
+  --md-accent-fg-color:  #C2410C;
+  --md-typeset-a-color:  #C2410C;
+
+  /* Weft light surface ramp */
+  --wl-bg:           #F0F6F8;  /* surface-base    */
+  --wl-bg-subtle:    #E8F1F4;  /* surface-overlay */
+  --wl-bg-card:      #FFFFFF;  /* surface-raised  */
+  --wl-bg-hover:     #DCE9EE;  /* surface-hover   */
+
+  /* Code surfaces deliberately stay dark in both schemes */
+  --wl-bg-code:      #0B1215;
+  --wl-fg-code:      #E2EEF2;
+
+  --wl-text:         #0F2027;  /* text-primary (light) */
+  --wl-text-muted:   #3D6070;  /* text-secondary       */
+
+  --wl-border:        #C5D8E0;  /* border-default (light) */
+  --wl-border-strong: #9BBBC8;  /* border-strong          */
+
+  --wl-accent:       #C2410C;                            /* deepened coral */
+  --wl-accent-soft:  rgba(194, 65, 12, 0.10);
+  --wl-on-accent:    #FFFFFF;                            /* text on coral fill */
+
+  --wl-danger:       #B91C1C;   /* deepened red for AA on light */
+  --wl-danger-soft:  rgba(239, 68, 68, 0.10);
+  --wl-ok:           #047857;   /* deepened emerald for AA on light */
+  --wl-ok-soft:      rgba(16, 185, 129, 0.12);
+}
+
+/* ==========================================================================
+   Footer — Weft suite links (.wl-* component; weft-mkdocs owns the rest of
+   the footer chrome, this only styles the bespoke suite strip).
+   ========================================================================== */
+
+.wl-footer-suite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-3);
+  margin-bottom: var(--wl-space-2);
+  font-size: 0.8rem;
+}
+
+.wl-footer-suite__label {
+  font-family: var(--wl-font-mono);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+.wl-footer-suite a {
+  color: inherit;
+  text-decoration: none;
+  opacity: 0.85;
+}
+
+.wl-footer-suite a:hover,
+.wl-footer-suite a:focus-visible {
+  text-decoration: underline;
+  text-decoration-color: var(--wl-accent);
+  opacity: 1;
+}
+
+/* ==========================================================================
+   LANDING PAGE
+   ========================================================================== */
+
+.wl-landing {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 0 var(--wl-space-4) var(--wl-space-10);
+}
+
+/* ---- Hero ---- */
+.wl-hero {
+  padding: var(--wl-space-10) 0 var(--wl-space-8);
+  display: grid;
+  gap: var(--wl-space-8);
+  grid-template-columns: 1fr;
+  align-items: center;
+}
+@media (min-width: 60rem) {
+  .wl-hero {
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    gap: var(--wl-space-8);
+  }
+}
+
+.wl-hero__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  font-family: var(--wl-font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wl-accent);
+  background: var(--wl-accent-soft);
+  border: 1px solid color-mix(in oklch, var(--wl-accent) 35%, transparent);
+  border-radius: 999px;
+  padding: 0.3em 0.85em;
+  margin-bottom: var(--wl-space-4);
+}
+
+.wl-hero__title {
+  font-family: var(--wl-font-display);
+  font-size: var(--wl-text-hero);
+  line-height: 1.02;
+  margin: 0 0 var(--wl-space-4);
+  letter-spacing: -0.03em;
+  font-weight: 700;
+  color: var(--wl-text);
+}
+
+.wl-hero__tagline {
+  font-size: var(--wl-text-lead);
+  line-height: 1.5;
+  color: var(--wl-text-muted);
+  max-width: 34rem;
+  margin: 0 0 var(--wl-space-6);
+}
+.wl-hero__tagline strong {
+  color: var(--wl-text);
+  font-weight: 600;
+}
+
+.wl-hero__cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wl-space-3);
+}
+
+.wl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: var(--wl-space-3) var(--wl-space-5);
+  border-radius: var(--wl-radius);
+  font-weight: 600;
+  font-size: 1rem;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.wl-btn--primary {
+  background: var(--wl-accent);
+  color: var(--wl-on-accent);
+}
+.wl-btn--primary:hover,
+.wl-btn--primary:focus-visible {
+  background: color-mix(in oklch, var(--wl-accent) 82%, #000 18%);
+  color: var(--wl-on-accent);
+}
+[data-md-color-scheme="slate"] .wl-btn--primary:hover,
+[data-md-color-scheme="slate"] .wl-btn--primary:focus-visible {
+  /* Lighten the coral on hover against the dark base */
+  background: color-mix(in oklch, var(--wl-accent) 82%, #fff 18%);
+}
+
+.wl-btn--secondary {
+  background: transparent;
+  color: var(--wl-text);
+  border-color: var(--wl-border-strong);
+}
+.wl-btn--secondary:hover,
+.wl-btn--secondary:focus-visible {
+  border-color: var(--wl-accent);
+  color: var(--wl-accent);
+}
+
+.wl-btn:focus-visible {
+  outline: 3px solid var(--wl-accent);
+  outline-offset: 2px;
+}
+
+/* ---- Hero finding panel (hand-marked-up, NOT Material-highlighted) ----
+   Pinned to the dark editor surface in BOTH schemes so the bright syntax
+   tokens stay legible — this is a screenshot-of-an-editor motif, not page
+   chrome. */
+.wl-finding {
+  background: var(--wl-bg-code);
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius);
+  overflow: hidden;
+  font-family: var(--wl-font-mono);
+  font-size: 0.82rem;
+  line-height: 1.6;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+}
+
+.wl-finding__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-3) var(--wl-space-4);
+  background: #131E24;             /* surface-raised — one step up from base */
+  border-bottom: 1px solid var(--wl-border);
+  color: #8FAAB8;
+  font-size: 0.72rem;
+}
+.wl-finding__dot {
+  width: 0.62rem;
+  height: 0.62rem;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.4;
+}
+.wl-finding__file {
+  margin-left: auto;
+  letter-spacing: 0.02em;
+}
+
+.wl-code {
+  margin: 0;
+  padding: var(--wl-space-4) var(--wl-space-4) var(--wl-space-3);
+  color: var(--wl-fg-code);
+  overflow-x: auto;
+  text-align: left;
+}
+.wl-code .ln {
+  display: inline-block;
+  width: 1.4rem;
+  text-align: right;
+  color: #5A7D8C;                  /* text-muted */
+  user-select: none;
+  margin-right: var(--wl-space-3);
+}
+/* The hero <pre> is hand-marked-up, not a Material highlight block; suppress
+   the code-nav / clipboard button content.code.copy injects into it
+   (Material 9.7 wraps it in .md-code__nav with a .md-code__button). */
+.wl-finding .md-clipboard,
+.wl-finding .md-code__nav,
+.wl-finding .md-code__button { display: none; }
+
+/* Syntax tokens — terminal-grade, tuned to the design-system code-highlight
+   palette (sky / violet / aqua / gold / coral). */
+.wl-tok-kw   { color: #38BDF8; }                 /* keyword — sky          */
+.wl-tok-dec  { color: #E3B341; }                 /* decorator — gold       */
+.wl-tok-fn   { color: #4ECDC4; }                 /* function — aqua        */
+.wl-tok-str  { color: #10B981; }                 /* string — emerald       */
+.wl-tok-cmt  { color: #5A7D8C; font-style: italic; }  /* comment — muted   */
+.wl-tok-raw  { color: #EF4444; font-weight: 600; }    /* the raw leak — red */
+
+/* The verdict strip under the code */
+.wl-verdict {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-3) var(--wl-space-4);
+  border-top: 1px solid var(--wl-border);
+  background: rgba(239, 68, 68, 0.12);   /* stale-red wash, on the dark panel */
+}
+.wl-verdict__mark {
+  flex: none;
+  font-weight: 700;
+  color: #EF4444;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+.wl-verdict__body {
+  font-family: var(--wl-font-mono);
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: #E2EEF2;                 /* always on the dark panel */
+  text-align: left;
+}
+.wl-verdict__rule {
+  color: #EF4444;
+  font-weight: 700;
+}
+/* INTEGRAL (claimed, trusted) reads green; EXTERNAL_RAW (actual, untrusted)
+   reads red — the same most→least-trusted semantics as the lattice. */
+.wl-verdict__body .wl-tier-bad  { color: #EF4444; font-weight: 600; }
+.wl-verdict__body .wl-tier-good { color: #10B981; font-weight: 600; }
+
+/* ---- Trust-flow motif: EXTERNAL_RAW flowing into a trusted producer ---- */
+.wl-flow {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-3) var(--wl-space-4);
+  border-top: 1px solid var(--wl-border);
+  font-family: var(--wl-font-mono);
+  font-size: 0.68rem;
+  flex-wrap: wrap;
+}
+.wl-flow__node {
+  padding: 0.25em 0.6em;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.wl-flow__node--raw   { color: #EF4444; }   /* untrusted — stale red   */
+.wl-flow__node--claim { color: #10B981; }   /* claimed trusted — green */
+.wl-flow__arrow {
+  color: #5A7D8C;
+  flex: none;
+}
+
+/* ---- Feature cards ---- */
+.wl-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--wl-space-4);
+  margin: var(--wl-space-6) 0 var(--wl-space-8);
+}
+
+.wl-feature-card {
+  position: relative;
+  padding: var(--wl-space-5);
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius);
+  background: var(--wl-bg-subtle);
+  transition: border-color 150ms ease;
+}
+.wl-feature-card:hover {
+  border-color: var(--wl-border-strong);
+}
+
+.wl-feature-card__icon {
+  display: block;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-bottom: var(--wl-space-3);
+  color: var(--wl-accent);
+}
+
+.wl-feature-card h3 {
+  margin: 0 0 var(--wl-space-2);
+  font-size: 1.05rem;
+  color: var(--wl-text);
+}
+
+.wl-feature-card p {
+  margin: 0;
+  color: var(--wl-text-muted);
+  line-height: 1.55;
+  font-size: 0.92rem;
+}
+
+.wl-feature-card code {
+  background: var(--wl-accent-soft);
+  color: var(--wl-accent);
+  padding: 0.1em 0.35em;
+  border-radius: var(--wl-radius-sm);
+  font-size: 0.85em;
+  font-family: var(--wl-font-mono);
+}
+
+/* ---- Section heading shared style ---- */
+.wl-section-eyebrow {
+  font-family: var(--wl-font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wl-accent);
+  margin: 0 0 var(--wl-space-2);
+}
+
+/* ==========================================================================
+   The trust model — decorators + the eight-state lattice
+   ========================================================================== */
+
+.wl-model {
+  margin-top: var(--wl-space-10);
+  padding-top: var(--wl-space-6);
+  border-top: 1px solid var(--wl-border);
+}
+
+.wl-model h2 {
+  font-family: var(--wl-font-display);
+  margin: 0 0 var(--wl-space-2);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.wl-model__intro {
+  color: var(--wl-text-muted);
+  max-width: 44rem;
+  line-height: 1.55;
+  margin: 0 0 var(--wl-space-6);
+}
+
+/* Decorators */
+.wl-decorators {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--wl-space-4);
+  margin-bottom: var(--wl-space-8);
+}
+.wl-decorator {
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius);
+  background: var(--wl-bg-subtle);
+  padding: var(--wl-space-5);
+}
+.wl-decorator__name {
+  display: block;
+  font-family: var(--wl-font-mono);
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--wl-accent);
+  margin-bottom: var(--wl-space-2);
+}
+.wl-decorator p {
+  margin: 0;
+  color: var(--wl-text-muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+/* The lattice ramp — eight ordered states, most → least trusted.
+   SEMANTIC ramp (not brand): emerald (--ready) → amber (--aging) → red
+   (--stale), so the most-trusted state reads green and the least-trusted red. */
+.wl-lattice {
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius);
+  background: var(--wl-bg-subtle);
+  padding: var(--wl-space-5);
+}
+.wl-lattice__caption {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--wl-font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--wl-text-muted);
+  margin-bottom: var(--wl-space-3);
+}
+.wl-lattice__track {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wl-tier {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--wl-space-2) var(--wl-space-3);
+  padding: 0.5em 0.7em;
+  border-radius: var(--wl-radius-sm);
+  font-family: var(--wl-font-mono);
+  font-size: 0.78rem;
+  color: var(--wl-text);
+  background: var(--wl-bg-card);
+  border: 1px solid var(--wl-border);
+}
+.wl-tier__swatch {
+  flex: none;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+}
+.wl-tier__name {
+  font-weight: 600;
+  min-width: 0;
+}
+.wl-tier__note {
+  margin-left: auto;
+  font-size: 0.68rem;
+  color: var(--wl-text-muted);
+  text-align: right;
+}
+/* On narrow viewports the note drops to its own full-width line so nothing
+   clips; the swatch + name + tag stay on the first line. */
+@media (max-width: 30rem) {
+  .wl-tier__note {
+    flex-basis: 100%;
+    margin-left: calc(0.85rem + var(--wl-space-3));
+    text-align: left;
+  }
+}
+/* declared vs inferred badge */
+.wl-tier__tag {
+  flex: none;
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.1em 0.45em;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.wl-tier__tag--decl { color: var(--wl-accent); }
+.wl-tier__tag--inf  { color: var(--wl-text-muted); }
+
+/* Swatch hues — SEMANTIC ramp most→least trusted, anchored on the design-system
+   triplet: --ready emerald (#10B981) → --aging amber (#F59E0B) → --stale red
+   (#EF4444). The endpoints are the exact tokens; the interior steps interpolate
+   in hue so the eight ordered states stay distinguishable. */
+.wl-sw-1 { background: #10B981; }   /* INTEGRAL        — --ready emerald     */
+.wl-sw-2 { background: #34C77E; }   /* ASSURED                                */
+.wl-sw-3 { background: #74C66A; }   /* GUARDED                                */
+.wl-sw-4 { background: #C2BE4A; }   /* UNKNOWN_ASSURED — nearing --aging      */
+.wl-sw-5 { background: #F59E0B; }   /* UNKNOWN_GUARDED — --aging amber        */
+.wl-sw-6 { background: #F4762A; }   /* EXTERNAL_RAW                           */
+.wl-sw-7 { background: #EF4444; }   /* UNKNOWN_RAW     — --stale red          */
+.wl-sw-8 { background: #C0303A; }   /* MIXED_RAW       — deepest (most stale)  */
+
+/* ==========================================================================
+   Embedded markdown body (install table + quick example)
+   ========================================================================== */
+.wl-body {
+  margin: var(--wl-space-8) 0 0;
+}
+/* Landing-body tables scroll horizontally on narrow viewports rather than
+   pushing the page wider. */
+.wl-body table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.wl-body::before {
+  content: "";
+  display: block;
+  border-top: 1px solid var(--wl-border);
+  margin-bottom: var(--wl-space-6);
+}
+
+/* ==========================================================================
+   Weft suite
+   ========================================================================== */
+.wl-suite {
+  margin-top: var(--wl-space-10);
+  padding-top: var(--wl-space-6);
+  border-top: 1px solid var(--wl-border);
+}
+
+.wl-suite h2 {
+  font-family: var(--wl-font-display);
+  margin: 0 0 var(--wl-space-2);
+  font-weight: 600;
+}
+
+.wl-suite__intro {
+  color: var(--wl-text-muted);
+  max-width: 44rem;
+  line-height: 1.55;
+  margin: 0 0 var(--wl-space-5);
+}
+
+.wl-suite__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--wl-space-4);
+}
+
+.wl-suite-card {
+  display: block;
+  padding: var(--wl-space-5);
+  border: 1px solid var(--wl-border);
+  border-radius: var(--wl-radius);
+  background: var(--wl-bg-card);
+  text-decoration: none;
+  color: var(--wl-text);
+  transition: border-color 150ms ease, transform 150ms ease;
+}
+
+.wl-suite-card:hover,
+.wl-suite-card:focus-visible {
+  border-color: var(--wl-accent);
+  transform: translateY(-2px);
+}
+
+.wl-suite-card:focus-visible {
+  outline: 3px solid var(--wl-accent);
+  outline-offset: 2px;
+}
+
+.wl-suite-card h3 {
+  margin: 0 0 var(--wl-space-2);
+  font-family: var(--wl-font-mono);
+  font-size: 1.05rem;
+  color: var(--wl-accent);
+}
+
+.wl-suite-card p {
+  margin: 0;
+  color: var(--wl-text-muted);
+  line-height: 1.5;
+  font-size: 0.92rem;
+}
+
+.wl-suite-card--current {
+  border-color: var(--wl-accent);
+  background: var(--wl-accent-soft);
+}
+
+.wl-suite-card__badge {
+  display: inline-block;
+  margin-top: var(--wl-space-3);
+  font-family: var(--wl-font-mono);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--wl-on-accent);
+  background: var(--wl-accent);
+  padding: 0.15em 0.6em;
+  border-radius: 999px;
+}
+
+/* ==========================================================================
+   Reduced motion
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .wl-btn,
+  .wl-suite-card,
+  .wl-feature-card {
+    transition: none;
+  }
+}

@@ -1,0 +1,1693 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Generic semantic-tainting static analyzer for Python">
+      
+      
+      
+        <link rel="canonical" href="https://wardline.foundryside.dev/concepts/taint-algebra/">
+      
+      
+        <link rel="prev" href="../model/">
+      
+      
+        <link rel="next" href="../rules/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Taint algebra - Wardline</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/weft-mkdocs.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#taint-algebra-the-combination-operators-and-their-invariants" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Wardline" class="md-header__button md-logo" aria-label="Wardline" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Wardline
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Taint algebra
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/foundryside-dev/wardline" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    foundryside-dev/wardline
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Wardline" class="md-nav__button md-logo" aria-label="Wardline" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Wardline
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/foundryside-dev/wardline" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    foundryside-dev/wardline
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Taint & trust model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Taint algebra
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Taint algebra
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-two-operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The two operators
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The two operators">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#least_trusted-the-rank-meet-weakest-link-the-one-the-engine-uses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        least_trusted — the rank-meet (weakest-link). The one the engine uses.
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#taint_join-the-provenance-clash-join-documented-but-unused" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        taint_join — the provenance-clash join. Documented, but unused.
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-discriminator-why-even-genuine-value-merges-use-least_trusted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The discriminator: why even genuine value-merges use least_trusted
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-reachable-state-set-and-its-invariant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The reachable-state set and its invariant
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The reachable-state set and its invariant">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-enforces-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What enforces it
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-the-trios-unreachability-matters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why the trio's unreachability matters
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#floor-clamp-anchor-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Floor / clamp / anchor rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-rule-consumption-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-rule consumption map
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-boundary-a-validator-that-checks-the-wrong-predicate-f4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known boundary: a validator that checks the wrong predicate (F4)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../trust-vocabulary-convergence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trust-vocabulary convergence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/suppression/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Suppressing findings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/judge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM triage judge
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/weft/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Weft integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/legis-handoff/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Signed scan handoff to legis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/loomweave-taint-store/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Loomweave taint store
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/assurance-posture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Assurance posture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/attestation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Attestation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Using Wardline with your coding agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/vocabulary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trust vocabulary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/finding-lifecycle-vocabulary/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Finding lifecycle & gate vocabulary
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    About
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    About
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/foundryside-dev/wardline/blob/main/CHANGELOG.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/foundryside-dev/wardline/blob/main/CONTRIBUTING.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://github.com/foundryside-dev/wardline/blob/main/LICENSE" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-two-operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The two operators
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The two operators">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#least_trusted-the-rank-meet-weakest-link-the-one-the-engine-uses" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        least_trusted — the rank-meet (weakest-link). The one the engine uses.
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#taint_join-the-provenance-clash-join-documented-but-unused" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        taint_join — the provenance-clash join. Documented, but unused.
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-discriminator-why-even-genuine-value-merges-use-least_trusted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The discriminator: why even genuine value-merges use least_trusted
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-reachable-state-set-and-its-invariant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The reachable-state set and its invariant
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The reachable-state set and its invariant">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-enforces-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What enforces it
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-the-trios-unreachability-matters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why the trio's unreachability matters
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#floor-clamp-anchor-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Floor / clamp / anchor rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-rule-consumption-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-rule consumption map
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-boundary-a-validator-that-checks-the-wrong-predicate-f4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known boundary: a validator that checks the wrong predicate (F4)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="taint-algebra-the-combination-operators-and-their-invariants">Taint algebra — the combination operators and their invariants<a class="headerlink" href="#taint-algebra-the-combination-operators-and-their-invariants" title="Permanent link">&para;</a></h1>
+<p>This is the authoritative specification of <em>how</em> Wardline combines taint states:
+which operator runs at each kind of program point, why, and the invariants that
+keep the result sound and precise. It is the engineering complement to the
+reader-facing <a href="../model/">Taint &amp; trust model</a>, and it consolidates the
+regression-guard rationale that was previously scattered across the test suite as
+inline comments.</p>
+<p>If you are extending the engine — adding a combination site, a rule, or an entry
+point that parses a <code>TaintState</code> — read this first.</p>
+<h2 id="the-two-operators">The two operators<a class="headerlink" href="#the-two-operators" title="Permanent link">&para;</a></h2>
+<p>Wardline's lattice (<code>src/wardline/core/taints.py</code>) defines two binary operators
+over <code>TaintState</code>. They are <strong>not</strong> interchangeable.</p>
+<h3 id="least_trusted-the-rank-meet-weakest-link-the-one-the-engine-uses"><code>least_trusted</code> — the rank-meet (weakest-link). The one the engine uses.<a class="headerlink" href="#least_trusted-the-rank-meet-weakest-link-the-one-the-engine-uses" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="n">least_trusted</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span> <span class="o">=</span> <span class="n">a</span> <span class="k">if</span> <span class="n">TRUST_RANK</span><span class="p">[</span><span class="n">a</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">TRUST_RANK</span><span class="p">[</span><span class="n">b</span><span class="p">]</span> <span class="k">else</span> <span class="n">b</span>
+</code></pre></div>
+<p>It returns the <em>less-trusted</em> (higher <code>TRUST_RANK</code>) of its two inputs — always
+one of the inputs, never a new state. It is commutative, associative, and
+idempotent, so the result of folding a set of states with it is independent of
+visitation order. <strong>Every</strong> combination / merge / aggregation / alternative site
+in the live engine uses <code>least_trusted</code>.</p>
+<h3 id="taint_join-the-provenance-clash-join-documented-but-unused"><code>taint_join</code> — the provenance-clash join. Documented, but unused.<a class="headerlink" href="#taint_join-the-provenance-clash-join-documented-but-unused" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="n">taint_join</span><span class="p">(</span><span class="n">INTEGRAL</span><span class="p">,</span> <span class="n">ASSURED</span><span class="p">)</span> <span class="o">==</span> <span class="n">MIXED_RAW</span>   <span class="c1"># different families clash</span>
+<span class="n">least_trusted</span><span class="p">(</span><span class="n">INTEGRAL</span><span class="p">,</span> <span class="n">ASSURED</span><span class="p">)</span> <span class="o">==</span> <span class="n">ASSURED</span>  <span class="c1"># weakest link wins</span>
+</code></pre></div>
+<p><code>taint_join</code> models <em>provenance compatibility</em>: combining two values of the
+<strong>same</strong> family yields that family's weaker member, but combining two values of
+<strong>different</strong> families is treated as a provenance clash and collapses to the
+absorbing top <code>MIXED_RAW</code>. After the three <code>least_trusted</code> migrations it has <strong>no
+production call site</strong> — it is retained deliberately as the documented contrast
+operator. See the ADR:
+<a href="https://github.com/foundryside-dev/wardline/blob/main/docs/decisions/2026-05-31-wardline-taint-lattice-retain.md">Retain the 8-state lattice</a>.</p>
+<h2 id="the-discriminator-why-even-genuine-value-merges-use-least_trusted">The discriminator: why even genuine value-merges use <code>least_trusted</code><a class="headerlink" href="#the-discriminator-why-even-genuine-value-merges-use-least_trusted" title="Permanent link">&para;</a></h2>
+<p>There are three shapes of combination point, and <strong>all three resolve to
+<code>least_trusted</code> at L2</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Shape</th>
+<th>Example</th>
+<th>Why <code>least_trusted</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Alternative</strong> (value is exactly one of N)</td>
+<td><code>x = a if c else b</code>; <code>if/else</code>, loop back-edges, <code>try/except</code>, <code>match</code> arms</td>
+<td>At the merge a variable holds the value of exactly one branch — weakest-link is the sound, precise bound.</td>
+</tr>
+<tr>
+<td><strong>Aggregation</strong> (a summary of a <em>set</em>)</td>
+<td>a function's callee-set taint; container literals</td>
+<td>Aggregating the influence of a set of callees is not building one value by merging provenances — it is a weakest-link summary.</td>
+</tr>
+<tr>
+<td><strong>Value-merge</strong> (one value built from several)</td>
+<td><code>a + b</code>; <code>",".join(parts)</code>; f-strings; <code>.format</code></td>
+<td>This is the subtle one — see below.</td>
+</tr>
+</tbody>
+</table>
+<p>The non-obvious case is the genuine <strong>value-merge</strong>. You might expect
+<code>taint_join</code>'s provenance-clash semantics to be "more correct" for <code>a + b</code>. They
+are not, and using them here was the false-positive class the migrations fixed:</p>
+<blockquote>
+<p>Two <strong>clean</strong> operands of <strong>different</strong> families — e.g. an <code>ASSURED</code> validated
+value concatenated with an <code>INTEGRAL</code> constant separator — would clash to
+<code>MIXED_RAW</code> under <code>taint_join</code>. <code>MIXED_RAW</code> is rank 7, inside the firing raw
+zone, so it fired <code>PY-WL-101</code> on validated, clean data. That is the
+<code>RAW_ZONE</code> false positive.</p>
+</blockquote>
+<p><code>least_trusted</code> is correct for value-merges too: a value built from an <code>ASSURED</code>
+part and an <code>INTEGRAL</code> part is no more trusted than <code>ASSURED</code>, and no <em>less</em>
+trusted than that either — there is no honest reason to treat a benign literal as
+contaminating. A <em>raw</em> operand still propagates at its precise rank and still
+fires. So the precision win has no soundness cost.</p>
+<h2 id="the-reachable-state-set-and-its-invariant">The reachable-state set and its invariant<a class="headerlink" href="#the-reachable-state-set-and-its-invariant" title="Permanent link">&para;</a></h2>
+<p>The only taint states any source can introduce into the live pipeline are:</p>
+<div class="highlight"><pre><span></span><code>{INTEGRAL, ASSURED, GUARDED, EXTERNAL_RAW, UNKNOWN_RAW}
+</code></pre></div>
+<p>These come from exactly four entry points: the decorator provider
+(<code>EXTERNAL_RAW</code>, <code>GUARDED</code>, <code>ASSURED</code>, <code>INTEGRAL</code>), the L1 fail-closed fallback
+(<code>UNKNOWN_RAW</code>), the bundled <code>stdlib_taint.yaml</code> table (<code>ASSURED</code>, <code>GUARDED</code>,
+<code>EXTERNAL_RAW</code>, <code>UNKNOWN_RAW</code>), and the serialisation-sink override
+(<code>UNKNOWN_RAW</code>).</p>
+<p>Because <code>least_trusted</code> always returns one of its inputs, <strong>its closure over the
+reachable set is the reachable set</strong>. The remaining three states —
+<code>{MIXED_RAW, UNKNOWN_GUARDED, UNKNOWN_ASSURED}</code> — are <strong>never produced anywhere in
+production</strong>. This is the linchpin invariant.</p>
+<h3 id="what-enforces-it">What enforces it<a class="headerlink" href="#what-enforces-it" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>least_trusted</code> is closed over the set</strong> by construction (it returns an
+  input).</li>
+<li><strong>The F5 parser guards</strong> close the two previously-ungated dynamic entry points
+  that could otherwise inject an unreachable state from data:</li>
+<li><code>stdlib_taint.py</code> accepts only <code>{ASSURED, GUARDED, EXTERNAL_RAW, UNKNOWN_RAW}</code>
+    (a stdlib call cannot produce your own <code>INTEGRAL</code> data).</li>
+<li><code>summary_cache.py</code> <code>_deserialise_summary</code> accepts the full reachable set
+    <code>{INTEGRAL, ASSURED, GUARDED, EXTERNAL_RAW, UNKNOWN_RAW}</code> — a <code>@trusted</code>
+    function legitimately caches <code>INTEGRAL</code> — and rejects only the trio. A
+    rejected (corrupt or tampered) cache file is dropped with a warning, never
+    injected.</li>
+<li><strong>The invariant-enforcement tests</strong> (<code>tests/unit/core/test_taint_invariants.py</code>)
+  pin both the operator closure and the end-to-end pipeline property (no scan
+  output is ever <code>MIXED_RAW</code> or an <code>UNKNOWN_GUARDED</code>/<code>UNKNOWN_ASSURED</code> state).</li>
+</ul>
+<h3 id="why-the-trios-unreachability-matters">Why the trio's unreachability matters<a class="headerlink" href="#why-the-trios-unreachability-matters" title="Permanent link">&para;</a></h3>
+<p>If <code>MIXED_RAW</code> ever became reachable, two rule families would <strong>disagree</strong> on it.
+<code>PY-WL-101</code> would <strong>fire</strong> on it as the <em>actual</em> return of a <code>@trusted</code> producer
+(where <code>body == declared</code>, so it passes the rule's trust-raising gate): at rank 7
+it is strictly less trusted than any clean declared tier, so the actual-vs-
+declared rank comparison trips. <code>severity_model.modulate</code>, by contrast, treats it
+as the freedom zone and <strong>suppresses</strong> (returns <code>NONE</code>). The firing is <strong>not</strong>
+unconditional, though: if the <em>body</em> is itself <code>MIXED_RAW</code> (the realistic route to
+a <code>MIXED_RAW</code> actual return), <code>PY-WL-101</code>'s body-less-trusted-than-declared gate
+suppresses first and delegates to <code>PY-WL-102</code>, so <code>101</code> does not fire there.
+(Note <code>PY-WL-101</code>'s <code>RAW_ZONE</code> set is a suppression gate on the <em>declared</em> tier,
+not the firing condition — <code>MIXED_RAW</code>'s membership in it is inert because you
+never <em>declare</em> <code>MIXED_RAW</code>.) That asymmetry is harmless only because the input is
+unreachable. The F5 guards are what keep it latent.</p>
+<h2 id="floor-clamp-anchor-rules">Floor / clamp / anchor rules<a class="headerlink" href="#floor-clamp-anchor-rules" title="Permanent link">&para;</a></h2>
+<p>All clamps move <strong>toward less-trusted</strong>, never toward more-trusted:</p>
+<ul>
+<li>A <strong>floor</strong> pins a function's refined taint to be no more trusted than its L1
+  seed (its body-evaluation tier). Floors clamp down to the seed; they never
+  promote a function to a more-trusted state.</li>
+<li>The L3 fixed point is <strong>monotone</strong>: a non-anchored function only ever moves
+  toward less-trusted during propagation. A strict move toward more-trusted
+  indicates a transfer-function bug and trips <code>L3_MONOTONICITY_VIOLATION</code>, which
+  pins the function at its old (safer) value.</li>
+<li><strong>Anchored</strong> functions are never refined by L3 — their declared tier is
+  authoritative, asserted post-fixed-point.</li>
+</ul>
+<h2 id="per-rule-consumption-map">Per-rule consumption map<a class="headerlink" href="#per-rule-consumption-map" title="Permanent link">&para;</a></h2>
+<p>Each rule reads exactly one resolved tier, matched to its intent — no combination
+crosses between maps:</p>
+<table>
+<thead>
+<tr>
+<th>Rule</th>
+<th>Reads</th>
+<th>Against</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PY-WL-101</code> (untrusted reaches trusted)</td>
+<td><code>function_return_taints</code> (<strong>actual</strong> returned-value taint)</td>
+<td><code>project_return_taints</code> (<strong>declared</strong> return tier)</td>
+</tr>
+<tr>
+<td><code>PY-WL-102</code> (boundary without rejection)</td>
+<td><code>project_taints</code> (<strong>body</strong> taint)</td>
+<td><code>project_return_taints</code> (<strong>declared</strong> return tier)</td>
+</tr>
+<tr>
+<td>Tier-modulated rules (e.g. broad/silent exception)</td>
+<td><code>project_taints</code> (<strong>body</strong> tier)</td>
+<td>— (single tier into <code>modulate</code>)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="known-boundary-a-validator-that-checks-the-wrong-predicate-f4">Known boundary: a validator that checks the wrong predicate (F4)<a class="headerlink" href="#known-boundary-a-validator-that-checks-the-wrong-predicate-f4" title="Permanent link">&para;</a></h2>
+<p>When a caller launders raw data through a <code>@trust_boundary</code> validator, <code>PY-WL-101</code>
+reads the validator's <strong>declared</strong> output tier (<code>effective_return</code>,
+<code>project_resolver.py:156</code>) — not the raw input — because the trust model treats
+the annotation as the contract.</p>
+<p>This is sound for the statically-decidable property. A <strong>broken</strong> validator with
+<em>no rejection path at all</em> is caught by <code>PY-WL-102</code> (it can never raise, so it
+cannot validate).</p>
+<p>The <strong>residual</strong> — accepted, out of static reach — is a validator that <strong>has</strong> a
+rejection path but checks the <strong>wrong predicate</strong> (e.g. it validates length when
+it should validate content). Such a validator passes <code>PY-WL-102</code> (it <em>can</em> reject)
+and <code>PY-WL-101</code> trusts its declared output. This is semantically invisible to
+static analysis: the engine can decide <em>"can this function reject at all"</em>, but
+not <em>"does it reject the right thing"</em>. This is a property limit of the model, not
+a bug — it is the boundary between what the annotation-as-contract trust model
+promises and what a value-level semantic analysis would require.</p>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../model/">Taint &amp; trust model</a> — the reader-facing introduction.</li>
+<li><a href="../rules/">Rules</a> — the checks built on this algebra.</li>
+<li><a href="https://github.com/foundryside-dev/wardline/blob/main/docs/decisions/2026-05-31-wardline-taint-lattice-retain.md">ADR: Retain the 8-state lattice</a>.</li>
+<li><code>docs/audits/2026-05-31-taint-combination-audit.md</code> — the audit this spec
+  consolidates (findings F1–F6).</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  <nav class="wl-footer-suite" aria-label="Weft suite">
+    <span class="wl-footer-suite__label">Weft suite</span>
+    <a href="https://wardline.foundryside.dev" rel="noopener">Wardline</a>
+    <a href="https://loomweave.foundryside.dev" rel="noopener" target="_blank">Loomweave</a>
+    <a href="https://filigree.foundryside.dev" rel="noopener" target="_blank">Filigree</a>
+    <a href="https://legis.foundryside.dev" rel="noopener" target="_blank">Legis</a>
+  </nav>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "navigation.instant", "content.code.copy", "search.suggest"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
