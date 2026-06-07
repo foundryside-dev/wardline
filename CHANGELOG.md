@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new `offset` pages through the rest via `agent_summary.truncation.next_offset`.
   `explain: true` inlines provenance into the `agent_summary.active_defects`
   entries (capped, announced) (weft-439d09fc8d).
+- **Emit destination is now echoed (no silent misroute).** Every Filigree emit
+  status block (MCP `scan`, agent-summary, CLI) carries a `destination`
+  (`{url, project, project_pinned}`) naming where findings were sent; the CLI
+  success line names the destination project. When the URL pins no project,
+  `project_pinned: false` surfaces that Filigree resolves it server-side — the
+  silent-misroute shape behind the lacuna→filigree contamination — so a
+  wrong-project write is visible at the caller (C-10(a)).
 - `wardline doctor` now verifies the Filigree federation token: it probes the
   configured daemon (URL resolved from `.mcp.json`/env) with the token wardline
   would emit and reports a `filigree.auth` check. `--repair` recovers the

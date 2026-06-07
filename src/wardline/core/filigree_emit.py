@@ -81,6 +81,36 @@ def build_scan_results_body(
     return body
 
 
+# --- destination echo (N1 / C-10(a)) -----------------------------------------
+
+
+def filigree_url_project(url: str | None) -> str | None:
+    """The destination project pinned in a Filigree Weft URL, or None when none is pinned.
+
+    An unpinned URL means Filigree resolves the project server-side (ambient/default) — the
+    silent-misroute shape behind the lacuna→filigree contamination. Recognizes both the
+    ``?project=<p>`` query and the ``/api/p/<p>/`` path conventions."""
+    if not url:
+        return None
+    parts = urllib.parse.urlsplit(url)
+    project = urllib.parse.parse_qs(parts.query).get("project", [None])[0]
+    if project:
+        return project
+    segments = [s for s in parts.path.split("/") if s]
+    for i, seg in enumerate(segments):
+        if seg == "p" and i + 1 < len(segments):
+            return segments[i + 1]
+    return None
+
+
+def filigree_destination(url: str | None) -> dict[str, Any]:
+    """The destination echo for the emit status block (N1 / C-10(a)): name where findings
+    were sent so a wrong-project write is visible at the caller instead of reading as
+    success. ``project_pinned`` is False when Filigree will resolve the project itself."""
+    project = filigree_url_project(url)
+    return {"url": url, "project": project, "project_pinned": project is not None}
+
+
 # --- transport + emitter -----------------------------------------------------
 
 

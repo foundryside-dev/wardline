@@ -21,7 +21,7 @@ from wardline.core.attest_key import load_attest_key
 from wardline.core.baseline import generate_baseline, load_baseline
 from wardline.core.errors import WardlineError
 from wardline.core.explain import explain_chain, explain_finding, explanation_from_context
-from wardline.core.filigree_emit import FiligreeEmitter, filigree_disabled_reason
+from wardline.core.filigree_emit import FiligreeEmitter, filigree_destination, filigree_disabled_reason
 from wardline.core.finding import Finding, Severity
 from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
@@ -65,6 +65,8 @@ def _emit_filigree(
         "auth_rejected": er.auth_rejected,
         "token_sent": er.token_sent,
         "url": er.url,
+        # N1 / C-10(a): name where findings went so a wrong-project write is visible.
+        "destination": filigree_destination(er.url),
     }
 
 
@@ -78,6 +80,7 @@ def _filigree_emit_status(block: dict[str, Any] | None) -> dict[str, Any]:
             "failed": 0,
             "warnings": [],
             "disabled_reason": "not configured",
+            "destination": filigree_destination(None),
         }
     disabled_reason = filigree_disabled_reason(
         reachable=bool(block.get("reachable")),

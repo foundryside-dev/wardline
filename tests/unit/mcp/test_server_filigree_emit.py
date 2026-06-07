@@ -66,6 +66,7 @@ def test_scan_emits_to_filigree_when_emitter_present(tmp_path):
         "token_sent": False,
         "url": None,
         "disabled_reason": None,
+        "destination": {"url": None, "project": None, "project_pinned": False},
     }
     assert emitter.scanned_paths == ("svc.py",)
 
@@ -88,6 +89,7 @@ def test_scan_reports_both_integrations_successful(tmp_path):
         "token_sent": False,
         "url": None,
         "disabled_reason": None,
+        "destination": {"url": None, "project": None, "project_pinned": False},
     }
 
 
@@ -103,6 +105,7 @@ def test_scan_filigree_block_null_when_no_emitter(tmp_path):
         "failed": 0,
         "warnings": [],
         "disabled_reason": "not configured",
+        "destination": {"url": None, "project": None, "project_pinned": False},
     }
 
 

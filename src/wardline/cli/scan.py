@@ -11,7 +11,13 @@ import click
 from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
 from wardline.core.emit import JsonlSink
 from wardline.core.errors import WardlineError
-from wardline.core.filigree_emit import EmitResult, FiligreeEmitter, filigree_disabled_reason
+from wardline.core.filigree_emit import (
+    EmitResult,
+    FiligreeEmitter,
+    filigree_destination,
+    filigree_disabled_reason,
+    filigree_url_project,
+)
 from wardline.core.finding import Severity
 from wardline.core.paths import weft_config_path
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
@@ -334,8 +340,17 @@ def scan(
                     err=True,
                 )
         else:
+            # N1 / C-10(a): name the destination project so a wrong-project write is visible
+            # rather than reading as silent success. An unpinned URL means Filigree resolves
+            # the project server-side — surface that ambiguity explicitly.
+            dest_project = filigree_url_project(filigree_url)
+            where = (
+                f"project {dest_project!r}"
+                if dest_project
+                else "server-default project (URL pins none — add ?project= to make it explicit)"
+            )
             line = (
-                f"emitted {len(findings)} finding(s) to {filigree_url} — "
+                f"emitted {len(findings)} finding(s) to {filigree_url} [{where}] — "
                 f"{emit_result.created} created / {emit_result.updated} updated"
             )
             if emit_result.failed:
@@ -407,6 +422,7 @@ def _filigree_status(result: EmitResult | None) -> dict[str, object]:
             "failed": 0,
             "warnings": [],
             "disabled_reason": "not configured",
+            "destination": filigree_destination(None),
         }
     return {
         "configured": True,
@@ -421,6 +437,8 @@ def _filigree_status(result: EmitResult | None) -> dict[str, object]:
             token_sent=result.token_sent,
             url=result.url,
         ),
+        # N1 / C-10(a): name where findings went so a wrong-project write is visible.
+        "destination": filigree_destination(result.url),
     }
 
 
