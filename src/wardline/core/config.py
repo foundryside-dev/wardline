@@ -36,7 +36,6 @@ class WardlineConfig:
     exclude: tuple[str, ...] = ()
     rules_enable: tuple[str, ...] = ("*",)
     rules_severity: Mapping[str, str] = field(default_factory=dict)
-    # reserved (declared so the shape is visible; inert in SP0)
     judge: Mapping[str, Any] = field(default_factory=dict)
     packs: tuple[str, ...] = ()
     pack_modules: Mapping[str, Any] = field(default_factory=dict)
@@ -299,10 +298,12 @@ def resolve_loomweave_url(
     local case; a flag or env var is the interim escape hatch for a fixed remote.
     Skipped under ``strict_defaults`` (hermetic, no project-derived discovery).
 
-    ``config_path`` / ``trust_local_packs`` / ``trusted_packs`` are accepted for
-    caller-shape compatibility (the same surface ``run_scan`` consumes) and reserved
-    for the canonical hub endpoint key once its layout is pinned; they are not read
-    today, since no sibling-endpoint config rung exists.
+    ``config_path`` / ``trust_local_packs`` / ``trusted_packs`` are the shared
+    scan-config param bundle that the CLI and MCP call sites pass UNIFORMLY to this
+    function and to ``run_scan``/``load`` alongside it. URL resolution itself reads
+    only ``flag``, the env var, the published port, and ``strict_defaults`` — the rest
+    are accepted for call-site parity (they regain meaning if the pending hub
+    sibling-endpoint key is ever read here).
     """
     if flag is not None:
         return flag
@@ -331,9 +332,10 @@ def resolve_filigree_url(
     tolerating the legacy ``.filigree/ephemeral.port``) carries the full Weft
     scan-results route; flag/env override. Skipped under ``strict_defaults``.
 
-    ``config_path`` / ``trust_local_packs`` / ``trusted_packs`` are accepted for
-    caller-shape compatibility and reserved for the canonical hub endpoint key once
-    its layout is pinned; they are not read today.
+    ``config_path`` / ``trust_local_packs`` / ``trusted_packs`` are the shared
+    scan-config param bundle the CLI/MCP call sites pass uniformly here and to
+    ``run_scan``/``load``; URL resolution reads only ``flag``, env, the published
+    port, and ``strict_defaults`` (see :func:`resolve_loomweave_url`).
     """
     if flag is not None:
         return flag

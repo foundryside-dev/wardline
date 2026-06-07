@@ -5,7 +5,9 @@ Known local URL conventions are discoverable from sibling project files. We do N
 write any config: the shared ``weft.toml`` is operator-authored and read-only for
 us, and live URLs are resolved on demand via the published ``.weft/<sibling>/
 ephemeral.port`` rung (see ``core/config.resolve_*_url``). An operator who wants a
-fixed URL sets it by hand in ``weft.toml [wardline.<sibling>].url``.
+fixed URL sets the ``WARDLINE_LOOMWEAVE_URL`` / ``WARDLINE_FILIGREE_URL`` env var (or
+passes a ``--*-url`` flag); sibling-endpoint *config keys* are hub-pinned and pending,
+so wardline reads none today.
 """
 
 from __future__ import annotations
@@ -107,9 +109,10 @@ def detect_siblings(root: Path) -> dict[str, str]:
 
     Binding persistence was dropped in the Weft config consolidation: live URLs are
     resolved on demand via the published ``.weft/<sibling>/ephemeral.port`` rung
-    (see ``core/config.resolve_*_url``); an operator who wants a fixed URL sets it by
-    hand in ``weft.toml [wardline.<sibling>].url``. We never write the operator's
-    config file. Returns a per-sibling human-readable status.
+    (see ``core/config.resolve_*_url``); an operator who wants a fixed URL sets the
+    ``WARDLINE_LOOMWEAVE_URL`` / ``WARDLINE_FILIGREE_URL`` env var (sibling-endpoint
+    config keys are hub-pinned and pending). We never write the operator's config
+    file. Returns a per-sibling human-readable status.
     """
     results: dict[str, str] = {}
     for key, detector in (("loomweave", _detect_loomweave), ("filigree", _detect_filigree)):

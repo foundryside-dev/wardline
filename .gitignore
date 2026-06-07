@@ -22,6 +22,10 @@ findings.jsonl
 
 # NOTE: do NOT ignore .weft/ — wardline's own .weft/wardline/{baseline,judged,waivers}.yaml
 # are deliberately committed; weft.toml is operator-authored and tracked.
+# DO ignore transient sibling port files: a committed .weft/<sibling>/ephemeral.port
+# would let a shared repo redirect wardline's token-bearing emit to a chosen loopback
+# port (a live, never-committed runtime artifact, not tracked state).
+.weft/*/ephemeral.port
 
 # Filigree issue tracker
 .filigree/

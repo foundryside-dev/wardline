@@ -112,8 +112,23 @@ def _check_bindings(root: Path) -> CheckResult:
 
 
 def _check_config(root: Path, *, fixed: bool) -> DoctorCheck:
+    cfg_path = weft_config_path(root)
+    # C-9c makes load() silently fall back to defaults on an unparseable shared
+    # weft.toml (a sibling's section may be broken). doctor restores the operator
+    # signal by distinguishing ABSENT (ok — defaults are intentional) from
+    # PRESENT-BUT-BROKEN (error — your policy is silently not applying).
+    if cfg_path.is_file():
+        try:
+            parsed = tomllib.loads(cfg_path.read_text(encoding="utf-8"))
+        except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as exc:
+            return DoctorCheck("wardline.config", "error", fixed=False, message=f"unparseable weft.toml: {exc}")
+        table = parsed.get("wardline")
+        if table is not None and not isinstance(table, dict):
+            return DoctorCheck(
+                "wardline.config", "error", fixed=False, message="[wardline] in weft.toml must be a table"
+            )
     try:
-        load(weft_config_path(root))
+        load(cfg_path)
     except ConfigError as exc:
         return DoctorCheck("wardline.config", "error", fixed=False, message=str(exc))
     return DoctorCheck("wardline.config", "ok", fixed=fixed)

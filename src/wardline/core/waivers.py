@@ -96,21 +96,22 @@ def load_project_waivers(root: Path) -> tuple[Waiver, ...]:
 
 
 def add_waiver(
-    config_path: Path,
+    path: Path,
     *,
     fingerprint: str,
     reason: str,
     expires: date | None,
     root: Path | None = None,
 ) -> Waiver:
-    """Append a waiver to ``config_path``'s ``waivers:`` list (creating the file if
-    absent). Validates via the SAME rules as :func:`parse_waivers`, so a bad
-    fingerprint or empty reason raises :class:`ConfigError` BEFORE any write.
+    """Append a waiver to the ``waivers:`` list in ``path`` — wardline's machine/CLI
+    state file ``.weft/wardline/waivers.yaml`` (creating it if absent). Validates via
+    the SAME rules as :func:`parse_waivers`, so a bad fingerprint or empty reason
+    raises :class:`ConfigError` BEFORE any write.
 
-    ``expires`` is stored as an ISO string (``YYYY-MM-DD``) — the human-authored
-    canonical form; both the in-line validation parse and a later
-    ``load`` → ``parse_waivers`` round-trip accept it.
+    ``expires`` is stored as an ISO string (``YYYY-MM-DD``); both the in-line
+    validation parse and a later ``parse_waivers`` round-trip accept it.
     """
+    config_path = path
     if root is not None:
         config_path = safe_project_file(root, config_path, label=config_path.name)
     entry: dict[str, object] = {"fingerprint": fingerprint, "reason": reason}

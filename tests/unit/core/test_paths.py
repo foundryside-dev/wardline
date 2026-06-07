@@ -47,3 +47,16 @@ def test_store_dir_absolute_override(tmp_path):
 def test_store_dir_malformed_config_falls_back(tmp_path):
     (tmp_path / "weft.toml").write_text("[wardline]\nstore_dir = [\n", encoding="utf-8")
     assert paths.weft_state_dir(tmp_path) == tmp_path / ".weft" / "wardline"
+
+
+def test_store_dir_absolute_outside_root_falls_back_to_default(tmp_path):
+    # A malicious/typo'd absolute store_dir outside root must NOT redirect state
+    # (consistent with the writers' safe_project_file confinement).
+    outside = tmp_path.parent / "elsewhere-state"
+    (tmp_path / "weft.toml").write_text(f'[wardline]\nstore_dir = "{outside}"\n', encoding="utf-8")
+    assert paths.weft_state_dir(tmp_path) == tmp_path / ".weft" / "wardline"
+
+
+def test_store_dir_relative_escape_falls_back_to_default(tmp_path):
+    (tmp_path / "weft.toml").write_text('[wardline]\nstore_dir = "../escape"\n', encoding="utf-8")
+    assert paths.weft_state_dir(tmp_path) == tmp_path / ".weft" / "wardline"
