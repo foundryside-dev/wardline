@@ -11,9 +11,10 @@ import click
 from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
 from wardline.core.emit import JsonlSink
 from wardline.core.errors import WardlineError
-from wardline.core.filigree_emit import EmitResult, FiligreeEmitter
+from wardline.core.filigree_emit import EmitResult, FiligreeEmitter, filigree_disabled_reason
 from wardline.core.finding import Severity
-from wardline.core.run import gate_decision, run_scan
+from wardline.core.paths import weft_config_path
+from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
 from wardline.core.sarif import SarifSink
 
 
@@ -70,7 +71,7 @@ from wardline.core.sarif import SarifSink
     "--trust-pack",
     "trusted_packs",
     multiple=True,
-    help="Allow importing this trust-grammar pack from wardline.yaml. May be repeated.",
+    help="Allow importing this trust-grammar pack from weft.toml [wardline]. May be repeated.",
 )
 @click.option(
     "--allow-custom-packs",
@@ -94,13 +95,13 @@ from wardline.core.sarif import SarifSink
     "--strict-defaults",
     is_flag=True,
     default=False,
-    help="Ignore repository-supplied custom configuration overrides (wardline.yaml).",
+    help="Ignore repository-supplied custom configuration overrides (weft.toml).",
 )
 @click.option(
     "--allow-source-root-escape",
     is_flag=True,
     default=False,
-    help="Allow wardline.yaml source_roots to resolve outside PATH.",
+    help="Allow weft.toml [wardline] source_roots to resolve outside PATH.",
 )
 @click.option(
     "--trust-suppressions",
@@ -111,6 +112,16 @@ from wardline.core.sarif import SarifSink
         "(they always annotate findings regardless). Use ONLY for trusted local checkouts; "
         "in CI prefer the unforgeable --new-since <merge-base> ratchet. Default off: by "
         "default the gate evaluates the unsuppressed population so a PR cannot self-suppress."
+    ),
+)
+@click.option(
+    "--allow-dirty",
+    is_flag=True,
+    default=False,
+    help=(
+        "For --format legis only: on a dirty working tree, emit an UNSIGNED, clearly-marked "
+        "(dirty: true) dev artifact instead of refusing. Signing stays clean-tree-only; this "
+        "lets the dev/tour loop exercise the Wardline->legis handshake without a commit."
     ),
 )
 def scan(
@@ -131,6 +142,7 @@ def scan(
     strict_defaults: bool,
     allow_source_root_escape: bool,
     trust_suppressions: bool,
+    allow_dirty: bool,
 ) -> None:
     """Scan PATH for findings."""
     if fmt == "sarif":
@@ -145,22 +157,8 @@ def scan(
     emit_result: EmitResult | None = None
     loomweave_result = None
     try:
-        filigree_url = resolve_filigree_url(
-            filigree_url,
-            path,
-            config_path,
-            trust_local_packs=trust_local_packs,
-            trusted_packs=trusted_packs,
-            strict_defaults=strict_defaults,
-        )
-        loomweave_url = resolve_loomweave_url(
-            loomweave_url,
-            path,
-            config_path,
-            trust_local_packs=trust_local_packs,
-            trusted_packs=trusted_packs,
-            strict_defaults=strict_defaults,
-        )
+        filigree_url = resolve_filigree_url(filigree_url, path, config_path, strict_defaults=strict_defaults)
+        loomweave_url = resolve_loomweave_url(loomweave_url, path, config_path, strict_defaults=strict_defaults)
         result = run_scan(
             path,
             config_path=config_path,
@@ -179,7 +177,8 @@ def scan(
             from wardline.core.finding import Finding
 
             cfg = load(
-                config_path or (path / "wardline.yaml"),
+                config_path or weft_config_path(path),
+                explicit=config_path is not None,
                 trust_local_packs=trust_local_packs,
                 trusted_packs=trusted_packs,
                 strict_defaults=strict_defaults,
@@ -221,10 +220,15 @@ def scan(
             # unsigned provenance (legis records it unverified). A dirty/non-repo tree under
             # signing raises LegisArtifactError -> exit 2 (CLI is loud by design).
             from wardline.core.config import load as load_cfg
-            from wardline.core.legis import build_legis_artifact, load_legis_artifact_key
+            from wardline.core.legis import (
+                build_legis_artifact,
+                legis_artifact_outcome,
+                load_legis_artifact_key,
+            )
 
             legis_cfg = load_cfg(
-                config_path or (path / "wardline.yaml"),
+                config_path or weft_config_path(path),
+                explicit=config_path is not None,
                 trust_local_packs=trust_local_packs,
                 trusted_packs=trusted_packs,
                 strict_defaults=strict_defaults,
@@ -235,8 +239,18 @@ def scan(
                 root=path,
                 config=legis_cfg,
                 key=legis_key.encode("utf-8") if legis_key else None,
+                allow_dirty=allow_dirty,
             )
             output.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            # Loud signal: an artifact marked dirty is UNSIGNED (dev/tour only). legis
+            # records it `unverified`; never gate CI on it. The dirty/signed status comes
+            # from the shared authority; the human stderr wording stays CLI-specific.
+            if legis_artifact_outcome(artifact).dirty:
+                click.echo(
+                    "warning: dirty working tree — emitted an UNSIGNED legis dev artifact "
+                    "(dirty: true, legis records it unverified). Commit for a signed artifact.",
+                    err=True,
+                )
         # Weft emission is additive: a FiligreeEmitError (HTTP >= 400) is a Wardline
         # payload bug -> caught below -> exit 2; an unreachable sibling warns + continues.
         if filigree_url is not None:
@@ -270,6 +284,7 @@ def scan(
                         decision,
                         filigree_emit=_filigree_status(emit_result),
                         loomweave_write=_loomweave_status(loomweave_result),
+                        migration_hint=baseline_migration_hint(result, decision, root=path, new_since=new_since),
                     ).to_dict(),
                     sort_keys=True,
                 )
@@ -281,10 +296,34 @@ def scan(
         raise SystemExit(2) from exc
     if emit_result is not None:
         if not emit_result.reachable:
-            click.echo(
-                f"warning: could not reach Filigree at {filigree_url}; findings written locally only.",
-                err=True,
-            )
+            if emit_result.auth_rejected:
+                # Reachable but refused — actionable, NOT "could not reach" (dogfood #5).
+                # Split 401 (no/bad token → set one) from 403 (token present but lacks
+                # access / blocked → setting a token won't help) so the remedy fits.
+                if emit_result.status == 403:
+                    click.echo(
+                        f"warning: Filigree returned 403 (forbidden) at {filigree_url}; the token is "
+                        "present but lacks access (scope/permission) or the request is blocked. "
+                        "Findings written locally only.",
+                        err=True,
+                    )
+                else:
+                    click.echo(
+                        f"warning: Filigree returned {emit_result.status} (auth rejected) at {filigree_url}; "
+                        "set WEFT_FEDERATION_TOKEN (or .env) to the project token. Findings written locally only.",
+                        err=True,
+                    )
+            elif emit_result.status is not None:
+                click.echo(
+                    f"warning: Filigree returned {emit_result.status} (server error) at {filigree_url}; "
+                    "findings written locally only.",
+                    err=True,
+                )
+            else:
+                click.echo(
+                    f"warning: could not reach Filigree at {filigree_url}; findings written locally only.",
+                    err=True,
+                )
         else:
             line = (
                 f"emitted {len(findings)} finding(s) to {filigree_url} — "
@@ -311,10 +350,15 @@ def scan(
             click.echo(line)
     s = result.summary
     unanalyzed_segment = f"; {s.unanalyzed} file(s) could not be analyzed" if s.unanalyzed else ""
+    # "active" = non-suppressed DEFECTs in the EMITTED findings — the canonical term
+    # used by SuppressionState.ACTIVE, ScanSummary.active, the MCP summary key, the
+    # agent-summary active_defects, and the wardline:loop prompt. It is NOT Filigree's
+    # first-seen "new" (unseen fingerprint) nor the --fail-on gate population
+    # (ScanResult.gate_findings). See docs/reference/finding-lifecycle-vocabulary.md.
     click.echo(
         f"scanned {result.files_scanned} file(s); {s.total} finding(s) — "
         f"{s.baselined + s.waived + s.judged} suppressed "
-        f"({s.baselined} baseline / {s.waived} waiver / {s.judged} judged), {s.active} new"
+        f"({s.baselined} baseline / {s.waived} waiver / {s.judged} judged), {s.active} active"
         f"{unanalyzed_segment} -> {output}"
     )
     # A discovered-but-not-analysed file is a silent under-scan; never hide it.
@@ -324,7 +368,17 @@ def scan(
             f"(see WLN-ENGINE-* facts in {output}).",
             err=True,
         )
-    gate_tripped = fail_on is not None and gate_decision(result, Severity(fail_on)).tripped
+    gate_dec = gate_decision(result, Severity(fail_on)) if fail_on is not None else None
+    gate_tripped = gate_dec is not None and gate_dec.tripped
+    if gate_dec is not None and gate_dec.tripped:
+        # Never let "0 active + gate FAILED" read as a bug: say why and which population.
+        click.echo(f"gate: FAILED (--fail-on {gate_dec.fail_on}) — {gate_dec.reason}", err=True)
+        click.echo(f"gate: evaluated {gate_dec.evaluated}", err=True)
+        # The secure-gate-default rollout signal: a committed baseline that used to clear
+        # the gate now re-enters it. Loud + separable from the generic reason above.
+        hint = baseline_migration_hint(result, gate_dec, root=path, new_since=new_since)
+        if hint is not None:
+            click.echo(hint, err=True)
     # Independent of the severity gate: opt-in enforcement of "everything analysed".
     if gate_tripped or (fail_on_unanalyzed and s.unanalyzed):
         raise SystemExit(1)
@@ -348,7 +402,10 @@ def _filigree_status(result: EmitResult | None) -> dict[str, object]:
         "updated": result.updated,
         "failed": result.failed,
         "warnings": list(result.warnings),
-        "disabled_reason": None if result.reachable else "filigree unreachable",
+        "disabled_reason": filigree_disabled_reason(
+            reachable=result.reachable,
+            status=result.status,
+        ),
     }
 
 

@@ -1,4 +1,4 @@
-"""JSON Schema (draft 2020-12) for ``wardline.yaml``.
+"""JSON Schema (draft 2020-12) for the ``[wardline]`` table of ``weft.toml``.
 
 Single source of truth for the config shape. ``additionalProperties: false`` at
 the top level turns a typo'd key into a hard ``ConfigError`` (fail-loud), and the
@@ -15,6 +15,13 @@ WARDLINE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
     "properties": {
+        # Operator override for wardline's machine-state subtree location (default
+        # .weft/wardline). Validated HERE at config.load() time, but CONSUMED ELSEWHERE:
+        # core.paths._store_dir_override re-reads it via a raw tomllib parse that bypasses
+        # this schema, so a schema-invalid weft.toml can still have its store_dir honored.
+        # That seam is safe because weft_state_dir CONFINES the value under root (it is the
+        # confinement, not this schema, that bounds it) — see core.paths.weft_state_dir.
+        "store_dir": {"type": "string"},
         "source_roots": {"type": "array", "items": {"type": "string"}},
         "exclude": {"type": "array", "items": {"type": "string"}},
         "packs": {"type": "array", "items": {"type": "string"}},
@@ -29,8 +36,6 @@ WARDLINE_SCHEMA: dict[str, Any] = {
                 "severity": {"type": "object", "additionalProperties": {"type": "string"}},
             },
         },
-        "baseline": {"type": "object"},
-        "waivers": {"type": "array", "items": {"type": "object"}},
         "judge": {
             "type": "object",
             "additionalProperties": False,
@@ -41,16 +46,6 @@ WARDLINE_SCHEMA: dict[str, Any] = {
                 "policy_file": {"type": "string"},
                 "write_confidence_floor": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             },
-        },
-        "filigree": {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {"url": {"type": "string"}},
-        },
-        "loomweave": {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {"url": {"type": "string"}},
         },
         "autofix": {
             "type": "object",

@@ -1115,6 +1115,68 @@ def _taint_container_base(
 # ── Control flow handlers ────────────────────────────────────────
 
 
+def _branch_copy(parent: dict[str, ast.Lambda] | None) -> dict[str, ast.Lambda] | None:
+    """An arm-local copy of the lambda-bindings map for one branch arm (``None`` when
+    bindings are not being tracked — a degraded caller). Copying per arm is what keeps
+    a lambda bound inside one arm from leaking into a mutually-exclusive sibling arm
+    (wardline-36016d26f3), mirroring how ``var_taints`` is copied per arm."""
+    return dict(parent) if parent is not None else None
+
+
+def _walk_branch_body(
+    body: list[ast.stmt],
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    var_taints: dict[str, TaintState],
+    call_site_taints: dict[int, dict[str, TaintState]] | None,
+    arm_bindings: dict[str, ast.Lambda] | None,
+) -> None:
+    """Walk one branch arm's body with *arm_bindings* as the active (arm-local)
+    lambda-bindings map, so lambda assignments inside the arm mutate the copy, not the
+    shared parent. A plain ``_walk_body`` when bindings aren't tracked."""
+    if arm_bindings is None:
+        _walk_body(body, function_taint, taint_map, var_taints, call_site_taints)
+        return
+    token = _CURRENT_LAMBDA_BINDINGS.set(arm_bindings)
+    try:
+        _walk_body(body, function_taint, taint_map, var_taints, call_site_taints)
+    finally:
+        _CURRENT_LAMBDA_BINDINGS.reset(token)
+
+
+def _merge_branch_bindings(
+    parent: dict[str, ast.Lambda] | None,
+    arms: list[dict[str, ast.Lambda] | None],
+) -> None:
+    """Merge mutually-exclusive branch arms' lambda bindings back into *parent* in
+    place. Each arm was walked against an arm-local *copy* of *parent*, so a binding
+    made in one arm cannot leak into a sibling arm during the walk
+    (wardline-36016d26f3); this re-converges the arms into the post-branch state.
+
+    We layer each arm's *delta relative to the pre-branch state* onto *parent* in
+    source order — we do NOT clear and re-union. The distinction is load-bearing: an
+    arm is a full copy of the pre-branch bindings, so a name an arm never touched still
+    carries its pre-branch lambda. A clear-then-union (or a union that lets the implicit
+    no-``else`` / no-match-catch-all fall-through arm win last) would let such an
+    untouched arm *revert* a rebinding done in another arm — silently dropping a binding
+    the engine kept before branch-locality was added, i.e. a NEW false negative for a
+    sink reached through the rebound name after the branch. Applying only net
+    added/changed bindings, last-arm-in-source-order wins, reproduces the prior
+    after-branch bindings for every rebinding case (so no new false negative) while
+    keeping the branch-local leak fix. A name an arm *removed* (rebound to a non-lambda)
+    is left in place: that can only over-approximate (an extra resolution), never miss a
+    sink."""
+    if parent is None:
+        return
+    pre = dict(parent)
+    for arm in arms:
+        if arm is None:
+            continue
+        for name, lam in arm.items():
+            if pre.get(name) is not lam:
+                parent[name] = lam
+
+
 def _handle_if(
     stmt: ast.If,
     function_taint: TaintState,
@@ -1128,18 +1190,25 @@ def _handle_if(
 
     # Snapshot before branches.
     pre_if = dict(var_taints)
+    parent_lambdas = _CURRENT_LAMBDA_BINDINGS.get()
 
-    # Walk the if-body.
+    # Walk the if-body with an arm-local lambda-bindings copy — branch-local like
+    # var_taints, so a lambda bound here cannot leak into the else arm.
     if_taints = dict(var_taints)
-    _walk_body(stmt.body, function_taint, taint_map, if_taints, call_site_taints)
+    if_lambdas = _branch_copy(parent_lambdas)
+    _walk_branch_body(stmt.body, function_taint, taint_map, if_taints, call_site_taints, if_lambdas)
 
     if stmt.orelse:
-        # Walk the else-body.
+        # Walk the else-body on its own arm-local bindings copy.
         else_taints = dict(var_taints)
-        _walk_body(stmt.orelse, function_taint, taint_map, else_taints, call_site_taints)
+        else_lambdas = _branch_copy(parent_lambdas)
+        _walk_branch_body(stmt.orelse, function_taint, taint_map, else_taints, call_site_taints, else_lambdas)
     else:
-        # No else — the "else" branch is the pre-if state.
+        # No else — the "else" branch is the pre-if state with bindings unchanged.
         else_taints = pre_if
+        else_lambdas = _branch_copy(parent_lambdas)
+
+    _merge_branch_bindings(parent_lambdas, [if_lambdas, else_lambdas])
 
     # Merge: for each variable, combine the two branch values. The var holds ONE
     # branch's value (an alternative), so combine via the rank-meet least_trusted
@@ -1247,23 +1316,29 @@ def _handle_try(
 ) -> None:
     """Handle try/except/else/finally — snapshot-branch-join pattern."""
     pre_try = dict(var_taints)
+    parent_lambdas = _CURRENT_LAMBDA_BINDINGS.get()
 
-    # Walk try body on a copy.
+    # Walk try body on a copy (arm-local lambda bindings — branch-local like var_taints).
     try_taints = dict(pre_try)
-    _walk_body(stmt.body, function_taint, taint_map, try_taints, call_site_taints)
+    try_lambdas = _branch_copy(parent_lambdas)
+    _walk_branch_body(stmt.body, function_taint, taint_map, try_taints, call_site_taints, try_lambdas)
 
     # Walk each handler on separate copies (mutually exclusive with try body).
     handler_branches: list[dict[str, TaintState]] = [try_taints]  # try-success is one branch
+    arm_bindings: list[dict[str, ast.Lambda] | None] = [try_lambdas]
     for handler in stmt.handlers:
         handler_taints = dict(pre_try)
         if handler.name:
             handler_taints[handler.name] = function_taint
-        _walk_body(handler.body, function_taint, taint_map, handler_taints, call_site_taints)
+        handler_lambdas = _branch_copy(parent_lambdas)
+        _walk_branch_body(handler.body, function_taint, taint_map, handler_taints, call_site_taints, handler_lambdas)
         handler_branches.append(handler_taints)
+        arm_bindings.append(handler_lambdas)
 
-    # Walk orelse on try-success branch (runs only if no exception).
+    # Walk orelse on the try-success branch (runs only if no exception) — continue the
+    # try arm's bindings, not a fresh copy.
     if stmt.orelse:
-        _walk_body(stmt.orelse, function_taint, taint_map, try_taints, call_site_taints)
+        _walk_branch_body(stmt.orelse, function_taint, taint_map, try_taints, call_site_taints, try_lambdas)
 
     # Merge all branches.
     all_vars: set[str] = set()
@@ -1290,7 +1365,12 @@ def _handle_try(
             except KeyError:
                 _taint_val = None  # var absent from pre-try state — leave unset
 
-    # finalbody runs unconditionally after merge.
+    # Lambda bindings: union the mutually-exclusive arms (try-success + each handler)
+    # back into the parent, mirroring the var_taints join above.
+    _merge_branch_bindings(parent_lambdas, arm_bindings)
+
+    # finalbody runs unconditionally after merge — with the merged bindings (in place,
+    # the active contextvar dict, since the function body continues into it).
     if stmt.finalbody:
         _walk_body(stmt.finalbody, function_taint, taint_map, var_taints, call_site_taints)
 
@@ -1317,20 +1397,32 @@ def _handle_match(
     subject_taint = _resolve_expr(stmt.subject, function_taint, taint_map, var_taints)
 
     pre_match = dict(var_taints)
+    parent_lambdas = _CURRENT_LAMBDA_BINDINGS.get()
     branches: list[dict[str, TaintState]] = []
+    arm_bindings: list[dict[str, ast.Lambda] | None] = []
     for case in stmt.cases:
         case_taints = dict(pre_match)
         for name in _collect_pattern_targets(case.pattern):
             case_taints[name] = subject_taint
-        if case.guard is not None:
-            # The guard is tested with the arm's captures in scope; resolve it for
-            # walrus side effects (binds into this arm's state).
-            _resolve_expr(case.guard, function_taint, taint_map, case_taints)
-        _walk_body(case.body, function_taint, taint_map, case_taints, call_site_taints)
+        # Arm-local lambda bindings (guard + body share the arm), branch-local like
+        # var_taints so a lambda bound in one case cannot leak into a sibling case.
+        case_lambdas = _branch_copy(parent_lambdas)
+        token = _CURRENT_LAMBDA_BINDINGS.set(case_lambdas) if case_lambdas is not None else None
+        try:
+            if case.guard is not None:
+                # The guard is tested with the arm's captures in scope; resolve it for
+                # walrus side effects (binds into this arm's state).
+                _resolve_expr(case.guard, function_taint, taint_map, case_taints)
+            _walk_body(case.body, function_taint, taint_map, case_taints, call_site_taints)
+        finally:
+            if token is not None:
+                _CURRENT_LAMBDA_BINDINGS.reset(token)
         branches.append(case_taints)
+        arm_bindings.append(case_lambdas)
 
-    # The implicit "no arm matched" path keeps the pre-match state.
+    # The implicit "no arm matched" path keeps the pre-match state and bindings.
     branches.append(pre_match)
+    arm_bindings.append(_branch_copy(parent_lambdas))
 
     all_vars: set[str] = set()
     for branch in branches:
@@ -1341,6 +1433,9 @@ def _handle_match(
         for v in vals[1:]:
             merged = combine(merged, v)
         var_taints[var] = merged
+
+    # Lambda bindings: union the mutually-exclusive case arms (+ no-match) into parent.
+    _merge_branch_bindings(parent_lambdas, arm_bindings)
 
 
 # ── Helpers ──────────────────────────────────────────────────────

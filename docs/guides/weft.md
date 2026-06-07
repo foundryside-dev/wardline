@@ -165,7 +165,22 @@ allowlist, `_NATIVE_FIRST_PARTY_PREFIXES` in `scanner/diagnostics.py` — the
 doesn't light up `WLN-ENGINE-UNKNOWN-IMPORT`. See
 [ADR: native-module import resolution](../decisions/2026-06-05-wardline-native-module-import-resolution.md).
 
+## How sibling URLs resolve
+
+Wardline never reads a sibling endpoint URL from config — there is no
+`[wardline.filigree].url` or `[wardline.loomweave].url` key. A sibling URL
+resolves, in precedence order, from:
+
+1. the `--filigree-url` / `--loomweave-url` flag;
+2. the `WARDLINE_FILIGREE_URL` / `WARDLINE_LOOMWEAVE_URL` environment variable;
+3. the published `<root>/.weft/<sibling>/ephemeral.port` file written by a running
+   sibling (the legacy `<root>/.<sibling>/ephemeral.port` location is tolerated
+   during the transition window).
+
+`wardline install` / `wardline doctor` only **detect** whether a sibling is
+present — they write no binding and persist no URL.
+
 ## See also
 
-- [Configuration](configuration.md) — `wardline.yaml` keys.
+- [Configuration](configuration.md) — `weft.toml` `[wardline]` keys.
 - [Suppressing findings](suppression.md) — how suppression state flows into SARIF and Filigree emission.

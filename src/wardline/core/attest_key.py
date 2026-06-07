@@ -1,6 +1,6 @@
 # src/wardline/core/attest_key.py
 """Attest signing-key mint and load.  The secret lives in ``.env`` (conventionally
-gitignored) and is never written into any committed file under ``.wardline/``.
+gitignored) and is never written into any committed file under ``.weft/wardline/``.
 Mirrors the discipline of :mod:`wardline.loomweave.config.load_loomweave_token`.
 """
 

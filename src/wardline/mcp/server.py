@@ -8,7 +8,6 @@ project files on disk. Rooted at a project path (launch cwd by default)."""
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -22,14 +21,15 @@ from wardline.core.attest_key import load_attest_key
 from wardline.core.baseline import generate_baseline, load_baseline
 from wardline.core.errors import WardlineError
 from wardline.core.explain import explain_chain, explain_finding, explanation_from_context
-from wardline.core.filigree_emit import FiligreeEmitter
+from wardline.core.filigree_emit import FiligreeEmitter, filigree_disabled_reason
 from wardline.core.finding import Finding, Kind, Severity, SuppressionState
 from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
-from wardline.core.run import gate_decision, run_scan
-from wardline.core.safe_paths import safe_project_file
+from wardline.core.paths import baseline_path as baseline_file
+from wardline.core.paths import waivers_path, weft_config_path
+from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
 from wardline.core.sei_resolution import resolve_query_filters
-from wardline.core.waivers import add_waiver, parse_waivers
+from wardline.core.waivers import add_waiver, load_project_waivers
 from wardline.mcp.prompts import get_prompt, list_prompts
 from wardline.mcp.protocol import _INVALID_PARAMS, JsonRpcServer, McpError
 from wardline.mcp.resources import list_resources, read_resource
@@ -59,6 +59,10 @@ def _emit_filigree(
         "updated": er.updated,
         "failed": er.failed,
         "warnings": list(er.warnings),
+        # Distinguish auth-rejected (401/403) from transport-unreachable so the agent reads
+        # an actionable reason, not a flat "unreachable" (dogfood #5).
+        "status": er.status,
+        "auth_rejected": er.auth_rejected,
     }
 
 
@@ -73,7 +77,11 @@ def _filigree_emit_status(block: dict[str, Any] | None) -> dict[str, Any]:
             "warnings": [],
             "disabled_reason": "not configured",
         }
-    return {"configured": True, **block}
+    disabled_reason = filigree_disabled_reason(
+        reachable=bool(block.get("reachable")),
+        status=block.get("status"),
+    )
+    return {"configured": True, "disabled_reason": disabled_reason, **block}
 
 
 def _loomweave_write_status(block: dict[str, Any] | None) -> dict[str, Any]:
@@ -169,6 +177,18 @@ def _cache_dir_arg(args: dict[str, Any], root: Path) -> Path | None:
     return _resolve_under_root(root, args["cache_dir"]) if args.get("cache_dir") else None
 
 
+def _bool_arg(args: dict[str, Any], name: str, default: bool) -> bool:
+    # Reject non-bool values loudly rather than ``bool(...)``-coercing them: a JSON string
+    # like "false" would otherwise coerce to True, silently inverting intent. Matches the
+    # strict (agent-actionable) validation max_findings already gets.
+    val = args.get(name)
+    if val is None:
+        return default
+    if not isinstance(val, bool):
+        raise ToolError(f"{name} must be a boolean")
+    return val
+
+
 def _scan(
     args: dict[str, Any],
     root: Path,
@@ -223,6 +243,7 @@ def _scan(
             "disabled_reason": wr.disabled_reason,
         }
     decision = gate_decision(result, threshold)
+    migration_hint = baseline_migration_hint(result, decision, root=path, new_since=new_since)
     filigree_block = _emit_filigree(result.findings, filigree, scanned_paths=result.scanned_paths)
     filigree_status = _filigree_emit_status(filigree_block)
     loomweave_status = _loomweave_write_status(loomweave_block)
@@ -233,9 +254,40 @@ def _scan(
     except (ValueError, WardlineError) as exc:
         # An unknown filter key or SEI resolution failure is agent-actionable -> isError result.
         raise ToolError(str(exc)) from exc
-    explain = bool(args.get("explain"))
+
+    # Payload-shrinking controls (dogfood #4). The `summary`/`gate` blocks always
+    # describe the WHOLE project; these only bound the returned finding bodies.
+    summary_only = _bool_arg(args, "summary_only", False)
+    include_suppressed = _bool_arg(args, "include_suppressed", True)
+    max_findings = args.get("max_findings")
+    if max_findings is not None and (
+        not isinstance(max_findings, int) or isinstance(max_findings, bool) or max_findings < 0
+    ):
+        raise ToolError("max_findings must be a non-negative integer")
+    explain = _bool_arg(args, "explain", False)
+
+    # include_suppressed:false drops the suppressed DEFECT bodies (counts stay whole).
+    if not include_suppressed:
+        selected = [f for f in selected if not (f.kind is Kind.DEFECT and f.suppressed is not SuppressionState.ACTIVE)]
+    findings_total = len(selected)
+
+    # summary_only returns no finding bodies at all (the smallest "did the gate pass?"
+    # payload); otherwise an explicit max_findings bounds the list (default: uncapped).
+    display = [] if summary_only else selected
+    findings_truncated = False
+    if max_findings is not None and len(display) > max_findings:
+        display = display[:max_findings]
+        findings_truncated = True
+
+    # explain has a DEFAULT ceiling: inlining EVERY active defect's provenance is the
+    # 56KB-on-one-line blowup the dogfood report hit. Cap the number of explanations (an
+    # explicit max_findings tightens it further); findings past the cap are still
+    # returned, just without inline provenance. The cut is announced, never silent.
+    explain_cap = max_findings if max_findings is not None else _EXPLAIN_DEFAULT_CAP
+    explanations_attached = 0
+    explanations_truncated = False
     findings_out: list[dict[str, Any]] = []
-    for f in selected:
+    for f in display:
         d = _finding_to_dict(f)
         if (
             explain
@@ -244,8 +296,12 @@ def _scan(
             and f.qualname is not None
             and result.context is not None
         ):
-            exp = explanation_from_context(f, result.context)
-            d["explanation"] = _explanation_to_dict(exp)
+            if explanations_attached < explain_cap:
+                exp = explanation_from_context(f, result.context)
+                d["explanation"] = _explanation_to_dict(exp)
+                explanations_attached += 1
+            else:
+                explanations_truncated = True
         findings_out.append(d)
     from wardline.core.agent_summary import build_agent_summary
 
@@ -263,7 +319,24 @@ def _scan(
             # silent under-scan reaches the agent, not just the human-facing stderr.
             "unanalyzed": result.summary.unanalyzed,
         },
-        "gate": {"tripped": decision.tripped, "fail_on": decision.fail_on, "exit_class": decision.exit_class},
+        # Make every cut explicit so a bounded payload never reads as "covered all".
+        "truncation": {
+            "summary_only": summary_only,
+            "include_suppressed": include_suppressed,
+            "max_findings": max_findings,
+            "findings_total": findings_total,
+            "findings_returned": len(findings_out),
+            "findings_truncated": findings_truncated,
+            "explanations_truncated": explanations_truncated,
+        },
+        "gate": {
+            "tripped": decision.tripped,
+            "fail_on": decision.fail_on,
+            "exit_class": decision.exit_class,
+            "reason": decision.reason,
+            "evaluated": decision.evaluated,
+            "migration_hint": migration_hint,
+        },
         "loomweave": loomweave_block,
         "filigree": filigree_block,
         "loomweave_write": loomweave_status,
@@ -273,6 +346,11 @@ def _scan(
             decision,
             filigree_emit=filigree_status,
             loomweave_write=loomweave_status,
+            display_findings=selected,
+            summary_only=summary_only,
+            max_findings=max_findings,
+            include_suppressed=include_suppressed,
+            migration_hint=migration_hint,
         ).to_dict(),
     }
     _attach_legis_artifact(
@@ -310,19 +388,26 @@ def _attach_legis_artifact(
     verbatim as the ``scan`` field of ``POST /wardline/scan-results``.
     """
     from wardline.core.errors import LegisArtifactError
-    from wardline.core.legis import build_legis_artifact, key_id, load_legis_artifact_key
+    from wardline.core.legis import (
+        build_legis_artifact,
+        key_id,
+        legis_artifact_outcome,
+        load_legis_artifact_key,
+    )
 
     key_str = load_legis_artifact_key(path)
     if key_str is None and not bool(args.get("legis_artifact")):
         return  # not requested — default response unchanged
 
     cfg = config_mod.load(
-        _cfg(args, path) or (path / "wardline.yaml"),
+        _cfg(args, path) or weft_config_path(path),
+        explicit=_cfg(args, path) is not None,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
     )
     key_bytes = key_str.encode("utf-8") if key_str else None
+    allow_dirty = _bool_arg(args, "allow_dirty", False)
     status: dict[str, Any] = {
         "configured": True,
         "signed": False,
@@ -330,12 +415,23 @@ def _attach_legis_artifact(
         "reason": None,
     }
     try:
-        artifact = build_legis_artifact(result, root=path, config=cfg, key=key_bytes)
+        artifact = build_legis_artifact(result, root=path, config=cfg, key=key_bytes, allow_dirty=allow_dirty)
     except LegisArtifactError as exc:
         status["reason"] = str(exc)
         response["legis_artifact_status"] = status
         return
-    status["signed"] = key_bytes is not None
+    # A dirty tree under allow_dirty falls through to the unsigned dev artifact: it is
+    # never signed even with a key present (false-provenance guard), and legis records
+    # it `unverified`. Read signed/dirty/reason from the single authority over what the
+    # producer emitted (legis_artifact_outcome), not by re-deriving from key presence.
+    outcome = legis_artifact_outcome(artifact)
+    status["signed"] = outcome.signed
+    status["dirty"] = outcome.dirty
+    if outcome.unverified_reason is not None:
+        # Match the CLI's loudness on the agent surface (agent-first): the artifact is
+        # UNSIGNED and legis records it unverified — say so rather than leaving the agent
+        # to infer it from signed:false / dirty:true alone.
+        status["reason"] = outcome.unverified_reason
     response["legis_artifact"] = artifact
     response["legis_artifact_status"] = status
 
@@ -536,7 +632,7 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
 def _baseline(args: dict[str, Any], root: Path) -> dict[str, Any]:
     reason = args.get("reason")
-    baseline_path = root / ".wardline" / "baseline.yaml"
+    baseline_path = baseline_file(root)
     overwrite = bool(args.get("overwrite", False))
     try:
         count = generate_baseline(
@@ -576,18 +672,15 @@ def _waiver_add(args: dict[str, Any], root: Path) -> dict[str, Any]:
     except ValueError as exc:
         # A malformed date is something the agent can fix and should see.
         raise ToolError("expires must be an ISO date (YYYY-MM-DD)") from exc
-    cfg_path = _cfg(args, root) or (root / "wardline.yaml")
-    safe_cfg_path = safe_project_file(root, cfg_path, label=cfg_path.name)
-    if safe_cfg_path.exists():
-        for existing in parse_waivers(config_mod.load(safe_cfg_path).waivers):
-            if existing.fingerprint == fp:
-                return {
-                    "fingerprint": existing.fingerprint,
-                    "reason": existing.reason,
-                    "expires": existing.expires.isoformat() if existing.expires else None,
-                    "already_exists": True,
-                }
-    waiver = add_waiver(cfg_path, fingerprint=fp, reason=reason, expires=expires, root=root)
+    for existing in load_project_waivers(root):
+        if existing.fingerprint == fp:
+            return {
+                "fingerprint": existing.fingerprint,
+                "reason": existing.reason,
+                "expires": existing.expires.isoformat() if existing.expires else None,
+                "already_exists": True,
+            }
+    waiver = add_waiver(waivers_path(root), fingerprint=fp, reason=reason, expires=expires, root=root)
     return {
         "fingerprint": waiver.fingerprint,
         "reason": waiver.reason,
@@ -603,7 +696,7 @@ def _fix(args: dict[str, Any], root: Path) -> dict[str, Any]:
     try:
         from wardline.core.config import load
 
-        cfg = load(cfg_path or (path / "wardline.yaml"))
+        cfg = load(cfg_path or weft_config_path(path), explicit=cfg_path is not None)
         result = run_scan(path, config_path=cfg_path, confine_to_root=True)
     except WardlineError as exc:
         raise ToolError(str(exc)) from exc
@@ -629,6 +722,11 @@ def _fix(args: dict[str, Any], root: Path) -> dict[str, Any]:
 # fail_on=NONE is not a meaningful gate threshold.
 _SEVERITY_ENUM = ["CRITICAL", "ERROR", "WARN", "INFO"]
 
+# Default ceiling on the number of active-defect provenances inlined by `explain: true`
+# on the MCP `scan`. Bounds the one-shot payload (the dogfood report hit 56,820 chars on
+# one line over a whole repo); an explicit `max_findings` tightens it further.
+_EXPLAIN_DEFAULT_CAP = 10
+
 
 class WardlineMCPServer:
     def __init__(
@@ -653,8 +751,6 @@ class WardlineMCPServer:
         self,
         config_path: Path | None = None,
         *,
-        trust_local_packs: bool = False,
-        trusted_packs: Iterable[str] = (),
         strict_defaults: bool = False,
     ) -> Any:
         """Build a LoomweaveClient for this server's root, or None when no URL is set."""
@@ -662,8 +758,6 @@ class WardlineMCPServer:
             self.loomweave_url,
             self.root,
             config_path,
-            trust_local_packs=trust_local_packs,
-            trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,
         )
         if url is None:
@@ -681,8 +775,6 @@ class WardlineMCPServer:
         self,
         config_path: Path | None = None,
         *,
-        trust_local_packs: bool = False,
-        trusted_packs: Iterable[str] = (),
         strict_defaults: bool = False,
     ) -> Any:
         """Build a FiligreeEmitter for this server's URL, or None when no URL is set."""
@@ -690,8 +782,6 @@ class WardlineMCPServer:
             self.filigree_url,
             self.root,
             config_path,
-            trust_local_packs=trust_local_packs,
-            trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,
         )
         if url is None:
@@ -704,8 +794,6 @@ class WardlineMCPServer:
         self,
         config_path: Path | None = None,
         *,
-        trust_local_packs: bool = False,
-        trusted_packs: Iterable[str] = (),
         strict_defaults: bool = False,
     ) -> Any:
         """Build a FiligreeIssueFiler from this server's Weft URL, or None when unset."""
@@ -713,8 +801,6 @@ class WardlineMCPServer:
             self.filigree_url,
             self.root,
             config_path,
-            trust_local_packs=trust_local_packs,
-            trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,
         )
         if url is None:
@@ -768,7 +854,27 @@ class WardlineMCPServer:
                             "type": "boolean",
                             "description": "Inline each active defect's taint provenance "
                             "(immediate tainted callee, source boundary, trust tiers, resolution "
-                            "counts) — one call instead of an explain_taint per finding.",
+                            "counts) — one call instead of an explain_taint per finding. Inlining is "
+                            "capped at 10 provenances by default (raise/lower with max_findings); the cut "
+                            "is reported at truncation.explanations_truncated.",
+                        },
+                        "summary_only": {
+                            "type": "boolean",
+                            "description": "Return counts + gate only, no finding bodies — the smallest "
+                            "'did the gate pass?' payload. summary/gate still describe the whole project.",
+                        },
+                        "max_findings": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Cap the number of returned finding bodies (and inlined "
+                            "explanations). Must be a non-negative integer. The cut is reported in the "
+                            "truncation block; summary counts stay whole-project.",
+                        },
+                        "include_suppressed": {
+                            "type": "boolean",
+                            "description": "Default true. Set false to drop suppressed (baselined/waived/"
+                            "judged) finding bodies from the response; the suppression counts stay in "
+                            "summary.",
                         },
                         "new_since": {
                             "type": "string",
@@ -786,7 +892,7 @@ class WardlineMCPServer:
                         },
                         "strict_defaults": {
                             "type": "boolean",
-                            "description": "Ignore repository-supplied custom configuration overrides (wardline.yaml)",
+                            "description": "Ignore repository-supplied custom configuration overrides (weft.toml)",
                         },
                         "trust_suppressions": {
                             "type": "boolean",
@@ -795,22 +901,28 @@ class WardlineMCPServer:
                             "evaluates the unsuppressed population so a PR cannot self-suppress its "
                             "own defect. Use only on a trusted checkout; in CI prefer new_since.",
                         },
+                        "legis_artifact": {
+                            "type": "boolean",
+                            "description": "Attach the verbatim-postable legis scan-artifact "
+                            "(`legis_artifact` block) even when no signing key is provisioned "
+                            "(unsigned, for legis's optional-verify posture).",
+                        },
+                        "allow_dirty": {
+                            "type": "boolean",
+                            "description": "For the legis artifact only: on a dirty tree emit an UNSIGNED, "
+                            "clearly-marked (dirty: true) dev artifact instead of refusing to sign. "
+                            "Signing stays clean-tree-only; legis records it unverified.",
+                        },
                     },
                 },
                 handler=lambda args, root: _scan(
                     args,
                     root,
                     self._loomweave_client(
-                        _cfg(args, root),
-                        trust_local_packs=bool(args.get("trust_local_packs") or False),
-                        trusted_packs=tuple(args.get("trust_packs") or []),
-                        strict_defaults=bool(args.get("strict_defaults") or False),
+                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
                     ),
                     self._filigree_emitter(
-                        _cfg(args, root),
-                        trust_local_packs=bool(args.get("trust_local_packs") or False),
-                        trusted_packs=tuple(args.get("trust_packs") or []),
-                        strict_defaults=bool(args.get("strict_defaults") or False),
+                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
                     ),
                     trust_local_packs=bool(args.get("trust_local_packs") or False),
                     strict_defaults=bool(args.get("strict_defaults") or False),
@@ -934,10 +1046,7 @@ class WardlineMCPServer:
                     args,
                     root,
                     self._loomweave_client(
-                        _cfg(args, root),
-                        trust_local_packs=bool(args.get("trust_local_packs") or False),
-                        trusted_packs=_trusted_packs_arg(args),
-                        strict_defaults=bool(args.get("strict_defaults") or False),
+                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
                     ),
                 ),
             )
@@ -969,10 +1078,7 @@ class WardlineMCPServer:
                     args,
                     root,
                     self._loomweave_client(
-                        _cfg(args, root),
-                        trust_local_packs=bool(args.get("trust_local_packs") or False),
-                        trusted_packs=_trusted_packs_arg(args),
-                        strict_defaults=bool(args.get("strict_defaults") or False),
+                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
                     ),
                 ),
             )
@@ -1045,22 +1151,11 @@ class WardlineMCPServer:
                     args,
                     root,
                     self._filigree_emitter(
-                        _cfg(args, root),
-                        trust_local_packs=bool(args.get("trust_local_packs") or False),
-                        trusted_packs=tuple(args.get("trust_packs") or []),
-                        strict_defaults=bool(args.get("strict_defaults") or False),
+                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
                     ),
-                    self._filigree_filer(
-                        _cfg(args, root),
-                        trust_local_packs=bool(args.get("trust_local_packs") or False),
-                        trusted_packs=tuple(args.get("trust_packs") or []),
-                        strict_defaults=bool(args.get("strict_defaults") or False),
-                    ),
+                    self._filigree_filer(_cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)),
                     self._loomweave_client(
-                        _cfg(args, root),
-                        trust_local_packs=bool(args.get("trust_local_packs") or False),
-                        trusted_packs=tuple(args.get("trust_packs") or []),
-                        strict_defaults=bool(args.get("strict_defaults") or False),
+                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
                     ),
                 ),
             )
@@ -1129,7 +1224,6 @@ class WardlineMCPServer:
                         "fingerprint": {"type": "string"},
                         "reason": {"type": "string"},
                         "expires": {"type": "string", "description": "YYYY-MM-DD"},
-                        "config": {"type": "string"},
                     },
                 },
                 handler=_waiver_add,
@@ -1189,8 +1283,6 @@ class WardlineMCPServer:
             self.loomweave_url,
             self.root,
             _cfg(arguments, self.root),
-            trust_local_packs=bool(arguments.get("trust_local_packs") or False),
-            trusted_packs=_trusted_packs_arg(arguments),
             strict_defaults=bool(arguments.get("strict_defaults") or False),
         )
 
@@ -1199,8 +1291,6 @@ class WardlineMCPServer:
             self.filigree_url,
             self.root,
             _cfg(arguments, self.root),
-            trust_local_packs=bool(arguments.get("trust_local_packs") or False),
-            trusted_packs=_trusted_packs_arg(arguments),
             strict_defaults=bool(arguments.get("strict_defaults") or False),
         )
 

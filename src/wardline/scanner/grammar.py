@@ -150,7 +150,7 @@ class TrustGrammar:
     """The wiring object: boundary types (feed L1 seeding) + rule classes (enforcement).
 
     ``rules`` are rule CLASSES (not instances) — they are instantiated per-config
-    downstream so ``wardline.yaml`` severity overrides still apply.
+    downstream so ``weft.toml [wardline]`` severity overrides still apply.
     """
 
     boundary_types: tuple[BoundaryType, ...]

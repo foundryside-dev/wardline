@@ -8,7 +8,16 @@ import pytest
 from wardline.core.errors import ConfigError
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.judged import JudgedFP, write_judged
-from wardline.core.run import ScanResult, ScanSummary, gate_decision, run_scan
+from wardline.core.paths import baseline_path, judged_path, waivers_path
+from wardline.core.run import (
+    GateDecision,
+    ScanResult,
+    ScanSummary,
+    baseline_migration_hint,
+    gate_decision,
+    run_scan,
+)
+from wardline.core.waivers import add_waiver
 
 FIXTURE = Path("tests/fixtures/sample_project")
 
@@ -63,7 +72,7 @@ def test_run_scan_unknown_rule_enable_is_gate_relevant(tmp_path: Path) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
-    (proj / "wardline.yaml").write_text("rules:\n  enable:\n    - NO_SUCH_RULE\n", encoding="utf-8")
+    (proj / "weft.toml").write_text('[wardline.rules]\nenable = ["NO_SUCH_RULE"]\n', encoding="utf-8")
 
     result = run_scan(proj)
     policy_findings = [f for f in result.findings if f.rule_id == "WLN-ENGINE-POLICY-CONFIG"]
@@ -76,7 +85,7 @@ def test_run_scan_none_severity_override_is_gate_relevant(tmp_path: Path) -> Non
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
-    (proj / "wardline.yaml").write_text("rules:\n  severity:\n    PY-WL-101: NONE\n", encoding="utf-8")
+    (proj / "weft.toml").write_text('[wardline.rules]\nseverity = { "PY-WL-101" = "NONE" }\n', encoding="utf-8")
 
     result = run_scan(proj)
     policy_findings = [f for f in result.findings if f.rule_id == "WLN-ENGINE-POLICY-CONFIG"]
@@ -101,7 +110,7 @@ def test_run_scan_baselined_count_distinguishes_categories(tmp_path: Path) -> No
     leak = next(f for f in first.findings if f.rule_id == "PY-WL-101")
 
     # Write a baseline accepting exactly that fingerprint (CLI test YAML shape).
-    bl = proj / ".wardline" / "baseline.yaml"
+    bl = baseline_path(proj)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
         "version: 1\nentries:\n"
@@ -134,7 +143,7 @@ def _leaky_proj(tmp_path: Path) -> tuple[Path, str]:
 
 
 def _write_baseline(proj: Path, fp: str) -> None:
-    bl = proj / ".wardline" / "baseline.yaml"
+    bl = baseline_path(proj)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
         f"version: 1\nentries:\n  - fingerprint: {fp}\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
@@ -143,14 +152,12 @@ def _write_baseline(proj: Path, fp: str) -> None:
 
 
 def _write_waiver(proj: Path, fp: str) -> None:
-    (proj / "wardline.yaml").write_text(
-        f"waivers:\n  - fingerprint: {fp}\n    reason: validated downstream\n", encoding="utf-8"
-    )
+    add_waiver(waivers_path(proj), fingerprint=fp, reason="validated downstream", expires=None, root=proj)
 
 
 def _write_judged(proj: Path, fp: str) -> None:
     write_judged(
-        proj / ".wardline" / "judged.yaml",
+        judged_path(proj),
         [
             JudgedFP(
                 fingerprint=fp,
@@ -197,6 +204,127 @@ def test_trust_suppressions_restores_old_gate_clearing(tmp_path: Path, writer) -
     # gate_findings is the None sentinel -> gate falls back to the suppressed findings.
     assert result.gate_findings is None
     assert gate_decision(result, Severity.ERROR).tripped is False
+
+
+def test_gate_decision_reason_names_suppressed_population_on_default_trip(tmp_path: Path) -> None:
+    # The dogfood #2 confusion: summary.active:0 + gate.tripped:true. The verdict must
+    # SAY why — name the suppressed-but-gated count and the escape hatches — and name the
+    # population it judged, so the agent does not have to run scan twice to infer it.
+    proj, fp = _leaky_proj(tmp_path)
+    _write_baseline(proj, fp)
+    decision = gate_decision(run_scan(proj), Severity.ERROR)
+    assert decision.tripped is True
+    assert decision.reason is not None
+    assert "1 suppressed" in decision.reason
+    assert "--trust-suppressions" in decision.reason and "--new-since" in decision.reason
+    assert decision.evaluated is not None and "unsuppressed" in decision.evaluated
+
+
+def test_gate_decision_reason_names_active_defect_on_genuine_trip(tmp_path: Path) -> None:
+    proj, _ = _leaky_proj(tmp_path)  # no suppression -> a genuinely active defect
+    decision = gate_decision(run_scan(proj), Severity.ERROR)
+    assert decision.tripped is True
+    assert decision.reason is not None and "1 active" in decision.reason
+    # a genuine active trip should NOT misdirect the agent to the suppression flags
+    assert "--trust-suppressions" not in decision.reason
+
+
+def test_gate_decision_reason_names_both_active_and_suppressed_on_mixed_trip(tmp_path: Path) -> None:
+    # The mixed branch of _gate_reason: one genuinely-active defect AND one baselined
+    # defect both gate by default. The verdict must name BOTH counts (not collapse to
+    # one), so the agent sees the real composition of the trip.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "a.py").write_text(_LEAKY, encoding="utf-8")
+    (proj / "b.py").write_text(_LEAKY, encoding="utf-8")
+    # Baseline ONLY a.py's finding (fingerprint match); b.py stays active.
+    fp_a = next(
+        f.fingerprint for f in run_scan(proj).findings if f.rule_id == "PY-WL-101" and f.location.path == "a.py"
+    )
+    _write_baseline(proj, fp_a)
+    decision = gate_decision(run_scan(proj), Severity.ERROR)
+    assert decision.tripped is True
+    assert decision.reason is not None
+    assert "1 active + 1 suppressed" in decision.reason
+    assert "--trust-suppressions" in decision.reason
+
+
+def test_gate_decision_rejects_contradictory_construction() -> None:
+    # The __post_init__ invariant guard: GateDecision must make "tripped gate that reads
+    # as passed" (dogfood #2) unconstructible, not merely avoided by the factory.
+    with pytest.raises(ValueError, match="exit_class"):
+        GateDecision(tripped=True, fail_on="ERROR", exit_class=0, reason="x", evaluated="y")
+    with pytest.raises(ValueError, match="reason"):
+        GateDecision(tripped=True, fail_on="ERROR", exit_class=1, reason=None, evaluated="y")
+    with pytest.raises(ValueError, match="reason"):
+        # fail_on set but no verdict — the no-gate shape leaking into a gated decision.
+        GateDecision(tripped=False, fail_on="ERROR", exit_class=0, reason=None, evaluated=None)
+    # The two legitimate shapes the factory produces still construct cleanly.
+    GateDecision(tripped=False, fail_on=None, exit_class=0)
+    GateDecision(tripped=True, fail_on="ERROR", exit_class=1, reason="1 active", evaluated="unsuppressed")
+
+
+def test_gate_decision_evaluated_reflects_trust_suppressions(tmp_path: Path) -> None:
+    proj, fp = _leaky_proj(tmp_path)
+    _write_baseline(proj, fp)
+    decision = gate_decision(run_scan(proj, trust_suppressions=True), Severity.ERROR)
+    assert decision.tripped is False
+    assert decision.evaluated is not None and "honored" in decision.evaluated
+
+
+def test_gate_decision_no_threshold_has_no_reason() -> None:
+    result = ScanResult(findings=[], summary=ScanSummary(0, 0, 0, 0, 0), files_scanned=0, context=None)
+    decision = gate_decision(result, None)
+    assert decision.reason is None and decision.evaluated is None
+
+
+def _hint(proj: Path, *, new_since=None, trust=False):
+    result = run_scan(proj, new_since=new_since, trust_suppressions=trust)
+    decision = gate_decision(result, Severity.ERROR)
+    return baseline_migration_hint(result, decision, root=proj, new_since=new_since)
+
+
+def test_migration_hint_fires_on_baselined_only_trip(tmp_path: Path) -> None:
+    # The dogfood #3 'my repo went red with no code change' case: a committed baseline
+    # that used to clear the gate now re-enters it. Emit a loud one-liner pointing at
+    # the escape hatches and the upgrade note.
+    proj, fp = _leaky_proj(tmp_path)
+    _write_baseline(proj, fp)
+    hint = _hint(proj)
+    assert hint is not None
+    assert "baseline" in hint
+    assert "--trust-suppressions" in hint and "--new-since" in hint
+    assert "UPGRADING" in hint
+
+
+def test_migration_hint_silent_under_trust_suppressions(tmp_path: Path) -> None:
+    proj, fp = _leaky_proj(tmp_path)
+    _write_baseline(proj, fp)
+    assert _hint(proj, trust=True) is None
+
+
+def test_migration_hint_silent_under_new_since(tmp_path: Path) -> None:
+    # new_since scopes the gate (operator-supplied ratchet); the surprise — and the hint —
+    # belongs to the unscoped run. Assert the helper short-circuits on a non-None ref
+    # (tested directly so it does not require a git repo for the delta walk).
+    proj, fp = _leaky_proj(tmp_path)
+    _write_baseline(proj, fp)
+    result = run_scan(proj)
+    decision = gate_decision(result, Severity.ERROR)
+    assert baseline_migration_hint(result, decision, root=proj, new_since="origin/main") is None
+
+
+def test_migration_hint_silent_on_genuine_active_trip(tmp_path: Path) -> None:
+    # An active (un-baselined) defect trips for a real reason — not a migration surprise.
+    proj, _ = _leaky_proj(tmp_path)
+    assert _hint(proj) is None
+
+
+def test_migration_hint_silent_without_baseline_file(tmp_path: Path) -> None:
+    # A waiver-only trip is real debt, not the baseline-rollout surprise this hint is for.
+    proj, fp = _leaky_proj(tmp_path)
+    _write_waiver(proj, fp)
+    assert _hint(proj) is None
 
 
 def test_gate_findings_is_unsuppressed_population(tmp_path: Path) -> None:
@@ -288,7 +416,7 @@ def test_new_since_scopes_both_populations_and_resists_suppression(tmp_path: Pat
     # Try to suppress the NEW (in-delta) defect via a committed baseline — must not help.
     first = run_scan(tmp_path)
     new_fp = next(f for f in first.findings if f.qualname == "caller.f").fingerprint
-    bl = tmp_path / ".wardline" / "baseline.yaml"
+    bl = baseline_path(tmp_path)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
         f"version: 1\nentries:\n  - fingerprint: {new_fp}\n    rule_id: PY-WL-101\n    path: caller.py\n"
@@ -327,7 +455,13 @@ def test_new_since_scopes_both_populations_and_resists_suppression(tmp_path: Pat
     # The out-of-delta unrelated.h is scoped OUT of the gate (delta: unchanged).
     assert gate_by_qn["unrelated.h"].suppressed is SuppressionState.BASELINED
     # Net: the gate trips on the new defect, and the repo baseline did not clear it.
-    assert gate_decision(result, Severity.ERROR).tripped is True
+    decision = gate_decision(result, Severity.ERROR)
+    assert decision.tripped is True
+    # The verdict reason counts only what ACTUALLY gates: caller.f (in-delta, repo-baselined
+    # -> 1 suppressed). unrelated.h is delta-scoped-out (BASELINED in the gate population),
+    # so it must NOT inflate the count — exactly 1, not 2.
+    assert decision.reason is not None
+    assert "1 suppressed" in decision.reason and "2 suppressed" not in decision.reason
 
 
 def test_run_scan_counts_unanalyzed_parse_error(tmp_path: Path) -> None:
@@ -364,7 +498,7 @@ def test_run_scan_missing_source_root_yields_finding(tmp_path: Path) -> None:
     # both the CLI summary and the MCP result) and count toward unanalyzed.
     proj = tmp_path / "proj"
     proj.mkdir()
-    (proj / "wardline.yaml").write_text("source_roots:\n  - does_not_exist\n", encoding="utf-8")
+    (proj / "weft.toml").write_text('[wardline]\nsource_roots = ["does_not_exist"]\n', encoding="utf-8")
     # discover still warns on a missing root (by design — the CLI keeps the stderr
     # signal); the NEW contract is that it ALSO becomes a structured finding.
     with pytest.warns(UserWarning, match="source root does not exist"):
@@ -381,11 +515,35 @@ def test_run_scan_explicit_missing_config_raises(tmp_path: Path) -> None:
     proj.mkdir()
     (proj / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
     with pytest.raises(ConfigError):
-        run_scan(proj, config_path=proj / "nope.yaml")
+        run_scan(proj, config_path=proj / "nope.toml")
+
+
+def test_gate_decision_rejects_unknown_fail_on() -> None:
+    # fail_on is always a Severity value; an arbitrary string is an illegal state the
+    # other guards would otherwise let through (it satisfies "reason iff fail_on").
+    with pytest.raises(ValueError, match="fail_on"):
+        GateDecision(tripped=True, fail_on="banana", exit_class=1, reason="x", evaluated="y")
+
+
+def test_gate_decision_accepts_valid_severity_value() -> None:
+    dec = GateDecision(tripped=True, fail_on=Severity.ERROR.value, exit_class=1, reason="x", evaluated="y")
+    assert dec.fail_on == "ERROR"
+
+
+def test_run_scan_explicit_malformed_config_raises(tmp_path: Path) -> None:
+    # (d) An EXPLICIT --config that EXISTS but is malformed must NOT silently fall
+    # back to default policy either — that is the same false-green as a missing path.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
+    bad = proj / "bad.toml"
+    bad.write_text("[wardline]\nsource_roots = [\n", encoding="utf-8")
+    with pytest.raises(ConfigError):
+        run_scan(proj, config_path=bad)
 
 
 def test_run_scan_implicit_missing_config_uses_defaults(tmp_path: Path) -> None:
-    # (d) The IMPLICIT default path (root/wardline.yaml) may legitimately be absent;
+    # (d) The IMPLICIT default path (root/weft.toml) may legitimately be absent;
     # run_scan returns defaults without raising.
     proj = tmp_path / "proj"
     proj.mkdir()

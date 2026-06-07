@@ -46,19 +46,59 @@ class AgentSummary:
     gate: GateDecision
     filigree_emit: dict[str, Any] = field(default_factory=_default_filigree_status)
     loomweave_write: dict[str, Any] = field(default_factory=_default_loomweave_status)
+    # Payload-shrinking controls (dogfood #4). The summary COUNTS always describe the
+    # whole project; these govern only the inline finding ARRAYS. ``display_findings``
+    # is the (already ``where``-filtered) view the arrays are built from — None means the
+    # whole result, the back-compat default used by the CLI ``--format agent-summary``.
+    display_findings: list[Finding] | None = None
+    summary_only: bool = False
+    max_findings: int | None = None
+    include_suppressed: bool = True
+    # The secure-gate-default rollout hint (or None), surfaced in the gate block so the
+    # "see gate.migration_hint" pointer in next_actions resolves on this surface too — the
+    # MCP scan response carries the same value at its top-level gate block.
+    migration_hint: str | None = None
+
+    def __post_init__(self) -> None:
+        # max_findings bounds the inline arrays via a slice; a negative value would
+        # silently DROP findings ([:-1]). Refuse it at construction, matching the
+        # GateDecision/EmitResult guards. ``display_findings ⊆ result.findings`` remains
+        # a documented caller precondition (a full fingerprint subset-check every build
+        # is too costly for the hot scan path).
+        if self.max_findings is not None and self.max_findings < 0:
+            raise ValueError(f"max_findings must be >= 0, got {self.max_findings}")
 
     def to_dict(self) -> dict[str, Any]:
-        active_defects = [_finding_entry(f, include_next=True) for f in _active_defects(self.result.findings)]
-        suppressed = [_finding_entry(f, include_next=False) for f in _suppressed_defects(self.result.findings)]
-        engine_facts = [_finding_entry(f, include_next=False) for f in _engine_facts(self.result.findings)]
+        # Counts are whole-project (summary describes the whole project, per the `where`
+        # contract); arrays come from the displayed/filtered view, then bounded.
+        count_active = len(_active_defects(self.result.findings))
+        count_suppressed = len(_suppressed_defects(self.result.findings))
+        count_facts = len(_engine_facts(self.result.findings))
+
+        base = self.result.findings if self.display_findings is None else self.display_findings
+        if self.summary_only:
+            shown_active: list[Finding] = []
+            shown_suppressed: list[Finding] = []
+            shown_facts: list[Finding] = []
+        else:
+            shown_active = _active_defects(base)
+            shown_suppressed = _suppressed_defects(base) if self.include_suppressed else []
+            shown_facts = _engine_facts(base)
+            if self.max_findings is not None:
+                shown_active = shown_active[: self.max_findings]
+                shown_suppressed = shown_suppressed[: self.max_findings]
+                shown_facts = shown_facts[: self.max_findings]
+        active_defects = [_finding_entry(f, include_next=True) for f in shown_active]
+        suppressed = [_finding_entry(f, include_next=False) for f in shown_suppressed]
+        engine_facts = [_finding_entry(f, include_next=False) for f in shown_facts]
         return {
             "schema": SCHEMA,
             "summary": {
                 "files_scanned": self.result.files_scanned,
                 "total_findings": self.result.summary.total,
-                "active_defects": len(active_defects),
-                "suppressed_findings": len(suppressed),
-                "engine_facts": len(engine_facts),
+                "active_defects": count_active,
+                "suppressed_findings": count_suppressed,
+                "engine_facts": count_facts,
                 "baselined": self.result.summary.baselined,
                 "waived": self.result.summary.waived,
                 "judged": self.result.summary.judged,
@@ -68,6 +108,9 @@ class AgentSummary:
                 "tripped": self.gate.tripped,
                 "fail_on": self.gate.fail_on,
                 "exit_class": self.gate.exit_class,
+                "reason": self.gate.reason,
+                "evaluated": self.gate.evaluated,
+                "migration_hint": self.migration_hint,
             },
             "integrations": {
                 "filigree_emit": dict(self.filigree_emit),
@@ -76,7 +119,11 @@ class AgentSummary:
             "active_defects": active_defects,
             "suppressed_findings": suppressed,
             "engine_facts": engine_facts,
-            "next_actions": _next_actions(active_defects),
+            # next_actions follow the whole-project active count, not the displayed slice,
+            # so a summary_only/filtered view does not falsely say "no active defects" — and
+            # they are GATE-AWARE so a baselined-only trip (0 active + gate FAILED) never
+            # reads as "rescan after edits" / passed (dogfood #2, the "Worse" half).
+            "next_actions": _next_actions_for(count_active, self.gate),
         }
 
 
@@ -146,14 +193,28 @@ def _finding_entry(finding: Finding, *, include_next: bool) -> dict[str, Any]:
     return entry
 
 
-def _next_actions(active_defects: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    if not active_defects:
-        return [{"tool": "scan", "reason": "no active defects; rescan after edits"}]
-    return [
-        {"tool": "explain_taint", "reason": "inspect each active defect before editing"},
-        {"tool": "file_finding", "reason": "promote confirmed true positives after Filigree emission"},
-        {"tool": "scan", "reason": "rescan after fixes to verify closure"},
-    ]
+def _next_actions_for(active_count: int, gate: GateDecision) -> list[dict[str, Any]]:
+    if active_count > 0:
+        return [
+            {"tool": "explain_taint", "reason": "inspect each active defect before editing"},
+            {"tool": "file_finding", "reason": "promote confirmed true positives after Filigree emission"},
+            {"tool": "scan", "reason": "rescan after fixes to verify closure"},
+        ]
+    if gate.tripped:
+        # 0 active defects but the gate FAILED — it tripped on suppressed/baselined findings.
+        # Do NOT say "rescan after edits" (which reads as passed); point at the gate verdict.
+        detail = gate.reason or "the gate tripped on suppressed (baselined/waived/judged) findings"
+        return [
+            {
+                "tool": "scan",
+                "reason": (
+                    f"gate FAILED with 0 active defects — {detail}. To clear: pass "
+                    "trust_suppressions (trusted checkout) or new_since <ref> (PR), or remove the "
+                    "baseline/waiver/judged entries; see gate.reason / gate.migration_hint."
+                ),
+            }
+        ]
+    return [{"tool": "scan", "reason": "no active defects; rescan after edits"}]
 
 
 def build_agent_summary(
@@ -162,10 +223,20 @@ def build_agent_summary(
     *,
     filigree_emit: dict[str, Any] | None = None,
     loomweave_write: dict[str, Any] | None = None,
+    display_findings: list[Finding] | None = None,
+    summary_only: bool = False,
+    max_findings: int | None = None,
+    include_suppressed: bool = True,
+    migration_hint: str | None = None,
 ) -> AgentSummary:
     return AgentSummary(
         result=result,
         gate=gate,
         filigree_emit=filigree_emit or _default_filigree_status(),
         loomweave_write=loomweave_write or _default_loomweave_status(),
+        display_findings=display_findings,
+        summary_only=summary_only,
+        max_findings=max_findings,
+        include_suppressed=include_suppressed,
+        migration_hint=migration_hint,
     )

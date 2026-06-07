@@ -61,6 +61,19 @@ as `unverified` — the trust-the-agent posture before a key is set).
     `tree_sha` that does not match the scanned content is false provenance, so it is
     refused rather than emitted.
 
+!!! tip "Dev/tour loop on a dirty tree: `--allow-dirty`"
+    Signing is clean-tree-only, but you do not need a commit to exercise the
+    Wardline→legis handshake. Pass `--allow-dirty` (CLI) / `allow_dirty: true` (MCP
+    `scan`) to emit an **unsigned**, clearly-marked artifact on a dirty tree:
+
+    ```bash
+    wardline scan . --format legis --allow-dirty --output /tmp/scan.legis.json
+    ```
+
+    The artifact carries `"dirty": true` and **no** `artifact_signature`; legis records
+    it as `unverified`. The committed tree is never signed as if it described dirty
+    working content. Use it for the dev loop and the tour — never to gate CI.
+
 ### From the MCP server (agents)
 
 The `scan` tool attaches the artifact automatically once the secret is provisioned —

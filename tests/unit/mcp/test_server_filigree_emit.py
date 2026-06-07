@@ -61,6 +61,9 @@ def test_scan_emits_to_filigree_when_emitter_present(tmp_path):
         "updated": 1,
         "failed": 0,
         "warnings": [],
+        "status": None,
+        "auth_rejected": False,
+        "disabled_reason": None,
     }
     assert emitter.scanned_paths == ("svc.py",)
 
@@ -78,6 +81,9 @@ def test_scan_reports_both_integrations_successful(tmp_path):
         "updated": 1,
         "failed": 0,
         "warnings": [],
+        "status": None,
+        "auth_rejected": False,
+        "disabled_reason": None,
     }
 
 
@@ -122,4 +128,42 @@ def test_scan_unreachable_filigree_is_soft(tmp_path):
     assert out["filigree"]["reachable"] is False
     assert out["filigree_emit"]["configured"] is True
     assert out["filigree_emit"]["reachable"] is False
+    assert out["filigree_emit"]["disabled_reason"] == "filigree unreachable"
     assert out["summary"]["total"] >= 1
+
+
+def test_scan_filigree_401_surfaces_auth_reason_to_agent(tmp_path):
+    # Dogfood #5 (MCP parity): a 401 stays soft but the agent must read an actionable
+    # disabled_reason naming the token, not a flat "unreachable".
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    out = _scan({}, tmp_path, None, FakeEmitter(EmitResult(reachable=False, status=401)))
+    assert out["filigree"]["reachable"] is False  # still soft
+    reason = out["filigree_emit"]["disabled_reason"]
+    assert "401" in reason and "WEFT_FEDERATION_TOKEN" in reason
+    assert "unreachable" not in reason
+
+
+def test_scan_filigree_403_says_forbidden_not_set_a_token(tmp_path):
+    # A 403 is auth-rejected too, but "set WEFT_FEDERATION_TOKEN" is the wrong remedy
+    # (the token is present and lacks access / is blocked). The reason must say forbidden,
+    # not point at the env var.
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    out = _scan({}, tmp_path, None, FakeEmitter(EmitResult(reachable=False, status=403)))
+    assert out["filigree"]["reachable"] is False  # still soft
+    reason = out["filigree_emit"]["disabled_reason"]
+    assert "403" in reason and "forbidden" in reason
+    assert "WEFT_FEDERATION_TOKEN" not in reason
+    assert "unreachable" not in reason
+
+
+def test_scan_filigree_5xx_says_server_error_not_unreachable(tmp_path):
+    # A 5xx outage reached us (the sibling is degraded, not absent). The disabled_reason
+    # must say "server error (503)", distinct from both the 401 auth case and the genuine
+    # transport-unreachable case (dogfood #5, the untested sibling of the 401 path).
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    out = _scan({}, tmp_path, None, FakeEmitter(EmitResult(reachable=False, status=503)))
+    assert out["filigree"]["reachable"] is False  # still soft
+    reason = out["filigree_emit"]["disabled_reason"]
+    assert "503" in reason and "server error" in reason
+    assert "unreachable" not in reason
+    assert "WEFT_FEDERATION_TOKEN" not in reason

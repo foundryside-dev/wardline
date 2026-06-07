@@ -97,6 +97,55 @@ class EmitResult:
     updated: int = 0
     failed: int = 0
     warnings: tuple[str, ...] = ()
+    # Discriminate WHY enrichment was unavailable so the caller can say the actionable
+    # thing instead of a flat "could not reach" (dogfood #5). ``status`` is the HTTP status
+    # for the SOFT-failure sub-cases — 401/403 (auth refused) or 5xx (outage) — and None for
+    # both a transport failure (connection refused / DNS / timeout — genuinely unreachable)
+    # and a 2xx success. It is the *error* status: a reached/success result carries none.
+    # All of these stay SOFT (reachable=False); only the message differs.
+    status: int | None = None
+
+    @property
+    def auth_rejected(self) -> bool:
+        # The 401/403 case: present-but-refusing-bearer-auth. Derived from ``status`` rather
+        # than stored as an independent field so the two can never disagree (an
+        # "auth-rejected (200)" is unrepresentable, not merely unbuilt by the producer).
+        return self.status in (401, 403)
+
+    def __post_init__(self) -> None:
+        # Mirror GateDecision's construction-time guard so a second constructor cannot
+        # express a contradictory outcome: a reached/success result carries no error status,
+        # and a soft-failure (unreachable) created/updated/failed nothing.
+        if self.reachable and self.status is not None:
+            raise ValueError(f"a reachable EmitResult carries no error status (got {self.status})")
+        if not self.reachable and (self.created or self.updated or self.failed):
+            raise ValueError("an unreachable EmitResult must have zero created/updated/failed")
+
+
+def filigree_disabled_reason(*, reachable: bool, status: int | None) -> str | None:
+    """The ``disabled_reason`` for an emit attempt, or None when Filigree was reached.
+
+    Single source of the auth-rejected (401/403) vs server-error (5xx) vs unreachable
+    (transport failure) ladder (dogfood #5), shared by the CLI and MCP status blocks so
+    the two surfaces can never drift. The CLI's human stderr wording (which embeds the
+    URL and ".env" hint) is intentionally separate.
+
+    Auth-rejection is DERIVED from ``status`` here exactly as :attr:`EmitResult.auth_rejected`
+    derives it, so the helper cannot be handed a contradictory ``auth_rejected`` flag that
+    disagrees with the status (the inconsistent triple the standalone signature once allowed).
+    ``reachable`` remains an input because ``status is None`` is ambiguous on its own — it
+    means EITHER a 2xx success (reachable) OR a transport failure (unreachable).
+    """
+    if reachable:
+        return None
+    if status in (401, 403):
+        # 401 → set a token; 403 → token present but lacks access (a token won't help).
+        if status == 403:
+            return "filigree forbidden (403); token present but lacks access / blocked"
+        return f"filigree auth-rejected ({status}); set WEFT_FEDERATION_TOKEN"
+    if status is not None:
+        return f"filigree server error ({status})"
+    return "filigree unreachable"
 
 
 class Transport(Protocol):
@@ -142,14 +191,18 @@ class FiligreeEmitter:
             resp = self._transport.post(self._url, body, headers)
         except (urllib.error.URLError, OSError):
             # Connection refused / DNS / timeout — sibling absent. Enrichment is
-            # non-load-bearing: warn (at the CLI) and continue.
+            # non-load-bearing: warn (at the CLI) and continue. No status reached us, so
+            # this is the genuine "could not reach" case (status=None).
             return EmitResult(reachable=False)
-        if resp.status >= 500 or resp.status in (401, 403):
-            # Server-side outage (5xx) or auth refusal (401/403, Filigree present but its
-            # opt-in bearer auth is on and rejecting us) — the sibling is degraded/refusing,
-            # not a Wardline payload bug. Treat like absent (warn + continue) so a Filigree
-            # 503 or 401 never makes the gate load-bearing.
-            return EmitResult(reachable=False)
+        if resp.status in (401, 403):
+            # Filigree is present but its opt-in bearer auth is on and refusing us. Stays
+            # SOFT (enrichment unavailable, never exit-2) — but distinguished as auth so the
+            # caller can say "401 (set WEFT_FEDERATION_TOKEN)" instead of "could not reach".
+            return EmitResult(reachable=False, status=resp.status)
+        if resp.status >= 500:
+            # Server-side outage (5xx) — the sibling is degraded, not a Wardline payload bug.
+            # Treat like absent (warn + continue), carrying the status for an honest message.
+            return EmitResult(reachable=False, status=resp.status)
         if not 200 <= resp.status < 300:
             # 3xx (a redirect reached the client) or any remaining 4xx (notably 400): Wardline
             # sent a request the server would not accept — bad payload / wrong endpoint. Loud.

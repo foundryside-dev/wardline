@@ -14,6 +14,7 @@ from wardline.core.errors import WardlineError
 from wardline.core.finding import Kind, SuppressionState
 from wardline.core.judge import JudgeRequest, JudgeResponse, JudgeVerdict
 from wardline.core.judge_run import JudgeOutcome, resolve_project_policy, run_judge
+from wardline.core.paths import judged_path
 from wardline.core.run import run_scan
 
 # A @trust_boundary(to_level=GUARDED) validator that returns its input unchanged
@@ -73,7 +74,7 @@ def test_run_judge_dry_run_returns_verdicts(tmp_path: Path) -> None:
     assert v.label in {"TRUE_POSITIVE", "FALSE_POSITIVE"}
     assert 0.0 <= v.confidence <= 1.0
     assert outcome.wrote == 0  # dry run never writes
-    assert not (root / ".wardline" / "judged.yaml").exists()
+    assert not judged_path(root).exists()
 
 
 def test_run_judge_write_persists_high_confidence_fp(tmp_path: Path) -> None:
@@ -81,7 +82,7 @@ def test_run_judge_write_persists_high_confidence_fp(tmp_path: Path) -> None:
     outcome = run_judge(root, judge_caller=_fp_caller(0.9), write=True)
     assert outcome.wrote >= 1
     assert outcome.held_back == 0
-    judged = root / ".wardline" / "judged.yaml"
+    judged = judged_path(root)
     assert judged.exists()
 
 
@@ -90,7 +91,7 @@ def test_run_judge_write_holds_back_low_confidence_fp(tmp_path: Path) -> None:
     outcome = run_judge(root, judge_caller=_fp_caller(0.3), write=True)
     assert outcome.wrote == 0
     assert outcome.held_back >= 1
-    assert not (root / ".wardline" / "judged.yaml").exists()
+    assert not judged_path(root).exists()
 
 
 def test_judge_workflow_still_consults_judged_after_write(tmp_path: Path) -> None:
@@ -102,7 +103,7 @@ def test_judge_workflow_still_consults_judged_after_write(tmp_path: Path) -> Non
     # 1) write a high-confidence FP for the active defect
     first = run_judge(root, judge_caller=_fp_caller(0.95), write=True)
     assert first.wrote >= 1
-    assert (root / ".wardline" / "judged.yaml").exists()
+    assert judged_path(root).exists()
     # 2) the scan run_judge builds (trust_suppressions=True) now sees that defect as JUDGED
     rescanned = run_scan(root, trust_suppressions=True)
     judged_defects = [
@@ -113,24 +114,24 @@ def test_judge_workflow_still_consults_judged_after_write(tmp_path: Path) -> Non
 
 def test_run_judge_ignores_project_floor_without_trust(tmp_path: Path) -> None:
     root = _leaky_project(tmp_path)
-    (root / "wardline.yaml").write_text("judge:\n  write_confidence_floor: 0.0\n", encoding="utf-8")
+    (root / "weft.toml").write_text("[wardline.judge]\nwrite_confidence_floor = 0.0\n", encoding="utf-8")
 
     outcome = run_judge(root, judge_caller=_fp_caller(0.3), write=True)
 
     assert outcome.wrote == 0
     assert outcome.held_back >= 1
-    assert not (root / ".wardline" / "judged.yaml").exists()
+    assert not judged_path(root).exists()
 
 
 def test_run_judge_trusted_project_floor_can_lower_write_threshold(tmp_path: Path) -> None:
     root = _leaky_project(tmp_path)
-    (root / "wardline.yaml").write_text("judge:\n  write_confidence_floor: 0.0\n", encoding="utf-8")
+    (root / "weft.toml").write_text("[wardline.judge]\nwrite_confidence_floor = 0.0\n", encoding="utf-8")
 
     outcome = run_judge(root, judge_caller=_fp_caller(0.3), write=True, trust_judge_config=True)
 
     assert outcome.wrote >= 1
     assert outcome.held_back == 0
-    assert (root / ".wardline" / "judged.yaml").exists()
+    assert judged_path(root).exists()
 
 
 def test_run_judge_triages_same_active_defect_fingerprints_as_scan_with_packs(
@@ -148,7 +149,7 @@ def test_run_judge_triages_same_active_defect_fingerprints_as_scan_with_packs(
     try:
         root = tmp_path / "proj"
         root.mkdir()
-        (root / "wardline.yaml").write_text("packs:\n  - judge_parity_pack\n", encoding="utf-8")
+        (root / "weft.toml").write_text('[wardline]\npacks = ["judge_parity_pack"]\n', encoding="utf-8")
         (root / "svc.py").write_text("def violator():\n    pass\n", encoding="utf-8")
 
         scan = run_scan(root, trusted_packs=("judge_parity_pack",))

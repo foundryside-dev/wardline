@@ -4,6 +4,7 @@ import pytest
 import yaml
 
 from wardline.core.baseline import generate_baseline, load_baseline
+from wardline.core.paths import baseline_path
 from wardline.core.run import run_scan
 
 # A trusted boundary returning an external-tainted value: PY-WL-101 ERROR defect.
@@ -26,10 +27,10 @@ def _leaky_project(tmp_path: Path) -> Path:
 def test_generate_baseline_writes_file_and_counts(tmp_path: Path) -> None:
     proj = _leaky_project(tmp_path)
     count = generate_baseline(proj, overwrite=False)
-    baseline_path = proj / ".wardline" / "baseline.yaml"
-    assert baseline_path.exists()
+    bl_path = baseline_path(proj)
+    assert bl_path.is_file()
     assert count >= 1
-    assert len(load_baseline(baseline_path).fingerprints) == count
+    assert len(load_baseline(bl_path).fingerprints) == count
 
 
 def test_generate_baseline_refuses_existing_without_overwrite(tmp_path: Path) -> None:
@@ -58,7 +59,7 @@ def test_generate_baseline_uses_scan_pipeline_for_trusted_packs(
     monkeypatch.syspath_prepend(str(project_root))
     proj = tmp_path / "proj"
     proj.mkdir()
-    (proj / "wardline.yaml").write_text("packs:\n  - tests.unit.install.mock_pack\n", encoding="utf-8")
+    (proj / "weft.toml").write_text('[wardline]\npacks = ["tests.unit.install.mock_pack"]\n', encoding="utf-8")
     (proj / "m.py").write_text("def violator():\n    pass\n", encoding="utf-8")
 
     scan = run_scan(
@@ -76,7 +77,7 @@ def test_generate_baseline_uses_scan_pipeline_for_trusted_packs(
         trusted_packs=("tests.unit.install.mock_pack",),
     )
 
-    baseline_doc = yaml.safe_load((proj / ".wardline" / "baseline.yaml").read_text(encoding="utf-8"))
+    baseline_doc = yaml.safe_load(baseline_path(proj).read_text(encoding="utf-8"))
     baseline_entries = baseline_doc["entries"]
     assert count >= 1
     assert any(

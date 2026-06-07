@@ -622,7 +622,7 @@ class WardlineAnalyzer:
                     ),
                     severity=Severity.NONE,
                     kind=Kind.FACT,
-                    location=Location(path="wardline.yaml"),
+                    location=Location(path="weft.toml"),
                     fingerprint=_fp("WLN-CONFIG-UNUSED-SOURCE", src),
                     properties={"source": src},
                 )
@@ -639,7 +639,7 @@ class WardlineAnalyzer:
                     ),
                     severity=Severity.NONE,
                     kind=Kind.FACT,
-                    location=Location(path="wardline.yaml"),
+                    location=Location(path="weft.toml"),
                     fingerprint=_fp("WLN-CONFIG-UNUSED-SANITISER", san),
                     properties={"sanitiser": san},
                 )

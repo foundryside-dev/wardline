@@ -156,6 +156,32 @@ def test_active_finding_carries_no_suppression_proof() -> None:
 
 
 # ---------------------------------------------------------------------------
+# legis_artifact_outcome — single authority for signed/dirty status (read from the
+# artifact the producer actually emitted, not re-derived from key presence).
+# ---------------------------------------------------------------------------
+def test_outcome_signed_when_signature_present() -> None:
+    o = legis.legis_artifact_outcome({legis.ARTIFACT_SIGNATURE_FIELD: "sig", "commit_sha": "x"})
+    assert o.signed is True
+    assert o.dirty is False
+    assert o.unverified_reason is None
+
+
+def test_outcome_dirty_is_unsigned_with_reason() -> None:
+    o = legis.legis_artifact_outcome({"dirty": True, "commit_sha": "x"})
+    assert o.signed is False
+    assert o.dirty is True
+    assert o.unverified_reason is not None
+    assert "unverified" in o.unverified_reason
+
+
+def test_outcome_unsigned_clean_no_reason() -> None:
+    o = legis.legis_artifact_outcome({"commit_sha": "x"})
+    assert o.signed is False
+    assert o.dirty is False
+    assert o.unverified_reason is None
+
+
+# ---------------------------------------------------------------------------
 # build_legis_artifact — provenance, defect-only, signing, dirty-tree refusal
 # ---------------------------------------------------------------------------
 import subprocess  # noqa: E402
@@ -189,7 +215,7 @@ def _committed_repo(tmp_path: object, source: str = _LEAKY):
 
 def _build(repo, *, key: bytes | None = None, allow_dirty: bool = False) -> dict:
     result = run_scan(repo)
-    cfg = load_config(repo / "wardline.yaml")
+    cfg = load_config(repo / "weft.toml")
     return legis.build_legis_artifact(result, root=repo, config=cfg, key=key, allow_dirty=allow_dirty)
 
 
@@ -235,7 +261,7 @@ def test_artifact_includes_all_findings_projected(tmp_path) -> None:
     )
     repo = tmp_path / "norepo"
     repo.mkdir()
-    cfg = load_config(repo / "wardline.yaml")
+    cfg = load_config(repo / "weft.toml")
     scan = legis.build_legis_artifact(result, root=repo, config=cfg, key=None)
     assert {f["kind"] for f in scan["findings"]} == {"defect", "fact"}
     assert len(scan["findings"]) == 2
@@ -259,10 +285,25 @@ def test_signing_refuses_dirty_tree(tmp_path) -> None:
         _build(repo, key=b"k")
 
 
-def test_allow_dirty_signs_anyway(tmp_path) -> None:
+def test_allow_dirty_emits_unsigned_marked_artifact(tmp_path) -> None:
+    # The honest fix for the dogfood #1 friction: a dirty tree with allow_dirty does
+    # NOT sign (signing the committed tree_sha for dirty working content is false
+    # provenance — see _git_tree_sha). It emits an UNSIGNED, clearly-marked dev
+    # artifact instead: no signature, dirty:true, legis records it `unverified`.
     repo = _committed_repo(tmp_path)
     (repo / "svc.py").write_text(_LEAKY + "\n# dirty\n", encoding="utf-8")
     scan = _build(repo, key=b"k", allow_dirty=True)
+    assert "artifact_signature" not in scan
+    assert scan["dirty"] is True
+    # best-effort provenance (HEAD commit) is still honestly recorded
+    assert scan["commit_sha"]
+
+
+def test_clean_signed_artifact_has_no_dirty_marker(tmp_path) -> None:
+    # A clean tree signs as before and carries no dirty marker — the signed wire is
+    # byte-unchanged (guards the golden-signature contract).
+    scan = _build(_committed_repo(tmp_path), key=b"k")
+    assert "dirty" not in scan
     assert scan["artifact_signature"].startswith("hmac-sha256:v2:")
 
 
@@ -271,6 +312,6 @@ def test_signing_non_repo_refuses(tmp_path) -> None:
     repo.mkdir()
     (repo / "svc.py").write_text(_LEAKY, encoding="utf-8")
     result = run_scan(repo)
-    cfg = load_config(repo / "wardline.yaml")
+    cfg = load_config(repo / "weft.toml")
     with pytest.raises(LegisArtifactError):
         legis.build_legis_artifact(result, root=repo, config=cfg, key=b"k")

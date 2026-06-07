@@ -36,6 +36,8 @@ import hmac
 import json
 import os
 import subprocess
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -220,12 +222,16 @@ def build_legis_artifact(
     the list — legis enforces its own 500-finding limit and a larger scan is rejected
     loudly rather than silently truncated.
 
-    When ``key`` is given the scan is signed and MUST carry honest provenance
-    (``scanner_identity``, ``rule_set_version``, ``commit_sha``, ``tree_sha``); signing
-    a non-repo or dirty tree is refused (:class:`LegisArtifactError`) because a
-    ``tree_sha`` that does not match the scanned content is false provenance. When
-    ``key`` is None the scan is emitted unsigned with best-effort provenance — legis
-    records it as ``unverified`` (the trust-the-agent posture before a key is set).
+    When ``key`` is given AND the tree is clean the scan is signed and MUST carry
+    honest provenance (``scanner_identity``, ``rule_set_version``, ``commit_sha``,
+    ``tree_sha``); signing a non-repo is refused (:class:`LegisArtifactError`). Signing
+    is clean-tree-only: a dirty tree with a key is refused (:class:`LegisArtifactError`)
+    UNLESS ``allow_dirty=True``, which does NOT sign — it emits the unsigned dev
+    artifact instead (a ``tree_sha`` that does not match dirty working content is false
+    provenance). When ``key`` is None — or a dirty tree under ``allow_dirty`` — the scan
+    is emitted unsigned with best-effort provenance and a ``dirty: true`` marker on a
+    dirty tree; legis records it as ``unverified`` (the trust-the-agent posture before a
+    key is set, and the dev/tour loop without a commit).
 
     Sign last, over the otherwise-complete scan: ``artifact_signature`` is added after
     the rest is in place, exactly as legis verifies (scan-minus-signature).
@@ -243,15 +249,18 @@ def build_legis_artifact(
     }
     commit, dirty = git_state(root)
 
-    if key is not None:
+    # Signing is CLEAN-TREE-ONLY. A key + clean tree produces the signed, verified
+    # artifact. A key + dirty tree is refused loudly UNLESS ``allow_dirty`` — and even
+    # then we do NOT sign: the only ``tree_sha`` we can read is the *committed* tree,
+    # which does not describe dirty working content, so signing it would be false
+    # provenance (see :func:`_git_tree_sha`). Instead ``allow_dirty`` falls through to
+    # the unsigned dev artifact below, clearly marked ``dirty: true`` (legis records it
+    # ``unverified``). This lets the dev/tour loop exercise the full Wardline→legis
+    # handshake without a commit, while keeping signature *verification* clean-tree-only.
+    if key is not None and not dirty:
         if commit is None:
             raise LegisArtifactError(
                 "cannot sign legis artifact: not a git repository, so commit/tree provenance is unavailable"
-            )
-        if dirty and not allow_dirty:
-            raise LegisArtifactError(
-                "refusing to sign a legis artifact for a dirty working tree "
-                "(uncommitted changes); commit first or pass allow_dirty"
             )
         tree = _git_tree_sha(root)
         if tree is None:
@@ -260,12 +269,54 @@ def build_legis_artifact(
         scan["tree_sha"] = tree
         scan[ARTIFACT_SIGNATURE_FIELD] = sign_artifact(scan, key)
         return scan
+    if key is not None and dirty and not allow_dirty:
+        raise LegisArtifactError(
+            "refusing to sign a legis artifact for a dirty working tree "
+            "(uncommitted changes); commit first or pass allow_dirty for an unsigned dev artifact"
+        )
 
-    # Unsigned: supply whatever provenance we can honestly read; legis marks it
-    # unverified. Never fabricate a tree_sha — omit it if unreadable.
+    # Unsigned (no key, or key + allow_dirty on a dirty tree): supply whatever
+    # provenance we can honestly read; legis marks it unverified. Never fabricate a
+    # tree_sha — omit it if unreadable. A dirty tree is flagged so neither the agent
+    # nor a human mistakes the committed provenance for the scanned working content.
     if commit is not None:
         scan["commit_sha"] = commit
         tree = _git_tree_sha(root)
         if tree is not None:
             scan["tree_sha"] = tree
+    if dirty:
+        scan["dirty"] = True
     return scan
+
+
+@dataclass(frozen=True, slots=True)
+class LegisArtifactOutcome:
+    """The signed/dirty status of a built artifact, read from what the producer
+    actually emitted. ``signed`` ⟺ the artifact carries a signature field (so it can
+    never disagree with the producer); ``dirty`` ⟺ the ``dirty`` marker is set;
+    ``unverified_reason`` is the agent-facing note for the unsigned dev-artifact case."""
+
+    signed: bool
+    dirty: bool
+    unverified_reason: str | None
+
+
+_DIRTY_UNVERIFIED_REASON = (
+    "dirty working tree — emitted an UNSIGNED legis dev artifact (legis records it "
+    "unverified); never gate CI on it. Commit for a signed artifact."
+)
+
+
+def legis_artifact_outcome(artifact: Mapping[str, Any]) -> LegisArtifactOutcome:
+    """Single authority for an artifact's signed/dirty status, shared by the CLI and
+    MCP surfaces so neither re-derives it from raw keys (which could drift from the
+    producer). ``signed`` is read from the presence of the signature field — the
+    authoritative record of what :func:`build_legis_artifact` did — not re-computed
+    from key presence."""
+    dirty = bool(artifact.get("dirty"))
+    signed = ARTIFACT_SIGNATURE_FIELD in artifact
+    return LegisArtifactOutcome(
+        signed=signed,
+        dirty=dirty,
+        unverified_reason=_DIRTY_UNVERIFIED_REASON if dirty else None,
+    )

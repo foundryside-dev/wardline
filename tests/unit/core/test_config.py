@@ -1,10 +1,8 @@
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 from wardline.core.config import (
-    WardlineConfig,
     load,
     resolve_filigree_url,
     resolve_loomweave_url,
@@ -12,56 +10,46 @@ from wardline.core.config import (
 from wardline.core.errors import ConfigError
 
 
+def _write_cfg(root: Path, body: str) -> Path:
+    """Write a weft.toml carrying a ``[wardline]`` table and return its path."""
+    p = root / "weft.toml"
+    p.write_text(body, encoding="utf-8")
+    return p
+
+
 def test_load_missing_returns_defaults(tmp_path) -> None:
-    cfg = load(tmp_path / "nope.yaml")
+    cfg = load(tmp_path / "weft.toml")
     assert cfg.source_roots == (".",)
     assert cfg.exclude == ()
     assert cfg.rules_enable == ("*",)
 
 
 def test_load_parses_known_keys_and_reserved_blocks(tmp_path) -> None:
-    p = tmp_path / "wardline.yaml"
-    p.write_text(
-        "source_roots: [src]\n"
-        "exclude: ['**/x/**']\n"
-        "rules:\n  enable: ['WLN-001']\n  severity: {WLN-001: WARN}\n"
-        "filigree: {url: http://x}\n",
-        encoding="utf-8",
+    p = _write_cfg(
+        tmp_path,
+        """
+[wardline]
+source_roots = ["src"]
+exclude = ["**/x/**"]
+
+[wardline.rules]
+enable = ["WLN-001"]
+severity = { "WLN-001" = "WARN" }
+""",
     )
     cfg = load(p)
     assert cfg.source_roots == ("src",)
     assert cfg.exclude == ("**/x/**",)
     assert cfg.rules_enable == ("WLN-001",)
     assert cfg.rules_severity == {"WLN-001": "WARN"}
-    assert cfg.filigree == {"url": "http://x"}
 
 
-def test_malformed_yaml_raises_config_error(tmp_path) -> None:
-    p = tmp_path / "wardline.yaml"
-    p.write_text("a: [1, 2\n", encoding="utf-8")
-    with pytest.raises(ConfigError):
-        load(p)
-
-
-def test_waivers_block_is_parsed_raw(tmp_path) -> None:
-    from wardline.core import config as config_mod
-
-    p = tmp_path / "wardline.yaml"
-    p.write_text(
-        "waivers:\n  - fingerprint: " + ("a" * 64) + "\n    reason: ok\n",
-        encoding="utf-8",
-    )
-    cfg = config_mod.load(p)
-    assert cfg.waivers == ({"fingerprint": "a" * 64, "reason": "ok"},)
-
-
-def test_waivers_key_does_not_warn(recwarn, tmp_path) -> None:
-    from wardline.core import config as config_mod
-
-    p = tmp_path / "wardline.yaml"
-    p.write_text("waivers: []\n", encoding="utf-8")
-    config_mod.load(p)
-    assert not [w for w in recwarn.list if "waivers" in str(w.message)]
+def test_malformed_toml_falls_back_to_defaults(tmp_path) -> None:
+    # C-9c: malformed weft.toml is treated as absent (defaults, never hard-fail).
+    # An IMPLICIT load warns (visible policy-downgrade) but does not raise.
+    p = _write_cfg(tmp_path, "[wardline]\nsource_roots = [1, 2\n")
+    with pytest.warns(UserWarning, match="weft.toml"):
+        assert load(p).source_roots == (".",)
 
 
 def test_judge_settings_defaults() -> None:
@@ -85,8 +73,6 @@ def test_judge_settings_from_mapping() -> None:
 
 
 def test_judge_settings_bad_type_raises() -> None:
-    import pytest
-
     from wardline.core.config import parse_judge_settings
     from wardline.core.errors import ConfigError
 
@@ -95,8 +81,6 @@ def test_judge_settings_bad_type_raises() -> None:
 
 
 def test_judge_settings_rejects_nonpositive_max_findings() -> None:
-    import pytest
-
     from wardline.core.config import parse_judge_settings
     from wardline.core.errors import ConfigError
 
@@ -112,8 +96,6 @@ def test_judge_settings_write_confidence_floor() -> None:
 
 
 def test_judge_settings_rejects_out_of_range_floor() -> None:
-    import pytest
-
     from wardline.core.config import parse_judge_settings
     from wardline.core.errors import ConfigError
 
@@ -122,25 +104,29 @@ def test_judge_settings_rejects_out_of_range_floor() -> None:
 
 
 def test_unknown_top_level_key_raises(tmp_path) -> None:
-    p = tmp_path / "wardline.yaml"
-    p.write_text("bogus: 1\n", encoding="utf-8")
+    p = _write_cfg(tmp_path, "[wardline]\nbogus = 1\n")
     with pytest.raises(ConfigError, match="invalid"):
         load(p)
 
 
 def test_full_valid_config_passes(tmp_path) -> None:
-    p = tmp_path / "wardline.yaml"
-    p.write_text(
-        "source_roots: [src]\n"
-        "exclude: ['**/x/**']\n"
-        "rules:\n  enable: ['WLN-001']\n  severity: {WLN-001: WARN}\n"
-        "baseline: {path: .wardline/baseline.yaml}\n"
-        "waivers:\n  - fingerprint: " + ("a" * 64) + "\n    reason: ok\n"
-        "judge:\n  model: anthropic/claude-opus-4-8\n  context_lines: 10\n"
-        "  max_findings: 50\n  write_confidence_floor: 0.7\n"
-        "filigree: {url: http://x}\n"
-        "loomweave: {url: http://loomweave.local:9100}\n",
-        encoding="utf-8",
+    p = _write_cfg(
+        tmp_path,
+        """
+[wardline]
+source_roots = ["src"]
+exclude = ["**/x/**"]
+
+[wardline.rules]
+enable = ["WLN-001"]
+severity = { "WLN-001" = "WARN" }
+
+[wardline.judge]
+model = "anthropic/claude-opus-4-8"
+context_lines = 10
+max_findings = 50
+write_confidence_floor = 0.7
+""",
     )
     cfg = load(p)
     assert cfg.source_roots == ("src",)
@@ -153,32 +139,28 @@ def test_full_valid_config_passes(tmp_path) -> None:
 
 
 def test_bad_judge_context_lines_type_raises(tmp_path) -> None:
-    p = tmp_path / "wardline.yaml"
-    p.write_text("judge:\n  context_lines: lots\n", encoding="utf-8")
+    p = _write_cfg(tmp_path, '[wardline.judge]\ncontext_lines = "lots"\n')
     with pytest.raises(ConfigError):
         load(p)
 
 
-def test_yaml_bool_is_not_a_valid_integer(tmp_path) -> None:
-    # Regression guard: YAML `true` is a bool, not an int. The schema's
+def test_bool_is_not_a_valid_integer(tmp_path) -> None:
+    # Regression guard: a TOML boolean is not an int. The schema's
     # {"type": "integer"} must reject it (jsonschema draft 2020-12 semantics),
     # matching parse_judge_settings' explicit bool guard.
-    p = tmp_path / "wardline.yaml"
-    p.write_text("judge:\n  context_lines: true\n", encoding="utf-8")
+    p = _write_cfg(tmp_path, "[wardline.judge]\ncontext_lines = true\n")
     with pytest.raises(ConfigError):
         load(p)
 
 
 def test_out_of_range_floor_raises(tmp_path) -> None:
-    p = tmp_path / "wardline.yaml"
-    p.write_text("judge:\n  write_confidence_floor: 2.0\n", encoding="utf-8")
+    p = _write_cfg(tmp_path, "[wardline.judge]\nwrite_confidence_floor = 2.0\n")
     with pytest.raises(ConfigError):
         load(p)
 
 
 def test_unknown_judge_key_raises(tmp_path) -> None:
-    p = tmp_path / "wardline.yaml"
-    p.write_text("judge:\n  bogus_setting: 1\n", encoding="utf-8")
+    p = _write_cfg(tmp_path, "[wardline.judge]\nbogus_setting = 1\n")
     with pytest.raises(ConfigError):
         load(p)
 
@@ -194,86 +176,32 @@ def test_unknown_judge_key_raises(tmp_path) -> None:
     ],
 )
 def test_autofix_boundary_exception_rejects_invalid_identifier(tmp_path: Path, exception_name: str) -> None:
-    p = tmp_path / "wardline.yaml"
-    p.write_text(f"autofix:\n  boundary_exception: {exception_name!r}\n", encoding="utf-8")
+    p = _write_cfg(tmp_path, f'[wardline.autofix]\nboundary_exception = "{exception_name}"\n')
     with pytest.raises(ConfigError, match="boundary_exception"):
         load(p)
 
 
 def test_autofix_boundary_exception_accepts_dotted_identifier(tmp_path: Path) -> None:
-    p = tmp_path / "wardline.yaml"
-    p.write_text("autofix:\n  boundary_exception: mypkg.ValidationError\n", encoding="utf-8")
+    p = _write_cfg(tmp_path, '[wardline.autofix]\nboundary_exception = "mypkg.ValidationError"\n')
     assert load(p).boundary_exception == "mypkg.ValidationError"
 
 
-def test_loomweave_and_filigree_url_read_from_config(tmp_path: Path) -> None:
-    (tmp_path / "wardline.yaml").write_text(
-        'loomweave:\n  url: "http://loomweave.local:9100"\n'
-        'filigree:\n  url: "http://filigree.local/api/weft/scan-results"\n',
-        encoding="utf-8",
-    )
-    cfg = load(tmp_path / "wardline.yaml")
-    assert cfg.loomweave_url == "http://loomweave.local:9100"
-    assert cfg.filigree_url == "http://filigree.local/api/weft/scan-results"
+def test_loomweave_loomweave_url_keys_rejected_now_hub_pending(tmp_path: Path) -> None:
+    # Sibling-endpoint config keys are NOT defined by wardline (hub-pinned, pending).
+    # additionalProperties:false therefore rejects a [wardline.loomweave]/[wardline.filigree] table.
+    for body in ('[wardline.loomweave]\nurl = "http://x"\n', '[wardline.filigree]\nurl = "http://x"\n'):
+        p = _write_cfg(tmp_path, body)
+        with pytest.raises(ConfigError):
+            load(p)
 
 
-def test_urls_default_to_none() -> None:
-    cfg = WardlineConfig()
-    assert cfg.loomweave_url is None
-    assert cfg.filigree_url is None
-
-
-def test_unknown_loomweave_key_is_rejected(tmp_path: Path) -> None:
-    (tmp_path / "wardline.yaml").write_text("loomweave:\n  bogus: 1\n", encoding="utf-8")
-    with pytest.raises(ConfigError):
-        load(tmp_path / "wardline.yaml")
-
-
-def test_resolve_precedence_flag_beats_env_beats_config(tmp_path: Path, monkeypatch) -> None:
-    (tmp_path / "wardline.yaml").write_text('loomweave:\n  url: "http://localhost:9100"\n', encoding="utf-8")
+def test_resolve_precedence_flag_beats_env_beats_published(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
-    assert resolve_loomweave_url(None, tmp_path, None) == "http://localhost:9100"
+    # No flag, no env, no published port -> None (no config rung exists).
+    assert resolve_loomweave_url(None, tmp_path, None) is None
     monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", "http://from-env")
     assert resolve_loomweave_url(None, tmp_path, None) == "http://from-env"
     assert resolve_loomweave_url("http://from-flag", tmp_path, None) == "http://from-flag"
-
-
-def test_resolve_urls_rejects_unsafe_config_urls(tmp_path: Path, monkeypatch) -> None:
-    (tmp_path / "wardline.yaml").write_text('loomweave:\n  url: "http://attacker-controlled.com"\n', encoding="utf-8")
-    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
-    with pytest.raises(ConfigError, match="disabled by default for security"):
-        resolve_loomweave_url(None, tmp_path, None)
-    # Passing trust_config_urls=True bypasses the block
-    assert resolve_loomweave_url(None, tmp_path, None, trust_config_urls=True) == "http://attacker-controlled.com"
-
-
-@pytest.mark.parametrize(
-    ("block", "resolver"),
-    [
-        ("loomweave", resolve_loomweave_url),
-        ("filigree", resolve_filigree_url),
-    ],
-)
-@pytest.mark.parametrize(
-    "url",
-    [
-        "file://localhost/tmp/wardline.json",
-        "ftp://localhost/api/wardline",
-        "localhost:8628/api/weft/scan-results",
-    ],
-)
-def test_config_urls_must_be_http_or_https_even_for_localhost(
-    tmp_path: Path,
-    monkeypatch,
-    block: str,
-    resolver: Callable[[str | None, Path, Path | None], str | None],
-    url: str,
-) -> None:
-    (tmp_path / "wardline.yaml").write_text(f'{block}:\n  url: "{url}"\n', encoding="utf-8")
-    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
-    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
-    with pytest.raises(ConfigError, match="disabled by default for security"):
-        resolver(None, tmp_path, None)
 
 
 def test_resolve_filigree_env(tmp_path: Path, monkeypatch) -> None:
@@ -286,30 +214,37 @@ def test_resolve_filigree_flag_beats_env(tmp_path: Path, monkeypatch) -> None:
     assert resolve_filigree_url("http://fil-flag", tmp_path, None) == "http://fil-flag"
 
 
-def test_resolve_filigree_rejects_unsafe_config_urls(tmp_path: Path, monkeypatch) -> None:
-    (tmp_path / "wardline.yaml").write_text('filigree:\n  url: "http://attacker-controlled.com"\n', encoding="utf-8")
-    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
-    with pytest.raises(ConfigError, match="disabled by default for security"):
-        resolve_filigree_url(None, tmp_path, None)
-    assert resolve_filigree_url(None, tmp_path, None, trust_config_urls=True) == "http://attacker-controlled.com"
+# --- ADR-044: published ephemeral.port resolution (consumer half) ---
+#
+# Discovery prefers the consolidated .weft/<sibling>/ephemeral.port and tolerates
+# the legacy .<sibling>/ephemeral.port during the federation transition window.
+# There is NO config-file URL rung: sibling endpoints are hub-pinned and pending.
 
 
-# --- ADR-044: published .loomweave/ephemeral.port resolution (consumer half) ---
-
-
-def _publish_port(root: Path, raw: str) -> None:
-    """Write a raw .loomweave/ephemeral.port payload (as Loomweave's publisher would)."""
-    d = root / ".loomweave"
+def _publish_port(root: Path, raw: str, *, legacy: bool = False) -> None:
+    """Write a raw loomweave ephemeral.port payload (as Loomweave's publisher would)."""
+    d = (root / ".loomweave") if legacy else (root / ".weft" / "loomweave")
     d.mkdir(parents=True, exist_ok=True)
     (d / "ephemeral.port").write_text(raw, encoding="ascii")
 
 
-def test_published_port_overrides_stale_config(tmp_path: Path, monkeypatch) -> None:
-    # A stale literal in wardline.yaml self-heals to the live published port.
-    (tmp_path / "wardline.yaml").write_text('loomweave:\n  url: "http://127.0.0.1:9111"\n', encoding="utf-8")
+def test_published_port_prefers_weft_location(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
-    _publish_port(tmp_path, "54321\n")
-    assert resolve_loomweave_url(None, tmp_path, None) == "http://127.0.0.1:54321"
+    _publish_port(tmp_path, "7777")
+    assert resolve_loomweave_url(None, tmp_path, None) == "http://127.0.0.1:7777"
+
+
+def test_published_port_legacy_fallback(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    _publish_port(tmp_path, "8888", legacy=True)
+    assert resolve_loomweave_url(None, tmp_path, None) == "http://127.0.0.1:8888"
+
+
+def test_published_port_weft_beats_legacy(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    _publish_port(tmp_path, "8888", legacy=True)
+    _publish_port(tmp_path, "7777")
+    assert resolve_loomweave_url(None, tmp_path, None) == "http://127.0.0.1:7777"
 
 
 def test_published_port_loses_to_flag_and_env(tmp_path: Path, monkeypatch) -> None:
@@ -320,12 +255,29 @@ def test_published_port_loses_to_flag_and_env(tmp_path: Path, monkeypatch) -> No
     assert resolve_loomweave_url(None, tmp_path, None) == "http://from-env"
 
 
-@pytest.mark.parametrize("raw", ["abc", "", "  ", "99999", "0", "-1", "65536", "80x", "+80", "9111 9112"])
-def test_published_port_malformed_falls_through_to_config(tmp_path: Path, monkeypatch, raw: str) -> None:
-    (tmp_path / "wardline.yaml").write_text('loomweave:\n  url: "http://localhost:9100"\n', encoding="utf-8")
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "abc",
+        "",
+        "  ",
+        "99999",
+        "0",
+        "-1",
+        "65536",
+        "80x",
+        "+80",
+        "9111 9112",
+        # An all-digit payload over CPython's 4300-digit int(str) cap: isdigit() is
+        # True but int() would raise ValueError. Must stay fail-soft -> None, never
+        # crash the scan (a planted ephemeral.port DoS).
+        pytest.param("9" * 5000, id="over-4300-digit-cap"),
+    ],
+)
+def test_published_port_malformed_returns_none(tmp_path: Path, monkeypatch, raw: str) -> None:
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     _publish_port(tmp_path, raw)
-    assert resolve_loomweave_url(None, tmp_path, None) == "http://localhost:9100"
+    assert resolve_loomweave_url(None, tmp_path, None) is None
 
 
 def test_published_port_boundaries_accepted(tmp_path: Path, monkeypatch) -> None:
@@ -336,12 +288,8 @@ def test_published_port_boundaries_accepted(tmp_path: Path, monkeypatch) -> None
     assert resolve_loomweave_url(None, tmp_path, None) == "http://127.0.0.1:65535"
 
 
-def test_missing_published_port_falls_through(tmp_path: Path, monkeypatch) -> None:
+def test_missing_published_port_returns_none(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
-    # No file, with config -> config; no file, no config -> None.
-    (tmp_path / "wardline.yaml").write_text('loomweave:\n  url: "http://localhost:9100"\n', encoding="utf-8")
-    assert resolve_loomweave_url(None, tmp_path, None) == "http://localhost:9100"
-    (tmp_path / "wardline.yaml").unlink()
     assert resolve_loomweave_url(None, tmp_path, None) is None
 
 
@@ -357,33 +305,31 @@ def test_published_port_skipped_under_strict_defaults(tmp_path: Path, monkeypatc
 def test_published_port_unreadable_is_soft(tmp_path: Path, monkeypatch) -> None:
     # A directory where the port file is expected -> OSError on read -> None, no raise.
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
-    (tmp_path / ".loomweave").mkdir()
-    (tmp_path / ".loomweave" / "ephemeral.port").mkdir()
+    (tmp_path / ".weft" / "loomweave").mkdir(parents=True)
+    (tmp_path / ".weft" / "loomweave" / "ephemeral.port").mkdir()
     assert resolve_loomweave_url(None, tmp_path, None) is None
 
 
-# --- ADR-044 twin: published .filigree/ephemeral.port resolution (consumer half) ---
-#
-# Filigree's URL contract carries the FULL Weft route, so the published value is
-# http://localhost:<port>/api/weft/scan-results (localhost to match install/detect.py's
-# writer; not a bare origin like Loomweave's, and not Loomweave's 127.0.0.1 spelling).
+# --- ADR-044 twin: published filigree ephemeral.port resolution (consumer half) ---
 
 
-def _publish_filigree_port(root: Path, raw: str) -> None:
-    """Write a raw .filigree/ephemeral.port payload (as Filigree's publisher would)."""
-    d = root / ".filigree"
+def _publish_filigree_port(root: Path, raw: str, *, legacy: bool = False) -> None:
+    """Write a raw filigree ephemeral.port payload (as Filigree's publisher would)."""
+    d = (root / ".filigree") if legacy else (root / ".weft" / "filigree")
     d.mkdir(parents=True, exist_ok=True)
     (d / "ephemeral.port").write_text(raw, encoding="ascii")
 
 
-def test_filigree_published_port_overrides_stale_config(tmp_path: Path, monkeypatch) -> None:
-    # A stale literal in wardline.yaml self-heals to the live published port.
-    (tmp_path / "wardline.yaml").write_text(
-        'filigree:\n  url: "http://127.0.0.1:9111/api/weft/scan-results"\n', encoding="utf-8"
-    )
+def test_filigree_published_port_prefers_weft_location(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
-    _publish_filigree_port(tmp_path, "54321\n")
-    assert resolve_filigree_url(None, tmp_path, None) == "http://localhost:54321/api/weft/scan-results"
+    _publish_filigree_port(tmp_path, "9001")
+    assert resolve_filigree_url(None, tmp_path, None) == "http://localhost:9001/api/weft/scan-results"
+
+
+def test_filigree_published_port_legacy_fallback(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    _publish_filigree_port(tmp_path, "9002", legacy=True)
+    assert resolve_filigree_url(None, tmp_path, None) == "http://localhost:9002/api/weft/scan-results"
 
 
 def test_filigree_published_port_loses_to_flag_and_env(tmp_path: Path, monkeypatch) -> None:
@@ -394,14 +340,27 @@ def test_filigree_published_port_loses_to_flag_and_env(tmp_path: Path, monkeypat
     assert resolve_filigree_url(None, tmp_path, None) == "http://from-env"
 
 
-@pytest.mark.parametrize("raw", ["abc", "", "  ", "99999", "0", "-1", "65536", "80x", "+80", "9111 9112"])
-def test_filigree_published_port_malformed_falls_through_to_config(tmp_path: Path, monkeypatch, raw: str) -> None:
-    (tmp_path / "wardline.yaml").write_text(
-        'filigree:\n  url: "http://localhost:9100/api/weft/scan-results"\n', encoding="utf-8"
-    )
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "abc",
+        "",
+        "  ",
+        "99999",
+        "0",
+        "-1",
+        "65536",
+        "80x",
+        "+80",
+        "9111 9112",
+        # Over CPython's 4300-digit int(str) cap: isdigit() True, int() would raise.
+        pytest.param("9" * 5000, id="over-4300-digit-cap"),
+    ],
+)
+def test_filigree_published_port_malformed_returns_none(tmp_path: Path, monkeypatch, raw: str) -> None:
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     _publish_filigree_port(tmp_path, raw)
-    assert resolve_filigree_url(None, tmp_path, None) == "http://localhost:9100/api/weft/scan-results"
+    assert resolve_filigree_url(None, tmp_path, None) is None
 
 
 def test_filigree_published_port_boundaries_accepted(tmp_path: Path, monkeypatch) -> None:
@@ -412,29 +371,20 @@ def test_filigree_published_port_boundaries_accepted(tmp_path: Path, monkeypatch
     assert resolve_filigree_url(None, tmp_path, None) == "http://localhost:65535/api/weft/scan-results"
 
 
-def test_missing_filigree_published_port_falls_through(tmp_path: Path, monkeypatch) -> None:
+def test_missing_filigree_published_port_returns_none(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
-    # No file, with config -> config; no file, no config -> None.
-    (tmp_path / "wardline.yaml").write_text(
-        'filigree:\n  url: "http://localhost:9100/api/weft/scan-results"\n', encoding="utf-8"
-    )
-    assert resolve_filigree_url(None, tmp_path, None) == "http://localhost:9100/api/weft/scan-results"
-    (tmp_path / "wardline.yaml").unlink()
     assert resolve_filigree_url(None, tmp_path, None) is None
 
 
 def test_filigree_published_port_skipped_under_strict_defaults(tmp_path: Path, monkeypatch) -> None:
-    # Hermetic defaults: no project-derived discovery (the published file is ignored).
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     _publish_filigree_port(tmp_path, "54321")
     assert resolve_filigree_url(None, tmp_path, None, strict_defaults=True) is None
-    # ...but flag/env still win even under strict_defaults.
     assert resolve_filigree_url("http://from-flag", tmp_path, None, strict_defaults=True) == "http://from-flag"
 
 
 def test_filigree_published_port_unreadable_is_soft(tmp_path: Path, monkeypatch) -> None:
-    # A directory where the port file is expected -> OSError on read -> None, no raise.
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
-    (tmp_path / ".filigree").mkdir()
-    (tmp_path / ".filigree" / "ephemeral.port").mkdir()
+    (tmp_path / ".weft" / "filigree").mkdir(parents=True)
+    (tmp_path / ".weft" / "filigree" / "ephemeral.port").mkdir()
     assert resolve_filigree_url(None, tmp_path, None) is None

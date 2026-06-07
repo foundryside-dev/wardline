@@ -1,84 +1,119 @@
 # Configuration
 
-Wardline reads an optional `wardline.yaml` from the scan root (or a path passed
-with `--config`). Every command — `scan`, `judge`, `baseline` — loads the same
-file. With no config, Wardline scans `.` with all rules enabled.
+Wardline reads its settings from the `[wardline]` table of a shared,
+operator-authored **`weft.toml`** at the scan root (or a TOML file passed with
+`--config`). Every command — `scan`, `judge`, `baseline`, `assure`, `attest` —
+loads the same table. `weft.toml` is the federation's shared operator file;
+Wardline only ever **reads** its own `[wardline]` table and never writes it.
 
-!!! warning "Unknown or mistyped keys are hard errors"
-    `wardline.yaml` is validated against a JSON Schema (draft 2020-12) on load.
-    The top level, the `rules` block, and the `judge` block all set
+With no `weft.toml` (or no `[wardline]` table), Wardline boots on built-in
+defaults: it scans `.` with all rules enabled.
+
+!!! info "Missing or malformed `weft.toml` is a silent fallback, never a hard error"
+    If `weft.toml` is **absent**, is **unreadable**, or **fails to parse as
+    TOML**, Wardline silently falls back to its built-in defaults — it never
+    hard-fails on a missing or malformed file. A `weft.toml` with no `[wardline]`
+    table behaves the same way.
+
+!!! warning "But unknown keys and out-of-range values in a *present* `[wardline]` table are hard errors"
+    Once a `[wardline]` table parses, it is validated against a JSON Schema
+    (draft 2020-12). The table, the `[wardline.rules]` block, the
+    `[wardline.judge]` block, and the `[wardline.autofix]` block all set
     `additionalProperties: false`, so a typo'd key or an out-of-range value
     **fails loud** — Wardline exits `2` rather than silently ignoring it.
 
     ```console
     $ wardline scan .
-    error: invalid wardline.yaml: Additional properties are not allowed ('bogus_key' was unexpected)
+    error: invalid weft.toml (after merging packs): Additional properties are not allowed ('bogus_key' was unexpected)
     ```
 
     ```console
     $ wardline scan .
-    error: invalid wardline.yaml: -5 is less than the minimum of 0
+    error: invalid weft.toml (after merging packs): -5 is less than the minimum of 0
     ```
 
-## Top-level keys
+## Keys under `[wardline]`
+
+Everything nests under the `[wardline]` table.
 
 | Key | Type | Purpose |
 |---|---|---|
 | `source_roots` | array of strings | Roots to discover Python under (default `["."]`). |
 | `exclude` | array of strings | Path patterns to skip during discovery. |
-| `rules` | object | Enable/disable rules and override severities. |
-| `baseline` | object | Reserved; inert. See note below. |
-| `waivers` | array of objects | Fingerprint-keyed suppressions with optional expiry. |
-| `judge` | object | Settings for the opt-in LLM triage judge. |
-| `filigree` | object | Reserved; inert. |
-| `loomweave` | object | Reserved; inert. |
+| `store_dir` | string | Operator override for Wardline's machine-state subtree (default `.weft/wardline`). A relative path resolves under the scan root. |
+| `packs` | array of strings | Trust-grammar packs to load. Operator-authored only (packs import and execute code). |
+| `rules` | table | Enable/disable rules and override severities. |
+| `judge` | table | Settings for the opt-in LLM triage judge. |
+| `autofix` | table | Settings for the interactive autofix (`wardline fix`). |
+
+!!! note "Sibling URLs are not config keys"
+    There is **no** `[wardline.filigree].url` or `[wardline.loomweave].url`
+    config key. Sibling endpoint URLs resolve only via the `--filigree-url` /
+    `--loomweave-url` flag, the `WARDLINE_FILIGREE_URL` / `WARDLINE_LOOMWEAVE_URL`
+    environment variable, or the published `<root>/.weft/<sibling>/ephemeral.port`
+    rung (legacy `<root>/.<sibling>/ephemeral.port` is tolerated). See
+    [Weft integration](weft.md).
+
+!!! note "Waivers are not config keys"
+    Waivers are fingerprint-keyed, machine/CLI-written suppression state — not
+    operator config. They live in `.weft/wardline/waivers.yaml`, not in
+    `weft.toml`. See [Suppressing findings](suppression.md#waivers).
 
 ### `source_roots` / `exclude`
 
-```yaml
-source_roots:
-  - src
-  - lib
-exclude:
-  - "**/migrations/**"
-  - tests
+```toml
+[wardline]
+source_roots = ["src", "lib"]
+exclude = ["**/migrations/**", "tests"]
 ```
 
 When `source_roots` is omitted it defaults to `["."]` (the scan path).
 
-### `rules`
+### `store_dir`
+
+Wardline writes its machine state — `baseline.yaml`, `judged.yaml`, and
+`waivers.yaml` — under `.weft/wardline/` at the scan root by default. An operator
+may relocate that subtree:
+
+```toml
+[wardline]
+store_dir = ".weft/wardline"   # the default; set to a path of your choosing
+```
+
+A relative `store_dir` resolves under the scan root. The attest signing key is
+**not** part of this subtree — it lives in `.env` (see [Attestation](attestation.md)).
+
+### `packs`
+
+Trust-grammar packs extend Wardline's vocabulary. Because a pack imports and
+executes code, packs are **operator-authored** — `wardline install <pack>` only
+*emits guidance* to add the pack here; it never writes `weft.toml` on your
+behalf.
+
+```toml
+[wardline]
+packs = ["myorg.trustpack"]
+```
+
+Then assert the pack at scan/judge time with `--trust-pack myorg.trustpack`.
+
+### `[wardline.rules]`
 
 Two sub-keys, both optional (`additionalProperties: false` — a typo here is a
 hard error):
 
 - `enable` — array of strings. Rule IDs (or `"*"`) to run. Defaults to `["*"]`
   (all rules).
-- `severity` — object mapping a rule ID to a severity string, overriding the
+- `severity` — table mapping a rule ID to a severity string, overriding the
   rule's built-in severity.
 
-```yaml
-rules:
-  enable:
-    - "*"
-  severity:
-    PY-WL-103: WARN
-    PY-WL-104: INFO
+```toml
+[wardline.rules]
+enable = ["*"]
+severity = { "PY-WL-103" = "WARN", "PY-WL-104" = "INFO" }
 ```
 
-### `waivers`
-
-An array of objects, each keyed on a finding's full `fingerprint`. A waiver
-needs a `reason` and may carry an ISO `expires` date. Covered in detail under
-[Suppressing findings](suppression.md#waivers).
-
-```yaml
-waivers:
-  - fingerprint: 7bd0099a6e87d1a7e5994d175da5dd5d5de422747b189e4223273ea8eaa9980d
-    reason: "validated downstream by the gateway; engine cannot see the guard"
-    expires: 2026-12-31
-```
-
-### `judge`
+### `[wardline.judge]`
 
 Settings for the opt-in LLM triage judge (`additionalProperties: false`). All
 keys are optional; the defaults are shown.
@@ -91,60 +126,57 @@ keys are optional; the defaults are shown.
 | `policy_file` | string | unset | Path (under the scan root) to an extra project policy appended to the built-in prompt. |
 | `write_confidence_floor` | number | `0.5` | `0.0`–`1.0`. FALSE_POSITIVE verdicts below this are reported but not written under `--write`. |
 
-```yaml
-judge:
-  model: anthropic/claude-opus-4-8
-  context_lines: 30
-  write_confidence_floor: 0.5
+```toml
+[wardline.judge]
+model = "anthropic/claude-opus-4-8"
+context_lines = 30
+write_confidence_floor = 0.5
 ```
 
 Out-of-range values fail loud:
 
 ```console
 $ wardline judge .
-error: invalid wardline.yaml: 2.0 is greater than the maximum of 1.0
+error: judge.write_confidence_floor must be 0.0..1.0, got 2.0
 ```
 
 See [LLM triage judge](judge.md) for what each setting does.
 
-### Reserved keys: `baseline`, `filigree`, `loomweave`
+### `[wardline.autofix]`
 
-These three keys are accepted as objects but are **reserved and currently
-inert**. They do not validate their internal shape, so do not add sub-keys
-expecting behavior.
+Settings for the interactive autofix (`wardline fix`).
 
-!!! note "The `baseline:` config key is not the baseline file"
-    The committed finding baseline lives in `.wardline/baseline.yaml`, managed
-    by `wardline baseline create|update` — **not** under the `baseline:` config
-    key. See [Suppressing findings](suppression.md#baseline).
+| Key | Type | Purpose |
+|---|---|---|
+| `boundary_exception` | string | Dotted exception name the autofix may insert at a trust boundary (e.g. `ValueError`). |
 
-## A complete `wardline.yaml`
+```toml
+[wardline.autofix]
+boundary_exception = "ValueError"
+```
 
-```yaml
-source_roots:
-  - src
-exclude:
-  - "**/migrations/**"
+## A complete `weft.toml`
 
-rules:
-  enable:
-    - "*"
-  severity:
-    PY-WL-103: WARN
+```toml
+[wardline]
+source_roots = ["src"]
+exclude = ["build/**"]
+packs = ["myorg.trustpack"]
 
-waivers:
-  - fingerprint: 7bd0099a6e87d1a7e5994d175da5dd5d5de422747b189e4223273ea8eaa9980d
-    reason: "validated downstream by the gateway; engine cannot see the guard"
-    expires: 2026-12-31
+[wardline.rules]
+enable = ["PY-WL-101"]
+severity = { "PY-WL-101" = "ERROR" }
 
-judge:
-  model: anthropic/claude-opus-4-8
-  context_lines: 30
-  write_confidence_floor: 0.5
+[wardline.judge]
+model = "anthropic/claude-opus-4-8"
+context_lines = 30
+
+[wardline.autofix]
+boundary_exception = "ValueError"
 ```
 
 ## See also
 
-- [Suppressing findings](suppression.md) — baseline, waivers, judged FPs.
-- [LLM triage judge](judge.md) — the `judge:` section in depth.
-- [Weft integration](weft.md) — emitting findings to SARIF / Filigree.
+- [Suppressing findings](suppression.md) — baseline, waivers, judged FPs (machine state under `.weft/wardline/`).
+- [LLM triage judge](judge.md) — the `[wardline.judge]` section in depth.
+- [Weft integration](weft.md) — emitting findings to SARIF / Filigree and how sibling URLs resolve.

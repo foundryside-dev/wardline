@@ -20,7 +20,7 @@ wardline --version
 ```
 
 ```text
-wardline, version 0.2.0
+wardline, version 1.0.0rc4
 ```
 
 ## 2. Run a first scan
@@ -32,7 +32,7 @@ wardline scan . --format jsonl
 ```
 
 ```text
-scanned 2 file(s); 4 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 new -> findings.jsonl
+scanned 2 file(s); 4 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> findings.jsonl
 ```
 
 !!! note "Where the findings go"

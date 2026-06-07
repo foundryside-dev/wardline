@@ -61,9 +61,17 @@ def test_baseline_create_config_escape_is_iserror(tmp_path: Path) -> None:
 
 
 def test_waiver_add_default_config_symlink_escape_is_iserror(tmp_path: Path) -> None:
+    # waiver_add now writes the member-owned waivers state at
+    # <root>/.weft/wardline/waivers.yaml (NOT config). add_waiver still confines that
+    # write via safe_project_file(root, ...), so a final-component symlink escaping the
+    # root is refused as an isError — the same confinement vector, on the new path.
+    from wardline.core.paths import waivers_path
+
     outside = tmp_path / "outside.yaml"
     outside.write_text("", encoding="utf-8")
-    (tmp_path / "wardline.yaml").symlink_to(outside)
+    waivers = waivers_path(tmp_path)
+    waivers.parent.mkdir(parents=True, exist_ok=True)
+    waivers.symlink_to(outside)
     server = WardlineMCPServer(root=tmp_path)
 
     resp = _dispatch(
@@ -92,7 +100,7 @@ def test_scan_bad_fail_on_enum_is_actionable_iserror(tmp_path: Path) -> None:
 
 
 def test_poisoned_source_roots_refused_by_mcp_and_core_by_default(tmp_path: Path) -> None:
-    # The deeper exfil vector: an IN-ROOT wardline.yaml whose source_roots escape
+    # The deeper exfil vector: an IN-ROOT weft.toml [wardline] whose source_roots escape
     # the root. config is confined, but the config itself points out. discover()
     # behind confine_to_root=True refuses it. The shared core default is now
     # confined too; legacy escape requires an explicit opt-out.
@@ -102,7 +110,7 @@ def test_poisoned_source_roots_refused_by_mcp_and_core_by_default(tmp_path: Path
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "secret.py").write_text("SECRET = 'do not exfiltrate'\n", encoding="utf-8")
-    (proj / "wardline.yaml").write_text('source_roots: ["../outside"]\n', encoding="utf-8")
+    (proj / "weft.toml").write_text('[wardline]\nsource_roots = ["../outside"]\n', encoding="utf-8")
 
     # MCP scan tool → confine_to_root=True → ConfigError → isError, no scan of outside.
     server = WardlineMCPServer(root=proj)

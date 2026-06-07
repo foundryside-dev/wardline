@@ -4,6 +4,26 @@ import pytest
 
 from wardline.mcp.server import ToolError, _scan
 
+
+def _many_leaks(n: int) -> str:
+    head = "from wardline.decorators import external_boundary, trusted\n@external_boundary\ndef raw(p):\n    return p\n"
+    body = "".join(f"@trusted\ndef leak_{i}(p):\n    return raw(p)\n" for i in range(n))
+    return head + body
+
+
+def _baseline_all(tmp_path) -> None:
+    # Baseline every PY-WL-101 finding so they all become suppressed=baselined.
+    from wardline.core.baseline import write_baseline
+    from wardline.core.paths import baseline_path
+    from wardline.core.run import run_scan
+
+    scan = run_scan(tmp_path)
+    defects = [f for f in scan.findings if f.rule_id == "PY-WL-101"]
+    bl = baseline_path(tmp_path)
+    bl.parent.mkdir(parents=True, exist_ok=True)
+    write_baseline(bl, defects)
+
+
 # Two boundaries + two trusted leaks → PY-WL-101 fires on both leaks.
 _SRC = (
     "from wardline.decorators import external_boundary, trusted\n"
@@ -66,3 +86,96 @@ def test_explain_matches_single_finding_explain(tmp_path):
     single = _explain_taint({"fingerprint": f["fingerprint"]}, tmp_path)
     # All six explanation keys must match the single-finding explain projection.
     assert f["explanation"] == {k: single[k] for k in f["explanation"]}
+
+
+# --- dogfood #4: payload shrinking ------------------------------------------
+
+
+def test_where_filters_agent_summary_arrays(tmp_path):
+    # Symptom (a): where matching 0 findings still returned all 34 suppressed inline.
+    # The agent_summary finding arrays must respect `where`; summary counts stay whole.
+    (tmp_path / "svc.py").write_text(_many_leaks(5), encoding="utf-8")
+    _baseline_all(tmp_path)
+    out = _scan({"where": {"suppression": "active", "severity": "CRITICAL"}}, tmp_path)
+    assert out["findings"] == []  # 0 active CRITICAL
+    summ = out["agent_summary"]
+    assert summ["suppressed_findings"] == []
+    assert summ["active_defects"] == []
+    # but the whole-project counts are preserved
+    assert summ["summary"]["suppressed_findings"] == 5
+    assert out["summary"]["baselined"] == 5
+
+
+def test_explain_true_has_default_cap(tmp_path):
+    # Blocker (c): bare explain:true over a many-defect repo must NOT inline every
+    # provenance (the 56KB-on-one-line symptom). A DEFAULT ceiling bounds it, and the
+    # truncation is announced — never silent.
+    (tmp_path / "svc.py").write_text(_many_leaks(40), encoding="utf-8")
+    out = _scan({"explain": True}, tmp_path)
+    explained = [f for f in out["findings"] if "explanation" in f]
+    assert 0 < len(explained) <= 10  # default cap
+    assert out["truncation"]["explanations_truncated"] is True
+    # the true total is still reported, so nothing is silently hidden
+    assert out["summary"]["active"] == 40
+
+
+def test_max_findings_can_raise_explain_cap_above_default(tmp_path):
+    # max_findings is the explicit knob: it can RAISE the inlined-explanation count above
+    # the conservative default (10) when the agent accepts the larger payload.
+    (tmp_path / "svc.py").write_text(_many_leaks(20), encoding="utf-8")
+    out = _scan({"explain": True, "max_findings": 20}, tmp_path)
+    explained = [f for f in out["findings"] if "explanation" in f]
+    assert len(explained) > 10  # exceeded the default cap
+    assert out["truncation"]["explanations_truncated"] is False
+
+
+def test_summary_only_omits_finding_arrays(tmp_path):
+    # (d): the "did the gate pass?" payload — counts + gate, no finding bodies.
+    (tmp_path / "svc.py").write_text(_many_leaks(5), encoding="utf-8")
+    out = _scan({"summary_only": True, "fail_on": "ERROR"}, tmp_path)
+    assert out["findings"] == []
+    summ = out["agent_summary"]
+    assert summ["active_defects"] == [] and summ["suppressed_findings"] == [] and summ["engine_facts"] == []
+    # counts + gate intact
+    assert out["summary"]["active"] == 5
+    assert out["gate"]["tripped"] is True
+    assert out["truncation"]["summary_only"] is True
+
+
+def test_include_suppressed_false_drops_suppressed(tmp_path):
+    # (b): drop the suppressed bodies from both surfaces; keep the counts.
+    (tmp_path / "svc.py").write_text(_many_leaks(5), encoding="utf-8")
+    _baseline_all(tmp_path)
+    out = _scan({"include_suppressed": False}, tmp_path)
+    assert all(f["suppressed"] == "active" for f in out["findings"])
+    assert out["agent_summary"]["suppressed_findings"] == []
+    # whole-project count still visible
+    assert out["summary"]["baselined"] == 5
+
+
+def test_max_findings_caps_and_marks(tmp_path):
+    # (b): bound the returned list and announce the cut.
+    (tmp_path / "svc.py").write_text(_many_leaks(10), encoding="utf-8")
+    out = _scan({"max_findings": 3}, tmp_path)
+    assert len(out["findings"]) == 3
+    assert out["truncation"]["findings_truncated"] is True
+    assert out["truncation"]["findings_returned"] == 3
+    assert out["truncation"]["findings_total"] >= 10
+
+
+@pytest.mark.parametrize("bad", [-1, 1.5, "3", True])
+def test_max_findings_rejects_non_negative_integer(tmp_path, bad):
+    # Agent-actionable validation: a negative / non-int / bool max_findings is a loud
+    # ToolError, never a silent negative-slice that drops the last finding.
+    (tmp_path / "svc.py").write_text(_SRC, encoding="utf-8")
+    with pytest.raises(ToolError, match="max_findings"):
+        _scan({"max_findings": bad}, tmp_path)
+
+
+@pytest.mark.parametrize("name", ["summary_only", "include_suppressed"])
+def test_boolean_payload_controls_reject_non_bool(tmp_path, name):
+    # The string "false" must NOT silently coerce to True (the bug the strict _bool_arg
+    # closes) — a non-bool is rejected loudly, matching max_findings' strictness.
+    (tmp_path / "svc.py").write_text(_SRC, encoding="utf-8")
+    with pytest.raises(ToolError, match=name):
+        _scan({name: "false"}, tmp_path)

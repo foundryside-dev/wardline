@@ -154,6 +154,52 @@ def test_http_auth_refused_is_soft_not_loud(status: int) -> None:
     t = _FakeTransport(response=Response(status=status, body='{"error":"unauthorized"}'))
     res = FiligreeEmitter("http://x", transport=t).emit([_f()])
     assert res.reachable is False
+    # ...but the RESULT must distinguish auth-rejected from transport-unreachable so the
+    # caller can say "401 (set WEFT_FEDERATION_TOKEN)" instead of "could not reach"
+    # (dogfood #5). 401/403 stays SOFT — only the message changes.
+    assert res.status == status
+    assert res.auth_rejected is True
+
+
+def test_transport_unreachable_has_no_status_and_is_not_auth_rejected() -> None:
+    import urllib.error
+
+    t = _FakeTransport(exc=urllib.error.URLError("connection refused"))
+    res = FiligreeEmitter("http://x", transport=t).emit([_f()])
+    assert res.reachable is False
+    assert res.status is None  # genuinely could-not-reach
+    assert res.auth_rejected is False
+
+
+def test_http_5xx_carries_status_but_is_not_auth_rejected() -> None:
+    t = _FakeTransport(response=Response(status=503, body="upstream down"))
+    res = FiligreeEmitter("http://x", transport=t).emit([_f()])
+    assert res.reachable is False
+    assert res.status == 503
+    assert res.auth_rejected is False
+
+
+def test_emit_result_auth_rejected_is_derived_from_status() -> None:
+    # ``auth_rejected`` is not an independent axis — it is exactly ``status in (401, 403)``.
+    # Deriving it makes "auth-rejected (200)" and "auth-rejected with a 5xx" unrepresentable.
+    assert EmitResult(reachable=False, status=401).auth_rejected is True
+    assert EmitResult(reachable=False, status=403).auth_rejected is True
+    assert EmitResult(reachable=False, status=503).auth_rejected is False
+    assert EmitResult(reachable=False).auth_rejected is False
+    assert EmitResult(reachable=True, created=1).auth_rejected is False
+
+
+def test_emit_result_rejects_contradictory_states() -> None:
+    # The redundant ``auth_rejected`` axis is gone: it can no longer be set independently
+    # (so it can never disagree with ``status``).
+    with pytest.raises(TypeError):
+        EmitResult(reachable=False, status=200, auth_rejected=True)  # type: ignore[call-arg]
+    # Mirror GateDecision's construction guard: a reached/success result carries no error
+    # status, and a soft-failure created/updated nothing.
+    with pytest.raises(ValueError):
+        EmitResult(reachable=True, status=503)
+    with pytest.raises(ValueError):
+        EmitResult(reachable=False, created=1)
 
 
 def test_bearer_token_carried_when_provided() -> None:

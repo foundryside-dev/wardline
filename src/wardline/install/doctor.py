@@ -13,14 +13,12 @@ from urllib.parse import urlsplit
 
 from wardline.core.config import load
 from wardline.core.errors import ConfigError
+from wardline.core.paths import weft_config_path, weft_state_dir
 from wardline.install.block import inject_block
 from wardline.install.detect import (
-    _already_recorded,
     _detect_filigree,
     _detect_loomweave,
-    _has_install_marker,
-    _has_live_key,
-    record_bindings,
+    detect_siblings,
 )
 from wardline.install.mcp_json import (
     _codex_config_path,
@@ -103,28 +101,34 @@ def _check_codex_mcp() -> CheckResult:
 
 
 def _check_bindings(root: Path) -> CheckResult:
-    cfg = root / "wardline.yaml"
-    text = cfg.read_text(encoding="utf-8", errors="replace") if cfg.is_file() else ""
-    missing: list[str] = []
-    for key, detector in (("loomweave", _detect_loomweave), ("filigree", _detect_filigree)):
-        present, url, _source = detector(root)
-        if not present:
-            continue
-        if _has_live_key(text, key):
-            continue
-        if url and _has_install_marker(text, key):
-            missing.append(key)
-            continue
-        if not _already_recorded(text, key):
-            missing.append(key)
-    if missing:
-        return CheckResult("bindings", False, "missing " + ", ".join(missing))
-    return CheckResult("bindings", True, "configured" if cfg.is_file() else "no siblings detected")
+    # Detection report only — bindings are no longer persisted to config (the shared
+    # weft.toml is operator-owned; live URLs resolve via the published .weft/<sibling>/
+    # ephemeral.port rung). Presence of a sibling is informational, never a failure.
+    detectors = (("loomweave", _detect_loomweave), ("filigree", _detect_filigree))
+    detected = [key for key, detector in detectors if detector(root)[0]]
+    if not detected:
+        return CheckResult("bindings", True, "no siblings detected")
+    return CheckResult("bindings", True, "detected: " + ", ".join(detected))
 
 
 def _check_config(root: Path, *, fixed: bool) -> DoctorCheck:
+    cfg_path = weft_config_path(root)
+    # C-9c makes load() silently fall back to defaults on an unparseable shared
+    # weft.toml (a sibling's section may be broken). doctor restores the operator
+    # signal by distinguishing ABSENT (ok — defaults are intentional) from
+    # PRESENT-BUT-BROKEN (error — your policy is silently not applying).
+    if cfg_path.is_file():
+        try:
+            parsed = tomllib.loads(cfg_path.read_text(encoding="utf-8"))
+        except (tomllib.TOMLDecodeError, OSError, UnicodeDecodeError) as exc:
+            return DoctorCheck("wardline.config", "error", fixed=False, message=f"unparseable weft.toml: {exc}")
+        table = parsed.get("wardline")
+        if table is not None and not isinstance(table, dict):
+            return DoctorCheck(
+                "wardline.config", "error", fixed=False, message="[wardline] in weft.toml must be a table"
+            )
     try:
-        load(root / "wardline.yaml")
+        load(cfg_path)
     except ConfigError as exc:
         return DoctorCheck("wardline.config", "error", fixed=False, message=str(exc))
     return DoctorCheck("wardline.config", "ok", fixed=fixed)
@@ -161,15 +165,13 @@ def _valid_http_url(url: str) -> bool:
     return parsed.scheme.lower() in {"http", "https"} and bool(parsed.netloc)
 
 
-def _config_url(root: Path, key: str) -> str | None:
-    cfg = load(root / "wardline.yaml")
-    value = cfg.loomweave_url if key == "loomweave" else cfg.filigree_url
-    return value
-
-
 def _check_url(root: Path, key: str, *, fixed: bool) -> DoctorCheck:
+    # Sibling-endpoint config keys were retired (pending the hub shared-endpoint
+    # schema); a fixed endpoint comes only from the env var now, so that is what we
+    # validate. Live local discovery (.weft/<sibling>/ephemeral.port) is dynamic and
+    # not a doctor concern.
     env_key = "WARDLINE_LOOMWEAVE_URL" if key == "loomweave" else "WARDLINE_FILIGREE_URL"
-    url = os.environ.get(env_key) or _config_url(root, key)
+    url = os.environ.get(env_key)
     check_id = f"{key}.url"
     if not url:
         return DoctorCheck(check_id, "ok", fixed=fixed, message="not configured")
@@ -223,17 +225,11 @@ def machine_readable_doctor(root: Path, *, fix: bool = False) -> dict[str, Any]:
         bindings_fixed = not before.get("bindings", CheckResult("bindings", True, "")).ok
 
     checks: list[DoctorCheck] = []
-    checks.append(_check_config(root, fixed=fix and not (root / "wardline.yaml").exists()))
+    checks.append(_check_config(root, fixed=fix and not weft_config_path(root).exists()))
     checks.append(_check_mcp_registration(root, before=before))
     checks.append(_check_marker_package())
-    try:
-        checks.append(_check_url(root, "loomweave", fixed=bindings_fixed))
-    except ConfigError as exc:
-        checks.append(DoctorCheck("loomweave.url", "error", message=str(exc)))
-    try:
-        checks.append(_check_url(root, "filigree", fixed=bindings_fixed))
-    except ConfigError as exc:
-        checks.append(DoctorCheck("filigree.url", "error", message=str(exc)))
+    checks.append(_check_url(root, "loomweave", fixed=bindings_fixed))
+    checks.append(_check_url(root, "filigree", fixed=bindings_fixed))
     checks.append(_check_decorator_grammar())
     checks.append(_check_scan_output_path(root))
     checks.append(_check_auth_token(root))
@@ -280,6 +276,9 @@ def repair_install(root: Path) -> dict[str, str]:
     statuses[".mcp.json"] = "repaired"
     install_codex_mcp(root)
     statuses["Codex MCP"] = "repaired"
-    record_bindings(root)
-    statuses["bindings"] = "repaired"
+    detect_siblings(root)
+    statuses["bindings"] = "detected"
+    # doctor MAY create its OWN state subtree (never weft.toml, never a sibling's).
+    weft_state_dir(root).mkdir(parents=True, exist_ok=True)
+    statuses["state_dir"] = "ensured"
     return statuses

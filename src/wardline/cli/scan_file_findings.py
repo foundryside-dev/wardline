@@ -22,7 +22,7 @@ from wardline.loomweave.config import load_loomweave_token, resolve_project_name
 @click.option("--config", "config_path", type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
 @click.option("--fail-on", type=click.Choice(["CRITICAL", "ERROR", "WARN", "INFO"]), default=None)
 @click.option("--cache-dir", type=click.Path(path_type=Path), default=None)
-@click.option("--filigree-url", "filigree_url", default=None, help="Filigree Weft URL (else env/wardline.yaml).")
+@click.option("--filigree-url", "filigree_url", default=None, help="Filigree Weft URL (else flag/env).")
 @click.option("--loomweave-url", "loomweave_url", default=None, help="Loomweave URL for optional identity attachment.")
 @click.option("--fingerprint", "fingerprints", multiple=True, help="Active finding fingerprint to promote.")
 @click.option("--all-active", is_flag=True, help="Promote every active defect from this scan.")
@@ -51,21 +51,9 @@ def scan_file_findings(
     """Run the agent workflow from scan to optionally filed Filigree issues."""
     dry = dry_run or (not fingerprints and not all_active)
     try:
-        resolved_filigree_url = resolve_filigree_url(
-            filigree_url,
-            path,
-            config_path,
-            trust_local_packs=trust_local_packs,
-            trusted_packs=trusted_packs,
-            strict_defaults=strict_defaults,
-        )
+        resolved_filigree_url = resolve_filigree_url(filigree_url, path, config_path, strict_defaults=strict_defaults)
         resolved_loomweave_url = resolve_loomweave_url(
-            loomweave_url,
-            path,
-            config_path,
-            trust_local_packs=trust_local_packs,
-            trusted_packs=trusted_packs,
-            strict_defaults=strict_defaults,
+            loomweave_url, path, config_path, strict_defaults=strict_defaults
         )
         filigree_emitter = None
         filigree_filer = None

@@ -24,13 +24,15 @@ from wardline.core.finding import (
     Finding,
     Kind,
     Location,
+    Maturity,
     Severity,
     SuppressionState,
 )
 from wardline.core.judged import load_judged
+from wardline.core.paths import baseline_path, judged_path, weft_config_path
 from wardline.core.protocols import Analyzer
-from wardline.core.suppression import apply_suppressions, gate_trips
-from wardline.core.waivers import WaiverSet, parse_waivers
+from wardline.core.suppression import apply_suppressions, gate_trips, severity_gates
+from wardline.core.waivers import WaiverSet, load_project_waivers
 
 if TYPE_CHECKING:
     from wardline.scanner.context import AnalysisContext
@@ -77,11 +79,41 @@ class ScanResult:
     gate_findings: list[Finding] | None = None
 
 
+_SEVERITY_VALUES: frozenset[str] = frozenset(s.value for s in Severity)
+
+
 @dataclass(frozen=True, slots=True)
 class GateDecision:
     tripped: bool
     fail_on: str | None
     exit_class: int  # 0 clean, 1 gate tripped, 2 reserved for tool errors (CLI layer)
+    # A human-readable verdict so "summary.active:0 + gate.tripped:true" never reads as
+    # a bug: ``reason`` names the count and class of defects that decided it (and the
+    # escape hatches when the trip is solely from suppressed-but-gated findings);
+    # ``evaluated`` names the population it judged (unsuppressed by default vs honored
+    # under --trust-suppressions). Both None when no threshold is set (no gate).
+    reason: str | None = None
+    evaluated: str | None = None
+
+    def __post_init__(self) -> None:
+        # Enforce the invariants the ``gate_decision`` factory upholds so a *second*
+        # constructor cannot reintroduce dogfood #2 (a tripped gate that reads as passed).
+        # exit_class mirrors tripped (0/1); the reserved 2 is a CLI SystemExit, never a
+        # GateDecision value.
+        if self.exit_class != (1 if self.tripped else 0):
+            raise ValueError(f"exit_class {self.exit_class} contradicts tripped={self.tripped}")
+        # A tripped gate must always carry its verdict — never silently None.
+        if self.tripped and self.reason is None:
+            raise ValueError("a tripped gate must carry a reason")
+        # No threshold (fail_on None) ⟺ no verdict; a threshold always produces both.
+        if (self.fail_on is None) != (self.reason is None):
+            raise ValueError("reason must be present iff fail_on is set")
+        if (self.fail_on is None) != (self.evaluated is None):
+            raise ValueError("evaluated must be present iff fail_on is set")
+        # fail_on is always a Severity value (the factory passes Severity.value); an
+        # arbitrary string satisfies the iff-guards above but is still an illegal state.
+        if self.fail_on is not None and self.fail_on not in _SEVERITY_VALUES:
+            raise ValueError(f"fail_on {self.fail_on!r} is not a valid Severity value")
 
 
 def run_scan(
@@ -119,15 +151,15 @@ def run_scan(
     from wardline.scanner.grammar import TrustGrammar, default_grammar
     from wardline.scanner.taint.summary_cache import SummaryCache
 
-    # An EXPLICIT --config path that doesn't exist must NOT silently fall back to
-    # default policy (dropping the operator's severity overrides/excludes) — that
-    # is a false-green. The IMPLICIT default (root/wardline.yaml) may legitimately
-    # be absent; config_mod.load tolerates that.
-    if config_path is not None and not config_path.exists():
-        raise ConfigError(f"config file does not exist: {config_path}")
-    cfg_path = config_path or (root / "wardline.yaml")
+    # An EXPLICIT --config path must NOT silently fall back to default policy
+    # (dropping the operator's severity overrides/excludes) whether it is missing
+    # OR present-but-malformed — either way that is a false-green. The IMPLICIT
+    # default (root/weft.toml) may legitimately be absent and tolerates a broken
+    # shared file with a warning; config_mod.load enforces both via ``explicit``.
+    cfg_path = config_path or weft_config_path(root)
     cfg = config_mod.load(
         cfg_path,
+        explicit=config_path is not None,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
@@ -202,9 +234,9 @@ def run_scan(
         )
     if cache is not None:
         cache.save()
-    baseline = load_baseline(root / ".wardline" / "baseline.yaml")
-    waivers = WaiverSet(parse_waivers(cfg.waivers))
-    judged = load_judged(root / ".wardline" / "judged.yaml")
+    baseline = load_baseline(baseline_path(root))
+    waivers = WaiverSet(load_project_waivers(root))
+    judged = load_judged(judged_path(root))
     today = date.today()
     # The emitted findings ALWAYS carry the full suppression annotations (baseline,
     # waiver, judged) so ``suppressed=…`` is visible in output regardless of trust.
@@ -280,6 +312,108 @@ def gate_decision(result: ScanResult, fail_on: Severity | None) -> GateDecision:
     # None SENTINEL: evaluate the unsuppressed gate population when present (secure
     # default), else the suppressed ``findings`` (trusted ``--trust-suppressions`` /
     # a directly-constructed ScanResult with no gate_findings).
-    gate_population = result.gate_findings if result.gate_findings is not None else result.findings
+    honors_suppressions = result.gate_findings is None
+    gate_population = result.findings if honors_suppressions else result.gate_findings
+    assert gate_population is not None  # narrow for mypy; the sentinel branch set findings
     tripped = gate_trips(gate_population, fail_on)
-    return GateDecision(tripped=tripped, fail_on=fail_on.value, exit_class=1 if tripped else 0)
+    sev = fail_on.value
+    evaluated = (
+        "post-suppression (repository baseline/waiver/judged honored — trusted-local)"
+        if honors_suppressions
+        else "unsuppressed (repository baseline/waiver/judged ignored)"
+    )
+    reason = _gate_reason(result, fail_on, tripped=tripped, honors_suppressions=honors_suppressions)
+    return GateDecision(
+        tripped=tripped,
+        fail_on=sev,
+        exit_class=1 if tripped else 0,
+        reason=reason,
+        evaluated=evaluated,
+    )
+
+
+def baseline_migration_hint(
+    result: ScanResult,
+    decision: GateDecision,
+    *,
+    root: Path,
+    new_since: str | None,
+) -> str | None:
+    """A LOUD one-line migration signal for the secure gate-default rollout, or None.
+
+    Returns the hint ONLY in the exact 'my repo went red with no code change' case:
+    a committed ``.weft/wardline/baseline.yaml`` exists, the gate tripped, the trip is
+    driven SOLELY by baselined defects re-entering the unsuppressed population (no
+    genuinely-active defect), and the operator passed neither ``--trust-suppressions``
+    nor ``--new-since``. Otherwise None — a genuine active trip, a waiver/judged-only
+    trip, a trusted/PR-scoped run, or no baseline file are all NOT the rollout surprise.
+    """
+    if not decision.tripped or decision.fail_on is None or new_since is not None:
+        return None
+    # --trust-suppressions honors the baseline, so there is no surprise to migrate from.
+    if result.gate_findings is None:
+        return None
+    if not baseline_path(root).is_file():
+        return None
+    from wardline.core.suppression import gate_breakdown
+
+    fail_on = Severity(decision.fail_on)
+    active, _suppressed = gate_breakdown(result.findings, fail_on)
+    if active:
+        return None  # a real active defect tripped it — not a migration artifact
+    baselined = sum(
+        1
+        for f in result.findings
+        if f.kind is Kind.DEFECT
+        and f.suppressed is SuppressionState.BASELINED
+        and f.maturity is not Maturity.PREVIEW
+        and severity_gates(f.severity, fail_on)
+    )
+    if not baselined:
+        return None  # tripped by waived/judged only — different escape, not this hint
+    sev = decision.fail_on
+    return (
+        f"migration: baseline present but not honored by default since v1.0 (secure gate default) — "
+        f"{baselined} baselined {sev}+ defect(s) re-enter the gate. Pass --trust-suppressions for a "
+        f"trusted local checkout or --new-since <merge-base> in CI. See UPGRADING.md."
+    )
+
+
+def _gate_reason(result: ScanResult, fail_on: Severity, *, tripped: bool, honors_suppressions: bool) -> str:
+    """The human verdict string, counted over the ACTUAL gate population so the numbers
+    are exactly what tripped it."""
+    from wardline.core.suppression import gate_breakdown
+
+    sev = fail_on.value
+    if not tripped:
+        return f"no {sev}+ defects in the evaluated population"
+    # Under --trust-suppressions the gate IS the annotated findings (suppressions
+    # honored), so only genuinely-active defects can have tripped it; never misdirect to
+    # the suppression flags.
+    if honors_suppressions:
+        active, _ = gate_breakdown(result.findings, fail_on)
+        return f"{active} active {sev}+ defect(s) at or above {sev}"
+    # Secure default: classify the defects that ACTUALLY gate (the unsuppressed gate
+    # population) by their state in the emitted findings. A ``--new-since`` delta scopes
+    # out-of-delta defects to BASELINED in the gate population too, so they are not ACTIVE
+    # here and are correctly NOT counted — the reason never inflates with scoped-out
+    # findings nor points at a flag that was already supplied.
+    gate_pop = result.gate_findings or []
+    emitted_state = {f.fingerprint: f.suppressed for f in result.findings}
+    active = 0
+    suppressed = 0
+    for f in gate_pop:
+        if f.kind is not Kind.DEFECT or f.maturity is Maturity.PREVIEW:
+            continue
+        if f.suppressed is not SuppressionState.ACTIVE or not severity_gates(f.severity, fail_on):
+            continue
+        if emitted_state.get(f.fingerprint, SuppressionState.ACTIVE) is SuppressionState.ACTIVE:
+            active += 1
+        else:
+            suppressed += 1
+    escape = "pass --trust-suppressions (trusted checkout) or --new-since <ref> (PR)"
+    if active and suppressed:
+        return f"{active} active + {suppressed} suppressed {sev}+ defect(s) gate by default; {escape}"
+    if suppressed:
+        return f"{suppressed} suppressed {sev}+ defect(s) (baseline/waiver/judged) not cleared; {escape}"
+    return f"{active} active {sev}+ defect(s) at or above {sev}"

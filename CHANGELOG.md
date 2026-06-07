@@ -7,43 +7,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- **Loomweave HMAC signer resync (auth path was 401ing every signed request).**
-  Wardline's request signature drifted from Loomweave's verifier (ADR-042): the
-  canonical message is now `METHOD\nPATH\nSHA256HEX(body)\nTIMESTAMP\nNONCE` (the
-  body-hash and timestamp were transposed) and every signed request now carries a
-  fresh high-entropy `X-Weft-Nonce` (`secrets.token_hex(16)`) — Loomweave hard-requires
-  the nonce (300s freshness window + replay cache) and 401s without it. The HMAC unit
-  test is no longer self-referential: it pins the canonical message as a literal,
-  Loomweave's HMAC known-answer vector (`auth.rs`), a frozen signature, and the
-  three-header/fresh-nonce wire shape. Affects only the authenticated Loomweave path
-  (reads against an unauthenticated serve were already fine).
-- **legis one-judge property (P1 `wardline-48a5a8d062`).** `build_legis_artifact` now
-  projects the **gate** population (`result.gate_findings`, the unsuppressed view the
-  `--fail-on` gate evaluates) instead of the suppressed `result.findings`, mirroring
-  `gate_decision`'s exact `is not None` fallback. A defect a committed
-  baseline/waiver/judged self-suppresses now reaches legis as `active` (legis enforces
-  it), so legis and Wardline's own gate judge the same population. `--trust-suppressions`
-  (gate_findings is None) still projects the suppressed view. `finding_count` stays
-  honest (both populations are the same length).
-
 ### Changed
-- **Filigree clients no longer crash the scan loop when Filigree auth is enabled.**
-  `401`/`403` from `/api/weft/*` are now treated as **soft** (enrichment unavailable,
-  like a 5xx/outage) across the emit and promote/file clients — previously a loud
-  `FiligreeEmitError` while the dossier client degraded softly (now coherent). `400`
-  (a Wardline payload bug) stays loud. Wardline can also now **send** a bearer token:
-  a new `WARDLINE_FILIGREE_TOKEN` loader threads `Authorization: Bearer` through all
-  three Filigree clients (emit, issue/promote, dossier work-provider) at every call
-  boundary; absent a token, no header is sent (default-off loopback-trust posture,
-  unchanged). No HMAC on this seam — it is bearer-only by design (ADR-018).
-- Filigree gained the same consume-time published-port self-heal as Loomweave
-  (ADR-044 twin): `resolve_filigree_url` now reads `<root>/.filigree/ephemeral.port`
-  (precedence `flag > env > published > wardline.yaml`, skipped under `strict_defaults`),
-  returning `http://localhost:<port>/api/weft/scan-results` to match `install/detect.py`'s
-  writer. A live dashboard on a new port self-heals over a stale install-stamped literal.
+- **BREAKING: Weft config/store consolidation.** Operator config moved from
+  `wardline.yaml` (YAML) to the `[wardline]` table of a shared, operator-authored
+  `weft.toml` (TOML), read via stdlib `tomllib` (zero new dependency). An
+  auto-discovered `weft.toml` that is missing falls back to built-in defaults
+  silently; one that is present-but-unparseable (or whose `[wardline]` is not a
+  table) falls back with a **warning** (a shared federation file may have another
+  member's broken section — wardline never crashes, but no longer downgrades policy
+  silently). An **explicit `--config`** that is missing OR present-but-malformed
+  **raises** (the operator named it; silently dropping their policy is a
+  false-green). Unknown/out-of-range keys in a *present, well-formed* `[wardline]`
+  table still fail loud. `--config` now points at a TOML file. Machine-written state
+  moved from `.wardline/` to `.weft/wardline/` — `baseline.yaml`, `judged.yaml`,
+  and the newly relocated `waivers.yaml` all live there (no fallback to the old
+  path; the attest signing key stays in `.env`). Waivers are **no longer a config
+  key** — they are machine state in `.weft/wardline/waivers.yaml` (written by the
+  MCP `waiver_add` tool / `add_waiver`). Sibling endpoint URL config keys were
+  **removed** (`[wardline.filigree].url` / `[wardline.loomweave].url` are not
+  valid); sibling URLs resolve only via the `--filigree-url`/`--loomweave-url`
+  flag, the `WARDLINE_FILIGREE_URL`/`WARDLINE_LOOMWEAVE_URL` env var, or the
+  published `<root>/.weft/<sibling>/ephemeral.port` file (legacy
+  `<root>/.<sibling>/ephemeral.port` tolerated). Binding auto-wiring was dropped:
+  `wardline install`/`doctor` now only **detect** siblings and write no config.
+  `wardline install <pack>` is **guidance-only** — it emits the snippet to add
+  `packs = [...]` to `weft.toml` `[wardline]` rather than writing config (packs
+  stay operator-authored). An operator may relocate the state subtree with
+  `[wardline].store_dir`. No automatic migration — see UPGRADING.md for operator
+  steps.
+- **Filigree bearer credential now read from the federation-scoped
+  `WEFT_FEDERATION_TOKEN`.** The federation loopback token was renamed
+  `WEFT_FEDERATION_TOKEN` (deconfliction plumbing across the Weft federation). The
+  loader now prefers it — checking env then `.env` — and the operator-facing
+  auth-rejected messages point at the new name. The previous `WARDLINE_FILIGREE_TOKEN`
+  is honored as a **deprecated fallback** (read after the new name), so existing
+  deployments keep working with no change; migrate at leisure. Only the token *value*
+  must match what the Filigree operator configured.
+
+### Fixed
+- **Explicit `--config` pointing at a malformed (but existing) `weft.toml` no longer
+  silently falls back to default policy.** The guard previously covered only a
+  *missing* explicit path; a present-but-unparseable one slipped through C-9c's
+  fail-soft and dropped the operator's severity overrides/excludes silently — a
+  false-green in the gate. An explicit path now raises `ConfigError` on a parse
+  error or non-table `[wardline]`; an auto-discovered `weft.toml` warns (instead of
+  failing silently) before falling back. (PR-review finding)
+- **PR-review polish (latent, no behavior change):** `GateDecision` now rejects a
+  `fail_on` that is not a valid `Severity` value at construction; `AgentSummary`
+  rejects a negative `max_findings`; `filigree_disabled_reason` derives
+  auth-rejection from `status` (the inconsistent `auth_rejected`/`status` triple is
+  no longer expressible); legis `signed`/`dirty` status is read through one shared
+  `legis_artifact_outcome` authority instead of being re-derived on each surface;
+  the dead `config` input was dropped from the MCP `waiver_add` schema.
+
+## [1.0.0rc2] - 2026-06-06
 
 ### Added
+- **MCP `scan` payload controls — `where` now shrinks the payload, plus
+  `summary_only` / `max_findings` / `include_suppressed` and a default explain cap
+  (dogfood friction #4).** `where` previously filtered only the top-level `findings`
+  list; the `agent_summary` arrays still inlined every suppressed finding, so a filter
+  matching zero findings still returned dozens. `where` now filters the `agent_summary`
+  arrays too. New args: `summary_only: true` (counts + gate, no finding bodies — the
+  smallest "did the gate pass?" payload), `include_suppressed: false` (drop suppressed
+  bodies; counts stay in `summary`), and `max_findings: N` (cap the returned bodies).
+  `explain: true` no longer inlines provenance for *every* active defect — the one-shot
+  blowup that returned 56,820 chars on one line — it is capped at 10 by default
+  (raise/lower with `max_findings`). Every cut is reported in a new `truncation` block
+  (`findings_total` / `findings_returned` / `findings_truncated` /
+  `explanations_truncated`) so a bounded payload never reads as "covered everything."
+  `summary`/`gate` always describe the whole project; the CLI `--format agent-summary`
+  output is unchanged.
+- **The `--fail-on` gate verdict now explains itself (dogfood friction #2/#3).** A scan
+  reporting `summary.active: 0` while `gate.tripped: true` no longer reads as a bug. The
+  gate block (CLI stderr, MCP `scan` result, and the agent-summary) carries a human
+  `reason` — e.g. `"34 suppressed ERROR+ defect(s) (baseline/waiver/judged) not cleared;
+  pass --trust-suppressions (trusted checkout) or --new-since <ref> (PR)"` for a
+  suppressed-only trip, `"N active ERROR+ defect(s) at or above ERROR"` for a genuine one
+  (no misdirection to the suppression flags) — and an `evaluated` string naming the judged population
+  (`unsuppressed …` by default vs `post-suppression … honored` under
+  `--trust-suppressions`). Counts come from the annotated findings, so they match
+  `summary`.
+- **Loud migration signal for the secure gate-default rollout (dogfood friction #3).**
+  When a committed `.wardline/baseline.yaml` exists, the gate trips **solely** because
+  baselined defects re-enter the unsuppressed population, and neither
+  `--trust-suppressions` nor `--new-since` was passed, Wardline now prints a one-line
+  `migration:` hint (CLI stderr; MCP `scan` `gate.migration_hint`; and the agent-summary
+  `gate.migration_hint`) pointing at the escape hatches and the new **`UPGRADING.md`**.
+  This is the "my repo went red with no code change" case made self-explaining; the
+  secure default itself is unchanged.
 - Live Loomweave port resolution (consumer half of Loomweave **ADR-044**): Wardline
   now reads Loomweave's published read-API port from `<project>/.loomweave/ephemeral.port`
   and inserts it into `resolve_loomweave_url` precedence as `flag > env > published
@@ -99,6 +151,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path_glob/sink/tier) and an `explain: true` mode that inlines each active defect's taint
   provenance — killing the scan-then-N-explains round-trips. New read-only `wardline findings`
   CLI verb shares the same filter core. (WS-B1, WS-B2)
+
+### Fixed
+- **`next_actions` is gate-aware — never reads as "passed" when the gate failed
+  (dogfood re-test, #2).** When the gate trips solely on baselined findings,
+  `summary.active` is 0, so the agent-summary's `next_actions` used to say
+  *"no active defects; rescan after edits"* — telling the agent it passed while the
+  gate FAILED. It now emits a scan action naming the gate failure and the escape
+  hatches (trust_suppressions / new_since / clear the baseline; see `gate.reason` /
+  `gate.migration_hint`). The active-defects and genuinely-clean paths are unchanged.
+- **CLI/MCP distinguish a Filigree `401` (auth-rejected) from transport-unreachable
+  (dogfood friction #5).** A `401` (token absent) was reported as *"could not reach
+  Filigree"*, sending agents to chase a broken-bridge theory. `EmitResult` now carries
+  `status` + `auth_rejected`; the CLI prints *"Filigree returned 401 (auth rejected) …
+  set WARDLINE_FILIGREE_TOKEN"* (and a distinct `5xx` "server error" vs the genuine
+  "could not reach"), and the MCP `scan` `filigree_emit` block / agent-summary carry the
+  same discriminated `disabled_reason`. A `403` is reported as *"forbidden (token present
+  but lacks access)"* rather than telling the agent to set a token that won't help.
+  `401`/`403` stays **soft** (non-load-bearing, never exit-2) — only the message changed.
+- **`scan --format legis --allow-dirty` emits an unsigned dev artifact instead of
+  refusing (dogfood friction #1).** On a dirty working tree `scan --format legis`
+  failed `exit 2` naming an `allow_dirty` flag that was never exposed — presenting
+  identically to "legis is broken," the session's single biggest rabbit hole. The flag
+  is now exposed (`--allow-dirty` CLI / `allow_dirty` MCP `scan`). The honest fix: a
+  dirty tree under `--allow-dirty` does **not** sign — the only readable `tree_sha` is
+  the *committed* one, which does not describe dirty working content, so signing it
+  would be false provenance. It falls through to the **unsigned** dev artifact, clearly
+  marked `dirty: true` (legis records it `unverified`). Signing stays clean-tree-only;
+  the loud refusal without `--allow-dirty` is unchanged. Lets the dev/tour loop exercise
+  the Wardline→legis handshake without a commit.
+- **PY-WL-110 (contradictory-trust) now fires for the `weft_markers` namespace
+  (soundness; `wardline-d62845bb18`).** The rule hardcoded
+  `wardline.decorators.*` as the only recognised marker prefix, so a contradictory
+  `@trusted` + `@external_boundary` stack imported from the renamed `weft_markers`
+  shim (the namespace authors are steered toward post-rebrand) was silently *not*
+  flagged. The prefix set is now derived from `BUILTIN_BOUNDARY_TYPES`
+  (`{wardline.decorators, weft_markers}`) so the rule cannot drift from the grammar
+  that seeds provenance. The other boundary rules read resolved provenance and never
+  had this gap.
+- **Taint: lambda bindings are now branch-local (`wardline-36016d26f3`).** The
+  `_CURRENT_LAMBDA_BINDINGS` map was shared across `if`/`else`, `try`/`except`, and
+  `match` arms (unlike `var_taints`), so a lambda bound in one arm leaked into a
+  mutually-exclusive sibling and could over-fire (false positive) in adversarial
+  branch layouts. Each arm is now walked against an arm-local copy and re-converged by
+  layering each arm's *delta* onto the pre-branch state in source order — which both
+  removes the cross-arm leak and preserves a rebinding made in a no-`else` / no-catch-all
+  arm for a call after the branch (so no new false negative is introduced).
+- **Loomweave HMAC signer resync (auth path was 401ing every signed request).**
+  Wardline's request signature drifted from Loomweave's verifier (ADR-042): the
+  canonical message is now `METHOD\nPATH\nSHA256HEX(body)\nTIMESTAMP\nNONCE` (the
+  body-hash and timestamp were transposed) and every signed request now carries a
+  fresh high-entropy `X-Weft-Nonce` (`secrets.token_hex(16)`) — Loomweave hard-requires
+  the nonce (300s freshness window + replay cache) and 401s without it. The HMAC unit
+  test is no longer self-referential: it pins the canonical message as a literal,
+  Loomweave's HMAC known-answer vector (`auth.rs`), a frozen signature, and the
+  three-header/fresh-nonce wire shape. Affects only the authenticated Loomweave path
+  (reads against an unauthenticated serve were already fine).
+- **legis one-judge property (P1 `wardline-48a5a8d062`).** `build_legis_artifact` now
+  projects the **gate** population (`result.gate_findings`, the unsuppressed view the
+  `--fail-on` gate evaluates) instead of the suppressed `result.findings`, mirroring
+  `gate_decision`'s exact `is not None` fallback. A defect a committed
+  baseline/waiver/judged self-suppresses now reaches legis as `active` (legis enforces
+  it), so legis and Wardline's own gate judge the same population. `--trust-suppressions`
+  (gate_findings is None) still projects the suppressed view. `finding_count` stays
+  honest (both populations are the same length).
+
+### Changed
+- **CLI scan summary now labels the non-suppressed count `active`, not `new`**
+  (`wardline-26e84dbd44`). The human summary line previously printed
+  `… N new`, but every other surface — the `SuppressionState.ACTIVE` enum, the
+  `ScanSummary.active` field, the MCP `summary.active` key, the agent-summary
+  `active_defects` key, and the `wardline:loop` prompt — already said `active`.
+  The CLI now matches, so an agent never reconciles a CLI "N new" against an MCP
+  "active". Text-only (the count value is unchanged); no JSON/SARIF/wire field
+  renamed. The new [Finding lifecycle & gate vocabulary](https://github.com/foundryside-dev/wardline/blob/main/docs/reference/finding-lifecycle-vocabulary.md)
+  reference page is the single source of truth for these state words (and the
+  three distinct meanings of "new" across the suite).
+- **Filigree clients no longer crash the scan loop when Filigree auth is enabled.**
+  `401`/`403` from `/api/weft/*` are now treated as **soft** (enrichment unavailable,
+  like a 5xx/outage) across the emit and promote/file clients — previously a loud
+  `FiligreeEmitError` while the dossier client degraded softly (now coherent). `400`
+  (a Wardline payload bug) stays loud. Wardline can also now **send** a bearer token:
+  a new `WARDLINE_FILIGREE_TOKEN` loader threads `Authorization: Bearer` through all
+  three Filigree clients (emit, issue/promote, dossier work-provider) at every call
+  boundary; absent a token, no header is sent (default-off loopback-trust posture,
+  unchanged). No HMAC on this seam — it is bearer-only by design (ADR-018).
+- Filigree gained the same consume-time published-port self-heal as Loomweave
+  (ADR-044 twin): `resolve_filigree_url` now reads `<root>/.filigree/ephemeral.port`
+  (precedence `flag > env > published > wardline.yaml`, skipped under `strict_defaults`),
+  returning `http://localhost:<port>/api/weft/scan-results` to match `install/detect.py`'s
+  writer. A live dashboard on a new port self-heals over a stale install-stamped literal.
 
 ### Security
 - **Builtin trust-marker decorators are now trusted only when they resolve to the

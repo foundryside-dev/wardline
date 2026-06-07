@@ -174,7 +174,7 @@ def test_run_scan_provenance_clash_with_cache(tmp_path) -> None:
 
     proj = tmp_path / "proj"
     proj.mkdir()
-    (proj / "wardline.yaml").write_text("provenance_clash: true\n", encoding="utf-8")
+    (proj / "weft.toml").write_text("[wardline]\nprovenance_clash = true\n", encoding="utf-8")
 
     source = """from wardline.decorators import external_boundary, trusted
 
@@ -218,7 +218,7 @@ def test_run_scan_provenance_clash_loads_mixed_raw_cache(tmp_path) -> None:
 
     proj = tmp_path / "proj"
     proj.mkdir()
-    (proj / "wardline.yaml").write_text("provenance_clash: true\n", encoding="utf-8")
+    (proj / "weft.toml").write_text("[wardline]\nprovenance_clash = true\n", encoding="utf-8")
     (proj / "m.py").write_text("def f(): pass\n", encoding="utf-8")
 
     cache_dir = tmp_path / "cache"

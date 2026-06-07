@@ -79,6 +79,15 @@ def test_scan_tool_returns_summary_and_gate(tmp_path: Path) -> None:
     assert out["summary"]["total"] == len(out["findings"])
     assert out["summary"]["active"] >= 1
     assert out["gate"]["tripped"] is True
+    # The agent-facing dogfood gate fields are assembled in server.py separately from
+    # the GateDecision, so assert them at the MCP surface (not just in core/run tests):
+    # a non-empty self-explaining reason, the evaluated population string, and the
+    # migration_hint key (None here — no committed baseline to migrate from).
+    assert isinstance(out["gate"]["reason"], str) and out["gate"]["reason"]
+    assert isinstance(out["gate"]["evaluated"], str) and out["gate"]["evaluated"]
+    # No committed baseline here, so the migration hint must be present AND None (a
+    # spurious fire would be a regression in the secure-default rollout signal).
+    assert "migration_hint" in out["gate"] and out["gate"]["migration_hint"] is None
     assert any(f["rule_id"] == "PY-WL-101" for f in out["findings"])
 
 
@@ -251,10 +260,32 @@ def test_unknown_prompt_is_invalid_params() -> None:
     assert "unknown prompt" in resp["error"]["message"]
 
 
+def test_fix_tool_explicit_malformed_config_is_an_iserror_result(tmp_path: Path) -> None:
+    # An explicit `config` arg pointing at a present-but-malformed weft.toml must NOT
+    # silently fall back to default policy — same false-green class as the scan path.
+    # It surfaces as an isError result (a WardlineError → ToolError), not a silent run.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text("def f(): return 1\n", encoding="utf-8")
+    bad = proj / "bad.toml"
+    bad.write_text("[wardline]\nsource_roots = [\n", encoding="utf-8")
+    server = WardlineMCPServer(root=proj)
+    resp = server.rpc.dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "tools/call",
+            "params": {"name": "fix", "arguments": {"path": "", "config": "bad.toml"}},
+        }
+    )
+    assert "error" not in resp, resp
+    assert resp["result"]["isError"] is True
+
+
 def test_fix_tool_requires_explicit_apply(tmp_path: Path) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
-    (proj / "wardline.yaml").write_text("autofix:\n  boundary_exception: ValueError\n", encoding="utf-8")
+    (proj / "weft.toml").write_text('[wardline.autofix]\nboundary_exception = "ValueError"\n', encoding="utf-8")
 
     src_content = (
         "from wardline.decorators import trust_boundary\n"

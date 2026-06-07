@@ -53,7 +53,7 @@ Options:
   --context-lines INTEGER  Excerpt radius (default 30).
   --max-findings INTEGER   Cap findings triaged this run.
   --write                  Append FALSE_POSITIVE verdicts to
-                           .wardline/judged.yaml (default: dry-run).
+                           .weft/wardline/judged.yaml (default: dry-run).
   --help                   Show this message and exit.
 ```
 
@@ -67,7 +67,7 @@ $ wardline judge .
 triaged 0 defect(s): 0 true / 0 false
 ```
 
-Flags override config (see the [`judge:` config section](configuration.md#judge)).
+Flags override config (see the [`[wardline.judge]` config section](configuration.md#wardlinejudge)).
 The default model is `anthropic/claude-opus-4-8`; the default excerpt radius is
 30 lines.
 
@@ -77,7 +77,7 @@ By default `judge` is a **dry-run**: it prints a verdict per finding and writes
 nothing. Each line shows a `TP`/`FP` tag, confidence, rule ID, location, and the
 rationale. Low-confidence FP verdicts are tagged `FP?` and noted as held back.
 
-`--write` appends the FALSE_POSITIVE verdicts to `.wardline/judged.yaml`, which a
+`--write` appends the FALSE_POSITIVE verdicts to `.weft/wardline/judged.yaml`, which a
 later scan or judge run reads as suppressions
 ([judged FPs](suppression.md#judged-false-positives)).
 
@@ -107,5 +107,5 @@ a load-bearing stage.
 
 ## See also
 
-- [Configuration](configuration.md#judge) — the `judge:` settings.
+- [Configuration](configuration.md#wardlinejudge) — the `[wardline.judge]` settings.
 - [Suppressing findings](suppression.md) — where judged FPs sit among baseline and waivers.

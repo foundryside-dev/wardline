@@ -1,7 +1,7 @@
 # src/wardline/core/baseline.py
 """The git-committable finding baseline (SP3).
 
-A ``.wardline/baseline.yaml`` is a snapshot of accepted findings keyed on the
+A ``.weft/wardline/baseline.yaml`` is a snapshot of accepted findings keyed on the
 full ``Finding.fingerprint`` (strict match — see spec §2 dial 1). The committed
 file carries ``rule_id``/``path``/``message`` per entry for human auditability in
 a git diff; only ``fingerprint`` is loaded into the match set. No governance.
@@ -17,6 +17,7 @@ from typing import Any
 from wardline.core.errors import ConfigError
 from wardline.core.finding import Finding, Kind, Severity, SuppressionState
 from wardline.core.optional_deps import require_yaml
+from wardline.core.paths import baseline_path as baseline_file
 from wardline.core.safe_paths import safe_project_file
 
 BASELINE_VERSION: int = 1
@@ -82,7 +83,7 @@ def collect_and_write_baseline(
     strict_defaults: bool = False,
 ) -> list[Finding]:
     """Derive the baselineable findings for ``root`` and write them to
-    ``.wardline/baseline.yaml``. Returns the findings that were baselined.
+    ``.weft/wardline/baseline.yaml``. Returns the findings that were baselined.
 
     Captures current DEFECTs, EXCLUDING any with an active waiver (else the
     baseline swallows them and their expiry never resurfaces — spec §8).
@@ -97,7 +98,7 @@ def collect_and_write_baseline(
     # Lazy import to avoid an import cycle (run imports baseline loading helpers).
     from wardline.core.run import run_scan
 
-    baseline_path = root / ".wardline" / "baseline.yaml"
+    baseline_path = baseline_file(root)
     if baseline_path.exists() and not overwrite:
         raise FileExistsError(str(baseline_path))
     result = run_scan(

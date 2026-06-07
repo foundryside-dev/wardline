@@ -49,7 +49,7 @@ from wardline.core.errors import WardlineError
     "--trust-pack",
     "trusted_packs",
     multiple=True,
-    help="Allow importing this trust-grammar pack from wardline.yaml. May be repeated.",
+    help="Allow importing this trust-grammar pack from weft.toml [wardline]. May be repeated.",
 )
 @click.option(
     "--allow-custom-packs",
@@ -62,7 +62,7 @@ from wardline.core.errors import WardlineError
     "--strict-defaults",
     is_flag=True,
     default=False,
-    help="Ignore repository-supplied custom configuration overrides (wardline.yaml).",
+    help="Ignore repository-supplied custom configuration overrides (weft.toml).",
 )
 @click.option("--allow-dirty", is_flag=True, help="Attest even with uncommitted changes (records dirty: true).")
 @click.option(
@@ -104,14 +104,7 @@ def attest(
         )
         raise SystemExit(2)
 
-    loomweave_url = resolve_loomweave_url(
-        loomweave_url,
-        path,
-        config_path,
-        trust_local_packs=trust_local_packs,
-        trusted_packs=trusted_packs,
-        strict_defaults=strict_defaults,
-    )
+    loomweave_url = resolve_loomweave_url(loomweave_url, path, config_path, strict_defaults=strict_defaults)
     loomweave_client = None
     if loomweave_url is not None:
         from wardline.loomweave.client import LoomweaveClient

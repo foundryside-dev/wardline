@@ -126,7 +126,7 @@ def test_mcp_attest_reproduce_with_trusted_pack(monkeypatch, tmp_path: Path) -> 
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[3]))
     proj = tmp_path / "proj"
     proj.mkdir()
-    (proj / "wardline.yaml").write_text("packs:\n  - tests.unit.install.mock_pack\n", encoding="utf-8")
+    (proj / "weft.toml").write_text('[wardline]\npacks = ["tests.unit.install.mock_pack"]\n', encoding="utf-8")
     (proj / "m.py").write_text(
         "from tests.unit.install.mock_pack import mock_boundary\n\n@mock_boundary\ndef violator():\n    pass\n",
         encoding="utf-8",

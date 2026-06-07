@@ -1,10 +1,13 @@
 # src/wardline/core/waivers.py
-"""Human-authored finding waivers (SP3).
+"""Finding waivers (SP3).
 
-Waivers live inline in ``wardline.yaml`` under a ``waivers:`` list, each keyed on
-a finding's full ``fingerprint`` (copied from scan output), with a REQUIRED reason
-and an OPTIONAL ISO expiry date. An expired waiver stops suppressing (the finding
-resurfaces). No governance.
+Waivers are machine-written state (via the MCP ``waiver_add`` tool) under
+``.weft/wardline/waivers.yaml`` (the
+member-owned subtree), a ``waivers:`` list each keyed on a finding's full
+``fingerprint`` (copied from scan output), with a REQUIRED reason and an OPTIONAL
+ISO expiry date. They are fingerprint-keyed entries an operator never hand-authors,
+so they live in wardline's own state — NOT in the read-only operator ``weft.toml``.
+An expired waiver stops suppressing (the finding resurfaces). No governance.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from typing import Any
 
 from wardline.core.errors import ConfigError
 from wardline.core.optional_deps import require_yaml
+from wardline.core.paths import waivers_path
 from wardline.core.safe_paths import safe_project_file
 
 _HEX = frozenset("0123456789abcdef")
@@ -69,22 +73,46 @@ def parse_waivers(raw: Sequence[Mapping[str, Any]]) -> tuple[Waiver, ...]:
     return tuple(waivers)
 
 
+def load_project_waivers(root: Path) -> tuple[Waiver, ...]:
+    """Read wardline's machine-written waivers from ``.weft/wardline/waivers.yaml``.
+
+    Absent file → empty tuple. Validates via the same rules as :func:`parse_waivers`,
+    so a malformed entry fails loud (a finding must not be silently suppressed by a
+    bad waiver record).
+    """
+    path = waivers_path(root)
+    if not path.is_file():
+        return ()
+    yaml = require_yaml("loading waivers")
+    try:
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"malformed {path.name}: {exc}") from exc
+    if not isinstance(loaded, dict):
+        raise ConfigError(f"{path.name} is not a mapping")
+    raw = loaded.get("waivers")
+    if raw is not None and not isinstance(raw, list):
+        raise ConfigError(f"malformed {path.name}: 'waivers' must be a list")
+    return parse_waivers(raw or ())
+
+
 def add_waiver(
-    config_path: Path,
+    path: Path,
     *,
     fingerprint: str,
     reason: str,
     expires: date | None,
     root: Path | None = None,
 ) -> Waiver:
-    """Append a waiver to ``config_path``'s ``waivers:`` list (creating the file if
-    absent). Validates via the SAME rules as :func:`parse_waivers`, so a bad
-    fingerprint or empty reason raises :class:`ConfigError` BEFORE any write.
+    """Append a waiver to the ``waivers:`` list in ``path`` — wardline's machine/CLI
+    state file ``.weft/wardline/waivers.yaml`` (creating it if absent). Validates via
+    the SAME rules as :func:`parse_waivers`, so a bad fingerprint or empty reason
+    raises :class:`ConfigError` BEFORE any write.
 
-    ``expires`` is stored as an ISO string (``YYYY-MM-DD``) — the human-authored
-    canonical form; both the in-line validation parse and a later
-    ``load`` → ``parse_waivers`` round-trip accept it.
+    ``expires`` is stored as an ISO string (``YYYY-MM-DD``); both the in-line
+    validation parse and a later ``parse_waivers`` round-trip accept it.
     """
+    config_path = path
     if root is not None:
         config_path = safe_project_file(root, config_path, label=config_path.name)
     entry: dict[str, object] = {"fingerprint": fingerprint, "reason": reason}
@@ -94,7 +122,7 @@ def add_waiver(
     # ConfigError on a bad fingerprint/reason/expiry BEFORE the file is touched.
     waiver = parse_waivers((entry,))[0]
 
-    yaml = require_yaml("updating wardline.yaml waivers")
+    yaml = require_yaml("updating waivers")
     raw: dict[str, Any] = {}
     if config_path.exists():
         try:

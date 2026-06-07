@@ -25,15 +25,13 @@ def _project_root_on_syspath(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_config_load_and_deep_merge_pack(tmp_path: Path) -> None:
-    p = tmp_path / "wardline.yaml"
+    p = tmp_path / "weft.toml"
     p.write_text(
-        "packs:\n"
-        "  - tests.unit.install.mock_pack\n"
-        "exclude:\n"
-        "  - local_exclude\n"
-        "rules:\n"
-        "  severity:\n"
-        "    PY-WL-103: WARN\n",
+        "[wardline]\n"
+        'packs = ["tests.unit.install.mock_pack"]\n'
+        'exclude = ["local_exclude"]\n'
+        "[wardline.rules]\n"
+        'severity = { "PY-WL-103" = "WARN" }\n',
         encoding="utf-8",
     )
     cfg = load(p, trust_local_packs=True, trusted_packs=("tests.unit.install.mock_pack",))
@@ -45,15 +43,15 @@ def test_config_load_and_deep_merge_pack(tmp_path: Path) -> None:
 
 
 def test_missing_pack_raises_config_error(tmp_path: Path) -> None:
-    p = tmp_path / "wardline.yaml"
-    p.write_text("packs:\n  - non_existent_pack_xyz\n", encoding="utf-8")
+    p = tmp_path / "weft.toml"
+    p.write_text('[wardline]\npacks = ["non_existent_pack_xyz"]\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="failed to load trust-grammar pack"):
         load(p, trusted_packs=("non_existent_pack_xyz",))
 
 
 def test_pack_config_is_rejected_by_default_without_importing(tmp_path: Path) -> None:
-    p = tmp_path / "wardline.yaml"
-    p.write_text("packs:\n  - import_side_effect_pack\n", encoding="utf-8")
+    p = tmp_path / "weft.toml"
+    p.write_text('[wardline]\npacks = ["import_side_effect_pack"]\n', encoding="utf-8")
     pytest.importorskip("jsonschema")
 
     with patch("importlib.import_module") as mock_import, pytest.raises(ConfigError, match="not trusted"):
@@ -76,8 +74,8 @@ def test_local_dotted_pack_guard_does_not_execute_parent_package(
         encoding="utf-8",
     )
     (package_dir / "sub.py").write_text("config = {}\n", encoding="utf-8")
-    config_path = project / "wardline.yaml"
-    config_path.write_text("packs:\n  - evil.sub\n", encoding="utf-8")
+    config_path = project / "weft.toml"
+    config_path.write_text('[wardline]\npacks = ["evil.sub"]\n', encoding="utf-8")
     monkeypatch.syspath_prepend(str(project))
 
     with pytest.raises(
@@ -96,7 +94,7 @@ def test_invalid_grammar_attribute_raises_config_error(tmp_path: Path) -> None:
     try:
         proj = tmp_path / "proj"
         proj.mkdir()
-        (proj / "wardline.yaml").write_text("packs:\n  - invalid_grammar_pack\n", encoding="utf-8")
+        (proj / "weft.toml").write_text('[wardline]\npacks = ["invalid_grammar_pack"]\n', encoding="utf-8")
         (proj / "m.py").write_text("def f(): pass\n", encoding="utf-8")
         with pytest.raises(ConfigError, match="attribute 'grammar' must be a TrustGrammar instance"):
             run_scan(proj, trust_local_packs=True, trusted_packs=("invalid_grammar_pack",))
@@ -107,8 +105,8 @@ def test_invalid_grammar_attribute_raises_config_error(tmp_path: Path) -> None:
 def test_analyzer_pack_integration(tmp_path: Path) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
-    (proj / "wardline.yaml").write_text(
-        "packs:\n  - tests.unit.install.mock_pack\n",
+    (proj / "weft.toml").write_text(
+        '[wardline]\npacks = ["tests.unit.install.mock_pack"]\n',
         encoding="utf-8",
     )
     # The rule PY-WL-901 fires on function/entity named "violator"

@@ -15,8 +15,17 @@ site/
 
 # Wardline runtime output
 findings.jsonl
-.wardline-cache/
+
+# Sibling legacy locations (transition window — .weft/<sibling>/ is preferred but
+# the old dot-dirs may still be present until siblings finish migrating).
 .loomweave
+
+# NOTE: do NOT ignore .weft/ — wardline's own .weft/wardline/{baseline,judged,waivers}.yaml
+# are deliberately committed; weft.toml is operator-authored and tracked.
+# DO ignore transient sibling port files: a committed .weft/<sibling>/ephemeral.port
+# would let a shared repo redirect wardline's token-bearing emit to a chosen loopback
+# port (a live, never-committed runtime artifact, not tracked state).
+.weft/*/ephemeral.port
 
 # Filigree issue tracker
 .filigree/
@@ -33,4 +42,3 @@ CLAUDE.md
 .coverage
 coverage.json
 loomweave.yaml
-wardline.yaml

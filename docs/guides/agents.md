@@ -32,11 +32,13 @@ If you have not installed Wardline yet, start with
 - installs the `wardline-gate` skill into `.claude/skills/` and `.agents/skills/`;
 - merges a `wardline` entry into `.mcp.json` (preserving any existing servers);
 - writes a global Codex MCP entry in `~/.codex/config.toml`;
-- detects a Loomweave taint store (`loomweave` on `PATH` or `WARDLINE_LOOMWEAVE_URL`)
-  and a Filigree project (`.filigree.conf`), recording a `loomweave:`/`filigree:`
-  binding in `wardline.yaml` — live when a URL env var, Filigree
-  `.filigree/ephemeral.port`, or HTTP-enabled `loomweave.yaml` exposes a URL;
-  otherwise a commented stanza for you to fill.
+- **detects** a Loomweave taint store (`loomweave` on `PATH` or
+  `WARDLINE_LOOMWEAVE_URL`) and a Filigree project (`.filigree.conf`) and reports
+  what it found — it writes **no** binding and persists **no** URL. `weft.toml`
+  stays operator-authored; live URLs come from the `--filigree-url` /
+  `--loomweave-url` flag, the `WARDLINE_FILIGREE_URL` / `WARDLINE_LOOMWEAVE_URL`
+  env var, or the published `.weft/<sibling>/ephemeral.port` rung (legacy
+  `.<sibling>/ephemeral.port` tolerated).
 
 ```console
 $ wardline install
@@ -47,8 +49,8 @@ wardline install:
   skill .agents/skills/wardline-gate: created
   .mcp.json (wardline entry): created
   Codex MCP (wardline entry): created
-  loomweave: detected (commented)
-  filigree: detected (commented)
+  loomweave: detected (no URL — rely on flag/env/published port)
+  filigree: detected (no URL — rely on flag/env/published port)
   runtime markers: install `weft-markers` and import from `weft_markers`
 ```
 
@@ -57,9 +59,10 @@ It is idempotent (re-run to refresh after upgrading wardline) and non-interactiv
 `--no-skill`, `--no-mcp`, or `--no-bindings`. There is no SessionStart hook —
 freshness is enforced only when you re-run `wardline install`.
 
-Once installed, the MCP server resolves the Loomweave URL from `wardline.yaml`, so
-the `.mcp.json` entry stays a stdio `wardline mcp --root .` command with no URL
-in its args.
+Once installed, the MCP server resolves a Loomweave/Filigree URL at runtime from
+the flag, env var, or published `.weft/<sibling>/ephemeral.port` rung — not from
+config — so the `.mcp.json` entry stays a stdio `wardline mcp --root .` command
+with no URL in its args.
 The Codex entry is global, so it runs `wardline mcp` without `--root` and lets
 Codex launch it from the active workspace.
 
@@ -71,8 +74,8 @@ $ wardline doctor
 
 Use `wardline doctor --repair` after moving binaries, starting a Filigree
 dashboard, or changing sibling tool config. It refreshes the instruction blocks,
-skills, MCP entries, and `wardline.yaml` bindings using the same discovery rules
-as `wardline install`.
+skills, and MCP entries, and re-detects siblings using the same discovery rules
+as `wardline install` — it never writes `weft.toml` or a sibling binding.
 
 ## Gate the agent's work with `wardline scan`
 
@@ -105,7 +108,7 @@ By default a scan reports but never fails — the gate is opt-in:
 
 ```console
 $ wardline scan .
-scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 new -> findings.jsonl
+scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> findings.jsonl
 ```
 
 ```console
@@ -118,7 +121,7 @@ at or above the threshold drives a non-zero exit:
 
 ```console
 $ wardline scan . --fail-on ERROR
-scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 new -> findings.jsonl
+scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> findings.jsonl
 ```
 
 ```console
@@ -171,10 +174,10 @@ error: WARDLINE_OPENROUTER_API_KEY is not set. `wardline judge` calls OpenRouter
 ```
 
 With a key, `judge` triages cold and prints one line per verdict. Pass `--write`
-to append `FALSE_POSITIVE` verdicts to `.wardline/judged.yaml` — but only those
+to append `FALSE_POSITIVE` verdicts to `.weft/wardline/judged.yaml` — but only those
 at or above the **confidence floor** (`judge.write_confidence_floor`, default
 `0.5`); a low-confidence FP is reported and held back rather than silently
-suppressed. A subsequent `wardline scan` reads `.wardline/judged.yaml` and treats
+suppressed. A subsequent `wardline scan` reads `.weft/wardline/judged.yaml` and treats
 those fingerprints as suppressed, so the gate stops tripping on triaged
 false positives while still flagging anything new.
 
@@ -190,7 +193,7 @@ a sibling Weft tool — emit SARIF 2.1.0:
 
 ```console
 $ wardline scan . --format sarif --output results.sarif --fail-on ERROR
-scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 new -> results.sarif
+scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> results.sarif
 ```
 
 The log is standard SARIF 2.1.0 with a `wardline` driver and one result per
@@ -223,6 +226,24 @@ no-clobber and accepts `overwrite: true` to re-derive).
 Resources expose the trust vocabulary, rule catalog, config, and config schema.
 The `wardline:loop` prompt documents the intended
 scan → explain → fix-at-the-boundary → rescan cycle.
+
+`scan` payload controls (the `summary`/`gate` blocks always describe the whole
+project — these only bound the returned finding bodies):
+
+- `where` — a conjunctive read-lens (keys: `rule_id`, `qualname`, `severity`,
+  `suppression`, `kind`, `path_glob`, `sink`, `tier`) that filters **both** the
+  `findings` list and the `agent_summary` arrays.
+- `summary_only: true` — counts + gate only, no finding bodies. The smallest
+  "did the gate pass?" payload.
+- `include_suppressed: false` — drop suppressed (baselined/waived/judged) bodies;
+  the suppression counts stay in `summary`.
+- `max_findings: N` — cap the returned bodies (and inlined explanations).
+- `explain: true` — inline each active defect's provenance; capped at 10 by
+  default (raise/lower with `max_findings`).
+
+Every cut is reported in the response `truncation` block (`findings_total`,
+`findings_returned`, `findings_truncated`, `explanations_truncated`) so a bounded
+payload never reads as "covered everything."
 
 With an opt-in Loomweave taint store configured (`wardline mcp --loomweave-url
 <URL>`), `explain_taint` becomes a query when you pass the finding's `qualname`

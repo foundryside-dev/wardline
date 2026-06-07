@@ -104,4 +104,4 @@ that into your loop design.
   surface, including `explain_taint`.
 - [Weft integration](weft.md) — the other Weft output paths (SARIF, native
   Filigree emitter, Loomweave producer conformance).
-- [Configuration](configuration.md) — `wardline.yaml` keys.
+- [Configuration](configuration.md) — `weft.toml` `[wardline]` keys.

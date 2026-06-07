@@ -1,20 +1,22 @@
-"""Detect sibling tools (Loomweave, Filigree) and record bindings in wardline.yaml.
+"""Detect sibling tools (Loomweave, Filigree) — detection only, never persisted.
 
 Presence is detectable (a marker file, local config, binary on PATH, or env URL).
-Known local URL conventions are discoverable from sibling project files; otherwise
-we write a commented stanza for the user to fill. Writes are text-appends guarded
-by a key/sentinel check, so re-running never duplicates or clobbers.
+Known local URL conventions are discoverable from sibling project files. We do NOT
+write any config: the shared ``weft.toml`` is operator-authored and read-only for
+us, and live URLs are resolved on demand via the published ``.weft/<sibling>/
+ephemeral.port`` rung (see ``core/config.resolve_*_url``). An operator who wants a
+fixed URL sets the ``WARDLINE_LOOMWEAVE_URL`` / ``WARDLINE_FILIGREE_URL`` env var (or
+passes a ``--*-url`` flag); sibling-endpoint *config keys* are hub-pinned and pending,
+so wardline reads none today.
 """
 
 from __future__ import annotations
 
-import json
 import os
-import re
 import shutil
 from pathlib import Path
 
-from wardline.core.safe_paths import safe_project_file
+from wardline.core.paths import legacy_sibling_dir, sibling_state_dir
 
 
 def _strip_scalar(value: str) -> str:
@@ -72,16 +74,28 @@ def _loomweave_url_from_config(root: Path) -> str | None:
 
 
 def _filigree_url_from_project(root: Path) -> str | None:
-    port_file = root / ".filigree" / "ephemeral.port"
-    if not port_file.is_file():
-        return None
-    text = port_file.read_text(encoding="utf-8", errors="replace").strip()
-    if not text.isdigit():
-        return None
-    port = int(text)
-    if not 1 <= port <= 65535:
-        return None
-    return f"http://localhost:{port}/api/weft/scan-results"
+    # Prefer the consolidated .weft/filigree/ location; tolerate the legacy
+    # .filigree/ dot-dir during the federation transition window.
+    for base in (sibling_state_dir(root, "filigree"), legacy_sibling_dir(root, "filigree")):
+        # ascii read, mirroring core/config._read_published_port: ephemeral.port is
+        # an ASCII integer by protocol, so non-ASCII bytes (incl. Unicode "digit"
+        # chars that pass isdigit() but raise in int()) are rejected at decode time.
+        try:
+            text = (base / "ephemeral.port").read_text(encoding="ascii").strip()
+        except (OSError, UnicodeDecodeError):
+            continue
+        # Guard int(): isdigit() is a superset of what int() parses, so an all-digit
+        # payload over CPython's 4300-digit cap raises ValueError (the ascii read
+        # above already excludes Unicode digits). Catch it so a planted ephemeral.port
+        # stays fail-soft and never crashes detection.
+        if text.isdigit():
+            try:
+                port = int(text)
+            except ValueError:
+                continue
+            if 1 <= port <= 65535:
+                return f"http://localhost:{port}/api/weft/scan-results"
+    return None
 
 
 def _detect_loomweave(root: Path) -> tuple[bool, str | None, str | None]:
@@ -102,85 +116,23 @@ def _detect_filigree(root: Path) -> tuple[bool, str | None, str | None]:
     return present, discovered, "discovered" if discovered else None
 
 
-def _live_stanza(key: str, url: str, source: str) -> str:
-    # json.dumps yields a YAML-valid, properly escaped double-quoted scalar
-    # (so a URL containing a quote/backslash can't corrupt wardline.yaml).
-    origin = "from env during install" if source == "env" else "discovered during install"
-    return f"{key}:\n  url: {json.dumps(url)}  # wardline-install:{key} ({origin})\n"
+def detect_siblings(root: Path) -> dict[str, str]:
+    """Detect sibling tools without persisting anything.
 
-
-_COMMENTED = {
-    "loomweave": (
-        "# wardline-install:loomweave — Loomweave taint store detected, no URL configured.\n"
-        "# Set the taint-store URL to enable per-entity taint-fact enrichment:\n"
-        "# loomweave:\n"
-        '#   url: "http://localhost:PORT"\n'
-    ),
-    "filigree": (
-        "# wardline-install:filigree — Filigree detected (.filigree.conf), no URL configured.\n"
-        "# Set the Weft scan-results URL to POST findings into Filigree:\n"
-        "# filigree:\n"
-        '#   url: "http://localhost:PORT/api/weft/scan-results"\n'
-    ),
-}
-
-
-def _has_live_key(text: str, key: str) -> bool:
-    return bool(re.search(rf"(?m)^{key}:", text))
-
-
-def _has_install_marker(text: str, key: str) -> bool:
-    return f"wardline-install:{key}" in text
-
-
-def _already_recorded(text: str, key: str) -> bool:
-    # Live key at column 0, or our sentinel from a previous commented write.
-    return _has_live_key(text, key) or _has_install_marker(text, key)
-
-
-def _replace_commented_binding(text: str, key: str, url: str, source: str) -> str:
-    return text.replace(_COMMENTED[key], _live_stanza(key, url, source), 1)
-
-
-def record_bindings(root: Path) -> dict[str, str]:
-    """Detect siblings and append stanzas to wardline.yaml. Returns per-key status."""
-    cfg = safe_project_file(root, root / "wardline.yaml", label="wardline.yaml")
-    text = cfg.read_text(encoding="utf-8") if cfg.exists() else ""
-    detections = {"loomweave": _detect_loomweave(root), "filigree": _detect_filigree(root)}
-    additions: list[str] = []
+    Binding persistence was dropped in the Weft config consolidation: live URLs are
+    resolved on demand via the published ``.weft/<sibling>/ephemeral.port`` rung
+    (see ``core/config.resolve_*_url``); an operator who wants a fixed URL sets the
+    ``WARDLINE_LOOMWEAVE_URL`` / ``WARDLINE_FILIGREE_URL`` env var (sibling-endpoint
+    config keys are hub-pinned and pending). We never write the operator's config
+    file. Returns a per-sibling human-readable status.
+    """
     results: dict[str, str] = {}
-    changed = False
-    for key, (present, url, source) in detections.items():
+    for key, detector in (("loomweave", _detect_loomweave), ("filigree", _detect_filigree)):
+        present, url, source = detector(root)
         if not present:
             results[key] = "absent"
-            continue
-        current = text + "".join(additions)
-        if _has_live_key(current, key):
-            results[key] = "present (left untouched)"
-            continue
-        if _has_install_marker(current, key):
-            if url:
-                replaced = _replace_commented_binding(text, key, url, source or "discovered")
-                if replaced == text:
-                    additions.append(_live_stanza(key, url, source or "discovered"))
-                else:
-                    text = replaced
-                changed = True
-                results[key] = "wired (env URL)" if source == "env" else "wired (discovered URL)"
-            else:
-                results[key] = "present (left untouched)"
-            continue
-        if url:
-            additions.append(_live_stanza(key, url, source or "discovered"))
-            results[key] = "wired (env URL)" if source == "env" else "wired (discovered URL)"
+        elif url:
+            results[key] = f"detected ({source} URL)"
         else:
-            additions.append(_COMMENTED[key])
-            results[key] = "detected (commented)"
-    if additions:
-        sep = "" if (not text or text.endswith("\n")) else "\n"
-        lead = "\n" if text else ""
-        text = text + sep + lead + "\n".join(additions)
-        changed = True
-    if changed:
-        cfg.write_text(text, encoding="utf-8")
+            results[key] = f"detected (no URL — set WARDLINE_{key.upper()}_URL or rely on live .weft/{key}/ discovery)"
     return results

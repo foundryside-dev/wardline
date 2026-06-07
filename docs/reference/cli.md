@@ -1,6 +1,6 @@
 # CLI reference
 
-Complete reference for the `wardline` command-line interface, version `0.2.0`.
+Complete reference for the `wardline` command-line interface, version `1.0.0rc4`.
 Every `--help` block below is the verbatim output of the installed CLI; every
 example is a realistic invocation.
 
@@ -42,7 +42,7 @@ Options:
   --help     Show this message and exit.
 
 Commands:
-  baseline  Manage the finding baseline (.wardline/baseline.yaml).
+  baseline  Manage the finding baseline (.weft/wardline/baseline.yaml).
   decorator-coverage
             List every Wardline trust-decorated entity under PATH.
   file-finding
@@ -56,7 +56,7 @@ Check the installed version:
 
 ```text
 $ wardline --version
-wardline, version 0.2.0
+wardline, version 1.0.0rc4
 ```
 
 Use `--version` in CI before a scan to pin the toolchain in your build log; the
@@ -73,7 +73,8 @@ Usage: wardline scan [OPTIONS] [PATH]
   Scan PATH for findings.
 
 Options:
-  --config PATH
+  --config FILE                   Path to a weft.toml whose [wardline] table
+                                  supplies configuration overrides (weft.toml).
   --format [jsonl|sarif|agent-summary|legis]
   --output PATH
   --fail-on [CRITICAL|ERROR|WARN|INFO]
@@ -89,7 +90,7 @@ it at a package root, not a single file.
 
 | Option | Effect |
 | --- | --- |
-| `--config PATH` | Path to a `wardline.yaml` config file; controls rule enable/severity and judge settings (defaults to `wardline.yaml` in the scan path). |
+| `--config FILE` | Path to a `weft.toml` config file; Wardline reads its `[wardline]` table for rule enable/severity and judge settings (defaults to `weft.toml` in the scan path). |
 | `--format [jsonl\|sarif\|agent-summary\|legis]` | Output shape. `jsonl` is one finding per line; `sarif` is SARIF 2.1.0 for GitHub code-scanning and other generic SARIF consumers; `agent-summary` is stable versioned JSON for agents (`schema: wardline-agent-summary-1`) with active defects first, suppressed findings, engine facts, integration status, and suggested next tool calls; `legis` is the signed, verbatim-postable `scan` for legis's `POST /wardline/scan-results` (signed when `WARDLINE_LEGIS_ARTIFACT_KEY` is provisioned — write it **outside** the working tree, see the [legis handoff guide](../guides/legis-handoff.md)). SARIF carries Wardline identity in `partialFingerprints["wardlineFingerprint/v1"]`; downstream Filigree lifecycle quality depends on importers preserving that field. |
 | `--output PATH` | Write findings to a file instead of stdout. |
 | `--fail-on [CRITICAL\|ERROR\|WARN\|INFO]` | Exit non-zero when any finding at or above this severity survives the baseline. Use this as your CI gate. |
@@ -106,7 +107,7 @@ $ wardline scan src/ --format sarif --output wardline.sarif --fail-on ERROR
 Incremental local run reusing a warm cache:
 
 ```text
-$ wardline scan src/ --cache-dir .wardline/cache
+$ wardline scan src/ --cache-dir .weft/wardline/cache
 ```
 
 Agent handoff summary:
@@ -130,7 +131,7 @@ Usage: wardline file-finding [OPTIONS] FINGERPRINT [PATH]
 
 Options:
   --config FILE
-  --filigree-url TEXT        Filigree Weft URL (else env/wardline.yaml).
+  --filigree-url TEXT        Filigree Weft URL (else flag/env).
   --loomweave-url TEXT         Loomweave URL used with --attach-loomweave-identity.
   --attach-loomweave-identity  After filing, resolve the finding qualname
                              through Loomweave and attach a Filigree entity
@@ -197,7 +198,7 @@ Options:
   --config FILE
   --fail-on [CRITICAL|ERROR|WARN|INFO]
   --cache-dir PATH
-  --filigree-url TEXT             Filigree Weft URL (else env/wardline.yaml).
+  --filigree-url TEXT             Filigree Weft URL (else flag/env).
   --loomweave-url TEXT              Loomweave URL for optional identity
                                   attachment.
   --fingerprint TEXT              Active finding fingerprint to promote.
@@ -239,17 +240,17 @@ Options:
   --context-lines INTEGER  Excerpt radius (default 30).
   --max-findings INTEGER   Cap findings triaged this run.
   --write                  Append FALSE_POSITIVE verdicts to
-                           .wardline/judged.yaml (default: dry-run).
+                           .weft/wardline/judged.yaml (default: dry-run).
   --help                   Show this message and exit.
 ```
 
 | Option | Effect |
 | --- | --- |
-| `--config PATH` | Path to a `wardline.yaml` config; supplies the default model slug and other judge settings. The API key is **never** read from config — it comes only from the `WARDLINE_OPENROUTER_API_KEY` environment variable or a `.env` in the scan root. |
+| `--config PATH` | Path to a `weft.toml` config; its `[wardline]` table supplies the default model slug and other judge settings. The API key is **never** read from config — it comes only from the `WARDLINE_OPENROUTER_API_KEY` environment variable or a `.env` in the scan root. |
 | `--model TEXT` | OpenRouter model slug, overriding whatever the config sets for this one run. |
 | `--context-lines INTEGER` | How many source lines on each side of a finding to include in the excerpt sent to the model. Default is `30`. |
 | `--max-findings INTEGER` | Hard cap on how many findings to triage this run — useful to bound token spend. |
-| `--write` | Persist `FALSE_POSITIVE` verdicts to `.wardline/judged.yaml`. **Without `--write` the command is a dry run** that prints verdicts but changes nothing. |
+| `--write` | Persist `FALSE_POSITIVE` verdicts to `.weft/wardline/judged.yaml`. **Without `--write` the command is a dry run** that prints verdicts but changes nothing. |
 
 By default `judge` is a dry run: it prints what it *would* suppress. Add
 `--write` only once you trust the verdicts.
@@ -267,7 +268,7 @@ $ wardline judge src/ --write
 ```
 
 The judge is opt-in and the safe default is dry-run; see the
-[judge guide](../guides/judge.md) for credentials, the `.wardline/judged.yaml`
+[judge guide](../guides/judge.md) for credentials, the `.weft/wardline/judged.yaml`
 format, and the false-positive workflow.
 
 ## `wardline vocab`
@@ -316,14 +317,14 @@ what the three decorators actually declare, see the
 
 ## `wardline baseline`
 
-**Purpose:** the baseline command group. The baseline (`.wardline/baseline.yaml`)
+**Purpose:** the baseline command group. The baseline (`.weft/wardline/baseline.yaml`)
 records the set of findings you have accepted, so future scans report only
 *new* findings. Requires the `scanner` extra.
 
 ```text
 Usage: wardline baseline [OPTIONS] COMMAND [ARGS]...
 
-  Manage the finding baseline (.wardline/baseline.yaml).
+  Manage the finding baseline (.weft/wardline/baseline.yaml).
 
 Options:
   --help  Show this message and exit.
@@ -352,7 +353,7 @@ Options:
 ```
 
 `PATH` is the directory to scan (current directory if omitted). `--config`
-points at a `.wardline` config so the baseline lands where the config expects.
+points at a `weft.toml` whose `[wardline]` table the baseline reads.
 
 Establish a baseline for an existing project so a noisy first scan does not
 break the build:

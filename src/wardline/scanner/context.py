@@ -131,7 +131,7 @@ class _RuleClass(Protocol):
     """A rule *class*: a ``rule_id`` classvar plus a ``base_severity``-taking
     constructor that yields a :class:`_Rule`. This is what a ``TrustGrammar``
     registers (Track 2) — the registry instantiates it per-config so
-    ``wardline.yaml`` severity overrides apply."""
+    ``weft.toml [wardline]`` severity overrides apply."""
 
     rule_id: str
 

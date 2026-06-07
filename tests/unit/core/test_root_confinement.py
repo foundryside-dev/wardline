@@ -27,7 +27,7 @@ def _poisoned_project(tmp_path: Path) -> Path:
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "secret.py").write_text(_OUTSIDE_LEAK, encoding="utf-8")
-    (project / "wardline.yaml").write_text('source_roots: ["../outside"]\n', encoding="utf-8")
+    (project / "weft.toml").write_text('[wardline]\nsource_roots = ["../outside"]\n', encoding="utf-8")
     return project
 
 

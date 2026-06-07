@@ -26,6 +26,7 @@ from wardline.core.judge_run import (
 from wardline.core.judge_run import (
     load_env_key as _load_env_key,  # re-exported: tests import _load_env_key from here
 )
+from wardline.core.paths import weft_config_path
 from wardline.core.triage import TriageResult
 
 
@@ -45,7 +46,7 @@ from wardline.core.triage import TriageResult
     "do_write",
     is_flag=True,
     default=False,
-    help="Append FALSE_POSITIVE verdicts to .wardline/judged.yaml (default: dry-run).",
+    help="Append FALSE_POSITIVE verdicts to .weft/wardline/judged.yaml (default: dry-run).",
 )
 @click.option(
     "--trust-judge-policy",
@@ -63,7 +64,7 @@ from wardline.core.triage import TriageResult
     "--trust-pack",
     "trusted_packs",
     multiple=True,
-    help="Allow importing this trust-grammar pack from wardline.yaml. May be repeated.",
+    help="Allow importing this trust-grammar pack from weft.toml [wardline]. May be repeated.",
 )
 @click.option(
     "--allow-custom-packs",
@@ -76,7 +77,7 @@ from wardline.core.triage import TriageResult
     "--strict-defaults",
     is_flag=True,
     default=False,
-    help="Ignore repository-supplied custom configuration overrides (wardline.yaml).",
+    help="Ignore repository-supplied custom configuration overrides (weft.toml).",
 )
 def judge(
     path: Path,
@@ -94,7 +95,8 @@ def judge(
     """Triage active DEFECTs with the opt-in LLM judge."""
     try:
         cfg = config_mod.load(
-            config_path or (path / "wardline.yaml"),
+            config_path or weft_config_path(path),
+            explicit=config_path is not None,
             trust_local_packs=trust_local_packs,
             trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,

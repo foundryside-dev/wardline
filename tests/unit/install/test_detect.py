@@ -2,201 +2,176 @@ from pathlib import Path
 
 import pytest
 
-from wardline.core.errors import WardlineError
-from wardline.install.detect import record_bindings
+from wardline.install.detect import detect_siblings
 
 
-def test_no_siblings_writes_nothing(tmp_path: Path, monkeypatch) -> None:
+def _assert_no_config_written(root: Path) -> None:
+    # detect_siblings is detection-only — it must never author config.
+    assert not (root / "weft.toml").exists()
+
+
+def test_no_siblings_returns_absent_and_writes_nothing(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
-    results = record_bindings(tmp_path)
+    results = detect_siblings(tmp_path)
     assert results == {"loomweave": "absent", "filigree": "absent"}
-    assert not (tmp_path / "wardline.yaml").exists()
+    _assert_no_config_written(tmp_path)
 
 
-def test_filigree_marker_writes_commented_stanza(tmp_path: Path, monkeypatch) -> None:
+def test_filigree_published_port_is_detected(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
-    (tmp_path / ".filigree.conf").write_text("{}", encoding="utf-8")
-    results = record_bindings(tmp_path)
-    assert results["filigree"] == "detected (commented)"
-    text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
-    assert "wardline-install:filigree" in text
-    assert "# filigree:" in text
+    port_dir = tmp_path / ".weft" / "filigree"
+    port_dir.mkdir(parents=True)
+    (port_dir / "ephemeral.port").write_text("8628", encoding="utf-8")
+
+    results = detect_siblings(tmp_path)
+
+    assert results["filigree"] == "detected (discovered URL)"
+    assert results["loomweave"] == "absent"
+    _assert_no_config_written(tmp_path)
 
 
-def test_filigree_commented_stanza_is_upgraded_when_port_becomes_discoverable(tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "payload",
+    [
+        # All-digit payload over CPython's 4300-digit int(str) cap: passes ascii
+        # decode and isdigit(), raises in int() -> caught by the int() guard.
+        pytest.param("9" * 5000, id="over-4300-digit-cap"),
+        # Unicode "digit" chars (superscripts) pass str.isdigit() but raise in int();
+        # rejected at the ascii read (decode error) before isdigit() is reached.
+        pytest.param("²³⁴", id="unicode-isdigit"),
+    ],
+)
+def test_filigree_hostile_port_payload_is_soft(tmp_path: Path, monkeypatch, payload: str) -> None:
+    # A planted ephemeral.port whose payload passes str.isdigit() but is not a valid
+    # int() — via the 4300-digit cap or a Unicode digit. Detection must stay fail-soft
+    # (treat as absent), never crash, whichever layer (ascii decode or int()) rejects it.
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
-    (tmp_path / ".filigree.conf").write_text("{}", encoding="utf-8")
-    record_bindings(tmp_path)
+    port_dir = tmp_path / ".weft" / "filigree"
+    port_dir.mkdir(parents=True)
+    (port_dir / "ephemeral.port").write_text(payload, encoding="utf-8")
 
+    results = detect_siblings(tmp_path)
+
+    assert results["filigree"] == "absent"
+    _assert_no_config_written(tmp_path)
+
+
+def test_filigree_legacy_dot_dir_port_is_detected(tmp_path: Path, monkeypatch) -> None:
+    # The legacy .filigree/ dot-dir is tolerated during the federation transition.
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
     filigree_dir = tmp_path / ".filigree"
     filigree_dir.mkdir()
     (filigree_dir / "ephemeral.port").write_text("8628", encoding="utf-8")
-    results = record_bindings(tmp_path)
 
-    assert results["filigree"] == "wired (discovered URL)"
-    text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
-    assert "# filigree:" not in text
-    assert text.count("wardline-install:filigree") == 1
-    assert 'filigree:\n  url: "http://localhost:8628/api/weft/scan-results"' in text
+    results = detect_siblings(tmp_path)
+
+    assert results["filigree"] == "detected (discovered URL)"
+    _assert_no_config_written(tmp_path)
 
 
-def test_filigree_ephemeral_port_writes_live_stanza(tmp_path: Path, monkeypatch) -> None:
+def test_env_url_is_detected(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", "http://clar:9100")
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    results = detect_siblings(tmp_path)
+    assert results["loomweave"] == "detected (env URL)"
+    _assert_no_config_written(tmp_path)
+
+
+def test_present_without_url_reports_no_url(tmp_path: Path, monkeypatch) -> None:
+    # A sibling marker present but no resolvable URL → detected, but the status
+    # records that no URL is known (operator must wire one or rely on live discovery).
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
     (tmp_path / ".filigree.conf").write_text("{}", encoding="utf-8")
-    filigree_dir = tmp_path / ".filigree"
-    filigree_dir.mkdir()
-    (filigree_dir / "ephemeral.port").write_text("8628", encoding="utf-8")
 
-    results = record_bindings(tmp_path)
+    results = detect_siblings(tmp_path)
 
-    assert results["filigree"] == "wired (discovered URL)"
-    text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
-    assert 'filigree:\n  url: "http://localhost:8628/api/weft/scan-results"' in text
+    assert results["filigree"].startswith("detected (no URL")
+    _assert_no_config_written(tmp_path)
 
 
-def test_loomweave_yaml_http_bind_writes_live_stanza(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
-    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
-    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: "loomweave")
-    (tmp_path / "loomweave.yaml").write_text(
-        "serve:\n  http:\n    enabled: true\n    bind: 127.0.0.1:9111\n",
-        encoding="utf-8",
-    )
-
-    results = record_bindings(tmp_path)
-
-    assert results["loomweave"] == "wired (discovered URL)"
-    text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
-    assert 'loomweave:\n  url: "http://127.0.0.1:9111"' in text
-
-
-def test_loomweave_yaml_http_disabled_remains_commented(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
-    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
-    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: "loomweave")
-    (tmp_path / "loomweave.yaml").write_text(
-        "serve:\n  http:\n    enabled: false\n    bind: 127.0.0.1:9111\n",
-        encoding="utf-8",
-    )
-
-    results = record_bindings(tmp_path)
-
-    assert results["loomweave"] == "detected (commented)"
-    text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
-    assert "# loomweave:" in text
-    assert 'url: "http://127.0.0.1:9111"' not in text
-
-
-def test_loomweave_commented_stanza_is_upgraded_when_http_becomes_discoverable(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
-    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
-    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: "loomweave")
-    (tmp_path / "loomweave.yaml").write_text(
-        "serve:\n  http:\n    enabled: false\n    bind: 127.0.0.1:9111\n",
-        encoding="utf-8",
-    )
-    record_bindings(tmp_path)
-
-    (tmp_path / "loomweave.yaml").write_text(
-        "serve:\n  http:\n    enabled: true\n    bind: 127.0.0.1:9111\n",
-        encoding="utf-8",
-    )
-    results = record_bindings(tmp_path)
-
-    assert results["loomweave"] == "wired (discovered URL)"
-    text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
-    assert "# loomweave:" not in text
-    assert text.count("wardline-install:loomweave") == 1
-    assert 'loomweave:\n  url: "http://127.0.0.1:9111"' in text
-
-
-def test_record_bindings_rejects_symlinked_wardline_yaml(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", "http://clar:9100")
-    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
-    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
-    outside = tmp_path / "outside.yaml"
-    outside.write_text("existing: true\n", encoding="utf-8")
-    (tmp_path / "wardline.yaml").symlink_to(outside)
-
-    with pytest.raises(WardlineError, match="symlink"):
-        record_bindings(tmp_path)
-
-    assert outside.read_text(encoding="utf-8") == "existing: true\n"
-
-
-def test_env_url_writes_live_stanza(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", "http://clar:9100")
-    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
-    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
-    results = record_bindings(tmp_path)
-    assert results["loomweave"] == "wired (env URL)"
-    text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
-    assert 'loomweave:\n  url: "http://clar:9100"' in text
-
-
-def test_existing_key_left_untouched(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", "http://new")
-    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
-    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
-    (tmp_path / "wardline.yaml").write_text('loomweave:\n  url: "http://existing"\n', encoding="utf-8")
-    results = record_bindings(tmp_path)
-    assert results["loomweave"] == "present (left untouched)"
-    text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
-    assert text.count("loomweave:") == 1
-    assert "http://new" not in text
-
-
-def test_rerun_does_not_duplicate_commented_stanza(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
-    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
-    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
-    (tmp_path / ".filigree.conf").write_text("{}", encoding="utf-8")
-    record_bindings(tmp_path)
-    record_bindings(tmp_path)
-    text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
-    assert text.count("wardline-install:filigree") == 1
-
-
-def test_both_siblings_live_written_once(tmp_path: Path, monkeypatch) -> None:
+def test_both_siblings_via_env(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", "http://clar:9100")
     monkeypatch.setenv("WARDLINE_FILIGREE_URL", "http://fil:9200/api/weft/scan-results")
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
-    results = record_bindings(tmp_path)
-    assert results == {"loomweave": "wired (env URL)", "filigree": "wired (env URL)"}
-    text = (tmp_path / "wardline.yaml").read_text(encoding="utf-8")
-    assert text.count("loomweave:") == 1
-    assert text.count("filigree:") == 1
+    results = detect_siblings(tmp_path)
+    assert results == {"loomweave": "detected (env URL)", "filigree": "detected (env URL)"}
+    _assert_no_config_written(tmp_path)
 
 
-def test_appends_to_file_without_trailing_newline(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", "http://clar:9100")
+# --- loomweave.yaml discovery (_loomweave_url_from_config / _http_url_from_bind) ---
+# This parsing logic is live (detect_siblings -> _detect_loomweave -> _loomweave_url_from_config);
+# these tests restore the coverage that moved out with the old record_bindings tests.
+
+_LOOMWEAVE_YAML = "serve:\n  http:\n    enabled: {enabled}\n    bind: {bind}\n"
+
+
+def test_loomweave_yaml_enabled_is_detected(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
-    (tmp_path / "wardline.yaml").write_text("exclude:\n  - build", encoding="utf-8")  # no trailing \n
-    assert record_bindings(tmp_path)["loomweave"] == "wired (env URL)"
-    # The result must still be loadable (no run-together lines).
-    from wardline.core.config import load
-
-    cfg = load(tmp_path / "wardline.yaml")
-    assert cfg.loomweave_url == "http://clar:9100"
-    assert cfg.exclude == ("build",)
+    (tmp_path / "loomweave.yaml").write_text(
+        _LOOMWEAVE_YAML.format(enabled="true", bind="127.0.0.1:9111"), encoding="utf-8"
+    )
+    results = detect_siblings(tmp_path)
+    assert results["loomweave"] == "detected (discovered URL)"
+    _assert_no_config_written(tmp_path)
 
 
-def test_url_with_quote_stays_valid_yaml(tmp_path: Path, monkeypatch) -> None:
-    weird = 'http://h/p?q="v"'
-    monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", weird)
+def test_loomweave_yaml_disabled_reports_no_url(tmp_path: Path, monkeypatch) -> None:
+    # enabled: false -> no URL discovered, but the file's presence still means "detected".
+    # A regression here would silently wire a deliberately-disabled endpoint.
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
-    record_bindings(tmp_path)
-    from wardline.core.config import load
+    (tmp_path / "loomweave.yaml").write_text(
+        _LOOMWEAVE_YAML.format(enabled="false", bind="127.0.0.1:9111"), encoding="utf-8"
+    )
+    results = detect_siblings(tmp_path)
+    assert results["loomweave"].startswith("detected (no URL")
+    _assert_no_config_written(tmp_path)
 
-    cfg = load(tmp_path / "wardline.yaml")
-    assert cfg.loomweave_url == weird
+
+def test_loomweave_binary_on_path_reports_no_url(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setattr(
+        "wardline.install.detect.shutil.which", lambda name: "/usr/bin/loomweave" if name == "loomweave" else None
+    )
+    results = detect_siblings(tmp_path)
+    assert results["loomweave"].startswith("detected (no URL")
+    _assert_no_config_written(tmp_path)
+
+
+def test_http_url_from_bind_normalizes_wildcard_host() -> None:
+    from wardline.install.detect import _http_url_from_bind
+
+    assert _http_url_from_bind("0.0.0.0:9111") == "http://127.0.0.1:9111"
+    assert _http_url_from_bind("127.0.0.1:9100") == "http://127.0.0.1:9100"
+    assert _http_url_from_bind("http://already:9100") == "http://already:9100"
+    assert _http_url_from_bind("::1:9100") == "http://[::1]:9100"
+    assert _http_url_from_bind("no-port") is None
+
+
+def test_loomweave_url_from_config_extracts_bind(tmp_path: Path) -> None:
+    from wardline.install.detect import _loomweave_url_from_config
+
+    (tmp_path / "loomweave.yaml").write_text(
+        _LOOMWEAVE_YAML.format(enabled="true", bind="0.0.0.0:9111"), encoding="utf-8"
+    )
+    assert _loomweave_url_from_config(tmp_path) == "http://127.0.0.1:9111"
+    # disabled -> None
+    (tmp_path / "loomweave.yaml").write_text(
+        _LOOMWEAVE_YAML.format(enabled="false", bind="0.0.0.0:9111"), encoding="utf-8"
+    )
+    assert _loomweave_url_from_config(tmp_path) is None

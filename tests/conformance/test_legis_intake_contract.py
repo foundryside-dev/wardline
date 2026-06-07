@@ -207,7 +207,7 @@ def _proj(tmp_path: Path, source: str = _LEAKY) -> Path:
 
 def _artifact(root: Path, *, key: bytes | None = None) -> tuple[dict[str, Any], Any]:
     result = run_scan(root)
-    cfg = load_config(root / "wardline.yaml")
+    cfg = load_config(root / "weft.toml")
     scan = wl_legis.build_legis_artifact(result, root=root, config=cfg, key=key)
     return scan, result
 
@@ -247,9 +247,7 @@ def test_legis_gate_population_equals_wardline_gate_active_count(tmp_path: Path)
     # summary.active, which counts active in the (possibly suppressed) emitted findings.
     scan, result = _artifact(_proj(tmp_path))
     gate_population = result.gate_findings if result.gate_findings is not None else result.findings
-    gate_active = sum(
-        1 for f in gate_population if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE
-    )
+    gate_active = sum(1 for f in gate_population if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE)
     assert len(active_defects(scan)) == gate_active
     assert gate_active >= 1
 
@@ -316,7 +314,7 @@ def test_secure_default_gate_defect_is_enforced_by_legis(tmp_path: Path) -> None
     )
     repo = tmp_path / "norepo"
     repo.mkdir()
-    cfg = load_config(repo / "wardline.yaml")
+    cfg = load_config(repo / "weft.toml")
     scan = wl_legis.build_legis_artifact(result, root=repo, config=cfg, key=None)
     # gate_findings != findings here (active vs baselined) — that asymmetry is the point.
     (projected,) = scan["findings"]
@@ -341,7 +339,7 @@ def test_trust_suppressions_path_projects_the_suppressed_view(tmp_path: Path) ->
     )
     repo = tmp_path / "norepo"
     repo.mkdir()
-    cfg = load_config(repo / "wardline.yaml")
+    cfg = load_config(repo / "weft.toml")
     scan = wl_legis.build_legis_artifact(result, root=repo, config=cfg, key=None)
     (projected,) = scan["findings"]
     assert projected["suppressed"] == "suppressed"

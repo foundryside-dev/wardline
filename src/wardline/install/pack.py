@@ -3,52 +3,17 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 
-from wardline.core.errors import ConfigError
-from wardline.core.optional_deps import require_yaml
-from wardline.core.safe_paths import safe_project_file
+def activate_pack(pack_name: str) -> str:
+    """Return operator guidance for activating a trust-grammar pack.
 
-
-def activate_pack(root: Path, pack_name: str) -> str:
-    """Add pack_name to the 'packs' list in wardline.yaml.
-
-    Returns "activated" or "already_active".
+    Packs import and execute code (see the ``_is_local_pack`` guard in
+    ``core/config``), so they MUST be operator-authored — wardline never writes the
+    shared, read-only ``weft.toml``. This emits the snippet for the operator to add
+    by hand; runtime trust is still asserted separately via ``--trust-pack``.
     """
-    yaml = require_yaml("activating a trust-grammar pack")
-    config_path = safe_project_file(root, root / "wardline.yaml", label="wardline.yaml")
-    if not config_path.exists():
-        raw = {"packs": [pack_name]}
-        config_path.write_text(
-            yaml.safe_dump(raw, sort_keys=False, default_flow_style=False, allow_unicode=True),
-            encoding="utf-8",
-        )
-        return "activated"
-
-    try:
-        raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError as exc:
-        raise ConfigError(f"malformed {config_path.name}: {exc}") from exc
-
-    if not isinstance(raw, dict):
-        raise ConfigError(f"{config_path.name} must be a mapping")
-
-    packs = raw.get("packs")
-    if packs is None:
-        packs = []
-        raw["packs"] = packs
-    elif not isinstance(packs, list):
-        raise ConfigError(f"malformed {config_path.name}: 'packs' must be a list")
-
-    if pack_name in packs:
-        return "already_active"
-
-    new_packs = list(packs)
-    new_packs.append(pack_name)
-    raw["packs"] = new_packs
-
-    config_path.write_text(
-        yaml.safe_dump(raw, sort_keys=False, default_flow_style=False, allow_unicode=True),
-        encoding="utf-8",
+    return (
+        f"To activate trust-grammar pack {pack_name!r}, add it to weft.toml under "
+        f'[wardline]:\n\n    [wardline]\n    packs = ["{pack_name}"]\n\n'
+        f"then pass --trust-pack {pack_name} at scan/judge time."
     )
-    return "activated"

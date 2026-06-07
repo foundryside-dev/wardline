@@ -98,7 +98,7 @@ return the same object (identical by construction — both call the same
 | `engine_limited` | int | Subset of `unknown` caused by engine under-scan (parse/recursion skip → `WLN-ENGINE-*` FACT) |
 | `coverage_pct` | float \| null | `100 × (boundaries_total − unknown_count) / boundaries_total`; `null` when `boundaries_total == 0` (no trust surface → not a false-green 100%) |
 | `unanalyzed_rule_ids` | list[str] | Distinct `WLN-ENGINE-*` rule ids seen in findings — indicates *why* engine-limited unknowns occurred |
-| `waiver_debt` | list | Every configured waiver from `wardline.yaml`, with days-to-expiry |
+| `waiver_debt` | list | Every waiver from `.weft/wardline/waivers.yaml`, with days-to-expiry |
 | `baselined_total` | int | Findings suppressed via the accepted baseline |
 | `judged_total` | int | Findings suppressed as LLM-judged false positives |
 
@@ -229,7 +229,7 @@ and the honesty gap directly, and acts on what it finds.
 ```
 
 Both `path` and `config` are optional. When omitted, `path` defaults to the
-server root and `config` resolves to `wardline.yaml` at the scan root. Paths
+server root and `config` resolves to `weft.toml` at the scan root. Paths
 are confined under the server root (the same guarantee as `scan`).
 
 ## CLI quick reference
@@ -250,15 +250,15 @@ $ wardline assure src/myproject --format json
 {"boundaries_total": 12, "proven": 9, ...}
 ```
 
-The default format is `json`. Pass `--config path/to/wardline.yaml` to point
+The default format is `json`. Pass `--config path/to/weft.toml` to point
 at a config file in a non-standard location.
 
 ## Zero setup
 
 `assure` is zero-config: no new configuration is required. It reads what every
-scan already computes and applies the same config (`wardline.yaml`) and waivers
-that govern `scan`. Run it on a path that already has trust annotations and you
-immediately know your coverage.
+scan already computes and applies the same config (`weft.toml` `[wardline]`) and
+waivers (`.weft/wardline/waivers.yaml`) that govern `scan`. Run it on a path that
+already has trust annotations and you immediately know your coverage.
 
 ## See also
 
@@ -266,7 +266,8 @@ immediately know your coverage.
   surface including `scan`, `explain_taint`, and `judge`.
 - [Suppressing findings](suppression.md) — baselines, waivers, and the
   `judged.yaml` record (all three suppression counts appear in `assure`).
-- [Configuration](configuration.md) — `wardline.yaml` keys including the
-  `waivers:` block that feeds `waiver_debt`.
+- [Configuration](configuration.md) — `weft.toml` `[wardline]` keys.
+- [Suppressing findings](suppression.md#waivers) — the `.weft/wardline/waivers.yaml`
+  state that feeds `waiver_debt`.
 - [Rules](../concepts/rules.md) — the `WLN-ENGINE-*` rule ids that appear in
   `unanalyzed_rule_ids`.

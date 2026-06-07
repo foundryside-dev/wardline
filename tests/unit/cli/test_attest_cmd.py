@@ -87,7 +87,7 @@ def test_build_round_trips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
 def test_build_and_verify_reproduce_with_trusted_pack(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("WARDLINE_ATTEST_KEY", raising=False)
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[3]))
-    (tmp_path / "wardline.yaml").write_text("packs:\n  - tests.unit.install.mock_pack\n", encoding="utf-8")
+    (tmp_path / "weft.toml").write_text('[wardline]\npacks = ["tests.unit.install.mock_pack"]\n', encoding="utf-8")
     (tmp_path / "m.py").write_text(
         "from tests.unit.install.mock_pack import mock_boundary\n\n@mock_boundary\ndef violator():\n    pass\n",
         encoding="utf-8",
@@ -196,7 +196,7 @@ def test_verify_reproduce_refuses_escaping_source_roots_by_default(
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "secret.py").write_text(_MODULE, encoding="utf-8")
-    (project / "wardline.yaml").write_text('source_roots: ["../outside"]\n', encoding="utf-8")
+    (project / "weft.toml").write_text('[wardline]\nsource_roots = ["../outside"]\n', encoding="utf-8")
     _git(["init"], project)
     _git(["config", "user.email", "test@example.com"], project)
     _git(["config", "user.name", "Test"], project)
