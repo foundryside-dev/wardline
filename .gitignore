@@ -50,3 +50,6 @@ loomweave.yaml
 .agents/skills/loomweave-workflow/SKILL.md
 .claude/skills/loomweave-workflow/.fingerprint
 .claude/skills/loomweave-workflow/SKILL.md
+wardline.yaml
+.agents/skills/wardline-gate/SKILL.md
+.claude/skills/wardline-gate/SKILL.md
