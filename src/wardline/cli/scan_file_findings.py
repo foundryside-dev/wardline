@@ -51,21 +51,9 @@ def scan_file_findings(
     """Run the agent workflow from scan to optionally filed Filigree issues."""
     dry = dry_run or (not fingerprints and not all_active)
     try:
-        resolved_filigree_url = resolve_filigree_url(
-            filigree_url,
-            path,
-            config_path,
-            trust_local_packs=trust_local_packs,
-            trusted_packs=trusted_packs,
-            strict_defaults=strict_defaults,
-        )
+        resolved_filigree_url = resolve_filigree_url(filigree_url, path, config_path, strict_defaults=strict_defaults)
         resolved_loomweave_url = resolve_loomweave_url(
-            loomweave_url,
-            path,
-            config_path,
-            trust_local_packs=trust_local_packs,
-            trusted_packs=trusted_packs,
-            strict_defaults=strict_defaults,
+            loomweave_url, path, config_path, strict_defaults=strict_defaults
         )
         filigree_emitter = None
         filigree_filer = None

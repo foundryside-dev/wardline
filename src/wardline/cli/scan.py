@@ -157,22 +157,8 @@ def scan(
     emit_result: EmitResult | None = None
     loomweave_result = None
     try:
-        filigree_url = resolve_filigree_url(
-            filigree_url,
-            path,
-            config_path,
-            trust_local_packs=trust_local_packs,
-            trusted_packs=trusted_packs,
-            strict_defaults=strict_defaults,
-        )
-        loomweave_url = resolve_loomweave_url(
-            loomweave_url,
-            path,
-            config_path,
-            trust_local_packs=trust_local_packs,
-            trusted_packs=trusted_packs,
-            strict_defaults=strict_defaults,
-        )
+        filigree_url = resolve_filigree_url(filigree_url, path, config_path, strict_defaults=strict_defaults)
+        loomweave_url = resolve_loomweave_url(loomweave_url, path, config_path, strict_defaults=strict_defaults)
         result = run_scan(
             path,
             config_path=config_path,

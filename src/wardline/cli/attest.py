@@ -104,14 +104,7 @@ def attest(
         )
         raise SystemExit(2)
 
-    loomweave_url = resolve_loomweave_url(
-        loomweave_url,
-        path,
-        config_path,
-        trust_local_packs=trust_local_packs,
-        trusted_packs=trusted_packs,
-        strict_defaults=strict_defaults,
-    )
+    loomweave_url = resolve_loomweave_url(loomweave_url, path, config_path, strict_defaults=strict_defaults)
     loomweave_client = None
     if loomweave_url is not None:
         from wardline.loomweave.client import LoomweaveClient

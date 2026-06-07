@@ -284,8 +284,6 @@ def resolve_loomweave_url(
     root: Path,
     config_path: Path | None = None,
     *,
-    trust_local_packs: bool = False,
-    trusted_packs: Iterable[str] = (),
     strict_defaults: bool = False,
 ) -> str | None:
     """Loomweave URL by precedence: explicit flag > env var > published port.
@@ -298,12 +296,9 @@ def resolve_loomweave_url(
     local case; a flag or env var is the interim escape hatch for a fixed remote.
     Skipped under ``strict_defaults`` (hermetic, no project-derived discovery).
 
-    ``config_path`` / ``trust_local_packs`` / ``trusted_packs`` are the shared
-    scan-config param bundle that the CLI and MCP call sites pass UNIFORMLY to this
-    function and to ``run_scan``/``load`` alongside it. URL resolution itself reads
-    only ``flag``, the env var, the published port, and ``strict_defaults`` — the rest
-    are accepted for call-site parity (they regain meaning if the pending hub
-    sibling-endpoint key is ever read here).
+    ``config_path`` is accepted (and passed positionally by the CLI/MCP call sites for
+    parity with ``run_scan``/``load``) but is the reserved hook for the canonical hub
+    sibling-endpoint key once its layout is pinned; it is not read today.
     """
     if flag is not None:
         return flag
@@ -320,8 +315,6 @@ def resolve_filigree_url(
     root: Path,
     config_path: Path | None = None,
     *,
-    trust_local_packs: bool = False,
-    trusted_packs: Iterable[str] = (),
     strict_defaults: bool = False,
 ) -> str | None:
     """Filigree Weft URL by precedence: explicit flag > env var > published port.
@@ -332,10 +325,8 @@ def resolve_filigree_url(
     tolerating the legacy ``.filigree/ephemeral.port``) carries the full Weft
     scan-results route; flag/env override. Skipped under ``strict_defaults``.
 
-    ``config_path`` / ``trust_local_packs`` / ``trusted_packs`` are the shared
-    scan-config param bundle the CLI/MCP call sites pass uniformly here and to
-    ``run_scan``/``load``; URL resolution reads only ``flag``, env, the published
-    port, and ``strict_defaults`` (see :func:`resolve_loomweave_url`).
+    ``config_path`` is the reserved hook for the pending hub sibling-endpoint key (see
+    :func:`resolve_loomweave_url`); it is accepted but not read today.
     """
     if flag is not None:
         return flag

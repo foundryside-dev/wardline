@@ -8,7 +8,6 @@ project files on disk. Rooted at a project path (launch cwd by default)."""
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -749,8 +748,6 @@ class WardlineMCPServer:
         self,
         config_path: Path | None = None,
         *,
-        trust_local_packs: bool = False,
-        trusted_packs: Iterable[str] = (),
         strict_defaults: bool = False,
     ) -> Any:
         """Build a LoomweaveClient for this server's root, or None when no URL is set."""
@@ -758,8 +755,6 @@ class WardlineMCPServer:
             self.loomweave_url,
             self.root,
             config_path,
-            trust_local_packs=trust_local_packs,
-            trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,
         )
         if url is None:
@@ -777,8 +772,6 @@ class WardlineMCPServer:
         self,
         config_path: Path | None = None,
         *,
-        trust_local_packs: bool = False,
-        trusted_packs: Iterable[str] = (),
         strict_defaults: bool = False,
     ) -> Any:
         """Build a FiligreeEmitter for this server's URL, or None when no URL is set."""
@@ -786,8 +779,6 @@ class WardlineMCPServer:
             self.filigree_url,
             self.root,
             config_path,
-            trust_local_packs=trust_local_packs,
-            trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,
         )
         if url is None:
@@ -800,8 +791,6 @@ class WardlineMCPServer:
         self,
         config_path: Path | None = None,
         *,
-        trust_local_packs: bool = False,
-        trusted_packs: Iterable[str] = (),
         strict_defaults: bool = False,
     ) -> Any:
         """Build a FiligreeIssueFiler from this server's Weft URL, or None when unset."""
@@ -809,8 +798,6 @@ class WardlineMCPServer:
             self.filigree_url,
             self.root,
             config_path,
-            trust_local_packs=trust_local_packs,
-            trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,
         )
         if url is None:
@@ -929,16 +916,10 @@ class WardlineMCPServer:
                     args,
                     root,
                     self._loomweave_client(
-                        _cfg(args, root),
-                        trust_local_packs=bool(args.get("trust_local_packs") or False),
-                        trusted_packs=tuple(args.get("trust_packs") or []),
-                        strict_defaults=bool(args.get("strict_defaults") or False),
+                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
                     ),
                     self._filigree_emitter(
-                        _cfg(args, root),
-                        trust_local_packs=bool(args.get("trust_local_packs") or False),
-                        trusted_packs=tuple(args.get("trust_packs") or []),
-                        strict_defaults=bool(args.get("strict_defaults") or False),
+                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
                     ),
                     trust_local_packs=bool(args.get("trust_local_packs") or False),
                     strict_defaults=bool(args.get("strict_defaults") or False),
@@ -1062,10 +1043,7 @@ class WardlineMCPServer:
                     args,
                     root,
                     self._loomweave_client(
-                        _cfg(args, root),
-                        trust_local_packs=bool(args.get("trust_local_packs") or False),
-                        trusted_packs=_trusted_packs_arg(args),
-                        strict_defaults=bool(args.get("strict_defaults") or False),
+                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
                     ),
                 ),
             )
@@ -1097,10 +1075,7 @@ class WardlineMCPServer:
                     args,
                     root,
                     self._loomweave_client(
-                        _cfg(args, root),
-                        trust_local_packs=bool(args.get("trust_local_packs") or False),
-                        trusted_packs=_trusted_packs_arg(args),
-                        strict_defaults=bool(args.get("strict_defaults") or False),
+                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
                     ),
                 ),
             )
@@ -1173,22 +1148,11 @@ class WardlineMCPServer:
                     args,
                     root,
                     self._filigree_emitter(
-                        _cfg(args, root),
-                        trust_local_packs=bool(args.get("trust_local_packs") or False),
-                        trusted_packs=tuple(args.get("trust_packs") or []),
-                        strict_defaults=bool(args.get("strict_defaults") or False),
+                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
                     ),
-                    self._filigree_filer(
-                        _cfg(args, root),
-                        trust_local_packs=bool(args.get("trust_local_packs") or False),
-                        trusted_packs=tuple(args.get("trust_packs") or []),
-                        strict_defaults=bool(args.get("strict_defaults") or False),
-                    ),
+                    self._filigree_filer(_cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)),
                     self._loomweave_client(
-                        _cfg(args, root),
-                        trust_local_packs=bool(args.get("trust_local_packs") or False),
-                        trusted_packs=tuple(args.get("trust_packs") or []),
-                        strict_defaults=bool(args.get("strict_defaults") or False),
+                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
                     ),
                 ),
             )
@@ -1317,8 +1281,6 @@ class WardlineMCPServer:
             self.loomweave_url,
             self.root,
             _cfg(arguments, self.root),
-            trust_local_packs=bool(arguments.get("trust_local_packs") or False),
-            trusted_packs=_trusted_packs_arg(arguments),
             strict_defaults=bool(arguments.get("strict_defaults") or False),
         )
 
@@ -1327,8 +1289,6 @@ class WardlineMCPServer:
             self.filigree_url,
             self.root,
             _cfg(arguments, self.root),
-            trust_local_packs=bool(arguments.get("trust_local_packs") or False),
-            trusted_packs=_trusted_packs_arg(arguments),
             strict_defaults=bool(arguments.get("strict_defaults") or False),
         )
 
