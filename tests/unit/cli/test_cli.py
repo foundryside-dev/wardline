@@ -462,7 +462,7 @@ def test_scan_baseline_annotates_but_does_not_clear_gate(tmp_path) -> None:
     assert res.exit_code == 1, res.output
     findings2 = [_json.loads(ln) for ln in out.read_text().splitlines() if ln.strip()]
     leak = next(f for f in findings2 if f["rule_id"] == "PY-WL-101")
-    assert leak["suppressed"] == "baselined"  # annotate-and-keep
+    assert leak["suppression_state"] == "baselined"  # annotate-and-keep
     assert "1 suppressed" in res.output
 
 

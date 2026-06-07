@@ -307,10 +307,19 @@ def scan(
                         "Findings written locally only.",
                         err=True,
                     )
+                elif emit_result.token_sent:
+                    # A token WAS sent and rejected — the value is wrong, not absent. Saying
+                    # "set the token" here is the C-7 misdiagnosis (weft-23574069a1).
+                    click.echo(
+                        f"warning: Filigree rejected the token (401) at {filigree_url}; a token WAS sent but "
+                        "its value is wrong — align WEFT_FEDERATION_TOKEN (env or .env) to the canonical "
+                        "federation token. Findings written locally only.",
+                        err=True,
+                    )
                 else:
                     click.echo(
-                        f"warning: Filigree returned {emit_result.status} (auth rejected) at {filigree_url}; "
-                        "set WEFT_FEDERATION_TOKEN (or .env) to the project token. Findings written locally only.",
+                        f"warning: Filigree returned 401 (auth rejected) at {filigree_url}; no token was sent — "
+                        "set WEFT_FEDERATION_TOKEN (env or .env) to the project token. Findings written locally only.",
                         err=True,
                     )
             elif emit_result.status is not None:
@@ -368,9 +377,13 @@ def scan(
             f"(see WLN-ENGINE-* facts in {output}).",
             err=True,
         )
-    gate_dec = gate_decision(result, Severity(fail_on)) if fail_on is not None else None
-    gate_tripped = gate_dec is not None and gate_dec.tripped
-    if gate_dec is not None and gate_dec.tripped:
+    gate_dec = gate_decision(result, Severity(fail_on)) if fail_on is not None else gate_decision(result, None)
+    gate_tripped = gate_dec.tripped
+    if gate_dec.verdict == "NOT_EVALUATED":
+        # A bare scan never ran the gate — say so explicitly so a clean-looking exit is not
+        # mistaken for a PASS (weft-b937e53854). Carries would_trip_at via the reason.
+        click.echo(f"gate: NOT_EVALUATED — {gate_dec.reason}", err=True)
+    elif gate_dec.tripped:
         # Never let "0 active + gate FAILED" read as a bug: say why and which population.
         click.echo(f"gate: FAILED (--fail-on {gate_dec.fail_on}) — {gate_dec.reason}", err=True)
         click.echo(f"gate: evaluated {gate_dec.evaluated}", err=True)
@@ -405,6 +418,8 @@ def _filigree_status(result: EmitResult | None) -> dict[str, object]:
         "disabled_reason": filigree_disabled_reason(
             reachable=result.reachable,
             status=result.status,
+            token_sent=result.token_sent,
+            url=result.url,
         ),
     }
 

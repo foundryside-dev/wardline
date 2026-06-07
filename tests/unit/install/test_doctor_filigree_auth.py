@@ -69,8 +69,15 @@ def test_rewrite_env_preserves_non_utf8_unrelated_line(tmp_path: Path) -> None:
 def _write_mcp_with_filigree_url(root: Path, url: str) -> None:
     root.joinpath(".mcp.json").write_text(
         json.dumps(
-            {"mcpServers": {"wardline": {"type": "stdio", "command": "wardline",
-             "args": ["mcp", "--root", ".", "--filigree-url", url]}}}
+            {
+                "mcpServers": {
+                    "wardline": {
+                        "type": "stdio",
+                        "command": "wardline",
+                        "args": ["mcp", "--root", ".", "--filigree-url", url],
+                    }
+                }
+            }
         ),
         encoding="utf-8",
     )
@@ -94,9 +101,7 @@ def test_mcp_filigree_url_none_when_args_not_list(tmp_path: Path) -> None:
     # is a substring search that would otherwise return a char index, and
     # args[idx + 1] a single bogus character. The list-type guard returns None.
     tmp_path.joinpath(".mcp.json").write_text(
-        json.dumps(
-            {"mcpServers": {"wardline": {"args": "mcp --filigree-url http://x"}}}
-        ),
+        json.dumps({"mcpServers": {"wardline": {"args": "mcp --filigree-url http://x"}}}),
         encoding="utf-8",
     )
     assert _mcp_filigree_url(tmp_path) is None
@@ -109,11 +114,23 @@ def test_check_project_mcp_accepts_pinned_sibling_args_in_operator_order(tmp_pat
     monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
     tmp_path.joinpath(".mcp.json").write_text(
         json.dumps(
-            {"mcpServers": {"wardline": {"type": "stdio", "command": "/bin/wardline", "args": [
-                "mcp", "--root", ".",
-                "--loomweave-url", "http://127.0.0.1:9730",
-                "--filigree-url", "http://127.0.0.1:8749/api/p/lacuna/weft/scan-results",
-            ]}}}
+            {
+                "mcpServers": {
+                    "wardline": {
+                        "type": "stdio",
+                        "command": "/bin/wardline",
+                        "args": [
+                            "mcp",
+                            "--root",
+                            ".",
+                            "--loomweave-url",
+                            "http://127.0.0.1:9730",
+                            "--filigree-url",
+                            "http://127.0.0.1:8749/api/p/lacuna/weft/scan-results",
+                        ],
+                    }
+                }
+            }
         ),
         encoding="utf-8",
     )
@@ -229,8 +246,12 @@ def test_check_ok_when_unreachable(tmp_path: Path, monkeypatch) -> None:
 def test_check_ok_when_non_loopback(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setenv("WEFT_FEDERATION_TOKEN", "T")
-    check = _check_filigree_auth(tmp_path, repair=False, filigree_url="https://remote.example.com/api/weft/scan-results",
-                                 transport=_ScriptedTransport({}))
+    check = _check_filigree_auth(
+        tmp_path,
+        repair=False,
+        filigree_url="https://remote.example.com/api/weft/scan-results",
+        transport=_ScriptedTransport({}),
+    )
     assert check.status == "ok"
     assert "non-loopback" in (check.message or "")
 

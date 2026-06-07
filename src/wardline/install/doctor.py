@@ -330,11 +330,14 @@ def _repair_filigree_auth(root: Path, url: str, transport: Transport) -> DoctorC
         if probe.reachable and probe.accepted:
             _rewrite_env_token(root / ".env", candidate)
             return DoctorCheck(
-                "filigree.auth", "ok", fixed=True,
+                "filigree.auth",
+                "ok",
+                fixed=True,
                 message="wrote WEFT_FEDERATION_TOKEN to .env (was a stale/mismatched token)",
             )
     return DoctorCheck(
-        "filigree.auth", "error",
+        "filigree.auth",
+        "error",
         message="no local federation_token matched the daemon — it likely uses a "
         "WEFT_FEDERATION_TOKEN env override; set that same value in .env",
     )
@@ -367,12 +370,14 @@ def _check_filigree_auth(
         return _repair_filigree_auth(root, url, probe_transport)
     if token:
         return DoctorCheck(
-            "filigree.auth", "error",
+            "filigree.auth",
+            "error",
             message=f"emit token rejected by filigree ({probe.status}); "
             "the configured token is not what the daemon accepts",
         )
     return DoctorCheck(
-        "filigree.auth", "error",
+        "filigree.auth",
+        "error",
         message="filigree rejected an unauthenticated emit and no federation token is set; "
         "export WEFT_FEDERATION_TOKEN or add it to .env",
     )

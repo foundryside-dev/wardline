@@ -508,8 +508,8 @@
       "rule_id": "PY-WL-111",
       "severity": "ERROR",
       "suggestion": null,
-      "suppressed": "active",
-      "suppression_reason": null
+      "suppression_reason": null,
+      "suppression_state": "active"
     },
     {
       "confidence": null,
@@ -533,8 +533,8 @@
       "rule_id": "PY-WL-101",
       "severity": "ERROR",
       "suggestion": null,
-      "suppressed": "active",
-      "suppression_reason": null
+      "suppression_reason": null,
+      "suppression_state": "active"
     }
   ],
   "sarif": {

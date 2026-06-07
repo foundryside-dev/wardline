@@ -53,6 +53,10 @@ class AgentSummary:
     display_findings: list[Finding] | None = None
     summary_only: bool = False
     max_findings: int | None = None
+    # Offset into the flattened ordered union (active → suppressed → engine_facts) for
+    # pagination. The default scan returns a bounded first page; the agent walks the rest
+    # with offset = truncation.next_offset (weft-439d09fc8d).
+    offset: int = 0
     include_suppressed: bool = True
     # The secure-gate-default rollout hint (or None), surfaced in the gate block so the
     # "see gate.migration_hint" pointer in next_actions resolves on this surface too — the
@@ -67,27 +71,41 @@ class AgentSummary:
         # is too costly for the hot scan path).
         if self.max_findings is not None and self.max_findings < 0:
             raise ValueError(f"max_findings must be >= 0, got {self.max_findings}")
+        if self.offset < 0:
+            raise ValueError(f"offset must be >= 0, got {self.offset}")
 
     def to_dict(self) -> dict[str, Any]:
         # Counts are whole-project (summary describes the whole project, per the `where`
-        # contract); arrays come from the displayed/filtered view, then bounded.
+        # contract); arrays come from the displayed/filtered view, then paginated.
         count_active = len(_active_defects(self.result.findings))
         count_suppressed = len(_suppressed_defects(self.result.findings))
         count_facts = len(_engine_facts(self.result.findings))
 
         base = self.result.findings if self.display_findings is None else self.display_findings
+        # ONE ordered sequence is the pagination unit (weft-439d09fc8d): active defects first
+        # (most urgent), then suppressed debt, then engine facts — each internally sorted by
+        # _sort_key. A single offset+max_findings window slices this union so one truncation
+        # block describes the whole page, not three independently-sliced arrays.
+        union = _active_defects(base)
+        if self.include_suppressed:
+            union = union + _suppressed_defects(base)
+        union = union + _engine_facts(base)
+        findings_total = len(union)
         if self.summary_only:
-            shown_active: list[Finding] = []
-            shown_suppressed: list[Finding] = []
-            shown_facts: list[Finding] = []
+            window: list[Finding] = []
+        elif self.max_findings is not None:
+            window = union[self.offset : self.offset + self.max_findings]
         else:
-            shown_active = _active_defects(base)
-            shown_suppressed = _suppressed_defects(base) if self.include_suppressed else []
-            shown_facts = _engine_facts(base)
-            if self.max_findings is not None:
-                shown_active = shown_active[: self.max_findings]
-                shown_suppressed = shown_suppressed[: self.max_findings]
-                shown_facts = shown_facts[: self.max_findings]
+            window = union[self.offset :]
+        findings_returned = len(window)
+        end = self.offset + findings_returned
+        findings_truncated = (not self.summary_only) and end < findings_total
+        next_offset = end if findings_truncated else None
+        # Re-split the window back into the three display arrays by category (the union was
+        # built in category order, so this preserves both order and the page boundary).
+        shown_active = [f for f in window if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE]
+        shown_suppressed = [f for f in window if f.kind is Kind.DEFECT and f.suppressed is not SuppressionState.ACTIVE]
+        shown_facts = [f for f in window if f.kind is Kind.FACT]
         active_defects = [_finding_entry(f, include_next=True) for f in shown_active]
         suppressed = [_finding_entry(f, include_next=False) for f in shown_suppressed]
         engine_facts = [_finding_entry(f, include_next=False) for f in shown_facts]
@@ -102,12 +120,15 @@ class AgentSummary:
                 "baselined": self.result.summary.baselined,
                 "waived": self.result.summary.waived,
                 "judged": self.result.summary.judged,
+                "informational": self.result.summary.informational,
                 "unanalyzed": self.result.summary.unanalyzed,
             },
             "gate": {
                 "tripped": self.gate.tripped,
                 "fail_on": self.gate.fail_on,
                 "exit_class": self.gate.exit_class,
+                "verdict": self.gate.verdict,
+                "would_trip_at": self.gate.would_trip_at,
                 "reason": self.gate.reason,
                 "evaluated": self.gate.evaluated,
                 "migration_hint": self.migration_hint,
@@ -119,6 +140,20 @@ class AgentSummary:
             "active_defects": active_defects,
             "suppressed_findings": suppressed,
             "engine_facts": engine_facts,
+            # Every cut is explicit so a bounded page never reads as "covered all". This is the
+            # single pagination descriptor for the union above; ``explanations_truncated`` is
+            # set by the MCP server when explain=true inlines provenance (core never explains).
+            "truncation": {
+                "summary_only": self.summary_only,
+                "include_suppressed": self.include_suppressed,
+                "max_findings": self.max_findings,
+                "offset": self.offset,
+                "findings_total": findings_total,
+                "findings_returned": findings_returned,
+                "next_offset": next_offset,
+                "findings_truncated": findings_truncated,
+                "explanations_truncated": False,
+            },
             # next_actions follow the whole-project active count, not the displayed slice,
             # so a summary_only/filtered view does not falsely say "no active defects" — and
             # they are GATE-AWARE so a baselined-only trip (0 active + gate FAILED) never
@@ -195,10 +230,45 @@ def _finding_entry(finding: Finding, *, include_next: bool) -> dict[str, Any]:
 
 def _next_actions_for(active_count: int, gate: GateDecision) -> list[dict[str, Any]]:
     if active_count > 0:
-        return [
+        actions = [
             {"tool": "explain_taint", "reason": "inspect each active defect before editing"},
             {"tool": "file_finding", "reason": "promote confirmed true positives after Filigree emission"},
             {"tool": "scan", "reason": "rescan after fixes to verify closure"},
+        ]
+        if gate.verdict == "NOT_EVALUATED":
+            # Active defects AND no threshold ran — name the enforcement step so a green-looking
+            # exit is not mistaken for a pass (weft-b937e53854).
+            actions.append(
+                {
+                    "tool": "scan",
+                    "reason": (
+                        f"gate NOT_EVALUATED (no --fail-on ran); pass --fail-on "
+                        f"{gate.would_trip_at or 'ERROR'} to enforce"
+                    ),
+                }
+            )
+        return actions
+    if gate.verdict == "NOT_EVALUATED":
+        # 0 active defects but the gate never ran. If would_trip_at is set, suppressed/baselined
+        # defects would re-enter an unsuppressed gate (the dogfood-#2 "worse" case); never let
+        # this read as a clean pass.
+        if gate.would_trip_at is not None:
+            return [
+                {
+                    "tool": "scan",
+                    "reason": (
+                        f"gate NOT_EVALUATED (no --fail-on ran); 0 active defects but suppressed/baselined "
+                        f"{gate.would_trip_at}+ finding(s) would trip an unsuppressed gate — pass --fail-on "
+                        f"{gate.would_trip_at} to enforce, or trust_suppressions / new_since <ref> to scope"
+                    ),
+                }
+            ]
+        return [
+            {
+                "tool": "scan",
+                "reason": "gate NOT_EVALUATED (no --fail-on ran); no defect would trip at any threshold — "
+                "pass --fail-on ERROR to lock it in",
+            }
         ]
     if gate.tripped:
         # 0 active defects but the gate FAILED — it tripped on suppressed/baselined findings.
@@ -226,6 +296,7 @@ def build_agent_summary(
     display_findings: list[Finding] | None = None,
     summary_only: bool = False,
     max_findings: int | None = None,
+    offset: int = 0,
     include_suppressed: bool = True,
     migration_hint: str | None = None,
 ) -> AgentSummary:
@@ -237,6 +308,7 @@ def build_agent_summary(
         display_findings=display_findings,
         summary_only=summary_only,
         max_findings=max_findings,
+        offset=offset,
         include_suppressed=include_suppressed,
         migration_hint=migration_hint,
     )

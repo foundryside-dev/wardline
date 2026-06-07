@@ -1,4 +1,4 @@
 {
   "corpus_version": 1,
-  "reason": "Federation rebrand: corpus docstring brand text changed the whole-file content_hash (no identity/structure change)"
+  "reason": "W3: rename per-finding output key suppressed->suppression_state (weft-f506e5f845); representation refresh, fingerprints unchanged"
 }

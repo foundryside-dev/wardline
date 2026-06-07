@@ -56,7 +56,7 @@ def test_scan_tool_survives_loomweave_write_error(tmp_path):
     # The scan payload itself is intact, NOT discarded — assert on real scan keys
     # that _scan always returns.
     assert "summary" in out
-    assert "findings" in out
+    assert "agent_summary" in out
     assert "gate" in out
     # PY-WL-101 fires on _LEAKY, so the scan found real findings.
     assert out["summary"]["total"] >= 1

@@ -251,17 +251,26 @@ def test_gate_decision_reason_names_both_active_and_suppressed_on_mixed_trip(tmp
 
 def test_gate_decision_rejects_contradictory_construction() -> None:
     # The __post_init__ invariant guard: GateDecision must make "tripped gate that reads
-    # as passed" (dogfood #2) unconstructible, not merely avoided by the factory.
+    # as passed" (dogfood #2) unconstructible, not merely avoided by the factory. The guards
+    # are now verdict-keyed (weft-b937e53854).
     with pytest.raises(ValueError, match="exit_class"):
-        GateDecision(tripped=True, fail_on="ERROR", exit_class=0, reason="x", evaluated="y")
+        GateDecision(tripped=True, fail_on="ERROR", exit_class=0, verdict="FAILED", reason="x", evaluated="y")
     with pytest.raises(ValueError, match="reason"):
-        GateDecision(tripped=True, fail_on="ERROR", exit_class=1, reason=None, evaluated="y")
-    with pytest.raises(ValueError, match="reason"):
-        # fail_on set but no verdict — the no-gate shape leaking into a gated decision.
-        GateDecision(tripped=False, fail_on="ERROR", exit_class=0, reason=None, evaluated=None)
-    # The two legitimate shapes the factory produces still construct cleanly.
-    GateDecision(tripped=False, fail_on=None, exit_class=0)
-    GateDecision(tripped=True, fail_on="ERROR", exit_class=1, reason="1 active", evaluated="unsuppressed")
+        GateDecision(tripped=True, fail_on="ERROR", exit_class=1, verdict="FAILED", reason=None, evaluated="y")
+    with pytest.raises(ValueError, match="NOT_EVALUATED"):
+        # NOT_EVALUATED but a threshold IS set — the no-gate shape leaking into a gated decision.
+        GateDecision(tripped=False, fail_on="ERROR", exit_class=0, verdict="NOT_EVALUATED", reason="x", evaluated="y")
+    with pytest.raises(ValueError, match="FAILED"):
+        # tripped but verdict says PASSED — the dogfood #2 regression made unconstructible.
+        GateDecision(tripped=True, fail_on="ERROR", exit_class=1, verdict="PASSED", reason="x", evaluated="y")
+    # The three legitimate shapes the factory produces still construct cleanly.
+    GateDecision(tripped=False, fail_on=None, exit_class=0, verdict="NOT_EVALUATED", reason="no threshold")
+    GateDecision(
+        tripped=False, fail_on="ERROR", exit_class=0, verdict="PASSED", reason="clean", evaluated="unsuppressed"
+    )
+    GateDecision(
+        tripped=True, fail_on="ERROR", exit_class=1, verdict="FAILED", reason="1 active", evaluated="unsuppressed"
+    )
 
 
 def test_gate_decision_evaluated_reflects_trust_suppressions(tmp_path: Path) -> None:
@@ -272,10 +281,16 @@ def test_gate_decision_evaluated_reflects_trust_suppressions(tmp_path: Path) -> 
     assert decision.evaluated is not None and "honored" in decision.evaluated
 
 
-def test_gate_decision_no_threshold_has_no_reason() -> None:
+def test_gate_decision_no_threshold_is_not_evaluated() -> None:
+    # weft-b937e53854: a bare scan is NOT a clean pass — it never ran the gate.
     result = ScanResult(findings=[], summary=ScanSummary(0, 0, 0, 0, 0), files_scanned=0, context=None)
     decision = gate_decision(result, None)
-    assert decision.reason is None and decision.evaluated is None
+    assert decision.verdict == "NOT_EVALUATED"
+    assert decision.tripped is False and decision.exit_class == 0
+    # Empty tree: nothing would trip, but the decision still carries an honest reason + population.
+    assert decision.would_trip_at is None
+    assert decision.reason is not None and "did not evaluate" in decision.reason
+    assert decision.evaluated is not None
 
 
 def _hint(proj: Path, *, new_since=None, trust=False):
@@ -522,12 +537,46 @@ def test_gate_decision_rejects_unknown_fail_on() -> None:
     # fail_on is always a Severity value; an arbitrary string is an illegal state the
     # other guards would otherwise let through (it satisfies "reason iff fail_on").
     with pytest.raises(ValueError, match="fail_on"):
-        GateDecision(tripped=True, fail_on="banana", exit_class=1, reason="x", evaluated="y")
+        GateDecision(tripped=True, fail_on="banana", exit_class=1, verdict="FAILED", reason="x", evaluated="y")
 
 
 def test_gate_decision_accepts_valid_severity_value() -> None:
-    dec = GateDecision(tripped=True, fail_on=Severity.ERROR.value, exit_class=1, reason="x", evaluated="y")
+    dec = GateDecision(
+        tripped=True, fail_on=Severity.ERROR.value, exit_class=1, verdict="FAILED", reason="x", evaluated="y"
+    )
     assert dec.fail_on == "ERROR"
+
+
+def test_would_trip_at_names_highest_severity_on_bare_scan(tmp_path: Path) -> None:
+    # weft-b937e53854: a bare scan reports would_trip_at = the worst active severity, so the
+    # agent's first call is not a vacuous green. The leaky proj has a PY-WL-101 ERROR defect.
+    proj, _ = _leaky_proj(tmp_path)
+    decision = gate_decision(run_scan(proj), None)
+    assert decision.verdict == "NOT_EVALUATED"
+    assert decision.would_trip_at == "ERROR"
+    assert decision.tripped is False and decision.exit_class == 0
+    assert decision.reason is not None and "ERROR" in decision.reason
+
+
+def test_verdict_passed_vs_failed_and_would_trip_at_is_threshold_independent(tmp_path: Path) -> None:
+    proj, _ = _leaky_proj(tmp_path)
+    result = run_scan(proj)
+    failed = gate_decision(result, Severity.ERROR)
+    assert failed.verdict == "FAILED" and failed.tripped is True and failed.would_trip_at == "ERROR"
+    # A threshold ABOVE the worst active severity passes; would_trip_at still names the worst.
+    passed = gate_decision(result, Severity.CRITICAL)
+    assert passed.verdict == "PASSED" and passed.tripped is False
+    assert passed.would_trip_at == "ERROR"
+
+
+def test_summary_buckets_sum_to_total(tmp_path: Path) -> None:
+    # weft-f506e5f845: active+baselined+waived+judged+informational == total exactly;
+    # unanalyzed is an overlay, not a partition member.
+    proj, fp = _leaky_proj(tmp_path)
+    _write_baseline(proj, fp)
+    s = run_scan(proj).summary
+    assert s.active + s.baselined + s.waived + s.judged + s.informational == s.total
+    assert s.informational >= 1  # the engine metric/fact is a non-defect finding
 
 
 def test_run_scan_explicit_malformed_config_raises(tmp_path: Path) -> None:

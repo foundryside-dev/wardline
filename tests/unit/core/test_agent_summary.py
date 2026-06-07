@@ -108,7 +108,11 @@ def test_agent_summary_no_active_defects_still_has_next_actions(tmp_path: Path) 
     out = build_agent_summary(scan, gate_decision(scan, None)).to_dict()
 
     assert out["active_defects"] == []
-    assert out["next_actions"] == [{"tool": "scan", "reason": "no active defects; rescan after edits"}]
+    # A bare scan is NOT_EVALUATED (weft-b937e53854): next_actions point at enforcing a
+    # threshold, never the bland "rescan after edits" that reads as a pass.
+    assert len(out["next_actions"]) == 1
+    reason = out["next_actions"][0]["reason"].lower()
+    assert "not_evaluated" in reason and "--fail-on" in reason
 
 
 def test_agent_summary_next_actions_do_not_say_passed_when_gate_tripped(tmp_path: Path) -> None:

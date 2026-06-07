@@ -87,13 +87,13 @@ def test_suppressed_serializes_in_jsonl() -> None:
 
     f = _finding(suppressed=SuppressionState.WAIVED, suppression_reason="reviewed")
     obj = json.loads(f.to_jsonl())
-    assert obj["suppressed"] == "waived"
+    assert obj["suppression_state"] == "waived"
     assert obj["suppression_reason"] == "reviewed"
 
 
 def test_active_suppression_serializes_too() -> None:
     obj = json.loads(_finding().to_jsonl())
-    assert obj["suppressed"] == "active"
+    assert obj["suppression_state"] == "active"
     assert obj["suppression_reason"] is None
 
 
@@ -112,7 +112,7 @@ def test_filigree_metadata_includes_suppression_only_when_suppressed() -> None:
     from wardline.core.finding import SuppressionState, to_filigree_metadata
 
     active = to_filigree_metadata(_finding())["wardline"]
-    assert "suppressed" not in active
+    assert "suppression_state" not in active
     waived = to_filigree_metadata(_finding(suppressed=SuppressionState.WAIVED, suppression_reason="ok"))["wardline"]
-    assert waived["suppressed"] == "waived"
+    assert waived["suppression_state"] == "waived"
     assert waived["suppression_reason"] == "ok"

@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Gate verdict is now explicit (no vacuous green).** `GateDecision` carries a
+  `verdict` (`NOT_EVALUATED` / `PASSED` / `FAILED`) and a `would_trip_at` (the
+  highest severity that would trip on the evaluated population, or null). A bare
+  scan with no `--fail-on` reports `verdict: NOT_EVALUATED` + `would_trip_at`
+  instead of a clean-looking `tripped: false`, so an agent's first scan is never a
+  false green. Surfaced on every gate block (MCP `scan`, agent-summary,
+  `scan_file_findings`) and on the CLI as a `gate: NOT_EVALUATED — …` line
+  (weft-b937e53854).
+- **Bounded default scan output + pagination.** The MCP `scan` tool returns a
+  bounded page (≤25 finding bodies) by default so a bare call cannot overflow an
+  agent's context (previously ~123KB on one line). New `full: true` lifts the cap;
+  new `offset` pages through the rest via `agent_summary.truncation.next_offset`.
+  `explain: true` inlines provenance into the `agent_summary.active_defects`
+  entries (capped, announced) (weft-439d09fc8d).
 - `wardline doctor` now verifies the Filigree federation token: it probes the
   configured daemon (URL resolved from `.mcp.json`/env) with the token wardline
   would emit and reports a `filigree.auth` check. `--repair` recovers the
@@ -15,6 +29,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in `.env`, removing a stale `WARDLINE_FILIGREE_TOKEN` line.
 
 ### Changed
+- **BREAKING (wire): per-finding `suppressed` key renamed to `suppression_state`.**
+  The JSONL stream, the Filigree `metadata.wardline.*` subtree, and the signed
+  **legis scan artifact** now emit `suppression_state` (values unchanged:
+  `active`/`baselined`/`waived`/`judged`). This eliminates the "active" overload
+  (the per-finding *state* vs the summary `active` *count*). Because the legis
+  artifact is signed, the canonical bytes — and the golden signature — change;
+  **legis must adopt `suppression_state` on its ingest/co-sign side** before the
+  signed hop verifies again (the opt-in `legis_e2e` oracle stays red until then)
+  (weft-f506e5f845).
+- The MCP `scan` response no longer carries a top-level `findings` array; finding
+  bodies live solely in `agent_summary` (the single canonical carrier). The
+  `truncation` block moved under `agent_summary` (weft-439d09fc8d).
+- The MCP `summary` block adds an `informational` bucket so
+  `active + baselined + waived + judged + informational == total`
+  (weft-f506e5f845).
+- The Filigree emit `disabled_reason` now distinguishes *no token sent* from
+  *token sent but rejected (401)* and names the URL it tried, instead of a flat
+  "set WEFT_FEDERATION_TOKEN" that implied absence (weft-23574069a1 / C-7).
 - **BREAKING: Weft config/store consolidation.** Operator config moved from
   `wardline.yaml` (YAML) to the `[wardline]` table of a shared, operator-authored
   `weft.toml` (TOML), read via stdlib `tomllib` (zero new dependency). An

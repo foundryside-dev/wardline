@@ -76,11 +76,23 @@ def test_preserves_operator_pinned_sibling_url_args(tmp_path: Path, monkeypatch:
     monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
     (tmp_path / ".mcp.json").write_text(
         json.dumps(
-            {"mcpServers": {"wardline": {"type": "stdio", "command": "OLD", "args": [
-                "mcp", "--root", ".",
-                "--loomweave-url", "http://127.0.0.1:9730",
-                "--filigree-url", "http://127.0.0.1:8749/api/p/lacuna/weft/scan-results",
-            ]}}}
+            {
+                "mcpServers": {
+                    "wardline": {
+                        "type": "stdio",
+                        "command": "OLD",
+                        "args": [
+                            "mcp",
+                            "--root",
+                            ".",
+                            "--loomweave-url",
+                            "http://127.0.0.1:9730",
+                            "--filigree-url",
+                            "http://127.0.0.1:8749/api/p/lacuna/weft/scan-results",
+                        ],
+                    }
+                }
+            }
         ),
         encoding="utf-8",
     )
@@ -90,9 +102,13 @@ def test_preserves_operator_pinned_sibling_url_args(tmp_path: Path, monkeypatch:
     entry = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["wardline"]
     assert entry["command"] == "/bin/wardline"
     assert entry["args"] == [
-        "mcp", "--root", ".",
-        "--loomweave-url", "http://127.0.0.1:9730",
-        "--filigree-url", "http://127.0.0.1:8749/api/p/lacuna/weft/scan-results",
+        "mcp",
+        "--root",
+        ".",
+        "--loomweave-url",
+        "http://127.0.0.1:9730",
+        "--filigree-url",
+        "http://127.0.0.1:8749/api/p/lacuna/weft/scan-results",
     ]
     # idempotent: re-running over the already-preserved entry is a no-op (no reorder churn).
     assert merge_mcp_entry(tmp_path) == "unchanged"
@@ -104,11 +120,23 @@ def test_already_canonical_lacuna_entry_is_unchanged(tmp_path: Path, monkeypatch
     monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
     (tmp_path / ".mcp.json").write_text(
         json.dumps(
-            {"mcpServers": {"wardline": {"type": "stdio", "command": "/bin/wardline", "args": [
-                "mcp", "--root", ".",
-                "--loomweave-url", "http://127.0.0.1:9730",
-                "--filigree-url", "http://127.0.0.1:8749/api/p/lacuna/weft/scan-results",
-            ]}}}
+            {
+                "mcpServers": {
+                    "wardline": {
+                        "type": "stdio",
+                        "command": "/bin/wardline",
+                        "args": [
+                            "mcp",
+                            "--root",
+                            ".",
+                            "--loomweave-url",
+                            "http://127.0.0.1:9730",
+                            "--filigree-url",
+                            "http://127.0.0.1:8749/api/p/lacuna/weft/scan-results",
+                        ],
+                    }
+                }
+            }
         ),
         encoding="utf-8",
     )

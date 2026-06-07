@@ -26,9 +26,7 @@ from wardline.install.doctor import (
 )
 @click.option("--repair", is_flag=True, help="Repair missing or stale install artifacts.")
 @click.option("--fix", "fix_json", is_flag=True, help="Repair install bindings and emit machine-readable JSON.")
-@click.option(
-    "--filigree-url", default=None, help="Filigree Weft URL to probe (default: resolve from .mcp.json/env)."
-)
+@click.option("--filigree-url", default=None, help="Filigree Weft URL to probe (default: resolve from .mcp.json/env).")
 def doctor(root: Path, repair: bool, fix_json: bool, filigree_url: str | None) -> None:
     """Check Wardline agent install artifacts and sibling bindings."""
     if repair and fix_json:

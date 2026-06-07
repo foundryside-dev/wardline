@@ -22,7 +22,7 @@ from wardline.core.baseline import generate_baseline, load_baseline
 from wardline.core.errors import WardlineError
 from wardline.core.explain import explain_chain, explain_finding, explanation_from_context
 from wardline.core.filigree_emit import FiligreeEmitter, filigree_disabled_reason
-from wardline.core.finding import Finding, Kind, Severity, SuppressionState
+from wardline.core.finding import Finding, Severity
 from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
 from wardline.core.paths import baseline_path as baseline_file
@@ -36,7 +36,6 @@ from wardline.mcp.resources import list_resources, read_resource
 from wardline.mcp.tooling import Tool, ToolCapability, ToolError, ToolPolicy
 from wardline.mcp.tooling import cfg as _cfg
 from wardline.mcp.tooling import explanation_to_dict as _explanation_to_dict
-from wardline.mcp.tooling import finding_to_dict as _finding_to_dict
 from wardline.mcp.tooling import require as _require
 from wardline.mcp.tooling import resolve_under_root as _resolve_under_root
 
@@ -60,9 +59,12 @@ def _emit_filigree(
         "failed": er.failed,
         "warnings": list(er.warnings),
         # Distinguish auth-rejected (401/403) from transport-unreachable so the agent reads
-        # an actionable reason, not a flat "unreachable" (dogfood #5).
+        # an actionable reason, not a flat "unreachable" (dogfood #5). token_sent + url further
+        # split a 401 into no-token vs token-rejected, naming where it tried (C-7).
         "status": er.status,
         "auth_rejected": er.auth_rejected,
+        "token_sent": er.token_sent,
+        "url": er.url,
     }
 
 
@@ -80,6 +82,8 @@ def _filigree_emit_status(block: dict[str, Any] | None) -> dict[str, Any]:
     disabled_reason = filigree_disabled_reason(
         reachable=bool(block.get("reachable")),
         status=block.get("status"),
+        token_sent=bool(block.get("token_sent")),
+        url=block.get("url"),
     )
     return {"configured": True, "disabled_reason": disabled_reason, **block}
 
@@ -255,84 +259,92 @@ def _scan(
         # An unknown filter key or SEI resolution failure is agent-actionable -> isError result.
         raise ToolError(str(exc)) from exc
 
-    # Payload-shrinking controls (dogfood #4). The `summary`/`gate` blocks always
-    # describe the WHOLE project; these only bound the returned finding bodies.
+    # Payload-shrinking controls. The `summary`/`gate` blocks always describe the WHOLE
+    # project; these only bound the returned finding BODIES (which live solely in
+    # agent_summary now — there is no separate top-level findings array). The DEFAULT scan is
+    # BOUNDED (weft-439d09fc8d): a bare call returns at most _DEFAULT_MAX_FINDINGS bodies so
+    # an agent's first natural call cannot overflow its own context. full=true lifts the cap;
+    # offset pages through the rest via truncation.next_offset.
     summary_only = _bool_arg(args, "summary_only", False)
     include_suppressed = _bool_arg(args, "include_suppressed", True)
+    full = _bool_arg(args, "full", False)
     max_findings = args.get("max_findings")
     if max_findings is not None and (
         not isinstance(max_findings, int) or isinstance(max_findings, bool) or max_findings < 0
     ):
         raise ToolError("max_findings must be a non-negative integer")
+    offset = args.get("offset", 0)
+    if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+        raise ToolError("offset must be a non-negative integer")
     explain = _bool_arg(args, "explain", False)
 
-    # include_suppressed:false drops the suppressed DEFECT bodies (counts stay whole).
-    if not include_suppressed:
-        selected = [f for f in selected if not (f.kind is Kind.DEFECT and f.suppressed is not SuppressionState.ACTIVE)]
-    findings_total = len(selected)
+    # Effective page size: full=true → uncapped; explicit max_findings → that; else the
+    # bounded default. summary_only short-circuits to no bodies inside agent_summary.
+    if full:
+        limit: int | None = None
+    elif max_findings is not None:
+        limit = max_findings
+    else:
+        limit = _DEFAULT_MAX_FINDINGS
 
-    # summary_only returns no finding bodies at all (the smallest "did the gate pass?"
-    # payload); otherwise an explicit max_findings bounds the list (default: uncapped).
-    display = [] if summary_only else selected
-    findings_truncated = False
-    if max_findings is not None and len(display) > max_findings:
-        display = display[:max_findings]
-        findings_truncated = True
+    from wardline.core.agent_summary import build_agent_summary
 
-    # explain has a DEFAULT ceiling: inlining EVERY active defect's provenance is the
-    # 56KB-on-one-line blowup the dogfood report hit. Cap the number of explanations (an
-    # explicit max_findings tightens it further); findings past the cap are still
-    # returned, just without inline provenance. The cut is announced, never silent.
-    explain_cap = max_findings if max_findings is not None else _EXPLAIN_DEFAULT_CAP
-    explanations_attached = 0
-    explanations_truncated = False
-    findings_out: list[dict[str, Any]] = []
-    for f in display:
-        d = _finding_to_dict(f)
-        if (
-            explain
-            and f.kind is Kind.DEFECT
-            and f.suppressed is SuppressionState.ACTIVE
-            and f.qualname is not None
-            and result.context is not None
-        ):
-            if explanations_attached < explain_cap:
-                exp = explanation_from_context(f, result.context)
-                d["explanation"] = _explanation_to_dict(exp)
-                explanations_attached += 1
+    agent_summary = build_agent_summary(
+        result,
+        decision,
+        filigree_emit=filigree_status,
+        loomweave_write=loomweave_status,
+        display_findings=selected,
+        summary_only=summary_only,
+        max_findings=limit,
+        offset=offset,
+        include_suppressed=include_suppressed,
+        migration_hint=migration_hint,
+    ).to_dict()
+
+    # explain inlines each SHOWN active defect's provenance into its agent_summary entry (one
+    # call instead of an explain_taint per finding). Capped — inlining EVERY provenance is the
+    # 56KB-on-one-line blowup the dogfood report hit; the cut is announced in truncation.
+    if explain and result.context is not None:
+        explain_cap = max_findings if max_findings is not None else _EXPLAIN_DEFAULT_CAP
+        by_fp = {f.fingerprint: f for f in selected}
+        attached = 0
+        explanations_truncated = False
+        for entry in agent_summary["active_defects"]:
+            f = by_fp.get(entry["fingerprint"])
+            if f is None or f.qualname is None:
+                continue
+            if attached < explain_cap:
+                entry["explanation"] = _explanation_to_dict(explanation_from_context(f, result.context))
+                attached += 1
             else:
                 explanations_truncated = True
-        findings_out.append(d)
-    from wardline.core.agent_summary import build_agent_summary
+        agent_summary["truncation"]["explanations_truncated"] = explanations_truncated
 
     response: dict[str, Any] = {
         "files_scanned": result.files_scanned,
-        "findings": findings_out,
         "summary": {
             "total": result.summary.total,
             "active": result.summary.active,
             "baselined": result.summary.baselined,
             "waived": result.summary.waived,
             "judged": result.summary.judged,
+            # Non-defect findings (facts/metrics/classifications). active+baselined+
+            # waived+judged+informational == total (the buckets-sum-to-total invariant,
+            # weft-f506e5f845); unanalyzed is an overlay (subset of informational), not a
+            # partition member.
+            "informational": result.summary.informational,
             # Files discovered but NOT analysed (parse error / too-deep / missing
             # source root — benign no-module skips are excluded). Surfaced so the
             # silent under-scan reaches the agent, not just the human-facing stderr.
             "unanalyzed": result.summary.unanalyzed,
         },
-        # Make every cut explicit so a bounded payload never reads as "covered all".
-        "truncation": {
-            "summary_only": summary_only,
-            "include_suppressed": include_suppressed,
-            "max_findings": max_findings,
-            "findings_total": findings_total,
-            "findings_returned": len(findings_out),
-            "findings_truncated": findings_truncated,
-            "explanations_truncated": explanations_truncated,
-        },
         "gate": {
             "tripped": decision.tripped,
             "fail_on": decision.fail_on,
             "exit_class": decision.exit_class,
+            "verdict": decision.verdict,
+            "would_trip_at": decision.would_trip_at,
             "reason": decision.reason,
             "evaluated": decision.evaluated,
             "migration_hint": migration_hint,
@@ -341,17 +353,7 @@ def _scan(
         "filigree": filigree_block,
         "loomweave_write": loomweave_status,
         "filigree_emit": filigree_status,
-        "agent_summary": build_agent_summary(
-            result,
-            decision,
-            filigree_emit=filigree_status,
-            loomweave_write=loomweave_status,
-            display_findings=selected,
-            summary_only=summary_only,
-            max_findings=max_findings,
-            include_suppressed=include_suppressed,
-            migration_hint=migration_hint,
-        ).to_dict(),
+        "agent_summary": agent_summary,
     }
     _attach_legis_artifact(
         response,
@@ -726,6 +728,10 @@ _SEVERITY_ENUM = ["CRITICAL", "ERROR", "WARN", "INFO"]
 # on the MCP `scan`. Bounds the one-shot payload (the dogfood report hit 56,820 chars on
 # one line over a whole repo); an explicit `max_findings` tightens it further.
 _EXPLAIN_DEFAULT_CAP = 10
+# The bounded-default page size for `scan` (weft-439d09fc8d). A bare scan returns at most
+# this many finding bodies so an agent's first natural call cannot overflow its context;
+# full=true lifts the cap and offset pages through the rest.
+_DEFAULT_MAX_FINDINGS = 25
 
 
 class WardlineMCPServer:
@@ -856,19 +862,32 @@ class WardlineMCPServer:
                             "(immediate tainted callee, source boundary, trust tiers, resolution "
                             "counts) — one call instead of an explain_taint per finding. Inlining is "
                             "capped at 10 provenances by default (raise/lower with max_findings); the cut "
-                            "is reported at truncation.explanations_truncated.",
+                            "is reported at agent_summary.truncation.explanations_truncated.",
                         },
                         "summary_only": {
                             "type": "boolean",
                             "description": "Return counts + gate only, no finding bodies — the smallest "
                             "'did the gate pass?' payload. summary/gate still describe the whole project.",
                         },
+                        "full": {
+                            "type": "boolean",
+                            "description": "Default false. The default scan is BOUNDED (≤25 finding bodies) so "
+                            "it cannot overflow your context; set full=true to return ALL bodies in one call "
+                            "(or page with offset). summary/gate counts are always whole-project.",
+                        },
                         "max_findings": {
                             "type": "integer",
                             "minimum": 0,
-                            "description": "Cap the number of returned finding bodies (and inlined "
-                            "explanations). Must be a non-negative integer. The cut is reported in the "
-                            "truncation block; summary counts stay whole-project.",
+                            "description": "Override the page size for returned finding bodies (and the inlined-"
+                            "explanation cap). Default 25; full=true ignores it. Must be a non-negative integer. "
+                            "The cut + next page are reported in agent_summary.truncation; counts stay whole.",
+                        },
+                        "offset": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Pagination cursor into the ordered finding union (active → suppressed "
+                            "→ engine_facts). Pass agent_summary.truncation.next_offset from the previous call to "
+                            "fetch the next page. Default 0.",
                         },
                         "include_suppressed": {
                             "type": "boolean",

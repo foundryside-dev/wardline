@@ -31,7 +31,7 @@ from wardline.core.finding import (
 from wardline.core.judged import load_judged
 from wardline.core.paths import baseline_path, judged_path, weft_config_path
 from wardline.core.protocols import Analyzer
-from wardline.core.suppression import apply_suppressions, gate_trips, severity_gates
+from wardline.core.suppression import SEVERITY_ORDER, apply_suppressions, gate_trips, severity_gates
 from wardline.core.waivers import WaiverSet, load_project_waivers
 
 if TYPE_CHECKING:
@@ -52,11 +52,19 @@ class ScanSummary:
     baselined: int
     waived: int
     judged: int
+    # Every NON-DEFECT finding (facts, metrics, classifications). The defect buckets
+    # above (active/baselined/waived/judged) partition the DEFECTs; this is the rest,
+    # so the five together sum to ``total`` exactly (the buckets-sum-to-total invariant —
+    # weft-f506e5f845). Before this bucket existed, non-defect facts/metrics were silently
+    # uncounted and total != sum(buckets).
+    informational: int = 0
     # Files DISCOVERED but NEVER analysed despite being analysable — a genuine
     # under-scan (parse errors, too-deep skips, missing source roots). Benign
     # no-module skips (WLN-ENGINE-NO-MODULE) are EXCLUDED — see UNANALYZED_RULE_IDS.
     # These are Severity.NONE FACTs that never trip the severity gate, so they are
-    # counted separately to surface a silent under-scan / false-green.
+    # counted separately to surface a silent under-scan / false-green. This is an
+    # OVERLAY (a subset of ``informational``), NOT a partition member — it is not added
+    # into the sum-to-total identity.
     unanalyzed: int = 0
 
 
@@ -82,18 +90,29 @@ class ScanResult:
 _SEVERITY_VALUES: frozenset[str] = frozenset(s.value for s in Severity)
 
 
+_VERDICT_VALUES: frozenset[str] = frozenset({"NOT_EVALUATED", "PASSED", "FAILED"})
+
+
 @dataclass(frozen=True, slots=True)
 class GateDecision:
     tripped: bool
     fail_on: str | None
     exit_class: int  # 0 clean, 1 gate tripped, 2 reserved for tool errors (CLI layer)
+    # An explicit verdict so a bare scan (no --fail-on) never reads as a clean PASS: a
+    # vacuous green is the worst false signal for a governance suite (weft-b937e53854).
+    #   NOT_EVALUATED — no threshold ran (fail_on is None); the gate did not judge.
+    #   PASSED        — a threshold ran and nothing tripped.
+    #   FAILED        — a threshold ran and tripped.
+    verdict: str
     # A human-readable verdict so "summary.active:0 + gate.tripped:true" never reads as
-    # a bug: ``reason`` names the count and class of defects that decided it (and the
-    # escape hatches when the trip is solely from suppressed-but-gated findings);
-    # ``evaluated`` names the population it judged (unsuppressed by default vs honored
-    # under --trust-suppressions). Both None when no threshold is set (no gate).
+    # a bug: ``reason`` names the count and class of defects that decided it (and, for
+    # NOT_EVALUATED, what WOULD trip); ``evaluated`` names the population it judged
+    # (unsuppressed by default vs honored under --trust-suppressions). ``would_trip_at`` is
+    # the highest severity at which the gate WOULD trip on that population (None if nothing
+    # would), computed in every branch so a bare scan still tells the agent the worst it found.
     reason: str | None = None
     evaluated: str | None = None
+    would_trip_at: str | None = None
 
     def __post_init__(self) -> None:
         # Enforce the invariants the ``gate_decision`` factory upholds so a *second*
@@ -102,18 +121,23 @@ class GateDecision:
         # GateDecision value.
         if self.exit_class != (1 if self.tripped else 0):
             raise ValueError(f"exit_class {self.exit_class} contradicts tripped={self.tripped}")
-        # A tripped gate must always carry its verdict — never silently None.
-        if self.tripped and self.reason is None:
-            raise ValueError("a tripped gate must carry a reason")
-        # No threshold (fail_on None) ⟺ no verdict; a threshold always produces both.
-        if (self.fail_on is None) != (self.reason is None):
-            raise ValueError("reason must be present iff fail_on is set")
-        if (self.fail_on is None) != (self.evaluated is None):
-            raise ValueError("evaluated must be present iff fail_on is set")
+        if self.verdict not in _VERDICT_VALUES:
+            raise ValueError(f"verdict {self.verdict!r} is not one of {sorted(_VERDICT_VALUES)}")
+        # The verdict is keyed to the gate state — these guards are what stop a tripped gate
+        # from ever serialising as a pass (the dogfood #2 regression).
+        if (self.verdict == "NOT_EVALUATED") != (self.fail_on is None):
+            raise ValueError("verdict NOT_EVALUATED iff no --fail-on threshold is set")
+        if (self.verdict == "FAILED") != self.tripped:
+            raise ValueError("verdict FAILED iff the gate tripped")
+        # Every decision carries its reason now — including NOT_EVALUATED (what would trip).
+        if self.reason is None:
+            raise ValueError("a gate decision must always carry a reason")
         # fail_on is always a Severity value (the factory passes Severity.value); an
-        # arbitrary string satisfies the iff-guards above but is still an illegal state.
+        # arbitrary string satisfies the guards above but is still an illegal state.
         if self.fail_on is not None and self.fail_on not in _SEVERITY_VALUES:
             raise ValueError(f"fail_on {self.fail_on!r} is not a valid Severity value")
+        if self.would_trip_at is not None and self.would_trip_at not in _SEVERITY_VALUES:
+            raise ValueError(f"would_trip_at {self.would_trip_at!r} is not a valid Severity value")
 
 
 def run_scan(
@@ -289,6 +313,7 @@ def run_scan(
         baselined=sum(1 for f in defects if f.suppressed is SuppressionState.BASELINED),
         waived=sum(1 for f in defects if f.suppressed is SuppressionState.WAIVED),
         judged=sum(1 for f in defects if f.suppressed is SuppressionState.JUDGED),
+        informational=len(findings) - len(defects),
         unanalyzed=sum(1 for f in findings if f.rule_id in UNANALYZED_RULE_IDS),
     )
     resolved_root = root.resolve()
@@ -305,30 +330,68 @@ def run_scan(
     )
 
 
+def _would_trip_at(gate_population: list[Finding]) -> str | None:
+    """The HIGHEST severity at which the gate would trip on this population, or None.
+
+    ``gate_trips`` is monotonic in the threshold (a lower threshold catches a superset), so
+    the highest tripping threshold equals the max severity of any active gating defect — the
+    single most useful "set --fail-on X to catch the worst thing here" signal.
+    """
+    for sev in reversed(SEVERITY_ORDER):  # CRITICAL → ERROR → WARN → INFO
+        if gate_trips(gate_population, sev):
+            return sev.value
+    return None
+
+
+def _not_evaluated_reason(would_trip_at: str | None, evaluated: str) -> str:
+    base = "no --fail-on threshold set; gate did not evaluate"
+    if would_trip_at is None:
+        return f"{base}. No active defect would trip at any threshold; evaluated {evaluated}"
+    return (
+        f"{base}. would_trip_at {would_trip_at} — pass --fail-on {would_trip_at} (or lower) to "
+        f"enforce; evaluated {evaluated}"
+    )
+
+
 def gate_decision(result: ScanResult, fail_on: Severity | None) -> GateDecision:
     """Translate a scan into a pass/fail verdict. A trip is data, not an error."""
-    if fail_on is None:
-        return GateDecision(tripped=False, fail_on=None, exit_class=0)
     # None SENTINEL: evaluate the unsuppressed gate population when present (secure
     # default), else the suppressed ``findings`` (trusted ``--trust-suppressions`` /
-    # a directly-constructed ScanResult with no gate_findings).
+    # a directly-constructed ScanResult with no gate_findings). Population selection is
+    # LIFTED above the no-threshold branch so even a bare scan computes would_trip_at over
+    # the SAME population an actual --fail-on would judge (weft-b937e53854).
     honors_suppressions = result.gate_findings is None
     gate_population = result.findings if honors_suppressions else result.gate_findings
     assert gate_population is not None  # narrow for mypy; the sentinel branch set findings
-    tripped = gate_trips(gate_population, fail_on)
-    sev = fail_on.value
+    would_trip_at = _would_trip_at(gate_population)
     evaluated = (
         "post-suppression (repository baseline/waiver/judged honored — trusted-local)"
         if honors_suppressions
         else "unsuppressed (repository baseline/waiver/judged ignored)"
     )
+    if fail_on is None:
+        # NOT a clean pass — the gate never ran. The verdict says so; would_trip_at names the
+        # worst severity present so the agent's first bare scan is not a false green.
+        return GateDecision(
+            tripped=False,
+            fail_on=None,
+            exit_class=0,
+            verdict="NOT_EVALUATED",
+            reason=_not_evaluated_reason(would_trip_at, evaluated),
+            evaluated=evaluated,
+            would_trip_at=would_trip_at,
+        )
+    tripped = gate_trips(gate_population, fail_on)
+    sev = fail_on.value
     reason = _gate_reason(result, fail_on, tripped=tripped, honors_suppressions=honors_suppressions)
     return GateDecision(
         tripped=tripped,
         fail_on=sev,
         exit_class=1 if tripped else 0,
+        verdict="FAILED" if tripped else "PASSED",
         reason=reason,
         evaluated=evaluated,
+        would_trip_at=would_trip_at,
     )
 
 

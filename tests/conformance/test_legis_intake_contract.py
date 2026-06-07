@@ -126,9 +126,13 @@ class _LegisFinding:
         qualname = d.get("qualname")
         if qualname is not None and not isinstance(qualname, str):
             raise _LegisPayloadError("finding qualname must be a string or null")
-        suppressed = d.get("suppressed", "active")
+        # W3 (weft-f506e5f845): the per-finding wire key was renamed suppressed ->
+        # suppression_state. This vendored guard tracks the NEW contract; the real legis
+        # ingest must adopt the same key (tracked in the W3 legis weft ticket) for the live
+        # legis_e2e oracle to pass again.
+        suppressed = d.get("suppression_state", "active")
         if not isinstance(suppressed, str):
-            raise _LegisPayloadError("finding suppressed must be a string")
+            raise _LegisPayloadError("finding suppression_state must be a string")
         for key in ("rule_id", "message", "kind", "fingerprint"):
             if not isinstance(d[key], str) or not d[key]:
                 raise _LegisPayloadError(f"finding {key} must be a non-empty string")
@@ -318,7 +322,7 @@ def test_secure_default_gate_defect_is_enforced_by_legis(tmp_path: Path) -> None
     scan = wl_legis.build_legis_artifact(result, root=repo, config=cfg, key=None)
     # gate_findings != findings here (active vs baselined) — that asymmetry is the point.
     (projected,) = scan["findings"]
-    assert projected["suppressed"] == "active"
+    assert projected["suppression_state"] == "active"
     legis_active = active_defects(scan)
     assert len(legis_active) == 1
     assert legis_active[0].fingerprint == "b" * 64
@@ -342,7 +346,7 @@ def test_trust_suppressions_path_projects_the_suppressed_view(tmp_path: Path) ->
     cfg = load_config(repo / "weft.toml")
     scan = wl_legis.build_legis_artifact(result, root=repo, config=cfg, key=None)
     (projected,) = scan["findings"]
-    assert projected["suppressed"] == "suppressed"
+    assert projected["suppression_state"] == "suppressed"
     assert _has_suppression_proof(projected["properties"])
     assert active_defects(scan) == []
 

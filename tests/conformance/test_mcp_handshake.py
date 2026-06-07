@@ -80,7 +80,7 @@ def test_full_client_handshake_and_every_surface() -> None:
     call = by_id[5]["result"]
     assert call["content"][0]["type"] == "text"
     payload = json.loads(call["content"][0]["text"])
-    assert {"findings", "summary", "gate"} <= set(payload)
+    assert {"agent_summary", "summary", "gate"} <= set(payload)
     # resources/read: the vocab resource round-trips non-empty text through the loop
     read = by_id[6]["result"]
     assert read["contents"][0]["uri"] == "wardline://vocab"

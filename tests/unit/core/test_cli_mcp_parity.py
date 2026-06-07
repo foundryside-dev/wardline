@@ -16,28 +16,37 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from wardline.core.agent_summary import build_agent_summary
 from wardline.core.finding import Severity
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
-from wardline.mcp.server import _finding_to_dict, _scan
+from wardline.mcp.server import _scan
 
 _CORPUS = Path(__file__).resolve().parents[3] / "tests" / "corpus" / "fixtures"
 
 
 def test_cli_and_mcp_scan_agree_on_findings_and_gate() -> None:
-    # Shared scan default: confine_to_root=True.
+    # Shared scan default: confine_to_root=True. The finding BODIES live solely in
+    # agent_summary now (the bloat-causing top-level `findings` array was removed, W1).
+    # The CLI `--format agent-summary` is uncapped; MCP defaults bounded, so parity is
+    # asserted against MCP full=true (engine parity preserved; only the default page size
+    # differs by surface, by design).
     cli_result = run_scan(_CORPUS)
-    cli_findings = [_finding_to_dict(f) for f in cli_result.findings]
     cli_gate = gate_decision(cli_result, Severity.ERROR)
+    cli_ag = build_agent_summary(cli_result, cli_gate).to_dict()
 
     # MCP parameterization: the real _scan handler (confine_to_root=True, no loomweave).
-    mcp = _scan({"fail_on": "ERROR"}, root=_CORPUS)
+    mcp = _scan({"fail_on": "ERROR", "full": True}, root=_CORPUS)
+    mcp_ag = mcp["agent_summary"]
 
-    assert mcp["findings"] == cli_findings
+    for key in ("active_defects", "suppressed_findings", "engine_facts"):
+        assert mcp_ag[key] == cli_ag[key], key
     cli_hint = baseline_migration_hint(cli_result, cli_gate, root=_CORPUS, new_since=None)
     assert mcp["gate"] == {
         "tripped": cli_gate.tripped,
         "fail_on": cli_gate.fail_on,
         "exit_class": cli_gate.exit_class,
+        "verdict": cli_gate.verdict,
+        "would_trip_at": cli_gate.would_trip_at,
         "reason": cli_gate.reason,
         "evaluated": cli_gate.evaluated,
         "migration_hint": cli_hint,
@@ -46,7 +55,7 @@ def test_cli_and_mcp_scan_agree_on_findings_and_gate() -> None:
     assert mcp["summary"]["active"] == cli_result.summary.active
     assert mcp["files_scanned"] == cli_result.files_scanned
     # Sanity: the labeled corpus is a non-trivial substrate (it fires real defects).
-    assert any(f["kind"] == "defect" for f in cli_findings)
+    assert any(e["kind"] == "defect" for e in cli_ag["active_defects"])
 
 
 def test_cli_and_mcp_emit_identical_filigree_body() -> None:

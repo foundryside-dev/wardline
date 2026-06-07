@@ -48,7 +48,7 @@ def test_mcp_scan_gate_trips_on_baselined_defect_by_default(tmp_path: Path) -> N
     proj = _leaky_project(tmp_path)
     server = WardlineMCPServer(root=proj)
     first = _call(server, "scan", {})
-    fp = next(f["fingerprint"] for f in first["findings"] if f["rule_id"] == "PY-WL-101")
+    fp = next(e["fingerprint"] for e in first["agent_summary"]["active_defects"] if e["rule_id"] == "PY-WL-101")
     bl = baseline_path(proj)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
@@ -57,8 +57,8 @@ def test_mcp_scan_gate_trips_on_baselined_defect_by_default(tmp_path: Path) -> N
     )
     # Default: annotated baselined, but the gate trips.
     default = _call(server, "scan", {"fail_on": "ERROR"})
-    leak = next(f for f in default["findings"] if f["rule_id"] == "PY-WL-101")
-    assert leak["suppressed"] == "baselined"
+    leak = next(e for e in default["agent_summary"]["suppressed_findings"] if e["rule_id"] == "PY-WL-101")
+    assert leak["suppression_state"] == "baselined"
     assert default["gate"]["tripped"] is True
     # trust_suppressions restores the trusted-local behaviour: the gate clears.
     trusted = _call(server, "scan", {"fail_on": "ERROR", "trust_suppressions": True})
@@ -104,7 +104,9 @@ def test_baseline_create_trusted_pack_matches_scan_mcp(tmp_path: Path, monkeypat
         server = WardlineMCPServer(root=proj)
 
         scan = _call(server, "scan", {"trust_packs": ["baseline_mcp_pack"], "trust_local_packs": True})
-        assert any(f["rule_id"] == "PY-WL-901" for f in scan["findings"])
+        ag = scan["agent_summary"]
+        shown = ag["active_defects"] + ag["suppressed_findings"] + ag["engine_facts"]
+        assert any(e["rule_id"] == "PY-WL-901" for e in shown)
 
         baseline = _call(
             server,

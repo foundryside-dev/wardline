@@ -104,6 +104,14 @@ class EmitResult:
     # and a 2xx success. It is the *error* status: a reached/success result carries none.
     # All of these stay SOFT (reachable=False); only the message differs.
     status: int | None = None
+    # Whether a bearer token was actually sent on the attempt. A 401 means different things
+    # by this flag: token_sent=False → none configured (set one); token_sent=True → the value
+    # was REJECTED (it is wrong; align it to the canonical source). The original "set
+    # WEFT_FEDERATION_TOKEN" message implied absence and is what steered F1's wrong root-cause
+    # (weft-23574069a1 / C-7). ``url`` is the endpoint attempted, so the actionable message can
+    # name WHERE it tried without the caller threading it separately.
+    token_sent: bool = False
+    url: str | None = None
 
     @property
     def auth_rejected(self) -> bool:
@@ -133,7 +141,9 @@ class ProbeResult:
     status: int | None = None
 
 
-def filigree_disabled_reason(*, reachable: bool, status: int | None) -> str | None:
+def filigree_disabled_reason(
+    *, reachable: bool, status: int | None, token_sent: bool = False, url: str | None = None
+) -> str | None:
     """The ``disabled_reason`` for an emit attempt, or None when Filigree was reached.
 
     Single source of the auth-rejected (401/403) vs server-error (5xx) vs unreachable
@@ -149,14 +159,23 @@ def filigree_disabled_reason(*, reachable: bool, status: int | None) -> str | No
     """
     if reachable:
         return None
+    at = f" at {url}" if url else ""
     if status in (401, 403):
-        # 401 → set a token; 403 → token present but lacks access (a token won't help).
+        # 403 → token present but lacks access (a token won't help). 401 → split by whether a
+        # token was actually SENT: absent (set one) vs rejected (the value is wrong). The old
+        # flat "set WEFT_FEDERATION_TOKEN" implied absence even when a token was sent and
+        # rejected — the C-7 misdiagnosis (weft-23574069a1).
         if status == 403:
-            return "filigree forbidden (403); token present but lacks access / blocked"
-        return f"filigree auth-rejected ({status}); set WEFT_FEDERATION_TOKEN"
+            return f"filigree forbidden (403){at}; token present but lacks access / blocked"
+        if token_sent:
+            return (
+                f"filigree rejected the token (401){at}; a token WAS sent but its value is wrong — "
+                "align WEFT_FEDERATION_TOKEN (env or .env) to the canonical federation token"
+            )
+        return f"filigree auth-rejected (401){at}; no token sent — set WEFT_FEDERATION_TOKEN (env or .env)"
     if status is not None:
-        return f"filigree server error ({status})"
-    return "filigree unreachable"
+        return f"filigree server error ({status}){at}"
+    return f"filigree unreachable{at}"
 
 
 class Transport(Protocol):
@@ -196,7 +215,8 @@ class FiligreeEmitter:
     def emit(self, findings: Sequence[Finding], *, scanned_paths: Sequence[str] = ()) -> EmitResult:
         body = json.dumps(build_scan_results_body(findings, scanned_paths=scanned_paths)).encode("utf-8")
         headers = {"Content-Type": "application/json"}
-        if self._token:
+        token_sent = bool(self._token)
+        if token_sent:
             headers["Authorization"] = f"Bearer {self._token}"
         try:
             resp = self._transport.post(self._url, body, headers)
@@ -204,16 +224,17 @@ class FiligreeEmitter:
             # Connection refused / DNS / timeout — sibling absent. Enrichment is
             # non-load-bearing: warn (at the CLI) and continue. No status reached us, so
             # this is the genuine "could not reach" case (status=None).
-            return EmitResult(reachable=False)
+            return EmitResult(reachable=False, token_sent=token_sent, url=self._url)
         if resp.status in (401, 403):
             # Filigree is present but its opt-in bearer auth is on and refusing us. Stays
-            # SOFT (enrichment unavailable, never exit-2) — but distinguished as auth so the
-            # caller can say "401 (set WEFT_FEDERATION_TOKEN)" instead of "could not reach".
-            return EmitResult(reachable=False, status=resp.status)
+            # SOFT (enrichment unavailable, never exit-2) — but distinguished as auth (and by
+            # token_sent: no-token vs token-rejected) so the caller can say the actionable
+            # thing instead of "could not reach".
+            return EmitResult(reachable=False, status=resp.status, token_sent=token_sent, url=self._url)
         if resp.status >= 500:
             # Server-side outage (5xx) — the sibling is degraded, not a Wardline payload bug.
             # Treat like absent (warn + continue), carrying the status for an honest message.
-            return EmitResult(reachable=False, status=resp.status)
+            return EmitResult(reachable=False, status=resp.status, token_sent=token_sent, url=self._url)
         if not 200 <= resp.status < 300:
             # 3xx (a redirect reached the client) or any remaining 4xx (notably 400): Wardline
             # sent a request the server would not accept — bad payload / wrong endpoint. Loud.
@@ -240,6 +261,8 @@ class FiligreeEmitter:
             updated=_safe_int(stats.get("findings_updated")),
             failed=len(failed) if isinstance(failed, list) else 0,
             warnings=tuple(warnings),
+            token_sent=token_sent,
+            url=self._url,
         )
 
     def verify_token(self) -> ProbeResult:

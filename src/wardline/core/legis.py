@@ -169,7 +169,7 @@ def project_finding(finding: Finding) -> dict[str, Any]:
         "fingerprint": wire["fingerprint"],
         "qualname": wire["qualname"],
         "properties": properties,
-        "suppressed": suppressed,
+        "suppression_state": suppressed,
     }
 
 

@@ -28,11 +28,16 @@ from wardline.core import legis
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
 
 # ---------------------------------------------------------------------------
-# Golden vector — the literal hex was produced by the REAL legis signer
-# (`from legis.enforcement.signing import sign`) over the fields below with the
-# key below. Vendoring the canonical_json+HMAC *formula* cannot catch a shared
-# misreading of the contract; a hardcoded hex captured from legis can. The live
-# `legis_e2e` oracle re-confirms the verify path against a running legis.
+# Golden vector — the literal hex pins Wardline's signer over the fields below
+# with the key below. Vendoring the canonical_json+HMAC *formula* cannot catch a
+# shared misreading of the contract; a hardcoded hex can. The live `legis_e2e`
+# oracle re-confirms the verify path against a running legis.
+#
+# REKEYED for W3 (weft-f506e5f845): the per-finding key was renamed
+# ``suppressed`` -> ``suppression_state``, which changes the SIGNED bytes. legis
+# (the consumer + co-signer) must adopt the same key and regenerate its matching
+# vector before the signed hop verifies again — tracked in the W3 legis weft ticket;
+# the opt-in `legis_e2e` oracle stays red against an un-updated legis until then.
 # ---------------------------------------------------------------------------
 _GOLDEN_KEY = b"test-shared-secret-key"
 _GOLDEN_FIELDS = {
@@ -49,11 +54,11 @@ _GOLDEN_FIELDS = {
             "fingerprint": "a" * 64,
             "qualname": "svc.leaky",
             "properties": {"declared_return": "INTEGRAL", "actual_return": "EXTERNAL_RAW"},
-            "suppressed": "active",
+            "suppression_state": "active",
         }
     ],
 }
-_GOLDEN_SIG = "hmac-sha256:v2:73eb9f0c8b7ba898aa4b5fd62fa56ade0cbd9755d2c42eee209012675537f81d"
+_GOLDEN_SIG = "hmac-sha256:v2:2b2cf09548572b58fd01c359d1b6a16c3c1181f1cbfe8e4f5ada6fcd21f35ac4"
 
 
 def test_golden_signature_matches_real_legis() -> None:
@@ -121,7 +126,7 @@ def test_projection_minimal_legis_read_surface() -> None:
         "fingerprint",
         "qualname",
         "properties",
-        "suppressed",
+        "suppression_state",
     }
 
 
@@ -130,7 +135,7 @@ def test_baselined_maps_to_suppressed_with_synthesized_proof() -> None:
     # non-active defect. A baselined finding with no reason must still carry proof.
     f = _finding(suppressed=SuppressionState.BASELINED, suppression_reason=None)
     out = legis.project_finding(f)
-    assert out["suppressed"] == "suppressed"
+    assert out["suppression_state"] == "suppressed"
     assert isinstance(out["properties"].get("suppression_reason"), str)
     assert out["properties"]["suppression_reason"].strip()
 
@@ -138,20 +143,20 @@ def test_baselined_maps_to_suppressed_with_synthesized_proof() -> None:
 def test_judged_maps_to_suppressed_and_carries_reason() -> None:
     f = _finding(suppressed=SuppressionState.JUDGED, suppression_reason="LLM: false positive")
     out = legis.project_finding(f)
-    assert out["suppressed"] == "suppressed"
+    assert out["suppression_state"] == "suppressed"
     assert out["properties"]["suppression_reason"] == "LLM: false positive"
 
 
 def test_waived_keeps_state_and_injects_proof_into_properties() -> None:
     f = _finding(suppressed=SuppressionState.WAIVED, suppression_reason="WAIVE-123")
     out = legis.project_finding(f)
-    assert out["suppressed"] == "waived"
+    assert out["suppression_state"] == "waived"
     assert out["properties"]["suppression_reason"] == "WAIVE-123"
 
 
 def test_active_finding_carries_no_suppression_proof() -> None:
     out = legis.project_finding(_finding(properties={"tier": "INTEGRAL"}))
-    assert out["suppressed"] == "active"
+    assert out["suppression_state"] == "active"
     assert "suppression_reason" not in out["properties"]
 
 

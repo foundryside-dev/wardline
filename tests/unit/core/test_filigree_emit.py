@@ -10,6 +10,7 @@ from wardline.core.filigree_emit import (
     FiligreeEmitter,
     Response,
     build_scan_results_body,
+    filigree_disabled_reason,
 )
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
 
@@ -72,7 +73,7 @@ def test_fingerprint_is_top_level_and_severity_lowercased() -> None:
 def test_metadata_namespaced_and_carries_suppression() -> None:
     wire = build_scan_results_body([_f(suppressed=SuppressionState.WAIVED, suppression_reason="fp")])["findings"][0]
     assert set(wire["metadata"]) == {"wardline"}
-    assert wire["metadata"]["wardline"]["suppressed"] == "waived"
+    assert wire["metadata"]["wardline"]["suppression_state"] == "waived"
     assert wire["metadata"]["wardline"]["suppression_reason"] == "fp"
 
 
@@ -214,6 +215,47 @@ def test_no_authorization_header_when_no_token() -> None:
     assert "Authorization" not in t.calls[0][2]
 
 
+# --- C-7: token-absent vs token-rejected (weft-23574069a1) -------------------
+
+
+def test_emit_stamps_token_sent_and_url() -> None:
+    url = "http://x/api/weft/scan-results"
+    t = _FakeTransport(response=Response(status=401, body="no"))
+    with_token = FiligreeEmitter(url, transport=t, token="wrong").emit([_f()])
+    assert with_token.token_sent is True and with_token.url == url
+    t2 = _FakeTransport(response=Response(status=401, body="no"))
+    no_token = FiligreeEmitter(url, transport=t2).emit([_f()])
+    assert no_token.token_sent is False and no_token.url == url
+    # success path also stamps token_sent + url
+    t3 = _FakeTransport(response=Response(status=200, body=_ok_body()))
+    ok = FiligreeEmitter(url, transport=t3, token="good").emit([_f()])
+    assert ok.token_sent is True and ok.url == url
+
+
+def test_disabled_reason_401_distinguishes_no_token_from_rejected() -> None:
+    url = "http://h/api/weft/scan-results"
+    # A token WAS sent and rejected — say the value is wrong, not "set a token" (the C-7
+    # misdiagnosis). Names the URL it tried.
+    rejected = filigree_disabled_reason(reachable=False, status=401, token_sent=True, url=url)
+    assert rejected is not None
+    assert "401" in rejected and "wrong" in rejected and url in rejected
+    assert "no token sent" not in rejected
+    # No token sent — that is the "set WEFT_FEDERATION_TOKEN" case.
+    absent = filigree_disabled_reason(reachable=False, status=401, token_sent=False, url=url)
+    assert absent is not None
+    assert "no token sent" in absent and "WEFT_FEDERATION_TOKEN" in absent and url in absent
+
+
+def test_disabled_reason_403_and_unreachable_unchanged_in_shape() -> None:
+    url = "http://h/api/weft/scan-results"
+    forbidden = filigree_disabled_reason(reachable=False, status=403, token_sent=True, url=url)
+    assert forbidden is not None and "403" in forbidden and "lacks access" in forbidden
+    unreachable = filigree_disabled_reason(reachable=False, status=None, token_sent=False, url=url)
+    assert unreachable is not None and "unreachable" in unreachable and url in unreachable
+    # reached/success -> no disabled_reason
+    assert filigree_disabled_reason(reachable=True, status=None) is None
+
+
 def test_2xx_with_unparseable_body_warns_not_crashes() -> None:
     # POST accepted (2xx) but the body is not a JSON object -> surface a warning,
     # reachable=True, zeroed stats; must NOT raise.
@@ -328,5 +370,5 @@ def test_judged_finding_carries_suppression_metadata() -> None:
     wire = build_scan_results_body([_f(suppressed=SuppressionState.JUDGED, suppression_reason="over-taint floor")])[
         "findings"
     ][0]
-    assert wire["metadata"]["wardline"]["suppressed"] == "judged"
+    assert wire["metadata"]["wardline"]["suppression_state"] == "judged"
     assert wire["metadata"]["wardline"]["suppression_reason"] == "over-taint floor"

@@ -123,7 +123,7 @@ class Finding:
             "confidence": self.confidence,
             "related_entities": list(self.related_entities),
             "properties": dict(self.properties),
-            "suppressed": self.suppressed.value,
+            "suppression_state": self.suppressed.value,
             "suppression_reason": self.suppression_reason,
             "maturity": self.maturity.value,
         }
@@ -182,7 +182,7 @@ def to_filigree_metadata(finding: Finding) -> dict[str, Any]:
     if finding.properties:
         wardline["properties"] = dict(finding.properties)
     if finding.suppressed is not SuppressionState.ACTIVE:
-        wardline["suppressed"] = finding.suppressed.value
+        wardline["suppression_state"] = finding.suppressed.value
         if finding.suppression_reason is not None:
             wardline["suppression_reason"] = finding.suppression_reason
     return {"wardline": wardline}
