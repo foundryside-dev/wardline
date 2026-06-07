@@ -122,6 +122,17 @@ class EmitResult:
             raise ValueError("an unreachable EmitResult must have zero created/updated/failed")
 
 
+@dataclass(frozen=True, slots=True)
+class ProbeResult:
+    """Outcome of an auth probe (verify_token). ``accepted`` is True when the daemon
+    authenticated the bearer (any non-401/403 status, e.g. a 400 from the sentinel body).
+    ``reachable`` is False only on a transport failure (connection refused / timeout)."""
+
+    reachable: bool
+    accepted: bool
+    status: int | None = None
+
+
 def filigree_disabled_reason(*, reachable: bool, status: int | None) -> str | None:
     """The ``disabled_reason`` for an emit attempt, or None when Filigree was reached.
 
@@ -230,3 +241,19 @@ class FiligreeEmitter:
             failed=len(failed) if isinstance(failed, list) else 0,
             warnings=tuple(warnings),
         )
+
+    def verify_token(self) -> ProbeResult:
+        """Probe whether the daemon accepts this emitter's bearer token, WITHOUT
+        recording anything. Auth runs in middleware before body validation, so a
+        deliberately-incomplete sentinel body yields 400 (auth passed) or 401/403
+        (rejected). Never reuses emit() — that would POST a valid empty scan."""
+        body = b"{}"  # parses as JSON, missing required scan-results fields => 400 when authed
+        headers = {"Content-Type": "application/json"}
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
+        try:
+            resp = self._transport.post(self._url, body, headers)
+        except (urllib.error.URLError, OSError):
+            return ProbeResult(reachable=False, accepted=False)
+        accepted = resp.status not in (401, 403)
+        return ProbeResult(reachable=True, accepted=accepted, status=resp.status)
