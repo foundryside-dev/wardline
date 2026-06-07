@@ -85,10 +85,15 @@ probe URL therefore resolves by:
 2. `WARDLINE_FILIGREE_URL` env var
 3. **`.mcp.json` → `mcpServers.wardline.args` → value after `--filigree-url`**
    (doctor already parses `.mcp.json` for `_check_project_mcp`)
-4. published-port rung (`.weft/filigree/ephemeral.port`, legacy
-   `.filigree/ephemeral.port`)
 
 If none resolve → `ok`, message `"filigree not configured; nothing to verify"`.
+
+The published-port rung (`.weft/filigree/ephemeral.port`) is **deliberately
+excluded**: it is a dynamic discovery convenience for live `scan`, not a
+configured emit target. doctor probes only a deliberately-configured URL, so it
+performs **no network I/O unless filigree emit is actually wired** — which also
+keeps the existing doctor test suite network-free. A CLI-only operator relying on
+the port rung can pass `--filigree-url` or set `WARDLINE_FILIGREE_URL`.
 
 #### Token
 
@@ -96,13 +101,18 @@ If none resolve → `ok`, message `"filigree not configured; nothing to verify"`
 
 #### Detection (read-only; runs without `--repair`)
 
+The token (`load_filigree_token(root)`, possibly `None`) is **always probed** — an
+absent token is not inherently an error, because the daemon may have auth off and
+accept unauthenticated emits.
+
 | Condition | Result |
 |---|---|
-| URL resolves, token is `None` | `error` — `"no federation token set; export WEFT_FEDERATION_TOKEN or add it to .env"` |
+| URL does not resolve | `ok` — `"filigree not configured; nothing to verify"` |
 | Resolved URL is **non-loopback** | `ok` — `"non-loopback filigree; token not probed"` (never send a bearer off-box) |
-| Probe → `401`/`403` | `error` — `"emit token rejected by filigree (<status>); the configured token is not what the daemon accepts"` |
 | Probe → unreachable (conn refused / timeout) | `ok` — `"filigree daemon not reachable; token not verified"` |
-| Probe → any other status (e.g. `400`, `2xx`) | `ok` |
+| Probe → accepted (any non-`401/403`, e.g. `400`/`2xx`) | `ok` |
+| Probe → `401`/`403`, **token present** | `error` — `"emit token rejected by filigree (<status>); the configured token is not what the daemon accepts"` |
+| Probe → `401`/`403`, **no token set** | `error` — `"filigree rejected an unauthenticated emit and no federation token is set; export WEFT_FEDERATION_TOKEN or add it to .env"` |
 
 **Probe mechanism:** `POST <url>` with a **sentinel body `{}`** and the bearer,
 ~2 s timeout. Filigree's auth middleware runs *before* body validation, so a good
