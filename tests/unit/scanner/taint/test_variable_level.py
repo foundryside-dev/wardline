@@ -461,12 +461,7 @@ def test_sink_lambda_in_loop_body_survives_for_post_loop_call() -> None:
     # sink-lambda bound in the loop body persists in the post-loop bindings, so a tainted
     # ``cb(raw)`` after the loop must fire. (Pins the loop path the candidate-set's FP
     # concern names; verified it neither hangs nor accumulates — rebinds are idempotent.)
-    src = (
-        "def handler(raw):\n"
-        "    for i in items:\n"
-        "        cb = lambda c: sink(c)\n"
-        "    cb(raw)\n"
-    )
+    src = "def handler(raw):\n    for i in items:\n        cb = lambda c: sink(c)\n    cb(raw)\n"
     assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
 
 
@@ -474,13 +469,7 @@ def test_benign_rebind_after_loop_replaces_lambda_candidate() -> None:
     # wardline-383f83fafe FP guard on the loop path: a benign linear rebind AFTER the loop
     # REPLACES the loop body's sink binding, so ``cb(raw)`` resolves only the benign body
     # — no stale accumulation across the loop boundary.
-    src = (
-        "def handler(raw):\n"
-        "    for i in items:\n"
-        "        cb = lambda c: sink(c)\n"
-        "    cb = lambda c: c\n"
-        "    cb(raw)\n"
-    )
+    src = "def handler(raw):\n    for i in items:\n        cb = lambda c: sink(c)\n    cb = lambda c: c\n    cb(raw)\n"
     assert _lambda_body_sink_arg(src) == T.INTEGRAL
 
 
