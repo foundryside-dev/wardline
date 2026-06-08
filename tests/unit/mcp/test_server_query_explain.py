@@ -137,7 +137,12 @@ def test_summary_only_omits_finding_arrays(tmp_path):
     (tmp_path / "svc.py").write_text(_many_leaks(5), encoding="utf-8")
     out = _scan({"summary_only": True, "fail_on": "ERROR"}, tmp_path)
     summ = out["agent_summary"]
-    assert summ["active_defects"] == [] and summ["suppressed_findings"] == [] and summ["engine_facts"] == []
+    assert (
+        summ["active_defects"] == []
+        and summ["suppressed_findings"] == []
+        and summ["engine_facts"] == []
+        and summ["informational"] == []
+    )
     # counts + gate intact
     assert out["summary"]["active"] == 5
     assert out["gate"]["tripped"] is True
@@ -190,7 +195,9 @@ def test_boolean_payload_controls_reject_non_bool(tmp_path, name):
 
 
 def _shown(ag) -> int:
-    return len(ag["active_defects"]) + len(ag["suppressed_findings"]) + len(ag["engine_facts"])
+    return (
+        len(ag["active_defects"]) + len(ag["suppressed_findings"]) + len(ag["engine_facts"]) + len(ag["informational"])
+    )
 
 
 def test_default_scan_is_bounded_to_25(tmp_path):

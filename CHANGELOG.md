@@ -105,6 +105,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixed-port sibling emit/discovery target the published-port rung cannot reconstruct.
 
 ### Fixed
+- **`agent_summary` display arrays now fully partition `total_findings` (W3 residual).** The
+  pagination union was `active_defects + suppressed_findings + engine_facts`, which excluded
+  non-defect findings that are not engine facts (metrics, classifications, suggestions, and
+  non-engine facts). Those findings were counted in `summary.total_findings` / `informational`
+  but occupied no display slot — an agent paginating `offset → next_offset` believed it had
+  covered all findings while never seeing metrics or classifications. A new `informational`
+  display array (parallel to `summary.informational`) captures this population. The union is
+  now `active_defects + suppressed_findings + engine_facts + informational`, and
+  `len(union) == truncation.findings_total == summary.total_findings` holds within the
+  `display_findings` contract. The `engine_facts` display array is unchanged (engine facts
+  only; non-engine facts go to `informational`). Closes the W3 pagination residual left open
+  by `weft-f506e5f845`, which added the `informational` summary *count* but not the
+  display-array complement.
 - **Lambda taint: a sink-lambda bound in a non-last branch arm is no longer lost.**
   The Level-2 taint engine tracked lambda bindings one-per-name, so at a branch merge
   only the last arm's binding survived; a name rebound to a sink-lambda in a non-last

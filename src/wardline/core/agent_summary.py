@@ -18,6 +18,17 @@ SCHEMA = "wardline-agent-summary-1"
 _SEVERITY_ORDER = {"CRITICAL": 0, "ERROR": 1, "WARN": 2, "INFO": 3, "NONE": 4}
 
 
+def _is_engine_fact(f: Finding) -> bool:
+    """Engine diagnostic facts: Kind.FACT with a WLN-ENGINE-* rule_id.
+
+    Used as the shared predicate for both ``_engine_facts`` and the re-split so
+    the two can never drift from each other.  The display array ``engine_facts``
+    covers exactly this population; ``informational`` (display) covers everything
+    else that is not a defect.
+    """
+    return f.kind is Kind.FACT and f.rule_id.startswith("WLN-ENGINE-")
+
+
 def _default_filigree_status() -> dict[str, Any]:
     return {
         "configured": False,
@@ -53,9 +64,9 @@ class AgentSummary:
     display_findings: list[Finding] | None = None
     summary_only: bool = False
     max_findings: int | None = None
-    # Offset into the flattened ordered union (active → suppressed → engine_facts) for
-    # pagination. The default scan returns a bounded first page; the agent walks the rest
-    # with offset = truncation.next_offset (weft-439d09fc8d).
+    # Offset into the flattened ordered union (active → suppressed → engine_facts →
+    # informational) for pagination. The default scan returns a bounded first page; the
+    # agent walks the rest with offset = truncation.next_offset (weft-439d09fc8d).
     offset: int = 0
     include_suppressed: bool = True
     # The secure-gate-default rollout hint (or None), surfaced in the gate block so the
@@ -83,13 +94,16 @@ class AgentSummary:
 
         base = self.result.findings if self.display_findings is None else self.display_findings
         # ONE ordered sequence is the pagination unit (weft-439d09fc8d): active defects first
-        # (most urgent), then suppressed debt, then engine facts — each internally sorted by
-        # _sort_key. A single offset+max_findings window slices this union so one truncation
-        # block describes the whole page, not three independently-sliced arrays.
+        # (most urgent), then suppressed debt, then engine facts, then the remaining
+        # informational findings (metrics, classifications, suggestions, non-engine facts) —
+        # each bucket internally sorted by _sort_key.  A single offset+max_findings window
+        # slices this union so one truncation block describes the whole page, not four
+        # independently-sliced arrays.  The union covers EVERY finding exactly once, so
+        # len(union) == summary.total_findings within the display_findings contract.
         union = _active_defects(base)
         if self.include_suppressed:
             union = union + _suppressed_defects(base)
-        union = union + _engine_facts(base)
+        union = union + _engine_facts(base) + _informational(base)
         findings_total = len(union)
         if self.summary_only:
             window: list[Finding] = []
@@ -101,14 +115,18 @@ class AgentSummary:
         end = self.offset + findings_returned
         findings_truncated = (not self.summary_only) and end < findings_total
         next_offset = end if findings_truncated else None
-        # Re-split the window back into the three display arrays by category (the union was
+        # Re-split the window back into the four display arrays by category (the union was
         # built in category order, so this preserves both order and the page boundary).
+        # NOTE: shown_facts must mirror _is_engine_fact exactly — a non-engine FACT
+        # (e.g. WLN-L3-*) must NOT land in both shown_facts and shown_informational.
         shown_active = [f for f in window if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE]
         shown_suppressed = [f for f in window if f.kind is Kind.DEFECT and f.suppressed is not SuppressionState.ACTIVE]
-        shown_facts = [f for f in window if f.kind is Kind.FACT]
+        shown_facts = [f for f in window if _is_engine_fact(f)]
+        shown_informational = [f for f in window if f.kind is not Kind.DEFECT and not _is_engine_fact(f)]
         active_defects = [_finding_entry(f, include_next=True) for f in shown_active]
         suppressed = [_finding_entry(f, include_next=False) for f in shown_suppressed]
         engine_facts = [_finding_entry(f, include_next=False) for f in shown_facts]
+        informational = [_finding_entry(f, include_next=False) for f in shown_informational]
         return {
             "schema": SCHEMA,
             "summary": {
@@ -120,6 +138,11 @@ class AgentSummary:
                 "baselined": self.result.summary.baselined,
                 "waived": self.result.summary.waived,
                 "judged": self.result.summary.judged,
+                # summary.informational counts ALL non-defect findings (engine facts included);
+                # the display array ``informational`` below covers only non-engine non-defects.
+                # engine_facts has its own display array, so the display split is:
+                #   active_defects + suppressed_findings + engine_facts + informational(display)
+                #   == total_findings (within the display_findings contract).
                 "informational": self.result.summary.informational,
                 "unanalyzed": self.result.summary.unanalyzed,
             },
@@ -140,6 +163,12 @@ class AgentSummary:
             "active_defects": active_defects,
             "suppressed_findings": suppressed,
             "engine_facts": engine_facts,
+            # Non-defect findings beyond engine facts: metrics, classifications, suggestions,
+            # and non-engine facts.  Parallel to summary.informational (which also includes
+            # engine_facts; see comment above), but scoped to the display window.  This is the
+            # W3 residual fix: these findings were counted in summary.total_findings but had no
+            # display array, making pagination falsely appear complete.
+            "informational": informational,
             # Every cut is explicit so a bounded page never reads as "covered all". This is the
             # single pagination descriptor for the union above; ``explanations_truncated`` is
             # set by the MCP server when explain=true inlines provenance (core never explains).
@@ -188,7 +217,28 @@ def _suppressed_defects(findings: list[Finding]) -> list[Finding]:
 
 def _engine_facts(findings: list[Finding]) -> list[Finding]:
     return sorted(
-        (f for f in findings if f.kind is Kind.FACT and f.rule_id.startswith("WLN-ENGINE-")),
+        (f for f in findings if _is_engine_fact(f)),
+        key=_sort_key,
+    )
+
+
+def _informational(findings: list[Finding]) -> list[Finding]:
+    """Non-defect findings that are NOT engine facts.
+
+    Covers Kind.METRIC, Kind.CLASSIFICATION, Kind.SUGGESTION, and Kind.FACT
+    findings whose rule_id does NOT start with "WLN-ENGINE-".  Together with
+    _engine_facts this partitions all non-defect findings, so the four display
+    arrays (active_defects, suppressed_findings, engine_facts, informational)
+    partition the full finding set exactly once — closing the W3 pagination
+    residual where these findings were counted in summary.total_findings but
+    occupied no display slot.
+
+    Note: summary.informational (in ScanSummary) counts ALL non-defect findings
+    including engine facts, so summary.informational >= len(informational display).
+    The display split here is finer; both are correct for their purpose.
+    """
+    return sorted(
+        (f for f in findings if f.kind is not Kind.DEFECT and not _is_engine_fact(f)),
         key=_sort_key,
     )
 

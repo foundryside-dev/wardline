@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from wardline.core.agent_summary import build_agent_summary
 from wardline.core.baseline import write_baseline
-from wardline.core.finding import Severity
+from wardline.core.finding import Finding, Kind, Location, Severity
 from wardline.core.paths import baseline_path
 from wardline.core.run import gate_decision, run_scan
 
@@ -176,3 +177,87 @@ def test_agent_summary_includes_integration_status_blocks(tmp_path: Path) -> Non
 
     assert out["integrations"]["filigree_emit"]["reachable"] is False
     assert out["integrations"]["loomweave_write"]["disabled_reason"] == "403"
+
+
+def test_agent_summary_nondefects_included_in_union_and_pagination(tmp_path: Path) -> None:
+    """W3 residual: non-defect findings beyond engine facts must appear in the union
+    and pagination, not just in the summary count.
+
+    Three assertions:
+    (1) truncation.findings_total == summary.total_findings (union == whole scan).
+    (2) Each synthetic non-defect finding's fingerprint appears in exactly one
+        display array (metric → informational; non-engine FACT → informational).
+    (3) len(active_defects) + len(suppressed_findings) + len(engine_facts)
+        + len(informational) == truncation.findings_total.
+    """
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    real_scan = run_scan(tmp_path)
+
+    # Synthetic non-defect findings that must NOT be silently dropped:
+    # – a Kind.METRIC with a "WLN-ENGINE-METRICS" rule_id  (engine prefix, but METRIC
+    #   kind → _is_engine_fact is False → goes to informational display array)
+    # – a non-engine Kind.FACT with a "WLN-L3-*" rule_id (non-engine → informational)
+    metric_fp = "metric-fingerprint-test-01"
+    l3fact_fp = "l3fact-fingerprint-test-01"
+    metric = Finding(
+        rule_id="WLN-ENGINE-METRICS",
+        message="L3 resolver run metrics",
+        severity=Severity.NONE,
+        kind=Kind.METRIC,
+        location=Location(path="<engine>"),
+        fingerprint=metric_fp,
+    )
+    # A Kind.FACT whose rule_id does NOT start with "WLN-ENGINE-" → _is_engine_fact
+    # returns False → must appear in the informational display array, not engine_facts.
+    l3_fact = Finding(
+        rule_id="WLN-CUSTOM-NON-ENGINE-FACT",
+        message="a non-engine fact finding for test coverage",
+        severity=Severity.INFO,
+        kind=Kind.FACT,
+        location=Location(path="<engine>"),
+        fingerprint=l3fact_fp,
+    )
+
+    augmented_findings = real_scan.findings + [metric, l3_fact]
+    orig_summary = real_scan.summary
+    augmented_summary = replace(
+        orig_summary,
+        total=orig_summary.total + 2,
+        informational=orig_summary.informational + 2,
+    )
+    augmented_scan = replace(
+        real_scan,
+        findings=augmented_findings,
+        summary=augmented_summary,
+    )
+
+    out = build_agent_summary(augmented_scan, gate_decision(augmented_scan, None)).to_dict()
+
+    # (1) union length == total_findings
+    assert out["truncation"]["findings_total"] == out["summary"]["total_findings"], (
+        "findings_total (union) must equal total_findings (summary)"
+    )
+
+    # (2) each synthetic finding appears in exactly one display array
+    all_fps_by_array: dict[str, list[str]] = {
+        "active_defects": [e["fingerprint"] for e in out["active_defects"]],
+        "suppressed_findings": [e["fingerprint"] for e in out["suppressed_findings"]],
+        "engine_facts": [e["fingerprint"] for e in out["engine_facts"]],
+        "informational": [e["fingerprint"] for e in out["informational"]],
+    }
+    for synthetic_fp in (metric_fp, l3fact_fp):
+        found_in = [name for name, fps in all_fps_by_array.items() if synthetic_fp in fps]
+        assert found_in == ["informational"], (
+            f"fingerprint {synthetic_fp!r} should be in exactly [informational], got {found_in}"
+        )
+
+    # (3) four-array partition == findings_total
+    total_shown = (
+        len(out["active_defects"])
+        + len(out["suppressed_findings"])
+        + len(out["engine_facts"])
+        + len(out["informational"])
+    )
+    assert total_shown == out["truncation"]["findings_total"], (
+        f"display array sum {total_shown} != findings_total {out['truncation']['findings_total']}"
+    )

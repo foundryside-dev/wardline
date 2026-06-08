@@ -105,7 +105,7 @@ def test_baseline_create_trusted_pack_matches_scan_mcp(tmp_path: Path, monkeypat
 
         scan = _call(server, "scan", {"trust_packs": ["baseline_mcp_pack"], "trust_local_packs": True})
         ag = scan["agent_summary"]
-        shown = ag["active_defects"] + ag["suppressed_findings"] + ag["engine_facts"]
+        shown = ag["active_defects"] + ag["suppressed_findings"] + ag["engine_facts"] + ag["informational"]
         assert any(e["rule_id"] == "PY-WL-901" for e in shown)
 
         baseline = _call(

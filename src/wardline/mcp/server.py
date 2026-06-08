@@ -889,8 +889,8 @@ class WardlineMCPServer:
                             "type": "integer",
                             "minimum": 0,
                             "description": "Pagination cursor into the ordered finding union (active → suppressed "
-                            "→ engine_facts). Pass agent_summary.truncation.next_offset from the previous call to "
-                            "fetch the next page. Default 0.",
+                            "→ engine_facts → informational). Pass agent_summary.truncation.next_offset from "
+                            "the previous call to fetch the next page. Default 0.",
                         },
                         "include_suppressed": {
                             "type": "boolean",

@@ -38,7 +38,7 @@ def test_cli_and_mcp_scan_agree_on_findings_and_gate() -> None:
     mcp = _scan({"fail_on": "ERROR", "full": True}, root=_CORPUS)
     mcp_ag = mcp["agent_summary"]
 
-    for key in ("active_defects", "suppressed_findings", "engine_facts"):
+    for key in ("active_defects", "suppressed_findings", "engine_facts", "informational"):
         assert mcp_ag[key] == cli_ag[key], key
     cli_hint = baseline_migration_hint(cli_result, cli_gate, root=_CORPUS, new_since=None)
     assert mcp["gate"] == {
