@@ -24,6 +24,12 @@ classifiers = [
 scanner = ["pyyaml>=6.0", "jsonschema>=4.0", "click>=8.0"]
 docs = ["mkdocs>=1.6", "mkdocs-material>=9.5"]
 loomweave = ["blake3>=1.0"]
+# Rust frontend (preview, Tier-A command-injection). tree-sitter-rust 0.24.2's
+# parser is ABI 15, loadable only by tree-sitter core >=0.25.0 — do NOT trust the
+# grammar's stale self-declared `tree-sitter~=0.22`. Both ship cp39-abi3 stable-ABI
+# wheels (one wheel per platform, CPython 3.9+, no compiler at install). The <0.26
+# cap is conservative: 0.26.x ABI/API compat is unverified — relax after a smoke test.
+rust = ["tree-sitter>=0.25,<0.26", "tree-sitter-rust==0.24.2"]
 # The SP5 LLM triage judge is dependency-free (stdlib urllib -> OpenRouter); no extra needed.
 
 [dependency-groups]
