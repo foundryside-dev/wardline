@@ -94,6 +94,7 @@ def _wait_for_capabilities(proc: subprocess.Popen[bytes], log: Path) -> str:
     with the server log tail so the caller can skip with a specific reason."""
     deadline = time.monotonic() + 20.0
     base_url: str | None = None
+    url = "<no HTTP bind address reported>"
     last_err = "waiting for Loomweave to report HTTP bind address"
     while time.monotonic() < deadline:
         if proc.poll() is not None:
