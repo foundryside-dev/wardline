@@ -14,8 +14,12 @@ from typing import TYPE_CHECKING
 from wardline.core.finding import Finding, Kind, Location, Maturity, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import RAW_ZONE, TRUST_RANK, TaintState
-from wardline.scanner.rules._ast_helpers import own_nodes
-from wardline.scanner.rules._sink_helpers import TaintedSinkRule, resolved_arg_taints
+from wardline.scanner.rules._sink_helpers import (
+    TaintedSinkRule,
+    enclosing_declared_tier,
+    resolved_arg_taints,
+    sink_method_calls,
+)
 from wardline.scanner.rules.metadata import RuleMetadata
 from wardline.scanner.rules.severity_model import modulate
 
@@ -35,17 +39,56 @@ _SINKS = frozenset({"execute", "executemany"})
 _SQL_STRING_KEYS: frozenset[int | str] = frozenset({0, "operation", "sql", "query", "statement"})
 
 
+def _kwargs_may_target_sql_string(call: ast.Call) -> bool:
+    """Whether a ``**`` unpack in *call* could supply the SQL-string operation.
+
+    ``True`` when ANY ``**`` unpack is opaque/non-static (a name, comprehension, or dict with
+    a ``**``-spread or non-constant key) OR is a literal dict carrying an SQL-string key;
+    ``False`` only when EVERY ``**`` unpack is a static literal dict whose keys are all
+    non-SQL-string (provably bound-parameter only). Iterates all ``**`` keywords so a clean
+    literal followed by an opaque/SQL-keyed one still fails closed. Meaningful only when a
+    ``**`` unpack is present — the caller gates on the engine's ``None`` arg-key, which exists
+    iff the call has a ``**`` unpack."""
+    for kw in call.keywords:
+        if kw.arg is not None:
+            continue  # a named keyword, keyed by its own name — handled via _SQL_STRING_KEYS
+        value = kw.value
+        if (
+            isinstance(value, ast.Dict)
+            and value.keys
+            and all(isinstance(k, ast.Constant) and isinstance(k.value, str) for k in value.keys)
+        ):
+            if any(k.value in _SQL_STRING_KEYS for k in value.keys):  # type: ignore[union-attr]
+                return True  # literal dict targets an SQL-string key
+            # literal dict with only non-SQL keys → bound-parameter only; keep checking others
+        else:
+            return True  # opaque / non-static ** — cannot isolate; fail closed
+    return False
+
+
 def _sql_string_taint(call: ast.Call, qualname: str, context: AnalysisContext) -> TaintState | None:
     """The least-trusted taint reaching the SQL-STRING argument (the operation), ignoring
-    bound-parameter arguments. Fail-closed: a ``Starred`` first positional
-    (``execute(*args)``) cannot be split into operation-vs-params, so its taint is taken
-    as the operation's (treated as potentially-SQL)."""
+    bound-parameter arguments. Fail-closed on positions that cannot be isolated from the
+    operation: a ``Starred`` first positional (``execute(*args)``) and a ``**`` unpack that
+    could supply the ``operation`` keyword (``execute(**kwargs)`` / ``**{"operation": ...}``).
+
+    The engine collapses a ``**`` unpack to a single ``None``-keyed taint (the worst across the
+    unpacked dict's values), so per-key attribution is impossible at this layer: when a literal
+    ``**`` dict carries an SQL-string key, the ``None`` taint is treated as reaching the
+    operation even if a clean value occupied that key — a deliberate fail-closed
+    over-approximation (never an FN). See wardline-8c31463f9f / wardline-e0e44852e7."""
     taints = resolved_arg_taints(call, qualname, context)
-    if "*0" in taints:  # splatted operation — cannot isolate the SQL string; fail closed
-        return taints.get(0)
+    kwargs_is_sql_slot = _kwargs_may_target_sql_string(call)
     worst: TaintState | None = None
     for key, ts in taints.items():
-        if key in _SQL_STRING_KEYS and ts is not None and (worst is None or TRUST_RANK[ts] > TRUST_RANK[worst]):
+        if ts is None:
+            continue
+        is_sql_slot = (
+            key in _SQL_STRING_KEYS  # operation position 0 / operation-ish keyword
+            or key == "*0"  # Starred first positional — cannot isolate; fail closed
+            or (key is None and kwargs_is_sql_slot)  # ** unpack that may target the operation
+        )
+        if is_sql_slot and (worst is None or TRUST_RANK[ts] > TRUST_RANK[worst]):
             worst = ts
     return worst
 
@@ -82,39 +125,41 @@ class SQLInjection(TaintedSinkRule):
     def check(self, context: AnalysisContext) -> list[Finding]:
         findings: list[Finding] = []
         for qualname, entity in context.entities.items():
-            # Strip ``.<locals>.`` so a nested def inherits its enclosing trusted tier,
-            # matching the family-wide TaintedSinkRule base (_sink_helpers.py) — without
-            # this, a tainted execute() wrapped in a nested function evaded the
-            # highest-severity sink (wardline-9b88ec5419).
-            lookup_name = qualname.split(".<locals>.")[0]
-            tier = context.project_taints.get(lookup_name, TaintState.UNKNOWN_RAW)
+            # Honor a nested def's OWN trust decorator, else inherit the nearest declared
+            # enclosing scope's tier — matching the family-wide TaintedSinkRule base
+            # (_sink_helpers.enclosing_declared_tier). Without inheritance a tainted execute()
+            # in an undecorated nested def evaded the sink (wardline-9b88ec5419); an
+            # unconditional strip wrongly overrode a nested def's own tier (wardline-bb8396f96e).
+            tier = enclosing_declared_tier(qualname, context.project_taints, context.declared_qualnames)
             severity = modulate(self.base_severity, tier)
             if severity == Severity.NONE:
                 continue  # freedom / fail-closed zone — suppressed
-            for node in own_nodes(entity.node):
-                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in self.SINKS:
-                    worst = _sql_string_taint(node, qualname, context)
-                    if worst is not None and worst in RAW_ZONE:
-                        line = node.lineno
-                        findings.append(
-                            Finding(
-                                rule_id=self.rule_id,
-                                message=(
-                                    f"{qualname}: {worst.value} (untrusted) data reaches the {self.sink_label} "
-                                    f"sink {node.func.attr}() at line {line}"
-                                ),
-                                severity=severity,
-                                kind=Kind.DEFECT,
-                                location=Location(path=entity.location.path, line_start=line),
-                                fingerprint=_fp(
-                                    rule_id=self.rule_id,
-                                    path=entity.location.path,
-                                    line_start=line,
-                                    qualname=qualname,
-                                    taint_path=f"{worst.value}->{node.func.attr}",
-                                ),
-                                qualname=qualname,
-                                properties={"tier": tier.value, "sink": node.func.attr, "arg_taint": worst.value},
-                            )
-                        )
+            for node in sink_method_calls(entity.node, self.SINKS):
+                worst = _sql_string_taint(node, qualname, context)
+                if worst is None or worst not in RAW_ZONE:
+                    continue
+                assert isinstance(node.func, ast.Attribute)  # guaranteed by sink_method_calls
+                sink_name = node.func.attr
+                line = node.lineno
+                findings.append(
+                    Finding(
+                        rule_id=self.rule_id,
+                        message=(
+                            f"{qualname}: {worst.value} (untrusted) data reaches the {self.sink_label} "
+                            f"sink {sink_name}() at line {line}"
+                        ),
+                        severity=severity,
+                        kind=Kind.DEFECT,
+                        location=Location(path=entity.location.path, line_start=line),
+                        fingerprint=_fp(
+                            rule_id=self.rule_id,
+                            path=entity.location.path,
+                            line_start=line,
+                            qualname=qualname,
+                            taint_path=f"{worst.value}->{sink_name}",
+                        ),
+                        qualname=qualname,
+                        properties={"tier": tier.value, "sink": sink_name, "arg_taint": worst.value},
+                    )
+                )
         return findings

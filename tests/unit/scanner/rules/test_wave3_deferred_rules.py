@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from wardline.core.config import WardlineConfig
-from wardline.core.finding import Finding, Kind
+from wardline.core.finding import Finding, Kind, Severity
 from wardline.scanner.analyzer import WardlineAnalyzer
 
 
@@ -203,6 +203,159 @@ def test_sql_injection_tainted_sql_string_with_clean_params_still_fires(tmp_path
     assert sqli[0].qualname == "m.q"
 
 
+# ── PY-WL-118 regression: **kwargs dict-unpacking gate (wardline-8c31463f9f) ──
+
+
+def test_sql_injection_fires_on_kwargs_operation(tmp_path: Path) -> None:
+    # A tainted SQL operation passed via ``**{"operation": ...}`` collapses to the engine's
+    # ``None`` (``**kwargs``) arg-key. The narrowed _SQL_STRING_KEYS gate ignored ``None``, so
+    # this FN slipped past the FP fix (wardline-8c31463f9f). The literal-dict key ("operation")
+    # is in the SQL-string slot, so 118 must fire.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @trusted(level='ASSURED')
+            def q(p, cursor):
+                cursor.execute(**{"operation": read_raw(p)})
+            """
+        },
+    )
+    sqli = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-118"]
+    assert len(sqli) == 1
+    assert sqli[0].qualname == "m.q"
+
+
+def test_sql_injection_fires_on_kwargs_sql(tmp_path: Path) -> None:
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @trusted(level='ASSURED')
+            def q(p, cursor):
+                cursor.execute(**{"sql": read_raw(p)})
+            """
+        },
+    )
+    sqli = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-118"]
+    assert len(sqli) == 1
+
+
+def test_sql_injection_kwargs_parameters_only_does_not_fire(tmp_path: Path) -> None:
+    # Preserves the parameterized-query FP fix (wardline-e0e44852e7) for the ``**kwargs`` shape:
+    # a literal dict that provably targets only the bound-parameter slot ("parameters") — never
+    # the SQL string — is not SQLi and must stay silent.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @trusted(level='ASSURED')
+            def q(p, cursor):
+                cursor.execute(**{"parameters": read_raw(p)})
+            """
+        },
+    )
+    sqli = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-118"]
+    assert sqli == []
+
+
+def test_sql_injection_opaque_kwargs_fails_closed(tmp_path: Path) -> None:
+    # An opaque ``**`` unpack (not a static literal dict) cannot be split into operation-vs-params,
+    # so a raw-tier value reaching it is treated as potentially the SQL string — fail closed, fire.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @trusted(level='ASSURED')
+            def q(p, cursor):
+                cursor.execute(**read_raw(p))
+            """
+        },
+    )
+    sqli = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-118"]
+    assert len(sqli) == 1
+
+
+def test_sql_injection_fires_on_execute_inside_lambda(tmp_path: Path) -> None:
+    # PY-WL-118 must inspect sink calls inside LAMBDA bodies, matching its sink-family siblings
+    # (PY-WL-106/107/108 descend into lambdas via _own_calls). It previously walked own_nodes,
+    # which treats ast.Lambda as a scope boundary, so a tainted execute() in a lambda silently
+    # escaped — a real SQLi FN. Attribution is to the enclosing entity (as the siblings do).
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @trusted(level='ASSURED')
+            def f(p, cursor):
+                run = lambda: cursor.execute(read_raw(p))
+                return run
+            """
+        },
+    )
+    sqli = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-118"]
+    assert len(sqli) == 1
+    assert sqli[0].qualname == "m.f"
+    assert sqli[0].severity is Severity.ERROR
+
+
+def test_sql_injection_fires_on_kwargs_operation_inside_lambda(tmp_path: Path) -> None:
+    # The bug-1 **kwargs gate and the lambda-descent fix compose: a tainted ** operation inside
+    # a lambda body must fire.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @trusted(level='ASSURED')
+            def f(p, cursor):
+                run = lambda: cursor.execute(**{"operation": read_raw(p)})
+                return run
+            """
+        },
+    )
+    sqli = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-118"]
+    assert len(sqli) == 1
+
+
+def test_sql_injection_lambda_bound_parameter_stays_silent(tmp_path: Path) -> None:
+    # Descending into lambdas must not break the bound-parameter FP fix (wardline-e0e44852e7):
+    # a clean SQL string with the untrusted value only in the parameter position stays silent
+    # even inside a lambda.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @trusted(level='ASSURED')
+            def f(p, cursor):
+                run = lambda: cursor.execute("SELECT * FROM t WHERE id = ?", (read_raw(p),))
+                return run
+            """
+        },
+    )
+    sqli = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-118"]
+    assert sqli == []
+
+
+def test_sql_injection_kwargs_mixed_literal_overfires_failclosed(tmp_path: Path) -> None:
+    # KNOWN, INTENDED fail-closed over-approximation: the engine collapses every ``**``-dict
+    # value into ONE worst-taint under the ``None`` key, so a literal dict that puts a clean
+    # value in the SQL-string slot ("operation") and the tainted value in the bound-parameter
+    # slot ("parameters") cannot be attributed per-key. Because an SQL-string key IS present and
+    # the ``**`` region carries raw taint, the gate fires (over-approximation, never an FN). The
+    # precise per-key attribution is engine-level work tracked as expansion backlog.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @trusted(level='ASSURED')
+            def q(p, cursor):
+                cursor.execute(**{"operation": "SELECT 1", "parameters": read_raw(p)})
+            """
+        },
+    )
+    sqli = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-118"]
+    assert len(sqli) == 1
+
+
 # ── PY-WL-119: Degenerate Boundary ─────────────────────────────────────────
 
 
@@ -312,6 +465,100 @@ def test_sql_injection_nested_def_inherits_trusted_tier(tmp_path: Path) -> None:
     sqli_findings = [f for f in defects if f.rule_id == "PY-WL-118"]
     assert len(sqli_findings) == 1
     assert sqli_findings[0].qualname == "m.safe_parent.<locals>.nested_untrusted"
+
+
+def test_sql_injection_nested_own_trusted_decorator_under_undecorated_parent_fires(tmp_path: Path) -> None:
+    # Regression wardline-bb8396f96e: the unconditional ``.<locals>.`` strip made a nested def
+    # inherit its parent's tier even when the nested def carries its OWN trust decorator. Here
+    # the parent is undecorated (UNKNOWN_RAW); the nested ``inner`` is @trusted in its own right,
+    # so its tier — not the parent's — governs, and the real SQLi must fire.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            def outer(p, cursor):
+                @trusted(level='ASSURED')
+                def inner(q, cursor):
+                    cursor.execute(read_raw(q))
+                return inner
+            """
+        },
+    )
+    defects = [f for f in findings if f.kind is Kind.DEFECT]
+    sqli = [f for f in defects if f.rule_id == "PY-WL-118"]
+    assert len(sqli) == 1
+    assert sqli[0].qualname == "m.outer.<locals>.inner"
+    assert sqli[0].severity is Severity.ERROR
+
+
+def test_sql_injection_nested_own_trusted_under_external_boundary_parent_fires(tmp_path: Path) -> None:
+    # Regression wardline-bb8396f96e, case B: parent is @external_boundary (EXTERNAL_RAW, which
+    # modulates to NONE). The nested @trusted ``inner`` must use its OWN tier and fire at ERROR
+    # rather than inheriting the suppressed parent tier.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @external_boundary
+            def outer(p, cursor):
+                @trusted(level='ASSURED')
+                def inner(q, cursor):
+                    cursor.execute(read_raw(q))
+                return inner
+            """
+        },
+    )
+    defects = [f for f in findings if f.kind is Kind.DEFECT]
+    sqli = [f for f in defects if f.rule_id == "PY-WL-118"]
+    assert len(sqli) == 1
+    assert sqli[0].qualname == "m.outer.<locals>.inner"
+    assert sqli[0].severity is Severity.ERROR
+
+
+def test_sql_injection_double_nested_undecorated_inherits_trusted_tier(tmp_path: Path) -> None:
+    # Preserves wardline-9b88ec5419 at depth: two levels of UNDECORATED nesting inside a @trusted
+    # outer must still inherit the outer's tier (walk-outward to the nearest DECLARED scope), so
+    # the leaf sink fires.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @trusted(level='ASSURED')
+            def deep(p, cursor):
+                def mid(q):
+                    def leaf(r):
+                        cursor.execute(read_raw(r))
+                    return leaf
+                return mid
+            """
+        },
+    )
+    defects = [f for f in findings if f.kind is Kind.DEFECT]
+    sqli = [f for f in defects if f.rule_id == "PY-WL-118"]
+    assert len(sqli) == 1
+    assert sqli[0].qualname == "m.deep.<locals>.mid.<locals>.leaf"
+
+
+def test_exec_sink_nested_own_trusted_under_undecorated_parent_fires(tmp_path: Path) -> None:
+    # Family-wide coverage: the same nested-own-decorator fix lives in the shared TaintedSinkRule
+    # base (_sink_helpers), so a non-118 sink rule (PY-WL-107, eval) must also honor a nested
+    # def's own @trusted decorator under an undecorated parent.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            def outer(p):
+                @trusted(level='ASSURED')
+                def inner(q):
+                    eval(read_raw(q))
+                return inner
+            """
+        },
+    )
+    defects = [f for f in findings if f.kind is Kind.DEFECT]
+    exec_findings = [f for f in defects if f.rule_id == "PY-WL-107"]
+    assert len(exec_findings) == 1
+    assert exec_findings[0].qualname == "m.outer.<locals>.inner"
 
 
 def test_stored_taint_nested_scope_isolation(tmp_path: Path) -> None:

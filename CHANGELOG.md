@@ -105,6 +105,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixed-port sibling emit/discovery target the published-port rung cannot reconstruct.
 
 ### Fixed
+- **Three PY-WL-118 false-negatives from the `scrub-2026-06-08` regression set
+  (`scrub-regression`).** Surfaced by adversarial verification of the six P1 scrub
+  fixes (`24b0a3e`); empirically reproduced and regression-tested.
+  - **Tainted SQL via `**kwargs` dict-unpacking now fires** (`wardline-8c31463f9f`). The
+    engine collapses a `**` unpack to a single taint under the `None` arg-key, which the
+    narrowed `_SQL_STRING_KEYS` gate ignored. `_sql_string_taint` now treats the `None` key
+    as the SQL-string slot when a `**` unpack could supply the `operation` — by inspecting the
+    literal-dict keys (`**{"operation": …}` fires, `**{"parameters": …}` stays silent,
+    preserving `wardline-e0e44852e7`) and failing closed on any opaque/non-static `**`. The
+    snapshot's per-`**`-key taint collapse means a literal dict mixing a clean operation with a
+    tainted parameter over-approximates (fires) — a deliberate fail-closed choice, never an FN.
+  - **Nested defs now honor their OWN trust decorator** (`wardline-bb8396f96e`). The
+    unconditional `.<locals>.` strip made a nested `@trusted` def inherit its parent's
+    (suppressed) tier. The new shared `_sink_helpers.enclosing_declared_tier` walks outward
+    through enclosing scopes and uses the nearest scope carrying an explicit declaration
+    (`declared_qualnames`), so a nested def's own decorator governs while a genuinely
+    undeclared nested def still inherits its enclosing trusted tier (`wardline-9b88ec5419`).
+    Applied family-wide (PY-WL-106/107/108/115/116/117 share the base).
+  - **PY-WL-118 now inspects sink calls inside lambda bodies** (`wardline-b8a94cf0ac`). The
+    rule walked `own_nodes`, which treats `ast.Lambda` as a scope boundary, so a tainted
+    `execute()` in a lambda escaped — while its sink-family siblings descend into lambdas. It
+    now uses the shared lambda-descending `sink_method_calls`, attributing the finding to the
+    enclosing entity as the siblings do.
 - **Six P1 correctness defects from the pre-1.0 rule scrub (`scrub-2026-06-08`).** All
   empirically reproduced and regression-tested; a new shared fail-closed argument resolver
   (`_sink_helpers.resolved_arg_taints`) gives the sink rules per-argument taint with a single

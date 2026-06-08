@@ -37,10 +37,40 @@ __all__ = [
     "TaintedSinkRule",
     "canonical_call_name",
     "dotted_name",
+    "enclosing_declared_tier",
     "resolved_arg_taints",
     "sink_calls",
+    "sink_method_calls",
     "worst_arg_taint",
 ]
+
+
+def enclosing_declared_tier(
+    qualname: str,
+    project_taints: Mapping[str, TaintState],
+    declared_qualnames: frozenset[str],
+) -> TaintState:
+    """Trust tier governing *qualname*, honoring a nested def's OWN trust decorator.
+
+    Walks outward through ``.<locals>.`` enclosing scopes and returns the tier of the
+    nearest scope that carries an explicit trust DECLARATION (``declared_qualnames`` — the
+    trust surface). So a nested def with its own decorator uses its own tier
+    (wardline-bb8396f96e), while a genuinely undeclared nested def inherits the nearest
+    declared enclosing scope's tier (wardline-9b88ec5419). Falls back to the full qualname's
+    own tier (defaulting ``UNKNOWN_RAW`` → developer-freedom) when no scope in the lexical
+    chain is declared.
+
+    Keying off the explicit-declaration set — not a tier heuristic — is what distinguishes
+    "this def declared its own trust" from "this def is undeclared and should inherit": an
+    undeclared nested def is registered in ``project_taints`` (typically ``UNKNOWN_RAW``) yet
+    is absent from ``declared_qualnames``, so the walk correctly steps past it to the parent.
+    """
+    parts = qualname.split(".<locals>.")
+    for i in range(len(parts), 0, -1):
+        candidate = ".<locals>.".join(parts[:i])
+        if candidate in declared_qualnames:
+            return project_taints.get(candidate, TaintState.UNKNOWN_RAW)
+    return project_taints.get(qualname, TaintState.UNKNOWN_RAW)
 
 
 def dotted_name(node: ast.expr) -> str | None:
@@ -110,6 +140,20 @@ def sink_calls(
             canonical = canonical_call_name(dotted, aliases)
             if canonical in sink_names:
                 yield call, canonical
+
+
+def sink_method_calls(func_node: ast.AST, method_names: frozenset[str]) -> Iterator[ast.Call]:
+    """Yield own-scope calls whose func is an attribute access ``recv.<method>`` whose method
+    name is in *method_names* (e.g. ``cursor.execute``).
+
+    Descends into lambda bodies (via :func:`_own_calls`) so a sink wrapped in a lambda is not
+    missed — the same lambda-traversal the dotted-FQN :func:`sink_calls` path already has; does
+    not enter nested def/class scopes (those are indexed as their own entities). For rules that
+    key on the METHOD NAME regardless of receiver (PY-WL-118), as opposed to canonical dotted
+    sink FQNs."""
+    for call in _own_calls(func_node):
+        if isinstance(call.func, ast.Attribute) and call.func.attr in method_names:
+            yield call
 
 
 def _module_for_qualname(qualname: str, context: AnalysisContext) -> str | None:
@@ -199,12 +243,13 @@ class TaintedSinkRule:
     def check(self, context: AnalysisContext) -> list[Finding]:
         findings: list[Finding] = []
         for qualname, entity in context.entities.items():
-            lookup_name = qualname.split(".<locals>.")[0]
-            tier = context.project_taints.get(lookup_name, TaintState.UNKNOWN_RAW)
+            # Honor a nested def's OWN trust decorator, else inherit the nearest declared
+            # enclosing scope's tier (wardline-bb8396f96e / wardline-9b88ec5419).
+            tier = enclosing_declared_tier(qualname, context.project_taints, context.declared_qualnames)
             severity = modulate(self.base_severity, tier)
             if severity == Severity.NONE:
                 continue  # freedom / fail-closed zone — suppressed
-            module = _module_for_qualname(lookup_name, context)
+            module = _module_for_qualname(qualname, context)
             alias_map = context.alias_maps.get(module, {}) if module is not None else {}
             for call, dotted in sink_calls(entity.node, self.SINKS, alias_map, module or ""):
                 if not self._accept_call(call):
