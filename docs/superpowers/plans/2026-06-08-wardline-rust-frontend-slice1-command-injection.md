@@ -120,11 +120,12 @@ module-level `pytest.importorskip("tree_sitter")`.
   single keying authority** — `dataflow.py` (WP4) and `rules.py` (WP5) both import it; no pass keys on a
   raw `ts_node`. Also add the typed `NodeId` alias on the Python side behind `id()` (zero behavior
   change) so the contract is shared.
-- `tests/conformance/qualnames_rust.json` is **vendored from Loomweave** here (a pinned copy of
-  `feat/rust-plugin-spec`:`fixtures/qualnames_rust.json`, the extractor-generated oracle) as the
-  **format drift-gate** (spec §6.4). Loomweave offered to drop the copy + a
-  `test_loomweave_rust_qualname_parity.py` skeleton straight into `tests/conformance/` — accept that or
-  vendor it manually; do not author the corpus ourselves (Loomweave is authoritative).
+- **DONE this session (2026-06-09):** `tests/conformance/qualnames_rust.json` is **vendored
+  byte-identical** from Loomweave (`feat/rust-plugin-spec`@`a3227ad`:`fixtures/qualnames_rust.json`,
+  the extractor-generated oracle — do not author it ourselves), and `tests/conformance/
+  test_loomweave_rust_qualname_parity.py` is the parity skeleton: 4 **structural self-tests run now**
+  (catch a malformed/stale re-vendor), 22 **producer rows skip** until the Rust frontend lands. Verified
+  green (4 passed / 22 skipped; ruff + mypy clean). WP2 un-skips the 22 (above).
 
 **Verify:** loader test green under `wardline[rust]`; skips clean without it.
 
@@ -181,6 +182,14 @@ Wardline reproduces its function-row `qualname`s byte-for-byte.
   re-parse): for a known builder chain, the `NodeId` the (stub) dataflow records for the `.output()`
   trigger **equals** the `NodeId` `mint_node_ids` assigns that CST node, which **equals** the one the
   rule locator looks up. A mismatch is a hard failure.
+- **Un-skip the vendored cross-tool gate.** `tests/conformance/test_loomweave_rust_qualname_parity.py`
+  (vendored in WP0) currently *skips* its 22 producer rows. **WP2 is not done until those go GREEN** —
+  i.e. `rust/index.py` + `rust/qualname.py` reproduce Loomweave's `qualnames_rust.json` byte-for-byte.
+  WP2's `_rust_producer` already pins the **exact API contract** the test calls; implement to it:
+  - `wardline.rust.index.discover_rust_entities(source: str, *, module: str) -> Sequence[RustEntity]`
+    — **parses `source` internally** (no AST/path arg; `module` is the supplied root, since deriving it
+    from `Cargo.toml` is SP2); each `RustEntity` carries `.qualname`. Emit **callables only**.
+  - `wardline.rust.qualname.rust_module_route(*, crate: str, src_root: str, file: str) -> str`.
 
 **Implement:** `rust/parse.py`, `rust/qualname.py` (ADR-049 forms), `rust/index.py`. **Root = the
 file-module approximation** (e.g. `demo`) — slice-1-reproducible; the **real crate prefix** from
@@ -299,8 +308,11 @@ Drafted `examples_violation`/`examples_clean` per spec §9.2. Reuse `modulate`, 
 
 ## Verification (end-to-end gate)
 
-1. `.venv/bin/pytest tests/unit/rust tests/corpus/rust -q` green (incl. qualname conformance, the
-   **NodeId cross-pass agreement** test, the FP/FN guards, the provider-fingerprint-on-bump test).
+1. `.venv/bin/pytest tests/unit/rust tests/corpus/rust tests/conformance/test_loomweave_rust_qualname_parity.py -q`
+   green — incl. qualname conformance, the **NodeId cross-pass agreement** test, the FP/FN guards, the
+   provider-fingerprint-on-bump test, **and the vendored Loomweave parity gate with its 22 producer rows
+   now GOING GREEN (not skipping)** — `discover_rust_entities`/`rust_module_route` reproduce
+   `qualnames_rust.json` byte-for-byte.
 2. **Immediately after WP1** *and* at the end: `.venv/bin/pytest -q` full suite green; the **Python
    corpus + `tests/golden/identity` parity stay byte-identical**.
 3. `.venv/bin/pytest -m rust_e2e -q` green under `wardline[rust]`; skips clean without it.
