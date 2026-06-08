@@ -130,6 +130,40 @@ def test_save_and_load_roundtrip(tmp_path) -> None:
     assert c2.get(_KEY) == summaries
 
 
+def test_warm_cache_honours_untrusted_sources_policy_change(tmp_path) -> None:
+    # A warm run whose config newly names a function as an untrusted source must produce the
+    # SAME defects as a cold run with that config — the cache key binds the effective-scan-
+    # policy hash, so the prior policy-free CLEAN summary is not served (wardline-9d6a81b9e7).
+    from wardline.core.config import WardlineConfig
+    from wardline.core.finding import Kind
+    from wardline.scanner.analyzer import WardlineAnalyzer
+
+    src = tmp_path / "example.py"
+    src.write_text(
+        "from wardline.decorators import trusted\n"
+        "@trusted(level='ASSURED')\n"
+        "def read_raw(p):\n    return p\n"
+        "@trusted(level='ASSURED')\n"
+        "def f(p, cursor):\n    cursor.execute(read_raw(p))\n",
+        encoding="utf-8",
+    )
+
+    def defects(az: WardlineAnalyzer, cfg: WardlineConfig) -> list[str]:
+        fs = list(az.analyze([src], cfg, root=tmp_path))
+        return sorted({x.rule_id for x in fs if x.kind is Kind.DEFECT})
+
+    cfg_clean = WardlineConfig()
+    cfg_src = WardlineConfig(untrusted_sources=("example.read_raw",))
+
+    cold = defects(WardlineAnalyzer(summary_cache=SummaryCache()), cfg_src)
+    assert cold == ["PY-WL-118"]
+
+    # Warm the cache with the policy-FREE run first, then re-run under the source policy.
+    az = WardlineAnalyzer(summary_cache=SummaryCache())
+    assert defects(az, cfg_clean) == []
+    assert defects(az, cfg_src) == cold  # must NOT serve the stale-clean summary
+
+
 def test_load_drops_file_when_internal_cache_key_mismatches_filename(tmp_path) -> None:
     import json
 

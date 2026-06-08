@@ -124,6 +124,15 @@ def resolve_project_taints(
     else:
         frontier = frozenset()
 
+    # The effective-scan-policy identity (untrusted_sources / sanitisers / provenance_clash
+    # shape summaries without changing source bytes). MUST match the dirty-detection key the
+    # parse stage computed from the same config, exactly as provider_fingerprint must — else a
+    # summary computed under one policy could be served under another (wardline-9d6a81b9e7).
+    from wardline.core.attest import ruleset_hash
+    from wardline.core.config import WardlineConfig
+
+    scan_policy_hash = ruleset_hash(config if config is not None else WardlineConfig())
+
     # Per-module summaries: reuse cached for clean cache-hit modules, else fresh.
     summaries: list[FunctionSummary] = []
     for m in modules:
@@ -133,6 +142,7 @@ def resolve_project_taints(
             schema_version=SUMMARY_SCHEMA_VERSION,
             resolver_version=_RESOLVER_VERSION,
             provider_fingerprint=provider_fingerprint,
+            scan_policy_hash=scan_policy_hash,
         )
         cached: tuple[FunctionSummary, ...] | None = None
         if summary_cache is not None and m.module_path not in frontier:
@@ -150,6 +160,7 @@ def resolve_project_taints(
             source_bytes=m.source_bytes,
             resolver_version=_RESOLVER_VERSION,
             provider_fingerprint=provider_fingerprint,
+            scan_policy_hash=scan_policy_hash,
         )
         summaries.extend(fresh)
         if summary_cache is not None:

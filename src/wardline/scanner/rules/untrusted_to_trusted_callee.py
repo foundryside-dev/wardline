@@ -16,7 +16,11 @@ opt-in, so the caller need not be anchored. FP-safe by construction:
   - the callee must resolve to a **same-module** anchored entity with a trusted body
     (``@external_boundary`` / ``@trust_boundary`` callees are excluded — their body is
     raw, so raw input is expected); unresolved/cross-module callees are skipped;
-  - argument-taint resolution is the conservative shared ``worst_arg_taint``.
+  - argument-taint resolution fires when **any** resolved arg is provably untrusted,
+    not the single ``worst_arg_taint``: the ``_PROVABLY_UNTRUSTED`` predicate is not
+    upward-closed (a hole at ``UNKNOWN_RAW`` sits between ``EXTERNAL_RAW`` and
+    ``MIXED_RAW``), so a max-rank collapse would let an ``UNKNOWN_RAW`` co-arg mask a
+    provably-untrusted argument.
 
 Subsumption: distinct from PY-WL-101 (return anchor vs call-site anchor); a function
 that *returns* such a call is 101, the *pass-in* is 105 even if the result is discarded.
@@ -29,12 +33,12 @@ from typing import TYPE_CHECKING
 
 from wardline.core.finding import Finding, Kind, Location, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
-from wardline.core.taints import TaintState
+from wardline.core.taints import TRUST_RANK, TaintState
 from wardline.scanner.rules._sink_helpers import (
     RAW_ZONE,
     _own_calls,
     dotted_name,
-    worst_arg_taint,
+    resolved_arg_taints,
 )
 from wardline.scanner.rules.metadata import RuleMetadata
 
@@ -111,9 +115,16 @@ class UntrustedReachesTrustedCallee:
                 callee_body = context.project_taints.get(callee)
                 if callee_body is None or callee_body in RAW_ZONE:
                     continue  # @external_boundary / @trust_boundary body is raw — raw input expected
-                worst = worst_arg_taint(call, qualname, context)
-                if worst is None or worst not in _PROVABLY_UNTRUSTED:
+                # Fire when ANY resolved arg is provably untrusted. worst_arg_taint
+                # (max TRUST_RANK) is unsound here: _PROVABLY_UNTRUSTED is NOT
+                # upward-closed (hole at UNKNOWN_RAW=6 between EXTERNAL_RAW=5 and
+                # MIXED_RAW=7), so an UNKNOWN_RAW co-arg would mask a provably-untrusted
+                # arg by bumping the max into the hole.
+                arg_taints = resolved_arg_taints(call, qualname, context).values()
+                untrusted = [ts for ts in arg_taints if ts in _PROVABLY_UNTRUSTED]
+                if not untrusted:
                     continue
+                worst = max(untrusted, key=lambda ts: TRUST_RANK[ts])
                 line = call.lineno
                 findings.append(
                     Finding(

@@ -950,13 +950,21 @@ def _handle_assign(
             var_types = _CURRENT_VAR_TYPES.get()
             if var_types is not None:
                 alias_map = _CURRENT_ALIAS_MAP.get()
+                new_type: str | None = None
                 if isinstance(stmt.value, ast.Call):
-                    fqn = _resolve_expr_fqn(stmt.value.func, alias_map)
-                    if fqn:
-                        var_types[target.id] = fqn
+                    new_type = _resolve_expr_fqn(stmt.value.func, alias_map) or None
                 elif isinstance(stmt.value, ast.Name):
-                    if stmt.value.id in var_types:
-                        var_types[target.id] = var_types[stmt.value.id]
+                    new_type = var_types.get(stmt.value.id)
+                if new_type is not None:
+                    var_types[target.id] = new_type
+                else:
+                    # Reassignment to an RHS we cannot type precisely (Subscript / BinOp /
+                    # IfExp / f-string / comprehension / unresolvable Call / typeless Name)
+                    # INVALIDATES any prior recorded type. Keeping the stale type let a method
+                    # call on a now-raw value resolve a clean @trusted summary, laundering raw
+                    # past the RAW_ZONE receiver guard (wardline-5ba7ce0f98). Dropping it falls
+                    # back to conservative resolution (more FPs at worst, never an FN).
+                    var_types.pop(target.id, None)
 
         elif isinstance(target, (ast.Tuple, ast.List)):
             # Tuple unpacking: a, b = ...

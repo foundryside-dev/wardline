@@ -302,12 +302,17 @@ def test_cache_miss_on_changed_source_recomputes() -> None:
 
 
 def _io_layer_cache_key(provider: _RawLeafProvider) -> str:
+    from wardline.core.attest import ruleset_hash
+    from wardline.core.config import WardlineConfig
+
     return compute_cache_key(
         module_path="pkg.io_layer",
         source_bytes=_IO.encode("utf-8"),
         schema_version=SUMMARY_SCHEMA_VERSION,
         resolver_version=_RESOLVER_VERSION,
         provider_fingerprint=provider.fingerprint(),
+        # Match the resolver's default (config is None here → default policy).
+        scan_policy_hash=ruleset_hash(WardlineConfig()),
     )
 
 

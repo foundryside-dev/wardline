@@ -123,6 +123,7 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
             source = path.read_text(encoding="utf-8")
             source_bytes = source.encode("utf-8")
 
+            from wardline.core.attest import ruleset_hash
             from wardline.scanner.taint.project_resolver import _RESOLVER_VERSION
             from wardline.scanner.taint.summary import SUMMARY_SCHEMA_VERSION, compute_cache_key
 
@@ -132,6 +133,7 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
                 schema_version=SUMMARY_SCHEMA_VERSION,
                 resolver_version=_RESOLVER_VERSION,
                 provider_fingerprint=provider_fingerprint,
+                scan_policy_hash=ruleset_hash(stage_input.config),
             )
             if stage_input.summary_cache is None or not stage_input.summary_cache.has_current(cache_key):
                 dirty_modules.add(module)

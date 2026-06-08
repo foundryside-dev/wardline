@@ -37,6 +37,7 @@ __all__ = [
     "TaintedSinkRule",
     "canonical_call_name",
     "dotted_name",
+    "resolved_arg_taints",
     "sink_calls",
     "worst_arg_taint",
 ]
@@ -119,30 +120,53 @@ def _module_for_qualname(qualname: str, context: AnalysisContext) -> str | None:
     return None
 
 
+def resolved_arg_taints(call: ast.Call, qualname: str, context: AnalysisContext) -> dict[int | str | None, TaintState]:
+    """Per-argument resolved taints for *call* — THE single fail-closed argument resolver.
+
+    Returns the engine's flow-sensitive per-call-site snapshot
+    (``function_call_site_arg_taints`` — the resolved taint of each argument AT the call
+    line), keyed by positional index (``int``), keyword name (``str``), ``None``
+    (``**kwargs``), and a ``"*{i}"`` marker alongside the int key for a ``Starred``
+    positional. Empty dict when the call takes no arguments.
+
+    Fail-closed: when no L2 snapshot exists for *call* (an L2-skipped function), warns
+    ``WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK`` and returns a pessimistic map marking every
+    syntactic argument ``UNKNOWN_RAW``. Each rule then SELECTS over this result on its own
+    terms (worst / any-provably-untrusted / by-position), so the fail-closed contract lives
+    in exactly one place and cannot drift between rules. The pessimism is correctly
+    direction-aware: a RAW_ZONE-gate (sink rules / a SQL-string position) still fires on the
+    UNKNOWN_RAW fallback, while a *provably*-untrusted gate (PY-WL-105, which excludes
+    UNKNOWN_RAW) correctly stays silent — preserving its deliberate no-flood design."""
+    snapshot = context.function_call_site_arg_taints.get(qualname, {}).get(id(call))
+    if snapshot is not None:
+        return dict(snapshot)
+
+    # Flow-sensitive snapshot is missing. Warn and build a pessimistic per-arg map.
+    import warnings
+
+    warnings.warn(f"WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK: {qualname}", stacklevel=2)
+    pessimistic: dict[int | str | None, TaintState] = {}
+    for i, arg in enumerate(call.args):
+        pessimistic[i] = TaintState.UNKNOWN_RAW
+        if isinstance(arg, ast.Starred):
+            pessimistic[f"*{i}"] = TaintState.UNKNOWN_RAW
+    for kw in call.keywords:
+        pessimistic[kw.arg] = TaintState.UNKNOWN_RAW
+    return pessimistic
+
+
 def worst_arg_taint(call: ast.Call, qualname: str, context: AnalysisContext) -> TaintState | None:
     """The LEAST-trusted (highest TRUST_RANK) resolvable argument taint of *call*, or
     None when no argument resolves. Positional + keyword args are considered.
 
-    Resolves from the engine's flow-sensitive per-call-site argument taints
-    (``function_call_site_arg_taints`` — the resolved taint of each argument AT the call
-    line). When no snapshot exists for *call* (an L2-skipped function), fails closed:
-    warns and treats any call with arguments as ``UNKNOWN_RAW``."""
-    # 1. Flow-sensitive resolved argument taints from L2 walk
-    arg_taints_map = context.function_call_site_arg_taints.get(qualname, {}).get(id(call))
-    if arg_taints_map is not None:
-        worst_fs: TaintState | None = None
-        for ts in arg_taints_map.values():
-            if ts is not None and (worst_fs is None or TRUST_RANK[ts] > TRUST_RANK[worst_fs]):
-                worst_fs = ts
-        return worst_fs
-
-    # Flow-sensitive snapshot is missing. Warn and enforce pessimistic default.
-    import warnings
-
-    warnings.warn(f"WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK: {qualname}", stacklevel=2)
-    if call.args or call.keywords:
-        return TaintState.UNKNOWN_RAW
-    return None
+    Thin selector over :func:`resolved_arg_taints` (the shared fail-closed resolver):
+    when no snapshot exists, that resolver yields a pessimistic ``UNKNOWN_RAW`` per arg,
+    so a call with arguments still resolves to ``UNKNOWN_RAW`` (fail-closed)."""
+    worst: TaintState | None = None
+    for ts in resolved_arg_taints(call, qualname, context).values():
+        if ts is not None and (worst is None or TRUST_RANK[ts] > TRUST_RANK[worst]):
+            worst = ts
+    return worst
 
 
 class TaintedSinkRule:

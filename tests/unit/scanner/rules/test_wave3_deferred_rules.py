@@ -150,6 +150,59 @@ def test_sql_injection_fires_on_execute(tmp_path: Path) -> None:
     assert sqli_findings[0].qualname == "m.test_sql"
 
 
+def test_sql_injection_parameterized_query_does_not_fire(tmp_path: Path) -> None:
+    # Bound-parameter query: the SQL string is a constant literal, the untrusted value is
+    # passed ONLY as a bound parameter (the OWASP-canonical mitigation), so it cannot alter
+    # SQL structure — there is no CWE-89 finding (wardline-e0e44852e7).
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @trusted(level='ASSURED')
+            def q(p, cursor):
+                cursor.execute("SELECT * FROM users WHERE id = ?", (read_raw(p),))
+            """
+        },
+    )
+    sqli = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-118"]
+    assert sqli == []
+
+
+def test_sql_injection_executemany_parameterized_does_not_fire(tmp_path: Path) -> None:
+    # executemany's seq_of_params is also a bound-parameter position.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @trusted(level='ASSURED')
+            def q(p, cursor):
+                cursor.executemany("INSERT INTO t VALUES (?)", read_raw(p))
+            """
+        },
+    )
+    sqli = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-118"]
+    assert sqli == []
+
+
+def test_sql_injection_tainted_sql_string_with_clean_params_still_fires(tmp_path: Path) -> None:
+    # The no-FN guard for the FP fix: narrowing to the operation position must NOT silence a
+    # genuinely tainted SQL STRING. Untrusted data interpolated into the query text — with a
+    # clean bound parameter — is still SQLi.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @trusted(level='ASSURED')
+            def q(p, uid, cursor):
+                cursor.execute(f"SELECT * FROM {read_raw(p)} WHERE id = ?", (uid,))
+            """
+        },
+    )
+    sqli = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-118"]
+    assert len(sqli) == 1
+    assert sqli[0].qualname == "m.q"
+
+
 # ── PY-WL-119: Degenerate Boundary ─────────────────────────────────────────
 
 
@@ -233,7 +286,13 @@ def test_stored_taint_reaches_callee_fires(tmp_path: Path) -> None:
     assert st_findings[0].qualname == "m.run"
 
 
-def test_sql_injection_nested_scope_isolation(tmp_path: Path) -> None:
+def test_sql_injection_nested_def_inherits_trusted_tier(tmp_path: Path) -> None:
+    # A nested def inside a @trusted parent inherits the parent's trusted tier via the
+    # family-wide ``.<locals>.`` strip (commit bdccca1). PY-WL-118 originally lacked the
+    # strip, so a tainted execute() wrapped in a nested function silently evaded the
+    # highest-severity sink (wardline-9b88ec5419). This test previously asserted the BUG
+    # (118 stays silent here); it now asserts the parity it always should have had —
+    # 118 fires exactly as its siblings 108/115/116/117 do in this shape.
     findings = _analyze_files(
         tmp_path,
         {
@@ -251,7 +310,8 @@ def test_sql_injection_nested_scope_isolation(tmp_path: Path) -> None:
     )
     defects = [f for f in findings if f.kind is Kind.DEFECT]
     sqli_findings = [f for f in defects if f.rule_id == "PY-WL-118"]
-    assert len(sqli_findings) == 0
+    assert len(sqli_findings) == 1
+    assert sqli_findings[0].qualname == "m.safe_parent.<locals>.nested_untrusted"
 
 
 def test_stored_taint_nested_scope_isolation(tmp_path: Path) -> None:

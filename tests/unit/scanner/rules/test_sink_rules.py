@@ -556,6 +556,53 @@ def test_107_self_method_call_arg_fires(tmp_path) -> None:
     assert [(x.rule_id, x.qualname) for x in findings] == [("PY-WL-107", "m.Service.run")]
 
 
+def test_107_stale_var_type_does_not_launder_raw_receiver(tmp_path) -> None:
+    # A name re-bound to an untyped RHS (a subscript here) holds raw, but its STALE recorded
+    # type (Box) let ``x.val()`` resolve Box.val's clean @trusted summary, laundering raw past
+    # the RAW_ZONE receiver guard (wardline-5ba7ce0f98). The reassignment must invalidate the
+    # type so the receiver stays raw and eval(out) fires.
+    ctx = _analyze(
+        tmp_path,
+        """
+        class Box:
+            @trusted(level='ASSURED')
+            def val(self):
+                return "literal"
+
+        @trusted(level='ASSURED')
+        def f(p):
+            x = Box()
+            lst = [read_raw(p)]
+            x = lst[0]
+            out = x.val()
+            eval(out)
+        """,
+    )
+    findings = UntrustedToExec().check(ctx)
+    assert [(x.rule_id, x.qualname) for x in findings] == [("PY-WL-107", "m.f")]
+
+
+def test_107_genuinely_typed_clean_receiver_still_resolves_clean(tmp_path) -> None:
+    # The no-FP guard for the stale-type fix: a receiver whose type is current (never
+    # re-bound) must still resolve its clean @trusted method summary — no PY-WL-107.
+    ctx = _analyze(
+        tmp_path,
+        """
+        class Box:
+            @trusted(level='ASSURED')
+            def val(self):
+                return "literal"
+
+        @trusted(level='ASSURED')
+        def f():
+            x = Box()
+            out = x.val()
+            eval(out)
+        """,
+    )
+    assert UntrustedToExec().check(ctx) == []
+
+
 def test_112_raw_reaches_subprocess_shell_true(tmp_path) -> None:
     ctx = _analyze(
         tmp_path,

@@ -137,6 +137,23 @@ def test_kwargs_unpacking_fires(tmp_path) -> None:
     assert _ids(ctx) == [("PY-WL-105", "m.h")]
 
 
+def test_provably_untrusted_arg_not_masked_by_unknown_co_arg(tmp_path) -> None:
+    # A provably-untrusted arg (EXTERNAL_RAW, rank 5) must fire even when an
+    # UNKNOWN_RAW co-arg (rank 6) bumps worst_arg_taint into the predicate's hole.
+    # _PROVABLY_UNTRUSTED = {EXTERNAL_RAW=5, MIXED_RAW=7} is NOT upward-closed.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def store2(meta, payload):
+            return 1
+        def h(meta, p):
+            store2(meta, read_raw(p))
+        """,
+    )
+    assert _ids(ctx) == [("PY-WL-105", "m.h")]
+
+
 def test_multiple_kwargs_unpacking_combines_raw_before_clean(tmp_path) -> None:
     ctx = _analyze(
         tmp_path,

@@ -36,6 +36,7 @@ def summarise_module(
     source_bytes: bytes,
     resolver_version: str,
     provider_fingerprint: str,
+    scan_policy_hash: str,
 ) -> tuple[FunctionSummary, ...]:
     """Emit one FunctionSummary per seeded function in this module."""
     cache_key = compute_cache_key(
@@ -44,6 +45,7 @@ def summarise_module(
         schema_version=SUMMARY_SCHEMA_VERSION,
         resolver_version=resolver_version,
         provider_fingerprint=provider_fingerprint,
+        scan_policy_hash=scan_policy_hash,
     )
     summaries: list[FunctionSummary] = []
     for fqn, seed in seeds.items():

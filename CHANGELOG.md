@@ -105,6 +105,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixed-port sibling emit/discovery target the published-port rung cannot reconstruct.
 
 ### Fixed
+- **Six P1 correctness defects from the pre-1.0 rule scrub (`scrub-2026-06-08`).** All
+  empirically reproduced and regression-tested; a new shared fail-closed argument resolver
+  (`_sink_helpers.resolved_arg_taints`) gives the sink rules per-argument taint with a single
+  fail-closed implementation (`worst_arg_taint` is now a thin selector over it).
+  - **PY-WL-118 no longer false-fires on parameterized queries** (`wardline-e0e44852e7`). SQLi
+    is a property of the SQL-string argument only; untrusted data passed as a *bound parameter*
+    (the OWASP-canonical mitigation) cannot alter query structure, so the rule now gates on the
+    operation-string position and ignores the parameter position. A tainted SQL string still
+    fires (fail-closed on a splatted operation).
+  - **PY-WL-118 nested-def evasion closed** (`wardline-9b88ec5419`). The rule now applies the
+    family-wide `.<locals>.` tier-strip, so a tainted `execute()` wrapped in a nested function
+    inherits its enclosing trusted tier and fires — matching siblings 108/115/116/117.
+  - **PY-WL-105 co-argument masking closed** (`wardline-836dcef5b4`). The rule fires when *any*
+    resolved argument is provably untrusted, not the single `worst_arg_taint`: the
+    `_PROVABLY_UNTRUSTED` predicate is not upward-closed (a hole at `UNKNOWN_RAW`), so a max-rank
+    collapse let an `UNKNOWN_RAW` co-argument mask a provably-untrusted one.
+  - **PY-WL-114 now gates on the resolved builtin FQN** (`wardline-0267c31cd8`), not the trailing
+    identifier — fixing both the alias-blind false negative (`@t(level='ASURED')` where `t`
+    aliases the builtin) and the foreign-same-name false positive (a non-wardline decorator
+    merely spelled `trusted`). Mirrors PY-WL-110's resolver + builtin-prefix check.
+  - **Engine fail-open: stale `var_types` no longer launders a raw receiver** (`wardline-5ba7ce0f98`).
+    A name re-bound to an imprecisely-typed RHS (subscript / BinOp / f-string / …) now invalidates
+    its recorded type, so a method call on a now-raw value can no longer resolve a clean `@trusted`
+    summary past the RAW_ZONE receiver guard. Conservative direction (more FPs at worst, never an FN).
+  - **Engine fail-open: summary cache key now binds the effective-scan-policy hash**
+    (`wardline-9d6a81b9e7`). `compute_cache_key` folds in `attest.ruleset_hash(config)` — the same
+    single policy identity `attest` signs — so seed-shaping config (`untrusted_sources`,
+    `sanitisers`, `provenance_clash`) can no longer let a warm/persisted cache serve a stale-CLEAN
+    summary that suppresses a real defect. Warm runs are byte-identical to cold runs across policy.
 - **`agent_summary` display arrays now fully partition `total_findings` (W3 residual).** The
   pagination union was `active_defects + suppressed_findings + engine_facts`, which excluded
   non-defect findings that are not engine facts (metrics, classifications, suggestions, and
