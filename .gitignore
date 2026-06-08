@@ -53,3 +53,6 @@ loomweave.yaml
 wardline.yaml
 .agents/skills/wardline-gate/SKILL.md
 .claude/skills/wardline-gate/SKILL.md
+
+# git worktrees (isolated feature workspaces)
+.worktrees/
