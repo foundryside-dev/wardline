@@ -92,7 +92,16 @@ _CURRENT_VAR_TYPES: contextvars.ContextVar[dict[str, str] | None] = contextvars.
     "_CURRENT_VAR_TYPES", default=None
 )
 
-_CURRENT_LAMBDA_BINDINGS: contextvars.ContextVar[dict[str, ast.Lambda] | None] = contextvars.ContextVar(
+# Maps a local name to the CANDIDATE SET of lambda bodies it MAY hold. A single
+# slot per name would lose a sink-lambda bound in a non-last branch arm when a later
+# arm rebinds the same name (wardline-383f83fafe): only one survived the merge, so a
+# post-branch ``cb(raw)`` resolved the wrong body and missed the sink. Within a linear
+# scope a name holds exactly one lambda (a rebind REPLACES the list); the set grows
+# only across mutually-exclusive branch arms at the merge, where the name MAY be any of
+# them. Calls resolve against EVERY candidate (sound over-approximation: an extra body
+# only records arg-taints, it never masks a sink). ``list`` not ``set`` — ast nodes are
+# id-hashed, so set iteration is non-deterministic and would destabilise the golden corpora.
+_CURRENT_LAMBDA_BINDINGS: contextvars.ContextVar[dict[str, list[ast.Lambda]] | None] = contextvars.ContextVar(
     "_CURRENT_LAMBDA_BINDINGS", default=None
 )
 
@@ -657,14 +666,18 @@ def _resolve_call(
 
     lambda_bindings = _CURRENT_LAMBDA_BINDINGS.get()
     if isinstance(node.func, ast.Name) and lambda_bindings is not None and node.func.id in lambda_bindings:
-        _resolve_lambda_body_at_call(
-            lambda_bindings[node.func.id],
-            function_taint,
-            taint_map,
-            var_taints,
-            pos_taints,
-            kw_arg_taints,
-        )
+        # Resolve against EVERY candidate body the name MAY hold (one per linear scope;
+        # several only after a branch merge). Each records its own sink calls' arg-taints
+        # — distinct AST nodes, so the recordings never collide (wardline-383f83fafe).
+        for lam in lambda_bindings[node.func.id]:
+            _resolve_lambda_body_at_call(
+                lam,
+                function_taint,
+                taint_map,
+                var_taints,
+                pos_taints,
+                kw_arg_taints,
+            )
     elif isinstance(node.func, ast.Lambda):
         _resolve_lambda_body_at_call(
             node.func,
@@ -820,7 +833,9 @@ def _process_stmt(
             lambda_bindings = _CURRENT_LAMBDA_BINDINGS.get()
             if lambda_bindings is not None:
                 if isinstance(value, ast.Lambda):
-                    lambda_bindings[stmt.target.id] = value
+                    # Linear rebind REPLACES the candidate set (a fresh single-element
+                    # list), never appends — only a branch merge unions arms.
+                    lambda_bindings[stmt.target.id] = [value]
                 else:
                     lambda_bindings.pop(stmt.target.id, None)
         elif isinstance(stmt.target, (ast.Subscript, ast.Attribute)):
@@ -926,7 +941,9 @@ def _handle_assign(
             lambda_bindings = _CURRENT_LAMBDA_BINDINGS.get()
             if lambda_bindings is not None:
                 if isinstance(stmt.value, ast.Lambda):
-                    lambda_bindings[target.id] = stmt.value
+                    # Linear rebind REPLACES the candidate set (see _resolve_call /
+                    # _merge_branch_bindings); only a branch merge unions arms.
+                    lambda_bindings[target.id] = [stmt.value]
                 else:
                     lambda_bindings.pop(target.id, None)
 
@@ -1115,12 +1132,14 @@ def _taint_container_base(
 # ── Control flow handlers ────────────────────────────────────────
 
 
-def _branch_copy(parent: dict[str, ast.Lambda] | None) -> dict[str, ast.Lambda] | None:
+def _branch_copy(parent: dict[str, list[ast.Lambda]] | None) -> dict[str, list[ast.Lambda]] | None:
     """An arm-local copy of the lambda-bindings map for one branch arm (``None`` when
     bindings are not being tracked — a degraded caller). Copying per arm is what keeps
     a lambda bound inside one arm from leaking into a mutually-exclusive sibling arm
-    (wardline-36016d26f3), mirroring how ``var_taints`` is copied per arm."""
-    return dict(parent) if parent is not None else None
+    (wardline-36016d26f3), mirroring how ``var_taints`` is copied per arm. The candidate
+    LISTS are copied too, so an arm's rebind/removal cannot mutate the parent's or a
+    sibling's set in place (wardline-383f83fafe)."""
+    return {name: list(lams) for name, lams in parent.items()} if parent is not None else None
 
 
 def _walk_branch_body(
@@ -1129,7 +1148,7 @@ def _walk_branch_body(
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
     call_site_taints: dict[int, dict[str, TaintState]] | None,
-    arm_bindings: dict[str, ast.Lambda] | None,
+    arm_bindings: dict[str, list[ast.Lambda]] | None,
 ) -> None:
     """Walk one branch arm's body with *arm_bindings* as the active (arm-local)
     lambda-bindings map, so lambda assignments inside the arm mutate the copy, not the
@@ -1145,36 +1164,53 @@ def _walk_branch_body(
 
 
 def _merge_branch_bindings(
-    parent: dict[str, ast.Lambda] | None,
-    arms: list[dict[str, ast.Lambda] | None],
+    parent: dict[str, list[ast.Lambda]] | None,
+    arms: list[dict[str, list[ast.Lambda]] | None],
 ) -> None:
     """Merge mutually-exclusive branch arms' lambda bindings back into *parent* in
     place. Each arm was walked against an arm-local *copy* of *parent*, so a binding
     made in one arm cannot leak into a sibling arm during the walk
     (wardline-36016d26f3); this re-converges the arms into the post-branch state.
 
-    We layer each arm's *delta relative to the pre-branch state* onto *parent* in
-    source order — we do NOT clear and re-union. The distinction is load-bearing: an
-    arm is a full copy of the pre-branch bindings, so a name an arm never touched still
-    carries its pre-branch lambda. A clear-then-union (or a union that lets the implicit
-    no-``else`` / no-match-catch-all fall-through arm win last) would let such an
-    untouched arm *revert* a rebinding done in another arm — silently dropping a binding
-    the engine kept before branch-locality was added, i.e. a NEW false negative for a
-    sink reached through the rebound name after the branch. Applying only net
-    added/changed bindings, last-arm-in-source-order wins, reproduces the prior
-    after-branch bindings for every rebinding case (so no new false negative) while
-    keeping the branch-local leak fix. A name an arm *removed* (rebound to a non-lambda)
-    is left in place: that can only over-approximate (an extra resolution), never miss a
-    sink."""
+    Post-branch a name MAY hold whichever lambda the taken arm bound it to, so its
+    candidate set is the UNION of every arm's set for that name (wardline-383f83fafe).
+    We rebuild *parent* from that union rather than overwriting slot-by-slot: the old
+    single-slot map kept only the last arm's binding, dropping a sink-lambda bound in a
+    non-last arm and missing the post-branch sink (the FN this closes).
+
+    The union also subsumes the no-false-negative guard the prior delta-merge protected
+    (wardline-36016d26f3): an arm that never touched a name still carries its pre-branch
+    set (each arm is a full copy of *parent*), and the implicit no-``else`` /
+    no-match-catch-all fall-through arm is exactly such a copy — so a rebinding made in
+    one arm is preserved in the union, never reverted by an untouched sibling. A name
+    that EVERY arm rebound to a non-lambda is absent from all arm sets and so drops out
+    of the union — sound, because on no post-branch path is it still a lambda. (The prior
+    delta-merge left such a name in place; that was a harmless over-approximation, not a
+    pinned behaviour.) Resolving an extra candidate only records arg-taints — it can
+    over-approximate, never mask a sink — so the union is FP-safe.
+
+    Invariant: a name is either ABSENT from the map or maps to a NON-EMPTY list. An empty
+    list would make ``_resolve_call``'s ``name in bindings`` check pass while the
+    candidate loop does nothing — silently skipping all bodies, a latent FN. Writers
+    uphold it (linear rebind stores ``[lam]`` or pops; this merge never buckets an empty
+    arm list), so the map never holds an empty list."""
     if parent is None:
         return
-    pre = dict(parent)
+    merged: dict[str, list[ast.Lambda]] = {}
     for arm in arms:
         if arm is None:
             continue
-        for name, lam in arm.items():
-            if pre.get(name) is not lam:
-                parent[name] = lam
+        for name, lams in arm.items():
+            if not lams:
+                continue  # uphold the empty-list-never-stored invariant (see docstring)
+            bucket = merged.setdefault(name, [])
+            for lam in lams:
+                # Dedup by identity (ast nodes don't define __eq__): the same lambda
+                # carried unchanged through several arms should be resolved once.
+                if not any(lam is seen for seen in bucket):
+                    bucket.append(lam)
+    parent.clear()
+    parent.update(merged)
 
 
 def _handle_if(
@@ -1245,6 +1281,13 @@ def _handle_for(
     # Snapshot pre-loop.
     pre_loop = dict(var_taints)
 
+    # Lambda bindings are mutated in place on the shared map across iterations (no
+    # _branch_copy/_merge here — a loop body is not a set of mutually-exclusive arms). A
+    # rebind inside the body REPLACES with the SAME ast.Lambda node every iteration (parsed
+    # once), and any in-body branch merge dedups candidates by identity, so the binding
+    # state is idempotent across iterations — the var_taints convergence check below is a
+    # sufficient fixpoint for the bindings too (no unbounded candidate growth, see
+    # wardline-383f83fafe).
     # Iterate walk until convergence (WLN-MED-09)
     for _ in range(8):
         current_state = dict(var_taints)
@@ -1325,7 +1368,7 @@ def _handle_try(
 
     # Walk each handler on separate copies (mutually exclusive with try body).
     handler_branches: list[dict[str, TaintState]] = [try_taints]  # try-success is one branch
-    arm_bindings: list[dict[str, ast.Lambda] | None] = [try_lambdas]
+    arm_bindings: list[dict[str, list[ast.Lambda]] | None] = [try_lambdas]
     for handler in stmt.handlers:
         handler_taints = dict(pre_try)
         if handler.name:
@@ -1399,7 +1442,7 @@ def _handle_match(
     pre_match = dict(var_taints)
     parent_lambdas = _CURRENT_LAMBDA_BINDINGS.get()
     branches: list[dict[str, TaintState]] = []
-    arm_bindings: list[dict[str, ast.Lambda] | None] = []
+    arm_bindings: list[dict[str, list[ast.Lambda]] | None] = []
     for case in stmt.cases:
         case_taints = dict(pre_match)
         for name in _collect_pattern_targets(case.pattern):

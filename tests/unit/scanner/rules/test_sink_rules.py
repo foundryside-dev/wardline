@@ -430,6 +430,67 @@ def test_107_lambda_bound_in_match_arm_does_not_leak_to_sibling(tmp_path) -> Non
     assert UntrustedToExec().check(ctx) == []
 
 
+def test_107_sink_lambda_in_non_last_if_arm_fires_after_branch(tmp_path) -> None:
+    # wardline-383f83fafe (single-slot ceiling): the sink-lambda is bound in the
+    # NON-last (if) arm; a BENIGN lambda rebinds ``cb`` in the last (else) arm. With the
+    # old single-slot binding map the benign last arm overwrote the sink binding, so the
+    # post-branch ``cb(raw)`` resolved only the benign body and the eval(x) sink was a
+    # silent false-negative. The candidate-set merge keeps both → PY-WL-107 fires.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p, cond):
+            raw = read_raw(p)
+            if cond:
+                cb = lambda x: eval(x)
+            else:
+                cb = lambda x: x
+            cb(raw)
+        """,
+    )
+    assert [(x.rule_id, x.qualname) for x in UntrustedToExec().check(ctx)] == [("PY-WL-107", "m.f")]
+
+
+def test_107_sink_lambda_in_non_last_try_arm_fires_after_branch(tmp_path) -> None:
+    # Same single-slot ceiling for try/except: sink-lambda in the try-success arm, benign
+    # rebind in the handler arm, tainted ``cb(raw)`` after the whole try/except.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            raw = read_raw(p)
+            try:
+                cb = lambda x: eval(x)
+            except Exception:
+                cb = lambda x: x
+            cb(raw)
+        """,
+    )
+    assert [(x.rule_id, x.qualname) for x in UntrustedToExec().check(ctx)] == [("PY-WL-107", "m.f")]
+
+
+def test_107_sink_lambda_in_non_last_match_arm_fires_after_branch(tmp_path) -> None:
+    # Same single-slot ceiling for match/case: sink-lambda in a non-last case-arm, benign
+    # rebind in the catch-all arm, tainted ``cb(raw)`` after the match.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p, kind):
+            raw = read_raw(p)
+            match kind:
+                case "a":
+                    cb = lambda x: eval(x)
+                case _:
+                    cb = lambda x: x
+            cb(raw)
+        """,
+    )
+    assert [(x.rule_id, x.qualname) for x in UntrustedToExec().check(ctx)] == [("PY-WL-107", "m.f")]
+
+
 def test_108_raw_reaches_os_system_in_lambda_body(tmp_path) -> None:
     # The engine fix is sink-agnostic (shared _resolve_expr / worst_arg_taint): a
     # command sink in a lambda body fires flow-sensitively on real taint too.

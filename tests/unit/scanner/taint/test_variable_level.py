@@ -351,6 +351,139 @@ def test_lambda_rebinding_in_try_survives_for_post_block_call() -> None:
     assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
 
 
+def test_sink_lambda_in_non_last_if_arm_survives_for_post_branch_call() -> None:
+    # wardline-383f83fafe: the single-slot ceiling. A sink-lambda bound in a NON-last
+    # branch arm and a BENIGN lambda bound to the same name in the last arm — the old
+    # single-slot ``dict[str, ast.Lambda]`` kept only the last-arm-in-source-order
+    # binding, so the benign last arm overwrote the sink binding and the post-branch
+    # ``cb(raw)`` resolved only the benign body → the taint→sink flow was MISSED (FN).
+    # The candidate-set model keeps BOTH bindings (``cb`` MAY be either lambda after the
+    # branch), so the body's ``sink(c)`` arg must stay EXTERNAL_RAW.
+    src = (
+        "def handler(raw):\n"
+        "    if flag:\n"
+        "        cb = lambda c: sink(c)\n"  # sink-lambda — NON-last arm
+        "    else:\n"
+        "        cb = lambda c: c\n"  # benign — last arm in source order
+        "    cb(raw)\n"  # raw reaches sink() via the if-arm lambda
+    )
+    assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
+
+
+def test_sink_lambda_in_non_last_try_arm_survives_for_post_branch_call() -> None:
+    # Same single-slot ceiling for try/except: the sink-lambda is bound in the try-success
+    # arm (a non-last arm) and a benign lambda rebinds ``cb`` in the handler arm. The
+    # candidate-set merge keeps both for the post-block ``cb(raw)``.
+    src = (
+        "def handler(raw):\n"
+        "    try:\n"
+        "        cb = lambda c: sink(c)\n"
+        "    except Exception:\n"
+        "        cb = lambda c: c\n"
+        "    cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
+
+
+def test_sink_lambda_in_non_last_match_arm_survives_for_post_branch_call() -> None:
+    # Same single-slot ceiling for match/case: the sink-lambda is bound in a non-last
+    # case-arm and a benign lambda rebinds ``cb`` in the catch-all arm.
+    src = (
+        "def handler(raw, kind):\n"
+        "    match kind:\n"
+        "        case 'a':\n"
+        "            cb = lambda c: sink(c)\n"
+        "        case _:\n"
+        "            cb = lambda c: c\n"
+        "    cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
+
+
+def test_lambda_rebind_after_branch_replaces_candidate_set() -> None:
+    # wardline-383f83fafe FP guard: the candidate-set model must NOT accumulate stale
+    # bindings across a LINEAR rebind. After the branch, ``cb`` is rebound to a fresh
+    # benign lambda; that REPLACES the (sink + benign) post-branch candidate set, so the
+    # subsequent ``cb(raw)`` resolves ONLY the ``log`` body — the if-arm sink lambda is
+    # gone and ``sink(c)`` must stay INTEGRAL (the floor pass's neutral recording only).
+    src = (
+        "def handler(raw):\n"
+        "    if flag:\n"
+        "        cb = lambda c: sink(c)\n"
+        "    else:\n"
+        "        cb = lambda c: c\n"
+        "    cb = lambda c: log(c)\n"  # linear rebind — REPLACES the candidate set
+        "    cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.INTEGRAL
+
+
+def test_all_arms_rebind_to_non_lambda_drops_candidate_set() -> None:
+    # wardline-383f83fafe, claim-#4 lock: when EVERY mutually-exclusive arm rebinds the
+    # name to a non-lambda, ``cb`` is provably not a lambda on any post-branch path, so
+    # the union drops it (the candidate set is empty) and ``cb(raw)`` resolves nothing —
+    # only the floor pass records the orphaned sink lambda neutrally → INTEGRAL. This
+    # pins the union's DROP semantics against a regression to the old delta-merge
+    # "left in place" over-approximation (which would have spuriously stayed EXTERNAL_RAW).
+    src = (
+        "def handler(raw, flag):\n"
+        "    cb = lambda c: sink(c)\n"
+        "    if flag:\n"
+        "        cb = 1\n"
+        "    else:\n"
+        "        cb = 2\n"
+        "    cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.INTEGRAL
+
+
+def test_sink_lambda_in_elif_middle_arm_survives_for_post_branch_call() -> None:
+    # wardline-383f83fafe: the sink-lambda is in the MIDDLE arm of an if/elif/else (elif
+    # is a nested ``If`` in the outer ``orelse``), so the union/merge must compose through
+    # the nesting. ``cb(raw)`` after the branch must see the elif-arm sink body.
+    src = (
+        "def handler(raw, k):\n"
+        "    if k == 1:\n"
+        "        cb = lambda c: c\n"
+        "    elif k == 2:\n"
+        "        cb = lambda c: sink(c)\n"
+        "    else:\n"
+        "        cb = lambda c: c\n"
+        "    cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
+
+
+def test_sink_lambda_in_loop_body_survives_for_post_loop_call() -> None:
+    # wardline-383f83fafe coverage: loops take a structurally different path from
+    # if/try/match — ``_handle_for`` walks the body via ``_walk_body`` directly on the
+    # shared bindings map (the linear-rebind REPLACE), no _branch_copy/_merge. A
+    # sink-lambda bound in the loop body persists in the post-loop bindings, so a tainted
+    # ``cb(raw)`` after the loop must fire. (Pins the loop path the candidate-set's FP
+    # concern names; verified it neither hangs nor accumulates — rebinds are idempotent.)
+    src = (
+        "def handler(raw):\n"
+        "    for i in items:\n"
+        "        cb = lambda c: sink(c)\n"
+        "    cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
+
+
+def test_benign_rebind_after_loop_replaces_lambda_candidate() -> None:
+    # wardline-383f83fafe FP guard on the loop path: a benign linear rebind AFTER the loop
+    # REPLACES the loop body's sink binding, so ``cb(raw)`` resolves only the benign body
+    # — no stale accumulation across the loop boundary.
+    src = (
+        "def handler(raw):\n"
+        "    for i in items:\n"
+        "        cb = lambda c: sink(c)\n"
+        "    cb = lambda c: c\n"
+        "    cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.INTEGRAL
+
+
 def test_compute_return_taint_all_shapes() -> None:
     import ast
     import textwrap
