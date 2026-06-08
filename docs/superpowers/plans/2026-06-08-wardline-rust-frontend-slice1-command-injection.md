@@ -70,7 +70,7 @@ src/wardline/rust/
   _tree_sitter.py     # require_rust() -> (Language, Parser); guarded import + RustToolingError
   nodeid.py           # NodeId newtype + NodeIdMap + mint_node_ids(tree) -> NodeIdMap (pre-order)
   parse.py            # source bytes -> tree; cursor helpers (scoped_identifier, field_expression…)
-  qualname.py         # the Rust dotted dialect (crate-rooted; closures/generics/trait-impl/async)
+  qualname.py         # the Rust dialect (ADR-049: impl[Trait]/impl#<>#0/@cfg; closures NOT entities)
   index.py            # function_item -> RustEntity + NodeId stamping
   vocabulary.py       # rust_taint.yaml loader (sources + sinks) + RUST_TAINT_VERSION
   rust_taint.yaml     # bundled vocabulary (wheel-shipped via hatch force-include)
@@ -120,8 +120,11 @@ module-level `pytest.importorskip("tree_sitter")`.
   single keying authority** — `dataflow.py` (WP4) and `rules.py` (WP5) both import it; no pass keys on a
   raw `ts_node`. Also add the typed `NodeId` alias on the Python side behind `id()` (zero behavior
   change) so the contract is shared.
-- `tests/conformance/qualnames_rust.json` is created here (empty/seed) as the **early format
-  drift-gate** (spec §6.4), populated in WP2.
+- `tests/conformance/qualnames_rust.json` is **vendored from Loomweave** here (a pinned copy of
+  `feat/rust-plugin-spec`:`fixtures/qualnames_rust.json`, the extractor-generated oracle) as the
+  **format drift-gate** (spec §6.4). Loomweave offered to drop the copy + a
+  `test_loomweave_rust_qualname_parity.py` skeleton straight into `tests/conformance/` — accept that or
+  vendor it manually; do not author the corpus ourselves (Loomweave is authoritative).
 
 **Verify:** loader test green under `wardline[rust]`; skips clean without it.
 
@@ -149,22 +152,41 @@ symlink guard *inside* the loop; add `target` to `_ALWAYS_SKIP`; preserve `fnmat
 
 ### WP2 — Rust parse + minimal index + qualname dialect
 
+The dialect is **Loomweave's ADR-049** (spec §6), not Wardline's — Wardline is the *second producer*
+that **mints the identical string** and never parses the locator. Reserved char is **`:` (invalid)**;
+`[ ] # < > @` are legal. `tests/conformance/qualnames_rust.json` is the copy **vendored from Loomweave**
+(`/home/john/loomweave` `feat/rust-plugin-spec`:`fixtures/qualnames_rust.json`, extractor-generated);
+Wardline reproduces its function-row `qualname`s byte-for-byte.
+
 **Test first:**
-- `tests/unit/rust/test_qualname.py` (against `tests/conformance/qualnames_rust.json`): free `fn foo`
-  in `crate::a` → **`crate.a.foo`** (crate-rooted, pinned); `impl Foo { fn bar }` → `crate.a.Foo.bar`;
-  `impl Trait for Foo { fn bar }` → `crate.a.Foo.bar:trait=Trait`; closure in `foo` →
-  `crate.a.foo.<locals>.{closure#0}`; **nested `fn outer { fn inner }`** → `crate.a.outer.<locals>.inner`;
-  **`async fn g<T>`** → `crate.a.g` (generics stripped, no async suffix, `kind=function`).
-- `tests/unit/rust/test_index.py` — the specimen yields one `RustEntity` per `function_item` with
-  `kind ∈ {function, method}`, a `Location`, and NodeIds.
+- `tests/unit/rust/test_qualname.py` (against the vendored corpus, ADR-049 forms — file-module rooted
+  for the single-file slice, e.g. `demo`): inherent method `demo.m.Foo.impl#<>#0.bar`; trait method
+  `demo.m.Foo.impl[Display].fmt`; trait collision `…impl[Display].fmt` + `…impl[Debug].fmt`; concrete
+  generics `…impl[From<i32>].from` ≠ `…impl[From<u32>].from`; positional generic `…impl#<$0>#0.get`
+  (**and the param-renamed source yields the identical string** — rename-stable); multiple inherent
+  ordinal `…impl#<>#0.a` + `…impl#<>#1.b` (resets in a nested `mod`); cfg-twin `demo.m.f@cfg(unix)` +
+  `…f@cfg(windows)`; `async fn` renders identically to `fn`; **closure → NOT an entity** (only the
+  enclosing `demo.m.f`); **nested `fn` → NOT an entity** (only `demo.m.outer`); generics stripped.
+- **Comparison rule (do NOT raw-`assert found == expected`):** the corpus rows include `module`/`struct`
+  rows Wardline never emits and its `kind` is the locator id-kind (`function` for every callable). So:
+  take Wardline's function entities; assert each `qualname` is in the case's set of **non-`module`**
+  `expected` qualnames; `kind` is informational (map Wardline's semantic `method` → id-kind `function`,
+  or compare qualname-only); never edit the vendored copy to drop rows. (Mirrors the `None ↔ ""`
+  accommodation the Python `loomweave_qualname_parity` test already makes.)
+- `tests/unit/rust/test_index.py` — the specimen yields one `RustEntity` per emitted callable
+  (free fn / inherent / trait / assoc — **closures and nested fns are NOT emitted**), with a `Location`
+  and NodeIds. Wardline keeps its semantic `function|method` split in `RustEntity` **metadata**; the
+  qualname/id-kind is `function`.
 - `tests/unit/rust/test_nodeid_crosspass.py` — **the spec §5 cross-pass agreement test** (not
   re-parse): for a known builder chain, the `NodeId` the (stub) dataflow records for the `.output()`
   trigger **equals** the `NodeId` `mint_node_ids` assigns that CST node, which **equals** the one the
-  rule locator looks up. A mismatch is a hard failure. (If slice 1's rule consumes the WP4 map directly
-  without an independent re-walk, document that and keep the test asserting builder==map agreement.)
+  rule locator looks up. A mismatch is a hard failure.
 
-**Implement:** `rust/parse.py`, `rust/qualname.py` (crate-rooted), `rust/index.py`. Module route =
-`crate`-rooted approximation from the file path (single-file; SP2 owns the real module tree).
+**Implement:** `rust/parse.py`, `rust/qualname.py` (ADR-049 forms), `rust/index.py`. **Root = the
+file-module approximation** (e.g. `demo`) — slice-1-reproducible; the **real crate prefix** from
+`Cargo.toml`, cross-file module route, `#[path]`, and cross-file ordinals are **SP2** (spec §6.3), so
+slice-1 findings are crate-prefix-provisional (consistent with their baseline-ineligibility). A finding
+inside a closure/nested fn attributes to the **enclosing named fn** (`line_start` localises).
 
 ### WP3 — Vocabulary (sources + command sinks) + `@trusted` marker + cache-version
 
@@ -293,10 +315,14 @@ Drafted `examples_violation`/`examples_clean` per spec §9.2. Reuse `modulate`, 
 
 ## Decisions to confirm in review (genuinely open)
 
-- **`format!` heuristic narrowing** (spec §12 Q2): "direct-interpolation-arg tokens only" for slice 1?
+- **`format!` heuristic narrowing** (spec §12 Q1): "direct-interpolation-arg tokens only" for slice 1?
 - **`@trusted` alone is enough** for the specimen to enter declared-trust (vs also needing
   `@trust_boundary` external→to_level)? (Default: `@trusted` + a vocabulary source is sufficient.)
+- **Accept Loomweave's offer** to drop the vendored `qualnames_rust.json` + parity-test skeleton into
+  `tests/conformance/`? (Default: yes — they generate it from the oracle; we should not hand-author it.)
 
-(Resolved in the spec, no longer open here: RS-WL-108 = ERROR; module root = `crate.a.foo`; CLI =
-explicit `--lang rust`; `RustAnalyzer` satisfies the full `Analyzer` protocol; identity provisional /
-baseline-ineligible until SP2.)
+(Resolved in the spec, no longer open here: RS-WL-108 = ERROR; **qualname dialect = Loomweave ADR-049**
+(Wardline conforms, file-module root for slice 1, crate prefix is SP2); **closures/nested fns are NOT
+entities**; **`:` is invalid** (no `:trait=`); corpus vendored from Loomweave; CLI = explicit
+`--lang rust`; `RustAnalyzer` satisfies the full `Analyzer` protocol; identity baseline-ineligible until
+the SP2 crate-prefix.)

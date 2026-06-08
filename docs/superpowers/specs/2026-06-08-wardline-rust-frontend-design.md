@@ -203,16 +203,18 @@ verdict core in the Rust rules; SP5 extracts it once the second Rust rule lands.
 Because this is the **interim Python frontend** (re-ported at the native-core cutover), two
 obligations keep it from creating drift the migration would have to unwind:
 
-- **Rust finding identity is PROVISIONAL until SP2, not yet a frozen contract.** The Python identity
-  oracle is `PY-WL-* ∧ Kind.DEFECT` only; it deliberately excludes `RS-WL-*`. The Rust qualname
-  dialect (§6) is self-consistent but must still reconcile with Loomweave's *unfixed* Rust entity-ID
-  dialect (§6.4) — so until SP2 fixes it, **`RS-WL-*` findings are explicitly identity-provisional and
-  baseline-ineligible**: the CLI/MCP output and the preview docs must say so, so users do not
-  accumulate Filigree associations / baselines that SP2's rekey would silently orphan. The *frozen*
-  cross-engine corpus (`tests/golden/identity/rust/`, mirroring the Python parity test, scoped to
-  `RS-WL-* ∧ Kind.DEFECT`) is an **SP2 completion gate**, not a slice-1 artifact. What slice 1 *does*
-  pin is a **format drift-gate** (`tests/conformance/qualnames_rust.json`, an early deliverable, §6.4)
-  so accidental dialect churn is caught even before the freeze.
+- **The dialect is FIXED (Loomweave ADR-049); `RS-WL-*` identity stays baseline-ineligible until SP2
+  for a narrower reason.** The Python identity oracle is `PY-WL-* ∧ Kind.DEFECT` only; it excludes
+  `RS-WL-*`. As of 2026-06-09 the Rust qualname dialect is no longer the blocker — Loomweave fixed it
+  (§6) and published the byte-exact corpus Wardline vendors. What remains provisional is the
+  **crate-rooted prefix**, which is SP2 (it needs `Cargo.toml`, §6.3): slice-1 qualnames are
+  file-module-rooted and reproducible, but the prefix gains its real crate value at SP2, changing each
+  fingerprint once. So **`RS-WL-*` findings stay identity-provisional and baseline-ineligible** until
+  SP2 — the CLI/MCP output and preview docs must say so, so users don't accumulate Filigree
+  associations / baselines that the SP2 crate-prefix rekey would orphan. The **format drift-gate**
+  (`tests/conformance/qualnames_rust.json`, vendored from Loomweave — §6.4) catches accidental dialect
+  divergence now; the **frozen** `tests/golden/identity/rust/` finding corpus is the SP2 completion
+  gate.
 - **Do not produce the unreachable lattice states (with one precise exception).** `UNKNOWN_GUARDED`
   and `UNKNOWN_ASSURED` are **unconditionally** unreachable under sound analysis and the cache
   rehydration guard rejects them (`summary_cache.py:53-85`). **`MIXED_RAW` is unreachable *except*
@@ -291,62 +293,95 @@ the **same** value in (a) the call-edge/callee builder, (b) the L2 analyzer's ca
 
 ## 6. The Rust qualname dialect
 
-### 6.1 The constraint
+### 6.1 The constraint, and who owns the dialect
 
-Wardline's qualname is a **dotted** string (`module.__qualname__`), byte-identical to CPython
-`co_qualname`, with `.<locals>.` for nested scopes (`core/qualname.py:24-83`). The **format is
-load-bearing in ~20 sites** (recon R2 enumerated them; do not under-count): tier-strip rules
-`split('.<locals>.')[0]` (`_sink_helpers.py:202`, `sql_injection.py:89`, `broad_exception.py:44`,
-`silent_exception.py:44`); enclosing-scope recovery `rsplit('.',1)[0]` (`callgraph.py:93`,
-`ast_primitives.py`, `analyzer.py:399`, `flow_trace.py:42,50,179,204`,
-`untrusted_to_trusted_callee.py:81`); module recovery (`explain.py:56`); last-component
-`rsplit('.',1)[-1]` (`contradictory_trust.py:80`, `invalid_decorator_level.py:105`,
-`decorator_provider.py:308`).
+Wardline's *Python* qualname is a **dotted** string byte-identical to CPython `co_qualname`, with
+`.<locals>.` for nested scopes (`core/qualname.py:24-83`); the `.` format is load-bearing in ~20 sites
+(`split('.<locals>.')[0]` tier-strip; `rsplit('.',1)` enclosing-scope/module recovery — `_sink_helpers.py:202`,
+`callgraph.py:93`, `explain.py:56`, etc.). Keeping `.` as the Rust delimiter too lets all of those
+sites stay unchanged.
 
-### 6.2 Decision: keep `.` as the delimiter; `crate`-root the path
+**But for Rust, Wardline is NOT the dialect author — Loomweave is.** The qualname is the SEI *locator*
+(`{plugin}:{kind}:{qualname}`, ADR-003/ADR-038); Loomweave's whole-tree `syn` extractor is the oracle
+that defines it, and it is **fixed by Loomweave ADR-049** (`docs/loomweave/adr/ADR-049-rust-qualname-canonicalization.md`,
+Accepted 2026-06-08). Wardline is the **second producer**: it **mints the identical string** from its
+tree-sitter frontend and **must not parse Loomweave's locator** (the ADR-003/038 opacity discipline).
+§6.2 below is the ADR-049 form Wardline conforms to, not a Wardline proposal. (The reply that fixed
+this is committed at `docs/integration/2026-06-09-loomweave-rust-qualname-dialect-reply.md`.)
 
-Render `crate::a::b::Type::method` as **`crate.a.b.Type.method`** (delimiter `.`, not `::`; **crate
-prefix retained**). The `.` delimiter **reuses every format-dependent site verbatim** — the lower-risk
-fork; switching to `::` would force an audited rewrite of all ~20 sites and is rejected. The **`crate`
-prefix is load-bearing for fingerprint stability** (it keeps the single-file slice-1 approximation in
-the same namespace the SP2 module-tree resolver will produce, and disambiguates multi-crate repos),
-so it is pinned now, not deferred.
+### 6.2 The dialect (ADR-049 — normative, Loomweave-authoritative)
 
-Dialect rules:
+`<crate>.<module-path>.<item-path>`, dot-separated. The reserved char is **`:` (rejected by
+`entity_id.rs`)**; `[ ] # < > @` are permitted and `.`-split-safe — which is why my earlier
+`:trait=`/`:setter` instinct is *invalid* and was replaced.
 
-- **Closures and nested `fn` items** use the literal `.<locals>.` separator (inherit the enclosing
-  fn's trust tier for free under `split('.<locals>.')[0]`): closure → `crate.mod.func.<locals>.{closure#N}`;
-  nested `fn inner` → `crate.mod.outer.<locals>.inner`.
-- **Generics are monomorphisation-agnostic**: strip turbofish / type-args / lifetimes. One qualname
-  per generic *definition* (`crate.mod.func`, never `::<i32>`).
-- **`async fn`** renders identically to a non-async fn (no suffix); `kind = function`/`method` per the
-  scope rule — but its CST node still carries an `async` modifier, so the index walk must not skip it.
-- **Trait-impl vs inherent disambiguation** rides the final component via a `:`-suffix (mirroring the
-  existing `:setter`/`:deleter` convention, `index.py:133-135`, which is `.`-split-safe): inherent →
-  `crate.mod.Foo.bar`; trait impl → `crate.mod.Foo.bar:trait=Trait`. **No `<`/`>`/`#` collision with
-  `.<locals>.`; must not break `rsplit('.',1)`.**
-- **`kind` stays 2-value** `function | method` (method iff the immediate scope is a type/`impl`); a
-  trait distinction, if a rule needs it, rides `Entity` metadata, never the qualname.
+- **Crate token:** the crate name underscored (`-`→`_`), read from `Cargo.toml [package].name` **as
+  text** (reading a manifest is allowed; running `cargo metadata`/registry resolution is not), falling
+  back to the dir containing `src/lib.rs`/`src/main.rs`. **Reading the manifest is whole-tree → the
+  crate prefix is SP2** (see §6.3).
+- **Module path:** the `mod` tree (crate root → item), honoring `#[path]` and file-module
+  (`mod foo;` → `foo.rs`/`foo/mod.rs`) boundaries; inline `mod` blocks nest.
+- **Trait-impl method:** `<Type>.impl[<TraitPath-with-concrete-generics>].<method>` — concrete generic
+  args are **part of the key**: `Foo.impl[Display].fmt`, `Foo.impl[From<i32>].from` ≠
+  `Foo.impl[From<u32>].from`. Methods **always** carry the impl discriminator (never bare `Foo.fmt`).
+- **Inherent-impl method:** `<Type>.impl#<positional-generic-sig>#<ordinal>.<method>` — generics
+  rendered **positionally/De-Bruijn** (`$0`,`$1`, so a param *rename* does not churn:
+  `impl<T> Foo<T>` and `impl<U> Foo<U>` both → `impl#<$0>#0`); non-generic → `impl#<>#0`; the
+  **ordinal** is source-order **scoped per item-list (module) and RESETS inside a nested `mod`**
+  (`impl#<>#0.a`, `impl#<>#1.b`).
+- **`#[cfg]` twins:** a path-colliding cfg-gated sibling appends a normalised `@cfg(<predicate>)`
+  (whitespace-stripped, `any()/all()` args sorted) — for **every** item kind, `fn`/`struct`/inline
+  `mod` alike (`f@cfg(unix)`, `S@cfg(windows)`), counted per-kind. Easy to under-implement; the corpus
+  carries `cfg_twin` + `struct_cfg_twin` rows so the drift-gate trips if missed.
+- **Closures and nested `fn` items are NOT entities.** Loomweave never descends into fn bodies — there
+  is **no `.<locals>.{closure#N}`** and no nested-fn entity. A finding inside a closure/nested fn
+  **attributes to the enclosing named fn** (`line_start` localises it). (So no Rust qualname contains
+  `.<locals>.`, and the Python tier-strip sites are inert for Rust — the enclosing fn's tier gates the
+  closure body directly, since Wardline's L2 still analyses that body intra-procedurally.)
+- **`async fn`** renders identically to `fn` (no suffix). **Generics** stripped at the definition
+  (`crate.mod.func`, never `::<i32>`); lifetimes stripped.
+- **id-`kind` is `function` for EVERY callable** (free fn, method, assoc fn) — there is no `method`
+  id-kind. Wardline keeps its semantic `function|method` distinction in `Entity` **metadata**, never
+  in the qualname.
 
-### 6.3 Module-route resolution (no salvageable Python logic)
+### 6.3 Module-route resolution + the slice-1 / SP2 reproducibility line
 
-Rust modules are **not 1:1 with files** (`mod foo {}` inline, `mod.rs`, `lib.rs`/`main.rs` roots,
-`#[path]`). `module_dotted_name`'s path rules have **no Rust analog**. The Rust frontend resolves the
-route from the **module tree** (crate root + `mod` declarations). For slice 1 (single-file,
-intra-function), a **`crate`-rooted approximation from the file path** is acceptable, with full
-module-tree resolution deferred to SP2 (the gate for multi-file correctness).
+Rust modules are **not 1:1 with files**. The route is the `mod` tree from the crate root (§6.2). Per
+the corpus's reproducibility tags, the line between what Wardline reproduces **now** vs at **SP2** is:
 
-### 6.4 Identity pinning + Loomweave reconciliation (open dependency)
+- **slice-1 (reproducible single-file now):** the qualname **suffix** — impl discriminator, `@cfg`,
+  within-file ordinal, positional generics, the closure/nested-fn folding — and a **file-module root**
+  (the corpus roots its single-file cases at the file module, e.g. `demo.m.Foo.impl#<>#0.bar`).
+- **SP2 (needs the whole tree):** the real **crate-name prefix from `Cargo.toml`**, the **cross-file
+  module route**, **`#[path]`**, and **cross-file inherent-impl ordinals**. *The crate-root prefix of
+  every entity is itself SP2.* `#[path]` is a **shared known gap** (Loomweave's `module_path.rs` does
+  not honour it yet; the corpus `path_attr_known_gap` row pins the mechanical file-path form with
+  `known_gap: true` — both engines match that, and `#[path]`-correct routing is a joint SP2 task).
 
-- **Early deliverable (WP0/WP2, not late):** `tests/conformance/qualnames_rust.json` pins the dialect
-  (closures, generics, trait impls, **async, nested fn items**, nested mods) — a **format drift-gate**
-  from the first commit, cheap to add now and expensive after downstream associations accumulate.
-- **Open dependency:** the dialect must eventually reconcile **byte-for-byte** with Loomweave's Rust
-  plugin entity-ID dialect (`rust:{kind}:{qualified_name}`), which is **not yet fixed**. SP2 owns the
-  cross-tool conformance and the **frozen** `tests/golden/identity/rust/` corpus, and may revise the
-  `:trait=` / `{closure#N}` spellings to match Loomweave — which is exactly why slice-1 `RS-WL-*`
-  findings are **baseline-ineligible and flagged provisional** (§3.6) until then. This is the largest
-  external unknown (§12 Q1).
+This is the precise reason `RS-WL-*` stays baseline-ineligible until SP2 (§3.6): the *dialect* is
+fixed and slice-1 suffixes are stable, but the **crate prefix gains its real value at SP2**, changing
+fingerprints once.
+
+### 6.4 Identity pinning — the corpus is INVERTED (Loomweave seeds, Wardline vendors)
+
+- **Loomweave hosts** `fixtures/qualnames_rust.json` (extractor-**generated**, locked by
+  `crates/loomweave-plugin-rust/tests/qualname_conformance.rs`, passing). **Wardline vendors** a pinned
+  copy to `tests/conformance/qualnames_rust.json` and reproduces `expected` **byte-for-byte** from its
+  frontend. This **inverts** the Python arrangement (Wardline seeded `qualnames.json`, Loomweave
+  vendored) because for Rust the whole-tree extractor is the oracle. The existing Python
+  `qualnames.json` / `loomweave_qualname_parity.json` and their tests are **untouched**.
+- **Comparison rule (do NOT reuse `test_qualname_conformance.py` verbatim — it will fail).** The corpus
+  `entities[].expected` is Loomweave's *full* emission: it includes `module` and `struct` rows Wardline
+  never emits, and its `kind` is the locator **id-kind** (`function` for every callable). So, per the
+  corpus `_consumer_comparison` key: **(1)** the byte-exact obligation is the **`qualname`** of every
+  function row (the string folded into `fingerprint`) — match char-for-char; **(2)** `kind` is
+  informational — map Wardline's semantic `method` → id-kind `function`, or compare qualname-only;
+  **(3)** `module` rows are validated against the `module_route` section, not re-emitted. Recommended
+  test: take Wardline's function entities, assert each `qualname` is in the case's set of non-`module`
+  `expected` qualnames. **Never edit the vendored copy to drop rows.**
+- The **frozen** `tests/golden/identity/rust/` finding-identity corpus remains the **SP2 completion
+  gate** (when crate-prefix/cross-file rows stop being provisional). Loomweave offered to drop the
+  vendored copy + a `test_loomweave_rust_qualname_parity.py` skeleton into Wardline's tree on request.
 
 ---
 
@@ -558,7 +593,7 @@ states both:
 | # | Risk | Severity | Mitigation |
 |---|------|----------|------------|
 | R-1 | NodeId minting disagrees across passes → findings silently vanish (fail-quiet) | High | §5 typed `NodeId` + named `NodeIdMap` threading + cross-pass agreement test |
-| R-2 | Provisional Rust qualname dialect → fingerprint/Filigree/Loomweave drift if downstream associations accumulate before SP2 | High | §3.6/§6.4: `RS-WL-*` baseline-ineligible + flagged provisional; `qualnames_rust.json` drift-gate early; frozen corpus an SP2 gate |
+| R-2 | ~~Unfixed dialect~~ **RESOLVED 2026-06-09** (Loomweave ADR-049 fixed the dialect, §6). Residual: the **crate-prefix** is SP2-provisional → one fingerprint rekey at SP2 | Med | §3.6/§6.3: `RS-WL-*` baseline-ineligible until SP2; vendored `qualnames_rust.json` drift-gate; frozen `golden/identity/rust/` an SP2 gate |
 | R-3 | Builder-dataflow under/over-approximates → FN or the argv-list FP flood | Med-High | §9.2 shell-gated hard FP rule; dense corpus + 0-finding clean fixture; ≤5% gate; FP/FN tests incl. `.args`/no-flag/`format!` negatives |
 | R-4 | tree-sitter core/grammar ABI mismatch at install → load failure | Med | §11 SP6 pins `tree-sitter>=0.25,<0.26` + `tree-sitter-rust==0.24.2` (ABI-15 floor); not the grammar's stale `~=0.22` self-pin |
 | R-5 | Interim Python frontend orphaned/duplicated at native cutover | Med (accepted) | §1.1 cost analysis (design survives; only frontend code re-written); native cutover unstarted |
@@ -576,10 +611,11 @@ Six sub-projects, each its own spec→plan→build cycle:
   make today's Python path "frontend #1" behind the seam, **behavior-preserving**; **partition the
   shared-context keyspace** so two frontends' NodeIds cannot collide (§5). **Gate: Python corpus +
   identity oracle stay byte-green.**
-- **SP2 — Rust parse + index** . tree-sitter-rust → entities; the Rust qualname dialect (§6) incl.
-  module-tree route resolution; **the frozen `tests/golden/identity/rust/` corpus + Loomweave
-  reconciliation** (§6.4) — both are SP2 *completion gates*, the point at which `RS-WL-*` identity
-  stops being provisional.
+- **SP2 — Rust parse + index** . tree-sitter-rust → entities; the ADR-049 qualname dialect (§6) incl.
+  the **whole-tree** pieces that are SP2 by construction — crate-name-from-`Cargo.toml`, cross-file
+  module route, `#[path]` (shared known gap), cross-file inherent-impl ordinals (§6.3); and **the
+  frozen `tests/golden/identity/rust/` finding corpus** (§6.4). These are the SP2 *completion gates*,
+  the point at which the crate-prefixed `RS-WL-*` identity stops being provisional.
 - **SP3 — Rust trust vocabulary** . `rust_taint.yaml` + `RustTrustProvider` (doc-comment markers) +
   `RUST_TAINT_VERSION`-in-`provider_fingerprint` (§8.1).
 - **SP4 — Rust L2 builder-dataflow** *(the hard core, §9.3)*.
@@ -596,32 +632,47 @@ only. It is the de-risking instrument, not a sub-project.
 
 ---
 
-## 12. Open questions for review (genuinely open after panel)
+## 12. Open questions for review
 
-1. **Loomweave Rust entity-ID dialect timing** (§6.4) — block SP2's identity freeze on Loomweave
-   fixing its Rust plugin first, or get Loomweave to commit its dialect now so SP2 pins the real
-   contract? (Slice 1 proceeds either way under the provisional/baseline-ineligible posture.)
-2. **`format!` heuristic narrowing** (§9.3) — confirm "direct-interpolation-arg tokens only" is the
+1. **`format!` heuristic narrowing** (§9.3) — confirm "direct-interpolation-arg tokens only" is the
    right precision/effort point for slice 1, vs a broader token-tree scan (more FN-resistant, more FP).
-3. **Doc-comment markers over a proc-macro crate** (§7) — confirm, given the agent-first/zero-config
+2. **Doc-comment markers over a proc-macro crate** (§7) — confirm, given the agent-first/zero-config
    thesis.
+3. **SEI cross-rename baseline policy** (forward, non-gating — §3.6) — when Loomweave ships its SEI
+   *resolve* oracle (currently deferred their side), do we re-key historical `RS-WL-*` findings through
+   it on rename/move, or accept churn-on-rename as a baseline reset? Tracked, not blocking slice 1.
 
-(Resolved during review, no longer open: RS-WL-108 severity → **ERROR**; module root → **`crate`-rooted**;
-CLI dispatch → **explicit `--lang rust`** for slice 1; provisional-vs-frozen identity → **provisional +
-baseline-ineligible until SP2**; RS-WL-108/112 de-confliction → **stated + forward-guarded**.)
+(Resolved, no longer open: **Q1 Loomweave dialect → FIXED** by ADR-049, 2026-06-09 — Wardline conforms
+(§6), blocker dropped; RS-WL-108 severity → **ERROR**; CLI dispatch → **explicit `--lang rust`**;
+identity → **baseline-ineligible until the SP2 crate-prefix lands**; SEI fold → **keep folding the
+qualname, do NOT fold Loomweave's SEI token** (Wardline can't reproduce it single-file); RS-WL-108/112
+de-confliction → **stated + forward-guarded**.)
 
 ---
 
-## 13. Review changelog (round 1)
+## 13. Review changelog
 
-Folded from the 7-reviewer panel: corrected citations (FunctionSeed → `function_level.py`; NodeId mint
-→ `callgraph.py build_call_edges`; cache-key 6th input `scan_policy_hash`; `_grammar_digest` hashes
+**Round 1 — 7-reviewer panel.** Corrected citations (FunctionSeed → `function_level.py`; NodeId mint →
+`callgraph.py build_call_edges`; cache-key 6th input `scan_policy_hash`; `_grammar_digest` hashes
 `co_code|co_consts`; live-oracle marker promotion; wheel tag cp39-abi3; qualname sites ~20 not ~12).
-Resolved deferred decisions (RS-WL-108 ERROR + reframed as a new threat class; module root crate-rooted;
-CLI `--lang rust`). Dissolved the provisional-vs-frozen identity contradiction (baseline-ineligible
-until SP2; `qualnames_rust.json` early, `golden/identity/rust/` an SP2 gate). Added: `RustAnalyzer`
-must satisfy the full `Analyzer` protocol (plan); NodeId `NodeIdMap` threading + cross-pass test;
-`local_string_taints` for `format!`-through-`let`; format! FP/FN both directions; de-confliction +
-forward-guard; Windows case-fold + `pwsh`; `arg0`/concat/FFI/`args`-flag FNs; coverage-posture
-disclosure; dense corpus + clean-fixture hard gate; symlink-confinement + `missing_source_roots` notes;
-`MIXED_RAW`-under-provenance-clash precision; interim cost analysis; SP1 relabelled post-slice refactor.
+Resolved deferred decisions (RS-WL-108 ERROR + reframed as a new threat class; CLI `--lang rust`).
+Added: `RustAnalyzer` must satisfy the full `Analyzer` protocol (plan); NodeId `NodeIdMap` threading +
+cross-pass test; `local_string_taints` for `format!`-through-`let`; format! FP/FN both directions;
+de-confliction + forward-guard; Windows case-fold + `pwsh`; `arg0`/concat/FFI/`args`-flag FNs;
+coverage-posture disclosure; dense corpus + clean-fixture hard gate; symlink-confinement +
+`missing_source_roots` notes; `MIXED_RAW`-under-provenance-clash precision; interim cost analysis; SP1
+relabelled post-slice refactor.
+
+**Round 2 — Loomweave ADR-049 conformance (2026-06-09).** The "Loomweave dialect unfixed" blocker is
+GONE — Loomweave fixed the Rust qualname dialect (ADR-049) and Wardline now **conforms** (it is the
+*second producer* that mints the same string; it never parses the locator). Replaced my proposed forms
+with the normative ADR-049 ones: trait impl `Foo.impl[Display].fmt` (concrete generics kept), inherent
+`Foo.impl#<>#0.bar` (positional `$0` generics, per-module ordinal), `@cfg(pred)` twins for all item
+kinds, **closures/nested-fns are NOT entities** (dropped `.<locals>.{closure#N}`; attribute to the
+enclosing fn), id-kind always `function`, **`:` is reserved/invalid** (killed `:trait=`/`:setter`).
+Corpus **inverted**: Loomweave hosts `fixtures/qualnames_rust.json` (extractor-generated), Wardline
+vendors + reproduces byte-for-byte under the documented comparison rule (qualname-only on function
+rows). Reproducibility tiers pinned: slice-1 = the file-module-rooted suffix; **SP2 = the crate
+prefix + cross-file route + `#[path]`** (so R-2 downgrades to Med). SEI fold resolved: keep folding the
+qualname, never Loomweave's SEI token. Reply committed at
+`docs/integration/2026-06-09-loomweave-rust-qualname-dialect-reply.md`.
