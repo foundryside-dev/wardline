@@ -137,12 +137,40 @@ def _is_generator(node: ast.AST) -> bool:
     return False
 
 
+def _has_loop_break(node: ast.AST) -> bool:
+    """True if *node* is, or contains, a ``break`` that binds to the loop *node* is
+    part of. Stops at nested loops (their breaks bind there) and at nested
+    function/class/lambda scopes (a break there is a separate construct)."""
+    if isinstance(node, ast.Break):
+        return True
+    if isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
+        # A break in a nested loop's body binds to *that* loop; but a break in its
+        # ``else:`` clause binds outward (to ours), so recurse only into orelse.
+        return any(_has_loop_break(stmt) for stmt in node.orelse)
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+        return False  # a break here belongs to a separate scope
+    return any(_has_loop_break(child) for child in ast.iter_child_nodes(node))
+
+
 def _can_fall_through(stmts: list[ast.stmt]) -> bool:
     """True if there is any execution path through stmts that doesn't end with return or raise."""
     if not stmts:
         return True
     for stmt in stmts:
         if isinstance(stmt, (ast.Return, ast.Raise)):
+            return False
+        # A with block is transparent to control flow: it is terminal iff its body
+        # is terminal (the context manager runs, then the body executes).
+        if isinstance(stmt, (ast.With, ast.AsyncWith)) and not _can_fall_through(stmt.body):
+            return False
+        # A constant-true loop with no break targeting it never exits normally to
+        # fall through — the only way out is a return/raise in the body.
+        if (
+            isinstance(stmt, ast.While)
+            and isinstance(stmt.test, ast.Constant)
+            and stmt.test.value
+            and not any(_has_loop_break(b) for b in stmt.body)
+        ):
             return False
         if isinstance(stmt, ast.If):
             if not stmt.orelse:
