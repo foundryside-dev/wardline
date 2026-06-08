@@ -16,7 +16,7 @@ severity, see [Configuration](../guides/configuration.md).
 | `PY-WL-101` | A trust-anchored function returns data less trusted than the level it declares — untrusted data reaches a trusted producer with no validation. | `ERROR` |
 | `PY-WL-102` | A trust boundary (a function that raises declared trust on its return) has no rejection path — no raise, no falsy-constant return — so it cannot validate. | `ERROR` |
 | `PY-WL-103` | A broad exception handler (bare except / Exception / BaseException) in a trusted-tier function. | `WARN` |
-| `PY-WL-104` | An exception handler that silently swallows the error (only pass/.../continue/break) in a trusted-tier function. | `WARN` |
+| `PY-WL-104` | An exception handler that silently swallows the error (body is only pass/.../continue/break or a bare constant expression, e.g. a docstring-like string) in a trusted-tier function. | `WARN` |
 | `PY-WL-105` | Untrusted data is passed as an argument to a trusted producer at a call site. | `ERROR` |
 | `PY-WL-106` | Untrusted data reaches a deserialization sink (pickle/marshal/yaml.load) in a trusted-tier function. | `WARN` |
 | `PY-WL-107` | Untrusted data reaches a dynamic-code-execution sink (eval/exec/compile) in a trusted-tier function. | `WARN` |

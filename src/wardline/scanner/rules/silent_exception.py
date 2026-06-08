@@ -1,9 +1,10 @@
 # src/wardline/scanner/rules/silent_exception.py
 """PY-WL-104 — silently swallowed exception in a trusted-tier function.
 
-A handler whose body only ``pass``/``...``/``continue``/``break`` discards the
-error with no logging, re-raise, or recovery. Tier-modulated (§5) — silent on
-undecorated code.
+A handler whose body is only ``pass``/``...``/``continue``/``break`` or a bare
+constant expression (a string literal or number) discards the error with no
+logging, re-raise, or recovery. Tier-modulated (§5) — silent on undecorated
+code, downgraded one step on partial tiers.
 """
 
 from __future__ import annotations
@@ -24,8 +25,10 @@ METADATA = RuleMetadata(
     rule_id="PY-WL-104",
     base_severity=Severity.WARN,
     kind=Kind.DEFECT,
-    description="An exception handler that silently swallows the error "
-    "(only pass/.../continue/break) in a trusted-tier function.",
+    description="An exception handler that silently swallows the error — body is "
+    "only pass/.../continue/break or a bare constant expression (e.g. a "
+    "docstring-like string literal or a number). Tier-modulated: fires on "
+    "trusted tiers, downgraded to INFO on partial tiers.",
     examples_violation=("@trusted\ndef f():\n    try:\n        g()\n    except ValueError:\n        pass",),
     examples_clean=("@trusted\ndef f():\n    try:\n        g()\n    except ValueError:\n        log(e)",),
 )
