@@ -105,6 +105,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixed-port sibling emit/discovery target the published-port rung cannot reconstruct.
 
 ### Fixed
+- **Lambda taint: a sink-lambda bound in a non-last branch arm is no longer lost.**
+  The Level-2 taint engine tracked lambda bindings one-per-name, so at a branch merge
+  only the last arm's binding survived; a name rebound to a sink-lambda in a non-last
+  `if`/`try`/`match` arm was overwritten by a later arm's benign lambda, and a tainted
+  call after the branch resolved the wrong body — a silent false negative. Lambda
+  bindings are now a per-name candidate set: a call resolves against every body the
+  name may hold across arms (sink-agnostic; surfaces e.g. PY-WL-106/107/108 on the
+  newly-covered shapes). May raise new findings on code matching this pattern under
+  `--fail-on`. (`wardline-383f83fafe`; orthogonal loop zero-trip FN tracked separately)
 - **Explicit `--config` pointing at a malformed (but existing) `weft.toml` no longer
   silently falls back to default policy.** The guard previously covered only a
   *missing* explicit path; a present-but-unparseable one slipped through C-9c's
