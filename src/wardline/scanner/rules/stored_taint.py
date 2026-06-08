@@ -179,34 +179,51 @@ class StoredTaint:
                                 break
 
                     if has_stored_arg:
-                        # Resolve callee FQN
-                        callee_qn = context.call_site_callees.get(id(node))
-                        if callee_qn is not None:
-                            callee_tier = context.project_taints.get(callee_qn)
-                            # Only flag if callee is a trusted producer or boundary
-                            if callee_tier is not None and callee_tier not in RAW_ZONE:
-                                worst = worst_arg_taint(node, qualname, context)
-                                if worst is not None and worst in RAW_ZONE:
-                                    findings.append(
-                                        Finding(
+                        # Resolve callee FQN(s). For a branch-conditional receiver, consult
+                        # the full candidate set so this fires on any trusted candidate
+                        # regardless of AST order (shares wardline-499c22bbdd's root cause);
+                        # otherwise the single call_site_callees entry.
+                        candidate_qns = context.call_site_candidate_callees.get(id(node))
+                        if candidate_qns:
+                            callee_qns: list[str] = sorted(candidate_qns)
+                        else:
+                            single = context.call_site_callees.get(id(node))
+                            callee_qns = [single] if single is not None else []
+                        # Keep only candidates that are trusted producers/boundaries; emit
+                        # ONE finding per call site (not one per candidate) deterministically
+                        # keyed on the first, so a branch-conditional receiver with several
+                        # trusted candidates is one defect (wardline-499c22bbdd panel).
+                        firing_qns = [
+                            qn
+                            for qn in callee_qns
+                            if (ct := context.project_taints.get(qn)) is not None and ct not in RAW_ZONE
+                        ]
+                        if firing_qns:
+                            worst = worst_arg_taint(node, qualname, context)
+                            if worst is not None and worst in RAW_ZONE:
+                                callee_qn = firing_qns[0]
+                                others = firing_qns[1:]
+                                also = f" (branch-conditional; also reaches {', '.join(others)})" if others else ""
+                                findings.append(
+                                    Finding(
+                                        rule_id=self.rule_id,
+                                        message=(
+                                            f"{qualname} passes stored/persisted data "
+                                            f"({worst.value}) to trusted callee {callee_qn} "
+                                            f"without validation at line {node.lineno}{also}"
+                                        ),
+                                        severity=severity,
+                                        kind=Kind.DEFECT,
+                                        location=Location(path=entity.location.path, line_start=node.lineno),
+                                        fingerprint=_fp(
                                             rule_id=self.rule_id,
-                                            message=(
-                                                f"{qualname} passes stored/persisted data "
-                                                f"({worst.value}) to trusted callee {callee_qn} "
-                                                f"without validation at line {node.lineno}"
-                                            ),
-                                            severity=severity,
-                                            kind=Kind.DEFECT,
-                                            location=Location(path=entity.location.path, line_start=node.lineno),
-                                            fingerprint=_fp(
-                                                rule_id=self.rule_id,
-                                                path=entity.location.path,
-                                                line_start=node.lineno,
-                                                qualname=qualname,
-                                                taint_path=f"stored->{callee_qn}",
-                                            ),
+                                            path=entity.location.path,
+                                            line_start=node.lineno,
                                             qualname=qualname,
-                                            properties={"callee": callee_qn, "arg_taint": worst.value},
-                                        )
+                                            taint_path=f"stored->{callee_qn}",
+                                        ),
+                                        qualname=qualname,
+                                        properties={"callee": callee_qn, "arg_taint": worst.value},
                                     )
+                                )
         return findings

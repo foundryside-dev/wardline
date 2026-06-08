@@ -132,15 +132,73 @@ def _contains_reraise(handler: ast.ExceptHandler) -> bool:
     return any(isinstance(stmt, ast.Raise) for stmt in _own_statements(handler))
 
 
-def handler_substitutes_on_failure(handler: ast.ExceptHandler) -> bool:
-    """FAIL-OPEN: does not re-raise and returns a value-bearing (non-rejection)
-    result. A falsy/bare ``return`` is a REJECTION signal, not substitution, so it
-    does not match; a (even conditional) re-raise never matches. PY-WL-113."""
+def returned_var_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> frozenset[str]:
+    """The set of local names *node* returns by value (``return result``) anywhere in
+    its own scope. Used to recognise the assign-then-fall-through substitution shape
+    in :func:`handler_substitutes_on_failure` — a handler that rebinds a name the
+    function later returns substitutes a value just as ``return name`` would."""
+    return frozenset(
+        stmt.value.id
+        for stmt in _own_statements(node)
+        if isinstance(stmt, ast.Return) and isinstance(stmt.value, ast.Name)
+    )
+
+
+def _is_self_assignment(stmt: ast.Assign) -> bool:
+    """True for an idempotent ``x = x`` — the RHS is a bare Name equal to a target.
+    Such an assignment substitutes nothing new, so it is not a fail-open substitution."""
+    return isinstance(stmt.value, ast.Name) and any(
+        isinstance(t, ast.Name) and t.id == stmt.value.id for t in stmt.targets
+    )
+
+
+def handler_substitutes_on_failure(handler: ast.ExceptHandler, returned_names: frozenset[str] = frozenset()) -> bool:
+    """FAIL-OPEN: does not re-raise and substitutes a value-bearing (non-rejection)
+    result. Two substitution shapes match, both bypassing the boundary:
+
+      - an in-handler ``return X`` of a non-falsy value (``return p`` / ``return DEFAULT``);
+      - an in-handler ASSIGNMENT of a non-falsy value to a name in *returned_names* —
+        a name the owning function then returns by FALL-THROUGH (``result = p`` here,
+        ``return result`` after the ``try``). Structurally identical to the return form.
+
+    A falsy/bare ``return`` (or assignment of a falsy value) is a REJECTION signal, not
+    substitution, so it does not match; a (even conditional) re-raise never matches.
+
+    The assignment shape is FALL-THROUGH only: it is gated on the handler having no
+    UNCONDITIONAL (top-level) ``return`` of its own, because a handler that always exits via
+    its own ``return`` (a rejecting ``return None`` or a value-return handled by the first
+    branch) never lets an in-handler assignment escape to the function's post-``try`` return
+    (wardline-c314a7140b panel-1: ``result = p`` then ``return None`` is fail-CLOSED). The
+    gate is TOP-LEVEL only (``handler.body``, NOT the depth-descending ``_own_statements``):
+    a merely CONDITIONAL ``return`` nested in an ``if`` does not prevent fall-through, so the
+    assignment can still escape on the other path and must match (panel-2: ``if flag: return
+    None`` then ``result = p``). A self-assignment (``result = result``) substitutes nothing
+    new and is excluded. *returned_names* defaults empty, so the assignment shape is inert
+    unless the caller supplies the function's fall-through-returned names. PY-WL-113."""
     if _contains_reraise(handler):
         return False
-    return any(
-        isinstance(stmt, ast.Return) and not _is_falsy_constant_return(stmt.value) for stmt in _own_statements(handler)
-    )
+    handler_returns = any(isinstance(s, ast.Return) for s in handler.body)
+    for stmt in _own_statements(handler):
+        if isinstance(stmt, ast.Return) and not _is_falsy_constant_return(stmt.value):
+            return True
+        if handler_returns:
+            continue  # the handler exits via its own return — no assignment falls through
+        if (
+            isinstance(stmt, ast.Assign)
+            and not _is_falsy_constant_return(stmt.value)
+            and not _is_self_assignment(stmt)
+            and any(isinstance(t, ast.Name) and t.id in returned_names for t in stmt.targets)
+        ):
+            return True
+        if (
+            isinstance(stmt, ast.AnnAssign)
+            and stmt.value is not None
+            and not _is_falsy_constant_return(stmt.value)
+            and isinstance(stmt.target, ast.Name)
+            and stmt.target.id in returned_names
+        ):
+            return True
+    return False
 
 
 def own_nodes(node: ast.AST) -> Iterator[ast.AST]:

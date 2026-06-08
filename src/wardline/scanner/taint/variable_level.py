@@ -80,6 +80,28 @@ _PROPAGATING_BUILTINS: frozenset[str] = frozenset({"str", "repr", "ascii", "byte
 _PROPAGATING_METHODS_WITH_ARGS: frozenset[str] = frozenset({"format", "join"})
 _PROPAGATING_METHODS_RECEIVER: frozenset[str] = frozenset({"get", "pop", "setdefault"})
 
+# Curated DB-API storage-read methods. A ``cursor.fetchone/fetchall/fetchmany()`` loads
+# stored/external data the same way ``open()``/``Path.read_text()`` do, so it seeds
+# ``EXTERNAL_RAW`` — without this the PY-WL-120 fetch* matcher was a dead branch (the
+# RAW_ZONE gate was unsatisfiable: the result was never seeded raw — wardline-e7c7cda31a).
+# Scoped to the three DBAPI-specific names (near-zero collision); bare ``.read`` is
+# deliberately NOT seeded (BytesIO/response/buffer ``.read()`` would over-fire, and the
+# file case already fires via receiver propagation below).
+# Residual FP (accepted, documented): a receiver whose type is NOT statically resolvable
+# (a bare param, a chained ``.query(...).fetchall()``) and is NOT a DB cursor but has a
+# coincidental fetch* method (SQLAlchemy Result, custom paginators) is seeded raw. A
+# project-typed receiver is shadowed by the var_types/taint_map lookups above (they run
+# first), so the common case is correct; the residual cuts toward soundness.
+_STORAGE_READ_METHODS: frozenset[str] = frozenset({"fetchone", "fetchall", "fetchmany"})
+
+# Curated in-place container MUTATORS. Calling one with a tainted argument contaminates
+# the RECEIVER (``box.append(raw)`` makes ``box`` carry ``raw``'s taint), mirroring the
+# container-literal ``box = [raw]`` which already taints ``box``. Without this, receiver
+# mutation was unmodelled — the mutator form silently dropped the taint the literal form
+# kept (wardline-67c7498931). A curated set (NOT a general "any attribute call mutates its
+# receiver" rule, which would over-fire on ``.strip()``/``.lower()``/in-place validators).
+_RECEIVER_MUTATING_METHODS: frozenset[str] = frozenset({"append", "add", "extend", "update", "insert"})
+
 _CURRENT_ALIAS_MAP: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
     "_CURRENT_ALIAS_MAP", default=None
 )
@@ -727,6 +749,27 @@ def _resolve_call(
                 if taint_hit is not None:
                     return taint_hit
         attr = node.func.attr
+        if attr in _STORAGE_READ_METHODS:
+            # DB-cursor fetch loads stored/external data → seed EXTERNAL_RAW, like a file
+            # read (wardline-e7c7cda31a). Placed AFTER the taint_map / var_types-resolved
+            # lookups above so a project-summarised ``self.fetchall``/typed receiver still
+            # wins; ahead of the generic propagating-method handling.
+            return TaintState.EXTERNAL_RAW
+        if attr in _RECEIVER_MUTATING_METHODS:
+            # In-place container mutation: write the worst (least-trusted) CONTENT-argument
+            # taint back onto the receiver variable, so a later read of the container sees
+            # it (wardline-67c7498931). Do NOT return — a mutator evaluates to None and the
+            # call's own value is discarded; let control fall through unchanged.
+            # ``list.insert(index, value)`` is the one outlier whose FIRST positional arg is
+            # an index (position metadata, not stored content), so a tainted index must not
+            # contaminate the container — skip it (panel finding wardline-67c7498931).
+            content_taints = (pos_taints[1:] if attr == "insert" else pos_taints) + kw_taints
+            base = _container_base_name(node.func.value)
+            if base is not None and content_taints:
+                worst = content_taints[0]
+                for at in content_taints[1:]:
+                    worst = combine(worst, at)
+                var_taints[base] = combine(var_taints.get(base, function_taint), worst)
         if attr in _PROPAGATING_METHODS_WITH_ARGS:
             # ``.format``/``.join`` are string-BUILDING value flows: combine the
             # receiver with the args via the rank-meet least_trusted (weakest-link),
@@ -1296,8 +1339,15 @@ def _handle_for(
     # state is idempotent across iterations — the var_taints convergence check below is a
     # sufficient fixpoint for the bindings too (no unbounded candidate growth, see
     # wardline-383f83fafe).
-    # Iterate walk until convergence (WLN-MED-09)
-    for _ in range(8):
+    # Iterate the walk until var_taints genuinely converges (WLN-MED-09). The bound is
+    # num_vars × lattice_height, NOT lattice_height (8) alone: 8 caps a SINGLE variable's
+    # monotone rank climb, but a read-before-write loop-carried chain propagates taint one
+    # link per iteration, so an N-variable chain needs N iterations to reach the head — a
+    # range(8) cap silently dropped chains longer than 8 (a fail-open FN, wardline-e04db6e656).
+    # The convergence break below is the real terminator; the backstop is a never-hit-in-
+    # practice safety net (finite monotone lattice over a fixed local-name set guarantees it).
+    iterations = 0
+    while True:
         current_state = dict(var_taints)
         # Assign the loop variable.
         _assign_target(stmt.target, iter_taint, var_taints)
@@ -1306,7 +1356,10 @@ def _handle_for(
         # Merge body state with pre-loop
         for var in set(var_taints) | set(pre_loop):
             var_taints[var] = combine(var_taints.get(var, function_taint), pre_loop.get(var, function_taint))
+        iterations += 1
         if var_taints == current_state:
+            break
+        if iterations >= len(var_taints) * len(TRUST_RANK) + 1:
             break
 
     # Walk orelse (runs after normal loop completion).
@@ -1324,13 +1377,20 @@ def _handle_while(
     """Handle while loops — body merges with pre-loop state."""
     pre_loop = dict(var_taints)
 
-    for _ in range(8):
+    # Iterate to genuine convergence with a num_vars × lattice_height backstop — see
+    # _handle_for: a range(8) cap was unsound for loop-carried chains > 8 links
+    # (wardline-e04db6e656).
+    iterations = 0
+    while True:
         current_state = dict(var_taints)
         _resolve_expr(stmt.test, function_taint, taint_map, var_taints)
         _walk_body(stmt.body, function_taint, taint_map, var_taints, call_site_taints)
         for var in set(var_taints) | set(pre_loop):
             var_taints[var] = combine(var_taints.get(var, function_taint), pre_loop.get(var, function_taint))
+        iterations += 1
         if var_taints == current_state:
+            break
+        if iterations >= len(var_taints) * len(TRUST_RANK) + 1:
             break
 
     if stmt.orelse:

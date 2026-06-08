@@ -40,7 +40,10 @@ if TYPE_CHECKING:
     from wardline.scanner.taint.function_level import FunctionSeed
     from wardline.scanner.taint.summary import FunctionSummary
 
-_RESOLVER_VERSION = "sp1d"
+# Bumped sp1d→sp1e: engine taint behaviour changed (DB-fetch source seed, container-mutator
+# write-back, loop fixpoint convergence, branch-conditional candidate callees) — invalidates
+# persisted/warm summary caches so they cannot serve stale-CLEAN results (cf. wardline-9d6a81b9e7).
+_RESOLVER_VERSION = "sp1e"
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,8 +102,16 @@ def resolve_project_taints(
     unresolved_counts: dict[str, int] = {}
     call_site_callees: dict[int, str] = {}
     call_site_implicit_receivers: dict[int, str] = {}
+    call_site_candidate_callees: dict[int, frozenset[str]] = {}
     for m in modules:
-        m_edges, m_resolved, m_unresolved, m_callees, m_implicit_receivers = build_call_edges(
+        (
+            m_edges,
+            m_resolved,
+            m_unresolved,
+            m_callees,
+            m_implicit_receivers,
+            m_candidate_callees,
+        ) = build_call_edges(
             entities=m.entities,
             class_qualnames=all_classes,
             alias_map=m.alias_map,
@@ -112,6 +123,7 @@ def resolve_project_taints(
         unresolved_counts.update(m_unresolved)
         call_site_callees.update(m_callees)
         call_site_implicit_receivers.update(m_implicit_receivers)
+        call_site_candidate_callees.update(m_candidate_callees)
 
     # Transitive dirty frontier (performance over-approximation — bounds which
     # clean modules skip provider re-invocation; NOT a correctness gate).
@@ -212,6 +224,7 @@ def resolve_project_taints(
         project_edges=MappingProxyType({fqn: frozenset(callees) for fqn, callees in edges.items()}),
         call_site_callees=MappingProxyType(call_site_callees),
         call_site_implicit_receivers=MappingProxyType(call_site_implicit_receivers),
+        call_site_candidate_callees=MappingProxyType(call_site_candidate_callees),
         taint_provenance=MappingProxyType(dict(provenance)),
         diagnostics=tuple(diagnostics),
         metadata=metadata,

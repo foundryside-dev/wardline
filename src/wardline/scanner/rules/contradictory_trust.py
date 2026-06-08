@@ -26,20 +26,21 @@ from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.scanner.grammar import BUILTIN_BOUNDARY_TYPES
 from wardline.scanner.rules.metadata import RuleMetadata
+from wardline.scanner.taint.decorator_provider import _is_builtin_decorator_fqn
 
 if TYPE_CHECKING:
     from wardline.scanner.context import AnalysisContext
 
-# The recognised trust-marker names (the grammar boundary types' canonical names)
-# and the module prefixes they may be imported from. A custom grammar's markers are
-# the agent's own concern; the builtin rule keys on the builtin vocabulary, which is
-# the contract Wardline ships. Both names AND prefixes are derived from
-# BUILTIN_BOUNDARY_TYPES so the rule cannot drift from the grammar — the prefix set
-# is how ``wardline.decorators`` and the renamed ``weft_markers`` shim are BOTH
-# recognised (wardline-d62845bb18: hardcoding only ``wardline.decorators`` silently
-# missed contradictory stacks written against the recommended ``weft_markers`` shim).
-_MARKER_NAMES: frozenset[str] = frozenset(bt.canonical_name for bt in BUILTIN_BOUNDARY_TYPES)
-_MARKER_MODULE_PREFIXES: frozenset[str] = frozenset(bt.module_prefix for bt in BUILTIN_BOUNDARY_TYPES)
+# A marker is recognised using the EXACT same predicate the engine's seeding uses
+# (``_is_builtin_decorator_fqn``): for a builtin boundary type with prefix ``P``, only
+# the public re-export ``P.<name>`` and the implementation-module export
+# ``P.trust.<name>`` count. The rule MUST NOT recognise a marker the engine's seeding
+# rejects, or it counts a "clash" the engine never actually resolved — an arbitrarily-
+# nested path like ``wardline.decorators.sub.external_boundary`` is seeded by NEITHER,
+# so it must not be counted here either (wardline-09c09f14df). Keying off the shared
+# seeding predicate (not a looser names+prefix heuristic) is how the rule cannot drift
+# from the grammar, and recognises both ``wardline.decorators`` and the renamed
+# ``weft_markers`` shim (wardline-d62845bb18).
 
 METADATA = RuleMetadata(
     rule_id="PY-WL-110",
@@ -77,9 +78,9 @@ def _marker_canonical_name(deco: ast.expr, alias_map: Mapping[str, str]) -> str 
     fqn = _resolve_decorator_fqn(deco, alias_map)
     if fqn is None:
         return None
-    last = fqn.rsplit(".", 1)[-1]
-    if last in _MARKER_NAMES and any(fqn.startswith(prefix + ".") for prefix in _MARKER_MODULE_PREFIXES):
-        return last
+    for bt in BUILTIN_BOUNDARY_TYPES:
+        if bt.builtin and _is_builtin_decorator_fqn(fqn, bt.canonical_name, bt.module_prefix):
+            return bt.canonical_name
     return None
 
 

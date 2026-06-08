@@ -587,6 +587,7 @@ class WardlineAnalyzer:
             function_call_site_taints=function_call_site_taints,
             function_call_site_arg_taints=function_call_site_arg_taints,
             call_site_callees=result.call_site_callees,
+            call_site_candidate_callees=result.call_site_candidate_callees,
             class_attr_taints=class_attr_taints,
             function_return_taints=function_return_taints,
             function_return_callee=function_return_callee,

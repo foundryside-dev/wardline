@@ -21,7 +21,7 @@ def test_local_bare_call_edge() -> None:
     src = "def a():\n    return b()\ndef b():\n    return 1\n"
     tree, entities, classes, aliases = _module(src, module="m")
     project_fqns = frozenset(e.qualname for e in entities)
-    edges, resolved, unresolved, callees, implicit = build_call_edges(
+    edges, resolved, unresolved, callees, implicit, _candidates = build_call_edges(
         entities=entities,
         class_qualnames=classes,
         alias_map=aliases,
@@ -39,7 +39,7 @@ def test_imported_call_edge() -> None:
     src = "from other import helper\ndef a():\n    return helper()\n"
     tree, entities, classes, aliases = _module(src, module="m")
     project_fqns = frozenset({"m.a", "other.helper"})
-    edges, resolved, unresolved, callees, implicit = build_call_edges(
+    edges, resolved, unresolved, callees, implicit, _candidates = build_call_edges(
         entities=entities,
         class_qualnames=classes,
         alias_map=aliases,
@@ -54,7 +54,7 @@ def test_self_method_edge() -> None:
     src = "class C:\n    def process(self):\n        return self.helper()\n    def helper(self):\n        return 1\n"
     tree, entities, classes, aliases = _module(src, module="m")
     project_fqns = frozenset(e.qualname for e in entities)
-    edges, resolved, unresolved, callees, implicit = build_call_edges(
+    edges, resolved, unresolved, callees, implicit, _candidates = build_call_edges(
         entities=entities,
         class_qualnames=classes,
         alias_map=aliases,
@@ -77,7 +77,7 @@ def test_classmethod_edge_records_implicit_class_receiver() -> None:
     )
     tree, entities, classes, aliases = _module(src, module="m")
     project_fqns = frozenset(e.qualname for e in entities)
-    edges, resolved, unresolved, callees, implicit = build_call_edges(
+    edges, resolved, unresolved, callees, implicit, _candidates = build_call_edges(
         entities=entities,
         class_qualnames=classes,
         alias_map=aliases,
@@ -93,7 +93,7 @@ def test_unresolved_external_call_counted() -> None:
     src = "def a():\n    return some_external_thing()\n"
     tree, entities, classes, aliases = _module(src, module="m")
     project_fqns = frozenset({"m.a"})
-    edges, resolved, unresolved, callees, implicit = build_call_edges(
+    edges, resolved, unresolved, callees, implicit, _candidates = build_call_edges(
         entities=entities,
         class_qualnames=classes,
         alias_map=aliases,
@@ -110,7 +110,7 @@ def test_constructor_call_is_unresolved() -> None:
     src = "class C:\n    def __init__(self): pass\ndef make():\n    return C()\n"
     tree, entities, classes, aliases = _module(src, module="m")
     project_fqns = frozenset(e.qualname for e in entities)
-    edges, resolved, unresolved, callees, implicit = build_call_edges(
+    edges, resolved, unresolved, callees, implicit, _candidates = build_call_edges(
         entities=entities,
         class_qualnames=classes,
         alias_map=aliases,
@@ -126,7 +126,7 @@ def test_nested_def_calls_not_attributed_to_outer() -> None:
     src = "def outer():\n    def inner():\n        return b()\n    return inner()\ndef b():\n    return 1\n"
     tree, entities, classes, aliases = _module(src, module="m")
     project_fqns = frozenset(e.qualname for e in entities)
-    edges, resolved, unresolved, callees, implicit = build_call_edges(
+    edges, resolved, unresolved, callees, implicit, _candidates = build_call_edges(
         entities=entities,
         class_qualnames=classes,
         alias_map=aliases,
@@ -143,7 +143,7 @@ def test_class_method_resolved_via_instance_tracking() -> None:
     src = "class C:\n    def run(self):\n        return 1\ndef make():\n    obj = C()\n    return obj.run()\n"
     tree, entities, classes, aliases = _module(src, module="m")
     project_fqns = frozenset(e.qualname for e in entities)
-    edges, resolved, unresolved, callees, implicit = build_call_edges(
+    edges, resolved, unresolved, callees, implicit, _candidates = build_call_edges(
         entities=entities,
         class_qualnames=classes,
         alias_map=aliases,
@@ -167,7 +167,7 @@ def test_nested_scope_assignment_does_not_pollute_receiver_tracking() -> None:
     )
     tree, entities, classes, aliases = _module(src, module="m")
     project_fqns = frozenset(e.qualname for e in entities)
-    edges, resolved, unresolved, callees, implicit = build_call_edges(
+    edges, resolved, unresolved, callees, implicit, _candidates = build_call_edges(
         entities=entities,
         class_qualnames=classes,
         alias_map=aliases,
@@ -178,3 +178,25 @@ def test_nested_scope_assignment_does_not_pollute_receiver_tracking() -> None:
     assert resolved["m.outer"] == 0
     assert unresolved["m.outer"] == 1
     assert implicit == {}
+
+
+def test_branch_conditional_receiver_records_candidate_callees() -> None:
+    # wardline-499c22bbdd: a receiver assigned a project class in each arm of an if/else
+    # records the FULL candidate callee set, not just the AST-last class's method.
+    src = (
+        "class Plain:\n    def take(self, x):\n        return 1\n"
+        "class TrustedSink:\n    def take(self, x):\n        return 1\n"
+        "def dispatch(flag):\n"
+        "    if flag:\n        o = TrustedSink()\n    else:\n        o = Plain()\n"
+        "    o.take(1)\n"
+    )
+    tree, entities, classes, aliases = _module(src, module="m")
+    project_fqns = frozenset(e.qualname for e in entities)
+    edges, resolved, unresolved, callees, implicit, candidates = build_call_edges(
+        entities=entities,
+        class_qualnames=classes,
+        alias_map=aliases,
+        module_prefix="m",
+        project_fqns=project_fqns,
+    )
+    assert frozenset({"m.Plain.take", "m.TrustedSink.take"}) in set(candidates.values())

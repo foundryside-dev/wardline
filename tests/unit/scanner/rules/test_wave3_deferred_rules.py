@@ -331,3 +331,143 @@ def test_stored_taint_nested_scope_isolation(tmp_path: Path) -> None:
     defects = [f for f in findings if f.kind is Kind.DEFECT]
     st_findings = [f for f in defects if f.rule_id == "PY-WL-120"]
     assert len(st_findings) == 0
+
+
+def test_stored_taint_cursor_fetch_reaches_return_fires(tmp_path: Path) -> None:
+    # wardline-e7c7cda31a: PY-WL-120 was a dead branch for DB-cursor fetches — the matcher
+    # matched fetchall() but the result was never seeded raw. Seeding fetch{one,all,many}
+    # EXTERNAL_RAW makes a @trusted fn that returns unvalidated rows fire PY-WL-120.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @trusted(level='ASSURED')
+            def get_rows(cursor):
+                rows = cursor.fetchall()
+                return rows
+            """
+        },
+    )
+    st = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-120"]
+    assert [f.qualname for f in st] == ["m.get_rows"]
+
+
+def test_stored_taint_cursor_fetch_validated_stays_silent(tmp_path: Path) -> None:
+    # FP guard: fetch then VALIDATE through a @trust_boundary before returning launders the
+    # return to ASSURED (outside RAW_ZONE) — must not fire PY-WL-120.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @trusted(level='ASSURED')
+            def get_rows(cursor):
+                rows = cursor.fetchall()
+                return validate(rows)
+            """
+        },
+    )
+    st = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-120" and f.qualname == "m.get_rows"]
+    assert st == []
+
+
+def test_stored_taint_cursor_fetch_constant_return_stays_silent(tmp_path: Path) -> None:
+    # FP guard: fetching then returning a constant (rows don't flow out) stays silent.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @trusted(level='ASSURED')
+            def get_rows(cursor):
+                rows = cursor.fetchall()
+                return 42
+            """
+        },
+    )
+    st = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-120" and f.qualname == "m.get_rows"]
+    assert st == []
+
+
+def test_stored_taint_branch_conditional_trusted_callee_fires_regardless_of_ast_order(tmp_path: Path) -> None:
+    # wardline-499c22bbdd (PY-WL-120 candidate-set consumer): stored rows passed to a
+    # branch-conditional receiver whose trusted-sink candidate is the AST-FIRST arm must
+    # still fire — the candidate set is consulted, not just the AST-last single callee.
+    src_tmpl = """
+        class Plain:
+            def take(self, x):
+                return 1
+        class TrustedSink:
+            @trusted(level='ASSURED')
+            def take(self, x):
+                return 1
+        @trusted(level='ASSURED')
+        def f(cursor, flag):
+            rows = cursor.fetchall()
+            if flag:
+                o = {first}
+            else:
+                o = {second}
+            o.take(rows)
+        """
+    for first, second in (("TrustedSink()", "Plain()"), ("Plain()", "TrustedSink()")):
+        findings = _analyze_files(tmp_path, {"m.py": src_tmpl.format(first=first, second=second)})
+        st = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-120" and f.qualname == "m.f"]
+        assert len(st) == 1, (first, second, st)
+
+
+def test_stored_taint_branch_conditional_neither_trusted_stays_silent(tmp_path: Path) -> None:
+    # CONTROL: two candidate receivers, neither a trusted sink — must stay silent.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            class Plain:
+                def take(self, x):
+                    return 1
+            class Plain2:
+                def take(self, x):
+                    return 1
+            @trusted(level='ASSURED')
+            def f(cursor, flag):
+                rows = cursor.fetchall()
+                if flag:
+                    o = Plain()
+                else:
+                    o = Plain2()
+                o.take(rows)
+            """
+        },
+    )
+    st = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-120" and f.qualname == "m.f"]
+    assert st == []
+
+
+def test_stored_taint_two_trusted_candidates_emits_one_finding(tmp_path: Path) -> None:
+    # panel-2 (wardline-499c22bbdd): PY-WL-120 carries its own one-finding-per-call-site
+    # collapse. When BOTH branch arms are trusted sinks, stored rows reaching the dispatch
+    # is ONE defect — assert exactly one finding with the "also reaches" annotation.
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            class A:
+                @trusted(level='ASSURED')
+                def take(self, x):
+                    return 1
+            class B:
+                @trusted(level='ASSURED')
+                def take(self, x):
+                    return 1
+            @trusted(level='ASSURED')
+            def f(cursor, flag):
+                rows = cursor.fetchall()
+                if flag:
+                    o = A()
+                else:
+                    o = B()
+                o.take(rows)
+            """
+        },
+    )
+    st = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-120" and f.qualname == "m.f"]
+    assert len(st) == 1, st
+    assert "also reaches" in st[0].message

@@ -324,7 +324,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 * **Description**:
   Loop statements (`_handle_for` and `_handle_while`) are only walked a single time. Any loop-carried data dependency where a variable is read before it is written in the loop body (e.g., `y = x; x = raw`) will use the pre-loop value of the variable, resulting in an under-tainted final state for `y` after the loop.
 * **Concrete Remediation**:
-  Iterate the walk of the loop body until the dictionary of variable taints (`var_taints`) converges (stabilizes). Since the trust model is finite and monotonic, the loop is guaranteed to converge in at most 8 iterations.
+  Iterate the walk of the loop body until the dictionary of variable taints (`var_taints`) converges (stabilizes). The trust model is finite and monotonic, so a fixpoint is guaranteed — but the iteration bound is `num_vars × lattice_height`, NOT lattice_height (8) alone: 8 caps a *single* variable's monotone rank climb, whereas a read-before-write loop-carried chain propagates taint one link per iteration, so an N-variable chain needs N iterations to reach the head. Iterating to genuine convergence (the `var_taints == previous_state` break) with a `num_vars × lattice_height` backstop is the sound fix; capping at a fixed 8 silently dropped chains longer than 8 links — a fail-open false negative (fixed: wardline-e04db6e656).
 
 ### WLN-MED-10: Ineffective Caching / Performance Architecture Flaw
 * **Focus Area**: Systems / Caching

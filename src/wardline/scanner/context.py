@@ -78,6 +78,11 @@ class AnalysisContext:
     # Bound method call sites whose explicit args start after an implicit receiver:
     # ``{id(call): "instance" | "class"}``.
     call_site_implicit_receivers: Mapping[int, str] = field(default_factory=dict)
+    # Branch-conditional dispatch: the FULL candidate callee set at a call site whose
+    # receiver may hold >1 project class (``{id(call): frozenset(callee_qn)}``). A
+    # superset of ``call_site_callees`` for those sites; sink rules consult it so they
+    # fire on any trusted-sink candidate regardless of AST order (wardline-499c22bbdd).
+    call_site_candidate_callees: Mapping[int, frozenset[str]] = field(default_factory=dict)
     # Cross-method class-attribute summary (closure A): ``{class_qualname: {attr: taint}}``,
     # the least-trusted value written to ``self.<attr>`` across the class's methods. Rules
     # resolve a ``self.<attr>``/``cls.<attr>`` read against it. Defaulted for direct
@@ -113,6 +118,11 @@ class AnalysisContext:
             self,
             "call_site_implicit_receivers",
             _freeze_mapping(self.call_site_implicit_receivers),
+        )
+        object.__setattr__(
+            self,
+            "call_site_candidate_callees",
+            _freeze_mapping(self.call_site_candidate_callees),
         )
         object.__setattr__(self, "class_attr_taints", _freeze_mapping(self.class_attr_taints))
         object.__setattr__(

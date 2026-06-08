@@ -2,11 +2,13 @@
 
 A trust-RAISING transition (declared return strictly MORE trusted than body — the
 taint shape unique to ``@trust_boundary``) that contains an ``except`` handler
-which swallows the failure and SUBSTITUTES a value-bearing result (``return p``,
-``return DEFAULT``, ``return cached``) instead of re-raising. Such a boundary can
-be bypassed by *triggering* the exception: the validation it appears to perform is
-discarded and a "valid-looking" value is returned in its place, so untrusted data
-passes the boundary untouched. It fails open, not closed.
+which swallows the failure and SUBSTITUTES a value-bearing result instead of
+re-raising — either by returning it directly (``return p``, ``return DEFAULT``,
+``return cached``) or by ASSIGNING it to a name the function then returns by
+fall-through (``result = p`` in the handler, ``return result`` after the ``try``).
+Such a boundary can be bypassed by *triggering* the exception: the validation it
+appears to perform is discarded and a "valid-looking" value is returned in its
+place, so untrusted data passes the boundary untouched. It fails open, not closed.
 
 The most insidious shape is the self-catch, where the handler catches the very
 exception the boundary's own rejection raises:
@@ -48,7 +50,11 @@ from typing import TYPE_CHECKING
 from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import TRUST_RANK
-from wardline.scanner.rules._ast_helpers import handler_substitutes_on_failure, own_except_handlers
+from wardline.scanner.rules._ast_helpers import (
+    handler_substitutes_on_failure,
+    own_except_handlers,
+    returned_var_names,
+)
 from wardline.scanner.rules.metadata import RuleMetadata
 
 if TYPE_CHECKING:
@@ -96,7 +102,8 @@ class FailOpenBoundary:
             # Trust-raising transition (== @trust_boundary): body less-trusted than return.
             if TRUST_RANK[body] <= TRUST_RANK[ret]:
                 continue
-            if not any(handler_substitutes_on_failure(h) for h in own_except_handlers(entity.node)):
+            returned = returned_var_names(entity.node)
+            if not any(handler_substitutes_on_failure(h, returned) for h in own_except_handlers(entity.node)):
                 continue
             findings.append(
                 Finding(

@@ -134,6 +134,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     single policy identity `attest` signs — so seed-shaping config (`untrusted_sources`,
     `sanitisers`, `provenance_clash`) can no longer let a warm/persisted cache serve a stale-CLEAN
     summary that suppresses a real defect. Warm runs are byte-identical to cold runs across policy.
+- **Six P2 correctness defects from the pre-1.0 rule scrub (`scrub-2026-06-08`).** All
+  empirically reproduced with a control (the safe near-identical shape that must stay silent),
+  regression-tested, and hardened across three adversarial review panels. Five make the engine
+  fire MORE (4 false-negatives + 1 soundness + 1 coverage); one removes a false positive.
+  - **PY-WL-109 with/`while True` fall-through** (`wardline-786a4ec647`). `_can_fall_through` now
+    models `with`/`async with` (terminal iff body) and a constant `while True` with no break, so
+    the None-leak rule no longer false-fires on returns wrapped in those constructs.
+  - **PY-WL-113 assign-then-fall-through substitution** (`wardline-c314a7140b`). The fail-open
+    rule now also matches an in-handler ASSIGNMENT of a value to a name the function returns by
+    fall-through (not just an in-handler `return`). Gated on the handler having no *unconditional*
+    top-level return (a conditional nested return does not stop fall-through) and excluding
+    idempotent self-assignment, so a fail-CLOSED `result = p; return None` stays silent.
+  - **PY-WL-110 nested-path false positive closed** (`wardline-09c09f14df`). Marker recognition
+    now keys on the engine's exact-export predicate (`_is_builtin_decorator_fqn`), so a nested
+    attribute path the engine never seeds is no longer counted as a contradictory-marker clash.
+  - **Engine soundness: loop fixpoint iterates to convergence** (`wardline-e04db6e656`). The
+    `range(8)` cap in `_handle_for`/`_handle_while` was lattice *height*, not propagation *depth*;
+    a loop-carried rebind chain longer than 8 links left the head under-tainted (a fail-open). The
+    walk now iterates to a genuine fixpoint with a `num_vars × lattice_height` backstop.
+  - **Engine: branch-conditional dispatch resolved flow-sensitively** (`wardline-499c22bbdd`). A
+    receiver assigned a project class in more than one branch arm is resolved to the SET of
+    candidate callees via a flow-sensitive reaching-definitions pass (branch arms unioned at
+    joins, straight-line reassignment replaces, loop body to a fixpoint, walrus replaces), so
+    PY-WL-105 and PY-WL-120 fire on any anchored trusted-sink candidate regardless of AST order
+    and emit one finding per call site. Replaces the AST-order-dependent flat last-write-wins.
+  - **PY-WL-120 DB-cursor fetches now fire** (`wardline-e7c7cda31a`). `cursor.fetch{one,all,many}()`
+    is seeded `EXTERNAL_RAW` (a curated method set), closing a dead matcher branch so DB reads
+    trip the stored-taint rule exactly as `open()`/`read_text()` already do.
+  - **Engine: container mutators contaminate the receiver** (`wardline-67c7498931`).
+    `.append`/`.add`/`.extend`/`.update`/`.insert` with a tainted argument now write that taint
+    back onto the receiver variable (matching the container-literal `box = [raw]`); `list.insert`'s
+    index argument is excluded (position metadata, not stored content).
 - **`agent_summary` display arrays now fully partition `total_findings` (W3 residual).** The
   pagination union was `active_defects + suppressed_findings + engine_facts`, which excluded
   non-defect findings that are not engine facts (metrics, classifications, suggestions, and

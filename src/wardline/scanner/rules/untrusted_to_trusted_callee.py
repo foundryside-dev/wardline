@@ -92,6 +92,20 @@ def _resolve_callee(call: ast.Call, module: str, context: AnalysisContext, *, ca
     return dotted if dotted in context.entities else None
 
 
+def _resolve_callees(call: ast.Call, module: str, context: AnalysisContext, *, caller_qualname: str = "") -> set[str]:
+    """The SET of candidate callee qualnames for a call site. For a branch-conditional
+    receiver (``o`` assigned a project class in >1 arm), this is the full candidate set
+    so the rule fires on any trusted-sink candidate regardless of AST order
+    (wardline-499c22bbdd); otherwise it is the single ``_resolve_callee`` result."""
+    candidates = context.call_site_candidate_callees.get(id(call))
+    if candidates:
+        resolved = {c for c in candidates if c in context.entities}
+        if resolved:
+            return resolved
+    single = _resolve_callee(call, module, context, caller_qualname=caller_qualname)
+    return {single} if single is not None else set()
+
+
 class UntrustedReachesTrustedCallee:
     rule_id = METADATA.rule_id
     metadata = METADATA
@@ -106,32 +120,46 @@ class UntrustedReachesTrustedCallee:
         for qualname, entity in context.entities.items():
             module = module_dotted_name(entity.location.path) or ""
             for call in _own_calls(entity.node):
-                callee = _resolve_callee(call, module, context, caller_qualname=qualname)
-                if callee is None:
+                callees = _resolve_callees(call, module, context, caller_qualname=qualname)
+                if not callees:
                     continue
-                prov = context.taint_provenance.get(callee)
-                if prov is None or prov.source != "anchored":
-                    continue  # callee is not a trust-declared producer
-                callee_body = context.project_taints.get(callee)
-                if callee_body is None or callee_body in RAW_ZONE:
-                    continue  # @external_boundary / @trust_boundary body is raw — raw input expected
-                # Fire when ANY resolved arg is provably untrusted. worst_arg_taint
-                # (max TRUST_RANK) is unsound here: _PROVABLY_UNTRUSTED is NOT
-                # upward-closed (hole at UNKNOWN_RAW=6 between EXTERNAL_RAW=5 and
-                # MIXED_RAW=7), so an UNKNOWN_RAW co-arg would mask a provably-untrusted
-                # arg by bumping the max into the hole.
+                # Arg gate (independent of which callee): fire when ANY resolved arg is
+                # provably untrusted. worst_arg_taint (max TRUST_RANK) is unsound here:
+                # _PROVABLY_UNTRUSTED is NOT upward-closed (hole at UNKNOWN_RAW=6 between
+                # EXTERNAL_RAW=5 and MIXED_RAW=7), so an UNKNOWN_RAW co-arg would mask a
+                # provably-untrusted arg by bumping the max into the hole. Computed once;
+                # only the callee-trust gate varies across branch-conditional candidates.
                 arg_taints = resolved_arg_taints(call, qualname, context).values()
                 untrusted = [ts for ts in arg_taints if ts in _PROVABLY_UNTRUSTED]
                 if not untrusted:
                     continue
                 worst = max(untrusted, key=lambda ts: TRUST_RANK[ts])
                 line = call.lineno
+                # Collect every candidate callee that is a trust-declared producer. A
+                # branch-conditional receiver may have >1 trusted candidate at one call
+                # site; emit ONE finding per call site (not one per candidate) so a single
+                # taint flow is a single defect, deterministically keyed on the first
+                # candidate (wardline-499c22bbdd panel: avoid duplicate findings/fingerprints).
+                firing = []
+                for callee in sorted(callees):
+                    prov = context.taint_provenance.get(callee)
+                    if prov is None or prov.source != "anchored":
+                        continue  # callee is not a trust-declared producer
+                    callee_body = context.project_taints.get(callee)
+                    if callee_body is None or callee_body in RAW_ZONE:
+                        continue  # @external_boundary / @trust_boundary body is raw — raw input expected
+                    firing.append((callee, callee_body))
+                if not firing:
+                    continue
+                callee, callee_body = firing[0]
+                others = [c for c, _ in firing[1:]]
+                also = f" (branch-conditional; also reaches {', '.join(others)})" if others else ""
                 findings.append(
                     Finding(
                         rule_id=self.rule_id,
                         message=(
                             f"{qualname}: {worst.value} (untrusted) data passed to trusted producer "
-                            f"{callee}() at line {line}"
+                            f"{callee}() at line {line}{also}"
                         ),
                         severity=self.base_severity,
                         kind=Kind.DEFECT,
@@ -144,7 +172,12 @@ class UntrustedReachesTrustedCallee:
                             taint_path=f"{worst.value}->{callee}",
                         ),
                         qualname=qualname,
-                        properties={"callee": callee, "arg_taint": worst.value, "callee_body": callee_body.value},
+                        properties={
+                            "callee": callee,
+                            "arg_taint": worst.value,
+                            "callee_body": callee_body.value,
+                            **({"candidate_callees": [c for c, _ in firing]} if others else {}),
+                        },
                     )
                 )
         return findings

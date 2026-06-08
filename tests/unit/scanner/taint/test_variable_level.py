@@ -1523,3 +1523,80 @@ def test_unresolved_nested_imported_call_returns_unknown_raw() -> None:
         alias_map={"vendor": "vendor"},
     )
     assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_loop_carried_chain_deeper_than_lattice_height_propagates() -> None:
+    # wardline-e04db6e656: the loop fixpoint cap was range(8) — lattice HEIGHT, not
+    # propagation DEPTH. A read-before-write rebind chain propagates one link per
+    # iteration, so an N-link chain needs N(+1) iterations; at cap=8 a chain > 8 links
+    # left the head under-tainted (a fail-open soundness FN). Iterate-to-convergence
+    # (num_vars × lattice_height backstop) fixes it for both for and while.
+    def chain(n: int, loop: str) -> tuple[str, str]:
+        names = [f"v{i}" for i in range(n)]
+        body = [f"        {names[i]} = {names[i - 1]}" for i in range(n - 1, 0, -1)]
+        body.append(f"        {names[0]} = read_raw(p)")
+        head = "for _ in p:" if loop == "for" else "while p:"
+        src = f"def f(p):\n    {names[n - 1]} = ''\n    {head}\n" + "\n".join(body) + "\n"
+        return src, names[n - 1]
+
+    for loop in ("for", "while"):
+        for n in (9, 25):
+            src, sink = chain(n, loop)
+            out = _vt(src, function_taint=T.INTEGRAL, taint_map={"read_raw": T.EXTERNAL_RAW})
+            assert out[sink] == T.EXTERNAL_RAW, (loop, n, out[sink])
+
+    # CONTROL (FP guard): a deep chain whose head is a constant literal — never a raw
+    # source — must stay clean regardless of iteration count.
+    names = [f"v{i}" for i in range(12)]
+    body = [f"        {names[i]} = {names[i - 1]}" for i in range(11, 0, -1)]
+    body.append(f"        {names[0]} = ''")
+    src = f"def f(p):\n    {names[11]} = ''\n    for _ in p:\n" + "\n".join(body) + "\n"
+    out = _vt(src, function_taint=T.INTEGRAL, taint_map={})
+    assert out[names[11]] == T.INTEGRAL, out[names[11]]
+
+
+def test_storage_read_methods_seed_external_raw() -> None:
+    # wardline-e7c7cda31a: cursor.fetch{one,all,many}() loads stored/external data and
+    # must seed EXTERNAL_RAW (the formerly-dead PY-WL-120 branch). Clean function_taint
+    # so only the seed can introduce taint.
+    for method in ("fetchone", "fetchall", "fetchmany"):
+        out = _vt(f"def f(cursor):\n    rows = cursor.{method}()\n", function_taint=T.ASSURED)
+        assert out["rows"] == T.EXTERNAL_RAW, (method, out["rows"])
+
+
+def test_container_mutator_writes_arg_taint_back_to_receiver() -> None:
+    # wardline-67c7498931: a container mutator called with a tainted arg contaminates the
+    # receiver (box.append(raw) matches the literal box=[raw]). Clean ASSURED seed + raw
+    # via taint_map so only the mutated arg carries taint.
+    tm = {"read_raw": T.UNKNOWN_RAW}
+    for stmt, recv in (
+        ("box = []\n    box.append(raw)", "box"),
+        ("box = []\n    box.extend([raw])", "box"),
+        ("s = set()\n    s.add(raw)", "s"),
+        ("d = {}\n    d.update({'k': raw})", "d"),
+        ("d = {}\n    d.update(k=raw)", "d"),
+        ("self.cache.append(raw)", "self"),
+    ):
+        out = _vt(f"def f(self, p):\n    raw = read_raw(p)\n    {stmt}\n", function_taint=T.ASSURED, taint_map=tm)
+        assert out[recv] == T.UNKNOWN_RAW, (stmt, out.get(recv))
+
+    # CONTROL: a clean arg must NOT taint the receiver (FP guard).
+    out = _vt(
+        "def f(p):\n    box = []\n    box.append('safe')\n    box.append(42)\n", function_taint=T.ASSURED, taint_map=tm
+    )
+    assert out["box"] == T.INTEGRAL
+    # CONTROL: list.insert's INDEX arg is positional metadata, not content — a tainted
+    # index must not contaminate the container (panel finding wardline-67c7498931).
+    out = _vt(
+        "def f(p):\n    raw = read_raw(p)\n    lst = ['a']\n    lst.insert(raw, 'clean')\n",
+        function_taint=T.ASSURED,
+        taint_map=tm,
+    )
+    assert out["lst"] == T.INTEGRAL, out["lst"]
+    # but a tainted VALUE in insert DOES contaminate.
+    out = _vt(
+        "def f(p):\n    raw = read_raw(p)\n    lst = []\n    lst.insert(0, raw)\n",
+        function_taint=T.ASSURED,
+        taint_map=tm,
+    )
+    assert out["lst"] == T.UNKNOWN_RAW, out["lst"]
