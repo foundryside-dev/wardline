@@ -23,8 +23,9 @@ _HERE = Path(__file__).parent
 _INPUTS = {
     "sampleapp": _HERE / "fixtures" / "sampleapp",
     "stress": _HERE / "fixtures" / "stress",
+    "sinks": _HERE / "fixtures" / "sinks",
 }
-CORPUS_VERSION = 1
+CORPUS_VERSION = 2
 
 
 def main() -> None:

@@ -115,12 +115,12 @@ class ContradictoryTrust:
 
             if len(markers) < 2:
                 continue
-            taint_path = "+".join(sorted(markers))
+            markers_label = "+".join(sorted(markers))
             findings.append(
                 Finding(
                     rule_id=self.rule_id,
                     message=(
-                        f"{qualname} carries contradictory trust markers ({taint_path}); the engine "
+                        f"{qualname} carries contradictory trust markers ({markers_label}); the engine "
                         f"resolves the clash to the least-trusted seed, silently ignoring the rest"
                     ),
                     severity=self.base_severity,
@@ -131,10 +131,13 @@ class ContradictoryTrust:
                         path=entity.location.path,
                         line_start=entity.location.line_start,
                         qualname=qualname,
-                        taint_path=taint_path,
+                        # Join-key stability (weft-4a9d0f863c): one finding per anchored qualname, so
+                        # (rule, path, line, qualname) is already unique; the marker set is source-derived
+                        # but not load-bearing for the join key. It stays in message/properties only.
+                        taint_path=None,
                     ),
                     qualname=qualname,
-                    properties={"markers": taint_path},
+                    properties={"markers": markers_label},
                 )
             )
         return findings

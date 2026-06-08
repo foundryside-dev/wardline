@@ -16,7 +16,7 @@ from wardline.core.finding import Finding, Kind, Location, Maturity, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import RAW_ZONE, TaintState
 from wardline.scanner.rules._ast_helpers import own_nodes
-from wardline.scanner.rules._sink_helpers import worst_arg_taint
+from wardline.scanner.rules._sink_helpers import dotted_name, worst_arg_taint
 from wardline.scanner.rules.metadata import RuleMetadata
 from wardline.scanner.rules.severity_model import modulate
 
@@ -157,7 +157,11 @@ class StoredTaint:
                                         path=entity.location.path,
                                         line_start=node.lineno,
                                         qualname=qualname,
-                                        taint_path="stored->return",
+                                        # Join-key stability (weft-4a9d0f863c): <=1 return per line, so
+                                        # (rule, path, line, qualname) is unique for the return site. Empty
+                                        # taint_path stays disjoint from the call-arg site below (which is
+                                        # always non-empty), so the two sites never collide on one line.
+                                        taint_path=None,
                                     ),
                                     qualname=qualname,
                                     properties={"return_taint": ret_taint.value},
@@ -220,7 +224,13 @@ class StoredTaint:
                                             path=entity.location.path,
                                             line_start=node.lineno,
                                             qualname=qualname,
-                                            taint_path=f"stored->{callee_qn}",
+                                            # Join-key stability (weft-4a9d0f863c): call-site-anchored, so
+                                            # >1 finding per (rule, path, line, qualname) is possible.
+                                            # Discriminate by SOURCE only — the callee spelling AS WRITTEN
+                                            # plus the call's full lexical SPAN — never the RESOLVED callee
+                                            # qualname (which drifts as call-graph resolution improves). The
+                                            # span (start:end) separates a chain's outer/inner calls.
+                                            taint_path=f"{dotted_name(node.func)}@{node.col_offset}:{node.end_col_offset}",
                                         ),
                                         qualname=qualname,
                                         properties={"callee": callee_qn, "arg_taint": worst.value},

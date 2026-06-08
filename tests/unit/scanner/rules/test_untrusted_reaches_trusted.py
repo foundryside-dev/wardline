@@ -362,3 +362,42 @@ def test_correct_trust_boundary_does_not_fire_101(tmp_path) -> None:
     # Exemption holds: no PY-WL-101, and 102 is satisfied by the raise guard.
     assert _run(ctx) == []
     assert BoundaryWithoutRejection().check(ctx) == []
+
+
+def test_py_wl_101_fingerprint_invariant_to_resolved_return_tier(tmp_path) -> None:
+    # weft-4a9d0f863c regression: the fingerprint is the cross-tool JOIN KEY, and it
+    # MUST NOT move when only the resolved actual-return TIER changes for the same
+    # source. The reported bug moved it across three builds (UNKNOWN_RAW<->EXTERNAL_RAW)
+    # for byte-identical source because the tier was folded into taint_path. Reproduce
+    # by swapping the resolved tier under an unchanged source position and asserting the
+    # join key holds while the diagnostic property genuinely differs.
+    import dataclasses
+
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "io.py": "from wardline.decorators import external_boundary\n"
+            "@external_boundary\ndef raw(p):\n    return p\n",
+            "svc.py": "from wardline.decorators import trusted\nfrom io import raw\n"
+            "@trusted(level='ASSURED')\ndef f(p):\n    return raw(p)\n",
+        },
+    )
+    base = [f for f in _run(ctx) if f.rule_id == "PY-WL-101"]
+    assert len(base) == 1
+    f0 = base[0]
+    assert f0.properties["actual_return"] == TaintState.EXTERNAL_RAW.value
+
+    # Swap ONLY the resolved actual-return tier to a different raw tier; UNKNOWN_RAW is
+    # still in the raw zone and ranks above the ASSURED declaration, so the rule still
+    # fires — the finding is "the same" defect, just classified one tier differently.
+    swapped_ctx = dataclasses.replace(
+        ctx,
+        function_return_taints={**ctx.function_return_taints, "svc.f": TaintState.UNKNOWN_RAW},
+    )
+    swapped = [f for f in UntrustedReachesTrusted().check(swapped_ctx) if f.rule_id == "PY-WL-101"]
+    assert len(swapped) == 1
+    f1 = swapped[0]
+
+    assert f1.properties["actual_return"] == TaintState.UNKNOWN_RAW.value  # the tier really changed
+    assert f1.properties["actual_return"] != f0.properties["actual_return"]
+    assert f1.fingerprint == f0.fingerprint  # ...but the JOIN KEY did not move

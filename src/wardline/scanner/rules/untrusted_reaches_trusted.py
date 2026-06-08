@@ -100,7 +100,6 @@ class UntrustedReachesTrusted:
                 continue  # no value-bearing return -> nothing to police
             if TRUST_RANK[actual] <= TRUST_RANK[declared]:
                 continue  # returns data at-least-as-trusted as declared
-            taint_path = f"{actual.value}->{declared.value}|{prov.via_callee or ''}"
             findings.append(
                 Finding(
                     rule_id=self.rule_id,
@@ -117,7 +116,11 @@ class UntrustedReachesTrusted:
                         path=entity.location.path,
                         line_start=entity.location.line_start,
                         qualname=qualname,
-                        taint_path=taint_path,
+                        # Join-key stability (weft-4a9d0f863c): one finding per anchored qualname,
+                        # so (rule, path, line, qualname) is already unique. actual/declared tiers and
+                        # via_callee are resolved values that drift across builds for identical source
+                        # (the reported bug) — they live in message/properties, never the join key.
+                        taint_path=None,
                     ),
                     qualname=qualname,
                     properties={"declared_return": declared.value, "actual_return": actual.value},

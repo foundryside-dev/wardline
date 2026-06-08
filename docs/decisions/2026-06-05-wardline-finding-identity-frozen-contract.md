@@ -105,6 +105,23 @@ pass unchanged.** Concretely:
    prerequisite on the Rust core landing and must not be negotiated away under
    schedule pressure.
 
+8. **`taint_path` discriminator convention (weft-4a9d0f863c).** A finding's
+   `taint_path` (the fifth fingerprint input) holds ONLY a source-derived
+   discriminator — never a resolved `TaintState` tier or `via_callee`, which drift
+   across builds for identical source. Call-site-anchored rules that can emit more
+   than one finding per `(rule_id, path, line_start, qualname)` discriminate by the
+   sink/callee spelling plus the call node's **full lexical span**, serialized as
+   `{col_offset}:{end_col_offset}`. These are CPython `ast` column coordinates:
+   **0-based UTF-8 byte offsets**, with a `Call` anchored at its func-expression
+   start (so a method chain's outer and inner calls share `col_offset` but differ in
+   `end_col_offset`). A second engine MUST reproduce these byte-offset column
+   semantics — the same obligation `entity_spans` (§3) already imposes — or the
+   hashed join key drifts *silently* (unlike a span diff, which the parity test
+   surfaces). A per-line source-order ordinal was considered as a more portable
+   alternative but rejected: it would require the rule to sort calls by
+   `(lineno, col_offset)` anyway, reintroducing the column dependency without the
+   span's collision-completeness.
+
 ## Consequences
 
 - **No silent drift.** A span/fingerprint/qualname change fails the parity test

@@ -105,6 +105,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixed-port sibling emit/discovery target the published-port rung cannot reconstruct.
 
 ### Fixed
+- **Finding fingerprint is now invariant to taint-resolution drift (weft-4a9d0f863c).**
+  The `fingerprint` — the cross-tool JOIN KEY into the baseline/waiver/judged stores
+  and the Filigree tracker — folded engine-RESOLUTION outputs (resolved `TaintState`
+  tiers and `via_callee`) into its `taint_path` component, so it moved across builds
+  for byte-identical source as the rule suite was extended (a baselined finding
+  escaped its baseline, tripped the gate, and minted a federation-wide duplicate).
+  Every rule's `taint_path` now carries only a SOURCE-derived discriminator: rules
+  emitting ≤1 finding per `(rule_id, path, line_start, qualname)` pass `taint_path=None`;
+  call-site-anchored rules (PY-WL-105/106/108/115/116/117/118/120) discriminate by the
+  sink/callee spelling plus the call's full lexical span (`col_offset:end_col_offset`,
+  collision-free even for chained calls). PY-WL-114 is unchanged (its `name:token`
+  path is already source-derived and load-bearing). The invariant is documented at
+  `compute_finding_fingerprint` and enforced by a new identity-corpus collision gate
+  (distinct-fingerprint-count == active-finding-count, exercised by a `sinks` fixture
+  with same-line and chained sinks) plus a PY-WL-101 resolved-tier-swap invariance test.
+  - **MIGRATION (one-time).** This is an intentional, reviewed fingerprint rekey
+    (identity corpus `corpus_version` 1→2). It stabilises a key that was *already*
+    drifting on every build, so it converts ongoing unbounded orphaning into a single
+    bounded event. All four fingerprint-keyed stores must be refreshed once after
+    upgrade: regenerate `baseline.yaml` (`wardline baseline update`) and re-run the
+    LLM judge to repopulate `judged.yaml`; previously-waived findings will resurface
+    (loudly — re-waive intentionally); and Filigree finding↔issue associations keyed
+    on the old fingerprint orphan until re-associated. Perform across the federation in
+    lockstep. After this, the key is stable across engine-precision changes.
 - **Three PY-WL-118 false-negatives from the `scrub-2026-06-08` regression set
   (`scrub-regression`).** Surfaced by adversarial verification of the six P1 scrub
   fixes (`24b0a3e`); empirically reproduced and regression-tested.

@@ -1,0 +1,2494 @@
+{
+  "entity_spans": [
+    {
+      "location": {
+        "col_end": 12,
+        "col_start": 0,
+        "line_end": 61,
+        "line_start": 60,
+        "path": "wardline_sinks.py"
+      },
+      "qualname": "wardline_sinks._refine_a"
+    },
+    {
+      "location": {
+        "col_end": 12,
+        "col_start": 0,
+        "line_end": 66,
+        "line_start": 65,
+        "path": "wardline_sinks.py"
+      },
+      "qualname": "wardline_sinks._refine_b"
+    },
+    {
+      "location": {
+        "col_end": 76,
+        "col_start": 0,
+        "line_end": 95,
+        "line_start": 88,
+        "path": "wardline_sinks.py"
+      },
+      "qualname": "wardline_sinks.chained_queries"
+    },
+    {
+      "location": {
+        "col_end": 49,
+        "col_start": 0,
+        "line_end": 84,
+        "line_start": 79,
+        "path": "wardline_sinks.py"
+      },
+      "qualname": "wardline_sinks.double_deserialize"
+    },
+    {
+      "location": {
+        "col_end": 47,
+        "col_start": 0,
+        "line_end": 75,
+        "line_start": 70,
+        "path": "wardline_sinks.py"
+      },
+      "qualname": "wardline_sinks.fan_out_stored"
+    },
+    {
+      "location": {
+        "col_end": 29,
+        "col_start": 0,
+        "line_end": 34,
+        "line_start": 31,
+        "path": "wardline_sinks.py"
+      },
+      "qualname": "wardline_sinks.import_catalog_blob"
+    },
+    {
+      "location": {
+        "col_end": 40,
+        "col_start": 0,
+        "line_end": 48,
+        "line_start": 45,
+        "path": "wardline_sinks.py"
+      },
+      "qualname": "wardline_sinks.load_report_plugin"
+    },
+    {
+      "location": {
+        "col_end": 25,
+        "col_start": 0,
+        "line_end": 107,
+        "line_start": 99,
+        "path": "wardline_sinks.py"
+      },
+      "qualname": "wardline_sinks.lookup_member"
+    },
+    {
+      "location": {
+        "col_end": 24,
+        "col_start": 0,
+        "line_end": 56,
+        "line_start": 52,
+        "path": "wardline_sinks.py"
+      },
+      "qualname": "wardline_sinks.open_catalog_file"
+    },
+    {
+      "location": {
+        "col_end": 34,
+        "col_start": 0,
+        "line_end": 27,
+        "line_start": 25,
+        "path": "wardline_sinks.py"
+      },
+      "qualname": "wardline_sinks.read_admin_arg"
+    },
+    {
+      "location": {
+        "col_end": 55,
+        "col_start": 0,
+        "line_end": 41,
+        "line_start": 38,
+        "path": "wardline_sinks.py"
+      },
+      "qualname": "wardline_sinks.run_export"
+    }
+  ],
+  "explain": {
+    "explanation": {
+      "fingerprint": "78c8c570136abce22f3cbf65f754c173839d9d39be653d0ab4d57c8ce015e09b",
+      "immediate_tainted_callee": "pickle.loads",
+      "line": 31,
+      "path": "wardline_sinks.py",
+      "resolved_call_count": 1,
+      "rule_id": "PY-WL-101",
+      "sink_qualname": "wardline_sinks.import_catalog_blob",
+      "source_boundary_qualname": null,
+      "tier_in": "UNKNOWN_RAW",
+      "tier_out": "ASSURED",
+      "unresolved_call_count": 2
+    },
+    "fingerprint": "78c8c570136abce22f3cbf65f754c173839d9d39be653d0ab4d57c8ce015e09b"
+  },
+  "facts": [
+    {
+      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "qualname": "wardline_sinks._refine_a",
+      "wardline_json": {
+        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "dead_code_root": {
+          "is_root": true,
+          "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
+          "source": "wardline_trust_decorator",
+          "tags": [
+            "entry-point"
+          ]
+        },
+        "findings": [
+          {
+            "fingerprint": "2b49ef9cc66d8a1698e32be64199877a8ab671a16f24698379fa9929d318c746",
+            "line_start": 60,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-101"
+          }
+        ],
+        "qualname": "wardline_sinks._refine_a",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "EXTERNAL_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "ASSURED",
+          "resolved_call_count": 0,
+          "source": "anchored",
+          "unresolved_call_count": 0
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "qualname": "wardline_sinks._refine_b",
+      "wardline_json": {
+        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "dead_code_root": {
+          "is_root": true,
+          "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
+          "source": "wardline_trust_decorator",
+          "tags": [
+            "entry-point"
+          ]
+        },
+        "findings": [
+          {
+            "fingerprint": "aa3b8af972c4494bfd7903762c0062d6ef41ab6f85b0463bf4b8507e22f428a6",
+            "line_start": 65,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-101"
+          }
+        ],
+        "qualname": "wardline_sinks._refine_b",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "EXTERNAL_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "ASSURED",
+          "resolved_call_count": 0,
+          "source": "anchored",
+          "unresolved_call_count": 0
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "qualname": "wardline_sinks.chained_queries",
+      "wardline_json": {
+        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "dead_code_root": {
+          "is_root": true,
+          "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
+          "source": "wardline_trust_decorator",
+          "tags": [
+            "entry-point"
+          ]
+        },
+        "findings": [
+          {
+            "fingerprint": "5d068cf314842b696b664280a6e76ff1c9769fbc8657f716fbfb8dfd55ef3964",
+            "line_start": 88,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-101"
+          },
+          {
+            "fingerprint": "3c64beba56d1118ca347efff026846773d761b8e0a2882108ed5cc0bfd79e69a",
+            "line_start": 95,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-118"
+          },
+          {
+            "fingerprint": "6a5d9ec7bb8a6af691bbe339f0470011b7f10182f721cfa733762e9372a6aa06",
+            "line_start": 95,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-118"
+          }
+        ],
+        "qualname": "wardline_sinks.chained_queries",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "UNKNOWN_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "ASSURED",
+          "resolved_call_count": 1,
+          "source": "anchored",
+          "unresolved_call_count": 4
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "qualname": "wardline_sinks.double_deserialize",
+      "wardline_json": {
+        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "dead_code_root": {
+          "is_root": true,
+          "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
+          "source": "wardline_trust_decorator",
+          "tags": [
+            "entry-point"
+          ]
+        },
+        "findings": [
+          {
+            "fingerprint": "c6601a8abd12cbbe5627550271240bc815d123e32f8949e86c39ee484f8f53a5",
+            "line_start": 79,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-101"
+          },
+          {
+            "fingerprint": "b8cf67e1bb76a75db7985800f8c17c66aaa0a883cb18425453a7abbf128ea789",
+            "line_start": 84,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-106"
+          },
+          {
+            "fingerprint": "c263717a7e2bb42dc8d39054544500f2dc397c5bfddcfe7a9292d23997217edb",
+            "line_start": 84,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-106"
+          }
+        ],
+        "qualname": "wardline_sinks.double_deserialize",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "UNKNOWN_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "ASSURED",
+          "resolved_call_count": 1,
+          "source": "anchored",
+          "unresolved_call_count": 3
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "qualname": "wardline_sinks.fan_out_stored",
+      "wardline_json": {
+        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "dead_code_root": {
+          "is_root": true,
+          "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
+          "source": "wardline_trust_decorator",
+          "tags": [
+            "entry-point"
+          ]
+        },
+        "findings": [
+          {
+            "fingerprint": "3f907f0e7a83be168e0b85bc22f4f0ab00ac78dc204dc1f8b66e9e0d0323fbba",
+            "line_start": 75,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-105"
+          },
+          {
+            "fingerprint": "981ae1ca44239bd55288edf7496e79bc01a686c2bf9f0f278d31ac5802721bcf",
+            "line_start": 75,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-105"
+          },
+          {
+            "fingerprint": "8b4332eff3e3142c28153ca17f7b2e67556f3bdf14ffba796c6bf280ecf87f5c",
+            "line_start": 75,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-120"
+          },
+          {
+            "fingerprint": "ced370ab43dafe2f9f240b17aa4453b0ec3ed6df19a5af9a6714f9939a133f40",
+            "line_start": 75,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-120"
+          }
+        ],
+        "qualname": "wardline_sinks.fan_out_stored",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "ASSURED",
+          "contributing_callee_qualname": null,
+          "declared_return": "ASSURED",
+          "resolved_call_count": 2,
+          "source": "anchored",
+          "unresolved_call_count": 1
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "qualname": "wardline_sinks.import_catalog_blob",
+      "wardline_json": {
+        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "dead_code_root": {
+          "is_root": true,
+          "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
+          "source": "wardline_trust_decorator",
+          "tags": [
+            "entry-point"
+          ]
+        },
+        "findings": [
+          {
+            "fingerprint": "78c8c570136abce22f3cbf65f754c173839d9d39be653d0ab4d57c8ce015e09b",
+            "line_start": 31,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-101"
+          },
+          {
+            "fingerprint": "cf48c38ba6782406cb79ab19d19fb700cdaba8073b3db1bfb366e74f93a282c6",
+            "line_start": 34,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-106"
+          }
+        ],
+        "qualname": "wardline_sinks.import_catalog_blob",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "UNKNOWN_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "ASSURED",
+          "resolved_call_count": 1,
+          "source": "anchored",
+          "unresolved_call_count": 2
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "qualname": "wardline_sinks.load_report_plugin",
+      "wardline_json": {
+        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "dead_code_root": {
+          "is_root": true,
+          "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
+          "source": "wardline_trust_decorator",
+          "tags": [
+            "entry-point"
+          ]
+        },
+        "findings": [
+          {
+            "fingerprint": "91ce0eca56522f2ba3d59a5dda28c5e75edc440faeef1a7661e1a91d3afe394d",
+            "line_start": 45,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-101"
+          },
+          {
+            "fingerprint": "e71fc9ff496b1b53a4ecbd06c2f4486e04d57a7f84628eacd2e6987d15319ce4",
+            "line_start": 48,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-115"
+          }
+        ],
+        "qualname": "wardline_sinks.load_report_plugin",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "UNKNOWN_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "ASSURED",
+          "resolved_call_count": 1,
+          "source": "anchored",
+          "unresolved_call_count": 1
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "qualname": "wardline_sinks.lookup_member",
+      "wardline_json": {
+        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "dead_code_root": {
+          "is_root": true,
+          "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
+          "source": "wardline_trust_decorator",
+          "tags": [
+            "entry-point"
+          ]
+        },
+        "findings": [
+          {
+            "fingerprint": "45ecfabb2181665a8aec69fece99ae4c171173e74333bcf617a99f3a2f2e2319",
+            "line_start": 99,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-101"
+          },
+          {
+            "fingerprint": "c48bac31d78f96b875a264abc931ecf8d60f1759a32065acade891877e8d5388",
+            "line_start": 106,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-118"
+          },
+          {
+            "fingerprint": "051c5bbb1db64eba5fc504c5f2e4c3e0a6dbbfd00b8b039e737e7c7bd10fb9de",
+            "line_start": 107,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-120"
+          }
+        ],
+        "qualname": "wardline_sinks.lookup_member",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "EXTERNAL_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "ASSURED",
+          "resolved_call_count": 1,
+          "source": "anchored",
+          "unresolved_call_count": 4
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "qualname": "wardline_sinks.open_catalog_file",
+      "wardline_json": {
+        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "dead_code_root": {
+          "is_root": true,
+          "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
+          "source": "wardline_trust_decorator",
+          "tags": [
+            "entry-point"
+          ]
+        },
+        "findings": [
+          {
+            "fingerprint": "0dc077bd4c491f6a3fe29df19d797f7f542d57ce2d7bdca11a33ab29a6c715ce",
+            "line_start": 52,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-101"
+          },
+          {
+            "fingerprint": "fe304ec020d8d529106f1bc47492590cf766ff076dbdb7c16a7f52809e69e609",
+            "line_start": 55,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-116"
+          },
+          {
+            "fingerprint": "7739d3dc46b4bb6f8afcad2db38a059b020c740b053e3258ee4795016d2508af",
+            "line_start": 56,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-120"
+          }
+        ],
+        "qualname": "wardline_sinks.open_catalog_file",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "EXTERNAL_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "ASSURED",
+          "resolved_call_count": 1,
+          "source": "anchored",
+          "unresolved_call_count": 2
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "qualname": "wardline_sinks.read_admin_arg",
+      "wardline_json": {
+        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "dead_code_root": {
+          "is_root": true,
+          "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
+          "source": "wardline_trust_decorator",
+          "tags": [
+            "entry-point"
+          ]
+        },
+        "findings": [],
+        "qualname": "wardline_sinks.read_admin_arg",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "EXTERNAL_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "EXTERNAL_RAW",
+          "resolved_call_count": 0,
+          "source": "anchored",
+          "unresolved_call_count": 0
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "qualname": "wardline_sinks.run_export",
+      "wardline_json": {
+        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "dead_code_root": {
+          "is_root": true,
+          "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
+          "source": "wardline_trust_decorator",
+          "tags": [
+            "entry-point"
+          ]
+        },
+        "findings": [
+          {
+            "fingerprint": "8e23886db6ba4c2678a9bca0cf3c27726f7bd155fe7543b0faacb07f3344358c",
+            "line_start": 38,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-101"
+          },
+          {
+            "fingerprint": "fdf48dba3decae9faa13ee79e21aeefc634a2d10c6f2acda7d1db3fb07fc351f",
+            "line_start": 41,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-112"
+          }
+        ],
+        "qualname": "wardline_sinks.run_export",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "EXTERNAL_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "ASSURED",
+          "resolved_call_count": 1,
+          "source": "anchored",
+          "unresolved_call_count": 1
+        }
+      }
+    }
+  ],
+  "findings": [
+    {
+      "confidence": null,
+      "fingerprint": "78c8c570136abce22f3cbf65f754c173839d9d39be653d0ab4d57c8ce015e09b",
+      "kind": "defect",
+      "location": {
+        "col_end": 29,
+        "col_start": 0,
+        "line_end": 34,
+        "line_start": 31,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks.import_catalog_blob declares return trust ASSURED but actually returns UNKNOWN_RAW (less trusted) — untrusted data reaches a trusted producer",
+      "properties": {
+        "actual_return": "UNKNOWN_RAW",
+        "declared_return": "ASSURED"
+      },
+      "qualname": "wardline_sinks.import_catalog_blob",
+      "related_entities": [],
+      "rule_id": "PY-WL-101",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "cf48c38ba6782406cb79ab19d19fb700cdaba8073b3db1bfb366e74f93a282c6",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": null,
+        "line_start": 34,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks.import_catalog_blob: EXTERNAL_RAW (untrusted) data reaches the deserialization sink pickle.loads() at line 34",
+      "properties": {
+        "arg_taint": "EXTERNAL_RAW",
+        "sink": "pickle.loads",
+        "tier": "ASSURED"
+      },
+      "qualname": "wardline_sinks.import_catalog_blob",
+      "related_entities": [],
+      "rule_id": "PY-WL-106",
+      "severity": "WARN",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "8e23886db6ba4c2678a9bca0cf3c27726f7bd155fe7543b0faacb07f3344358c",
+      "kind": "defect",
+      "location": {
+        "col_end": 55,
+        "col_start": 0,
+        "line_end": 41,
+        "line_start": 38,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks.run_export declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer",
+      "properties": {
+        "actual_return": "EXTERNAL_RAW",
+        "declared_return": "ASSURED"
+      },
+      "qualname": "wardline_sinks.run_export",
+      "related_entities": [],
+      "rule_id": "PY-WL-101",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "fdf48dba3decae9faa13ee79e21aeefc634a2d10c6f2acda7d1db3fb07fc351f",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": null,
+        "line_start": 41,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks.run_export: EXTERNAL_RAW (untrusted) data reaches the shell=True subprocess sink subprocess.run() at line 41",
+      "properties": {
+        "arg_taint": "EXTERNAL_RAW",
+        "sink": "subprocess.run",
+        "tier": "ASSURED"
+      },
+      "qualname": "wardline_sinks.run_export",
+      "related_entities": [],
+      "rule_id": "PY-WL-112",
+      "severity": "WARN",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "91ce0eca56522f2ba3d59a5dda28c5e75edc440faeef1a7661e1a91d3afe394d",
+      "kind": "defect",
+      "location": {
+        "col_end": 40,
+        "col_start": 0,
+        "line_end": 48,
+        "line_start": 45,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks.load_report_plugin declares return trust ASSURED but actually returns UNKNOWN_RAW (less trusted) — untrusted data reaches a trusted producer",
+      "properties": {
+        "actual_return": "UNKNOWN_RAW",
+        "declared_return": "ASSURED"
+      },
+      "qualname": "wardline_sinks.load_report_plugin",
+      "related_entities": [],
+      "rule_id": "PY-WL-101",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "e71fc9ff496b1b53a4ecbd06c2f4486e04d57a7f84628eacd2e6987d15319ce4",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": null,
+        "line_start": 48,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks.load_report_plugin: EXTERNAL_RAW (untrusted) data reaches the dynamic import sink importlib.import_module() at line 48",
+      "properties": {
+        "arg_taint": "EXTERNAL_RAW",
+        "sink": "importlib.import_module",
+        "tier": "ASSURED"
+      },
+      "qualname": "wardline_sinks.load_report_plugin",
+      "related_entities": [],
+      "rule_id": "PY-WL-115",
+      "severity": "WARN",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "0dc077bd4c491f6a3fe29df19d797f7f542d57ce2d7bdca11a33ab29a6c715ce",
+      "kind": "defect",
+      "location": {
+        "col_end": 24,
+        "col_start": 0,
+        "line_end": 56,
+        "line_start": 52,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks.open_catalog_file declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer",
+      "properties": {
+        "actual_return": "EXTERNAL_RAW",
+        "declared_return": "ASSURED"
+      },
+      "qualname": "wardline_sinks.open_catalog_file",
+      "related_entities": [],
+      "rule_id": "PY-WL-101",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "fe304ec020d8d529106f1bc47492590cf766ff076dbdb7c16a7f52809e69e609",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": null,
+        "line_start": 55,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "preview",
+      "message": "wardline_sinks.open_catalog_file: EXTERNAL_RAW (untrusted) data reaches the path-traversal sink open() at line 55",
+      "properties": {
+        "arg_taint": "EXTERNAL_RAW",
+        "sink": "open",
+        "tier": "ASSURED"
+      },
+      "qualname": "wardline_sinks.open_catalog_file",
+      "related_entities": [],
+      "rule_id": "PY-WL-116",
+      "severity": "WARN",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "7739d3dc46b4bb6f8afcad2db38a059b020c740b053e3258ee4795016d2508af",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": null,
+        "line_start": 56,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "preview",
+      "message": "wardline_sinks.open_catalog_file returns stored/persisted data (EXTERNAL_RAW) without validation at line 56",
+      "properties": {
+        "return_taint": "EXTERNAL_RAW"
+      },
+      "qualname": "wardline_sinks.open_catalog_file",
+      "related_entities": [],
+      "rule_id": "PY-WL-120",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "2b49ef9cc66d8a1698e32be64199877a8ab671a16f24698379fa9929d318c746",
+      "kind": "defect",
+      "location": {
+        "col_end": 12,
+        "col_start": 0,
+        "line_end": 61,
+        "line_start": 60,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks._refine_a declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer",
+      "properties": {
+        "actual_return": "EXTERNAL_RAW",
+        "declared_return": "ASSURED"
+      },
+      "qualname": "wardline_sinks._refine_a",
+      "related_entities": [],
+      "rule_id": "PY-WL-101",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "aa3b8af972c4494bfd7903762c0062d6ef41ab6f85b0463bf4b8507e22f428a6",
+      "kind": "defect",
+      "location": {
+        "col_end": 12,
+        "col_start": 0,
+        "line_end": 66,
+        "line_start": 65,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks._refine_b declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer",
+      "properties": {
+        "actual_return": "EXTERNAL_RAW",
+        "declared_return": "ASSURED"
+      },
+      "qualname": "wardline_sinks._refine_b",
+      "related_entities": [],
+      "rule_id": "PY-WL-101",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "3f907f0e7a83be168e0b85bc22f4f0ab00ac78dc204dc1f8b66e9e0d0323fbba",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": null,
+        "line_start": 75,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks.fan_out_stored: EXTERNAL_RAW (untrusted) data passed to trusted producer wardline_sinks._refine_a() at line 75",
+      "properties": {
+        "arg_taint": "EXTERNAL_RAW",
+        "callee": "wardline_sinks._refine_a",
+        "callee_body": "ASSURED"
+      },
+      "qualname": "wardline_sinks.fan_out_stored",
+      "related_entities": [],
+      "rule_id": "PY-WL-105",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "981ae1ca44239bd55288edf7496e79bc01a686c2bf9f0f278d31ac5802721bcf",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": null,
+        "line_start": 75,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks.fan_out_stored: EXTERNAL_RAW (untrusted) data passed to trusted producer wardline_sinks._refine_b() at line 75",
+      "properties": {
+        "arg_taint": "EXTERNAL_RAW",
+        "callee": "wardline_sinks._refine_b",
+        "callee_body": "ASSURED"
+      },
+      "qualname": "wardline_sinks.fan_out_stored",
+      "related_entities": [],
+      "rule_id": "PY-WL-105",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "8b4332eff3e3142c28153ca17f7b2e67556f3bdf14ffba796c6bf280ecf87f5c",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": null,
+        "line_start": 75,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "preview",
+      "message": "wardline_sinks.fan_out_stored passes stored/persisted data (EXTERNAL_RAW) to trusted callee wardline_sinks._refine_a without validation at line 75",
+      "properties": {
+        "arg_taint": "EXTERNAL_RAW",
+        "callee": "wardline_sinks._refine_a"
+      },
+      "qualname": "wardline_sinks.fan_out_stored",
+      "related_entities": [],
+      "rule_id": "PY-WL-120",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "ced370ab43dafe2f9f240b17aa4453b0ec3ed6df19a5af9a6714f9939a133f40",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": null,
+        "line_start": 75,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "preview",
+      "message": "wardline_sinks.fan_out_stored passes stored/persisted data (EXTERNAL_RAW) to trusted callee wardline_sinks._refine_b without validation at line 75",
+      "properties": {
+        "arg_taint": "EXTERNAL_RAW",
+        "callee": "wardline_sinks._refine_b"
+      },
+      "qualname": "wardline_sinks.fan_out_stored",
+      "related_entities": [],
+      "rule_id": "PY-WL-120",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "c6601a8abd12cbbe5627550271240bc815d123e32f8949e86c39ee484f8f53a5",
+      "kind": "defect",
+      "location": {
+        "col_end": 49,
+        "col_start": 0,
+        "line_end": 84,
+        "line_start": 79,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks.double_deserialize declares return trust ASSURED but actually returns UNKNOWN_RAW (less trusted) — untrusted data reaches a trusted producer",
+      "properties": {
+        "actual_return": "UNKNOWN_RAW",
+        "declared_return": "ASSURED"
+      },
+      "qualname": "wardline_sinks.double_deserialize",
+      "related_entities": [],
+      "rule_id": "PY-WL-101",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "b8cf67e1bb76a75db7985800f8c17c66aaa0a883cb18425453a7abbf128ea789",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": null,
+        "line_start": 84,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks.double_deserialize: EXTERNAL_RAW (untrusted) data reaches the deserialization sink pickle.loads() at line 84",
+      "properties": {
+        "arg_taint": "EXTERNAL_RAW",
+        "sink": "pickle.loads",
+        "tier": "ASSURED"
+      },
+      "qualname": "wardline_sinks.double_deserialize",
+      "related_entities": [],
+      "rule_id": "PY-WL-106",
+      "severity": "WARN",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "c263717a7e2bb42dc8d39054544500f2dc397c5bfddcfe7a9292d23997217edb",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": null,
+        "line_start": 84,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks.double_deserialize: EXTERNAL_RAW (untrusted) data reaches the deserialization sink pickle.loads() at line 84",
+      "properties": {
+        "arg_taint": "EXTERNAL_RAW",
+        "sink": "pickle.loads",
+        "tier": "ASSURED"
+      },
+      "qualname": "wardline_sinks.double_deserialize",
+      "related_entities": [],
+      "rule_id": "PY-WL-106",
+      "severity": "WARN",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "5d068cf314842b696b664280a6e76ff1c9769fbc8657f716fbfb8dfd55ef3964",
+      "kind": "defect",
+      "location": {
+        "col_end": 76,
+        "col_start": 0,
+        "line_end": 95,
+        "line_start": 88,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks.chained_queries declares return trust ASSURED but actually returns UNKNOWN_RAW (less trusted) — untrusted data reaches a trusted producer",
+      "properties": {
+        "actual_return": "UNKNOWN_RAW",
+        "declared_return": "ASSURED"
+      },
+      "qualname": "wardline_sinks.chained_queries",
+      "related_entities": [],
+      "rule_id": "PY-WL-101",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "3c64beba56d1118ca347efff026846773d761b8e0a2882108ed5cc0bfd79e69a",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": null,
+        "line_start": 95,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "preview",
+      "message": "wardline_sinks.chained_queries: EXTERNAL_RAW (untrusted) data reaches the SQL-injection sink execute() at line 95",
+      "properties": {
+        "arg_taint": "EXTERNAL_RAW",
+        "sink": "execute",
+        "tier": "ASSURED"
+      },
+      "qualname": "wardline_sinks.chained_queries",
+      "related_entities": [],
+      "rule_id": "PY-WL-118",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "6a5d9ec7bb8a6af691bbe339f0470011b7f10182f721cfa733762e9372a6aa06",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": null,
+        "line_start": 95,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "preview",
+      "message": "wardline_sinks.chained_queries: EXTERNAL_RAW (untrusted) data reaches the SQL-injection sink execute() at line 95",
+      "properties": {
+        "arg_taint": "EXTERNAL_RAW",
+        "sink": "execute",
+        "tier": "ASSURED"
+      },
+      "qualname": "wardline_sinks.chained_queries",
+      "related_entities": [],
+      "rule_id": "PY-WL-118",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "45ecfabb2181665a8aec69fece99ae4c171173e74333bcf617a99f3a2f2e2319",
+      "kind": "defect",
+      "location": {
+        "col_end": 25,
+        "col_start": 0,
+        "line_end": 107,
+        "line_start": 99,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks.lookup_member declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer",
+      "properties": {
+        "actual_return": "EXTERNAL_RAW",
+        "declared_return": "ASSURED"
+      },
+      "qualname": "wardline_sinks.lookup_member",
+      "related_entities": [],
+      "rule_id": "PY-WL-101",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "c48bac31d78f96b875a264abc931ecf8d60f1759a32065acade891877e8d5388",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": null,
+        "line_start": 106,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "preview",
+      "message": "wardline_sinks.lookup_member: EXTERNAL_RAW (untrusted) data reaches the SQL-injection sink execute() at line 106",
+      "properties": {
+        "arg_taint": "EXTERNAL_RAW",
+        "sink": "execute",
+        "tier": "ASSURED"
+      },
+      "qualname": "wardline_sinks.lookup_member",
+      "related_entities": [],
+      "rule_id": "PY-WL-118",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "051c5bbb1db64eba5fc504c5f2e4c3e0a6dbbfd00b8b039e737e7c7bd10fb9de",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": null,
+        "line_start": 107,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "preview",
+      "message": "wardline_sinks.lookup_member returns stored/persisted data (EXTERNAL_RAW) without validation at line 107",
+      "properties": {
+        "return_taint": "EXTERNAL_RAW"
+      },
+      "qualname": "wardline_sinks.lookup_member",
+      "related_entities": [],
+      "rule_id": "PY-WL-120",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    }
+  ],
+  "sarif": {
+    "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+    "runs": [
+      {
+        "results": [
+          {
+            "codeFlows": [
+              {
+                "threadFlows": [
+                  {
+                    "locations": [
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "wardline_sinks.import_catalog_blob declares return trust ASSURED but actually returns UNKNOWN_RAW (less trusted) — untrusted data reaches a trusted producer"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "endColumn": 29,
+                              "endLine": 34,
+                              "startColumn": 0,
+                              "startLine": 31
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "endColumn": 29,
+                    "endLine": 34,
+                    "startColumn": 0,
+                    "startLine": 31
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.import_catalog_blob declares return trust ASSURED but actually returns UNKNOWN_RAW (less trusted) — untrusted data reaches a trusted producer"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "78c8c570136abce22f3cbf65f754c173839d9d39be653d0ab4d57c8ce015e09b"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.import_catalog_blob",
+              "wardlineProperties": {
+                "actual_return": "UNKNOWN_RAW",
+                "declared_return": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-101"
+          },
+          {
+            "codeFlows": [
+              {
+                "threadFlows": [
+                  {
+                    "locations": [
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "wardline_sinks.import_catalog_blob: EXTERNAL_RAW (untrusted) data reaches the deserialization sink pickle.loads() at line 34"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "startLine": 34
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "level": "warning",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "startLine": 34
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.import_catalog_blob: EXTERNAL_RAW (untrusted) data reaches the deserialization sink pickle.loads() at line 34"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "cf48c38ba6782406cb79ab19d19fb700cdaba8073b3db1bfb366e74f93a282c6"
+            },
+            "properties": {
+              "internalSeverity": "WARN",
+              "kind": "defect",
+              "qualname": "wardline_sinks.import_catalog_blob",
+              "wardlineProperties": {
+                "arg_taint": "EXTERNAL_RAW",
+                "sink": "pickle.loads",
+                "tier": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-106"
+          },
+          {
+            "codeFlows": [
+              {
+                "threadFlows": [
+                  {
+                    "locations": [
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "wardline_sinks.run_export declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "endColumn": 55,
+                              "endLine": 41,
+                              "startColumn": 0,
+                              "startLine": 38
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "endColumn": 55,
+                    "endLine": 41,
+                    "startColumn": 0,
+                    "startLine": 38
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.run_export declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "8e23886db6ba4c2678a9bca0cf3c27726f7bd155fe7543b0faacb07f3344358c"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.run_export",
+              "wardlineProperties": {
+                "actual_return": "EXTERNAL_RAW",
+                "declared_return": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-101"
+          },
+          {
+            "codeFlows": [
+              {
+                "threadFlows": [
+                  {
+                    "locations": [
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "Taint source: wardline_sinks.read_admin_arg"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "endColumn": 34,
+                              "endLine": 27,
+                              "startColumn": 0,
+                              "startLine": 25
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "wardline_sinks.run_export: EXTERNAL_RAW (untrusted) data reaches the shell=True subprocess sink subprocess.run() at line 41"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "startLine": 41
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "level": "warning",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "startLine": 41
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.run_export: EXTERNAL_RAW (untrusted) data reaches the shell=True subprocess sink subprocess.run() at line 41"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "fdf48dba3decae9faa13ee79e21aeefc634a2d10c6f2acda7d1db3fb07fc351f"
+            },
+            "properties": {
+              "internalSeverity": "WARN",
+              "kind": "defect",
+              "qualname": "wardline_sinks.run_export",
+              "wardlineProperties": {
+                "arg_taint": "EXTERNAL_RAW",
+                "sink": "subprocess.run",
+                "tier": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-112"
+          },
+          {
+            "codeFlows": [
+              {
+                "threadFlows": [
+                  {
+                    "locations": [
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "wardline_sinks.load_report_plugin declares return trust ASSURED but actually returns UNKNOWN_RAW (less trusted) — untrusted data reaches a trusted producer"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "endColumn": 40,
+                              "endLine": 48,
+                              "startColumn": 0,
+                              "startLine": 45
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "endColumn": 40,
+                    "endLine": 48,
+                    "startColumn": 0,
+                    "startLine": 45
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.load_report_plugin declares return trust ASSURED but actually returns UNKNOWN_RAW (less trusted) — untrusted data reaches a trusted producer"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "91ce0eca56522f2ba3d59a5dda28c5e75edc440faeef1a7661e1a91d3afe394d"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.load_report_plugin",
+              "wardlineProperties": {
+                "actual_return": "UNKNOWN_RAW",
+                "declared_return": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-101"
+          },
+          {
+            "codeFlows": [
+              {
+                "threadFlows": [
+                  {
+                    "locations": [
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "Taint source: wardline_sinks.read_admin_arg"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "endColumn": 34,
+                              "endLine": 27,
+                              "startColumn": 0,
+                              "startLine": 25
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "wardline_sinks.load_report_plugin: EXTERNAL_RAW (untrusted) data reaches the dynamic import sink importlib.import_module() at line 48"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "startLine": 48
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "level": "warning",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "startLine": 48
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.load_report_plugin: EXTERNAL_RAW (untrusted) data reaches the dynamic import sink importlib.import_module() at line 48"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "e71fc9ff496b1b53a4ecbd06c2f4486e04d57a7f84628eacd2e6987d15319ce4"
+            },
+            "properties": {
+              "internalSeverity": "WARN",
+              "kind": "defect",
+              "qualname": "wardline_sinks.load_report_plugin",
+              "wardlineProperties": {
+                "arg_taint": "EXTERNAL_RAW",
+                "sink": "importlib.import_module",
+                "tier": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-115"
+          },
+          {
+            "codeFlows": [
+              {
+                "threadFlows": [
+                  {
+                    "locations": [
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "wardline_sinks.open_catalog_file declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "endColumn": 24,
+                              "endLine": 56,
+                              "startColumn": 0,
+                              "startLine": 52
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "endColumn": 24,
+                    "endLine": 56,
+                    "startColumn": 0,
+                    "startLine": 52
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.open_catalog_file declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "0dc077bd4c491f6a3fe29df19d797f7f542d57ce2d7bdca11a33ab29a6c715ce"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.open_catalog_file",
+              "wardlineProperties": {
+                "actual_return": "EXTERNAL_RAW",
+                "declared_return": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-101"
+          },
+          {
+            "codeFlows": [
+              {
+                "threadFlows": [
+                  {
+                    "locations": [
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "Taint source: wardline_sinks.read_admin_arg"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "endColumn": 34,
+                              "endLine": 27,
+                              "startColumn": 0,
+                              "startLine": 25
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "wardline_sinks.open_catalog_file: EXTERNAL_RAW (untrusted) data reaches the path-traversal sink open() at line 55"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "startLine": 55
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "level": "warning",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "startLine": 55
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.open_catalog_file: EXTERNAL_RAW (untrusted) data reaches the path-traversal sink open() at line 55"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "fe304ec020d8d529106f1bc47492590cf766ff076dbdb7c16a7f52809e69e609"
+            },
+            "properties": {
+              "internalSeverity": "WARN",
+              "kind": "defect",
+              "qualname": "wardline_sinks.open_catalog_file",
+              "wardlineProperties": {
+                "arg_taint": "EXTERNAL_RAW",
+                "sink": "open",
+                "tier": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-116"
+          },
+          {
+            "codeFlows": [
+              {
+                "threadFlows": [
+                  {
+                    "locations": [
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "wardline_sinks.open_catalog_file returns stored/persisted data (EXTERNAL_RAW) without validation at line 56"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "startLine": 56
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "startLine": 56
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.open_catalog_file returns stored/persisted data (EXTERNAL_RAW) without validation at line 56"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "7739d3dc46b4bb6f8afcad2db38a059b020c740b053e3258ee4795016d2508af"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.open_catalog_file",
+              "wardlineProperties": {
+                "return_taint": "EXTERNAL_RAW"
+              }
+            },
+            "ruleId": "PY-WL-120"
+          },
+          {
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "endColumn": 12,
+                    "endLine": 61,
+                    "startColumn": 0,
+                    "startLine": 60
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks._refine_a declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "2b49ef9cc66d8a1698e32be64199877a8ab671a16f24698379fa9929d318c746"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks._refine_a",
+              "wardlineProperties": {
+                "actual_return": "EXTERNAL_RAW",
+                "declared_return": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-101"
+          },
+          {
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "endColumn": 12,
+                    "endLine": 66,
+                    "startColumn": 0,
+                    "startLine": 65
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks._refine_b declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "aa3b8af972c4494bfd7903762c0062d6ef41ab6f85b0463bf4b8507e22f428a6"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks._refine_b",
+              "wardlineProperties": {
+                "actual_return": "EXTERNAL_RAW",
+                "declared_return": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-101"
+          },
+          {
+            "codeFlows": [
+              {
+                "threadFlows": [
+                  {
+                    "locations": [
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "wardline_sinks.fan_out_stored: EXTERNAL_RAW (untrusted) data passed to trusted producer wardline_sinks._refine_a() at line 75"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "startLine": 75
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "startLine": 75
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.fan_out_stored: EXTERNAL_RAW (untrusted) data passed to trusted producer wardline_sinks._refine_a() at line 75"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "3f907f0e7a83be168e0b85bc22f4f0ab00ac78dc204dc1f8b66e9e0d0323fbba"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.fan_out_stored",
+              "wardlineProperties": {
+                "arg_taint": "EXTERNAL_RAW",
+                "callee": "wardline_sinks._refine_a",
+                "callee_body": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-105"
+          },
+          {
+            "codeFlows": [
+              {
+                "threadFlows": [
+                  {
+                    "locations": [
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "wardline_sinks.fan_out_stored: EXTERNAL_RAW (untrusted) data passed to trusted producer wardline_sinks._refine_b() at line 75"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "startLine": 75
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "startLine": 75
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.fan_out_stored: EXTERNAL_RAW (untrusted) data passed to trusted producer wardline_sinks._refine_b() at line 75"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "981ae1ca44239bd55288edf7496e79bc01a686c2bf9f0f278d31ac5802721bcf"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.fan_out_stored",
+              "wardlineProperties": {
+                "arg_taint": "EXTERNAL_RAW",
+                "callee": "wardline_sinks._refine_b",
+                "callee_body": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-105"
+          },
+          {
+            "codeFlows": [
+              {
+                "threadFlows": [
+                  {
+                    "locations": [
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "wardline_sinks.fan_out_stored passes stored/persisted data (EXTERNAL_RAW) to trusted callee wardline_sinks._refine_a without validation at line 75"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "startLine": 75
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "startLine": 75
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.fan_out_stored passes stored/persisted data (EXTERNAL_RAW) to trusted callee wardline_sinks._refine_a without validation at line 75"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "8b4332eff3e3142c28153ca17f7b2e67556f3bdf14ffba796c6bf280ecf87f5c"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.fan_out_stored",
+              "wardlineProperties": {
+                "arg_taint": "EXTERNAL_RAW",
+                "callee": "wardline_sinks._refine_a"
+              }
+            },
+            "ruleId": "PY-WL-120"
+          },
+          {
+            "codeFlows": [
+              {
+                "threadFlows": [
+                  {
+                    "locations": [
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "wardline_sinks.fan_out_stored passes stored/persisted data (EXTERNAL_RAW) to trusted callee wardline_sinks._refine_b without validation at line 75"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "startLine": 75
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "startLine": 75
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.fan_out_stored passes stored/persisted data (EXTERNAL_RAW) to trusted callee wardline_sinks._refine_b without validation at line 75"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "ced370ab43dafe2f9f240b17aa4453b0ec3ed6df19a5af9a6714f9939a133f40"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.fan_out_stored",
+              "wardlineProperties": {
+                "arg_taint": "EXTERNAL_RAW",
+                "callee": "wardline_sinks._refine_b"
+              }
+            },
+            "ruleId": "PY-WL-120"
+          },
+          {
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "endColumn": 49,
+                    "endLine": 84,
+                    "startColumn": 0,
+                    "startLine": 79
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.double_deserialize declares return trust ASSURED but actually returns UNKNOWN_RAW (less trusted) — untrusted data reaches a trusted producer"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "c6601a8abd12cbbe5627550271240bc815d123e32f8949e86c39ee484f8f53a5"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.double_deserialize",
+              "wardlineProperties": {
+                "actual_return": "UNKNOWN_RAW",
+                "declared_return": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-101"
+          },
+          {
+            "level": "warning",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "startLine": 84
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.double_deserialize: EXTERNAL_RAW (untrusted) data reaches the deserialization sink pickle.loads() at line 84"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "b8cf67e1bb76a75db7985800f8c17c66aaa0a883cb18425453a7abbf128ea789"
+            },
+            "properties": {
+              "internalSeverity": "WARN",
+              "kind": "defect",
+              "qualname": "wardline_sinks.double_deserialize",
+              "wardlineProperties": {
+                "arg_taint": "EXTERNAL_RAW",
+                "sink": "pickle.loads",
+                "tier": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-106"
+          },
+          {
+            "level": "warning",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "startLine": 84
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.double_deserialize: EXTERNAL_RAW (untrusted) data reaches the deserialization sink pickle.loads() at line 84"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "c263717a7e2bb42dc8d39054544500f2dc397c5bfddcfe7a9292d23997217edb"
+            },
+            "properties": {
+              "internalSeverity": "WARN",
+              "kind": "defect",
+              "qualname": "wardline_sinks.double_deserialize",
+              "wardlineProperties": {
+                "arg_taint": "EXTERNAL_RAW",
+                "sink": "pickle.loads",
+                "tier": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-106"
+          },
+          {
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "endColumn": 76,
+                    "endLine": 95,
+                    "startColumn": 0,
+                    "startLine": 88
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.chained_queries declares return trust ASSURED but actually returns UNKNOWN_RAW (less trusted) — untrusted data reaches a trusted producer"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "5d068cf314842b696b664280a6e76ff1c9769fbc8657f716fbfb8dfd55ef3964"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.chained_queries",
+              "wardlineProperties": {
+                "actual_return": "UNKNOWN_RAW",
+                "declared_return": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-101"
+          },
+          {
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "startLine": 95
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.chained_queries: EXTERNAL_RAW (untrusted) data reaches the SQL-injection sink execute() at line 95"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "3c64beba56d1118ca347efff026846773d761b8e0a2882108ed5cc0bfd79e69a"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.chained_queries",
+              "wardlineProperties": {
+                "arg_taint": "EXTERNAL_RAW",
+                "sink": "execute",
+                "tier": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-118"
+          },
+          {
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "startLine": 95
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.chained_queries: EXTERNAL_RAW (untrusted) data reaches the SQL-injection sink execute() at line 95"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "6a5d9ec7bb8a6af691bbe339f0470011b7f10182f721cfa733762e9372a6aa06"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.chained_queries",
+              "wardlineProperties": {
+                "arg_taint": "EXTERNAL_RAW",
+                "sink": "execute",
+                "tier": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-118"
+          },
+          {
+            "codeFlows": [
+              {
+                "threadFlows": [
+                  {
+                    "locations": [
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "wardline_sinks.lookup_member declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "endColumn": 25,
+                              "endLine": 107,
+                              "startColumn": 0,
+                              "startLine": 99
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "endColumn": 25,
+                    "endLine": 107,
+                    "startColumn": 0,
+                    "startLine": 99
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.lookup_member declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "45ecfabb2181665a8aec69fece99ae4c171173e74333bcf617a99f3a2f2e2319"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.lookup_member",
+              "wardlineProperties": {
+                "actual_return": "EXTERNAL_RAW",
+                "declared_return": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-101"
+          },
+          {
+            "codeFlows": [
+              {
+                "threadFlows": [
+                  {
+                    "locations": [
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "wardline_sinks.lookup_member: EXTERNAL_RAW (untrusted) data reaches the SQL-injection sink execute() at line 106"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "startLine": 106
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "startLine": 106
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.lookup_member: EXTERNAL_RAW (untrusted) data reaches the SQL-injection sink execute() at line 106"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "c48bac31d78f96b875a264abc931ecf8d60f1759a32065acade891877e8d5388"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.lookup_member",
+              "wardlineProperties": {
+                "arg_taint": "EXTERNAL_RAW",
+                "sink": "execute",
+                "tier": "ASSURED"
+              }
+            },
+            "ruleId": "PY-WL-118"
+          },
+          {
+            "codeFlows": [
+              {
+                "threadFlows": [
+                  {
+                    "locations": [
+                      {
+                        "importance": "important",
+                        "location": {
+                          "message": {
+                            "text": "wardline_sinks.lookup_member returns stored/persisted data (EXTERNAL_RAW) without validation at line 107"
+                          },
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "wardline_sinks.py"
+                            },
+                            "region": {
+                              "startLine": 107
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "startLine": 107
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.lookup_member returns stored/persisted data (EXTERNAL_RAW) without validation at line 107"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "051c5bbb1db64eba5fc504c5f2e4c3e0a6dbbfd00b8b039e737e7c7bd10fb9de"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.lookup_member",
+              "wardlineProperties": {
+                "return_taint": "EXTERNAL_RAW"
+              }
+            },
+            "ruleId": "PY-WL-120"
+          }
+        ],
+        "tool": {
+          "driver": {
+            "informationUri": "https://github.com/foundryside/wardline",
+            "name": "wardline",
+            "rules": [
+              {
+                "id": "PY-WL-101"
+              },
+              {
+                "id": "PY-WL-105"
+              },
+              {
+                "id": "PY-WL-106"
+              },
+              {
+                "id": "PY-WL-112"
+              },
+              {
+                "id": "PY-WL-115"
+              },
+              {
+                "id": "PY-WL-116"
+              },
+              {
+                "id": "PY-WL-118"
+              },
+              {
+                "id": "PY-WL-120"
+              }
+            ],
+            "version": "<normalized>"
+          }
+        }
+      }
+    ],
+    "version": "2.1.0"
+  }
+}

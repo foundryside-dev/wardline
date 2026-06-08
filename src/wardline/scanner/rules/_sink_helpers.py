@@ -273,7 +273,13 @@ class TaintedSinkRule:
                             path=entity.location.path,
                             line_start=line,
                             qualname=qualname,
-                            taint_path=f"{worst.value}->{dotted}",
+                            # Join-key stability (weft-4a9d0f863c): this rule is call-site-anchored and
+                            # can emit >1 finding per (rule, path, line, qualname) (several sinks on one
+                            # line). Discriminate by SOURCE only — the sink dotted-name plus the call's
+                            # full lexical SPAN — never the resolved arg taint (which drifts across builds).
+                            # The span (start:end), not the start column alone, is what separates the outer
+                            # and inner calls of a chain (``a.sink(x).sink(y)``), which share a start column.
+                            taint_path=f"{dotted}@{call.col_offset}:{call.end_col_offset}",
                         ),
                         qualname=qualname,
                         properties={"tier": tier.value, "sink": dotted, "arg_taint": worst.value},

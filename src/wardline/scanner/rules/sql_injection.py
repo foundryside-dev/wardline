@@ -156,7 +156,13 @@ class SQLInjection(TaintedSinkRule):
                             path=entity.location.path,
                             line_start=line,
                             qualname=qualname,
-                            taint_path=f"{worst.value}->{sink_name}",
+                            # Join-key stability (weft-4a9d0f863c): call-site-anchored, so >1 finding per
+                            # (rule, path, line, qualname) is possible (e.g. execute + executemany, or a
+                            # chain ``cur.execute(a).execute(b)``, on one line). Discriminate by SOURCE only
+                            # — the method name plus the call's full lexical SPAN — never the resolved arg
+                            # taint (drifts). The span (start:end), not the start column alone, separates a
+                            # chain's outer/inner calls, which share a start column under CPython's anchor.
+                            taint_path=f"{sink_name}@{node.col_offset}:{node.end_col_offset}",
                         ),
                         qualname=qualname,
                         properties={"tier": tier.value, "sink": sink_name, "arg_taint": worst.value},

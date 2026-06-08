@@ -169,7 +169,13 @@ class UntrustedReachesTrustedCallee:
                             path=entity.location.path,
                             line_start=line,
                             qualname=qualname,
-                            taint_path=f"{worst.value}->{callee}",
+                            # Join-key stability (weft-4a9d0f863c): call-site-anchored, so >1 finding per
+                            # (rule, path, line, qualname) is possible (several calls on one line).
+                            # Discriminate by SOURCE only — the callee spelling AS WRITTEN plus the call's
+                            # full lexical SPAN — never the resolved arg taint or the resolved callee
+                            # qualname (both drift across builds for identical source). The span (start:end)
+                            # separates a chain's outer/inner calls, which share a start column.
+                            taint_path=f"{dotted_name(call.func)}@{call.col_offset}:{call.end_col_offset}",
                         ),
                         qualname=qualname,
                         properties={

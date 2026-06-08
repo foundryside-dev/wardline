@@ -65,7 +65,10 @@ class SilentException:
                             path=entity.location.path,
                             line_start=line,
                             qualname=qualname,
-                            taint_path=tier.value,
+                            # Join-key stability (weft-4a9d0f863c): anchored at the handler line, which
+                            # is unique per finding within a qualname. The tier is a resolved value
+                            # (hoisted per-entity, never a discriminator) — keep it off the join key.
+                            taint_path=None,
                         ),
                         qualname=qualname,
                         properties={"tier": tier.value},

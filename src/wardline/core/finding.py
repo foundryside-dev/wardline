@@ -131,12 +131,26 @@ class Finding:
 
 
 # --- Finding fingerprint (SP2 §7) --------------------------------------------
-# Stable cross-run identity that folds in qualname + a taint-path signature so
-# two taint paths into one sink (same file/rule/line, different path) get
-# DISTINCT fingerprints (Filigree drift constraint). Discrimination is only as
-# fine as the supplied ``taint_path`` — callers derive it from ``taint_provenance``
-# (a single best-callee, not a full path), so two paths sharing best-callee AND
-# returned taint will still collide. That is the spec's accepted granularity.
+# Stable cross-run identity. The fingerprint is the cross-tool JOIN KEY: Filigree
+# associates issues to it and the baseline/waiver stores key on it, so it MUST be
+# invariant to taint-resolution drift — it must not move across builds while the
+# source is byte-identical (weft-4a9d0f863c: it moved across three builds because
+# resolved taint tiers and ``via_callee`` were folded in, and those legitimately
+# change as the rule suite is extended/refined).
+#
+# INVARIANT (enforce at every call site — see tests/golden/identity): ``taint_path``
+# carries ONLY a SOURCE-DERIVED discriminator and exists SOLELY to separate two
+# distinct findings that share (rule_id, path, line_start, qualname). A component
+# may appear in ``taint_path`` only if it is BOTH (a) derived purely from source
+# tokens / lexical position (a sink dotted-name, a callee spelling as written, a
+# decorator marker/level token, a call's ``col_offset``) — NOT a resolved
+# ``TaintState`` tier and NOT ``via_callee`` — AND (b) load-bearing: actually
+# needed to tell two co-located findings apart. A rule that emits at most one
+# finding per (rule_id, path, line_start, qualname) passes ``taint_path=None``.
+# Resolved tiers belong in ``message``/``properties``, never the join key.
+# (This is invariant to taint-resolution drift; ``line_start`` and source-token
+# spellings can still shift on a genuine source/parse change — that is expected,
+# since the contract is identical-source -> identical-fingerprint.)
 def compute_finding_fingerprint(
     *,
     rule_id: str,
