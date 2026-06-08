@@ -16,6 +16,7 @@ from pathlib import Path
 
 from wardline.core.config import WardlineConfig
 from wardline.core.finding import Finding, Kind, Severity
+from wardline.core.taints import TaintState
 from wardline.scanner.analyzer import WardlineAnalyzer
 
 
@@ -597,6 +598,14 @@ def test_stored_taint_cursor_fetch_reaches_return_fires(tmp_path: Path) -> None:
     )
     st = [f for f in findings if f.kind is Kind.DEFECT and f.rule_id == "PY-WL-120"]
     assert [f.qualname for f in st] == ["m.get_rows"]
+    # wardline-obs-638a5d9fd1: pin the resolved tier for a DB-cursor read. The PY-WL-101
+    # finding on the same producer must classify actual_return as EXTERNAL_RAW (DB read is
+    # external/stored data, like open()/read_text()), DETERMINISTICALLY — not the old
+    # fail-closed UNKNOWN_RAW the dead-branch fallback produced. This locks the storage-read
+    # seed's end-to-end return tier so the "tier drift" observation cannot recur.
+    p101 = [f for f in findings if f.rule_id == "PY-WL-101" and f.qualname == "m.get_rows"]
+    assert len(p101) == 1, p101
+    assert p101[0].properties["actual_return"] == TaintState.EXTERNAL_RAW.value
 
 
 def test_stored_taint_cursor_fetch_validated_stays_silent(tmp_path: Path) -> None:
