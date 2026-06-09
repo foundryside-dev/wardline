@@ -126,7 +126,7 @@ class InvalidDecoratorLevel:
                 None,
             )
             alias_map = (context.alias_maps.get(mod_name) if mod_name is not None else None) or {}
-            for deco in entity.node.decorator_list:
+            for deco_ordinal, deco in enumerate(entity.node.decorator_list):
                 name = _builtin_level_marker(deco, alias_map)
                 if name is None:
                     continue
@@ -171,7 +171,23 @@ class InvalidDecoratorLevel:
                                     path=entity.location.path,
                                     line_start=entity.location.line_start,
                                     qualname=qualname,
-                                    taint_path=f"{name}:{token}",
+                                    # Join-key collision (wardline-377b896a87): this rule emits >1
+                                    # finding per (rule, path, line_start, qualname) — one per invalid
+                                    # decorator on a def — and ``line_start`` is anchored at the ENTITY,
+                                    # not the decorator, so the decorator's position is otherwise absent
+                                    # from the key. Two STACKED IDENTICAL decorators share name, token,
+                                    # AND entity line, so the only thing that tells them apart is their
+                                    # POSITION in the def's decorator_list. The load-bearing
+                                    # discriminator is that ORDINAL (``#<i>``): a within-def index that
+                                    # is move-stable (invariant to the def moving vertically AND to
+                                    # column shifts — unlike an absolute line/column span) and
+                                    # collision-complete (at most one finding per decorator; a repeated
+                                    # ``level=``/``to_level=`` kwarg is a SyntaxError, so the inner
+                                    # kw-loop yields <=1 match per decorator). ``{name}:{token}`` is
+                                    # retained as informative source text only. Source-only (no resolved
+                                    # tier), honouring the §8 invariant (weft-4a9d0f863c). Forward-
+                                    # compatible with a future relative-span discriminator.
+                                    taint_path=f"{name}:{token}#{deco_ordinal}",
                                 ),
                                 qualname=qualname,
                                 properties={"decorator": name, "token": token},

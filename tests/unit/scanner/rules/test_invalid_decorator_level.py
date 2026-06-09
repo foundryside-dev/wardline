@@ -164,3 +164,30 @@ def test_invalid_decorator_level_local_same_name_does_not_fire(tmp_path) -> None
         """,
     )
     assert InvalidDecoratorLevel().check(ctx) == []
+
+
+def test_stacked_identical_decorators_have_distinct_fingerprints(tmp_path) -> None:
+    # Soundness / fingerprint collision (wardline-377b896a87): two stacked identical invalid
+    # decorators on ONE def are two distinct findings, but the fingerprint anchored at the
+    # ENTITY line with taint_path=f"{name}:{token}" (no within-def discriminator) collapsed them
+    # to one key — one silently masking the other on the baseline/waiver/judge/Filigree joins.
+    # The decorators share name, token, AND entity line; the only thing that tells them apart is
+    # their POSITION in the decorator_list, so the discriminator carries the decorator ordinal
+    # (move-stable: invariant to the def moving and to column shifts; collision-complete since at
+    # most one finding is emitted per decorator).
+    _, ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trust_boundary
+
+        @trust_boundary(to_level='bogus')
+        @trust_boundary(to_level='bogus')
+        def handler(p):
+            if not p: raise ValueError
+            return p
+        """,
+    )
+    findings = InvalidDecoratorLevel().check(ctx)
+    assert len(findings) == 2, "both invalid decorators must be reported"
+    fps = {f.fingerprint for f in findings}
+    assert len(fps) == 2, "two distinct findings must not share a fingerprint (collision)"

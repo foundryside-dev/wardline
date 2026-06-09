@@ -74,8 +74,8 @@
       "location": {
         "col_end": 25,
         "col_start": 0,
-        "line_end": 107,
-        "line_start": 99,
+        "line_end": 119,
+        "line_start": 111,
         "path": "wardline_sinks.py"
       },
       "qualname": "wardline_sinks.lookup_member"
@@ -109,6 +109,16 @@
         "path": "wardline_sinks.py"
       },
       "qualname": "wardline_sinks.run_export"
+    },
+    {
+      "location": {
+        "col_end": 12,
+        "col_start": 0,
+        "line_end": 107,
+        "line_start": 100,
+        "path": "wardline_sinks.py"
+      },
+      "qualname": "wardline_sinks.stacked_invalid_levels"
     }
   ],
   "explain": {
@@ -129,10 +139,10 @@
   },
   "facts": [
     {
-      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
       "qualname": "wardline_sinks._refine_a",
       "wardline_json": {
-        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
         "dead_code_root": {
           "is_root": true,
           "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
@@ -162,10 +172,10 @@
       }
     },
     {
-      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
       "qualname": "wardline_sinks._refine_b",
       "wardline_json": {
-        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
         "dead_code_root": {
           "is_root": true,
           "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
@@ -195,10 +205,10 @@
       }
     },
     {
-      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
       "qualname": "wardline_sinks.chained_queries",
       "wardline_json": {
-        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
         "dead_code_root": {
           "is_root": true,
           "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
@@ -240,10 +250,10 @@
       }
     },
     {
-      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
       "qualname": "wardline_sinks.double_deserialize",
       "wardline_json": {
-        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
         "dead_code_root": {
           "is_root": true,
           "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
@@ -285,10 +295,10 @@
       }
     },
     {
-      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
       "qualname": "wardline_sinks.fan_out_stored",
       "wardline_json": {
-        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
         "dead_code_root": {
           "is_root": true,
           "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
@@ -336,10 +346,10 @@
       }
     },
     {
-      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
       "qualname": "wardline_sinks.import_catalog_blob",
       "wardline_json": {
-        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
         "dead_code_root": {
           "is_root": true,
           "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
@@ -375,10 +385,10 @@
       }
     },
     {
-      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
       "qualname": "wardline_sinks.load_report_plugin",
       "wardline_json": {
-        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
         "dead_code_root": {
           "is_root": true,
           "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
@@ -414,10 +424,10 @@
       }
     },
     {
-      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
       "qualname": "wardline_sinks.lookup_member",
       "wardline_json": {
-        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
         "dead_code_root": {
           "is_root": true,
           "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
@@ -428,20 +438,20 @@
         },
         "findings": [
           {
-            "fingerprint": "45ecfabb2181665a8aec69fece99ae4c171173e74333bcf617a99f3a2f2e2319",
-            "line_start": 99,
+            "fingerprint": "0508a699d59ad28767a979c4af85e524a025325efa28070bbdbcf6df418e5024",
+            "line_start": 111,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-101"
           },
           {
-            "fingerprint": "c48bac31d78f96b875a264abc931ecf8d60f1759a32065acade891877e8d5388",
-            "line_start": 106,
+            "fingerprint": "5ba5cc508e6f372d29620b40e6b5ffa334100acb9a43ba3694d1538afe496ba9",
+            "line_start": 118,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-118"
           },
           {
-            "fingerprint": "051c5bbb1db64eba5fc504c5f2e4c3e0a6dbbfd00b8b039e737e7c7bd10fb9de",
-            "line_start": 107,
+            "fingerprint": "dff95e304d3c6f3afaab584a465850fd82fdfb89b8151f1fd7b5cbce0764f20c",
+            "line_start": 119,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-120"
           }
@@ -459,10 +469,10 @@
       }
     },
     {
-      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
       "qualname": "wardline_sinks.open_catalog_file",
       "wardline_json": {
-        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
         "dead_code_root": {
           "is_root": true,
           "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
@@ -504,10 +514,10 @@
       }
     },
     {
-      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
       "qualname": "wardline_sinks.read_admin_arg",
       "wardline_json": {
-        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
         "dead_code_root": {
           "is_root": true,
           "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
@@ -530,10 +540,10 @@
       }
     },
     {
-      "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+      "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
       "qualname": "wardline_sinks.run_export",
       "wardline_json": {
-        "content_hash_at_compute": "e1bfc42718a7a00c8f5505df4c9b8fb6a07687ff13e4d432d739f0c757635aca",
+        "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
         "dead_code_root": {
           "is_root": true,
           "reason": "Wardline trust-decorated entity is externally reachable or trust-significant.",
@@ -565,6 +575,43 @@
           "resolved_call_count": 1,
           "source": "anchored",
           "unresolved_call_count": 1
+        }
+      }
+    },
+    {
+      "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
+      "qualname": "wardline_sinks.stacked_invalid_levels",
+      "wardline_json": {
+        "content_hash_at_compute": "6a065b812f9ebc7da0a1c2fbf9814226efc5180e3709ec7e134bce959a8069c1",
+        "dead_code_root": {
+          "is_root": false,
+          "reason": null,
+          "source": null,
+          "tags": []
+        },
+        "findings": [
+          {
+            "fingerprint": "470bbce20fe595fd6bf27a51922d490be30b4284bb1ba5076ba58d328df4ba35",
+            "line_start": 100,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-114"
+          },
+          {
+            "fingerprint": "86344efb75eb182f898cd934d54e39c0aae9caa6b2c9f20caefa502cd22dbf0d",
+            "line_start": 100,
+            "path": "wardline_sinks.py",
+            "rule_id": "PY-WL-114"
+          }
+        ],
+        "qualname": "wardline_sinks.stacked_invalid_levels",
+        "schema_version": "wardline-taint-1",
+        "taint": {
+          "actual_return": "UNKNOWN_RAW",
+          "contributing_callee_qualname": null,
+          "declared_return": "UNKNOWN_RAW",
+          "resolved_call_count": 0,
+          "source": "fallback",
+          "unresolved_call_count": 0
         }
       }
     }
@@ -1106,13 +1153,63 @@
     },
     {
       "confidence": null,
-      "fingerprint": "45ecfabb2181665a8aec69fece99ae4c171173e74333bcf617a99f3a2f2e2319",
+      "fingerprint": "470bbce20fe595fd6bf27a51922d490be30b4284bb1ba5076ba58d328df4ba35",
+      "kind": "defect",
+      "location": {
+        "col_end": 12,
+        "col_start": 0,
+        "line_end": 107,
+        "line_start": 100,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks.stacked_invalid_levels has an invalid or out-of-range trust level 'BOGUS' on decorator @trusted",
+      "properties": {
+        "decorator": "trusted",
+        "token": "BOGUS"
+      },
+      "qualname": "wardline_sinks.stacked_invalid_levels",
+      "related_entities": [],
+      "rule_id": "PY-WL-114",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "86344efb75eb182f898cd934d54e39c0aae9caa6b2c9f20caefa502cd22dbf0d",
+      "kind": "defect",
+      "location": {
+        "col_end": 12,
+        "col_start": 0,
+        "line_end": 107,
+        "line_start": 100,
+        "path": "wardline_sinks.py"
+      },
+      "maturity": "stable",
+      "message": "wardline_sinks.stacked_invalid_levels has an invalid or out-of-range trust level 'BOGUS' on decorator @trusted",
+      "properties": {
+        "decorator": "trusted",
+        "token": "BOGUS"
+      },
+      "qualname": "wardline_sinks.stacked_invalid_levels",
+      "related_entities": [],
+      "rule_id": "PY-WL-114",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "0508a699d59ad28767a979c4af85e524a025325efa28070bbdbcf6df418e5024",
       "kind": "defect",
       "location": {
         "col_end": 25,
         "col_start": 0,
-        "line_end": 107,
-        "line_start": 99,
+        "line_end": 119,
+        "line_start": 111,
         "path": "wardline_sinks.py"
       },
       "maturity": "stable",
@@ -1131,17 +1228,17 @@
     },
     {
       "confidence": null,
-      "fingerprint": "c48bac31d78f96b875a264abc931ecf8d60f1759a32065acade891877e8d5388",
+      "fingerprint": "5ba5cc508e6f372d29620b40e6b5ffa334100acb9a43ba3694d1538afe496ba9",
       "kind": "defect",
       "location": {
         "col_end": null,
         "col_start": null,
         "line_end": null,
-        "line_start": 106,
+        "line_start": 118,
         "path": "wardline_sinks.py"
       },
       "maturity": "preview",
-      "message": "wardline_sinks.lookup_member: EXTERNAL_RAW (untrusted) data reaches the SQL-injection sink execute() at line 106",
+      "message": "wardline_sinks.lookup_member: EXTERNAL_RAW (untrusted) data reaches the SQL-injection sink execute() at line 118",
       "properties": {
         "arg_taint": "EXTERNAL_RAW",
         "sink": "execute",
@@ -1157,17 +1254,17 @@
     },
     {
       "confidence": null,
-      "fingerprint": "051c5bbb1db64eba5fc504c5f2e4c3e0a6dbbfd00b8b039e737e7c7bd10fb9de",
+      "fingerprint": "dff95e304d3c6f3afaab584a465850fd82fdfb89b8151f1fd7b5cbce0764f20c",
       "kind": "defect",
       "location": {
         "col_end": null,
         "col_start": null,
         "line_end": null,
-        "line_start": 107,
+        "line_start": 119,
         "path": "wardline_sinks.py"
       },
       "maturity": "preview",
-      "message": "wardline_sinks.lookup_member returns stored/persisted data (EXTERNAL_RAW) without validation at line 107",
+      "message": "wardline_sinks.lookup_member returns stored/persisted data (EXTERNAL_RAW) without validation at line 119",
       "properties": {
         "return_taint": "EXTERNAL_RAW"
       },
@@ -2277,6 +2374,74 @@
             "ruleId": "PY-WL-118"
           },
           {
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "endColumn": 12,
+                    "endLine": 107,
+                    "startColumn": 0,
+                    "startLine": 100
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.stacked_invalid_levels has an invalid or out-of-range trust level 'BOGUS' on decorator @trusted"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "470bbce20fe595fd6bf27a51922d490be30b4284bb1ba5076ba58d328df4ba35"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.stacked_invalid_levels",
+              "wardlineProperties": {
+                "decorator": "trusted",
+                "token": "BOGUS"
+              }
+            },
+            "ruleId": "PY-WL-114"
+          },
+          {
+            "level": "error",
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "wardline_sinks.py"
+                  },
+                  "region": {
+                    "endColumn": 12,
+                    "endLine": 107,
+                    "startColumn": 0,
+                    "startLine": 100
+                  }
+                }
+              }
+            ],
+            "message": {
+              "text": "wardline_sinks.stacked_invalid_levels has an invalid or out-of-range trust level 'BOGUS' on decorator @trusted"
+            },
+            "partialFingerprints": {
+              "wardlineFingerprint/v1": "86344efb75eb182f898cd934d54e39c0aae9caa6b2c9f20caefa502cd22dbf0d"
+            },
+            "properties": {
+              "internalSeverity": "ERROR",
+              "kind": "defect",
+              "qualname": "wardline_sinks.stacked_invalid_levels",
+              "wardlineProperties": {
+                "decorator": "trusted",
+                "token": "BOGUS"
+              }
+            },
+            "ruleId": "PY-WL-114"
+          },
+          {
             "codeFlows": [
               {
                 "threadFlows": [
@@ -2294,9 +2459,9 @@
                             },
                             "region": {
                               "endColumn": 25,
-                              "endLine": 107,
+                              "endLine": 119,
                               "startColumn": 0,
-                              "startLine": 99
+                              "startLine": 111
                             }
                           }
                         }
@@ -2315,9 +2480,9 @@
                   },
                   "region": {
                     "endColumn": 25,
-                    "endLine": 107,
+                    "endLine": 119,
                     "startColumn": 0,
-                    "startLine": 99
+                    "startLine": 111
                   }
                 }
               }
@@ -2326,7 +2491,7 @@
               "text": "wardline_sinks.lookup_member declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v1": "45ecfabb2181665a8aec69fece99ae4c171173e74333bcf617a99f3a2f2e2319"
+              "wardlineFingerprint/v1": "0508a699d59ad28767a979c4af85e524a025325efa28070bbdbcf6df418e5024"
             },
             "properties": {
               "internalSeverity": "ERROR",
@@ -2349,14 +2514,14 @@
                         "importance": "important",
                         "location": {
                           "message": {
-                            "text": "wardline_sinks.lookup_member: EXTERNAL_RAW (untrusted) data reaches the SQL-injection sink execute() at line 106"
+                            "text": "wardline_sinks.lookup_member: EXTERNAL_RAW (untrusted) data reaches the SQL-injection sink execute() at line 118"
                           },
                           "physicalLocation": {
                             "artifactLocation": {
                               "uri": "wardline_sinks.py"
                             },
                             "region": {
-                              "startLine": 106
+                              "startLine": 118
                             }
                           }
                         }
@@ -2374,16 +2539,16 @@
                     "uri": "wardline_sinks.py"
                   },
                   "region": {
-                    "startLine": 106
+                    "startLine": 118
                   }
                 }
               }
             ],
             "message": {
-              "text": "wardline_sinks.lookup_member: EXTERNAL_RAW (untrusted) data reaches the SQL-injection sink execute() at line 106"
+              "text": "wardline_sinks.lookup_member: EXTERNAL_RAW (untrusted) data reaches the SQL-injection sink execute() at line 118"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v1": "c48bac31d78f96b875a264abc931ecf8d60f1759a32065acade891877e8d5388"
+              "wardlineFingerprint/v1": "5ba5cc508e6f372d29620b40e6b5ffa334100acb9a43ba3694d1538afe496ba9"
             },
             "properties": {
               "internalSeverity": "ERROR",
@@ -2407,14 +2572,14 @@
                         "importance": "important",
                         "location": {
                           "message": {
-                            "text": "wardline_sinks.lookup_member returns stored/persisted data (EXTERNAL_RAW) without validation at line 107"
+                            "text": "wardline_sinks.lookup_member returns stored/persisted data (EXTERNAL_RAW) without validation at line 119"
                           },
                           "physicalLocation": {
                             "artifactLocation": {
                               "uri": "wardline_sinks.py"
                             },
                             "region": {
-                              "startLine": 107
+                              "startLine": 119
                             }
                           }
                         }
@@ -2432,16 +2597,16 @@
                     "uri": "wardline_sinks.py"
                   },
                   "region": {
-                    "startLine": 107
+                    "startLine": 119
                   }
                 }
               }
             ],
             "message": {
-              "text": "wardline_sinks.lookup_member returns stored/persisted data (EXTERNAL_RAW) without validation at line 107"
+              "text": "wardline_sinks.lookup_member returns stored/persisted data (EXTERNAL_RAW) without validation at line 119"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v1": "051c5bbb1db64eba5fc504c5f2e4c3e0a6dbbfd00b8b039e737e7c7bd10fb9de"
+              "wardlineFingerprint/v1": "dff95e304d3c6f3afaab584a465850fd82fdfb89b8151f1fd7b5cbce0764f20c"
             },
             "properties": {
               "internalSeverity": "ERROR",
@@ -2470,6 +2635,9 @@
               },
               {
                 "id": "PY-WL-112"
+              },
+              {
+                "id": "PY-WL-114"
               },
               {
                 "id": "PY-WL-115"

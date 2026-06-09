@@ -1,4 +1,4 @@
 {
   "corpus_version": 2,
-  "reason": "weft-4a9d0f863c: fingerprint resolution-invariance; source-only full-span (col_offset:end_col_offset) discriminator for call-site rules; sinks fixture with same-line + chained sinks exercising all four call-site rule families (corpus_version 2)."
+  "reason": "wardline-377b896a87: PY-WL-114 decorator-ordinal (within-def, move-stable) discriminator (close stacked-identical-decorator fingerprint collision) + add stacked_invalid_levels collision-gate fixture"
 }

@@ -95,6 +95,18 @@ def chained_queries(argv: Sequence[str]) -> object:
     return conn.cursor().execute(f"SELECT {name}").execute(f"DELETE {name}")  # noqa: S608
 
 
+@trusted(level="BOGUS")
+@trusted(level="BOGUS")
+def stacked_invalid_levels(p: object) -> object:
+    """Two stacked identical invalid trust decorators on ONE def — PY-WL-114 emits one
+    finding per decorator, anchored at the ENTITY line (not the decorator). The two findings
+    share name, token, AND entity line, so the discriminator must carry each decorator's
+    POSITION in the decorator_list (its ordinal) — a move-stable within-def index that keeps
+    the two join keys distinct without using absolute lines or columns (wardline-377b896a87
+    collision gate). Isolated trivial body — no sinks — so it perturbs no other finding."""
+    return p
+
+
 @trusted(level="ASSURED")
 def lookup_member(argv: Sequence[str]) -> list[object]:
     """Untrusted text reaches a SQL execution sink (PY-WL-118); the returned
