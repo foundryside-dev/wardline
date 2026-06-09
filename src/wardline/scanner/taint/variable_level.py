@@ -1332,13 +1332,24 @@ def _handle_for(
     # Snapshot pre-loop.
     pre_loop = dict(var_taints)
 
-    # Lambda bindings are mutated in place on the shared map across iterations (no
-    # _branch_copy/_merge here — a loop body is not a set of mutually-exclusive arms). A
-    # rebind inside the body REPLACES with the SAME ast.Lambda node every iteration (parsed
-    # once), and any in-body branch merge dedups candidates by identity, so the binding
+    # Lambda bindings are mutated in place on the shared map across iterations (no per-arm
+    # copy WITHIN the fixpoint — the body's in-place resolution is what gives a sound
+    # loop-carried binding: a cb(raw) call placed BEFORE an in-body rebind sees the prior
+    # iteration's candidate). A rebind REPLACES with the SAME ast.Lambda node every
+    # iteration (parsed once) and in-body branch merges dedup by identity, so the binding
     # state is idempotent across iterations — the var_taints convergence check below is a
     # sufficient fixpoint for the bindings too (no unbounded candidate growth, see
     # wardline-383f83fafe).
+    #
+    # The loop body is, however, a CONDITIONALLY-executed arm: a reachable 0-iteration path
+    # means the post-loop binding for a name MAY still be its pre-loop value. Snapshot the
+    # pre-loop bindings (the "loop did not run" arm) and union them back AFTER the fixpoint
+    # (see below), exactly like a no-`else` ``if`` — otherwise a sink-lambda bound before
+    # the loop and rebound clean inside it is silently dropped on the zero-trip path, and a
+    # post-loop call through the name misses the sink (the FN this closes,
+    # wardline-d6af917bde).
+    pre_loop_lambdas = _branch_copy(_CURRENT_LAMBDA_BINDINGS.get())
+
     # Iterate the walk until var_taints genuinely converges (WLN-MED-09). The bound is
     # num_vars × lattice_height, NOT lattice_height (8) alone: 8 caps a SINGLE variable's
     # monotone rank climb, but a read-before-write loop-carried chain propagates taint one
@@ -1362,6 +1373,18 @@ def _handle_for(
         if iterations >= len(var_taints) * len(TRUST_RANK) + 1:
             break
 
+    # Union the converged "loop ran" binding arm with the "loop did not run" arm so the
+    # post-loop candidate set covers BOTH the zero-trip path (pre_loop_lambdas) and the
+    # body's rebinds — the faithful mirror of a no-`else` ``if`` join (wardline-d6af917bde).
+    # _merge_branch_bindings preserves the dedup-by-identity and never-empty-list
+    # invariants. This lands BEFORE the orelse walk, so a `for...else` body that further
+    # rebinds the name still mutates the unioned state in place (accepted limitation: the
+    # break-vs-normal-exit distinction is not modelled — orelse is walked unconditionally).
+    parent_lambdas = _CURRENT_LAMBDA_BINDINGS.get()
+    if parent_lambdas is not None:
+        post_body_arm = _branch_copy(parent_lambdas)
+        _merge_branch_bindings(parent_lambdas, [post_body_arm, pre_loop_lambdas])
+
     # Walk orelse (runs after normal loop completion).
     if stmt.orelse:
         _walk_body(stmt.orelse, function_taint, taint_map, var_taints, call_site_taints)
@@ -1376,6 +1399,12 @@ def _handle_while(
 ) -> None:
     """Handle while loops — body merges with pre-loop state."""
     pre_loop = dict(var_taints)
+
+    # The body is a conditionally-executed arm (a reachable 0-iteration path), so snapshot
+    # the pre-loop lambda bindings (the "loop did not run" arm) and union them back after
+    # the fixpoint — the no-`else` ``if`` mirror that keeps a pre-loop sink-lambda visible
+    # on the zero-trip path (wardline-d6af917bde; see _handle_for for the full rationale).
+    pre_loop_lambdas = _branch_copy(_CURRENT_LAMBDA_BINDINGS.get())
 
     # Iterate to genuine convergence with a num_vars × lattice_height backstop — see
     # _handle_for: a range(8) cap was unsound for loop-carried chains > 8 links
@@ -1392,6 +1421,12 @@ def _handle_while(
             break
         if iterations >= len(var_taints) * len(TRUST_RANK) + 1:
             break
+
+    # Union the converged "loop ran" arm with the "loop did not run" arm (wardline-d6af917bde).
+    parent_lambdas = _CURRENT_LAMBDA_BINDINGS.get()
+    if parent_lambdas is not None:
+        post_body_arm = _branch_copy(parent_lambdas)
+        _merge_branch_bindings(parent_lambdas, [post_body_arm, pre_loop_lambdas])
 
     if stmt.orelse:
         _walk_body(stmt.orelse, function_taint, taint_map, var_taints, call_site_taints)
