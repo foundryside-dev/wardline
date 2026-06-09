@@ -8,10 +8,18 @@ arrangement: Wardline *vendors* ``qualnames_rust.json`` and reproduces its
 the *second producer*, it MINTS the same locator string and never parses it.
 
 Provenance — re-vendor when Loomweave bumps the corpus:
-    source: loomweave  feat/rust-plugin-spec  @ 8f4f85f  (fixtures/qualnames_rust.json,
-            blob be9f8e2, extractor-generated, locked by
+    source: loomweave  rc4  @ a209fc7603b09bb06564e09c8c99390d410ea5b2
+            (fixtures/qualnames_rust.json, blob 56cba0fe2d6c449ebc841c52a2800368b2e389e4,
+            extractor-generated, locked by
             crates/loomweave-plugin-rust/tests/qualname_conformance.rs)
-    vendored byte-identical to tests/conformance/qualnames_rust.json (2026-06-09).
+    vendored byte-identical to tests/conformance/qualnames_rust.json (2026-06-10).
+    The a209fc7 re-vendor (rust-sp2 sprint, Task 1 upstream) adds FIVE cases:
+    ``generic_self_nested_param`` (the F2 nested-param trip-wire — the unit-only
+    guard now has its corpus row), ``leaf_item_kinds`` (enum/trait/type_alias/
+    const/static), ``stacked_cfg_twin`` (ALL #[cfg] predicates folded — normalised,
+    sorted, ``&``-joined), ``cfg_escape_reserved_char`` (injective escape ``%``->``%25``
+    then ``:``->``%3A``, applied to the whitespace-stripped predicate BEFORE any
+    any()/all() arg sort), and ``leaf_kind_cfg_twin`` (per-(kind, name) twin counter).
     NOTE: this is the **ADR-049 amendment 3 (self-type generic args)** corpus, layered on
     amendment Option b. The impl ``<Type>`` segment now carries the self type's CONCRETE
     generic args (``Foo<i32>`` vs ``Foo<u32>`` are distinct keys; the impl's own top-level
@@ -60,11 +68,23 @@ import pytest
 _CORPUS: dict[str, Any] = json.loads((Path(__file__).parent / "qualnames_rust.json").read_text("utf-8"))
 
 _KNOWN_TIERS = {"slice-1", "sp2"}
-# The ADR-049-amendment corpus adds `impl` entities (one per merged impl block) and
-# `macro` rows. Wardline emits only `function` callables, so the comparison rule
-# (set-equality on function-kind qualnames) is unchanged; the extra kinds must be
-# *known* so test_expected_kinds_are_known stays a real guard, not a false failure.
-_KNOWN_KINDS = {"function", "struct", "module", "impl", "macro"}
+# The a209fc7 corpus carries the FULL ten-kind ADR-049 surface (leaf_item_kinds /
+# leaf_kind_cfg_twin pin enum/trait/type_alias/const/static; macro + impl were already
+# present). Wardline still compares only `function`-kind rows here (the subset-consumer
+# rule); the full-set graduation is the producer-surface task. The kinds must be *known*
+# so test_expected_kinds_are_known stays a real guard, not a false failure.
+_KNOWN_KINDS = {
+    "module",
+    "struct",
+    "function",
+    "enum",
+    "trait",
+    "type_alias",
+    "const",
+    "static",
+    "macro",
+    "impl",
+}
 
 
 def _expected_function_qualnames(case: dict[str, Any]) -> set[str]:

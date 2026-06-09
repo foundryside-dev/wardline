@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from tree_sitter import Node
 
 __all__ = [
+    "cfg_discriminant",
     "cfg_predicate_of",
     "impl_type_param_names",
     "normalize_cfg_predicate",
@@ -76,17 +77,23 @@ def normalize_cfg_predicate(text: str) -> str:
     """Canonicalise a ``cfg(...)`` predicate, mirroring loomweave ``qualname.rs``
     ``normalise_pred`` BYTE-FOR-BYTE (the @cfg discriminant is a parity surface).
 
-    ``text`` is the argument token-tree text incl. its parens, e.g. ``"(unix)"`` or
-    ``"(any(windows, unix))"``; the outer cfg-argument parens are stripped to the bare
-    predicate, then: all whitespace removed, and a single top-level ``any(...)``/
-    ``all(...)`` wrapper's args sorted by a **naive** ``split(',')`` (NOT paren-aware —
-    this is exactly the oracle's algorithm; deeper nesting is left as the deterministic
-    stripped string, even though that mangles, because the contract is byte-equality
-    with the oracle, not a "nicer" canonical form).
+    ``text`` is the RAW argument token-tree text, with or without its outer parens
+    (``"(unix)"`` / ``"unix"`` / ``"(any(windows, unix))"``); the outer cfg-argument
+    parens (if present) are stripped to the bare predicate, then — in the oracle's
+    exact order: all whitespace removed; every reserved entity-id char escaped
+    (``_escape_reserved``: ``%`` -> ``%25`` first, then ``:`` -> ``%3A`` — injective,
+    so ``feature="a:b"`` and a literal source ``feature="a%3Ab"`` stay distinct); and
+    a single top-level ``any(...)``/``all(...)`` wrapper's args sorted by a **naive**
+    ``split(',')`` (NOT paren-aware — this is exactly the oracle's algorithm; deeper
+    nesting is left as the deterministic stripped string, even though that mangles,
+    because the contract is byte-equality with the oracle, not a "nicer" canonical
+    form). The escape runs on the whole stripped predicate BEFORE the any()/all()
+    split, exactly as in ``normalise_pred``.
     """
     stripped = "".join(text.split())
     if stripped.startswith("(") and stripped.endswith(")"):
         stripped = stripped[1:-1]
+    stripped = _escape_reserved(stripped)
     for fn in ("any", "all"):
         prefix = fn + "("
         if stripped.startswith(prefix) and stripped.endswith(")"):
@@ -96,9 +103,33 @@ def normalize_cfg_predicate(text: str) -> str:
     return stripped
 
 
+def _escape_reserved(s: str) -> str:
+    """Escape every reserved entity-id char so a cfg predicate can never inject the
+    reserved ``:`` separator into a qualname (mirrors qualname.rs ``escape_reserved``).
+    Order matters for injectivity: the ``%`` introducer is encoded FIRST."""
+    return s.replace("%", "%25").replace(":", "%3A")
+
+
+def cfg_discriminant(predicates: Sequence[str]) -> str:
+    """Fold ALL of an item's RAW ``#[cfg(...)]`` predicates into the stable ``@cfg(...)``
+    discriminant suffix (mirrors qualname.rs ``cfg_discriminant`` BYTE-FOR-BYTE): each
+    predicate normalised+escaped exactly once (``normalize_cfg_predicate``), the set
+    sorted (order-independent — NOT source order), joined with ``&``. Folding every
+    predicate is what keeps stacked cfg-twins (``#[cfg(feature="a")] #[cfg(unix)]`` vs
+    ``#[cfg(feature="b")] #[cfg(unix)]``) distinct. Applied by ``index.py`` only on a
+    bare-path COLLISION, exactly like the oracle's extract.rs twin counter."""
+    return f"@cfg({'&'.join(sorted(normalize_cfg_predicate(p) for p in predicates))})"
+
+
 def cfg_predicate_of(attribute_item: Node) -> str | None:
-    """The normalised cfg predicate of an ``attribute_item`` node, or ``None`` if it is
-    not a ``#[cfg(...)]`` attribute. e.g. ``#[cfg(unix)]`` -> ``"unix"``.
+    """The RAW cfg predicate text of an ``attribute_item`` node (outer argument parens
+    included, source spacing intact — e.g. ``#[cfg(feature = "a")]`` ->
+    ``'(feature = "a")'``), or ``None`` if it is not a ``#[cfg(...)]`` attribute.
+
+    Deliberately UN-normalised, mirroring extract.rs ``cfg_predicates`` (raw token
+    text): collection is raw, and ``cfg_discriminant`` is the single place predicates
+    are normalised + reserved-char-escaped — normalising here too would double-escape
+    (``a:b`` -> ``a%253Ab``).
     """
     if not attribute_item.named_children:
         return None
@@ -111,7 +142,7 @@ def cfg_predicate_of(attribute_item: Node) -> str | None:
     args = attribute.child_by_field_name("arguments")
     if args is None or args.text is None:
         return None
-    return normalize_cfg_predicate(args.text.decode("utf-8"))
+    return args.text.decode("utf-8")
 
 
 # Generic args that are NOT part of the locator key (qualname.rs trait_generic_args /

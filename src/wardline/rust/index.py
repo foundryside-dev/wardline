@@ -81,19 +81,21 @@ def _walk_scope(
     entities: list[RustEntity],
     path: str,
 ) -> None:
-    # Attributes are *preceding siblings* of the item they decorate, so fold each
-    # pending cfg predicate onto the next item. Any non-attribute node resets it.
-    items: list[tuple[Node, str | None]] = []
-    pending_cfg: str | None = None
+    # Attributes are *preceding siblings* of the item they decorate, so accumulate
+    # every pending cfg predicate RAW onto the next item (mirrors extract.rs
+    # `cfg_predicates` — ALL stacked #[cfg]s feed the discriminant, normalisation
+    # happens exactly once in `cfg_discriminant`). Any non-attribute node resets it.
+    items: list[tuple[Node, list[str]]] = []
+    pending_cfgs: list[str] = []
     for child in child_nodes:
         if child.type == "attribute_item":
             pred = q.cfg_predicate_of(child)
             if pred is not None:
-                pending_cfg = pred
+                pending_cfgs.append(pred)
             continue
         if child.type in _ITEM_TYPES:
-            items.append((child, pending_cfg))
-        pending_cfg = None
+            items.append((child, pending_cfgs))
+        pending_cfgs = []
 
     # The @cfg suffix is added only on a bare-path COLLISION (ADR-049): a lone
     # cfg-gated item gets no suffix. Collisions are per-kind; we emit only callables,
@@ -115,12 +117,12 @@ def _walk_scope(
                 impl_segments[node.id] = seg
                 impl_twin_counts[seg] += 1
 
-    for node, cfg in items:
+    for node, cfgs in items:
         if node.type == "function_item":
             name = _name(node)
             qualname = f"{module}.{name}"
-            if cfg is not None and fn_name_counts[name] > 1:
-                qualname += f"@cfg({cfg})"
+            if cfgs and fn_name_counts[name] > 1:
+                qualname += q.cfg_discriminant(cfgs)
             entities.append(_entity(qualname, "function", node, nmap, path))
         elif node.type == "mod_item":
             body = node.child_by_field_name("body")
@@ -130,8 +132,8 @@ def _walk_scope(
             seg = impl_segments.get(node.id)
             if seg is None:
                 continue
-            if cfg is not None and impl_twin_counts[seg] > 1:
-                seg += f"@cfg({cfg})"
+            if cfgs and impl_twin_counts[seg] > 1:
+                seg += q.cfg_discriminant(cfgs)
             _emit_impl_methods(node, f"{module}.{seg}", nmap, entities, path)
         # struct_item: scope-only, never a callable -> not emitted.
 

@@ -15,7 +15,11 @@ import pytest
 pytest.importorskip("tree_sitter", reason="wardline[rust] extra not installed")
 
 from wardline.rust.index import discover_rust_entities  # noqa: E402
-from wardline.rust.qualname import normalize_cfg_predicate, rust_module_route  # noqa: E402
+from wardline.rust.qualname import (  # noqa: E402
+    cfg_discriminant,
+    normalize_cfg_predicate,
+    rust_module_route,
+)
 
 
 def test_module_route_root_files_contribute_no_segment() -> None:
@@ -44,6 +48,34 @@ def test_normalize_cfg_sorts_a_single_flat_any_all_like_the_oracle() -> None:
     # contract is byte-equality with the oracle, not a "nicer" canonical form).
     assert normalize_cfg_predicate("(any(windows, unix))") == "any(unix,windows)"
     assert normalize_cfg_predicate("(all(unix, windows))") == "all(unix,windows)"
+
+
+def test_normalize_cfg_predicate_escapes_reserved_chars() -> None:
+    # % before : (order matters — injective, mirrors loomweave escape_reserved:
+    # the introducer is encoded first so a literal source `%3A` cannot alias a
+    # real escaped `:`; qualname.rs escape_reserved).
+    assert normalize_cfg_predicate('feature = "a:b"') == 'feature="a%3Ab"'
+    assert normalize_cfg_predicate('feature = "a%3Ab"') == 'feature="a%253Ab"'
+
+
+def test_escape_happens_before_any_all_split() -> None:
+    # escape applies to the whole stripped pred BEFORE arg sorting (oracle order:
+    # qualname.rs normalise_pred — strip ws -> escape_reserved -> any()/all() sort).
+    assert normalize_cfg_predicate('any(feature = "a:b", unix)') == 'any(feature="a%3Ab",unix)'
+
+
+def test_cfg_discriminant_folds_all_predicates_sorted() -> None:
+    # ALL predicates fold (each normalised, the set sorted, joined `&`) — mirrors
+    # loomweave cfg_discriminant (qualname.rs); pinned upstream by stacked_cfg_twin.
+    assert cfg_discriminant(["unix", 'feature = "a"']) == '@cfg(feature="a"&unix)'
+    assert cfg_discriminant(['feature = "a"', "unix"]) == '@cfg(feature="a"&unix)'  # order-independent
+
+
+def test_cfg_discriminant_normalizes_exactly_once() -> None:
+    # raw input with a reserved char escapes ONCE (no double-escape through the
+    # pipeline): index.py collects RAW predicates, cfg_discriminant is the single
+    # normalisation point — the layering that prevents `a:b` -> `a%253Ab`.
+    assert cfg_discriminant(['feature = "a:b"']) == '@cfg(feature="a%3Ab")'
 
 
 def test_positional_generics_are_rename_stable() -> None:

@@ -53,6 +53,29 @@ def test_semantic_kind_split_rides_metadata_not_the_qualname() -> None:
     assert entities["demo.m.Foo.impl#<>.bar"].kind == "method"
 
 
+def test_stacked_cfg_twins_get_distinct_folded_suffixes() -> None:
+    # ALL stacked #[cfg] attributes fold into the discriminant (loomweave extract.rs
+    # cfg_predicates collects every cfg; folding only the FIRST/LAST would hand both
+    # blocks the same suffix and silently merge them). Pinned upstream by the
+    # stacked_cfg_twin corpus row.
+    src = (
+        "struct Foo;\n"
+        '#[cfg(feature = "a")]\n#[cfg(unix)]\nimpl Foo { pub fn go(&self) {} }\n'
+        '#[cfg(feature = "b")]\n#[cfg(unix)]\nimpl Foo { pub fn go(&self) {} }\n'
+    )
+    names = {e.qualname for e in discover_rust_entities(src, module="demo.m")}
+    assert 'demo.m.Foo.impl#<>@cfg(feature="a"&unix).go' in names
+    assert 'demo.m.Foo.impl#<>@cfg(feature="b"&unix).go' in names
+
+
+def test_single_stacked_cfg_impl_without_twin_gets_no_suffix() -> None:
+    # dialect: @cfg is a COLLISION discriminator — a lone stacked-cfg impl stays bare
+    # (the suffix applies only when extract.rs's twin counter sees a path collision).
+    src = '#[cfg(feature = "a")]\n#[cfg(unix)]\nstruct Foo;\nimpl Foo { pub fn go(&self) {} }\n'
+    names = {e.qualname for e in discover_rust_entities(src, module="demo.m")}
+    assert "demo.m.Foo.impl#<>.go" in names
+
+
 def test_node_id_zero_is_the_root() -> None:
     # Sanity that the stamped NodeId comes from the shared mint authority (pre-order
     # from the root): the first function's id is well past 0 (root + items precede).
