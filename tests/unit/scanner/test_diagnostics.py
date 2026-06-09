@@ -115,6 +115,11 @@ def test_collision_guard_distinguishes_on_any_consumer_visible_field() -> None:
     b = Finding("PY-WL-114", "m", Severity.ERROR, Kind.DEFECT, Location("a.py", 3), fp, properties={"k": 2})
     out = build_collision_findings([a, b])
     assert len(out) == 1
+    # finding_count and members must agree on the SAME distinctness key — a
+    # properties-only difference must be counted AND listed (one member per distinct).
+    assert out[0].properties["finding_count"] == 2
+    assert len(out[0].properties["members"]) == 2
+    assert {m["properties"]["k"] for m in out[0].properties["members"]} == {1, 2}
 
 
 def test_collision_guard_is_deterministic_and_per_group() -> None:

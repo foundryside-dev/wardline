@@ -156,11 +156,16 @@ def build_collision_findings(findings: list[Finding]) -> list[Finding]:
         if len(group) < 2:
             continue
         # Benign exact-duplicates collapse to one canonical form; a collision has >=2.
-        distinct = sorted({f.to_jsonl() for f in group})
-        if len(distinct) < 2:
+        # ``to_jsonl()`` is the SINGLE distinctness key — both the count and the
+        # member list derive from it, so a collision that differs only in
+        # properties/severity (not in the 5-tuple below) is still counted AND listed.
+        reps: dict[str, Finding] = {}
+        for f in group:
+            reps.setdefault(f.to_jsonl(), f)
+        if len(reps) < 2:
             continue
-        members = sorted({(f.rule_id, f.location.path, f.location.line_start, f.qualname, f.message) for f in group})
-        summary = "; ".join(f"{rid}@{path}:{line}" for rid, path, line, _qn, _msg in members)
+        distinct = [reps[k] for k in sorted(reps)]
+        summary = "; ".join(f"{f.rule_id}@{f.location.path}:{f.location.line_start}" for f in distinct)
         out.append(
             Finding(
                 rule_id="WLN-ENGINE-FINGERPRINT-COLLISION",
@@ -176,8 +181,16 @@ def build_collision_findings(findings: list[Finding]) -> list[Finding]:
                     "colliding_fingerprint": fp,
                     "finding_count": len(distinct),
                     "members": [
-                        {"rule_id": rid, "path": path, "line_start": line, "qualname": qn, "message": msg}
-                        for rid, path, line, qn, msg in members
+                        {
+                            "rule_id": f.rule_id,
+                            "path": f.location.path,
+                            "line_start": f.location.line_start,
+                            "qualname": f.qualname,
+                            "severity": f.severity.value,
+                            "message": f.message,
+                            "properties": dict(f.properties),
+                        }
+                        for f in distinct
                     ],
                 },
             )

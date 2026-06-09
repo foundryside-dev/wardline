@@ -148,6 +148,10 @@ class Finding:
 # needed to tell two co-located findings apart. A rule that emits at most one
 # finding per (rule_id, path, line_start, qualname) passes ``taint_path=None``.
 # Resolved tiers belong in ``message``/``properties``, never the join key.
+# This invariant is no longer convention-only: ``scanner.diagnostics.build_collision_findings``
+# enforces it at runtime over the full emitted set (wardline-8fb773a7af) — two DISTINCT
+# findings sharing a fingerprint surface a loud WLN-ENGINE-FINGERPRINT-COLLISION DEFECT
+# that trips the gate, instead of one silently masking the other on the joins.
 # (This is invariant to taint-resolution drift; ``line_start`` and source-token
 # spellings can still shift on a genuine source/parse change — that is expected,
 # since the contract is identical-source -> identical-fingerprint.)

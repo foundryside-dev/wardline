@@ -47,6 +47,35 @@ def test_analyzer_emits_metrics_and_computes_transitive_taint(tmp_path) -> None:
     assert ctx.project_taints["pkg.service.fetch"] == T.MIXED_RAW
 
 
+def test_analyze_emits_collision_diagnostic_through_the_real_chokepoint(tmp_path) -> None:
+    # Wiring proof for the no-collision guard (wardline-8fb773a7af). The unit tests
+    # exercise build_collision_findings in isolation; this proves the guard is
+    # actually live on the analyze() return path — that two distinct rule findings
+    # sharing a fingerprint surface a WLN-ENGINE-FINGERPRINT-COLLISION DEFECT in the
+    # emitted set. Without this, an inert wiring would fail SILENTLY — the exact
+    # failure the guard exists to prevent.
+    from wardline.core.finding import Finding, Location, Severity
+
+    _write(tmp_path, "app.py", "def f():\n    return 1\n")
+    shared_fp = "c0ffee" + "0" * 58
+
+    class _CollidingRegistry:
+        def run(self, context):  # noqa: ANN001, ANN202
+            return [
+                Finding("PY-WL-114", "first", Severity.ERROR, Kind.DEFECT, Location("app.py", 1), shared_fp),
+                Finding("PY-WL-114", "second", Severity.ERROR, Kind.DEFECT, Location("app.py", 1), shared_fp),
+            ]
+
+    analyzer = WardlineAnalyzer(registry=_CollidingRegistry())
+    findings = analyzer.analyze([tmp_path / "app.py"], WardlineConfig(), root=tmp_path)
+
+    collisions = [f for f in findings if f.rule_id == "WLN-ENGINE-FINGERPRINT-COLLISION"]
+    assert len(collisions) == 1
+    assert collisions[0].kind == Kind.DEFECT
+    assert collisions[0].severity == Severity.ERROR
+    assert collisions[0].properties["colliding_fingerprint"] == shared_fp
+
+
 def test_analyzer_emits_unknown_import_fact(tmp_path) -> None:
     _write(tmp_path, "app.py", "from some_external_lib import thing\ndef f(): return thing()\n")
     analyzer = WardlineAnalyzer()
