@@ -42,9 +42,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from wardline._version import __version__
-from wardline.core.attest import git_state, ruleset_hash
+from wardline.core.attest import git_state
 from wardline.core.errors import LegisArtifactError
 from wardline.core.finding import FINGERPRINT_SCHEME, Finding, SuppressionState
+from wardline.core.ruleset import ruleset_hash
 from wardline.core.safe_paths import safe_project_file
 from wardline.core.taints import TaintState
 

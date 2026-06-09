@@ -123,7 +123,7 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
             source = path.read_text(encoding="utf-8")
             source_bytes = source.encode("utf-8")
 
-            from wardline.core.attest import ruleset_hash
+            from wardline.core.ruleset import ruleset_hash
             from wardline.scanner.taint.project_resolver import _RESOLVER_VERSION
             from wardline.scanner.taint.summary import SUMMARY_SCHEMA_VERSION, compute_cache_key
 

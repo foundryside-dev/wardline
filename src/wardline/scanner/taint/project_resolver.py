@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
+from wardline.core.config import WardlineConfig
+from wardline.core.ruleset import ruleset_hash
 from wardline.scanner.taint.callgraph import build_call_edges
 from wardline.scanner.taint.module_summariser import summarise_module
 from wardline.scanner.taint.propagation import propagate_callgraph_taints
@@ -140,9 +142,6 @@ def resolve_project_taints(
     # shape summaries without changing source bytes). MUST match the dirty-detection key the
     # parse stage computed from the same config, exactly as provider_fingerprint must — else a
     # summary computed under one policy could be served under another (wardline-9d6a81b9e7).
-    from wardline.core.attest import ruleset_hash
-    from wardline.core.config import WardlineConfig
-
     scan_policy_hash = ruleset_hash(config if config is not None else WardlineConfig())
 
     # Per-module summaries: reuse cached for clean cache-hit modules, else fresh.

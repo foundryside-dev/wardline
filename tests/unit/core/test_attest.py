@@ -27,12 +27,12 @@ from wardline.core.attest import (
     _canonical_bytes,
     build_attestation,
     git_state,
-    ruleset_hash,
     verify_attestation,
 )
 from wardline.core.config import WardlineConfig
 from wardline.core.errors import AttestError, WardlineError
 from wardline.core.paths import waivers_path
+from wardline.core.ruleset import ruleset_hash
 from wardline.core.taints import TaintState
 from wardline.core.waivers import add_waiver
 from wardline.scanner.grammar import BoundaryType, TrustGrammar

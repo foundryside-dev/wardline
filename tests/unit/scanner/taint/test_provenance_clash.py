@@ -229,8 +229,8 @@ def test_run_scan_provenance_clash_loads_mixed_raw_cache(tmp_path) -> None:
     # policy field). Reconstruct it from the SAME config run_scan will load, so the pre-seeded
     # key matches and the cache hits (wardline-9d6a81b9e7).
     from wardline.core import config as config_mod
-    from wardline.core.attest import ruleset_hash
     from wardline.core.paths import weft_config_path
+    from wardline.core.ruleset import ruleset_hash
 
     cfg = config_mod.load(weft_config_path(proj), explicit=False)
     key = compute_cache_key(

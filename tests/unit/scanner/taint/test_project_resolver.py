@@ -302,8 +302,8 @@ def test_cache_miss_on_changed_source_recomputes() -> None:
 
 
 def _io_layer_cache_key(provider: _RawLeafProvider) -> str:
-    from wardline.core.attest import ruleset_hash
     from wardline.core.config import WardlineConfig
+    from wardline.core.ruleset import ruleset_hash
 
     return compute_cache_key(
         module_path="pkg.io_layer",
