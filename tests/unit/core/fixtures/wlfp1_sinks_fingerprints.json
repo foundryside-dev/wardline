@@ -1,0 +1,163 @@
+{
+  "_comment": "FROZEN wlfp1 (line_start IN) fingerprints from the real pre-P3 engine, corpus_version 3 @ git 966cd9f^ (P3 parent). The NON-CIRCULAR oracle for P4 old_fp reconstruction: compute_old_new_fingerprints over a fresh sinks scan must reproduce these byte-for-byte. DO NOT regenerate by running the current engine.",
+  "source": "git 966cd9f^:tests/golden/identity/corpus/sinks.json",
+  "count": 26,
+  "fingerprints": [
+    {
+      "rule_id": "PY-WL-101",
+      "qualname": "wardline_sinks._refine_a",
+      "line_start": 60,
+      "fingerprint": "2b49ef9cc66d8a1698e32be64199877a8ab671a16f24698379fa9929d318c746"
+    },
+    {
+      "rule_id": "PY-WL-101",
+      "qualname": "wardline_sinks._refine_b",
+      "line_start": 65,
+      "fingerprint": "aa3b8af972c4494bfd7903762c0062d6ef41ab6f85b0463bf4b8507e22f428a6"
+    },
+    {
+      "rule_id": "PY-WL-101",
+      "qualname": "wardline_sinks.chained_queries",
+      "line_start": 88,
+      "fingerprint": "5d068cf314842b696b664280a6e76ff1c9769fbc8657f716fbfb8dfd55ef3964"
+    },
+    {
+      "rule_id": "PY-WL-101",
+      "qualname": "wardline_sinks.double_deserialize",
+      "line_start": 79,
+      "fingerprint": "c6601a8abd12cbbe5627550271240bc815d123e32f8949e86c39ee484f8f53a5"
+    },
+    {
+      "rule_id": "PY-WL-101",
+      "qualname": "wardline_sinks.import_catalog_blob",
+      "line_start": 31,
+      "fingerprint": "78c8c570136abce22f3cbf65f754c173839d9d39be653d0ab4d57c8ce015e09b"
+    },
+    {
+      "rule_id": "PY-WL-101",
+      "qualname": "wardline_sinks.load_report_plugin",
+      "line_start": 45,
+      "fingerprint": "91ce0eca56522f2ba3d59a5dda28c5e75edc440faeef1a7661e1a91d3afe394d"
+    },
+    {
+      "rule_id": "PY-WL-101",
+      "qualname": "wardline_sinks.lookup_member",
+      "line_start": 111,
+      "fingerprint": "0508a699d59ad28767a979c4af85e524a025325efa28070bbdbcf6df418e5024"
+    },
+    {
+      "rule_id": "PY-WL-101",
+      "qualname": "wardline_sinks.open_catalog_file",
+      "line_start": 52,
+      "fingerprint": "0dc077bd4c491f6a3fe29df19d797f7f542d57ce2d7bdca11a33ab29a6c715ce"
+    },
+    {
+      "rule_id": "PY-WL-101",
+      "qualname": "wardline_sinks.run_export",
+      "line_start": 38,
+      "fingerprint": "8e23886db6ba4c2678a9bca0cf3c27726f7bd155fe7543b0faacb07f3344358c"
+    },
+    {
+      "rule_id": "PY-WL-105",
+      "qualname": "wardline_sinks.fan_out_stored",
+      "line_start": 75,
+      "fingerprint": "3f907f0e7a83be168e0b85bc22f4f0ab00ac78dc204dc1f8b66e9e0d0323fbba"
+    },
+    {
+      "rule_id": "PY-WL-105",
+      "qualname": "wardline_sinks.fan_out_stored",
+      "line_start": 75,
+      "fingerprint": "981ae1ca44239bd55288edf7496e79bc01a686c2bf9f0f278d31ac5802721bcf"
+    },
+    {
+      "rule_id": "PY-WL-106",
+      "qualname": "wardline_sinks.double_deserialize",
+      "line_start": 84,
+      "fingerprint": "b8cf67e1bb76a75db7985800f8c17c66aaa0a883cb18425453a7abbf128ea789"
+    },
+    {
+      "rule_id": "PY-WL-106",
+      "qualname": "wardline_sinks.double_deserialize",
+      "line_start": 84,
+      "fingerprint": "c263717a7e2bb42dc8d39054544500f2dc397c5bfddcfe7a9292d23997217edb"
+    },
+    {
+      "rule_id": "PY-WL-106",
+      "qualname": "wardline_sinks.import_catalog_blob",
+      "line_start": 34,
+      "fingerprint": "cf48c38ba6782406cb79ab19d19fb700cdaba8073b3db1bfb366e74f93a282c6"
+    },
+    {
+      "rule_id": "PY-WL-112",
+      "qualname": "wardline_sinks.run_export",
+      "line_start": 41,
+      "fingerprint": "fdf48dba3decae9faa13ee79e21aeefc634a2d10c6f2acda7d1db3fb07fc351f"
+    },
+    {
+      "rule_id": "PY-WL-114",
+      "qualname": "wardline_sinks.stacked_invalid_levels",
+      "line_start": 100,
+      "fingerprint": "470bbce20fe595fd6bf27a51922d490be30b4284bb1ba5076ba58d328df4ba35"
+    },
+    {
+      "rule_id": "PY-WL-114",
+      "qualname": "wardline_sinks.stacked_invalid_levels",
+      "line_start": 100,
+      "fingerprint": "86344efb75eb182f898cd934d54e39c0aae9caa6b2c9f20caefa502cd22dbf0d"
+    },
+    {
+      "rule_id": "PY-WL-115",
+      "qualname": "wardline_sinks.load_report_plugin",
+      "line_start": 48,
+      "fingerprint": "e71fc9ff496b1b53a4ecbd06c2f4486e04d57a7f84628eacd2e6987d15319ce4"
+    },
+    {
+      "rule_id": "PY-WL-116",
+      "qualname": "wardline_sinks.open_catalog_file",
+      "line_start": 55,
+      "fingerprint": "fe304ec020d8d529106f1bc47492590cf766ff076dbdb7c16a7f52809e69e609"
+    },
+    {
+      "rule_id": "PY-WL-118",
+      "qualname": "wardline_sinks.chained_queries",
+      "line_start": 95,
+      "fingerprint": "3c64beba56d1118ca347efff026846773d761b8e0a2882108ed5cc0bfd79e69a"
+    },
+    {
+      "rule_id": "PY-WL-118",
+      "qualname": "wardline_sinks.chained_queries",
+      "line_start": 95,
+      "fingerprint": "6a5d9ec7bb8a6af691bbe339f0470011b7f10182f721cfa733762e9372a6aa06"
+    },
+    {
+      "rule_id": "PY-WL-118",
+      "qualname": "wardline_sinks.lookup_member",
+      "line_start": 118,
+      "fingerprint": "5ba5cc508e6f372d29620b40e6b5ffa334100acb9a43ba3694d1538afe496ba9"
+    },
+    {
+      "rule_id": "PY-WL-120",
+      "qualname": "wardline_sinks.fan_out_stored",
+      "line_start": 75,
+      "fingerprint": "8b4332eff3e3142c28153ca17f7b2e67556f3bdf14ffba796c6bf280ecf87f5c"
+    },
+    {
+      "rule_id": "PY-WL-120",
+      "qualname": "wardline_sinks.fan_out_stored",
+      "line_start": 75,
+      "fingerprint": "ced370ab43dafe2f9f240b17aa4453b0ec3ed6df19a5af9a6714f9939a133f40"
+    },
+    {
+      "rule_id": "PY-WL-120",
+      "qualname": "wardline_sinks.lookup_member",
+      "line_start": 119,
+      "fingerprint": "dff95e304d3c6f3afaab584a465850fd82fdfb89b8151f1fd7b5cbce0764f20c"
+    },
+    {
+      "rule_id": "PY-WL-120",
+      "qualname": "wardline_sinks.open_catalog_file",
+      "line_start": 56,
+      "fingerprint": "7739d3dc46b4bb6f8afcad2db38a059b020c740b053e3258ee4795016d2508af"
+    }
+  ]
+}

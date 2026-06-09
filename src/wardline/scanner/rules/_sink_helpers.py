@@ -282,6 +282,8 @@ class TaintedSinkRule:
                             # taint (it drifts across builds: weft-4a9d0f863c).
                             taint_path=f"{line - (entity.location.line_start or 0)}:{call.col_offset}:{call.end_col_offset}:{dotted}",  # noqa: E501
                         ),
+                        # OLD (wlfp1) taint_path, byte-exact, for `wardline rekey` (P4).
+                        taint_path_v0=f"{dotted}@{call.col_offset}:{call.end_col_offset}",
                         qualname=qualname,
                         properties={"tier": tier.value, "sink": dotted, "arg_taint": worst.value},
                     )

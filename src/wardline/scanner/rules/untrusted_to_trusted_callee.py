@@ -177,6 +177,8 @@ class UntrustedReachesTrustedCallee:
                             # drift). The span (start:end) separates a chain's outer/inner calls.
                             taint_path=f"{line - (entity.location.line_start or 0)}:{call.col_offset}:{call.end_col_offset}:{dotted_name(call.func)}",  # noqa: E501
                         ),
+                        # OLD (wlfp1) taint_path, byte-exact, for `wardline rekey` (P4).
+                        taint_path_v0=f"{dotted_name(call.func)}@{call.col_offset}:{call.end_col_offset}",
                         qualname=qualname,
                         properties={
                             "callee": callee,

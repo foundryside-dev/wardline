@@ -189,6 +189,8 @@ class InvalidDecoratorLevel:
                                     # compatible with a future relative-span discriminator.
                                     taint_path=f"{name}:{token}#{deco_ordinal}",
                                 ),
+                                # OLD (wlfp1) taint_path == NEW (P3 unchanged) but ephemeral — recompute for rekey (P4).
+                                taint_path_v0=f"{name}:{token}#{deco_ordinal}",
                                 qualname=qualname,
                                 properties={"decorator": name, "token": token},
                             )

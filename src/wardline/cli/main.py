@@ -21,6 +21,7 @@ from wardline.cli.install import install
 from wardline.cli.judge import judge as judge_command
 from wardline.cli.lsp import lsp
 from wardline.cli.mcp import mcp
+from wardline.cli.rekey import rekey
 from wardline.cli.scan import scan
 from wardline.cli.scan_file_findings import scan_file_findings
 from wardline.core.baseline import collect_and_write_baseline
@@ -38,6 +39,7 @@ def cli() -> None:
 
 cli.add_command(scan)
 cli.add_command(scan_file_findings)
+cli.add_command(rekey)
 cli.add_command(judge_command)
 cli.add_command(mcp)
 cli.add_command(lsp)

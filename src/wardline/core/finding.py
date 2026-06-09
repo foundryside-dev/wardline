@@ -103,6 +103,16 @@ class Finding:
     suppressed: SuppressionState = SuppressionState.ACTIVE
     suppression_reason: str | None = None
     maturity: Maturity = Maturity.STABLE
+    # MIGRATION-ONLY breadcrumb (P4 / `wardline rekey`), NEVER serialized — no
+    # serializer references it (``to_jsonl``/SARIF/``to_filigree_metadata``/store-doc
+    # builders are all explicit-field dicts), so it stays out of the frozen identity
+    # corpus and every wire payload. It carries the OLD (wlfp1) ``taint_path`` string
+    # so the migration can recompute a finding's pre-rekey fingerprint
+    # (``compute_finding_fingerprint_v0``) from the same scan. ``None`` for rules whose
+    # old taint_path was ``None`` (singletons / PY-WL-103 / PY-WL-104 / PY-WL-120-return);
+    # set by the multi-emit rules whose old taint_path was non-empty. Removable once
+    # every project has migrated (a no-corpus-impact cleanup).
+    taint_path_v0: str | None = None
 
     def to_jsonl(self) -> str:
         payload: dict[str, Any] = {

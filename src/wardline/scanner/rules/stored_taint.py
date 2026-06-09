@@ -232,6 +232,8 @@ class StoredTaint:
                                             # qualname (drifts). The span separates a chain's outer/inner calls.
                                             taint_path=f"{node.lineno - (entity.location.line_start or 0)}:{node.col_offset}:{node.end_col_offset}:{dotted_name(node.func)}",  # noqa: E501
                                         ),
+                                        # OLD (wlfp1) taint_path, byte-exact, for `wardline rekey` (P4).
+                                        taint_path_v0=f"{dotted_name(node.func)}@{node.col_offset}:{node.end_col_offset}",
                                         qualname=qualname,
                                         properties={"callee": callee_qn, "arg_taint": worst.value},
                                     )

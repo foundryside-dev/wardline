@@ -151,6 +151,7 @@ def run_scan(
     trusted_packs: tuple[str, ...] = (),
     strict_defaults: bool = False,
     trust_suppressions: bool = False,
+    skip_suppression: bool = False,
 ) -> ScanResult:
     """Discover → analyze → apply suppressions. Pure function of (disk + config).
 
@@ -258,24 +259,33 @@ def run_scan(
         )
     if cache is not None:
         cache.save()
-    baseline = load_baseline(baseline_path(root))
-    waivers = WaiverSet(load_project_waivers(root))
-    judged = load_judged(judged_path(root))
     today = date.today()
-    # The emitted findings ALWAYS carry the full suppression annotations (baseline,
-    # waiver, judged) so ``suppressed=…`` is visible in output regardless of trust.
-    findings = apply_suppressions(raw, baseline, waivers, today=today, judged=judged)
-    # The gate population applies ZERO suppression but runs the SAME structural
-    # transforms apply_suppressions does (esp. the lineless-DEFECT→non-gating-FACT
-    # downgrade), so the only difference vs ``findings`` is the suppression sources —
-    # NOT ``list(raw)``, which would let a lineless DEFECT trip the gate. When the
-    # operator trusts repo suppressions, gate_findings is None and the gate falls back
-    # to the suppressed ``findings`` (None SENTINEL, never an accidental falsy-empty).
     gate_findings: list[Finding] | None
-    if trust_suppressions:
+    if skip_suppression:
+        # `wardline rekey` (P4) scans a project whose stores are still OLD-scheme;
+        # loading them would (correctly) SCHEME_MISMATCH. Skip the store files entirely
+        # and apply EMPTY suppression — the structural transforms (esp. the lineless-
+        # DEFECT→FACT downgrade) STILL run, so the result is exactly the join population
+        # the stores hold, derived without reading the stores it is about to migrate.
+        findings = apply_suppressions(raw, Baseline(frozenset()), WaiverSet([]), today=today, judged=None)
         gate_findings = None
     else:
-        gate_findings = apply_suppressions(raw, Baseline(frozenset()), WaiverSet([]), today=today, judged=None)
+        baseline = load_baseline(baseline_path(root))
+        waivers = WaiverSet(load_project_waivers(root))
+        judged = load_judged(judged_path(root))
+        # The emitted findings ALWAYS carry the full suppression annotations (baseline,
+        # waiver, judged) so ``suppressed=…`` is visible in output regardless of trust.
+        findings = apply_suppressions(raw, baseline, waivers, today=today, judged=judged)
+        # The gate population applies ZERO suppression but runs the SAME structural
+        # transforms apply_suppressions does (esp. the lineless-DEFECT→non-gating-FACT
+        # downgrade), so the only difference vs ``findings`` is the suppression sources —
+        # NOT ``list(raw)``, which would let a lineless DEFECT trip the gate. When the
+        # operator trusts repo suppressions, gate_findings is None and the gate falls back
+        # to the suppressed ``findings`` (None SENTINEL, never an accidental falsy-empty).
+        if trust_suppressions:
+            gate_findings = None
+        else:
+            gate_findings = apply_suppressions(raw, Baseline(frozenset()), WaiverSet([]), today=today, judged=None)
 
     if new_since is not None:
         changed_files = get_changed_files_since(new_since, root)

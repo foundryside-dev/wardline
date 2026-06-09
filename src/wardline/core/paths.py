@@ -85,6 +85,12 @@ def waivers_path(root: Path) -> Path:
     return weft_state_dir(root) / "waivers.yaml"
 
 
+def migration_journal_path(root: Path) -> Path:
+    """The `wardline rekey` (P4) migration journal — remap + per-leg done-flags,
+    resumable. Lives in wardline's own state subtree alongside the stores it rekeys."""
+    return weft_state_dir(root) / "migration_journal.yaml"
+
+
 def sibling_state_dir(root: Path, sibling: str) -> Path:
     """Preferred location of a sibling member's runtime subtree."""
     return root / _WEFT_DIR / sibling

@@ -164,6 +164,8 @@ class SQLInjection(TaintedSinkRule):
                             # chain's outer/inner calls. Never the resolved arg taint (drifts).
                             taint_path=f"{line - (entity.location.line_start or 0)}:{node.col_offset}:{node.end_col_offset}:{sink_name}",  # noqa: E501
                         ),
+                        # OLD (wlfp1) taint_path, byte-exact, for `wardline rekey` (P4).
+                        taint_path_v0=f"{sink_name}@{node.col_offset}:{node.end_col_offset}",
                         qualname=qualname,
                         properties={"tier": tier.value, "sink": sink_name, "arg_taint": worst.value},
                     )

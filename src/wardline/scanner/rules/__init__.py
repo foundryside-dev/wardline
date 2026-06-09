@@ -104,6 +104,8 @@ def _policy_config_finding(message: str, *, reason: str, taint_path: str, **prop
             path=ENGINE_PATH,
             taint_path=taint_path,
         ),
+        # OLD (wlfp1) taint_path == NEW (unchanged by P3), but ephemeral — recompute for rekey (P4).
+        taint_path_v0=taint_path,
         properties={"reason": reason, **properties},
     )
 
