@@ -71,15 +71,15 @@ class _Analyzer:
     def __init__(self, nmap: NodeIdMap) -> None:
         self._nmap = nmap
         tables = load_rust_taint()
+        # Key sources/sinks on the CRATE-QUALIFIED full path (`std::env::var`,
+        # `std::process::Command::new`). Matching is crate-consistent (see `_call_matches`):
+        # the declared crate is part of the key, not discarded — so a foreign crate's like-named
+        # symbol (`mycrate::Command::new`, `myconfig::env::var`) cannot match the std entry.
         self._sources: dict[str, TaintState] = {
-            path: src.returns_taint for (_crate, path), src in tables.sources.items()
+            f"{crate}::{path}": src.returns_taint for (crate, path), src in tables.sources.items()
         }
-        # The constructor suffix to recognise (last two segments of a `command` sink path,
-        # so `Command::new`, `std::process::Command::new`, etc. all match).
-        self._command_suffixes: set[str] = {
-            "::".join(path.split("::")[-2:])
-            for (_crate, path), sink in tables.sinks.items()
-            if sink.sink_kind == "command"
+        self._command_fullpaths: set[str] = {
+            f"{crate}::{path}" for (crate, path), sink in tables.sinks.items() if sink.sink_kind == "command"
         }
         self._local_taints: dict[str, TaintState] = {}
         self._commands: dict[str, _CmdAccum] = {}
@@ -93,22 +93,31 @@ class _Analyzer:
             # an expression in statement position, OR the block's tail expression (no `;`),
             # under any number of try/await/return wrappers.
             expr = stmt.named_children[0] if stmt.type == "expression_statement" and stmt.named_children else stmt
+            if expr.type == "assignment_expression":
+                # A re-assignment (`cmd = ...;`) re-binds the name exactly as a shadowing `let`
+                # does, so it MUST clear/replace the tracked builder too — otherwise the stale
+                # `_CmdAccum` survives and a later `cmd.output()` reconstructs a phantom trigger
+                # carrying the dead constructor's taint (a false RS-WL-108 at the gating severity).
+                self._bind(_name_of(expr.child_by_field_name("left")), expr.child_by_field_name("right"))
+                continue
             call = _unwrap_to_call(expr)
             if call is not None:
                 self._try_command_chain(call, bound_name=None)
         return self._triggers
 
     def _let(self, let_node: Node) -> None:
-        value = let_node.child_by_field_name("value")
+        self._bind(_name_of(let_node.child_by_field_name("pattern")), let_node.child_by_field_name("value"))
+
+    def _bind(self, name: str | None, value: Node | None) -> None:
+        """(Re)bind ``name`` to ``value`` — the shared core of ``let`` and assignment.
+
+        A fresh binding to a tracked name clears BOTH its prior taint and any stale Command
+        builder; if the new value is itself a builder, ``_try_command_chain`` re-adds it. This
+        symmetry is what keeps a shadowing/reassignment from stranding a dead constructor."""
         if value is None:
             return
-        name = _name_of(let_node.child_by_field_name("pattern"))
         if name is not None:
-            self._local_taints.pop(name, None)  # a fresh binding clears this name's prior taint
-            # ...and a stale Command builder bound to this name. Without this, a shadowing
-            # `let c = non_command();` strands the prior `_CmdAccum` and a later `c.output()`
-            # reconstructs it — a phantom trigger carrying the old binding's taint (false
-            # RS-WL-108). If the new value IS a builder, `_try_command_chain` re-adds it below.
+            self._local_taints.pop(name, None)
             self._commands.pop(name, None)
         call = _unwrap_to_call(value)
         if call is not None and self._try_command_chain(call, bound_name=name):
@@ -166,7 +175,7 @@ class _Analyzer:
 
     def _is_command_new(self, call_node: Node) -> bool:
         path = _call_function_path(call_node)
-        return path is not None and _path_matches(path, self._command_suffixes)
+        return path is not None and any(_call_matches(path, full) for full in self._command_fullpaths)
 
     def _expr_taint(self, node: Node) -> TaintState:
         """The proven taint of an expression; default ``_CLEAN`` (taint flows only from
@@ -182,8 +191,8 @@ class _Analyzer:
         if kind == "call_expression":
             path = _call_function_path(node)
             if path is not None:
-                for suffix, taint in self._sources.items():
-                    if _path_matches(path, {suffix}):
+                for full_path, taint in self._sources.items():
+                    if _call_matches(path, full_path):
                         return taint
         worst = _CLEAN
         for child in node.named_children:
@@ -249,8 +258,20 @@ def _call_function_path(call_node: Node) -> str | None:
     return None
 
 
-def _path_matches(path: str, suffixes: set[str]) -> bool:
-    return any(path == suffix or path.endswith("::" + suffix) for suffix in suffixes)
+def _call_matches(call_path: str, declared_full: str) -> bool:
+    """True iff ``call_path`` is a crate-consistent reference to the crate-qualified
+    ``declared_full`` path: a trailing segment-suffix of it, with at least two segments.
+
+    ``std::process::Command::new`` is referenced as the fully-qualified path, as
+    ``process::Command::new`` (``use std::process``), or as bare ``Command::new``
+    (``use std::process::Command``) — all trailing suffixes. A foreign-crate-rooted path
+    (``mycrate::Command::new``) is NOT a suffix of the std path, so it is rejected; the
+    two-segment floor stops a bare one-segment name (``new``/``var``) from matching loosely.
+    The single irreducible residue is a bare two-segment name re-imported from a *different*
+    crate (``use other::Command; Command::new``) — unresolvable without ``use``-resolution (SP2)."""
+    if "::" not in call_path:
+        return False
+    return call_path == declared_full or declared_full.endswith("::" + call_path)
 
 
 def _first_arg(call_node: Node) -> Node | None:

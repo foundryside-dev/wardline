@@ -57,6 +57,26 @@ def test_prose_mention_of_trusted_does_not_match() -> None:
     assert RustTrustProvider().taint_for(fn) is None
 
 
+def test_prose_containing_the_full_directive_does_not_match() -> None:
+    # A doc comment that MENTIONS the full parenthesized directive in prose (e.g. warning
+    # against it) must not seed trust — only a directive that LEADS the doc line counts. The
+    # marker is anchored to the start of the doc text, so `search`-style mid-string matches
+    # (which would falsely seed ASSURED and spuriously un-suppress findings) are rejected.
+    for prose in (
+        "/// Do not use @trusted(level=ASSURED) here; it is dangerous.\nfn f() {}\n",
+        "/// Historically this was @trusted(level=GUARDED).\nfn f() {}\n",
+    ):
+        assert RustTrustProvider().taint_for(_first_fn(prose)) is None
+
+
+def test_marker_with_no_leading_space_still_matches() -> None:
+    # No-regression for the anchor: `///@trusted(...)` (no space after the slashes) must still
+    # be honored — the anchor allows leading whitespace, it does not require it.
+    fn = _first_fn("///@trusted(level=ASSURED)\nfn f() {}\n")
+    seed = RustTrustProvider().taint_for(fn)
+    assert seed is not None and seed.body_taint is TaintState.ASSURED
+
+
 def test_malformed_level_is_surfaced_not_silently_ignored() -> None:
     fn = _first_fn("/// @trusted(level=BOGUS)\nfn f() {}\n")
     with pytest.raises(ValueError, match="level"):

@@ -32,7 +32,11 @@ _TRUSTED_TIERS: dict[str, TaintState] = {
     "ASSURED": TaintState.ASSURED,
     "GUARDED": TaintState.GUARDED,
 }
-_MARKER = re.compile(r"@trusted\s*\(\s*level\s*=\s*(\w+)\s*\)")
+# Anchored to the START of the doc text (`re.match` + leading `\s*` for the `/// ` space):
+# only a directive that LEADS the doc-comment line declares trust. A `search` would also match
+# the directive mentioned in prose ("do not use @trusted(level=ASSURED) here"), falsely seeding
+# trust and spuriously un-suppressing the fn's findings.
+_MARKER = re.compile(r"\s*@trusted\s*\(\s*level\s*=\s*(\w+)\s*\)")
 
 
 def rust_provider_fingerprint(version: int) -> str:
@@ -66,7 +70,7 @@ class RustTrustProvider:
                 outer = node.child_by_field_name("outer")
                 doc = node.child_by_field_name("doc")
                 if outer is not None and doc is not None and doc.text is not None:
-                    match = _MARKER.search(doc.text.decode("utf-8"))
+                    match = _MARKER.match(doc.text.decode("utf-8"))
                     if match is not None:
                         word = match.group(1)
                         if word not in _TRUSTED_TIERS:

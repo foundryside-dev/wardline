@@ -2,8 +2,20 @@
 
 Wardline MINTS the same locator string Loomweave's whole-tree ``syn`` extractor emits;
 it never parses Loomweave's locator. The vendored corpus
-(``tests/conformance/qualnames_rust.json``) is the byte-for-byte oracle. Reserved char
-is ``:`` (invalid); ``[ ] # < > @ $`` are legal segments of the dialect.
+(``tests/conformance/qualnames_rust.json``) is the byte-for-byte oracle. ``:`` is the
+reserved separator and ``[ ] # < > @ $`` are legal segments of the dialect.
+
+KNOWN GAP (path-typed generic args): a trait/self-type concrete generic arg that is itself
+a ``::``-path — e.g. ``impl From<std::io::Error>`` — renders a segment containing ``:``
+(``...impl[From<std::io::Error>].from``). Loomweave renders the BYTE-IDENTICAL segment (its
+``trait_generic_args`` keeps ``::`` via ``strip_ws``), then REJECTS the assembled locator at
+``entity_id`` construction (``validate_no_colon``) and degrades the whole file. Wardline is
+faithful in *rendering* but lacks that validate-and-degrade gate, so it currently emits a
+``:``-bearing locator. The correct fix is an ADR-049 amendment defining a colon-free canonical
+form for path-typed generic args, adopted by both producers in lockstep — a Wardline-only
+normalization would itself diverge from the (still-unreleased) oracle. Low slice-1 blast radius
+(RS-WL-* findings are ``provisional_identity`` and Wardline emits no federation entity yet).
+Tracked: see the ``rust-bug-hunt-2026-06-09`` reserved-colon issue.
 
 This module holds the pure string/CST-node renderers; ``index.py`` walks the tree and
 assembles full qualnames from them. tree-sitter types appear only under ``TYPE_CHECKING``

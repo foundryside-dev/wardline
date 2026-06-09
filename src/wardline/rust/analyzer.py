@@ -140,7 +140,9 @@ class RustAnalyzer:
                 seed = self._provider.taint_for(entity.node)
             except ValueError:
                 # A typo'd @trusted marker must not abort the scan: fail closed for this fn
-                # (its findings suppressed). WP6 surfaces it as a diagnostic finding.
+                # (its findings suppressed). NOTE: a typo is currently swallowed silently —
+                # surfacing it as an operator-visible diagnostic FACT is tracked backlog
+                # (rust-bug-hunt-2026-06-09), not yet built.
                 seed = None
             tier = seed.body_taint if seed is not None else _FAIL_CLOSED
             project_taints[entity.qualname] = tier

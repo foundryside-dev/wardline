@@ -134,6 +134,74 @@ def test_rebind_to_a_clean_value_clears_stale_taint() -> None:
     assert _findings(src) == []
 
 
+def test_assignment_reassign_to_clean_command_clears_stale_tainted_builder() -> None:
+    # An *assignment* re-bind (`cmd = ...;`, not a `let`) must clear a tracked builder the
+    # same way `let` does. Here `cmd` is rebuilt with a CLEAN literal program, so `cmd.output()`
+    # must reconstruct the clean builder — no RS-WL-108. Before the fix the assignment statement
+    # was dropped (its node is an assignment_expression, not a call), leaving the stale tainted
+    # L4 builder and firing a phantom RS-WL-108 ERROR (FP at the gating severity) on safe code.
+    src = (
+        _TRUSTED + "fn f() {\n" + _SEED + "    let mut cmd = Command::new(t);\n"
+        '    cmd = Command::new("/usr/bin/ls");\n'
+        '    cmd.arg("-la");\n'
+        "    cmd.output();\n}\n"
+    )
+    assert _findings(src) == []
+
+
+def test_assignment_reassign_to_tainted_command_fires() -> None:
+    # The inverse: a CLEAN builder reassigned to a tainted-program builder must now fire (the
+    # actually-attacker-controlled exec). Before the fix this was a silent false negative.
+    src = (
+        _TRUSTED + "fn f() {\n" + _SEED + '    let mut cmd = Command::new("/usr/bin/ls");\n'
+        "    cmd = Command::new(t);\n"
+        "    cmd.output();\n}\n"
+    )
+    assert [f.rule_id for f in _findings(src)] == ["RS-WL-108"]
+
+
+def test_assignment_reassign_to_non_command_drops_the_builder() -> None:
+    # Reassigning a Command-bound name to a non-command must drop the tracked builder entirely;
+    # a later `.output()` on it is a method call on some other value, not a phantom spawn.
+    src = (
+        _TRUSTED + "fn f() {\n" + _SEED + "    let mut cmd = Command::new(t);\n"
+        "    cmd = make_safe_command();\n"
+        "    cmd.output();\n}\n"
+    )
+    assert _findings(src) == []
+
+
+def test_foreign_crate_command_new_does_not_fire() -> None:
+    # The vocab declares the sink for crate `std` (std::process::Command::new). A DIFFERENT
+    # crate's `Command::new` (e.g. a user CQRS/command-bus type) spawns no OS process and must
+    # not fire RS-WL-108 at ERROR. Matching is crate-consistent (a trailing segment-suffix of
+    # the crate-qualified std path), so an explicit foreign root is rejected.
+    src = _TRUSTED + "fn f() {\n" + _SEED + "    mycrate::Command::new(t).output();\n}\n"
+    assert _findings(src) == []
+
+
+@pytest.mark.parametrize(
+    "ctor",
+    [
+        "Command::new(t)",  # bare (use std::process::Command) — the documented aliasing
+        "process::Command::new(t)",  # use std::process
+        "std::process::Command::new(t)",  # fully qualified
+    ],
+)
+def test_std_command_new_aliases_still_fire(ctor: str) -> None:
+    # No-regression: every crate-consistent spelling of the std sink must still fire.
+    src = _TRUSTED + "fn f() {\n" + _SEED + f"    {ctor}.output();\n}}\n"
+    assert [f.rule_id for f in _findings(src)] == ["RS-WL-108"]
+
+
+def test_foreign_crate_env_var_is_not_a_taint_source() -> None:
+    # The crate qualifier is honored on the SOURCE side too: a non-std `env::var` (some other
+    # crate's like-named fn) is not the std external-input source, so a program built from it
+    # is clean and RS-WL-108 must not fire.
+    src = _TRUSTED + 'fn f() {\n    let t = myconfig::env::var("X").unwrap();\n    Command::new(t).output();\n}\n'
+    assert _findings(src) == []
+
+
 def test_a_typoed_trusted_marker_does_not_abort_the_whole_file_scan() -> None:
     # A malformed @trusted level must fail closed for that fn, not crash the scan.
     src = "/// @trusted(level=BOGUS)\nfn f() {\n" + _SEED + "    Command::new(t).output();\n}\n"
