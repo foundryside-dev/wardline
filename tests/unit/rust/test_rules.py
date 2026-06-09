@@ -171,6 +171,21 @@ def test_assignment_reassign_to_non_command_drops_the_builder() -> None:
     assert _findings(src) == []
 
 
+@pytest.mark.parametrize(
+    "ctor",
+    [
+        "tokio::process::Command::new(t).output().await",  # the dominant async command sink
+        "async_process::Command::new(t).output().await",  # smol/async-std ecosystem
+    ],
+)
+def test_async_ecosystem_command_sinks_fire(ctor: str) -> None:
+    # The crate qualifier must ADMIT the declared async-runtime Command sinks, not just std.
+    # tokio::process::Command genuinely spawns an OS process, so a tainted program there is a
+    # true RS-WL-108 — losing it (an FN) would blind the tool to the most common real sink.
+    src = _TRUSTED + "fn f() {\n" + _SEED + f"    {ctor};\n}}\n"
+    assert [f.rule_id for f in _findings(src)] == ["RS-WL-108"]
+
+
 def test_foreign_crate_command_new_does_not_fire() -> None:
     # The vocab declares the sink for crate `std` (std::process::Command::new). A DIFFERENT
     # crate's `Command::new` (e.g. a user CQRS/command-bus type) spawns no OS process and must

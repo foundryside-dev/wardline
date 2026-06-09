@@ -28,10 +28,12 @@ _LEGAL_RETURN: frozenset[TaintState] = frozenset(
 )
 _LEGAL_SINK_KINDS: frozenset[str] = frozenset({"command"})
 
-RUST_TAINT_VERSION: int = 2
+RUST_TAINT_VERSION: int = 3
 """Bumped when the table's shape or entries change materially; folded into the
 provider fingerprint so changes invalidate dependent summaries. v2 dropped the inert
-``io::stdin`` source (out-param reads are unmodelled in slice-1)."""
+``io::stdin`` source (out-param reads are unmodelled in slice-1). v3 added the async-runtime
+command sinks (``tokio::process::Command::new``, ``async_process::Command::new``) so the
+crate-aware matcher admits them (a crate-blind suffix used to catch tokio by accident)."""
 
 __all__ = [
     "RUST_TAINT_VERSION",

@@ -14,7 +14,11 @@
 # v2: dropped `io::stdin` — stdin data reaches a program via the `.read_line(&mut buf)`
 # out-param, which the flat-local taint model does not track, so the source could never
 # contribute a finding (misleading dead weight). Out-param sources are SP2.
-version: 2
+# v3: added the async-runtime command sinks (tokio::process::Command::new,
+# async_process::Command::new) — they genuinely spawn OS processes and dominate real async
+# Rust; the crate-aware matcher (rust-bug-hunt-2026-06-09) only admits a sink's declared crate,
+# so each runtime must be declared explicitly rather than caught by a crate-blind suffix.
+version: 3
 
 sources:
   - crate: std
@@ -52,3 +56,13 @@ sinks:
     path: process::Command::new
     sink_kind: command
     rationale: Spawns an OS process; a tainted program or shell argument is command injection.
+
+  - crate: tokio
+    path: process::Command::new
+    sink_kind: command
+    rationale: tokio's async process spawner; spawns an OS process exactly like std::process::Command.
+
+  - crate: async_process
+    path: Command::new
+    sink_kind: command
+    rationale: The async-process (smol/async-std) process spawner; spawns an OS process.
