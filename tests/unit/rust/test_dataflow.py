@@ -149,3 +149,50 @@ def test_plain_command_builder_still_fires_after_the_rebind_fix() -> None:
     # No-regression guard: a builder bound once and never shadowed still reconstructs.
     (trig,) = _triggers(_SEED + "    let c = Command::new(t);\n    c.output();\n")
     assert trig.program_taint in RAW_ZONE
+
+
+# --------------------------------------------------------------------------- #
+# Format-family macros — write!/writeln!/format_args! value-taint (issue 8a34187941)
+# --------------------------------------------------------------------------- #
+
+
+def test_write_macro_value_taint_propagates() -> None:
+    # write!(dst, "fmt", t) — value-taint = worst over the format args (the writer `dst` is
+    # the destination, not a contributor). Modelled like format!'s result.
+    (trig,) = _triggers(
+        _SEED + '    let s = write!(dst, "rm {}", t);\n    Command::new("sh").arg("-c").arg(s).output();\n'
+    )
+    assert _has_raw_arg(trig)
+
+
+def test_writeln_macro_value_taint_propagates() -> None:
+    (trig,) = _triggers(
+        _SEED + '    let s = writeln!(dst, "rm {}", t);\n    Command::new("sh").arg("-c").arg(s).output();\n'
+    )
+    assert _has_raw_arg(trig)
+
+
+def test_format_args_macro_value_taint_propagates() -> None:
+    # format_args! behaves like format! (no writer) and is the genuinely-realistic case:
+    # it returns `Arguments` consumed format-like.
+    (trig,) = _triggers(
+        _SEED + '    let s = format_args!("rm {}", t);\n    Command::new("sh").arg("-c").arg(s).output();\n'
+    )
+    assert _has_raw_arg(trig)
+
+
+def test_write_writer_arg_is_not_a_taint_contributor() -> None:
+    # The leading writer of write!/writeln! is the destination, not a value contributor:
+    # a tainted writer with clean format args must NOT taint the formatted value.
+    (trig,) = _triggers(
+        _SEED + '    let s = write!(t, "rm {}", "ls");\n    Command::new("sh").arg("-c").arg(s).output();\n'
+    )
+    assert not _has_raw_arg(trig)
+
+
+def test_clean_format_args_propagates_no_taint() -> None:
+    # No-FP guard: format_args! over only literals stays clean.
+    (trig,) = _triggers(
+        _SEED + '    let s = format_args!("rm {}", "ls");\n    Command::new("sh").arg("-c").arg(s).output();\n'
+    )
+    assert not _has_raw_arg(trig)

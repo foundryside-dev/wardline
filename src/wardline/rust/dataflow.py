@@ -38,6 +38,11 @@ _SHELL_FLAGS = frozenset({"-c", "/c", "-command"})
 # command beneath is not silently invisible.
 _WRAPPERS = frozenset({"try_expression", "await_expression", "return_expression"})
 _CLEAN = TaintState.ASSURED  # the default "not proven tainted" tier (not in RAW_ZONE)
+# Format-family macros whose value-taint = worst over their direct interpolation-arg tokens.
+# `write!`/`writeln!` take a leading WRITER (the destination) before the format string — it is
+# NOT a value-taint contributor, so it is dropped. `format!`/`format_args!` have no writer.
+_FORMAT_MACROS = frozenset({"format", "write", "writeln", "format_args"})
+_WRITER_MACROS = frozenset({"write", "writeln"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,13 +206,20 @@ class _Analyzer:
 
     def _format_taint(self, macro_node: Node) -> TaintState:
         name = macro_node.child_by_field_name("macro")
-        if name is None or _text(name) != "format":
-            return _CLEAN  # only format! is modelled in slice 1
+        if name is None or _text(name) not in _FORMAT_MACROS:
+            return _CLEAN  # only the format-family macros are modelled in slice 1
         tree = next((c for c in macro_node.named_children if c.type == "token_tree"), None)
         if tree is None:
             return _CLEAN
+        children = tree.named_children
+        if _text(name) in _WRITER_MACROS and children:
+            # write!/writeln! lead with a WRITER (the destination) — drop it; only the
+            # subsequent format string + interpolation args contribute value-taint. A simple
+            # `dst` identifier writer is one named child; a compound writer (`&mut s`) may leave
+            # a stray token (a bounded slice-1 limitation, like the captured-`{x}` FN).
+            children = children[1:]
         worst = _CLEAN
-        for child in tree.named_children:
+        for child in children:
             if child.type == "string_literal":
                 continue  # the format string (and any literal arg) is clean
             worst = least_trusted(worst, self._expr_taint(child))
