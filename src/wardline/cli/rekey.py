@@ -41,6 +41,10 @@ def _print_journal(journal: Journal) -> None:
             continue
         status = "done" if leg.done else "PENDING"
         click.echo(f"  {leg.name}: {status} ({len(leg.carried)} carried, {len(leg.orphaned)} orphaned)")
+        # Surface the orphaned fingerprints, not just the count — a dropped verdict must
+        # never be silent (the original is recoverable from .rekey_snapshot/ until rollback).
+        for of in leg.orphaned:
+            click.echo(f"    orphaned (source moved/deleted, verdict NOT carried): {of}", err=True)
     for c in journal.collisions:
         click.echo(f"  COLLISION: {c.message}", err=True)
     if journal.complete:

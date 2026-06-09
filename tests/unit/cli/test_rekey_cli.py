@@ -82,7 +82,7 @@ def test_rekey_migrates_baseline_and_is_resumable_without_rescan(tmp_path: Path)
     jpath = paths.migration_journal_path(project)
     journal = load_journal(jpath)
     journal.leg("baseline").done = False
-    write_journal(jpath, journal)
+    write_journal(jpath, journal, root=project)
     paths.baseline_path(project).write_text(
         yaml.safe_dump({"fingerprint_scheme": "wlfp2", "version": 1, "entries": []}), encoding="utf-8"
     )

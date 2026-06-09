@@ -13,6 +13,7 @@ it. It never touches the production hash, the analyzer, or the rules.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,15 +38,63 @@ _STORES: tuple[tuple[str, str, int], ...] = (
     ("waivers.yaml", "waivers", WAIVERS_VERSION),
 )
 
+# Mirror of scanner.rules._POLICY_CONFIG_RULE_ID (core must not import scanner — layering).
+# A drift test (test_rekey_population.py) asserts the two stay equal. POLICY-CONFIG is the
+# ONE engine rule whose fingerprint is compute_finding_fingerprint-based (line_start-sensitive
+# under wlfp1), so it is v0-reconstructed, NOT identity-mapped, unlike the other engine
+# diagnostics. Verified mechanically: no other WLN-ENGINE-*/WLN-L3-* DEFECT uses
+# compute_finding_fingerprint (they use diagnostics._fingerprint, which is scheme-independent).
+_POLICY_CONFIG_RULE_ID = "WLN-ENGINE-POLICY-CONFIG"
+
 
 def is_join_population(f: Finding) -> bool:
-    """The findings the stores key on — the SAME positive allowlist the identity
-    corpus freezes (``PY-WL-* ∧ Kind.DEFECT``; see ``golden.identity._capture.
-    is_identity_bearing``). Engine diagnostics (``WLN-ENGINE-*`` / ``WLN-L3-*``),
-    metrics, and FACTs never enter a baseline/waiver/judged store, so they are not
-    remapped. (Rust ``RS-WL-*`` carry ``provisional_identity`` and are firewalled out
-    of the stores too — out of scope until the worktree rebase, P5.)"""
-    return f.rule_id.startswith("PY-WL-") and f.kind is Kind.DEFECT
+    """The findings the stores can key on. ``collect_and_write_baseline`` stores EVERY
+    ``Kind.DEFECT`` (no rule_id filter), and waivers/judged are bare-fingerprint-keyed,
+    so the remap MUST cover every DEFECT — not just ``PY-WL-*`` — or a stored engine
+    DEFECT (e.g. ``WLN-ENGINE-POLICY-CONFIG``, ``WLN-L3-MONOTONICITY-VIOLATION``, both
+    gating ERROR DEFECTs at ENGINE_PATH) silently orphans on migration and resurfaces
+    ACTIVE (the P4-review gate regression).
+
+    ``RS-WL-*`` (Rust) is EXCLUDED: those findings do not appear on rc4 at all (the
+    plugin lives in a worktree), so the exclusion is a no-op here. **P5-REVISIT:** when
+    the Rust worktree rebases, decide whether RS-WL DEFECTs enter the stores and should
+    migrate (see the skipped test in test_rekey_population.py)."""
+    return f.kind is Kind.DEFECT and not f.rule_id.startswith("RS-WL-")
+
+
+def _is_scheme_independent(rule_id: str) -> bool:
+    """True iff the finding's fingerprint did NOT change across the wlfp1->wlfp2 rekey,
+    i.e. it was hashed by the engine's local ``diagnostics._fingerprint`` (which never
+    folded ``line_start``), so its ``old_fp == new_fp``. That is the engine-diagnostic
+    family (``WLN-ENGINE-*`` / ``WLN-L3-*``) EXCEPT ``WLN-ENGINE-POLICY-CONFIG``, which —
+    alone among engine rules — is hashed via ``compute_finding_fingerprint`` and so is
+    v0-reconstructed like the policy rules."""
+    if rule_id == _POLICY_CONFIG_RULE_ID:
+        return False
+    return rule_id.startswith("WLN-ENGINE-") or rule_id.startswith("WLN-L3-")
+
+
+def _old_fingerprint(f: Finding) -> str:
+    """The finding's pre-rekey (wlfp1) fingerprint. Scheme-independent engine
+    diagnostics kept their fingerprint, so ``old_fp == new_fp``; everything else
+    (``PY-WL-*``, ``WLN-ENGINE-POLICY-CONFIG``, and custom-grammar rules) was hashed via
+    ``compute_finding_fingerprint`` with ``line_start`` IN, so it is reconstructed from
+    ``finding.location.line_start`` (P3 preserved it as exactly the hashed line) +
+    ``finding.taint_path_v0`` (the old taint_path, ``None`` where it was ``None``).
+
+    LIMITATION: a CUSTOM-grammar *multi-emit* rule that set a non-empty ``taint_path``
+    but did NOT surface ``taint_path_v0`` will reconstruct the wrong ``old_fp`` and its
+    verdict will orphan. Built-in rules all set ``taint_path_v0`` at their non-None
+    sites; custom multi-emit rules must do likewise to be move-stable across a rekey."""
+    if _is_scheme_independent(f.rule_id):
+        return f.fingerprint
+    return compute_finding_fingerprint_v0(
+        rule_id=f.rule_id,
+        path=f.location.path,
+        line_start=f.location.line_start,
+        qualname=f.qualname,
+        taint_path=f.taint_path_v0,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,29 +110,19 @@ class FingerprintRemap:
 
 
 def compute_old_new_fingerprints(findings: Iterable[Finding]) -> list[FingerprintRemap]:
-    """The dual-fingerprint contract from one scan, over the join population only.
-
-    ``old_fp`` = ``compute_finding_fingerprint_v0(rule_id, path, location.line_start,
-    qualname, taint_path_v0)`` — P3 preserved ``location.line_start`` as exactly the
-    line the old ``_fp`` hashed, and the multi-emit rules surface the old ``taint_path``
-    as ``taint_path_v0`` (``None`` where it was ``None``). ``new_fp`` = the live
-    ``finding.fingerprint``. The reconstruction is validated NON-CIRCULARLY against the
-    real pre-P3 corpus in ``tests/unit/core/test_rekey_dual_fp.py``.
+    """The dual-fingerprint contract from one scan, over the join population (every
+    DEFECT minus RS-WL). ``old_fp`` is ``_old_fingerprint(f)`` (v0 reconstruction for
+    scheme-sensitive rules, identity for scheme-independent engine diagnostics); ``new_fp``
+    is the live ``finding.fingerprint``. The v0 reconstruction is validated NON-CIRCULARLY
+    against the real pre-P3 corpus in ``tests/unit/core/test_rekey_dual_fp.py``.
     """
     remaps: list[FingerprintRemap] = []
     for f in findings:
         if not is_join_population(f):
             continue
-        old_fp = compute_finding_fingerprint_v0(
-            rule_id=f.rule_id,
-            path=f.location.path,
-            line_start=f.location.line_start,
-            qualname=f.qualname,
-            taint_path=f.taint_path_v0,
-        )
         remaps.append(
             FingerprintRemap(
-                old_fp=old_fp,
+                old_fp=_old_fingerprint(f),
                 new_fp=f.fingerprint,
                 rule_id=f.rule_id,
                 path=f.location.path,
@@ -307,12 +346,16 @@ def journal_to_doc(journal: Journal) -> dict[str, Any]:
     }
 
 
-def write_journal(path: Path, journal: Journal, *, root: Path | None = None) -> None:
+def write_journal(path: Path, journal: Journal, *, root: Path) -> None:
+    # ``root`` is REQUIRED (confinement is non-optional, matching _write_store_doc).
     yaml = require_yaml("writing the rekey journal")
-    if root is not None:
-        path = safe_project_file(root, path, label=path.name)
+    path = safe_project_file(root, path, label=path.name)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(journal_to_doc(journal), sort_keys=False, allow_unicode=True), encoding="utf-8")
+    # Atomic write: a crash mid-write must leave the OLD journal intact (or none) — never
+    # a truncated doc that load_journal rejects, which would brick --resume.
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(yaml.safe_dump(journal_to_doc(journal), sort_keys=False, allow_unicode=True), encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def load_journal(path: Path) -> Journal:
@@ -419,10 +462,19 @@ def _apply_filigree_leg(leg: Leg, findings: Sequence[Finding] | None, filigree: 
         leg.done = False
         leg.debt = f"Filigree rejected the re-emit (bad payload/endpoint): {exc}"
         return
-    if result.reachable:
+    if result.reachable and not result.failed and not result.warnings:
         leg.done = True
         leg.debt = None
         leg.carried = [f.fingerprint for f in population]
+    elif result.reachable:
+        # 2xx but the server rejected some findings (failed>0) or warned — NOT a clean
+        # reconciliation. Record debt and leave the leg pending so a re-run retries.
+        leg.done = False
+        leg.debt = (
+            f"Filigree accepted the re-emit with {result.failed} rejected"
+            + (f" and warnings: {'; '.join(result.warnings)}" if result.warnings else "")
+            + " — re-run `wardline rekey` to reconcile the remainder."
+        )
     else:
         leg.done = False
         leg.debt = (
@@ -498,9 +550,21 @@ def probe(root: Path, findings: Sequence[Finding]) -> ProbeReport:
 def run_rekey(root: Path, findings: Sequence[Finding], *, filigree: Any = None) -> Journal:
     """Fresh migration: snapshot FIRST (pre-migration provenance), plan the remap from
     the single scan, write the journal, then apply the legs. Idempotent via the snapshot."""
+    # Refuse a forward re-run over an ALREADY-COMPLETE migration. The snapshot (wlfp1) and
+    # journal persist after success (only --rollback clears them), and the live stores are
+    # now wlfp2; re-snapshot never clobbers, so a second forward run would re-carry from the
+    # STALE wlfp1 snapshot and DROP any verdict added since the migration. (Incomplete — e.g.
+    # a deferred Filigree leg — still re-runs, preserving the converge/retry path.)
+    jpath = paths.migration_journal_path(root)
+    if jpath.is_file() and load_journal(jpath).complete:
+        raise WardlineError(
+            "this project's fingerprint migration is already complete — "
+            "use `wardline rekey --rollback` to undo it, or delete "
+            f"{snapshot_dir(root)} + {jpath} to migrate afresh."
+        )
     snapshot_stores(root)  # must precede any store write
     journal = new_journal(compute_old_new_fingerprints(findings))
-    write_journal(paths.migration_journal_path(root), journal, root=root)
+    write_journal(jpath, journal, root=root)
     return apply_pending_legs(root, journal, findings=findings, filigree=filigree)
 
 
