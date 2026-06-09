@@ -284,3 +284,16 @@ For shell workflows, `wardline scan --format agent-summary` writes the same
 versioned handoff shape (`wardline-agent-summary-1`) to disk: active defects
 first with fingerprints and next tool calls, plus suppressed findings, engine
 facts, and Loomweave/Filigree write status when configured.
+
+## Scanning Rust (preview)
+
+For a Rust codebase, add `--lang rust` (install the `wardline[rust]` extra first).
+It sweeps `*.rs` and flags command-injection defects (`RS-WL-108` program
+injection / `RS-WL-112` shell injection) through the same gate, formats, and
+emission paths as the Python frontend. Treat the result as a **signal, not a
+contract**: Rust findings carry provisional identity (baseline-ineligible) and
+`weft.toml` severity overrides do not apply yet. Declare a function's trust tier
+with a `/// @trusted(level=ASSURED|GUARDED)` doc-comment marker so the
+default-clean analysis knows which functions are part of your trust surface. See
+the [Rust support guide](rust-preview.md) for the boundary sources, the trust
+marker, and the documented false-negative families.

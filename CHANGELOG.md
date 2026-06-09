@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Rust support (preview).** A new `--lang rust` frontend (behind the
+  `wardline[rust]` extra: tree-sitter, no base dependency) sweeps `*.rs` and flags
+  command-injection trust-boundary defects — `RS-WL-108` (program injection, ERROR:
+  untrusted data chooses the executable of `std::process::Command`) and `RS-WL-112`
+  (shell injection, WARN: untrusted data reaches a `sh -c` command line). Trust is
+  declared with a `/// @trusted(level=ASSURED|GUARDED)` doc-comment marker; analysis
+  is default-clean and reuses the Python engine's taint lattice, severity modulation,
+  and finding/gate machinery. Findings carry **provisional identity** (baseline-
+  ineligible) and `weft.toml` severity overrides do not yet apply; a `.rs` file that
+  does not fully parse is surfaced as `WLN-ENGINE-PARSE-ERROR` and never half-analyzed.
+  The Python default path is byte-identical (identity oracle green). See the
+  [Rust support guide](docs/guides/rust-preview.md).
 - **Gate verdict is now explicit (no vacuous green).** `GateDecision` carries a
   `verdict` (`NOT_EVALUATED` / `PASSED` / `FAILED`) and a `would_trip_at` (the
   highest severity that would trip on the evaluated population, or null). A bare

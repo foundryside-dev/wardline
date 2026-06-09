@@ -73,6 +73,7 @@ nav:
       - Assurance posture: guides/assurance-posture.md
       - Attestation: guides/attestation.md
       - Using Wardline with your coding agent: guides/agents.md
+      - Rust support (preview): guides/rust-preview.md
   - Reference:
       - CLI: reference/cli.md
       - Trust vocabulary: reference/vocabulary.md
