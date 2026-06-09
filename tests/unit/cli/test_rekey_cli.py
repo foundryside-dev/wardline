@@ -91,6 +91,7 @@ def test_rekey_migrates_baseline_and_is_resumable_without_rescan(tmp_path: Path)
     res2 = CliRunner().invoke(cli, ["rekey", str(project), "--resume"])
     assert res2.exit_code == 0, res2.output
     assert load_baseline(paths.baseline_path(project)).fingerprints == frozenset({leak.fingerprint})
+    assert "predates" not in res2.output  # a schemed wlfp1 store must NOT trip the prescheme caution
 
 
 def test_rekey_probe_writes_nothing(tmp_path: Path) -> None:
@@ -99,6 +100,7 @@ def test_rekey_probe_writes_nothing(tmp_path: Path) -> None:
     res = CliRunner().invoke(cli, ["rekey", str(project), "--probe"])
     assert res.exit_code == 0, res.output
     assert "will carry" in res.output
+    assert "predates" not in res.output  # a schemed wlfp1 store must NOT trip the prescheme caution
     assert not paths.migration_journal_path(project).exists()
     assert not snapshot_dir(project).exists()
 
@@ -114,6 +116,56 @@ def test_rekey_rollback_restores(tmp_path: Path) -> None:
     assert res.exit_code == 0, res.output
     assert paths.baseline_path(project).read_bytes() == original  # byte-identical restore
     assert not paths.migration_journal_path(project).exists()
+
+
+def test_probe_cautions_on_a_scheme_less_store(tmp_path: Path) -> None:
+    # A scheme-less (pre-P1) baseline -> the probe must caution that a high orphan rate may
+    # be a fingerprint-formula change, not source churn, AND the orphan label must name the
+    # custom-rule cause (not only "source moved/deleted").
+    project = _project(tmp_path)
+    bp = paths.baseline_path(project)
+    bp.parent.mkdir(parents=True, exist_ok=True)
+    # NO fingerprint_scheme header; one entry that no current finding matches -> an orphan.
+    bp.write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "entries": [{"fingerprint": "a" * 64, "rule_id": "PY-WL-101", "path": "svc.py", "message": "x"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    res = CliRunner().invoke(cli, ["rekey", str(project), "--probe"])
+    assert res.exit_code == 1, res.output  # an orphan present -> non-clean probe
+    assert "predates" in res.output  # the pre-scheme caution fired
+    assert "taint_path_v0" in res.output  # the orphan label names the custom-rule cause
+
+
+def test_rekey_on_scheme_less_baseline_sets_flag_and_cautions_on_resume(tmp_path: Path) -> None:
+    # End-to-end snapshot-detection path (distinct from --probe, which reads LIVE stores):
+    # a scheme-less (pre-P1) baseline whose fingerprints DO reconstruct still carries, but the
+    # forward run must FLAG it from the SNAPSHOT (journal.snapshot_prescheme) and caution, and
+    # --resume must re-print that caution from the persisted journal.
+    project = _project(tmp_path)
+    leak, _ = _seed_wlfp1_baseline(project)
+    bp = paths.baseline_path(project)
+    doc = yaml.safe_load(bp.read_text(encoding="utf-8"))
+    doc.pop("fingerprint_scheme", None)  # strip the header -> scheme-less / pre-P1
+    bp.write_text(yaml.safe_dump(doc), encoding="utf-8")
+
+    res = CliRunner().invoke(cli, ["rekey", str(project)])
+    assert res.exit_code == 0, res.output
+    assert "predates" in res.output  # forward run cautions (flag read from the snapshot)
+    jpath = paths.migration_journal_path(project)
+    assert load_journal(jpath).snapshot_prescheme is True  # persisted onto the journal
+    assert load_baseline(bp).fingerprints == frozenset({leak.fingerprint})  # still carried
+
+    journal = load_journal(jpath)
+    journal.leg("baseline").done = False
+    write_journal(jpath, journal, root=project)
+    res2 = CliRunner().invoke(cli, ["rekey", str(project), "--resume"])
+    assert res2.exit_code == 0, res2.output
+    assert "predates" in res2.output  # --resume re-prints the caution from the loaded journal
 
 
 def test_mutually_exclusive_flags(tmp_path: Path) -> None:

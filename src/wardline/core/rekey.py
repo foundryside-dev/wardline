@@ -314,6 +314,9 @@ class Journal:
     schema_version: int = JOURNAL_SCHEMA_VERSION
     fingerprint_scheme_from: str = "wlfp1"
     fingerprint_scheme_to: str = FINGERPRINT_SCHEME
+    # The snapshotted stores carried no scheme stamp (pre-P1) — orphans here MAY be a
+    # fingerprint-formula change (pre-705acfe), not source churn. Surfaced as a caution.
+    snapshot_prescheme: bool = False
 
     def leg(self, name: str) -> Leg:
         return next(leg for leg in self.legs if leg.name == name)
@@ -337,6 +340,7 @@ def journal_to_doc(journal: Journal) -> dict[str, Any]:
         "schema_version": journal.schema_version,
         "fingerprint_scheme_from": journal.fingerprint_scheme_from,
         "fingerprint_scheme_to": journal.fingerprint_scheme_to,
+        "snapshot_prescheme": journal.snapshot_prescheme,
         "remap": dict(journal.remap),
         "collisions": [{"new_fp": c.new_fp, "old_fps": list(c.old_fps)} for c in journal.collisions],
         "legs": [
@@ -384,6 +388,7 @@ def load_journal(path: Path) -> Journal:
         schema_version=int(loaded.get("schema_version", JOURNAL_SCHEMA_VERSION)),
         fingerprint_scheme_from=str(loaded.get("fingerprint_scheme_from", "wlfp1")),
         fingerprint_scheme_to=str(loaded.get("fingerprint_scheme_to", FINGERPRINT_SCHEME)),
+        snapshot_prescheme=bool(loaded.get("snapshot_prescheme", False)),
     )
 
 
@@ -506,6 +511,23 @@ def _store_fingerprints(root: Path) -> dict[str, set[str]]:
     return out
 
 
+def _dir_has_prescheme_store(dir_path: Path) -> bool:
+    """True iff a store in ``dir_path`` holds entries but carries NO ``fingerprint_scheme``
+    header — i.e. it predates P1's scheme stamp. Such a store MAY also predate the
+    taint-resolution-drift fix (705acfe), in which case its fingerprints fold resolved-taint
+    values that v0 reconstruction cannot reproduce — so its verdicts orphan from a
+    fingerprint-FORMULA change, not source churn. The header alone can't distinguish the two
+    eras, so callers surface the possibility rather than mislabel every orphan a source move."""
+    for name, key, _ver in _STORES:
+        p = dir_path / name
+        if not p.is_file():
+            continue
+        loaded = _read_old_store(p)
+        if loaded.get(key) and not loaded.get("fingerprint_scheme"):
+            return True
+    return False
+
+
 @dataclass(frozen=True, slots=True)
 class ProbeReport:
     scanned_findings: int
@@ -513,6 +535,7 @@ class ProbeReport:
     orphaned: tuple[str, ...]
     collisions: tuple[RekeyCollision, ...]
     per_store: dict[str, int]  # store name -> count of its old_fps with no current finding
+    prescheme: bool = False  # a live store predates the scheme stamp (possible formula drift)
 
     @property
     def clean(self) -> bool:
@@ -541,6 +564,7 @@ def probe(root: Path, findings: Sequence[Finding]) -> ProbeReport:
         orphaned=tuple(sorted(orphaned)),
         collisions=result.collisions,
         per_store=per_store,
+        prescheme=_dir_has_prescheme_store(paths.weft_state_dir(root)),
     )
 
 
@@ -564,6 +588,9 @@ def run_rekey(root: Path, findings: Sequence[Finding], *, filigree: Any = None) 
         )
     snapshot_stores(root)  # must precede any store write
     journal = new_journal(compute_old_new_fingerprints(findings))
+    # Detect from the immutable snapshot (byte-identical to the pre-migration live stores)
+    # so the caution persists onto the journal for --resume display too.
+    journal.snapshot_prescheme = _dir_has_prescheme_store(snapshot_dir(root))
     write_journal(jpath, journal, root=root)
     return apply_pending_legs(root, journal, findings=findings, filigree=filigree)
 

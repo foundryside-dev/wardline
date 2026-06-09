@@ -16,6 +16,7 @@ def test_journal_roundtrip_and_resume_skips_done(tmp_path: Path) -> None:
 
     j.leg("baseline").done = True
     j.leg("baseline").carried = [a]
+    j.snapshot_prescheme = True  # a scheme-less (pre-P1) snapshot — must persist for --resume display
     assert j.next_pending_leg() == "judged"
 
     p = tmp_path / "migration_journal.yaml"
@@ -24,11 +25,21 @@ def test_journal_roundtrip_and_resume_skips_done(tmp_path: Path) -> None:
     assert loaded.remap == {a: na}
     assert loaded.leg("baseline").done is True
     assert loaded.leg("baseline").carried == [a]
+    assert loaded.snapshot_prescheme is True  # the prescheme caution survives the roundtrip
     assert loaded.next_pending_leg() == "judged"
 
     for leg in loaded.legs:
         leg.done = True
     assert loaded.complete
+
+
+def test_journal_snapshot_prescheme_defaults_false_when_absent(tmp_path: Path) -> None:
+    # A journal written before this field existed (no key) loads as False — backward compatible.
+    j = Journal(remap={})
+    assert j.snapshot_prescheme is False
+    p = tmp_path / "j.yaml"
+    write_journal(p, j, root=tmp_path)
+    assert load_journal(p).snapshot_prescheme is False
 
 
 def test_journal_persists_collisions(tmp_path: Path) -> None:

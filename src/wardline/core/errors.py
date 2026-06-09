@@ -28,7 +28,8 @@ class SchemeMismatchError(ConfigError):
         super().__init__(
             f"{store_name}: fingerprint scheme {found_desc} does not match this build's "
             f"{expected!r}. Run `wardline rekey` to migrate this project's stores "
-            f"(pre-1.0: no automatic upgrade)."
+            f"(or `wardline rekey --resume` to finish an interrupted migration; "
+            f"pre-1.0: no automatic upgrade)."
         )
 
 

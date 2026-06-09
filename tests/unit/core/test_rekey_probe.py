@@ -85,3 +85,28 @@ def test_probe_clean_when_all_match(tmp_path: Path) -> None:
     )
     report = probe(root, [f])
     assert report.matched == 1 and report.orphaned == () and report.clean
+    assert report.prescheme is False  # a wlfp1-stamped store is not pre-scheme
+
+
+def test_probe_does_not_flag_an_empty_project(tmp_path: Path) -> None:
+    # No stores at all -> nothing to migrate, nothing to caution about.
+    assert probe(tmp_path, [_finding()]).prescheme is False
+
+
+def test_probe_flags_a_scheme_less_prescheme_store(tmp_path: Path) -> None:
+    # A POPULATED store with NO fingerprint_scheme header predates P1's stamp. Its
+    # fingerprints may also predate 705acfe (resolved-taint) -> v0 can't reconstruct them
+    # and verdicts orphan from a formula change, not source churn. Surface the possibility.
+    root = tmp_path
+    state = paths.weft_state_dir(root)
+    state.mkdir(parents=True)
+    (state / "baseline.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "entries": [{"fingerprint": "a" * 64, "rule_id": "PY-WL-101", "path": "x.py", "message": "y"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert probe(root, [_finding()]).prescheme is True

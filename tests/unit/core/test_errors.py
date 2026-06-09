@@ -26,6 +26,7 @@ def test_scheme_mismatch_error_is_actionable_configerror() -> None:
     assert "baseline.yaml" in msg  # names the offending file
     assert "wlfp1" in msg  # names the scheme this build expects
     assert "wardline rekey" in msg  # the actionable next step
+    assert "--resume" in msg  # the recovery path for an interrupted migration
     assert e.store_name == "baseline.yaml"
     assert e.found == "wlfp0"
     assert e.expected == "wlfp1"

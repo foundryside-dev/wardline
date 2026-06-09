@@ -18,15 +18,30 @@ from wardline.core.filigree_emit import FiligreeEmitter
 from wardline.core.rekey import Journal, ProbeReport, probe, resume_rekey, rollback, run_rekey
 from wardline.core.run import run_scan
 
+# Why a verdict can orphan (NOT only a source move) — shared by --probe and --resume output.
+_ORPHAN_CAUSE = "source moved/deleted, or a custom multi-emit rule not surfacing taint_path_v0"
+
+
+def _print_prescheme_caution() -> None:
+    click.echo(
+        "  note: a store here predates the fingerprint-scheme stamp (pre-P1). If its "
+        "fingerprints also predate the taint-resolution-drift fix, a HIGH orphan rate is a "
+        "fingerprint-formula change, NOT source churn — re-baseline rather than assume the "
+        "code moved.",
+        err=True,
+    )
+
 
 def _print_probe(report: ProbeReport) -> None:
     click.echo(f"probe: {report.scanned_findings} finding(s) scanned; {report.matched} verdict(s) will carry.")
     if report.orphaned:
-        click.echo(f"  {len(report.orphaned)} orphaned (source moved/deleted — verdict will NOT carry):", err=True)
+        click.echo(f"  {len(report.orphaned)} orphaned ({_ORPHAN_CAUSE}) — verdict will NOT carry:", err=True)
         for of in report.orphaned:
             click.echo(f"    {of}", err=True)
     for c in report.collisions:
         click.echo(f"  COLLISION: {c.message}", err=True)
+    if report.prescheme:
+        _print_prescheme_caution()
     if report.clean:
         click.echo("probe: clean — every stored verdict will carry.")
 
@@ -44,9 +59,11 @@ def _print_journal(journal: Journal) -> None:
         # Surface the orphaned fingerprints, not just the count — a dropped verdict must
         # never be silent (the original is recoverable from .rekey_snapshot/ until rollback).
         for of in leg.orphaned:
-            click.echo(f"    orphaned (source moved/deleted, verdict NOT carried): {of}", err=True)
+            click.echo(f"    orphaned ({_ORPHAN_CAUSE}) — verdict NOT carried: {of}", err=True)
     for c in journal.collisions:
         click.echo(f"  COLLISION: {c.message}", err=True)
+    if journal.snapshot_prescheme:
+        _print_prescheme_caution()
     if journal.complete:
         click.echo("rekey complete — stores load clean under the new scheme.")
     else:
