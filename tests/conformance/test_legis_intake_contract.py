@@ -149,6 +149,18 @@ class _LegisFinding:
 
 
 def active_defects(scan: Mapping[str, Any]) -> list[_LegisFinding]:
+    # KNOWN UPSTREAM FAIL-OPEN (weft foundation seam S8 / G1), mirrored FAITHFULLY:
+    # legis reads findings with an empty default, and verify_wardline_artifact (below)
+    # does NOT require the key, so a producer that renamed/dropped `findings` would
+    # verify `verified` with zero routed defects. Closing that is legis's job (add
+    # `findings` to the required set, validate before signature). We keep this mirror
+    # faithful-to-current-legis on purpose and freeze OUR side independently in
+    # test_legis_artifact_contract_freeze.py so the trigger can never originate here.
+    # When legis closes G1, invert HERE: require the key — `if "findings" not in scan:
+    # raise _LegisPayloadError(...)` then read `scan["findings"]` — dropping the empty
+    # default. NOT via _ARTIFACT_PROVENANCE_FIELDS (verify_wardline_artifact): that tuple
+    # is validated as non-empty STRINGS, and `findings` is a LIST, so it would reject
+    # every valid artifact; and the fail-open is this empty default, not that signature path.
     raw_findings = scan.get("findings", [])
     if not isinstance(raw_findings, list):
         raise _LegisPayloadError("scan findings must be a list")

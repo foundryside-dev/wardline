@@ -56,6 +56,20 @@ LEGIS_ARTIFACT_KEY_ENV = "WARDLINE_LEGIS_ARTIFACT_KEY"
 SIG_PREFIX = "hmac-sha256:v2:"
 ARTIFACT_SIGNATURE_FIELD = "artifact_signature"
 
+# Cross-member scan-artifact keys that legis reads with a DEFAULT, not a hard
+# requirement (``findings`` -> empty list, ``dirty`` -> false). A silent rename of one
+# of these routes zero defects into legis under a green ``verified`` status — the
+# consumer never errors, it just governs an empty scan (weft foundation seam S8 / G1;
+# the ``dirty``-key analog is the hub's dirty-freeze issue). The fail-open is legis's to
+# close, but the trigger — a producer key drifting — is ours to prevent: the full
+# emitted key-set is frozen by tests/conformance/test_legis_artifact_contract_freeze.py.
+# Change a value here ONLY in lockstep with the legis hub. ``fingerprint_scheme`` is an
+# ignored-unknown envelope field today, frozen alongside so it cannot silently become a
+# drifted required key tomorrow.
+FINDINGS_FIELD = "findings"
+DIRTY_FIELD = "dirty"
+FINGERPRINT_SCHEME_FIELD = "fingerprint_scheme"
+
 # The one shared vocabulary — legis carries these 8 tiers verbatim (TRUST_TIERS in
 # legis ingest.py). Sourced from the lattice so the two can never drift.
 TRUST_TIERS: frozenset[str] = frozenset(t.value for t in TaintState)
@@ -248,8 +262,8 @@ def build_legis_artifact(
         # Envelope scheme signal (legis ignores unknown top-level fields; it is part
         # of the signed body so the artifact_signature covers it). Per-finding
         # fingerprints stay BARE — legis reads them from to_jsonl (SARIF-style value).
-        "fingerprint_scheme": FINGERPRINT_SCHEME,
-        "findings": findings,
+        FINGERPRINT_SCHEME_FIELD: FINGERPRINT_SCHEME,
+        FINDINGS_FIELD: findings,
     }
     commit, dirty = git_state(root)
 
@@ -289,7 +303,7 @@ def build_legis_artifact(
         if tree is not None:
             scan["tree_sha"] = tree
     if dirty:
-        scan["dirty"] = True
+        scan[DIRTY_FIELD] = True
     return scan
 
 
@@ -317,7 +331,7 @@ def legis_artifact_outcome(artifact: Mapping[str, Any]) -> LegisArtifactOutcome:
     producer). ``signed`` is read from the presence of the signature field — the
     authoritative record of what :func:`build_legis_artifact` did — not re-computed
     from key presence."""
-    dirty = bool(artifact.get("dirty"))
+    dirty = bool(artifact.get(DIRTY_FIELD))
     signed = ARTIFACT_SIGNATURE_FIELD in artifact
     return LegisArtifactOutcome(
         signed=signed,
