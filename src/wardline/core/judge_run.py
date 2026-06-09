@@ -28,6 +28,7 @@ from wardline.core.judged import JudgedFP, JudgedSet, load_judged, write_judged
 from wardline.core.paths import judged_path as judged_file
 from wardline.core.paths import weft_config_path
 from wardline.core.run import run_scan
+from wardline.core.safe_paths import safe_project_file
 from wardline.core.source_excerpt import extract_excerpt
 from wardline.core.triage import TriageResult, run_triage
 
@@ -64,7 +65,7 @@ def load_env_key(root: Path) -> None:
     """
     if os.environ.get(_API_KEY_ENV):
         return
-    env_path = root / ".env"
+    env_path = safe_project_file(root, root / ".env", label=".env")
     if not env_path.is_file():
         return
     for raw in env_path.read_text(encoding="utf-8", errors="replace").splitlines():

@@ -28,6 +28,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from wardline.core.safe_paths import safe_project_file
+
 WEFT_FEDERATION_TOKEN_ENV = "WEFT_FEDERATION_TOKEN"
 # Deprecated fallback — read after the federation-scoped name so existing
 # deployments (e.g. lacuna's .env) keep working until they migrate.
@@ -46,7 +48,7 @@ def _read_token(name: str, root: Path) -> str | None:
     value = os.environ.get(name)
     if value:
         return value
-    env_path = root / ".env"
+    env_path = safe_project_file(root, root / ".env", label=".env")
     if not env_path.is_file():
         return None
     for raw in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -65,7 +67,7 @@ def _read_filigree_mint(root: Path) -> str | None:
     boot / install / doctor). Missing or unreadable falls through cleanly to None so
     the emit path degrades to the legacy/off rungs rather than crashing the scan.
     """
-    path = root.joinpath(*_FILIGREE_MINT_RELPATH)
+    path = safe_project_file(root, root.joinpath(*_FILIGREE_MINT_RELPATH), label="federation_token")
     try:
         value = path.read_text(encoding="utf-8").strip()
     except OSError:
