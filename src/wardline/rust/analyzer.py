@@ -113,7 +113,10 @@ class RustAnalyzer:
                 continue
             self._last_rust_context = context
             files_analyzed += 1
-            functions_total += len(context.entities)
+            # The coverage METRIC counts CALLABLES only — `context.entities` now carries
+            # the full ten-kind surface (Phase 1b), but the trust-surface denominator is
+            # still "functions that could have declared @trusted".
+            functions_total += sum(1 for e in context.entities.values() if e.kind in ("function", "method"))
             # Declared = seeded from a `/// @trusted` marker (tier is a real trust level, not
             # the fail-closed default). This is the trust SURFACE — the denominator that stops
             # a default-clean scan over an un-annotated repo from reading as a clean PASS.
@@ -136,6 +139,11 @@ class RustAnalyzer:
         project_taints: dict[str, TaintState] = {}
         triggers: list[RustTriggerContext] = []
         for entity in entities:
+            if entity.kind not in ("function", "method"):
+                # Phase 1b: the index emits the full ten-kind surface; the taint path
+                # judges CALLABLES only (a module/struct/const has no body to seed or
+                # walk — feeding one to taint_for/dataflow would be a category error).
+                continue
             try:
                 seed = self._provider.taint_for(entity.node)
             except ValueError:

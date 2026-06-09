@@ -1,16 +1,31 @@
-"""The minimal Rust index: parse tree -> callable ``RustEntity`` list + NodeId stamping.
+"""The Rust index: parse tree -> full ADR-049 entity surface + NodeId stamping.
 
-Walks the module scope in source order, minting each callable's qualname via the
+Walks the module scope in source order, minting every entity's qualname via the
 ``qualname`` dialect (ADR-049) and stamping its ``NodeId`` from the shared keying
-authority. **Only callables are emitted** (free fns, inherent methods, trait methods,
-assoc fns) — structs and modules are scope-only, closures and nested ``fn``s are never
-emitted because the walk never descends a ``function_item`` body (ADR-049). A finding
-inside a closure/nested fn attributes to the enclosing named fn via ``line_start``.
+authority. **The full ten-kind surface is emitted** (Phase 1b): the file-scope
+``module`` entity FIRST, then — at their source positions — free items over the
+nine named kinds (function/struct/enum/trait/type_alias/const/static/macro plus
+inline ``mod``), the merged ``impl`` entity (once, at its FIRST contributing
+block), and impl methods re-parented onto the impl entity (``module -> impl ->
+method`` containment, mirroring extract.rs ``emit_impl``).
 
-This is the single-file, file-module-rooted slice-1 view: the caller supplies ``module``
-(crate name from ``Cargo.toml`` + cross-file route are SP2). tree-sitter types appear
-only under ``TYPE_CHECKING`` so importing this module never pulls the ``wardline[rust]``
-extra.
+Not emitted, matching the oracle: closures and nested ``fn``s (the walk never
+descends a ``function_item`` body — a finding inside one attributes to the
+enclosing named fn via ``line_start``), trait-body items (extract.rs deliberately
+never walks trait bodies — a trait definition is only its ``trait`` entity), bare
+macro INVOCATIONS, external ``mod foo;`` declarations, and ``union`` items
+(outside the ten-kind set, the oracle's ``_ => None`` arm).
+
+cfg twins are counted per-(kind, name) over the nine named item kinds (extract.rs
+``twin_counts``): ``fn S`` and ``struct S`` never interfere — the entity id's kind
+segment already separates them — and the ``@cfg(...)`` suffix is applied only on a
+within-kind collision. Impl blocks have their own pre-cfg twin counter keyed on
+the full impl segment.
+
+This is still the single-file, file-module-rooted view: the caller supplies
+``module`` (crate name from ``Cargo.toml`` + cross-file route are SP2).
+tree-sitter types appear only under ``TYPE_CHECKING`` so importing this module
+never pulls the ``wardline[rust]`` extra.
 """
 
 from __future__ import annotations
@@ -34,38 +49,60 @@ if TYPE_CHECKING:
 
 __all__ = ["RustEntity", "discover_rust_entities", "index_entities"]
 
-_ITEM_TYPES = frozenset({"function_item", "mod_item", "impl_item", "struct_item"})
+# tree-sitter node type -> ADR-049 id-kind, for the free leaf items emitted directly
+# at their source position. `mod_item` (recursed) and `impl_item` (merged) are handled
+# by their own arms; a bare macro invocation is an `expression_statement`, never here.
+_LEAF_KINDS: dict[str, str] = {
+    "function_item": "function",
+    "struct_item": "struct",
+    "enum_item": "enum",
+    "trait_item": "trait",
+    "type_item": "type_alias",
+    "const_item": "const",
+    "static_item": "static",
+    "macro_definition": "macro",
+}
+_ITEM_TYPES = frozenset(_LEAF_KINDS) | frozenset({"mod_item", "impl_item"})
 
 
 @dataclass(frozen=True, slots=True)
 class RustEntity:
-    """A callable Rust entity. ``kind`` is Wardline's *semantic* split
-    (``function``/``method``); the qualname id-kind is ``function`` for both (ADR-049).
+    """One emitted Rust entity. ``kind`` spans the full ADR-049 id-kind set
+    (``module``/``struct``/``function``/``enum``/``trait``/``type_alias``/``const``/
+    ``static``/``macro``/``impl``) plus Wardline's *semantic* ``method`` for impl fns —
+    the qualname id-kind is ``function`` for both (``qualname.entity_id`` maps it).
 
-    ``node`` is the ``function_item`` CST node (valid while the source tree is alive) —
-    the analyzer reuses it (under the *same* ``NodeIdMap``, spec §5) to seed the fn's
-    trust tier and run dataflow over its body."""
+    ``parent`` is the qualname of the containing module or impl entity (``None`` for
+    the file-scope module) — the ``module -> impl -> method`` containment chain.
+
+    ``node`` is the entity's CST node (valid while the source tree is alive) — for
+    callables the analyzer reuses it (under the *same* ``NodeIdMap``, spec §5) to seed
+    the fn's trust tier and run dataflow over its body."""
 
     qualname: str
     kind: str
     node_id: NodeId
     location: Location
     node: Node
+    parent: str | None
 
 
 def index_entities(tree: Tree, nmap: NodeIdMap, *, module: str, path: str = "") -> list[RustEntity]:
-    """Emit the callable entities of an already-parsed ``tree`` under its ``nmap``.
+    """Emit the entities of an already-parsed ``tree`` under its ``nmap``.
 
     The analyzer calls this so index/dataflow/rules share ONE tree and ONE keying
     authority (spec §5 — re-parsing would mint divergent NodeIds and fail quietly).
+    The file-scope ``module`` entity is emitted FIRST (corpus row order), spanning
+    the root node.
     """
-    entities: list[RustEntity] = []
-    _walk_scope(tree.root_node.children, module, nmap, entities, path)
+    root = tree.root_node
+    entities: list[RustEntity] = [_entity(module, "module", root, nmap, path, parent=None)]
+    _walk_scope(root.children, module, nmap, entities, path)
     return entities
 
 
 def discover_rust_entities(source: str, *, module: str, path: str = "") -> list[RustEntity]:
-    """Parse ``source`` and emit its callable entities, qualname-rooted at ``module``.
+    """Parse ``source`` and emit its entities, qualname-rooted at ``module``.
 
     The corpus-facing API: parses internally (``module`` is the supplied file-module root,
     since deriving it from ``Cargo.toml`` is SP2). ``path`` only labels ``Location``.
@@ -98,11 +135,14 @@ def _walk_scope(
         pending_cfgs = []
 
     # The @cfg suffix is added only on a bare-path COLLISION (ADR-049): a lone
-    # cfg-gated item gets no suffix. Collisions are per-kind; we emit only callables,
-    # so count function names. Inherent impls carry NO source-order ordinal (ADR-049
-    # amend, Option b): same-(type, generic-sig) impls share one `impl#<...>` key and
-    # their methods merge under it.
-    fn_name_counts = Counter(_name(node) for node, _ in items if node.type == "function_item")
+    # cfg-gated item gets no suffix. Counting is per-(kind, name) over the nine
+    # NAMED item kinds (extract.rs `twin_counts`) — the id's kind segment already
+    # separates `fn S` from `struct S`, so a unique (kind, name) keeps the bare path.
+    twin_counts: Counter[tuple[str, str]] = Counter()
+    for node, _cfg in items:
+        key = _named_item_key(node)
+        if key is not None:
+            twin_counts[key] += 1
 
     # Pre-cfg impl-segment twin counts (mirrors extract.rs `impl_twin_counts`): two
     # impls of the same (type, generic-sig) — incl. cfg-twins — share one key and would
@@ -117,25 +157,56 @@ def _walk_scope(
                 impl_segments[node.id] = seg
                 impl_twin_counts[seg] += 1
 
+    # First block with a given (cfg-augmented) impl qualname emits the ONE merged impl
+    # entity; later same-key blocks only append methods (extract.rs `seen_impl_ids`).
+    # Per-scope is equivalent to per-file: the qualname embeds the full module path.
+    seen_impl_quals: set[str] = set()
+
     for node, cfgs in items:
-        if node.type == "function_item":
-            name = _name(node)
-            qualname = f"{module}.{name}"
-            if cfgs and fn_name_counts[name] > 1:
-                qualname += q.cfg_discriminant(cfgs)
-            entities.append(_entity(qualname, "function", node, nmap, path))
-        elif node.type == "mod_item":
+        if node.type == "mod_item":
             body = node.child_by_field_name("body")
-            if body is not None:  # `mod foo;` (external) has no body to descend
-                _walk_scope(body.children, f"{module}.{_name(node)}", nmap, entities, path)
+            if body is None:  # `mod foo;` (external) has no body to descend
+                continue
+            name = _name(node)
+            nested = f"{module}.{name}"
+            if cfgs and twin_counts[("module", name)] > 1:
+                nested += q.cfg_discriminant(cfgs)
+            # The inline-mod entity is emitted AT its source position, BEFORE its
+            # members (corpus nested_inline_mod row order; extract.rs inline-mod arm).
+            entities.append(_entity(nested, "module", node, nmap, path, parent=module))
+            _walk_scope(body.children, nested, nmap, entities, path)
         elif node.type == "impl_item":
             seg = impl_segments.get(node.id)
             if seg is None:
                 continue
             if cfgs and impl_twin_counts[seg] > 1:
                 seg += q.cfg_discriminant(cfgs)
-            _emit_impl_methods(node, f"{module}.{seg}", nmap, entities, path)
-        # struct_item: scope-only, never a callable -> not emitted.
+            impl_qualname = f"{module}.{seg}"
+            if impl_qualname not in seen_impl_quals:
+                seen_impl_quals.add(impl_qualname)
+                entities.append(_entity(impl_qualname, "impl", node, nmap, path, parent=module))
+            _emit_impl_methods(node, impl_qualname, nmap, entities, path)
+        else:
+            kind = _LEAF_KINDS[node.type]
+            name = _name(node)
+            qualname = f"{module}.{name}"
+            if cfgs and twin_counts[(kind, name)] > 1:
+                qualname += q.cfg_discriminant(cfgs)
+            entities.append(_entity(qualname, kind, node, nmap, path, parent=module))
+
+
+def _named_item_key(node: Node) -> tuple[str, str] | None:
+    """The per-(kind, name) twin-counter key of a named item, or ``None`` for items
+    that don't participate (impl blocks have their own counter; an external ``mod foo;``
+    emits nothing, matching extract.rs counting only ``content: Some(_)`` mods)."""
+    if node.type == "mod_item":
+        if node.child_by_field_name("body") is None:
+            return None
+        return ("module", _name(node))
+    kind = _LEAF_KINDS.get(node.type)
+    if kind is None:
+        return None
+    return (kind, _name(node))
 
 
 def _impl_segment(impl_node: Node) -> str | None:
@@ -161,7 +232,11 @@ def _emit_impl_methods(
         return
     for child in body.named_children:
         if child.type == "function_item":
-            entities.append(_entity(f"{impl_qualname}.{_name(child)}", "method", child, nmap, path))
+            # Methods re-parent onto the impl ENTITY (module -> impl -> method), and the
+            # method qualname builds from the cfg-AUGMENTED impl qualname (extract.rs).
+            entities.append(
+                _entity(f"{impl_qualname}.{_name(child)}", "method", child, nmap, path, parent=impl_qualname)
+            )
 
 
 def _name(node: Node) -> str:
@@ -171,7 +246,7 @@ def _name(node: Node) -> str:
     return ""
 
 
-def _entity(qualname: str, kind: str, node: Node, nmap: NodeIdMap, path: str) -> RustEntity:
+def _entity(qualname: str, kind: str, node: Node, nmap: NodeIdMap, path: str, *, parent: str | None) -> RustEntity:
     start = node.start_point
     end = node.end_point
     location = Location(
@@ -181,4 +256,6 @@ def _entity(qualname: str, kind: str, node: Node, nmap: NodeIdMap, path: str) ->
         col_start=start[1],
         col_end=end[1],
     )
-    return RustEntity(qualname=qualname, kind=kind, node_id=nmap.node_id(node), location=location, node=node)
+    return RustEntity(
+        qualname=qualname, kind=kind, node_id=nmap.node_id(node), location=location, node=node, parent=parent
+    )

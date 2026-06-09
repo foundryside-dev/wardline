@@ -43,8 +43,11 @@ if TYPE_CHECKING:
     from tree_sitter import Node
 
 __all__ = [
+    "RUST_ONTOLOGY_VERSION",
+    "RUST_PLUGIN_ID",
     "cfg_discriminant",
     "cfg_predicate_of",
+    "entity_id",
     "impl_type_param_names",
     "normalize_cfg_predicate",
     "render_positional_generics",
@@ -54,6 +57,33 @@ __all__ = [
 ]
 
 _ROOT_STEMS = frozenset({"lib", "main", "mod"})
+
+# The ADR-049 producer identity (mirrors loomweave plugin.toml: `plugin_id = "rust"`,
+# `ontology_version = "0.4.0"`) — Wardline mints the SAME entity ids as the oracle.
+RUST_PLUGIN_ID = "rust"
+RUST_ONTOLOGY_VERSION = "0.4.0"
+
+# The ten ADR-049 id-kinds (plugin.toml `entity_kinds`). Wardline's semantic `method`
+# is NOT an id-kind — `entity_id` maps it to `function` itself.
+_ID_KINDS = frozenset(
+    {"module", "struct", "function", "enum", "trait", "type_alias", "const", "static", "macro", "impl"}
+)
+
+
+def entity_id(kind: str, qualname: str) -> str:
+    """The federation entity id ``{plugin}:{kind}:{qualname}`` for an emitted entity.
+
+    Wardline's semantic ``method`` maps to the id-kind ``function`` HERE (callers pass
+    ``RustEntity.kind`` verbatim, never pre-mapping); any kind outside the ten-kind
+    ADR-049 set raises ``ValueError`` — mirroring loomweave's ``build_entity_id``
+    validation posture (reject, never silently coin a new kind).
+    """
+    if kind == "method":
+        kind = "function"
+    if kind not in _ID_KINDS:
+        msg = f"unknown Rust entity kind {kind!r} (not in the ADR-049 ten-kind set)"
+        raise ValueError(msg)
+    return f"{RUST_PLUGIN_ID}:{kind}:{qualname}"
 
 
 def rust_module_route(*, crate: str, src_root: str, file: str) -> str:

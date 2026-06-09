@@ -46,14 +46,15 @@ the *producer-parity* tests below run live (``_rust_producer`` resolves
 ``wardline.rust.index`` — they no longer skip). The *structural* self-tests also run
 and catch a malformed / stale re-vendor. SP2 rows still ``xfail`` (whole-tree view).
 
-The comparison rule (from the corpus ``_consumer_comparison`` key — do NOT use raw
-list-equality against ``expected``):
-  1. The byte-exact obligation is the ``qualname`` of every NON-``module`` row.
-  2. ``kind`` is the locator id-kind (``function`` for every callable); Wardline's
-     semantic ``method`` ↔ id-kind ``function`` for impl fns. Compare qualname-only.
-  3. ``module`` rows are validated via the ``module_route`` section, not re-emitted.
-Wardline emits only callables (functions), so the non-vacuous form of (1) is
-*set-equality on the function-kind qualnames* (catches both missing and extra).
+The comparison rule — GRADUATED (Phase 1b): Wardline now emits the FULL ten-kind
+ADR-049 surface (changeset §7 rule 1 for full-surface producers), so the gate is
+**ordered-list equality of `(qualname, kind)` pairs** against the corpus
+``expected`` — exactly loomweave's own ordered conformance gate. Wardline's
+semantic ``method`` maps to the id-kind ``function`` (the only mapping applied);
+``module`` rows are compared like every other row AND the ``module_route``
+section separately validates the file->module routing. The corpus
+``_consumer_comparison`` subset rule (set-equality over function rows) remains
+valid for function-only CONSUMERS; Wardline is no longer one.
 """
 
 from __future__ import annotations
@@ -70,9 +71,9 @@ _CORPUS: dict[str, Any] = json.loads((Path(__file__).parent / "qualnames_rust.js
 _KNOWN_TIERS = {"slice-1", "sp2"}
 # The a209fc7 corpus carries the FULL ten-kind ADR-049 surface (leaf_item_kinds /
 # leaf_kind_cfg_twin pin enum/trait/type_alias/const/static; macro + impl were already
-# present). Wardline still compares only `function`-kind rows here (the subset-consumer
-# rule); the full-set graduation is the producer-surface task. The kinds must be *known*
-# so test_expected_kinds_are_known stays a real guard, not a false failure.
+# present), and Wardline now compares its FULL ordered emission against it (Phase 1b
+# graduation). The kinds must be *known* so test_expected_kinds_are_known stays a real
+# guard, not a false failure.
 _KNOWN_KINDS = {
     "module",
     "struct",
@@ -87,10 +88,11 @@ _KNOWN_KINDS = {
 }
 
 
-def _expected_function_qualnames(case: dict[str, Any]) -> set[str]:
-    """The contract's obligation surface for a function-only producer: the set of
-    ``function``-kind qualnames in the case (``module``/``struct`` rows excluded)."""
-    return {row["qualname"] for row in case["expected"] if row["kind"] == "function"}
+def _expected_all_pairs(case: dict[str, Any]) -> list[tuple[str, str]]:
+    """The full-surface obligation: the case's ``expected`` rows as an ORDERED list of
+    ``(qualname, kind)`` pairs — order is part of the contract (loomweave's own gate
+    compares the emission list in order)."""
+    return [(row["qualname"], row["kind"]) for row in case["expected"]]
 
 
 # --------------------------------------------------------------------------- #
@@ -163,9 +165,15 @@ def test_entity_qualnames(case: dict[str, Any]) -> None:
     rust_index, _ = _rust_producer()
     if case["reproducibility"] == "sp2":  # pragma: no cover - flips to hard assert at SP2
         pytest.xfail("sp2 row: needs the whole-tree view (crate name / cross-file route)")
-    # WP2 contract: emit callable entities for `source` rooted at `module_path`.
-    found = {e.qualname for e in rust_index.discover_rust_entities(case["source"], module=case["module_path"])}
-    assert found == _expected_function_qualnames(case)
+    # Phase 1b contract: the FULL ordered ten-kind emission for `source` rooted at
+    # `module_path`, kind-mapped semantic `method` -> id-kind `function` (the one
+    # legal projection; everything else must match the corpus byte-for-byte AND
+    # row-for-row in order).
+    found = [
+        (e.qualname, "function" if e.kind == "method" else e.kind)
+        for e in rust_index.discover_rust_entities(case["source"], module=case["module_path"])
+    ]
+    assert found == _expected_all_pairs(case)
 
 
 @pytest.mark.parametrize("route", _CORPUS["module_route"], ids=lambda r: r["name"])

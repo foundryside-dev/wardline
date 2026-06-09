@@ -104,6 +104,22 @@ def test_coverage_posture_flags_empty_trust_surface(tmp_path) -> None:
     assert cov.properties["functions_total"] == 1
 
 
+def test_non_callable_entities_do_not_enter_taint_analysis(tmp_path) -> None:
+    # Phase 1b: the index now emits struct/enum/const/trait (etc.) rows. The taint
+    # path must judge CALLABLES ONLY — leaf entities have no body/trust marker, so
+    # feeding them to taint_for/dataflow would crash or fabricate findings, and the
+    # coverage METRIC's functions_total must keep counting callables only.
+    src = 'struct Cfg;\npub enum Mode { A }\npub const NAME: &str = "x";\npub trait Run {}\n' + _INJECTION
+    (tmp_path / "m.rs").write_text(src, encoding="utf-8")
+    findings = list(RustAnalyzer().analyze([tmp_path / "m.rs"], _cfg(), root=tmp_path))
+    rs = [f for f in findings if f.rule_id.startswith("RS-WL-")]
+    assert [f.rule_id for f in rs] == ["RS-WL-108"]  # exactly the one fn's finding
+    assert all(f.qualname is not None and f.qualname.endswith(".run") for f in rs)
+    (cov,) = [f for f in findings if f.rule_id == "WLN-RUST-COVERAGE"]
+    assert cov.properties["functions_total"] == 1  # callables only, not 5
+    assert cov.properties["functions_declared"] == 1
+
+
 def test_clean_file_yields_no_findings(tmp_path) -> None:
     (tmp_path / "clean.rs").write_text(
         _TRUSTED + 'fn run() {\n    Command::new("ls").arg("-la").output();\n}\n', encoding="utf-8"

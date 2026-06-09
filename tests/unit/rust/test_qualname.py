@@ -16,10 +16,34 @@ pytest.importorskip("tree_sitter", reason="wardline[rust] extra not installed")
 
 from wardline.rust.index import discover_rust_entities  # noqa: E402
 from wardline.rust.qualname import (  # noqa: E402
+    RUST_ONTOLOGY_VERSION,
+    RUST_PLUGIN_ID,
     cfg_discriminant,
+    entity_id,
     normalize_cfg_predicate,
     rust_module_route,
 )
+
+
+def test_entity_id_maps_method_and_validates_kind() -> None:
+    # entity_id mirrors loomweave's build_entity_id posture: `{plugin}:{kind}:{qualname}`,
+    # Wardline's semantic `method` maps to the id-kind `function` HERE (callers never
+    # pre-map), and a kind outside the ten-kind ADR-049 set raises.
+    assert entity_id("function", "demo.m.f") == "rust:function:demo.m.f"
+    assert entity_id("method", "demo.m.Foo.impl#<>.bar") == "rust:function:demo.m.Foo.impl#<>.bar"
+    assert entity_id("impl", "demo.m.Foo.impl#<>") == "rust:impl:demo.m.Foo.impl#<>"
+    assert entity_id("module", "demo.m") == "rust:module:demo.m"
+    assert entity_id("type_alias", "demo.m.Alias") == "rust:type_alias:demo.m.Alias"
+    with pytest.raises(ValueError, match="union"):
+        entity_id("union", "demo.m.U")
+    assert RUST_PLUGIN_ID == "rust"
+    assert RUST_ONTOLOGY_VERSION == "0.4.0"
+
+
+def _callable_quals(source: str, module: str) -> set[str]:
+    """The CALLABLE qualnames of a source — these rendering tests pin method/fn
+    qualname bytes; the full ten-kind emission surface is test_index.py's job."""
+    return {e.qualname for e in discover_rust_entities(source, module=module) if e.kind in ("function", "method")}
 
 
 def test_module_route_root_files_contribute_no_segment() -> None:
@@ -85,8 +109,8 @@ def test_positional_generics_are_rename_stable() -> None:
     # §2). No source-order ordinal (ADR-049 amend, Option b).
     with_t = "struct Foo<T>(T);\nimpl<T> Foo<T> { fn get(&self) {} }\n"
     with_u = "struct Foo<U>(U);\nimpl<U> Foo<U> { fn get(&self) {} }\n"
-    t = {e.qualname for e in discover_rust_entities(with_t, module="demo.m")}
-    u = {e.qualname for e in discover_rust_entities(with_u, module="demo.m")}
+    t = _callable_quals(with_t, "demo.m")
+    u = _callable_quals(with_u, "demo.m")
     assert t == u == {"demo.m.Foo<$0>.impl#<$0>.get"}
 
 
@@ -95,7 +119,7 @@ def test_positional_generics_count_type_params_only() -> None:
     # only `T` counts. impl<'a, const N: usize, T> -> one positional $0 in both prefix
     # (Foo<$0>) and signature (impl#<$0>).
     src = "struct Foo<T>(T);\nimpl<'a, const N: usize, T> Foo<T> { fn get(&self) {} }\n"
-    quals = {e.qualname for e in discover_rust_entities(src, module="demo.m")}
+    quals = _callable_quals(src, "demo.m")
     assert quals == {"demo.m.Foo<$0>.impl#<$0>.get"}
 
 
@@ -104,7 +128,7 @@ def test_self_type_concrete_args_split_distinct_impls() -> None:
     # keys, so two like-named `get` methods do NOT collide/merge (the silent-data-loss
     # family the amendment closes). Mirrors corpus generic_self_inherent_concrete_args.
     src = "struct Foo<T>(T);\nimpl Foo<i32> { fn get(&self) {} }\nimpl Foo<u32> { fn get(&self) {} }\n"
-    quals = {e.qualname for e in discover_rust_entities(src, module="demo.m")}
+    quals = _callable_quals(src, "demo.m")
     assert quals == {"demo.m.Foo<i32>.impl#<>.get", "demo.m.Foo<u32>.impl#<>.get"}
 
 
@@ -115,8 +139,8 @@ def test_nested_self_type_param_renders_literal_not_positional() -> None:
     # only guard against accidentally implementing recursive positional substitution.
     vec = "struct Foo<T>(T);\nimpl<T> Foo<Vec<T>> { fn get(&self) {} }\n"
     ref = "struct Foo<T>(T);\nimpl<T> Foo<&T> { fn get(&self) {} }\n"
-    v = {e.qualname for e in discover_rust_entities(vec, module="demo.m")}
-    r = {e.qualname for e in discover_rust_entities(ref, module="demo.m")}
+    v = _callable_quals(vec, "demo.m")
+    r = _callable_quals(ref, "demo.m")
     assert v == {"demo.m.Foo<Vec<T>>.impl#<$0>.get"}
     assert r == {"demo.m.Foo<&T>.impl#<$0>.get"}
 
@@ -125,7 +149,7 @@ def test_non_generic_self_type_renders_bare() -> None:
     # A non-generic self type renders the bare name (no empty brackets) — unchanged by
     # the self-type-args amendment.
     src = "struct Foo;\nimpl Foo { fn bar(&self) {} }\n"
-    quals = {e.qualname for e in discover_rust_entities(src, module="demo.m")}
+    quals = _callable_quals(src, "demo.m")
     assert quals == {"demo.m.Foo.impl#<>.bar"}
 
 
@@ -136,7 +160,7 @@ def test_empty_turbofish_self_type_does_not_emit_empty_brackets() -> None:
     # (Not asserted as oracle-convergence: whether syn accepts `impl Foo<>` at all is
     # unverified; either way neither producer emits a `Foo<>` entity for this input.)
     src = "struct Foo;\nimpl Foo<> { fn bar(&self) {} }\n"
-    quals = {e.qualname for e in discover_rust_entities(src, module="demo.m")}
+    quals = _callable_quals(src, "demo.m")
     assert quals == {"demo.m.Foo.impl#<>.bar"}
 
 
@@ -145,8 +169,8 @@ def test_trait_args_drop_lifetimes_and_bindings_and_omit_empty_brackets() -> Non
     # associated-type bindings dropped), and trait_impl omits <> when none survive.
     binding = "struct F;\nimpl Iterator<Item = u8> for F { fn next(&mut self) {} }\n"
     lifetime = "struct F;\nimpl<'a> MyTrait<'a> for F { fn m(&self) {} }\n"
-    b = {e.qualname for e in discover_rust_entities(binding, module="m")}
-    lt = {e.qualname for e in discover_rust_entities(lifetime, module="m")}
+    b = _callable_quals(binding, "m")
+    lt = _callable_quals(lifetime, "m")
     assert b == {"m.F.impl[Iterator].next"}  # binding dropped, no brackets
     assert lt == {"m.F.impl[MyTrait].m"}  # lifetime dropped, no empty <>
 
@@ -155,5 +179,5 @@ def test_cfg_twin_inherent_impls_split_by_at_cfg() -> None:
     # Post-amendment the ordinal is gone, so a cfg-gated pair of same-signature inherent
     # impls would COLLIDE to one qualname (silent finding-masking) without the @cfg split.
     src = "struct Foo;\n#[cfg(unix)]\nimpl Foo { fn run(&self) {} }\n#[cfg(windows)]\nimpl Foo { fn run(&self) {} }\n"
-    quals = sorted(e.qualname for e in discover_rust_entities(src, module="demo.m"))
+    quals = sorted(_callable_quals(src, "demo.m"))
     assert quals == ["demo.m.Foo.impl#<>@cfg(unix).run", "demo.m.Foo.impl#<>@cfg(windows).run"]
