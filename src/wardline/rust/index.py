@@ -28,11 +28,11 @@ from wardline.rust.parse import parse_rust
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from tree_sitter import Node
+    from tree_sitter import Node, Tree
 
     from wardline.rust.nodeid import NodeIdMap
 
-__all__ = ["RustEntity", "discover_rust_entities"]
+__all__ = ["RustEntity", "discover_rust_entities", "index_entities"]
 
 _ITEM_TYPES = frozenset({"function_item", "mod_item", "impl_item", "struct_item"})
 
@@ -40,25 +40,38 @@ _ITEM_TYPES = frozenset({"function_item", "mod_item", "impl_item", "struct_item"
 @dataclass(frozen=True, slots=True)
 class RustEntity:
     """A callable Rust entity. ``kind`` is Wardline's *semantic* split
-    (``function``/``method``); the qualname id-kind is ``function`` for both (ADR-049)."""
+    (``function``/``method``); the qualname id-kind is ``function`` for both (ADR-049).
+
+    ``node`` is the ``function_item`` CST node (valid while the source tree is alive) —
+    the analyzer reuses it (under the *same* ``NodeIdMap``, spec §5) to seed the fn's
+    trust tier and run dataflow over its body."""
 
     qualname: str
     kind: str
     node_id: NodeId
     location: Location
+    node: Node
 
 
-def discover_rust_entities(source: str, *, module: str, path: str = "") -> list[RustEntity]:
-    """Emit the callable entities of ``source``, qualname-rooted at ``module``.
+def index_entities(tree: Tree, nmap: NodeIdMap, *, module: str, path: str = "") -> list[RustEntity]:
+    """Emit the callable entities of an already-parsed ``tree`` under its ``nmap``.
 
-    Parses internally (no AST/path arg — ``module`` is the supplied file-module root,
-    since deriving it from ``Cargo.toml`` is SP2). ``path`` only labels ``Location``.
+    The analyzer calls this so index/dataflow/rules share ONE tree and ONE keying
+    authority (spec §5 — re-parsing would mint divergent NodeIds and fail quietly).
     """
-    tree = parse_rust(source)
-    nmap = mint_node_ids(tree)
     entities: list[RustEntity] = []
     _walk_scope(tree.root_node.children, module, nmap, entities, path)
     return entities
+
+
+def discover_rust_entities(source: str, *, module: str, path: str = "") -> list[RustEntity]:
+    """Parse ``source`` and emit its callable entities, qualname-rooted at ``module``.
+
+    The corpus-facing API: parses internally (``module`` is the supplied file-module root,
+    since deriving it from ``Cargo.toml`` is SP2). ``path`` only labels ``Location``.
+    """
+    tree = parse_rust(source)
+    return index_entities(tree, mint_node_ids(tree), module=module, path=path)
 
 
 def _walk_scope(
@@ -164,4 +177,4 @@ def _entity(qualname: str, kind: str, node: Node, nmap: NodeIdMap, path: str) ->
         col_start=start[1],
         col_end=end[1],
     )
-    return RustEntity(qualname=qualname, kind=kind, node_id=nmap.node_id(node), location=location)
+    return RustEntity(qualname=qualname, kind=kind, node_id=nmap.node_id(node), location=location, node=node)
