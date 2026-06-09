@@ -124,10 +124,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`import ast; ast = read_raw(p); ast.literal_eval(p)`) laundered raw data through the
   shadowed-module's clean entry — an end-to-end soundness false negative (a tainted
   value reached an `os.system`/`PY-WL-108` sink unflagged). Each early short-circuit
-  (the imported-fqn path, the direct dotted lookup, the bare-name call path, and the
-  context-encoder path) now defers when the call's chain-ROOT name is a tracked
-  local/parameter currently in the RAW_ZONE — covering chained receivers
-  (`a.b.method()`) and bare-name shadows (`foo()`) as well as the one-level case.
+  (the imported-fqn path, the direct dotted lookup, the bare-name call path, the
+  context-encoder path, and the attribute-READ path in `_resolve_expr`) now defers
+  when the call/read's chain-ROOT name is a tracked local/parameter currently in the
+  RAW_ZONE — covering chained receivers (`a.b.method()`) and bare-name shadows
+  (`foo()`) as well as the one-level case.
   `self`/`cls` roots are excluded so analyzer-injected cross-method summaries are
   preserved, and the var-types (`Type.method`) path is intentionally left ungated (a
   legitimately typed object carries a raw-ish value taint from an unmodeled

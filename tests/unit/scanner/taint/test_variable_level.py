@@ -1774,3 +1774,26 @@ def test_encoder_method_shadow_does_not_launder() -> None:
         alias_map={"shlex": "shlex"},
     )
     assert out["x"] in (T.UNKNOWN_RAW, T.EXTERNAL_RAW), out["x"]
+
+
+def test_read_path_raw_local_shadow_does_not_launder() -> None:
+    # Sibling of the call-path fix on the attribute-READ path (_resolve_expr): a raw
+    # local shadowing a module name, READ as ``cfg.validate`` (not called), must not
+    # inherit the module entry's clean taint (wardline-f6a29ce23a / -6b79150e79).
+    out = _vt(
+        "def f(p):\n    cfg = read_raw(p)\n    x = cfg.validate\n",
+        function_taint=T.INTEGRAL,
+        taint_map={"read_raw": T.UNKNOWN_RAW, "cfg.validate": T.ASSURED},
+    )
+    assert out["x"] == T.UNKNOWN_RAW, out["x"]
+
+
+def test_read_path_self_attr_cross_summary_preserved_when_self_raw() -> None:
+    # self.<attr> cross-method summary must STILL be read even when self is raw —
+    # the read-path guard must exclude self/cls (same as the call path).
+    out = _vt(
+        "def m(self, p):\n    x = self.cache\n",
+        function_taint=T.UNKNOWN_RAW,
+        taint_map={"self.cache": T.ASSURED},
+    )
+    assert out["x"] == T.ASSURED, out["x"]

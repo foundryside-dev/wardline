@@ -530,7 +530,16 @@ def _resolve_expr(
         # value path; the call-receiver path is handled in _resolve_call).
         dotted = _dotted_name(node)
         if dotted is not None and dotted in taint_map:
-            return taint_map[dotted]
+            # Same shadow guard as the call path (wardline-f6a29ce23a): a raw local
+            # shadowing a module name, read as ``cfg.attr``, must not inherit the
+            # module entry's clean taint. ``self``/``cls`` are excluded so the
+            # cross-method summary above is preserved even when ``self`` is raw, and a
+            # genuine module read (root not tracked in ``var_taints``) is untouched.
+            # No typed-object FP analog exists here — an instance read ``h.attr`` is
+            # never minted into ``taint_map`` (only module-/self-rooted keys are).
+            root = _call_root_name(node)
+            if not (root is not None and root not in ("self", "cls") and var_taints.get(root) in RAW_ZONE):
+                return taint_map[dotted]
         return _resolve_expr(node.value, function_taint, taint_map, var_taints)
     if isinstance(node, ast.Await):
         # Unwrap — the inner expression (typically a Call) is already handled.
