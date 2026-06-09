@@ -26,7 +26,7 @@ import contextvars
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from wardline.core.taints import _PROVENANCE_CLASH, TRUST_RANK, TaintState, combine
+from wardline.core.taints import _PROVENANCE_CLASH, RAW_ZONE, TRUST_RANK, TaintState, combine
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -446,6 +446,18 @@ def _dotted_name(node: ast.expr) -> str | None:
     return None
 
 
+def _call_root_name(func: ast.expr) -> str | None:
+    """Root receiver/callee name of a call's ``func``: for an attribute call
+    ``X.Y.method()`` the chain root ``X``; for a bare call ``foo()`` the name
+    ``foo``. ``None`` when the root is not a plain Name (e.g. a subscript or call
+    receiver). Used to detect a raw local/parameter shadowing a module/import name
+    (wardline-f6a29ce23a)."""
+    cur = func
+    while isinstance(cur, ast.Attribute):
+        cur = cur.value
+    return cur.id if isinstance(cur, ast.Name) else None
+
+
 def _resolve_expr(
     node: ast.expr,
     function_taint: TaintState,
@@ -710,6 +722,28 @@ def _resolve_call(
             kw_arg_taints,
         )
 
+    # A dotted/imported/bare ``taint_map`` entry always describes a MODULE-LEVEL
+    # symbol (``mod.fn`` / from-imported func / config sanitiser / ``Type.method`` —
+    # every key minted by ``build_call_taint_map`` is rooted in an import alias or a
+    # top-level/bare callable, never a runtime object). When the call's RECEIVER or
+    # CALLEE name is instead a tracked LOCAL or PARAMETER holding RAW data, that local
+    # SHADOWS the module/import name: the clean entry does NOT describe the raw object,
+    # so returning it would launder the raw taint (wardline-f6a29ce23a). The
+    # discriminator is membership in ``var_taints`` (a real import is never tracked
+    # there; an assigned local / parameter is) plus the RAW_ZONE check, which limits
+    # suppression to the only unsound case — a genuine module sanitiser (root not in
+    # ``var_taints``, or tracked-but-clean) is untouched. The chain ROOT is used so a
+    # chained receiver (``a.b.method()``, root ``a``) is covered, not only one-level
+    # ``a.method()``. ``self``/``cls`` are EXCLUDED: their dotted keys are
+    # analyzer-injected cross-method summaries (analyzer.py), not module shadows, and
+    # must still be read even when the method's ``self`` seed is raw. The early
+    # ``taint_map`` short-circuits below defer to the RAW_ZONE receiver guard (and the
+    # bare-call path returns the raw callee taint) when this is set.
+    _call_root = _call_root_name(node.func)
+    root_shadows_raw_local = (
+        _call_root is not None and _call_root not in ("self", "cls") and var_taints.get(_call_root) in RAW_ZONE
+    )
+
     alias_map = _CURRENT_ALIAS_MAP.get()
     imported_fqn: str | None = None
     if alias_map is not None:
@@ -717,7 +751,7 @@ def _resolve_call(
 
         module_prefix = _CURRENT_MODULE_PREFIX.get() or ""
         imported_fqn = resolve_call_fqn(node, alias_map, frozenset(taint_map.keys()), module_prefix)
-        if imported_fqn in _CONTEXT_ENCODERS:
+        if imported_fqn in _CONTEXT_ENCODERS and not root_shadows_raw_local:
             if not arg_taints:
                 return TaintState.GUARDED
             result = arg_taints[0]
@@ -726,7 +760,7 @@ def _resolve_call(
             return combine(result, TaintState.GUARDED)
         if imported_fqn in _SERIALISATION_SINKS:
             return TaintState.UNKNOWN_RAW
-        if imported_fqn in taint_map:
+        if imported_fqn in taint_map and not root_shadows_raw_local:
             return taint_map[imported_fqn]
 
     if isinstance(node.func, ast.Attribute):
@@ -738,11 +772,25 @@ def _resolve_call(
             if dotted in _SERIALISATION_SINKS:
                 return TaintState.UNKNOWN_RAW
             taint_hit = taint_map.get(dotted)
-            if taint_hit is not None:
+            if taint_hit is not None and not root_shadows_raw_local:
+                # ``not root_shadows_raw_local``: a raw local/param shadowing the
+                # module name must not inherit the module entry (see above).
                 return taint_hit
         if isinstance(node.func.value, ast.Name):
             var_types = _CURRENT_VAR_TYPES.get()
             if var_types is not None and node.func.value.id in var_types:
+                # This path is reached ONLY for a receiver with a TRACKED TYPE
+                # (annotation or ``x = Type()`` constructor) — never a module shadow
+                # (a raw ``cfg = read_raw(p)`` carries no tracked type). It is
+                # deliberately NOT gated by ``root_shadows_raw_local``: a legitimately
+                # typed object routinely has a RAW-ZONE value taint (an unmodeled
+                # ``Type()`` constructor defaults to ``UNKNOWN_RAW``), and that object
+                # must still resolve ``Type.method`` via its type — gating on the
+                # value taint false-positives the ``h = Helper(); h.get_assured()``
+                # pattern (test_helper_method_returning_assured_does_not_false_positive).
+                # A config sanitiser CAN mint a ``Type.method`` key, so a raw-seeded
+                # *typed parameter* could in principle launder here; that narrow
+                # residual is accepted over the FP cost (wardline-f6a29ce23a).
                 type_prefix = var_types[node.func.value.id]
                 resolved_dotted = f"{type_prefix}.{node.func.attr}"
                 taint_hit = taint_map.get(resolved_dotted)
@@ -800,6 +848,12 @@ def _resolve_call(
                 result = combine(result, default_taint)
             return result
     if isinstance(node.func, ast.Name):
+        if root_shadows_raw_local:
+            # ``foo()`` where ``foo`` is a raw local/param shadowing a clean import:
+            # calling raw data yields raw, never the import's clean ``taint_map``
+            # entry (wardline-f6a29ce23a). ``var_taints`` holds ``foo`` (the root
+            # check passed), so the lookup is safe.
+            return var_taints[node.func.id]
         try:
             return taint_map[node.func.id]
         except KeyError:
@@ -816,8 +870,6 @@ def _resolve_call(
                 result = combine(result, at)
             return result
     if isinstance(node.func, ast.Attribute):
-        from wardline.core.taints import RAW_ZONE
-
         receiver_taint = _resolve_expr(node.func.value, function_taint, taint_map, var_taints)
         if receiver_taint in RAW_ZONE:
             return receiver_taint

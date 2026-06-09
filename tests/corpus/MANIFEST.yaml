@@ -17,6 +17,10 @@ fixtures:
     - {rule_id: PY-WL-107, qualname: "exec_sink.evals_untrusted", label: TRUE_POSITIVE, note: "EXTERNAL_RAW reaches eval() in a trusted-tier fn"}
   command_sink.py:
     - {rule_id: PY-WL-108, qualname: "command_sink.runs_untrusted", label: TRUE_POSITIVE, note: "EXTERNAL_RAW reaches os.system in a trusted-tier fn"}
+  shadow_launder.py:
+    - {rule_id: PY-WL-108, qualname: "shadow_launder.shadowed_sink", label: TRUE_POSITIVE, note: "raw local shadows the 'ast' stdlib module; ast.literal_eval (GUARDED) launder closed (wardline-f6a29ce23a) — discriminating: vanishes if the fix regresses"}
+  shadow_launder_bare.py:
+    - {rule_id: PY-WL-108, qualname: "shadow_launder_bare.bare_shadow_sink", label: TRUE_POSITIVE, note: "raw local shadows from-imported 'literal_eval'; bare-name-call launder closed (wardline-f6a29ce23a) — discriminating: vanishes if the fix regresses"}
   trusted_callee.py:
     - {rule_id: PY-WL-105, qualname: "trusted_callee.handler", label: TRUE_POSITIVE, note: "EXTERNAL_RAW passed to the trusted callee store()"}
   aliased_stdlib.py:

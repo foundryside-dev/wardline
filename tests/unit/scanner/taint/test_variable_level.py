@@ -1600,3 +1600,177 @@ def test_container_mutator_writes_arg_taint_back_to_receiver() -> None:
         taint_map=tm,
     )
     assert out["lst"] == T.UNKNOWN_RAW, out["lst"]
+
+
+# ── Receiver shadow laundering: a raw local/param that shadows a module name ──
+#
+# wardline-f6a29ce23a. A dotted/imported ``taint_map`` entry describes a
+# MODULE-LEVEL symbol (``mod.fn`` / from-imported func / config sanitiser). When a
+# tracked LOCAL or PARAMETER named the same as the module holds RAW data, the early
+# ``taint_map`` short-circuits in ``_resolve_call`` used to return the module's
+# clean taint — laundering the raw receiver before the RAW_ZONE receiver guard
+# could fire. The discriminator: a real module import is never in ``var_taints``,
+# whereas an assigned/param local IS; suppress the short-circuit only when the
+# receiver is a tracked raw local, leaving genuine module sanitisers untouched.
+
+_SHADOW_TM = {"read_raw": T.UNKNOWN_RAW, "cfg.validate": T.ASSURED}
+
+
+def test_raw_local_shadowing_module_does_not_launder_dotted_path() -> None:
+    # Direct dotted-lookup path (no alias_map): cfg is a raw LOCAL shadowing the
+    # ``cfg`` module; cfg.validate() must NOT inherit the module entry's ASSURED.
+    out = _vt(
+        "def f(p):\n    cfg = read_raw(p)\n    x = cfg.validate()\n",
+        function_taint=T.INTEGRAL,
+        taint_map=_SHADOW_TM,
+    )
+    assert out["cfg"] == T.UNKNOWN_RAW
+    assert out["x"] == T.UNKNOWN_RAW, out["x"]
+
+
+def test_raw_local_shadowing_module_does_not_launder_imported_fqn_path() -> None:
+    # imported_fqn path (alias_map present): same shadow, resolved via the alias
+    # map to the fqn ``cfg.validate`` — must still defer to the raw receiver.
+    out = _vt(
+        "def f(p):\n    cfg = read_raw(p)\n    x = cfg.validate()\n",
+        function_taint=T.INTEGRAL,
+        taint_map=_SHADOW_TM,
+        alias_map={"cfg": "cfg"},
+    )
+    assert out["x"] == T.UNKNOWN_RAW, out["x"]
+
+
+def test_raw_param_shadowing_module_does_not_launder() -> None:
+    # A PARAMETER (not just an assigned local) named like the module, seeded raw.
+    out = _vt(
+        "def f(cfg):\n    x = cfg.validate()\n",
+        function_taint=T.UNKNOWN_RAW,
+        taint_map={"cfg.validate": T.ASSURED},
+        alias_map={"cfg": "cfg"},
+    )
+    assert out["x"] == T.UNKNOWN_RAW, out["x"]
+
+
+def test_genuine_module_sanitiser_stays_clean_dotted() -> None:
+    # FP GUARD: ``cfg`` is NOT a tracked local (a real ``import cfg``), so
+    # cfg.validate(p) is the genuine module sanitiser and must stay ASSURED even
+    # when the function/arg is raw — the fix must not over-fire here.
+    out = _vt(
+        "def f(p):\n    x = cfg.validate(p)\n",
+        function_taint=T.UNKNOWN_RAW,
+        taint_map={"cfg.validate": T.ASSURED},
+        alias_map={"cfg": "cfg"},
+    )
+    assert out["x"] == T.ASSURED, out["x"]
+
+
+def test_genuine_module_sanitiser_stays_clean_no_alias() -> None:
+    # Same guard via the direct dotted-lookup path (no alias_map).
+    out = _vt(
+        "def f(p):\n    x = cfg.validate(p)\n",
+        function_taint=T.UNKNOWN_RAW,
+        taint_map={"cfg.validate": T.ASSURED},
+    )
+    assert out["x"] == T.ASSURED, out["x"]
+
+
+def test_clean_local_shadow_keeps_module_entry() -> None:
+    # A tracked local that is NOT raw (INTEGRAL) does not trigger suppression — the
+    # module entry still resolves (both are clean, so no soundness issue and no
+    # spurious change). Confirms suppression is gated on RAW_ZONE, not mere tracking.
+    out = _vt(
+        "def f():\n    cfg = 42\n    x = cfg.validate()\n",
+        function_taint=T.INTEGRAL,
+        taint_map={"cfg.validate": T.ASSURED},
+    )
+    assert out["x"] == T.ASSURED, out["x"]
+
+
+# ── Receiver-shadow family: chained receivers, self/cls preservation, bare-name,
+#    var_types typed-receiver (wardline-f6a29ce23a, consolidated) ──────────────
+
+
+def test_chained_receiver_shadow_does_not_launder() -> None:
+    # a.b.method(): node.func.value is ast.Attribute. The guard must walk to the
+    # ROOT name 'a'; a raw 'a' shadowing a multi-component module must not inherit
+    # the module entry's clean taint.
+    out = _vt(
+        "def f(p):\n    a = read_raw(p)\n    x = a.b.urlopen()\n",
+        function_taint=T.INTEGRAL,
+        taint_map={"read_raw": T.UNKNOWN_RAW, "a.b.urlopen": T.ASSURED},
+        alias_map={"a": "a"},
+    )
+    assert out["x"] == T.UNKNOWN_RAW, out["x"]
+
+
+def test_self_method_cross_summary_preserved_when_self_raw() -> None:
+    # self.sibling() with self seeded RAW must STILL read the analyzer-injected
+    # cross-method summary (self/cls are never module shadows). The guard must
+    # exclude self/cls roots, else it demotes a legitimate clean sibling summary.
+    out = _vt(
+        "def m(self, p):\n    x = self.sanitize()\n",
+        function_taint=T.UNKNOWN_RAW,
+        taint_map={"self.sanitize": T.ASSURED},
+    )
+    assert out["x"] == T.ASSURED, out["x"]
+
+
+def test_cls_method_cross_summary_preserved_when_cls_raw() -> None:
+    out = _vt(
+        "def m(cls, p):\n    x = cls.sanitize()\n",
+        function_taint=T.UNKNOWN_RAW,
+        taint_map={"cls.sanitize": T.ASSURED},
+    )
+    assert out["x"] == T.ASSURED, out["x"]
+
+
+def test_bare_name_shadow_does_not_launder() -> None:
+    # foo() where foo is a raw local shadowing a clean from-imported function:
+    # calling raw data yields raw, never the import's clean taint.
+    out = _vt(
+        "def f(p):\n    validate = read_raw(p)\n    x = validate()\n",
+        function_taint=T.INTEGRAL,
+        taint_map={"read_raw": T.UNKNOWN_RAW, "validate": T.ASSURED},
+    )
+    assert out["x"] == T.UNKNOWN_RAW, out["x"]
+
+
+def test_bare_name_genuine_import_call_stays_clean() -> None:
+    # FP GUARD: a genuine (un-shadowed) from-imported sanitiser stays clean.
+    out = _vt(
+        "def f(p):\n    x = validate(p)\n",
+        function_taint=T.UNKNOWN_RAW,
+        taint_map={"validate": T.ASSURED},
+    )
+    assert out["x"] == T.ASSURED, out["x"]
+
+
+def test_var_types_typed_receiver_resolves_via_type_when_value_raw() -> None:
+    # The var_types path is DELIBERATELY NOT shadow-gated: a legitimately typed
+    # object routinely carries a RAW-ZONE value taint (an unmodeled ``Type()``
+    # constructor defaults to UNKNOWN_RAW), yet must still resolve ``Type.method``
+    # via its type. Gating on the value taint would FP the ``h = Helper();
+    # h.get_assured()`` pattern (test_helper_method_returning_assured_does_not_
+    # false_positive). The var_types path serves typed objects, never module
+    # shadows (a raw ``cfg = read_raw(p)`` carries no tracked type), so leaving it
+    # ungated costs no shadow coverage. The narrow raw-typed-PARAMETER +
+    # config-sanitiser residual is accepted over that FP cost (wardline-f6a29ce23a).
+    out = _vt(
+        "def f(obj: mymod.Schema):\n    x = obj.validate()\n",
+        function_taint=T.UNKNOWN_RAW,
+        taint_map={"mymod.Schema.validate": T.ASSURED},
+        alias_map={"mymod": "mymod"},
+    )
+    assert out["x"] == T.ASSURED, out["x"]
+
+
+def test_encoder_method_shadow_does_not_launder() -> None:
+    # shlex = raw; shlex.quote(x): the _CONTEXT_ENCODERS branch must not encode a
+    # raw shadowed receiver into a clean GUARDED result.
+    out = _vt(
+        "def f(p):\n    shlex = read_raw(p)\n    x = shlex.quote(p)\n",
+        function_taint=T.INTEGRAL,
+        taint_map={"read_raw": T.UNKNOWN_RAW},
+        alias_map={"shlex": "shlex"},
+    )
+    assert out["x"] in (T.UNKNOWN_RAW, T.EXTERNAL_RAW), out["x"]

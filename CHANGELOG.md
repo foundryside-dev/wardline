@@ -117,6 +117,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixed-port sibling emit/discovery target the published-port rung cannot reconstruct.
 
 ### Fixed
+- **Raw-receiver taint laundering via name-collision shadowing (wardline-f6a29ce23a).**
+  In the L2 per-variable resolver (`_resolve_call`), the early `taint_map`
+  short-circuits returned a MODULE-LEVEL symbol's clean return-taint without checking
+  the call's receiver, so a local/parameter that **shadowed** a module/import name
+  (`import ast; ast = read_raw(p); ast.literal_eval(p)`) laundered raw data through the
+  shadowed-module's clean entry — an end-to-end soundness false negative (a tainted
+  value reached an `os.system`/`PY-WL-108` sink unflagged). Each early short-circuit
+  (the imported-fqn path, the direct dotted lookup, the bare-name call path, and the
+  context-encoder path) now defers when the call's chain-ROOT name is a tracked
+  local/parameter currently in the RAW_ZONE — covering chained receivers
+  (`a.b.method()`) and bare-name shadows (`foo()`) as well as the one-level case.
+  `self`/`cls` roots are excluded so analyzer-injected cross-method summaries are
+  preserved, and the var-types (`Type.method`) path is intentionally left ungated (a
+  legitimately typed object carries a raw-ish value taint from an unmodeled
+  constructor — gating it would false-positive `h = Helper(); h.get_assured()`).
+  Genuine module sanitisers are untouched (the root is never tracked in `var_taints`);
+  the Python default path stays identity-oracle byte-identical, with two discriminating
+  corpus fixtures added.
 - **Finding fingerprint is now invariant to taint-resolution drift (weft-4a9d0f863c).**
   The `fingerprint` — the cross-tool JOIN KEY into the baseline/waiver/judged stores
   and the Filigree tracker — folded engine-RESOLUTION outputs (resolved `TaintState`
