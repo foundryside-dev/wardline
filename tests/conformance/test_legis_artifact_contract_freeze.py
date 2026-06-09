@@ -191,9 +191,7 @@ def _defect(state: SuppressionState) -> Finding:
 
 
 @pytest.mark.parametrize(("state", "wire"), list(_SUPPRESSION_STATE_WIRE.items()))
-def test_nonactive_suppression_state_value_and_proof_key_are_frozen(
-    state: SuppressionState, wire: str
-) -> None:
+def test_nonactive_suppression_state_value_and_proof_key_are_frozen(state: SuppressionState, wire: str) -> None:
     proj = project_finding(_defect(state))
     assert set(proj) == _FINDING_KEYS  # top-level key-set is branch-invariant
     assert proj["suppression_state"] == wire  # the legis routing value

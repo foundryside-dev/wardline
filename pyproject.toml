@@ -48,6 +48,7 @@ dev = [
     "types-PyYAML",
     "types-jsonschema",
     "hypothesis",
+    "import-linter>=2.0",
 ]
 
 [project.scripts]
@@ -133,3 +134,17 @@ branch = true
 
 [tool.coverage.report]
 show_missing = true
+
+[tool.importlinter]
+root_package = "wardline"
+
+# REPORT-ONLY layering contracts (CI runs `lint-imports || true`). They encode the
+# intended core/ layering: the taint engine must not depend on the attestation layer.
+# This contract is BROKEN today (wardline.scanner.pipeline / .taint.project_resolver
+# import wardline.core.attest); the layering agent moves that code (wardline-9ec283d168
+# code half). Until then the non-blocking step surfaces the violation without gating CI.
+[[tool.importlinter.contracts]]
+name = "Taint engine must not import the attestation layer"
+type = "forbidden"
+source_modules = ["wardline.scanner"]
+forbidden_modules = ["wardline.core.attest"]
