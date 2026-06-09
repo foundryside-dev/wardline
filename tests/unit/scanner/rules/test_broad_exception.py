@@ -107,3 +107,27 @@ def test_specific_tuple_is_clean(tmp_path) -> None:
         },
     )
     assert _run(ctx) == []
+
+
+def test_multiple_handlers_one_function_are_distinguished_only_by_line_start(tmp_path) -> None:
+    # Cardinality + latent-collision precondition (wardline-6102d4c833). PY-WL-103 is
+    # MULTI-EMIT per (rule, path, qualname): one finding per broad handler, with
+    # taint_path=None, so two handlers in ONE function are kept distinct SOLELY by
+    # line_start (each handler is on its own line). This is correct under the CURRENT
+    # contract (line_start is in the join key). It is a documented PRECONDITION for the
+    # move-stability redesign: when line_start is removed from the key these two distinct
+    # findings collide unless the rule is first given a source-derived within-scope
+    # discriminator (the fix is sequenced into that redesign to avoid a double rekey).
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": "from wardline.decorators import trusted\n"
+            "@trusted\ndef f():\n"
+            "    try:\n        a()\n    except:\n        pass\n"
+            "    try:\n        b()\n    except:\n        pass\n",
+        },
+    )
+    findings = _run(ctx)
+    assert [f.qualname for f in findings] == ["m.f", "m.f"], "multi-emit: one finding per handler"
+    fps = {f.fingerprint for f in findings}
+    assert len(fps) == 2, "distinct today (via line_start); collides iff line_start leaves the key"
