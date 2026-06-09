@@ -46,7 +46,8 @@ def test_filigree_leg_soft_fails_and_then_succeeds(tmp_path: Path) -> None:
     bad = _FakeEmitter(EmitResult(reachable=False, status=None, url="http://x"))
     apply_pending_legs(tmp_path, j, findings=[finding], filigree=bad)
     assert j.leg("filigree").done is False
-    assert j.leg("filigree").debt and "unreachable" in j.leg("filigree").debt.lower()
+    filigree_debt = j.leg("filigree").debt
+    assert filigree_debt and "unreachable" in filigree_debt.lower()
     assert bad.calls and bad.calls[0][0].fingerprint == "1" * 64  # re-emitted under new_fp
 
     # A later 2xx marks it done.
