@@ -76,6 +76,8 @@ Options:
   --config FILE                   Path to a weft.toml whose [wardline] table
                                   supplies configuration overrides (weft.toml).
   --format [jsonl|sarif|agent-summary|legis]
+  --lang [python|rust]            Language frontend. 'rust' (PREVIEW) scans
+                                  .rs files for command-injection findings.
   --output PATH
   --fail-on [CRITICAL|ERROR|WARN|INFO]
   --cache-dir PATH                Persist L3 summary cache here for faster
@@ -92,6 +94,7 @@ it at a package root, not a single file.
 | --- | --- |
 | `--config FILE` | Path to a `weft.toml` config file; Wardline reads its `[wardline]` table for rule enable/severity and judge settings (defaults to `weft.toml` in the scan path). |
 | `--format [jsonl\|sarif\|agent-summary\|legis]` | Output shape. `jsonl` is one finding per line; `sarif` is SARIF 2.1.0 for GitHub code-scanning and other generic SARIF consumers; `agent-summary` is stable versioned JSON for agents (`schema: wardline-agent-summary-1`) with active defects first, suppressed findings, engine facts, integration status, and suggested next tool calls; `legis` is the signed, verbatim-postable `scan` for legis's `POST /wardline/scan-results` (signed when `WARDLINE_LEGIS_ARTIFACT_KEY` is provisioned — write it **outside** the working tree, see the [legis handoff guide](../guides/legis-handoff.md)). SARIF carries Wardline identity in `partialFingerprints["wardlineFingerprint/v2"]`; downstream Filigree lifecycle quality depends on importers preserving that field. |
+| `--lang [python\|rust]` | Language frontend (default `python`). `rust` is a **preview** that sweeps `*.rs` for command-injection findings (`RS-WL-108`/`RS-WL-112`); needs the `wardline[rust]` extra. Findings carry provisional identity (baseline-ineligible) and config severity overrides do not apply — see the [Rust support guide](../guides/rust-preview.md). |
 | `--output PATH` | Write findings to a file instead of stdout. |
 | `--fail-on [CRITICAL\|ERROR\|WARN\|INFO]` | Exit non-zero when any finding at or above this severity survives the baseline. Use this as your CI gate. |
 | `--cache-dir PATH` | Persist the L3 inter-procedural summary cache here so the next scan reuses unchanged summaries. |

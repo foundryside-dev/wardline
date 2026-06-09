@@ -24,6 +24,15 @@ classifiers = [
 scanner = ["pyyaml>=6.0", "jsonschema>=4.0", "click>=8.0"]
 docs = ["mkdocs>=1.6", "mkdocs-material>=9.5"]
 loomweave = ["blake3>=1.0"]
+# Rust frontend (preview, Tier-A command-injection). tree-sitter-rust 0.24.2's
+# parser is ABI 15, loadable only by tree-sitter core >=0.25.0 — do NOT trust the
+# grammar's stale self-declared `tree-sitter~=0.22`. Both ship cp39-abi3 stable-ABI
+# wheels (one wheel per platform, CPython 3.9+, no compiler at install). The <0.26
+# cap is conservative: 0.26.x ABI/API compat is unverified — relax after a smoke test.
+# The frontend plugs into the scanner pipeline (run_scan, the `--lang rust` click CLI)
+# and loads rust_taint.yaml, so it pulls `wardline[scanner]` (pyyaml/click/jsonschema):
+# `pip install wardline[rust]` is then usable standalone, not merely additive to [scanner].
+rust = ["wardline[scanner]", "tree-sitter>=0.25,<0.26", "tree-sitter-rust==0.24.2"]
 # The SP5 LLM triage judge is dependency-free (stdlib urllib -> OpenRouter); no extra needed.
 
 [dependency-groups]
@@ -59,6 +68,7 @@ packages = ["src/wardline"]
 [tool.hatch.build.targets.wheel.force-include]
 "src/wardline/scanner/taint/stdlib_taint.yaml" = "wardline/scanner/taint/stdlib_taint.yaml"
 "src/wardline/core/vocabulary.yaml" = "wardline/core/vocabulary.yaml"
+"src/wardline/rust/rust_taint.yaml" = "wardline/rust/rust_taint.yaml"
 "src/wardline/skills/wardline-gate/SKILL.md" = "wardline/skills/wardline-gate/SKILL.md"
 
 [tool.ruff]
@@ -108,12 +118,13 @@ disable_error_code = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not network and not loomweave_e2e and not legis_e2e and not filigree_e2e'"
+addopts = "-m 'not network and not loomweave_e2e and not legis_e2e and not filigree_e2e and not rust_e2e'"
 markers = [
     "network: tests that need network (live OpenRouter judge e2e — SP5)",
     "loomweave_e2e: tests that need a real `loomweave serve` binary (SP9 round-trip)",
     "legis_e2e: tests that need a real `legis` server (Track 5 intake round-trip)",
     "filigree_e2e: tests that need a real Filigree with the promote route (WS-A2 round-trip)",
+    "rust_e2e: live `wardline scan --lang rust` CLI subprocess over the .rs corpus (WP6)",
 ]
 
 [tool.coverage.run]

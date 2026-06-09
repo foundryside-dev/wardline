@@ -37,6 +37,12 @@ from wardline.core.sarif import SarifSink
     default=None,
 )
 @click.option("--format", "fmt", type=click.Choice(["jsonl", "sarif", "agent-summary", "legis"]), default="jsonl")
+@click.option(
+    "--lang",
+    type=click.Choice(["python", "rust"]),
+    default="python",
+    help="Language frontend. 'rust' (PREVIEW) scans .rs files for RS-WL-* command-injection findings.",
+)
 @click.option("--output", type=click.Path(path_type=Path), default=None)
 # exit 1 if any non-suppressed DEFECT has severity >= this threshold (SP3b)
 @click.option("--fail-on", type=click.Choice(["CRITICAL", "ERROR", "WARN", "INFO"]), default=None)
@@ -134,6 +140,7 @@ def scan(
     path: Path,
     config_path: Path | None,
     fmt: str,
+    lang: str,
     output: Path | None,
     fail_on: str | None,
     fail_on_unanalyzed: bool,
@@ -151,6 +158,16 @@ def scan(
     allow_dirty: bool,
 ) -> None:
     """Scan PATH for findings."""
+    if lang == "rust":
+        # Loud posture banner: the Rust frontend is a preview slice. RS-WL-* findings carry
+        # provisional identity (baseline-ineligible until SP2) and weft.toml severity
+        # overrides do not yet apply to them. Surface this so a green/red gate is not
+        # mistaken for the stability of the Python path.
+        click.echo(
+            "note: --lang rust is PREVIEW — RS-WL-* findings have provisional identity "
+            "(baseline-ineligible) and config severity overrides do not apply.",
+            err=True,
+        )
     if fmt == "sarif":
         default_name = "findings.sarif"
     elif fmt == "agent-summary":
@@ -175,6 +192,7 @@ def scan(
             strict_defaults=strict_defaults,
             confine_to_root=not allow_source_root_escape,
             trust_suppressions=trust_suppressions,
+            lang=lang,
         )
         findings = result.findings
         if fix:
@@ -212,6 +230,7 @@ def scan(
                         strict_defaults=strict_defaults,
                         confine_to_root=not allow_source_root_escape,
                         trust_suppressions=trust_suppressions,
+                        lang=lang,
                     )
                     findings = result.findings
         if fmt == "sarif":
@@ -392,6 +411,22 @@ def scan(
             f"(see WLN-ENGINE-* facts in {output}).",
             err=True,
         )
+    if lang == "rust":
+        # Coverage posture: Rust analysis is default-clean, so a scan over a repo with no
+        # @trusted markers is vacuously green. Surface the trust surface explicitly so
+        # "0 active" is never mistaken for "analyzed and safe" (the anti-false-green line).
+        coverage = next((f for f in result.findings if f.rule_id == "WLN-RUST-COVERAGE"), None)
+        if coverage is not None:
+            declared = coverage.properties["functions_declared"]
+            total = coverage.properties["functions_total"]
+            click.echo(f"trust surface: {declared} of {total} function(s) declared @trusted", err=True)
+            if total > 0 and declared == 0:
+                click.echo(
+                    "warning: no function declares @trusted — the scan analyzed 0 of "
+                    f"{total} function(s) for trust; a clean result here proves nothing. "
+                    "Add /// @trusted(level=ASSURED) markers to your boundary functions.",
+                    err=True,
+                )
     gate_dec = gate_decision(result, Severity(fail_on)) if fail_on is not None else gate_decision(result, None)
     gate_tripped = gate_dec.tripped
     if gate_dec.verdict == "NOT_EVALUATED":

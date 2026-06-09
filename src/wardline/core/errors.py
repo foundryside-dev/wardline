@@ -73,6 +73,13 @@ class LegisArtifactError(WardlineError):
     operator must act on (CLI → exit 2; MCP → isError result)."""
 
 
+class RustToolingError(WardlineError):
+    """The Rust frontend's tree-sitter toolchain (the ``wardline[rust]`` extra) is
+    unavailable. Raised lazily by ``wardline.rust._tree_sitter.require_rust`` with
+    an actionable install hint — the base package and the ``scanner`` extra never
+    import tree-sitter, so a bare install stays zero-dependency."""
+
+
 class DossierError(WardlineError):
     """A dossier tool-execution fault the agent must act on: the requested entity is
     not in the scanned set, or its module could not be analysed. Optional-source

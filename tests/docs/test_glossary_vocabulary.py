@@ -36,14 +36,14 @@ _ANCHORS: tuple[tuple[str, int, str], ...] = (
     ("src/wardline/core/run.py", 87, "gate_findings:"),
     ("src/wardline/core/run.py", 97, "class GateDecision"),
     ("src/wardline/core/run.py", 106, "verdict: str"),
-    ("src/wardline/core/run.py", 288, "Baseline(frozenset())"),
-    ("src/wardline/core/run.py", 298, "def apply_delta_scope"),
-    ("src/wardline/core/run.py", 322, "active=sum"),
-    ("src/wardline/core/run.py", 373, "honors_suppressions"),
+    ("src/wardline/core/run.py", 301, "Baseline(frozenset())"),
+    ("src/wardline/core/run.py", 311, "def apply_delta_scope"),
+    ("src/wardline/core/run.py", 335, "active=sum"),
+    ("src/wardline/core/run.py", 386, "honors_suppressions"),
     # src/wardline/cli/scan.py — CLI summary line + gate stderr
-    ("src/wardline/cli/scan.py", 384, "suppressed"),
-    ("src/wardline/cli/scan.py", 385, "{s.active} active"),
-    ("src/wardline/cli/scan.py", 403, "gate: FAILED"),
+    ("src/wardline/cli/scan.py", 403, "suppressed"),
+    ("src/wardline/cli/scan.py", 404, "{s.active} active"),
+    ("src/wardline/cli/scan.py", 438, "gate: FAILED"),
     # src/wardline/mcp/server.py — MCP scan summary + gate block
     ("src/wardline/mcp/server.py", 330, '"total": result.summary.total'),
     ("src/wardline/mcp/server.py", 331, '"active": result.summary.active'),
@@ -69,10 +69,10 @@ _ANCHORS: tuple[tuple[str, int, str], ...] = (
     # informational display array (new, W3 residual fix)
     ("src/wardline/core/agent_summary.py", 171, '"informational": informational'),
     # per-finding suppression_state output key (renamed from `suppressed`, weft-f506e5f845)
-    ("src/wardline/core/finding.py", 136, '"suppression_state"'),
-    ("src/wardline/core/finding.py", 281, 'wardline["suppression_state"]'),
+    ("src/wardline/core/finding.py", 140, '"suppression_state"'),
+    ("src/wardline/core/finding.py", 285, 'wardline["suppression_state"]'),
     # stable-file anchors (lower churn, but locked for free)
-    ("src/wardline/core/finding.py", 68, 'ACTIVE = "active"'),
+    ("src/wardline/core/finding.py", 72, 'ACTIVE = "active"'),
     ("src/wardline/core/suppression.py", 24, "SuppressionState.BASELINED"),
 )
 
