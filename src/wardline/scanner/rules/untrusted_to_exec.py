@@ -18,6 +18,7 @@ METADATA = RuleMetadata(
     rule_id="PY-WL-107",
     base_severity=Severity.WARN,
     kind=Kind.DEFECT,
+    multi_emit=True,
     description="Untrusted data reaches a dynamic-code-execution sink (eval/exec/compile) in a trusted-tier function.",
     examples_violation=(
         "@external_boundary\ndef read_raw(p):\n    return p\n"

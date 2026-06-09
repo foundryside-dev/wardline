@@ -57,6 +57,7 @@ METADATA = RuleMetadata(
     rule_id="PY-WL-112",
     base_severity=Severity.WARN,  # matches the 108 OS-command family; ERROR is defensible
     kind=Kind.DEFECT,
+    multi_emit=True,
     description=(
         "Untrusted data reaches a subprocess call with a literal shell=True "
         "(conditionally-shell OS-command injection, CWE-78)."

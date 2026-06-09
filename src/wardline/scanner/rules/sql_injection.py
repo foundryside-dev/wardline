@@ -97,6 +97,7 @@ METADATA = RuleMetadata(
     rule_id="PY-WL-118",
     base_severity=Severity.ERROR,
     kind=Kind.DEFECT,
+    multi_emit=True,
     description=(
         "Untrusted data reaches a SQL/database execution sink (execute/executemany) in a trusted-tier function."
     ),

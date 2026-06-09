@@ -36,6 +36,7 @@ METADATA = RuleMetadata(
     rule_id="PY-WL-117",
     base_severity=Severity.WARN,
     kind=Kind.DEFECT,
+    multi_emit=True,
     description=(
         "Untrusted data reaches an HTTP client sink (SSRF, requests/httpx/urllib) in a trusted-tier function."
     ),

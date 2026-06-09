@@ -52,6 +52,7 @@ METADATA = RuleMetadata(
     rule_id="PY-WL-105",
     base_severity=Severity.ERROR,
     kind=Kind.DEFECT,
+    multi_emit=True,
     description="Untrusted data is passed as an argument to a trusted producer at a call site.",
     examples_violation=(
         "@external_boundary\ndef read_raw(p):\n    return p\n"

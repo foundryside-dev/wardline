@@ -17,6 +17,7 @@ METADATA = RuleMetadata(
     rule_id="PY-WL-115",
     base_severity=Severity.WARN,
     kind=Kind.DEFECT,
+    multi_emit=True,
     description=(
         "Untrusted data reaches a dynamic import sink (importlib.import_module / "
         "__import__) in a trusted-tier function."

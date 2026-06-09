@@ -83,6 +83,7 @@ METADATA = RuleMetadata(
     rule_id="PY-WL-120",
     base_severity=Severity.ERROR,
     kind=Kind.DEFECT,
+    multi_emit=True,
     description="Stored/persisted taint reaches trusted state without validation.",
     examples_violation=(
         "@trusted(level='ASSURED')\ndef get_config():\n    data = open('config.txt').read()\n    return data",

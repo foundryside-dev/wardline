@@ -32,6 +32,7 @@ METADATA = RuleMetadata(
     rule_id="PY-WL-108",
     base_severity=Severity.WARN,
     kind=Kind.DEFECT,
+    multi_emit=True,
     description="Untrusted data reaches an always-shell OS-command sink (os.system/os.popen/subprocess.getoutput).",
     examples_violation=(
         "@external_boundary\ndef read_raw(p):\n    return p\n"

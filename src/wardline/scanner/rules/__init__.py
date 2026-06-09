@@ -77,6 +77,7 @@ _POLICY_CONFIG_METADATA = RuleMetadata(
     rule_id=_POLICY_CONFIG_RULE_ID,
     base_severity=Severity.ERROR,
     kind=Kind.DEFECT,
+    multi_emit=True,
     description="Project policy configuration weakens or disables Wardline policy rules.",
 )
 

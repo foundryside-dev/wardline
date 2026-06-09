@@ -26,6 +26,7 @@ METADATA = RuleMetadata(
     rule_id="PY-WL-116",
     base_severity=Severity.WARN,
     kind=Kind.DEFECT,
+    multi_emit=True,
     description=(
         "Untrusted data reaches a path/filesystem-traversal sink (open/os.path.join/pathlib.Path) "
         "in a trusted-tier function."

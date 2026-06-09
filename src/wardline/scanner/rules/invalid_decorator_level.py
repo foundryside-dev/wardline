@@ -37,6 +37,7 @@ METADATA = RuleMetadata(
     rule_id="PY-WL-114",
     base_severity=Severity.ERROR,
     kind=Kind.DEFECT,
+    multi_emit=True,
     description=(
         "A builtin trust decorator (@trusted or @trust_boundary) has a level argument "
         "that is statically readable but invalid or out-of-range."

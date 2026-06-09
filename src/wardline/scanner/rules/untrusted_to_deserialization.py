@@ -31,6 +31,7 @@ METADATA = RuleMetadata(
     rule_id="PY-WL-106",
     base_severity=Severity.WARN,
     kind=Kind.DEFECT,
+    multi_emit=True,
     description="Untrusted data reaches a deserialization sink (pickle/marshal/yaml.load) in a trusted-tier function.",
     examples_violation=(
         "@external_boundary\ndef read_raw(p):\n    return p\n"

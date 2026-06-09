@@ -25,6 +25,7 @@ METADATA = RuleMetadata(
     rule_id="PY-WL-104",
     base_severity=Severity.WARN,
     kind=Kind.DEFECT,
+    multi_emit=True,
     description="An exception handler that silently swallows the error — body is "
     "only pass/.../continue/break or a bare constant expression (e.g. a "
     "docstring-like string literal or a number). Tier-modulated: fires on "
