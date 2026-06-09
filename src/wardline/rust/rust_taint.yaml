@@ -1,0 +1,56 @@
+# src/wardline/rust/rust_taint.yaml
+# Bundled Rust trust vocabulary (preview, Tier-A command-injection slice).
+#
+# `sources` claim the taint of the value a std call RETURNS (externally controlled
+# input crossing the trust boundary). `sinks` mark dangerous call targets by
+# `sink_kind`; the slice-1 rules (RS-WL-108/112) consume `command`. Paths are the
+# Rust call path; matching is by trailing segments (a `use std::env; env::var(..)`
+# and a fully-qualified `std::env::var(..)` both match `crate: std, path: env::var`).
+#
+# `version` (RUST_TAINT_VERSION) is bumped when the table's shape/semantics change;
+# it folds into the provider_fingerprint so a vocab change invalidates dependent
+# summaries (a per-file source hash cannot observe an out-of-source vocab edit).
+
+version: 1
+
+sources:
+  - crate: std
+    path: env::var
+    returns_taint: EXTERNAL_RAW
+    rationale: A process environment variable; externally controlled.
+
+  - crate: std
+    path: env::var_os
+    returns_taint: EXTERNAL_RAW
+    rationale: A process environment variable (OsString); externally controlled.
+
+  - crate: std
+    path: env::args
+    returns_taint: EXTERNAL_RAW
+    rationale: Command-line arguments; attacker-influenceable at launch.
+
+  - crate: std
+    path: env::vars
+    returns_taint: EXTERNAL_RAW
+    rationale: The full process environment; externally controlled.
+
+  - crate: std
+    path: fs::read_to_string
+    returns_taint: EXTERNAL_RAW
+    rationale: External file contents read as a string; unvalidated.
+
+  - crate: std
+    path: fs::read
+    returns_taint: EXTERNAL_RAW
+    rationale: External file bytes; unvalidated.
+
+  - crate: std
+    path: io::stdin
+    returns_taint: EXTERNAL_RAW
+    rationale: Standard input handle; data read from it is externally controlled.
+
+sinks:
+  - crate: std
+    path: process::Command::new
+    sink_kind: command
+    rationale: Spawns an OS process; a tainted program or shell argument is command injection.
