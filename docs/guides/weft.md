@@ -52,7 +52,7 @@ Suppressed findings (baseline / waiver / judged) emit a SARIF
 reason as the justification.
 
 Downstream importers should preserve
-`partialFingerprints["wardlineFingerprint/v1"]` as the finding's lifecycle
+`partialFingerprints["wardlineFingerprint/v2"]` as the finding's lifecycle
 identity. If that field arrives empty or is discarded, the imported finding may
 still be visible as a generic SARIF result, but Filigree promotion,
 deduplication, and close/reopen behavior cannot rely on the same stable identity

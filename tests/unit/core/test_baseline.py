@@ -61,6 +61,17 @@ def test_wrong_scheme_raises_scheme_mismatch(tmp_path: Path) -> None:
         load_baseline(p)
 
 
+def test_non_string_scheme_header_treated_as_missing(tmp_path: Path) -> None:
+    # A non-string fingerprint_scheme (hand-mangled) is treated as missing and
+    # raises the actionable SchemeMismatchError, not a crash. Locks the isinstance
+    # guard in require_fingerprint_scheme.
+    p = tmp_path / "b.yaml"
+    p.write_text(yaml.safe_dump({"fingerprint_scheme": 1, "version": BASELINE_VERSION, "entries": []}), "utf-8")
+    with pytest.raises(SchemeMismatchError) as ei:
+        load_baseline(p)
+    assert "wardline rekey" in str(ei.value)
+
+
 def test_empty_mapping_is_empty_baseline_no_scheme_error(tmp_path: Path) -> None:
     # Fresh checkout: an empty `{}` store returns empty, never SchemeMismatchError
     # (empty-guard precedes the scheme check).

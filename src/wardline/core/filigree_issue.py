@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from wardline.core.errors import FiligreeEmitError
+from wardline.core.finding import FINGERPRINT_SCHEME, format_fingerprint
 from wardline.core.http import read_response_text
 from wardline.loomweave.identity import SeiResolver
 
@@ -54,7 +55,15 @@ def build_promote_body(
     priority: str | None = None,
     labels: Sequence[str] | None = None,
 ) -> dict[str, Any]:
-    body: dict[str, Any] = {"scan_source": scan_source, "fingerprint": fingerprint}
+    # The promote join key MUST match the form the scan-results INGEST wire writes
+    # (filigree_emit._finding_to_wire emits the scheme-prefixed value), or Filigree's
+    # exact-match promote lookup 404s against the finding it just ingested. Callers
+    # pass the BARE in-memory fingerprint (agent_summary / CLI arg); we prefix it here
+    # at the wire boundary, symmetric with ingest.
+    body: dict[str, Any] = {
+        "scan_source": scan_source,
+        "fingerprint": format_fingerprint(FINGERPRINT_SCHEME, fingerprint),
+    }
     if priority is not None:
         body["priority"] = priority
     if labels:

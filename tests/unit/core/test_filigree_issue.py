@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from wardline.core.errors import FiligreeEmitError
+from wardline.core.filigree_emit import build_scan_results_body
 from wardline.core.filigree_issue import (
     FileResult,
     FiligreeIssueFiler,
@@ -13,8 +14,27 @@ from wardline.core.filigree_issue import (
     Response,
     api_base_url_from_weft,
     attach_loomweave_identity_for_finding,
+    build_promote_body,
     promote_url_from_weft,
 )
+from wardline.core.finding import Finding, Kind, Location, Severity
+
+
+def test_promote_wire_fingerprint_matches_ingest_wire() -> None:
+    # The promote join key MUST equal the value scan-results ingested, or Filigree's
+    # exact-match lookup 404s against the finding it just stored. Lock the two wires
+    # symmetric: both carry the scheme-prefixed form for the same bare fingerprint.
+    f = Finding(
+        rule_id="PY-WL-101",
+        message="m",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path="svc.py", line_start=1),
+        fingerprint="a" * 64,
+    )
+    ingested = build_scan_results_body([f])["findings"][0]["fingerprint"]
+    promoted = build_promote_body(fingerprint=f.fingerprint)["fingerprint"]
+    assert promoted == ingested == "wlfp1:" + "a" * 64
 
 
 class FakeTransport:
@@ -60,9 +80,11 @@ def test_file_returns_issue_id_on_200():
     filer = FiligreeIssueFiler("http://h/api/weft/scan-results", transport=t)
     res = filer.file("fp123", priority="P2")
     assert res == FileResult(reachable=True, issue_id="wardline-abc", created=True)
-    # The request carried the fingerprint + scan_source to the promote route.
+    # The request carried the fingerprint + scan_source to the promote route. The wire
+    # value is scheme-PREFIXED (symmetric with the ingest wire) so the promote join
+    # matches what scan-results stored; the caller passed the bare in-memory value.
     assert t.last["url"].endswith("/api/weft/findings/promote")
-    assert t.last["body"] == {"scan_source": "wardline", "fingerprint": "fp123", "priority": "P2"}
+    assert t.last["body"] == {"scan_source": "wardline", "fingerprint": "wlfp1:fp123", "priority": "P2"}
 
 
 def test_file_already_linked_created_false():

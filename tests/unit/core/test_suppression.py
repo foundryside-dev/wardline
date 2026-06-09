@@ -89,6 +89,11 @@ def test_collision_diagnostic_survives_suppression_and_trips_gate() -> None:
 def test_baselined_finding_is_annotated() -> None:
     out = apply_suppressions([_defect(_FP_A)], Baseline(frozenset({_FP_A})), _no_waivers(), today=_TODAY)
     assert out[0].suppressed is SuppressionState.BASELINED
+    # Lock the baseline/else branch split in apply_suppressions: BASELINED carries NO
+    # reason (the resolver returns reason=None for a baseline match), distinct from
+    # WAIVED/JUDGED which carry the resolver reason. A future edit collapsing the two
+    # branches would change this.
+    assert out[0].suppression_reason is None
 
 
 def test_waived_finding_is_annotated_with_reason() -> None:
