@@ -99,7 +99,15 @@ class RustAnalyzer:
                 findings.append(_parse_error_finding(relpath, "tree-sitter recovered from a syntax error"))
                 continue
             module = _module_for(file, resolved_root)
-            file_findings, context = self._analyze_tree(tree, module=module, path=relpath)
+            try:
+                file_findings, context = self._analyze_tree(tree, module=module, path=relpath)
+            except Exception as exc:  # noqa: BLE001 — per-file isolation, see below
+                # One pathological file (e.g. a RecursionError on a deeply-nested expression)
+                # must not abort the whole scan and lose every other file's findings. Mirror
+                # the Python engine's per-function isolation: degrade to a counted diagnostic
+                # FACT (WLN-ENGINE-FILE-FAILED ∈ UNANALYZED_RULE_IDS) and keep scanning.
+                findings.append(_file_failed_finding(relpath, f"{type(exc).__name__}: {exc}"))
+                continue
             self._last_rust_context = context
             findings.extend(file_findings)
         return findings
@@ -168,12 +176,21 @@ def _module_for(file: Path, resolved_root: Path) -> str:
 def _parse_error_finding(relpath: str, detail: str) -> Finding:
     # Reuse the engine's parse-error rule id so it counts toward ScanSummary.unanalyzed
     # and the CLI "see WLN-ENGINE-* facts" line works for free (UNANALYZED_RULE_IDS).
+    return _engine_fact("WLN-ENGINE-PARSE-ERROR", f"{relpath}: could not parse Rust source ({detail})", relpath)
+
+
+def _file_failed_finding(relpath: str, detail: str) -> Finding:
+    # Analysis raised AFTER a clean parse — a per-file under-scan, counted toward unanalyzed.
+    return _engine_fact("WLN-ENGINE-FILE-FAILED", f"{relpath}: Rust analysis failed ({detail})", relpath)
+
+
+def _engine_fact(rule_id: str, message: str, relpath: str) -> Finding:
     return Finding(
-        rule_id="WLN-ENGINE-PARSE-ERROR",
-        message=f"{relpath}: could not parse Rust source ({detail})",
+        rule_id=rule_id,
+        message=message,
         severity=Severity.NONE,
         kind=Kind.FACT,
         location=Location(path=relpath),
-        fingerprint=_fp("WLN-ENGINE-PARSE-ERROR", relpath),
+        fingerprint=_fp(rule_id, relpath),
         properties={"lang": "rust"},
     )

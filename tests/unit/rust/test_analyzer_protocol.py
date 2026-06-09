@@ -85,3 +85,28 @@ def test_multiple_files_accumulate_findings(tmp_path) -> None:
     (tmp_path / "b.rs").write_text(_INJECTION.replace("fn run()", "fn other()"), encoding="utf-8")
     findings = list(RustAnalyzer().analyze([tmp_path / "a.rs", tmp_path / "b.rs"], _cfg(), root=tmp_path))
     assert sorted(f.location.path for f in findings) == ["a.rs", "b.rs"]
+
+
+def test_one_crashing_file_is_isolated_and_does_not_lose_other_findings(tmp_path) -> None:
+    # A clean-parsing but pathologically deep expression overflows the recursive dataflow
+    # walk (RecursionError). Per-file isolation must degrade THAT file to a counted
+    # WLN-ENGINE-FILE-FAILED FACT and still emit the OTHER file's real RS-WL-108 — never
+    # abort the whole scan (the engine's per-function isolation, mirrored per-file).
+    deep_expr = "+".join(["x"] * 6000)  # nested binary_expression depth >> default recursionlimit
+    deep = tmp_path / "deep.rs"
+    deep.write_text(
+        f"/// @trusted(level=ASSURED)\nfn boom() {{\n    let t = {deep_expr};\n    Command::new(t).output();\n}}\n",
+        encoding="utf-8",
+    )
+    inject = tmp_path / "inject.rs"
+    inject.write_text(_INJECTION, encoding="utf-8")
+
+    # deep.rs FIRST so the crash precedes the clean file — isolation must let inject.rs through.
+    findings = list(RustAnalyzer().analyze([deep, inject], _cfg(), root=tmp_path))
+
+    file_failed = [f for f in findings if f.rule_id == "WLN-ENGINE-FILE-FAILED"]
+    assert len(file_failed) == 1 and file_failed[0].location.path == "deep.rs"
+    assert file_failed[0].severity.value == "NONE"
+    # The other file's real finding survived the neighbour's crash.
+    survivors = [f for f in findings if f.rule_id == "RS-WL-108"]
+    assert len(survivors) == 1 and survivors[0].location.path == "inject.rs"

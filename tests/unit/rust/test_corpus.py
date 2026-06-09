@@ -30,20 +30,37 @@ def test_corpus_files_parse_without_error() -> None:
         assert not has_errors(parse_rust(text)), f"{name} must parse cleanly"
 
 
+# The 9 intended sink functions (by qualname leaf), split by rule. The 3 benign
+# neighbours (benign_all_literal / benign_nonshell_tainted_arg / benign_rebound_to_clean)
+# must NOT appear — they are the false-positive probes.
+_EXPECTED_108 = frozenset(
+    {
+        "sink_env_var_output",
+        "sink_env_var_os_status",
+        "sink_fs_read_to_string_try",
+        "sink_fs_read_await",
+        "sink_return_position",
+        "sink_stepwise",
+    }
+)
+_EXPECTED_112 = frozenset({"sink_sh_dash_c", "sink_bin_bash_dash_c", "sink_powershell_command"})
+
+
 def test_dense_positive_corpus_fires_exactly_the_intended_sinks() -> None:
     text = (_CORPUS / "command_sink.rs").read_text(encoding="utf-8")
     findings = _rs_findings(text, "corpus.command_sink")
-    by_rule = {"RS-WL-108": 0, "RS-WL-112": 0}
-    for f in findings:
-        by_rule[f.rule_id] = by_rule.get(f.rule_id, 0) + 1
-    # 6 program-injection + 3 shell-injection sinks, 0 from the 3 benign neighbours.
-    assert by_rule == {"RS-WL-108": 6, "RS-WL-112": 3}
 
-    # ≤5% false-positive gate, measured over the 12 @trusted functions in the file.
-    intended = 9
-    total_fns = 12
-    false_positives = max(0, len(findings) - intended)
-    assert false_positives / total_fns <= 0.05
+    # Per-FUNCTION attribution, not just aggregate counts: assert the exact SET of functions
+    # that fired each rule. This catches a compensating double-regression (a benign fn wrongly
+    # firing while a real sink stops) that an aggregate {108:6, 112:3} count would mask — and
+    # subsumes the "0 false positives over 12 @trusted fns" property (any benign_* fire fails).
+    fired_108 = {f.qualname.rsplit(".", 1)[-1] for f in findings if f.rule_id == "RS-WL-108"}
+    fired_112 = {f.qualname.rsplit(".", 1)[-1] for f in findings if f.rule_id == "RS-WL-112"}
+    assert fired_108 == _EXPECTED_108
+    assert fired_112 == _EXPECTED_112
+    # No finding attributes to any benign probe (the explicit ≤5% → 0% FP floor).
+    benign = {"benign_all_literal", "benign_nonshell_tainted_arg", "benign_rebound_to_clean"}
+    assert {f.qualname.rsplit(".", 1)[-1] for f in findings} & benign == set()
 
 
 def test_clean_corpus_is_hard_zero() -> None:

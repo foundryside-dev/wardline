@@ -58,6 +58,16 @@ def apply_suppressions(
                 )
             )
             continue
+        # Provisional-identity findings (preview rules whose fingerprint will shift in a
+        # later slice — e.g. the Rust RS-WL-* frontend) are baseline-INELIGIBLE by contract:
+        # a fingerprint-keyed baseline/waiver/judged entry pinned to them now would silently
+        # orphan when the identity changes. Never match them — they stay ACTIVE, so they
+        # always gate and a committed suppression can never (even under --trust-suppressions)
+        # clear them. This is what the CLI's "provisional identity (baseline-ineligible)"
+        # banner promises; the guarantee lives here, not just in prose.
+        if f.properties.get("provisional_identity") is True:
+            out.append(f)
+            continue
         # Precedence: waiver (explicit human intent, carries expiry) > judged (LLM
         # FP-verdict, carries the rationale) > baseline (silent).
         waiver = waivers.match(f.fingerprint, today)

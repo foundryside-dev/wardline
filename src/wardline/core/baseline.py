@@ -43,9 +43,17 @@ class Baseline:
 
 
 def build_baseline_document(findings: Iterable[Finding]) -> dict[str, Any]:
-    """Pure: the YAML-shaped dict for the given findings (deduped, severity-sorted)."""
+    """Pure: the YAML-shaped dict for the given findings (deduped, severity-sorted).
+
+    Provisional-identity findings (preview rules whose fingerprint is not yet stable —
+    e.g. the Rust RS-WL-* frontend) are EXCLUDED: writing them to a baseline would pin a
+    suppression to an identity that shifts in a later slice. They are baseline-ineligible
+    by contract (the suppression path keeps them ACTIVE), so they must never be captured.
+    """
     unique: dict[str, Finding] = {}
     for f in findings:
+        if f.properties.get("provisional_identity") is True:
+            continue
         unique.setdefault(f.fingerprint, f)
     ordered = sorted(
         unique.values(),

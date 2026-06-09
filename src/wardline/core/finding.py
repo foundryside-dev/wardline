@@ -44,6 +44,10 @@ UNANALYZED_RULE_IDS = frozenset(
         "WLN-ENGINE-PARSE-ERROR",
         "WLN-ENGINE-FILE-SKIPPED",
         "WLN-ENGINE-SOURCE-ROOT-MISSING",
+        # A file that parsed but whose analysis raised (per-file isolation, e.g. the Rust
+        # frontend catching a RecursionError on a pathologically deep expression) — a
+        # genuine under-scan, counted so it never reads as a clean result.
+        "WLN-ENGINE-FILE-FAILED",
     }
 )
 
