@@ -149,7 +149,7 @@ The MCP `scan` gate block exposes `gate.tripped` (`src/wardline/mcp/server.py:34
 `src/wardline/core/agent_summary.py:153` (`verdict`). The CLI prints
 `gate: FAILED (--fail-on …) — <reason>` then `gate: evaluated <…>`, or a
 `gate: NOT_EVALUATED — …` line for a bare scan
-(`src/wardline/cli/scan.py:422`).
+(`src/wardline/cli/scan.py:438`).
 
 `--new-since` scopes **both** populations identically: any `active` defect
 outside the delta is re-marked `baselined` in both the emitted and gate lists

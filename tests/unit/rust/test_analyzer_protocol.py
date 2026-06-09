@@ -37,12 +37,13 @@ def test_analyze_over_files_finds_injection_with_repo_relative_path(tmp_path) ->
     analyzer = RustAnalyzer()
     findings = list(analyzer.analyze([src / "m.rs"], _cfg(), root=tmp_path))
 
-    assert [f.rule_id for f in findings] == ["RS-WL-108"]
+    rs = [f for f in findings if f.rule_id.startswith("RS-WL-")]
+    assert [f.rule_id for f in rs] == ["RS-WL-108"]
     # repo-relative POSIX path (the Filigree/Location anchor), not the absolute fs path.
-    assert findings[0].location.path == "src/m.rs"
+    assert rs[0].location.path == "src/m.rs"
     # dumb-but-deterministic slice-1 route: crate=root.name, src_root=root (src/ NOT
     # stripped — full Cargo-aware routing is SP2; provisional_identity disclaims it).
-    assert findings[0].qualname == f"{tmp_path.name}.src.m.run"
+    assert rs[0].qualname == f"{tmp_path.name}.src.m.run"
 
 
 def test_last_context_is_none_but_rust_context_is_retained(tmp_path) -> None:
@@ -72,19 +73,51 @@ def test_unparseable_file_emits_parse_error_fact_and_no_rs_findings(tmp_path) ->
     assert all(not f.rule_id.startswith("RS-WL-") for f in findings)
 
 
+def test_coverage_posture_fact_reports_trust_surface(tmp_path) -> None:
+    # One @trusted fn + one unmarked fn: the coverage METRIC must report 1 of 2 declared,
+    # so a default-clean scan cannot read as a clean PASS when nothing was in the trust surface.
+    (tmp_path / "m.rs").write_text(
+        _TRUSTED + 'fn declared() {\n    Command::new("ls").output();\n}\n'
+        'fn undeclared() {\n    Command::new("ls").output();\n}\n',
+        encoding="utf-8",
+    )
+    findings = list(RustAnalyzer().analyze([tmp_path / "m.rs"], _cfg(), root=tmp_path))
+    cov = [f for f in findings if f.rule_id == "WLN-RUST-COVERAGE"]
+    assert len(cov) == 1
+    assert cov[0].properties["functions_total"] == 2
+    assert cov[0].properties["functions_declared"] == 1
+    assert cov[0].severity.value == "NONE"
+
+
+def test_coverage_posture_flags_empty_trust_surface(tmp_path) -> None:
+    # A repo with ZERO @trusted markers: every finding is modulated to NONE (default-clean),
+    # so the scan is vacuously green. The coverage FACT must expose functions_declared == 0
+    # over a non-zero function count — the anti-false-green signal.
+    (tmp_path / "m.rs").write_text(
+        'fn a() {\n    let t = std::env::var("X").unwrap();\n    Command::new(t).output();\n}\n',
+        encoding="utf-8",
+    )
+    findings = list(RustAnalyzer().analyze([tmp_path / "m.rs"], _cfg(), root=tmp_path))
+    assert [f for f in findings if f.rule_id.startswith("RS-WL-")] == []  # vacuously clean
+    (cov,) = [f for f in findings if f.rule_id == "WLN-RUST-COVERAGE"]
+    assert cov.properties["functions_declared"] == 0
+    assert cov.properties["functions_total"] == 1
+
+
 def test_clean_file_yields_no_findings(tmp_path) -> None:
     (tmp_path / "clean.rs").write_text(
         _TRUSTED + 'fn run() {\n    Command::new("ls").arg("-la").output();\n}\n', encoding="utf-8"
     )
     findings = list(RustAnalyzer().analyze([tmp_path / "clean.rs"], _cfg(), root=tmp_path))
-    assert findings == []
+    assert [f for f in findings if f.rule_id.startswith("RS-WL-")] == []
 
 
 def test_multiple_files_accumulate_findings(tmp_path) -> None:
     (tmp_path / "a.rs").write_text(_INJECTION, encoding="utf-8")
     (tmp_path / "b.rs").write_text(_INJECTION.replace("fn run()", "fn other()"), encoding="utf-8")
     findings = list(RustAnalyzer().analyze([tmp_path / "a.rs", tmp_path / "b.rs"], _cfg(), root=tmp_path))
-    assert sorted(f.location.path for f in findings) == ["a.rs", "b.rs"]
+    rs = [f for f in findings if f.rule_id.startswith("RS-WL-")]
+    assert sorted(f.location.path for f in rs) == ["a.rs", "b.rs"]
 
 
 def test_one_crashing_file_is_isolated_and_does_not_lose_other_findings(tmp_path) -> None:

@@ -10,9 +10,11 @@ data reaching the program or shell command line of `std::process::Command`.
     across releases. They are **baseline-ineligible** — and this is *enforced*, not
     just advised: the engine never matches them against a committed
     baseline/waiver/judged entry and never writes them into a generated baseline, so
-    they always stay `active` and always gate (a stale committed suppression can
-    never silently clear one). `weft.toml` severity overrides do **not** apply to
-    Rust rules yet. Treat a Rust scan as a signal, not a contract.
+    a stale committed suppression can never silently clear one. (A `--new-since`
+    delta-scope still scopes them like any other defect; that scoping is computed per
+    run, never persisted.) `weft.toml` severity overrides do **not** apply to Rust
+    rules yet, and the frontend is **CLI-only** — the MCP `scan` tool analyzes
+    Python. Treat a Rust scan as a signal, not a contract.
 
 ## Running it
 
@@ -63,6 +65,13 @@ fn run_user_command() {
 - `GUARDED` — partial trust; findings are downgraded one step (ERROR → WARN).
 - *(no marker)* — the function is treated as outside the trust surface and its
   findings are suppressed.
+
+Because analysis is default-clean, a scan over a repo with **no** markers is
+vacuously green. Every Rust scan therefore reports a **trust-surface coverage**
+line (`trust surface: D of T function(s) declared @trusted`) and a
+`WLN-RUST-COVERAGE` metric in the findings, and warns loudly when `D == 0` — so a
+clean result is never mistaken for "analyzed and safe" when the truth is "nothing
+was in the trust surface."
 
 ## Boundary sources
 

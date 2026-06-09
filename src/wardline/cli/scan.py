@@ -411,6 +411,22 @@ def scan(
             f"(see WLN-ENGINE-* facts in {output}).",
             err=True,
         )
+    if lang == "rust":
+        # Coverage posture: Rust analysis is default-clean, so a scan over a repo with no
+        # @trusted markers is vacuously green. Surface the trust surface explicitly so
+        # "0 active" is never mistaken for "analyzed and safe" (the anti-false-green line).
+        coverage = next((f for f in result.findings if f.rule_id == "WLN-RUST-COVERAGE"), None)
+        if coverage is not None:
+            declared = coverage.properties["functions_declared"]
+            total = coverage.properties["functions_total"]
+            click.echo(f"trust surface: {declared} of {total} function(s) declared @trusted", err=True)
+            if total > 0 and declared == 0:
+                click.echo(
+                    "warning: no function declares @trusted — the scan analyzed 0 of "
+                    f"{total} function(s) for trust; a clean result here proves nothing. "
+                    "Add /// @trusted(level=ASSURED) markers to your boundary functions.",
+                    err=True,
+                )
     gate_dec = gate_decision(result, Severity(fail_on)) if fail_on is not None else gate_decision(result, None)
     gate_tripped = gate_dec.tripped
     if gate_dec.verdict == "NOT_EVALUATED":

@@ -21,7 +21,7 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING
 
-from wardline.core.finding import Finding, Kind, Location, Severity
+from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity
 from wardline.core.taints import TaintState
 from wardline.rust import qualname as q
 from wardline.rust.context import RustAnalysisContext, RustTriggerContext
@@ -87,6 +87,9 @@ class RustAnalyzer:
         """
         resolved_root = root.resolve()
         findings: list[Finding] = []
+        functions_total = 0
+        functions_declared = 0
+        files_analyzed = 0
         for file in files:
             relpath = _relpath(file, resolved_root)
             try:
@@ -109,7 +112,14 @@ class RustAnalyzer:
                 findings.append(_file_failed_finding(relpath, f"{type(exc).__name__}: {exc}"))
                 continue
             self._last_rust_context = context
+            files_analyzed += 1
+            functions_total += len(context.entities)
+            # Declared = seeded from a `/// @trusted` marker (tier is a real trust level, not
+            # the fail-closed default). This is the trust SURFACE — the denominator that stops
+            # a default-clean scan over an un-annotated repo from reading as a clean PASS.
+            functions_declared += sum(1 for tier in context.project_taints.values() if tier is not _FAIL_CLOSED)
             findings.extend(file_findings)
+        findings.append(_coverage_finding(functions_total, functions_declared, files_analyzed))
         return findings
 
     def analyze_source(self, source: str, *, module: str, path: str = "") -> list[Finding]:
@@ -182,6 +192,36 @@ def _parse_error_finding(relpath: str, detail: str) -> Finding:
 def _file_failed_finding(relpath: str, detail: str) -> Finding:
     # Analysis raised AFTER a clean parse — a per-file under-scan, counted toward unanalyzed.
     return _engine_fact("WLN-ENGINE-FILE-FAILED", f"{relpath}: Rust analysis failed ({detail})", relpath)
+
+
+def _coverage_finding(functions_total: int, functions_declared: int, files_analyzed: int) -> Finding:
+    """A whole-scan METRIC reporting the Rust trust-surface coverage.
+
+    Rust analysis is default-clean: an un-``@trusted`` function modulates its findings to
+    NONE. So a scan over a repo with zero markers is *vacuously* green — ``0 active`` with
+    nothing actually in the trust surface. This FACT exposes ``functions_declared`` over
+    ``functions_total`` so that clean-because-analyzed-and-safe is distinguishable from
+    clean-because-nothing-was-analyzable (the anti-false-green posture the CLI surfaces).
+    The fingerprint is keyed on metric IDENTITY (fixed); the values drift per run.
+    """
+    message = (
+        f"Rust trust-surface coverage: {functions_declared} of {functions_total} function(s) "
+        f"declared @trusted across {files_analyzed} analyzed file(s)"
+    )
+    return Finding(
+        rule_id="WLN-RUST-COVERAGE",
+        message=message,
+        severity=Severity.NONE,
+        kind=Kind.METRIC,
+        location=Location(path=ENGINE_PATH),
+        fingerprint=_fp("WLN-RUST-COVERAGE", ENGINE_PATH),
+        properties={
+            "functions_total": functions_total,
+            "functions_declared": functions_declared,
+            "files_analyzed": files_analyzed,
+            "lang": "rust",
+        },
+    )
 
 
 def _engine_fact(rule_id: str, message: str, relpath: str) -> Finding:

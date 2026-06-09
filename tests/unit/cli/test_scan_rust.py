@@ -47,6 +47,25 @@ def test_scan_lang_rust_malformed_file_fails_unanalyzed_gate(tmp_path) -> None:
     assert "could not be analyzed" in result.output
 
 
+def test_scan_lang_rust_warns_on_empty_trust_surface(tmp_path) -> None:
+    # A repo with NO @trusted markers is vacuously green (default-clean). The CLI must say
+    # so loudly — "0 active" without an empty-trust-surface warning is the false green.
+    (tmp_path / "m.rs").write_text(
+        'fn a() {\n    let t = std::env::var("X").unwrap();\n    Command::new(t).output();\n}\n', encoding="utf-8"
+    )
+    out = tmp_path / "findings.jsonl"
+    result = CliRunner().invoke(scan, [str(tmp_path), "--lang", "rust", "--output", str(out)])
+    assert result.exit_code == 0
+    assert "trust surface" in result.output.lower() and "0 of 1" in result.output
+
+
+def test_scan_lang_rust_reports_coverage_when_markers_present(tmp_path) -> None:
+    (tmp_path / "m.rs").write_text(_INJECTION, encoding="utf-8")  # one @trusted fn
+    out = tmp_path / "findings.jsonl"
+    result = CliRunner().invoke(scan, [str(tmp_path), "--lang", "rust", "--output", str(out)])
+    assert "1 of 1" in result.output  # trust surface fully covered
+
+
 def test_scan_default_lang_python_ignores_rs(tmp_path) -> None:
     # Without --lang rust, a .rs file is not swept and no preview banner prints.
     (tmp_path / "m.rs").write_text(_INJECTION, encoding="utf-8")

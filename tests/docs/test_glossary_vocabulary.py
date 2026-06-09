@@ -43,7 +43,7 @@ _ANCHORS: tuple[tuple[str, int, str], ...] = (
     # src/wardline/cli/scan.py — CLI summary line + gate stderr
     ("src/wardline/cli/scan.py", 403, "suppressed"),
     ("src/wardline/cli/scan.py", 404, "{s.active} active"),
-    ("src/wardline/cli/scan.py", 422, "gate: FAILED"),
+    ("src/wardline/cli/scan.py", 438, "gate: FAILED"),
     # src/wardline/mcp/server.py — MCP scan summary + gate block
     ("src/wardline/mcp/server.py", 330, '"total": result.summary.total'),
     ("src/wardline/mcp/server.py", 331, '"active": result.summary.active'),
