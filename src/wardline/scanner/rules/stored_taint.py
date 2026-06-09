@@ -155,13 +155,13 @@ class StoredTaint:
                                     fingerprint=_fp(
                                         rule_id=self.rule_id,
                                         path=entity.location.path,
-                                        line_start=node.lineno,
                                         qualname=qualname,
-                                        # Join-key stability (weft-4a9d0f863c): <=1 return per line, so
-                                        # (rule, path, line, qualname) is unique for the return site. Empty
-                                        # taint_path stays disjoint from the call-arg site below (which is
-                                        # always non-empty), so the two sites never collide on one line.
-                                        taint_path=None,
+                                        # >1 return per function is possible. Discriminate ENTITY-RELATIVE
+                                        # (return line - def line, invariant to a comment ABOVE the function:
+                                        # wlfp2/wardline-8654423823) + the return's lexical span + a ``return``
+                                        # token. The ``:return`` token keeps this DISJOINT from the call-arg
+                                        # site below (which ends in a callee name), so the two never collide.
+                                        taint_path=f"{node.lineno - (entity.location.line_start or 0)}:{node.col_offset}:{node.end_col_offset}:return",  # noqa: E501
                                     ),
                                     qualname=qualname,
                                     properties={"return_taint": ret_taint.value},
@@ -222,15 +222,14 @@ class StoredTaint:
                                         fingerprint=_fp(
                                             rule_id=self.rule_id,
                                             path=entity.location.path,
-                                            line_start=node.lineno,
                                             qualname=qualname,
-                                            # Join-key stability (weft-4a9d0f863c): call-site-anchored, so
-                                            # >1 finding per (rule, path, line, qualname) is possible.
-                                            # Discriminate by SOURCE only — the callee spelling AS WRITTEN
-                                            # plus the call's full lexical SPAN — never the RESOLVED callee
-                                            # qualname (which drifts as call-graph resolution improves). The
-                                            # span (start:end) separates a chain's outer/inner calls.
-                                            taint_path=f"{dotted_name(node.func)}@{node.col_offset}:{node.end_col_offset}",
+                                            # Call-site-anchored, >1 finding per (rule, path, qualname)
+                                            # possible. Discriminate SOURCE-only: an ENTITY-RELATIVE line
+                                            # offset (call line - def line, invariant to a comment ABOVE the
+                                            # function: wlfp2/wardline-8654423823) + the call's full lexical
+                                            # SPAN + the callee spelling AS WRITTEN. Never the RESOLVED callee
+                                            # qualname (drifts). The span separates a chain's outer/inner calls.
+                                            taint_path=f"{node.lineno - (entity.location.line_start or 0)}:{node.col_offset}:{node.end_col_offset}:{dotted_name(node.func)}",  # noqa: E501
                                         ),
                                         qualname=qualname,
                                         properties={"callee": callee_qn, "arg_taint": worst.value},

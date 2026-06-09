@@ -6,7 +6,7 @@
 
 - **id:** `migration`
 - **goal:** Carry every baseline/judged/waiver verdict (+ best-effort Filigree) across the value-rekey in ONE migration scan, computing `old_fp` (frozen wlfp1 formula, incl. `line_start`) and `new_fp` (new engine) from the SAME source, journalled, resumable, with snapshot rollback.
-- **depends-on:** **P1** (scheme headers + `SchemeMismatchError` + `build_waivers_document`), **P3** (defines `new_fp` + the v0 discriminator component `taint_path_v0`). Both must land first.
+- **depends-on:** **P1** (scheme headers + `SchemeMismatchError` + `build_waivers_document`), **P3** (defines `new_fp`; preserves `Location.line_start` == the old `_fp` line). Both landed. NOTE: P3 did NOT surface `taint_path_v0` (corpus-contamination — see S2); P4 adds its own non-serialized field + recomputes the old taint_path forms.
 - **rekey-impact:** **value-rekey** (operator-run; never automatic).
 - **blast radius:** additive migration-only: `core/rekey.py`, `core/fingerprint_v0.py`, `cli/rekey.py`, one `cli/main.py` registration, `RekeyCollisionError` in `errors.py`, `migration_journal_path` in `paths.py`. Reads the stores + the `build_*_document` writers. Does NOT touch the production hash, suppression, analyzer, or rules. Each project's `.weft/wardline/` is mutated only by explicit `wardline rekey`; snapshot makes the YAML legs reversible.
 
@@ -26,7 +26,11 @@
 
 - [ ] **S2 — dual-fingerprint contract from one scan.**
   - Test: `tests/unit/core/test_rekey_dual_fp.py::test_dual_fingerprint_for_every_rule_class` — over a fixture exercising **singleton (PY-WL-102), handler (PY-WL-103), ordinal (PY-WL-114), call-site (PY-WL-118), AND BOTH PY-WL-120 sites** (return → singleton-like, call-arg → call-site), assert `compute_old_new_fingerprints(scan_result)` returns per finding `(old_fp, new_fp)` where `old_fp == compute_finding_fingerprint_v0(...)` matches the v0 golden and `new_fp == finding.fingerprint`. (Do NOT assert `old_fp != new_fp` partially — `line_start` drops for ALL rules so they ALL differ; the load-bearing property is that `old_fp` MATCHES the stored fp.)
-  - **Cross-WP contract (verify P3's committed interface FIRST):** `old_fp` for call-site rules needs the v0 `taint_path` STRING via `finding.properties["taint_path_v0"]` (P3 surfaces it). For singletons/handler/PY-WL-114, `old_fp` derives from the Finding (`None` / `handler.lineno`-on-Location / unchanged ordinal). **Verify P3 preserves `handler.lineno` on `Location.line_start` for PY-WL-103/104.** If P3 froze WITHOUT `taint_path_v0`, fall back to a two-engine scan (changes the scan shape — resolve before writing impl).
+  - **Cross-WP contract — what P3 ACTUALLY left (decided 2026-06-09, ground-truthed):** P3 **deliberately did NOT surface `taint_path_v0`.** Reason: `taint_path` is ephemeral (consumed by the hash, never stored), and stashing it in `properties` would contaminate the FROZEN identity corpus (`to_jsonl` includes `properties`) + every SARIF/Filigree payload, then need a THIRD rekey to remove — disqualifying. So P3 owes P4 exactly ONE thing, and it is satisfied: **`Location.line_start` == the exact line the OLD `_fp` hashed at every rule** (verified — singletons/114 use the def line, PY-WL-103/104 use the handler line, call-site rules use the call line; every rule sets `Location.line_start` and the old `_fp`'s `line_start` from the SAME value). So `old_fp`'s `line_start` component = `finding.location.line_start` for ALL rules. The OLD `taint_path` is what P4 must reconstruct:
+    - singletons (101/102/109/110/111/113/119), PY-WL-103/104, PY-WL-120-return: OLD `taint_path` was `None` → P4 uses `None`.
+    - PY-WL-114: OLD == NEW `taint_path` (`f"{name}:{token}#{ordinal}"`, unchanged by P3) — but it is ephemeral, so P4 must recompute it.
+    - call-site family (106/107/108/112/115/116/117 via `_sink_helpers`, 118, 105, 120-call-arg): OLD `taint_path` was `f"{sink}@{col}:{end_col}"`; NEW is `f"{rel}:{col}:{end_col}:{sink}"`. Both built from the SAME AST inputs (sink/callee name + `col_offset`/`end_col_offset`), so P4 can recompute the OLD form.
+    - **P4's chosen mechanism (its own impl, not P3's):** add a non-serialized `Finding.taint_path_v0: str | None = None` field (NEVER referenced by any serializer — `to_jsonl`/SARIF/`to_filigree_metadata`/store-doc builders are all explicit-field dicts, so it stays zero-pollution and needs no third rekey), and set it at the same rule sites P3 already edits by recomputing the OLD form from the still-present AST inputs. The rules still EXIST in P4 — no rule resurrection / two-engine scan needed.
   - Impl: `src/wardline/core/rekey.py` with `compute_old_new_fingerprints(result) -> list[FingerprintRemap]` (`FingerprintRemap`: old_fp, new_fp, rule_id, path, qualname). Derive v0 taint_path per the per-finding (not per-rule — PY-WL-120 spans two classes) rule. Raise loudly if a call-site finding lacks the expected v0 component.
 
 - [ ] **S3 — new_fp injectivity → per-collision orphan-and-report (NOT abort).** See D-INJECTIVITY.
@@ -73,7 +77,7 @@
 ## Acceptance
 - `wardline rekey PATH` does exactly ONE `run_scan`, writes a complete `migration_journal.yaml`, applies legs `[baseline, judged, waivers, filigree]`.
 - After leg 1 the local gate is green under wlfp2; all three YAML stores load `SCHEME_MISMATCH`-clean.
-- `old_fp` via frozen `compute_finding_fingerprint_v0` (wlfp1), `new_fp` via the new engine; call-site old_fp uses P3's `taint_path_v0`.
+- `old_fp` via frozen `compute_finding_fingerprint_v0` (wlfp1) over `(rule_id, path, finding.location.line_start, qualname, recomputed-old-taint_path)`, `new_fp` via the new engine.
 - Every carried entry byte-preserves all non-fingerprint provenance **sourced from the snapshot**; orphans reported, never dropped.
 - **Crash-after-write-before-flag preserves content** (not an empty store).
 - Two old_fp → one new_fp is reported per-pair and the migration continues (NOT a whole-run abort).

@@ -53,26 +53,20 @@ def test_to_jsonl_round_trips_collections() -> None:
 
 
 def test_finding_fingerprint_is_deterministic_and_discriminating() -> None:
-    a = compute_finding_fingerprint(
-        rule_id="PY-WL-101", path="a.py", line_start=1, qualname="m.f", taint_path="EXTERNAL_RAW|g"
-    )
-    b = compute_finding_fingerprint(
-        rule_id="PY-WL-101", path="a.py", line_start=1, qualname="m.f", taint_path="EXTERNAL_RAW|g"
-    )
+    a = compute_finding_fingerprint(rule_id="PY-WL-101", path="a.py", qualname="m.f", taint_path="EXTERNAL_RAW|g")
+    b = compute_finding_fingerprint(rule_id="PY-WL-101", path="a.py", qualname="m.f", taint_path="EXTERNAL_RAW|g")
     # same inputs -> stable
     assert a == b
     assert len(a) == 64
     # path-sensitive
     assert a != compute_finding_fingerprint(
-        rule_id="PY-WL-101", path="b.py", line_start=1, qualname="m.f", taint_path="EXTERNAL_RAW|g"
+        rule_id="PY-WL-101", path="b.py", qualname="m.f", taint_path="EXTERNAL_RAW|g"
     )
-    # TWO TAINT PATHS INTO ONE SINK: same (rule, file, line, qualname) but a
-    # different taint path -> DISTINCT fingerprint (Filigree constraint, §7).
-    assert a != compute_finding_fingerprint(
-        rule_id="PY-WL-101", path="a.py", line_start=1, qualname="m.f", taint_path="MIXED_RAW|h"
-    )
+    # TWO TAINT PATHS INTO ONE SINK: same (rule, file, qualname) but a different
+    # taint path -> DISTINCT fingerprint (Filigree constraint, §7).
+    assert a != compute_finding_fingerprint(rule_id="PY-WL-101", path="a.py", qualname="m.f", taint_path="MIXED_RAW|h")
     # optional fields default cleanly
-    assert len(compute_finding_fingerprint(rule_id="WLN-ENGINE-X", path="a.py", line_start=None)) == 64
+    assert len(compute_finding_fingerprint(rule_id="WLN-ENGINE-X", path="a.py")) == 64
 
 
 def test_finding_defaults_to_active_suppression() -> None:

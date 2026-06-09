@@ -140,7 +140,7 @@ def test_preview_rules_are_non_gating() -> None:
                     severity=Severity.ERROR,
                     kind=Kind.DEFECT,
                     location=Location(path="test.py", line_start=1),
-                    fingerprint=_fp(rule_id=self.rule_id, path="test.py", line_start=1),
+                    fingerprint=_fp(rule_id=self.rule_id, path="test.py"),
                 )
             ]
 

@@ -92,7 +92,7 @@ def test_load_project_waivers_absent_is_empty(tmp_path):
 
 def test_build_waivers_document_carries_scheme_and_version() -> None:
     doc = build_waivers_document([Waiver(fingerprint=_FP, reason="r", expires=date(2030, 1, 1))])
-    assert doc["fingerprint_scheme"] == FINGERPRINT_SCHEME == "wlfp1"
+    assert doc["fingerprint_scheme"] == FINGERPRINT_SCHEME == "wlfp2"
     assert doc["version"] == WAIVERS_VERSION
     assert doc["waivers"][0]["fingerprint"] == _FP  # bare 64-hex
     assert ":" not in doc["waivers"][0]["fingerprint"]
@@ -157,7 +157,7 @@ def test_wrong_scheme_raises(tmp_path) -> None:
     p = paths.waivers_path(tmp_path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(
-        yaml.safe_dump({"fingerprint_scheme": "wlfp2", "version": WAIVERS_VERSION, "waivers": []}),
+        yaml.safe_dump({"fingerprint_scheme": "wlfp1", "version": WAIVERS_VERSION, "waivers": []}),
         encoding="utf-8",
     )
     with pytest.raises(SchemeMismatchError):

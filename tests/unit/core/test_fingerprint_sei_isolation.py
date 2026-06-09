@@ -16,10 +16,11 @@ import pytest
 
 from wardline.core.finding import compute_finding_fingerprint
 
-# Independently computed (NOT via compute_finding_fingerprint):
-#   parts = ("PY-WL-101", "pkg/mod.py", "42", "pkg.mod.f", "EXTERNAL_RAW")
+# Independently computed (NOT via compute_finding_fingerprint). wlfp2 dropped
+# line_start from the hashed parts (wardline-8654423823):
+#   parts = ("PY-WL-101", "pkg/mod.py", "pkg.mod.f", "EXTERNAL_RAW")
 #   hashlib.sha256("\x00".join(parts).encode()).hexdigest()
-_GOLDEN = "2f10c79df56839bfce49b31359bd392240cf146ef7280190baa5666d1ff25126"
+_GOLDEN = "9a2a957f3862de61faddf9c9fc44433169ef655fd6c35fdb0c275a612de95cba"
 
 
 def test_fingerprint_matches_independent_golden() -> None:
@@ -27,7 +28,6 @@ def test_fingerprint_matches_independent_golden() -> None:
     fp = compute_finding_fingerprint(
         rule_id="PY-WL-101",
         path="pkg/mod.py",
-        line_start=42,
         qualname="pkg.mod.f",
         taint_path="EXTERNAL_RAW",
     )
@@ -40,12 +40,12 @@ def test_fingerprint_has_no_sei_or_identity_parameter() -> None:
     assert "sei" not in params
     assert "identity" not in params
     assert "binding_key" not in params
-    assert params == {"rule_id", "path", "line_start", "qualname", "taint_path"}
+    assert params == {"rule_id", "path", "qualname", "taint_path"}
 
 
 def test_fingerprint_rejects_sei_keyword() -> None:
     # Belt-and-braces: passing an SEI keyword is a TypeError (no such input exists).
     with pytest.raises(TypeError):
         compute_finding_fingerprint(  # type: ignore[call-arg]
-            rule_id="PY-WL-101", path="p.py", line_start=1, sei="loomweave:eid:deadbeef"
+            rule_id="PY-WL-101", path="p.py", sei="loomweave:eid:deadbeef"
         )

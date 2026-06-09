@@ -1,5 +1,5 @@
 {
-  "corpus_version": 3,
-  "fingerprint_scheme": "wlfp1",
-  "reason": "scheme-infra (P1): SARIF key /v1->/v2 + META fingerprint_scheme=wlfp1 (hash unchanged)"
+  "corpus_version": 4,
+  "fingerprint_scheme": "wlfp2",
+  "reason": "rekey (wlfp2/wardline-8654423823): drop line_start + entity-relative move-stable discriminators"
 }

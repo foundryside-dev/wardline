@@ -169,14 +169,13 @@ class InvalidDecoratorLevel:
                                 fingerprint=_fp(
                                     rule_id=self.rule_id,
                                     path=entity.location.path,
-                                    line_start=entity.location.line_start,
                                     qualname=qualname,
                                     # Join-key collision (wardline-377b896a87): this rule emits >1
-                                    # finding per (rule, path, line_start, qualname) — one per invalid
-                                    # decorator on a def — and ``line_start`` is anchored at the ENTITY,
-                                    # not the decorator, so the decorator's position is otherwise absent
-                                    # from the key. Two STACKED IDENTICAL decorators share name, token,
-                                    # AND entity line, so the only thing that tells them apart is their
+                                    # finding per (rule, path, qualname) — one per invalid decorator on a
+                                    # def. With ``line_start`` no longer hashed (wlfp2), the decorator's
+                                    # position must come ENTIRELY from the discriminator. Two STACKED
+                                    # IDENTICAL decorators share name AND token, so the only thing that
+                                    # tells them apart is their
                                     # POSITION in the def's decorator_list. The load-bearing
                                     # discriminator is that ORDINAL (``#<i>``): a within-def index that
                                     # is move-stable (invariant to the def moving vertically AND to

@@ -34,7 +34,7 @@ def test_promote_wire_fingerprint_matches_ingest_wire() -> None:
     )
     ingested = build_scan_results_body([f])["findings"][0]["fingerprint"]
     promoted = build_promote_body(fingerprint=f.fingerprint)["fingerprint"]
-    assert promoted == ingested == "wlfp1:" + "a" * 64
+    assert promoted == ingested == "wlfp2:" + "a" * 64
 
 
 class FakeTransport:
@@ -84,7 +84,7 @@ def test_file_returns_issue_id_on_200():
     # value is scheme-PREFIXED (symmetric with the ingest wire) so the promote join
     # matches what scan-results stored; the caller passed the bare in-memory value.
     assert t.last["url"].endswith("/api/weft/findings/promote")
-    assert t.last["body"] == {"scan_source": "wardline", "fingerprint": "wlfp1:fp123", "priority": "P2"}
+    assert t.last["body"] == {"scan_source": "wardline", "fingerprint": "wlfp2:fp123", "priority": "P2"}
 
 
 def test_file_already_linked_created_false():

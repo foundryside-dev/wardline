@@ -45,7 +45,7 @@ def test_body_envelope() -> None:
     body = build_scan_results_body([_f()])
     assert body["scan_source"] == "wardline"
     assert isinstance(body["findings"], list) and len(body["findings"]) == 1
-    assert body["fingerprint_scheme"] == FINGERPRINT_SCHEME == "wlfp1"
+    assert body["fingerprint_scheme"] == FINGERPRINT_SCHEME == "wlfp2"
 
 
 def test_scan_results_body_sets_mark_unseen() -> None:

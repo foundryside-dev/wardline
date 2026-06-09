@@ -66,7 +66,7 @@ def test_bad_fingerprint_raises(tmp_path: Path) -> None:
 
 def test_build_document_carries_scheme_and_bare_fp(tmp_path: Path) -> None:
     doc = build_judged_document([_fp()])
-    assert doc["fingerprint_scheme"] == FINGERPRINT_SCHEME == "wlfp1"
+    assert doc["fingerprint_scheme"] == FINGERPRINT_SCHEME == "wlfp2"
     assert ":" not in doc["findings"][0]["fingerprint"]  # entry stays bare
 
 
@@ -80,7 +80,7 @@ def test_missing_scheme_raises_scheme_mismatch_not_version(tmp_path: Path) -> No
 
 def test_wrong_scheme_raises_scheme_mismatch(tmp_path: Path) -> None:
     path = tmp_path / "judged.yaml"
-    path.write_text("fingerprint_scheme: wlfp2\nversion: 1\nfindings: []\n")
+    path.write_text("fingerprint_scheme: wlfp1\nversion: 1\nfindings: []\n")
     with pytest.raises(SchemeMismatchError):
         load_judged(path)
 

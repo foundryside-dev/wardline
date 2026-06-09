@@ -114,7 +114,6 @@ class UntrustedReachesTrusted:
                     fingerprint=_fp(
                         rule_id=self.rule_id,
                         path=entity.location.path,
-                        line_start=entity.location.line_start,
                         qualname=qualname,
                         # Join-key stability (weft-4a9d0f863c): one finding per anchored qualname,
                         # so (rule, path, line, qualname) is already unique. actual/declared tiers and

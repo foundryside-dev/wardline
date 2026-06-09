@@ -32,7 +32,7 @@ def _finding(fp: str, *, rule: str = "PY-WL-101", sev: Severity = Severity.ERROR
 def test_build_document_shape_and_version() -> None:
     doc = build_baseline_document([_finding(_FP_A)])
     assert doc["version"] == BASELINE_VERSION
-    assert doc["fingerprint_scheme"] == FINGERPRINT_SCHEME == "wlfp1"
+    assert doc["fingerprint_scheme"] == FINGERPRINT_SCHEME == "wlfp2"
     assert doc["entries"][0]["fingerprint"] == _FP_A
     assert doc["entries"][0]["rule_id"] == "PY-WL-101"
     assert "path" in doc["entries"][0] and "message" in doc["entries"][0]
@@ -54,7 +54,7 @@ def test_missing_scheme_header_raises_scheme_mismatch_not_version(tmp_path: Path
 def test_wrong_scheme_raises_scheme_mismatch(tmp_path: Path) -> None:
     p = tmp_path / "b.yaml"
     p.write_text(
-        yaml.safe_dump({"fingerprint_scheme": "wlfp2", "version": BASELINE_VERSION, "entries": []}),
+        yaml.safe_dump({"fingerprint_scheme": "wlfp1", "version": BASELINE_VERSION, "entries": []}),
         encoding="utf-8",
     )
     with pytest.raises(SchemeMismatchError):

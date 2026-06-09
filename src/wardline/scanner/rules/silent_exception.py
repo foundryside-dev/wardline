@@ -59,16 +59,18 @@ class SilentException:
                         message=f"{qualname}: exception silently swallowed at line {line}",
                         severity=severity,
                         kind=Kind.DEFECT,
+                        # Location.line_start stays the HANDLER line (display/SARIF + the P4
+                        # migration's old-fp derivation), NOT the def line.
                         location=Location(path=entity.location.path, line_start=line),
                         fingerprint=_fp(
                             rule_id=self.rule_id,
                             path=entity.location.path,
-                            line_start=line,
                             qualname=qualname,
-                            # Join-key stability (weft-4a9d0f863c): anchored at the handler line, which
-                            # is unique per finding within a qualname. The tier is a resolved value
-                            # (hoisted per-entity, never a discriminator) — keep it off the join key.
-                            taint_path=None,
+                            # Multi-emit: >1 silent handler per function. Discriminate ENTITY-RELATIVE
+                            # (handler line - def line) + the handler's lexical span, so two handlers stay
+                            # distinct after line_start left the hash (wlfp2/wardline-6102d4c833) yet a
+                            # comment ABOVE the function does not churn it. Source-only; tier never joins.
+                            taint_path=f"{handler.lineno - (entity.location.line_start or 0)}:{handler.col_offset}:{handler.end_col_offset}:except",  # noqa: E501
                         ),
                         qualname=qualname,
                         properties={"tier": tier.value},

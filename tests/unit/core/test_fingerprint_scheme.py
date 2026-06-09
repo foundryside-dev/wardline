@@ -1,9 +1,10 @@
-"""P1 scheme-infra S1: the self-describing fingerprint scheme stamp.
+"""Self-describing fingerprint scheme stamp (P1 scheme-infra) + the wlfp2 label.
 
-The fingerprint VALUE is unchanged here (still the wlfp1 hash, line_start IN) —
-this only adds the format layer (``scheme:hex``) applied at the wire/store
-boundary. ``compute_finding_fingerprint`` keeps returning bare 64-hex; the
-prefix is never stored in-memory.
+The format layer (``scheme:hex``) is applied only at the wire/store boundary;
+``compute_finding_fingerprint`` returns bare 64-hex and the prefix is never
+stored in-memory. P3 advanced the scheme label to ``wlfp2`` when it dropped
+``line_start`` from the hashed parts (wardline-8654423823) — the parse/format
+helpers are scheme-agnostic, so their tokens below are arbitrary.
 """
 
 from __future__ import annotations
@@ -18,8 +19,8 @@ from wardline.core.finding import (
 )
 
 
-def test_scheme_constant_is_wlfp1() -> None:
-    assert FINGERPRINT_SCHEME == "wlfp1"
+def test_scheme_constant_is_wlfp2() -> None:
+    assert FINGERPRINT_SCHEME == "wlfp2"
 
 
 def test_format_fingerprint_prefixes_with_colon() -> None:
@@ -57,7 +58,7 @@ def test_parse_rejects_malformed(bad: str) -> None:
 
 
 def test_compute_fingerprint_stays_bare_64_hex() -> None:
-    fp = compute_finding_fingerprint(rule_id="PY-WL-101", path="a.py", line_start=3)
+    fp = compute_finding_fingerprint(rule_id="PY-WL-101", path="a.py")
     assert ":" not in fp
     assert len(fp) == 64
     assert all(c in "0123456789abcdef" for c in fp)

@@ -146,25 +146,32 @@ class Finding:
 # decorator marker/level token, a call's ``col_offset``) — NOT a resolved
 # ``TaintState`` tier and NOT ``via_callee`` — AND (b) load-bearing: actually
 # needed to tell two co-located findings apart. A rule that emits at most one
-# finding per (rule_id, path, line_start, qualname) passes ``taint_path=None``.
+# finding per (rule_id, path, qualname) passes ``taint_path=None``.
 # Resolved tiers belong in ``message``/``properties``, never the join key.
 # This invariant is no longer convention-only: ``scanner.diagnostics.build_collision_findings``
 # enforces it at runtime over the full emitted set (wardline-8fb773a7af) — two DISTINCT
 # findings sharing a fingerprint surface a loud WLN-ENGINE-FINGERPRINT-COLLISION DEFECT
 # that trips the gate, instead of one silently masking the other on the joins.
-# (This is invariant to taint-resolution drift; ``line_start`` and source-token
-# spellings can still shift on a genuine source/parse change — that is expected,
-# since the contract is identical-source -> identical-fingerprint.)
+#
+# ``line_start`` is DELIBERATELY NOT hashed (wlfp2, wardline-8654423823): a benign
+# comment above an entity shifts every line below it but is the same source, so it
+# must not churn the cross-tool join key. Multi-emit rules therefore discriminate
+# co-located findings with an ENTITY-RELATIVE position — ``node.lineno -
+# entity.location.line_start`` plus the call's ``col_offset:end_col_offset`` — which
+# is invariant to the whole entity moving (a comment above it). NOTE: it is
+# entity-relative, NOT move-stable in the strong sense — a comment inserted INSIDE
+# the entity above the node still shifts the relative offset (accepted; the contract
+# is identical-source -> identical-fingerprint, and that edit is not identical source).
+# ``line_start`` remains on ``Finding.location`` for SARIF regions and display.
 def compute_finding_fingerprint(
     *,
     rule_id: str,
     path: str,
-    line_start: int | None,
     qualname: str | None = None,
     taint_path: str | None = None,
 ) -> str:
     digest = hashlib.sha256()
-    parts = (rule_id, path, str(line_start), qualname or "", taint_path or "")
+    parts = (rule_id, path, qualname or "", taint_path or "")
     digest.update("\x00".join(parts).encode())
     return digest.hexdigest()
 
@@ -178,7 +185,7 @@ def compute_finding_fingerprint(
 # 64-hex; the prefix is applied only when serialising to a store/wire and
 # stripped (``parse_fingerprint``) when reading one back. ``wlfp1`` is this
 # (line_start-IN) formula; the move-stability rekey will bump it to ``wlfp2``.
-FINGERPRINT_SCHEME = "wlfp1"
+FINGERPRINT_SCHEME = "wlfp2"
 
 _HEX_DIGITS = frozenset("0123456789abcdef")
 

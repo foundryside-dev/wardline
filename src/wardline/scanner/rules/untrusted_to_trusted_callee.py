@@ -167,15 +167,14 @@ class UntrustedReachesTrustedCallee:
                         fingerprint=_fp(
                             rule_id=self.rule_id,
                             path=entity.location.path,
-                            line_start=line,
                             qualname=qualname,
-                            # Join-key stability (weft-4a9d0f863c): call-site-anchored, so >1 finding per
-                            # (rule, path, line, qualname) is possible (several calls on one line).
-                            # Discriminate by SOURCE only — the callee spelling AS WRITTEN plus the call's
-                            # full lexical SPAN — never the resolved arg taint or the resolved callee
-                            # qualname (both drift across builds for identical source). The span (start:end)
-                            # separates a chain's outer/inner calls, which share a start column.
-                            taint_path=f"{dotted_name(call.func)}@{call.col_offset}:{call.end_col_offset}",
+                            # Call-site-anchored, >1 finding per (rule, path, qualname) possible (several
+                            # calls in one function). Discriminate SOURCE-only: an ENTITY-RELATIVE line
+                            # offset (call line - def line, invariant to a comment ABOVE the function:
+                            # wlfp2/wardline-8654423823) + the call's full lexical SPAN + the callee spelling
+                            # AS WRITTEN. Never the resolved arg taint or resolved callee qualname (both
+                            # drift). The span (start:end) separates a chain's outer/inner calls.
+                            taint_path=f"{line - (entity.location.line_start or 0)}:{call.col_offset}:{call.end_col_offset}:{dotted_name(call.func)}",  # noqa: E501
                         ),
                         qualname=qualname,
                         properties={

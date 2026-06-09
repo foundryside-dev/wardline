@@ -248,7 +248,7 @@ def test_artifact_envelope_carries_scheme_findings_stay_bare(tmp_path) -> None:
     from wardline.core.finding import FINGERPRINT_SCHEME
 
     scan = _build(_committed_repo(tmp_path))  # unsigned
-    assert scan["fingerprint_scheme"] == FINGERPRINT_SCHEME == "wlfp1"
+    assert scan["fingerprint_scheme"] == FINGERPRINT_SCHEME == "wlfp2"
     for finding in scan["findings"]:
         assert ":" not in finding["fingerprint"]  # bare 64-hex, no scheme prefix
 

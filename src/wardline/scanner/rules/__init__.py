@@ -101,7 +101,6 @@ def _policy_config_finding(message: str, *, reason: str, taint_path: str, **prop
         fingerprint=compute_finding_fingerprint(
             rule_id=_POLICY_CONFIG_RULE_ID,
             path=ENGINE_PATH,
-            line_start=None,
             taint_path=taint_path,
         ),
         properties={"reason": reason, **properties},

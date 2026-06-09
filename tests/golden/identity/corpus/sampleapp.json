@@ -543,7 +543,7 @@
   ],
   "explain": {
     "explanation": {
-      "fingerprint": "10585d7285af0772e2eab3ded409d0b274b26a9aa1e9e15a245c131ba76c4b0c",
+      "fingerprint": "a3664243f41893d7f4d5272d1b1a4f98a383bf67a78cd15b1e2f851782753b5f",
       "immediate_tainted_callee": "read_raw_username",
       "line": 41,
       "path": "trust_flow.py",
@@ -555,7 +555,7 @@
       "tier_out": "ASSURED",
       "unresolved_call_count": 0
     },
-    "fingerprint": "10585d7285af0772e2eab3ded409d0b274b26a9aa1e9e15a245c131ba76c4b0c"
+    "fingerprint": "a3664243f41893d7f4d5272d1b1a4f98a383bf67a78cd15b1e2f851782753b5f"
   },
   "facts": [
     {
@@ -1825,7 +1825,7 @@
         },
         "findings": [
           {
-            "fingerprint": "10585d7285af0772e2eab3ded409d0b274b26a9aa1e9e15a245c131ba76c4b0c",
+            "fingerprint": "a3664243f41893d7f4d5272d1b1a4f98a383bf67a78cd15b1e2f851782753b5f",
             "line_start": 41,
             "path": "trust_flow.py",
             "rule_id": "PY-WL-101"
@@ -1873,7 +1873,7 @@
   "findings": [
     {
       "confidence": null,
-      "fingerprint": "10585d7285af0772e2eab3ded409d0b274b26a9aa1e9e15a245c131ba76c4b0c",
+      "fingerprint": "a3664243f41893d7f4d5272d1b1a4f98a383bf67a78cd15b1e2f851782753b5f",
       "kind": "defect",
       "location": {
         "col_end": 34,
@@ -1971,7 +1971,7 @@
               "text": "trust_flow.unsafe_account_key declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "10585d7285af0772e2eab3ded409d0b274b26a9aa1e9e15a245c131ba76c4b0c"
+              "wardlineFingerprint/v2": "a3664243f41893d7f4d5272d1b1a4f98a383bf67a78cd15b1e2f851782753b5f"
             },
             "properties": {
               "internalSeverity": "ERROR",

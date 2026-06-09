@@ -271,15 +271,16 @@ class TaintedSinkRule:
                         fingerprint=_fp(
                             rule_id=self.rule_id,
                             path=entity.location.path,
-                            line_start=line,
                             qualname=qualname,
-                            # Join-key stability (weft-4a9d0f863c): this rule is call-site-anchored and
-                            # can emit >1 finding per (rule, path, line, qualname) (several sinks on one
-                            # line). Discriminate by SOURCE only — the sink dotted-name plus the call's
-                            # full lexical SPAN — never the resolved arg taint (which drifts across builds).
-                            # The span (start:end), not the start column alone, is what separates the outer
-                            # and inner calls of a chain (``a.sink(x).sink(y)``), which share a start column.
-                            taint_path=f"{dotted}@{call.col_offset}:{call.end_col_offset}",
+                            # Call-site-anchored: >1 finding per (rule, path, qualname) is possible
+                            # (several sinks in one function). Discriminate by SOURCE only — an
+                            # ENTITY-RELATIVE line offset (call line - the enclosing def's line, invariant
+                            # to a comment ABOVE the function: wlfp2/wardline-8654423823) plus the call's
+                            # full lexical SPAN and the sink dotted-name. The span (start:end), not the
+                            # start column alone, separates the outer/inner calls of a chain
+                            # (``a.sink(x).sink(y)``), which share a start column. Never the resolved arg
+                            # taint (it drifts across builds: weft-4a9d0f863c).
+                            taint_path=f"{line - (entity.location.line_start or 0)}:{call.col_offset}:{call.end_col_offset}:{dotted}",  # noqa: E501
                         ),
                         qualname=qualname,
                         properties={"tier": tier.value, "sink": dotted, "arg_taint": worst.value},

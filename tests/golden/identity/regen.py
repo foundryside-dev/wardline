@@ -26,10 +26,11 @@ _INPUTS = {
     "stress": _HERE / "fixtures" / "stress",
     "sinks": _HERE / "fixtures" / "sinks",
 }
-# Bumped 2->3 for P1 scheme-infra: SARIF key /v1->/v2 + META gains
-# fingerprint_scheme. Every finding fingerprint VALUE is byte-identical (the hash
-# was not touched) — that invariant is the proof P1 is format-only.
-CORPUS_VERSION = 3
+# 2->3: P1 scheme-infra (format-only — fingerprint VALUES byte-identical).
+# 3->4: P3 value-rekey (wardline-8654423823) — line_start dropped from the hash +
+# move-stable entity-relative discriminators, so every PY-WL-*/RS-WL-* fingerprint
+# VALUE changes and META.fingerprint_scheme advances wlfp1->wlfp2.
+CORPUS_VERSION = 4
 
 
 def main() -> None:

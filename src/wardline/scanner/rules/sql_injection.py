@@ -154,15 +154,14 @@ class SQLInjection(TaintedSinkRule):
                         fingerprint=_fp(
                             rule_id=self.rule_id,
                             path=entity.location.path,
-                            line_start=line,
                             qualname=qualname,
-                            # Join-key stability (weft-4a9d0f863c): call-site-anchored, so >1 finding per
-                            # (rule, path, line, qualname) is possible (e.g. execute + executemany, or a
-                            # chain ``cur.execute(a).execute(b)``, on one line). Discriminate by SOURCE only
-                            # — the method name plus the call's full lexical SPAN — never the resolved arg
-                            # taint (drifts). The span (start:end), not the start column alone, separates a
-                            # chain's outer/inner calls, which share a start column under CPython's anchor.
-                            taint_path=f"{sink_name}@{node.col_offset}:{node.end_col_offset}",
+                            # Call-site-anchored, >1 finding per (rule, path, qualname) possible (execute +
+                            # executemany, or a chain ``cur.execute(a).execute(b)``). Discriminate SOURCE-only:
+                            # an ENTITY-RELATIVE line offset (call line - def line, invariant to a comment
+                            # ABOVE the function: wlfp2/wardline-8654423823) + the call's full lexical SPAN +
+                            # the method name. The span (start:end), not the start column alone, separates a
+                            # chain's outer/inner calls. Never the resolved arg taint (drifts).
+                            taint_path=f"{line - (entity.location.line_start or 0)}:{node.col_offset}:{node.end_col_offset}:{sink_name}",  # noqa: E501
                         ),
                         qualname=qualname,
                         properties={"tier": tier.value, "sink": sink_name, "arg_taint": worst.value},
