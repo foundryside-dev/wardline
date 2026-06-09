@@ -311,6 +311,16 @@ this is committed at `docs/integration/2026-06-09-loomweave-rust-qualname-dialec
 
 ### 6.2 The dialect (ADR-049 — normative, Loomweave-authoritative)
 
+> **ADR-049 amendment (Option b), 2026-06-09.** The authoritative extractor (`feat/rust-plugin-spec` @
+> `8adb1ee`) **dropped the inherent-impl source-order ordinal**: same-`(type, generic-sig)` inherent
+> impls now **MERGE** into one `impl` entity (their methods hang off one `impl#<...>` key, reorder-stable),
+> and cfg-twin inherent impls are split by an `@cfg(...)` suffix on the impl key — with the ordinal gone,
+> `@cfg` is the **sole** distinguisher for inherent twins. Trait generic args drop lifetimes *and*
+> associated-type bindings (keep only concrete Type/Const args), omitting `<...>` when nothing survives
+> (`Iterator<Item=u8>` → `impl[Iterator]`, `Trait<'a>` → `impl[Trait]`); positional generics count **type
+> params only** (lifetimes/consts do not count). Wardline re-vendored the corpus from `8adb1ee` (blob
+> `795ae03`) and conformed. The forms below are the post-amendment (no-ordinal, merge) ones.
+
 `<crate>.<module-path>.<item-path>`, dot-separated. The reserved char is **`:` (rejected by
 `entity_id.rs`)**; `[ ] # < > @` are permitted and `.`-split-safe — which is why my earlier
 `:trait=`/`:setter` instinct is *invalid* and was replaced.
@@ -324,11 +334,14 @@ this is committed at `docs/integration/2026-06-09-loomweave-rust-qualname-dialec
 - **Trait-impl method:** `<Type>.impl[<TraitPath-with-concrete-generics>].<method>` — concrete generic
   args are **part of the key**: `Foo.impl[Display].fmt`, `Foo.impl[From<i32>].from` ≠
   `Foo.impl[From<u32>].from`. Methods **always** carry the impl discriminator (never bare `Foo.fmt`).
-- **Inherent-impl method:** `<Type>.impl#<positional-generic-sig>#<ordinal>.<method>` — generics
+- **Inherent-impl method:** `<Type>.impl#<positional-generic-sig>.<method>` — generics
   rendered **positionally/De-Bruijn** (`$0`,`$1`, so a param *rename* does not churn:
-  `impl<T> Foo<T>` and `impl<U> Foo<U>` both → `impl#<$0>#0`); non-generic → `impl#<>#0`; the
-  **ordinal** is source-order **scoped per item-list (module) and RESETS inside a nested `mod`**
-  (`impl#<>#0.a`, `impl#<>#1.b`).
+  `impl<T> Foo<T>` and `impl<U> Foo<U>` both → `impl#<$0>`); non-generic → `impl#<>`. **No ordinal**
+  (ADR-049 amendment, Option b): same-`(type, generic-sig)` inherent impls **MERGE** into one `impl`
+  entity — their methods all hang off the one `impl#<...>` key, reorder-stable (`impl#<>.a`,
+  `impl#<>.b`). cfg-twin inherent impls (same type + generic-sig, mutually-exclusive cfgs) are split by
+  the `@cfg(...)` suffix on the impl key (`impl#<>@cfg(unix)` vs `impl#<>@cfg(windows)`) — the sole
+  distinguisher now that the ordinal is gone.
 - **`#[cfg]` twins:** a path-colliding cfg-gated sibling appends a normalised `@cfg(<predicate>)`
   (whitespace-stripped, `any()/all()` args sorted) — for **every** item kind, `fn`/`struct`/inline
   `mod` alike (`f@cfg(unix)`, `S@cfg(windows)`), counted per-kind. Easy to under-implement; the corpus
@@ -350,10 +363,12 @@ Rust modules are **not 1:1 with files**. The route is the `mod` tree from the cr
 the corpus's reproducibility tags, the line between what Wardline reproduces **now** vs at **SP2** is:
 
 - **slice-1 (reproducible single-file now):** the qualname **suffix** — impl discriminator, `@cfg`,
-  within-file ordinal, positional generics, the closure/nested-fn folding — and a **file-module root**
-  (the corpus roots its single-file cases at the file module, e.g. `demo.m.Foo.impl#<>#0.bar`).
+  the merge of same-signature inherent impls (no ordinal), positional generics, the closure/nested-fn
+  folding — and a **file-module root** (the corpus roots its single-file cases at the file module, e.g.
+  `demo.m.Foo.impl#<>.bar`).
 - **SP2 (needs the whole tree):** the real **crate-name prefix from `Cargo.toml`**, the **cross-file
-  module route**, **`#[path]`**, and **cross-file inherent-impl ordinals**. *The crate-root prefix of
+  module route**, and **`#[path]`** (inherent-impl ordinals no longer exist post-amendment — same-signature
+  impls merge — so the old cross-file-ordinal SP2 item is moot). *The crate-root prefix of
   every entity is itself SP2.* `#[path]` is a **shared known gap** (Loomweave's `module_path.rs` does
   not honour it yet; the corpus `path_attr_known_gap` row pins the mechanical file-path form with
   `known_gap: true` — both engines match that, and `#[path]`-correct routing is a joint SP2 task).
@@ -613,7 +628,7 @@ Six sub-projects, each its own spec→plan→build cycle:
   identity oracle stay byte-green.**
 - **SP2 — Rust parse + index** . tree-sitter-rust → entities; the ADR-049 qualname dialect (§6) incl.
   the **whole-tree** pieces that are SP2 by construction — crate-name-from-`Cargo.toml`, cross-file
-  module route, `#[path]` (shared known gap), cross-file inherent-impl ordinals (§6.3); and **the
+  module route, `#[path]` (shared known gap) (§6.3); and **the
   frozen `tests/golden/identity/rust/` finding corpus** (§6.4). These are the SP2 *completion gates*,
   the point at which the crate-prefixed `RS-WL-*` identity stops being provisional.
 - **SP3 — Rust trust vocabulary** . `rust_taint.yaml` + `RustTrustProvider` (doc-comment markers) +
@@ -667,7 +682,8 @@ relabelled post-slice refactor.
 GONE — Loomweave fixed the Rust qualname dialect (ADR-049) and Wardline now **conforms** (it is the
 *second producer* that mints the same string; it never parses the locator). Replaced my proposed forms
 with the normative ADR-049 ones: trait impl `Foo.impl[Display].fmt` (concrete generics kept), inherent
-`Foo.impl#<>#0.bar` (positional `$0` generics, per-module ordinal), `@cfg(pred)` twins for all item
+`Foo.impl#<>.bar` (positional `$0` generics, **no ordinal** — Option-b amendment: same-signature
+inherent impls merge), `@cfg(pred)` twins for all item
 kinds, **closures/nested-fns are NOT entities** (dropped `.<locals>.{closure#N}`; attribute to the
 enclosing fn), id-kind always `function`, **`:` is reserved/invalid** (killed `:trait=`/`:setter`).
 Corpus **inverted**: Loomweave hosts `fixtures/qualnames_rust.json` (extractor-generated), Wardline

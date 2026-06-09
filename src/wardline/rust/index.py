@@ -83,10 +83,24 @@ def _walk_scope(
         pending_cfg = None
 
     # The @cfg suffix is added only on a bare-path COLLISION (ADR-049): a lone
-    # cfg-gated fn gets no suffix. Collisions are per-kind; we emit only callables,
-    # so count function names.
+    # cfg-gated item gets no suffix. Collisions are per-kind; we emit only callables,
+    # so count function names. Inherent impls carry NO source-order ordinal (ADR-049
+    # amend, Option b): same-(type, generic-sig) impls share one `impl#<...>` key and
+    # their methods merge under it.
     fn_name_counts = Counter(_name(node) for node, _ in items if node.type == "function_item")
-    inherent_ordinal: dict[str, int] = {}  # per-self-type, resets per module scope
+
+    # Pre-cfg impl-segment twin counts (mirrors extract.rs `impl_twin_counts`): two
+    # impls of the same (type, generic-sig) — incl. cfg-twins — share one key and would
+    # collide; a cfg-gated member of such a group is split by an `@cfg(...)` suffix on
+    # the impl key (now the ONLY distinguisher for inherent twins, the ordinal is gone).
+    impl_segments: dict[int, str] = {}
+    impl_twin_counts: Counter[str] = Counter()
+    for node, _cfg in items:
+        if node.type == "impl_item":
+            seg = _impl_segment(node)
+            if seg is not None:
+                impl_segments[node.id] = seg
+                impl_twin_counts[seg] += 1
 
     for node, cfg in items:
         if node.type == "function_item":
@@ -100,37 +114,37 @@ def _walk_scope(
             if body is not None:  # `mod foo;` (external) has no body to descend
                 _walk_scope(body.children, f"{module}.{_name(node)}", nmap, entities, path)
         elif node.type == "impl_item":
-            _walk_impl(node, module, nmap, entities, path, inherent_ordinal)
+            seg = impl_segments.get(node.id)
+            if seg is None:
+                continue
+            if cfg is not None and impl_twin_counts[seg] > 1:
+                seg += f"@cfg({cfg})"
+            _emit_impl_methods(node, f"{module}.{seg}", nmap, entities, path)
         # struct_item: scope-only, never a callable -> not emitted.
 
 
-def _walk_impl(
-    impl_node: Node,
-    module: str,
-    nmap: NodeIdMap,
-    entities: list[RustEntity],
-    path: str,
-    inherent_ordinal: dict[str, int],
-) -> None:
+def _impl_segment(impl_node: Node) -> str | None:
+    """The pre-cfg ``<SelfType>.impl[...]`` / ``<SelfType>.impl#<...>`` segment, or
+    ``None`` if the impl has no self type. No ordinal (ADR-049 amend)."""
     type_node = impl_node.child_by_field_name("type")
     if type_node is None:
-        return
+        return None
     self_type = q.render_self_type(type_node)
     trait_node = impl_node.child_by_field_name("trait")
     if trait_node is not None:
-        impl_seg = f"{self_type}.impl[{q.render_trait_segment(trait_node)}]"
-    else:
-        positional = q.render_positional_generics(impl_node)
-        ordinal = inherent_ordinal.get(self_type, 0)
-        inherent_ordinal[self_type] = ordinal + 1
-        impl_seg = f"{self_type}.impl#<{positional}>#{ordinal}"
+        return f"{self_type}.impl[{q.render_trait_segment(trait_node)}]"
+    return f"{self_type}.impl#<{q.render_positional_generics(impl_node)}>"
 
+
+def _emit_impl_methods(
+    impl_node: Node, impl_qualname: str, nmap: NodeIdMap, entities: list[RustEntity], path: str
+) -> None:
     body = impl_node.child_by_field_name("body")
     if body is None:
         return
     for child in body.named_children:
         if child.type == "function_item":
-            entities.append(_entity(f"{module}.{impl_seg}.{_name(child)}", "method", child, nmap, path))
+            entities.append(_entity(f"{impl_qualname}.{_name(child)}", "method", child, nmap, path))
 
 
 def _name(node: Node) -> str:

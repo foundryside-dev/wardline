@@ -47,41 +47,27 @@ def rust_module_route(*, crate: str, src_root: str, file: str) -> str:
 
 
 def normalize_cfg_predicate(text: str) -> str:
-    """Canonicalise a ``cfg(...)`` predicate: strip all whitespace, sort ``any()/all()``
-    args (ADR-049 §cfg_twins). ``text`` is the argument token-tree text, e.g. ``"(unix)"``
-    or ``"(any(windows, unix))"``; the surrounding parens are stripped.
+    """Canonicalise a ``cfg(...)`` predicate, mirroring loomweave ``qualname.rs``
+    ``normalise_pred`` BYTE-FOR-BYTE (the @cfg discriminant is a parity surface).
+
+    ``text`` is the argument token-tree text incl. its parens, e.g. ``"(unix)"`` or
+    ``"(any(windows, unix))"``; the outer cfg-argument parens are stripped to the bare
+    predicate, then: all whitespace removed, and a single top-level ``any(...)``/
+    ``all(...)`` wrapper's args sorted by a **naive** ``split(',')`` (NOT paren-aware —
+    this is exactly the oracle's algorithm; deeper nesting is left as the deterministic
+    stripped string, even though that mangles, because the contract is byte-equality
+    with the oracle, not a "nicer" canonical form).
     """
     stripped = "".join(text.split())
     if stripped.startswith("(") and stripped.endswith(")"):
         stripped = stripped[1:-1]
-    return _sort_cfg(stripped)
-
-
-def _sort_cfg(expr: str) -> str:
     for fn in ("any", "all"):
         prefix = fn + "("
-        if expr.startswith(prefix) and expr.endswith(")"):
-            inner = expr[len(prefix) : -1]
-            args = sorted(_sort_cfg(arg) for arg in _split_top_level(inner))
-            return f"{fn}(" + ",".join(args) + ")"
-    return expr
-
-
-def _split_top_level(expr: str) -> list[str]:
-    """Split on top-level commas (not those nested inside parentheses)."""
-    parts: list[str] = []
-    depth = 0
-    start = 0
-    for i, ch in enumerate(expr):
-        if ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-        elif ch == "," and depth == 0:
-            parts.append(expr[start:i])
-            start = i + 1
-    parts.append(expr[start:])
-    return [p for p in parts if p]
+        if stripped.startswith(prefix) and stripped.endswith(")"):
+            inner = stripped[len(prefix) : -1]
+            parts = sorted(inner.split(","))  # naive split — matches the oracle verbatim
+            return f"{fn}({','.join(parts)})"
+    return stripped
 
 
 def cfg_predicate_of(attribute_item: Node) -> str | None:
@@ -102,31 +88,66 @@ def cfg_predicate_of(attribute_item: Node) -> str | None:
     return normalize_cfg_predicate(args.text.decode("utf-8"))
 
 
+# Trait generic args that are NOT part of the locator key (qualname.rs trait_generic_args
+# keeps only GenericArgument::Type / ::Const): lifetimes and associated-type bindings.
+_DROPPED_TRAIT_ARGS = frozenset({"lifetime", "type_binding"})
+
+
 def render_self_type(type_node: Node) -> str:
-    """The base name of an impl's self type, generics stripped: ``Foo<T>`` -> ``Foo``."""
+    """The locator-relevant name of an impl's self type (mirrors qualname.rs
+    ``self_ty_name``): the last path segment for a path type (``Foo`` in ``crate::m::Foo``
+    and in ``Foo<T>``), else a whitespace-free textual rendering for an exotic self type
+    (tuple/reference/array — out-of-corpus, Tier-B)."""
     if type_node.type == "generic_type":
         base = type_node.child_by_field_name("type")
         if base is not None:
             return _last_path_segment(base)
-    return _last_path_segment(type_node)
+    if type_node.type in ("type_identifier", "scoped_type_identifier"):
+        return _last_path_segment(type_node)
+    return _strip_ws(type_node)
 
 
 def render_trait_segment(trait_node: Node) -> str:
-    """The trait discriminator for a trait impl: last path segment + concrete generic
-    args, lifetimes dropped. ``std::fmt::Display`` -> ``Display``; ``From<i32>`` ->
-    ``From<i32>`` (concrete args are part of the key).
-    """
+    """The trait discriminator (mirrors qualname.rs ``trait_impl`` + ``trait_generic_args``):
+    the trait path's last segment, plus its concrete type/const generic args — lifetimes
+    AND associated-type bindings dropped, each arg whitespace-stripped — with the
+    ``<...>`` omitted ENTIRELY when no args survive. ``std::fmt::Display`` -> ``Display``;
+    ``From<i32>`` -> ``From<i32>``; ``Iterator<Item=u8>`` -> ``Iterator`` (binding dropped);
+    ``Trait<'a>`` -> ``Trait`` (lifetime dropped, no empty brackets)."""
     if trait_node.type == "generic_type":
         base = trait_node.child_by_field_name("type")
-        base_name = _last_path_segment(base) if base is not None else ""
+        trait_name = _last_path_segment(base) if base is not None else ""
         targs = trait_node.child_by_field_name("type_arguments")
-        args = [_text(c) for c in targs.named_children if c.type != "lifetime"] if targs is not None else []
-        return base_name + "<" + ",".join(args) + ">"
+        args = (
+            [_strip_ws(c) for c in targs.named_children if c.type not in _DROPPED_TRAIT_ARGS]
+            if targs is not None
+            else []
+        )
+        return f"{trait_name}<{','.join(args)}>" if args else trait_name
     return _last_path_segment(trait_node)
+
+
+def render_positional_generics(impl_node: Node) -> str:
+    """The impl's TYPE params rendered positionally (De Bruijn): ``impl<T>`` -> ``$0``;
+    ``impl`` / ``impl<'a>`` / ``impl<const N: usize>`` -> ``""``. Only ``type_parameter``s
+    count (mirrors syn ``generics.type_params()``); lifetime and const params do not."""
+    tp = impl_node.child_by_field_name("type_parameters")
+    if tp is None:
+        return ""
+    count = sum(1 for c in tp.named_children if c.type == "type_parameter")
+    return ",".join(f"${i}" for i in range(count))
 
 
 def _text(node: Node) -> str:
     return node.text.decode("utf-8") if node.text is not None else ""
+
+
+def _strip_ws(node: Node) -> str:
+    """A whitespace-free textual rendering of a node's source text (mirrors qualname.rs
+    ``strip_ws`` = ``to_token_stream().to_string()`` with all whitespace removed —
+    removing whitespace from the source span converges to the same string for paths/types,
+    where the only inter-token difference is spacing)."""
+    return "".join(_text(node).split())
 
 
 def _last_path_segment(node: Node) -> str:
@@ -136,14 +157,3 @@ def _last_path_segment(node: Node) -> str:
         if name is not None:
             return _text(name)
     return _text(node)
-
-
-def render_positional_generics(impl_node: Node) -> str:
-    """The impl's generic params rendered positionally (De Bruijn): ``impl<T>`` -> ``$0``,
-    ``impl`` -> ``""``. Type and const params count positionally; lifetimes are dropped.
-    """
-    tp = impl_node.child_by_field_name("type_parameters")
-    if tp is None:
-        return ""
-    count = sum(1 for c in tp.named_children if c.type in ("type_parameter", "const_parameter"))
-    return ",".join(f"${i}" for i in range(count))

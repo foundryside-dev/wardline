@@ -84,10 +84,14 @@ def test_two_independent_passes_agree_on_the_trigger_nodeid() -> None:
     assert a is not None and b is not None
     assert a.id == b.id  # genuinely the same CST node, found two ways
 
-    # The §5 contract: the single map maps that node to one NodeId for both passes,
-    # and that is the NodeId mint assigned it (the keying authority).
-    assert nmap.node_id(a) == nmap.node_id(b)
-    assert nmap.get(a) is not None
+    # NON-TAUTOLOGICAL: the minted NodeId of the trigger equals its INDEPENDENTLY
+    # computed pre-order position (the cursor walk counts it). A broken mint — wrong
+    # child order, off-by-one, named-only, reversed — fails here. Asserting only
+    # nmap.node_id(a) == nmap.node_id(b) would be dict[k]==dict[k] (always true once
+    # a.id == b.id) and would never exercise the mint algorithm §5 depends on.
+    expected_index = next(i for i, n in enumerate(_cursor_preorder(tree)) if n.id == a.id)
+    assert int(nmap.node_id(a)) == expected_index
+    assert int(nmap.node_id(b)) == expected_index
 
 
 def test_raw_node_id_is_not_stable_across_parses_but_the_minted_index_is() -> None:
@@ -99,5 +103,6 @@ def test_raw_node_id_is_not_stable_across_parses_but_the_minted_index_is() -> No
     n1 = _locate_by_recursion(t1.root_node)
     n2 = _locate_by_recursion(t2.root_node)
     assert n1 is not None and n2 is not None
+    assert n1.id != n2.id  # the premise: distinct live trees -> distinct raw pointers
     m1, m2 = mint_node_ids(t1), mint_node_ids(t2)
     assert m1.node_id(n1) == m2.node_id(n2)  # minted index: deterministic across parses

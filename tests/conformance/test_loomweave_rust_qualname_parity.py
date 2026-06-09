@@ -8,9 +8,17 @@ arrangement: Wardline *vendors* ``qualnames_rust.json`` and reproduces its
 the *second producer*, it MINTS the same locator string and never parses it.
 
 Provenance — re-vendor when Loomweave bumps the corpus:
-    source: loomweave  feat/rust-plugin-spec  @ a3227ad  (fixtures/qualnames_rust.json,
-            extractor-generated, locked by crates/loomweave-plugin-rust/tests/qualname_conformance.rs)
+    source: loomweave  feat/rust-plugin-spec  @ 8adb1ee  (fixtures/qualnames_rust.json,
+            blob 795ae03, extractor-generated, locked by
+            crates/loomweave-plugin-rust/tests/qualname_conformance.rs)
     vendored byte-identical to tests/conformance/qualnames_rust.json (2026-06-09).
+    NOTE: this is the **ADR-049 amendment (Option b)** corpus — the inherent-impl
+    source-order ordinal was DROPPED (`Foo.impl#<>.bar`, not `impl#<>#0.bar`) and
+    same-signature inherent impls merge. It supersedes the a3227ad point an earlier
+    vendor pinned. ⚠️ The Wardline-facing federation handshake doc
+    (loomweave docs/federation/2026-06-09-rust-qualname-dialect-response.md) still
+    describes the *old* ordinal form — it was not updated with the amendment; the
+    authoritative extractor + this corpus are the oracle and define the dialect.
 
 Status: the Rust frontend (``wardline.rust.*``) does not exist yet — it is built in
 slice-1 (see docs/superpowers/plans/2026-06-08-...-slice1-command-injection.md, WP2).
@@ -40,7 +48,11 @@ import pytest
 _CORPUS: dict[str, Any] = json.loads((Path(__file__).parent / "qualnames_rust.json").read_text("utf-8"))
 
 _KNOWN_TIERS = {"slice-1", "sp2"}
-_KNOWN_KINDS = {"function", "struct", "module"}
+# The ADR-049-amendment corpus adds `impl` entities (one per merged impl block) and
+# `macro` rows. Wardline emits only `function` callables, so the comparison rule
+# (set-equality on function-kind qualnames) is unchanged; the extra kinds must be
+# *known* so test_expected_kinds_are_known stays a real guard, not a false failure.
+_KNOWN_KINDS = {"function", "struct", "module", "impl", "macro"}
 
 
 def _expected_function_qualnames(case: dict[str, Any]) -> set[str]:

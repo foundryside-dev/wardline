@@ -30,7 +30,7 @@ _SPECIMEN = (
 def test_emits_one_entity_per_callable_excluding_bodies() -> None:
     entities = discover_rust_entities(_SPECIMEN, module="demo.m")
     quals = {e.qualname for e in entities}
-    assert quals == {"demo.m.top", "demo.m.Foo.impl#<>#0.bar", "demo.m.outer"}
+    assert quals == {"demo.m.top", "demo.m.Foo.impl#<>.bar", "demo.m.outer"}
     # the nested fn and the closure produced no entity of their own
     assert not any("inner" in q for q in quals)
 
@@ -50,7 +50,7 @@ def test_semantic_kind_split_rides_metadata_not_the_qualname() -> None:
     # distinction is semantic metadata only (ADR-049 kind boundary).
     entities = {e.qualname: e for e in discover_rust_entities(_SPECIMEN, module="demo.m")}
     assert entities["demo.m.top"].kind == "function"
-    assert entities["demo.m.Foo.impl#<>#0.bar"].kind == "method"
+    assert entities["demo.m.Foo.impl#<>.bar"].kind == "method"
 
 
 def test_node_id_zero_is_the_root() -> None:

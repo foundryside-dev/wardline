@@ -8,6 +8,24 @@
 
 ---
 
+> **UPDATE 2026-06-09 (ADR-049 amendment, Option b).** After this reply was written, Loomweave
+> **amended ADR-049** ("Option b", authoritative extractor on `feat/rust-plugin-spec` @ commit
+> `8adb1ee`): the **inherent-impl source-order ordinal was dropped**. Same-`(type, generic-sig)`
+> inherent impls now **MERGE** into one `impl` entity (their methods all hang off one `impl#<...>`
+> key, reorder-stable), so the old `Foo.impl#<>#0.bar` / `Foo.impl#<$0>#0.get` forms below are now
+> `Foo.impl#<>.bar` / `Foo.impl#<$0>.get` (**no ordinal**). cfg-twin inherent impls are now split by
+> an `@cfg(...)` suffix on the impl key (`Foo.impl#<>@cfg(unix)` vs `Foo.impl#<>@cfg(windows)`) — with
+> the ordinal gone, `@cfg` is the **sole** distinguisher for inherent twins. Trait generic args now
+> drop lifetimes *and* associated-type bindings (keep only concrete Type/Const args), omitting `<...>`
+> entirely when nothing survives (`Iterator<Item=u8>` → `impl[Iterator]`, `Trait<'a>` → `impl[Trait]`);
+> positional generics count **type params only**. Wardline **re-vendored** the corpus from `8adb1ee`
+> (blob `795ae03`) to `tests/conformance/qualnames_rust.json` and **conformed**. ⚠️ The Loomweave-side
+> federation response doc (`docs/federation/2026-06-09-rust-qualname-dialect-response.md`) still
+> describes the **OLD ordinal form** — it was **not** updated; the authoritative extractor + the
+> vendored corpus are the oracle, not that doc. The inline examples below are corrected to the new form.
+
+---
+
 ## TL;DR
 
 **The premise is now false: Loomweave's Rust qualname dialect IS fixed.** It was settled in **ADR-049** (`loomweave/docs/loomweave/adr/ADR-049-rust-qualname-canonicalization.md`, Accepted 2026-06-08) and is emitted today by `crates/loomweave-plugin-rust`. We've landed a shared corpus and a byte-for-byte extractor parity test. **You can drop the §6.4 blocker and freeze `RS-WL-*` finding identity within the dialect** (still baseline-ineligible until your sp2 surface lands, exactly per your own §3.6 staging — nothing changes there).
@@ -21,7 +39,7 @@ Your dialect was directionally right (dotted, `.`-delimited, crate-rooted, gener
 | Your §6 proposal | **Adopt instead (emitted by Loomweave today)** |
 |---|---|
 | trait method `Foo.bar:trait=Trait` (suffix) | **`Foo.impl[Display].fmt`** — an `impl[...]` path **segment**, concrete generics kept: `Foo.impl[From<i32>].from` ≠ `Foo.impl[From<u32>].from`. **Reason you must change:** `:` is the one reserved char `entity_id.rs` rejects; a `:trait=` id would be refused. `impl[...]` uses `[]<>#@`, all permitted and `.`-split-safe. |
-| (no inherent disambig) | **`Foo.impl#<>#0.bar`** / **`Foo.impl#<$0>#0.get`** — positional `$i` generics (rename-stable) + source-order ordinal. Ordinal is scoped **per item-list (module), and RESETS inside a nested `mod`** — scope your counter per-module, not file-global. |
+| (no inherent disambig) | **`Foo.impl#<>.bar`** / **`Foo.impl#<$0>.get`** — positional `$i` generics (rename-stable), **no ordinal** (ADR-049 amendment, Option b). Same-`(type, generic-sig)` inherent impls **MERGE** into one `impl` entity (their methods all hang off the one `impl#<...>` key, reorder-stable); cfg-twins are split by an `@cfg(...)` suffix on the impl key. |
 | closure `crate.mod.func.<locals>.{closure#N}` | **Not an entity.** Loomweave never descends into fn bodies. **Drop `{closure#N}` entirely** — it's positional and churns under edits (the exact instability SEI exists to kill). Attribute a finding inside a closure to the enclosing named fn; your `line_start` already localises it. |
 | nested `fn` `crate.mod.outer.<locals>.inner` | **Not an entity.** Same reason — attribute to `outer`. |
 | `kind = function｜method` | id-kind is **`function`** for every callable (free fn, method, assoc fn). No `method` id-kind. Put the function/method semantic split in `Entity` metadata, never the qualname (you already proposed this for the trait distinction in §6.2 — extend it to method-ness). |
@@ -42,8 +60,8 @@ Unchanged / confirmed agreements: `.` delimiter (keep your ~20 split sites), cra
 
 Every corpus case is tagged **`slice-1`** or **`sp2`**:
 
-- **`slice-1`** — the qualname **suffix** (impl discriminator, `@cfg`, within-file ordinal, positional generics, the closure/nested-fn folding) is reproducible by your one-file pass **now**.
-- **`sp2`** — needs the whole-tree view: **crate name from `Cargo.toml`**, **cross-file module route**, **`#[path]`**, **cross-file inherent-impl ordinals**. The **crate-root prefix of every entity is itself sp2** until you read manifests.
+- **`slice-1`** — the qualname **suffix** (impl discriminator, `@cfg`, the merge of same-signature inherent impls — no ordinal, positional generics, the closure/nested-fn folding) is reproducible by your one-file pass **now**.
+- **`sp2`** — needs the whole-tree view: **crate name from `Cargo.toml`**, **cross-file module route**, **`#[path]`**. The **crate-root prefix of every entity is itself sp2** until you read manifests. (Inherent-impl ordinals no longer exist as a concept post-amendment — same-signature impls merge — so the old "cross-file ordinals" sp2 item is gone.)
 
 So slice-1 rows are your drift-gate today; the crate-prefix and cross-file rows are your SP2 completion gate — and you never accumulate a baseline on an sp2 row that an SP2 rekey would orphan. **Known gap pinned honestly:** `#[path]` is not yet honoured by our `module_path.rs`; the `path_attr_known_gap` corpus row pins what we *actually emit today* (the mechanical file-path module), with `known_gap: true`. Both engines match the emitted form; `#[path]`-correct routing is a shared sp2 task.
 
@@ -60,6 +78,6 @@ Freezing the *dialect* is what drops your blocker; this is the separable forward
 - `docs/loomweave/adr/ADR-049-rust-qualname-canonicalization.md` — authoritative decision.
 - `fixtures/qualnames_rust.json` — shared corpus (extractor-generated, reproducibility-tiered).
 - `crates/loomweave-plugin-rust/tests/qualname_conformance.rs` — byte-for-byte parity test (passing; full plugin suite 41/41, fmt + clippy-pedantic clean).
-- `fixtures/entity_id.json` — already carries the ADR-049 Rust rows (`impl[Display]`, `impl#<$0>#0`, `@cfg(unix)`).
+- `fixtures/entity_id.json` — already carries the ADR-049 Rust rows (`impl[Display]`, `impl#<$0>`, `@cfg(unix)`). *(Post-amendment form — the inherent ordinal is dropped.)*
 
 Ping me to vendor the copy + parity-test skeleton into your tree whenever you want it.
