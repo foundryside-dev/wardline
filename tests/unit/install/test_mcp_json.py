@@ -208,3 +208,128 @@ def test_install_codex_mcp_replaces_stale_wardline_entry(tmp_path: Path, monkeyp
     assert 'command = "/bin/wardline"' in content
     assert 'args = ["mcp"]' in content
     assert "--root" not in content
+
+
+# --- Filigree server-mode scoped --filigree-url persist/repair ---------------------
+#
+# When Filigree runs in server mode for the project, `merge_mcp_entry` injects (fresh)
+# or repairs (loopback/unscoped) the wardline entry's --filigree-url to the live
+# /api/p/{prefix}/ scope, so a fresh install lands a working, fail-close-safe emit
+# target out of the box. An operator's remote endpoint is never rewritten.
+
+
+# Isolation from the real ~/.config/filigree/server.json is provided by the autouse
+# fixture in tests/unit/conftest.py; the server-mode tests below override it.
+
+
+def _register_filigree_server(monkeypatch: pytest.MonkeyPatch, cfg_home: Path, *, port, projects: dict) -> None:
+    sj = cfg_home / "server.json"
+    sj.parent.mkdir(parents=True, exist_ok=True)
+    sj.write_text(json.dumps({"port": port, "projects": projects}), encoding="utf-8")
+    monkeypatch.setattr("wardline.core.config._filigree_server_config_path", lambda: sj)
+
+
+def _wardline_args(tmp_path: Path) -> list:
+    return json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["wardline"]["args"]
+
+
+def test_install_injects_server_mode_scoped_filigree_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    store = tmp_path / ".weft" / "filigree"
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=8749, projects={str(store): {"prefix": "lacuna"}})
+    assert merge_mcp_entry(tmp_path) == "created"
+    assert _wardline_args(tmp_path) == [
+        "mcp",
+        "--root",
+        ".",
+        "--filigree-url",
+        "http://localhost:8749/api/p/lacuna/weft/scan-results",
+    ]
+    # Idempotent: the discovered scope matches the persisted flag on re-run.
+    assert merge_mcp_entry(tmp_path) == "unchanged"
+
+
+def test_install_repairs_unscoped_loopback_filigree_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    store = tmp_path / ".weft" / "filigree"
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=8749, projects={str(store): {"prefix": "lacuna"}})
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "wardline": {
+                        "type": "stdio",
+                        "command": "/bin/wardline",
+                        "args": ["mcp", "--root", ".", "--filigree-url", "http://127.0.0.1:8749/api/weft/scan-results"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert merge_mcp_entry(tmp_path) == "updated"
+    assert _wardline_args(tmp_path)[-1] == "http://localhost:8749/api/p/lacuna/weft/scan-results"
+
+
+def test_install_repairs_filigree_url_in_place_preserving_loomweave_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    store = tmp_path / ".weft" / "filigree"
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=8749, projects={str(store): {"prefix": "lacuna"}})
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "wardline": {
+                        "type": "stdio",
+                        "command": "/bin/wardline",
+                        "args": [
+                            "mcp",
+                            "--root",
+                            ".",
+                            "--loomweave-url",
+                            "http://127.0.0.1:9730",
+                            "--filigree-url",
+                            "http://127.0.0.1:8749/api/weft/scan-results",
+                        ],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert merge_mcp_entry(tmp_path) == "updated"
+    assert _wardline_args(tmp_path) == [
+        "mcp",
+        "--root",
+        ".",
+        "--loomweave-url",
+        "http://127.0.0.1:9730",
+        "--filigree-url",
+        "http://localhost:8749/api/p/lacuna/weft/scan-results",
+    ]
+
+
+def test_install_never_rewrites_operator_remote_filigree_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    store = tmp_path / ".weft" / "filigree"
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=8749, projects={str(store): {"prefix": "lacuna"}})
+    remote = "https://filigree.example.com/api/weft/scan-results"
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "wardline": {
+                        "type": "stdio",
+                        "command": "/bin/wardline",
+                        "args": ["mcp", "--root", ".", "--filigree-url", remote],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    # A deliberate non-loopback endpoint is preserved verbatim (no-op).
+    assert merge_mcp_entry(tmp_path) == "unchanged"
+    assert _wardline_args(tmp_path)[-1] == remote

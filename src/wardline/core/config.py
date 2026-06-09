@@ -3,6 +3,7 @@ base package stays zero-dep); validation still uses the `scanner` extra (jsonsch
 
 from __future__ import annotations
 
+import json
 import keyword
 import os
 import tomllib
@@ -301,20 +302,101 @@ def _loomweave_published_url(root: Path) -> str | None:
     return f"http://127.0.0.1:{port}" if port is not None else None
 
 
-def _filigree_published_url(root: Path) -> str | None:
-    """Filigree's live Weft scan-results URL from its published ``ephemeral.port``.
+def _filigree_server_config_path() -> Path:
+    """Path to Filigree's server-mode global registry (its own ``SERVER_CONFIG_FILE``).
 
-    Twin of :func:`_loomweave_published_url` (Loomweave **ADR-044**): Filigree
-    writes its live bound port on a successful loopback bind. We *read* it — never
-    derive or guess. Prefers ``.weft/filigree/ephemeral.port`` and falls back to
-    the legacy ``.filigree/ephemeral.port``. Fail-soft on any defect.
+    Server mode runs ONE daemon for many projects on a single shared port, so it
+    publishes no per-project ``ephemeral.port``; instead it records each project's
+    store dir → ``{prefix}`` and the shared port here. Mirrors
+    ``filigree.server.SERVER_CONFIG_FILE`` and ``filigree.scanner_callback``'s
+    server-mode resolution. A function (not a constant) so tests can redirect it
+    hermetically."""
+    return Path.home() / ".config" / "filigree" / "server.json"
+
+
+def _filigree_server_scope(root: Path) -> tuple[int, str] | None:
+    """``(port, prefix)`` for *root* from Filigree's server-mode registry, or ``None``.
+
+    Reads :func:`_filigree_server_config_path` and matches *root*'s Filigree store
+    dir (``.weft/filigree`` preferred, legacy ``.filigree`` tolerated) against the
+    registered project paths. Returns the shared daemon port and this project's
+    routing prefix when the project is server-registered; ``None`` when the file is
+    absent/corrupt or the project is not registered (ethereal/solo). We *read* the
+    registry — never derive. Fail-soft: never raises."""
+    try:
+        data = json.loads(_filigree_server_config_path().read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    port = data.get("port")
+    # bool is an int subclass; a JSON ``true`` is not a port.
+    if not isinstance(port, int) or isinstance(port, bool) or not (1 <= port <= 65535):
+        return None
+    projects = data.get("projects")
+    if not isinstance(projects, dict):
+        return None
+    candidates: set[Path] = set()
+    for base in (sibling_state_dir(root, "filigree"), legacy_sibling_dir(root, "filigree")):
+        try:
+            candidates.add(base.resolve())
+        except (OSError, RuntimeError):
+            continue
+    for store_path, meta in projects.items():
+        if not isinstance(store_path, str) or not isinstance(meta, dict):
+            continue
+        try:
+            registered = Path(store_path).resolve()
+        except (OSError, ValueError, RuntimeError):
+            continue
+        if registered in candidates:
+            prefix = meta.get("prefix")
+            if isinstance(prefix, str) and prefix.strip():
+                return port, prefix.strip()
+    return None
+
+
+def filigree_server_scoped_url(root: Path) -> str | None:
+    """The project-scoped Weft scan-results URL when Filigree runs in *server* mode
+    for *root*, else ``None``.
+
+    Server-mode Filigree fail-closes an unscoped ``/api/weft/scan-results`` write
+    (its N1 ``ProjectMiddleware``), so the federation write MUST carry the project
+    scope ``/api/p/{prefix}/``. ``wardline install`` persists this into ``.mcp.json``
+    so the scoped target is explicit/inspectable; :func:`_filigree_published_url`
+    re-derives it live for a bare entry. ``None`` in ethereal/solo mode (the
+    per-project ``ephemeral.port`` rung's unscoped URL is correct there)."""
+    scope = _filigree_server_scope(root)
+    if scope is None:
+        return None
+    port, prefix = scope
+    return f"http://localhost:{port}/api/p/{prefix}/weft/scan-results"
+
+
+def _filigree_published_url(root: Path) -> str | None:
+    """Filigree's live Weft scan-results URL, project-scoped when it runs in server mode.
+
+    Server mode first: one shared daemon serves many projects on a single port and
+    publishes NO per-project ``ephemeral.port``, recording each project's scope in
+    the home-global registry instead (:func:`filigree_server_scoped_url`). The scope
+    is mandatory there — an unscoped write fail-closes (N1) — so the registry rung
+    outranks the bare per-project port.
+
+    Otherwise, the per-project published-port half of Loomweave **ADR-044** applies:
+    Filigree writes its live bound port on a successful loopback bind; we *read* it —
+    never derive. Prefers ``.weft/filigree/ephemeral.port`` and falls back to the
+    legacy ``.filigree/ephemeral.port``. Fail-soft on any defect.
 
     Unlike Loomweave's bare-origin contract, Filigree's URL carries the full Weft
     route, so this returns the route-suffixed
-    ``http://localhost:<port>/api/weft/scan-results`` (loopback by construction).
-    The ``localhost`` host self-heals transparently over an install-stamped literal
-    — Filigree's loopback spelling, distinct from Loomweave's ``127.0.0.1``.
+    ``http://localhost:<port>/api/[p/<prefix>/]weft/scan-results`` (loopback by
+    construction). The ``localhost`` host self-heals transparently over an
+    install-stamped literal — Filigree's loopback spelling, distinct from
+    Loomweave's ``127.0.0.1``.
     """
+    scoped = filigree_server_scoped_url(root)
+    if scoped is not None:
+        return scoped
     port = _read_published_port(root, "filigree")
     return f"http://localhost:{port}/api/weft/scan-results" if port is not None else None
 

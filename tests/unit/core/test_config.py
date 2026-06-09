@@ -310,6 +310,108 @@ def test_published_port_unreadable_is_soft(tmp_path: Path, monkeypatch) -> None:
     assert resolve_loomweave_url(None, tmp_path, None) is None
 
 
+# --- Filigree server-mode scope resolution (~/.config/filigree/server.json) ---
+#
+# Server mode runs ONE daemon for many projects on a single shared port and publishes
+# NO per-project ephemeral.port; it records each project's store dir -> {prefix} in a
+# home-global registry. wardline reads it to build the project-SCOPED write route
+# (/api/p/{prefix}/...) that a multi-project daemon fail-closes an unscoped write
+# against. Tests redirect the registry path so they never touch the real machine file.
+
+import json as _json  # noqa: E402
+
+# Per-test isolation from the real ~/.config/filigree/server.json is provided by the
+# autouse fixture in tests/unit/conftest.py; the server-mode tests below override it.
+
+
+def _register_filigree_server(monkeypatch, cfg_home: Path, *, port, projects: dict) -> Path:
+    """Write a Filigree server-mode ``server.json`` and point wardline's resolver at it."""
+    sj = cfg_home / "server.json"
+    sj.parent.mkdir(parents=True, exist_ok=True)
+    sj.write_text(_json.dumps({"port": port, "projects": projects}), encoding="utf-8")
+    monkeypatch.setattr("wardline.core.config._filigree_server_config_path", lambda: sj)
+    return sj
+
+
+def test_filigree_server_mode_scoped_url(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    store = tmp_path / ".weft" / "filigree"
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=8749, projects={str(store): {"prefix": "lacuna"}})
+    assert resolve_filigree_url(None, tmp_path, None) == "http://localhost:8749/api/p/lacuna/weft/scan-results"
+
+
+def test_filigree_server_mode_legacy_store_path_matches(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    legacy = tmp_path / ".filigree"
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=9000, projects={str(legacy): {"prefix": "proj"}})
+    assert resolve_filigree_url(None, tmp_path, None) == "http://localhost:9000/api/p/proj/weft/scan-results"
+
+
+def test_filigree_server_scope_beats_stale_ephemeral_port(tmp_path: Path, monkeypatch) -> None:
+    # A multi-project daemon's scope is authoritative and outranks a leftover unscoped
+    # per-project ephemeral.port from a past ethereal run.
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    d = tmp_path / ".weft" / "filigree"
+    d.mkdir(parents=True)
+    (d / "ephemeral.port").write_text("5555", encoding="ascii")
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=8749, projects={str(d): {"prefix": "lacuna"}})
+    assert resolve_filigree_url(None, tmp_path, None) == "http://localhost:8749/api/p/lacuna/weft/scan-results"
+
+
+def test_filigree_ethereal_only_is_unscoped(tmp_path: Path, monkeypatch) -> None:
+    # No server.json match -> ethereal: the per-project ephemeral.port's unscoped URL.
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    d = tmp_path / ".weft" / "filigree"
+    d.mkdir(parents=True)
+    (d / "ephemeral.port").write_text("6006", encoding="ascii")
+    assert resolve_filigree_url(None, tmp_path, None) == "http://localhost:6006/api/weft/scan-results"
+
+
+def test_filigree_server_unregistered_project_falls_through(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    _register_filigree_server(
+        monkeypatch, tmp_path / "cfg", port=8749, projects={"/some/other/.weft/filigree": {"prefix": "other"}}
+    )
+    # Not our project, and no local ephemeral.port -> nothing resolves.
+    assert resolve_filigree_url(None, tmp_path, None) is None
+
+
+def test_filigree_server_scope_loses_to_flag_and_env(tmp_path: Path, monkeypatch) -> None:
+    store = tmp_path / ".weft" / "filigree"
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=8749, projects={str(store): {"prefix": "lacuna"}})
+    assert resolve_filigree_url("http://fil-flag", tmp_path, None) == "http://fil-flag"
+    monkeypatch.setenv("WARDLINE_FILIGREE_URL", "http://fil-env")
+    assert resolve_filigree_url(None, tmp_path, None) == "http://fil-env"
+
+
+def test_filigree_server_scope_skipped_under_strict_defaults(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    store = tmp_path / ".weft" / "filigree"
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=8749, projects={str(store): {"prefix": "lacuna"}})
+    assert resolve_filigree_url(None, tmp_path, None, strict_defaults=True) is None
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "{not json",
+        "[]",
+        '{"projects": {}}',  # no port
+        '{"port": "x", "projects": {}}',  # non-int port
+        '{"port": true, "projects": {}}',  # bool is not a port
+        '{"port": 70000, "projects": {}}',  # out of range
+        '{"port": 8749, "projects": []}',  # projects not an object
+    ],
+)
+def test_filigree_server_json_malformed_is_soft(tmp_path: Path, monkeypatch, payload: str) -> None:
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    sj = tmp_path / "cfg" / "server.json"
+    sj.parent.mkdir(parents=True)
+    sj.write_text(payload, encoding="utf-8")
+    monkeypatch.setattr("wardline.core.config._filigree_server_config_path", lambda: sj)
+    assert resolve_filigree_url(None, tmp_path, None) is None
+
+
 # --- ADR-044 twin: published filigree ephemeral.port resolution (consumer half) ---
 
 

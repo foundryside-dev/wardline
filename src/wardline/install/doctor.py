@@ -83,10 +83,11 @@ def _check_project_mcp(root: Path) -> CheckResult:
     if not isinstance(servers, dict):
         return CheckResult(".mcp.json", False, "missing mcpServers object")
     entry = servers.get("wardline")
-    # An entry carrying operator-pinned --filigree-url/--loomweave-url args is well-formed:
-    # compare against the canonical entry augmented with those preserved args, not the bare
-    # canonical entry (which would flag a configured emit target as misconfiguration).
-    if entry != _desired_local_entry(entry):
+    # An entry carrying operator-pinned --loomweave-url/--filigree-url args is well-formed:
+    # compare against the canonical entry augmented with those preserved args (and the
+    # live server-mode filigree scope, if any), not the bare canonical entry (which would
+    # flag a configured emit target as misconfiguration).
+    if entry != _desired_local_entry(entry, root):
         return CheckResult(".mcp.json", False, "missing wardline server")
     return CheckResult(".mcp.json", True, "configured")
 
