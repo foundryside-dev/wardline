@@ -359,6 +359,14 @@ this is committed at `docs/integration/2026-06-09-loomweave-rust-qualname-dialec
 
 ### 6.3 Module-route resolution + the slice-1 / SP2 reproducibility line
 
+> **Phase-1b fold amendment, 2026-06-10 (user-approved).** SP2 is no longer the qualname-prefix work
+> alone: the Phase-1b producer surface folds into it (§11; the change-set is
+> `docs/integration/2026-06-09-loomweave-rust-qualname-phase1b-changeset.md`), so the SP2 entity
+> surface is the **full ten-kind set** — Wardline emits `module` and `struct` (and the other leaf)
+> rows itself, not just callables. The *reproducibility* line below is unchanged by the fold (the
+> Phase-1b rows are all slice-1 modulo the shared crate-prefix caveat); `#[path]` remains the shared
+> known gap.
+
 Rust modules are **not 1:1 with files**. The route is the `mod` tree from the crate root (§6.2). Per
 the corpus's reproducibility tags, the line between what Wardline reproduces **now** vs at **SP2** is:
 
@@ -378,6 +386,19 @@ fixed and slice-1 suffixes are stable, but the **crate prefix gains its real val
 fingerprints once.
 
 ### 6.4 Identity pinning — the corpus is INVERTED (Loomweave seeds, Wardline vendors)
+
+> **Phase-1b fold amendment, 2026-06-10 (user-approved — supersedes the comparison rule in the second
+> bullet).** With the Phase-1b producer surface folded into SP2 (§11), Wardline emits the **full
+> ten-kind surface** (`module`, `struct`, `function`, `enum`, `trait`, `type_alias`, `const`,
+> `static`, `macro`, `impl`), so "rows Wardline never emits" no longer holds and the conformance
+> comparison **graduates from the subset-consumer rule to the full-set rule** (change-set §7 rule 1):
+> compare Wardline's full ordered emission of `(qualname, kind)` pairs — semantic `method` mapped to
+> id-kind `function` — list-equal against `expected`. Oracle ground-truth corrections (verified
+> 2026-06-10): `feat/rust-plugin-spec` is **merged into Loomweave `rc4`** (the plugin is live,
+> on-by-default; the stale local branch ref is to be ignored); the upstream corpus gained
+> `generic_self_nested_param` (zero diffs in shared cases); and the leaf-kind, stacked-cfg,
+> cfg-escape, and leaf-kind-cfg-twin rows are added **upstream by this sprint** (the extractor
+> already emits all of it, un-oracled), verified by Loomweave's own cargo gate, then re-vendored.
 
 - **Loomweave hosts** `fixtures/qualnames_rust.json` (extractor-**generated**, locked by
   `crates/loomweave-plugin-rust/tests/qualname_conformance.rs`, passing). **Wardline vendors** a pinned
@@ -628,7 +649,13 @@ Six sub-projects, each its own spec→plan→build cycle:
   identity oracle stay byte-green.**
 - **SP2 — Rust parse + index** . tree-sitter-rust → entities; the ADR-049 qualname dialect (§6) incl.
   the **whole-tree** pieces that are SP2 by construction — crate-name-from-`Cargo.toml`, cross-file
-  module route, `#[path]` (shared known gap) (§6.3); and **the
+  module route, `#[path]` (shared known gap) (§6.3); **the full Phase-1b producer surface**
+  *(amended 2026-06-10 — user-approved fold;
+  `docs/integration/2026-06-09-loomweave-rust-qualname-phase1b-changeset.md`)* — the six leaf kinds
+  (`enum`/`trait`/`type_alias`/`const`/`static`/`macro`), the `impl` entity with
+  `module → impl → method` re-parenting, the anchored `imports`/`implements` edges, and
+  `ontology_version 0.4.0` under `plugin_id rust`, taking the conformance comparison from
+  subset-consumer to full-set (§6.4); and **the
   frozen `tests/golden/identity/rust/` finding corpus** (§6.4). These are the SP2 *completion gates*,
   the point at which the crate-prefixed `RS-WL-*` identity stops being provisional.
 - **SP3 — Rust trust vocabulary** . `rust_taint.yaml` + `RustTrustProvider` (doc-comment markers) +
@@ -692,3 +719,16 @@ rows). Reproducibility tiers pinned: slice-1 = the file-module-rooted suffix; **
 prefix + cross-file route + `#[path]`** (so R-2 downgrades to Med). SEI fold resolved: keep folding the
 qualname, never Loomweave's SEI token. Reply committed at
 `docs/integration/2026-06-09-loomweave-rust-qualname-dialect-reply.md`.
+
+**Round 3 — Phase 1b folded into SP2 + oracle ground-truth corrections (2026-06-10).** The
+user-approved fold: SP2 (§11) now also comprises the **Phase-1b producer surface** from
+`docs/integration/2026-06-09-loomweave-rust-qualname-phase1b-changeset.md` — six leaf kinds, the
+`impl` entity + method re-parenting, the anchored `imports`/`implements` edges, `ontology_version
+0.4.0` under `plugin_id rust`. Consequence for §6.3/§6.4: Wardline emits the **full ten-kind
+surface**, so the "module/struct rows Wardline never emits" premise is retired and the conformance
+comparison graduates from the subset-consumer rule to the **full-set rule** (change-set §7 rule 1).
+Oracle ground truth corrected (verified 2026-06-10): `feat/rust-plugin-spec` is **merged into
+Loomweave `rc4`** (plugin live, on-by-default); the upstream corpus gained
+`generic_self_nested_param`; the leaf-kind / stacked-cfg / cfg-escape / leaf-kind-cfg-twin rows —
+emitted by the extractor but un-oracled — are added **upstream by this sprint**, gated by
+Loomweave's own cargo suite, then re-vendored.
