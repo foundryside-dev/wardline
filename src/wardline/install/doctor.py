@@ -394,15 +394,15 @@ def machine_readable_doctor(
     """Return the shared machine-readable doctor shape, optionally repairing install bindings."""
     before = {check.name: check for check in check_install(root)}
     bindings_fixed = False
-    # Resolve the probe URL before repair_install as belt-and-suspenders. merge_mcp_entry
-    # now PRESERVES an operator-pinned --filigree-url arg (it no longer normalizes sibling
-    # URLs away), so resolution is order-independent: resolving before vs after repair
-    # yields the same value. We resolve early so a future change to repair can't surprise
-    # the probe target.
-    probe_url = _resolve_probe_url(root, filigree_url)
     if fix:
         repair_install(root)
         bindings_fixed = not before.get("bindings", CheckResult("bindings", True, "")).ok
+    # Resolve the probe URL AFTER repair: when Filigree runs in server mode, repair
+    # (merge_mcp_entry) rewrites a default-shaped/unscoped --filigree-url to the live
+    # project scope, so the post-repair value is the URL the agent will actually emit
+    # to — and the one whose auth the filigree-auth check should probe. Without fix,
+    # repair is a no-op and this is just the recorded emit target.
+    probe_url = _resolve_probe_url(root, filigree_url)
 
     checks: list[DoctorCheck] = []
     checks.append(_check_config(root, fixed=fix and not weft_config_path(root).exists()))

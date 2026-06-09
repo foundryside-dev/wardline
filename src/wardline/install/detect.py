@@ -16,6 +16,7 @@ import os
 import shutil
 from pathlib import Path
 
+from wardline.core.config import filigree_server_scoped_url
 from wardline.core.paths import legacy_sibling_dir, sibling_state_dir
 
 
@@ -111,6 +112,13 @@ def _detect_filigree(root: Path) -> tuple[bool, str | None, str | None]:
     url = os.environ.get("WARDLINE_FILIGREE_URL") or None
     if url:
         return True, url, "env"
+    # Server mode first: a multi-project daemon publishes no per-project ephemeral.port,
+    # so its project scope is discoverable only from the home-global registry. Report the
+    # SCOPED URL so install output matches the scoped target merge_mcp_entry persists
+    # (without it, install would print "filigree absent" right after wiring it).
+    scoped = filigree_server_scoped_url(root)
+    if scoped is not None:
+        return True, scoped, "server-mode scope"
     discovered = _filigree_url_from_project(root)
     present = discovered is not None or (root / ".filigree.conf").is_file()
     return present, discovered, "discovered" if discovered else None
