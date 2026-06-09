@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wardline — trust-boundary analysis</title>
+<meta name="description" content="Wardline is a generic, lightweight semantic-tainting static analyzer for Python. Zero runtime dependencies. Tracks untrusted data across your codebase and gates trust-boundary violations. Part of the Weft Federation.">
+<!-- Preload brand + product faces before first paint (kills the substitute-font flash). -->
+<link rel="preload" href="fonts/SpaceGrotesk-Variable.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="fonts/JetBrainsMono-Variable.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="stylesheet" href="colors_and_type.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to main content</a>
+
+<!-- ============================ HEADER ============================ -->
+<header class="hub-header">
+  <div class="brand">
+    <!-- Wardline glyph — canonical mark, coral via currentColor -->
+    <svg class="mark" width="26" height="26" viewBox="0 0 32 32" fill="none" role="img" aria-label="Wardline">
+      <g stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 4 V28"/>
+        <path d="M6 10 H15"/>
+        <path d="M6 16 H15"/>
+        <path d="M6 22 H15"/>
+        <path d="M18 16 L26 11 V21 L18 16Z" fill="currentColor"/>
+      </g>
+    </svg>
+    <span class="wordmark">Wardline</span>
+    <span class="path-hint">~/wardline</span>
+  </div>
+  <nav class="hub-nav" aria-label="Primary">
+    <a href="#trust-model">Trust model</a>
+    <a href="#commands">Commands</a>
+    <a href="#federation">Federation</a>
+    <a class="ext" href="https://wardline.foundryside.dev/docs/" target="_blank" rel="noopener">Docs</a>
+    <a class="ext" href="https://github.com/foundryside-dev/wardline" target="_blank" rel="noopener">GitHub</a>
+    <a class="ext" href="https://github.com/foundryside-dev/weft" target="_blank" rel="noopener">Weft&nbsp;hub</a>
+  </nav>
+</header>
+
+<main id="main">
+
+  <!-- ============================ HERO ============================ -->
+  <section class="hero">
+    <div class="eyebrow">
+      <span class="eyebrow-dot" aria-hidden="true"></span>
+      <span class="t-label" style="color: var(--thread-wardline);">Trust-boundary analysis · Python · zero runtime dependencies</span>
+    </div>
+
+    <h1 class="hero-title">Does this function's data<br>match its trust claim?</h1>
+
+    <p class="hero-lede">
+      Wardline reads your Python source statically — it never runs your code — and asks one question
+      of every trust-annotated function: <strong>is the data it works with as trusted as it claims?</strong>
+      It propagates a taint (a trust level) across the whole call graph and flags untrusted data
+      reaching a trusted producer with no validation in between.
+    </p>
+
+    <div class="install-strip">
+      <div class="install-cmd">
+        <span class="prompt">$</span>
+        <span id="install-text">pip install "wardline[scanner]"</span>
+        <button class="install-copy" id="install-copy-btn" aria-label="Copy install command">copy</button>
+      </div>
+      <a class="install-link ext" href="https://wardline.foundryside.dev/docs/getting-started/" target="_blank" rel="noopener">Get started</a>
+    </div>
+
+    <!-- ---- PY-WL-101 hero finding panel ---- -->
+    <div class="finding-panel" aria-label="Example: PY-WL-101 trust-boundary violation">
+      <div class="finding-panel__bar">
+        <span class="finding-panel__dot" aria-hidden="true"></span>
+        <span class="finding-panel__dot" aria-hidden="true"></span>
+        <span class="finding-panel__dot" aria-hidden="true"></span>
+        <span class="finding-panel__filename">demo.py</span>
+      </div>
+      <pre class="fp-code"><code><span class="fp-ln">1</span><span class="fp-kw">from</span> weft_markers <span class="fp-kw">import</span> trusted, external_boundary
+<span class="fp-ln">2</span>
+<span class="fp-ln">3</span><span class="fp-dec">@external_boundary</span>
+<span class="fp-ln">4</span><span class="fp-kw">def</span> <span class="fp-fn">read_request</span>(<span class="fp-arg">req</span>):
+<span class="fp-ln">5</span>    <span class="fp-kw">return</span> req.body            <span class="fp-cmt"># raw, untrusted (EXTERNAL_RAW)</span>
+<span class="fp-ln">6</span>
+<span class="fp-ln">7</span><span class="fp-dec">@trusted</span>(level=<span class="fp-str">"ASSURED"</span>)
+<span class="fp-ln">8</span><span class="fp-kw">def</span> <span class="fp-fn">build_record</span>(<span class="fp-arg">req</span>):
+<span class="fp-ln">9</span>    <span class="fp-kw">return</span> <span class="fp-raw">read_request(req)</span>   <span class="fp-cmt"># claims ASSURED, returns raw — no validation</span></code></pre>
+
+      <!-- trust-flow motif -->
+      <div class="fp-flow" aria-label="Trust flow: EXTERNAL_RAW reaches @trusted ASSURED — violation">
+        <span class="fp-flow__node fp-flow__node--raw">EXTERNAL_RAW</span>
+        <span class="fp-flow__arrow" aria-hidden="true">&#8594;</span>
+        <span class="fp-flow__node fp-flow__node--claim">@trusted ASSURED</span>
+        <span class="fp-flow__arrow" aria-hidden="true">&#8594;</span>
+        <span class="fp-flow__node fp-flow__node--bad">&#x2717; no validation</span>
+      </div>
+
+      <!-- verdict strip -->
+      <div class="fp-verdict">
+        <span class="fp-verdict__mark" aria-hidden="true">&#x2717;</span>
+        <div class="fp-verdict__body">
+          <strong>demo.build_record</strong> declares return trust <span class="vt-good">ASSURED</span>
+          but actually returns <span class="vt-bad">EXTERNAL_RAW</span> (less trusted) —
+          untrusted data reaches a trusted producer.
+          &nbsp;&nbsp;<span class="fp-verdict__rule">demo.py:8 · PY-WL-101</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- metric strip -->
+    <div class="hero-stats">
+      <div class="stat">
+        <span class="stat-label"><span class="stat-dot t-wardline"></span>Runtime deps</span>
+        <span class="stat-value">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label"><span class="stat-dot t-ready"></span>Trust decorators</span>
+        <span class="stat-value">3</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label"><span class="stat-dot t-accent"></span>Lattice states</span>
+        <span class="stat-value">8</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label"><span class="stat-dot t-muted"></span>Output formats</span>
+        <span class="stat-value">SARIF&thinsp;+&thinsp;JSONL</span>
+      </div>
+    </div>
+
+    <!-- CI gate example -->
+    <div class="ci-gate">
+      <div class="t-label ci-gate__label" style="color: var(--thread-wardline);">Gate CI with a single command</div>
+      <code class="ci-gate__cmd"><span style="color: var(--text-muted);">$</span> wardline scan . --fail-on ERROR</code>
+      <div class="ci-gate__exit">
+        <span class="ci-exit-item"><span class="exit-code exit-ok">exit 0</span> — clean</span>
+        <span class="ci-exit-item"><span class="exit-code exit-trip">exit 1</span> — gate tripped</span>
+        <span class="ci-exit-item"><span class="exit-code exit-err">exit 2</span> — wardline error</span>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ============================ TRUST MODEL ============================ -->
+  <section class="trust-model">
+    <div class="t-label section-label" style="color: var(--thread-wardline);">The trust model</div>
+    <h2 id="trust-model" class="comp-title">Three decorators. Eight states.</h2>
+    <p class="comp-lede">
+      Declare trust at the source, not in a config file. Wardline reads those declarations and
+      propagates them across the whole call graph. Everything else is inferred.
+    </p>
+
+    <!-- Decorators -->
+    <div class="decorators-grid">
+      <div class="decorator-card">
+        <span class="decorator-name">@external_boundary</span>
+        <p class="decorator-body">
+          Marks a function as the entry point for untrusted external data — network requests, file
+          reads, environment variables. Its return value is tainted <code style="font-family: var(--font-mono); font-size: 11px; background: var(--surface-overlay); padding: 2px 5px; border-radius: var(--radius-sm);">EXTERNAL_RAW</code>.
+        </p>
+      </div>
+      <div class="decorator-card">
+        <span class="decorator-name">@trust_boundary</span>
+        <p class="decorator-body">
+          Marks a function that validates or transforms data before passing it inward. The function
+          is expected to reject or sanitize; Wardline checks that it can.
+        </p>
+      </div>
+      <div class="decorator-card">
+        <span class="decorator-name">@trusted(level="…")</span>
+        <p class="decorator-body">
+          Declares the return trust level a function claims to produce. Wardline verifies the actual
+          propagated trust level meets that claim — violations become findings.
+        </p>
+      </div>
+    </div>
+
+    <!-- 8-state lattice -->
+    <div class="lattice-block">
+      <div class="lattice-caption">
+        <span>Most trusted</span>
+        <span>8-state trust lattice</span>
+        <span>Least trusted</span>
+      </div>
+      <div class="lattice-track" role="list" aria-label="Trust lattice states, most to least trusted">
+        <!-- hues from extra.css: #10B981, #34C77E, #74C66A, #C2BE4A, #F59E0B, #F4762A, #EF4444, #C0303A -->
+        <div class="tier-row" role="listitem">
+          <span class="tier-swatch" style="background: #10B981;" aria-hidden="true"></span>
+          <span class="tier-name" style="color: #10B981;">INTEGRAL</span>
+        </div>
+        <div class="tier-row" role="listitem">
+          <span class="tier-swatch" style="background: #34C77E;" aria-hidden="true"></span>
+          <span class="tier-name" style="color: #34C77E;">ASSURED</span>
+        </div>
+        <div class="tier-row" role="listitem">
+          <span class="tier-swatch" style="background: #74C66A;" aria-hidden="true"></span>
+          <span class="tier-name" style="color: #74C66A;">GUARDED</span>
+        </div>
+        <div class="tier-row" role="listitem">
+          <span class="tier-swatch" style="background: #C2BE4A;" aria-hidden="true"></span>
+          <span class="tier-name" style="color: #C2BE4A;">UNKNOWN_ASSURED</span>
+        </div>
+        <div class="tier-row" role="listitem">
+          <span class="tier-swatch" style="background: #F59E0B;" aria-hidden="true"></span>
+          <span class="tier-name" style="color: #F59E0B;">UNKNOWN_GUARDED</span>
+        </div>
+        <div class="tier-row" role="listitem">
+          <span class="tier-swatch" style="background: #F4762A;" aria-hidden="true"></span>
+          <span class="tier-name" style="color: #F4762A;">EXTERNAL_RAW</span>
+        </div>
+        <div class="tier-row" role="listitem">
+          <span class="tier-swatch" style="background: #EF4444;" aria-hidden="true"></span>
+          <span class="tier-name" style="color: #EF4444;">UNKNOWN_RAW</span>
+        </div>
+        <div class="tier-row" role="listitem">
+          <span class="tier-swatch" style="background: #C0303A;" aria-hidden="true"></span>
+          <span class="tier-name" style="color: #C0303A;">MIXED_RAW</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Opt-in explanation -->
+    <div class="optin-block">
+      <p class="optin-block__body">
+        <strong>Opt-in by design.</strong> Undecorated code sits in the developer-freedom zone —
+        unknown-trust, <em>no findings</em>. You declare trust only on the functions that matter,
+        which is what lets Wardline scan a large untouched codebase (including its own) with zero
+        noise. Start by annotating the edges where data crosses trust levels; the engine infers the rest.
+      </p>
+    </div>
+
+  </section>
+
+  <!-- ============================ COMMANDS ============================ -->
+  <section class="commands">
+    <div class="t-label section-label" style="color: var(--thread-wardline);">The command surface</div>
+    <h2 id="commands" class="comp-title">CLI + MCP + agent integration</h2>
+    <p class="comp-lede">
+      Wardline is agent-first: the MCP server exposes scan, explain, judge, baseline, and waiver
+      tools over JSON-RPC with no SDK. Agents run the full scan&thinsp;&rarr;&thinsp;explain&thinsp;&rarr;&thinsp;fix-at-boundary&thinsp;&rarr;&thinsp;rescan loop natively.
+    </p>
+
+    <div class="cmd-grid">
+      <!-- CLI -->
+      <div class="cmd-card">
+        <div class="t-label cmd-card-label" style="color: var(--thread-wardline);">CLI</div>
+        <table class="cmd-table">
+          <tr>
+            <td>wardline scan</td>
+            <td>scan for trust-boundary violations (SARIF / JSONL / human output)</td>
+          </tr>
+          <tr>
+            <td>wardline assure</td>
+            <td>gate: assert the trust posture still holds (pass/fail)</td>
+          </tr>
+          <tr>
+            <td>wardline attest</td>
+            <td>produce a signed assurance bundle</td>
+          </tr>
+          <tr>
+            <td>wardline dossier</td>
+            <td>per-entity trust dossier</td>
+          </tr>
+          <tr>
+            <td>wardline judge</td>
+            <td>opt-in LLM triage — labels findings TRUE/FALSE positive (never runs automatically)</td>
+          </tr>
+          <tr>
+            <td>wardline install</td>
+            <td>wire Wardline into your coding agent (CLAUDE.md, .mcp.json, Loomweave / Filigree bindings)</td>
+          </tr>
+        </table>
+        <p class="cmd-note">The <a class="ext" href="https://wardline.foundryside.dev/docs/reference/cli/" target="_blank" rel="noopener">CLI reference</a> in the docs is authoritative. <code style="font-size: 10.5px; background: var(--surface-overlay); padding: 1px 5px; border-radius: var(--radius-sm);">--fail-on</code> level, output format flags, and suppression options are covered there.</p>
+      </div>
+
+      <!-- MCP -->
+      <div class="cmd-card">
+        <div class="t-label cmd-card-label" style="color: var(--thread-wardline);">MCP (JSON-RPC · no SDK)</div>
+        <table class="cmd-table">
+          <tr>
+            <td>scan</td>
+            <td>scan with a conjunctive <code style="font-size: 10.5px; background: var(--surface-overlay); padding: 1px 5px; border-radius: var(--radius-sm);">where</code> filter + inline explain</td>
+          </tr>
+          <tr>
+            <td>scan_file_findings</td>
+            <td>dry-run findings for one file</td>
+          </tr>
+          <tr>
+            <td>decorator_coverage</td>
+            <td>trust-decorator coverage posture report</td>
+          </tr>
+          <tr>
+            <td>dossier</td>
+            <td>the per-entity trust dossier over MCP</td>
+          </tr>
+          <tr>
+            <td>assure</td>
+            <td>gate the trust posture over MCP</td>
+          </tr>
+          <tr>
+            <td>attest</td>
+            <td>produce a signed assurance bundle over MCP</td>
+          </tr>
+        </table>
+        <p class="cmd-note">Launch with <code style="font-size: 10.5px; background: var(--surface-overlay); padding: 1px 5px; border-radius: var(--radius-sm);">wardline mcp</code>. Run <code style="font-size: 10.5px; background: var(--surface-overlay); padding: 1px 5px; border-radius: var(--radius-sm);">wardline install</code> to wire it automatically. See <a class="ext" href="https://wardline.foundryside.dev/docs/guides/agents/" target="_blank" rel="noopener">agent integration docs</a>.</p>
+      </div>
+    </div>
+
+    <!-- Installation table -->
+    <div class="install-table-wrap">
+      <div class="t-label section-label" style="margin-bottom: 10px;">Installation layers</div>
+      <table class="install-table">
+        <thead>
+          <tr>
+            <th>Command</th>
+            <th>What it provides</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>pip install weft-markers</td>
+            <td>Tiny runtime marker package — import <code style="font-size: 10.5px; background: var(--surface-overlay); padding: 1px 4px; border-radius: 2px;">@trusted</code>, <code style="font-size: 10.5px; background: var(--surface-overlay); padding: 1px 4px; border-radius: 2px;">@external_boundary</code>, <code style="font-size: 10.5px; background: var(--surface-overlay); padding: 1px 4px; border-radius: 2px;">@trust_boundary</code> in application code without depending on the full scanner</td>
+          </tr>
+          <tr>
+            <td>pip install wardline</td>
+            <td>Zero-dependency base — the library and decorators, no CLI</td>
+          </tr>
+          <tr>
+            <td>pip install "wardline[scanner]"</td>
+            <td>The full scanner — <code style="font-size: 10.5px; background: var(--surface-overlay); padding: 1px 4px; border-radius: 2px;">wardline</code> CLI, <code style="font-size: 10.5px; background: var(--surface-overlay); padding: 1px 4px; border-radius: 2px;">wardline mcp</code> server (adds pyyaml, jsonschema, click)</td>
+          </tr>
+          <tr>
+            <td>pip install "wardline[loomweave]"</td>
+            <td>Persist per-entity taint facts to a Loomweave store (adds blake3)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </section>
+
+  <!-- ============================ FEDERATION ============================ -->
+  <section class="federation">
+    <div class="t-label section-label" style="color: var(--thread-wardline);">The federation</div>
+    <h2 id="federation" class="comp-title">Wardline in the Weft Federation</h2>
+    <p class="comp-lede">
+      Wardline is the Weft Federation's <strong>trust-policy surface</strong> — it answers, statically
+      and deterministically, whether the data each trust-annotated function works with is as trusted
+      as it claims. The siblings enrich this picture; they are never required.
+    </p>
+
+    <div class="fed-intro-block">
+      <p class="fed-intro__body">
+        <em>Enrich-only, never load-bearing.</em> Wardline scans and analyzes with all siblings absent.
+        The Filigree emitter is fail-soft (<code style="font-size: 12px; background: var(--surface-overlay); padding: 1px 5px; border-radius: var(--radius-sm);">core/filigree_emit.py</code>). Remove any sibling — the scanner keeps working.
+      </p>
+    </div>
+
+    <div class="facts">
+      <div class="fact">
+        <div class="t-label">The connective tissue</div>
+        <div class="fact-title">SEI — Stable Entity Identity</div>
+        <div class="fact-body">
+          Wardline keys taint facts and cross-tool bindings on SEI, the durable per-entity identity
+          owned by Loomweave. A link survives a rename because it keys on the identity, not the name.
+          Degrades gracefully when the <code style="font-size: 11px; background: var(--surface-overlay); padding: 1px 4px; border-radius: 2px;">sei</code> capability is absent from the Loomweave instance.
+          <span class="tag tag-ok">LOCKED · 2026-06-05</span>
+        </div>
+      </div>
+      <div class="fact">
+        <div class="t-label">The authority</div>
+        <div class="fact-title">Wardline owns trust policy</div>
+        <div class="fact-body">
+          The trust lattice and its states, the decorator vocabulary, the rule IDs (<code style="font-size: 11px; background: var(--surface-overlay); padding: 1px 4px; border-radius: 2px;">PY-WL-1xx</code>), the scanner
+          engine, and the corpus of ground-truth specimens are all Wardline's authority.
+          The federation hub does not restate rule counts or decorator names — the repo is the source of truth.
+        </div>
+      </div>
+    </div>
+
+    <div class="t-label section-label">Bindings</div>
+    <ul class="bindings">
+      <li>
+        <span class="b-name" style="color: var(--thread-wardline);">Wardline</span>
+        <span class="b-arrow">→</span>
+        <span class="b-name" style="color: var(--thread-loomweave);">Loomweave</span>
+        <span class="b-desc">taint facts enrich the entity graph, keyed on SEI — survives any rename</span>
+      </li>
+      <li>
+        <span class="b-name" style="color: var(--thread-wardline);">Wardline</span>
+        <span class="b-arrow">→</span>
+        <span class="b-name" style="color: var(--thread-filigree);">Filigree</span>
+        <span class="b-desc">findings become tracked work via the native Filigree emitter</span>
+        <span class="tag tag-warn">A-1 · LIVE — until Loomweave-absent path demonstrated end-to-end</span>
+      </li>
+      <li>
+        <span class="b-name" style="color: var(--thread-wardline);">Wardline</span>
+        <span class="b-arrow">→</span>
+        <span class="b-name" style="color: var(--thread-legis);">Legis</span>
+        <span class="b-desc">findings are governed by Legis (git/CI governance &amp; attestations)</span>
+      </li>
+    </ul>
+
+    <p class="t-meta weave-foot">
+      Full federation context and the asterisk register:
+      <a class="ext" href="https://github.com/foundryside-dev/weft/blob/main/federation-map.md" target="_blank" rel="noopener">federation-map.md</a> ·
+      <a class="ext" href="https://github.com/foundryside-dev/weft/blob/main/asterisk-register.md" target="_blank" rel="noopener">asterisk-register.md</a> ·
+      <a class="ext" href="https://github.com/foundryside-dev/weft/blob/main/members/wardline.md" target="_blank" rel="noopener">members/wardline.md</a>
+    </p>
+
+    <!-- sibling member thumbnails -->
+    <div class="t-label section-label" style="margin-top: 28px;">The Weft Federation members</div>
+    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 0;">
+
+      <a class="bindings-member ext" href="https://github.com/foundryside-dev/weft" target="_blank" rel="noopener"
+         style="display:flex; align-items:center; gap:12px; padding:11px 14px;
+                background: var(--surface-raised); border:1px solid var(--border-default);
+                border-radius: var(--radius); text-decoration:none; color: inherit;
+                transition: background var(--dur-fast) var(--ease);">
+        <!-- Weft / hub glyph -->
+        <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true" style="flex:none; color: var(--accent);">
+          <g stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+            <path d="M11 6 V18.8"/><path d="M11 23.2 V26"/>
+            <path d="M21 6 V8.8"/><path d="M21 13.2 V26"/>
+            <path d="M6 11 H8.8"/><path d="M13.2 11 H26"/>
+            <path d="M6 21 H18.8"/><path d="M23.2 21 H26"/>
+          </g>
+        </svg>
+        <span style="flex:1;">
+          <span style="font-size:13px; font-weight:600; color: var(--text-primary);">Weft Federation hub</span>
+          <span style="font-size:11px; color: var(--text-muted); display:block; margin-top:1px;">Roster, doctrine, federation map, SEI standard, composition law</span>
+        </span>
+        <span style="font-size:11px; color: var(--text-muted);">github.com/foundryside-dev/weft</span>
+      </a>
+
+      <a class="bindings-member ext" href="https://github.com/foundryside-dev/clarion" target="_blank" rel="noopener"
+         style="display:flex; align-items:center; gap:12px; padding:11px 14px;
+                background: var(--surface-raised); border:1px solid var(--border-default);
+                border-radius: var(--radius); text-decoration:none; color: inherit;
+                transition: background var(--dur-fast) var(--ease);">
+        <!-- Loomweave glyph -->
+        <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true" style="flex:none; color: var(--thread-loomweave);">
+          <g stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 5 V27"/><path d="M16 11 H24"/><path d="M16 21 H8"/></g>
+          <g fill="currentColor"><circle cx="16" cy="5" r="2.4"/><circle cx="24" cy="11" r="2.4"/><circle cx="8" cy="21" r="2.4"/><circle cx="16" cy="27" r="2.4"/></g>
+        </svg>
+        <span style="flex:1;">
+          <span style="font-size:13px; font-weight:600; color: var(--text-primary);">Loomweave</span>
+          <span style="font-size:11px; color: var(--text-muted); display:block; margin-top:1px;">Code structure + identity authority — mints the SEI Wardline's bindings key on</span>
+        </span>
+        <span style="font-size:11px; color: var(--thread-loomweave); white-space:nowrap;">SEI authority</span>
+      </a>
+
+      <a class="bindings-member ext" href="https://github.com/foundryside-dev/filigree" target="_blank" rel="noopener"
+         style="display:flex; align-items:center; gap:12px; padding:11px 14px;
+                background: var(--surface-raised); border:1px solid var(--border-default);
+                border-radius: var(--radius); text-decoration:none; color: inherit;
+                transition: background var(--dur-fast) var(--ease);">
+        <!-- Filigree glyph -->
+        <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true" style="flex:none; color: var(--thread-filigree);">
+          <g stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M16 4 L28 16 L16 28 L4 16 Z"/><path d="M16 11 L21 16 L16 21 L11 16 Z" fill="currentColor" stroke="none"/></g>
+        </svg>
+        <span style="flex:1;">
+          <span style="font-size:13px; font-weight:600; color: var(--text-primary);">Filigree</span>
+          <span style="font-size:11px; color: var(--text-muted); display:block; margin-top:1px;">Work state / issue lifecycle — Wardline findings become tracked Filigree work</span>
+        </span>
+        <span style="font-size:11px; color: var(--thread-filigree); white-space:nowrap;">findings → work</span>
+      </a>
+
+      <a class="bindings-member ext" href="https://github.com/foundryside-dev/legis" target="_blank" rel="noopener"
+         style="display:flex; align-items:center; gap:12px; padding:11px 14px;
+                background: var(--surface-raised); border:1px solid var(--border-default);
+                border-radius: var(--radius); text-decoration:none; color: inherit;
+                transition: background var(--dur-fast) var(--ease);">
+        <!-- Legis glyph -->
+        <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true" style="flex:none; color: var(--thread-legis);">
+          <g stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 6 V25"/><path d="M9 25 H23"/><path d="M7 9 H25"/><path d="M7 9 L4 16 H10 L7 9Z"/><path d="M25 9 L22 16 H28 L25 9Z"/></g>
+        </svg>
+        <span style="flex:1;">
+          <span style="font-size:13px; font-weight:600; color: var(--text-primary);">Legis</span>
+          <span style="font-size:11px; color: var(--text-muted); display:block; margin-top:1px;">Git/CI governance &amp; attestations — governs Wardline findings at the boundary</span>
+        </span>
+        <span style="font-size:11px; color: var(--thread-legis); white-space:nowrap;">governance</span>
+      </a>
+
+    </div>
+
+  </section>
+
+</main>
+
+<!-- ============================ FOOTER ============================ -->
+<footer class="hub-footer">
+  <!-- Wardline glyph in footer (muted) -->
+  <svg class="mark" width="18" height="18" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+    <g stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M18 4 V28"/>
+      <path d="M6 10 H15"/>
+      <path d="M6 16 H15"/>
+      <path d="M6 22 H15"/>
+      <path d="M18 16 L26 11 V21 L18 16Z" fill="currentColor"/>
+    </g>
+  </svg>
+  <span class="foot-note">Front door for <strong>Wardline</strong> — the authoritative reference is the <a class="ext" href="https://wardline.foundryside.dev/docs/" target="_blank" rel="noopener">docs site</a> and the <a class="ext" href="https://github.com/foundryside-dev/wardline" target="_blank" rel="noopener">repo</a>.</span>
+  <nav class="foot-links" aria-label="Resources">
+    <a class="ext" href="https://github.com/foundryside-dev/wardline" target="_blank" rel="noopener">Source</a>
+    <a class="ext" href="https://github.com/foundryside-dev/weft" target="_blank" rel="noopener">Weft hub</a>
+    <a class="ext" href="https://github.com/foundryside-dev/weft/blob/main/doctrine.md" target="_blank" rel="noopener">Doctrine</a>
+    <a class="ext" href="https://github.com/foundryside-dev/weft/blob/main/sei-standard.md" target="_blank" rel="noopener">SEI</a>
+    <a class="ext" href="https://github.com/foundryside-dev/weft/blob/main/glossary.md" target="_blank" rel="noopener">Glossary</a>
+    <a class="ext" href="https://github.com/foundryside-dev/weft/blob/main/federation-map.md" target="_blank" rel="noopener">Federation map</a>
+  </nav>
+  <!-- Foundryside parent org attribution -->
+  <a class="foot-org ext" href="https://foundryside.dev" target="_blank" rel="noopener" aria-label="part of Foundryside — foundryside.dev">
+    <svg class="mark" width="17" height="17" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <g stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 24 H27"/><path d="M11 24 V15"/><path d="M16 24 V10"/><path d="M21 24 V15"/>
+      </g>
+      <g fill="currentColor">
+        <circle cx="11" cy="15" r="2.1"/><circle cx="16" cy="10" r="2.3"/><circle cx="21" cy="15" r="2.1"/>
+      </g>
+    </svg>
+    <span>part of Foundryside · foundryside.dev</span>
+  </a>
+  <span class="foot-meta">MIT · 2026 · v1.0.0rc4</span>
+</footer>
+
+<script src="main.js"></script>
+</body>
+</html>
