@@ -28,6 +28,7 @@ from wardline.core.finding import (
     Severity,
     SuppressionState,
 )
+from wardline.core.frontends import FRONTENDS
 from wardline.core.judged import load_judged
 from wardline.core.paths import baseline_path, judged_path, weft_config_path
 from wardline.core.protocols import Analyzer
@@ -177,11 +178,11 @@ def run_scan(
     released path (byte-identical to before this parameter existed); ``"rust"`` routes
     ``.rs`` discovery to the preview ``RustAnalyzer``. Any other value is a ``ConfigError``.
     """
-    if lang not in ("python", "rust"):
-        raise ConfigError(f"unknown language {lang!r}; expected 'python' or 'rust'")
-    suffixes = frozenset({".rs"}) if lang == "rust" else frozenset({".py"})
-    from wardline.scanner.analyzer import build_analyzer
-    from wardline.scanner.grammar import TrustGrammar, default_grammar
+    if lang not in FRONTENDS:
+        known = ", ".join(f"'{k}'" for k in sorted(FRONTENDS))
+        raise ConfigError(f"unknown language {lang!r}; expected one of {known}")
+    frontend = FRONTENDS[lang]
+    suffixes = frontend.suffixes
     from wardline.scanner.taint.summary_cache import SummaryCache
 
     # An EXPLICIT --config path must NOT silently fall back to default policy
@@ -222,23 +223,7 @@ def run_scan(
                 warn.filename,
                 warn.lineno,
             )
-    analyzer: Analyzer
-    if lang == "rust":
-        from wardline.rust.analyzer import RustAnalyzer
-
-        analyzer = RustAnalyzer()
-    else:
-        grammar = default_grammar()
-        for pack_name, pkg in cfg.pack_modules.items():
-            pack_grammar = getattr(pkg, "grammar", None)
-            if pack_grammar is not None:
-                if not isinstance(pack_grammar, TrustGrammar):
-                    raise ConfigError(f"pack {pack_name!r} attribute 'grammar' must be a TrustGrammar instance")
-                grammar = grammar.extend(
-                    boundary_types=pack_grammar.boundary_types,
-                    rules=pack_grammar.rules,
-                )
-        analyzer = build_analyzer(grammar=grammar, summary_cache=cache)
+    analyzer: Analyzer = frontend.build_analyzer(config=cfg, summary_cache=cache)
     raw = list(analyzer.analyze(files, cfg, root=root))
     for warn in captured_warnings:
         msg = str(warn.message)
