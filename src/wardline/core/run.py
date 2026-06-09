@@ -151,6 +151,7 @@ def run_scan(
     trusted_packs: tuple[str, ...] = (),
     strict_defaults: bool = False,
     trust_suppressions: bool = False,
+    lang: str = "python",
 ) -> ScanResult:
     """Discover → analyze → apply suppressions. Pure function of (disk + config).
 
@@ -170,7 +171,14 @@ def run_scan(
     trusted local / judge-DX behaviour, an explicit operator trust decision suitable
     only for a trusted checkout, never for enforcement on untrusted PR content. The
     secure CI ratchet is the operator-supplied, unforgeable ``--new-since`` instead.
+
+    ``lang`` (default ``"python"``) selects the language frontend: ``"python"`` is the
+    released path (byte-identical to before this parameter existed); ``"rust"`` routes
+    ``.rs`` discovery to the preview ``RustAnalyzer``. Any other value is a ``ConfigError``.
     """
+    if lang not in ("python", "rust"):
+        raise ConfigError(f"unknown language {lang!r}; expected 'python' or 'rust'")
+    suffixes = frozenset({".rs"}) if lang == "rust" else frozenset({".py"})
     from wardline.scanner.analyzer import build_analyzer
     from wardline.scanner.grammar import TrustGrammar, default_grammar
     from wardline.scanner.taint.summary_cache import SummaryCache
@@ -202,7 +210,7 @@ def run_scan(
 
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        files = discover(root, cfg, confine_to_root=confine_to_root)
+        files = discover(root, cfg, confine_to_root=confine_to_root, suffixes=suffixes)
         captured_warnings = list(w)
     for warn in captured_warnings:
         msg = str(warn.message)
@@ -213,18 +221,23 @@ def run_scan(
                 warn.filename,
                 warn.lineno,
             )
-    grammar = default_grammar()
-    for pack_name, pkg in cfg.pack_modules.items():
-        pack_grammar = getattr(pkg, "grammar", None)
-        if pack_grammar is not None:
-            if not isinstance(pack_grammar, TrustGrammar):
-                raise ConfigError(f"pack {pack_name!r} attribute 'grammar' must be a TrustGrammar instance")
-            grammar = grammar.extend(
-                boundary_types=pack_grammar.boundary_types,
-                rules=pack_grammar.rules,
-            )
+    analyzer: Analyzer
+    if lang == "rust":
+        from wardline.rust.analyzer import RustAnalyzer
 
-    analyzer: Analyzer = build_analyzer(grammar=grammar, summary_cache=cache)
+        analyzer = RustAnalyzer()
+    else:
+        grammar = default_grammar()
+        for pack_name, pkg in cfg.pack_modules.items():
+            pack_grammar = getattr(pkg, "grammar", None)
+            if pack_grammar is not None:
+                if not isinstance(pack_grammar, TrustGrammar):
+                    raise ConfigError(f"pack {pack_name!r} attribute 'grammar' must be a TrustGrammar instance")
+                grammar = grammar.extend(
+                    boundary_types=pack_grammar.boundary_types,
+                    rules=pack_grammar.rules,
+                )
+        analyzer = build_analyzer(grammar=grammar, summary_cache=cache)
     raw = list(analyzer.analyze(files, cfg, root=root))
     for warn in captured_warnings:
         msg = str(warn.message)

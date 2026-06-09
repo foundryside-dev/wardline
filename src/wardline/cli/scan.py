@@ -37,6 +37,12 @@ from wardline.core.sarif import SarifSink
     default=None,
 )
 @click.option("--format", "fmt", type=click.Choice(["jsonl", "sarif", "agent-summary", "legis"]), default="jsonl")
+@click.option(
+    "--lang",
+    type=click.Choice(["python", "rust"]),
+    default="python",
+    help="Language frontend. 'rust' (PREVIEW) scans .rs files for RS-WL-* command-injection findings.",
+)
 @click.option("--output", type=click.Path(path_type=Path), default=None)
 # exit 1 if any non-suppressed DEFECT has severity >= this threshold (SP3b)
 @click.option("--fail-on", type=click.Choice(["CRITICAL", "ERROR", "WARN", "INFO"]), default=None)
@@ -134,6 +140,7 @@ def scan(
     path: Path,
     config_path: Path | None,
     fmt: str,
+    lang: str,
     output: Path | None,
     fail_on: str | None,
     fail_on_unanalyzed: bool,
@@ -151,6 +158,16 @@ def scan(
     allow_dirty: bool,
 ) -> None:
     """Scan PATH for findings."""
+    if lang == "rust":
+        # Loud posture banner: the Rust frontend is a preview slice. RS-WL-* findings carry
+        # provisional identity (baseline-ineligible until SP2) and weft.toml severity
+        # overrides do not yet apply to them. Surface this so a green/red gate is not
+        # mistaken for the stability of the Python path.
+        click.echo(
+            "note: --lang rust is PREVIEW — RS-WL-* findings have provisional identity "
+            "(baseline-ineligible) and config severity overrides do not apply.",
+            err=True,
+        )
     if fmt == "sarif":
         default_name = "findings.sarif"
     elif fmt == "agent-summary":
@@ -175,6 +192,7 @@ def scan(
             strict_defaults=strict_defaults,
             confine_to_root=not allow_source_root_escape,
             trust_suppressions=trust_suppressions,
+            lang=lang,
         )
         findings = result.findings
         if fix:
@@ -212,6 +230,7 @@ def scan(
                         strict_defaults=strict_defaults,
                         confine_to_root=not allow_source_root_escape,
                         trust_suppressions=trust_suppressions,
+                        lang=lang,
                     )
                     findings = result.findings
         if fmt == "sarif":
