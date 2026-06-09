@@ -333,3 +333,18 @@ def test_install_never_rewrites_operator_remote_filigree_url(tmp_path: Path, mon
     # A deliberate non-loopback endpoint is preserved verbatim (no-op).
     assert merge_mcp_entry(tmp_path) == "unchanged"
     assert _wardline_args(tmp_path)[-1] == remote
+
+
+def test_install_preserves_already_scoped_loopback_host_spelling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An entry that already names the correct port+scope but spells the host 127.0.0.1
+    # (vs our localhost) is the canary case: same target, must NOT be churned.
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    store = tmp_path / ".weft" / "filigree"
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=8749, projects={str(store): {"prefix": "lacuna"}})
+    canary = "http://127.0.0.1:8749/api/p/lacuna/weft/scan-results"
+    entry = {"type": "stdio", "command": "/bin/wardline", "args": ["mcp", "--root", ".", "--filigree-url", canary]}
+    (tmp_path / ".mcp.json").write_text(json.dumps({"mcpServers": {"wardline": entry}}), encoding="utf-8")
+    assert merge_mcp_entry(tmp_path) == "unchanged"
+    assert _wardline_args(tmp_path)[-1] == canary

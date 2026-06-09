@@ -71,6 +71,20 @@ def _flag_pairs(entry: object) -> list[tuple[str, str]]:
     return pairs
 
 
+def _same_scope_target(a: str, b: str) -> bool:
+    """True when two URLs name the same Filigree write target up to loopback host
+    spelling — identical port and path (the scope-bearing parts). Lets an already-
+    correct entry that merely spells the host ``127.0.0.1`` (vs our ``localhost``) be
+    recognised as correct and preserved verbatim, rather than churned every repair."""
+    try:
+        pa, pb = urlsplit(a), urlsplit(b)
+    except ValueError:
+        return False
+    if pa.hostname not in _LOOPBACK_HOSTS or pb.hostname not in _LOOPBACK_HOSTS:
+        return False
+    return (pa.port, pa.path) == (pb.port, pb.path)
+
+
 def _is_loopback_url(value: str) -> bool:
     """True when *value* is a loopback HTTP URL (a default-shaped, locally-rebuildable
     target). A non-loopback host is an operator's deliberate remote endpoint and is
@@ -84,10 +98,16 @@ def _is_loopback_url(value: str) -> bool:
 
 def _desired_filigree_url(existing: str | None, discovered: str | None) -> str | None:
     """The ``--filigree-url`` to write. A discovered server-mode scoped URL is
-    authoritative and replaces an absent or loopback (default-shaped) value —
-    repairing a stale or unscoped local target — but never overrides an operator's
-    non-loopback (remote) endpoint. Absent a discovery, preserve the existing value."""
-    if discovered is not None and (existing is None or _is_loopback_url(existing)):
+    authoritative and replaces an absent or *wrongly-targeted* loopback value —
+    repairing a stale, unscoped, or wrong-scoped local target — but it never overrides
+    an operator's non-loopback (remote) endpoint, and it never churns a loopback entry
+    that already names the correct port+scope (only the host spelling might differ;
+    that is left as the operator wrote it). Absent a discovery, preserve verbatim."""
+    if discovered is None:
+        return existing
+    if existing is None:
+        return discovered
+    if _is_loopback_url(existing) and not _same_scope_target(existing, discovered):
         return discovered
     return existing
 
