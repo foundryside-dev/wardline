@@ -14,8 +14,26 @@ from wardline.core.errors import ConfigError
 _ALWAYS_SKIP = frozenset({"__pycache__", ".venv", "venv", ".git", ".mypy_cache"})
 
 
-def discover(root: Path, config: WardlineConfig, *, confine_to_root: bool = False) -> list[Path]:
+def discover(
+    root: Path,
+    config: WardlineConfig,
+    *,
+    confine_to_root: bool = False,
+    suffixes: frozenset[str] = frozenset({".py"}),
+) -> list[Path]:
+    """Discover source files under the configured roots.
+
+    ``suffixes`` selects the language: the default ``{".py"}`` is byte-identical to
+    the original Python-only sweep; a Rust frontend passes ``{".rs"}``. Files across
+    all requested suffixes are gathered and yielded in one combined sorted order, so
+    finding/entity order stays deterministic and the single-suffix Python case is
+    unchanged.
+    """
     root = root.resolve()
+    # `target` is cargo build output — skip it only in `.rs` mode. It is a legitimate
+    # Python package name, so adding it to the global skip set would silently under-scan
+    # Python projects (the very failure wardline surfaces loudly elsewhere).
+    skip_dirs = _ALWAYS_SKIP | {"target"} if ".rs" in suffixes else _ALWAYS_SKIP
     found: list[Path] = []
     for src in config.source_roots:
         base = (root / src).resolve()
@@ -29,9 +47,10 @@ def discover(root: Path, config: WardlineConfig, *, confine_to_root: bool = Fals
         if not base.exists():
             warnings.warn(f"source root does not exist: {base}", stacklevel=2)
             continue
-        for path in sorted(base.rglob("*.py")):
+        candidates = sorted({path for suffix in suffixes for path in base.rglob(f"*{suffix}")})
+        for path in candidates:
             rel_parts = path.relative_to(base).parts if path.is_relative_to(base) else path.parts
-            if any(part in _ALWAYS_SKIP for part in rel_parts):
+            if any(part in skip_dirs for part in rel_parts):
                 continue
             if confine_to_root and not path.resolve().is_relative_to(root):
                 # A *.py symlink inside a legitimate source_root can point at an
