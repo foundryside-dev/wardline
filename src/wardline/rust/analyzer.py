@@ -48,7 +48,12 @@ class RustAnalyzer:
         project_taints: dict[str, TaintState] = {}
         triggers: list[RustTriggerContext] = []
         for entity in entities:
-            seed = self._provider.taint_for(entity.node)
+            try:
+                seed = self._provider.taint_for(entity.node)
+            except ValueError:
+                # A typo'd @trusted marker must not abort the whole-file scan: fail closed for
+                # this fn (its findings suppressed). WP6 surfaces it as a diagnostic finding.
+                seed = None
             tier = seed.body_taint if seed is not None else _FAIL_CLOSED
             project_taints[entity.qualname] = tier
             body = entity.node.child_by_field_name("body")

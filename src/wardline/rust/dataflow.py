@@ -31,7 +31,12 @@ if TYPE_CHECKING:
 __all__ = ["CommandTrigger", "analyze_command_dataflow"]
 
 _TERMINALS = frozenset({"output", "spawn", "status"})
-_SHELL_FLAGS = frozenset({"-c", "/C", "/c"})
+# Shell command-string flags, compared case-folded: sh/bash -c, cmd /C, powershell -Command.
+_SHELL_FLAGS = frozenset({"-c", "/c", "-command"})
+# Expression wrappers that sit between a statement/tail position and the call beneath —
+# the dominant `Command::new(x).output()?` / `.await` / `return ...` idioms. Peeled so the
+# command beneath is not silently invisible.
+_WRAPPERS = frozenset({"try_expression", "await_expression", "return_expression"})
 _CLEAN = TaintState.ASSURED  # the default "not proven tainted" tier (not in RAW_ZONE)
 
 
@@ -84,10 +89,13 @@ class _Analyzer:
         for stmt in fn_body.named_children:
             if stmt.type == "let_declaration":
                 self._let(stmt)
-            elif stmt.type == "expression_statement" and stmt.named_children:
-                expr = stmt.named_children[0]
-                if expr.type == "call_expression":
-                    self._try_command_chain(expr, bound_name=None)
+                continue
+            # an expression in statement position, OR the block's tail expression (no `;`),
+            # under any number of try/await/return wrappers.
+            expr = stmt.named_children[0] if stmt.type == "expression_statement" and stmt.named_children else stmt
+            call = _unwrap_to_call(expr)
+            if call is not None:
+                self._try_command_chain(call, bound_name=None)
         return self._triggers
 
     def _let(self, let_node: Node) -> None:
@@ -95,10 +103,13 @@ class _Analyzer:
         if value is None:
             return
         name = _name_of(let_node.child_by_field_name("pattern"))
-        if value.type == "call_expression" and self._try_command_chain(value, bound_name=name):
+        if name is not None:
+            self._local_taints.pop(name, None)  # a fresh binding clears this name's prior taint
+        call = _unwrap_to_call(value)
+        if call is not None and self._try_command_chain(call, bound_name=name):
             return  # a Command builder bound to `name` (or terminated inline)
         if name is not None:
-            taint = self._expr_taint(value)
+            taint = self._expr_taint(value)  # taint over the ORIGINAL value (wrappers and all)
             if taint != _CLEAN:  # record only proven taint
                 self._local_taints[name] = taint
 
@@ -124,7 +135,7 @@ class _Analyzer:
             if method == "arg":
                 arg = _first_arg(call_node)
                 if arg is not None:
-                    if arg.type == "string_literal" and _string_value(arg) in _SHELL_FLAGS:
+                    if arg.type == "string_literal" and _string_value(arg).lower() in _SHELL_FLAGS:
                         accum.shell_flag_seen = True
                     accum.arg_taints.append((self._nmap.node_id(arg), self._expr_taint(arg)))
             elif method == "args":
@@ -192,6 +203,17 @@ class _Analyzer:
 # --------------------------------------------------------------------------- #
 # tree-sitter helpers
 # --------------------------------------------------------------------------- #
+
+
+def _unwrap_to_call(node: Node | None) -> Node | None:
+    """Peel ``try_expression``/``await_expression``/``return_expression`` wrappers to the
+    ``call_expression`` beneath, or ``None``. ``Command::new(x).output()?`` is the dominant
+    Rust spawn idiom; without this the whole invocation is invisible to the rules."""
+    depth = 0
+    while node is not None and node.type in _WRAPPERS and depth < 8:
+        node = node.named_children[0] if node.named_children else None
+        depth += 1
+    return node if node is not None and node.type == "call_expression" else None
 
 
 def _unwind(call_node: Node) -> tuple[Node, list[tuple[str, Node]]]:

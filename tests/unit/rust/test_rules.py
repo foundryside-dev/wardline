@@ -93,6 +93,61 @@ def test_unmarked_fn_is_suppressed_by_modulate() -> None:
     assert _findings(src) == []
 
 
+_SEED = '    let t = std::env::var("X").unwrap();\n'
+
+
+@pytest.mark.parametrize(
+    "terminal",
+    [
+        "Command::new(t).output();",  # baseline
+        "Command::new(t).output()?;",  # ? operator — the dominant Rust spawn idiom
+        "Command::new(t).output().await;",  # async
+        "Command::new(t).output().unwrap();",  # call wrapper
+        "return Command::new(t).output();",  # return position
+    ],
+)
+def test_program_injection_fires_through_idiomatic_terminators(terminal: str) -> None:
+    # Regression: ?/await/return-wrapped Command calls were silently dropped (the widest
+    # Tier-A hole the WP4+WP5 panel found). Each must still fire RS-WL-108.
+    src = _TRUSTED + "fn f() {\n" + _SEED + "    " + terminal + "\n}\n"
+    assert [f.rule_id for f in _findings(src)] == ["RS-WL-108"]
+
+
+def test_program_injection_fires_in_tail_position() -> None:
+    # A block's tail expression (no trailing `;`) is a bare call_expression child, not an
+    # expression_statement — it was dropped. Must fire.
+    src = _TRUSTED + "fn f() {\n" + _SEED + "    Command::new(t).output()\n}\n"
+    assert [f.rule_id for f in _findings(src)] == ["RS-WL-108"]
+
+
+@pytest.mark.parametrize("program", ["/bin/sh", "/usr/bin/bash", "powershell"])
+def test_shell_injection_recognizes_path_qualified_and_powershell_shells(program: str) -> None:
+    flag = "-Command" if program == "powershell" else "-c"
+    src = _TRUSTED + "fn f() {\n" + _SEED + f'    Command::new("{program}").arg("{flag}").arg(t).output();\n}}\n'
+    assert [f.rule_id for f in _findings(src)] == ["RS-WL-112"]
+
+
+def test_rebind_to_a_clean_value_clears_stale_taint() -> None:
+    # Regression: a local re-bound to a provably-clean literal must drop its prior taint
+    # (a false positive the analyzer has full information to avoid).
+    src = _TRUSTED + "fn f() {\n" + _SEED + '    let t = "safe";\n    Command::new(t).output();\n}\n'
+    assert _findings(src) == []
+
+
+def test_a_typoed_trusted_marker_does_not_abort_the_whole_file_scan() -> None:
+    # A malformed @trusted level must fail closed for that fn, not crash the scan.
+    src = "/// @trusted(level=BOGUS)\nfn f() {\n" + _SEED + "    Command::new(t).output();\n}\n"
+    assert _findings(src) == []  # fail-closed, no exception
+
+
+def test_two_commands_on_one_line_get_distinct_fingerprints() -> None:
+    # The no-collision invariant: two DISTINCT triggers on the same physical line (identical
+    # taint_path) must not share a fingerprint (the NodeId disambiguates).
+    src = _TRUSTED + "fn f() {\n" + _SEED + "    Command::new(t).output(); Command::new(t).spawn();\n}\n"
+    fps = [f.fingerprint for f in _findings(src)]
+    assert len(fps) == 2 and len(set(fps)) == 2
+
+
 def test_guarded_tier_downgrades_severity() -> None:
     # @trusted(level=GUARDED) -> modulate(ERROR, GUARDED) == WARN (the partial-trust downgrade).
     src = (

@@ -11,7 +11,10 @@
 # it folds into the provider_fingerprint so a vocab change invalidates dependent
 # summaries (a per-file source hash cannot observe an out-of-source vocab edit).
 
-version: 1
+# v2: dropped `io::stdin` — stdin data reaches a program via the `.read_line(&mut buf)`
+# out-param, which the flat-local taint model does not track, so the source could never
+# contribute a finding (misleading dead weight). Out-param sources are SP2.
+version: 2
 
 sources:
   - crate: std
@@ -43,11 +46,6 @@ sources:
     path: fs::read
     returns_taint: EXTERNAL_RAW
     rationale: External file bytes; unvalidated.
-
-  - crate: std
-    path: io::stdin
-    returns_taint: EXTERNAL_RAW
-    rationale: Standard input handle; data read from it is externally controlled.
 
 sinks:
   - crate: std

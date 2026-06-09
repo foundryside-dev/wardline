@@ -75,7 +75,11 @@ class RustShellInjectionRule:
 
 
 def _is_shell(program_literal: str | None) -> bool:
-    return program_literal is not None and program_literal in _SHELL_PROGRAMS
+    # Basename + case-fold: `/bin/sh`, `C:\Windows\System32\cmd.exe`, and `BASH` are all shells.
+    if program_literal is None:
+        return False
+    basename = program_literal.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return basename in _SHELL_PROGRAMS
 
 
 def _worst_arg_taint(tc: RustTriggerContext) -> TaintState:
@@ -122,7 +126,11 @@ def _finding(rule_id: str, tc: RustTriggerContext, severity: Severity, taint_pat
             path=tc.path,
             line_start=trig.trigger_line,
             qualname=tc.qualname,
-            taint_path=taint_path,
+            # Fold the trigger's NodeId so two DISTINCT commands on the SAME line (identical
+            # taint_path) get distinct fingerprints — the no-collision invariant. The NodeId
+            # is the reproducible pre-order index, so this stays deterministic across runs.
+            # The stored properties["taint_path"] keeps the clean, human-readable form.
+            taint_path=f"{taint_path}@node{trig.trigger_node_id}",
         ),
         qualname=tc.qualname,
         properties={

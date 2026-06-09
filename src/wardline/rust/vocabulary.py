@@ -28,9 +28,10 @@ _LEGAL_RETURN: frozenset[TaintState] = frozenset(
 )
 _LEGAL_SINK_KINDS: frozenset[str] = frozenset({"command"})
 
-RUST_TAINT_VERSION: int = 1
+RUST_TAINT_VERSION: int = 2
 """Bumped when the table's shape or entries change materially; folded into the
-provider fingerprint so changes invalidate dependent summaries."""
+provider fingerprint so changes invalidate dependent summaries. v2 dropped the inert
+``io::stdin`` source (out-param reads are unmodelled in slice-1)."""
 
 __all__ = [
     "RUST_TAINT_VERSION",
