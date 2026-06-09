@@ -138,11 +138,13 @@ def _walk_scope(
 
 def _impl_segment(impl_node: Node) -> str | None:
     """The pre-cfg ``<SelfType>.impl[...]`` / ``<SelfType>.impl#<...>`` segment, or
-    ``None`` if the impl has no self type. No ordinal (ADR-049 amend)."""
+    ``None`` if the impl has no self type. The self type carries its concrete generic args
+    (ADR-049 §2 self-type-args amendment — ``Foo<i32>`` vs ``Foo<u32>`` are distinct keys,
+    the impl's own params positional); no ordinal (ADR-049 amend Option b)."""
     type_node = impl_node.child_by_field_name("type")
     if type_node is None:
         return None
-    self_type = q.render_self_type(type_node)
+    self_type = q.render_self_type(type_node, q.impl_type_param_names(impl_node))
     trait_node = impl_node.child_by_field_name("trait")
     if trait_node is not None:
         return f"{self_type}.impl[{q.render_trait_segment(trait_node)}]"

@@ -5,10 +5,13 @@ it never parses Loomweave's locator. The vendored corpus
 (``tests/conformance/qualnames_rust.json``) is the byte-for-byte oracle. ``:`` is the
 reserved separator and ``[ ] # < > @ $`` are legal segments of the dialect.
 
-KNOWN GAP (path-typed generic args): a trait/self-type concrete generic arg that is itself
-a ``::``-path — e.g. ``impl From<std::io::Error>`` — renders a segment containing ``:``
-(``...impl[From<std::io::Error>].from``). Loomweave renders the BYTE-IDENTICAL segment (its
-``trait_generic_args`` keeps ``::`` via ``strip_ws``), then REJECTS the assembled locator at
+KNOWN GAP (path-typed generic args): a trait OR self-type concrete generic arg that is itself
+a ``::``-path renders a segment containing ``:`` — both in the trait fragment
+(``impl From<std::io::Error>`` -> ``...impl[From<std::io::Error>].from``) and, since the
+self-type-args amendment (ADR-049 §2), in the self-type prefix (``impl Foo<std::io::Error>``
+-> ``...Foo<std::io::Error>.impl#<>...``). Loomweave renders the BYTE-IDENTICAL segment (its
+``trait_generic_args`` / ``self_ty_locator`` keep ``::`` via ``strip_ws`` — the cfg-only
+``escape_reserved`` does NOT cover generic args), then REJECTS the assembled locator at
 ``entity_id`` construction (``validate_no_colon``) and degrades the whole file. Wardline is
 faithful in *rendering* but lacks that validate-and-degrade gate, so it currently emits a
 ``:``-bearing locator. The correct fix is an ADR-049 amendment defining a colon-free canonical
@@ -16,6 +19,14 @@ form for path-typed generic args, adopted by both producers in lockstep — a Wa
 normalization would itself diverge from the (still-unreleased) oracle. Low slice-1 blast radius
 (RS-WL-* findings are ``provisional_identity`` and Wardline emits no federation entity yet).
 Tracked: see the ``rust-bug-hunt-2026-06-09`` reserved-colon issue.
+
+KNOWN GAP (const-generic-arg spacing): a multi-token *const* generic arg (``Foo<{N + 1}>``,
+``Foo<-1>``) is rendered by the oracle via ``to_token_stream().to_string()`` — proc-macro2
+CANONICAL spacing (``{ N + 1 }``), NOT whitespace-stripped — whereas Wardline ``_strip_ws``-es
+every arg (``{N+1}``). Same impossibility class as the reserved-colon gap: matching would mean
+reimplementing proc-macro2 token spacing, so the right fix is a lockstep ADR-049 amendment
+(cleanest: the oracle ``strip_ws``-es const args too). Out-of-corpus, Tier-B; plain const args
+(``Foo<3>``, ``Foo<i32>``, a bare const-param ident) already match byte-for-byte.
 
 This module holds the pure string/CST-node renderers; ``index.py`` walks the tree and
 assembles full qualnames from them. tree-sitter types appear only under ``TYPE_CHECKING``
@@ -27,10 +38,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from tree_sitter import Node
 
 __all__ = [
     "cfg_predicate_of",
+    "impl_type_param_names",
     "normalize_cfg_predicate",
     "render_positional_generics",
     "render_self_type",
@@ -100,23 +114,80 @@ def cfg_predicate_of(attribute_item: Node) -> str | None:
     return normalize_cfg_predicate(args.text.decode("utf-8"))
 
 
-# Trait generic args that are NOT part of the locator key (qualname.rs trait_generic_args
-# keeps only GenericArgument::Type / ::Const): lifetimes and associated-type bindings.
-_DROPPED_TRAIT_ARGS = frozenset({"lifetime", "type_binding"})
+# Generic args that are NOT part of the locator key (qualname.rs trait_generic_args /
+# self_ty_locator keep only GenericArgument::Type / ::Const): lifetimes and assoc-type
+# bindings. Shared by the trait fragment and the self-type prefix.
+_DROPPED_GENERIC_ARGS = frozenset({"lifetime", "type_binding"})
 
 
-def render_self_type(type_node: Node) -> str:
-    """The locator-relevant name of an impl's self type (mirrors qualname.rs
-    ``self_ty_name``): the last path segment for a path type (``Foo`` in ``crate::m::Foo``
-    and in ``Foo<T>``), else a whitespace-free textual rendering for an exotic self type
-    (tuple/reference/array — out-of-corpus, Tier-B)."""
+def impl_type_param_names(impl_node: Node) -> list[str]:
+    """The impl's declared generic TYPE-parameter names in source (De Bruijn) order:
+    ``impl<T, U> Foo`` -> ``["T", "U"]`` (mirrors qualname.rs ``declared_type_params`` =
+    syn ``generics.type_params()``). Lifetimes and const params are excluded — only the
+    positions used by the inherent ``#<...>`` signature AND by the self-type prefix to
+    recognise which self-type args are the impl's OWN params (rendered positionally)."""
+    tp = impl_node.child_by_field_name("type_parameters")
+    if tp is None:
+        return []
+    names: list[str] = []
+    for child in tp.named_children:
+        if child.type == "type_parameter":
+            name = child.child_by_field_name("name")
+            # A blank name only arises from error recovery (`impl<>`); syn yields no such
+            # param, so skipping it keeps the De Bruijn count true to the oracle.
+            if name is not None and (text := _text(name)):
+                names.append(text)
+    return names
+
+
+def render_self_type(type_node: Node, type_params: Sequence[str]) -> str:
+    """The locator-relevant name of an impl's self type INCLUDING its concrete generic
+    args (mirrors qualname.rs ``self_ty_locator``, ADR-049 §2 self-type-args amendment).
+
+    The bare last path segment (``Foo`` in ``crate::m::Foo``) plus its surviving generic
+    args in ``<...>`` — comma-joined, ``<>`` omitted ENTIRELY when none survive. An arg
+    that is exactly one of the impl's OWN declared params (``type_params``) renders
+    positionally (``$N``, rename-stable: ``impl<T> Foo<T>`` -> ``Foo<$0>``); a CONCRETE
+    arg (``i32``, ``Vec<u8>``, ``&T``) renders literally whitespace-free. Substitution is
+    TOP-LEVEL only — a param NESTED in another arg (``Foo<Vec<T>>`` -> ``Foo<Vec<T>>``,
+    NOT ``Foo<Vec<$0>>``) keeps its literal text (F2 nested-param rule; a nested-param
+    corpus row is owed by Loomweave, so the unit guard in test_qualname.py is the only
+    check against accidental recursive substitution). Lifetimes/bindings dropped; a
+    non-generic self type renders the bare name; an exotic self type (tuple/array) renders
+    whitespace-free (out-of-corpus, Tier-B)."""
     if type_node.type == "generic_type":
-        base = type_node.child_by_field_name("type")
-        if base is not None:
-            return _last_path_segment(base)
+        base_node = type_node.child_by_field_name("type")
+        base = _last_path_segment(base_node) if base_node is not None else ""
+        targs = type_node.child_by_field_name("type_arguments")
+        if targs is None:
+            return base
+        # Drop dropped-kinds AND any arg that renders empty: a malformed empty turbofish
+        # `Foo<>` error-recovers to a blank `type_identifier` (valid Rust never yields one,
+        # so this never touches a real arg). Keeps the pure producer from emitting `Foo<>`;
+        # the scan path gates such input on has_errors() before it reaches here anyway.
+        rendered = [
+            r
+            for c in targs.named_children
+            if c.type not in _DROPPED_GENERIC_ARGS
+            if (r := _self_type_arg(c, type_params))
+        ]
+        return f"{base}<{','.join(rendered)}>" if rendered else base
     if type_node.type in ("type_identifier", "scoped_type_identifier"):
         return _last_path_segment(type_node)
     return _strip_ws(type_node)
+
+
+def _self_type_arg(arg_node: Node, type_params: Sequence[str]) -> str:
+    """One self-type generic arg (mirrors qualname.rs ``self_ty_arg``): a bare
+    ``type_identifier`` matching one of the impl's declared params -> its positional ``$N``
+    token (rename-stable); anything else (concrete type, nested generic, reference, scoped
+    path) -> a literal whitespace-free rendering. NOT recursive — only a top-level bare
+    param substitutes."""
+    if arg_node.type == "type_identifier":
+        name = _text(arg_node)
+        if name in type_params:
+            return f"${type_params.index(name)}"
+    return _strip_ws(arg_node)
 
 
 def render_trait_segment(trait_node: Node) -> str:
@@ -131,7 +202,9 @@ def render_trait_segment(trait_node: Node) -> str:
         trait_name = _last_path_segment(base) if base is not None else ""
         targs = trait_node.child_by_field_name("type_arguments")
         args = (
-            [_strip_ws(c) for c in targs.named_children if c.type not in _DROPPED_TRAIT_ARGS]
+            # Drop dropped-kinds AND empty-rendering args (a malformed `From<>` error-recovers
+            # to a blank arg; valid Rust never yields one) -> bare trait name, no empty `<>`.
+            [s for c in targs.named_children if c.type not in _DROPPED_GENERIC_ARGS if (s := _strip_ws(c))]
             if targs is not None
             else []
         )
@@ -142,11 +215,10 @@ def render_trait_segment(trait_node: Node) -> str:
 def render_positional_generics(impl_node: Node) -> str:
     """The impl's TYPE params rendered positionally (De Bruijn): ``impl<T>`` -> ``$0``;
     ``impl`` / ``impl<'a>`` / ``impl<const N: usize>`` -> ``""``. Only ``type_parameter``s
-    count (mirrors syn ``generics.type_params()``); lifetime and const params do not."""
-    tp = impl_node.child_by_field_name("type_parameters")
-    if tp is None:
-        return ""
-    count = sum(1 for c in tp.named_children if c.type == "type_parameter")
+    count (mirrors syn ``generics.type_params()``); lifetime and const params do not. Keyed
+    on the SAME name list as the self-type prefix (``impl_type_param_names``) so positions
+    agree between ``Foo<$0>`` and ``impl#<$0>``."""
+    count = len(impl_type_param_names(impl_node))
     return ",".join(f"${i}" for i in range(count))
 
 

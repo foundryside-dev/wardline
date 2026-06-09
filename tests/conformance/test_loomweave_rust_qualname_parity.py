@@ -8,23 +8,30 @@ arrangement: Wardline *vendors* ``qualnames_rust.json`` and reproduces its
 the *second producer*, it MINTS the same locator string and never parses it.
 
 Provenance — re-vendor when Loomweave bumps the corpus:
-    source: loomweave  feat/rust-plugin-spec  @ 1bd5855  (fixtures/qualnames_rust.json,
-            blob 6c0aee1, extractor-generated, locked by
+    source: loomweave  feat/rust-plugin-spec  @ 8f4f85f  (fixtures/qualnames_rust.json,
+            blob be9f8e2, extractor-generated, locked by
             crates/loomweave-plugin-rust/tests/qualname_conformance.rs)
     vendored byte-identical to tests/conformance/qualnames_rust.json (2026-06-09).
-    NOTE: this is the **ADR-049 amendment (Option b)** corpus — the inherent-impl
-    source-order ordinal was DROPPED (`Foo.impl#<>.bar`, not `impl#<>#0.bar`) and
-    same-signature inherent impls merge. The 1bd5855 re-vendor additionally adds the
-    two cfg-twin-on-impl trip-wire cases (``inherent_impl_cfg_twin`` /
-    ``trait_impl_cfg_twin``) — without them the gate never exercised the ``@cfg``
-    suffix landing ON an impl key, so an extractor that omitted it would have passed
-    while silently merging cfg-twin impls. ⚠️ The earlier federation handshake doc
+    NOTE: this is the **ADR-049 amendment 3 (self-type generic args)** corpus, layered on
+    amendment Option b. The impl ``<Type>`` segment now carries the self type's CONCRETE
+    generic args (``Foo<i32>`` vs ``Foo<u32>`` are distinct keys; the impl's own top-level
+    declared params render positionally, ``Foo<$0>``) — closing a silent-merge data-loss
+    family where like-named methods on different instantiations collided. The 8f4f85f
+    re-vendor changes 2 rows (``positional_generic_param``/``_renamed``:
+    ``Foo.impl#<$0>`` -> ``Foo<$0>.impl#<$0>``) and adds 3 (``generic_self_inherent_concrete_args``,
+    ``generic_self_trait_concrete_args``, ``generic_self_same_concrete_two_blocks_merge``).
+    Still present from prior amendments: the dropped inherent ordinal (``Foo.impl#<>.bar``,
+    not ``impl#<>#0.bar``), same-key inherent merge, and the two cfg-twin-on-impl trip-wires
+    (``inherent_impl_cfg_twin`` / ``trait_impl_cfg_twin``). KNOWN GAP — the F2 nested-param
+    rule (``impl<T> Foo<Vec<T>>`` -> literal ``Foo<Vec<T>>``, NOT recursive ``Foo<Vec<$0>>``)
+    has NO corpus row yet (Loomweave owes one); it is guarded only by
+    tests/unit/rust/test_qualname.py::test_nested_self_type_param_renders_literal_not_positional.
+    ⚠️ The earlier federation handshake doc
     (loomweave docs/federation/2026-06-09-rust-qualname-dialect-response.md) still
-    describes the *old* ordinal form — it is intentionally left intact as history and
-    is SUPERSEDED by the Phase 1b change-set
-    (docs/integration/2026-06-09-loomweave-rust-qualname-phase1b-changeset.md), which
-    is the authoritative description of this corpus. Where any doc and the live
-    extractor + this corpus diverge, the extractor + corpus are the oracle.
+    describes the *old* ordinal form — left intact as history, SUPERSEDED by the Phase 1b
+    change-set (docs/integration/2026-06-09-loomweave-rust-qualname-phase1b-changeset.md,
+    amended for amendment 3), which is the authoritative description of this corpus. Where
+    any doc and the live extractor + this corpus diverge, the extractor + corpus are the oracle.
 
 Status: the Rust frontend (``wardline.rust.*``) now EXISTS (slice-1 WP2 landed), so
 the *producer-parity* tests below run live (``_rust_producer`` resolves

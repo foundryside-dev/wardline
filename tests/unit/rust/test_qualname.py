@@ -48,21 +48,64 @@ def test_normalize_cfg_sorts_a_single_flat_any_all_like_the_oracle() -> None:
 
 def test_positional_generics_are_rename_stable() -> None:
     # <T> and <U> render to the identical positional ($0) locator — a param rename
-    # must not churn the qualname (ADR-049 De Bruijn rendering). No source-order ordinal
-    # (ADR-049 amend, Option b).
+    # must not churn the qualname (ADR-049 De Bruijn rendering) — in BOTH the self-type
+    # prefix (Foo<$0>) and the inherent #<$0> signature (self-type-args amendment, ADR-049
+    # §2). No source-order ordinal (ADR-049 amend, Option b).
     with_t = "struct Foo<T>(T);\nimpl<T> Foo<T> { fn get(&self) {} }\n"
     with_u = "struct Foo<U>(U);\nimpl<U> Foo<U> { fn get(&self) {} }\n"
     t = {e.qualname for e in discover_rust_entities(with_t, module="demo.m")}
     u = {e.qualname for e in discover_rust_entities(with_u, module="demo.m")}
-    assert t == u == {"demo.m.Foo.impl#<$0>.get"}
+    assert t == u == {"demo.m.Foo<$0>.impl#<$0>.get"}
 
 
 def test_positional_generics_count_type_params_only() -> None:
     # syn generics.type_params() excludes lifetimes AND const params (ADR-049 amend);
-    # only `T` counts. impl<'a, const N: usize, T> -> one positional $0.
+    # only `T` counts. impl<'a, const N: usize, T> -> one positional $0 in both prefix
+    # (Foo<$0>) and signature (impl#<$0>).
     src = "struct Foo<T>(T);\nimpl<'a, const N: usize, T> Foo<T> { fn get(&self) {} }\n"
     quals = {e.qualname for e in discover_rust_entities(src, module="demo.m")}
-    assert quals == {"demo.m.Foo.impl#<$0>.get"}
+    assert quals == {"demo.m.Foo<$0>.impl#<$0>.get"}
+
+
+def test_self_type_concrete_args_split_distinct_impls() -> None:
+    # ADR-049 §2 self-type-args amendment: distinct CONCRETE instantiations get distinct
+    # keys, so two like-named `get` methods do NOT collide/merge (the silent-data-loss
+    # family the amendment closes). Mirrors corpus generic_self_inherent_concrete_args.
+    src = "struct Foo<T>(T);\nimpl Foo<i32> { fn get(&self) {} }\nimpl Foo<u32> { fn get(&self) {} }\n"
+    quals = {e.qualname for e in discover_rust_entities(src, module="demo.m")}
+    assert quals == {"demo.m.Foo<i32>.impl#<>.get", "demo.m.Foo<u32>.impl#<>.get"}
+
+
+def test_nested_self_type_param_renders_literal_not_positional() -> None:
+    # F2 nested-param rule: positional substitution is TOP-LEVEL only. A param nested
+    # inside another self-type arg keeps its LITERAL text (Foo<Vec<T>>, NOT Foo<Vec<$0>>;
+    # Foo<&T>, NOT Foo<&$0>). Loomweave owes a nested-param corpus row, so THIS is the
+    # only guard against accidentally implementing recursive positional substitution.
+    vec = "struct Foo<T>(T);\nimpl<T> Foo<Vec<T>> { fn get(&self) {} }\n"
+    ref = "struct Foo<T>(T);\nimpl<T> Foo<&T> { fn get(&self) {} }\n"
+    v = {e.qualname for e in discover_rust_entities(vec, module="demo.m")}
+    r = {e.qualname for e in discover_rust_entities(ref, module="demo.m")}
+    assert v == {"demo.m.Foo<Vec<T>>.impl#<$0>.get"}
+    assert r == {"demo.m.Foo<&T>.impl#<$0>.get"}
+
+
+def test_non_generic_self_type_renders_bare() -> None:
+    # A non-generic self type renders the bare name (no empty brackets) — unchanged by
+    # the self-type-args amendment.
+    src = "struct Foo;\nimpl Foo { fn bar(&self) {} }\n"
+    quals = {e.qualname for e in discover_rust_entities(src, module="demo.m")}
+    assert quals == {"demo.m.Foo.impl#<>.bar"}
+
+
+def test_empty_turbofish_self_type_does_not_emit_empty_brackets() -> None:
+    # `impl Foo<>` is malformed: tree-sitter error-recovers a blank generic arg (verified
+    # has_errors=True, so the scan path gates it before index_entities). The PURE producer
+    # must still not emit a `Foo<>` segment — Wardline filters the empty arg to bare `Foo`.
+    # (Not asserted as oracle-convergence: whether syn accepts `impl Foo<>` at all is
+    # unverified; either way neither producer emits a `Foo<>` entity for this input.)
+    src = "struct Foo;\nimpl Foo<> { fn bar(&self) {} }\n"
+    quals = {e.qualname for e in discover_rust_entities(src, module="demo.m")}
+    assert quals == {"demo.m.Foo.impl#<>.bar"}
 
 
 def test_trait_args_drop_lifetimes_and_bindings_and_omit_empty_brackets() -> None:
