@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import ast
 
-from wardline.core.finding import Kind, Severity
+from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity
+from wardline.scanner.diagnostics import _fingerprint as _diag_fp
 from wardline.scanner.diagnostics import (
+    build_collision_findings,
     build_diagnostic_findings,
     build_metric_finding,
     build_unknown_import_findings,
@@ -55,6 +57,77 @@ def test_unknown_diagnostic_code_is_error_not_silent() -> None:
     out = build_diagnostic_findings([("MYSTERY_CODE", "???")])
     assert out[0].severity == Severity.ERROR
     assert "MYSTERY_CODE" in out[0].message
+
+
+# --- Fingerprint-collision guard (wardline-8fb773a7af) -----------------------
+# Every fingerprint consumer (baseline/judged/waivers/filigree_emit/sarif) treats
+# Finding.fingerprint as a UNIQUE join key — baseline (setdefault) and judged
+# (last-write-wins) SILENTLY collapse same-fp findings, the three YAML loaders
+# REJECT duplicate fps, and SARIF/Filigree dedup downstream. So two *distinct*
+# findings sharing a fingerprint is always a soundness defect (one masks the
+# other). Two *byte-identical* findings are a benign duplicate (collapsing loses
+# nothing) and must NOT fire. The guard converts the silent mask into a loud
+# ERROR/DEFECT engine diagnostic at the analyzer chokepoint.
+
+
+def _forge(fp: str, *, rule_id: str = "PY-WL-114", message: str = "m", line: int | None = 3) -> Finding:
+    return Finding(
+        rule_id=rule_id,
+        message=message,
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path="a.py", line_start=line),
+        fingerprint=fp,
+    )
+
+
+def test_collision_guard_flags_distinct_findings_sharing_a_fingerprint() -> None:
+    fp = "a" * 64
+    out = build_collision_findings([_forge(fp, message="first"), _forge(fp, message="second")])
+    assert len(out) == 1
+    diag = out[0]
+    assert diag.rule_id == "WLN-ENGINE-FINGERPRINT-COLLISION"
+    assert diag.severity == Severity.ERROR  # trips --fail-on ERROR (WLN-L3-MONOTONICITY precedent)
+    assert diag.kind == Kind.DEFECT
+    assert diag.location.path == ENGINE_PATH  # lineless ENGINE_PATH DEFECT still gates (suppression.py:40)
+    assert fp in diag.message
+    assert diag.properties["colliding_fingerprint"] == fp
+    assert diag.properties["finding_count"] == 2
+
+
+def test_collision_guard_ignores_byte_identical_duplicates() -> None:
+    # A rule that emits the SAME finding twice is a benign duplicate — collapsing
+    # on the join key loses nothing, so it is NOT a collision.
+    fp = "b" * 64
+    out = build_collision_findings([_forge(fp, message="same"), _forge(fp, message="same")])
+    assert out == []
+
+
+def test_collision_guard_clean_set_emits_nothing() -> None:
+    out = build_collision_findings([_forge("c" * 64), _forge("d" * 64, rule_id="PY-WL-101")])
+    assert out == []
+
+
+def test_collision_guard_distinguishes_on_any_consumer_visible_field() -> None:
+    # Same fp, identical message, but differing properties => still a lossy collapse.
+    fp = "e" * 64
+    a = Finding("PY-WL-114", "m", Severity.ERROR, Kind.DEFECT, Location("a.py", 3), fp, properties={"k": 1})
+    b = Finding("PY-WL-114", "m", Severity.ERROR, Kind.DEFECT, Location("a.py", 3), fp, properties={"k": 2})
+    out = build_collision_findings([a, b])
+    assert len(out) == 1
+
+
+def test_collision_guard_is_deterministic_and_per_group() -> None:
+    fp1, fp2 = "1" * 64, "2" * 64
+    # Pass groups out of fingerprint order to prove the output is sorted by colliding fp.
+    out = build_collision_findings(
+        [_forge(fp2, message="x"), _forge(fp1, message="y"), _forge(fp2, message="z"), _forge(fp1, message="w")]
+    )
+    assert [d.properties["colliding_fingerprint"] for d in out] == [fp1, fp2]
+    # Each diagnostic's OWN fingerprint is keyed on its colliding fp => distinct + stable.
+    assert out[0].fingerprint == _diag_fp("WLN-ENGINE-FINGERPRINT-COLLISION", fp1)
+    assert out[1].fingerprint == _diag_fp("WLN-ENGINE-FINGERPRINT-COLLISION", fp2)
+    assert out[0].fingerprint != out[1].fingerprint
 
 
 def test_diagnose_unknown_imports_flags_external_named_import() -> None:

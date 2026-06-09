@@ -108,6 +108,83 @@ def build_diagnostic_findings(diagnostics: list[tuple[str, str]]) -> list[Findin
     return findings
 
 
+def build_collision_findings(findings: list[Finding]) -> list[Finding]:
+    """Defense-in-depth fingerprint-collision guard (wardline-8fb773a7af).
+
+    The soundness bar "two DISTINCT findings must never share a fingerprint" is
+    otherwise asserted only by a COMMENT (``finding.py``) and by the REACTIVE
+    identity corpus (which only covers shapes a fixture happens to exercise —
+    PY-WL-114's collision lived undetected precisely because no fixture hit it).
+    This is the PROACTIVE guard: it runs over the full emitted finding set at the
+    single analyzer chokepoint and converts a silent mask into a loud signal.
+
+    Why it matters: every fingerprint consumer treats ``Finding.fingerprint`` as a
+    UNIQUE join key. ``baseline.generate_baseline`` collapses same-fp findings with
+    ``setdefault`` (keep first); ``judged`` is last-write-wins; the baseline/waiver/
+    judged YAML loaders REJECT a duplicate fingerprint outright; SARIF
+    (``partialFingerprints``) and Filigree dedup downstream. So when two findings
+    that a consumer would treat as DIFFERENT share a fingerprint, one silently
+    masks the other on all four joins — a real trust-boundary false-negative.
+
+    Distinctness oracle: ``Finding.to_jsonl()`` (deterministic, ``sort_keys``)
+    captures exactly the consumer-visible surface. Two findings in a same-fp group
+    with differing ``to_jsonl()`` are a lossy collision; byte-identical findings are
+    a benign duplicate (collapsing loses nothing) and do NOT fire — a rule may
+    legitimately emit the same finding twice.
+
+    Posture: one ``WLN-ENGINE-FINGERPRINT-COLLISION`` DEFECT per colliding
+    fingerprint, ``Severity.ERROR`` at ``ENGINE_PATH`` — the same engine-soundness
+    posture as ``WLN-L3-MONOTONICITY-VIOLATION``. A lineless DEFECT at
+    ``ENGINE_PATH`` is NOT downgraded to a non-gating FACT (``suppression.py`` only
+    downgrades lineless DEFECTs OFF ``ENGINE_PATH``), so this trips ``--fail-on
+    ERROR``: fail-loud / deconfliction-first. It is engine-diagnostic kind, so the
+    identity corpus (PY-WL-* ∧ DEFECT only) excludes it and the frozen contract is
+    untouched. Each diagnostic's own fingerprint is keyed on the colliding fp, so
+    the guard's own output can never collide.
+
+    Scope boundary: this sees the analyzer-return population. The lineless-DEFECT
+    downgrade in ``suppression.py`` runs DOWNSTREAM, so this guard does not police
+    findings minted after ``analyze()`` returns.
+    """
+    by_fp: dict[str, list[Finding]] = {}
+    for f in findings:
+        by_fp.setdefault(f.fingerprint, []).append(f)
+
+    out: list[Finding] = []
+    for fp in sorted(by_fp):
+        group = by_fp[fp]
+        if len(group) < 2:
+            continue
+        # Benign exact-duplicates collapse to one canonical form; a collision has >=2.
+        distinct = sorted({f.to_jsonl() for f in group})
+        if len(distinct) < 2:
+            continue
+        members = sorted({(f.rule_id, f.location.path, f.location.line_start, f.qualname, f.message) for f in group})
+        summary = "; ".join(f"{rid}@{path}:{line}" for rid, path, line, _qn, _msg in members)
+        out.append(
+            Finding(
+                rule_id="WLN-ENGINE-FINGERPRINT-COLLISION",
+                message=(
+                    f"{len(distinct)} distinct findings share fingerprint {fp} — one silently masks "
+                    f"the other on the baseline/waiver/judge/Filigree joins: {summary}"
+                ),
+                severity=Severity.ERROR,
+                kind=Kind.DEFECT,
+                location=Location(path=_ENGINE_PATH),
+                fingerprint=_fingerprint("WLN-ENGINE-FINGERPRINT-COLLISION", fp),
+                properties={
+                    "colliding_fingerprint": fp,
+                    "finding_count": len(distinct),
+                    "members": [
+                        {"rule_id": rid, "path": path, "line_start": line, "qualname": qn, "message": msg}
+                        for rid, path, line, qn, msg in members
+                    ],
+                },
+            )
+        )
+    return out
+
+
 def build_unknown_import_findings(
     file_trees: list[tuple[str, str, ast.Module]],
     *,

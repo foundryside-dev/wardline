@@ -20,6 +20,7 @@ from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity
 from wardline.core.taints import TaintState, combine
 from wardline.scanner.context import AnalysisContext, RuleRegistry
 from wardline.scanner.diagnostics import (
+    build_collision_findings,
     build_diagnostic_findings,
     build_metric_finding,
     build_unknown_import_findings,
@@ -652,6 +653,12 @@ class WardlineAnalyzer:
             else build_default_registry(config, rules=(self._grammar.rules if self._grammar is not None else None))
         )
         findings.extend(registry.run(context))
+        # Proactive no-collision guard (wardline-8fb773a7af): every fingerprint
+        # consumer joins on Finding.fingerprint as a unique key, so two DISTINCT
+        # findings sharing one is a silent false-negative. Run last, over the full
+        # emitted set, and append a loud ENGINE DEFECT per collision. Its own input
+        # is the pre-append list, so the guard never sees (or collides with) itself.
+        findings.extend(build_collision_findings(findings))
         return findings
 
 

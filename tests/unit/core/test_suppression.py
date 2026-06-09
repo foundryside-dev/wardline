@@ -65,6 +65,27 @@ def test_engine_diagnostic_defect_without_line_start_surfaces() -> None:
     assert out[0].suppressed is SuppressionState.ACTIVE  # surfaces, not dropped
 
 
+def test_collision_diagnostic_survives_suppression_and_trips_gate() -> None:
+    # End-to-end posture lock for the no-collision guard (wardline-8fb773a7af):
+    # the real build_collision_findings output is a lineless ENGINE_PATH ERROR
+    # DEFECT. It must NOT be downgraded to a non-gating FACT (the lineless
+    # downgrade exempts <engine>) and it MUST trip --fail-on ERROR — otherwise the
+    # guard would be loud-but-ignorable and the masked finding stays hidden.
+    from wardline.scanner.diagnostics import build_collision_findings
+
+    fp = "f" * 64
+    a = Finding("PY-WL-114", "first", Severity.ERROR, Kind.DEFECT, Location("a.py", 3), fp)
+    b = Finding("PY-WL-114", "second", Severity.ERROR, Kind.DEFECT, Location("a.py", 3), fp)
+    diags = build_collision_findings([a, b])
+    assert len(diags) == 1 and diags[0].rule_id == "WLN-ENGINE-FINGERPRINT-COLLISION"
+
+    out = apply_suppressions(diags, _empty_baseline(), _no_waivers(), today=_TODAY)
+    assert out[0].rule_id == "WLN-ENGINE-FINGERPRINT-COLLISION"  # NOT downgraded
+    assert out[0].kind is Kind.DEFECT
+    assert out[0].suppressed is SuppressionState.ACTIVE
+    assert gate_trips(out, Severity.ERROR) is True
+
+
 def test_baselined_finding_is_annotated() -> None:
     out = apply_suppressions([_defect(_FP_A)], Baseline(frozenset({_FP_A})), _no_waivers(), today=_TODAY)
     assert out[0].suppressed is SuppressionState.BASELINED
