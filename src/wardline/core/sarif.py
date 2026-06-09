@@ -107,7 +107,7 @@ def _result(finding: Finding, rule_index: int, context: AnalysisContext | None =
         "level": _LEVEL[finding.severity],
         "message": {"text": finding.message},
         "locations": [{"physicalLocation": physical}],
-        "partialFingerprints": {"wardlineFingerprint/v1": finding.fingerprint},
+        "partialFingerprints": {"wardlineFingerprint/v2": finding.fingerprint},
         "properties": props,
     }
     if finding.suppressed is not SuppressionState.ACTIVE:

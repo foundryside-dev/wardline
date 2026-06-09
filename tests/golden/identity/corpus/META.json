@@ -1,4 +1,5 @@
 {
-  "corpus_version": 2,
-  "reason": "wardline-377b896a87: PY-WL-114 decorator-ordinal (within-def, move-stable) discriminator (close stacked-identical-decorator fingerprint collision) + add stacked_invalid_levels collision-gate fixture"
+  "corpus_version": 3,
+  "fingerprint_scheme": "wlfp1",
+  "reason": "scheme-infra (P1): SARIF key /v1->/v2 + META fingerprint_scheme=wlfp1 (hash unchanged)"
 }

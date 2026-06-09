@@ -13,6 +13,7 @@ from types import ModuleType
 import pytest
 import yaml
 
+from wardline.core.finding import FINGERPRINT_SCHEME
 from wardline.core.judge import JudgeResponse, JudgeVerdict
 from wardline.core.paths import baseline_path
 from wardline.mcp.server import WardlineMCPServer
@@ -52,7 +53,8 @@ def test_mcp_scan_gate_trips_on_baselined_defect_by_default(tmp_path: Path) -> N
     bl = baseline_path(proj)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
-        f"version: 1\nentries:\n  - fingerprint: {fp}\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
+        f"fingerprint_scheme: {FINGERPRINT_SCHEME}\nversion: 1\n"
+        f"entries:\n  - fingerprint: {fp}\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
         encoding="utf-8",
     )
     # Default: annotated baselined, but the gate trips.

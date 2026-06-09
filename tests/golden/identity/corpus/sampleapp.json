@@ -1971,7 +1971,7 @@
               "text": "trust_flow.unsafe_account_key declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v1": "10585d7285af0772e2eab3ded409d0b274b26a9aa1e9e15a245c131ba76c4b0c"
+              "wardlineFingerprint/v2": "10585d7285af0772e2eab3ded409d0b274b26a9aa1e9e15a245c131ba76c4b0c"
             },
             "properties": {
               "internalSeverity": "ERROR",

@@ -11,8 +11,8 @@ from wardline.core.baseline import (
     load_baseline,
     write_baseline,
 )
-from wardline.core.errors import ConfigError
-from wardline.core.finding import Finding, Kind, Location, Severity
+from wardline.core.errors import ConfigError, SchemeMismatchError
+from wardline.core.finding import FINGERPRINT_SCHEME, Finding, Kind, Location, Severity
 
 _FP_A = "a" * 64
 _FP_B = "b" * 64
@@ -32,9 +32,41 @@ def _finding(fp: str, *, rule: str = "PY-WL-101", sev: Severity = Severity.ERROR
 def test_build_document_shape_and_version() -> None:
     doc = build_baseline_document([_finding(_FP_A)])
     assert doc["version"] == BASELINE_VERSION
+    assert doc["fingerprint_scheme"] == FINGERPRINT_SCHEME == "wlfp1"
     assert doc["entries"][0]["fingerprint"] == _FP_A
     assert doc["entries"][0]["rule_id"] == "PY-WL-101"
     assert "path" in doc["entries"][0] and "message" in doc["entries"][0]
+    # entry fingerprint stays BARE 64-hex (no scheme prefix in-store)
+    assert ":" not in doc["entries"][0]["fingerprint"]
+
+
+def test_missing_scheme_header_raises_scheme_mismatch_not_version(tmp_path: Path) -> None:
+    # A header-less store must fail with the actionable SchemeMismatchError
+    # (naming the file + `wardline rekey`), NOT a hintless version error — and
+    # the scheme check must run BEFORE the version check.
+    p = tmp_path / "b.yaml"
+    p.write_text(yaml.safe_dump({"version": BASELINE_VERSION, "entries": []}), encoding="utf-8")
+    with pytest.raises(SchemeMismatchError) as ei:
+        load_baseline(p)
+    assert "wardline rekey" in str(ei.value)
+
+
+def test_wrong_scheme_raises_scheme_mismatch(tmp_path: Path) -> None:
+    p = tmp_path / "b.yaml"
+    p.write_text(
+        yaml.safe_dump({"fingerprint_scheme": "wlfp2", "version": BASELINE_VERSION, "entries": []}),
+        encoding="utf-8",
+    )
+    with pytest.raises(SchemeMismatchError):
+        load_baseline(p)
+
+
+def test_empty_mapping_is_empty_baseline_no_scheme_error(tmp_path: Path) -> None:
+    # Fresh checkout: an empty `{}` store returns empty, never SchemeMismatchError
+    # (empty-guard precedes the scheme check).
+    p = tmp_path / "b.yaml"
+    p.write_text("{}\n", encoding="utf-8")
+    assert load_baseline(p).fingerprints == frozenset()
 
 
 def test_build_document_dedups_and_sorts_severity_first() -> None:
@@ -80,14 +112,26 @@ def test_malformed_yaml_raises(tmp_path: Path) -> None:
 
 def test_version_mismatch_raises(tmp_path: Path) -> None:
     p = tmp_path / "b.yaml"
-    p.write_text(yaml.safe_dump({"version": 999, "entries": []}), encoding="utf-8")
+    p.write_text(
+        yaml.safe_dump({"fingerprint_scheme": FINGERPRINT_SCHEME, "version": 999, "entries": []}),
+        encoding="utf-8",
+    )
     with pytest.raises(ConfigError):
         load_baseline(p)
 
 
 def test_bad_fingerprint_raises(tmp_path: Path) -> None:
     p = tmp_path / "b.yaml"
-    p.write_text(yaml.safe_dump({"version": BASELINE_VERSION, "entries": [{"fingerprint": "short"}]}), encoding="utf-8")
+    p.write_text(
+        yaml.safe_dump(
+            {
+                "fingerprint_scheme": FINGERPRINT_SCHEME,
+                "version": BASELINE_VERSION,
+                "entries": [{"fingerprint": "short"}],
+            }
+        ),
+        encoding="utf-8",
+    )
     with pytest.raises(ConfigError):
         load_baseline(p)
 
@@ -95,7 +139,13 @@ def test_bad_fingerprint_raises(tmp_path: Path) -> None:
 def test_duplicate_fingerprint_in_file_raises(tmp_path: Path) -> None:
     p = tmp_path / "b.yaml"
     p.write_text(
-        yaml.safe_dump({"version": BASELINE_VERSION, "entries": [{"fingerprint": _FP_A}, {"fingerprint": _FP_A}]}),
+        yaml.safe_dump(
+            {
+                "fingerprint_scheme": FINGERPRINT_SCHEME,
+                "version": BASELINE_VERSION,
+                "entries": [{"fingerprint": _FP_A}, {"fingerprint": _FP_A}],
+            }
+        ),
         encoding="utf-8",
     )
     with pytest.raises(ConfigError):

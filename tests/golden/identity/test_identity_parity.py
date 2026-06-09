@@ -34,6 +34,17 @@ _REGEN_HINT = (
 )
 
 
+def test_corpus_meta_has_engine_scheme() -> None:
+    # P1 scheme-infra: META records the scheme the corpus was captured under so a
+    # future scheme bump is a visible, accountable corpus delta.
+    import json
+
+    from wardline.core.finding import FINGERPRINT_SCHEME
+
+    meta = json.loads((_HERE / "corpus" / "META.json").read_text(encoding="utf-8"))
+    assert meta["fingerprint_scheme"] == FINGERPRINT_SCHEME
+
+
 @pytest.mark.parametrize("name", sorted(_INPUTS))
 def test_identity_corpus_is_byte_identical(name: str, request: pytest.FixtureRequest) -> None:
     root = _INPUTS[name]

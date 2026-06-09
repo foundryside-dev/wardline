@@ -19,9 +19,13 @@ from pathlib import Path
 from typing import Any
 
 from wardline.core.errors import ConfigError
+from wardline.core.finding import FINGERPRINT_SCHEME, require_fingerprint_scheme
 from wardline.core.optional_deps import require_yaml
 from wardline.core.paths import waivers_path
 from wardline.core.safe_paths import safe_project_file
+
+WAIVERS_VERSION: int = 1
+"""Bumped on a format change; validated on load (mirrors BASELINE_VERSION)."""
 
 _HEX = frozenset("0123456789abcdef")
 
@@ -73,6 +77,20 @@ def parse_waivers(raw: Sequence[Mapping[str, Any]]) -> tuple[Waiver, ...]:
     return tuple(waivers)
 
 
+def build_waivers_document(waivers: Iterable[Waiver]) -> dict[str, Any]:
+    """Pure: the YAML-shaped dict (scheme header + version + waivers) for the
+    given waivers, preserving caller order. ``add_waiver`` writes its own
+    header inline (it preserves existing raw entries verbatim); this is the
+    object→document path the rekey migration (P4) writes through."""
+    entries: list[dict[str, Any]] = []
+    for w in waivers:
+        entry: dict[str, Any] = {"fingerprint": w.fingerprint, "reason": w.reason}
+        if w.expires is not None:
+            entry["expires"] = w.expires.isoformat()
+        entries.append(entry)
+    return {"fingerprint_scheme": FINGERPRINT_SCHEME, "version": WAIVERS_VERSION, "waivers": entries}
+
+
 def load_project_waivers(root: Path) -> tuple[Waiver, ...]:
     """Read wardline's machine-written waivers from ``.weft/wardline/waivers.yaml``.
 
@@ -90,6 +108,12 @@ def load_project_waivers(root: Path) -> tuple[Waiver, ...]:
         raise ConfigError(f"malformed {path.name}: {exc}") from exc
     if not isinstance(loaded, dict):
         raise ConfigError(f"{path.name} is not a mapping")
+    # Loader order is load-bearing: empty-guard → scheme → version → entries.
+    if not loaded:
+        return ()
+    require_fingerprint_scheme(loaded, store_name=path.name)
+    if loaded.get("version") != WAIVERS_VERSION:
+        raise ConfigError(f"{path.name}: version mismatch — expected {WAIVERS_VERSION}, got {loaded.get('version')!r}")
     raw = loaded.get("waivers")
     if raw is not None and not isinstance(raw, list):
         raise ConfigError(f"malformed {path.name}: 'waivers' must be a list")
@@ -131,6 +155,11 @@ def add_waiver(
             raise ConfigError(f"malformed {config_path.name}: {exc}") from exc
         if not isinstance(loaded, dict):
             raise ConfigError(f"{config_path.name} is not a mapping")
+        # A non-empty existing store must already carry the current scheme — else
+        # appending a current-scheme fingerprint to an old-scheme file would mint a
+        # mixed, silently-orphaning store. (Empty/absent → fresh write below.)
+        if loaded:
+            require_fingerprint_scheme(loaded, store_name=config_path.name)
         raw = loaded
     existing = raw.get("waivers")
     if existing is not None and not isinstance(existing, list):
@@ -139,10 +168,11 @@ def add_waiver(
     if any(isinstance(w, Mapping) and w.get("fingerprint") == fingerprint for w in waivers):
         raise ConfigError(f"waiver for {fingerprint} already exists")
     waivers.append(entry)
-    raw["waivers"] = waivers
+    # Re-stamp the scheme header (idempotent) and place it first for readability.
+    document = {"fingerprint_scheme": FINGERPRINT_SCHEME, "version": WAIVERS_VERSION, "waivers": waivers}
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
-        yaml.safe_dump(raw, sort_keys=False, default_flow_style=False, allow_unicode=True),
+        yaml.safe_dump(document, sort_keys=False, default_flow_style=False, allow_unicode=True),
         encoding="utf-8",
     )
     return waiver

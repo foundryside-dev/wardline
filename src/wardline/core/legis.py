@@ -44,7 +44,7 @@ from typing import TYPE_CHECKING, Any
 from wardline._version import __version__
 from wardline.core.attest import git_state, ruleset_hash
 from wardline.core.errors import LegisArtifactError
-from wardline.core.finding import Finding, SuppressionState
+from wardline.core.finding import FINGERPRINT_SCHEME, Finding, SuppressionState
 from wardline.core.safe_paths import safe_project_file
 from wardline.core.taints import TaintState
 
@@ -245,6 +245,10 @@ def build_legis_artifact(
     scan: dict[str, Any] = {
         "scanner_identity": f"wardline@{__version__}",
         "rule_set_version": ruleset_hash(config),
+        # Envelope scheme signal (legis ignores unknown top-level fields; it is part
+        # of the signed body so the artifact_signature covers it). Per-finding
+        # fingerprints stay BARE — legis reads them from to_jsonl (SARIF-style value).
+        "fingerprint_scheme": FINGERPRINT_SCHEME,
         "findings": findings,
     }
     commit, dirty = git_state(root)

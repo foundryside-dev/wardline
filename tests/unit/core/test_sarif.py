@@ -61,9 +61,12 @@ def test_severity_maps_to_level() -> None:
     assert levels == {"CRITICAL": "error", "ERROR": "error", "WARN": "warning", "INFO": "note", "NONE": "none"}
 
 
-def test_partial_fingerprint_and_location() -> None:
+def test_partial_fingerprint_key_is_v2() -> None:
     res = build_sarif([_f(line_start=42)])["runs"][0]["results"][0]
-    assert res["partialFingerprints"] == {"wardlineFingerprint/v1": "a" * 64}
+    # The KEY versions to /v2 to signal the scheme change; the VALUE stays bare
+    # (SARIF consumers read the value, not a prefixed form).
+    assert res["partialFingerprints"] == {"wardlineFingerprint/v2": "a" * 64}
+    assert ":" not in res["partialFingerprints"]["wardlineFingerprint/v2"]
     region = res["locations"][0]["physicalLocation"]["region"]
     # _f sets line_start == line_end and no columns -> exactly these two keys, no null cols
     assert set(region) == {"startLine", "endLine"}

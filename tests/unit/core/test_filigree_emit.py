@@ -12,7 +12,17 @@ from wardline.core.filigree_emit import (
     build_scan_results_body,
     filigree_disabled_reason,
 )
-from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
+from wardline.core.finding import (
+    FINGERPRINT_SCHEME,
+    Finding,
+    Kind,
+    Location,
+    Severity,
+    SuppressionState,
+    to_filigree_metadata,
+)
+
+_PREFIXED_A = f"{FINGERPRINT_SCHEME}:" + "a" * 64
 
 
 def _f(**kw: object) -> Finding:
@@ -35,6 +45,7 @@ def test_body_envelope() -> None:
     body = build_scan_results_body([_f()])
     assert body["scan_source"] == "wardline"
     assert isinstance(body["findings"], list) and len(body["findings"]) == 1
+    assert body["fingerprint_scheme"] == FINGERPRINT_SCHEME == "wlfp1"
 
 
 def test_scan_results_body_sets_mark_unseen() -> None:
@@ -64,10 +75,17 @@ def test_finding_uses_path_not_file_path() -> None:
 
 def test_fingerprint_is_top_level_and_severity_lowercased() -> None:
     wire = build_scan_results_body([_f()])["findings"][0]
-    assert wire["fingerprint"] == "a" * 64
+    # The WIRE value is scheme-prefixed (the envelope + value together let a
+    # Filigree consumer detect a scheme change); the in-memory Finding stays bare.
+    assert wire["fingerprint"] == _PREFIXED_A
     assert wire["severity"] == "high"  # ERROR -> high
     assert wire["language"] == "python"
     assert wire["line_start"] == 5 and wire["line_end"] == 6
+
+
+def test_metadata_fingerprint_is_prefixed() -> None:
+    meta = to_filigree_metadata(_f())
+    assert meta["wardline"]["fingerprint"] == _PREFIXED_A
 
 
 def test_metadata_namespaced_and_carries_suppression() -> None:

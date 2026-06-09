@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from wardline.core.errors import ConfigError
-from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
+from wardline.core.finding import FINGERPRINT_SCHEME, Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.judged import JudgedFP, write_judged
 from wardline.core.paths import baseline_path, judged_path, waivers_path
 from wardline.core.run import (
@@ -113,7 +113,7 @@ def test_run_scan_baselined_count_distinguishes_categories(tmp_path: Path) -> No
     bl = baseline_path(proj)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
-        "version: 1\nentries:\n"
+        f"fingerprint_scheme: {FINGERPRINT_SCHEME}\nversion: 1\nentries:\n"
         f"  - fingerprint: {leak.fingerprint}\n"
         "    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
         encoding="utf-8",
@@ -146,7 +146,8 @@ def _write_baseline(proj: Path, fp: str) -> None:
     bl = baseline_path(proj)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
-        f"version: 1\nentries:\n  - fingerprint: {fp}\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
+        f"fingerprint_scheme: {FINGERPRINT_SCHEME}\nversion: 1\n"
+        f"entries:\n  - fingerprint: {fp}\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
         encoding="utf-8",
     )
 
@@ -434,7 +435,8 @@ def test_new_since_scopes_both_populations_and_resists_suppression(tmp_path: Pat
     bl = baseline_path(tmp_path)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
-        f"version: 1\nentries:\n  - fingerprint: {new_fp}\n    rule_id: PY-WL-101\n    path: caller.py\n"
+        f"fingerprint_scheme: {FINGERPRINT_SCHEME}\nversion: 1\n"
+        f"entries:\n  - fingerprint: {new_fp}\n    rule_id: PY-WL-101\n    path: caller.py\n"
         "    message: m\n",
         encoding="utf-8",
     )

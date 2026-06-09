@@ -563,7 +563,7 @@
               "text": "identity_stress.assert_only_boundary declares a trust boundary (EXTERNAL_RAW -> ASSURED) but its only rejection path is assert — stripped under python -O, so the validation vanishes in production"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v1": "ce186e1ededcf7a37a3c91eddb73a31dfac1cb83e0be897bdb35db21f30a6ca9"
+              "wardlineFingerprint/v2": "ce186e1ededcf7a37a3c91eddb73a31dfac1cb83e0be897bdb35db21f30a6ca9"
             },
             "properties": {
               "internalSeverity": "ERROR",
@@ -645,7 +645,7 @@
               "text": "identity_stress.untrusted_reaches_trusted declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v1": "1dc9064692fed478ed23be8b4e6105163bbf4c082fa52d0c9bf4bef4f3a754bb"
+              "wardlineFingerprint/v2": "1dc9064692fed478ed23be8b4e6105163bbf4c082fa52d0c9bf4bef4f3a754bb"
             },
             "properties": {
               "internalSeverity": "ERROR",

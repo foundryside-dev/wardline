@@ -20,7 +20,13 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from wardline.core.errors import FiligreeEmitError
-from wardline.core.finding import Finding, severity_to_filigree, to_filigree_metadata
+from wardline.core.finding import (
+    FINGERPRINT_SCHEME,
+    Finding,
+    format_fingerprint,
+    severity_to_filigree,
+    to_filigree_metadata,
+)
 from wardline.core.http import read_response_text
 
 _SUGGESTION_LIMIT = 10000
@@ -48,7 +54,7 @@ def _finding_to_wire(finding: Finding) -> dict[str, Any]:
         "severity": severity_to_filigree(finding.severity),
         "line_start": finding.location.line_start,
         "line_end": finding.location.line_end,
-        "fingerprint": finding.fingerprint,
+        "fingerprint": format_fingerprint(FINGERPRINT_SCHEME, finding.fingerprint),
         "metadata": to_filigree_metadata(finding),
         "language": "python",
     }
@@ -73,6 +79,7 @@ def build_scan_results_body(
     scanned = list(dict.fromkeys(p for p in scanned_paths if p))
     body = {
         "scan_source": scan_source,
+        "fingerprint_scheme": FINGERPRINT_SCHEME,
         "mark_unseen": bool(findings_wire or scanned),
         "findings": findings_wire,
     }

@@ -15,7 +15,14 @@ from pathlib import Path
 from typing import Any
 
 from wardline.core.errors import ConfigError
-from wardline.core.finding import Finding, Kind, Severity, SuppressionState
+from wardline.core.finding import (
+    FINGERPRINT_SCHEME,
+    Finding,
+    Kind,
+    Severity,
+    SuppressionState,
+    require_fingerprint_scheme,
+)
 from wardline.core.optional_deps import require_yaml
 from wardline.core.paths import baseline_path as baseline_file
 from wardline.core.safe_paths import safe_project_file
@@ -52,6 +59,7 @@ def build_baseline_document(findings: Iterable[Finding]) -> dict[str, Any]:
         key=lambda f: (_SEVERITY_SORT[f.severity], f.rule_id, f.location.path, f.fingerprint),
     )
     return {
+        "fingerprint_scheme": FINGERPRINT_SCHEME,
         "version": BASELINE_VERSION,
         "entries": [
             {"fingerprint": f.fingerprint, "rule_id": f.rule_id, "path": f.location.path, "message": f.message}
@@ -160,6 +168,8 @@ def _build_baseline(raw: Any, name: str = "baseline.yaml") -> Baseline:
         raise ConfigError(f"{name}: must be a mapping at top level")
     if not raw:
         return Baseline(frozenset())
+    # Loader order is load-bearing: empty-guard (above) → scheme → version.
+    require_fingerprint_scheme(raw, store_name=name)
     if raw.get("version") != BASELINE_VERSION:
         raise ConfigError(f"{name}: version mismatch — expected {BASELINE_VERSION}, got {raw.get('version')!r}")
     entries = raw.get("entries")

@@ -18,6 +18,7 @@ import argparse
 from pathlib import Path
 
 from golden.identity import _capture as c  # type: ignore[import-not-found]
+from wardline.core.finding import FINGERPRINT_SCHEME
 
 _HERE = Path(__file__).parent
 _INPUTS = {
@@ -25,7 +26,10 @@ _INPUTS = {
     "stress": _HERE / "fixtures" / "stress",
     "sinks": _HERE / "fixtures" / "sinks",
 }
-CORPUS_VERSION = 2
+# Bumped 2->3 for P1 scheme-infra: SARIF key /v1->/v2 + META gains
+# fingerprint_scheme. Every finding fingerprint VALUE is byte-identical (the hash
+# was not touched) — that invariant is the proof P1 is format-only.
+CORPUS_VERSION = 3
 
 
 def main() -> None:
@@ -42,7 +46,7 @@ def main() -> None:
         encoding="utf-8",
     )
     (out / "META.json").write_text(
-        c.to_json({"corpus_version": CORPUS_VERSION, "reason": args.reason}),
+        c.to_json({"corpus_version": CORPUS_VERSION, "fingerprint_scheme": FINGERPRINT_SCHEME, "reason": args.reason}),
         encoding="utf-8",
     )
     print(f"wrote identity corpus ({len(_INPUTS)} inputs + assure + META) to {out}")

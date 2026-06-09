@@ -239,6 +239,20 @@ def test_signed_artifact_signature_verifies_over_minus_signature(tmp_path) -> No
     assert legis.sign_artifact(scan, b"k") == sig  # re-sign of the posted body matches
 
 
+def test_artifact_envelope_carries_scheme_findings_stay_bare(tmp_path) -> None:
+    # The artifact ENVELOPE carries the scheme signal (like Filigree's envelope /
+    # SARIF's key-version); legis ignores unknown top-level fields, so this is
+    # forward-compatible. Per-finding fingerprints stay BARE (legis reads them from
+    # to_jsonl; SARIF-style bare value). The scheme is part of the signed body, so the
+    # signature round-trip above still holds with it present.
+    from wardline.core.finding import FINGERPRINT_SCHEME
+
+    scan = _build(_committed_repo(tmp_path))  # unsigned
+    assert scan["fingerprint_scheme"] == FINGERPRINT_SCHEME == "wlfp1"
+    for finding in scan["findings"]:
+        assert ":" not in finding["fingerprint"]  # bare 64-hex, no scheme prefix
+
+
 def test_artifact_includes_all_findings_projected(tmp_path) -> None:
     # legis records finding_count over the WHOLE list (service/wardline.py), so the
     # artifact carries every finding — including engine FACTs — each projected so its

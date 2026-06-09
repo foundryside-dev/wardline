@@ -1,5 +1,6 @@
 # tests/unit/core/test_weft_mapping.py
 from wardline.core.finding import (
+    FINGERPRINT_SCHEME,
     Finding,
     Kind,
     Location,
@@ -32,7 +33,7 @@ def test_metadata_namespaces_rich_fields_under_wardline() -> None:
     md = to_filigree_metadata(f)
     assert set(md) == {"wardline"}
     wl = md["wardline"]
-    assert wl["fingerprint"] == "fp123"
+    assert wl["fingerprint"] == f"{FINGERPRINT_SCHEME}:fp123"  # wire/metadata fp is scheme-prefixed (S6)
     assert wl["internal_severity"] == "WARN"
     assert wl["kind"] == "defect"
     assert wl["qualname"] == "pkg.mod.C.method"

@@ -10,6 +10,7 @@ from click.testing import CliRunner
 from wardline.cli.main import cli
 from wardline.cli.main import cli as _cli
 from wardline.cli.scan import scan
+from wardline.core.finding import FINGERPRINT_SCHEME
 from wardline.core.paths import baseline_path, judged_path
 
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "sample_project"
@@ -453,7 +454,9 @@ def test_scan_baseline_annotates_but_does_not_clear_gate(tmp_path) -> None:
     bl = baseline_path(proj)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
-        "version: 1\nentries:\n  - fingerprint: " + fp + "\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
+        f"fingerprint_scheme: {FINGERPRINT_SCHEME}\nversion: 1\nentries:\n  - fingerprint: "
+        + fp
+        + "\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
         encoding="utf-8",
     )
     # SECURITY default: the defect is baselined for REPORTING (annotated), but the
@@ -478,7 +481,9 @@ def test_scan_baseline_clears_gate_with_trust_suppressions(tmp_path) -> None:
     bl = baseline_path(proj)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
-        "version: 1\nentries:\n  - fingerprint: " + fp + "\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
+        f"fingerprint_scheme: {FINGERPRINT_SCHEME}\nversion: 1\nentries:\n  - fingerprint: "
+        + fp
+        + "\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
         encoding="utf-8",
     )
     res = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--fail-on", "ERROR", "--trust-suppressions"])

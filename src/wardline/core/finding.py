@@ -169,6 +169,67 @@ def compute_finding_fingerprint(
     return digest.hexdigest()
 
 
+# --- Self-describing fingerprint scheme (P1 scheme-infra) --------------------
+# The fingerprint is the cross-tool JOIN KEY (baseline / waiver / judged stores
+# and the Filigree wire). Stamping a scheme onto it at the wire/store boundary
+# lets a store that was written under a different hash formula LOUD-FAIL on load
+# (``SchemeMismatchError``) instead of silently joining stale values and
+# orphaning every verdict. The IN-MEMORY ``Finding.fingerprint`` stays bare
+# 64-hex; the prefix is applied only when serialising to a store/wire and
+# stripped (``parse_fingerprint``) when reading one back. ``wlfp1`` is this
+# (line_start-IN) formula; the move-stability rekey will bump it to ``wlfp2``.
+FINGERPRINT_SCHEME = "wlfp1"
+
+_HEX_DIGITS = frozenset("0123456789abcdef")
+
+
+def format_fingerprint(scheme: str, fingerprint: str) -> str:
+    """Stamp a bare 64-hex fingerprint with its scheme for the wire/store.
+
+    The inverse of :func:`parse_fingerprint`. Does not validate ``fingerprint``
+    here — callers pass ``Finding.fingerprint``, already a bare digest.
+    """
+    return f"{scheme}:{fingerprint}"
+
+
+def parse_fingerprint(value: str) -> tuple[str, str]:
+    """Split a ``scheme:hex`` fingerprint into ``(scheme, bare_hex)``.
+
+    Pure FORMAT parser: it returns whatever scheme token is present and does
+    NOT judge whether that scheme is the one this build expects — scheme
+    *mismatch* is the store loaders' concern (``SchemeMismatchError``). Raises
+    ``ValueError`` on a structurally malformed value: no colon, empty scheme, or
+    a hex part that is not exactly 64 lowercase hex characters.
+    """
+    scheme, sep, hexpart = value.partition(":")
+    if sep != ":" or not scheme:
+        raise ValueError(f"not a scheme-prefixed fingerprint: {value!r}")
+    if len(hexpart) != 64 or any(c not in _HEX_DIGITS for c in hexpart):
+        raise ValueError(f"invalid fingerprint hex (need 64 lowercase hex): {hexpart!r}")
+    return scheme, hexpart
+
+
+def require_fingerprint_scheme(document: Mapping[str, Any], *, store_name: str) -> None:
+    """Loud-fail (``SchemeMismatchError``) if ``document``'s ``fingerprint_scheme``
+    header is absent or differs from this build's :data:`FINGERPRINT_SCHEME`.
+
+    The baseline/judged/waivers loaders all call this. **Loader order is
+    load-bearing:** call it AFTER the empty-guard (a fresh/empty store must
+    return empty, never raise) and BEFORE the version check (a version-mismatch
+    raised first would hide the actionable ``wardline rekey`` hint). A non-string
+    header is treated as missing.
+    """
+    # Imported lazily-at-module-load: errors imports nothing from wardline, so
+    # this top-of-module import would be acyclic, but the symbol is only needed
+    # here — keep it local to avoid widening finding.py's import surface.
+    from wardline.core.errors import SchemeMismatchError
+
+    raw = document.get("fingerprint_scheme")
+    found = raw if isinstance(raw, str) else None
+    if found != FINGERPRINT_SCHEME:
+        raise SchemeMismatchError(store_name=store_name, found=found, expected=FINGERPRINT_SCHEME)
+
+
 # --- Weft wire mapping (pure; SP4 uses these to build the scan-results body) -
 _SEVERITY_TO_FILIGREE: dict[Severity, str] = {
     Severity.CRITICAL: "critical",
@@ -187,7 +248,7 @@ def severity_to_filigree(severity: Severity) -> str:
 def to_filigree_metadata(finding: Finding) -> dict[str, Any]:
     """Build the ``metadata.wardline.*`` subtree (semantic JSON, not byte-stable)."""
     wardline: dict[str, Any] = {
-        "fingerprint": finding.fingerprint,
+        "fingerprint": format_fingerprint(FINGERPRINT_SCHEME, finding.fingerprint),
         "internal_severity": finding.severity.value,
         "kind": finding.kind.value,
     }

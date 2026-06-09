@@ -108,7 +108,7 @@ def _sarif_result_sort_key(res: dict[str, Any]) -> tuple[str, int, str, str, str
     uri = res["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
     region = res["locations"][0]["physicalLocation"].get("region", {})
     start = region.get("startLine", -1)
-    fp = res["partialFingerprints"]["wardlineFingerprint/v1"]
+    fp = res["partialFingerprints"]["wardlineFingerprint/v2"]
     # Total tiebreaker (see _finding_sort_key) — fingerprint can collide.
     return (uri or "", start, res["ruleId"], fp, json.dumps(res, sort_keys=True, ensure_ascii=False))
 

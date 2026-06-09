@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from wardline.core.errors import ConfigError
+from wardline.core.finding import FINGERPRINT_SCHEME, require_fingerprint_scheme
 from wardline.core.optional_deps import require_yaml
 from wardline.core.safe_paths import safe_project_file
 
@@ -54,6 +55,7 @@ def build_judged_document(entries: Iterable[JudgedFP]) -> dict[str, Any]:
         unique[e.fingerprint] = e  # last write wins (re-judge updates)
     ordered = sorted(unique.values(), key=lambda e: (e.rule_id, e.fingerprint))
     return {
+        "fingerprint_scheme": FINGERPRINT_SCHEME,
         "version": JUDGED_VERSION,
         "findings": [
             {
@@ -94,6 +96,8 @@ def load_judged(path: Path) -> JudgedSet:
         raise ConfigError(f"{path.name}: must be a mapping at top level")
     if not raw:
         return JudgedSet([])
+    # Loader order is load-bearing: empty-guard (above) → scheme → version.
+    require_fingerprint_scheme(raw, store_name=path.name)
     if raw.get("version") != JUDGED_VERSION:
         raise ConfigError(f"{path.name}: version mismatch — expected {JUDGED_VERSION}, got {raw.get('version')!r}")
     findings = raw.get("findings") or []
