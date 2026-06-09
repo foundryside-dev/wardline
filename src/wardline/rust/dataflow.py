@@ -105,6 +105,11 @@ class _Analyzer:
         name = _name_of(let_node.child_by_field_name("pattern"))
         if name is not None:
             self._local_taints.pop(name, None)  # a fresh binding clears this name's prior taint
+            # ...and a stale Command builder bound to this name. Without this, a shadowing
+            # `let c = non_command();` strands the prior `_CmdAccum` and a later `c.output()`
+            # reconstructs it — a phantom trigger carrying the old binding's taint (false
+            # RS-WL-108). If the new value IS a builder, `_try_command_chain` re-adds it below.
+            self._commands.pop(name, None)
         call = _unwrap_to_call(value)
         if call is not None and self._try_command_chain(call, bound_name=name):
             return  # a Command builder bound to `name` (or terminated inline)

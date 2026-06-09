@@ -128,3 +128,24 @@ def test_variable_bound_shell_name_is_a_documented_fn() -> None:
     (trig,) = _triggers(_SEED + '    let s = "sh";\n    Command::new(s).arg("-c").arg(t).output();\n')
     assert trig.program_literal is None
     assert _has_raw_arg(trig)  # the arg is still tainted; only the shell-ness is lost
+
+
+def test_let_rebind_clears_a_stale_command_builder() -> None:
+    # A shadowing `let` re-binds the name to a NON-command; the old `_CmdAccum` must not
+    # survive and have a later `.output()` falsely attributed to it. `_let` mirrors the
+    # taint clear (`_local_taints.pop`) and must mirror the builder clear too — otherwise
+    # `c.output()` emits a phantom trigger carrying the FIRST binding's program taint,
+    # surfacing as a false RS-WL-108 that fires at ERROR and trips the gate.
+    trigs = _triggers(
+        _SEED
+        + "    let c = Command::new(t);\n"  # c is a tainted-program builder...
+        + "    let c = make_thing();\n"  # ...then shadowed by a non-command
+        + "    c.output();\n"  # this terminal must NOT reconstruct the stale builder
+    )
+    assert list(trigs) == []  # the rebound `c` is not a tracked command -> zero triggers
+
+
+def test_plain_command_builder_still_fires_after_the_rebind_fix() -> None:
+    # No-regression guard: a builder bound once and never shadowed still reconstructs.
+    (trig,) = _triggers(_SEED + "    let c = Command::new(t);\n    c.output();\n")
+    assert trig.program_taint in RAW_ZONE
