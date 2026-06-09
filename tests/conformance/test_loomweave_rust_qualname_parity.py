@@ -8,23 +8,28 @@ arrangement: Wardline *vendors* ``qualnames_rust.json`` and reproduces its
 the *second producer*, it MINTS the same locator string and never parses it.
 
 Provenance — re-vendor when Loomweave bumps the corpus:
-    source: loomweave  feat/rust-plugin-spec  @ 8adb1ee  (fixtures/qualnames_rust.json,
-            blob 795ae03, extractor-generated, locked by
+    source: loomweave  feat/rust-plugin-spec  @ 1bd5855  (fixtures/qualnames_rust.json,
+            blob 6c0aee1, extractor-generated, locked by
             crates/loomweave-plugin-rust/tests/qualname_conformance.rs)
     vendored byte-identical to tests/conformance/qualnames_rust.json (2026-06-09).
     NOTE: this is the **ADR-049 amendment (Option b)** corpus — the inherent-impl
     source-order ordinal was DROPPED (`Foo.impl#<>.bar`, not `impl#<>#0.bar`) and
-    same-signature inherent impls merge. It supersedes the a3227ad point an earlier
-    vendor pinned. ⚠️ The Wardline-facing federation handshake doc
+    same-signature inherent impls merge. The 1bd5855 re-vendor additionally adds the
+    two cfg-twin-on-impl trip-wire cases (``inherent_impl_cfg_twin`` /
+    ``trait_impl_cfg_twin``) — without them the gate never exercised the ``@cfg``
+    suffix landing ON an impl key, so an extractor that omitted it would have passed
+    while silently merging cfg-twin impls. ⚠️ The earlier federation handshake doc
     (loomweave docs/federation/2026-06-09-rust-qualname-dialect-response.md) still
-    describes the *old* ordinal form — it was not updated with the amendment; the
-    authoritative extractor + this corpus are the oracle and define the dialect.
+    describes the *old* ordinal form — it is intentionally left intact as history and
+    is SUPERSEDED by the Phase 1b change-set
+    (docs/integration/2026-06-09-loomweave-rust-qualname-phase1b-changeset.md), which
+    is the authoritative description of this corpus. Where any doc and the live
+    extractor + this corpus diverge, the extractor + corpus are the oracle.
 
-Status: the Rust frontend (``wardline.rust.*``) does not exist yet — it is built in
-slice-1 (see docs/superpowers/plans/2026-06-08-...-slice1-command-injection.md, WP2).
-Until then the *structural* self-tests below run (they catch a malformed / stale
-vendor now), and the *producer-parity* tests skip cleanly. **WP2's definition of
-done includes un-skipping these** — wire ``_rust_producer`` to the real API.
+Status: the Rust frontend (``wardline.rust.*``) now EXISTS (slice-1 WP2 landed), so
+the *producer-parity* tests below run live (``_rust_producer`` resolves
+``wardline.rust.index`` — they no longer skip). The *structural* self-tests also run
+and catch a malformed / stale re-vendor. SP2 rows still ``xfail`` (whole-tree view).
 
 The comparison rule (from the corpus ``_consumer_comparison`` key — do NOT use raw
 list-equality against ``expected``):
