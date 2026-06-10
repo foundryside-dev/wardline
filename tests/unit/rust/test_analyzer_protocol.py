@@ -41,9 +41,11 @@ def test_analyze_over_files_finds_injection_with_repo_relative_path(tmp_path) ->
     assert [f.rule_id for f in rs] == ["RS-WL-108"]
     # repo-relative POSIX path (the Filigree/Location anchor), not the absolute fs path.
     assert rs[0].location.path == "src/m.rs"
-    # dumb-but-deterministic slice-1 route: crate=root.name, src_root=root (src/ NOT
-    # stripped — full Cargo-aware routing is SP2; provisional_identity disclaims it).
-    assert rs[0].qualname == f"{tmp_path.name}.src.m.run"
+    # No Cargo.toml and no src/lib|main.rs anywhere -> no crate root registers, so the
+    # SP2 router uses the class-3 route: constant "crate" segment + #out branding +
+    # literal relpath stems (relpath-pure — scan-root-name-independent). Real
+    # crate-prefixed routes are pinned in tests/unit/rust/test_crate_roots.py.
+    assert rs[0].qualname == "crate.#out.src.m.run"
 
 
 def test_last_context_is_none_but_rust_context_is_retained(tmp_path) -> None:
@@ -102,6 +104,51 @@ def test_coverage_posture_flags_empty_trust_surface(tmp_path) -> None:
     (cov,) = [f for f in findings if f.rule_id == "WLN-RUST-COVERAGE"]
     assert cov.properties["functions_declared"] == 0
     assert cov.properties["functions_total"] == 1
+
+
+def test_non_callable_entities_do_not_enter_taint_analysis(tmp_path) -> None:
+    # Phase 1b: the index now emits struct/enum/const/trait (etc.) rows. The taint
+    # path must judge CALLABLES ONLY — leaf entities have no body/trust marker, so
+    # feeding them to taint_for/dataflow would crash or fabricate findings, and the
+    # coverage METRIC's functions_total must keep counting callables only.
+    src = 'struct Cfg;\npub enum Mode { A }\npub const NAME: &str = "x";\npub trait Run {}\n' + _INJECTION
+    (tmp_path / "m.rs").write_text(src, encoding="utf-8")
+    findings = list(RustAnalyzer().analyze([tmp_path / "m.rs"], _cfg(), root=tmp_path))
+    rs = [f for f in findings if f.rule_id.startswith("RS-WL-")]
+    assert [f.rule_id for f in rs] == ["RS-WL-108"]  # exactly the one fn's finding
+    assert all(f.qualname is not None and f.qualname.endswith(".run") for f in rs)
+    (cov,) = [f for f in findings if f.rule_id == "WLN-RUST-COVERAGE"]
+    assert cov.properties["functions_total"] == 1  # callables only, not 5
+    assert cov.properties["functions_declared"] == 1
+
+
+def test_fn_struct_same_name_keeps_both_entities_and_counts_one_callable(tmp_path) -> None:
+    # Keystone panel: `fn S` and `struct S` share a qualname (the per-kind twin counter
+    # deliberately adds no @cfg suffix across kinds), so a context map keyed on qualname
+    # alone silently drops one of them at dict-ification. The context must keep BOTH
+    # (keys are kind-disambiguated entity ids) and the coverage denominator counts the
+    # ONE callable — computed from the entity list, never the (collapsible) mapping.
+    src = (
+        "struct S { x: i32 }\n"
+        + _TRUSTED
+        + 'fn S() {\n    let t = std::env::var("X").unwrap();\n    Command::new(t).output();\n}\n'
+    )
+    (tmp_path / "m.rs").write_text(src, encoding="utf-8")
+    analyzer = RustAnalyzer()
+    findings = list(analyzer.analyze([tmp_path / "m.rs"], _cfg(), root=tmp_path))
+
+    rs = [f for f in findings if f.rule_id.startswith("RS-WL-")]
+    assert [f.rule_id for f in rs] == ["RS-WL-108"]  # the fn IS exercised
+    ctx = analyzer.last_rust_context
+    assert ctx is not None
+    qual = "crate.#out.m.S"  # class-3 route: constant crate segment + #out branding
+    # BOTH entities survive, addressable by their kind-disambiguated entity-id keys.
+    assert f"rust:struct:{qual}" in ctx.entities
+    assert f"rust:function:{qual}" in ctx.entities
+    assert {(e.kind, e.qualname) for e in ctx.entities.values()} >= {("struct", qual), ("function", qual)}
+    (cov,) = [f for f in findings if f.rule_id == "WLN-RUST-COVERAGE"]
+    assert cov.properties["functions_total"] == 1  # one callable, not two, not zero
+    assert cov.properties["functions_declared"] == 1
 
 
 def test_clean_file_yields_no_findings(tmp_path) -> None:

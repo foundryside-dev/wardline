@@ -77,6 +77,34 @@ def test_marker_with_no_leading_space_still_matches() -> None:
     assert seed is not None and seed.body_taint is TaintState.ASSURED
 
 
+def test_trusted_marker_on_impl_method_seeds_only_that_method() -> None:
+    # The marker works on impl METHODS, not just free fns: inside the impl body the
+    # doc comment is the method's preceding sibling exactly as at file scope. The
+    # marked method seeds its level; its unmarked sibling stays None (fail-closed).
+    src = (
+        "struct Foo;\n"
+        "impl Foo {\n"
+        "    /// @trusted(level=GUARDED)\n"
+        "    fn marked(&self) {}\n"
+        "    fn sibling(&self) {}\n"
+        "}\n"
+    )
+    tree = parse_rust(src)
+    impl_node = next(c for c in tree.root_node.children if c.type == "impl_item")
+    body = impl_node.child_by_field_name("body")
+    assert body is not None
+    fns: dict[str, Node] = {}
+    for child in body.named_children:
+        if child.type == "function_item":
+            name = child.child_by_field_name("name")
+            assert name is not None and name.text is not None
+            fns[name.text.decode("utf-8")] = child
+    provider = RustTrustProvider()
+    seed = provider.taint_for(fns["marked"])
+    assert seed is not None and seed.body_taint is TaintState.GUARDED
+    assert provider.taint_for(fns["sibling"]) is None
+
+
 def test_malformed_level_is_surfaced_not_silently_ignored() -> None:
     fn = _first_fn("/// @trusted(level=BOGUS)\nfn f() {}\n")
     with pytest.raises(ValueError, match="level"):

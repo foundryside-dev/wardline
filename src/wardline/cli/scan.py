@@ -41,7 +41,10 @@ from wardline.core.sarif import SarifSink
     "--lang",
     type=click.Choice(["python", "rust"]),
     default="python",
-    help="Language frontend. 'rust' (PREVIEW) scans .rs files for RS-WL-* command-injection findings.",
+    help=(
+        "Language frontend. 'rust' scans .rs files for RS-WL-* command-injection findings "
+        "(frozen identity, baseline-eligible; config severity overrides not yet applied)."
+    ),
 )
 @click.option("--output", type=click.Path(path_type=Path), default=None)
 # exit 1 if any non-suppressed DEFECT has severity >= this threshold (SP3b)
@@ -159,13 +162,13 @@ def scan(
 ) -> None:
     """Scan PATH for findings."""
     if lang == "rust":
-        # Loud posture banner: the Rust frontend is a preview slice. RS-WL-* findings carry
-        # provisional identity (baseline-ineligible until SP2) and weft.toml severity
-        # overrides do not yet apply to them. Surface this so a green/red gate is not
-        # mistaken for the stability of the Python path.
+        # Posture banner: RS-WL-* identity is graduated (frozen, baseline-eligible) but
+        # rule coverage is the command-injection slice and weft.toml severity overrides
+        # do not yet apply to Rust findings (analyzer accepts config for protocol parity
+        # only). Surface the remaining gaps so a green gate is read at the right scope.
         click.echo(
-            "note: --lang rust is PREVIEW — RS-WL-* findings have provisional identity "
-            "(baseline-ineligible) and config severity overrides do not apply.",
+            "note: --lang rust covers the command-injection slice (RS-WL-108/112); "
+            "config severity overrides do not yet apply to Rust findings.",
             err=True,
         )
     if fmt == "sarif":

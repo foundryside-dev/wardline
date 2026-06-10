@@ -6,9 +6,10 @@ verdict rules — so callgraph/dataflow/rule passes share the single keying auth
 §5; a re-parse would mint divergent NodeIds and fail quietly).
 
 WP6 adds ``analyze(files, config, *, root)`` — the engine ``Analyzer`` protocol method
-``run_scan`` drives under ``--lang rust``. It reads each ``.rs`` file, derives a deterministic
-slice-1 module route (``crate=root.name, src_root=root`` — full Cargo-aware routing is SP2),
-runs the per-file pipeline, and surfaces a ``WLN-ENGINE-PARSE-ERROR`` FACT for any file
+``run_scan`` drives under ``--lang rust``. It discovers the tree's Cargo crate roots ONCE
+(SP2, ``wardline.rust.crate_roots`` — the loomweave-oracle-mirroring whole-tree pass),
+routes each ``.rs`` file to its real crate-prefixed module (``_module_for``), runs the
+per-file pipeline, and surfaces a ``WLN-ENGINE-PARSE-ERROR`` FACT for any file
 tree-sitter cannot fully parse (then contributes no findings for it — never half-analyze).
 
 ``last_context`` is the engine-shaped ``AnalysisContext | None`` (None in slice-1: the
@@ -25,6 +26,7 @@ from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity
 from wardline.core.taints import TaintState
 from wardline.rust import qualname as q
 from wardline.rust.context import RustAnalysisContext, RustTriggerContext
+from wardline.rust.crate_roots import CrateRoots, discover_crate_roots
 from wardline.rust.dataflow import analyze_command_dataflow
 from wardline.rust.index import index_entities
 from wardline.rust.nodeid import mint_node_ids
@@ -86,6 +88,9 @@ class RustAnalyzer:
         ``WLN-ENGINE-PARSE-ERROR`` FACT and no ``RS-WL-*`` findings.
         """
         resolved_root = root.resolve()
+        # SP2 whole-tree pass: discover Cargo crate roots ONCE per scan; every file's
+        # module route resolves against this map (longest-prefix, symlink-safe walk).
+        crate_roots = discover_crate_roots(resolved_root)
         findings: list[Finding] = []
         functions_total = 0
         functions_declared = 0
@@ -101,9 +106,9 @@ class RustAnalyzer:
             if has_errors(tree):
                 findings.append(_parse_error_finding(relpath, "tree-sitter recovered from a syntax error"))
                 continue
-            module = _module_for(file, resolved_root)
+            module = _module_for(file, resolved_root, crate_roots)
             try:
-                file_findings, context = self._analyze_tree(tree, module=module, path=relpath)
+                file_findings, context, file_callables = self._analyze_tree(tree, module=module, path=relpath)
             except Exception as exc:  # noqa: BLE001 — per-file isolation, see below
                 # One pathological file (e.g. a RecursionError on a deeply-nested expression)
                 # must not abort the whole scan and lose every other file's findings. Mirror
@@ -113,7 +118,12 @@ class RustAnalyzer:
                 continue
             self._last_rust_context = context
             files_analyzed += 1
-            functions_total += len(context.entities)
+            # The coverage METRIC counts CALLABLES only — the emission carries the full
+            # ten-kind surface (Phase 1b), but the trust-surface denominator is still
+            # "functions that could have declared @trusted". `_analyze_tree` counts them
+            # over the entity LIST (never the context mapping, which dict-ification
+            # could collapse).
+            functions_total += file_callables
             # Declared = seeded from a `/// @trusted` marker (tier is a real trust level, not
             # the fail-closed default). This is the trust SURFACE — the denominator that stops
             # a default-clean scan over an un-annotated repo from reading as a clean PASS.
@@ -125,17 +135,27 @@ class RustAnalyzer:
     def analyze_source(self, source: str, *, module: str, path: str = "") -> list[Finding]:
         """Analyze a single in-memory source string (the WP5 rule-test entry)."""
         tree = parse_rust(source)
-        findings, context = self._analyze_tree(tree, module=module, path=path)
+        findings, context, _ = self._analyze_tree(tree, module=module, path=path)
         self._last_rust_context = context
         return findings
 
-    def _analyze_tree(self, tree: Tree, *, module: str, path: str) -> tuple[list[Finding], RustAnalysisContext]:
+    def _analyze_tree(self, tree: Tree, *, module: str, path: str) -> tuple[list[Finding], RustAnalysisContext, int]:
+        """Run the per-file pipeline; returns ``(findings, context, callables_total)``.
+
+        ``callables_total`` (the coverage-metric denominator) is counted over the
+        entity LIST, before dict-ification — the context mapping is keyed and a
+        pathological duplicate could collapse there.
+        """
         nmap = mint_node_ids(tree)
         entities = index_entities(tree, nmap, module=module, path=path)
+        callables = [e for e in entities if e.kind in ("function", "method")]
 
         project_taints: dict[str, TaintState] = {}
         triggers: list[RustTriggerContext] = []
-        for entity in entities:
+        for entity in callables:
+            # Phase 1b: the index emits the full ten-kind surface; the taint path
+            # judges CALLABLES only (a module/struct/const has no body to seed or
+            # walk — feeding one to taint_for/dataflow would be a category error).
             try:
                 seed = self._provider.taint_for(entity.node)
             except ValueError:
@@ -150,17 +170,34 @@ class RustAnalyzer:
             if body is None:
                 continue
             for trig in analyze_command_dataflow(body, nmap):
-                triggers.append(RustTriggerContext(trigger=trig, qualname=entity.qualname, tier=tier, path=path))
+                triggers.append(
+                    RustTriggerContext(
+                        trigger=trig,
+                        qualname=entity.qualname,
+                        tier=tier,
+                        path=path,
+                        # The entity's OWN anchors — the rules fold trigger positions into
+                        # the fingerprint entity-relative (wlfp2 move-stability), so the
+                        # containing fn's line/NodeId travel with each trigger.
+                        entity_line_start=entity.location.line_start or 0,
+                        entity_node_id=entity.node_id,
+                    )
+                )
 
         context = RustAnalysisContext(
             triggers=tuple(triggers),
             project_taints=project_taints,
-            entities={e.qualname: e for e in entities},
+            # Keyed by the kind-disambiguated FEDERATION id (`rust:{kind}:{qualname}`,
+            # semantic `method` mapped to id-kind `function` by entity_id itself) — a
+            # qualname-only key would silently drop one of `fn S` / `struct S`, whose
+            # qualnames legitimately collide (the per-kind twin counter never suffixes
+            # ACROSS kinds; the id's kind segment is what separates them).
+            entities={q.entity_id(e.kind, e.qualname): e for e in entities},
         )
         findings: list[Finding] = []
         for rule in self._rules:
             findings.extend(rule.check(context))
-        return findings, context
+        return findings, context, len(callables)
 
 
 def _relpath(file: Path, resolved_root: Path) -> str:
@@ -170,19 +207,59 @@ def _relpath(file: Path, resolved_root: Path) -> str:
     return resolved.as_posix()
 
 
-def _module_for(file: Path, resolved_root: Path) -> str:
-    """The slice-1 module route: ``crate=root.name``, ``src_root=root`` (no ``src/`` strip).
+def _module_for(file: Path, resolved_root: Path, roots: CrateRoots) -> str:
+    """The SP2 module route. Three file classes:
 
-    Deterministic and stable per function — all slice-1 needs (``provisional_identity``
-    disclaims qualname/baseline stability). Cargo-aware crate/route derivation is SP2.
+    1. **In-src** (under a crate root's ``src/``): the ADR-049 oracle route —
+       ``rust_module_route(crate=<real Cargo.toml name>, src_root=<root>/src, file)``.
+       Conformance-bearing: byte-identical to loomweave's emission for the same file.
+    2. **Under a crate root but OUTSIDE its src/** (``tests/``, ``benches/``,
+       ``build.rs``, ...): ``{crate}.#out.{<relpath segments from the crate dir,
+       '.rs' stripped, ALL stems literal — no main/lib/mod collapsing>}``. Loomweave's
+       ``emittable_scope`` emits NOTHING for these files, so this qualname carries no
+       cross-tool conformance claim; the reserved ``#out`` segment is structurally
+       impossible in loomweave's locator grammar (``#`` appears only inside
+       ``impl#<...>`` discriminators), so a class-2 route can never collide with a
+       class-1/loomweave locator (e.g. ``<crate>/tests/integration.rs`` vs
+       ``<crate>/src/tests/integration.rs`` -> ``rust_app.#out.tests.integration``
+       vs ``rust_app.tests.integration``). Wardline scans these files anyway —
+       coverage is never narrowed to the entity surface.
+    3. **Under no crate root** (a bare no-Cargo tree): the crate segment is the
+       CONSTANT ``"crate"`` (cargo forbids the keyword ``crate`` as a package name,
+       so it cannot collide with a class-1 crate) — route =
+       ``crate.#out.{<relpath segments from the scan root, stems literal>}``.
+       Relpath-pure and scan-root-name-INDEPENDENT: renaming the scan-root
+       directory does not rekey fingerprints (e.g. ``bin/app.rs`` ->
+       ``crate.#out.bin.app`` whatever the root is called). Same
+       no-conformance-claim disclaimer as class 2.
     """
     resolved = file.resolve()
-    crate = resolved_root.name or "crate"
+    crate_dir = roots.crate_dir_for(resolved)
+    crate_name = roots.crate_name_for(resolved)
+    if crate_dir is not None and crate_name is not None:
+        src_root = crate_dir / "src"
+        if resolved.is_relative_to(src_root):
+            return q.rust_module_route(crate=crate_name, src_root=str(src_root), file=str(resolved))
+        return _out_route(crate_name, crate_dir, resolved)  # class 2
     try:
-        return q.rust_module_route(crate=crate, src_root=str(resolved_root), file=str(resolved))
+        return _out_route("crate", resolved_root, resolved)  # class 3
     except ValueError:
         # file outside root (should not happen — discover confines to root); degrade to crate.
-        return crate
+        return "crate"
+
+
+def _out_route(crate: str, base: Path, file: Path) -> str:
+    """The class-2/3 non-conformance route: ``{crate}.#out.{relpath stems}``.
+
+    Mechanical and relpath-pure: every path segment from ``base`` contributes its
+    LITERAL stem (only the final ``.rs`` is stripped — ``main``/``lib``/``mod`` are
+    NOT collapsed, unlike the ADR-049 in-src route, because there is no module tree
+    to mirror out here and literal stems keep distinct files distinct). The ``#out``
+    segment brands the route as outside loomweave's emittable scope.
+    """
+    rel = file.relative_to(base)
+    segments = [*rel.parts[:-1], file.stem]
+    return ".".join([crate, "#out", *segments])
 
 
 def _parse_error_finding(relpath: str, detail: str) -> Finding:

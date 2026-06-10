@@ -48,7 +48,9 @@ def test_live_scan_rust_corpus_trips_gate_and_emits_findings(tmp_path) -> None:
     proc = _scan([str(work), "--lang", "rust", "--fail-on", "ERROR", "--output", str(out)])
 
     assert proc.returncode == 1, proc.stderr  # gate tripped on the RS-WL-108 ERRORs
-    assert "preview" in (proc.stdout + proc.stderr).lower()
+    # The graduated posture banner (the old "(preview)" banner is gone): coverage is
+    # the command-injection slice; severity-override gap still surfaced.
+    assert "command-injection slice" in (proc.stdout + proc.stderr)
     rule_ids = [json.loads(line)["rule_id"] for line in out.read_text().splitlines() if line.strip()]
     assert rule_ids.count("RS-WL-108") == 6
     assert rule_ids.count("RS-WL-112") == 3

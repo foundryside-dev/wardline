@@ -16,9 +16,11 @@ self-type-args amendment (ADR-049 §2), in the self-type prefix (``impl Foo<std:
 faithful in *rendering* but lacks that validate-and-degrade gate, so it currently emits a
 ``:``-bearing locator. The correct fix is an ADR-049 amendment defining a colon-free canonical
 form for path-typed generic args, adopted by both producers in lockstep — a Wardline-only
-normalization would itself diverge from the (still-unreleased) oracle. Low slice-1 blast radius
-(RS-WL-* findings are ``provisional_identity`` and Wardline emits no federation entity yet).
-Tracked: see the ``rust-bug-hunt-2026-06-09`` reserved-colon issue.
+normalization would itself diverge from the (still-unreleased) oracle. The frozen Rust
+identity corpus (``tests/golden/identity/rust/``) deliberately contains no path-typed
+generic args, so graduation does not pre-empt the pending cross-tool decision.
+Tracked: see the ``rust-bug-hunt-2026-06-09`` reserved-colon issue and the 2026-06-10
+ADR-049 amendment-request letter.
 
 KNOWN GAP (const-generic-arg spacing): a multi-token *const* generic arg (``Foo<{N + 1}>``,
 ``Foo<-1>``) is rendered by the oracle via ``to_token_stream().to_string()`` — proc-macro2
@@ -43,7 +45,11 @@ if TYPE_CHECKING:
     from tree_sitter import Node
 
 __all__ = [
+    "RUST_ONTOLOGY_VERSION",
+    "RUST_PLUGIN_ID",
+    "cfg_discriminant",
     "cfg_predicate_of",
+    "entity_id",
     "impl_type_param_names",
     "normalize_cfg_predicate",
     "render_positional_generics",
@@ -53,6 +59,33 @@ __all__ = [
 ]
 
 _ROOT_STEMS = frozenset({"lib", "main", "mod"})
+
+# The ADR-049 producer identity (mirrors loomweave plugin.toml: `plugin_id = "rust"`,
+# `ontology_version = "0.4.0"`) — Wardline mints the SAME entity ids as the oracle.
+RUST_PLUGIN_ID = "rust"
+RUST_ONTOLOGY_VERSION = "0.4.0"
+
+# The ten ADR-049 id-kinds (plugin.toml `entity_kinds`). Wardline's semantic `method`
+# is NOT an id-kind — `entity_id` maps it to `function` itself.
+_ID_KINDS = frozenset(
+    {"module", "struct", "function", "enum", "trait", "type_alias", "const", "static", "macro", "impl"}
+)
+
+
+def entity_id(kind: str, qualname: str) -> str:
+    """The federation entity id ``{plugin}:{kind}:{qualname}`` for an emitted entity.
+
+    Wardline's semantic ``method`` maps to the id-kind ``function`` HERE (callers pass
+    ``RustEntity.kind`` verbatim, never pre-mapping); any kind outside the ten-kind
+    ADR-049 set raises ``ValueError`` — mirroring loomweave's ``build_entity_id``
+    validation posture (reject, never silently coin a new kind).
+    """
+    if kind == "method":
+        kind = "function"
+    if kind not in _ID_KINDS:
+        msg = f"unknown Rust entity kind {kind!r} (not in the ADR-049 ten-kind set)"
+        raise ValueError(msg)
+    return f"{RUST_PLUGIN_ID}:{kind}:{qualname}"
 
 
 def rust_module_route(*, crate: str, src_root: str, file: str) -> str:
@@ -76,17 +109,23 @@ def normalize_cfg_predicate(text: str) -> str:
     """Canonicalise a ``cfg(...)`` predicate, mirroring loomweave ``qualname.rs``
     ``normalise_pred`` BYTE-FOR-BYTE (the @cfg discriminant is a parity surface).
 
-    ``text`` is the argument token-tree text incl. its parens, e.g. ``"(unix)"`` or
-    ``"(any(windows, unix))"``; the outer cfg-argument parens are stripped to the bare
-    predicate, then: all whitespace removed, and a single top-level ``any(...)``/
-    ``all(...)`` wrapper's args sorted by a **naive** ``split(',')`` (NOT paren-aware —
-    this is exactly the oracle's algorithm; deeper nesting is left as the deterministic
-    stripped string, even though that mangles, because the contract is byte-equality
-    with the oracle, not a "nicer" canonical form).
+    ``text`` is the RAW argument token-tree text, with or without its outer parens
+    (``"(unix)"`` / ``"unix"`` / ``"(any(windows, unix))"``); the outer cfg-argument
+    parens (if present) are stripped to the bare predicate, then — in the oracle's
+    exact order: all whitespace removed; every reserved entity-id char escaped
+    (``_escape_reserved``: ``%`` -> ``%25`` first, then ``:`` -> ``%3A`` — injective,
+    so ``feature="a:b"`` and a literal source ``feature="a%3Ab"`` stay distinct); and
+    a single top-level ``any(...)``/``all(...)`` wrapper's args sorted by a **naive**
+    ``split(',')`` (NOT paren-aware — this is exactly the oracle's algorithm; deeper
+    nesting is left as the deterministic stripped string, even though that mangles,
+    because the contract is byte-equality with the oracle, not a "nicer" canonical
+    form). The escape runs on the whole stripped predicate BEFORE the any()/all()
+    split, exactly as in ``normalise_pred``.
     """
     stripped = "".join(text.split())
     if stripped.startswith("(") and stripped.endswith(")"):
         stripped = stripped[1:-1]
+    stripped = _escape_reserved(stripped)
     for fn in ("any", "all"):
         prefix = fn + "("
         if stripped.startswith(prefix) and stripped.endswith(")"):
@@ -96,9 +135,48 @@ def normalize_cfg_predicate(text: str) -> str:
     return stripped
 
 
+def _escape_reserved(s: str) -> str:
+    """Escape every reserved entity-id char so a cfg predicate can never inject the
+    reserved ``:`` separator into a qualname (mirrors qualname.rs ``escape_reserved``).
+    Order matters for injectivity: the ``%`` introducer is encoded FIRST."""
+    return s.replace("%", "%25").replace(":", "%3A")
+
+
+def cfg_discriminant(predicates: Sequence[str]) -> str:
+    """Fold ALL of an item's RAW ``#[cfg(...)]`` predicates into the stable ``@cfg(...)``
+    discriminant suffix (mirrors qualname.rs ``cfg_discriminant`` BYTE-FOR-BYTE): each
+    predicate normalised+escaped exactly once (``normalize_cfg_predicate``), the set
+    sorted (order-independent — NOT source order), joined with ``&``. Folding every
+    predicate is what keeps stacked cfg-twins (``#[cfg(feature="a")] #[cfg(unix)]`` vs
+    ``#[cfg(feature="b")] #[cfg(unix)]``) distinct. Applied by ``index.py`` only on a
+    bare-path COLLISION, exactly like the oracle's extract.rs twin counter.
+
+    Raises ``ValueError`` on an empty input: ``@cfg()`` is never a meaningful
+    discriminant (the oracle's ``cfg_suffix`` guards the empty case BEFORE calling
+    ``cfg_discriminant``), and rendering it would silently collide every
+    "discriminated" twin onto one key — a caller bug, surfaced loudly."""
+    if not predicates:
+        msg = "cfg_discriminant() requires at least one raw #[cfg] predicate"
+        raise ValueError(msg)
+    return f"@cfg({'&'.join(sorted(normalize_cfg_predicate(p) for p in predicates))})"
+
+
 def cfg_predicate_of(attribute_item: Node) -> str | None:
-    """The normalised cfg predicate of an ``attribute_item`` node, or ``None`` if it is
-    not a ``#[cfg(...)]`` attribute. e.g. ``#[cfg(unix)]`` -> ``"unix"``.
+    """The RAW cfg predicate text of an ``attribute_item`` node (outer argument parens
+    included, source spacing intact — e.g. ``#[cfg(feature = "a")]`` ->
+    ``'(feature = "a")'``), or ``None`` if it is not a ``#[cfg(...)]`` attribute.
+
+    Deliberately UN-normalised, mirroring extract.rs ``cfg_predicates`` (raw token
+    text): collection is raw, and ``cfg_discriminant`` is the single place predicates
+    are normalised + reserved-char-escaped — normalising here too would double-escape
+    (``a:b`` -> ``a%253Ab``).
+
+    The ONE exception to "raw source span": comment nodes inside the predicate
+    (``#[cfg(any(unix, /* why */ windows))]``) are excised — the oracle's predicate
+    is ``list.tokens.to_string()`` and proc-macro2 token streams carry no comments,
+    so comment bytes were never part of the oracle's raw text either (corpus row
+    ``cfg_predicate_internal_comment``). Everything else (parens, spacing, unescaped
+    reserved chars) is kept verbatim.
     """
     if not attribute_item.named_children:
         return None
@@ -111,7 +189,37 @@ def cfg_predicate_of(attribute_item: Node) -> str | None:
     args = attribute.child_by_field_name("arguments")
     if args is None or args.text is None:
         return None
-    return normalize_cfg_predicate(args.text.decode("utf-8"))
+    return _text_excluding_comments(args)
+
+
+# tree-sitter comment node types — `///` doc comments parse as line_comment too.
+_COMMENT_TYPES = frozenset({"line_comment", "block_comment"})
+
+
+def _text_excluding_comments(node: Node) -> str:
+    """``node``'s raw source text with every comment node's byte span excised
+    (the comment's SURROUNDING whitespace survives — ``normalize_cfg_predicate``
+    strips all whitespace downstream, so only the comment bytes themselves matter)."""
+    raw = node.text or b""
+    base = node.start_byte
+    spans: list[tuple[int, int]] = []
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        if current.type in _COMMENT_TYPES:
+            spans.append((current.start_byte - base, current.end_byte - base))
+            continue
+        stack.extend(current.children)
+    if not spans:
+        return raw.decode("utf-8")
+    spans.sort()
+    kept = bytearray()
+    pos = 0
+    for start, end in spans:
+        kept += raw[pos:start]
+        pos = end
+    kept += raw[pos:]
+    return kept.decode("utf-8")
 
 
 # Generic args that are NOT part of the locator key (qualname.rs trait_generic_args /

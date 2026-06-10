@@ -116,10 +116,10 @@ def test_rekey_policy_config_rule_id_matches_scanner() -> None:
     assert _POLICY_CONFIG_RULE_ID == SCANNER_PCID
 
 
-def test_rs_wl_excluded_from_migration_pending_p5() -> None:
-    # P5-REVISIT (named decision, not an accident): RS-WL-* (Rust) DEFECTs never appear on
-    # rc4 (the plugin is in a worktree), so they are excluded from the migration population.
-    # When the worktree rebases, decide whether RS-WL DEFECTs enter the stores and migrate.
+def test_rs_wl_included_in_the_migration_population() -> None:
+    # P5-REVISIT decided 2026-06-10 (identity keystone): Rust identity graduated —
+    # RS-WL-* DEFECTs are baseline-eligible, so a stored RS-WL verdict must migrate
+    # like any other DEFECT (the former exclusion became a live orphaning path).
     rs = Finding(
         rule_id="RS-WL-108",
         message="rust cmd injection",
@@ -128,4 +128,4 @@ def test_rs_wl_excluded_from_migration_pending_p5() -> None:
         location=Location(path="m.rs", line_start=4),
         fingerprint="r" * 64,
     )
-    assert not is_join_population(rs)
+    assert is_join_population(rs)

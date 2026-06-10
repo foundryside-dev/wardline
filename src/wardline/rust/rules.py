@@ -99,7 +99,11 @@ def _program_finding(tc: RustTriggerContext, severity: Severity) -> Finding:
         f"(constructed at line {trig.constructor_line}, run at line {trig.trigger_line}): "
         f"an attacker controls which executable runs (CWE-78)."
     )
-    return _finding(RustProgramInjectionRule.rule_id, tc, severity, taint_path, message)
+    # Fingerprint discriminator (NOT the display path): source-derived + entity-relative
+    # only (wlfp2 — see _fp_discriminant). The constructor's relative line is folded so
+    # two stepwise builders terminating on one line stay distinct by construction site.
+    fp_disc = f"Command::new(program)@L+{trig.constructor_line - tc.entity_line_start}"
+    return _finding(RustProgramInjectionRule.rule_id, tc, severity, taint_path, fp_disc, message)
 
 
 def _shell_finding(tc: RustTriggerContext, severity: Severity, worst: TaintState) -> Finding:
@@ -110,10 +114,40 @@ def _shell_finding(tc: RustTriggerContext, severity: Severity, worst: TaintState
         f"('{trig.program_literal} -c ...', run at line {trig.trigger_line}): "
         f"an attacker can inject shell syntax (CWE-78)."
     )
-    return _finding(RustShellInjectionRule.rule_id, tc, severity, taint_path, message)
+    # The program literal is a source token (the spelling as written), so it is a legal
+    # wlfp2 discriminator component; the resolved `worst` tier is NOT (display-only).
+    fp_disc = f"arg->'{trig.program_literal} -c'"
+    return _finding(RustShellInjectionRule.rule_id, tc, severity, taint_path, fp_disc, message)
 
 
-def _finding(rule_id: str, tc: RustTriggerContext, severity: Severity, taint_path: str, message: str) -> Finding:
+def _fp_discriminant(tc: RustTriggerContext, fp_disc: str) -> str:
+    """The wlfp2 ``taint_path`` fingerprint component for one trigger.
+
+    Every folded position is ENTITY-RELATIVE (wlfp2 move-stability, the
+    rust-sp2-2026-06-10 keystone rekey — see core/finding.py:170): the trigger line
+    folds as ``line - entity_line_start`` and the trigger NodeId as
+    ``trigger_node_id - entity_node_id``. Both anchors are the containing fn's own
+    (its first line, its pre-order index), so an edit ABOVE the entity — a comment
+    at the top of the file, a sibling fn inserted above — shifts absolute lines and
+    pre-order indices in lockstep and leaves both deltas invariant. An edit INSIDE
+    the fn above the trigger moves the deltas and rekeys (accepted: that is the
+    same entity-relative limitation the Python sink rules carry).
+
+    The relative-NodeId fold is the SOLE same-line discriminant: two DISTINCT
+    triggers on one physical line (identical rule/path/qualname/relative-line) get
+    distinct fingerprints — the no-collision invariant. Resolved taint tiers never
+    appear here (they drift across builds: weft-4a9d0f863c); the human-readable
+    ``properties["taint_path"]`` keeps the absolute-line display form.
+    """
+    trig = tc.trigger
+    rel_line = trig.trigger_line - tc.entity_line_start
+    rel_node = int(trig.trigger_node_id) - int(tc.entity_node_id)
+    return f"{fp_disc}->exec@L+{rel_line}@node+{rel_node}"
+
+
+def _finding(
+    rule_id: str, tc: RustTriggerContext, severity: Severity, taint_path: str, fp_disc: str, message: str
+) -> Finding:
     trig = tc.trigger
     return Finding(
         rule_id=rule_id,
@@ -125,19 +159,12 @@ def _finding(rule_id: str, tc: RustTriggerContext, severity: Severity, taint_pat
             rule_id=rule_id,
             path=tc.path,
             qualname=tc.qualname,
-            # Fold the trigger's NodeId so two DISTINCT commands on the SAME line (identical
-            # taint_path) get distinct fingerprints — the no-collision invariant. line_start
-            # was dropped from the fingerprint by the move-stability rekey (wlfp2), so the
-            # NodeId fold is now the SOLE same-line discriminant. The NodeId is the
-            # reproducible pre-order index, so this stays deterministic across runs. The
-            # stored properties["taint_path"] keeps the clean, human-readable form.
-            taint_path=f"{taint_path}@node{trig.trigger_node_id}",
+            taint_path=_fp_discriminant(tc, fp_disc),
         ),
         qualname=tc.qualname,
         properties={
             "taint_path": taint_path,
             "constructor_line": trig.constructor_line,
             "trigger_node_id": int(trig.trigger_node_id),
-            "provisional_identity": True,  # RS-WL-* are baseline-ineligible until SP2 (spec §3.6)
         },
     )
