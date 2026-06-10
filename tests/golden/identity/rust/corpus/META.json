@@ -1,0 +1,5 @@
+{
+  "corpus_version": 1,
+  "fingerprint_scheme": "wlfp2",
+  "reason": "initial freeze (rust-sp2-2026-06-10 Task 6): SP2 completion gate — crate-prefixed RS-WL-* identity over the vendored rust-app crate"
+}

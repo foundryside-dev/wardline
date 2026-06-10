@@ -1,0 +1,254 @@
+{
+  "edges": [
+    {
+      "confidence": "resolved",
+      "from_id": "rust:impl:rust_app.cmd.runner.Runner.impl[Describe]",
+      "kind": "implements",
+      "source_byte_end": 804,
+      "source_byte_start": 796,
+      "to_id": "rust:trait:rust_app.Describe"
+    },
+    {
+      "confidence": "resolved",
+      "from_id": "rust:module:rust_app",
+      "kind": "imports",
+      "source_byte_end": 203,
+      "source_byte_start": 172,
+      "to_id": "rust:struct:rust_app.cmd.runner.Runner"
+    },
+    {
+      "confidence": "resolved",
+      "from_id": "rust:module:rust_app.cmd.runner",
+      "kind": "imports",
+      "source_byte_end": 393,
+      "source_byte_start": 373,
+      "to_id": "rust:trait:rust_app.Describe"
+    }
+  ],
+  "entities": [
+    {
+      "kind": "module",
+      "location": {
+        "col_end": 0,
+        "col_start": 0,
+        "line_end": 4,
+        "line_start": 1,
+        "path": "src/cmd/mod.rs"
+      },
+      "parent": null,
+      "qualname": "rust_app.cmd"
+    },
+    {
+      "kind": "module",
+      "location": {
+        "col_end": 0,
+        "col_start": 0,
+        "line_end": 46,
+        "line_start": 1,
+        "path": "src/cmd/runner.rs"
+      },
+      "parent": null,
+      "qualname": "rust_app.cmd.runner"
+    },
+    {
+      "kind": "const",
+      "location": {
+        "col_end": 41,
+        "col_start": 0,
+        "line_end": 12,
+        "line_start": 12,
+        "path": "src/cmd/runner.rs"
+      },
+      "parent": "rust_app.cmd.runner",
+      "qualname": "rust_app.cmd.runner.DEFAULT_TIMEOUT_SECS"
+    },
+    {
+      "kind": "enum",
+      "location": {
+        "col_end": 1,
+        "col_start": 0,
+        "line_end": 17,
+        "line_start": 14,
+        "path": "src/cmd/runner.rs"
+      },
+      "parent": "rust_app.cmd.runner",
+      "qualname": "rust_app.cmd.runner.Mode"
+    },
+    {
+      "kind": "struct",
+      "location": {
+        "col_end": 18,
+        "col_start": 0,
+        "line_end": 19,
+        "line_start": 19,
+        "path": "src/cmd/runner.rs"
+      },
+      "parent": "rust_app.cmd.runner",
+      "qualname": "rust_app.cmd.runner.Runner"
+    },
+    {
+      "kind": "impl",
+      "location": {
+        "col_end": 1,
+        "col_start": 0,
+        "line_end": 29,
+        "line_start": 21,
+        "path": "src/cmd/runner.rs"
+      },
+      "parent": "rust_app.cmd.runner",
+      "qualname": "rust_app.cmd.runner.Runner.impl#<>"
+    },
+    {
+      "kind": "function",
+      "location": {
+        "col_end": 5,
+        "col_start": 4,
+        "line_end": 28,
+        "line_start": 23,
+        "path": "src/cmd/runner.rs"
+      },
+      "parent": "rust_app.cmd.runner.Runner.impl#<>",
+      "qualname": "rust_app.cmd.runner.Runner.impl#<>.launch"
+    },
+    {
+      "kind": "impl",
+      "location": {
+        "col_end": 1,
+        "col_start": 0,
+        "line_end": 35,
+        "line_start": 31,
+        "path": "src/cmd/runner.rs"
+      },
+      "parent": "rust_app.cmd.runner",
+      "qualname": "rust_app.cmd.runner.Runner.impl[Describe]"
+    },
+    {
+      "kind": "function",
+      "location": {
+        "col_end": 5,
+        "col_start": 4,
+        "line_end": 34,
+        "line_start": 32,
+        "path": "src/cmd/runner.rs"
+      },
+      "parent": "rust_app.cmd.runner.Runner.impl[Describe]",
+      "qualname": "rust_app.cmd.runner.Runner.impl[Describe].describe"
+    },
+    {
+      "kind": "function",
+      "location": {
+        "col_end": 1,
+        "col_start": 0,
+        "line_end": 40,
+        "line_start": 38,
+        "path": "src/cmd/runner.rs"
+      },
+      "parent": "rust_app.cmd.runner",
+      "qualname": "rust_app.cmd.runner.shell_name@cfg(unix)"
+    },
+    {
+      "kind": "function",
+      "location": {
+        "col_end": 1,
+        "col_start": 0,
+        "line_end": 45,
+        "line_start": 43,
+        "path": "src/cmd/runner.rs"
+      },
+      "parent": "rust_app.cmd.runner",
+      "qualname": "rust_app.cmd.runner.shell_name@cfg(windows)"
+    },
+    {
+      "kind": "module",
+      "location": {
+        "col_end": 0,
+        "col_start": 0,
+        "line_end": 22,
+        "line_start": 1,
+        "path": "src/main.rs"
+      },
+      "parent": null,
+      "qualname": "rust_app"
+    },
+    {
+      "kind": "trait",
+      "location": {
+        "col_end": 1,
+        "col_start": 0,
+        "line_end": 12,
+        "line_start": 10,
+        "path": "src/main.rs"
+      },
+      "parent": "rust_app",
+      "qualname": "rust_app.Describe"
+    },
+    {
+      "kind": "function",
+      "location": {
+        "col_end": 1,
+        "col_start": 0,
+        "line_end": 21,
+        "line_start": 15,
+        "path": "src/main.rs"
+      },
+      "parent": "rust_app",
+      "qualname": "rust_app.main"
+    }
+  ],
+  "findings": [
+    {
+      "confidence": null,
+      "fingerprint": "8eb7f8775b3756ecb5eb5047ee29433a282f169aef4caecb493596e238f167fa",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": 27,
+        "line_start": 27,
+        "path": "src/cmd/runner.rs"
+      },
+      "maturity": "stable",
+      "message": "Untrusted data selects the program executed by Command::new (constructed at line 26, run at line 27): an attacker controls which executable runs (CWE-78).",
+      "properties": {
+        "constructor_line": 26,
+        "provisional_identity": true,
+        "taint_path": "EXTERNAL_RAW->Command::new(program)@L26->exec@L27",
+        "trigger_node_id": 146
+      },
+      "qualname": "rust_app.cmd.runner.Runner.impl#<>.launch",
+      "related_entities": [],
+      "rule_id": "RS-WL-108",
+      "severity": "ERROR",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "b34c868714b59c4aa6be57cbef8d1e29662ba853d92dd92cd9e87067e6ac2239",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": 18,
+        "line_start": 18,
+        "path": "src/main.rs"
+      },
+      "maturity": "stable",
+      "message": "Untrusted data reaches a shell command line ('sh -c ...', run at line 18): an attacker can inject shell syntax (CWE-78).",
+      "properties": {
+        "constructor_line": 18,
+        "provisional_identity": true,
+        "taint_path": "EXTERNAL_RAW->arg->'sh -c'->exec@L18",
+        "trigger_node_id": 106
+      },
+      "qualname": "rust_app.main",
+      "related_entities": [],
+      "rule_id": "RS-WL-112",
+      "severity": "WARN",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    }
+  ]
+}
