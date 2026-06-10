@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING
 from wardline.core.taints import _PROVENANCE_CLASH, TRUST_RANK, TaintState, combine
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator
 
 # Serialisation sinks — calls that cross the representation boundary. Their
 # output sheds validation provenance (raw bytes/str), so → UNKNOWN_RAW. This is
@@ -1691,7 +1691,7 @@ def compute_return_callee(
 
 
 def _assignment_callee(
-    nodes: list[ast.AST],
+    nodes: Iterable[ast.AST],
     name: str,
     worst: TaintState,
     function_taint: TaintState,
@@ -1724,9 +1724,7 @@ def _assignment_callee(
                 and _resolve_expr(node.value, function_taint, taint_map, var_taints) == worst
             ):
                 result = callee
-        nested = _assignment_callee(
-            list(ast.iter_child_nodes(node)), name, worst, function_taint, taint_map, var_taints
-        )
+        nested = _assignment_callee(ast.iter_child_nodes(node), name, worst, function_taint, taint_map, var_taints)
         if nested is not None:
             result = nested
     return result
@@ -1743,7 +1741,7 @@ def _return_callee(node: ast.expr) -> str | None:
 
 
 def _collect_return_paths(
-    nodes: list[ast.AST],
+    nodes: Iterable[ast.AST],
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
@@ -1771,4 +1769,4 @@ def _collect_return_paths(
         if isinstance(node, (ast.Return, ast.Yield, ast.YieldFrom)) and node.value is not None:
             taint = _resolve_expr(node.value, function_taint, taint_map, var_taints)
             out.append((taint, _return_callee(node.value), node.value))
-        _collect_return_paths(list(ast.iter_child_nodes(node)), function_taint, taint_map, var_taints, out)
+        _collect_return_paths(ast.iter_child_nodes(node), function_taint, taint_map, var_taints, out)
