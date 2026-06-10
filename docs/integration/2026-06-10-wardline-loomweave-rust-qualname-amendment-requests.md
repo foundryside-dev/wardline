@@ -4,7 +4,7 @@
 **To:** Loomweave maintainers (Rust plugin)
 **Date:** 2026-06-10
 **Re:** Two un-decided dialect gaps both producers share — (1) reserved-colon path-typed generic args, (2) const-generic-arg spacing — plus the record of the amend-3 corpus tail your `rc4` now carries.
-**Status:** **DRAFT — awaiting Wardline-owner sign-off before sending; proposal only, neither producer implements until ADR-049 is amended and corpus rows land.**
+**Status:** **SIGNED OFF — Wardline owner (john@foundryside.dev), 2026-06-10. ADR-049 amended same day (loomweave `rc4`, amendment 4: one shared `escape_reserved(strip_ws(arg))` pipeline for every concrete generic argument, type or const). Implementation + the three corpus rows land next sprint; both producers conform in lockstep once the rows exist (`wardline-be5ee9cc34`, const-spacing half of `wardline-e8f7c0508f`, blocker `wardline-e3e9e109ba`).**
 
 ---
 
