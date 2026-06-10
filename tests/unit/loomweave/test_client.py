@@ -125,3 +125,41 @@ def test_connection_error_is_soft():
             raise OSError("connection refused")
 
     assert _client(Boom()).batch_get(["a"]) is None
+
+
+def test_resolve_sends_batch_scoped_plugin_hint():
+    # ADR-036 plugin-aware resolution: the OPTIONAL batch-scoped hint rides the
+    # request verbatim (docs/integration/2026-06-11-wardline-resolve-plugin-hint-
+    # proposal.md). One hint per request — never per qualname.
+    t = FakeTransport([Response(status=200, body='{"resolved":{},"unresolved":["m.f"]}')])
+    _client(t).resolve(["m.f"], plugin="rust")
+    assert json.loads(t.calls[0][2])["plugin"] == "rust"
+
+
+def test_resolve_omits_plugin_field_when_unhinted():
+    # Omission is today's behavior FOREVER (the contract never fabricates a hint) —
+    # and an absent field is what keeps unhinted requests valid against any server
+    # version under deny_unknown_fields.
+    t = FakeTransport([Response(status=200, body='{"resolved":{},"unresolved":["m.f"]}')])
+    _client(t).resolve(["m.f"])
+    assert "plugin" not in json.loads(t.calls[0][2])
+
+
+def test_resolve_hinted_4xx_downgrades_chunk_to_unresolved():
+    # Fail-soft: an older Loomweave whose ResolveRequest is deny_unknown_fields 400s
+    # on the hint field — identity enrichment must degrade to unresolved, not crash
+    # the dossier/attach path.
+    t = FakeTransport([Response(status=400, body='{"error":"unknown field `plugin`"}')])
+    result = _client(t).resolve(["m.f", "m.g"], plugin="rust")
+    assert result is not None
+    assert result.resolved == {}
+    assert result.unresolved == ["m.f", "m.g"]
+
+
+def test_resolve_unhinted_4xx_stays_loud():
+    # An unhinted 4xx cannot be hint-field version skew — it is a real request bug
+    # and must stay diagnosable (the pre-existing INVALID_PATH pin, re-asserted
+    # against the hint-conditional soft band).
+    t = FakeTransport([Response(status=400, body='{"code":"INVALID_PATH"}')])
+    with pytest.raises(LoomweaveError, match="INVALID_PATH"):
+        _client(t).resolve(["m.f"])

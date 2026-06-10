@@ -191,14 +191,34 @@ class LoomweaveClient:
         # an empty envelope rather than raising (mirrors filigree_emit's defensiveness).
         return parsed if isinstance(parsed, dict) else {}
 
-    def resolve(self, qualnames: list[str]) -> ResolveResult | None:
+    def resolve(self, qualnames: list[str], *, plugin: str | None = None) -> ResolveResult | None:
+        """POST /api/wardline/resolve — qualname -> locator, batched.
+
+        ``plugin`` is the OPTIONAL batch-scoped producer hint (ADR-036 plugin-aware
+        resolution; shape agreed in docs/integration/2026-06-11-wardline-resolve-
+        plugin-hint-proposal.md): a CONSTRAINT, never a preference — resolution is
+        restricted to that plugin's namespace, so a hinted qualname owned only by
+        another plugin stays unresolved. Omitted = the unhinted cross-plugin behavior
+        (ambiguous degrades to unresolved server-side), legal forever.
+
+        Fail-soft posture: a 4xx on a HINTED request downgrades the chunk to
+        unresolved — an older Loomweave whose ``ResolveRequest`` is
+        ``deny_unknown_fields`` 400s on the hint field, and identity enrichment must
+        degrade, not crash. An UNHINTED 4xx stays loud (it cannot be a version skew on
+        this field — it is a real request bug, e.g. ``INVALID_PATH``, and silence
+        would hide it). Outage/5xx stays ``None`` ("unreachable", ``_send``)."""
         resolved: dict[str, str] = {}
         unresolved: list[str] = []
         for chunk in _chunks(qualnames, self._batch_max):
-            payload = {"project": self._project, "qualnames": list(chunk)}
+            payload: dict[str, Any] = {"project": self._project, "qualnames": list(chunk)}
+            if plugin is not None:
+                payload["plugin"] = plugin
             resp = self._send("POST", "/api/wardline/resolve", payload)
             if resp is None:
                 return None
+            if plugin is not None and 400 <= resp.status < 500:
+                unresolved.extend(str(q) for q in chunk)
+                continue
             data = self._require_ok(resp, "/api/wardline/resolve")
             r = data.get("resolved")
             if isinstance(r, dict):

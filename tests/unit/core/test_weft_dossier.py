@@ -47,7 +47,8 @@ class _FakeLoomweave:
             "sei": {"supported": self._sei_supported, "version": 1},
         }
 
-    def resolve(self, qualnames):
+    def resolve(self, qualnames, *, plugin=None):
+        self.plugin_hints = [*getattr(self, "plugin_hints", []), plugin]
         return ResolveResult(resolved={q: f"python:function:{q}" for q in qualnames}, unresolved=[])
 
     def resolve_identity(self, locator):

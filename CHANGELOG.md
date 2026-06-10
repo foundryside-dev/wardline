@@ -158,6 +158,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through cleanly to the legacy/off rungs (emit stays soft-fail) (weft-23574069a1).
 
 ### Changed
+- **Loomweave resolve client: ADR-036 plugin hint + hinted fail-soft.**
+  `LoomweaveClient.resolve()` accepts an optional batch-scoped `plugin` hint
+  (contract: `docs/integration/2026-06-11-wardline-resolve-plugin-hint-proposal.md`)
+  and threads it from every call site that knows the producer: attest boundary
+  enrichment and decorator coverage send `python` (Python-surface by
+  construction); the Filigree identity-attach path derives the producer from
+  the finding's rule family (`RS-WL-*` → `rust`), so a Rust finding now mints a
+  `rust:function:` locator and a `rust:function` entity association instead of
+  the previously hardcoded `python:function`. A 4xx on a *hinted* request
+  degrades fail-soft to `unresolved` (an older Loomweave under
+  `deny_unknown_fields` rejects the new field; identity enrichment must
+  degrade, not crash); an unhinted 4xx stays loud. User-supplied dossier
+  entities stay unhinted — the contract never fabricates a hint.
 - **Rust qualname dialect: ADR-049 Amendments 6–9 (Loomweave lockstep, one
   batched re-vendor covering 4–9).** Closes the four Sprint-4 gold-blocker
   collision families at the dialect level, mirroring the authoritative

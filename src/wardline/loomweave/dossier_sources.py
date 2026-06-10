@@ -33,7 +33,7 @@ class _LinkageClient(Protocol):
 
 
 class _ResolveClient(Protocol):
-    def resolve(self, qualnames: list[str]) -> ResolveResult | None: ...
+    def resolve(self, qualnames: list[str], *, plugin: str | None = None) -> ResolveResult | None: ...
 
 
 class _Resolver(Protocol):
@@ -79,14 +79,22 @@ class LoomweaveLinkageProvider:
         )
 
 
-def resolve_entity_binding(client: _ResolveClient, resolver: _Resolver, qualname: str) -> EntityBinding | None:
+def resolve_entity_binding(
+    client: _ResolveClient, resolver: _Resolver, qualname: str, *, plugin: str | None = None
+) -> EntityBinding | None:
     """Resolve a Wardline qualname to its opaque SEI :class:`EntityBinding`.
 
     Two hops, both via existing Track-3 surfaces: ``resolve`` maps the qualname to its
     Loomweave locator, then the ``SeiResolver`` maps the locator to its SEI binding (the
     identity axis). Returns None when the qualname cannot be resolved to a locator (the
-    caller degrades to a no-binding, honest-unavailable dossier — never a guessed key)."""
-    rr = client.resolve([qualname])
+    caller degrades to a no-binding, honest-unavailable dossier — never a guessed key).
+
+    ``plugin`` is the batch-scoped producer hint (ADR-036): pass it when the caller
+    KNOWS which frontend minted the qualname (attest boundaries and decorator coverage
+    are Python-surface; a finding's producer derives from its rule id); omit it when
+    the language is genuinely unknown (a user-supplied dossier entity) — the contract
+    never fabricates a hint."""
+    rr = client.resolve([qualname], plugin=plugin)
     locator = rr.resolved.get(qualname) if rr is not None else None
     if not locator:
         return None

@@ -249,8 +249,19 @@ def identity_attach_result_to_json(result: IdentityAttachResult) -> dict[str, An
     }
 
 
-def _locator_for_finding_qualname(qualname: str) -> str:
-    return f"python:function:{qualname}"
+def plugin_for_finding(finding: Any) -> str:
+    """The ADR-049 plugin id that minted ``finding`` — the resolve-hint discriminator
+    (ADR-036). Rust rules are the ``RS-WL-`` family; everything else with a qualname is
+    the Python frontend. Derived from the rule id (findings carry no ``lang`` field;
+    the rule family IS the producer)."""
+    rule_id = getattr(finding, "rule_id", "") or ""
+    return "rust" if rule_id.startswith("RS-WL-") else "python"
+
+
+def _locator_for_finding_qualname(qualname: str, plugin: str) -> str:
+    # Both frontends' callable findings carry function-kind qualnames (Wardline's
+    # semantic `method` maps to the id-kind `function` in both dialects).
+    return f"{plugin}:function:{qualname}"
 
 
 def _finding_for_fingerprint(fingerprint: str, root: Path, config_path: Path | None) -> Any | None:
@@ -288,6 +299,7 @@ def attach_loomweave_identity_for_finding(
         issue_id=issue_id,
         filer=filer,
         loomweave_client=loomweave_client,
+        plugin=plugin_for_finding(finding),
     )
 
 
@@ -297,12 +309,13 @@ def attach_loomweave_identity_for_qualname(
     issue_id: str | None,
     filer: FiligreeIssueFiler,
     loomweave_client: Any,
+    plugin: str = "python",
 ) -> IdentityAttachResult:
     if not issue_id:
         return IdentityAttachResult.not_attempted("no issue_id from Filigree promote")
     if loomweave_client is None:
         return IdentityAttachResult.not_attempted("no Loomweave URL configured")
-    locator = _locator_for_finding_qualname(qualname)
+    locator = _locator_for_finding_qualname(qualname, plugin)
     try:
         resolver = SeiResolver.detect(loomweave_client)
         binding = resolver.resolve_locator(locator)
@@ -314,25 +327,29 @@ def attach_loomweave_identity_for_qualname(
             issue_id=issue_id,
             entity_id=binding.sei,
             content_hash=binding.content_hash,
-            entity_kind="python:function",
+            entity_kind=f"{plugin}:function",
         )
 
-    legacy = _legacy_locator_binding(loomweave_client, qualname, fallback_locator=binding.locator or locator)
+    legacy = _legacy_locator_binding(
+        loomweave_client, qualname, fallback_locator=binding.locator or locator, plugin=plugin
+    )
     if legacy.entity_id and legacy.content_hash:
         return filer.attach_entity_association(
             issue_id=issue_id,
             entity_id=legacy.entity_id,
             content_hash=legacy.content_hash,
-            entity_kind="python:function",
+            entity_kind=f"{plugin}:function",
         )
     return legacy
 
 
-def _legacy_locator_binding(loomweave_client: Any, qualname: str, *, fallback_locator: str) -> IdentityAttachResult:
+def _legacy_locator_binding(
+    loomweave_client: Any, qualname: str, *, fallback_locator: str, plugin: str = "python"
+) -> IdentityAttachResult:
     entity_id: str | None = fallback_locator
     content_hash: str | None = None
     try:
-        resolved = loomweave_client.resolve([qualname])
+        resolved = loomweave_client.resolve([qualname], plugin=plugin)
     except Exception as exc:
         return IdentityAttachResult.skipped(
             f"Loomweave legacy locator resolve failed: {exc}",

@@ -94,7 +94,7 @@ def test_cli_dossier_with_loomweave_url_degrades_soft(tmp_path: Path, monkeypatc
         def capabilities(self):
             return None
 
-        def resolve(self, qualnames):
+        def resolve(self, qualnames, *, plugin=None):
             return None
 
     monkeypatch.setattr("wardline.loomweave.client.LoomweaveClient", _FakeClient)

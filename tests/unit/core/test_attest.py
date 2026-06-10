@@ -455,7 +455,8 @@ class _FakeLoomweave:
     def capabilities(self) -> dict[str, object]:
         return {"sei": {"supported": True, "version": 1}}
 
-    def resolve(self, qualnames: list[str]) -> ResolveResult:
+    def resolve(self, qualnames: list[str], *, plugin: str | None = None) -> ResolveResult:
+        self.plugin_hints = [*getattr(self, "plugin_hints", []), plugin]
         resolved = {q: f"python:function:{q}" for q in qualnames if q == self._hit}
         unresolved = [q for q in qualnames if q != self._hit]
         return ResolveResult(resolved=resolved, unresolved=unresolved)
@@ -476,10 +477,14 @@ class _RaisingLoomweave(_FakeLoomweave):
 
 def test_sei_keyed_bundle_fills_resolved_boundary_only(tmp_path: Path) -> None:
     tree = _annotated_tree(tmp_path)
-    bundle = build_attestation(tree, _KEY, loomweave_client=_FakeLoomweave(hit="m.leak"), today=_PINNED)
+    client = _FakeLoomweave(hit="m.leak")
+    bundle = build_attestation(tree, _KEY, loomweave_client=client, today=_PINNED)
 
     payload = bundle["payload"]
     assert payload["sei_source"] == "loomweave"
+    # Boundaries come from the Python AnalysisContext, so every resolve hop carries
+    # the ADR-036 plugin hint (constraint, never fabricated).
+    assert set(client.plugin_hints) == {"python"}
     by_qn = {b["qualname"]: b for b in payload["boundaries"]}
     assert by_qn["m.leak"]["sei"] == _SEI  # the one resolvable qualname is keyed
     assert by_qn["m.clean"]["sei"] is None  # unresolved → honestly None

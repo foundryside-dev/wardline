@@ -204,7 +204,8 @@ class DownLoomweave:
     def capabilities(self):
         return None
 
-    def resolve(self, qualnames):
+    def resolve(self, qualnames, *, plugin=None):
+        self.plugin_hints = [*getattr(self, "plugin_hints", []), plugin]
         return None
 
 
@@ -212,7 +213,8 @@ class LegacyLoomweave:
     def capabilities(self):
         return None
 
-    def resolve(self, qualnames):
+    def resolve(self, qualnames, *, plugin=None):
+        self.plugin_hints = [*getattr(self, "plugin_hints", []), plugin]
         return SimpleNamespace(resolved={qualnames[0]: "python:function:pkg.mod.leaky"}, unresolved=[])
 
     def get_taint_fact(self, qualname):
@@ -334,3 +336,62 @@ def test_attach_loomweave_identity_reports_association_failure(monkeypatch, tmp_
     assert res.attached is False
     assert res.entity_id == "loomweave:eid:abc"
     assert res.reason == "filigree association returned HTTP 500"
+
+
+class RustFakeFinding:
+    def __init__(self, qualname):
+        self.qualname = qualname
+        self.rule_id = "RS-WL-101"
+
+
+def test_plugin_for_finding_discriminates_by_rule_family():
+    from wardline.core.filigree_issue import plugin_for_finding
+
+    assert plugin_for_finding(RustFakeFinding("demo.m.f")) == "rust"
+    assert plugin_for_finding(FakeFinding("pkg.mod.leaky")) == "python"  # no rule_id attr -> python
+    assert plugin_for_finding(SimpleNamespace(rule_id="PY-WL-101")) == "python"
+
+
+def test_attach_threads_rust_plugin_through_locator_resolve_and_entity_kind(monkeypatch, tmp_path):
+    # ADR-036 plugin hint, end to end on the Wardline side: a Rust finding mints a
+    # rust: locator for the SEI hop, sends plugin="rust" on the legacy resolve hop,
+    # and stamps the association entity_kind as rust:function.
+    from wardline.core import filigree_issue as mod
+
+    monkeypatch.setattr(mod, "_finding_for_fingerprint", lambda fp, root, cfg: RustFakeFinding("demo.m.leaky"))
+
+    class RustLegacyLoomweave:
+        def __init__(self):
+            self.identity_locators = []
+            self.plugin_hints = []
+
+        def capabilities(self):
+            return None  # pre-SEI -> the legacy locator path
+
+        def resolve(self, qualnames, *, plugin=None):
+            self.plugin_hints.append(plugin)
+            return SimpleNamespace(resolved={qualnames[0]: "rust:function:demo.m.leaky"}, unresolved=[])
+
+        def resolve_identity(self, locator):
+            self.identity_locators.append(locator)
+            return None
+
+        def get_taint_fact(self, qualname):
+            return SimpleNamespace(current_content_hash="rust-hash")
+
+    client = RustLegacyLoomweave()
+    transport = RecordingTransport()
+    filer = FiligreeIssueFiler("http://f/api/weft/scan-results", transport=transport)
+
+    res = attach_loomweave_identity_for_finding(
+        fingerprint="fp1",
+        issue_id="wardline-1",
+        root=tmp_path,
+        filer=filer,
+        loomweave_client=client,
+    )
+
+    assert client.plugin_hints == ["rust"]
+    assert res.attached is True
+    assert transport.calls[0]["body"]["entity_id"] == "rust:function:demo.m.leaky"
+    assert transport.calls[0]["body"]["entity_kind"] == "rust:function"

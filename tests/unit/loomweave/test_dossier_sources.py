@@ -27,7 +27,8 @@ class _FakeClient:
     def get_callees(self, entity_id, *, limit=50):
         return self._callees
 
-    def resolve(self, qualnames):
+    def resolve(self, qualnames, *, plugin=None):
+        self.plugin_hints = [*getattr(self, "plugin_hints", []), plugin]
         from wardline.loomweave.client import ResolveResult
 
         resolved = {q: self._resolved[q] for q in qualnames if q in self._resolved}

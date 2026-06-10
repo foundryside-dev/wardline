@@ -13,6 +13,7 @@ from wardline.core.filigree_issue import (
     IdentityAttachResult,
     attach_loomweave_identity_for_qualname,
     identity_attach_result_to_json,
+    plugin_for_finding,
 )
 from wardline.core.finding import Finding, Kind, Severity, SuppressionState
 from wardline.core.run import gate_decision, run_scan
@@ -174,6 +175,7 @@ def scan_file_findings(
                         issue_id=file_result.issue_id,
                         filer=filigree_filer,
                         loomweave_client=loomweave_client,
+                        plugin=plugin_for_finding(finding),
                     )
                 else:
                     identity_result = IdentityAttachResult.skipped("finding has no qualname")

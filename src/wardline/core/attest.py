@@ -147,7 +147,9 @@ def _enrich_seis(boundaries: list[dict[str, Any]], loomweave_client: Any) -> str
         resolved_any = False
         for boundary in boundaries:
             try:
-                binding = resolve_entity_binding(loomweave_client, resolver, boundary["qualname"])
+                # Boundaries come from the Python AnalysisContext (declared_qualnames),
+                # so the producer is known — send the ADR-036 plugin hint.
+                binding = resolve_entity_binding(loomweave_client, resolver, boundary["qualname"], plugin="python")
             except Exception:  # noqa: BLE001 — per-boundary fail-soft, see docstring
                 continue
             if binding is not None and binding.sei:
