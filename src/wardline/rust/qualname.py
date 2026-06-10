@@ -5,30 +5,17 @@ it never parses Loomweave's locator. The vendored corpus
 (``tests/conformance/qualnames_rust.json``) is the byte-for-byte oracle. ``:`` is the
 reserved separator and ``[ ] # < > @ $`` are legal segments of the dialect.
 
-KNOWN GAP (path-typed generic args): a trait OR self-type concrete generic arg that is itself
-a ``::``-path renders a segment containing ``:`` — both in the trait fragment
-(``impl From<std::io::Error>`` -> ``...impl[From<std::io::Error>].from``) and, since the
-self-type-args amendment (ADR-049 §2), in the self-type prefix (``impl Foo<std::io::Error>``
--> ``...Foo<std::io::Error>.impl#<>...``). Loomweave renders the BYTE-IDENTICAL segment (its
-``trait_generic_args`` / ``self_ty_locator`` keep ``::`` via ``strip_ws`` — the cfg-only
-``escape_reserved`` does NOT cover generic args), then REJECTS the assembled locator at
-``entity_id`` construction (``validate_no_colon``) and degrades the whole file. Wardline is
-faithful in *rendering* but lacks that validate-and-degrade gate, so it currently emits a
-``:``-bearing locator. The correct fix is an ADR-049 amendment defining a colon-free canonical
-form for path-typed generic args, adopted by both producers in lockstep — a Wardline-only
-normalization would itself diverge from the (still-unreleased) oracle. The frozen Rust
-identity corpus (``tests/golden/identity/rust/``) deliberately contains no path-typed
-generic args, so graduation does not pre-empt the pending cross-tool decision.
-Tracked: see the ``rust-bug-hunt-2026-06-09`` reserved-colon issue and the 2026-06-10
-ADR-049 amendment-request letter.
-
-KNOWN GAP (const-generic-arg spacing): a multi-token *const* generic arg (``Foo<{N + 1}>``,
-``Foo<-1>``) is rendered by the oracle via ``to_token_stream().to_string()`` — proc-macro2
-CANONICAL spacing (``{ N + 1 }``), NOT whitespace-stripped — whereas Wardline ``_strip_ws``-es
-every arg (``{N+1}``). Same impossibility class as the reserved-colon gap: matching would mean
-reimplementing proc-macro2 token spacing, so the right fix is a lockstep ADR-049 amendment
-(cleanest: the oracle ``strip_ws``-es const args too). Out-of-corpus, Tier-B; plain const args
-(``Foo<3>``, ``Foo<i32>``, a bare const-param ident) already match byte-for-byte.
+ADR-049 AMENDMENT 4 (2026-06-11, implemented): every CONCRETE generic arg — type or const,
+in both the trait fragment and the self-type prefix — renders through
+``escape_reserved(strip_ws(arg))``: whitespace-stripped first (the oracle now strips const
+args too, closing the proc-macro2-spacing gap), then the injective reserved-char escape
+(``%`` -> ``%25``, then ``:`` -> ``%3A``). ``impl From<std::io::Error> for Foo`` ->
+``Foo.impl[From<std%3A%3Aio%3A%3AError>]``; ``impl Foo<{ 1 + 2 }>`` -> ``Foo<{1+2}>.impl#<>``.
+The same escape covers the NON-``Type::Path`` self-type fallback (reference/tuple/slice/ptr:
+``impl Serializer for &mut fmt::Formatter`` -> ``&mutfmt%3A%3AFormatter``). The escape happens
+in the producer BEFORE the id is assembled — ``entity_id``'s ``:`` rejection stays strict.
+Corpus rows: ``path_typed_generic_arg_trait``/``_inherent``, ``const_generic_arg_spacing``,
+``reference_self_type_path_escape``.
 
 This module holds the pure string/CST-node renderers; ``index.py`` walks the tree and
 assembles full qualnames from them. tree-sitter types appear only under ``TYPE_CHECKING``
@@ -282,7 +269,10 @@ def render_self_type(type_node: Node, type_params: Sequence[str]) -> str:
         return f"{base}<{','.join(rendered)}>" if rendered else base
     if type_node.type in ("type_identifier", "scoped_type_identifier"):
         return _last_path_segment(type_node)
-    return _strip_ws(type_node)
+    # Non-Type::Path fallback (reference/tuple/slice/raw-pointer self types): may carry a
+    # ``::``-path (`&mut fmt::Formatter`), so it escapes like a concrete generic arg
+    # (ADR-049 Amendment 4 self-type-fallback completion). A `:`-free fallback is unchanged.
+    return _escape_reserved(_strip_ws(type_node))
 
 
 def _self_type_arg(arg_node: Node, type_params: Sequence[str]) -> str:
@@ -295,7 +285,7 @@ def _self_type_arg(arg_node: Node, type_params: Sequence[str]) -> str:
         name = _text(arg_node)
         if name in type_params:
             return f"${type_params.index(name)}"
-    return _strip_ws(arg_node)
+    return _escape_reserved(_strip_ws(arg_node))
 
 
 def render_trait_segment(trait_node: Node) -> str:
@@ -312,7 +302,12 @@ def render_trait_segment(trait_node: Node) -> str:
         args = (
             # Drop dropped-kinds AND empty-rendering args (a malformed `From<>` error-recovers
             # to a blank arg; valid Rust never yields one) -> bare trait name, no empty `<>`.
-            [s for c in targs.named_children if c.type not in _DROPPED_GENERIC_ARGS if (s := _strip_ws(c))]
+            [
+                _escape_reserved(s)
+                for c in targs.named_children
+                if c.type not in _DROPPED_GENERIC_ARGS
+                if (s := _strip_ws(c))
+            ]
             if targs is not None
             else []
         )

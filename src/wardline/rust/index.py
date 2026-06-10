@@ -172,6 +172,24 @@ def _walk_scope(
                 impl_segments[node.id] = seg
                 impl_twin_counts[seg] += 1
 
+    # Method-level cfg-twin counts (ADR-049 Amendment 5): keyed on the FINAL impl
+    # qualname (post impl-level cfg) + method name, counted across ALL merged blocks —
+    # so an impl-level cfg-twin (already split into distinct impl entities) gets no
+    # redundant method suffix, while methods merging across same-key blocks do.
+    final_impl_quals: dict[int, str] = {}
+    method_twin_counts: Counter[tuple[str, str]] = Counter()
+    for node, cfgs in items:
+        if node.type == "impl_item":
+            seg = impl_segments.get(node.id)
+            if seg is None:
+                continue
+            if cfgs and impl_twin_counts[seg] > 1:
+                seg += q.cfg_discriminant(cfgs)
+            final_qual = f"{module}.{seg}"
+            final_impl_quals[node.id] = final_qual
+            for method, _mcfgs in _impl_methods_with_cfgs(node):
+                method_twin_counts[(final_qual, _name(method))] += 1
+
     # First block with a given (cfg-augmented) impl qualname emits the ONE merged impl
     # entity; later same-key blocks only append methods (extract.rs `seen_impl_ids`).
     # The set is PER-INVOCATION (each nested scope gets a fresh one); that is sound
@@ -193,16 +211,13 @@ def _walk_scope(
             entities.append(_entity(nested, "module", node, nmap, path, parent=module))
             _walk_scope(body.children, nested, nmap, entities, path)
         elif node.type == "impl_item":
-            seg = impl_segments.get(node.id)
-            if seg is None:
+            impl_qualname = final_impl_quals.get(node.id)
+            if impl_qualname is None:
                 continue
-            if cfgs and impl_twin_counts[seg] > 1:
-                seg += q.cfg_discriminant(cfgs)
-            impl_qualname = f"{module}.{seg}"
             if impl_qualname not in seen_impl_quals:
                 seen_impl_quals.add(impl_qualname)
                 entities.append(_entity(impl_qualname, "impl", node, nmap, path, parent=module))
-            _emit_impl_methods(node, impl_qualname, nmap, entities, path)
+            _emit_impl_methods(node, impl_qualname, nmap, entities, path, method_twin_counts)
         else:
             kind = _LEAF_KINDS[node.type]
             name = _name(node)
@@ -241,19 +256,47 @@ def _impl_segment(impl_node: Node) -> str | None:
     return f"{self_type}.impl#<{q.render_positional_generics(impl_node)}>"
 
 
-def _emit_impl_methods(
-    impl_node: Node, impl_qualname: str, nmap: NodeIdMap, entities: list[RustEntity], path: str
-) -> None:
+def _impl_methods_with_cfgs(impl_node: Node) -> list[tuple[Node, list[str]]]:
+    """``(function_item, raw cfg predicates)`` pairs of an impl body, with the SAME
+    pending-cfg accumulation discipline as ``_walk_scope`` (comments transparent,
+    attributes accumulate, any other node resets)."""
     body = impl_node.child_by_field_name("body")
     if body is None:
-        return
-    for child in body.named_children:
+        return []
+    out: list[tuple[Node, list[str]]] = []
+    pending_cfgs: list[str] = []
+    for child in body.children:
+        if child.type in _COMMENT_TYPES:
+            continue
+        if child.type == "attribute_item":
+            pred = q.cfg_predicate_of(child)
+            if pred is not None:
+                pending_cfgs.append(pred)
+            continue
         if child.type == "function_item":
-            # Methods re-parent onto the impl ENTITY (module -> impl -> method), and the
-            # method qualname builds from the cfg-AUGMENTED impl qualname (extract.rs).
-            entities.append(
-                _entity(f"{impl_qualname}.{_name(child)}", "method", child, nmap, path, parent=impl_qualname)
-            )
+            out.append((child, pending_cfgs))
+        pending_cfgs = []
+    return out
+
+
+def _emit_impl_methods(
+    impl_node: Node,
+    impl_qualname: str,
+    nmap: NodeIdMap,
+    entities: list[RustEntity],
+    path: str,
+    method_twin_counts: Counter[tuple[str, str]],
+) -> None:
+    for child, mcfgs in _impl_methods_with_cfgs(impl_node):
+        # Methods re-parent onto the impl ENTITY (module -> impl -> method), and the
+        # method qualname builds from the cfg-AUGMENTED impl qualname (extract.rs).
+        # A cfg-gated TWIN method (same final impl qualname + name, counted across
+        # merged blocks) carries its own @cfg suffix (ADR-049 Amendment 5).
+        name = _name(child)
+        qualname = f"{impl_qualname}.{name}"
+        if mcfgs and method_twin_counts[(impl_qualname, name)] > 1:
+            qualname += q.cfg_discriminant(mcfgs)
+        entities.append(_entity(qualname, "method", child, nmap, path, parent=impl_qualname))
 
 
 def _name(node: Node) -> str:

@@ -100,7 +100,7 @@ _CORPUS: dict[str, Any] = json.loads(_CORPUS_PATH.read_text("utf-8"))
 # The git blob hash of the vendored corpus as committed upstream (loomweave rc4
 # @ cab95a1695a45f875933d8c4ac0e800e793c9305). Re-vendors update this constant in
 # the SAME commit as the new bytes — see the RE-VENDOR PROCEDURE in the header.
-UPSTREAM_BLOB_SHA = "ed436c825861ad2b9e313f9211f5a55583b80c7c"
+UPSTREAM_BLOB_SHA = "5f3a2fa52aa43ddbc7adbb4f84c9282ee1ca1cf8"
 
 _KNOWN_TIERS = {"slice-1", "sp2"}
 # The a209fc7 corpus carries the FULL ten-kind ADR-049 surface (leaf_item_kinds /
