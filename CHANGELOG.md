@@ -8,18 +8,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Rust support (preview).** A new `--lang rust` frontend (behind the
+- **Rust support.** A new `--lang rust` frontend (behind the
   `wardline[rust]` extra: tree-sitter, no base dependency) sweeps `*.rs` and flags
   command-injection trust-boundary defects — `RS-WL-108` (program injection, ERROR:
   untrusted data chooses the executable of `std::process::Command`) and `RS-WL-112`
   (shell injection, WARN: untrusted data reaches a `sh -c` command line). Trust is
   declared with a `/// @trusted(level=ASSURED|GUARDED)` doc-comment marker; analysis
   is default-clean and reuses the Python engine's taint lattice, severity modulation,
-  and finding/gate machinery. Findings carry **provisional identity** (baseline-
-  ineligible) and `weft.toml` severity overrides do not yet apply; a `.rs` file that
-  does not fully parse is surfaced as `WLN-ENGINE-PARSE-ERROR` and never half-analyzed.
-  The Python default path is byte-identical (identity oracle green). See the
-  [Rust support guide](docs/guides/rust-preview.md).
+  and finding/gate machinery. A `.rs` file that does not fully parse is surfaced as
+  `WLN-ENGINE-PARSE-ERROR` and never half-analyzed. The Python default path is
+  byte-identical (identity oracle green). Rule coverage is the command-injection
+  slice and `weft.toml` severity overrides do not yet apply to Rust findings. See
+  the [Rust support guide](docs/guides/rust-preview.md).
+- **Rust finding identity is graduated — RS-WL-* findings are baseline-eligible.**
+  The whole-tree SP2 pass reads the real crate name from `Cargo.toml`
+  (`[package].name`, `-`→`_`, two-branch crate-root registration mirroring the
+  Loomweave extractor, symlink-safe) and routes cross-file modules, so every
+  qualname/fingerprint carries its real crate prefix. Identity is frozen by a new
+  byte-exact golden corpus (`tests/golden/identity/rust/`, the SP2 completion
+  gate); the pre-SP2 `provisional_identity` plumbing (never-baseline-match /
+  never-baseline-capture) is removed — baseline, waivers, and judged verdicts now
+  apply to Rust findings exactly as for Python. (Pre-graduation RS-WL-*
+  fingerprints change once; they were never baseline-eligible, so no migration.)
+- **Rust frontend is a full ADR-049 producer (Loomweave Phase 1b).** The entity
+  surface grows from callables-only to the full ten-kind contract set —
+  `enum`/`trait`/`type_alias`/`const`/`static`/`macro` leaf entities, the `impl`
+  block as its own entity with `module → impl → method` containment, per-kind
+  `@cfg` twin discrimination (stacked `#[cfg]` attributes fold sorted-`&`-joined;
+  reserved chars escape `%`→`%25`, `:`→`%3A`; comments are token-stream-invisible)
+  — plus the two anchored edge kinds (`imports`, `implements`; resolved-or-dropped,
+  never `inferred`), under `plugin_id rust` / `ontology_version 0.4.0`. Conformance
+  against the Loomweave-hosted corpus graduates from the subset-consumer rule to
+  the full-set ordered byte-for-byte rule, with eight new oracle rows vendored
+  upstream this sprint and a corpus **drift alarm** (upstream blob byte-pin in the
+  default suite + an opt-in `loomweave_drift` live recheck against a sibling
+  checkout). The path-typed-generic-arg reserved-colon case and const-generic-arg
+  spacing remain a pending cross-tool ADR-049 decision (drafted amendment-request
+  letter in `docs/integration/`); the frozen identity corpus deliberately avoids
+  both shapes.
 - **Gate verdict is now explicit (no vacuous green).** `GateDecision` carries a
   `verdict` (`NOT_EVALUATED` / `PASSED` / `FAILED`) and a `would_trip_at` (the
   highest severity that would trip on the evaluated population, or null). A bare

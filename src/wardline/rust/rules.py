@@ -138,6 +138,5 @@ def _finding(rule_id: str, tc: RustTriggerContext, severity: Severity, taint_pat
             "taint_path": taint_path,
             "constructor_line": trig.constructor_line,
             "trigger_node_id": int(trig.trigger_node_id),
-            "provisional_identity": True,  # RS-WL-* are baseline-ineligible until SP2 (spec §3.6)
         },
     )

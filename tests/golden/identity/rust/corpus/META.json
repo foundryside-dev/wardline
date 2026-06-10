@@ -1,5 +1,5 @@
 {
-  "corpus_version": 1,
+  "corpus_version": 2,
   "fingerprint_scheme": "wlfp2",
-  "reason": "initial freeze (rust-sp2-2026-06-10 Task 6): SP2 completion gate — crate-prefixed RS-WL-* identity over the vendored rust-app crate"
+  "reason": "graduation (rust-sp2-2026-06-10 Task 7): drop provisional_identity property (rules.py no longer emits it; RS-WL-* baseline-eligible)"
 }

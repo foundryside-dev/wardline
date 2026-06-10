@@ -16,9 +16,11 @@ self-type-args amendment (ADR-049 §2), in the self-type prefix (``impl Foo<std:
 faithful in *rendering* but lacks that validate-and-degrade gate, so it currently emits a
 ``:``-bearing locator. The correct fix is an ADR-049 amendment defining a colon-free canonical
 form for path-typed generic args, adopted by both producers in lockstep — a Wardline-only
-normalization would itself diverge from the (still-unreleased) oracle. Low slice-1 blast radius
-(RS-WL-* findings are ``provisional_identity`` and Wardline emits no federation entity yet).
-Tracked: see the ``rust-bug-hunt-2026-06-09`` reserved-colon issue.
+normalization would itself diverge from the (still-unreleased) oracle. The frozen Rust
+identity corpus (``tests/golden/identity/rust/``) deliberately contains no path-typed
+generic args, so graduation does not pre-empt the pending cross-tool decision.
+Tracked: see the ``rust-bug-hunt-2026-06-09`` reserved-colon issue and the 2026-06-10
+ADR-049 amendment-request letter.
 
 KNOWN GAP (const-generic-arg spacing): a multi-token *const* generic arg (``Foo<{N + 1}>``,
 ``Foo<-1>``) is rendered by the oracle via ``to_token_stream().to_string()`` — proc-macro2

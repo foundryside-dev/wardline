@@ -23,7 +23,9 @@ _INPUTS = {
     "rustapp": _HERE / "fixtures" / "rustapp",
 }
 # 1: initial freeze (SP2 completion gate) — crate-prefixed RS-WL-* identity.
-CORPUS_VERSION = 1
+# 2: graduation — drop the provisional_identity property (rules.py no longer emits it;
+#    RS-WL-* baseline-eligible). Fingerprints unchanged (the property was never folded in).
+CORPUS_VERSION = 2
 
 
 def main() -> None:

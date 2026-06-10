@@ -211,7 +211,6 @@
       "message": "Untrusted data selects the program executed by Command::new (constructed at line 26, run at line 27): an attacker controls which executable runs (CWE-78).",
       "properties": {
         "constructor_line": 26,
-        "provisional_identity": true,
         "taint_path": "EXTERNAL_RAW->Command::new(program)@L26->exec@L27",
         "trigger_node_id": 146
       },
@@ -238,7 +237,6 @@
       "message": "Untrusted data reaches a shell command line ('sh -c ...', run at line 18): an attacker can inject shell syntax (CWE-78).",
       "properties": {
         "constructor_line": 18,
-        "provisional_identity": true,
         "taint_path": "EXTERNAL_RAW->arg->'sh -c'->exec@L18",
         "trigger_node_id": 106
       },

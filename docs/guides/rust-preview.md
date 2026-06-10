@@ -1,20 +1,23 @@
-# Rust support (preview)
+# Rust support
 
-Wardline ships a **preview** language frontend for Rust. Point it at a tree of
+Wardline ships a language frontend for Rust. Point it at a tree of
 `.rs` files and it flags command-injection trust-boundary defects — untrusted
 data reaching the program or shell command line of `std::process::Command`.
 
-!!! warning "Preview — provisional identity, narrow scope"
-    The Rust frontend is an early slice. Its findings (`RS-WL-108` / `RS-WL-112`)
-    carry **provisional identity**: their `qualname`/fingerprint is not yet stable
-    across releases. They are **baseline-ineligible** — and this is *enforced*, not
-    just advised: the engine never matches them against a committed
-    baseline/waiver/judged entry and never writes them into a generated baseline, so
-    a stale committed suppression can never silently clear one. (A `--new-since`
-    delta-scope still scopes them like any other defect; that scoping is computed per
-    run, never persisted.) `weft.toml` severity overrides do **not** apply to Rust
-    rules yet, and the frontend is **CLI-only** — the MCP `scan` tool analyzes
-    Python. Treat a Rust scan as a signal, not a contract.
+!!! note "Identity graduated — RS-WL-* findings are baseline-eligible"
+    Rust finding identity is **frozen**: qualnames are real crate-prefixed module
+    routes (`Cargo.toml`-aware, whole-tree) and fingerprints are stable across
+    releases, gated byte-for-byte by the frozen identity corpus in
+    `tests/golden/identity/rust/`. RS-WL-* findings participate fully in the
+    suppression machinery — they match committed baseline/waiver/judged entries
+    and are captured by `wardline baseline` like any Python finding.
+
+!!! warning "Scope — command-injection slice; no config severity overrides yet"
+    Rule coverage is the **command-injection slice** (`RS-WL-108` / `RS-WL-112`) —
+    a Rust scan says nothing about other defect families. `weft.toml` severity
+    overrides do **not** apply to Rust rules yet (they carry hardcoded base
+    severities), and the frontend is **CLI-only** — the MCP `scan` tool analyzes
+    Python.
 
 ## Running it
 
@@ -89,7 +92,7 @@ terminators.
 ## Known limitations (this slice)
 
 The frontend reports **provable** taint, not fail-closed unknowns. The following
-are **known false-negative families** — deliberately out of scope for the preview
+are **known false-negative families** — deliberately out of scope for this
 slice, documented so you do not mistake silence for safety:
 
 - **Iterator extraction of `args`/`vars`.** `env::args()`/`env::vars()` are in the
@@ -108,9 +111,10 @@ slice, documented so you do not mistake silence for safety:
 - **Closures and nested `fn`s.** A finding inside a closure or nested function
   attributes to the enclosing named function by line; the inner scope is not
   walked separately.
-- **Module routing is path-based, not Cargo-aware.** Qualnames are rooted at the
-  scan directory name with no `Cargo.toml`/`#[path]` resolution — another reason
-  the identity is provisional.
+- **`#[path]` module attributes are not honoured.** Module routing is
+  `Cargo.toml`-aware (real crate names, `src/` roots, workspace members,
+  longest-prefix nesting), but a `#[path = "..."]` override is routed
+  mechanically by file path — a known gap shared with the Loomweave extractor.
 
 A `.rs` file that tree-sitter cannot fully parse is **not** half-analyzed: it is
 surfaced as a `WLN-ENGINE-PARSE-ERROR` fact, counts toward the "could not be
