@@ -17,6 +17,24 @@ in the producer BEFORE the id is assembled — ``entity_id``'s ``:`` rejection s
 Corpus rows: ``path_typed_generic_arg_trait``/``_inherent``, ``const_generic_arg_spacing``,
 ``reference_self_type_path_escape``.
 
+ADR-049 AMENDMENTS 6+7 (2026-06-11, implemented): the residual-collision LADDER for impl
+qualnames — ``@cfg -> stage S (self-type written path) -> stage T (trait written path) ->
+method-@cfg`` — lives in ``index._walk_scope``; this module supplies the witness/render
+primitives. ``written_path_of`` is the qself-free Type::Path detector (segment idents
+joined ``::``, a leading ``::`` preserved, generic args ignored); ``self_type_witness``
+is the stage-S witness (escaped written path, or the Amendment-4 textual render for a
+qself-bearing/non-path self type); ``trait_written_path`` + ``render_trait_segment_qualified``
+are the stage-T witness and fired-group rendering (escaped written trait path, final
+segment keeping the existing generic-args rendering — a single-segment path renders
+byte-identically to the bare fragment). All witnesses are SINGLE-FILE computable: written
+paths as-typed, no name resolution (the second-producer constraint).
+
+ADR-049 AMENDMENT 8 (2026-06-11, implemented): ``rust_module_route`` stays the
+PURE-FILESYSTEM route by design — ``#[path]``-aware routing is the SEPARATE entry point
+``mounts.MountOverlay.logical_module_path`` (mount overlay first, this route as the
+default), pinned by the corpus ``module_mounts`` section. Amendment 9 (``const _``
+skip-emission) lives in ``index._walk_scope``.
+
 This module holds the pure string/CST-node renderers; ``index.py`` walks the tree and
 assembles full qualnames from them. tree-sitter types appear only under ``TYPE_CHECKING``
 so importing this module never pulls the ``wardline[rust]`` extra.
@@ -41,8 +59,13 @@ __all__ = [
     "normalize_cfg_predicate",
     "render_positional_generics",
     "render_self_type",
+    "render_self_type_parts",
     "render_trait_segment",
+    "render_trait_segment_qualified",
     "rust_module_route",
+    "self_type_witness",
+    "trait_written_path",
+    "written_path_of",
 ]
 
 _ROOT_STEMS = frozenset({"lib", "main", "mod"})
@@ -239,8 +262,17 @@ def render_self_type(type_node: Node, type_params: Sequence[str]) -> str:
     """The locator-relevant name of an impl's self type INCLUDING its concrete generic
     args (mirrors qualname.rs ``self_ty_locator``, ADR-049 §2 self-type-args amendment).
 
-    The bare last path segment (``Foo`` in ``crate::m::Foo``) plus its surviving generic
-    args in ``<...>`` — comma-joined, ``<>`` omitted ENTIRELY when none survive. An arg
+    ``base + args`` of ``render_self_type_parts`` — see there for the full rule."""
+    base, args = render_self_type_parts(type_node, type_params)
+    return base + args
+
+
+def render_self_type_parts(type_node: Node, type_params: Sequence[str]) -> tuple[str, str]:
+    """``(base, args)`` decomposition of the self-type render — the Amendment-6 ladder
+    re-renders the BASE alone (stage S) while the ``<...>`` args suffix is stage-invariant.
+
+    The base is the bare last path segment (``Foo`` in ``crate::m::Foo``); ``args`` is the
+    surviving generic args in ``<...>`` — comma-joined, ``""`` when none survive. An arg
     that is exactly one of the impl's OWN declared params (``type_params``) renders
     positionally (``$N``, rename-stable: ``impl<T> Foo<T>`` -> ``Foo<$0>``); a CONCRETE
     arg (``i32``, ``Vec<u8>``, ``&T``) renders literally whitespace-free. Substitution is
@@ -248,14 +280,19 @@ def render_self_type(type_node: Node, type_params: Sequence[str]) -> str:
     NOT ``Foo<Vec<$0>>``) keeps its literal text (F2 nested-param rule; a nested-param
     corpus row is owed by Loomweave, so the unit guard in test_qualname.py is the only
     check against accidental recursive substitution). Lifetimes/bindings dropped; a
-    non-generic self type renders the bare name; an exotic self type (tuple/array) renders
-    whitespace-free (out-of-corpus, Tier-B)."""
+    non-generic self type renders the bare name. A non-``Type::Path`` OR qself-bearing
+    self type (``&mut fmt::Formatter``, ``<A as B>::C`` — ``written_path_of`` is None)
+    renders the Amendment-4 textual fallback as the base, args empty (Amendment 6 pins
+    qself with the fallback: the witness/render must not double-escape)."""
     if type_node.type == "generic_type":
         base_node = type_node.child_by_field_name("type")
-        base = _last_path_segment(base_node) if base_node is not None else ""
+        if base_node is None or written_path_of(base_node) is None:
+            # qself-bearing generic path (`<A as B>::C<T>`): whole-node A4 fallback.
+            return _escape_reserved(_strip_ws(type_node)), ""
+        base = _last_path_segment(base_node)
         targs = type_node.child_by_field_name("type_arguments")
         if targs is None:
-            return base
+            return base, ""
         # Drop dropped-kinds AND any arg that renders empty: a malformed empty turbofish
         # `Foo<>` error-recovers to a blank `type_identifier` (valid Rust never yields one,
         # so this never touches a real arg). Keeps the pure producer from emitting `Foo<>`;
@@ -266,13 +303,60 @@ def render_self_type(type_node: Node, type_params: Sequence[str]) -> str:
             if c.type not in _DROPPED_GENERIC_ARGS
             if (r := _self_type_arg(c, type_params))
         ]
-        return f"{base}<{','.join(rendered)}>" if rendered else base
-    if type_node.type in ("type_identifier", "scoped_type_identifier"):
-        return _last_path_segment(type_node)
+        return (base, f"<{','.join(rendered)}>") if rendered else (base, "")
+    if type_node.type in ("type_identifier", "scoped_type_identifier") and written_path_of(type_node) is not None:
+        return _last_path_segment(type_node), ""
     # Non-Type::Path fallback (reference/tuple/slice/raw-pointer self types): may carry a
     # ``::``-path (`&mut fmt::Formatter`), so it escapes like a concrete generic arg
     # (ADR-049 Amendment 4 self-type-fallback completion). A `:`-free fallback is unchanged.
-    return _escape_reserved(_strip_ws(type_node))
+    return _escape_reserved(_strip_ws(type_node)), ""
+
+
+def written_path_of(node: Node) -> str | None:
+    """The WRITTEN path of a qself-free Type::Path node — segment idents joined ``::``,
+    a leading ``::`` contributing a leading separator (``impl Tr for ::a::X`` and
+    ``impl Tr for a::X`` carry distinct witnesses), generic args never included — or
+    ``None`` for a non-path / qself-bearing node (``<A as B>::C`` routes its
+    ``bracketed_type`` head here and falls out). Mirrors the Amendment-6 witness rule:
+    as-written, single-file, no name resolution."""
+    if node.type in ("type_identifier", "identifier", "crate", "super", "self", "metavariable"):
+        return _text(node)
+    if node.type in ("scoped_type_identifier", "scoped_identifier"):
+        name = node.child_by_field_name("name")
+        if name is None:
+            return None
+        path = node.child_by_field_name("path")
+        if path is None:
+            # `::X` — a leading-:: anchor with no prefix path before the separator.
+            return f"::{_text(name)}" if any(c.type == "::" for c in node.children) else _text(name)
+        prefix = written_path_of(path)
+        return None if prefix is None else f"{prefix}::{_text(name)}"
+    return None
+
+
+def self_type_witness(type_node: Node) -> tuple[str, bool]:
+    """The stage-S witness of an impl's self type (ADR-049 Amendment 6) as
+    ``(witness, is_path)``.
+
+    For a qself-free ``Type::Path`` (a ``generic_type`` contributes its base — args are
+    already normalized and MUST NOT affect the witness): ``escape_reserved`` over the
+    written path, ``is_path=True`` — a fired group re-renders this member's base to the
+    witness verbatim. Otherwise the Amendment-4 textual render (already escaped) with
+    ``is_path=False`` — the member participates in distinctness but its rendering is
+    never touched (re-applying the escape would double-escape)."""
+    base = type_node.child_by_field_name("type") if type_node.type == "generic_type" else type_node
+    written = written_path_of(base) if base is not None else None
+    if written is not None:
+        return _escape_reserved(written), True
+    return _escape_reserved(_strip_ws(type_node)), False
+
+
+def trait_written_path(trait_node: Node) -> str | None:
+    """The stage-T witness (ADR-049 Amendment 7): the trait path AS WRITTEN — segment
+    idents joined ``::``, leading ``::`` preserved, generic args ignored — or ``None``
+    for a non-path trait node (out-of-corpus; such a member never drives a fire)."""
+    base = trait_node.child_by_field_name("type") if trait_node.type == "generic_type" else trait_node
+    return written_path_of(base) if base is not None else None
 
 
 def _self_type_arg(arg_node: Node, type_params: Sequence[str]) -> str:
@@ -298,21 +382,36 @@ def render_trait_segment(trait_node: Node) -> str:
     if trait_node.type == "generic_type":
         base = trait_node.child_by_field_name("type")
         trait_name = _last_path_segment(base) if base is not None else ""
-        targs = trait_node.child_by_field_name("type_arguments")
-        args = (
-            # Drop dropped-kinds AND empty-rendering args (a malformed `From<>` error-recovers
-            # to a blank arg; valid Rust never yields one) -> bare trait name, no empty `<>`.
-            [
-                _escape_reserved(s)
-                for c in targs.named_children
-                if c.type not in _DROPPED_GENERIC_ARGS
-                if (s := _strip_ws(c))
-            ]
-            if targs is not None
-            else []
-        )
+        args = _trait_generic_args(trait_node)
         return f"{trait_name}<{','.join(args)}>" if args else trait_name
     return _last_path_segment(trait_node)
+
+
+def render_trait_segment_qualified(trait_node: Node) -> str:
+    """The Amendment-7 FIRED-group trait fragment: ``escape_reserved`` over the
+    ``::``-joined written trait path (leading ``::`` -> leading ``%3A%3A``), the final
+    segment keeping the existing ``trait_generic_args`` rendering. A single-segment
+    written path renders byte-identically to ``render_trait_segment``. Applied to EVERY
+    member of a fired post-S group — never outside one (the corpus-pinned bare fragment
+    is untouched for un-fired groups)."""
+    written = trait_written_path(trait_node)
+    if written is None:  # non-path trait node (out-of-corpus): bare rendering, defensively
+        return render_trait_segment(trait_node)
+    qualified = _escape_reserved(written)
+    args = _trait_generic_args(trait_node) if trait_node.type == "generic_type" else []
+    return f"{qualified}<{','.join(args)}>" if args else qualified
+
+
+def _trait_generic_args(trait_node: Node) -> list[str]:
+    """The surviving (concrete type/const) generic args of a ``generic_type`` trait node,
+    each whitespace-stripped + escaped. Drops dropped-kinds AND empty-rendering args (a
+    malformed ``From<>`` error-recovers to a blank arg; valid Rust never yields one)."""
+    targs = trait_node.child_by_field_name("type_arguments")
+    if targs is None:
+        return []
+    return [
+        _escape_reserved(s) for c in targs.named_children if c.type not in _DROPPED_GENERIC_ARGS if (s := _strip_ws(c))
+    ]
 
 
 def render_positional_generics(impl_node: Node) -> str:

@@ -29,6 +29,7 @@ from wardline.rust.context import RustAnalysisContext, RustTriggerContext
 from wardline.rust.crate_roots import CrateRoots, discover_crate_roots
 from wardline.rust.dataflow import analyze_command_dataflow
 from wardline.rust.index import index_entities
+from wardline.rust.mounts import MountOverlay, build_mount_overlay
 from wardline.rust.nodeid import mint_node_ids
 from wardline.rust.parse import has_errors, parse_rust
 from wardline.rust.provider import RustTrustProvider
@@ -91,22 +92,32 @@ class RustAnalyzer:
         # SP2 whole-tree pass: discover Cargo crate roots ONCE per scan; every file's
         # module route resolves against this map (longest-prefix, symlink-safe walk).
         crate_roots = discover_crate_roots(resolved_root)
+        # ADR-049 Amendment 8 pre-pass: read every file ONCE, then build each crate's
+        # #[path] mount overlay from its scanned in-src sources — class-1 module routes
+        # resolve mount-first (logical_module_path), filesystem-fallback otherwise.
+        sources: dict[Path, str] = {}
+        read_errors: dict[Path, str] = {}
+        for file in files:
+            try:
+                sources[file] = file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                read_errors[file] = str(exc)
+        overlays = _build_overlays(sources, resolved_root, crate_roots)
         findings: list[Finding] = []
         functions_total = 0
         functions_declared = 0
         files_analyzed = 0
         for file in files:
             relpath = _relpath(file, resolved_root)
-            try:
-                source = file.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError) as exc:
-                findings.append(_parse_error_finding(relpath, str(exc)))
+            if file in read_errors:
+                findings.append(_parse_error_finding(relpath, read_errors[file]))
                 continue
+            source = sources[file]
             tree = parse_rust(source)
             if has_errors(tree):
                 findings.append(_parse_error_finding(relpath, "tree-sitter recovered from a syntax error"))
                 continue
-            module = _module_for(file, resolved_root, crate_roots)
+            module = _module_for(file, resolved_root, crate_roots, overlays)
             try:
                 file_findings, context, file_callables = self._analyze_tree(tree, module=module, path=relpath)
             except Exception as exc:  # noqa: BLE001 — per-file isolation, see below
@@ -207,10 +218,41 @@ def _relpath(file: Path, resolved_root: Path) -> str:
     return resolved.as_posix()
 
 
-def _module_for(file: Path, resolved_root: Path, roots: CrateRoots) -> str:
+def _build_overlays(sources: dict[Path, str], resolved_root: Path, roots: CrateRoots) -> dict[Path, MountOverlay]:
+    """One ``#[path]`` mount overlay per crate (ADR-049 Amendment 8), discovered over
+    the scanned IN-SRC sources of that crate (class-2/3 files keep their ``#out``
+    non-conformance routes — a mount declared outside ``src/`` is outside loomweave's
+    emittable scope and never overlays a class-1 route). Paths are project-root-relative
+    posix, matching the R5 sort rule ("declaring-file path relative to the project
+    root"). A mount declared in a file outside the scan list is invisible — the overlay
+    is the view of the scanned tree."""
+    per_crate: dict[Path, tuple[str, dict[str, str]]] = {}
+    for file, source in sources.items():
+        resolved = file.resolve()
+        crate_dir = roots.crate_dir_for(resolved)
+        crate_name = roots.crate_name_for(resolved)
+        if crate_dir is None or crate_name is None or not resolved.is_relative_to(crate_dir / "src"):
+            continue
+        if not resolved.is_relative_to(resolved_root):
+            continue  # defensive: discover confines to root
+        per_crate.setdefault(crate_dir, (crate_name, {}))[1][resolved.relative_to(resolved_root).as_posix()] = source
+    return {
+        crate_dir: build_mount_overlay(
+            crate_sources,
+            crate=crate_name,
+            src_root=(crate_dir / "src").relative_to(resolved_root).as_posix(),
+        )
+        for crate_dir, (crate_name, crate_sources) in per_crate.items()
+    }
+
+
+def _module_for(file: Path, resolved_root: Path, roots: CrateRoots, overlays: dict[Path, MountOverlay]) -> str:
     """The SP2 module route. Three file classes:
 
-    1. **In-src** (under a crate root's ``src/``): the ADR-049 oracle route —
+    1. **In-src** (under a crate root's ``src/``): the ADR-049 oracle route — the
+       crate's ``#[path]`` mount overlay first (Amendment 8,
+       ``MountOverlay.logical_module_path``), whose default for an un-mounted file is
+       the unchanged pure-filesystem
        ``rust_module_route(crate=<real Cargo.toml name>, src_root=<root>/src, file)``.
        Conformance-bearing: byte-identical to loomweave's emission for the same file.
     2. **Under a crate root but OUTSIDE its src/** (``tests/``, ``benches/``,
@@ -239,6 +281,10 @@ def _module_for(file: Path, resolved_root: Path, roots: CrateRoots) -> str:
     if crate_dir is not None and crate_name is not None:
         src_root = crate_dir / "src"
         if resolved.is_relative_to(src_root):
+            overlay = overlays.get(crate_dir)
+            if overlay is not None and resolved.is_relative_to(resolved_root):
+                return overlay.logical_module_path(resolved.relative_to(resolved_root).as_posix())
+            # No overlay built for this crate (defensive): the filesystem default.
             return q.rust_module_route(crate=crate_name, src_root=str(src_root), file=str(resolved))
         return _out_route(crate_name, crate_dir, resolved)  # class 2
     try:

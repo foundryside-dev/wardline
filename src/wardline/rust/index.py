@@ -13,14 +13,19 @@ Not emitted, matching the oracle: closures and nested ``fn``s (the walk never
 descends a ``function_item`` body — a finding inside one attributes to the
 enclosing named fn via ``line_start``), trait-body items (extract.rs deliberately
 never walks trait bodies — a trait definition is only its ``trait`` entity), bare
-macro INVOCATIONS, external ``mod foo;`` declarations, and ``union`` items
-(outside the ten-kind set, the oracle's ``_ => None`` arm).
+macro INVOCATIONS, external ``mod foo;`` declarations, ``union`` items (outside
+the ten-kind set, the oracle's ``_ => None`` arm), and unnamed ``const _`` items
+(ADR-049 Amendment 9 — unconditionally skipped on ``ident == "_"``: nothing can
+ever name the item, so no discriminant can rescue it).
 
 cfg twins are counted per-(kind, name) over the nine named item kinds (extract.rs
 ``twin_counts``): ``fn S`` and ``struct S`` never interfere — the entity id's kind
 segment already separates them — and the ``@cfg(...)`` suffix is applied only on a
-within-kind collision. Impl blocks have their own pre-cfg twin counter keyed on
-the full impl segment.
+within-kind collision. Impl qualnames are decided by the RESIDUAL-COLLISION LADDER
+(ADR-049 Amendment 6, spanning Amendments 1/5/6/7): per scope, four stages each
+keyed on the previous stage's output — ``@cfg`` (pre-cfg impl-segment twin counter)
+-> stage S (self-type written-path qualification) -> stage T (trait written-path
+qualification) -> method-``@cfg`` (keyed on the FINAL post-S/T impl qualname).
 
 This is the single-file, file-module-rooted view: the caller supplies ``module``
 (the SP2 whole-tree pass — ``Cargo.toml`` crate roots + cross-file routes — lives
@@ -159,34 +164,61 @@ def _walk_scope(
         if key is not None:
             twin_counts[key] += 1
 
-    # Pre-cfg impl-segment twin counts (mirrors extract.rs `impl_twin_counts`): two
-    # impls of the same (type, generic-sig) — incl. cfg-twins — share one key and would
-    # collide; a cfg-gated member of such a group is split by an `@cfg(...)` suffix on
-    # the impl key (now the ONLY distinguisher for inherent twins, the ordinal is gone).
-    impl_segments: dict[int, str] = {}
-    impl_twin_counts: Counter[str] = Counter()
-    for node, _cfg in items:
-        if node.type == "impl_item":
-            seg = _impl_segment(node)
-            if seg is not None:
-                impl_segments[node.id] = seg
-                impl_twin_counts[seg] += 1
+    # ---- impl qualnames: the ADR-049 residual-collision LADDER (Amendments 1/5/6/7),
+    # decided per scope in four stages, each keyed on the previous stage's output:
+    #   (1) @cfg -> (2) stage S (self-type written path) -> (3) stage T (trait written
+    #   path) -> (4) method-@cfg.
+    # Twin-gated end to end: a lone impl never qualifies, un-fired groups change nothing,
+    # and cross-path cfg-twins (split at stage 1) leave S cold. Per-scope grouping IS the
+    # per-extraction-unit grouping: a qualname embeds the full module path, so groups can
+    # never span scopes.
 
-    # Method-level cfg-twin counts (ADR-049 Amendment 5): keyed on the FINAL impl
-    # qualname (post impl-level cfg) + method name, counted across ALL merged blocks —
-    # so an impl-level cfg-twin (already split into distinct impl entities) gets no
-    # redundant method suffix, while methods merging across same-key blocks do.
-    final_impl_quals: dict[int, str] = {}
-    method_twin_counts: Counter[tuple[str, str]] = Counter()
+    # Stage 1 (@cfg): pre-cfg impl-segment twin counts on the BARE keys, exactly as
+    # before the ladder existed (mirrors extract.rs `impl_twin_counts`) — already-@cfg-
+    # split twins keep their current ids byte-for-byte.
+    impl_keys: dict[int, _ImplKey] = {}
+    bare_counts: Counter[str] = Counter()
     for node, cfgs in items:
         if node.type == "impl_item":
-            seg = impl_segments.get(node.id)
-            if seg is None:
-                continue
-            if cfgs and impl_twin_counts[seg] > 1:
-                seg += q.cfg_discriminant(cfgs)
-            final_qual = f"{module}.{seg}"
-            final_impl_quals[node.id] = final_qual
+            ikey = _impl_key(node, cfgs)
+            if ikey is not None:
+                impl_keys[node.id] = ikey
+                bare_counts[ikey.key] += 1
+    for k in impl_keys.values():
+        if k.cfgs and bare_counts[k.key] > 1:
+            k.cfg_suffix = q.cfg_discriminant(k.cfgs)
+
+    # Stage S (Amendment 6): a post-cfg group with >= 2 distinct self-type written-path
+    # witnesses re-renders every qself-free Type::Path member's base as the escaped
+    # written path; an A4-fallback member keeps its single-escaped render (its witness
+    # still counts toward distinctness). Identical-witness coherence-illegal twins do
+    # not fire — no witness can split them (`duplicate_ids()` is the alarm upstream).
+    for group in _impl_groups(impl_keys):
+        if len({m.self_witness for m in group}) > 1:
+            for m in group:
+                if m.self_is_path:
+                    m.base = m.self_witness
+
+    # Stage T (Amendment 7): a post-S group with >= 2 distinct trait written paths
+    # switches EVERY member's impl[...] fragment to the qualified rendering (a single-
+    # segment path renders byte-identically; inherent impls never fire — their #<> keys
+    # never group with [...] keys). Running T after S yields minimal qualification: a
+    # pair already split by S leaves T cold.
+    for group in _impl_groups(impl_keys):
+        if len({m.trait_witness for m in group if m.trait_witness is not None}) > 1:
+            for m in group:
+                if m.trait_node is not None:
+                    m.fragment = f"impl[{q.render_trait_segment_qualified(m.trait_node)}]"
+
+    # Stage 4 — method-level cfg-twin counts (ADR-049 Amendment 5): keyed on the FINAL
+    # (post-S/T) impl qualname + method name, counted across ALL merged blocks — so an
+    # impl-level cfg-twin (already split into distinct impl entities) gets no redundant
+    # method suffix, while methods merging across same-key blocks do.
+    final_impl_quals: dict[int, str] = {nid: f"{module}.{k.key}" for nid, k in impl_keys.items()}
+    method_twin_counts: Counter[tuple[str, str]] = Counter()
+    for node, _cfgs in items:
+        if node.type == "impl_item" and node.id in final_impl_quals:
+            final_qual = final_impl_quals[node.id]
             for method, _mcfgs in _impl_methods_with_cfgs(node):
                 method_twin_counts[(final_qual, _name(method))] += 1
 
@@ -221,6 +253,13 @@ def _walk_scope(
         else:
             kind = _LEAF_KINDS[node.type]
             name = _name(node)
+            if kind == "const" and name == "_":
+                # ADR-049 Amendment 9: `const _` is NOT an entity — skipped
+                # UNCONDITIONALLY on `ident == "_"` (skip-only-when-twinned would make
+                # the emitted set sibling-dependent and churn SEI; nothing can ever name
+                # the item, so no discriminant can rescue it). No entity, no containment;
+                # a finding inside one attributes to the enclosing module by line.
+                continue
             qualname = f"{module}.{name}"
             if cfgs and twin_counts[(kind, name)] > 1:
                 qualname += q.cfg_discriminant(cfgs)
@@ -238,22 +277,71 @@ def _named_item_key(node: Node) -> tuple[str, str] | None:
     kind = _LEAF_KINDS.get(node.type)
     if kind is None:
         return None
-    return (kind, _name(node))
+    name = _name(node)
+    if kind == "const" and name == "_":
+        return None  # ADR-049 Amendment 9: never emitted, so never counted
+    return (kind, name)
 
 
-def _impl_segment(impl_node: Node) -> str | None:
-    """The pre-cfg ``<SelfType>.impl[...]`` / ``<SelfType>.impl#<...>`` segment, or
-    ``None`` if the impl has no self type. The self type carries its concrete generic args
-    (ADR-049 §2 self-type-args amendment — ``Foo<i32>`` vs ``Foo<u32>`` are distinct keys,
-    the impl's own params positional); no ordinal (ADR-049 amend Option b)."""
+@dataclass(slots=True)
+class _ImplKey:
+    """One impl block's decomposed segment parts, MUTATED through the residual-collision
+    ladder (stage 1 sets ``cfg_suffix``; a fired stage S rewrites ``base``; a fired stage
+    T rewrites ``fragment``). ``key`` is the current ``<SelfType>.impl…@cfg`` segment —
+    before stage 1 it IS the bare pre-cfg key the @cfg twin counter runs on."""
+
+    cfgs: list[str]
+    base: str  # self-type base render (last path segment / A4 fallback)
+    self_args: str  # "<...>" args suffix, "" when none survive (stage-invariant)
+    fragment: str  # "impl[...]" (bare) / "impl#<...>"
+    cfg_suffix: str  # "" until stage 1 fires
+    self_witness: str  # stage-S witness (escaped written path / A4 fallback render)
+    self_is_path: bool  # qself-free Type::Path -> base re-renders on a fired S group
+    trait_node: Node | None
+    trait_witness: str | None  # stage-T witness (written trait path), None for inherent
+
+    @property
+    def key(self) -> str:
+        return f"{self.base}{self.self_args}.{self.fragment}{self.cfg_suffix}"
+
+
+def _impl_key(impl_node: Node, cfgs: list[str]) -> _ImplKey | None:
+    """The decomposed pre-cfg ``<SelfType>.impl[...]`` / ``<SelfType>.impl#<...>`` parts,
+    or ``None`` if the impl has no self type. The self type carries its concrete generic
+    args (ADR-049 §2 self-type-args amendment — ``Foo<i32>`` vs ``Foo<u32>`` are distinct
+    keys, the impl's own params positional); no ordinal (ADR-049 amend Option b)."""
     type_node = impl_node.child_by_field_name("type")
     if type_node is None:
         return None
-    self_type = q.render_self_type(type_node, q.impl_type_param_names(impl_node))
+    base, self_args = q.render_self_type_parts(type_node, q.impl_type_param_names(impl_node))
+    self_witness, self_is_path = q.self_type_witness(type_node)
     trait_node = impl_node.child_by_field_name("trait")
     if trait_node is not None:
-        return f"{self_type}.impl[{q.render_trait_segment(trait_node)}]"
-    return f"{self_type}.impl#<{q.render_positional_generics(impl_node)}>"
+        fragment = f"impl[{q.render_trait_segment(trait_node)}]"
+        trait_witness = q.trait_written_path(trait_node)
+    else:
+        fragment = f"impl#<{q.render_positional_generics(impl_node)}>"
+        trait_witness = None
+    return _ImplKey(
+        cfgs=cfgs,
+        base=base,
+        self_args=self_args,
+        fragment=fragment,
+        cfg_suffix="",
+        self_witness=self_witness,
+        self_is_path=self_is_path,
+        trait_node=trait_node,
+        trait_witness=trait_witness,
+    )
+
+
+def _impl_groups(impl_keys: dict[int, _ImplKey]) -> list[list[_ImplKey]]:
+    """The current collision groups: impls sharing a ``key``, singletons dropped (the
+    ladder is twin-gated — a lone impl never qualifies)."""
+    by_key: dict[str, list[_ImplKey]] = {}
+    for k in impl_keys.values():
+        by_key.setdefault(k.key, []).append(k)
+    return [g for g in by_key.values() if len(g) > 1]
 
 
 def _impl_methods_with_cfgs(impl_node: Node) -> list[tuple[Node, list[str]]]:

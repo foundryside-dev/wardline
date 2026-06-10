@@ -20,6 +20,7 @@ documented wardline-local fallback route; only the *route shape* differs.
 from __future__ import annotations
 
 import os
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -134,7 +135,7 @@ def test_in_src_files_get_the_oracle_crate_prefixed_route(tmp_path: Path) -> Non
     (crate / "src" / "a" / "mod.rs").write_text("", encoding="utf-8")
     roots = discover_crate_roots(tmp_path)
 
-    route = analyzer._module_for  # noqa: SLF001 - the unit under test
+    route = partial(analyzer._module_for, overlays={})  # noqa: SLF001 - the unit under test (overlay-free: the filesystem default)
     assert route(crate / "src" / "lib.rs", tmp_path, roots) == "my_app"
     assert route(crate / "src" / "a" / "b.rs", tmp_path, roots) == "my_app.a.b"
     assert route(crate / "src" / "a" / "mod.rs", tmp_path, roots) == "my_app.a"
@@ -147,7 +148,7 @@ def test_workspace_member_files_route_to_their_own_crates(tmp_path: Path) -> Non
     m2 = _write_crate(tmp_path, "m2", '[package]\nname = "m_two"\n', lib=False)
     roots = discover_crate_roots(tmp_path)
 
-    route = analyzer._module_for  # noqa: SLF001
+    route = partial(analyzer._module_for, overlays={})  # noqa: SLF001
     assert route(m1 / "src" / "lib.rs", tmp_path, roots) == "m_one"
     assert route(m2 / "src" / "main.rs", tmp_path, roots) == "m_two"
 
@@ -166,7 +167,7 @@ def test_out_of_src_files_get_the_out_branded_crate_route(tmp_path: Path) -> Non
     (crate / "build.rs").write_text("", encoding="utf-8")
     roots = discover_crate_roots(tmp_path)
 
-    route = analyzer._module_for  # noqa: SLF001
+    route = partial(analyzer._module_for, overlays={})  # noqa: SLF001
     assert route(crate / "build.rs", tmp_path, roots) == "c_app.#out.build"
     assert route(crate / "tests" / "integration.rs", tmp_path, roots) == "c_app.#out.tests.integration"
 
@@ -183,7 +184,7 @@ def test_class2_route_cannot_collide_with_an_in_src_twin(tmp_path: Path) -> None
     (crate / "tests" / "integration.rs").write_text("", encoding="utf-8")
     roots = discover_crate_roots(tmp_path)
 
-    route = analyzer._module_for  # noqa: SLF001
+    route = partial(analyzer._module_for, overlays={})  # noqa: SLF001
     in_src = route(crate / "src" / "tests" / "integration.rs", tmp_path, roots)
     out_of_src = route(crate / "tests" / "integration.rs", tmp_path, roots)
     assert in_src == "c_app.tests.integration"  # class 1: the conformance-bearing route
@@ -202,7 +203,7 @@ def test_no_crate_files_get_the_relpath_pure_constant_crate_route(tmp_path: Path
     roots = discover_crate_roots(tmp_path)
 
     assert roots.crate_dir_for(tmp_path / "src" / "m.rs") is None  # no lib.rs/main.rs -> no root
-    got = analyzer._module_for(tmp_path / "src" / "m.rs", tmp_path, roots)  # noqa: SLF001
+    got = analyzer._module_for(tmp_path / "src" / "m.rs", tmp_path, roots, {})  # noqa: SLF001
     assert got == "crate.#out.src.m"  # NOT f"{tmp_path.name}..." — root-name-independent
 
 

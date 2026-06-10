@@ -39,7 +39,7 @@ from wardline.core.finding import Finding, Kind
 from wardline.core.paths import weft_config_path
 from wardline.core.run import run_scan
 from wardline.rust import qualname as q
-from wardline.rust.analyzer import _module_for
+from wardline.rust.analyzer import _build_overlays, _module_for
 from wardline.rust.crate_roots import discover_crate_roots
 from wardline.rust.edges import RustParsedFile, discover_rust_edges, index_rust_file
 
@@ -73,12 +73,14 @@ def _parsed_files(root: Path) -> list[RustParsedFile]:
     cfg = config_mod.load(weft_config_path(resolved_root), explicit=False)
     files = discover(resolved_root, cfg, confine_to_root=True, suffixes=frozenset({".rs"}))
     crate_roots = discover_crate_roots(resolved_root)
+    sources = {file: file.read_text(encoding="utf-8") for file in files}
+    # Same Amendment-8 pre-pass as the analyzer: per-crate #[path] mount overlays.
+    overlays = _build_overlays(sources, resolved_root, crate_roots)
     parsed: list[RustParsedFile] = []
     for file in files:
-        source = file.read_text(encoding="utf-8")
-        module = _module_for(file, resolved_root, crate_roots)
+        module = _module_for(file, resolved_root, crate_roots, overlays)
         relpath = file.resolve().relative_to(resolved_root).as_posix()
-        parsed.append(index_rust_file(source, module=module, path=relpath))
+        parsed.append(index_rust_file(source=sources[file], module=module, path=relpath))
     return parsed
 
 

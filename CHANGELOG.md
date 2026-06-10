@@ -158,6 +158,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through cleanly to the legacy/off rungs (emit stays soft-fail) (weft-23574069a1).
 
 ### Changed
+- **Rust qualname dialect: ADR-049 Amendments 6–9 (Loomweave lockstep, one
+  batched re-vendor covering 4–9).** Closes the four Sprint-4 gold-blocker
+  collision families at the dialect level, mirroring the authoritative
+  Loomweave producer byte-for-byte (49-entity corpus + the new `module_mounts`
+  section, blob `d81fb975…`):
+  - **Amendments 6+7 — the residual-collision ladder** (`@cfg` → stage S
+    self-type written path → stage T trait written path → method-`@cfg`):
+    same-key impl twins split on their *written* self-type path
+    (`impl T for a::X` / `b::X` → `a%3A%3AX.impl[T]` / `b%3A%3AX.impl[T]`) and
+    then on their written trait path (`Compat<$0>.impl[a%3A%3AAsyncRead]`).
+    Twin-gated end to end: only already-colliding ids change; a lone impl and
+    every un-fired group render byte-identically to before (the frozen RS-WL
+    identity corpus is unchanged).
+  - **Amendment 8 — `#[path]` mount overlay** (`wardline.rust.mounts`): literal
+    `#[path = "…"] mod name;` declarations now route mounted files/subtrees to
+    their *logical* module path (rustc's relative-path rule; chains, cfg-twin
+    `@cfg` composition, R5 first-wins determinism; macro-wrapped and
+    `cfg_attr`-delivered mounts stay invisible by dialect rule). Mounted files
+    re-key from their filesystem route — `rust_module_route` itself is
+    unchanged and remains the no-mount default.
+  - **Amendment 9 — `const _` skip-emission:** an unnamed `const _` is no
+    longer an entity (unconditional — nothing can ever name it; findings inside
+    one attribute to the enclosing module).
 - **BREAKING (gate): parse failures are now gate-eligible.**
   `WLN-ENGINE-PARSE-ERROR` (a discovered file that could not be read/parsed) is
   promoted from a NONE FACT to an **ERROR DEFECT**: its sinks were never

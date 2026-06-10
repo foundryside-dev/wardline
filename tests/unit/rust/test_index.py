@@ -276,3 +276,35 @@ def test_emission_is_deterministic() -> None:
         ]
 
     assert run() == run()
+
+
+def test_identical_witness_twins_do_not_fire_stage_s() -> None:
+    # ADR-049 Amendment 6, known residual BY DESIGN: coherence-illegal twins with the
+    # SAME written self-type path carry identical witnesses — no witness can split
+    # them, stage S stays cold, and the two blocks still MERGE onto one bare key
+    # (upstream, `duplicate_ids()` is the alarm; un-corpused, pinned here).
+    src = (
+        "pub trait T { fn go(&self); }\n"
+        "mod a { pub struct X; }\n"
+        "impl T for a::X { fn go(&self){} }\n"
+        "impl T for a::X { fn other(&self){} }\n"
+    )
+    rows = [(e.qualname, e.kind) for e in discover_rust_entities(src, module="demo.m")]
+    assert rows == [
+        ("demo.m", "module"),
+        ("demo.m.T", "trait"),
+        ("demo.m.a", "module"),
+        ("demo.m.a.X", "struct"),
+        ("demo.m.X.impl[T]", "impl"),
+        ("demo.m.X.impl[T].go", "method"),
+        ("demo.m.X.impl[T].other", "method"),
+    ]
+
+
+def test_unnamed_const_skip_leaves_named_siblings_untouched() -> None:
+    # ADR-049 Amendment 9 unit guard (the corpus pins the skip via ordered-equality;
+    # this pins the SEMANTIC kind view too): `const _` emits nothing — no entity, no
+    # twin-count participation — while named consts are unaffected.
+    src = "pub const LIMIT: u32 = 10;\nconst _: () = assert!(true);\nconst _: () = assert!(true);\n"
+    rows = [(e.qualname, e.kind) for e in discover_rust_entities(src, module="demo.m")]
+    assert rows == [("demo.m", "module"), ("demo.m.LIMIT", "const")]
