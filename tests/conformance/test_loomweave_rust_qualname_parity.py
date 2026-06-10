@@ -13,6 +13,25 @@ Provenance — re-vendor when Loomweave bumps the corpus:
             extractor-generated, locked by
             crates/loomweave-plugin-rust/tests/qualname_conformance.rs)
     vendored byte-identical to tests/conformance/qualnames_rust.json (2026-06-10).
+
+Drift alarm (two layers — wardline-868908944b):
+    1. Byte-pin (default suite): ``UPSTREAM_BLOB_SHA`` below pins the vendored file's
+       git blob hash. ANY byte change to the vendored copy fails loudly — re-vendors
+       are deliberate, atomic, and update the constant in the same commit.
+    2. Live recheck (opt-in, ``-m loomweave_drift``): byte-compares the vendored copy
+       against the sibling checkout (``WARDLINE_LOOMWEAVE_REPO``, default
+       ``/home/john/loomweave``); skips when the checkout is absent (CI).
+
+RE-VENDOR PROCEDURE — a RELEASE-GATE item (run ``pytest -m loomweave_drift -v``
+before every release; on drift, or on any deliberate corpus bump upstream):
+    1. ``cp $WARDLINE_LOOMWEAVE_REPO/fixtures/qualnames_rust.json
+       tests/conformance/qualnames_rust.json`` — byte-verbatim. NEVER hand-edit the
+       vendored copy; the upstream extractor + its cargo gate are the only authors.
+    2. Update ``UPSTREAM_BLOB_SHA`` to ``git hash-object tests/conformance/qualnames_rust.json``
+       and refresh the provenance lines above (source commit + blob) — all in the
+       SAME commit as the new bytes.
+    3. Re-run conformance (``pytest tests/conformance -q``) and CONFORM the producer
+       until byte-green — fix ``wardline.rust.*``, never weaken the comparison.
     The cab95a1 re-vendor (keystone-panel rows) adds TWO cases pinning syn's
     token-stream comment semantics: ``cfg_attr_comment_interposition`` (a ``//`` or
     ``///`` comment between ``#[cfg]`` and its item never detaches the cfg — both
@@ -66,14 +85,22 @@ valid for function-only CONSUMERS; Wardline is no longer one.
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-_CORPUS: dict[str, Any] = json.loads((Path(__file__).parent / "qualnames_rust.json").read_text("utf-8"))
+_CORPUS_PATH = Path(__file__).parent / "qualnames_rust.json"
+_CORPUS: dict[str, Any] = json.loads(_CORPUS_PATH.read_text("utf-8"))
+
+# The git blob hash of the vendored corpus as committed upstream (loomweave rc4
+# @ cab95a1695a45f875933d8c4ac0e800e793c9305). Re-vendors update this constant in
+# the SAME commit as the new bytes — see the RE-VENDOR PROCEDURE in the header.
+UPSTREAM_BLOB_SHA = "ed436c825861ad2b9e313f9211f5a55583b80c7c"
 
 _KNOWN_TIERS = {"slice-1", "sp2"}
 # The a209fc7 corpus carries the FULL ten-kind ADR-049 surface (leaf_item_kinds /
@@ -137,6 +164,45 @@ def test_corpus_exercises_functions() -> None:
     assert any(row["kind"] == "function" for c in _CORPUS["entities"] for row in c["expected"]), (
         "corpus exercises no function qualnames — the producer gate would be vacuous"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Corpus drift alarm (wardline-868908944b) — layer 1 runs in the default suite;
+# layer 2 is the opt-in live recheck against the sibling checkout.
+# --------------------------------------------------------------------------- #
+
+
+def test_vendored_corpus_matches_upstream_blob_pin() -> None:
+    """Layer 1: the vendored corpus byte-pins to the upstream git blob hash."""
+    assert len(UPSTREAM_BLOB_SHA) == 40 and set(UPSTREAM_BLOB_SHA) <= set("0123456789abcdef"), (
+        f"UPSTREAM_BLOB_SHA must be 40 lowercase hex chars (a git blob SHA-1): {UPSTREAM_BLOB_SHA!r}"
+    )
+    data = _CORPUS_PATH.read_bytes()
+    actual = hashlib.sha1(b"blob %d\x00" % len(data) + data).hexdigest()
+    assert actual == UPSTREAM_BLOB_SHA, (
+        f"the vendored corpus changed (git blob {actual}, pinned {UPSTREAM_BLOB_SHA}) — "
+        "if this was a deliberate re-vendor, update UPSTREAM_BLOB_SHA in the same commit "
+        "and re-run conformance; if not, someone edited the vendored copy (forbidden — "
+        "the upstream extractor is the only author; see the RE-VENDOR PROCEDURE in this "
+        "module's header)"
+    )
+
+
+@pytest.mark.loomweave_drift
+def test_vendored_corpus_matches_live_sibling_checkout() -> None:
+    """Layer 2 (opt-in, ``-m loomweave_drift``): the sibling loomweave checkout's
+    fixture must be byte-identical to the vendored copy — the release-gate drift
+    alarm. Absent checkout (CI) skips; drift FAILS."""
+    repo = Path(os.environ.get("WARDLINE_LOOMWEAVE_REPO", "/home/john/loomweave"))
+    upstream = repo / "fixtures" / "qualnames_rust.json"
+    if not upstream.is_file():
+        pytest.skip(f"no loomweave sibling checkout at {repo} (override via WARDLINE_LOOMWEAVE_REPO)")
+    if upstream.read_bytes() != _CORPUS_PATH.read_bytes():
+        pytest.fail(
+            f"upstream {upstream} has drifted from the vendored tests/conformance/qualnames_rust.json — "
+            "re-vendor + conform: follow the RE-VENDOR PROCEDURE in this module's header "
+            "(byte-verbatim copy, bump UPSTREAM_BLOB_SHA in the same commit, re-run conformance)"
+        )
 
 
 # --------------------------------------------------------------------------- #
