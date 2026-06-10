@@ -56,3 +56,6 @@ wardline.yaml
 
 # git worktrees (isolated feature workspaces)
 .worktrees/
+
+# CI-only assembled Pages tree (www root + docs/)
+publish/

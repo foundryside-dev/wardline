@@ -1,9 +1,10 @@
----
-template: home.html
-hide:
-  - navigation
-  - toc
----
+# Wardline
+
+Generic, lightweight semantic-tainting static analyzer for Python — track
+untrusted data across your codebase and gate trust-boundary violations, with
+zero runtime dependencies. The product front door lives at
+[wardline.foundryside.dev](https://wardline.foundryside.dev/); these are the
+reference docs.
 
 ## Install
 

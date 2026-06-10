@@ -1,6 +1,6 @@
 site_name: Wardline
 site_description: Generic semantic-tainting static analyzer for Python
-site_url: https://wardline.foundryside.dev
+site_url: https://wardline.foundryside.dev/docs/
 repo_url: https://github.com/foundryside-dev/wardline
 repo_name: foundryside-dev/wardline
 edit_uri: edit/main/docs/

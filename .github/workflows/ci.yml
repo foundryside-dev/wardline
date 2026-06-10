@@ -189,5 +189,36 @@ jobs:
           enable-cache: true
           python-version: "3.13"
       - run: uv sync --extra docs
-      - name: Deploy
-        run: uv run mkdocs gh-deploy --force
+      # The www/ front door owns the site root (and the CNAME); the MkDocs
+      # reference docs are served from the /docs/ subpath. `mkdocs gh-deploy`
+      # can only publish the bare MkDocs site, so assemble the combined tree
+      # by hand and force-push it to gh-pages (keeps the Pages source as the
+      # gh-pages branch — no repo-settings change). Dependency-free, matching
+      # Wardline's zero-dep ethos.
+      - name: Assemble site (www root + docs/ subpath)
+        run: |
+          set -euo pipefail
+          rm -rf publish
+          cp -r www/. publish/
+          # site_url is pinned to .../docs/ in mkdocs.yml, so internal links
+          # and the canonical resolve under the subpath. --strict matches the
+          # docs-build gate so the deployed build can't silently differ.
+          uv run mkdocs build --strict -d "$PWD/publish/docs"
+          # CNAME has a single source of truth: www/CNAME (copied above to
+          # publish/CNAME). Fail loudly if it didn't make it to the root.
+          test -f publish/CNAME
+          touch publish/.nojekyll
+      - name: Deploy to gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd publish
+          git init -q
+          git checkout -q -b gh-pages
+          git add -A
+          git -c user.email=ci@foundryside.dev -c user.name="wardline-ci" \
+            commit -qm "deploy: www root + /docs/ (${GITHUB_SHA})"
+          git push -f \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            gh-pages
