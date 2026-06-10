@@ -17,6 +17,7 @@ from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import TaintState
 from wardline.scanner.grammar import BUILTIN_BOUNDARY_TYPES
 from wardline.scanner.rules.metadata import RuleMetadata
+from wardline.scanner.taint.decorator_provider import _is_builtin_decorator_fqn, _shadowed_builtin_roots
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -26,11 +27,10 @@ if TYPE_CHECKING:
 _BOUNDARY_LEVELS = frozenset({TaintState.GUARDED, TaintState.ASSURED})
 _TRUSTED_LEVELS = frozenset({TaintState.INTEGRAL, TaintState.ASSURED})
 
-# The module prefixes a BUILTIN trust decorator may be imported from (``wardline.decorators``
-# and the renamed ``weft_markers`` shim), derived from the grammar so this rule cannot drift
-# from the vocabulary the engine actually honours. PY-WL-114 polices the LEVEL-bearing builtin
-# markers only — ``trusted`` (``level=``) and ``trust_boundary`` (``to_level=``).
-_MARKER_MODULE_PREFIXES: frozenset[str] = frozenset(bt.module_prefix for bt in BUILTIN_BOUNDARY_TYPES)
+# PY-WL-114 polices the LEVEL-bearing builtin markers only — ``trusted`` (``level=``)
+# and ``trust_boundary`` (``to_level=``). Recognition uses the engine's OWN seeding
+# predicate (``_is_builtin_decorator_fqn`` + shadowed-root fail-closed rejection), so
+# the rule cannot recognise a marker the seeding rejects (wardline-09c09f14df).
 _LEVEL_MARKER_NAMES: frozenset[str] = frozenset({"trusted", "trust_boundary"})
 
 METADATA = RuleMetadata(
@@ -94,18 +94,29 @@ def _resolve_decorator_fqn(deco: ast.expr, alias_map: Mapping[str, str]) -> str 
     return f"{head_fqn}.{rest}" if rest else head_fqn
 
 
-def _builtin_level_marker(deco: ast.expr, alias_map: Mapping[str, str]) -> str | None:
+def _builtin_level_marker(deco: ast.expr, alias_map: Mapping[str, str], shadowed_roots: frozenset[str]) -> str | None:
     """The canonical builtin marker name (``trusted`` / ``trust_boundary``) iff *deco*
-    resolves to a BUILTIN level-bearing trust decorator. Gating on the resolved FQN (not the
-    trailing identifier) fixes both the alias-blind FN — ``@t(level=...)`` where ``t`` aliases
-    the builtin — and the foreign-name FP — a non-wardline / locally-defined decorator that
-    merely happens to be spelled ``trusted`` (wardline-0267c31cd8)."""
+    resolves to a builtin level-bearing trust decorator THE ENGINE'S SEEDING WOULD HONOUR.
+    Gating on the resolved FQN (not the trailing identifier) fixes both the alias-blind FN —
+    ``@t(level=...)`` where ``t`` aliases the builtin — and the foreign-name FP — a
+    non-wardline / locally-defined decorator that merely happens to be spelled ``trusted``
+    (wardline-0267c31cd8). Matching uses the seeding predicate itself: only the exact
+    exports ``P.<name>`` / ``P.trust.<name>`` count (an arbitrarily-nested path like
+    ``wardline.decorators.evil.trusted`` is seeded by NEITHER, so a bad level on it never
+    disabled any gate), and a marker whose root the scanned project shadows is rejected
+    fail-closed exactly as the provider rejects it. PY-WL-110 sidesteps shadows via its
+    anchored-provenance gate; this rule fires precisely where seeding FAILED, so it must
+    thread the shadow set explicitly."""
     fqn = _resolve_decorator_fqn(deco, alias_map)
     if fqn is None:
         return None
-    last = fqn.rsplit(".", 1)[-1]
-    if last in _LEVEL_MARKER_NAMES and any(fqn.startswith(prefix + ".") for prefix in _MARKER_MODULE_PREFIXES):
-        return last
+    for bt in BUILTIN_BOUNDARY_TYPES:
+        if not bt.builtin or bt.canonical_name not in _LEVEL_MARKER_NAMES:
+            continue
+        if bt.module_prefix.split(".")[0] in shadowed_roots:
+            continue
+        if _is_builtin_decorator_fqn(fqn, bt.canonical_name, bt.module_prefix):
+            return bt.canonical_name
     return None
 
 
@@ -119,6 +130,10 @@ class InvalidDecoratorLevel:
     def check(self, context: AnalysisContext) -> list[Finding]:
         findings: list[Finding] = []
         modules = list(context.alias_maps.keys())
+        # The scanned project's modules are the alias-map keys; the same shadow
+        # computation the provider runs (a project-local top-level ``wardline`` /
+        # ``weft_markers`` rejects every builtin marker under that root).
+        shadowed_roots = _shadowed_builtin_roots(frozenset(modules))
         for qualname, entity in context.entities.items():
             # The alias map for the module that owns this entity — needed to resolve an
             # aliased builtin decorator to its FQN (mirrors PY-WL-110).
@@ -128,7 +143,7 @@ class InvalidDecoratorLevel:
             )
             alias_map = (context.alias_maps.get(mod_name) if mod_name is not None else None) or {}
             for deco_ordinal, deco in enumerate(entity.node.decorator_list):
-                name = _builtin_level_marker(deco, alias_map)
+                name = _builtin_level_marker(deco, alias_map, shadowed_roots)
                 if name is None:
                     continue
 

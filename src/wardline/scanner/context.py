@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from wardline.core.finding import Finding, Severity
     from wardline.core.taints import TaintState
     from wardline.scanner.index import Entity
+    from wardline.scanner.rules._sink_helpers import SinkBindings
     from wardline.scanner.taint.propagation import TaintProvenance
 
 
@@ -98,6 +99,29 @@ class AnalysisContext:
     project_edges: Mapping[str, frozenset[str]] = field(default_factory=dict)
     # Import alias maps per module: ``{module: {alias: target_fqn}}``.
     alias_maps: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    # MODULE-SCOPE name bindings per module: ``{module: SinkBindings}`` — module-level
+    # callable aliases (``runner = subprocess.run``) and constructed instances
+    # (``client = httpx.Client()``), collected from each module's top-level scope by the
+    # analyzer. The sink machinery layers a function's own bindings OVER these
+    # (``resolved_sink_calls(..., module_bindings=...)``), closing the documented
+    # module-level false negatives (wardline-13cfdd7b31 / wardline-66b2c91470).
+    # Defaulted so direct constructions (tests) need not supply it; absence degrades to
+    # function-scope-only binding resolution.
+    module_bindings: Mapping[str, SinkBindings] = field(default_factory=dict)
+    # Rule ids selected for THIS run (``rules.enable``), or ``None`` when unknown
+    # (direct constructions / duck-typed registry seams without a ``rules``
+    # property). A rule that suppresses-and-delegates to a sibling (PY-WL-120 →
+    # PY-WL-101) consults this so it never delegates to a rule that will not run;
+    # ``None`` preserves the historical assume-enabled behavior.
+    enabled_rule_ids: frozenset[str] | None = None
+    # Per-scan degradation channel: qualnames whose sink-argument resolution fell
+    # back to the pessimistic flow-INSENSITIVE map (no L2 snapshot — an L2-skipped
+    # function). ``resolved_arg_taints`` records here instead of warning from
+    # inside rule ``check()`` calls; the analyzer surfaces the collected set as ONE
+    # ``WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK`` NONE/FACT finding per scan
+    # (mirroring WLN-ENGINE-FUNCTION-SKIPPED). Deliberately a mutable set on a
+    # frozen context: it is a diagnostics side channel, not engine output.
+    flow_insensitive_fallbacks: set[str] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "project_taints", _freeze_mapping(self.project_taints))
@@ -135,6 +159,8 @@ class AnalysisContext:
             "alias_maps",
             _freeze_mapping(self.alias_maps),
         )
+        # SinkBindings values are frozen dataclasses — only the outer map needs the proxy.
+        object.__setattr__(self, "module_bindings", _freeze_mapping(self.module_bindings))
 
 
 class _RuleClass(Protocol):

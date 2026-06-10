@@ -1066,12 +1066,17 @@ def test_dict_pop_joins_tainted_default_arg() -> None:
 
 
 def test_unknown_builtin_call_still_falls_back_to_function_taint() -> None:
-    # HARD BOUNDARY: len()/int()/validate() are NOT curated — they must STILL fall
-    # back to function_taint, or we explode in false positives.
+    # HARD BOUNDARY: len()/int() are curated NON-propagators (validators/
+    # measurers) — they keep the function_taint fallback. An unknown bare call
+    # like validate() (absent from the taint_map) is the OPPOSITE: it now
+    # propagates the worst of (caller seed, args) — an unmodeled callee cannot
+    # be assumed to clean a raw argument (wardline-93d608c997; the unresolved
+    # bare-name launder closure). See test_engine_precision.py for the family.
     assert _vt("def f(p):\n    x = len(read_raw(p))\n", function_taint=T.GUARDED, taint_map=_RAW_TM)["x"] == T.GUARDED
     assert _vt("def f(p):\n    x = int(read_raw(p))\n", function_taint=T.GUARDED, taint_map=_RAW_TM)["x"] == T.GUARDED
     assert (
-        _vt("def f(p):\n    x = validate(read_raw(p))\n", function_taint=T.GUARDED, taint_map=_RAW_TM)["x"] == T.GUARDED
+        _vt("def f(p):\n    x = validate(read_raw(p))\n", function_taint=T.GUARDED, taint_map=_RAW_TM)["x"]
+        == T.UNKNOWN_RAW
     )
 
 

@@ -37,9 +37,11 @@ def _taint_path_none_flags(source_file: str) -> list[bool]:
 
 
 def test_taintedsinkrule_base_carries_a_discriminator() -> None:
-    # The 7 sink subclasses (106/107/108/112/115/116/117) have NO per-module _fp call —
-    # the single call lives in the shared base. It must carry a (non-None) span so every
-    # subclass is covered.
+    # The attribute-only sink subclasses (106/107/108/112/115/117/121-126) have NO
+    # per-module _fp call — the single call lives in the shared base's
+    # build_sink_finding (the 2026-06-10 consolidation restored this single-call
+    # property; the former mixins satisfied it only transitively). It must carry a
+    # (non-None) span so every subclass is covered.
     flags = _taint_path_none_flags(inspect.getfile(TaintedSinkRule))
     assert flags, "expected the TaintedSinkRule base to build a fingerprint"
     assert not any(flags), "the shared sink-rule fingerprint must carry a discriminator (never taint_path=None)"

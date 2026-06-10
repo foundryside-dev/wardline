@@ -538,6 +538,21 @@ def test_108_trusted_literal_arg_does_not_fire(tmp_path) -> None:
     assert UntrustedToCommand().check(ctx) == []
 
 
+def test_108_undecorated_is_suppressed(tmp_path) -> None:
+    # Matrix slot (wardline-e159060db7): the suite pinned 106/112 undecorated
+    # suppression but not 108's — an undecorated (UNKNOWN_RAW freedom-zone)
+    # function must stay silent even with raw data at the always-shell sink.
+    ctx = _analyze(
+        tmp_path,
+        """
+        def f(p):
+            os.system(read_raw(p))
+            return 1
+        """,
+    )
+    assert UntrustedToCommand().check(ctx) == []
+
+
 def test_107_self_method_call_arg_fires(tmp_path) -> None:
     # Sibling method call (self.get_raw) should resolve to EXTERNAL_RAW and trigger PY-WL-107.
     ctx = _analyze(
@@ -767,8 +782,11 @@ def test_112_resolves_aliased_shell_subprocess_sinks(tmp_path) -> None:
     ]
 
 
-def test_fallback_flow_insensitive_warnings() -> None:
-    # If flow-sensitive map is missing, we warn and pessimistically assume UNKNOWN_RAW.
+def test_fallback_flow_insensitive_records_on_the_context() -> None:
+    # If the flow-sensitive map is missing, the resolver records the degradation on
+    # the context (one WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK FACT per scan, emitted
+    # by the analyzer) and pessimistically assumes UNKNOWN_RAW. Never a warning —
+    # a warnings-as-error embedder must not lose a whole rule to the diagnostic.
     import ast
     import warnings
 
@@ -788,9 +806,8 @@ def test_fallback_flow_insensitive_warnings() -> None:
         taint_provenance={},
     )  # Empty context has no flow-sensitive mappings
 
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
         res = worst_arg_taint(call, "m.f", context)
-        assert len(w) == 1
-        assert "WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK" in str(w[0].message)
-        assert res == TaintState.UNKNOWN_RAW
+    assert res == TaintState.UNKNOWN_RAW
+    assert context.flow_insensitive_fallbacks == {"m.f"}

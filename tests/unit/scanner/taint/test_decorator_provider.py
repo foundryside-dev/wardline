@@ -241,7 +241,11 @@ def test_star_imported_trust_boundary_fires_end_to_end(tmp_path) -> None:
     )
     result = run_scan(pkg)
     active = {f.rule_id for f in result.findings if f.suppressed.value == "active"}
-    assert "PY-WL-102" in active, "star-imported @trust_boundary was not seeded"
+    # The boundary-integrity family partitions (wardline-718048a518): the bare
+    # ``return p`` shape is PY-WL-119's domain, every other no-rejection shape is
+    # PY-WL-102's. Either member firing proves the star-imported decorator was
+    # seeded — the FN this test guards is the EMPTY intersection.
+    assert {"PY-WL-102", "PY-WL-119"} & active, "star-imported @trust_boundary was not seeded"
 
 
 # ── Coverage: fail-closed arms reached only by unusual / malformed decorator

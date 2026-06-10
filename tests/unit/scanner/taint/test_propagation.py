@@ -92,8 +92,15 @@ def test_two_anchored_callees_aggregate_via_least_trusted() -> None:
     edges = {"A": {"B", "C"}, "B": set(), "C": set()}
     tm = {"A": T.UNKNOWN_RAW, "B": T.GUARDED, "C": T.EXTERNAL_RAW}
     src = {"A": "fallback", "B": "anchored", "C": "anchored"}
-    refined, _prov, _diags, _it = _run(edges, tm, src)
-    assert refined["A"] != T.MIXED_RAW
+    refined, _prov, diags, _it = _run(edges, tm, src)
+    # Exact value (wardline-e159060db7): the fallback floor must HOLD A at
+    # UNKNOWN_RAW — `!= MIXED_RAW` also passed under a floor-drop mutation
+    # (combined = EXTERNAL_RAW satisfies it). And the floor must hold at the
+    # combination site itself, not via the monotonicity commit backstop: under
+    # the floor-drop mutation the value survives only because the guard rejects
+    # the move and emits L3_MONOTONICITY_VIOLATION — so no diagnostics allowed.
+    assert refined["A"] == T.UNKNOWN_RAW
+    assert diags == []
 
 
 def test_clean_different_family_callees_stay_clean() -> None:
@@ -165,8 +172,30 @@ def test_fallback_caller_clean_callees_floor_holds_not_mixed() -> None:
     edges = {"A": {"B", "C"}, "B": set(), "C": set()}
     tm = {"A": T.UNKNOWN_RAW, "B": T.ASSURED, "C": T.INTEGRAL}
     src = {"A": "fallback", "B": "anchored", "C": "anchored"}
-    refined, _prov, _diags, _it = _run(edges, tm, src)
+    refined, _prov, diags, _it = _run(edges, tm, src)
     assert refined["A"] == T.UNKNOWN_RAW  # floor, NOT MIXED_RAW
+    # The floor must hold at the combination site, not via the monotonicity
+    # commit guard (which would emit L3_MONOTONICITY_VIOLATION while preserving
+    # the value) — see test_two_anchored_callees_aggregate_via_least_trusted.
+    assert diags == []
+
+
+def test_scc_round_floor_holds_inside_cycle_without_phase1_seed() -> None:
+    # Exercises the `_compute_scc_round` floor in ISOLATION from Phase-1
+    # initialization (wardline-e159060db7): A and B form a cycle, so B is inside
+    # A's SCC and Phase 1's external-callee pass never touches A — the Phase-2
+    # floor (current[A] = UNKNOWN_RAW) is the ONLY thing pinning A against its
+    # anchored-INTEGRAL cycle partner. Mutation-probed: with the floor dropped
+    # (`new_taint = combined`) the round proposes INTEGRAL for A and only the
+    # monotonicity commit guard saves the VALUE while emitting
+    # L3_MONOTONICITY_VIOLATION — hence both assertions are load-bearing.
+    edges = {"A": {"B"}, "B": {"A"}}
+    tm = {"A": T.UNKNOWN_RAW, "B": T.INTEGRAL}
+    src = {"A": "fallback", "B": "anchored"}
+    refined, _prov, diags, _it = _run(edges, tm, src)
+    assert refined["A"] == T.UNKNOWN_RAW  # floor holds — fallback can't prove trust
+    assert refined["B"] == T.INTEGRAL  # anchored partner unaffected
+    assert diags == []
 
 
 def test_long_chain_converges_without_bound_diagnostic() -> None:

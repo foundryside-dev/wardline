@@ -3,9 +3,28 @@
 
 A trust-RAISING transition (declared return strictly MORE trusted than body —
 the taint shape unique to ``@trust_boundary`` among the vocabulary) that contains
-no ``raise`` and no falsy-constant ``return`` cannot actually reject bad input,
-so it is not validating. Declaration-gated (the decorator is the opt-in), so it
-emits at base severity (NOT tier-modulated).
+no rejection path of any recognised shape cannot actually reject bad input, so it
+is not validating. Declaration-gated (the decorator is the opt-in), so it emits
+at base severity (NOT tier-modulated).
+
+Recognised rejection shapes (any one keeps the rule silent):
+  - an own-scope ``raise`` or ``assert`` (the assert-only case is PY-WL-111's);
+  - a rejection-shaped ``return`` — falsy constant, conditional expression with a
+    rejecting branch (``return m.group(0) if m else None``), or a curated
+    raising-conversion / lookup (``return int(p)`` / ``return Color[p]`` /
+    ``return ALLOWED[p]`` — validate-by-construction);
+  - a ONE-HOP, SAME-MODULE call to a helper whose own body has a real rejection
+    (``_require_nonempty(p)``, a raising staticmethod, or wholesale delegation to
+    another raising boundary). A helper that cannot raise never counts.
+
+**The boundary-integrity family partitions FOUR ways** (wardline-718048a518) —
+at most one of {102, 111, 113, 119} fires per boundary:
+  - PY-WL-119 — the bare degenerate shape (single ``return <param>``): the
+    more-specific rule wins, so 102 SUPPRESSES itself there (the suppression is
+    structural — keyed on the shape, not on whether 119 is enabled);
+  - PY-WL-102 — every OTHER shape with no rejection path (cannot reject at all);
+  - PY-WL-111 — rejection only via ``assert`` (stripped under ``python -O``);
+  - PY-WL-113 — a real rejection exists but a fail-open handler defeats it.
 """
 
 from __future__ import annotations
@@ -15,7 +34,11 @@ from typing import TYPE_CHECKING
 from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import TRUST_RANK
-from wardline.scanner.rules._ast_helpers import has_rejection_path
+from wardline.scanner.rules._ast_helpers import (
+    has_rejection_path,
+    is_degenerate_boundary,
+    rejecting_helper_calls,
+)
 from wardline.scanner.rules.metadata import RuleMetadata
 
 if TYPE_CHECKING:
@@ -30,7 +53,8 @@ METADATA = RuleMetadata(
         "has no rejection path — no raise, no falsy-constant return — so it cannot "
         "validate."
     ),
-    examples_violation=("@trust_boundary(to_level='ASSURED')\ndef v(p):\n    return p",),
+    # NOT the bare `return p` shape — that is PY-WL-119's (the family partitions).
+    examples_violation=("@trust_boundary(to_level='ASSURED')\ndef v(p):\n    x = p\n    return x",),
     examples_clean=(
         "@trust_boundary(to_level='ASSURED')\ndef v(p):\n    if not p:\n        raise ValueError\n    return p",
     ),
@@ -58,6 +82,12 @@ class BoundaryWithoutRejection:
             if TRUST_RANK[body] <= TRUST_RANK[ret]:
                 continue
             if has_rejection_path(entity.node):
+                continue
+            # The bare degenerate shape is PY-WL-119's domain (more-specific wins).
+            if is_degenerate_boundary(entity.node):
+                continue
+            # One-hop: a same-module raising helper IS this boundary's rejection path.
+            if rejecting_helper_calls(entity, context.entities, context.call_site_callees):
                 continue
             findings.append(
                 Finding(

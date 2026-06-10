@@ -10,9 +10,20 @@ emits at base severity (NOT tier-modulated).
 
 A PY-WL-102-adjacent refinement: 102 fires when a boundary cannot reject *at all*;
 111 fires when it *appears* to reject but only via a guard that disappears in
-production. The two partition the space — a boundary with a real ``raise`` or a
-falsy-constant ``return`` trips neither (see ``asserts_are_sole_rejection`` /
-``has_rejection_path`` in ``_ast_helpers``).
+production. A boundary with a real ``raise`` / rejection-shaped ``return``
+(see ``asserts_are_sole_rejection`` / ``has_rejection_path`` in ``_ast_helpers``)
+— or a ONE-HOP same-module call to a helper that itself raises (the helper's
+``raise`` survives ``python -O``, so the CWE-617 claim would be factually false)
+— trips neither.
+
+**The boundary-integrity family partitions FOUR ways** (wardline-718048a518) —
+at most one of {102, 111, 113, 119} fires per boundary:
+  - PY-WL-119 — the bare degenerate shape (single ``return <param>``);
+  - PY-WL-102 — every other shape with no rejection path;
+  - PY-WL-111 — rejection only via ``assert`` (this rule). This includes an
+    assert INSIDE a ``try`` whose handler substitutes: the rejection is still
+    assert-only, so 111 wins over 113 (documented precedence);
+  - PY-WL-113 — a real rejection exists but a fail-open handler defeats it.
 """
 
 from __future__ import annotations
@@ -22,7 +33,7 @@ from typing import TYPE_CHECKING
 from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import TRUST_RANK
-from wardline.scanner.rules._ast_helpers import asserts_are_sole_rejection
+from wardline.scanner.rules._ast_helpers import asserts_are_sole_rejection, rejecting_helper_calls
 from wardline.scanner.rules.metadata import RuleMetadata
 
 if TYPE_CHECKING:
@@ -65,6 +76,10 @@ class AssertOnlyBoundary:
             if TRUST_RANK[body] <= TRUST_RANK[ret]:
                 continue
             if not asserts_are_sole_rejection(entity.node):
+                continue
+            # One-hop: a same-module raising helper survives `python -O`, so the
+            # assert is NOT the sole rejection and the CWE-617 claim would be false.
+            if rejecting_helper_calls(entity, context.entities, context.call_site_callees):
                 continue
             findings.append(
                 Finding(

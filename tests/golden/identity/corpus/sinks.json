@@ -714,7 +714,7 @@
       "qualname": "wardline_sinks.run_export",
       "related_entities": [],
       "rule_id": "PY-WL-112",
-      "severity": "WARN",
+      "severity": "ERROR",
       "suggestion": null,
       "suppression_reason": null,
       "suppression_state": "active"
@@ -1512,7 +1512,7 @@
                 ]
               }
             ],
-            "level": "warning",
+            "level": "error",
             "locations": [
               {
                 "physicalLocation": {
@@ -1532,7 +1532,7 @@
               "wardlineFingerprint/v2": "13c25150c1e15425e6ae5f9d99f67ec09dd5ffb4b60ac49e20367a0ad6240c6f"
             },
             "properties": {
-              "internalSeverity": "WARN",
+              "internalSeverity": "ERROR",
               "kind": "defect",
               "qualname": "wardline_sinks.run_export",
               "wardlineProperties": {

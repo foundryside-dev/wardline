@@ -242,6 +242,136 @@ def test_failopen_boundary_silent_on_idempotent_self_assignment(tmp_path) -> Non
     assert FailOpenBoundary().check(ctx) == []
 
 
+def test_failopen_silent_when_no_rejection_exists_102s_domain(tmp_path) -> None:
+    # wardline-718048a518 repro A: no rejection of any shape exists, so the boundary
+    # is PY-WL-102's ("cannot reject at all") — 113's premise (a rejection exists and
+    # is defeated) does not hold; 113 must stay silent.
+    ctx = _analyze(
+        tmp_path,
+        """
+        def compute(p):
+            return p
+        @trust_boundary(to_level='ASSURED')
+        def v(p):
+            try:
+                x = compute(p)
+            except Exception:
+                return p
+            return x
+        """,
+    )
+    assert FailOpenBoundary().check(ctx) == []
+
+
+def test_failopen_silent_when_assert_is_sole_rejection_111s_domain(tmp_path) -> None:
+    # wardline-718048a518 repro B: the only rejection is an assert — PY-WL-111's
+    # exclusive domain; 113 must stay silent.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trust_boundary(to_level='ASSURED')
+        def v(p):
+            assert p
+            try:
+                return p
+            except Exception:
+                return "x"
+        """,
+    )
+    assert FailOpenBoundary().check(ctx) == []
+
+
+def test_failopen_silent_on_unrelated_cache_miss_fallback(tmp_path) -> None:
+    # boundary.json FP 5: the boundary's rejection (the raise) is lexically OUTSIDE
+    # the try, so the handler cannot swallow it — fail-CLOSED, must stay silent.
+    ctx = _analyze(
+        tmp_path,
+        """
+        _cache = {}
+        @trust_boundary(to_level='ASSURED')
+        def v(p):
+            if not p.isdigit():
+                raise ValueError
+            try:
+                cached = _cache[p]
+                return cached
+            except KeyError:
+                result = int(p)
+                _cache[p] = result
+                return result
+        """,
+    )
+    assert FailOpenBoundary().check(ctx) == []
+
+
+def test_failopen_fires_when_rejection_inside_try_with_unrelated_handler_type(tmp_path) -> None:
+    # TP preserved: an unrelated exception TYPE whose raise IS inside the same try
+    # can preempt the validation — still fires (type-blindness is documented).
+    ctx = _analyze(
+        tmp_path,
+        """
+        _cache = {}
+        @trust_boundary(to_level='ASSURED')
+        def v(p):
+            try:
+                if not p.isdigit():
+                    raise ValueError
+                cached = _cache[p]
+                return cached
+            except KeyError:
+                return p
+        """,
+    )
+    assert [(f.rule_id, f.qualname) for f in FailOpenBoundary().check(ctx)] == [("PY-WL-113", "m.v")]
+
+
+def test_failopen_fires_when_helper_rejection_inside_try_is_swallowed(tmp_path) -> None:
+    # One-hop coherence: the rejection delegated to a same-module raising helper
+    # (which silences 102) is INSIDE the try and swallowed by a substituting
+    # handler — a real fail-open; 113 must own it.
+    ctx = _analyze(
+        tmp_path,
+        """
+        def _require_nonempty(p):
+            if not p:
+                raise ValueError("empty")
+        @trust_boundary(to_level='ASSURED')
+        def v(p):
+            try:
+                _require_nonempty(p)
+                return p
+            except ValueError:
+                return p
+        """,
+    )
+    assert [(f.rule_id, f.qualname) for f in FailOpenBoundary().check(ctx)] == [("PY-WL-113", "m.v")]
+
+
+def test_failopen_silent_when_helper_rejection_outside_try(tmp_path) -> None:
+    # The helper-delegated rejection runs BEFORE the try — the cache-miss handler
+    # cannot swallow it; fail-closed, silent.
+    ctx = _analyze(
+        tmp_path,
+        """
+        _cache = {}
+        def _require_digit(p):
+            if not p.isdigit():
+                raise ValueError
+        @trust_boundary(to_level='ASSURED')
+        def v(p):
+            _require_digit(p)
+            try:
+                cached = _cache[p]
+                return cached
+            except KeyError:
+                result = int(p)
+                _cache[p] = result
+                return result
+        """,
+    )
+    assert FailOpenBoundary().check(ctx) == []
+
+
 def test_failopen_boundary_fires_on_conditional_return_then_fallthrough_assign(tmp_path) -> None:
     # panel-2 FN (wardline-c314a7140b): the handler returns only CONDITIONALLY (nested if)
     # and otherwise FALLS THROUGH with a value-substituting assignment. The fall-through

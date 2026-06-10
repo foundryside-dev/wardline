@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING
 
 from wardline.core.finding import Finding, Kind, Location, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
-from wardline.core.taints import TaintState
 from wardline.scanner.rules._ast_helpers import is_silent_handler, own_except_handlers
+from wardline.scanner.rules._sink_helpers import enclosing_declared_tier
 from wardline.scanner.rules.metadata import RuleMetadata
 from wardline.scanner.rules.severity_model import modulate
 
@@ -45,8 +45,11 @@ class SilentException:
     def check(self, context: AnalysisContext) -> list[Finding]:
         findings: list[Finding] = []
         for qualname, entity in context.entities.items():
-            lookup_name = qualname.split(".<locals>.")[0]
-            tier = context.project_taints.get(lookup_name, TaintState.UNKNOWN_RAW)
+            # Nearest DECLARED enclosing scope governs a nested def (a nested def's own
+            # trust decorator wins; undeclared nested defs inherit) — the same
+            # enclosing_declared_tier semantics as the sink rule family, NOT the
+            # outermost-function strip (wardline-bb8396f96e / wardline-9b88ec5419).
+            tier = enclosing_declared_tier(qualname, context.project_taints, context.declared_qualnames)
             severity = modulate(self.base_severity, tier)
             if severity == Severity.NONE:
                 continue

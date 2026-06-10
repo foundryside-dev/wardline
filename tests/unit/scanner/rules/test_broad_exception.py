@@ -131,3 +131,80 @@ def test_multiple_handlers_one_function_are_distinguished_only_by_line_start(tmp
     assert [f.qualname for f in findings] == ["m.f", "m.f"], "multi-emit: one finding per handler"
     fps = {f.fingerprint for f in findings}
     assert len(fps) == 2, "distinct today (via line_start); collides iff line_start leaves the key"
+
+
+def test_nested_trusted_def_uses_its_own_tier(tmp_path) -> None:
+    # A nested def carrying its OWN trust declaration is governed by that tier, not
+    # the undecorated outer's UNKNOWN_RAW (which would wrongly suppress the rule).
+    # Aligns PY-WL-103 with the sink family's enclosing_declared_tier semantics
+    # (wardline-bb8396f96e).
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": """\
+            from wardline.decorators import trusted
+
+            def outer(p):
+                @trusted(level="ASSURED")
+                def inner():
+                    try:
+                        g()
+                    except Exception:
+                        pass
+                return inner
+            """,
+        },
+    )
+    findings = _run(ctx)
+    assert [(f.rule_id, f.qualname) for f in findings] == [("PY-WL-103", "m.outer.<locals>.inner")]
+    assert findings[0].severity == Severity.WARN
+    assert findings[0].properties["tier"] == "ASSURED"
+
+
+def test_nested_external_boundary_def_inside_trusted_is_suppressed(tmp_path) -> None:
+    # A nested @external_boundary def is explicitly in the raw zone; the @trusted
+    # OUTER's tier must not leak onto it (the FP direction of the .<locals>. strip).
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": """\
+            from wardline.decorators import external_boundary, trusted
+
+            @trusted(level="ASSURED")
+            def outer(p):
+                @external_boundary
+                def inner():
+                    try:
+                        g()
+                    except Exception:
+                        pass
+                return inner
+            """,
+        },
+    )
+    assert _run(ctx) == []
+
+
+def test_undeclared_nested_def_inherits_enclosing_declared_tier(tmp_path) -> None:
+    # A genuinely undeclared nested def inherits the nearest DECLARED enclosing
+    # scope's tier (wardline-9b88ec5419) — pins the inheritance half of the walk.
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": """\
+            from wardline.decorators import trusted
+
+            @trusted(level="ASSURED")
+            def outer(p):
+                def inner():
+                    try:
+                        g()
+                    except Exception:
+                        pass
+                return inner
+            """,
+        },
+    )
+    findings = _run(ctx)
+    assert [(f.rule_id, f.qualname) for f in findings] == [("PY-WL-103", "m.outer.<locals>.inner")]
+    assert findings[0].properties["tier"] == "ASSURED"

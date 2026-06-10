@@ -62,10 +62,10 @@ class ScanSummary:
     # Files DISCOVERED but NEVER analysed despite being analysable — a genuine
     # under-scan (parse errors, too-deep skips, missing source roots). Benign
     # no-module skips (WLN-ENGINE-NO-MODULE) are EXCLUDED — see UNANALYZED_RULE_IDS.
-    # These are Severity.NONE FACTs that never trip the severity gate, so they are
-    # counted separately to surface a silent under-scan / false-green. This is an
-    # OVERLAY (a subset of ``informational``), NOT a partition member — it is not added
-    # into the sum-to-total identity.
+    # PARSE-ERROR/FILE-FAILED are gate-eligible ERROR DEFECTs (fail-closed: unscanned
+    # code must not read GREEN); FILE-SKIPPED/SOURCE-ROOT-MISSING stay non-gating FACTs.
+    # This is an OVERLAY counted by rule_id across both buckets, NOT a partition
+    # member — it is not added into the sum-to-total identity.
     unanalyzed: int = 0
 
 

@@ -35,8 +35,14 @@ from wardline.scanner.rules.untrusted_to_command import UntrustedToCommand
 from wardline.scanner.rules.untrusted_to_deserialization import UntrustedToDeserialization
 from wardline.scanner.rules.untrusted_to_exec import UntrustedToExec
 from wardline.scanner.rules.untrusted_to_import import UntrustedToImport
+from wardline.scanner.rules.untrusted_to_log import UntrustedToLog
+from wardline.scanner.rules.untrusted_to_mail import UntrustedToMail
+from wardline.scanner.rules.untrusted_to_native import UntrustedToNative
+from wardline.scanner.rules.untrusted_to_reflection import UntrustedToReflection
 from wardline.scanner.rules.untrusted_to_shell_subprocess import UntrustedToShellSubprocess
+from wardline.scanner.rules.untrusted_to_template import UntrustedToTemplate
 from wardline.scanner.rules.untrusted_to_trusted_callee import UntrustedReachesTrustedCallee
+from wardline.scanner.rules.untrusted_to_xml import UntrustedToXML
 
 if TYPE_CHECKING:
     from wardline.core.config import WardlineConfig
@@ -64,6 +70,13 @@ _ALL_RULE_CLASSES = (
     SQLInjection,
     DegenerateBoundary,
     StoredTaint,
+    # PY-WL-121…126 — the 2026-06-10 coverage-gap sink families (all PREVIEW).
+    UntrustedToXML,
+    UntrustedToTemplate,
+    UntrustedToReflection,
+    UntrustedToNative,
+    UntrustedToLog,
+    UntrustedToMail,
 )
 
 

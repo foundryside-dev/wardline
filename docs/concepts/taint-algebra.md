@@ -154,8 +154,10 @@ reads the validator's **declared** output tier (`effective_return`,
 the annotation as the contract.
 
 This is sound for the statically-decidable property. A **broken** validator with
-*no rejection path at all* is caught by `PY-WL-102` (it can never raise, so it
-cannot validate).
+*no rejection path at all* is caught by the boundary-integrity family — `PY-WL-119`
+for the bare `return p` shape, `PY-WL-102` for every other no-rejection shape
+(it can never raise, so it cannot validate), with `PY-WL-111` (assert-only) and
+`PY-WL-113` (fail-open handler) covering the defeated-rejection variants.
 
 The **residual** — accepted, out of static reach — is a validator that **has** a
 rejection path but checks the **wrong predicate** (e.g. it validates length when

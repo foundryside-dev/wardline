@@ -2,11 +2,15 @@
 
 FP rate = active DEFECTs labeled FALSE_POSITIVE / total active DEFECTs, gated <= 5%.
 The corpus is sized so a single mislabel cannot trivially breach the budget.
+
+FALSE_POSITIVE entries are clean-shape sentinels: the engine must NOT fire on them.
+Silent sentinel = passing (not stale); fired sentinel = a live FP counted against the
+budget. The corpus must carry sentinels so the gate exercises real reconciliation.
 """
 
 from __future__ import annotations
 
-from corpus.harness import reconcile  # type: ignore[import-not-found]
+from corpus.harness import FALSE_POSITIVE, load_manifest, reconcile  # type: ignore[import-not-found]
 
 
 def test_fp_rate_within_budget():
@@ -22,6 +26,45 @@ def test_fp_rate_within_budget():
         f"stale manifest entries (no finding matched): {[(e.path, e.rule_id, e.qualname) for e in rec.stale]}"
     )
     assert rec.fp_rate <= 0.05, f"FP rate {rec.fp_rate:.1%} exceeds the 5% budget"
+
+
+def test_corpus_carries_false_positive_sentinels():
+    # The gate only exercises real reconciliation if the corpus mixes labels: clean-shape
+    # sentinels (FALSE_POSITIVE) alongside the TRUE_POSITIVE defects. A silent sentinel is
+    # the engine behaving correctly, so it must NOT be reported stale.
+    expectations = load_manifest()
+    sentinels = [e for e in expectations if e.label == FALSE_POSITIVE]
+    assert len(sentinels) >= 3, (
+        f"corpus has {len(sentinels)} FALSE_POSITIVE sentinels (need >= 3 so the FP-rate "
+        "gate computes over a mixed corpus, not a vacuous all-TP one)"
+    )
+    rec = reconcile()
+    silent_stale = [e for e in rec.stale if e.label == FALSE_POSITIVE]
+    assert not silent_stale, (
+        "silent FALSE_POSITIVE sentinels were reported stale — a sentinel the engine "
+        "does not fire on is PASSING, not stale: "
+        f"{[(e.path, e.rule_id, e.qualname) for e in silent_stale]}"
+    )
+
+
+def test_fired_sentinel_counts_against_budget(monkeypatch, tmp_path):
+    # End-to-end fired-sentinel path: relabel a known-firing fixture entry as
+    # FALSE_POSITIVE in a scratch manifest — the fired finding must be counted as a
+    # live FP (against the budget), not reported stale or unaccounted.
+    import corpus.harness as harness  # type: ignore[import-not-found]
+
+    original = harness.MANIFEST_PATH.read_text()
+    relabel_target = 'qualname: "deser_sink.loads_untrusted", label: TRUE_POSITIVE'
+    assert relabel_target in original, "relabel target drifted — pick another known-firing entry"
+    scratch = tmp_path / "MANIFEST.yaml"
+    scratch.write_text(original.replace(relabel_target, relabel_target.replace("TRUE_POSITIVE", "FALSE_POSITIVE")))
+    monkeypatch.setattr(harness, "MANIFEST_PATH", scratch)
+
+    rec = reconcile()
+    assert rec.false_positives == 1
+    assert rec.fp_rate == 1 / rec.active_defects
+    assert not rec.unaccounted
+    assert "deser_sink.loads_untrusted" not in {e.qualname for e in rec.stale}
 
 
 def test_reconciliation_fp_rate_arithmetic():

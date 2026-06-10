@@ -138,3 +138,77 @@ def test_parse_project_stage_unshadowed_fingerprint_is_bare(tmp_path) -> None:
     assert result.provider_fingerprint == DecoratorTaintSourceProvider().fingerprint()
     seed = result.modules[0].seeds["m.f"]
     assert seed.body_taint == T.INTEGRAL
+
+
+def test_parse_project_stage_records_entity_qualname_config_source_match(tmp_path) -> None:
+    # An untrusted_sources entry naming a project entity qualname is APPLIED here
+    # (the seed override below) — the match must be reported back to the analyzer
+    # so the directive is never misreported as WLN-CONFIG-UNUSED-SOURCE.
+    path = tmp_path / "m.py"
+    path.write_text("def get_input():\n    return 'x'\n", encoding="utf-8")
+    result = run_parse_project_stage(
+        ParseProjectInput(
+            files=(path,),
+            root=tmp_path,
+            provider=DecoratorTaintSourceProvider(),
+            config=WardlineConfig(untrusted_sources=("m.get_input", "elsewhere.unmatched")),
+            star_exports=vocabulary_star_exports(),
+        )
+    )
+    seed = result.modules[0].seeds["m.get_input"]
+    assert seed.body_taint == T.EXTERNAL_RAW  # the directive took effect...
+    assert result.matched_config_sources == frozenset({"m.get_input"})  # ...and is recorded
+    # The unmatched entry is NOT recorded — the unused-source diagnostic stays live.
+
+
+def test_parse_project_stage_parse_failure_is_gating_error_defect(tmp_path) -> None:
+    # A discovered-but-unparseable file is a gate-eligible ERROR DEFECT (fail-closed:
+    # unscanned code must not pass the default --fail-on ERROR loop), never a NONE
+    # FACT. line_start is ALWAYS set (fallback 1) so the lineless-DEFECT downgrade
+    # in suppression.py cannot demote a no-line encoding failure out of the gate.
+    from wardline.core.finding import Kind, Severity
+
+    (tmp_path / "syntax.py").write_text("def f(:\n", encoding="utf-8")
+    (tmp_path / "enc.py").write_bytes(b'# -*- coding: latin-1 -*-\nx = "\xe9"\n')
+    result = run_parse_project_stage(
+        ParseProjectInput(
+            files=(tmp_path / "syntax.py", tmp_path / "enc.py"),
+            root=tmp_path,
+            provider=DecoratorTaintSourceProvider(),
+            config=WardlineConfig(),
+            star_exports=vocabulary_star_exports(),
+        )
+    )
+    by_path = {f.location.path: f for f in result.parse_findings}
+    assert set(by_path) == {"syntax.py", "enc.py"}
+    for finding in by_path.values():
+        assert finding.rule_id == "WLN-ENGINE-PARSE-ERROR"
+        assert finding.kind is Kind.DEFECT
+        assert finding.severity is Severity.ERROR
+        assert finding.location.line_start is not None
+    # The syntax error keeps its real line; the encoding error falls back to 1.
+    assert by_path["syntax.py"].location.line_start == 1
+    assert by_path["enc.py"].location.line_start == 1
+
+
+def test_parse_project_stage_recursion_skip_stays_nongating_fact(tmp_path) -> None:
+    # The fail-closed change is scoped to PARSE failures: the recursion-limit
+    # file skip keeps its released non-gating FACT contract (it mirrors
+    # WLN-ENGINE-FUNCTION-SKIPPED, surfaced via summary.unanalyzed instead).
+    from wardline.core.finding import Kind, Severity
+
+    expr = "p" + " + p" * 3000
+    (tmp_path / "deep.py").write_text(f"def deep(p):\n    x = {expr}\n    return x\n", encoding="utf-8")
+    result = run_parse_project_stage(
+        ParseProjectInput(
+            files=(tmp_path / "deep.py",),
+            root=tmp_path,
+            provider=DecoratorTaintSourceProvider(),
+            config=WardlineConfig(),
+            star_exports=vocabulary_star_exports(),
+        )
+    )
+    skips = [f for f in result.parse_findings if f.rule_id == "WLN-ENGINE-FILE-SKIPPED"]
+    assert len(skips) == 1
+    assert skips[0].kind is Kind.FACT
+    assert skips[0].severity is Severity.NONE

@@ -17,7 +17,7 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity
-from wardline.core.taints import TaintState, combine
+from wardline.core.taints import RAW_ZONE, TaintState, combine
 from wardline.scanner.context import AnalysisContext, RuleRegistry
 from wardline.scanner.diagnostics import (
     build_collision_findings,
@@ -25,17 +25,20 @@ from wardline.scanner.diagnostics import (
     build_metric_finding,
     build_unknown_import_findings,
 )
-from wardline.scanner.grammar import TrustGrammar, default_grammar
+from wardline.scanner.grammar import TrustGrammar, build_sanitiser_collision_findings, default_grammar
 from wardline.scanner.index import Entity
 from wardline.scanner.pipeline import L2FunctionInput, ParseProjectInput, run_l2_function_stage, run_parse_project_stage
 from wardline.scanner.rules import build_default_registry
+from wardline.scanner.rules._sink_helpers import SinkBindings, collect_sink_bindings
 from wardline.scanner.taint.call_taint_map import build_call_taint_map
 from wardline.scanner.taint.decorator_provider import (
     DecoratorTaintSourceProvider,
     vocabulary_star_exports,
 )
+from wardline.scanner.taint.module_summariser import collect_module_global_raw_seeds, own_scope_global_names
 from wardline.scanner.taint.project_resolver import resolve_project_taints
 from wardline.scanner.taint.provider import TaintSourceProvider
+from wardline.scanner.taint.variable_level import attribute_write_recording, project_attribute_writes
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -52,9 +55,14 @@ def _fp(*parts: str) -> str:
 
 
 _L2Record = tuple[Entity, TaintState, dict[str, TaintState], str, dict[str, str], str, bool]
+# The L2 fixed-point memo key. ``seed`` and ``method_tm`` are FIXED per entity across
+# iterations (computed once in pass 1), so the key carries only the iteration-VARYING
+# inputs: the class-attribute overlay and the parameter meets — both O(per-function).
+# Keying on the full sorted taint map was O(project) per function per iteration,
+# the whole-scan O(n^2) hotspot (resource-exhaustion on large/adversarial trees).
 type _L2InputKey = tuple[
-    TaintState,
-    tuple[tuple[str, TaintState], ...],
+    tuple[tuple[str, TaintState], ...] | None,
+    tuple[tuple[str, TaintState], ...] | None,
     tuple[tuple[str, TaintState], ...] | None,
 ]
 type _L2Result = tuple[
@@ -65,6 +73,143 @@ type _L2Result = tuple[
     str | None,
     dict[str, dict[str, TaintState]],
 ]
+
+# Above this many candidate-key probes, fall back to the full (unpruned) per-function
+# taint map — a sound, slower path for a single pathologically token-dense function.
+_CANDIDATE_KEY_BUDGET = 50_000
+
+
+def _pruned_method_taint_map(
+    node: ast.AST,
+    alias_map: dict[str, str],
+    module_prefix: str,
+    call_tm: dict[str, TaintState],
+    project_return_taints: dict[str, TaintState],
+) -> dict[str, TaintState]:
+    """Restrict the per-function taint map to keys the function can actually look up.
+
+    Folding the whole project's return-taint map into EVERY function's taint map made
+    each per-function L2 run O(project): the map copy in ``analyze_function_variables``,
+    the per-call ``frozenset(taint_map.keys())``, and the fixed-point memo key all scale
+    with the map — an O(n^2) whole-scan blowup. The L2 resolver only ever looks a key up
+    by a form DERIVED FROM SOURCE TOKENS in the function body (variable_level.py):
+
+      * a bare name / literal dotted chain as written (``foo`` / ``mod.fn`` / ``self.x``),
+      * an alias-resolved chain (``resolve_call_fqn`` / ``_resolve_expr_fqn``:
+        ``alias_map[root] + rest``),
+      * a module-local candidate (``{module_prefix}.{name}``), and
+      * a tracked-receiver-type method key (``{class_fqn}.{attr}`` where the class FQN
+        is itself one of the resolved forms above and ``attr`` is an attribute token).
+
+    So the restriction of the merged map to those candidate forms is lookup-equivalent
+    to the full map: every key the body can derive is present with the same value
+    (project return taints win over ``call_tm`` on conflict, matching the previous
+    ``dict(call_tm); update(project_return_taints)`` precedence), and never-derivable
+    keys cannot be consulted. Extra candidates that happen to exist in the merged map
+    are included harmlessly (the full map contained them too).
+    """
+    chains: set[str] = set()
+    attrs: set[str] = set()
+    for n in ast.walk(node):
+        if isinstance(n, ast.Name):
+            chains.add(n.id)
+        elif isinstance(n, ast.Attribute):
+            attrs.add(n.attr)
+            parts: list[str] = []
+            cur: ast.expr = n
+            while isinstance(cur, ast.Attribute):
+                parts.append(cur.attr)
+                cur = cur.value
+            if isinstance(cur, ast.Name):
+                parts.append(cur.id)
+                chains.add(".".join(reversed(parts)))
+    forms: set[str] = set(chains)
+    for chain in chains:
+        root, _, rest = chain.partition(".")
+        target = alias_map.get(root)
+        if target is not None:
+            forms.add(f"{target}.{rest}" if rest else target)
+        if module_prefix:
+            forms.add(f"{module_prefix}.{chain}")
+    if len(forms) * (len(attrs) + 1) > _CANDIDATE_KEY_BUDGET:
+        merged = dict(call_tm)
+        merged.update(project_return_taints)
+        return merged
+
+    tm: dict[str, TaintState] = {}
+
+    def _take(key: str) -> None:
+        value = project_return_taints.get(key)
+        if value is None:
+            value = call_tm.get(key)
+        if value is not None:
+            tm[key] = value
+
+    for form in forms:
+        _take(form)
+        for attr in attrs:
+            _take(f"{form}.{attr}")
+    return tm
+
+
+def _with_module_global_params(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    param_meets: dict[str, TaintState] | None,
+    global_seeds: dict[str, TaintState] | None,
+) -> tuple[ast.FunctionDef | ast.AsyncFunctionDef, dict[str, TaintState] | None]:
+    """Present raw MODULE GLOBALS to one function's L2 walk as implicit parameters.
+
+    The L2 walk resolves a bare name as ``var_taints.get(name, function_taint)`` —
+    so an unassigned module-global read would otherwise inherit the trusted caller
+    seed (laundering the module-level taint, wardline-66b2c91470). Rather than
+    threading a new seed channel through the engine, the raw globals the body
+    references are appended as SYNTHETIC keyword-only parameters on a shallow
+    wrapper node — sharing the ORIGINAL body/decorator statement objects, so the
+    ``id()``-keyed call-site maps stay valid for every downstream consumer — and
+    their taints are delivered through the existing ``param_meets`` channel.
+    Semantically, module globals enter the function exactly like implicit
+    parameters carrying the module-level taint: a function-local assignment then
+    shadows the seed flow-sensitively, like any reassigned parameter. Names
+    already bound as real parameters are skipped (a parameter shadows the global
+    for the whole scope), as are globals the body never mentions (no dead
+    ``var_taints`` entries).
+    """
+    if not global_seeds:
+        return node, param_meets
+    args = node.args
+    existing = {a.arg for a in (*args.posonlyargs, *args.args, *args.kwonlyargs)}
+    if args.vararg is not None:
+        existing.add(args.vararg.arg)
+    if args.kwarg is not None:
+        existing.add(args.kwarg.arg)
+    referenced = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+    names = sorted(name for name in global_seeds if name in referenced and name not in existing)
+    if not names:
+        return node, param_meets
+    synthetic = [ast.copy_location(ast.arg(arg=name), node) for name in names]
+    new_args = ast.arguments(
+        posonlyargs=list(args.posonlyargs),
+        args=list(args.args),
+        vararg=args.vararg,
+        kwonlyargs=[*args.kwonlyargs, *synthetic],
+        kw_defaults=[*args.kw_defaults, *([None] * len(synthetic))],
+        kwarg=args.kwarg,
+        defaults=list(args.defaults),
+    )
+    wrapper = type(node)(
+        name=node.name,
+        args=new_args,
+        body=node.body,
+        decorator_list=node.decorator_list,
+        returns=node.returns,
+        type_comment=node.type_comment,
+        type_params=list(getattr(node, "type_params", [])),
+    )
+    ast.copy_location(wrapper, node)
+    merged = dict(param_meets or {})
+    for name in names:
+        merged[name] = combine(merged[name], global_seeds[name]) if name in merged else global_seeds[name]
+    return wrapper, merged
 
 
 class WardlineAnalyzer:
@@ -128,6 +273,11 @@ class WardlineAnalyzer:
         file_meta = parse_stage.files
         parse_findings = list(parse_stage.parse_findings)
         dirty_modules = set(parse_stage.dirty_modules)
+        # Entity-qualname seeds applied in the parse stage ARE the directive taking
+        # effect — count them as matched, or a working untrusted_sources entry that
+        # names a project function is misreported as WLN-CONFIG-UNUSED-SOURCE (only
+        # the import/alias path in build_call_taint_map recorded matches before).
+        matched_sources.update(parse_stage.matched_config_sources)
 
         # Use the SHADOW-AWARE provider fingerprint computed during the parse stage
         # for BOTH the dirty-detection key (above, inside the parse stage) AND the
@@ -162,6 +312,27 @@ class WardlineAnalyzer:
         # @trust_boundary validator) body != return, and using body here would
         # mis-read validated output as raw (over-taint -> PY-WL-101 false positive).
         project_return_taints = dict(result.return_taint_map)
+
+        # Nested-def RETURN taints, bucketed by their enclosing entity — injected
+        # into the enclosing function's per-entity taint map under the helper's
+        # BARE name. The L2 bare-name resolution otherwise treats an already-
+        # analyzed local helper (``m.f.<locals>.clean``) as an unknown callee and
+        # applies the worst-arg conservatism, turning every local validate/parse
+        # helper into a PY-WL-101 ERROR FP (2026-06-10 review; the launder-closing
+        # conservatism of wardline-93d608c997 is preserved for genuinely-unknown
+        # bare names). This pass-1 seed uses the L1 return tiers; the fixed-point
+        # loop below overlays the PRECISE L2 actual-return taints once they exist
+        # (an undecorated ``def clean(x): return 1`` is UNKNOWN_RAW at L1 but
+        # INTEGRAL at L2). Built once per scan — a per-entity scan of the project
+        # map would reintroduce the O(n^2) hotspot the pruned taint map removed.
+        # Lexically sound: a nested def shadows any module-level/imported callable
+        # of the same name for the whole enclosing scope.
+        nested_def_returns: dict[str, dict[str, TaintState]] = {}
+        for nested_qn, nested_taint in project_return_taints.items():
+            enclosing_qn, sep, bare = nested_qn.rpartition(".<locals>.")
+            if sep and "." not in bare:
+                nested_def_returns.setdefault(enclosing_qn, {})[bare] = nested_taint
+
         project_by_module: dict[str, dict[str, TaintState]] = {}
         for parsed in file_meta:
             module = parsed.module
@@ -332,6 +503,7 @@ class WardlineAnalyzer:
             alias_map: dict[str, str],
             param_meets: dict[str, TaintState] | None = None,
             module_prefix: str | None = None,
+            global_seeds: dict[str, TaintState] | None = None,
         ) -> tuple[
             dict[int, dict[str, TaintState]],
             dict[int, dict[int | str | None, TaintState]],
@@ -339,6 +511,8 @@ class WardlineAnalyzer:
             TaintState | None,
             str | None,
         ]:
+            # Module-global taint channel: raw module globals enter as implicit params.
+            node, param_meets = _with_module_global_params(node, param_meets, global_seeds)
             result = run_l2_function_stage(
                 L2FunctionInput(
                     node=node,
@@ -374,8 +548,58 @@ class WardlineAnalyzer:
                 function_return_taints.pop(qn, None)
             function_return_callee[qn] = ret_callee
 
+        # ── Module-scope channels (wardline-66b2c91470 / wardline-13cfdd7b31) ──
+        # (a) module-level name bindings (callable aliases / constructed instances) for
+        # the sink rules' binding-aware resolution, exposed on the context;
+        # (b) module-global RAW seeds — module-level names assigned from a raw source at
+        # import time, presented to each function's L2 walk as implicit raw parameters.
+        module_sink_bindings: dict[str, SinkBindings] = {}
+        module_global_taints: dict[str, dict[str, TaintState]] = {}
+        for parsed in file_meta:
+            module_sink_bindings[parsed.module] = collect_sink_bindings(parsed.tree, parsed.alias_map, parsed.module)
+            global_raw_seeds = collect_module_global_raw_seeds(
+                parsed.tree,
+                module=parsed.module,
+                alias_map=parsed.alias_map,
+                return_taints=project_return_taints,
+                local_fqns=frozenset(ent.qualname for ent in parsed.entities),
+                untrusted_sources=frozenset(config.untrusted_sources),
+            )
+            if global_raw_seeds:
+                module_global_taints[parsed.module] = global_raw_seeds
+
         # ── L2 pass 1 — per-method var/return taints + per-class attribute summary ──
         all_classes = frozenset(c for parsed in file_meta for c in parsed.class_qualnames)
+        failed_paths: set[str] = set()
+
+        def _record_file_failure(relpath: str, ent: Entity, exc: Exception) -> None:
+            # Per-file isolation, mirroring the Rust frontend's WLN-ENGINE-FILE-FAILED:
+            # an unexpected engine exception on ONE file's analysis must not abort the
+            # whole scan (losing every other file's findings) — and must not silently
+            # skip either. Fail closed: a gate-eligible ERROR DEFECT names the file
+            # (rule id already in UNANALYZED_RULE_IDS, so it counts toward
+            # ScanSummary.unanalyzed). One finding per file — the fingerprint is keyed
+            # on the relpath (the Rust contract), so a second failing entity in the
+            # same file must not mint a colliding distinct finding. ``line_start``
+            # falls back to the entity line so the lineless-DEFECT downgrade
+            # (suppression.py) never demotes it back out of the gate.
+            l2_failed.add(ent.qualname)
+            if relpath in failed_paths:
+                return
+            failed_paths.add(relpath)
+            func_skip_findings.append(
+                Finding(
+                    rule_id="WLN-ENGINE-FILE-FAILED",
+                    message=f"{relpath}: analysis failed at {ent.qualname} ({type(exc).__name__}: {exc})",
+                    severity=Severity.ERROR,
+                    kind=Kind.DEFECT,
+                    location=Location(path=relpath, line_start=ent.location.line_start or 1),
+                    fingerprint=_fp("WLN-ENGINE-FILE-FAILED", relpath),
+                    qualname=ent.qualname,
+                    properties={"reason": "analysis_exception", "exception": type(exc).__name__},
+                )
+            )
+
         for parsed in file_meta:
             module = parsed.module
             entities = parsed.entities
@@ -392,28 +616,53 @@ class WardlineAnalyzer:
                 matched_sources=matched_sources,
                 matched_sanitisers=matched_sanitisers,
             )
+            # Per-class sibling RETURN-taint entries, built ONCE per module (the
+            # previous per-method rescan of all module entities was O(entities) per
+            # method). A caller observes a sibling's RETURN taint via self./cls.
+            sibling_tm: dict[str, dict[str, TaintState]] = {}
+            for ent in entities:
+                enclosing = ent.qualname.rsplit(".", 1)[0]
+                if enclosing in classes:
+                    sib_name = ent.qualname[len(enclosing) + 1 :]
+                    sib_taint = project_return_taints.get(ent.qualname, TaintState.UNKNOWN_RAW)
+                    bucket = sibling_tm.setdefault(enclosing, {})
+                    bucket[f"self.{sib_name}"] = sib_taint
+                    bucket[f"cls.{sib_name}"] = sib_taint
             for ent in entities:
                 entity_index[ent.qualname] = ent
                 seed = project_taints.get(ent.qualname, TaintState.UNKNOWN_RAW)
-                method_tm = dict(call_tm)
-                method_tm.update(project_return_taints)
                 enclosing_class = ent.qualname.rsplit(".", 1)[0]
                 is_method = enclosing_class in classes
-                if is_method:
-                    sib_prefix = enclosing_class + "."
-                    for sib in entities:
-                        if sib.qualname.startswith(sib_prefix) and "." not in sib.qualname[len(sib_prefix) :]:
-                            sib_name = sib.qualname[len(sib_prefix) :]
-                            sib_taint = project_return_taints.get(sib.qualname, TaintState.UNKNOWN_RAW)
-                            method_tm[f"self.{sib_name}"] = sib_taint
-                            method_tm[f"cls.{sib_name}"] = sib_taint
+                # Attribute writes are recorded DURING the L2 walk (per-statement
+                # var_taints, branch-aware receiver types) — a post-hoc second walk
+                # against the FINAL var_taints laundered reassigned-after-write RHS
+                # variables and branch-rebound receivers (wardline-b369c7d06c).
+                recorded_writes: dict[str, dict[str, TaintState]] = {}
+                writes: dict[str, dict[str, TaintState]] = {}
+                method_tm: dict[str, TaintState] = {}
                 try:
-                    call_sites, call_args, var_taints, ret_taint, ret_callee = _run_l2(
-                        ent.node, seed, method_tm, alias_map, module_prefix=module
+                    method_tm = _pruned_method_taint_map(ent.node, alias_map, module, call_tm, project_return_taints)
+                    if is_method:
+                        method_tm.update(sibling_tm.get(enclosing_class, {}))
+                    # Own nested defs shadow same-named module/imported callables
+                    # for the whole scope, so they layer LAST (see nested_def_returns).
+                    method_tm.update(nested_def_returns.get(ent.qualname, {}))
+                    with attribute_write_recording(recorded_writes):
+                        call_sites, call_args, var_taints, ret_taint, ret_callee = _run_l2(
+                            ent.node,
+                            seed,
+                            method_tm,
+                            alias_map,
+                            module_prefix=module,
+                            global_seeds=module_global_taints.get(module),
+                        )
+                    writes = project_attribute_writes(
+                        recorded_writes, all_classes, enclosing_class if is_method else None
                     )
                 except RecursionError:
                     l2_failed.add(ent.qualname)
                     call_sites, call_args, var_taints, ret_taint, ret_callee = {}, {}, {}, None, None
+                    writes = {}
                     func_skip_findings.append(
                         Finding(
                             rule_id="WLN-ENGINE-FUNCTION-SKIPPED",
@@ -426,28 +675,44 @@ class WardlineAnalyzer:
                             properties={"reason": "recursion_limit"},
                         )
                     )
+                except MemoryError:
+                    raise  # exhaustion is not a per-file condition — isolating it would thrash
+                except Exception as exc:  # noqa: BLE001 — per-file isolation, see _record_file_failure
+                    call_sites, call_args, var_taints, ret_taint, ret_callee = {}, {}, {}, None, None
+                    writes = {}
+                    _record_file_failure(parsed.relpath, ent, exc)
                 _store(ent.qualname, call_sites, call_args, var_taints, ret_taint, ret_callee)
                 project_call_site_arg_taints.update(call_args)
                 l2_records.append((ent, seed, method_tm, enclosing_class, alias_map, module, is_method))
-                if ent.qualname not in l2_failed:
-                    from wardline.scanner.taint.variable_level import collect_attribute_writes
+                for target_class, cls_writes in writes.items():
+                    summary = class_attr_taints.setdefault(target_class, {})
+                    for attr_name, attr_taint in cls_writes.items():
+                        summary[attr_name] = (
+                            combine(summary[attr_name], attr_taint) if attr_name in summary else attr_taint
+                        )
 
-                    writes = collect_attribute_writes(
-                        ent.node,
-                        seed,
-                        dict(method_tm),
-                        dict(var_taints),
-                        all_classes,
-                        alias_map,
-                        module,
-                        enclosing_class=enclosing_class if is_method else None,
-                    )
-                    for target_class, cls_writes in writes.items():
-                        summary = class_attr_taints.setdefault(target_class, {})
-                        for attr_name, attr_taint in cls_writes.items():
-                            summary[attr_name] = (
-                                combine(summary[attr_name], attr_taint) if attr_name in summary else attr_taint
-                            )
+        # Module-global taint channel, WRITE direction: a function assigning raw to a
+        # declared ``global g`` marks the module global; the fixed-point loop below
+        # re-runs every function with the merged seeds, so OTHER functions reading
+        # ``g`` inherit. ONE merge hop only (documented approximation): the write
+        # taints are read from pass 1 and stay FIXED through the loop — a raw value
+        # routed global→function→second global needs a second hop and is a bounded
+        # FN. The write taint is the function's FINAL (exit-state) L2 taint for the
+        # name; only RAW_ZONE writes are recorded (the channel propagates raw, it
+        # never upgrades a module-level raw seed to clean), and seeds combine
+        # least-trusted-wins with the import-time seeds.
+        for ent, _seed, _tm, _enclosing_class, _alias_map, module, _is_method in l2_records:
+            if ent.qualname in l2_failed:
+                continue
+            global_names = own_scope_global_names(ent.node)
+            if not global_names:
+                continue
+            final_vars = function_var_taints.get(ent.qualname, {})
+            for name in global_names:
+                write_taint = final_vars.get(name)
+                if write_taint is not None and write_taint in RAW_ZONE:
+                    bucket = module_global_taints.setdefault(module, {})
+                    bucket[name] = combine(bucket[name], write_taint) if name in bucket else write_taint
 
         # Compute initial project-wide parameter meets from pass-1 call sites
         project_param_meets: dict[str, dict[str, TaintState]] = {}
@@ -468,6 +733,19 @@ class WardlineAnalyzer:
                         else:
                             callee_meets[param] = taint
 
+        def _l2_nested_def_overlay() -> dict[str, dict[str, TaintState]]:
+            """Per-enclosing-entity nested-def bare-name map from the PRECISE L2
+            actual-return taints (``function_return_taints``); see the pass-1
+            ``nested_def_returns`` seed for the rationale. Recomputed per fixed-
+            point iteration so a helper chain converges; participates in the memo
+            key and the convergence check below."""
+            overlay: dict[str, dict[str, TaintState]] = {}
+            for nested_qn, nested_taint in function_return_taints.items():
+                enclosing_qn, sep, bare = nested_qn.rpartition(".<locals>.")
+                if sep and "." not in bare:
+                    overlay.setdefault(enclosing_qn, {})[bare] = nested_taint
+            return overlay
+
         # ── Iterative Fixed-point L2 Loop to converge parameters and attributes ──
         l2_iteration_bound = _l2_iteration_bound(l2_records)
         l2_converged = False
@@ -476,6 +754,7 @@ class WardlineAnalyzer:
         for _iteration in range(l2_iteration_bound):
             old_class_attr_taints = {k: dict(v) for k, v in class_attr_taints.items()}
             old_project_param_meets = {k: dict(v) for k, v in project_param_meets.items()}
+            nested_def_overlay = _l2_nested_def_overlay()
 
             # Run L2 pass on all functions with current class_attr_taints and project_param_meets
             class_attr_taints = {}
@@ -483,39 +762,53 @@ class WardlineAnalyzer:
             for ent, seed, method_tm, enclosing_class, alias_map, module, is_method in l2_records:
                 if ent.qualname in l2_failed:
                     continue
-                tm_iter = dict(method_tm)
                 attr_summary = old_class_attr_taints.get(enclosing_class)
-                if attr_summary:
-                    for attr_name, attr_taint in attr_summary.items():
-                        tm_iter[f"self.{attr_name}"] = attr_taint
-                        tm_iter[f"cls.{attr_name}"] = attr_taint
                 param_meets = old_project_param_meets.get(ent.qualname)
+                nested_map = nested_def_overlay.get(ent.qualname)
 
+                # ``seed``/``method_tm`` are fixed per entity, so the memo key carries
+                # only the iteration-varying inputs (see ``_L2InputKey``) — and on a
+                # hit the O(per-function) ``tm_iter`` copy is skipped entirely.
                 inputs_key = (
-                    seed,
-                    tuple(sorted(tm_iter.items())),
+                    tuple(sorted(attr_summary.items())) if attr_summary else None,
                     tuple(sorted(param_meets.items())) if param_meets else None,
+                    tuple(sorted(nested_map.items())) if nested_map else None,
                 )
                 if last_l2_inputs.get(ent.qualname) == inputs_key:
                     call_sites, call_args, var_taints, ret_taint, ret_callee, writes = last_l2_results[ent.qualname]
                 else:
+                    tm_iter = dict(method_tm)
+                    if attr_summary:
+                        for attr_name, attr_taint in attr_summary.items():
+                            tm_iter[f"self.{attr_name}"] = attr_taint
+                            tm_iter[f"cls.{attr_name}"] = attr_taint
+                    if nested_map:
+                        # Own nested defs shadow same-named module/imported callables
+                        # (and the pass-1 L1 seed) for the whole scope — layered last.
+                        tm_iter.update(nested_map)
+                    recorded_writes = {}
                     try:
-                        call_sites, call_args, var_taints, ret_taint, ret_callee = _run_l2(
-                            ent.node, seed, tm_iter, alias_map, param_meets=param_meets, module_prefix=module
-                        )
-                        from wardline.scanner.taint.variable_level import collect_attribute_writes
-
-                        writes = collect_attribute_writes(
-                            ent.node,
-                            seed,
-                            dict(tm_iter),
-                            dict(var_taints),
-                            all_classes,
-                            alias_map,
-                            module,
-                            enclosing_class=enclosing_class if is_method else None,
+                        with attribute_write_recording(recorded_writes):
+                            # ``module_global_taints`` is FIXED during this loop (merged
+                            # once after pass 1), so the ``inputs_key`` memo stays valid.
+                            call_sites, call_args, var_taints, ret_taint, ret_callee = _run_l2(
+                                ent.node,
+                                seed,
+                                tm_iter,
+                                alias_map,
+                                param_meets=param_meets,
+                                module_prefix=module,
+                                global_seeds=module_global_taints.get(module),
+                            )
+                        writes = project_attribute_writes(
+                            recorded_writes, all_classes, enclosing_class if is_method else None
                         )
                     except RecursionError:
+                        continue
+                    except MemoryError:
+                        raise  # exhaustion is not a per-file condition — isolating it would thrash
+                    except Exception as exc:  # noqa: BLE001 — per-file isolation, see _record_file_failure
+                        _record_file_failure(ent.location.path, ent, exc)
                         continue
                     last_l2_inputs[ent.qualname] = inputs_key
                     last_l2_results[ent.qualname] = (call_sites, call_args, var_taints, ret_taint, ret_callee, writes)
@@ -549,8 +842,14 @@ class WardlineAnalyzer:
                             else:
                                 callee_meets[param] = taint
 
-            # Break if class_attr_taints and project_param_meets did not change
-            if class_attr_taints == old_class_attr_taints and project_param_meets == old_project_param_meets:
+            # Break if class_attr_taints, project_param_meets, and the nested-def
+            # return overlay did not change (the overlay feeds tm_iter, so a still-
+            # moving helper chain must keep iterating).
+            if (
+                class_attr_taints == old_class_attr_taints
+                and project_param_meets == old_project_param_meets
+                and _l2_nested_def_overlay() == nested_def_overlay
+            ):
                 l2_converged = True
                 break
 
@@ -581,6 +880,22 @@ class WardlineAnalyzer:
                 )
             )
 
+        # The registry is built BEFORE the context so the selected rule-id set can
+        # ride on it (PY-WL-120's suppress-and-delegate consults enablement; a
+        # duck-typed registry seam without a ``rules`` property yields None —
+        # "unknown", the historical assume-enabled posture).
+        registry = (
+            self._registry
+            if self._registry is not None
+            else build_default_registry(config, rules=(self._grammar.rules if self._grammar is not None else None))
+        )
+        registry_rules = getattr(registry, "rules", None)
+        enabled_rule_ids = (
+            frozenset(str(getattr(rule, "rule_id", type(rule).__name__)) for rule in registry_rules)
+            if registry_rules is not None
+            else None
+        )
+
         context = AnalysisContext(
             project_taints=project_taints,
             project_return_taints=project_return_taints,
@@ -598,6 +913,8 @@ class WardlineAnalyzer:
             project_edges=result.project_edges,
             call_site_implicit_receivers=result.call_site_implicit_receivers,
             alias_maps={m.module_path: m.alias_map for m in modules},
+            module_bindings=module_sink_bindings,
+            enabled_rule_ids=enabled_rule_ids,
         )
         self.last_context = context
 
@@ -646,13 +963,65 @@ class WardlineAnalyzer:
                     properties={"sanitiser": san},
                 )
             )
+        # A sanitiser colliding with a modelled serialisation sink would otherwise be
+        # dropped silently; the collision FACT speaks instead of UNUSED-SANITISER.
+        findings.extend(build_sanitiser_collision_findings(config.sanitisers))
 
-        registry = (
-            self._registry
-            if self._registry is not None
-            else build_default_registry(config, rules=(self._grammar.rules if self._grammar is not None else None))
-        )
-        findings.extend(registry.run(context))
+        # Per-rule isolation: one crashing rule must not abort the whole scan and
+        # silently lose every other rule's findings. Each rule runs in its own
+        # single-rule registry (reusing RuleRegistry.run's maturity stamping); a
+        # raise becomes a gate-eligible ERROR DEFECT at ENGINE_PATH (the lineless
+        # downgrade exempts ENGINE_PATH, so it trips --fail-on ERROR — fail-closed,
+        # same posture as WLN-ENGINE-FINGERPRINT-COLLISION). Duck-typed registry
+        # seams without a ``rules`` property keep the undelegated single call.
+        if registry_rules is None:
+            findings.extend(registry.run(context))
+        else:
+            for rule in registry_rules:
+                solo = RuleRegistry()
+                solo.register(rule)
+                try:
+                    findings.extend(solo.run(context))
+                except Exception as exc:  # noqa: BLE001 — per-rule isolation, see above
+                    rid = str(getattr(rule, "rule_id", type(rule).__name__))
+                    findings.append(
+                        Finding(
+                            rule_id="WLN-ENGINE-RULE-FAILED",
+                            message=(
+                                f"rule {rid} aborted ({type(exc).__name__}: {exc}) — "
+                                "its findings are missing from this scan"
+                            ),
+                            severity=Severity.ERROR,
+                            kind=Kind.DEFECT,
+                            location=Location(path=ENGINE_PATH),
+                            fingerprint=_fp("WLN-ENGINE-RULE-FAILED", rid),
+                            properties={"rule": rid, "exception": type(exc).__name__},
+                        )
+                    )
+        # Sink-argument resolution degraded to the pessimistic flow-INSENSITIVE
+        # fallback somewhere (an L2-skipped function): surface the recorded set as
+        # ONE NONE/FACT finding per scan, mirroring WLN-ENGINE-FUNCTION-SKIPPED. A
+        # finding, not a UserWarning — MCP/library consumers see the degradation,
+        # and a warnings-as-error embedder cannot turn the diagnostic into a
+        # rule-aborting raise (review 2026-06-10).
+        if context.flow_insensitive_fallbacks:
+            findings.append(
+                Finding(
+                    rule_id="WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK",
+                    message=(
+                        "sink-argument taint resolution fell back to the pessimistic "
+                        f"flow-insensitive map for {len(context.flow_insensitive_fallbacks)} "
+                        "function(s) — their sink findings assume UNKNOWN_RAW arguments"
+                    ),
+                    severity=Severity.NONE,
+                    kind=Kind.FACT,
+                    location=Location(path=ENGINE_PATH),
+                    # Keyed on the engine path only (never the affected qualnames) so the
+                    # one-per-scan FACT keeps a stable identity as the set churns.
+                    fingerprint=_fp("WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK", ENGINE_PATH),
+                    properties={"qualnames": sorted(context.flow_insensitive_fallbacks)},
+                )
+            )
         # Proactive no-collision guard (wardline-8fb773a7af): every fingerprint
         # consumer joins on Finding.fingerprint as a unique key, so two DISTINCT
         # findings sharing one is a silent false-negative. Run last, over the full

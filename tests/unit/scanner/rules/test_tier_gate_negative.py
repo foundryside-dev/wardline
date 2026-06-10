@@ -223,11 +223,13 @@ def test_102_below_anchor_and_non_raising_gate_is_silent_but_trust_boundary_fire
     # stay silent: (a) an undecorated boundary-shaped function (not anchored), and
     # (b) a @trusted producer (anchored but body == declared, so not trust-raising).
     # The positive control is a @trust_boundary with no raise -> fires at base ERROR.
+    # (Laundered shape: the bare `return p` single-statement body is PY-WL-119's in the
+    # four-way partition, so 102's control routes through a local.)
     undecorated = _analyze(tmp_path, "def v(p):\n    return p\n")
     assert BoundaryWithoutRejection().check(undecorated) == []
     trusted_not_raising = _analyze(tmp_path, "@trusted(level='ASSURED')\ndef v(p):\n    return p\n")
     assert BoundaryWithoutRejection().check(trusted_not_raising) == []
-    fires = _analyze(tmp_path, "@trust_boundary(to_level='ASSURED')\ndef v(p):\n    return p\n")
+    fires = _analyze(tmp_path, "@trust_boundary(to_level='ASSURED')\ndef v(p):\n    cleaned = p\n    return cleaned\n")
     findings = BoundaryWithoutRejection().check(fires)
     assert [(x.rule_id, x.qualname) for x in findings] == [("PY-WL-102", "m.v")]
     assert findings[0].severity is Severity.ERROR

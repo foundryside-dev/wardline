@@ -8,6 +8,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Six new PREVIEW sink rules, `PY-WL-121`–`PY-WL-126`** (the 2026-06-10
+  coverage-gap families; all tier-modulated, argument-slot precise, and
+  construct-then-method / callable-alias aware):
+  - `PY-WL-121` — untrusted data reaches an **XML parsing** sink (CWE-611);
+    per-sink severity calibrated to default parser posture (`lxml.etree.*` at
+    ERROR — entity-resolving by default; stdlib etree/minidom/sax at WARN —
+    billion-laughs DoS only since CPython 3.7.1). Only the document slot fires.
+  - `PY-WL-122` — untrusted data **compiled into a server-side template**
+    (jinja2 `Template`/`Environment.from_string`, mako `Template`; SSTI,
+    CWE-1336, ERROR). A tainted *render variable* is the safe idiom and never fires.
+  - `PY-WL-123` — untrusted **attribute NAME** in `setattr`/`getattr`
+    (dynamic attribute injection / mass assignment, CWE-915, WARN). Fixed-name
+    writes of untrusted *values* stay silent.
+  - `PY-WL-124` — untrusted path reaches a **native-library load**
+    (`ctypes.CDLL`/`WinDLL`/`OleDLL`/`PyDLL`, `ctypes.cdll.LoadLibrary`;
+    CWE-114, ERROR).
+  - `PY-WL-125` — untrusted data as the **log MESSAGE format string**
+    (`logging.*` module-level and Logger-method forms; CWE-117, INFO — visible
+    to an explicit `--fail-on INFO` without tripping the default gate). The
+    lazy `%`-args parameterization (`logging.info('u=%s', raw)`) never fires.
+  - `PY-WL-126` — untrusted **recipient/message** in `smtplib`
+    `SMTP`/`SMTP_SSL` `.sendmail` (mail/CRLF header injection, CWE-93, WARN).
+- **Per-file isolation: `WLN-ENGINE-FILE-FAILED`.** An unexpected exception
+  while analyzing one file no longer aborts the whole scan (losing every other
+  file's findings) — and is not a silent skip either: the scan continues and the
+  failed file is named by a gate-eligible `WLN-ENGINE-FILE-FAILED` ERROR defect,
+  counted toward `ScanSummary.unanalyzed` (the Rust frontend's per-file contract,
+  now on the Python path).
+- **New config diagnostic `WLN-CONFIG-SANITISER-SINK-COLLISION`.** A configured
+  sanitiser that collides with a built-in serialisation sink of the same name
+  (e.g. declaring `pickle.loads` a sanitiser) can never take effect — the
+  conservative sink classification wins — yet it previously also suppressed
+  `WLN-CONFIG-UNUSED-SANITISER`, making the dead declaration a silent no-op. One
+  FACT per colliding sanitiser now names the collision so the operator learns
+  their suppression attempt was overridden, not honoured.
+- **Sink-family expansions across the existing sink rules** (each fires on more
+  real-world shapes; shared machinery in `_sink_helpers` — construct-then-method
+  receiver resolution, callable-alias bindings, `ArgSpec` argument-position
+  matching, and a fail-closed per-argument taint resolver):
+  - `PY-WL-118` (SQLi) adds **`executescript`** (sqlite3 cursor AND connection —
+    multi-statement, no parameter binding at all), a fail-closed **receiver
+    heuristic** (DB-driver binding/name evidence fires, executor/pool evidence
+    suppresses, unknown receivers fire), and the **constant `text()` clause
+    exemption** for the canonical SQLAlchemy parameterized pattern.
+  - `PY-WL-117` (SSRF) now resolves **constructed client/session instance
+    methods** (`httpx.Client()`, `requests.Session()`, `aiohttp.ClientSession`,
+    chained and `with`-bound forms) plus client `base_url=`, and is **URL-slot
+    precise** — a tainted `timeout=`/`headers=` with a clean URL no longer fires.
+  - `PY-WL-116` (path traversal) adds the **filesystem-mutation** APIs
+    (`os.remove`/`rename`/`makedirs`/…, `shutil.rmtree`/`copy*`/`move`),
+    **`pathlib.Path` methods** on a tainted-constructed `Path`, and **archive
+    extraction** (`tarfile`/`zipfile` `extract`/`extractall` — Zip Slip), with a
+    literal **`filter="data"` exemption** (tarfile's safe extraction filter).
+  - `PY-WL-106` (deserialization) adds the **OO streaming-unpickle API**
+    (`pickle.Unpickler(stream).load()`), **`shelve.open`** (path slot only), and
+    a curated **third-party CWE-502 table** (`dill`, `jsonpickle.decode`,
+    `joblib.load`, `torch.load`, `numpy.load`) with two literal-keyword gates:
+    `numpy.load` fires only with a literal `allow_pickle=True`; `torch.load` is
+    suppressed by a literal `weights_only=True`.
+  - `PY-WL-115` (dynamic import) adds **`runpy.run_path`/`run_module`** and
+    **`importlib.util.spec_from_file_location`** (import-and-execute class).
+  - `PY-WL-108` (command execution) adds the **argv-style program-execution
+    family** (`os.exec*`/`os.spawn*`/`os.posix_spawn*`/`pty.spawn`) and decides
+    **`shlex.quote` GUARDED semantics**: a quote call as a fragment of a
+    constant-shaped concatenation/f-string guards the always-shell sinks
+    (`os.system("echo " + shlex.quote(raw))` is clean); a bare whole-command
+    quote still fires, and the guard never applies to the argv sinks.
+  - `PY-WL-107` (eval/exec/compile) adds the `builtins.` and `__builtins__.`
+    spellings.
 - **Rust support.** A new `--lang rust` frontend (behind the
   `wardline[rust]` extra: tree-sitter, no base dependency) sweeps `*.rs` and flags
   command-injection trust-boundary defects — `RS-WL-108` (program injection, ERROR:
@@ -89,6 +158,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through cleanly to the legacy/off rungs (emit stays soft-fail) (weft-23574069a1).
 
 ### Changed
+- **BREAKING (gate): parse failures are now gate-eligible.**
+  `WLN-ENGINE-PARSE-ERROR` (a discovered file that could not be read/parsed) is
+  promoted from a NONE FACT to an **ERROR DEFECT**: its sinks were never
+  analyzed, so a default `--fail-on ERROR` reading green over it was a fail-open
+  (e.g. a latin-1 coding cookie CPython runs but the UTF-8 reader rejects hid
+  live code from the scan). Baseline/waiver still annotate it but cannot clear
+  the secure gate; `--trust-suppressions` can (an explicit operator trust
+  decision). A tree with unparseable files now trips `--fail-on ERROR` until the
+  files are fixed or the suppression is explicitly trusted. (Python frontend;
+  the Rust frontend's parse-error surfacing is unchanged — still a FACT.)
+- **BREAKING (severity): `PY-WL-108` and `PY-WL-112` base severity WARN → ERROR.**
+  Tainted command/program execution (always-shell APIs, argv exec/spawn,
+  literal-`shell=True` subprocess) is the same blast-radius exploit class as
+  SQLi (CWE-78 ≅ CWE-89), so both calibrate with `PY-WL-118`'s ERROR. Findings
+  from these rules now trip a default `--fail-on ERROR` gate in fully-trusted
+  functions; override per project via `rules.severity` if needed.
+- **BREAKING (fingerprints): the boundary-integrity family now partitions
+  four ways — bare `return p` boundaries re-key from `PY-WL-102` to `PY-WL-119`.**
+  At most one of {102, 111, 113, 119} fires per boundary: 119 wins the bare
+  degenerate shape (`return <param>`), 102 keeps every other no-rejection shape,
+  111 keeps assert-only (including an assert inside a substituting `try` —
+  documented precedence over 113), 113 fires only when a real rejection exists
+  and a fail-open handler can swallow it. Because `rule_id` is part of the
+  fingerprint, **baselined/waived/judged `PY-WL-102` entries for bare `return p`
+  boundaries go stale** (the finding now carries `PY-WL-119`) — re-baseline /
+  re-waive once after upgrade. The same boundary is no longer double-counted at
+  ERROR in the gate population.
+- **`PY-WL-102`/`PY-WL-111` recognise more genuine rejection shapes (fewer
+  FPs on real validators):** a ONE-HOP same-module call to a raising helper
+  (a factored-out validator, raising staticmethod, or delegation to another
+  raising boundary — the helper must have a production-surviving rejection;
+  assert-only helpers never count), curated **raising conversions**
+  (`return int(p)` / `float`/`complex`/`Decimal`/`Fraction`/`UUID` over a
+  non-constant argument, and non-constant subscript lookups `Color[p]` /
+  `ALLOWED[p]` — validate-by-construction), and **conditional-expression falsy
+  returns** (`return m.group(0) if m else None`).
 - **BREAKING (wire): per-finding `suppressed` key renamed to `suppression_state`.**
   The JSONL stream, the Filigree `metadata.wardline.*` subtree, and the signed
   **legis scan artifact** now emit `suppression_state` (values unchanged:

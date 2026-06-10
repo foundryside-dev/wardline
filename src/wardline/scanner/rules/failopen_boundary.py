@@ -25,10 +25,27 @@ exception the boundary's own rejection raises:
 This is why the rule does NOT gate on a broad ``except`` — a *narrow* handler that
 names the rejection's own exception type is the worst case, not the mildest.
 
-**The boundary-integrity trio partitions cleanly:**
-  - PY-WL-102 — boundary with NO rejection path (cannot reject at all);
-  - PY-WL-111 — rejection only via ``assert`` (stripped under ``python -O``);
-  - PY-WL-113 — rejection exists but is defeated by a fail-open handler.
+**The boundary-integrity family partitions FOUR ways** (wardline-718048a518) —
+at most one of {102, 111, 113, 119} fires per boundary:
+  - PY-WL-119 — the bare degenerate shape (single ``return <param>``);
+  - PY-WL-102 — every other shape with NO rejection path (cannot reject at all);
+  - PY-WL-111 — rejection only via ``assert`` (stripped under ``python -O``).
+    This precedence is deliberate: an assert inside a ``try`` caught by a
+    substituting handler is still 111's (the rejection is assert-only);
+  - PY-WL-113 — a REAL rejection exists but a fail-open handler defeats it.
+
+This rule enforces its premise in code, not just prose:
+  1. a real (production-surviving) rejection must EXIST — an own-scope ``raise``
+     / rejection-shaped ``return``, or a one-hop same-module raising helper call
+     (``rejecting_helper_calls``). No rejection → 102's domain; assert-only →
+     111's domain;
+  2. the rejection must be SWALLOWABLE by the matching handler — lexically inside
+     that handler's own ``try`` body (the self-catch), or inside the handler
+     itself (a handler that conditionally rejects but substitutes on the other
+     path). A rejection wholly OUTSIDE the ``try`` (validate-then-cache shapes)
+     cannot be defeated by the handler, so the boundary fails CLOSED and the rule
+     stays silent.
+
 A handler that re-raises (even conditionally) is fail-closed and never matches
 (conservative, mirroring ``has_rejection_path``); a handler that returns a
 falsy/empty constant is signalling REJECTION, not substituting, and also never
@@ -37,22 +54,26 @@ matches (see ``_is_falsy_constant_return``).
 Declaration-gated (the ``@trust_boundary`` decorator is the opt-in), so it emits at
 base severity — NOT tier-modulated — exactly like 102 and 111.
 
-**Residual FP:** a declared boundary that legitimately catches an *unrelated*
-exception and returns a default for a non-validation reason. Rare inside a thing
-explicitly declared as a validator, and swallow-and-substitute in a validator is
-itself the smell; tracked, not hidden.
+**Residual FP:** a declared boundary whose ``try`` body holds its rejection AND an
+unrelated exception source, with a narrow handler for only the unrelated type.
+The rule does not match exception TYPES (the self-catch worst case is a *narrow*
+handler), so it cannot tell that pair apart; tracked, not hidden.
 """
 
 from __future__ import annotations
 
+import ast
 from typing import TYPE_CHECKING
 
 from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import TRUST_RANK
 from wardline.scanner.rules._ast_helpers import (
+    _own_statements,
+    block_has_real_rejection,
     handler_substitutes_on_failure,
-    own_except_handlers,
+    has_real_rejection,
+    rejecting_helper_calls,
     returned_var_names,
 )
 from wardline.scanner.rules.metadata import RuleMetadata
@@ -102,8 +123,24 @@ class FailOpenBoundary:
             # Trust-raising transition (== @trust_boundary): body less-trusted than return.
             if TRUST_RANK[body] <= TRUST_RANK[ret]:
                 continue
+            # Premise 1 (the family partition): a REAL rejection must exist. None at
+            # all -> PY-WL-102's domain; assert-only -> PY-WL-111's domain.
+            rejecting_calls = rejecting_helper_calls(entity, context.entities, context.call_site_callees)
+            if not (has_real_rejection(entity.node) or rejecting_calls):
+                continue
+            # Premise 2: the rejection must be SWALLOWABLE by the substituting
+            # handler — inside its own try body, or inside the handler itself.
             returned = returned_var_names(entity.node)
-            if not any(handler_substitutes_on_failure(h, returned) for h in own_except_handlers(entity.node)):
+            if not any(
+                handler_substitutes_on_failure(handler, returned)
+                and (
+                    block_has_real_rejection(try_stmt.body, rejecting_calls)
+                    or block_has_real_rejection(handler.body, rejecting_calls)
+                )
+                for try_stmt in _own_statements(entity.node)
+                if isinstance(try_stmt, (ast.Try, ast.TryStar))
+                for handler in try_stmt.handlers
+            ):
                 continue
             findings.append(
                 Finding(

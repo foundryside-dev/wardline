@@ -68,7 +68,7 @@ def _candidate_receiver_classes(
     alias_map: dict[str, str],
     module_prefix: str,
     class_qualnames: frozenset[str],
-    project_fqns: frozenset[str],
+    known_fqns: frozenset[str],
 ) -> dict[int, frozenset[str]]:
     """Flow-sensitive reaching-definitions pass over *func*'s own scope.
 
@@ -81,7 +81,6 @@ def _candidate_receiver_classes(
     (wardline-499c22bbdd). Mirrors the merge discipline of ``variable_level``'s taint walk.
     """
     candidates_at_call: dict[int, frozenset[str]] = {}
-    known_fqns = project_fqns | class_qualnames  # resolve_call_fqn resolves constructors here
 
     def resolve_class(value: ast.expr | None, env: dict[str, set[str]]) -> set[str]:
         if isinstance(value, ast.NamedExpr):  # ``(x := expr)`` evaluates to expr
@@ -254,6 +253,9 @@ def build_call_edges(
     call_site_implicit_receivers: dict[int, str] = {}
     call_site_candidate_callees: dict[int, frozenset[str]] = {}
     entity_by_fqn = {entity.qualname: entity for entity in entities}
+    # Hoisted out of _candidate_receiver_classes: the union is O(project) and was
+    # rebuilt once PER FUNCTION, an O(n^2) whole-scan term on large trees.
+    known_fqns = project_fqns | class_qualnames  # resolve_call_fqn resolves constructors here
 
     def _decorator_name(decorator: ast.expr) -> str | None:
         if isinstance(decorator, ast.Call):
@@ -296,7 +298,7 @@ def build_call_edges(
             alias_map=alias_map,
             module_prefix=module_prefix,
             class_qualnames=class_qualnames,
-            project_fqns=project_fqns,
+            known_fqns=known_fqns,
         )
 
         callees: set[str] = set()

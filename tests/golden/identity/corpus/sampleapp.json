@@ -981,7 +981,7 @@
         "qualname": "models.Money.__lt__",
         "schema_version": "wardline-taint-1",
         "taint": {
-          "actual_return": "UNKNOWN_RAW",
+          "actual_return": "INTEGRAL",
           "contributing_callee_qualname": null,
           "declared_return": "UNKNOWN_RAW",
           "resolved_call_count": 0,
@@ -1149,7 +1149,7 @@
         "qualname": "repository.Repository.__contains__",
         "schema_version": "wardline-taint-1",
         "taint": {
-          "actual_return": "UNKNOWN_RAW",
+          "actual_return": "INTEGRAL",
           "contributing_callee_qualname": null,
           "declared_return": "UNKNOWN_RAW",
           "resolved_call_count": 0,

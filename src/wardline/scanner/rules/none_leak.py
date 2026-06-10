@@ -28,6 +28,7 @@ from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import RAW_ZONE, TRUST_RANK
 from wardline.scanner.rules._ast_helpers import _own_statements
+from wardline.scanner.rules._sink_helpers import module_for_qualname
 from wardline.scanner.rules.metadata import RuleMetadata
 
 if TYPE_CHECKING:
@@ -48,14 +49,6 @@ METADATA = RuleMetadata(
         "@trusted(level='ASSURED')\ndef f(flag) -> int | None:\n    if flag:\n        return g()\n    return None",
     ),
 )
-
-
-def _module_for_qualname(qualname: str, context: AnalysisContext) -> str | None:
-    modules = context.alias_maps.keys()
-    for module in sorted(modules, key=len, reverse=True):
-        if qualname == module or qualname.startswith(module + "."):
-            return module
-    return None
 
 
 def _is_none_return(stmt: ast.Return) -> bool:
@@ -223,7 +216,7 @@ class NoneLeak:
                 continue  # trust-raising shape -> PY-WL-102's territory, not 109's
             if _is_generator(entity.node):
                 continue
-            module = _module_for_qualname(qualname, context)
+            module = module_for_qualname(qualname, context)
             alias_map = context.alias_maps.get(module, {}) if module is not None else {}
             if not _promises_non_none(entity.node, alias_map):
                 continue  # no explicit non-None contract -> not a provable leak (FP guard)

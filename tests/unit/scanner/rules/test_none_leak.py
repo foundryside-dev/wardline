@@ -133,6 +133,22 @@ def test_unannotated_does_not_fire(tmp_path) -> None:
     assert _ids(ctx) == []
 
 
+def test_undecorated_does_not_fire(tmp_path) -> None:
+    # Tier-suppression matrix slot (wardline-e159060db7): PY-WL-109 is gated on
+    # an ANCHORED trusted producer. The identical annotated mixed-return shape
+    # without a trust marker makes no trusted-output claim -> silent.
+    ctx = _analyze(
+        tmp_path,
+        """
+        def maybe(flag) -> int:
+            if flag:
+                return 1
+            return
+        """,
+    )
+    assert _ids(ctx) == []
+
+
 def test_all_value_returns_do_not_fire(tmp_path) -> None:
     ctx = _analyze(
         tmp_path,

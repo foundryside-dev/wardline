@@ -395,6 +395,27 @@ def test_clean_boundary_does_not_fire(tmp_path: Path) -> None:
     assert len(db_findings) == 0
 
 
+def test_degenerate_shape_without_boundary_claim_is_suppressed(tmp_path: Path) -> None:
+    # Tier-suppression matrix slot (wardline-e159060db7): PY-WL-119 is gated on an
+    # ANCHORED trust-RAISING declaration. The byte-identical bare-passthrough body
+    # must stay silent both undecorated (not anchored) and under @trusted
+    # (anchored, but body == return -> not a trust-raising boundary).
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            def plain(x):
+                return x
+
+            @trusted(level='ASSURED')
+            def producer(x):
+                return x
+            """
+        },
+    )
+    assert [f for f in findings if f.rule_id == "PY-WL-119"] == []
+
+
 # ── PY-WL-120: Stored Taint ────────────────────────────────────────────────
 
 

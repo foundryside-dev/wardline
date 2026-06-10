@@ -60,6 +60,11 @@ class ParseProjectOutput:
     parse_findings: list[Finding]
     dirty_modules: frozenset[str]
     provider_fingerprint: str
+    # config.untrusted_sources entries that matched a PROJECT ENTITY QUALNAME and
+    # were applied as seeds here. The analyzer unions these into its matched-source
+    # bookkeeping — without this channel a WORKING directive was misreported as
+    # WLN-CONFIG-UNUSED-SOURCE (only the import/alias path recorded matches).
+    matched_config_sources: frozenset[str] = frozenset()
 
 
 def _provider_fingerprint_for_project(provider: TaintSourceProvider, project_modules: frozenset[str]) -> str:
@@ -84,6 +89,7 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
     parsed_files: list[ParsedFile] = []
     parse_findings: list[Finding] = []
     dirty_modules: set[str] = set()
+    matched_config_sources: set[str] = set()
     root = stage_input.root.resolve()
 
     # The set of dotted module names in the scan. Used to fail closed for builtin
@@ -157,6 +163,9 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
                 if ent.qualname in stage_input.config.untrusted_sources:
                     from wardline.scanner.taint.function_level import FunctionSeed
 
+                    # The seed below IS the directive taking effect — record the match
+                    # so the analyzer's unused-source diagnostic does not contradict it.
+                    matched_config_sources.add(ent.qualname)
                     seeds[ent.qualname] = FunctionSeed(
                         qualname=ent.qualname,
                         body_taint=TaintState.EXTERNAL_RAW,
@@ -165,15 +174,26 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
                         unprovable_boundaries=(),
                     )
         except (SyntaxError, UnicodeDecodeError, OSError) as exc:
+            # A discovered-but-unparseable file is a GATE-ELIGIBLE ERROR DEFECT, not a
+            # NONE FACT: its sinks were never analyzed, so a default `--fail-on ERROR`
+            # reading GREEN over it is a fail-open (e.g. a latin-1 coding cookie that
+            # CPython runs but this UTF-8 reader rejects hides live code from the scan).
+            # Severity ERROR so the documented agent loop (`scan . --fail-on ERROR`)
+            # trips — the secure-by-default posture (same as the suppression gate and
+            # WLN-ENGINE-FINGERPRINT-COLLISION). Repository baseline/waiver still
+            # ANNOTATE it but cannot clear the secure gate; `--trust-suppressions` can
+            # (an explicit operator trust decision). ``line_start`` falls back to 1 so
+            # the lineless-DEFECT downgrade (suppression.py) never demotes it back out
+            # of the gate for read/encoding errors that carry no line.
             msg = getattr(exc, "msg", None) or str(exc)
             lineno = exc.lineno if isinstance(exc, SyntaxError) else None
             parse_findings.append(
                 Finding(
                     rule_id="WLN-ENGINE-PARSE-ERROR",
                     message=f"{relpath}: could not read/parse ({msg})",
-                    severity=Severity.NONE,
-                    kind=Kind.FACT,
-                    location=Location(path=relpath, line_start=lineno),
+                    severity=Severity.ERROR,
+                    kind=Kind.DEFECT,
+                    location=Location(path=relpath, line_start=lineno or 1),
                     fingerprint=_fp("WLN-ENGINE-PARSE-ERROR", relpath),
                     properties={"module": module},
                 )
@@ -189,6 +209,24 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
                     location=Location(path=relpath),
                     fingerprint=_fp("WLN-ENGINE-FILE-SKIPPED", relpath),
                     properties={"module": module, "reason": "recursion_limit"},
+                )
+            )
+            continue
+        except Exception as exc:  # noqa: BLE001 — per-file isolation, mirrors the Rust frontend
+            # An UNEXPECTED exception while indexing/seeding one file must not abort
+            # the whole scan (losing every other file's findings) — and must not be a
+            # silent skip either. Fail closed: a WLN-ENGINE-FILE-FAILED ERROR DEFECT
+            # (gate-eligible, counted toward ScanSummary.unanalyzed) names the file,
+            # and the scan continues — the Rust frontend's per-file contract.
+            parse_findings.append(
+                Finding(
+                    rule_id="WLN-ENGINE-FILE-FAILED",
+                    message=f"{relpath}: analysis failed ({type(exc).__name__}: {exc})",
+                    severity=Severity.ERROR,
+                    kind=Kind.DEFECT,
+                    location=Location(path=relpath, line_start=1),
+                    fingerprint=_fp("WLN-ENGINE-FILE-FAILED", relpath),
+                    properties={"module": module, "reason": "analysis_exception", "exception": type(exc).__name__},
                 )
             )
             continue
@@ -240,6 +278,7 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
         parse_findings=parse_findings,
         dirty_modules=frozenset(dirty_modules),
         provider_fingerprint=provider_fingerprint,
+        matched_config_sources=frozenset(matched_config_sources),
     )
 
 
