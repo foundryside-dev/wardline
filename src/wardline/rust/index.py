@@ -22,8 +22,9 @@ segment already separates them — and the ``@cfg(...)`` suffix is applied only 
 within-kind collision. Impl blocks have their own pre-cfg twin counter keyed on
 the full impl segment.
 
-This is still the single-file, file-module-rooted view: the caller supplies
-``module`` (crate name from ``Cargo.toml`` + cross-file route are SP2).
+This is the single-file, file-module-rooted view: the caller supplies ``module``
+(the SP2 whole-tree pass — ``Cargo.toml`` crate roots + cross-file routes — lives
+in ``crate_roots.py``/``analyzer._module_for`` and feeds it in).
 tree-sitter types appear only under ``TYPE_CHECKING`` so importing this module
 never pulls the ``wardline[rust]`` extra.
 """
@@ -112,8 +113,9 @@ def index_entities(tree: Tree, nmap: NodeIdMap, *, module: str, path: str = "") 
 def discover_rust_entities(source: str, *, module: str, path: str = "") -> list[RustEntity]:
     """Parse ``source`` and emit its entities, qualname-rooted at ``module``.
 
-    The corpus-facing API: parses internally (``module`` is the supplied file-module root,
-    since deriving it from ``Cargo.toml`` is SP2). ``path`` only labels ``Location``.
+    The corpus-facing API: parses internally (``module`` is the supplied file-module root —
+    the scan path derives it via ``crate_roots``/``analyzer._module_for``; corpus cases
+    supply it directly). ``path`` only labels ``Location``.
     """
     tree = parse_rust(source)
     return index_entities(tree, mint_node_ids(tree), module=module, path=path)

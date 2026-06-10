@@ -41,8 +41,10 @@ def test_analyze_over_files_finds_injection_with_repo_relative_path(tmp_path) ->
     assert [f.rule_id for f in rs] == ["RS-WL-108"]
     # repo-relative POSIX path (the Filigree/Location anchor), not the absolute fs path.
     assert rs[0].location.path == "src/m.rs"
-    # dumb-but-deterministic slice-1 route: crate=root.name, src_root=root (src/ NOT
-    # stripped — full Cargo-aware routing is SP2; provisional_identity disclaims it).
+    # No Cargo.toml and no src/lib|main.rs anywhere -> no crate root registers, so the
+    # SP2 router falls back to the pre-SP2 mechanical route (crate=root.name, src/ NOT
+    # stripped) — byte-unchanged for no-Cargo trees. Real crate-prefixed routes are
+    # pinned in tests/unit/rust/test_crate_roots.py.
     assert rs[0].qualname == f"{tmp_path.name}.src.m.run"
 
 

@@ -6,9 +6,10 @@ verdict rules — so callgraph/dataflow/rule passes share the single keying auth
 §5; a re-parse would mint divergent NodeIds and fail quietly).
 
 WP6 adds ``analyze(files, config, *, root)`` — the engine ``Analyzer`` protocol method
-``run_scan`` drives under ``--lang rust``. It reads each ``.rs`` file, derives a deterministic
-slice-1 module route (``crate=root.name, src_root=root`` — full Cargo-aware routing is SP2),
-runs the per-file pipeline, and surfaces a ``WLN-ENGINE-PARSE-ERROR`` FACT for any file
+``run_scan`` drives under ``--lang rust``. It discovers the tree's Cargo crate roots ONCE
+(SP2, ``wardline.rust.crate_roots`` — the loomweave-oracle-mirroring whole-tree pass),
+routes each ``.rs`` file to its real crate-prefixed module (``_module_for``), runs the
+per-file pipeline, and surfaces a ``WLN-ENGINE-PARSE-ERROR`` FACT for any file
 tree-sitter cannot fully parse (then contributes no findings for it — never half-analyze).
 
 ``last_context`` is the engine-shaped ``AnalysisContext | None`` (None in slice-1: the
@@ -25,6 +26,7 @@ from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity
 from wardline.core.taints import TaintState
 from wardline.rust import qualname as q
 from wardline.rust.context import RustAnalysisContext, RustTriggerContext
+from wardline.rust.crate_roots import CrateRoots, discover_crate_roots
 from wardline.rust.dataflow import analyze_command_dataflow
 from wardline.rust.index import index_entities
 from wardline.rust.nodeid import mint_node_ids
@@ -86,6 +88,9 @@ class RustAnalyzer:
         ``WLN-ENGINE-PARSE-ERROR`` FACT and no ``RS-WL-*`` findings.
         """
         resolved_root = root.resolve()
+        # SP2 whole-tree pass: discover Cargo crate roots ONCE per scan; every file's
+        # module route resolves against this map (longest-prefix, symlink-safe walk).
+        crate_roots = discover_crate_roots(resolved_root)
         findings: list[Finding] = []
         functions_total = 0
         functions_declared = 0
@@ -101,7 +106,7 @@ class RustAnalyzer:
             if has_errors(tree):
                 findings.append(_parse_error_finding(relpath, "tree-sitter recovered from a syntax error"))
                 continue
-            module = _module_for(file, resolved_root)
+            module = _module_for(file, resolved_root, crate_roots)
             try:
                 file_findings, context, file_callables = self._analyze_tree(tree, module=module, path=relpath)
             except Exception as exc:  # noqa: BLE001 — per-file isolation, see below
@@ -190,13 +195,30 @@ def _relpath(file: Path, resolved_root: Path) -> str:
     return resolved.as_posix()
 
 
-def _module_for(file: Path, resolved_root: Path) -> str:
-    """The slice-1 module route: ``crate=root.name``, ``src_root=root`` (no ``src/`` strip).
+def _module_for(file: Path, resolved_root: Path, roots: CrateRoots) -> str:
+    """The SP2 module route. Three file classes:
 
-    Deterministic and stable per function — all slice-1 needs (``provisional_identity``
-    disclaims qualname/baseline stability). Cargo-aware crate/route derivation is SP2.
+    1. **In-src** (under a crate root's ``src/``): the ADR-049 oracle route —
+       ``rust_module_route(crate=<real Cargo.toml name>, src_root=<root>/src, file)``.
+       Conformance-bearing: byte-identical to loomweave's emission for the same file.
+    2. **Under a crate root but OUTSIDE its src/** (``tests/``, ``benches/``,
+       ``build.rs``, ...): wardline-local fallback — the owning crate's real name +
+       the mechanical path route from the crate dir (no ``src/`` to strip). Loomweave's
+       ``emittable_scope`` emits NOTHING for these files, so this qualname carries no
+       cross-tool conformance claim and cannot collide with a loomweave locator —
+       wardline scans them anyway (coverage is never narrowed to the entity surface).
+    3. **Under no crate root** (a bare no-Cargo tree — the whole pre-SP2 preview
+       population): the pre-SP2 mechanical route, byte-unchanged — ``crate`` = scan-root
+       name, ``src_root`` = the scan root (no ``src/`` strip). Same no-conformance-claim
+       disclaimer as class 2; the preview scan population is unchanged.
     """
     resolved = file.resolve()
+    crate_dir = roots.crate_dir_for(resolved)
+    crate_name = roots.crate_name_for(resolved)
+    if crate_dir is not None and crate_name is not None:
+        src_root = crate_dir / "src"
+        base = src_root if resolved.is_relative_to(src_root) else crate_dir
+        return q.rust_module_route(crate=crate_name, src_root=str(base), file=str(resolved))
     crate = resolved_root.name or "crate"
     try:
         return q.rust_module_route(crate=crate, src_root=str(resolved_root), file=str(resolved))

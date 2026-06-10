@@ -50,7 +50,8 @@ Provenance — re-vendor when Loomweave bumps the corpus:
 Status: the Rust frontend (``wardline.rust.*``) now EXISTS (slice-1 WP2 landed), so
 the *producer-parity* tests below run live (``_rust_producer`` resolves
 ``wardline.rust.index`` — they no longer skip). The *structural* self-tests also run
-and catch a malformed / stale re-vendor. SP2 rows still ``xfail`` (whole-tree view).
+and catch a malformed / stale re-vendor. SP2 rows assert for real (the whole-tree
+crate-root pass landed — ``wardline.rust.crate_roots``); no xfail tier remains.
 
 The comparison rule — GRADUATED (Phase 1b): Wardline now emits the FULL ten-kind
 ADR-049 surface (changeset §7 rule 1 for full-surface producers), so the gate is
@@ -150,7 +151,8 @@ def _rust_producer() -> tuple[Any, Any]:
     Expected slice-1 surface (pinned in the plan's WP2):
       - ``wardline.rust.index.discover_rust_entities(source: str, *, module: str)
         -> Sequence[RustEntity]`` (parses internally; entities carry ``.qualname``;
-        deriving ``module``/crate from Cargo.toml is SP2, so the case supplies it);
+        the case supplies ``module`` directly — the scan path derives it from
+        Cargo.toml crate roots, ``wardline.rust.crate_roots``);
       - ``wardline.rust.qualname.rust_module_route(*, crate: str, src_root: str,
         file: str) -> str``.
 
@@ -169,8 +171,7 @@ def _rust_producer() -> tuple[Any, Any]:
 @pytest.mark.parametrize("case", _CORPUS["entities"], ids=lambda c: c["name"])
 def test_entity_qualnames(case: dict[str, Any]) -> None:
     rust_index, _ = _rust_producer()
-    if case["reproducibility"] == "sp2":  # pragma: no cover - flips to hard assert at SP2
-        pytest.xfail("sp2 row: needs the whole-tree view (crate name / cross-file route)")
+    # SP2 landed: sp2 rows assert for real alongside slice-1 (no xfail tier remains).
     # Phase 1b contract: the FULL ordered ten-kind emission for `source` rooted at
     # `module_path`, kind-mapped semantic `method` -> id-kind `function` (the one
     # legal projection; everything else must match the corpus byte-for-byte AND
@@ -185,8 +186,9 @@ def test_entity_qualnames(case: dict[str, Any]) -> None:
 @pytest.mark.parametrize("route", _CORPUS["module_route"], ids=lambda r: r["name"])
 def test_module_route(route: dict[str, Any]) -> None:
     _, rust_qualname = _rust_producer()
-    if route["reproducibility"] == "sp2":  # pragma: no cover - flips to hard assert at SP2
-        pytest.xfail("sp2 row (e.g. #[path] known gap): correct routing is a shared SP2 task")
+    # SP2 landed: the sp2 `path_attr_known_gap` row asserts for real — #[path] stays
+    # un-honoured by BOTH producers (the shared known gap), so the mechanical route IS
+    # the expected byte form and passes without special-casing.
     # WP2 contract: route a file to its dotted module given the crate + src_root.
     got = rust_qualname.rust_module_route(crate=route["crate"], src_root=route["src_root"], file=route["file"])
     assert got == route["expected_module"]
