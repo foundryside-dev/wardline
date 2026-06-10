@@ -55,11 +55,11 @@ def is_join_population(f: Finding) -> bool:
     gating ERROR DEFECTs at ENGINE_PATH) silently orphans on migration and resurfaces
     ACTIVE (the P4-review gate regression).
 
-    ``RS-WL-*`` (Rust) is EXCLUDED: those findings do not appear on rc4 at all (the
-    plugin lives in a worktree), so the exclusion is a no-op here. **P5-REVISIT:** when
-    the Rust worktree rebases, decide whether RS-WL DEFECTs enter the stores and should
-    migrate (see the skipped test in test_rekey_population.py)."""
-    return f.kind is Kind.DEFECT and not f.rule_id.startswith("RS-WL-")
+    ``RS-WL-*`` (Rust) is INCLUDED — P5-REVISIT decided 2026-06-10 (identity keystone):
+    Rust identity graduated to baseline-eligible, so an RS-WL DEFECT enters the stores
+    like any other and a stored RS-WL verdict must migrate, not orphan. (The former
+    hard exclusion was a no-op pre-merge but a live orphaning path post-graduation.)"""
+    return f.kind is Kind.DEFECT
 
 
 def _is_scheme_independent(rule_id: str) -> bool:
@@ -111,7 +111,7 @@ class FingerprintRemap:
 
 def compute_old_new_fingerprints(findings: Iterable[Finding]) -> list[FingerprintRemap]:
     """The dual-fingerprint contract from one scan, over the join population (every
-    DEFECT minus RS-WL). ``old_fp`` is ``_old_fingerprint(f)`` (v0 reconstruction for
+    DEFECT). ``old_fp`` is ``_old_fingerprint(f)`` (v0 reconstruction for
     scheme-sensitive rules, identity for scheme-independent engine diagnostics); ``new_fp``
     is the live ``finding.fingerprint``. The v0 reconstruction is validated NON-CIRCULARLY
     against the real pre-P3 corpus in ``tests/unit/core/test_rekey_dual_fp.py``.

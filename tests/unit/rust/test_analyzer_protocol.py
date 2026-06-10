@@ -42,10 +42,10 @@ def test_analyze_over_files_finds_injection_with_repo_relative_path(tmp_path) ->
     # repo-relative POSIX path (the Filigree/Location anchor), not the absolute fs path.
     assert rs[0].location.path == "src/m.rs"
     # No Cargo.toml and no src/lib|main.rs anywhere -> no crate root registers, so the
-    # SP2 router falls back to the pre-SP2 mechanical route (crate=root.name, src/ NOT
-    # stripped) — byte-unchanged for no-Cargo trees. Real crate-prefixed routes are
-    # pinned in tests/unit/rust/test_crate_roots.py.
-    assert rs[0].qualname == f"{tmp_path.name}.src.m.run"
+    # SP2 router uses the class-3 route: constant "crate" segment + #out branding +
+    # literal relpath stems (relpath-pure — scan-root-name-independent). Real
+    # crate-prefixed routes are pinned in tests/unit/rust/test_crate_roots.py.
+    assert rs[0].qualname == "crate.#out.src.m.run"
 
 
 def test_last_context_is_none_but_rust_context_is_retained(tmp_path) -> None:
@@ -141,7 +141,7 @@ def test_fn_struct_same_name_keeps_both_entities_and_counts_one_callable(tmp_pat
     assert [f.rule_id for f in rs] == ["RS-WL-108"]  # the fn IS exercised
     ctx = analyzer.last_rust_context
     assert ctx is not None
-    qual = f"{tmp_path.name}.m.S"
+    qual = "crate.#out.m.S"  # class-3 route: constant crate segment + #out branding
     # BOTH entities survive, addressable by their kind-disambiguated entity-id keys.
     assert f"rust:struct:{qual}" in ctx.entities
     assert f"rust:function:{qual}" in ctx.entities

@@ -193,12 +193,36 @@
       },
       "parent": "rust_app",
       "qualname": "rust_app.main"
+    },
+    {
+      "kind": "module",
+      "location": {
+        "col_end": 0,
+        "col_start": 0,
+        "line_end": 14,
+        "line_start": 1,
+        "path": "tests/integration.rs"
+      },
+      "parent": null,
+      "qualname": "rust_app.#out.tests.integration"
+    },
+    {
+      "kind": "function",
+      "location": {
+        "col_end": 1,
+        "col_start": 0,
+        "line_end": 13,
+        "line_start": 9,
+        "path": "tests/integration.rs"
+      },
+      "parent": "rust_app.#out.tests.integration",
+      "qualname": "rust_app.#out.tests.integration.shell_smoke"
     }
   ],
   "findings": [
     {
       "confidence": null,
-      "fingerprint": "8eb7f8775b3756ecb5eb5047ee29433a282f169aef4caecb493596e238f167fa",
+      "fingerprint": "3b602642e9cdac085dfcaa3fccc454e7a668f58fb1d16254d33e73ce10429f4c",
       "kind": "defect",
       "location": {
         "col_end": null,
@@ -224,7 +248,7 @@
     },
     {
       "confidence": null,
-      "fingerprint": "b34c868714b59c4aa6be57cbef8d1e29662ba853d92dd92cd9e87067e6ac2239",
+      "fingerprint": "d27ddae0f7699a677570dde97dd36ff2b581730e91acf19faa3f3fe0af3e99ef",
       "kind": "defect",
       "location": {
         "col_end": null,
@@ -241,6 +265,32 @@
         "trigger_node_id": 106
       },
       "qualname": "rust_app.main",
+      "related_entities": [],
+      "rule_id": "RS-WL-112",
+      "severity": "WARN",
+      "suggestion": null,
+      "suppression_reason": null,
+      "suppression_state": "active"
+    },
+    {
+      "confidence": null,
+      "fingerprint": "c0f302edd3c4cb61f0acf2f5e7f447268270e4d2ea04742f6634432f103a44cf",
+      "kind": "defect",
+      "location": {
+        "col_end": null,
+        "col_start": null,
+        "line_end": 12,
+        "line_start": 12,
+        "path": "tests/integration.rs"
+      },
+      "maturity": "stable",
+      "message": "Untrusted data reaches a shell command line ('sh -c ...', run at line 12): an attacker can inject shell syntax (CWE-78).",
+      "properties": {
+        "constructor_line": 12,
+        "taint_path": "EXTERNAL_RAW->arg->'sh -c'->exec@L12",
+        "trigger_node_id": 74
+      },
+      "qualname": "rust_app.#out.tests.integration.shell_smoke",
       "related_entities": [],
       "rule_id": "RS-WL-112",
       "severity": "WARN",

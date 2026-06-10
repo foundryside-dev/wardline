@@ -41,6 +41,15 @@ def test_corpus_meta_has_engine_scheme() -> None:
     assert meta["fingerprint_scheme"] == FINGERPRINT_SCHEME
 
 
+def test_corpus_meta_version_matches_regen() -> None:
+    # The keystone panel's discipline gap: bumping regen.CORPUS_VERSION without
+    # actually regenerating (or vice versa) must fail loudly, not drift silently.
+    from golden.identity.rust import regen  # type: ignore[import-not-found]
+
+    meta = json.loads((_HERE / "corpus" / "META.json").read_text(encoding="utf-8"))
+    assert meta["corpus_version"] == regen.CORPUS_VERSION
+
+
 @pytest.mark.parametrize("name", sorted(_INPUTS))
 def test_rust_identity_corpus_is_byte_identical(name: str, request: pytest.FixtureRequest) -> None:
     root = _INPUTS[name]
@@ -74,6 +83,17 @@ def test_corpus_freezes_a_finding_per_rule_with_real_fingerprints() -> None:
     assert all(f["qualname"].startswith("rust_app.") for f in findings), (
         f"finding qualnames are not crate-prefixed: {[f['qualname'] for f in findings]}"
     )
+
+
+def test_corpus_freezes_a_class2_out_route_finding() -> None:
+    # The class-2 fixture (tests/integration.rs, outside src/) must freeze a real
+    # FINDING whose qualname carries the reserved `.#out.` non-conformance branding —
+    # the route shape the rekey introduced cannot silently fall out of the corpus.
+    findings = _corpus("rustapp")["findings"]
+    out_rows = [f for f in findings if ".#out." in f["qualname"]]
+    assert out_rows, f"no `.#out.` qualname frozen (qualnames={[f['qualname'] for f in findings]})"
+    assert any(f["rule_id"] == "RS-WL-112" for f in out_rows), "class-2 RS-WL-112 finding not frozen"
+    assert any(f["qualname"].startswith("rust_app.#out.tests.integration") for f in out_rows)
 
 
 def test_corpus_freezes_the_impl_entity_surface() -> None:

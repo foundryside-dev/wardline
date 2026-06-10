@@ -25,7 +25,12 @@ _INPUTS = {
 # 1: initial freeze (SP2 completion gate) — crate-prefixed RS-WL-* identity.
 # 2: graduation — drop the provisional_identity property (rules.py no longer emits it;
 #    RS-WL-* baseline-eligible). Fingerprints unchanged (the property was never folded in).
-CORPUS_VERSION = 2
+# 3: rekey (rust-sp2-2026-06-10 keystone) — entity-relative fingerprint discriminators
+#    (wlfp2 move-stability: lines/NodeIds fold as deltas against the containing fn;
+#    resolved taint tiers dropped from the join key), `#out` non-conformance route
+#    branding (class 2 = {crate}.#out.{...}), relpath-pure constant-"crate" class-3
+#    segment, and the class-2 fixture (tests/integration.rs) pinned.
+CORPUS_VERSION = 3
 
 
 def main() -> None:

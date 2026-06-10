@@ -25,9 +25,13 @@ loomweave additionally EXCLUDES out-of-src files (``tests/``, ``benches/``,
 and files under no crate root — it emits no federation entity for them. That is
 its *entity surface*, not a scan filter: wardline keeps scanning ALL discovered
 ``.rs`` files. Files outside any crate's ``src/`` tree get a wardline-local
-FALLBACK module route (see ``analyzer._module_for``) whose qualnames carry **no
-cross-tool conformance claim** — loomweave emits nothing there, so no locator
-collision is possible.
+``#out``-branded module route (see ``analyzer._module_for``: class 2 =
+``{crate}.#out.{...}``, class 3 = ``crate.#out.{...}`` with the constant crate
+segment) whose qualnames carry **no cross-tool conformance claim**. The reserved
+``#out`` segment is structurally impossible in loomweave's locator grammar (``#``
+appears only inside ``impl#<...>`` discriminators) and cargo forbids the keyword
+``crate`` as a package name, so neither route can collide with a class-1 /
+loomweave locator.
 """
 
 from __future__ import annotations

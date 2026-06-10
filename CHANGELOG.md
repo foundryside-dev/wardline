@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never-baseline-capture) is removed — baseline, waivers, and judged verdicts now
   apply to Rust findings exactly as for Python. (Pre-graduation RS-WL-*
   fingerprints change once; they were never baseline-eligible, so no migration.)
+  Finding identity is keyed to the crate name: adding/removing a `Cargo.toml` or
+  renaming the crate in the manifest rekeys RS-WL-* fingerprints (re-baseline
+  after such a change); non-conformance files — outside `src/`, or in a
+  manifest-less tree — carry a reserved `#out` route segment
+  (`{crate}.#out.{...}` / `crate.#out.{...}`) so their qualnames can never
+  collide with a Loomweave-conformant locator.
 - **Rust frontend is a full ADR-049 producer (Loomweave Phase 1b).** The entity
   surface grows from callables-only to the full ten-kind contract set —
   `enum`/`trait`/`type_alias`/`const`/`static`/`macro` leaf entities, the `impl`

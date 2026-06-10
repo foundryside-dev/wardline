@@ -170,7 +170,19 @@ class RustAnalyzer:
             if body is None:
                 continue
             for trig in analyze_command_dataflow(body, nmap):
-                triggers.append(RustTriggerContext(trigger=trig, qualname=entity.qualname, tier=tier, path=path))
+                triggers.append(
+                    RustTriggerContext(
+                        trigger=trig,
+                        qualname=entity.qualname,
+                        tier=tier,
+                        path=path,
+                        # The entity's OWN anchors — the rules fold trigger positions into
+                        # the fingerprint entity-relative (wlfp2 move-stability), so the
+                        # containing fn's line/NodeId travel with each trigger.
+                        entity_line_start=entity.location.line_start or 0,
+                        entity_node_id=entity.node_id,
+                    )
+                )
 
         context = RustAnalysisContext(
             triggers=tuple(triggers),
@@ -202,29 +214,52 @@ def _module_for(file: Path, resolved_root: Path, roots: CrateRoots) -> str:
        ``rust_module_route(crate=<real Cargo.toml name>, src_root=<root>/src, file)``.
        Conformance-bearing: byte-identical to loomweave's emission for the same file.
     2. **Under a crate root but OUTSIDE its src/** (``tests/``, ``benches/``,
-       ``build.rs``, ...): wardline-local fallback — the owning crate's real name +
-       the mechanical path route from the crate dir (no ``src/`` to strip). Loomweave's
+       ``build.rs``, ...): ``{crate}.#out.{<relpath segments from the crate dir,
+       '.rs' stripped, ALL stems literal — no main/lib/mod collapsing>}``. Loomweave's
        ``emittable_scope`` emits NOTHING for these files, so this qualname carries no
-       cross-tool conformance claim and cannot collide with a loomweave locator —
-       wardline scans them anyway (coverage is never narrowed to the entity surface).
-    3. **Under no crate root** (a bare no-Cargo tree — the whole pre-SP2 preview
-       population): the pre-SP2 mechanical route, byte-unchanged — ``crate`` = scan-root
-       name, ``src_root`` = the scan root (no ``src/`` strip). Same no-conformance-claim
-       disclaimer as class 2; the preview scan population is unchanged.
+       cross-tool conformance claim; the reserved ``#out`` segment is structurally
+       impossible in loomweave's locator grammar (``#`` appears only inside
+       ``impl#<...>`` discriminators), so a class-2 route can never collide with a
+       class-1/loomweave locator (e.g. ``<crate>/tests/integration.rs`` vs
+       ``<crate>/src/tests/integration.rs`` -> ``rust_app.#out.tests.integration``
+       vs ``rust_app.tests.integration``). Wardline scans these files anyway —
+       coverage is never narrowed to the entity surface.
+    3. **Under no crate root** (a bare no-Cargo tree): the crate segment is the
+       CONSTANT ``"crate"`` (cargo forbids the keyword ``crate`` as a package name,
+       so it cannot collide with a class-1 crate) — route =
+       ``crate.#out.{<relpath segments from the scan root, stems literal>}``.
+       Relpath-pure and scan-root-name-INDEPENDENT: renaming the scan-root
+       directory does not rekey fingerprints (e.g. ``bin/app.rs`` ->
+       ``crate.#out.bin.app`` whatever the root is called). Same
+       no-conformance-claim disclaimer as class 2.
     """
     resolved = file.resolve()
     crate_dir = roots.crate_dir_for(resolved)
     crate_name = roots.crate_name_for(resolved)
     if crate_dir is not None and crate_name is not None:
         src_root = crate_dir / "src"
-        base = src_root if resolved.is_relative_to(src_root) else crate_dir
-        return q.rust_module_route(crate=crate_name, src_root=str(base), file=str(resolved))
-    crate = resolved_root.name or "crate"
+        if resolved.is_relative_to(src_root):
+            return q.rust_module_route(crate=crate_name, src_root=str(src_root), file=str(resolved))
+        return _out_route(crate_name, crate_dir, resolved)  # class 2
     try:
-        return q.rust_module_route(crate=crate, src_root=str(resolved_root), file=str(resolved))
+        return _out_route("crate", resolved_root, resolved)  # class 3
     except ValueError:
         # file outside root (should not happen — discover confines to root); degrade to crate.
-        return crate
+        return "crate"
+
+
+def _out_route(crate: str, base: Path, file: Path) -> str:
+    """The class-2/3 non-conformance route: ``{crate}.#out.{relpath stems}``.
+
+    Mechanical and relpath-pure: every path segment from ``base`` contributes its
+    LITERAL stem (only the final ``.rs`` is stripped — ``main``/``lib``/``mod`` are
+    NOT collapsed, unlike the ADR-049 in-src route, because there is no module tree
+    to mirror out here and literal stems keep distinct files distinct). The ``#out``
+    segment brands the route as outside loomweave's emittable scope.
+    """
+    rel = file.relative_to(base)
+    segments = [*rel.parts[:-1], file.stem]
+    return ".".join([crate, "#out", *segments])
 
 
 def _parse_error_finding(relpath: str, detail: str) -> Finding:

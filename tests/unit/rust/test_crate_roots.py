@@ -152,10 +152,13 @@ def test_workspace_member_files_route_to_their_own_crates(tmp_path: Path) -> Non
     assert route(m2 / "src" / "main.rs", tmp_path, roots) == "m_two"
 
 
-def test_out_of_src_files_get_the_crate_named_fallback_route(tmp_path: Path) -> None:
+def test_out_of_src_files_get_the_out_branded_crate_route(tmp_path: Path) -> None:
     # Class 2: under a crate root but OUTSIDE its src/ — loomweave's emittable_scope
     # emits NOTHING here; wardline routes mechanically from the crate dir under the
-    # real crate name (documented: no cross-tool conformance claim, no collision risk).
+    # real crate name + the reserved `#out` segment (no cross-tool conformance claim;
+    # `#` appears only inside loomweave's `impl#<...>` discriminators, so the route
+    # can never collide with a class-1/loomweave locator). ALL stems are literal —
+    # no main/lib/mod collapsing.
     analyzer = _analyzer_module()
     crate = _write_crate(tmp_path, "c", '[package]\nname = "c-app"\n')
     (crate / "tests").mkdir()
@@ -164,14 +167,35 @@ def test_out_of_src_files_get_the_crate_named_fallback_route(tmp_path: Path) -> 
     roots = discover_crate_roots(tmp_path)
 
     route = analyzer._module_for  # noqa: SLF001
-    assert route(crate / "build.rs", tmp_path, roots) == "c_app.build"
-    assert route(crate / "tests" / "integration.rs", tmp_path, roots) == "c_app.tests.integration"
+    assert route(crate / "build.rs", tmp_path, roots) == "c_app.#out.build"
+    assert route(crate / "tests" / "integration.rs", tmp_path, roots) == "c_app.#out.tests.integration"
 
 
-def test_no_crate_files_keep_the_pre_sp2_mechanical_route(tmp_path: Path) -> None:
-    # Class 3: no owning crate root anywhere — today's entire preview population.
-    # The route is BYTE-IDENTICAL to the pre-SP2 behavior (crate = scan-root name,
-    # src_root = scan root, no src/ strip) so the preview scan population is unchanged.
+def test_class2_route_cannot_collide_with_an_in_src_twin(tmp_path: Path) -> None:
+    # The keystone panel's collision repro, inverted: <crate>/tests/integration.rs
+    # (class 2) and <crate>/src/tests/integration.rs (class 1) used to mint the SAME
+    # qualname prefix (`c_app.tests.integration`). The `#out` branding separates them.
+    analyzer = _analyzer_module()
+    crate = _write_crate(tmp_path, "c", '[package]\nname = "c-app"\n')
+    (crate / "src" / "tests").mkdir()
+    (crate / "src" / "tests" / "integration.rs").write_text("", encoding="utf-8")
+    (crate / "tests").mkdir()
+    (crate / "tests" / "integration.rs").write_text("", encoding="utf-8")
+    roots = discover_crate_roots(tmp_path)
+
+    route = analyzer._module_for  # noqa: SLF001
+    in_src = route(crate / "src" / "tests" / "integration.rs", tmp_path, roots)
+    out_of_src = route(crate / "tests" / "integration.rs", tmp_path, roots)
+    assert in_src == "c_app.tests.integration"  # class 1: the conformance-bearing route
+    assert out_of_src == "c_app.#out.tests.integration"  # class 2: #out-branded
+    assert in_src != out_of_src
+
+
+def test_no_crate_files_get_the_relpath_pure_constant_crate_route(tmp_path: Path) -> None:
+    # Class 3: no owning crate root anywhere. The crate segment is the CONSTANT
+    # "crate" (cargo forbids the keyword as a package name, so it cannot collide
+    # with class 1) + the `#out` branding + literal relpath stems — relpath-pure,
+    # scan-root-name-INDEPENDENT (renaming the root directory does not rekey).
     analyzer = _analyzer_module()
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "m.rs").write_text("", encoding="utf-8")
@@ -179,7 +203,7 @@ def test_no_crate_files_keep_the_pre_sp2_mechanical_route(tmp_path: Path) -> Non
 
     assert roots.crate_dir_for(tmp_path / "src" / "m.rs") is None  # no lib.rs/main.rs -> no root
     got = analyzer._module_for(tmp_path / "src" / "m.rs", tmp_path, roots)  # noqa: SLF001
-    assert got == f"{tmp_path.name}.src.m"
+    assert got == "crate.#out.src.m"  # NOT f"{tmp_path.name}..." — root-name-independent
 
 
 def test_scan_coverage_is_not_narrowed_to_emittable_scope(tmp_path: Path) -> None:
@@ -210,6 +234,6 @@ def test_scan_coverage_is_not_narrowed_to_emittable_scope(tmp_path: Path) -> Non
     ]
     by_path = {f.location.path: f.qualname for f in rs}
     assert by_path["c/src/cmd.rs"] == "c_app.cmd.run"  # class 1: the oracle route
-    assert by_path["c/build.rs"] == "c_app.build.run"  # class 2: crate-named fallback
-    assert by_path["c/tests/integration.rs"] == "c_app.tests.integration.run"
-    assert by_path["bare/m.rs"] == f"{tmp_path.name}.bare.m.run"  # class 3: pre-SP2 route
+    assert by_path["c/build.rs"] == "c_app.#out.build.run"  # class 2: #out-branded crate route
+    assert by_path["c/tests/integration.rs"] == "c_app.#out.tests.integration.run"
+    assert by_path["bare/m.rs"] == "crate.#out.bare.m.run"  # class 3: relpath-pure constant crate

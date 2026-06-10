@@ -13,14 +13,15 @@ path consults it anymore.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 
 from wardline.core.baseline import Baseline, build_baseline_document
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
-from wardline.core.suppression import apply_suppressions
-from wardline.core.waivers import WaiverSet
+from wardline.core.judged import JudgedFP, JudgedSet
+from wardline.core.suppression import apply_suppressions, gate_trips
+from wardline.core.waivers import Waiver, WaiverSet
 
 
 def _rs_finding(*, stray_provisional_prop: bool = False) -> Finding:
@@ -49,6 +50,44 @@ def test_rs_finding_is_suppressed_by_a_matching_baseline() -> None:
 def test_rs_finding_is_captured_in_a_generated_baseline() -> None:
     doc = build_baseline_document([_rs_finding()])
     assert [e["fingerprint"] for e in doc["entries"]] == ["a" * 64]
+
+
+def test_rs_finding_is_suppressed_by_a_matching_waiver() -> None:
+    # Graduation covers the WHOLE suppression machinery, not just the baseline leg:
+    # a hand-authored waiver keyed to the RS-WL fingerprint must resolve WAIVED
+    # (waiver > judged > baseline precedence lives in resolve_identity).
+    f = _rs_finding()
+    waivers = WaiverSet([Waiver(fingerprint="a" * 64, reason="accepted: sandboxed CLI", expires=None)])
+    (out,) = apply_suppressions([f], Baseline(frozenset()), waivers, today=date(2026, 6, 10))
+    assert out.suppressed is SuppressionState.WAIVED
+    assert out.suppression_reason  # the waiver's reason travels with the verdict
+
+
+def test_rs_finding_is_suppressed_by_a_judged_false_positive() -> None:
+    f = _rs_finding()
+    judged = JudgedSet(
+        [
+            JudgedFP(
+                fingerprint="a" * 64,
+                rule_id="RS-WL-108",
+                path="src/m.rs",
+                message="program injection",
+                rationale="the program is a vetted constant at runtime",
+                model_id="test-judge",
+                confidence=0.97,
+                recorded_at=datetime(2026, 6, 10, tzinfo=UTC),
+                policy_hash="p" * 8,
+            )
+        ]
+    )
+    (out,) = apply_suppressions([f], Baseline(frozenset()), WaiverSet([]), today=date(2026, 6, 10), judged=judged)
+    assert out.suppressed is SuppressionState.JUDGED
+
+
+def test_active_rs_error_trips_the_gate() -> None:
+    # An ACTIVE (unsuppressed) RS-WL-108 ERROR participates in --fail-on like any
+    # Python defect — graduated findings are gate citizens, not advisory.
+    assert gate_trips([_rs_finding()], Severity.ERROR) is True
 
 
 def test_producer_no_longer_emits_the_provisional_property() -> None:

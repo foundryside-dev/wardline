@@ -41,7 +41,10 @@ from wardline.core.sarif import SarifSink
     "--lang",
     type=click.Choice(["python", "rust"]),
     default="python",
-    help="Language frontend. 'rust' (PREVIEW) scans .rs files for RS-WL-* command-injection findings.",
+    help=(
+        "Language frontend. 'rust' scans .rs files for RS-WL-* command-injection findings "
+        "(frozen identity, baseline-eligible; config severity overrides not yet applied)."
+    ),
 )
 @click.option("--output", type=click.Path(path_type=Path), default=None)
 # exit 1 if any non-suppressed DEFECT has severity >= this threshold (SP3b)

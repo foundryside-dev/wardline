@@ -1,5 +1,5 @@
 {
-  "corpus_version": 2,
+  "corpus_version": 3,
   "fingerprint_scheme": "wlfp2",
-  "reason": "graduation (rust-sp2-2026-06-10 Task 7): drop provisional_identity property (rules.py no longer emits it; RS-WL-* baseline-eligible)"
+  "reason": "rekey (rust-sp2-2026-06-10 keystone): entity-relative fingerprint discriminators (wlfp2 move-stability) + #out non-conformance route branding + relpath-pure class-3 crate segment + class-2 fixture pinned"
 }

@@ -12,6 +12,16 @@ data reaching the program or shell command line of `std::process::Command`.
     suppression machinery — they match committed baseline/waiver/judged entries
     and are captured by `wardline baseline` like any Python finding.
 
+Finding identity is **keyed to the crate name**: the qualname every fingerprint
+hashes starts with the crate read from `Cargo.toml` (`[package].name`,
+underscored). Adding or removing a `Cargo.toml`, or renaming the crate in the
+manifest, therefore **rekeys** every fingerprint under that crate — re-baseline
+after such a change. For manifest-less trees the identity is path-pure (stable
+under a scan-root directory rename), but adding a manifest later rekeys those
+findings too. Relatedly, scanning a **subtree** of a crate (e.g. its `src/`
+directory directly) loses sight of the manifest and degrades identity to the
+manifest-less form — always scan from the crate root.
+
 !!! warning "Scope — command-injection slice; no config severity overrides yet"
     Rule coverage is the **command-injection slice** (`RS-WL-108` / `RS-WL-112`) —
     a Rust scan says nothing about other defect families. `weft.toml` severity
