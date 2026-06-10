@@ -147,7 +147,15 @@ def cfg_discriminant(predicates: Sequence[str]) -> str:
     sorted (order-independent — NOT source order), joined with ``&``. Folding every
     predicate is what keeps stacked cfg-twins (``#[cfg(feature="a")] #[cfg(unix)]`` vs
     ``#[cfg(feature="b")] #[cfg(unix)]``) distinct. Applied by ``index.py`` only on a
-    bare-path COLLISION, exactly like the oracle's extract.rs twin counter."""
+    bare-path COLLISION, exactly like the oracle's extract.rs twin counter.
+
+    Raises ``ValueError`` on an empty input: ``@cfg()`` is never a meaningful
+    discriminant (the oracle's ``cfg_suffix`` guards the empty case BEFORE calling
+    ``cfg_discriminant``), and rendering it would silently collide every
+    "discriminated" twin onto one key — a caller bug, surfaced loudly."""
+    if not predicates:
+        msg = "cfg_discriminant() requires at least one raw #[cfg] predicate"
+        raise ValueError(msg)
     return f"@cfg({'&'.join(sorted(normalize_cfg_predicate(p) for p in predicates))})"
 
 
@@ -160,6 +168,13 @@ def cfg_predicate_of(attribute_item: Node) -> str | None:
     text): collection is raw, and ``cfg_discriminant`` is the single place predicates
     are normalised + reserved-char-escaped — normalising here too would double-escape
     (``a:b`` -> ``a%253Ab``).
+
+    The ONE exception to "raw source span": comment nodes inside the predicate
+    (``#[cfg(any(unix, /* why */ windows))]``) are excised — the oracle's predicate
+    is ``list.tokens.to_string()`` and proc-macro2 token streams carry no comments,
+    so comment bytes were never part of the oracle's raw text either (corpus row
+    ``cfg_predicate_internal_comment``). Everything else (parens, spacing, unescaped
+    reserved chars) is kept verbatim.
     """
     if not attribute_item.named_children:
         return None
@@ -172,7 +187,37 @@ def cfg_predicate_of(attribute_item: Node) -> str | None:
     args = attribute.child_by_field_name("arguments")
     if args is None or args.text is None:
         return None
-    return args.text.decode("utf-8")
+    return _text_excluding_comments(args)
+
+
+# tree-sitter comment node types — `///` doc comments parse as line_comment too.
+_COMMENT_TYPES = frozenset({"line_comment", "block_comment"})
+
+
+def _text_excluding_comments(node: Node) -> str:
+    """``node``'s raw source text with every comment node's byte span excised
+    (the comment's SURROUNDING whitespace survives — ``normalize_cfg_predicate``
+    strips all whitespace downstream, so only the comment bytes themselves matter)."""
+    raw = node.text or b""
+    base = node.start_byte
+    spans: list[tuple[int, int]] = []
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        if current.type in _COMMENT_TYPES:
+            spans.append((current.start_byte - base, current.end_byte - base))
+            continue
+        stack.extend(current.children)
+    if not spans:
+        return raw.decode("utf-8")
+    spans.sort()
+    kept = bytearray()
+    pos = 0
+    for start, end in spans:
+        kept += raw[pos:start]
+        pos = end
+    kept += raw[pos:]
+    return kept.decode("utf-8")
 
 
 # Generic args that are NOT part of the locator key (qualname.rs trait_generic_args /

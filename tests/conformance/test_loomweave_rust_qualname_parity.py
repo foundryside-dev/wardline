@@ -8,12 +8,18 @@ arrangement: Wardline *vendors* ``qualnames_rust.json`` and reproduces its
 the *second producer*, it MINTS the same locator string and never parses it.
 
 Provenance — re-vendor when Loomweave bumps the corpus:
-    source: loomweave  rc4  @ a209fc7603b09bb06564e09c8c99390d410ea5b2
-            (fixtures/qualnames_rust.json, blob 56cba0fe2d6c449ebc841c52a2800368b2e389e4,
+    source: loomweave  rc4  @ cab95a1695a45f875933d8c4ac0e800e793c9305
+            (fixtures/qualnames_rust.json, blob ed436c825861ad2b9e313f9211f5a55583b80c7c,
             extractor-generated, locked by
             crates/loomweave-plugin-rust/tests/qualname_conformance.rs)
     vendored byte-identical to tests/conformance/qualnames_rust.json (2026-06-10).
-    The a209fc7 re-vendor (rust-sp2 sprint, Task 1 upstream) adds FIVE cases:
+    The cab95a1 re-vendor (keystone-panel rows) adds TWO cases pinning syn's
+    token-stream comment semantics: ``cfg_attr_comment_interposition`` (a ``//`` or
+    ``///`` comment between ``#[cfg]`` and its item never detaches the cfg — both
+    twins keep their ``@cfg`` discriminant) and ``cfg_predicate_internal_comment``
+    (a ``/* ... */`` inside the predicate is invisible to the token stream —
+    ``any(unix, /* why */ windows)`` renders ``any(unix,windows)``).
+    The prior a209fc7 re-vendor (rust-sp2 sprint, Task 1 upstream) added FIVE cases:
     ``generic_self_nested_param`` (the F2 nested-param trip-wire — the unit-only
     guard now has its corpus row), ``leaf_item_kinds`` (enum/trait/type_alias/
     const/static), ``stacked_cfg_twin`` (ALL #[cfg] predicates folded — normalised,

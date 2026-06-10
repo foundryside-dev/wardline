@@ -213,6 +213,49 @@ def test_per_kind_twin_suffix_applies_within_a_leaf_kind() -> None:
     ]
 
 
+def test_line_comment_interposition_does_not_detach_cfg() -> None:
+    # Keystone-panel repro: a `//` comment between #[cfg] and its item. Comments are
+    # token-stream-invisible to the oracle (syn never sees them — extract.rs
+    # cfg_predicates operates on syn attributes, which attach across comments), so
+    # the cfg must stay pending: both twins keep their @cfg discriminant, and there
+    # is NO bare colliding `demo.m.f`.
+    src = "#[cfg(unix)]\n// comment\npub fn f() {}\n#[cfg(windows)]\npub fn f() {}\n"
+    rows = [(e.qualname, e.kind) for e in discover_rust_entities(src, module="demo.m")]
+    assert rows == [
+        ("demo.m", "module"),
+        ("demo.m.f@cfg(unix)", "function"),
+        ("demo.m.f@cfg(windows)", "function"),
+    ]
+
+
+def test_doc_comment_interposition_does_not_detach_cfg() -> None:
+    # The corpus row (cfg_attr_comment_interposition): a `///` doc comment IS a syn
+    # attribute (#[doc = "..."], Meta::NameValue) but NOT a cfg, so it contributes
+    # nothing to the discriminant — and in tree-sitter it is a plain line_comment
+    # sibling that must not reset the pending cfg either.
+    src = "#[cfg(unix)]\n// platform note\npub fn f() {}\n#[cfg(windows)]\n/// doc comment\npub fn f() {}\n"
+    rows = [(e.qualname, e.kind) for e in discover_rust_entities(src, module="demo.m")]
+    assert rows == [
+        ("demo.m", "module"),
+        ("demo.m.f@cfg(unix)", "function"),
+        ("demo.m.f@cfg(windows)", "function"),
+    ]
+
+
+def test_in_predicate_comment_is_token_invisible() -> None:
+    # The corpus row (cfg_predicate_internal_comment): a /* */ comment INSIDE the
+    # predicate never reaches the oracle's token stream (proc-macro2 drops comments),
+    # so the discriminant renders from tokens only — comment stripped, any() args
+    # sorted, whitespace gone.
+    src = '#[cfg(any(unix, /* why */ windows))]\npub fn g() {}\n#[cfg(target_os = "macos")]\npub fn g() {}\n'
+    rows = [(e.qualname, e.kind) for e in discover_rust_entities(src, module="demo.m")]
+    assert rows == [
+        ("demo.m", "module"),
+        ("demo.m.g@cfg(any(unix,windows))", "function"),
+        ('demo.m.g@cfg(target_os="macos")', "function"),
+    ]
+
+
 def test_emission_is_deterministic() -> None:
     # Two runs over the same source produce byte-identical ordered emissions
     # (qualname, kind, parent, span) — the property the full-set ordered

@@ -103,7 +103,7 @@ class RustAnalyzer:
                 continue
             module = _module_for(file, resolved_root)
             try:
-                file_findings, context = self._analyze_tree(tree, module=module, path=relpath)
+                file_findings, context, file_callables = self._analyze_tree(tree, module=module, path=relpath)
             except Exception as exc:  # noqa: BLE001 — per-file isolation, see below
                 # One pathological file (e.g. a RecursionError on a deeply-nested expression)
                 # must not abort the whole scan and lose every other file's findings. Mirror
@@ -113,10 +113,12 @@ class RustAnalyzer:
                 continue
             self._last_rust_context = context
             files_analyzed += 1
-            # The coverage METRIC counts CALLABLES only — `context.entities` now carries
-            # the full ten-kind surface (Phase 1b), but the trust-surface denominator is
-            # still "functions that could have declared @trusted".
-            functions_total += sum(1 for e in context.entities.values() if e.kind in ("function", "method"))
+            # The coverage METRIC counts CALLABLES only — the emission carries the full
+            # ten-kind surface (Phase 1b), but the trust-surface denominator is still
+            # "functions that could have declared @trusted". `_analyze_tree` counts them
+            # over the entity LIST (never the context mapping, which dict-ification
+            # could collapse).
+            functions_total += file_callables
             # Declared = seeded from a `/// @trusted` marker (tier is a real trust level, not
             # the fail-closed default). This is the trust SURFACE — the denominator that stops
             # a default-clean scan over an un-annotated repo from reading as a clean PASS.
@@ -128,22 +130,27 @@ class RustAnalyzer:
     def analyze_source(self, source: str, *, module: str, path: str = "") -> list[Finding]:
         """Analyze a single in-memory source string (the WP5 rule-test entry)."""
         tree = parse_rust(source)
-        findings, context = self._analyze_tree(tree, module=module, path=path)
+        findings, context, _ = self._analyze_tree(tree, module=module, path=path)
         self._last_rust_context = context
         return findings
 
-    def _analyze_tree(self, tree: Tree, *, module: str, path: str) -> tuple[list[Finding], RustAnalysisContext]:
+    def _analyze_tree(self, tree: Tree, *, module: str, path: str) -> tuple[list[Finding], RustAnalysisContext, int]:
+        """Run the per-file pipeline; returns ``(findings, context, callables_total)``.
+
+        ``callables_total`` (the coverage-metric denominator) is counted over the
+        entity LIST, before dict-ification — the context mapping is keyed and a
+        pathological duplicate could collapse there.
+        """
         nmap = mint_node_ids(tree)
         entities = index_entities(tree, nmap, module=module, path=path)
+        callables = [e for e in entities if e.kind in ("function", "method")]
 
         project_taints: dict[str, TaintState] = {}
         triggers: list[RustTriggerContext] = []
-        for entity in entities:
-            if entity.kind not in ("function", "method"):
-                # Phase 1b: the index emits the full ten-kind surface; the taint path
-                # judges CALLABLES only (a module/struct/const has no body to seed or
-                # walk — feeding one to taint_for/dataflow would be a category error).
-                continue
+        for entity in callables:
+            # Phase 1b: the index emits the full ten-kind surface; the taint path
+            # judges CALLABLES only (a module/struct/const has no body to seed or
+            # walk — feeding one to taint_for/dataflow would be a category error).
             try:
                 seed = self._provider.taint_for(entity.node)
             except ValueError:
@@ -163,12 +170,17 @@ class RustAnalyzer:
         context = RustAnalysisContext(
             triggers=tuple(triggers),
             project_taints=project_taints,
-            entities={e.qualname: e for e in entities},
+            # Keyed by the kind-disambiguated FEDERATION id (`rust:{kind}:{qualname}`,
+            # semantic `method` mapped to id-kind `function` by entity_id itself) — a
+            # qualname-only key would silently drop one of `fn S` / `struct S`, whose
+            # qualnames legitimately collide (the per-kind twin counter never suffixes
+            # ACROSS kinds; the id's kind segment is what separates them).
+            entities={q.entity_id(e.kind, e.qualname): e for e in entities},
         )
         findings: list[Finding] = []
         for rule in self._rules:
             findings.extend(rule.check(context))
-        return findings, context
+        return findings, context, len(callables)
 
 
 def _relpath(file: Path, resolved_root: Path) -> str:

@@ -64,6 +64,14 @@ _LEAF_KINDS: dict[str, str] = {
 }
 _ITEM_TYPES = frozenset(_LEAF_KINDS) | frozenset({"mod_item", "impl_item"})
 
+# Comment nodes are token-stream-INVISIBLE to the oracle (syn/proc-macro2 drop them
+# before extract.rs ever runs), so a comment interposed between a #[cfg] attribute
+# and its item must not reset the pending-cfg accumulation. Covers `//`, `/* */`,
+# AND `///` doc comments (tree-sitter parses a doc comment as a line_comment too;
+# to syn it is a #[doc] attribute — either way, never a cfg). Corpus row:
+# cfg_attr_comment_interposition.
+_COMMENT_TYPES = frozenset({"line_comment", "block_comment"})
+
 
 @dataclass(frozen=True, slots=True)
 class RustEntity:
@@ -125,6 +133,11 @@ def _walk_scope(
     items: list[tuple[Node, list[str]]] = []
     pending_cfgs: list[str] = []
     for child in child_nodes:
+        if child.type in _COMMENT_TYPES:
+            # Token-stream-invisible (see _COMMENT_TYPES): skip WITHOUT resetting
+            # pending_cfgs — a `// note` between #[cfg] and the fn must not detach
+            # the cfg and hand two twins the same bare colliding path.
+            continue
         if child.type == "attribute_item":
             pred = q.cfg_predicate_of(child)
             if pred is not None:
@@ -159,7 +172,9 @@ def _walk_scope(
 
     # First block with a given (cfg-augmented) impl qualname emits the ONE merged impl
     # entity; later same-key blocks only append methods (extract.rs `seen_impl_ids`).
-    # Per-scope is equivalent to per-file: the qualname embeds the full module path.
+    # The set is PER-INVOCATION (each nested scope gets a fresh one); that is sound
+    # because the impl qualname embeds the full module path, so two impls in different
+    # scopes can never share a key — dedup only ever needs to see one scope at a time.
     seen_impl_quals: set[str] = set()
 
     for node, cfgs in items:

@@ -39,6 +39,10 @@ class RustAnalysisContext:
 
     triggers: Sequence[RustTriggerContext]
     project_taints: Mapping[str, TaintState]  # qualname -> body taint
+    # Keyed by the kind-disambiguated federation entity id (`rust:{kind}:{qualname}`,
+    # qualname.entity_id — semantic `method` maps to id-kind `function`). NOT keyed by
+    # bare qualname: `fn S` and `struct S` legitimately share one (the per-kind twin
+    # counter never suffixes across kinds), and a qualname key would drop one of them.
     entities: Mapping[str, RustEntity]
 
 

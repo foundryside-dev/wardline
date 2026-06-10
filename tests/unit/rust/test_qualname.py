@@ -15,10 +15,12 @@ import pytest
 pytest.importorskip("tree_sitter", reason="wardline[rust] extra not installed")
 
 from wardline.rust.index import discover_rust_entities  # noqa: E402
+from wardline.rust.parse import parse_rust  # noqa: E402
 from wardline.rust.qualname import (  # noqa: E402
     RUST_ONTOLOGY_VERSION,
     RUST_PLUGIN_ID,
     cfg_discriminant,
+    cfg_predicate_of,
     entity_id,
     normalize_cfg_predicate,
     rust_module_route,
@@ -100,6 +102,35 @@ def test_cfg_discriminant_normalizes_exactly_once() -> None:
     # pipeline): index.py collects RAW predicates, cfg_discriminant is the single
     # normalisation point — the layering that prevents `a:b` -> `a%253Ab`.
     assert cfg_discriminant(['feature = "a:b"']) == '@cfg(feature="a%3Ab")'
+
+
+def test_cfg_discriminant_rejects_empty_input() -> None:
+    # An empty predicate list would render the meaningless `@cfg()` and silently
+    # collide every "discriminated" twin onto it — a caller bug, surfaced loudly.
+    with pytest.raises(ValueError, match="predicate"):
+        cfg_discriminant([])
+
+
+def test_cfg_predicate_of_returns_raw_unnormalized_text() -> None:
+    # The collection-is-raw invariant (mirrors extract.rs cfg_predicates): the
+    # returned predicate keeps its outer argument parens, source spacing, and the
+    # UNESCAPED reserved `:` — cfg_discriminant is the single normalisation point
+    # (normalising here too would double-escape `a:b` -> `a%253Ab`).
+    tree = parse_rust('#[cfg(feature = "a:b")]\nfn f() {}\n')
+    attr = next(c for c in tree.root_node.children if c.type == "attribute_item")
+    assert cfg_predicate_of(attr) == '(feature = "a:b")'
+
+
+def test_cfg_predicate_of_excludes_comment_tokens() -> None:
+    # A /* */ comment inside the predicate is NOT part of the oracle's token stream
+    # (proc-macro2 drops comments before cfg_predicates ever sees them), so the raw
+    # collected text excludes the comment bytes — everything else stays raw
+    # (the comment's surrounding source whitespace survives; normalize strips it).
+    tree = parse_rust("#[cfg(any(unix, /* why */ windows))]\npub fn g() {}\n")
+    attr = next(c for c in tree.root_node.children if c.type == "attribute_item")
+    raw = cfg_predicate_of(attr)
+    assert raw == "(any(unix,  windows))"
+    assert normalize_cfg_predicate(raw) == "any(unix,windows)"
 
 
 def test_positional_generics_are_rename_stable() -> None:
