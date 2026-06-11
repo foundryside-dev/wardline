@@ -419,9 +419,7 @@ def _not_evaluated_reason(would_trip_at: str | None, evaluated: str, *, gate: st
     )
 
 
-def gate_decision(
-    result: ScanResult, fail_on: Severity | None, *, fail_on_unanalyzed: bool = False
-) -> GateDecision:
+def gate_decision(result: ScanResult, fail_on: Severity | None, *, fail_on_unanalyzed: bool = False) -> GateDecision:
     """Translate a scan into a pass/fail verdict. A trip is data, not an error.
 
     Two independent sub-gates compose into one decision: the severity gate (``fail_on``)

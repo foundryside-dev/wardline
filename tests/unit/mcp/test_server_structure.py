@@ -47,3 +47,20 @@ def test_mcp_advertisement_snapshot() -> None:
         "wardline://config-schema",
     ]
     assert [prompt["name"] for prompt in prompts["result"]["prompts"]] == ["wardline:loop"]
+
+    # B1/B2: every advertised tool carries the standard MCP metadata surface —
+    # title (2025-03-26), a complete annotations object whose title mirrors the
+    # tool title, an object-typed outputSchema (2025-06-18) — alongside the
+    # homegrown capabilities key (mapped, not replaced).
+    for tool in tools["result"]["tools"]:
+        assert isinstance(tool["title"], str) and tool["title"], tool["name"]
+        assert set(tool["annotations"]) == {
+            "title",
+            "readOnlyHint",
+            "destructiveHint",
+            "idempotentHint",
+            "openWorldHint",
+        }, tool["name"]
+        assert tool["annotations"]["title"] == tool["title"], tool["name"]
+        assert tool["outputSchema"]["type"] == "object", tool["name"]
+        assert isinstance(tool["capabilities"], list) and tool["capabilities"], tool["name"]

@@ -395,3 +395,12 @@ def test_attach_threads_rust_plugin_through_locator_resolve_and_entity_kind(monk
     assert res.attached is True
     assert transport.calls[0]["body"]["entity_id"] == "rust:function:demo.m.leaky"
     assert transport.calls[0]["body"]["entity_kind"] == "rust:function"
+
+
+def test_file_2xx_non_string_issue_id_is_normalized_to_none():
+    # Filigree's promote response is external input: a non-string issue_id (e.g. an
+    # integer) must not flow verbatim into tool payloads that publish issue_id as
+    # string|null in their MCP outputSchema — type-narrow at the wire boundary.
+    t = FakeTransport(200, '{"issue_id": 123, "created": true}')
+    res = FiligreeIssueFiler("http://h/api/weft/scan-results", transport=t).file("fp")
+    assert res.reachable is True and res.issue_id is None and res.created is True

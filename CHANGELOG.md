@@ -8,6 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **MCP structured tool output on all 15 tools** — every tool now declares an
+  `outputSchema` in `tools/list` and returns `structuredContent` alongside the
+  (byte-identical) text block on `tools/call`, so MCP-spec clients consume and
+  validate results without parsing JSON out of a text blob. Tool-execution
+  errors stay `isError` results and never carry `structuredContent`. The
+  server now negotiates the MCP protocol revision (`2025-06-18` /
+  `2025-03-26` / `2024-11-05`; previously hard-pinned to `2024-11-05`).
+  Per-tool declarations (schemas, annotations, capabilities) moved out of
+  `_register_tools` to module level next to their handlers
+  (`wardline-47ff226ebe`, MCP-primary B1; declaration colocation from
+  `wardline-80e457bc41`).
+- **Standard MCP tool `annotations` + `title`** — each tool's `tools/list`
+  entry now carries a human `title` and the standard `ToolAnnotations` hints
+  (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`)
+  derived from the existing capability model, so standard MCP clients see the
+  read-only/destructive signal wardline already computes. The homegrown
+  `capabilities` key is still emitted for existing consumers; hints describe
+  the integration-free baseline posture and `ToolPolicy` remains the
+  enforcement authority (`wardline-e63204176b`, MCP-primary B2).
+
+### Fixed
+- **Non-string `issue_id` from Filigree promote is normalized to `null`** —
+  the promote response is type-narrowed at the wire boundary, so a skewed
+  2xx body can no longer leak a non-string `issue_id` into `file_finding` /
+  `scan_file_findings` payloads (violating their published output schemas).
+- **Type-skewed Loomweave store blobs coerce to `null` in `explain_taint`** —
+  `tier_in`/`tier_out`/callee qualnames read from a store blob now get the
+  same isinstance guards as the adjacent fingerprint/path fields.
+- **`scan_file_findings` federation honesty** — the emit block's
+  `disabled_reason` now uses the shared 401/403-vs-5xx-vs-transport ladder
+  instead of a flat `filigree unreachable`, and the no-Filigree-URL branch no
+  longer misattributes the identity-attach skip to a promote that never ran.
+
 - **MCP `scan` tool `fail_on_unanalyzed` argument** — the CLI's
   `--fail-on-unanalyzed` knob over the MCP surface (default off, same as the
   CLI), so gate semantics are fully controllable on the primary surface. The

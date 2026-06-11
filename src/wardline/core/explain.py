@@ -142,6 +142,16 @@ def _is_fresh(view: Any) -> bool:
     return stamped is not None and stamped == view.current_content_hash
 
 
+def _opt_str(value: Any) -> str | None:
+    """Type-narrow an untrusted store-blob field to string-or-None.
+
+    The blob is external input (hand-editable, version-skewable); the adjacent
+    fingerprint/rule_id/path/line fields are already isinstance-guarded — taint tiers
+    and callee qualnames get the same treatment so a type-skewed blob cannot put a
+    non-string into a payload published as string|null in the MCP outputSchema."""
+    return value if isinstance(value, str) else None
+
+
 def _callee_leaf(callee_qualname: str | None) -> str | None:
     """The blob stores the resolved callee QUALNAME; SP8's immediate_tainted_callee is
     the bare trailing name. Project back for surface parity with the SP8 shape."""
@@ -208,7 +218,7 @@ def _explanation_from_blob(
     first = _select_blob_finding(finding_rows, fingerprint=fingerprint, path=path, line=line, rule_id=rule_id)
     if first is None:
         return None
-    callee_q = taint.get("contributing_callee_qualname")
+    callee_q = _opt_str(taint.get("contributing_callee_qualname"))
     stored_fingerprint = first.get("fingerprint")
     stored_rule_id = first.get("rule_id")
     stored_path = first.get("path")
@@ -220,8 +230,8 @@ def _explanation_from_blob(
         sink_qualname=qualname if isinstance(qualname, str) else None,
         path=stored_path if isinstance(stored_path, str) else "",
         line=stored_line if isinstance(stored_line, int) else None,
-        tier_in=taint.get("actual_return"),
-        tier_out=taint.get("declared_return"),
+        tier_in=_opt_str(taint.get("actual_return")),
+        tier_out=_opt_str(taint.get("declared_return")),
         immediate_tainted_callee=_callee_leaf(callee_q),
         source_boundary_qualname=callee_q,
         resolved_call_count=int(taint.get("resolved_call_count", 0) or 0),
@@ -275,12 +285,12 @@ def explain_chain(
             return TaintChain(hops=hops, truncated_at=current)
         blob = view.wardline_json or {}
         taint = blob.get("taint", {})
-        next_q = taint.get("contributing_callee_qualname")
+        next_q = _opt_str(taint.get("contributing_callee_qualname"))
         hops.append(
             ChainHop(
                 qualname=current,
-                tier_in=taint.get("actual_return"),
-                tier_out=taint.get("declared_return"),
+                tier_in=_opt_str(taint.get("actual_return")),
+                tier_out=_opt_str(taint.get("declared_return")),
                 contributing_callee_qualname=next_q,
             )
         )

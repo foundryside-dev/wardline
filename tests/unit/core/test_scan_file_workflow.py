@@ -116,3 +116,35 @@ def test_scan_file_findings_surfaces_partial_failures(tmp_path):
     assert finding["promotion"]["disabled_reason"] == "filigree unreachable"
     assert finding["identity_attach"]["attempted"] is False
     assert "no issue_id" in finding["identity_attach"]["reason"]
+
+
+def test_scan_file_findings_no_filer_reason_names_missing_url(tmp_path):
+    # When no Filigree filer is configured, identity_attach must name the actual
+    # cause (no URL), matching promotion.disabled_reason — not claim a promote
+    # happened and returned no issue_id.
+    root = _project(tmp_path)
+    dry = scan_file_findings(root)
+    fp = dry["active_defects"][0]["fingerprint"]
+
+    out = scan_file_findings(root, fingerprints=(fp,), dry_run=False)
+
+    finding = out["active_defects"][0]
+    assert finding["promotion"]["disabled_reason"] == "no Filigree URL configured"
+    assert finding["identity_attach"]["attempted"] is False
+    assert finding["identity_attach"]["reason"] == "no Filigree URL configured"
+
+
+def test_scan_file_findings_emit_disabled_reason_uses_discriminated_ladder(tmp_path):
+    # A 401-with-token soft emit failure must surface the discriminated ladder
+    # (dogfood #5), not the flat "filigree unreachable".
+    root = _project(tmp_path)
+    dry = scan_file_findings(root)
+    fp = dry["active_defects"][0]["fingerprint"]
+    emitter = FakeEmitter(EmitResult(reachable=False, status=401, token_sent=True, url="http://filigree.local"))
+
+    out = scan_file_findings(root, fingerprints=(fp,), filigree_emitter=emitter, dry_run=False)
+
+    reason = out["filigree_emit"]["disabled_reason"]
+    assert "401" in reason
+    assert "token" in reason
+    assert "http://filigree.local" in reason

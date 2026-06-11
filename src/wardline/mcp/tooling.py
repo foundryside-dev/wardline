@@ -51,6 +51,19 @@ class Tool:
     handler: Callable[[dict[str, Any], Path], Any]
     network: bool = False
     capabilities: frozenset[ToolCapability] = frozenset({ToolCapability.READ})
+    # B1/B2 (wardline-47ff226ebe / wardline-e63204176b): MCP rev 2025-06-18 structured
+    # output + 2025-03-26 display metadata. ``annotations`` is the standard MCP
+    # ToolAnnotations object (title, readOnlyHint, destructiveHint, idempotentHint,
+    # openWorldHint). CONVENTION: the hints describe the tool's integration-free
+    # baseline posture — readOnlyHint mirrors the DECLARED capability set, and
+    # openWorldHint mirrors the declared NETWORK capability. Opt-in federation reach
+    # (a configured Filigree/Loomweave URL widening scan/dossier/attest at runtime)
+    # is deliberately NOT reflected here: hints are static, untrusted UX advisories,
+    # and ToolPolicy + _effective_tool_capabilities remain the enforcement authority
+    # over what a call may actually do.
+    title: str | None = None
+    output_schema: dict[str, Any] | None = None
+    annotations: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         capabilities = set(self.capabilities) or {ToolCapability.READ}

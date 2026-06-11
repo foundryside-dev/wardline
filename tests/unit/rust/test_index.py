@@ -269,7 +269,7 @@ def test_emission_is_deterministic() -> None:
         "#[cfg(unix)]\nfn f() {}\n#[cfg(windows)]\nfn f() {}\n"
     )
 
-    def run() -> list[tuple[str, str, str | None, int, int]]:
+    def run() -> list[tuple[str, str, str | None, int | None, int | None]]:
         return [
             (e.qualname, e.kind, e.parent, e.location.line_start, e.location.line_end)
             for e in discover_rust_entities(src, module="demo.m", path="m.rs")

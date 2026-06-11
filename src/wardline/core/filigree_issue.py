@@ -193,7 +193,11 @@ class FiligreeIssueFiler:
             payload = json.loads(resp.body) if resp.body else {}
         except json.JSONDecodeError:
             payload = {}
-        issue_id = payload.get("issue_id") if isinstance(payload, dict) else None
+        # Type-narrow at the wire boundary like the emit path does (_safe_int): a 2xx
+        # body carrying a non-string issue_id must not flow verbatim into tool payloads
+        # that publish issue_id as string|null in their MCP outputSchema.
+        raw_issue_id = payload.get("issue_id") if isinstance(payload, dict) else None
+        issue_id = raw_issue_id if isinstance(raw_issue_id, str) else None
         created = bool(payload.get("created")) if isinstance(payload, dict) else False
         return FileResult(reachable=True, issue_id=issue_id, created=created)
 

@@ -32,7 +32,7 @@ import dataclasses
 import json
 from typing import TYPE_CHECKING, Any
 
-from golden.identity._capture import _finding_sort_key, to_json
+from golden.identity._capture import _finding_sort_key, to_json  # type: ignore[import-not-found]
 from wardline.core import config as config_mod
 from wardline.core.discovery import discover
 from wardline.core.finding import Finding, Kind

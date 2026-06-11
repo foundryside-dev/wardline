@@ -11,7 +11,10 @@ import sys
 from collections.abc import Callable
 from typing import Any, TextIO
 
-PROTOCOL_VERSION = "2024-11-05"  # MCP protocol revision this server speaks
+# MCP protocol revisions this server speaks, newest first. structuredContent/outputSchema
+# exist only in 2025-06-18; tool annotations/title arrived in 2025-03-26.
+SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
+PROTOCOL_VERSION = "2025-06-18"  # the latest MCP protocol revision this server speaks
 
 Handler = Callable[[dict[str, Any]], Any]
 
@@ -46,8 +49,12 @@ class JsonRpcServer:
         self._handlers[method] = handler
 
     def _initialize(self, params: dict[str, Any]) -> dict[str, Any]:
+        # Spec negotiation: echo the client's requested revision when we support it,
+        # otherwise answer with the latest revision we speak.
+        requested = params.get("protocolVersion")
+        version = requested if requested in SUPPORTED_PROTOCOL_VERSIONS else PROTOCOL_VERSION
         return {
-            "protocolVersion": PROTOCOL_VERSION,
+            "protocolVersion": version,
             "capabilities": self.capabilities,
             "serverInfo": {"name": self._name, "version": self._version},
         }

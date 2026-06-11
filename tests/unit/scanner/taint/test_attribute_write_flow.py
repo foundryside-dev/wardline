@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import ast
 import textwrap
+from collections.abc import Mapping
 from pathlib import Path
 
 from wardline.core.config import WardlineConfig
@@ -64,7 +65,7 @@ def _defect_ids(tmp_path: Path, body: str) -> set[str]:
     return {f.rule_id for f in findings if f.kind is Kind.DEFECT}
 
 
-def _attr_taints(analyzer: WardlineAnalyzer) -> dict[str, dict[str, TaintState]]:
+def _attr_taints(analyzer: WardlineAnalyzer) -> Mapping[str, Mapping[str, TaintState]]:
     ctx = analyzer.last_context
     assert ctx is not None
     return ctx.class_attr_taints
