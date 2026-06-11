@@ -216,6 +216,9 @@ def _scan(
     trusted_packs = _trusted_packs_arg(args)
     cache_dir = _cache_dir_arg(args, root)
     trust_suppressions = bool(args.get("trust_suppressions") or False)
+    # A1 (wardline-2ee1bbda82): the same frontend selector the CLI's --lang exposes.
+    # A bad value is run_scan's ConfigError (names the valid set) -> isError result.
+    lang = args.get("lang") or "python"
     result = run_scan(
         path,
         config_path=_cfg(args, root),
@@ -226,6 +229,7 @@ def _scan(
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
         trust_suppressions=trust_suppressions,
+        lang=lang,
     )
     # Fail-soft Loomweave write: only when a client was injected (server has a URL).
     # An outage/403 yields a not-reachable WriteResult; never raises here.
@@ -819,6 +823,16 @@ class WardlineMCPServer:
                         "path": {"type": "string", "description": "subdir relative to project root"},
                         "fail_on": {"type": "string", "enum": _SEVERITY_ENUM},
                         "config": {"type": "string"},
+                        "lang": {
+                            "type": "string",
+                            "enum": ["python", "rust"],
+                            "description": "Language frontend (default python). 'rust' sweeps .rs files "
+                            "for the command-injection slice (RS-WL-108 program injection / RS-WL-112 "
+                            "shell injection; frozen identity, baseline-eligible). Preview posture: "
+                            "weft.toml severity overrides do not yet apply to Rust findings, and a tree "
+                            "with no /// @trusted markers is vacuously green — read the WLN-RUST-COVERAGE "
+                            "fact before trusting '0 active'. Requires the wardline[rust] extra.",
+                        },
                         "where": {
                             "type": "object",
                             "description": "Filter the returned findings (conjunctive). Keys: "

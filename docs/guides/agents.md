@@ -287,7 +287,9 @@ facts, and Loomweave/Filigree write status when configured.
 
 ## Scanning Rust
 
-For a Rust codebase, add `--lang rust` (install the `wardline[rust]` extra first).
+For a Rust codebase, add `--lang rust` (install the `wardline[rust]` extra first);
+over MCP, pass `lang: "rust"` to the `scan` tool — the two surfaces share the
+engine and return identical findings.
 It sweeps `*.rs` and flags command-injection defects (`RS-WL-108` program
 injection / `RS-WL-112` shell injection) through the same gate, formats, and
 emission paths as the Python frontend. Rust finding identity is frozen and

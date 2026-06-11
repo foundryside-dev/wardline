@@ -58,6 +58,48 @@ def test_cli_and_mcp_scan_agree_on_findings_and_gate() -> None:
     assert any(e["kind"] == "defect" for e in cli_ag["active_defects"])
 
 
+def test_cli_and_mcp_scan_agree_on_rust_findings(tmp_path: Path) -> None:
+    """A1 (wardline-2ee1bbda82): the Rust frontend must yield the SAME findings over
+    both surfaces. The CLI side is the REAL Click command (`scan --lang rust`) writing
+    jsonl; the MCP side is `_scan({"lang": "rust", ...})`. Every agent_summary bucket
+    entry carries a fingerprint, so the union must equal the CLI's emitted finding set,
+    and the gate verdicts must agree."""
+    import json
+
+    import pytest
+
+    pytest.importorskip("tree_sitter", reason="wardline[rust] extra not installed")
+    from click.testing import CliRunner
+
+    from wardline.cli.scan import scan as scan_cmd
+
+    trusted = "/// @trusted(level=ASSURED)\n"
+    (tmp_path / "hot.rs").write_text(
+        trusted + 'fn run() {\n    let t = std::env::var("X").unwrap();\n    Command::new(t).output();\n}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "clean.rs").write_text(trusted + 'fn ok() {\n    Command::new("ls").output();\n}\n', encoding="utf-8")
+
+    out = tmp_path / "findings.jsonl"
+    cli = CliRunner().invoke(scan_cmd, [str(tmp_path), "--lang", "rust", "--fail-on", "ERROR", "--output", str(out)])
+    assert cli.exit_code == 1  # the RS-WL-108 injection trips the gate
+    cli_fps = sorted(json.loads(line)["fingerprint"] for line in out.read_text().splitlines() if line.strip())
+
+    mcp = _scan({"lang": "rust", "fail_on": "ERROR", "full": True}, root=tmp_path)
+    ag = mcp["agent_summary"]
+    mcp_fps = sorted(
+        e["fingerprint"]
+        for key in ("active_defects", "suppressed_findings", "engine_facts", "informational")
+        for e in ag[key]
+    )
+    assert mcp_fps == cli_fps
+    assert mcp["gate"]["tripped"] is True
+    assert mcp["gate"]["verdict"] == "FAILED"
+    # Engine-level parity too: the shared run_scan path under lang="rust" is what both drove.
+    engine = run_scan(tmp_path, lang="rust")
+    assert sorted(f.fingerprint for f in engine.findings) == cli_fps
+
+
 def test_cli_and_mcp_emit_identical_filigree_body() -> None:
     """The Filigree emission set must be identical across surfaces. The CLI passes
     `result.findings` and `result.scanned_paths` to FiligreeEmitter.emit. The MCP

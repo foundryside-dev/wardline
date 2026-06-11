@@ -26,8 +26,10 @@ manifest-less form — always scan from the crate root.
     Rule coverage is the **command-injection slice** (`RS-WL-108` / `RS-WL-112`) —
     a Rust scan says nothing about other defect families. `weft.toml` severity
     overrides do **not** apply to Rust rules yet (they carry hardcoded base
-    severities), and the frontend is **CLI-only** — the MCP `scan` tool analyzes
-    Python.
+    severities). The frontend is reachable from both surfaces — CLI `--lang rust`
+    and the MCP `scan` tool's `lang: "rust"` argument — but only on `scan`:
+    `baseline`, `judge`, `explain_taint`, `assure`, and the other verbs still
+    analyze Python only on both surfaces.
 
 ## Running it
 
@@ -48,6 +50,17 @@ $ wardline scan . --lang rust --fail-on ERROR
 else about the scan is unchanged: `--fail-on`, `--format {jsonl,sarif,agent-summary,legis}`,
 `--output`, `--new-since`, Filigree/Loomweave emission, and the exit-code gate all
 work exactly as they do for Python. The default (`--lang python`) is untouched.
+
+Over MCP, the `scan` tool takes the same selector as a `lang` argument:
+
+```json
+{"name": "scan", "arguments": {"lang": "rust", "fail_on": "ERROR"}}
+```
+
+The two surfaces share `run_scan`, so an MCP Rust scan returns the same findings
+and gate verdict as the CLI (pinned by a parity test). The CLI's stderr posture
+banners have no MCP twin — over MCP, read the `WLN-RUST-COVERAGE` fact in the
+scan payload before trusting `0 active` on a tree with no `@trusted` markers.
 
 ## What it finds
 

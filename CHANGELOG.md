@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **MCP `scan` tool `lang` argument** (`python` | `rust`, default `python`) —
+  the same frontend selector as CLI `--lang`, so the Rust command-injection
+  slice (`RS-WL-108`/`RS-WL-112`) is reachable over the MCP surface; CLI and
+  MCP Rust scans return identical findings (pinned by a parity test). An
+  unknown value is rejected loudly naming the valid set
+  (`wardline-2ee1bbda82`, MCP-primary A1).
 - **`wardline explain-taint <fingerprint> [PATH]`** — the CLI twin of the MCP
   `explain_taint` tool (same core builder, identical JSON: provenance slice,
   remediation hint, optional `--chain` walk via a Loomweave store), so a
