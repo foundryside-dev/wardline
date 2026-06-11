@@ -107,7 +107,7 @@ it at a package root, not a single file.
 | `--lang [python\|rust]` | Language frontend (default `python`). `rust` sweeps `*.rs` and covers the **command-injection slice** (`RS-WL-108`/`RS-WL-112`); needs the `wardline[rust]` extra. Finding identity is frozen and crate-prefixed (baseline-eligible); config severity overrides do not yet apply to Rust findings — see the [Rust support guide](../guides/rust-preview.md). |
 | `--output PATH` | Write findings to a file instead of stdout. |
 | `--fail-on [CRITICAL\|ERROR\|WARN\|INFO]` | Exit non-zero when any finding at or above this severity survives the baseline. Use this as your CI gate. |
-| `--cache-dir PATH` | Persist the L3 inter-procedural summary cache here so the next scan reuses unchanged summaries. |
+| `--cache-dir PATH` | Persist the L3 inter-procedural summary cache here so the next scan reuses unchanged summaries. Use an operator-owned directory outside untrusted checkouts; do not put the cache in a path that pull-request content can commit or modify. |
 | `--filigree-url TEXT` | Opt-in: POST findings to a Filigree Weft scan-results endpoint as well as emitting them locally. Prefer this native path when agents need Filigree promotion, deduplication, or close/reopen lifecycle state. |
 
 Realistic invocation — scan the source tree, emit SARIF to a file, and fail the
@@ -120,8 +120,13 @@ $ wardline scan src/ --format sarif --output wardline.sarif --fail-on ERROR
 Incremental local run reusing a warm cache:
 
 ```text
-$ wardline scan src/ --cache-dir .weft/wardline/cache
+$ wardline scan src/ --cache-dir ~/.cache/wardline/my-project
 ```
+
+Only reuse a disk summary cache that is outside the scanned repository or is
+otherwise protected from repository content. A cache directory inside an
+untrusted checkout can be pre-populated by a pull request and must not be used as
+CI gate input.
 
 Agent handoff summary:
 
