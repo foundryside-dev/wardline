@@ -276,6 +276,25 @@ def test_null_byte_file_is_gate_eligible(tmp_path) -> None:
     assert gate_decision(result, Severity.ERROR).tripped is True
 
 
+def test_duplicate_project_fqns_trip_default_fail_on_error_gate(tmp_path) -> None:
+    # A default repository-root scan maps both pkg/foo.py and src/pkg/foo.py to
+    # pkg.foo. Duplicate function qualnames must fail loud before a later module
+    # can hide an unsafe summary under the same project-wide key.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "pkg/foo.py", "def f(p):\n    return p\n")
+    _write(proj, "src/pkg/foo.py", "def f(p):\n    return 'safe'\n")
+
+    result = run_scan(proj)
+
+    duplicates = [f for f in result.findings if f.rule_id == "WLN-ENGINE-DUPLICATE-FQN"]
+    assert len(duplicates) == 1
+    assert duplicates[0].kind is Kind.DEFECT
+    assert duplicates[0].severity is Severity.ERROR
+    assert "pkg.foo.f" in duplicates[0].message
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
 def test_parse_error_gates_in_secure_population_but_baseline_annotates(tmp_path) -> None:
     # Secure-by-default precedent: a committed baseline ANNOTATES the parse-error
     # defect (suppressed in the emitted findings) but cannot clear the secure gate;

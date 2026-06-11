@@ -8,7 +8,7 @@ import pytest
 from wardline.core.taints import TaintState as T
 from wardline.scanner.ast_primitives import build_import_alias_map
 from wardline.scanner.index import discover_class_qualnames, discover_file_entities
-from wardline.scanner.taint.function_level import seed_function_taints
+from wardline.scanner.taint.function_level import FunctionSeed, seed_function_taints
 from wardline.scanner.taint.project_resolver import _RESOLVER_VERSION, ModuleInput, resolve_project_taints
 from wardline.scanner.taint.provider import (
     DefaultTaintSourceProvider,
@@ -49,6 +49,28 @@ def _module_input(module: str, src: str, provider) -> ModuleInput:
     tree = ast.parse(src)
     entities = tuple(discover_file_entities(tree, module=module, path=f"{module}.py"))
     seeds = seed_function_taints(entities, ctx=SeedContext(module=module), provider=provider)
+    return ModuleInput(
+        module_path=module,
+        entities=entities,
+        class_qualnames=discover_class_qualnames(tree, module=module),
+        alias_map=build_import_alias_map(tree, module_path=module),
+        seeds=seeds,
+        source_bytes=src.encode("utf-8"),
+    )
+
+
+def _module_input_with_seed(module: str, path: str, src: str, *, body_taint: T, return_taint: T) -> ModuleInput:
+    tree = ast.parse(src)
+    entities = tuple(discover_file_entities(tree, module=module, path=path))
+    seeds = {
+        entity.qualname: FunctionSeed(
+            qualname=entity.qualname,
+            body_taint=body_taint,
+            return_taint=return_taint,
+            source="provider",
+        )
+        for entity in entities
+    }
     return ModuleInput(
         module_path=module,
         entities=entities,
@@ -264,6 +286,38 @@ def test_resolver_exposes_effective_return_taint_map() -> None:
     assert result.return_taint_map["m.validate"] == T.ASSURED  # declared return
     # non-anchored: effective return == refined body taint
     assert result.return_taint_map["m.plain"] == result.taint_map["m.plain"]
+
+
+def test_duplicate_project_fqns_emit_diagnostic_and_do_not_overwrite_taints() -> None:
+    modules = [
+        _module_input_with_seed(
+            "pkg.foo",
+            "pkg/foo.py",
+            "def f(p):\n    return p\n",
+            body_taint=T.EXTERNAL_RAW,
+            return_taint=T.EXTERNAL_RAW,
+        ),
+        _module_input_with_seed(
+            "pkg.foo",
+            "src/pkg/foo.py",
+            "def f(p):\n    return 'safe'\n",
+            body_taint=T.INTEGRAL,
+            return_taint=T.INTEGRAL,
+        ),
+    ]
+
+    result = resolve_project_taints(modules=modules, provider_fingerprint="dup-test-v1")
+
+    assert result.diagnostics == (
+        (
+            "DUPLICATE_FQN",
+            "Duplicate function qualname 'pkg.foo.f' across 2 entities: "
+            "pkg.foo (pkg/foo.py:1), pkg.foo (src/pkg/foo.py:1); project taint summaries are keyed by "
+            "qualname and cannot disambiguate these definitions",
+        ),
+    )
+    assert result.taint_map["pkg.foo.f"] == T.EXTERNAL_RAW
+    assert result.return_taint_map["pkg.foo.f"] == T.EXTERNAL_RAW
 
 
 def test_cache_miss_on_changed_source_recomputes() -> None:

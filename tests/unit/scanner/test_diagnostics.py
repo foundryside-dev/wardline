@@ -44,6 +44,7 @@ def test_l3_diagnostic_findings_map_code_to_severity() -> None:
         ("L3_MONOTONICITY_VIOLATION", "func x moved up"),
         ("L3_CONVERGENCE_BOUND", "SCC of size 3 hit bound"),
         ("L3_LOW_RESOLUTION", "Function m.f has 80% unresolved (4/5)"),
+        ("DUPLICATE_FQN", "duplicate m.f"),
     ]
     out = {f.rule_id: f for f in build_diagnostic_findings(diags)}
     assert out["WLN-L3-MONOTONICITY-VIOLATION"].severity == Severity.ERROR
@@ -51,6 +52,8 @@ def test_l3_diagnostic_findings_map_code_to_severity() -> None:
     assert out["WLN-L3-CONVERGENCE-BOUND"].severity == Severity.WARN
     assert out["WLN-L3-LOW-RESOLUTION"].severity == Severity.INFO
     assert out["WLN-L3-LOW-RESOLUTION"].kind == Kind.METRIC
+    assert out["WLN-ENGINE-DUPLICATE-FQN"].severity == Severity.ERROR
+    assert out["WLN-ENGINE-DUPLICATE-FQN"].kind == Kind.DEFECT
 
 
 def test_unknown_diagnostic_code_is_error_not_silent() -> None:
