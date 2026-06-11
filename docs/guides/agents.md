@@ -54,10 +54,14 @@ wardline install:
   runtime markers: install `weft-markers` and import from `weft_markers`
 ```
 
-It is idempotent (re-run to refresh after upgrading wardline) and non-interactive
-(safe in CI). Opt out of any piece with `--no-claude-md`, `--no-agents-md`,
-`--no-skill`, `--no-mcp`, or `--no-bindings`. There is no SessionStart hook —
-freshness is enforced only when you re-run `wardline install`.
+It is idempotent (re-run to refresh after upgrading wardline) and
+non-interactive, but it writes project-local agent and MCP files. Run it only
+on a trusted checkout or as an operator-controlled bootstrap step. For
+untrusted pull-request CI, use `wardline scan ... --fail-on ERROR`; do not run
+`wardline install` against attacker-controlled working-tree contents. Opt out
+of any piece with `--no-claude-md`, `--no-agents-md`, `--no-skill`, `--no-mcp`,
+or `--no-bindings`. There is no SessionStart hook — freshness is enforced only
+when you re-run `wardline install`.
 
 Once installed, the MCP server resolves a Loomweave/Filigree URL at runtime from
 the flag, env var, or published `.weft/<sibling>/ephemeral.port` rung — not from
