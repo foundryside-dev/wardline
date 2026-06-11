@@ -60,6 +60,25 @@ def test_where_unknown_key_is_toolerror(tmp_path):
         _scan({"where": {"bogus": "x"}}, tmp_path)
 
 
+def test_where_sei_filter_honors_strict_defaults(tmp_path, monkeypatch):
+    from wardline.core import config as config_mod
+
+    (tmp_path / "svc.py").write_text(_SRC, encoding="utf-8")
+    seen: dict[str, bool] = {}
+
+    def fake_resolve_loomweave_url(flag, root, config_path, *, strict_defaults=False):
+        seen["strict_defaults"] = strict_defaults
+        if not strict_defaults:
+            raise AssertionError("strict_defaults was not propagated to SEI filter resolution")
+        return None
+
+    monkeypatch.setattr(config_mod, "resolve_loomweave_url", fake_resolve_loomweave_url)
+
+    with pytest.raises(ToolError, match="no Loomweave URL configured"):
+        _scan({"where": {"qualname": "sei:python:function:svc.leak_a"}}, tmp_path, strict_defaults=True)
+    assert seen["strict_defaults"] is True
+
+
 def test_explain_inlines_provenance_on_active_defects(tmp_path):
     (tmp_path / "svc.py").write_text(_SRC, encoding="utf-8")
     out = _scan({"explain": True}, tmp_path)

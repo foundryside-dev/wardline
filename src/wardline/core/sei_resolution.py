@@ -26,6 +26,8 @@ def resolve_query_filters(
     root: Path,
     config_path: Path | None,
     loomweave_client: Any = None,
+    *,
+    strict_defaults: bool = False,
 ) -> dict[str, Any] | None:
     """Resolve a `qualname` filter starting with `sei:` in findings queries to its resolved qualname."""
     if not where or "qualname" not in where:
@@ -38,7 +40,7 @@ def resolve_query_filters(
     if loomweave_client is None:
         from wardline.core.config import resolve_loomweave_url
 
-        loomweave_url = resolve_loomweave_url(None, root, config_path)
+        loomweave_url = resolve_loomweave_url(None, root, config_path, strict_defaults=strict_defaults)
         if loomweave_url is not None:
             from wardline.loomweave.client import LoomweaveClient
             from wardline.loomweave.config import load_loomweave_token, resolve_project_name

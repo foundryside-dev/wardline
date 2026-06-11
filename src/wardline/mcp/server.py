@@ -700,7 +700,13 @@ def _scan(
     loomweave_status = _loomweave_write_status(loomweave_block)
     where = args.get("where")
     try:
-        resolved_where = resolve_query_filters(where, root, _cfg(args, root), loomweave)
+        resolved_where = resolve_query_filters(
+            where,
+            root,
+            _cfg(args, root),
+            loomweave,
+            strict_defaults=strict_defaults,
+        )
         selected = filter_findings(result.findings, resolved_where)
     except (ValueError, WardlineError) as exc:
         # An unknown filter key or SEI resolution failure is agent-actionable -> isError result.
