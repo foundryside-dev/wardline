@@ -99,6 +99,10 @@ class AnalysisContext:
     project_edges: Mapping[str, frozenset[str]] = field(default_factory=dict)
     # Import alias maps per module: ``{module: {alias: target_fqn}}``.
     alias_maps: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    # SHA-256 of the exact source bytes parsed for each project-relative file. Optional
+    # consumers that stamp external facts use this to refuse post-scan disk races without
+    # making the scanner depend on optional BLAKE3.
+    analyzed_source_sha256: Mapping[str, str] = field(default_factory=dict)
     # MODULE-SCOPE name bindings per module: ``{module: SinkBindings}`` — module-level
     # callable aliases (``runner = subprocess.run``) and constructed instances
     # (``client = httpx.Client()``), collected from each module's top-level scope by the
@@ -159,6 +163,7 @@ class AnalysisContext:
             "alias_maps",
             _freeze_mapping(self.alias_maps),
         )
+        object.__setattr__(self, "analyzed_source_sha256", _freeze_mapping(self.analyzed_source_sha256))
         # SinkBindings values are frozen dataclasses — only the outer map needs the proxy.
         object.__setattr__(self, "module_bindings", _freeze_mapping(self.module_bindings))
 

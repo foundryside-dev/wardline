@@ -41,6 +41,7 @@ class ParsedFile:
     entities: tuple[Entity, ...]
     alias_map: dict[str, str]
     class_qualnames: frozenset[str]
+    source_sha256: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +129,7 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
         try:
             source = path.read_text(encoding="utf-8")
             source_bytes = source.encode("utf-8")
+            source_sha256 = hashlib.sha256(source_bytes).hexdigest()
 
             from wardline.core.ruleset import ruleset_hash
             from wardline.scanner.taint.project_resolver import _RESOLVER_VERSION
@@ -249,6 +251,7 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
                 entities=entities,
                 alias_map=alias_map,
                 class_qualnames=classes,
+                source_sha256=source_sha256,
             )
         )
         for ent in entities:

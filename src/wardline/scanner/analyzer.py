@@ -913,6 +913,7 @@ class WardlineAnalyzer:
             project_edges=result.project_edges,
             call_site_implicit_receivers=result.call_site_implicit_receivers,
             alias_maps={m.module_path: m.alias_map for m in modules},
+            analyzed_source_sha256={parsed.relpath: parsed.source_sha256 for parsed in file_meta},
             module_bindings=module_sink_bindings,
             enabled_rule_ids=enabled_rule_ids,
         )
