@@ -445,23 +445,38 @@ def scan(
                     "Add /// @trusted(level=ASSURED) markers to your boundary functions.",
                     err=True,
                 )
-    gate_dec = gate_decision(result, Severity(fail_on)) if fail_on is not None else gate_decision(result, None)
-    gate_tripped = gate_dec.tripped
+    # Both sub-gates (severity + opt-in unanalyzed) live in the ONE shared decision —
+    # the same one the MCP scan tool serialises — so the surfaces cannot drift (A4).
+    gate_dec = gate_decision(
+        result,
+        Severity(fail_on) if fail_on is not None else None,
+        fail_on_unanalyzed=fail_on_unanalyzed,
+    )
     if gate_dec.verdict == "NOT_EVALUATED":
         # A bare scan never ran the gate — say so explicitly so a clean-looking exit is not
         # mistaken for a PASS (weft-b937e53854). Carries would_trip_at via the reason.
         click.echo(f"gate: NOT_EVALUATED — {gate_dec.reason}", err=True)
     elif gate_dec.tripped:
         # Never let "0 active + gate FAILED" read as a bug: say why and which population.
-        click.echo(f"gate: FAILED (--fail-on {gate_dec.fail_on}) — {gate_dec.reason}", err=True)
+        # Name only the knob(s) that actually tripped — an unanalyzed-only trip must not
+        # print "--fail-on None".
+        knobs = []
+        if gate_dec.severity_tripped:
+            knobs.append(f"--fail-on {gate_dec.fail_on}")
+        if gate_dec.unanalyzed_tripped:
+            knobs.append("--fail-on-unanalyzed")
+        click.echo(f"gate: FAILED ({', '.join(knobs)}) — {gate_dec.reason}", err=True)
         click.echo(f"gate: evaluated {gate_dec.evaluated}", err=True)
         # The secure-gate-default rollout signal: a committed baseline that used to clear
         # the gate now re-enters it. Loud + separable from the generic reason above.
         hint = baseline_migration_hint(result, gate_dec, root=path, new_since=new_since)
         if hint is not None:
             click.echo(hint, err=True)
-    # Independent of the severity gate: opt-in enforcement of "everything analysed".
-    if gate_tripped or (fail_on_unanalyzed and s.unanalyzed):
+    elif gate_dec.fail_on is None:
+        # Only the unanalyzed gate ran and it passed — keep the no-vacuous-severity-green
+        # signal a NOT_EVALUATED verdict used to carry here.
+        click.echo(f"gate: PASSED (--fail-on-unanalyzed only) — {gate_dec.reason}", err=True)
+    if gate_dec.tripped:
         raise SystemExit(1)
 
 

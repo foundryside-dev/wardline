@@ -278,6 +278,20 @@ def _finding_entry(finding: Finding, *, include_next: bool) -> dict[str, Any]:
     return entry
 
 
+def _unanalyzed_trip_action(gate: GateDecision) -> dict[str, Any]:
+    # An unanalyzed trip is an under-scan, not a finding — suppression escape hatches
+    # (trust_suppressions / new_since / baseline edits) cannot clear it; only fixing what
+    # blocked analysis (or dropping the knob) can.
+    return {
+        "tool": "scan",
+        "reason": (
+            f"gate FAILED on unanalyzed files — {gate.reason}. Fix what blocked analysis "
+            "(parse errors / too-deep skips / missing source roots — see the WLN-ENGINE-* "
+            "facts), or drop fail_on_unanalyzed; suppressions cannot clear this trip."
+        ),
+    }
+
+
 def _next_actions_for(active_count: int, gate: GateDecision) -> list[dict[str, Any]]:
     if active_count > 0:
         actions = [
@@ -285,29 +299,59 @@ def _next_actions_for(active_count: int, gate: GateDecision) -> list[dict[str, A
             {"tool": "file_finding", "reason": "promote confirmed true positives after Filigree emission"},
             {"tool": "scan", "reason": "rescan after fixes to verify closure"},
         ]
-        if gate.verdict == "NOT_EVALUATED":
-            # Active defects AND no threshold ran — name the enforcement step so a green-looking
-            # exit is not mistaken for a pass (weft-b937e53854).
+        if gate.fail_on is None:
+            # Active defects AND no severity threshold ran (the gate may still have evaluated
+            # via fail_on_unanalyzed) — name the enforcement step so a green-looking exit is
+            # not mistaken for a pass (weft-b937e53854).
             actions.append(
                 {
                     "tool": "scan",
                     "reason": (
-                        f"gate NOT_EVALUATED (no --fail-on ran); pass --fail-on "
+                        f"severity gate did not run (no --fail-on); pass --fail-on "
                         f"{gate.would_trip_at or 'ERROR'} to enforce"
                     ),
                 }
             )
+        if gate.unanalyzed_tripped:
+            actions.append(_unanalyzed_trip_action(gate))
         return actions
-    if gate.verdict == "NOT_EVALUATED":
-        # 0 active defects but the gate never ran. If would_trip_at is set, suppressed/baselined
-        # defects would re-enter an unsuppressed gate (the dogfood-#2 "worse" case); never let
-        # this read as a clean pass.
+    if gate.tripped:
+        # 0 active defects but the gate FAILED. Attribute each tripping sub-gate — and never
+        # point an unanalyzed trip at the suppression escape hatches (they cannot clear it).
+        actions = []
+        if gate.unanalyzed_tripped:
+            actions.append(_unanalyzed_trip_action(gate))
+        if gate.severity_tripped:
+            # The severity gate tripped on suppressed/baselined findings. Do NOT say
+            # "rescan after edits" (which reads as passed); point at the gate verdict.
+            detail = gate.reason or "the gate tripped on suppressed (baselined/waived/judged) findings"
+            actions.append(
+                {
+                    "tool": "scan",
+                    "reason": (
+                        f"gate FAILED with 0 active defects — {detail}. To clear: pass "
+                        "trust_suppressions (trusted checkout) or new_since <ref> (PR), or remove the "
+                        "baseline/waiver/judged entries; see gate.reason / gate.migration_hint."
+                    ),
+                }
+            )
+        return actions
+    if gate.fail_on is None:
+        # 0 active defects but the severity gate never ran (NOT_EVALUATED, or PASSED on the
+        # unanalyzed knob alone). If would_trip_at is set, suppressed/baselined defects would
+        # re-enter an unsuppressed gate (the dogfood-#2 "worse" case); never let this read as
+        # a clean pass.
+        label = (
+            "gate NOT_EVALUATED (no --fail-on ran)"
+            if gate.verdict == "NOT_EVALUATED"
+            else "severity gate did not run (no --fail-on)"
+        )
         if gate.would_trip_at is not None:
             return [
                 {
                     "tool": "scan",
                     "reason": (
-                        f"gate NOT_EVALUATED (no --fail-on ran); 0 active defects but suppressed/baselined "
+                        f"{label}; 0 active defects but suppressed/baselined "
                         f"{gate.would_trip_at}+ finding(s) would trip an unsuppressed gate — pass --fail-on "
                         f"{gate.would_trip_at} to enforce, or trust_suppressions / new_since <ref> to scope"
                     ),
@@ -316,22 +360,7 @@ def _next_actions_for(active_count: int, gate: GateDecision) -> list[dict[str, A
         return [
             {
                 "tool": "scan",
-                "reason": "gate NOT_EVALUATED (no --fail-on ran); no defect would trip at any threshold — "
-                "pass --fail-on ERROR to lock it in",
-            }
-        ]
-    if gate.tripped:
-        # 0 active defects but the gate FAILED — it tripped on suppressed/baselined findings.
-        # Do NOT say "rescan after edits" (which reads as passed); point at the gate verdict.
-        detail = gate.reason or "the gate tripped on suppressed (baselined/waived/judged) findings"
-        return [
-            {
-                "tool": "scan",
-                "reason": (
-                    f"gate FAILED with 0 active defects — {detail}. To clear: pass "
-                    "trust_suppressions (trusted checkout) or new_since <ref> (PR), or remove the "
-                    "baseline/waiver/judged entries; see gate.reason / gate.migration_hint."
-                ),
+                "reason": f"{label}; no defect would trip at any threshold — pass --fail-on ERROR to lock it in",
             }
         ]
     return [{"tool": "scan", "reason": "no active defects; rescan after edits"}]

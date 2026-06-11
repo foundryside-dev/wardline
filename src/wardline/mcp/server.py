@@ -213,6 +213,8 @@ def _scan(
         # A bad enum value is agent-actionable — give it the valid set rather than
         # letting it surface as an opaque generic JSON-RPC -32603.
         raise ToolError("fail_on must be one of CRITICAL/ERROR/WARN/INFO") from exc
+    # A4 (wardline-7fd0f3a82c): the CLI's --fail-on-unanalyzed knob, same default (off).
+    fail_on_unanalyzed = _bool_arg(args, "fail_on_unanalyzed", False)
     new_since = args.get("new_since")
     trusted_packs = _trusted_packs_arg(args)
     cache_dir = _cache_dir_arg(args, root)
@@ -253,7 +255,7 @@ def _scan(
             "unresolved_qualnames": list(wr.unresolved_qualnames),
             "disabled_reason": wr.disabled_reason,
         }
-    decision = gate_decision(result, threshold)
+    decision = gate_decision(result, threshold, fail_on_unanalyzed=fail_on_unanalyzed)
     migration_hint = baseline_migration_hint(result, decision, root=path, new_since=new_since)
     filigree_block = _emit_filigree(result.findings, filigree, scanned_paths=result.scanned_paths)
     filigree_status = _filigree_emit_status(filigree_block)
@@ -349,8 +351,13 @@ def _scan(
         "gate": {
             "tripped": decision.tripped,
             "fail_on": decision.fail_on,
+            "fail_on_unanalyzed": decision.fail_on_unanalyzed,
             "exit_class": decision.exit_class,
             "verdict": decision.verdict,
+            # Sub-gate attribution: which knob(s) the overall trip came from, so an agent
+            # never has to parse `reason` to tell a severity trip from an unanalyzed one.
+            "severity_tripped": decision.severity_tripped,
+            "unanalyzed_tripped": decision.unanalyzed_tripped,
             "would_trip_at": decision.would_trip_at,
             "reason": decision.reason,
             "evaluated": decision.evaluated,
@@ -936,6 +943,14 @@ class WardlineMCPServer:
                     "properties": {
                         "path": {"type": "string", "description": "subdir relative to project root"},
                         "fail_on": {"type": "string", "enum": _SEVERITY_ENUM},
+                        "fail_on_unanalyzed": {
+                            "type": "boolean",
+                            "description": "Also trip the gate when any file was discovered but could "
+                            "not be analyzed (parse error / too-deep skip / missing source root; benign "
+                            "no-module skips excluded). Default false — same default as the CLI's "
+                            "--fail-on-unanalyzed; summary.unanalyzed always reports the count either "
+                            "way, and gate.unanalyzed_tripped attributes a trip to this knob.",
+                        },
                         "config": {"type": "string"},
                         "lang": {
                             "type": "string",

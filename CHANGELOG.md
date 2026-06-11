@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **MCP `scan` tool `fail_on_unanalyzed` argument** — the CLI's
+  `--fail-on-unanalyzed` knob over the MCP surface (default off, same as the
+  CLI), so gate semantics are fully controllable on the primary surface. The
+  unanalyzed gate now lives **inside** `gate_decision` (one shared
+  implementation; the CLI exit-code OR is gone), and the gate block/decision
+  gained sub-gate attribution: `gate.fail_on_unanalyzed`,
+  `gate.severity_tripped`, `gate.unanalyzed_tripped` — so an agent can tell a
+  severity trip from an under-scan trip without parsing `reason`. An
+  unanalyzed trip's `next_actions` point at fixing what blocked analysis
+  (suppressions cannot clear it). Side fix: CLI `--fail-on-unanalyzed` alone
+  no longer prints `gate: NOT_EVALUATED` while exiting 1 — the verdict is now
+  an honest `FAILED`/`PASSED` whenever either sub-gate ran
+  (`wardline-7fd0f3a82c`, MCP-primary A4).
 - **MCP `rekey` tool** — fingerprint-scheme migration over MCP via the same
   `core.rekey` the CLI drives (no second migration path). Probe-by-default
   (read-only match/orphan/collision report, writes nothing); `apply` /

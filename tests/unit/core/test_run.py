@@ -270,7 +270,13 @@ def test_gate_decision_rejects_contradictory_construction() -> None:
         tripped=False, fail_on="ERROR", exit_class=0, verdict="PASSED", reason="clean", evaluated="unsuppressed"
     )
     GateDecision(
-        tripped=True, fail_on="ERROR", exit_class=1, verdict="FAILED", reason="1 active", evaluated="unsuppressed"
+        tripped=True,
+        fail_on="ERROR",
+        exit_class=1,
+        verdict="FAILED",
+        reason="1 active",
+        evaluated="unsuppressed",
+        severity_tripped=True,
     )
 
 
@@ -292,6 +298,108 @@ def test_gate_decision_no_threshold_is_not_evaluated() -> None:
     assert decision.would_trip_at is None
     assert decision.reason is not None and "did not evaluate" in decision.reason
     assert decision.evaluated is not None
+
+
+def _unanalyzed_result(unanalyzed: int) -> ScanResult:
+    # The unanalyzed overlay counts non-gating engine FACTs (file-skipped / missing source
+    # root), so the severity gate population can be empty while unanalyzed > 0.
+    return ScanResult(
+        findings=[],
+        summary=ScanSummary(unanalyzed, 0, 0, 0, 0, informational=unanalyzed, unanalyzed=unanalyzed),
+        files_scanned=1,
+        context=None,
+    )
+
+
+def test_gate_decision_fail_on_unanalyzed_trips_without_threshold() -> None:
+    # A4 (wardline-7fd0f3a82c): the unanalyzed gate is part of the decision itself, not a
+    # CLI-only exit-code OR — so the MCP surface (no exit code) can express it too.
+    decision = gate_decision(_unanalyzed_result(2), None, fail_on_unanalyzed=True)
+    assert decision.tripped is True and decision.exit_class == 1
+    assert decision.verdict == "FAILED"
+    assert decision.fail_on is None
+    assert decision.fail_on_unanalyzed is True
+    assert decision.unanalyzed_tripped is True and decision.severity_tripped is False
+    assert decision.reason is not None and "2" in decision.reason and "not analyzed" in decision.reason
+    # The severity gate still never ran — the reason must say so (no vacuous severity green).
+    assert "no --fail-on threshold set" in decision.reason
+
+
+def test_gate_decision_fail_on_unanalyzed_clean_passes_without_threshold() -> None:
+    # The knob alone makes the gate EVALUATED (it judged the unanalyzed count), but the
+    # reason must still flag that no severity threshold ran.
+    decision = gate_decision(_unanalyzed_result(0), None, fail_on_unanalyzed=True)
+    assert decision.tripped is False and decision.exit_class == 0
+    assert decision.verdict == "PASSED"
+    assert decision.fail_on is None and decision.fail_on_unanalyzed is True
+    assert decision.unanalyzed_tripped is False and decision.severity_tripped is False
+    assert decision.reason is not None and "no --fail-on threshold set" in decision.reason
+
+
+def test_gate_decision_fail_on_unanalyzed_composes_with_severity_gate(tmp_path: Path) -> None:
+    # Both sub-gates configured: a severity-clean tree with an unanalyzed file still FAILS,
+    # and the reason names BOTH outcomes.
+    proj, _fp_ = _leaky_proj(tmp_path)
+    result = run_scan(proj)
+    decision = gate_decision(result, Severity.ERROR, fail_on_unanalyzed=True)
+    # The leaky fixture has no unanalyzed files: severity trips, unanalyzed does not.
+    assert decision.severity_tripped is True and decision.unanalyzed_tripped is False
+    assert decision.tripped is True and decision.verdict == "FAILED"
+    clean = gate_decision(_unanalyzed_result(1), Severity.ERROR, fail_on_unanalyzed=True)
+    assert clean.severity_tripped is False and clean.unanalyzed_tripped is True
+    assert clean.tripped is True and clean.verdict == "FAILED"
+    assert clean.fail_on == "ERROR"
+    assert clean.reason is not None and "not analyzed" in clean.reason
+
+
+def test_gate_decision_default_ignores_unanalyzed() -> None:
+    # Default (knob off) preserves released behaviour on BOTH surfaces: unanalyzed is
+    # reported, never gated.
+    decision = gate_decision(_unanalyzed_result(3), None)
+    assert decision.tripped is False and decision.verdict == "NOT_EVALUATED"
+    assert decision.fail_on_unanalyzed is False and decision.unanalyzed_tripped is False
+
+
+def test_gate_decision_unanalyzed_invariants_unconstructible() -> None:
+    # The sub-trip decomposition is guarded the same way dogfood #2 is: an overall trip
+    # that no sub-gate explains (or vice versa) must not construct.
+    with pytest.raises(ValueError, match="severity_tripped|unanalyzed_tripped|tripped"):
+        # tripped with NEITHER sub-gate tripping.
+        GateDecision(tripped=True, fail_on="ERROR", exit_class=1, verdict="FAILED", reason="x", evaluated="y")
+    with pytest.raises(ValueError, match="unanalyzed_tripped"):
+        # unanalyzed trip without the knob on.
+        GateDecision(
+            tripped=True,
+            fail_on="ERROR",
+            exit_class=1,
+            verdict="FAILED",
+            reason="x",
+            evaluated="y",
+            unanalyzed_tripped=True,
+        )
+    with pytest.raises(ValueError, match="severity_tripped"):
+        # severity trip without a threshold.
+        GateDecision(
+            tripped=True,
+            fail_on=None,
+            exit_class=1,
+            verdict="FAILED",
+            reason="x",
+            evaluated="y",
+            fail_on_unanalyzed=True,
+            severity_tripped=True,
+        )
+    with pytest.raises(ValueError, match="NOT_EVALUATED"):
+        # The knob alone makes the gate evaluated — NOT_EVALUATED is no longer its shape.
+        GateDecision(
+            tripped=False,
+            fail_on=None,
+            exit_class=0,
+            verdict="NOT_EVALUATED",
+            reason="x",
+            evaluated="y",
+            fail_on_unanalyzed=True,
+        )
 
 
 def _hint(proj: Path, *, new_since=None, trust=False):
@@ -539,12 +647,26 @@ def test_gate_decision_rejects_unknown_fail_on() -> None:
     # fail_on is always a Severity value; an arbitrary string is an illegal state the
     # other guards would otherwise let through (it satisfies "reason iff fail_on").
     with pytest.raises(ValueError, match="fail_on"):
-        GateDecision(tripped=True, fail_on="banana", exit_class=1, verdict="FAILED", reason="x", evaluated="y")
+        GateDecision(
+            tripped=True,
+            fail_on="banana",
+            exit_class=1,
+            verdict="FAILED",
+            reason="x",
+            evaluated="y",
+            severity_tripped=True,
+        )
 
 
 def test_gate_decision_accepts_valid_severity_value() -> None:
     dec = GateDecision(
-        tripped=True, fail_on=Severity.ERROR.value, exit_class=1, verdict="FAILED", reason="x", evaluated="y"
+        tripped=True,
+        fail_on=Severity.ERROR.value,
+        exit_class=1,
+        verdict="FAILED",
+        reason="x",
+        evaluated="y",
+        severity_tripped=True,
     )
     assert dec.fail_on == "ERROR"
 

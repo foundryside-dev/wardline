@@ -114,6 +114,14 @@ class GateDecision:
     reason: str | None = None
     evaluated: str | None = None
     would_trip_at: str | None = None
+    # The unanalyzed sub-gate (A4, wardline-7fd0f3a82c). ``fail_on_unanalyzed`` is the knob
+    # state; the two ``*_tripped`` flags decompose ``tripped`` so consumers (CLI echo, MCP
+    # next_actions) can attribute a trip to its sub-gate without parsing ``reason``. The
+    # decomposition lives IN the decision — not as a surface-level exit-code OR — so the
+    # MCP gate block (which has no exit code) can express the unanalyzed gate at all.
+    fail_on_unanalyzed: bool = False
+    severity_tripped: bool = False
+    unanalyzed_tripped: bool = False
 
     def __post_init__(self) -> None:
         # Enforce the invariants the ``gate_decision`` factory upholds so a *second*
@@ -125,9 +133,10 @@ class GateDecision:
         if self.verdict not in _VERDICT_VALUES:
             raise ValueError(f"verdict {self.verdict!r} is not one of {sorted(_VERDICT_VALUES)}")
         # The verdict is keyed to the gate state — these guards are what stop a tripped gate
-        # from ever serialising as a pass (the dogfood #2 regression).
-        if (self.verdict == "NOT_EVALUATED") != (self.fail_on is None):
-            raise ValueError("verdict NOT_EVALUATED iff no --fail-on threshold is set")
+        # from ever serialising as a pass (the dogfood #2 regression). The gate is evaluated
+        # when EITHER sub-gate is configured (a severity threshold or the unanalyzed knob).
+        if (self.verdict == "NOT_EVALUATED") != (self.fail_on is None and not self.fail_on_unanalyzed):
+            raise ValueError("verdict NOT_EVALUATED iff neither --fail-on nor --fail-on-unanalyzed is set")
         if (self.verdict == "FAILED") != self.tripped:
             raise ValueError("verdict FAILED iff the gate tripped")
         # Every decision carries its reason now — including NOT_EVALUATED (what would trip).
@@ -139,6 +148,14 @@ class GateDecision:
             raise ValueError(f"fail_on {self.fail_on!r} is not a valid Severity value")
         if self.would_trip_at is not None and self.would_trip_at not in _SEVERITY_VALUES:
             raise ValueError(f"would_trip_at {self.would_trip_at!r} is not a valid Severity value")
+        # The sub-trip decomposition must EXPLAIN the overall trip — an overall trip no
+        # sub-gate accounts for (or a sub-trip without its knob) is an illegal state.
+        if self.tripped != (self.severity_tripped or self.unanalyzed_tripped):
+            raise ValueError("tripped must equal (severity_tripped or unanalyzed_tripped)")
+        if self.severity_tripped and self.fail_on is None:
+            raise ValueError("severity_tripped requires a fail_on threshold")
+        if self.unanalyzed_tripped and not self.fail_on_unanalyzed:
+            raise ValueError("unanalyzed_tripped requires fail_on_unanalyzed")
 
 
 def run_scan(
@@ -392,8 +409,8 @@ def _would_trip_at(gate_population: list[Finding]) -> str | None:
     return None
 
 
-def _not_evaluated_reason(would_trip_at: str | None, evaluated: str) -> str:
-    base = "no --fail-on threshold set; gate did not evaluate"
+def _not_evaluated_reason(would_trip_at: str | None, evaluated: str, *, gate: str = "gate") -> str:
+    base = f"no --fail-on threshold set; {gate} did not evaluate"
     if would_trip_at is None:
         return f"{base}. No active defect would trip at any threshold; evaluated {evaluated}"
     return (
@@ -402,8 +419,18 @@ def _not_evaluated_reason(would_trip_at: str | None, evaluated: str) -> str:
     )
 
 
-def gate_decision(result: ScanResult, fail_on: Severity | None) -> GateDecision:
-    """Translate a scan into a pass/fail verdict. A trip is data, not an error."""
+def gate_decision(
+    result: ScanResult, fail_on: Severity | None, *, fail_on_unanalyzed: bool = False
+) -> GateDecision:
+    """Translate a scan into a pass/fail verdict. A trip is data, not an error.
+
+    Two independent sub-gates compose into one decision: the severity gate (``fail_on``)
+    and the unanalyzed gate (``fail_on_unanalyzed`` — trips when any file was discovered
+    but never analysed; benign no-module skips excluded, see ``ScanSummary.unanalyzed``).
+    Folding the unanalyzed gate in HERE (A4, wardline-7fd0f3a82c) is what lets both
+    surfaces share it: the CLI exits on ``tripped`` and the MCP gate block serialises the
+    same decision, so neither can drift.
+    """
     # None SENTINEL: evaluate the unsuppressed gate population when present (secure
     # default), else the suppressed ``findings`` (trusted ``--trust-suppressions`` /
     # a directly-constructed ScanResult with no gate_findings). Population selection is
@@ -418,7 +445,7 @@ def gate_decision(result: ScanResult, fail_on: Severity | None) -> GateDecision:
         if honors_suppressions
         else "unsuppressed (repository baseline/waiver/judged ignored)"
     )
-    if fail_on is None:
+    if fail_on is None and not fail_on_unanalyzed:
         # NOT a clean pass — the gate never ran. The verdict says so; would_trip_at names the
         # worst severity present so the agent's first bare scan is not a false green.
         return GateDecision(
@@ -430,17 +457,34 @@ def gate_decision(result: ScanResult, fail_on: Severity | None) -> GateDecision:
             evaluated=evaluated,
             would_trip_at=would_trip_at,
         )
-    tripped = gate_trips(gate_population, fail_on)
-    sev = fail_on.value
-    reason = _gate_reason(result, fail_on, tripped=tripped, honors_suppressions=honors_suppressions)
+    severity_tripped = fail_on is not None and gate_trips(gate_population, fail_on)
+    unanalyzed_tripped = bool(fail_on_unanalyzed and result.summary.unanalyzed)
+    tripped = severity_tripped or unanalyzed_tripped
+    if fail_on is not None:
+        reason = _gate_reason(result, fail_on, tripped=severity_tripped, honors_suppressions=honors_suppressions)
+    else:
+        # Unanalyzed-only gate: the unanalyzed sub-gate evaluated but the severity gate
+        # never ran — the reason must say so, or a PASSED here is a vacuous severity green.
+        reason = _not_evaluated_reason(would_trip_at, evaluated, gate="the severity gate")
+    if fail_on_unanalyzed:
+        n = result.summary.unanalyzed
+        prefix = (
+            f"{n} file(s) discovered but not analyzed (fail_on_unanalyzed tripped)"
+            if unanalyzed_tripped
+            else "0 files unanalyzed (fail_on_unanalyzed passed)"
+        )
+        reason = f"{prefix}; {reason}"
     return GateDecision(
         tripped=tripped,
-        fail_on=sev,
+        fail_on=fail_on.value if fail_on is not None else None,
         exit_class=1 if tripped else 0,
         verdict="FAILED" if tripped else "PASSED",
         reason=reason,
         evaluated=evaluated,
         would_trip_at=would_trip_at,
+        fail_on_unanalyzed=fail_on_unanalyzed,
+        severity_tripped=severity_tripped,
+        unanalyzed_tripped=unanalyzed_tripped,
     )
 
 

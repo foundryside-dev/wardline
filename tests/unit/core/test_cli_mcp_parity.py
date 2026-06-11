@@ -44,8 +44,11 @@ def test_cli_and_mcp_scan_agree_on_findings_and_gate() -> None:
     assert mcp["gate"] == {
         "tripped": cli_gate.tripped,
         "fail_on": cli_gate.fail_on,
+        "fail_on_unanalyzed": cli_gate.fail_on_unanalyzed,
         "exit_class": cli_gate.exit_class,
         "verdict": cli_gate.verdict,
+        "severity_tripped": cli_gate.severity_tripped,
+        "unanalyzed_tripped": cli_gate.unanalyzed_tripped,
         "would_trip_at": cli_gate.would_trip_at,
         "reason": cli_gate.reason,
         "evaluated": cli_gate.evaluated,
@@ -127,3 +130,35 @@ def test_cli_and_mcp_emit_identical_filigree_body() -> None:
     # active-only) silently diverging the two surfaces' Filigree emission.
     assert [f.fingerprint for f in cap.seen] == [f.fingerprint for f in cli_result.findings]
     assert cap.scanned_paths == cli_result.scanned_paths
+
+
+def test_cli_and_mcp_agree_on_fail_on_unanalyzed_gate(tmp_path: Path) -> None:
+    """A4 (wardline-7fd0f3a82c): the unanalyzed gate must be controllable over BOTH
+    surfaces and yield the SAME verdict. The CLI side is the REAL Click command; the MCP
+    side is `_scan` with the new `fail_on_unanalyzed` arg. Fixture: an unparseable file
+    (discovered but never analysed) and no severity threshold."""
+    from click.testing import CliRunner
+
+    from wardline.cli.scan import scan as scan_cmd
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "bad.py").write_text("def f(:\n", encoding="utf-8")  # syntax error -> unanalyzed
+
+    for knob, expect_trip in ((True, True), (False, False)):
+        cli_args = [str(proj), "--output", str(tmp_path / "f.jsonl")]
+        cli_args.append("--fail-on-unanalyzed" if knob else "--no-fail-on-unanalyzed")
+        cli = CliRunner().invoke(scan_cmd, cli_args)
+        mcp = _scan({"fail_on_unanalyzed": knob}, root=proj)
+        assert cli.exit_code == (1 if expect_trip else 0), cli.output
+        assert mcp["gate"]["tripped"] is expect_trip
+        assert mcp["gate"]["exit_class"] == cli.exit_code
+        assert mcp["gate"]["fail_on_unanalyzed"] is knob
+        assert mcp["gate"]["unanalyzed_tripped"] is expect_trip
+        assert mcp["summary"]["unanalyzed"] >= 1
+        if expect_trip:
+            assert mcp["gate"]["verdict"] == "FAILED"
+            assert "not analyzed" in (mcp["gate"]["reason"] or "")
+        else:
+            # Knob off + no threshold: the gate never ran — released behaviour.
+            assert mcp["gate"]["verdict"] == "NOT_EVALUATED"
