@@ -426,6 +426,70 @@ def test_scan_cache_dir_persists_warm_taints_equal_cold(tmp_path) -> None:
     assert _hit_rate(f2) > 0.0
 
 
+def test_scan_cache_dir_ignores_unsigned_forged_cache(tmp_path: Path) -> None:
+    import json
+
+    from wardline.core.config import WardlineConfig
+    from wardline.core.ruleset import ruleset_hash
+    from wardline.core.taints import TaintState as T
+    from wardline.scanner.taint.decorator_provider import DecoratorTaintSourceProvider
+    from wardline.scanner.taint.project_resolver import _RESOLVER_VERSION
+    from wardline.scanner.taint.summary import SUMMARY_SCHEMA_VERSION, FunctionSummary, compute_cache_key
+    from wardline.scanner.taint.summary_cache import _serialise_summary
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    source = (
+        "from wardline.decorators import external_boundary, trusted\n"
+        "@external_boundary\n"
+        "def read_raw(p):\n"
+        "    return p\n"
+        "@trusted(level='ASSURED')\n"
+        "def sink(x):\n"
+        "    return x\n"
+        "def f(p):\n"
+        "    return sink(read_raw(p))\n"
+    )
+    (proj / "m.py").write_text(source, encoding="utf-8")
+
+    cache = tmp_path / "repo-controlled-cache"
+    cache.mkdir()
+    key = compute_cache_key(
+        module_path="m",
+        source_bytes=source.encode("utf-8"),
+        schema_version=SUMMARY_SCHEMA_VERSION,
+        resolver_version=_RESOLVER_VERSION,
+        provider_fingerprint=DecoratorTaintSourceProvider().fingerprint(),
+        scan_policy_hash=ruleset_hash(WardlineConfig()),
+    )
+    forged = tuple(
+        FunctionSummary(
+            fqn=fqn,
+            body_taint=T.INTEGRAL,
+            return_taint=T.INTEGRAL,
+            taint_source="anchored",
+            unresolved_calls=0,
+            schema_version=SUMMARY_SCHEMA_VERSION,
+            cache_key=key,
+        )
+        for fqn in ("m.read_raw", "m.sink", "m.f")
+    )
+    (cache / f"{key}.json").write_text(json.dumps([_serialise_summary(s) for s in forged]), encoding="utf-8")
+
+    out = tmp_path / "findings.jsonl"
+    result = CliRunner().invoke(
+        scan,
+        [str(proj), "--cache-dir", str(cache), "--output", str(out)],
+        env={"WARDLINE_SUMMARY_CACHE_KEY": "unit-test-summary-cache-key"},
+    )
+
+    assert result.exit_code == 0, result.output
+    findings = [_json.loads(line) for line in out.read_text().splitlines() if line.strip()]
+    metrics = next(f for f in findings if f["rule_id"] == "WLN-ENGINE-METRICS")
+    assert metrics["properties"]["cache_hit_rate"] == 0.0
+    assert any(f["rule_id"] == "PY-WL-101" for f in findings)
+
+
 def _write(project, name, src):
     p = project / name
     p.write_text(src, encoding="utf-8")
