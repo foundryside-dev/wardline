@@ -465,6 +465,26 @@ def test_filigree_published_port_malformed_returns_none(tmp_path: Path, monkeypa
     assert resolve_filigree_url(None, tmp_path, None) is None
 
 
+@pytest.mark.skipif(not hasattr(Path, "symlink_to"), reason="symlink support unavailable")
+def test_filigree_published_port_symlink_is_not_opened(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    port_dir = tmp_path / ".weft" / "filigree"
+    port_dir.mkdir(parents=True)
+    port_path = port_dir / "ephemeral.port"
+    port_path.symlink_to(Path("/dev/zero"))
+
+    real_read_text = Path.read_text
+
+    def _read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self == port_path:
+            raise AssertionError("symlinked ephemeral.port must not be opened")
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _read_text)
+
+    assert resolve_filigree_url(None, tmp_path, None) is None
+
+
 def test_filigree_published_port_boundaries_accepted(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     _publish_filigree_port(tmp_path, "1")

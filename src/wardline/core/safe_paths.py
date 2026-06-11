@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import stat
 from pathlib import Path
 
 from wardline.core.errors import WardlineError
@@ -32,3 +33,26 @@ def safe_write_text(root: Path, target: Path, content: str, *, label: str | None
     """Safely write ``content`` to ``target`` under ``root``, resolving symlinks and boundary checks."""
     safe_path = safe_project_file(root, target, label=label)
     safe_path.write_text(content, encoding="utf-8")
+
+
+def safe_read_text_if_regular(
+    root: Path,
+    target: Path,
+    *,
+    label: str | None = None,
+    encoding: str = "utf-8",
+) -> str | None:
+    """Read an optional fixed project file only when it is a regular in-root file.
+
+    Returns ``None`` for missing, symlinked, non-regular, escaping, unreadable, or
+    undecodable paths. This is for fail-soft discovery/config rungs such as
+    sibling ``ephemeral.port`` files, where an attacker-controlled repository must
+    not be able to make Wardline block on a FIFO/device or follow a symlink.
+    """
+    try:
+        safe_path = safe_project_file(root, target, label=label)
+        if not stat.S_ISREG(safe_path.stat(follow_symlinks=False).st_mode):
+            return None
+        return safe_path.read_text(encoding=encoding)
+    except (OSError, UnicodeDecodeError, WardlineError):
+        return None

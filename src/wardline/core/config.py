@@ -20,6 +20,7 @@ from wardline.core.paths import (
     legacy_sibling_dir,
     sibling_state_dir,
 )
+from wardline.core.safe_paths import safe_read_text_if_regular
 
 
 def validate_boundary_exception_name(value: str) -> str:
@@ -267,10 +268,10 @@ def _read_published_port(root: Path, sibling: str) -> int | None:
     during the federation transition window. Returns a valid port or ``None``
     (missing / unreadable / malformed / out-of-range) — fail-soft."""
     for base in (sibling_state_dir(root, sibling), legacy_sibling_dir(root, sibling)):
-        try:
-            raw = (base / "ephemeral.port").read_text(encoding="ascii").strip()
-        except (OSError, UnicodeDecodeError):
+        text = safe_read_text_if_regular(root, base / "ephemeral.port", label="ephemeral.port", encoding="ascii")
+        if text is None:
             continue
+        raw = text.strip()
         # Guard int(): isdigit() is a superset of what int() parses, so an
         # all-digit payload over CPython's 4300-digit cap raises ValueError (the
         # ascii read above already excludes Unicode digits). Catch it so a planted

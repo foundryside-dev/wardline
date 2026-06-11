@@ -18,6 +18,7 @@ from pathlib import Path
 
 from wardline.core.config import filigree_server_scoped_url
 from wardline.core.paths import legacy_sibling_dir, sibling_state_dir
+from wardline.core.safe_paths import safe_read_text_if_regular
 
 
 def _strip_scalar(value: str) -> str:
@@ -81,10 +82,10 @@ def _filigree_url_from_project(root: Path) -> str | None:
         # ascii read, mirroring core/config._read_published_port: ephemeral.port is
         # an ASCII integer by protocol, so non-ASCII bytes (incl. Unicode "digit"
         # chars that pass isdigit() but raise in int()) are rejected at decode time.
-        try:
-            text = (base / "ephemeral.port").read_text(encoding="ascii").strip()
-        except (OSError, UnicodeDecodeError):
+        port_text = safe_read_text_if_regular(root, base / "ephemeral.port", label="ephemeral.port", encoding="ascii")
+        if port_text is None:
             continue
+        text = port_text.strip()
         # Guard int(): isdigit() is a superset of what int() parses, so an all-digit
         # payload over CPython's 4300-digit cap raises ValueError (the ascii read
         # above already excludes Unicode digits). Catch it so a planted ephemeral.port
