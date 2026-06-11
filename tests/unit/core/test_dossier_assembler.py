@@ -364,6 +364,33 @@ def test_assembled_envelope_is_token_bounded(tmp_path: Path) -> None:
     assert estimate_tokens(text) <= DOSSIER_TOKEN_BUDGET
 
 
+def test_shape_source_text_cannot_bypass_dossier_budget(tmp_path: Path) -> None:
+    proj = tmp_path / "shape"
+    proj.mkdir()
+    long_default = repr("d" * 10_000)
+    long_annotation = "tuple[" + ", ".join(["str"] * 2_000) + "]"
+    long_decorator = repr("x" * 10_000)
+    (proj / "m.py").write_text(
+        "def noisy(*args, **kwargs):\n"
+        "    def wrap(fn):\n"
+        "        return fn\n"
+        "    return wrap\n"
+        f"@noisy({long_decorator})\n"
+        f"def target(arg: {long_annotation} = {long_default}):\n"
+        "    return arg\n",
+        encoding="utf-8",
+    )
+
+    d = build_dossier("m.target", root=proj)
+    text = json.dumps(d.to_dict(), sort_keys=True)
+
+    assert estimate_tokens(text) <= DOSSIER_TOKEN_BUDGET
+    assert d.truncation.truncated is True
+    assert "shape" in (d.truncation.note or "")
+    assert d.shape.signature is not None
+    assert len(d.shape.signature) < 1_000
+
+
 # --- synthesis is best-effort and degrades with its inputs ------------------
 
 

@@ -21,8 +21,9 @@ Design invariants (from the dossier design spec §5 + SEI conformance §2.1):
 * **SEI is opaque.** It is carried verbatim as the binding key, never parsed.
 * **No false-green.** An absent/unreachable source yields an *honest partial*
   section (``available=False`` + reason), never fabricated data and never a crash.
-  Over-budget content is trimmed with an EXPLICIT, elision-honest truncation marker
-  (shown-of-total) — a silent cap reads as "covered everything" when it did not.
+  Over-budget content is trimmed or compacted with an EXPLICIT, elision-honest
+  truncation marker (shown-of-total for lists, a visible marker for scalar text) —
+  a silent cap reads as "covered everything" when it did not.
 * **Zero-dependency base.** Stdlib only; no tokenizer, no blake3, no extras.
 """
 
@@ -351,8 +352,8 @@ class EntityDossier:
 # --- token budgeting --------------------------------------------------------
 
 # Lists are trimmed in this order (lowest value first) until the envelope fits.
-# Identity/shape/trust-verdict are never trimmed — only the variable-length lists
-# and finally the synthesis prose.
+# Scalar identity/shape/trust-verdict fields are not dropped, but oversized strings
+# are compacted after lower-value lists and synthesis have been trimmed.
 _LIST_TRIM_ORDER = (
     "linkages.scc_peers",
     "linkages.callers",
@@ -360,6 +361,8 @@ _LIST_TRIM_ORDER = (
     "work.tickets",
     "trust.active_findings",
 )
+_CORE_TEXT_TRIM_STEPS = (512, 256, 128, 64)
+_TRUNCATED_TEXT_MARKER = "...<truncated>..."
 
 
 def _list_for(dossier: EntityDossier, key: str) -> list[Any]:
@@ -373,18 +376,80 @@ def _with_list(dossier: EntityDossier, key: str, items: list[Any]) -> EntityDoss
     return dataclasses.replace(dossier, **{section: new_section})
 
 
+def _truncate_text(value: str | None, max_chars: int) -> tuple[str | None, bool]:
+    if value is None or len(value) <= max_chars:
+        return value, False
+    if max_chars <= len(_TRUNCATED_TEXT_MARKER):
+        return _TRUNCATED_TEXT_MARKER[:max_chars], True
+    keep = max_chars - len(_TRUNCATED_TEXT_MARKER)
+    head = (keep + 1) // 2
+    tail = keep // 2
+    suffix = value[-tail:] if tail else ""
+    return f"{value[:head]}{_TRUNCATED_TEXT_MARKER}{suffix}", True
+
+
+def _compact_core_text(dossier: EntityDossier, *, max_chars: int) -> tuple[EntityDossier, set[str]]:
+    changed: set[str] = set()
+    qualname, qualname_truncated = _truncate_text(dossier.identity.qualname, max_chars)
+    if qualname_truncated:
+        changed.add("identity.qualname")
+    kind, kind_truncated = _truncate_text(dossier.identity.kind, max_chars)
+    if kind_truncated:
+        changed.add("identity.kind")
+    path, path_truncated = _truncate_text(dossier.identity.path, max_chars)
+    if path_truncated:
+        changed.add("identity.path")
+    sei, sei_truncated = _truncate_text(dossier.identity.sei, max_chars)
+    if sei_truncated:
+        changed.add("identity.sei")
+    content_hash, content_hash_truncated = _truncate_text(dossier.identity.content_hash, max_chars)
+    if content_hash_truncated:
+        changed.add("identity.content_hash")
+
+    signature, signature_truncated = _truncate_text(dossier.shape.signature, max_chars)
+    if signature_truncated:
+        changed.add("shape.signature")
+
+    decorators: list[str] = []
+    decorators_changed = False
+    for decorator in dossier.shape.decorators:
+        truncated, was_truncated = _truncate_text(decorator, max_chars)
+        decorators.append(truncated or "")
+        decorators_changed = decorators_changed or was_truncated
+    if decorators_changed:
+        changed.add("shape.decorators")
+
+    identity = dataclasses.replace(
+        dossier.identity,
+        qualname=qualname or "",
+        kind=kind,
+        path=path,
+        sei=sei,
+        content_hash=content_hash,
+    )
+    shape = dataclasses.replace(
+        dossier.shape,
+        signature=signature,
+        decorators=decorators if decorators_changed else dossier.shape.decorators,
+    )
+    return dataclasses.replace(dossier, identity=identity, shape=shape), changed
+
+
 def bound_to_budget(dossier: EntityDossier, *, budget: int = DOSSIER_TOKEN_BUDGET) -> EntityDossier:
     """Return a copy of *dossier* whose estimated token size fits ``budget``,
     trimming variable-length lists (and finally the synthesis prose) in priority
     order and recording every elision honestly in :class:`Truncation`.
 
-    Identity and shape are never trimmed — they are the load-bearing minimum. If a
-    list is trimmed, ``Truncation.elided`` reports its shown-of-total counts so a
-    caller always knows something was dropped (no silent cap / false-green)."""
+    Identity and shape are never dropped — they are the load-bearing minimum — but
+    attacker-controlled scalar source text is compacted when it alone would exceed
+    the budget. If a list is trimmed, ``Truncation.elided`` reports its shown-of-total
+    counts so a caller always knows something was dropped (no silent cap /
+    false-green)."""
     if dossier.estimated_tokens() <= budget:
         return dataclasses.replace(dossier, truncation=Truncation.none())
 
     totals = {key: len(_list_for(dossier, key)) for key in _LIST_TRIM_ORDER}
+    shape_decorator_total = len(dossier.shape.decorators)
     current = dossier
 
     # Pass 1: shrink lists, cheapest-value first, halving until the envelope fits.
@@ -399,23 +464,51 @@ def bound_to_budget(dossier: EntityDossier, *, budget: int = DOSSIER_TOKEN_BUDGE
         current = dataclasses.replace(current, synthesis=None)
         synthesis_dropped = True
 
+    # Pass 3: decorators are shape, so keep them for synthesis-only overflow; trim
+    # them only when the remaining shape itself is still responsible for the excess.
+    while current.estimated_tokens() > budget and current.shape.decorators:
+        current = dataclasses.replace(
+            current,
+            shape=dataclasses.replace(
+                current.shape,
+                decorators=current.shape.decorators[: len(current.shape.decorators) // 2],
+            ),
+        )
+
+    # Pass 4: if the remaining load-bearing core is still too large, compact scalar
+    # text fields rather than returning an unbounded source-controlled envelope.
+    scalar_compacted: set[str] = set()
+    if current.estimated_tokens() > budget:
+        for max_chars in _CORE_TEXT_TRIM_STEPS:
+            current, compacted = _compact_core_text(current, max_chars=max_chars)
+            scalar_compacted.update(compacted)
+            if current.estimated_tokens() <= budget:
+                break
+
     elided = [
         ElidedSection(section=key, shown=len(_list_for(current, key)), total=totals[key])
         for key in _LIST_TRIM_ORDER
         if len(_list_for(current, key)) < totals[key]
     ]
+    if len(current.shape.decorators) < shape_decorator_total:
+        elided.append(
+            ElidedSection(section="shape.decorators", shown=len(current.shape.decorators), total=shape_decorator_total)
+        )
     note_bits = []
     if elided:
         note_bits.append("lists trimmed to fit token budget")
     if synthesis_dropped:
         note_bits.append("synthesis dropped to fit token budget")
-    # Honest about a fit we did NOT achieve: identity/shape are never trimmed, so a
-    # pathologically long qualname/path can leave the core over budget. Say so rather
-    # than claiming "trimmed to fit" — a dishonest marker is itself a false-green.
+    if scalar_compacted:
+        fields = ", ".join(sorted(scalar_compacted))
+        note_bits.append(f"core scalar fields compacted to fit token budget: {fields}")
+    # Honest about a fit we did NOT achieve after all trimmable content has been
+    # removed/compacted. This should be rare with the default budget, but the marker
+    # must not claim success if a caller supplies a smaller-than-schema budget.
     remaining = current.estimated_tokens()
     if remaining > budget:
         note = (
-            f"EXCEEDS token budget: untrimmable identity/shape ~{remaining} of {budget} tokens; "
+            f"EXCEEDS token budget after all trimmable content: ~{remaining} of {budget} tokens; "
             "nothing further is trimmable"
         )
     else:
