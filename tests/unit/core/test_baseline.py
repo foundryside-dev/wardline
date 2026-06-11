@@ -11,8 +11,9 @@ from wardline.core.baseline import (
     load_baseline,
     write_baseline,
 )
-from wardline.core.errors import ConfigError, SchemeMismatchError
+from wardline.core.errors import ConfigError, SchemeMismatchError, WardlineError
 from wardline.core.finding import FINGERPRINT_SCHEME, Finding, Kind, Location, Severity
+from wardline.core.paths import baseline_path
 
 _FP_A = "a" * 64
 _FP_B = "b" * 64
@@ -102,6 +103,31 @@ def test_write_then_load_round_trips(tmp_path: Path) -> None:
     bl = load_baseline(p)
     assert bl.fingerprints == frozenset({_FP_A, _FP_B})
     assert bl.contains(_FP_A) and not bl.contains("c" * 64)
+
+
+def test_write_baseline_refuses_direct_symlink_target(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.yaml"
+    outside.write_text("", encoding="utf-8")
+    link = tmp_path / "baseline.yaml"
+    link.symlink_to(outside)
+
+    with pytest.raises(WardlineError, match="symlink"):
+        write_baseline(link, [_finding(_FP_A)])
+
+    assert outside.read_text(encoding="utf-8") == ""
+
+
+def test_write_baseline_refuses_rooted_symlink_target(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.yaml"
+    outside.write_text("", encoding="utf-8")
+    bp = baseline_path(tmp_path)
+    bp.parent.mkdir(parents=True)
+    bp.symlink_to(outside)
+
+    with pytest.raises(WardlineError, match="symlink"):
+        write_baseline(bp, [_finding(_FP_A)], root=tmp_path)
+
+    assert outside.read_text(encoding="utf-8") == ""
 
 
 def test_missing_file_is_empty_baseline(tmp_path: Path) -> None:

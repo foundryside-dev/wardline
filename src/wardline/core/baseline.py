@@ -25,7 +25,7 @@ from wardline.core.finding import (
 )
 from wardline.core.optional_deps import require_yaml
 from wardline.core.paths import baseline_path as baseline_file
-from wardline.core.safe_paths import safe_project_file
+from wardline.core.safe_paths import safe_write_text, write_text_no_follow
 
 BASELINE_VERSION: int = 1
 """Bumped on a format change; validated on load (mirrors STDLIB_TAINT_VERSION)."""
@@ -70,13 +70,13 @@ def build_baseline_document(findings: Iterable[Finding]) -> dict[str, Any]:
 
 def write_baseline(path: Path, findings: Iterable[Finding], root: Path | None = None) -> None:
     yaml = require_yaml("writing baseline.yaml")
-    if root is not None:
-        path = safe_project_file(root, path, label=path.name)
-    path.parent.mkdir(parents=True, exist_ok=True)
     text = yaml.safe_dump(
         build_baseline_document(findings), sort_keys=False, default_flow_style=False, allow_unicode=True
     )
-    path.write_text(text, encoding="utf-8")
+    if root is not None:
+        safe_write_text(root, path, text, label=path.name)
+    else:
+        write_text_no_follow(path, text, label=path.name)
 
 
 def collect_and_write_baseline(
