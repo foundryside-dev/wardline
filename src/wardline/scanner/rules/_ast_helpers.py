@@ -43,6 +43,86 @@ def _own_statements(node: ast.AST) -> Iterator[ast.stmt]:
         yield from _own_statements(child)
 
 
+def _own_reachable_statements(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.stmt]:
+    yield from _reachable_statements_in_block(node.body)
+
+
+def _own_reachable_nodes(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.AST]:
+    for stmt in _own_reachable_statements(node):
+        yield from _own_nodes_in_reachable_stmt(stmt)
+
+
+def _own_nodes_in_reachable_stmt(stmt: ast.stmt) -> Iterator[ast.AST]:
+    yield stmt
+    if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return
+    yield from _walk_own_non_stmt_children(stmt)
+
+
+def _walk_own_non_stmt_children(node: ast.AST) -> Iterator[ast.AST]:
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            yield child
+        elif isinstance(child, ast.stmt):
+            continue
+        else:
+            yield child
+            yield from _walk_own_non_stmt_children(child)
+
+
+def _reachable_statements_in_block(stmts: list[ast.stmt]) -> Iterator[ast.stmt]:
+    for stmt in stmts:
+        yield stmt
+        if not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            for block in _child_statement_blocks(stmt):
+                yield from _reachable_statements_in_block(block)
+        if _stmt_always_terminates(stmt):
+            break
+
+
+def _child_statement_blocks(stmt: ast.stmt) -> Iterator[list[ast.stmt]]:
+    if isinstance(stmt, (ast.If, ast.For, ast.AsyncFor, ast.While)):
+        yield stmt.body
+        yield stmt.orelse
+    elif isinstance(stmt, (ast.With, ast.AsyncWith)):
+        yield stmt.body
+    elif isinstance(stmt, (ast.Try, ast.TryStar)):
+        yield stmt.body
+        yield stmt.orelse
+        yield stmt.finalbody
+        for handler in stmt.handlers:
+            yield handler.body
+    elif isinstance(stmt, ast.Match):
+        for case in stmt.cases:
+            yield case.body
+
+
+def _block_always_terminates(stmts: list[ast.stmt]) -> bool:
+    return any(_stmt_always_terminates(stmt) for stmt in stmts)
+
+
+def _match_has_irrefutable_case(stmt: ast.Match) -> bool:
+    return any(
+        isinstance(case.pattern, ast.MatchAs) and case.pattern.pattern is None and case.guard is None
+        for case in stmt.cases
+    )
+
+
+def _stmt_always_terminates(stmt: ast.stmt) -> bool:
+    if isinstance(stmt, (ast.Return, ast.Raise)):
+        return True
+    if isinstance(stmt, ast.If):
+        return (
+            bool(stmt.body)
+            and bool(stmt.orelse)
+            and _block_always_terminates(stmt.body)
+            and _block_always_terminates(stmt.orelse)
+        )
+    if isinstance(stmt, ast.Match):
+        return _match_has_irrefutable_case(stmt) and all(_block_always_terminates(case.body) for case in stmt.cases)
+    return False
+
+
 def own_except_handlers(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.ExceptHandler]:
     """Yield the ``except`` handlers in *node*'s own scope (excludes nested defs)."""
     for stmt in _own_statements(node):
@@ -147,7 +227,7 @@ def has_real_rejection(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     a ``raise`` or a rejection-shaped ``return`` — i.e. NOT counting ``assert``.
     This is PY-WL-113's premise half: a rejection must EXIST (and survive ``-O``)
     before a fail-open handler can be said to defeat it."""
-    return any(_stmt_is_real_rejection(stmt) for stmt in _own_statements(node))
+    return any(_stmt_is_real_rejection(stmt) for stmt in _own_reachable_statements(node))
 
 
 def has_rejection_path(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -170,7 +250,10 @@ def has_rejection_path(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
       - PY-WL-111 — the only rejection is ``assert``;
       - PY-WL-113 — a real rejection exists but a fail-open handler defeats it.
     """
-    return any(isinstance(stmt, ast.Assert) or _stmt_is_real_rejection(stmt) for stmt in _own_statements(node))
+    return any(
+        isinstance(stmt, ast.Assert) or _stmt_is_real_rejection(stmt)
+        for stmt in _own_reachable_statements(node)
+    )
 
 
 def asserts_are_sole_rejection(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -185,7 +268,7 @@ def asserts_are_sole_rejection(node: ast.FunctionDef | ast.AsyncFunctionDef) -> 
     see the project context additionally consult :func:`rejecting_helper_calls` —
     a raising same-module helper survives ``-O`` and rescues the boundary."""
     has_assert = False
-    for stmt in _own_statements(node):
+    for stmt in _own_reachable_statements(node):
         if _stmt_is_real_rejection(stmt):
             return False
         if isinstance(stmt, ast.Assert):
@@ -275,7 +358,7 @@ def rejecting_helper_calls(
     assert vanishes under ``python -O`` exactly like an inline one, which would
     falsely silence PY-WL-111)."""
     ids: set[int] = set()
-    for n in own_nodes(entity.node):
+    for n in _own_reachable_nodes(entity.node):
         if isinstance(n, ast.Call):
             callee = _resolve_one_hop_callee(n, entity, entities, call_site_callees)
             if callee is not None and has_real_rejection(callee.node):
@@ -283,22 +366,25 @@ def rejecting_helper_calls(
     return frozenset(ids)
 
 
+def _own_reachable_nodes_in_blocks(stmts: list[ast.stmt]) -> Iterator[ast.AST]:
+    for stmt in _reachable_statements_in_block(stmts):
+        yield from _own_nodes_in_reachable_stmt(stmt)
+
+
 def block_has_real_rejection(stmts: list[ast.stmt], rejecting_call_ids: frozenset[int] = frozenset()) -> bool:
     """True when the statement list *stmts* (a ``try`` body or handler body)
-    lexically contains a real rejection — a ``raise`` / rejection-shaped
-    ``return`` in its own scope, or a call whose ``id()`` is in
+    lexically contains a reachable real rejection — a ``raise`` / rejection-shaped
+    ``return`` in its own scope, or a reachable call whose ``id()`` is in
     *rejecting_call_ids* (a one-hop rejecting helper, see
     :func:`rejecting_helper_calls`). PY-WL-113's per-``try`` premise: a handler
     can only swallow a rejection that lives inside its own ``try``."""
-    for top in stmts:
-        for stmt in (top, *_own_statements(top)):
-            if _stmt_is_real_rejection(stmt):
-                return True
+    for stmt in _reachable_statements_in_block(stmts):
+        if _stmt_is_real_rejection(stmt):
+            return True
     if rejecting_call_ids:
-        for top in stmts:
-            for n in own_nodes(top):
-                if isinstance(n, ast.Call) and id(n) in rejecting_call_ids:
-                    return True
+        for n in _own_reachable_nodes_in_blocks(stmts):
+            if isinstance(n, ast.Call) and id(n) in rejecting_call_ids:
+                return True
     return False
 
 

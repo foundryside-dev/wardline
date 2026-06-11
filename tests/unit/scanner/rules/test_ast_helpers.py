@@ -35,6 +35,13 @@ def test_has_rejection_path_detects_raise_and_falsy_returns() -> None:
     assert not has_rejection_path(_fn("def f(p):\n x = p\n return x\n"))
 
 
+def test_unreachable_rejections_do_not_count() -> None:
+    assert not has_rejection_path(_fn("def f(p):\n return p\n raise ValueError\n"))
+    assert not has_real_rejection(_fn("def f(p):\n return p\n raise ValueError\n"))
+    assert not has_rejection_path(_fn("def f(p):\n if c:\n  return p\n else:\n  return p\n raise ValueError\n"))
+    assert not asserts_are_sole_rejection(_fn("def f(p):\n return p\n assert p\n"))
+
+
 def test_asserts_are_sole_rejection() -> None:
     # only an assert -> True (PY-WL-111's case)
     assert asserts_are_sole_rejection(_fn("def f(p):\n assert p\n return p\n"))
@@ -116,6 +123,20 @@ def test_rejecting_helper_calls_one_hop_lexical_fallback() -> None:
     )
     calls = rejecting_helper_calls(ents["m.v"], ents, {})
     assert len(calls) == 1
+
+
+def test_rejecting_helper_call_after_return_does_not_count() -> None:
+    ents = _entities(
+        """
+        def _require_nonempty(p):
+            if not p:
+                raise ValueError("empty")
+        def v(p):
+            return p
+            _require_nonempty(p)
+        """
+    )
+    assert rejecting_helper_calls(ents["m.v"], ents, {}) == frozenset()
 
 
 def test_rejecting_helper_calls_staticmethod_helper() -> None:
