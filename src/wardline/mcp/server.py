@@ -1191,6 +1191,43 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                         "additionalProperties": False,
                     },
                 },
+                "scan_scope": {
+                    "type": "object",
+                    "description": (
+                        "Signed scope binding: scan root, configured/resolved source roots, and realized files."
+                    ),
+                    "properties": {
+                        "schema": {"type": "string", "enum": ["wardline-legis-scan-scope-1"]},
+                        "scan_root": {
+                            "type": "string",
+                            "description": "Scan root relative to the git repository root when in git; otherwise '.'.",
+                        },
+                        "is_git_root": {
+                            "type": "boolean",
+                            "description": "True only when the scan root is the containing git repository root.",
+                        },
+                        "source_roots": {"type": "array", "items": {"type": "string"}},
+                        "resolved_source_roots": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Configured source roots resolved relative to the signed scope base.",
+                        },
+                        "scanned_paths": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Files actually discovered and analyzed, relative to the scan root.",
+                        },
+                    },
+                    "required": [
+                        "schema",
+                        "scan_root",
+                        "is_git_root",
+                        "source_roots",
+                        "resolved_source_roots",
+                        "scanned_paths",
+                    ],
+                    "additionalProperties": False,
+                },
                 "commit_sha": {
                     "type": "string",
                     "description": "Present when provenance was readable (always on the signed path).",
@@ -1209,7 +1246,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                     "description": "Present (true) only when the working tree was dirty (unsigned dev artifact).",
                 },
             },
-            "required": ["scanner_identity", "rule_set_version", "fingerprint_scheme", "findings"],
+            "required": ["scanner_identity", "rule_set_version", "fingerprint_scheme", "findings", "scan_scope"],
             "additionalProperties": False,
         },
         "legis_artifact_status": {

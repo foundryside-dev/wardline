@@ -17,7 +17,21 @@
       "suppression_state": "active"
     }
   ],
+  "scan_scope": {
+    "schema": "wardline-legis-scan-scope-1",
+    "scan_root": ".",
+    "is_git_root": true,
+    "source_roots": [
+      "."
+    ],
+    "resolved_source_roots": [
+      "."
+    ],
+    "scanned_paths": [
+      "svc.py"
+    ]
+  },
   "commit_sha": "0000000000000000000000000000000000000000",
   "tree_sha": "1111111111111111111111111111111111111111",
-  "artifact_signature": "hmac-sha256:v2:05e268b2e90dd8ab446c148a110d7367cb47854551b695f13cee3274ad2a2c86"
+  "artifact_signature": "hmac-sha256:v2:15ffe67f96e2298d608d901cfd72328b77ee7235b9418ff0c190a168f0e429b5"
 }

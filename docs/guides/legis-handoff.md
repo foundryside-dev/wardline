@@ -25,6 +25,14 @@ signature:
   "rule_set_version": "sha256:9f86d0…",
   "commit_sha": "0a4a00e…",
   "tree_sha": "4b825dc…",
+  "scan_scope": {
+    "schema": "wardline-legis-scan-scope-1",
+    "scan_root": ".",
+    "is_git_root": true,
+    "source_roots": ["."],
+    "resolved_source_roots": ["."],
+    "scanned_paths": ["src/service.py"]
+  },
   "findings": [ … ],
   "artifact_signature": "hmac-sha256:v2:73eb9f0c…"
 }
@@ -38,6 +46,9 @@ The agent posts it verbatim as the `scan` field:
   one [`attest`](attestation.md) signs. Two artifacts with the same value were
   produced under the same rules.
 * **`commit_sha` / `tree_sha`** — the committed revision and its tree object SHA.
+* **`scan_scope`** — the signed scope binding: scan root, whether that root is the
+  git toplevel, configured and resolved `source_roots`, and the files actually
+  scanned. A signed CI artifact must have `"is_git_root": true`.
 * **`artifact_signature`** — `hmac-sha256:v2:<hex>` over the canonical JSON of every
   other field (see [Signing](#signing)).
 
@@ -60,6 +71,12 @@ as `unverified` — the trust-the-agent posture before a key is set).
     `.gitignore`. A dirty or non-git tree under signing fails loudly (exit 2): a
     `tree_sha` that does not match the scanned content is false provenance, so it is
     refused rather than emitted.
+
+!!! warning "Signed artifacts are repository-root scans"
+    When `WARDLINE_LEGIS_ARTIFACT_KEY` is provisioned, Wardline signs only when `PATH`
+    is the containing git repository root. A subdirectory scan still emits an unsigned
+    dev artifact when requested without a key, but it cannot be presented as verified
+    evidence for the repository commit/tree.
 
 !!! tip "Dev/tour loop on a dirty tree: `--allow-dirty`"
     Signing is clean-tree-only, but you do not need a commit to exercise the

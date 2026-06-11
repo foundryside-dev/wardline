@@ -52,6 +52,7 @@ from pathlib import Path
 import pytest
 
 from wardline.core.config import load as load_config
+from wardline.core.errors import LegisArtifactError
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.legis import build_legis_artifact, project_finding
 from wardline.core.run import run_scan
@@ -66,7 +67,7 @@ _LEAKY = (
 
 # --- The frozen contract -----------------------------------------------------
 # Always present, in every mode.
-_BASE = frozenset({"scanner_identity", "rule_set_version", "fingerprint_scheme", "findings"})
+_BASE = frozenset({"scanner_identity", "rule_set_version", "fingerprint_scheme", "findings", "scan_scope"})
 # No git repo: no commit/tree provenance to read.
 _NON_REPO = _BASE
 # A clean committed repo, no signing key: best-effort committed provenance.
@@ -79,6 +80,9 @@ _REPO_DIRTY_UNSIGNED = _BASE | {"commit_sha", "tree_sha", "dirty"}
 # Every projected finding carries exactly these keys (project_finding).
 _FINDING_KEYS = frozenset(
     {"rule_id", "message", "severity", "kind", "fingerprint", "qualname", "properties", "suppression_state"}
+)
+_SCOPE_KEYS = frozenset(
+    {"schema", "scan_root", "is_git_root", "source_roots", "resolved_source_roots", "scanned_paths"}
 )
 
 
@@ -150,6 +154,37 @@ def test_projected_finding_key_set_is_frozen(tmp_path: Path) -> None:
     assert scan["findings"], "fixture must yield at least one defect to freeze finding keys"
     for finding in scan["findings"]:
         assert set(finding) == _FINDING_KEYS
+
+
+def test_scan_scope_key_set_and_values_are_frozen(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    (root / "src").mkdir(parents=True)
+    (root / "src" / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    (root / "weft.toml").write_text('[wardline]\nsource_roots = ["src"]\n', encoding="utf-8")
+
+    scan = _build(root, key=None)
+    scope = scan["scan_scope"]
+
+    assert set(scope) == _SCOPE_KEYS
+    assert scope["schema"] == "wardline-legis-scan-scope-1"
+    assert scope["scan_root"] == "."
+    assert scope["is_git_root"] is False
+    assert scope["source_roots"] == ["src"]
+    assert scope["resolved_source_roots"] == ["src"]
+    assert scope["scanned_paths"] == ["src/svc.py"]
+
+
+def test_signed_artifact_refuses_subdirectory_scan_root(tmp_path: Path) -> None:
+    root = _proj(tmp_path)
+    subdir = root / "safe"
+    subdir.mkdir()
+    (subdir / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    _git_commit(root)
+    result = run_scan(subdir)
+    cfg = load_config(subdir / "weft.toml")
+
+    with pytest.raises(LegisArtifactError, match="git repository root"):
+        build_legis_artifact(result, root=subdir, config=cfg, key=b"shared-secret")
 
 
 def test_findings_is_a_list(tmp_path: Path) -> None:

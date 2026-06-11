@@ -70,6 +70,8 @@ ARTIFACT_SIGNATURE_FIELD = "artifact_signature"
 FINDINGS_FIELD = "findings"
 DIRTY_FIELD = "dirty"
 FINGERPRINT_SCHEME_FIELD = "fingerprint_scheme"
+SCAN_SCOPE_FIELD = "scan_scope"
+SCAN_SCOPE_SCHEMA = "wardline-legis-scan-scope-1"
 
 # The one shared vocabulary — legis carries these 8 tiers verbatim (TRUST_TIERS in
 # legis ingest.py). Sourced from the lattice so the two can never drift.
@@ -209,6 +211,55 @@ def _git_tree_sha(root: Path) -> str | None:
     return rev.stdout.strip() or None
 
 
+def _git_repo_root(root: Path) -> Path | None:
+    """The containing git repository root, or None when unavailable."""
+    try:
+        rev = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    if rev.returncode != 0:
+        return None
+    value = rev.stdout.strip()
+    if not value:
+        return None
+    try:
+        return Path(value).resolve()
+    except OSError:
+        return None
+
+
+def _relative_posix(path: Path, base: Path) -> str:
+    """Return *path* relative to *base* in stable POSIX form, allowing ``..``."""
+    try:
+        rel = path.relative_to(base)
+    except ValueError:
+        rel = Path(os.path.relpath(path, base))
+    return rel.as_posix() if rel.parts else "."
+
+
+def _scan_scope(result: ScanResult, *, root: Path, config: WardlineConfig) -> dict[str, Any]:
+    """Signed description of the exact scan scope carried by the artifact."""
+    resolved_root = root.resolve()
+    repo_root = _git_repo_root(root)
+    scope_base = repo_root if repo_root is not None else resolved_root
+    resolved_source_roots = [
+        _relative_posix((resolved_root / source_root).resolve(), scope_base) for source_root in config.source_roots
+    ]
+    return {
+        "schema": SCAN_SCOPE_SCHEMA,
+        "scan_root": _relative_posix(resolved_root, scope_base),
+        "is_git_root": repo_root is not None and resolved_root == repo_root,
+        "source_roots": list(config.source_roots),
+        "resolved_source_roots": resolved_source_roots,
+        "scanned_paths": list(result.scanned_paths),
+    }
+
+
 def build_legis_artifact(
     result: ScanResult,
     *,
@@ -265,8 +316,13 @@ def build_legis_artifact(
         # fingerprints stay BARE — legis reads them from to_jsonl (SARIF-style value).
         FINGERPRINT_SCHEME_FIELD: FINGERPRINT_SCHEME,
         FINDINGS_FIELD: findings,
+        # Bind the artifact to the requested and realized scope. This prevents a
+        # signed subdirectory or narrowed-source-root scan from being indistinguishable
+        # from a full-repository scan carrying the same commit/tree provenance.
+        SCAN_SCOPE_FIELD: _scan_scope(result, root=root, config=config),
     }
     commit, dirty = git_state(root)
+    repo_root = _git_repo_root(root)
 
     # Signing is CLEAN-TREE-ONLY. A key + clean tree produces the signed, verified
     # artifact. A key + dirty tree is refused loudly UNLESS ``allow_dirty`` — and even
@@ -280,6 +336,11 @@ def build_legis_artifact(
         if commit is None:
             raise LegisArtifactError(
                 "cannot sign legis artifact: not a git repository, so commit/tree provenance is unavailable"
+            )
+        if repo_root is None or root.resolve() != repo_root:
+            raise LegisArtifactError(
+                "cannot sign legis artifact: scan root is not the git repository root; "
+                "scan the repository root so commit/tree provenance and scan scope match"
             )
         tree = _git_tree_sha(root)
         if tree is None:

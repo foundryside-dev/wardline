@@ -33,6 +33,7 @@ from wardline.core.legis import (
     DIRTY_FIELD,
     FINDINGS_FIELD,
     FINGERPRINT_SCHEME_FIELD,
+    SCAN_SCOPE_FIELD,
     build_legis_artifact,
     sign_artifact,
 )
@@ -86,6 +87,7 @@ def test_golden_vector_keys_are_the_named_constants() -> None:
     vector = _vector()
     assert FINDINGS_FIELD in vector
     assert FINGERPRINT_SCHEME_FIELD in vector
+    assert SCAN_SCOPE_FIELD in vector
     assert DIRTY_FIELD not in vector  # clean signed artifact carries no dirty marker
     assert isinstance(vector[FINDINGS_FIELD], list) and vector[FINDINGS_FIELD]
 
