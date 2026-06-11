@@ -40,9 +40,19 @@ def test_mcp_resolves_loomweave_url_from_env(tmp_path: Path, monkeypatch) -> Non
     captured: dict[str, object] = {}
 
     class _FakeServer:
-        def __init__(self, *, root: Path, loomweave_url: str | None = None, filigree_url: str | None = None) -> None:
+        def __init__(
+            self,
+            *,
+            root: Path,
+            loomweave_url: str | None = None,
+            filigree_url: str | None = None,
+            allow_write: bool = True,
+            allow_network: bool = True,
+        ) -> None:
             captured["loomweave_url"] = loomweave_url
             captured["filigree_url"] = filigree_url
+            captured["allow_write"] = allow_write
+            captured["allow_network"] = allow_network
             self.rpc = self
 
         def run_stdio(self) -> None:
