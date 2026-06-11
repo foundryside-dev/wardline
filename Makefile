@@ -34,7 +34,18 @@ build:  ## Build sdist + wheel
 	uv build
 
 clean:  ## Remove build + cache artifacts
-	rm -rf dist/ build/ *.egg-info .mypy_cache .ruff_cache .pytest_cache .coverage coverage.json
+	@set -eu; \
+	for path in dist build *.egg-info .mypy_cache .ruff_cache .pytest_cache; do \
+		if [ ! -e "$$path" ] && [ ! -L "$$path" ]; then \
+			continue; \
+		fi; \
+		if [ -L "$$path" ]; then \
+			echo "refusing to remove symlink $$path" >&2; \
+			exit 1; \
+		fi; \
+		rm -rf -- "$$path"; \
+	done; \
+	rm -f -- .coverage coverage.json
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
 ci: lint typecheck test-cov  ## Run the full local CI gate
