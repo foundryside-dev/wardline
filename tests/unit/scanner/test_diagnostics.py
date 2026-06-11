@@ -222,10 +222,10 @@ def test_diagnose_unresolved_star_module_still_emits_fact() -> None:
 # --- Native / first-party module resolution (Task C) -------------------------
 # When wardline.core becomes a compiled (PyO3) module it has NO Python AST in the
 # scanned tree, so it drops out of project_modules and would fire UNKNOWN-IMPORT.
-# The declarative native-prefix allowlist resolves it. These tests SIMULATE the
-# native case by passing an empty project_modules (the obvious "scan self" test
-# is green today because the .py files are still present, so it would gate
-# nothing).
+# The declarative native import allowlist resolves exact known exports. These
+# tests SIMULATE the native case by passing an empty project_modules (the obvious
+# "scan self" test is green today because the .py files are still present, so it
+# would gate nothing).
 
 
 def test_native_first_party_core_import_resolves_without_project_module() -> None:
@@ -255,12 +255,33 @@ def test_native_allowlist_does_not_suppress_genuine_third_party() -> None:
 
 
 def test_native_allowlist_does_not_suppress_undeclared_wardline_submodule() -> None:
-    # Precision: only DECLARED native prefixes resolve. A wardline.* module that is
-    # neither a project module nor a declared native prefix must still report, so
+    # Precision: only DECLARED native imports resolve. A wardline.* module that is
+    # neither a project module nor a declared native import must still report, so
     # the allowlist can't silently swallow a real gap.
     tree = ast.parse("from wardline.experimental.zzz import q\n")
     out = diagnose_unknown_imports(tree=tree, module_path="x", project_modules=frozenset(), stdlib_keys=frozenset())
     assert len(out) == 1
+
+
+def test_native_allowlist_does_not_suppress_unknown_decorator_export() -> None:
+    tree = ast.parse("from wardline.decorators import nonexistent\n")
+    out = diagnose_unknown_imports(tree=tree, module_path="x", project_modules=frozenset(), stdlib_keys=frozenset())
+    assert len(out) == 1
+    assert "nonexistent" in out[0][2]
+
+
+def test_native_allowlist_does_not_suppress_nested_decorator_spoof() -> None:
+    tree = ast.parse("from wardline.decorators.evil import trusted\n")
+    out = diagnose_unknown_imports(tree=tree, module_path="x", project_modules=frozenset(), stdlib_keys=frozenset())
+    assert len(out) == 1
+    assert "wardline.decorators.evil" in out[0][2]
+
+
+def test_native_allowlist_does_not_suppress_unknown_core_submodule() -> None:
+    tree = ast.parse("from wardline.core.evil import x\n")
+    out = diagnose_unknown_imports(tree=tree, module_path="x", project_modules=frozenset(), stdlib_keys=frozenset())
+    assert len(out) == 1
+    assert "wardline.core.evil" in out[0][2]
 
 
 def test_native_allowlist_prefix_boundary_is_dotted() -> None:
