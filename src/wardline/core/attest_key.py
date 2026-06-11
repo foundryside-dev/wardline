@@ -9,12 +9,30 @@ from __future__ import annotations
 import hashlib
 import os
 import secrets
+import subprocess
 from contextlib import suppress
 from pathlib import Path
 
+from wardline.core.errors import WardlineError
 from wardline.core.safe_paths import safe_project_file
 
 WARDLINE_ATTEST_KEY_ENV = "WARDLINE_ATTEST_KEY"
+_SAFE_GIT_CONFIG = ("-c", "core.fsmonitor=false")
+
+
+def _git_tracks_path(root: Path, target: Path) -> bool:
+    try:
+        root_resolved = root.resolve()
+        relpath = target.resolve(strict=False).relative_to(root_resolved).as_posix()
+        result = subprocess.run(
+            ["git", *_SAFE_GIT_CONFIG, "ls-files", "--error-unmatch", "--", relpath],
+            cwd=root_resolved,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, ValueError):
+        return False
+    return result.returncode == 0
 
 
 def load_attest_key(root: Path) -> str | None:
@@ -52,10 +70,16 @@ def mint_attest_key(root: Path) -> tuple[str, str]:
     if existing:
         return existing, "present"
 
-    key = secrets.token_hex(32)
-
     # --- write to .env --------------------------------------------------
     env_path = safe_project_file(root, root / ".env", label=".env")
+    if _git_tracks_path(root, env_path):
+        raise WardlineError(
+            "refusing to mint WARDLINE_ATTEST_KEY into tracked .env; "
+            "untrack .env or pass --no-attest-key and provide WARDLINE_ATTEST_KEY from the environment"
+        )
+
+    key = secrets.token_hex(32)
+
     if env_path.exists():
         text = env_path.read_text(encoding="utf-8")
         if not text.endswith("\n"):

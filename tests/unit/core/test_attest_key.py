@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,11 @@ from wardline.core.attest_key import (
     mint_attest_key,
 )
 from wardline.core.errors import WardlineError
+
+
+def _git(args: list[str], cwd: Path) -> None:
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
 
 # ---------------------------------------------------------------------------
 # Test 1: load_attest_key — env wins
@@ -89,6 +95,22 @@ def test_mint_rejects_symlinked_dotenv(tmp_path: Path, monkeypatch: pytest.Monke
         mint_attest_key(tmp_path)
 
     assert outside.read_text(encoding="utf-8") == ""
+
+
+def test_mint_refuses_tracked_dotenv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(WARDLINE_ATTEST_KEY_ENV, raising=False)
+    _git(["init"], tmp_path)
+    _git(["config", "user.email", "test@example.com"], tmp_path)
+    _git(["config", "user.name", "Test"], tmp_path)
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("EXISTING=1\n", encoding="utf-8")
+    _git(["add", ".env"], tmp_path)
+    _git(["commit", "-m", "track env"], tmp_path)
+
+    with pytest.raises(WardlineError, match="tracked \\.env"):
+        mint_attest_key(tmp_path)
+
+    assert dotenv.read_text(encoding="utf-8") == "EXISTING=1\n"
 
 
 def test_mint_key_loadable_after_mint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
