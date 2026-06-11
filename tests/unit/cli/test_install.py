@@ -130,6 +130,28 @@ def test_install_summary_includes_binding_lines(tmp_path: Path, monkeypatch) -> 
     assert "filigree:" in result.output
 
 
+def test_install_refuses_symlinked_skill_parent_escape(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside_skill = outside / "skills" / "wardline-gate"
+    outside_skill.mkdir(parents=True)
+    sentinel = outside_skill / "keep.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    (root / ".claude").symlink_to(outside, target_is_directory=True)
+
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: tmp_path / "home")
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+
+    result = CliRunner().invoke(cli, ["install", "--root", str(root)])
+
+    assert result.exit_code == 2
+    assert "escapes project root" in result.output
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+    assert not (outside_skill / "SKILL.md").exists()
+
+
 def test_install_detects_filigree_from_ephemeral_port(tmp_path: Path, monkeypatch) -> None:
     # The "wire config" feature was removed: install DETECTS the sibling from its
     # published port and REPORTS it, writing no config file.

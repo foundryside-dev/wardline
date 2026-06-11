@@ -8,7 +8,7 @@ from pathlib import Path
 from wardline.core.errors import WardlineError
 
 
-def safe_project_file(root: Path, target: Path, *, label: str | None = None) -> Path:
+def safe_project_path(root: Path, target: Path, *, label: str | None = None) -> Path:
     """Return ``target`` only if writes to it stay under ``root``.
 
     Fixed install/write targets must not follow a final symlink out of a project.
@@ -27,6 +27,11 @@ def safe_project_file(root: Path, target: Path, *, label: str | None = None) -> 
     if not (parent == root_resolved or parent.is_relative_to(root_resolved)):
         raise WardlineError(f"{name}: parent directory escapes project root {root_resolved}")
     return candidate
+
+
+def safe_project_file(root: Path, target: Path, *, label: str | None = None) -> Path:
+    """Return ``target`` only if file writes to it stay under ``root``."""
+    return safe_project_path(root, target, label=label)
 
 
 def safe_write_text(root: Path, target: Path, content: str, *, label: str | None = None) -> None:
