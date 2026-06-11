@@ -22,7 +22,7 @@ from wardline.core.errors import ConfigError
 from wardline.core.finding import FINGERPRINT_SCHEME, require_fingerprint_scheme
 from wardline.core.optional_deps import require_yaml
 from wardline.core.paths import waivers_path
-from wardline.core.safe_paths import safe_project_file
+from wardline.core.safe_paths import safe_project_file, safe_write_text, write_text_no_follow
 
 WAIVERS_VERSION: int = 1
 """Bumped on a format change; validated on load (mirrors BASELINE_VERSION)."""
@@ -170,11 +170,11 @@ def add_waiver(
     waivers.append(entry)
     # Re-stamp the scheme header (idempotent) and place it first for readability.
     document = {"fingerprint_scheme": FINGERPRINT_SCHEME, "version": WAIVERS_VERSION, "waivers": waivers}
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        yaml.safe_dump(document, sort_keys=False, default_flow_style=False, allow_unicode=True),
-        encoding="utf-8",
-    )
+    content = yaml.safe_dump(document, sort_keys=False, default_flow_style=False, allow_unicode=True)
+    if root is not None:
+        safe_write_text(root, config_path, content, label=config_path.name)
+    else:
+        write_text_no_follow(config_path, content, label=config_path.name)
     return waiver
 
 

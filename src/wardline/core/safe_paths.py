@@ -42,6 +42,12 @@ def safe_write_text(root: Path, target: Path, content: str, *, label: str | None
     _write_text_no_follow(safe_path, content, label=label or safe_path.name)
 
 
+def write_text_no_follow(target: Path, content: str, *, label: str | None = None) -> None:
+    """Write ``content`` without following a final-component symlink."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _write_text_no_follow(target, content, label=label or target.name)
+
+
 def _write_text_no_follow(path: Path, content: str, *, label: str) -> None:
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     if hasattr(os, "O_NOFOLLOW"):

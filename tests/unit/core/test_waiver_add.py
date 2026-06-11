@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from wardline.core.errors import ConfigError
+from wardline.core.errors import ConfigError, WardlineError
 from wardline.core.paths import waivers_path
 from wardline.core.waivers import add_waiver, load_project_waivers
 
@@ -80,3 +80,28 @@ def test_add_waiver_no_expiry_omits_field(tmp_path: Path) -> None:
     assert w.expires is None
     waivers = load_project_waivers(tmp_path)
     assert waivers[0].expires is None
+
+
+def test_add_waiver_refuses_direct_symlink_target(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.yaml"
+    outside.write_text("", encoding="utf-8")
+    link = tmp_path / "waivers.yaml"
+    link.symlink_to(outside)
+
+    with pytest.raises(WardlineError, match="symlink"):
+        add_waiver(link, fingerprint=FP, reason="ok", expires=None)
+
+    assert outside.read_text(encoding="utf-8") == ""
+
+
+def test_add_waiver_refuses_rooted_symlink_target(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.yaml"
+    outside.write_text("", encoding="utf-8")
+    wp = waivers_path(tmp_path)
+    wp.parent.mkdir(parents=True)
+    wp.symlink_to(outside)
+
+    with pytest.raises(WardlineError, match="symlink"):
+        add_waiver(wp, fingerprint=FP, reason="ok", expires=None, root=tmp_path)
+
+    assert outside.read_text(encoding="utf-8") == ""
