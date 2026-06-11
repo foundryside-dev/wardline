@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import stat
 from pathlib import Path
 
@@ -18,7 +19,7 @@ def safe_project_path(root: Path, target: Path, *, label: str | None = None) -> 
     root_resolved = root.resolve()
     candidate = target if target.is_absolute() else root_resolved / target
     name = label or candidate.name
-    if candidate.exists() and candidate.is_symlink():
+    if candidate.is_symlink():
         raise WardlineError(f"{name}: refusing to write through a symlink")
     resolved = candidate.resolve(strict=False)
     if not (resolved == root_resolved or resolved.is_relative_to(root_resolved)):
@@ -37,7 +38,22 @@ def safe_project_file(root: Path, target: Path, *, label: str | None = None) -> 
 def safe_write_text(root: Path, target: Path, content: str, *, label: str | None = None) -> None:
     """Safely write ``content`` to ``target`` under ``root``, resolving symlinks and boundary checks."""
     safe_path = safe_project_file(root, target, label=label)
-    safe_path.write_text(content, encoding="utf-8")
+    safe_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_text_no_follow(safe_path, content, label=label or safe_path.name)
+
+
+def _write_text_no_follow(path: Path, content: str, *, label: str) -> None:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags, 0o666)
+    except OSError as exc:
+        if path.is_symlink():
+            raise WardlineError(f"{label}: refusing to write through a symlink") from exc
+        raise
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(content)
 
 
 def safe_read_text_if_regular(

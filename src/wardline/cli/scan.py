@@ -248,7 +248,7 @@ def scan(
                     )
                     findings = result.findings
         if fmt == "sarif":
-            sarif_sink = SarifSink(output)
+            sarif_sink = SarifSink(output, root=path if output_is_default else None)
             sarif_sink.write(findings, result.context)
         elif fmt == "jsonl":
             jsonl_sink = JsonlSink(output)

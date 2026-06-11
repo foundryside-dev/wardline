@@ -4,6 +4,9 @@ import ast
 import json
 from pathlib import Path
 
+import pytest
+
+from wardline.core.errors import WardlineError
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.sarif import SarifSink, build_sarif
 from wardline.core.taints import TaintState
@@ -113,6 +116,18 @@ def test_sink_writes_valid_json(tmp_path: Path) -> None:
     SarifSink(out).write([_f()])
     loaded = json.loads(out.read_text("utf-8"))
     assert loaded["version"] == "2.1.0"
+
+
+def test_sink_refuses_symlink_target(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.txt"
+    outside.write_text("keep\n", encoding="utf-8")
+    out = tmp_path / "findings.sarif"
+    out.symlink_to(outside)
+
+    with pytest.raises(WardlineError, match="refusing to write through a symlink"):
+        SarifSink(out).write([_f()])
+
+    assert outside.read_text(encoding="utf-8") == "keep\n"
 
 
 def test_metric_findings_excluded_from_sarif() -> None:

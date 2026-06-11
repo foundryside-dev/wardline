@@ -51,6 +51,22 @@ def test_scan_format_sarif_default_output_path(tmp_path: Path) -> None:
     assert (project / "findings.sarif").exists()
 
 
+def test_scan_format_sarif_default_refuses_symlinked_output(tmp_path: Path) -> None:
+    import shutil
+
+    project = tmp_path / "proj"
+    shutil.copytree(FIXTURE, project)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("keep\n", encoding="utf-8")
+    (project / "findings.sarif").symlink_to(outside)
+
+    result = CliRunner().invoke(cli, ["scan", str(project), "--format", "sarif"])
+
+    assert result.exit_code == 2
+    assert "refusing to write through a symlink" in result.output
+    assert outside.read_text(encoding="utf-8") == "keep\n"
+
+
 def test_scan_format_sarif_still_gates(tmp_path: Path) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
