@@ -77,6 +77,14 @@ dashboard, or changing sibling tool config. It refreshes the instruction blocks,
 skills, and MCP entries, and re-detects siblings using the same discovery rules
 as `wardline install` — it never writes `weft.toml` or a sibling binding.
 
+Over MCP, the `doctor` tool returns the same machine-readable envelope
+(read-only by default; pass `repair: true` for the write-gated repair) **plus
+the running server's self-identification**: package version, pid, start time,
+and a source-freshness verdict. If `server.fresh` is `false`, the long-lived
+MCP server process predates the on-disk wardline code — every result it serves
+is stale; restart the server. Call it whenever federation writes fail or after
+upgrading/editing wardline itself.
+
 ## Gate the agent's work with `wardline scan`
 
 Wardline marks trust boundaries with marker decorators from `weft_markers`:

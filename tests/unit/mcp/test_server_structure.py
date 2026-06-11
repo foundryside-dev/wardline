@@ -37,6 +37,7 @@ def test_mcp_advertisement_snapshot() -> None:
         "baseline",
         "waiver_add",
         "fix",
+        "doctor",
     ]
     assert [resource["uri"] for resource in resources["result"]["resources"]] == [
         "wardline://vocab",

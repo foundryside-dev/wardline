@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **MCP `doctor` tool** — the CLI `doctor --fix` health envelope over MCP
+  (install artifacts, MCP registration, config parseability, sibling URLs,
+  Filigree emit-auth probe; read-only by default, `repair: true` is the
+  explicit write-gated opt-in) **plus server self-identification**: package
+  version, pid, project root, start time, and a source-freshness verdict
+  (`server.fresh` / `server.freshness` check) that detects a long-lived MCP
+  server serving code older than the on-disk tree — the 2026-06-06
+  stale-server incident class (`wardline-4c5165e896`, MCP-primary A2).
 - **MCP `scan` tool `lang` argument** (`python` | `rust`, default `python`) —
   the same frontend selector as CLI `--lang`, so the Rust command-injection
   slice (`RS-WL-108`/`RS-WL-112`) is reachable over the MCP surface; CLI and

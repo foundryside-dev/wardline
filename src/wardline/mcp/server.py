@@ -8,6 +8,7 @@ project files on disk. Rooted at a project path (launch cwd by default)."""
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -677,6 +678,29 @@ def _waiver_add(args: dict[str, Any], root: Path) -> dict[str, Any]:
     }
 
 
+def _doctor(
+    args: dict[str, Any],
+    root: Path,
+    *,
+    started_at: float,
+    filigree_url: str | None = None,
+) -> dict[str, Any]:
+    """The CLI `doctor --fix` envelope over MCP (A2, wardline-2ee1bbda82's sibling):
+    install/federation health checks via the SAME machine_readable_doctor builder,
+    plus the running server's self-identification + source-freshness verdict so an
+    agent can detect a stale long-lived server without shelling out. Read-only by
+    default; `repair: true` is the explicit WRITE opt-in (mirrors CLI --fix)."""
+    from wardline.install.doctor import machine_readable_doctor
+    from wardline.mcp.freshness import attach_server_identity
+
+    repair = _bool_arg(args, "repair", False)
+    flag = args.get("filigree_url")
+    if flag is not None and not isinstance(flag, str):
+        raise ToolError("filigree_url must be a string")
+    payload = machine_readable_doctor(root, fix=repair, filigree_url=flag or filigree_url)
+    return attach_server_identity(payload, root=root, started_at=started_at)
+
+
 def _fix(args: dict[str, Any], root: Path) -> dict[str, Any]:
     """Scan the path and apply mechanical autofixes to findings in-place."""
     path = _resolve_under_root(root, args["path"]) if args.get("path") else root
@@ -733,6 +757,9 @@ class WardlineMCPServer:
         self.root = Path(root)
         self.loomweave_url = loomweave_url
         self.filigree_url = filigree_url
+        # Recorded once at construction: the doctor tool's freshness verdict compares
+        # on-disk source mtimes against this to expose a stale long-lived server.
+        self.started_at = time.time()
         self._tool_policy = ToolPolicy(allow_write=allow_write, allow_network=allow_network)
         self.rpc = JsonRpcServer(server_name="wardline", server_version=__version__)
         self._tools: dict[str, Tool] = {}
@@ -1261,6 +1288,41 @@ class WardlineMCPServer:
                 handler=_fix,
             )
         )
+        self.add_tool(
+            Tool(
+                name="doctor",
+                description="Health-check the wardline install and federation wiring "
+                "(same checks as CLI `doctor --fix`: instruction blocks, skills, MCP "
+                "registration, config parseability, sibling URLs, Filigree emit auth) "
+                "PLUS this server's self-identification: package version, pid, start "
+                "time, and a source-FRESHNESS verdict. If `server.fresh` is false this "
+                "long-lived server predates the on-disk wardline code — its results are "
+                "stale; restart the MCP server. Read-only by default; `repair: true` "
+                "(write-gated) repairs install artifacts and re-pins a rejected "
+                "federation token.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "repair": {
+                            "type": "boolean",
+                            "description": "Default false (pure probe, writes nothing). true repairs "
+                            "install artifacts (CLAUDE.md/AGENTS.md blocks, .claude/.agents skills, "
+                            ".mcp.json + Codex registration, .weft state dir) and, when Filigree "
+                            "rejected the emit token, re-pins the accepted local mint in .env.",
+                        },
+                        "filigree_url": {
+                            "type": "string",
+                            "description": "Filigree URL to probe for emit auth (default: the server's "
+                            "configured URL, then WARDLINE_FILIGREE_URL, then the .mcp.json arg). "
+                            "Only loopback origins are ever probed with a token.",
+                        },
+                    },
+                },
+                handler=lambda args, root: _doctor(
+                    args, root, started_at=self.started_at, filigree_url=self.filigree_url
+                ),
+            )
+        )
 
     def add_tool(self, tool: Tool) -> None:
         schema = dict(tool.input_schema)
@@ -1328,6 +1390,16 @@ class WardlineMCPServer:
             capabilities.add(ToolCapability.NETWORK)
         if tool.name == "judge" and bool(arguments.get("write", False)):
             capabilities.add(ToolCapability.WRITE)
+        if tool.name == "doctor":
+            if bool(arguments.get("repair", False)):
+                capabilities.add(ToolCapability.WRITE)
+            from wardline.install.doctor import _resolve_probe_url
+
+            flag = arguments.get("filigree_url")
+            probe_url = flag if isinstance(flag, str) and flag else None
+            if _resolve_probe_url(self.root, probe_url or self.filigree_url) is not None:
+                # The filigree-auth probe will touch the (loopback-only) network.
+                capabilities.add(ToolCapability.NETWORK)
         return frozenset(capabilities)
 
     def _tools_call(self, params: dict[str, Any]) -> dict[str, Any]:
