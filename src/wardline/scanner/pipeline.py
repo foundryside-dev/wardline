@@ -206,9 +206,9 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
                 Finding(
                     rule_id="WLN-ENGINE-FILE-SKIPPED",
                     message=f"{relpath}: skipped — expression too deep to analyze safely",
-                    severity=Severity.NONE,
-                    kind=Kind.FACT,
-                    location=Location(path=relpath),
+                    severity=Severity.ERROR,
+                    kind=Kind.DEFECT,
+                    location=Location(path=relpath, line_start=1),
                     fingerprint=_fp("WLN-ENGINE-FILE-SKIPPED", relpath),
                     properties={"module": module, "reason": "recursion_limit"},
                 )

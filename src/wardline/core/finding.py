@@ -28,9 +28,9 @@ ENGINE_PATH = "<engine>"
 
 # Rule ids for files where analysis was ATTEMPTED OR EXPECTED but FAILED / never
 # happened — a genuine under-scan: parse/read failures, files too deep to walk
-# (recursion), and missing source roots. These are Severity.NONE FACTs that never
-# trip the severity gate, so callers count them separately (ScanSummary.unanalyzed)
-# to surface the silent under-scan and (opt-in) gate on it.
+# (recursion), and missing source roots. Some are gate-eligible DEFECTs and some
+# are non-gating FACTs, so callers also count them separately
+# (ScanSummary.unanalyzed) to expose the under-scan independent of severity.
 #
 # WLN-ENGINE-NO-MODULE is DELIBERATELY EXCLUDED: a file that maps to no module
 # (e.g. a top-level / src/__init__.py) is a benign layout artifact with nothing to

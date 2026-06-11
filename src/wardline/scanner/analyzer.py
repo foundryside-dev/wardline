@@ -571,6 +571,7 @@ class WardlineAnalyzer:
         # ── L2 pass 1 — per-method var/return taints + per-class attribute summary ──
         all_classes = frozenset(c for parsed in file_meta for c in parsed.class_qualnames)
         failed_paths: set[str] = set()
+        function_skip_recorded: set[str] = set()
 
         def _record_file_failure(relpath: str, ent: Entity, exc: Exception) -> None:
             # Per-file isolation, mirroring the Rust frontend's WLN-ENGINE-FILE-FAILED:
@@ -597,6 +598,24 @@ class WardlineAnalyzer:
                     fingerprint=_fp("WLN-ENGINE-FILE-FAILED", relpath),
                     qualname=ent.qualname,
                     properties={"reason": "analysis_exception", "exception": type(exc).__name__},
+                )
+            )
+
+        def _record_l2_recursion(ent: Entity) -> None:
+            l2_failed.add(ent.qualname)
+            if ent.qualname in function_skip_recorded:
+                return
+            function_skip_recorded.add(ent.qualname)
+            func_skip_findings.append(
+                Finding(
+                    rule_id="WLN-ENGINE-FUNCTION-SKIPPED",
+                    message=f"{ent.qualname}: skipped L2 — expression too deep to analyze safely",
+                    severity=Severity.ERROR,
+                    kind=Kind.DEFECT,
+                    location=ent.location,
+                    fingerprint=_fp("WLN-ENGINE-FUNCTION-SKIPPED", ent.qualname),
+                    qualname=ent.qualname,
+                    properties={"reason": "recursion_limit"},
                 )
             )
 
@@ -660,21 +679,15 @@ class WardlineAnalyzer:
                         recorded_writes, all_classes, enclosing_class if is_method else None
                     )
                 except RecursionError:
-                    l2_failed.add(ent.qualname)
-                    call_sites, call_args, var_taints, ret_taint, ret_callee = {}, {}, {}, None, None
-                    writes = {}
-                    func_skip_findings.append(
-                        Finding(
-                            rule_id="WLN-ENGINE-FUNCTION-SKIPPED",
-                            message=f"{ent.qualname}: skipped L2 — expression too deep to analyze safely",
-                            severity=Severity.NONE,
-                            kind=Kind.FACT,
-                            location=ent.location,
-                            fingerprint=_fp("WLN-ENGINE-FUNCTION-SKIPPED", ent.qualname),
-                            qualname=ent.qualname,
-                            properties={"reason": "recursion_limit"},
-                        )
+                    _record_l2_recursion(ent)
+                    call_sites, call_args, var_taints, ret_taint, ret_callee = (
+                        {},
+                        {},
+                        {},
+                        TaintState.UNKNOWN_RAW,
+                        None,
                     )
+                    writes = {}
                 except MemoryError:
                     raise  # exhaustion is not a per-file condition — isolating it would thrash
                 except Exception as exc:  # noqa: BLE001 — per-file isolation, see _record_file_failure
@@ -804,7 +817,15 @@ class WardlineAnalyzer:
                             recorded_writes, all_classes, enclosing_class if is_method else None
                         )
                     except RecursionError:
-                        continue
+                        _record_l2_recursion(ent)
+                        call_sites, call_args, var_taints, ret_taint, ret_callee, writes = (
+                            {},
+                            {},
+                            {},
+                            TaintState.UNKNOWN_RAW,
+                            None,
+                            {},
+                        )
                     except MemoryError:
                         raise  # exhaustion is not a per-file condition — isolating it would thrash
                     except Exception as exc:  # noqa: BLE001 — per-file isolation, see _record_file_failure

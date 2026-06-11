@@ -191,10 +191,9 @@ def test_parse_project_stage_parse_failure_is_gating_error_defect(tmp_path) -> N
     assert by_path["enc.py"].location.line_start == 1
 
 
-def test_parse_project_stage_recursion_skip_stays_nongating_fact(tmp_path) -> None:
-    # The fail-closed change is scoped to PARSE failures: the recursion-limit
-    # file skip keeps its released non-gating FACT contract (it mirrors
-    # WLN-ENGINE-FUNCTION-SKIPPED, surfaced via summary.unanalyzed instead).
+def test_parse_project_stage_recursion_skip_is_gate_eligible(tmp_path) -> None:
+    # A recursion-limit file skip means policy rules never ran for the file. It
+    # must be a gate-eligible under-scan defect, not a green severity result.
     from wardline.core.finding import Kind, Severity
 
     expr = "p" + " + p" * 3000
@@ -210,5 +209,6 @@ def test_parse_project_stage_recursion_skip_stays_nongating_fact(tmp_path) -> No
     )
     skips = [f for f in result.parse_findings if f.rule_id == "WLN-ENGINE-FILE-SKIPPED"]
     assert len(skips) == 1
-    assert skips[0].kind is Kind.FACT
-    assert skips[0].severity is Severity.NONE
+    assert skips[0].kind is Kind.DEFECT
+    assert skips[0].severity is Severity.ERROR
+    assert skips[0].location.line_start == 1

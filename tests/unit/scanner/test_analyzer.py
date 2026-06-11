@@ -132,12 +132,12 @@ def test_analyzer_l2_recursion_boundary_contains_per_function(monkeypatch) -> No
         assert ctx is not None
         assert ctx.function_var_taints["m.a"] == {}  # L2 contained
         assert "b" in ctx.function_var_taints["m.b"] or ctx.function_var_taints["m.b"] == {}
-        # The contained function is NOT silently dropped — a FACT records the skip
-        # so its absent return taint is observable, not an invisible under-taint.
+        # The contained function is NOT silently dropped: the skip is gate-eligible
+        # and its actual return is pessimistic rather than absent.
         skips = [f for f in findings if f.rule_id == "WLN-ENGINE-FUNCTION-SKIPPED"]
         assert [f.qualname for f in skips] == ["m.a"]
-        assert all(f.kind == Kind.FACT for f in skips)
-        assert "m.a" not in ctx.function_return_taints
+        assert all(f.kind == Kind.DEFECT for f in skips)
+        assert ctx.function_return_taints["m.a"] == T.UNKNOWN_RAW
 
 
 def test_analyzer_default_provider_seeds_from_decorators(tmp_path) -> None:

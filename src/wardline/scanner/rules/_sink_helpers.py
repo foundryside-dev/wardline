@@ -477,9 +477,10 @@ def resolved_arg_taints(call: ast.Call, qualname: str, context: AnalysisContext)
     qualname is recorded into ``context.flow_insensitive_fallbacks`` and a pessimistic
     map marking every syntactic argument ``UNKNOWN_RAW`` is returned. The analyzer
     surfaces the recorded set as ONE ``WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK``
-    NONE/FACT finding per scan — a finding, not a ``UserWarning``, so MCP/library
-    consumers see the degradation and a warnings-as-error embedder cannot turn the
-    diagnostic into a rule-aborting raise (review 2026-06-10). Each rule then
+    NONE/FACT finding per scan in addition to the gate-eligible function skip — a
+    finding, not a ``UserWarning``, so MCP/library consumers see the degradation and
+    a warnings-as-error embedder cannot turn the diagnostic into a rule-aborting raise
+    (review 2026-06-10). Each rule then
     SELECTS over this result on its own terms (worst / any-provably-untrusted /
     by-position), so the fail-closed contract lives in exactly one place and cannot
     drift between rules. The pessimism is correctly direction-aware: a

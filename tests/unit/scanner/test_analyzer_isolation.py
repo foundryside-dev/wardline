@@ -97,12 +97,15 @@ def test_l2_engine_exception_emits_one_finding_per_file(tmp_path, monkeypatch) -
 
 def test_recursion_error_still_yields_function_skip_fact(tmp_path, monkeypatch) -> None:
     # The broad fence must NOT swallow the dedicated RecursionError boundary —
-    # too-deep functions keep their non-gating WLN-ENGINE-FUNCTION-SKIPPED FACT.
+    # too-deep functions keep their dedicated WLN-ENGINE-FUNCTION-SKIPPED finding.
     _boom_on_marker(monkeypatch, RecursionError("simulated deep L2"))
     _write(tmp_path, "deep.py", "def a():\n    boom = 1\n    return boom\n")
     analyzer = WardlineAnalyzer()
     findings = analyzer.analyze([tmp_path / "deep.py"], WardlineConfig(), root=tmp_path)
-    assert any(f.rule_id == "WLN-ENGINE-FUNCTION-SKIPPED" and f.kind == Kind.FACT for f in findings)
+    skipped = [f for f in findings if f.rule_id == "WLN-ENGINE-FUNCTION-SKIPPED"]
+    assert len(skipped) == 1
+    assert skipped[0].kind == Kind.DEFECT
+    assert skipped[0].severity == Severity.ERROR
     assert not any(f.rule_id == "WLN-ENGINE-FILE-FAILED" for f in findings)
 
 

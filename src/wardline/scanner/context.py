@@ -122,8 +122,8 @@ class AnalysisContext:
     # back to the pessimistic flow-INSENSITIVE map (no L2 snapshot — an L2-skipped
     # function). ``resolved_arg_taints`` records here instead of warning from
     # inside rule ``check()`` calls; the analyzer surfaces the collected set as ONE
-    # ``WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK`` NONE/FACT finding per scan
-    # (mirroring WLN-ENGINE-FUNCTION-SKIPPED). Deliberately a mutable set on a
+    # ``WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK`` NONE/FACT finding per scan.
+    # Deliberately a mutable set on a
     # frozen context: it is a diagnostics side channel, not engine output.
     flow_insensitive_fallbacks: set[str] = field(default_factory=set)
 
