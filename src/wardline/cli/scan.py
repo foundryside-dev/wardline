@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import urllib.parse
 from pathlib import Path
 
 import click
@@ -395,14 +396,15 @@ def scan(
                 line += f"; {len(emit_result.warnings)} warning(s): " + "; ".join(emit_result.warnings)
             click.echo(line)
     if loomweave_result is not None:
+        logged_loomweave_url = _redact_url_for_log(loomweave_url)
         if not loomweave_result.reachable:
             reason = loomweave_result.disabled_reason or "unreachable"
             click.echo(
-                f"warning: Loomweave taint store not written at {loomweave_url} ({reason}); scan unaffected.",
+                f"warning: Loomweave taint store not written at {logged_loomweave_url} ({reason}); scan unaffected.",
                 err=True,
             )
         else:
-            line = f"wrote {loomweave_result.written} taint fact(s) to {loomweave_url}"
+            line = f"wrote {loomweave_result.written} taint fact(s) to {logged_loomweave_url}"
             if loomweave_result.unresolved_qualnames:
                 line += (
                     f"; {len(loomweave_result.unresolved_qualnames)} qualname(s) unresolved (not indexed by Loomweave)"
@@ -531,3 +533,23 @@ def _loomweave_status(result: object | None) -> dict[str, object]:
         "unresolved_qualnames": list(getattr(result, "unresolved_qualnames", ())),
         "disabled_reason": getattr(result, "disabled_reason", None),
     }
+
+
+def _redact_url_for_log(url: str | None) -> str:
+    if url is None:
+        return "<not configured>"
+    parts = urllib.parse.urlsplit(url)
+    if not parts.scheme or not parts.netloc:
+        return url.split("?", 1)[0].split("#", 1)[0]
+    try:
+        host = parts.hostname or ""
+        port = parts.port
+    except ValueError:
+        return f"{parts.scheme}://<redacted>"
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    if port is not None:
+        host = f"{host}:{port}"
+    if parts.username is not None or parts.password is not None:
+        host = f"<redacted>@{host}"
+    return urllib.parse.urlunsplit((parts.scheme, host, parts.path, "", ""))

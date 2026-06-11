@@ -999,6 +999,28 @@ def test_scan_loomweave_soft_outage_does_not_change_exit(tmp_path, monkeypatch) 
     assert "scan unaffected" in result.output
 
 
+def test_scan_loomweave_soft_outage_redacts_url_secrets(tmp_path, monkeypatch) -> None:
+    from wardline.loomweave.client import WriteResult
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    monkeypatch.setattr(
+        "wardline.loomweave.write.write_facts_to_loomweave",
+        lambda *a, **k: WriteResult(reachable=False, disabled_reason="connection refused"),
+    )
+    out = tmp_path / "f.jsonl"
+    secret_url = "https://user:secret@loomweave.example/api/taint?token=abc#frag"
+
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--loomweave-url", secret_url])
+
+    assert result.exit_code == 0, result.output
+    assert "https://<redacted>@loomweave.example/api/taint" in result.output
+    assert "user:secret" not in result.output
+    assert "token=abc" not in result.output
+    assert "#frag" not in result.output
+
+
 def test_scan_reports_filigree_success_and_loomweave_unreachable_independently(tmp_path, monkeypatch) -> None:
     from wardline.loomweave.client import WriteResult
 
