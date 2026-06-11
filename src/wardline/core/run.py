@@ -200,7 +200,7 @@ def run_scan(
         raise ConfigError(f"unknown language {lang!r}; expected one of {known}")
     frontend = FRONTENDS[lang]
     suffixes = frontend.suffixes
-    from wardline.scanner.taint.summary_cache import SummaryCache
+    from wardline.scanner.taint.summary_cache import SummaryCache, summary_cache_auth_secret_from_env
 
     # An EXPLICIT --config path must NOT silently fall back to default policy
     # (dropping the operator's severity overrides/excludes) whether it is missing
@@ -217,7 +217,7 @@ def run_scan(
     )
     cache = None
     if cache_dir is not None:
-        cache = SummaryCache(cache_dir=cache_dir)
+        cache = SummaryCache(cache_dir=cache_dir, cache_auth_secret=summary_cache_auth_secret_from_env())
         from wardline.core.taints import _PROVENANCE_CLASH
 
         token_clash = _PROVENANCE_CLASH.set(cfg.provenance_clash)

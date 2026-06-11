@@ -401,10 +401,11 @@ def test_scan_cache_dir_persists_warm_taints_equal_cold(tmp_path) -> None:
     out1 = tmp_path / "f1.jsonl"
     out2 = tmp_path / "f2.jsonl"
     runner = CliRunner()
-    r1 = runner.invoke(scan, [str(proj), "--cache-dir", str(cache), "--output", str(out1)])
+    env = {"WARDLINE_SUMMARY_CACHE_KEY": "unit-test-summary-cache-key"}
+    r1 = runner.invoke(scan, [str(proj), "--cache-dir", str(cache), "--output", str(out1)], env=env)
     assert r1.exit_code == 0, r1.output
     assert cache.exists() and any(cache.iterdir())  # cache written to disk
-    r2 = runner.invoke(scan, [str(proj), "--cache-dir", str(cache), "--output", str(out2)])
+    r2 = runner.invoke(scan, [str(proj), "--cache-dir", str(cache), "--output", str(out2)], env=env)
     assert r2.exit_code == 0, r2.output
 
     def _parse(p: Path) -> list[dict]:

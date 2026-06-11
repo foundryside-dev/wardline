@@ -9,7 +9,7 @@ from wardline.core.taints import _PROVENANCE_CLASH, combine
 from wardline.core.taints import TaintState as T
 from wardline.scanner.taint.propagation import propagate_callgraph_taints
 from wardline.scanner.taint.summary import SUMMARY_SCHEMA_VERSION
-from wardline.scanner.taint.summary_cache import _deserialise_summary, _serialise_summary
+from wardline.scanner.taint.summary_cache import SummaryCache, _deserialise_summary, _serialise_summary
 from wardline.scanner.taint.variable_level import compute_variable_taints
 
 
@@ -169,7 +169,7 @@ def test_summary_cache_mixed_raw_clash() -> None:
         _PROVENANCE_CLASH.reset(token)
 
 
-def test_run_scan_provenance_clash_with_cache(tmp_path) -> None:
+def test_run_scan_provenance_clash_with_cache(tmp_path, monkeypatch) -> None:
     from wardline.core.run import run_scan
 
     proj = tmp_path / "proj"
@@ -196,6 +196,7 @@ def clashing(cond, p):
     (proj / "m.py").write_text(source, encoding="utf-8")
 
     cache = tmp_path / "cache"
+    monkeypatch.setenv("WARDLINE_SUMMARY_CACHE_KEY", "unit-test-summary-cache-key")
 
     run_scan(proj, cache_dir=cache)
     assert cache.exists()
@@ -206,15 +207,12 @@ def clashing(cond, p):
     assert hit_rate > 0.0, "Cache was not hit! MIXED_RAW cache entry might have been dropped."
 
 
-def test_run_scan_provenance_clash_loads_mixed_raw_cache(tmp_path) -> None:
-    import json
-
+def test_run_scan_provenance_clash_loads_signed_mixed_raw_cache(tmp_path, monkeypatch) -> None:
     from wardline.core.run import run_scan
     from wardline.core.taints import TaintState as T
     from wardline.scanner.taint.decorator_provider import DecoratorTaintSourceProvider
     from wardline.scanner.taint.project_resolver import _RESOLVER_VERSION, compute_cache_key
     from wardline.scanner.taint.summary import SUMMARY_SCHEMA_VERSION, FunctionSummary
-    from wardline.scanner.taint.summary_cache import _serialise_summary
 
     proj = tmp_path / "proj"
     proj.mkdir()
@@ -252,7 +250,11 @@ def test_run_scan_provenance_clash_loads_mixed_raw_cache(tmp_path) -> None:
         cache_key=key,
     )
 
-    (cache_dir / f"{key}.json").write_text(json.dumps([_serialise_summary(s)]), encoding="utf-8")
+    secret = b"unit-test-summary-cache-key"
+    cache = SummaryCache(cache_dir=cache_dir, cache_auth_secret=secret)
+    cache.put(key, (s,))
+    cache.save()
+    monkeypatch.setenv("WARDLINE_SUMMARY_CACHE_KEY", secret.decode("utf-8"))
 
     res = run_scan(proj, cache_dir=cache_dir)
 

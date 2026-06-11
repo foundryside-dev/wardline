@@ -90,8 +90,9 @@ Options:
                                   .rs files for command-injection findings.
   --output PATH
   --fail-on [CRITICAL|ERROR|WARN|INFO]
-  --cache-dir PATH                Persist L3 summary cache here for faster
-                                  incremental scans.
+  --cache-dir PATH                Store authenticated L3 summary-cache entries
+                                  here for faster incremental scans when
+                                  WARDLINE_SUMMARY_CACHE_KEY is set.
   --filigree-url TEXT             POST findings to this Filigree Weft scan-
                                   results URL (opt-in).
   --help                          Show this message and exit.
@@ -107,7 +108,7 @@ it at a package root, not a single file.
 | `--lang [python\|rust]` | Language frontend (default `python`). `rust` sweeps `*.rs` and covers the **command-injection slice** (`RS-WL-108`/`RS-WL-112`); needs the `wardline[rust]` extra. Finding identity is frozen and crate-prefixed (baseline-eligible); config severity overrides do not yet apply to Rust findings — see the [Rust support guide](../guides/rust-preview.md). |
 | `--output PATH` | Write findings to a file instead of stdout. |
 | `--fail-on [CRITICAL\|ERROR\|WARN\|INFO]` | Exit non-zero when any finding at or above this severity survives the baseline. Use this as your CI gate. |
-| `--cache-dir PATH` | Persist the L3 inter-procedural summary cache here so the next scan reuses unchanged summaries. Use an operator-owned directory outside untrusted checkouts; do not put the cache in a path that pull-request content can commit or modify. |
+| `--cache-dir PATH` | Store the L3 inter-procedural summary cache here so the next scan can reuse unchanged summaries when `WARDLINE_SUMMARY_CACHE_KEY` is set in the process environment. Unsigned or incorrectly signed files are ignored and the scan falls back to recomputing summaries. Use an operator-owned directory outside untrusted checkouts; do not put the cache in a path that pull-request content can commit or modify. |
 | `--filigree-url TEXT` | Opt-in: POST findings to a Filigree Weft scan-results endpoint as well as emitting them locally. Prefer this native path when agents need Filigree promotion, deduplication, or close/reopen lifecycle state. |
 
 Realistic invocation — scan the source tree, emit SARIF to a file, and fail the
@@ -120,13 +121,14 @@ $ wardline scan src/ --format sarif --output wardline.sarif --fail-on ERROR
 Incremental local run reusing a warm cache:
 
 ```text
+$ export WARDLINE_SUMMARY_CACHE_KEY="$(openssl rand -hex 32)"
 $ wardline scan src/ --cache-dir ~/.cache/wardline/my-project
 ```
 
-Only reuse a disk summary cache that is outside the scanned repository or is
-otherwise protected from repository content. A cache directory inside an
-untrusted checkout can be pre-populated by a pull request and must not be used as
-CI gate input.
+Only reuse a disk summary cache when `WARDLINE_SUMMARY_CACHE_KEY` is provisioned
+from trusted process environment. Unsigned cache files are never loaded, and a
+cache directory inside an untrusted checkout is still a poor CI choice because
+repository content can force cold-cache behavior by deleting or replacing files.
 
 Agent handoff summary:
 
