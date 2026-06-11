@@ -382,6 +382,8 @@ def explain_finding(
             if served is not None:
                 return served
         # miss/stale/outage → fall through to the re-run
+    if fingerprint is None and path is None and line is None:
+        return None
     return _explain_local(
         root,
         fingerprint=fingerprint,

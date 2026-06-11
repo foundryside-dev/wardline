@@ -76,7 +76,14 @@ def _fresh_view(proj, qualname, callee_qualname):
             "resolved_call_count": 1,
             "unresolved_call_count": 0,
         },
-        "findings": [],
+        "findings": [
+            {
+                "rule_id": "PY-WL-101",
+                "fingerprint": "f" * 64,
+                "path": "svc.py",
+                "line_start": 5,
+            }
+        ],
     }
     return TaintFactView(qualname=qualname, exists=True, wardline_json=blob, current_content_hash=h)
 
@@ -120,7 +127,14 @@ def _type_skewed_view(proj, qualname):
             "resolved_call_count": 1,
             "unresolved_call_count": 0,
         },
-        "findings": [],
+        "findings": [
+            {
+                "rule_id": "PY-WL-101",
+                "fingerprint": "f" * 64,
+                "path": "svc.py",
+                "line_start": 5,
+            }
+        ],
     }
     return TaintFactView(qualname=qualname, exists=True, wardline_json=blob, current_content_hash=h)
 
