@@ -1,9 +1,8 @@
-from pathlib import Path
-
-from wardline.core.config import WardlineConfig
-from wardline.scanner import NoOpAnalyzer
+import wardline.scanner as scanner
+from wardline.scanner.analyzer import WardlineAnalyzer
 
 
-def test_noop_analyzer_returns_no_findings() -> None:
-    result = NoOpAnalyzer().analyze([Path("a.py")], WardlineConfig(), root=Path("."))
-    assert list(result) == []
+def test_noop_analyzer_is_not_exported() -> None:
+    assert scanner.__all__ == ["WardlineAnalyzer"]
+    assert not hasattr(scanner, "NoOpAnalyzer")
+    assert scanner.WardlineAnalyzer is WardlineAnalyzer
