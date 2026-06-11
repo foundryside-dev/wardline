@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Protocol
 
 from wardline.core.finding import Finding
-from wardline.core.safe_paths import safe_write_text
+from wardline.core.safe_paths import safe_write_text, write_text_no_follow
 
 
 class Sink(Protocol):
@@ -22,4 +22,7 @@ class JsonlSink:
 
     def write(self, findings: Sequence[Finding]) -> None:
         content = "".join(f"{finding.to_jsonl()}\n" for finding in findings)
-        safe_write_text(self._root or self._path.parent, self._path, content, label=self._path.name)
+        if self._root is not None:
+            safe_write_text(self._root, self._path, content, label=self._path.name)
+        else:
+            write_text_no_follow(self._path, content, label=self._path.name)

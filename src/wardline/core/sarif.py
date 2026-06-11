@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from wardline import __version__
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
-from wardline.core.safe_paths import safe_write_text
+from wardline.core.safe_paths import safe_write_text, write_text_no_follow
 from wardline.scanner.flow_trace import build_finding_code_flow
 
 if TYPE_CHECKING:
@@ -167,4 +167,7 @@ class SarifSink:
 
     def write(self, findings: Sequence[Finding], context: AnalysisContext | None = None) -> None:
         content = json.dumps(build_sarif(findings, context), indent=2, ensure_ascii=False)
-        safe_write_text(self._root or self._path.parent, self._path, content, label=self._path.name)
+        if self._root is not None:
+            safe_write_text(self._root, self._path, content, label=self._path.name)
+        else:
+            write_text_no_follow(self._path, content, label=self._path.name)
