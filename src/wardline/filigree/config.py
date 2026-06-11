@@ -9,17 +9,18 @@ outbound (client) token wardline emits matches the daemon's with zero operator
 ceremony on a same-host install. Resolution order (highest precedence first):
 
   1. env ``WEFT_FEDERATION_TOKEN``                         — operator override / cross-host
-  2. ``root/.env`` ``WEFT_FEDERATION_TOKEN``               — wardline's portable convention
-  3. ``<root>/.weft/filigree/federation_token``            — filigree's auto-minted 0600 file
-  4. legacy ``WARDLINE_FILIGREE_TOKEN`` (env then .env)    — deprecated transition fallback
-  5. None                                                  — auth stays off
+  2. legacy env ``WARDLINE_FILIGREE_TOKEN``                 — deprecated operator fallback
+  3. ``root/.env`` ``WEFT_FEDERATION_TOKEN``               — wardline's portable convention
+  4. ``<root>/.weft/filigree/federation_token``            — filigree's auto-minted 0600 file
+  5. legacy ``root/.env`` ``WARDLINE_FILIGREE_TOKEN``       — deprecated file fallback
+  6. None                                                  — auth stays off
 
 Rung 3 is the same project-store file filigree mints and validates against (the C-9e
 same-host cross-member read; conventions.md C-3 + conflict-register §A-15): reading it
 makes the client token match the per-project daemon with no env/.env/.mcp.json config.
 This token is loopback deconfliction/identification plumbing, **not** a secret — the
-0600 mode is filigree's to set; wardline only reads. The env-sourced tokens (rungs 1/4)
-otherwise come from env / ``.env`` ONLY, never from weft.toml — the same discipline as
+0600 mode is filigree's to set; wardline only reads. The configured tokens otherwise
+come from env / ``.env`` ONLY, never from weft.toml — the same discipline as
 the Loomweave secret and the OpenRouter judge key.
 """
 
@@ -41,13 +42,14 @@ WARDLINE_FILIGREE_TOKEN_ENV = "WARDLINE_FILIGREE_TOKEN"
 _FILIGREE_MINT_RELPATH = (".weft", "filigree", "federation_token")
 
 
-def _read_token(name: str, root: Path) -> str | None:
-    """Return the value of ``name`` from the environment, or from a single
-    ``KEY=VALUE`` line in ``root/.env``, or None. An already-set environment value
-    always wins over the file."""
+def _read_env_token(name: str) -> str | None:
+    """Return a non-empty process environment token, or None."""
     value = os.environ.get(name)
-    if value:
-        return value
+    return value or None
+
+
+def _read_dotenv_token(name: str, root: Path) -> str | None:
+    """Return ``name`` from a single ``KEY=VALUE`` line in ``root/.env``, or None."""
     env_path = safe_project_file(root, root / ".env", label=".env")
     if not env_path.is_file():
         return None
@@ -77,18 +79,26 @@ def _read_filigree_mint(root: Path) -> str | None:
 
 def load_filigree_token(root: Path) -> str | None:
     """Resolve the outbound Filigree bearer token (see the module docstring for the
-    five-rung order), or None when federation auth is off."""
-    # Rungs 1-2: the canonical federation name, resolved fully (env then .env).
-    value = _read_token(WEFT_FEDERATION_TOKEN_ENV, root)
+    six-rung order), or None when federation auth is off."""
+    # Rungs 1-2: process environment is operator-controlled and outranks every
+    # project-local token file, including root/.env entries with newer names.
+    value = _read_env_token(WEFT_FEDERATION_TOKEN_ENV)
     if value:
         return value
-    # Rung 3: filigree's auto-minted project-store token (same-host, zero-ceremony).
+    value = _read_env_token(WARDLINE_FILIGREE_TOKEN_ENV)
+    if value:
+        return value
+    # Rung 3: the canonical federation name in root/.env.
+    value = _read_dotenv_token(WEFT_FEDERATION_TOKEN_ENV, root)
+    if value:
+        return value
+    # Rung 4: filigree's auto-minted project-store token (same-host, zero-ceremony).
     value = _read_filigree_mint(root)
     if value:
         return value
-    # Rung 4: the deprecated legacy name (env then .env) for un-migrated deployments.
-    value = _read_token(WARDLINE_FILIGREE_TOKEN_ENV, root)
+    # Rung 5: the deprecated legacy name in root/.env for un-migrated deployments.
+    value = _read_dotenv_token(WARDLINE_FILIGREE_TOKEN_ENV, root)
     if value:
         return value
-    # Rung 5: off.
+    # Rung 6: off.
     return None

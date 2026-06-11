@@ -68,15 +68,13 @@ def test_new_name_in_dot_env_wins_over_legacy_in_dot_env(tmp_path: Path) -> None
     assert load_filigree_token(tmp_path) == "new-file"
 
 
-def test_new_name_in_dot_env_wins_over_legacy_in_environment(monkeypatch, tmp_path: Path) -> None:
-    # The migration-relevant cross-tier rung: the new name is resolved FULLY (env then
-    # .env) before the legacy name is consulted at all, so the new name in .env (rung 2)
-    # beats the legacy name in the actual environment (rung 3) — a file entry outranks an
-    # env var across the name boundary. This pins "new-name-first" where it could silently
-    # regress to legacy-first (relevant while lacuna still exports WARDLINE_FILIGREE_TOKEN).
+def test_legacy_environment_wins_over_new_name_in_dot_env(monkeypatch, tmp_path: Path) -> None:
+    # Process environment is operator-controlled; root/.env may come from the scanned
+    # repository. All environment aliases must outrank all project .env aliases, even
+    # across the canonical/legacy name boundary.
     monkeypatch.setenv(WARDLINE_FILIGREE_TOKEN_ENV, "legacy-env")
     (tmp_path / ".env").write_text(f"{WEFT_FEDERATION_TOKEN_ENV}=new-file\n", encoding="utf-8")
-    assert load_filigree_token(tmp_path) == "new-file"
+    assert load_filigree_token(tmp_path) == "legacy-env"
 
 
 # ---------------------------------------------------------------------------
@@ -114,10 +112,16 @@ def test_dot_env_overrides_mint_file(tmp_path: Path) -> None:
     assert load_filigree_token(tmp_path) == "from-file"
 
 
-def test_mint_file_wins_over_legacy(monkeypatch, tmp_path: Path) -> None:
-    # Rung 3 (mint file) outranks rung 4 (legacy name), so a fresh same-host install
-    # picks the daemon's minted token over a stale legacy env/.env value.
+def test_legacy_env_overrides_mint_file(monkeypatch, tmp_path: Path) -> None:
+    # Process environment is operator-controlled and outranks every repo-local token
+    # source, including the same-host mint file.
     monkeypatch.setenv(WARDLINE_FILIGREE_TOKEN_ENV, "legacy-env")
+    _mint_filigree_token(tmp_path, "minted-tok")
+    assert load_filigree_token(tmp_path) == "legacy-env"
+
+
+def test_mint_file_wins_over_legacy_dot_env(tmp_path: Path) -> None:
+    # The same-host mint file still outranks a deprecated repo-local .env fallback.
     (tmp_path / ".env").write_text(f"{WARDLINE_FILIGREE_TOKEN_ENV}=legacy-file\n", encoding="utf-8")
     _mint_filigree_token(tmp_path, "minted-tok")
     assert load_filigree_token(tmp_path) == "minted-tok"
