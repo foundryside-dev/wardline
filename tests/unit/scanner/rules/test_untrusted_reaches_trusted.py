@@ -44,6 +44,22 @@ def test_trusted_returning_raw_fires(tmp_path) -> None:
     assert all(f.kind == Kind.DEFECT for f in findings)
 
 
+def test_trusted_returning_project_submodule_imported_raw_fires(tmp_path) -> None:
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "pkg/sources.py": "from wardline.decorators import external_boundary\n"
+            "@external_boundary\ndef read(p):\n    return p\n",
+            "svc.py": "import pkg.sources\n"
+            "from wardline.decorators import trusted\n"
+            "@trusted(level='ASSURED')\n"
+            "def leaky(p):\n    return pkg.sources.read(p)\n",
+        },
+    )
+    assert ctx.function_return_taints["svc.leaky"] == TaintState.EXTERNAL_RAW
+    assert ("PY-WL-101", "svc.leaky") in {(f.rule_id, f.qualname) for f in _run(ctx)}
+
+
 def test_trusted_early_returning_raw_before_later_clean_reassignment_fires(tmp_path) -> None:
     ctx, _ = _analyze(
         tmp_path,

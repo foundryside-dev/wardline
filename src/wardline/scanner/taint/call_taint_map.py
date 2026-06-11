@@ -91,7 +91,14 @@ def build_call_taint_map(
             # module import: dotted ``local.func`` calls
             for func_name, taint in bucket.items():
                 tm[f"{local}.{func_name}"] = taint
-            continue
+        for module, module_bucket in project_by_module.items():
+            if module.startswith(target + "."):
+                # ``import pkg.sub`` collapses the alias to ``pkg``; the call is
+                # written ``local.<rest-of-module>.fn`` just like multi-component
+                # stdlib imports.
+                remainder = module[len(target) + 1 :]
+                for func_name, taint in module_bucket.items():
+                    tm[f"{local}.{remainder}.{func_name}"] = taint
         # from-import of a project function: target == "module.func_name"
         mod, _, leaf = target.rpartition(".")
         mod_bucket = project_by_module.get(mod)

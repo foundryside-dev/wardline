@@ -43,6 +43,16 @@ def test_dotted_module_project_call_keyed_dotted() -> None:
     assert tm["other.fn"] == T.MIXED_RAW
 
 
+def test_multicomponent_project_plain_import_keyed_fully() -> None:
+    aliases = _aliases("import pkg.sources\n", "m")
+    tm = build_call_taint_map(
+        module_path="m",
+        alias_map=aliases,
+        project_by_module={"pkg.sources": {"read": T.EXTERNAL_RAW}},
+    )
+    assert tm["pkg.sources.read"] == T.EXTERNAL_RAW
+
+
 def test_stdlib_external_dotted_taint_carries() -> None:
     # Positive external-dotted channel: a non-sink stdlib entry, aliased.
     aliases = _aliases("import subprocess as sp\n", "m")
@@ -131,6 +141,20 @@ def test_l2_urllib_plain_import_carries_external_raw_end_to_end() -> None:
     tm = build_call_taint_map(module_path="m", alias_map=aliases)
     out = compute_variable_taints(func, T.INTEGRAL, dict(tm))
     assert out["x"] == T.EXTERNAL_RAW  # the curated network-source taint, not dropped
+
+
+def test_l2_project_plain_submodule_import_carries_return_taint_end_to_end() -> None:
+    src = "import pkg.sources\ndef f(p):\n    x = pkg.sources.read(p)\n"
+    func = ast.parse(src).body[1]
+    assert isinstance(func, ast.FunctionDef)
+    aliases = build_import_alias_map(ast.parse(src), module_path="m")
+    tm = build_call_taint_map(
+        module_path="m",
+        alias_map=aliases,
+        project_by_module={"pkg.sources": {"read": T.EXTERNAL_RAW}},
+    )
+    out = compute_variable_taints(func, T.ASSURED, dict(tm))
+    assert out["x"] == T.EXTERNAL_RAW
 
 
 # ── PART D: aliased serialisation sinks NOT in stdlib_taint resolve to UNKNOWN_RAW ──
