@@ -72,6 +72,40 @@ def test_get_callees_reads_the_callees_field():
     assert res.truncated is True
 
 
+def test_linkage_non_finite_large_float_total_falls_back_to_neighbour_count():
+    body = (
+        '{"entity_id":"x","callers":['
+        '{"entity_id":"python:function:svc.caller","confidence":"resolved","call_site_count":1}'
+        '],"total":1e999999,"truncated":false}'
+    )
+    res = _client(FakeTransport([Response(status=200, body=body)])).get_callers("x")
+    assert res is not None
+    assert res.neighbours == ("python:function:svc.caller",)
+    assert res.total == 1
+
+
+def test_linkage_nan_total_falls_back_to_neighbour_count():
+    body = '{"entity_id":"x","callees":[],"total":NaN,"truncated":false}'
+    res = _client(FakeTransport([Response(status=200, body=body)])).get_callees("x")
+    assert res is not None
+    assert res.neighbours == ()
+    assert res.total == 0
+
+
+def test_linkage_negative_total_falls_back_to_neighbour_count():
+    body = json.dumps(
+        {
+            "entity_id": "x",
+            "callers": [{"entity_id": "python:function:svc.caller"}],
+            "total": -4,
+            "truncated": False,
+        }
+    )
+    res = _client(FakeTransport([Response(status=200, body=body)])).get_callers("x")
+    assert res is not None
+    assert res.total == 1
+
+
 def test_linkage_404_entity_unknown_is_soft_none():
     # entity not known to Loomweave → 404 → honest None (caller degrades), never a crash
     t = FakeTransport([Response(status=404, body='{"code":"NOT_FOUND","error":"unknown"}')])

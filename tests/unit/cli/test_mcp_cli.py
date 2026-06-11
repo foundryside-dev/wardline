@@ -48,7 +48,7 @@ def test_mcp_command_passes_policy_flags(tmp_path, monkeypatch) -> None:
     import wardline.cli.mcp as mcp_cli
     from wardline.cli.main import cli
 
-    captured = {}
+    captured: dict[str, object] = {}
 
     class FakeRpc:
         def run_stdio(self) -> None:

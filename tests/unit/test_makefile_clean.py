@@ -14,6 +14,7 @@ pytestmark = pytest.mark.skipif(MAKE is None, reason="make is not installed")
 
 
 def run_make_clean(workdir: Path) -> subprocess.CompletedProcess[str]:
+    assert MAKE is not None
     return subprocess.run(
         [MAKE, "-f", str(PROJECT_ROOT / "Makefile"), "clean"],
         cwd=workdir,

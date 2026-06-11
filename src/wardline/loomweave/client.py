@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import secrets
 import urllib.error
 import urllib.parse
@@ -136,6 +137,17 @@ def _error_code(body: str) -> str | None:
     except json.JSONDecodeError:
         return None
     return parsed.get("code") if isinstance(parsed, dict) else None
+
+
+def _linkage_total(raw: object, fallback: int) -> int:
+    if isinstance(raw, bool):
+        return fallback
+    if isinstance(raw, int):
+        return raw if raw >= 0 else fallback
+    if isinstance(raw, float) and math.isfinite(raw):
+        total = int(raw)
+        return total if total >= 0 else fallback
+    return fallback
 
 
 class LoomweaveClient:
@@ -426,8 +438,8 @@ class LoomweaveClient:
         total = data.get("total")
         return LinkageResult(
             neighbours=neighbours,
-            # accept int or a JSON float; any other shape → fall back to the count read
-            total=int(total) if isinstance(total, (int, float)) and not isinstance(total, bool) else len(neighbours),
+            # accept finite JSON numbers; malformed totals fall back to the count read
+            total=_linkage_total(total, len(neighbours)),
             truncated=bool(data.get("truncated", False)),
         )
 
