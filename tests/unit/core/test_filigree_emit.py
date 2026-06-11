@@ -67,6 +67,22 @@ def test_scan_results_body_can_reconcile_clean_scanned_files() -> None:
     assert body["findings"] == []
 
 
+def test_scan_results_body_disables_mark_unseen_when_scan_is_unanalyzed() -> None:
+    parse_error = _f(
+        rule_id="WLN-ENGINE-PARSE-ERROR",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path="src/m.py", line_start=1),
+        fingerprint="b" * 64,
+    )
+
+    body = build_scan_results_body([parse_error], scanned_paths=("src/m.py",))
+
+    assert body["mark_unseen"] is False
+    assert body["scanned_paths"] == ["src/m.py"]
+    assert body["findings"][0]["rule_id"] == "WLN-ENGINE-PARSE-ERROR"
+
+
 def test_finding_uses_path_not_file_path() -> None:
     wire = build_scan_results_body([_f()])["findings"][0]
     assert wire["path"] == "src/m.py"

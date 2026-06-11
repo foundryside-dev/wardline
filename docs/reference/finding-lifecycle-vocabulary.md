@@ -207,8 +207,11 @@ owned by sibling tools and are recorded here as coordination context:
 
 - **Filigree's "new" / `seen_count` lifecycle is Filigree-owned.** Filigree
   decides first-seen vs returning purely from fingerprint presence across scans
-  (`mark_unseen`, `src/wardline/core/filigree_emit.py:68-76`). Wardline emits the
-  fingerprint and `scanned_paths`; it does not rename Filigree's first-seen concept.
+  (`mark_unseen`, `src/wardline/core/filigree_emit.py`). Wardline emits the
+  fingerprint and `scanned_paths`; it does not rename Filigree's first-seen
+  concept. If a scan contains under-analysis findings (`WLN-ENGINE-*` unanalyzed
+  rule ids), Wardline disables `mark_unseen` for that batch so an absent fingerprint
+  cannot be treated as fixed when the source was not actually analyzed.
 
 - **legis receives the gate population, keyed by `suppression_state`.** The legis
   scan artifact projects the *whole scan*, mapping `baselined` / `judged` onto

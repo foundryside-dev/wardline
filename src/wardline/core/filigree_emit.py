@@ -22,6 +22,7 @@ from typing import Any, Protocol
 from wardline.core.errors import FiligreeEmitError
 from wardline.core.finding import (
     FINGERPRINT_SCHEME,
+    UNANALYZED_RULE_IDS,
     Finding,
     format_fingerprint,
     severity_to_filigree,
@@ -74,13 +75,18 @@ def build_scan_results_body(
     ``mark_unseen`` opts into Filigree's per-(file, scan_source) absent-fingerprint sweep:
     a fingerprint seen before but absent now in a scanned file enters
     ``unseen_in_latest``. Clean files are represented by ``scanned_paths`` so
-    close-on-fixed can reconcile a file whose last finding disappeared."""
+    close-on-fixed can reconcile a file whose last finding disappeared.
+
+    If any file was discovered but not analyzed, do not run the absent-fingerprint
+    sweep: a parse/file failure means missing findings are not proof of a fix.
+    """
     findings_wire = [_finding_to_wire(f) for f in findings]
     scanned = list(dict.fromkeys(p for p in scanned_paths if p))
+    has_unanalyzed = any(f.rule_id in UNANALYZED_RULE_IDS for f in findings)
     body = {
         "scan_source": scan_source,
         "fingerprint_scheme": FINGERPRINT_SCHEME,
-        "mark_unseen": bool(findings_wire or scanned),
+        "mark_unseen": bool(findings_wire or scanned) and not has_unanalyzed,
         "findings": findings_wire,
     }
     if scanned:
