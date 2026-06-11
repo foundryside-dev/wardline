@@ -54,11 +54,13 @@ def _render_human(posture: object) -> None:
 
     assert isinstance(posture, AssurancePosture)
     d = posture.to_dict()
-    total: int = d["boundaries_total"]
+    boundary_total: int = d["boundaries_total"]
+    unanalyzed_total: int = d["unanalyzed_total"]
+    coverage_total = boundary_total + unanalyzed_total
     unknown_list: list[dict[str, Any]] = d["unknown"]
     waiver_debt: list[dict[str, Any]] = d["waiver_debt"]
 
-    if total == 0:
+    if coverage_total == 0:
         click.echo("No trust surface declared (0 trust-annotated boundaries) — nothing to assure.")
     else:
         pct: float = d["coverage_pct"]
@@ -67,12 +69,16 @@ def _render_human(posture: object) -> None:
         unknown_count = len(unknown_list)
         engine_limited: int = d["engine_limited"]
 
-        definite = total - unknown_count
-        click.echo(f"Trust-surface coverage: {pct}% ({definite}/{total} boundaries reached a definite verdict)")
+        definite = boundary_total - unknown_count
+        click.echo(
+            f"Trust-surface coverage: {pct}% ({definite}/{coverage_total} surface item(s) reached a definite verdict)"
+        )
         click.echo(f"  proven:   {proven}")
         click.echo(f"  defect:   {defect}")
         engine_note = f"  ({engine_limited} engine-limited)" if engine_limited else ""
-        click.echo(f"  unknown:  {unknown_count}{engine_note}")
+        click.echo(f"  unknown:  {unknown_count + unanalyzed_total}{engine_note}")
+        if unanalyzed_total:
+            click.echo(f"  unanalyzed files: {unanalyzed_total}")
 
         if unknown_list:
             click.echo("  Unknown boundaries:")

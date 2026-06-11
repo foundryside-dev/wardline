@@ -40,6 +40,9 @@ _MODULE = (
 )
 
 _PLAIN = "def f():\n    return 1\n"
+_BAD_DECORATED = (
+    "from wardline.decorators.trust import trusted\n\n@trusted(level='INTEGRAL')\ndef broken(:\n    return 1\n"
+)
 
 
 def test_json_output_equals_core(tmp_path: Path) -> None:
@@ -72,6 +75,18 @@ def test_human_format_empty_surface(tmp_path: Path) -> None:
     assert "nothing to assure" in result.output.lower()
     # Must not mislead the user with a bare coverage claim on an empty surface.
     assert "100% coverage" not in result.output
+
+
+def test_human_format_unanalyzed_files_are_not_full_coverage(tmp_path: Path) -> None:
+    (tmp_path / "good.py").write_text(_MODULE, encoding="utf-8")
+    (tmp_path / "bad.py").write_text(_BAD_DECORATED, encoding="utf-8")
+
+    result = CliRunner().invoke(cli, ["assure", str(tmp_path), "--format", "human"])
+
+    assert result.exit_code == 0, result.output
+    assert "100.0%" not in result.output
+    assert "75.0%" in result.output
+    assert "unanalyzed files: 1" in result.output
 
 
 def test_human_lapsed_waiver_wording(tmp_path: Path) -> None:

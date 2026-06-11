@@ -2316,13 +2316,17 @@ _ASSURE_OUTPUT_SCHEMA: dict[str, Any] = {
         },
         "engine_limited": {
             "type": "integer",
-            "description": "Sub-count of `unknown` that are unknown specifically because the engine under-scanned "
-            "them (reason != null).",
+            "description": "Under-scan pressure: entity-level unknowns with an engine reason plus unanalyzed files.",
         },
         "coverage_pct": {
             "type": ["number", "null"],
-            "description": "Share of boundaries with a definite verdict, rounded to 1 decimal. null when "
-            "boundaries_total == 0 (no trust surface — never a vacuous 100%).",
+            "description": "Share of known boundaries with a definite verdict over known boundaries plus "
+            "unanalyzed files, rounded to 1 decimal. null when there are no boundaries and no unanalyzed files.",
+        },
+        "unanalyzed_total": {
+            "type": "integer",
+            "description": "Files discovered but never analyzed. Each counts as at least one uncovered surface "
+            "item in coverage_pct.",
         },
         "unanalyzed_rule_ids": {
             "type": "array",
@@ -2361,6 +2365,7 @@ _ASSURE_OUTPUT_SCHEMA: dict[str, Any] = {
         "unknown",
         "engine_limited",
         "coverage_pct",
+        "unanalyzed_total",
         "unanalyzed_rule_ids",
         "waiver_debt",
         "baselined_total",
@@ -2716,7 +2721,11 @@ _ATTEST_OUTPUT_SCHEMA: dict[str, Any] = {
                             },
                         },
                         "engine_limited": {"type": "integer"},
-                        "coverage_pct": {"type": ["number", "null"], "description": "null when boundaries_total == 0."},
+                        "coverage_pct": {
+                            "type": ["number", "null"],
+                            "description": "null when there are no boundaries and no unanalyzed files.",
+                        },
+                        "unanalyzed_total": {"type": "integer"},
                         "unanalyzed_rule_ids": {"type": "array", "items": {"type": "string"}},
                         "waiver_debt": {
                             "type": "array",
@@ -2744,6 +2753,7 @@ _ATTEST_OUTPUT_SCHEMA: dict[str, Any] = {
                         "unknown",
                         "engine_limited",
                         "coverage_pct",
+                        "unanalyzed_total",
                         "unanalyzed_rule_ids",
                         "waiver_debt",
                         "baselined_total",

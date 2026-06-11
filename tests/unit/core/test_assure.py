@@ -51,6 +51,10 @@ _MODULE = (
     "    return src()\n"
 )
 
+_BAD_DECORATED_MODULE = (
+    "from wardline.decorators.trust import trusted\n\n@trusted(level='INTEGRAL')\ndef broken(:\n    return 1\n"
+)
+
 
 def test_coverage_denominator_end_to_end(tmp_path: Path) -> None:
     (tmp_path / "m.py").write_text(_MODULE, encoding="utf-8")
@@ -76,6 +80,7 @@ def test_coverage_denominator_end_to_end(tmp_path: Path) -> None:
     assert got["engine_limited"] == 0
     # 3 of 3 reached a definite verdict — the defect counts as COVERED.
     assert got["coverage_pct"] == 100.0
+    assert got["unanalyzed_total"] == 0
     assert got["unanalyzed_rule_ids"] == []
     # 2026-07-01 − 2026-06-03 = 28 days.
     assert got["waiver_debt"] == [
@@ -153,6 +158,7 @@ def test_unknown_and_engine_limited_branch() -> None:
     assert got["proven"] == 1
     assert len(got["unknown"]) == 2
     assert got["engine_limited"] == 1
+    assert got["unanalyzed_total"] == 0
     assert got["coverage_pct"] == round(100 * (3 - 2) / 3, 1) == 33.3
     # `unknown` is sorted by qualname: m.b before m.c.
     assert [u["qualname"] for u in got["unknown"]] == ["m.b", "m.c"]
@@ -180,6 +186,7 @@ def test_empty_surface_coverage_is_null(tmp_path: Path) -> None:
     got = posture.to_dict()
 
     assert got["boundaries_total"] == 0
+    assert got["unanalyzed_total"] == 0
     assert got["coverage_pct"] is None, (
         f"expected None but got {got['coverage_pct']!r}; "
         "a vacuous 100.0 reads as 'fully assured' to a numeric gate — false-green"
@@ -216,3 +223,20 @@ def test_empty_surface_coverage_is_null(tmp_path: Path) -> None:
     pure_posture = posture_from_scan(empty_result, empty_ctx, waivers=(), today=date(2026, 6, 3))
     assert pure_posture.coverage_pct is None
     assert pure_posture.to_dict()["coverage_pct"] is None
+
+
+def test_unanalyzed_files_count_against_assurance_coverage(tmp_path: Path) -> None:
+    (tmp_path / "good.py").write_text(_MODULE, encoding="utf-8")
+    (tmp_path / "bad.py").write_text(_BAD_DECORATED_MODULE, encoding="utf-8")
+
+    posture = build_posture(tmp_path, today=date(2026, 6, 3))
+    got = posture.to_dict()
+
+    assert got["boundaries_total"] == 3
+    assert got["proven"] == 2
+    assert got["defect_total"] == 1
+    assert got["unknown"] == []
+    assert got["unanalyzed_total"] == 1
+    assert got["engine_limited"] == 1
+    assert got["coverage_pct"] == round(100 * 3 / 4, 1) == 75.0
+    assert got["unanalyzed_rule_ids"] == ["WLN-ENGINE-PARSE-ERROR"]
