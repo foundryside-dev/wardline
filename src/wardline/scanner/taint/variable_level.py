@@ -351,7 +351,13 @@ def analyze_function_variables(
             param_meets=context.param_meets,
             provenance_clash=context.provenance_clash,
         )
-        return_taint = compute_return_taint(func_node, function_taint, dict(taint_map), variable_taints)
+        return_taint = compute_return_taint(
+            func_node,
+            function_taint,
+            dict(taint_map),
+            variable_taints,
+            call_site_taints,
+        )
         # compute_return_callee is PROVENANCE-ONLY: _assignment_callee re-resolves
         # every direct-call assignment RHS against the FINAL var_taints, and letting
         # that re-resolution record would COMBINE post-call taint into the at-call
@@ -361,7 +367,13 @@ def analyze_function_variables(
         # the only recording they get.
         token_no_record = _CURRENT_CALL_SITE_ARG_TAINTS.set(None)
         try:
-            return_callee = compute_return_callee(func_node, function_taint, dict(taint_map), dict(variable_taints))
+            return_callee = compute_return_callee(
+                func_node,
+                function_taint,
+                dict(taint_map),
+                dict(variable_taints),
+                call_site_taints,
+            )
         finally:
             _CURRENT_CALL_SITE_ARG_TAINTS.reset(token_no_record)
         return VariableTaintResult(
@@ -2218,21 +2230,23 @@ def compute_return_taint(
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
+    return_snapshots: dict[int, dict[str, TaintState]] | None = None,
 ) -> TaintState | None:
     """Compute the *actual* taint a function returns (least-trusted of all paths).
 
     Resolves every value-bearing ``return`` statement in *func_node*'s own scope
-    (nested functions/lambdas excluded) against the already-computed ``var_taints``
-    and the call-resolution ``taint_map``, and joins them with :func:`least_trusted`
-    — the worst (least-trusted) value any path can return. Returns ``None`` when the
-    function has no value-bearing ``return`` (implicit ``None`` / bare ``return`` /
-    pure side-effect): there is no returned data to police.
+    (nested functions/lambdas excluded) against the statement snapshot for that
+    return when available, falling back to the already-computed final
+    ``var_taints``. It then joins paths with :func:`least_trusted` — the worst
+    (least-trusted) value any path can return. Returns ``None`` when the function
+    has no value-bearing ``return`` (implicit ``None`` / bare ``return`` / pure
+    side-effect): there is no returned data to police.
 
     This is the precise input PY-WL-101 needs — distinct from ``project_taints``
     (the function's anchored *body* taint, pinned to its declaration).
     """
     returns: list[tuple[TaintState, str | None, ast.expr]] = []
-    _collect_return_paths(list(func_node.body), function_taint, taint_map, var_taints, returns)
+    _collect_return_paths(list(func_node.body), function_taint, taint_map, var_taints, returns, return_snapshots)
     if not returns:
         return None
     result = returns[0][0]
@@ -2246,6 +2260,7 @@ def compute_return_callee(
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
+    return_snapshots: dict[int, dict[str, TaintState]] | None = None,
 ) -> str | None:
     """Identify the callee that contributes a function's *actual* (least-trusted)
     return taint — the property ``explain_finding`` reports for a PY-WL-101 sink.
@@ -2271,7 +2286,7 @@ def compute_return_callee(
     beyond one hop stay ``None`` (the N-hop walk lives in the Loomweave stored-fact path).
     """
     returns: list[tuple[TaintState, str | None, ast.expr]] = []
-    _collect_return_paths(list(func_node.body), function_taint, taint_map, var_taints, returns)
+    _collect_return_paths(list(func_node.body), function_taint, taint_map, var_taints, returns, return_snapshots)
     if not returns:
         return None
     worst = returns[0][0]
@@ -2349,6 +2364,7 @@ def _collect_return_paths(
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
     out: list[tuple[TaintState, str | None, ast.expr]],
+    return_snapshots: dict[int, dict[str, TaintState]] | None = None,
 ) -> None:
     """Recurse the AST collecting ``(taint, callee_or_None, value_node)`` for each
     value-bearing return, descending into ALL children EXCEPT nested ``FunctionDef``/
@@ -2370,6 +2386,14 @@ def _collect_return_paths(
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             continue
         if isinstance(node, (ast.Return, ast.Yield, ast.YieldFrom)) and node.value is not None:
-            taint = _resolve_expr(node.value, function_taint, taint_map, var_taints)
+            snapshot = return_snapshots.get(id(node)) if return_snapshots is not None else None
+            taint = _resolve_expr(node.value, function_taint, taint_map, dict(snapshot or var_taints))
             out.append((taint, _return_callee(node.value), node.value))
-        _collect_return_paths(list(ast.iter_child_nodes(node)), function_taint, taint_map, var_taints, out)
+        _collect_return_paths(
+            list(ast.iter_child_nodes(node)),
+            function_taint,
+            taint_map,
+            var_taints,
+            out,
+            return_snapshots,
+        )

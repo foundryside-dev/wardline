@@ -44,6 +44,28 @@ def test_trusted_returning_raw_fires(tmp_path) -> None:
     assert all(f.kind == Kind.DEFECT for f in findings)
 
 
+def test_trusted_early_returning_raw_before_later_clean_reassignment_fires(tmp_path) -> None:
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "io.py": "from wardline.decorators import external_boundary\n"
+            "@external_boundary\ndef read_raw(p):\n    return p\n",
+            "svc.py": "from wardline.decorators import trusted\n"
+            "from io import read_raw\n"
+            "@trusted(level='ASSURED', to_level='ASSURED')\n"
+            "def leaky(p, cond):\n"
+            "    x = read_raw(p)\n"
+            "    if cond:\n"
+            "        return x\n"
+            "    x = 1\n"
+            "    return x\n",
+        },
+    )
+    assert ctx.function_return_taints["svc.leaky"] == TaintState.EXTERNAL_RAW
+    findings = _run(ctx)
+    assert ("PY-WL-101", "svc.leaky") in {(f.rule_id, f.qualname) for f in findings}
+
+
 def test_duplicate_trusted_function_uses_second_definition_for_py_wl_101(tmp_path) -> None:
     ctx, _ = _analyze(
         tmp_path,
