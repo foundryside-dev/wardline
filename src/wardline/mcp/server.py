@@ -701,6 +701,93 @@ def _doctor(
     return attach_server_identity(payload, root=root, started_at=started_at)
 
 
+def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, Any]:
+    """Fingerprint-scheme migration over MCP (A3): the same core.rekey the CLI drives —
+    no second migration path. Probe-by-default (read-only: report match/orphans/
+    collisions, write NOTHING); `apply`/`resume`/`rollback` are explicit, mutually
+    exclusive, WRITE-gated. The injected Filigree emitter (apply only) re-emits under
+    the new fingerprints, best-effort like the CLI's --filigree-url leg."""
+    from wardline.core.rekey import ORPHAN_CAUSE, Journal, probe, resume_rekey, rollback, run_rekey
+
+    apply_ = _bool_arg(args, "apply", False)
+    do_resume = _bool_arg(args, "resume", False)
+    do_rollback = _bool_arg(args, "rollback", False)
+    if sum((apply_, do_resume, do_rollback)) > 1:
+        raise ToolError("apply, resume and rollback are mutually exclusive")
+    path = _resolve_under_root(root, args["path"]) if args.get("path") else root
+
+    def journal_block(journal: Journal) -> dict[str, Any]:
+        # Lean payload: carried as a COUNT (can be the whole store), orphans VERBATIM
+        # (a dropped verdict must never be silent — mirrors the CLI's per-orphan lines).
+        block: dict[str, Any] = {
+            "complete": journal.complete,
+            "fingerprint_scheme_from": journal.fingerprint_scheme_from,
+            "fingerprint_scheme_to": journal.fingerprint_scheme_to,
+            "snapshot_prescheme": journal.snapshot_prescheme,
+            "orphan_cause": ORPHAN_CAUSE,
+            "collisions": [
+                {"new_fp": c.new_fp, "old_fps": list(c.old_fps), "message": c.message} for c in journal.collisions
+            ],
+            "legs": [
+                {
+                    "name": leg.name,
+                    "done": leg.done,
+                    "carried_count": len(leg.carried),
+                    "orphaned": list(leg.orphaned),
+                    "debt": leg.debt,
+                }
+                for leg in journal.legs
+            ],
+            "next_pending_leg": journal.next_pending_leg(),
+        }
+        if not journal.complete:
+            block["next_action"] = "re-run the rekey tool to finish pending leg(s)"
+        return block
+
+    if do_rollback:
+        rolled = rollback(path)
+        return {
+            "mode": "rollback",
+            "restored": list(rolled.restored),
+            "note": "Filigree associations from the forward run are NOT reversed "
+            "(no remap endpoint); reconcile manually if needed.",
+        }
+    if do_resume:
+        # Resume NEVER re-scans — YAML legs re-carry from the snapshot; a pending
+        # Filigree leg is deferred as debt (re-run with apply to retry it).
+        return {"mode": "resume", **journal_block(resume_rekey(path))}
+
+    # Probe (the default) and apply both need the suppression-free scan: migration
+    # scans WITHOUT loading the stores it is about to rekey (they are still
+    # old-scheme and would SCHEME_MISMATCH).
+    result = run_scan(
+        path,
+        config_path=_cfg(args, root),
+        cache_dir=_cache_dir_arg(args, root),
+        confine_to_root=True,
+        trust_local_packs=bool(args.get("trust_local_packs", False)),
+        trusted_packs=_trusted_packs_arg(args),
+        strict_defaults=bool(args.get("strict_defaults", False)),
+        skip_suppression=True,
+    )
+    if not apply_:
+        report = probe(path, result.findings)
+        return {
+            "mode": "probe",
+            "scanned_findings": report.scanned_findings,
+            "matched": report.matched,
+            "orphaned": list(report.orphaned),
+            "orphan_cause": ORPHAN_CAUSE,
+            "collisions": [
+                {"new_fp": c.new_fp, "old_fps": list(c.old_fps), "message": c.message} for c in report.collisions
+            ],
+            "per_store": dict(report.per_store),
+            "prescheme": report.prescheme,
+            "clean": report.clean,
+        }
+    return {"mode": "apply", **journal_block(run_rekey(path, result.findings, filigree=filigree))}
+
+
 def _fix(args: dict[str, Any], root: Path) -> dict[str, Any]:
     """Scan the path and apply mechanical autofixes to findings in-place."""
     path = _resolve_under_root(root, args["path"]) if args.get("path") else root
@@ -1323,6 +1410,64 @@ class WardlineMCPServer:
                 ),
             )
         )
+        self.add_tool(
+            Tool(
+                name="rekey",
+                description="Re-key baseline/waiver/judged verdicts across a fingerprint-scheme "
+                "change (after the engine's fingerprint formula migrates, NOT after ordinary "
+                "refactors — fingerprints are line-insensitive). DEFAULT is a read-only PROBE: "
+                "reports how many stored verdicts will carry, which orphan and why, and any "
+                "collisions — writes nothing. Pass `apply: true` to migrate (snapshots first, "
+                "resumable journal), `resume: true` to finish an interrupted migration without "
+                "re-scanning, `rollback: true` to restore the pre-migration stores. The three "
+                "are mutually exclusive and write-gated.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "subdir relative to project root"},
+                        "config": {"type": "string"},
+                        "cache_dir": {
+                            "type": "string",
+                            "description": "subdir relative to project root for summary cache",
+                        },
+                        "trust_packs": {"type": "array", "items": {"type": "string"}},
+                        "trust_local_packs": {
+                            "type": "boolean",
+                            "description": "Allow loading custom trust-grammar packs from the local project directory",
+                        },
+                        "strict_defaults": {
+                            "type": "boolean",
+                            "description": "Ignore repository-supplied custom configuration overrides (weft.toml)",
+                        },
+                        "apply": {
+                            "type": "boolean",
+                            "description": "Default false (read-only probe). true RUNS the migration: "
+                            "snapshot stores, write the resumable journal, carry verdicts to the "
+                            "new fingerprints, best-effort re-emit to a configured Filigree.",
+                        },
+                        "resume": {
+                            "type": "boolean",
+                            "description": "Finish an interrupted migration from the journal WITHOUT "
+                            "re-scanning (YAML legs re-carry from the snapshot).",
+                        },
+                        "rollback": {
+                            "type": "boolean",
+                            "description": "Restore the pre-migration stores byte-identical from the "
+                            "snapshot and remove the journal. Filigree associations are NOT reversed.",
+                        },
+                    },
+                },
+                handler=lambda args, root: _rekey(
+                    args,
+                    root,
+                    # The Filigree leg only runs under apply; building the emitter is
+                    # cheap and returns None when no URL resolves.
+                    self._filigree_emitter(_cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False))
+                    if args.get("apply")
+                    else None,
+                ),
+            )
+        )
 
     def add_tool(self, tool: Tool) -> None:
         schema = dict(tool.input_schema)
@@ -1399,6 +1544,12 @@ class WardlineMCPServer:
             probe_url = flag if isinstance(flag, str) and flag else None
             if _resolve_probe_url(self.root, probe_url or self.filigree_url) is not None:
                 # The filigree-auth probe will touch the (loopback-only) network.
+                capabilities.add(ToolCapability.NETWORK)
+        if tool.name == "rekey":
+            if any(bool(arguments.get(k, False)) for k in ("apply", "resume", "rollback")):
+                capabilities.add(ToolCapability.WRITE)
+            if bool(arguments.get("apply", False)) and self._resolved_filigree_url_for_policy(arguments) is not None:
+                # apply's last leg re-emits the rekeyed findings to Filigree.
                 capabilities.add(ToolCapability.NETWORK)
         return frozenset(capabilities)
 

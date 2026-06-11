@@ -15,11 +15,9 @@ import click
 from wardline.core.config import resolve_filigree_url
 from wardline.core.errors import WardlineError
 from wardline.core.filigree_emit import FiligreeEmitter
+from wardline.core.rekey import ORPHAN_CAUSE as _ORPHAN_CAUSE
 from wardline.core.rekey import Journal, ProbeReport, probe, resume_rekey, rollback, run_rekey
 from wardline.core.run import run_scan
-
-# Why a verdict can orphan (NOT only a source move) — shared by --probe and --resume output.
-_ORPHAN_CAUSE = "source moved/deleted, or a custom multi-emit rule not surfacing taint_path_v0"
 
 
 def _print_prescheme_caution() -> None:

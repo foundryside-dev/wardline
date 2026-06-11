@@ -70,6 +70,7 @@ def test_full_client_handshake_and_every_surface() -> None:
         "fix",
         "waiver_add",
         "doctor",
+        "rekey",
     }
     # resources/list: the four stable URIs
     resource_uris = {r["uri"] for r in by_id[3]["result"]["resources"]}

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **MCP `rekey` tool** — fingerprint-scheme migration over MCP via the same
+  `core.rekey` the CLI drives (no second migration path). Probe-by-default
+  (read-only match/orphan/collision report, writes nothing); `apply` /
+  `resume` / `rollback` are explicit, mutually exclusive, write-gated args;
+  `apply` re-emits to a configured Filigree (network-gated) like the CLI's
+  `--filigree-url` leg. Orphaned verdicts are listed verbatim with the shared
+  orphan-cause explanation (`wardline-d8cc650ab9`, MCP-primary A3).
 - **MCP `doctor` tool** — the CLI `doctor --fix` health envelope over MCP
   (install artifacts, MCP registration, config parseability, sibling URLs,
   Filigree emit-auth probe; read-only by default, `repair: true` is the

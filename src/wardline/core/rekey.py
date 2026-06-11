@@ -30,6 +30,9 @@ from wardline.core.safe_paths import safe_project_file
 from wardline.core.waivers import WAIVERS_VERSION
 
 SNAPSHOT_DIR_NAME = ".rekey_snapshot"
+# Why a verdict can orphan (NOT only a source move) — the one explanation both
+# surfaces (CLI rekey output, MCP rekey payload) attach to every dropped verdict.
+ORPHAN_CAUSE = "source moved/deleted, or a custom multi-emit rule not surfacing taint_path_v0"
 # (store filename, list-key inside the YAML doc, version constant) — the three YAML
 # legs, in gate-criticality order (baseline first restores the local --fail-on gate).
 _STORES: tuple[tuple[str, str, int], ...] = (
