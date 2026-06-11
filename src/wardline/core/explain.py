@@ -125,20 +125,42 @@ def _explain_local(
     return explanation_from_context(finding, result.context)
 
 
-def _is_fresh(view: Any) -> bool:
-    """Fresh iff: exists, a live current_content_hash is present, the blob is a
-    structurally sound dict (with a dict ``taint``), and the in-blob
-    content_hash_at_compute equals that live hash. Wardline decides freshness by
-    comparing the stamp IT wrote against the hash Loomweave read live; Loomweave never
-    asserts a verdict. Missing hash (file deleted/unreadable), exists:false, or a
-    malformed/skewed blob (wrong types after the HTTP round-trip) ⇒ stale, so the
-    caller falls through to the SP8 re-run rather than serving a broken fact."""
-    if not view.exists or view.current_content_hash is None:
+def _local_content_hash(root: Path, path: str) -> str | None:
+    """Return the local whole-file blake3 for an in-project relative path."""
+    try:
+        from wardline.loomweave import require_blake3
+
+        blake3 = require_blake3()
+        root_resolved = root.resolve()
+        candidate = Path(path)
+        local = candidate if candidate.is_absolute() else root / candidate
+        resolved = local.resolve(strict=True)
+        if not resolved.is_file() or not resolved.is_relative_to(root_resolved):
+            return None
+        return str(blake3.blake3(resolved.read_bytes()).hexdigest())
+    except (OSError, ValueError, LoomweaveError):
+        return None
+
+
+def _is_fresh(view: Any, *, root: Path | None = None, path: str | None = None) -> bool:
+    """Fresh iff the stored Wardline stamp matches current file bytes.
+
+    When a local ``root`` and selected finding ``path`` are available, freshness is
+    checked against the local file hash. The remote ``current_content_hash`` is kept
+    only for legacy chain reads that lack a path; it is not authoritative for
+    ``explain_finding`` blob serving.
+    """
+    if not view.exists:
         return False
     blob = view.wardline_json
     if not isinstance(blob, dict) or not isinstance(blob.get("taint"), dict):
         return False
     stamped = blob.get("content_hash_at_compute")
+    if root is not None and path is not None:
+        local_hash = _local_content_hash(root, path)
+        return isinstance(stamped, str) and local_hash is not None and stamped == local_hash
+    if view.current_content_hash is None:
+        return False
     return stamped is not None and stamped == view.current_content_hash
 
 
@@ -156,6 +178,12 @@ def _callee_leaf(callee_qualname: str | None) -> str | None:
     """The blob stores the resolved callee QUALNAME; SP8's immediate_tainted_callee is
     the bare trailing name. Project back for surface parity with the SP8 shape."""
     return None if callee_qualname is None else callee_qualname.rsplit(".", 1)[-1]
+
+
+def _opt_count(value: Any) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
 
 
 def _blob_finding_matches(
@@ -193,12 +221,14 @@ def _select_blob_finding(
             ),
             None,
         )
-    return findings[0] if findings else {}
+    return findings[0] if findings else None
 
 
 def _explanation_from_blob(
     view: Any,
     *,
+    root: Path | None = None,
+    sink_qualname: str | None = None,
     fingerprint: str | None = None,
     path: str | None = None,
     line: int | None = None,
@@ -219,11 +249,19 @@ def _explanation_from_blob(
     if first is None:
         return None
     callee_q = _opt_str(taint.get("contributing_callee_qualname"))
+    resolved_call_count = _opt_count(taint.get("resolved_call_count", 0))
+    unresolved_call_count = _opt_count(taint.get("unresolved_call_count", 0))
+    if resolved_call_count is None or unresolved_call_count is None:
+        return None
     stored_fingerprint = first.get("fingerprint")
     stored_rule_id = first.get("rule_id")
     stored_path = first.get("path")
     stored_line = first.get("line_start")
     qualname = blob.get("qualname")
+    if sink_qualname is not None and qualname != sink_qualname:
+        return None
+    if root is not None and (not isinstance(stored_path, str) or not _is_fresh(view, root=root, path=stored_path)):
+        return None
     return TaintExplanation(
         fingerprint=stored_fingerprint if isinstance(stored_fingerprint, str) else "",
         rule_id=stored_rule_id if isinstance(stored_rule_id, str) else "",
@@ -234,8 +272,8 @@ def _explanation_from_blob(
         tier_out=_opt_str(taint.get("declared_return")),
         immediate_tainted_callee=_callee_leaf(callee_q),
         source_boundary_qualname=callee_q,
-        resolved_call_count=int(taint.get("resolved_call_count", 0) or 0),
-        unresolved_call_count=int(taint.get("unresolved_call_count", 0) or 0),
+        resolved_call_count=resolved_call_count,
+        unresolved_call_count=unresolved_call_count,
     )
 
 
@@ -332,8 +370,15 @@ def explain_finding(
             # load-bearing for explain: degrade to the SP8 re-run, never raise. (The
             # store read is optional enrichment; only the WRITE path surfaces a 4xx.)
             views = None
-        if views and views[0].qualname == sink_qualname and _is_fresh(views[0]):
-            served = _explanation_from_blob(views[0], fingerprint=fingerprint, path=path, line=line)
+        if views and views[0].qualname == sink_qualname:
+            served = _explanation_from_blob(
+                views[0],
+                root=root,
+                sink_qualname=sink_qualname,
+                fingerprint=fingerprint,
+                path=path,
+                line=line,
+            )
             if served is not None:
                 return served
         # miss/stale/outage → fall through to the re-run
