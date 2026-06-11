@@ -19,7 +19,7 @@ import secrets
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 
 
 _ALLOWED_SCHEMES = ("http", "https")
+MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024
+_JSON_SEPARATORS = (",", ":")
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,9 +126,8 @@ class TaintFactBySeiView:
         )
 
 
-def _chunks(seq: Sequence[Any], size: int) -> Iterator[Sequence[Any]]:
-    for i in range(0, len(seq), size):
-        yield seq[i : i + size]
+def _json_body(payload: dict[str, Any]) -> bytes:
+    return json.dumps(payload, separators=_JSON_SEPARATORS).encode("utf-8")
 
 
 def _error_code(body: str) -> str | None:
@@ -146,18 +147,49 @@ class LoomweaveClient:
         project: str,
         transport: Transport | None = None,
         batch_max: int = 2000,
+        max_body_bytes: int = MAX_REQUEST_BODY_BYTES,
     ) -> None:
         self._base = base_url.rstrip("/")
         self._secret = secret
         self._project = project
         self._transport: Transport = transport if transport is not None else UrllibTransport()
-        self._batch_max = batch_max
+        self._batch_max = max(1, batch_max)
+        self._max_body_bytes = max(1, max_body_bytes)
+
+    def _payload_chunks(
+        self,
+        items: Sequence[Any],
+        make_payload: Callable[[list[Any]], dict[str, Any]],
+    ) -> Iterator[list[Any]]:
+        chunk: list[Any] = []
+        for item in items:
+            candidate = [*chunk, item]
+            over_count = len(candidate) > self._batch_max
+            over_bytes = len(_json_body(make_payload(candidate))) > self._max_body_bytes
+            if chunk and (over_count or over_bytes):
+                yield chunk
+                chunk = [item]
+                continue
+            chunk = candidate
+            if len(chunk) == 1 and len(_json_body(make_payload(chunk))) > self._max_body_bytes:
+                yield chunk
+                chunk = []
+        if chunk:
+            yield chunk
 
     def _send(self, method: str, path_and_query: str, payload: dict[str, Any] | None) -> Response | None:
         """Sign + send. Returns the Response, or None on a SOFT failure (outage/5xx)."""
         import time
 
-        body = json.dumps(payload).encode("utf-8") if payload is not None else b""
+        body = _json_body(payload) if payload is not None else b""
+        if len(body) > self._max_body_bytes:
+            logger.warning(
+                "Loomweave request body for %s is %d bytes, over the %d-byte cap",
+                path_and_query,
+                len(body),
+                self._max_body_bytes,
+            )
+            return None
         headers: dict[str, str] = {}
         if payload is not None:
             headers["Content-Type"] = "application/json"
@@ -209,10 +241,15 @@ class LoomweaveClient:
         would hide it). Outage/5xx stays ``None`` ("unreachable", ``_send``)."""
         resolved: dict[str, str] = {}
         unresolved: list[str] = []
-        for chunk in _chunks(qualnames, self._batch_max):
+
+        def make_payload(chunk: list[Any]) -> dict[str, Any]:
             payload: dict[str, Any] = {"project": self._project, "qualnames": list(chunk)}
             if plugin is not None:
                 payload["plugin"] = plugin
+            return payload
+
+        for chunk in self._payload_chunks(qualnames, make_payload):
+            payload = make_payload(chunk)
             resp = self._send("POST", "/api/wardline/resolve", payload)
             if resp is None:
                 return None
@@ -237,8 +274,12 @@ class LoomweaveClient:
         first failure — the caller's remedy is to re-run the whole scan/write."""
         written = 0
         unresolved: list[str] = []
-        for chunk in _chunks(facts, self._batch_max):
-            payload = {"project": self._project, "facts": list(chunk)}
+
+        def make_payload(chunk: list[Any]) -> dict[str, Any]:
+            return {"project": self._project, "facts": list(chunk)}
+
+        for chunk in self._payload_chunks(facts, make_payload):
+            payload = make_payload(chunk)
             resp = self._send("POST", "/api/wardline/taint-facts", payload)
             if resp is None:
                 return WriteResult(reachable=False)  # soft outage
@@ -264,8 +305,12 @@ class LoomweaveClient:
 
     def batch_get(self, qualnames: list[str]) -> list[TaintFactView] | None:
         views: list[TaintFactView] = []
-        for chunk in _chunks(qualnames, self._batch_max):
-            payload = {"project": self._project, "qualnames": list(chunk)}
+
+        def make_payload(chunk: list[Any]) -> dict[str, Any]:
+            return {"project": self._project, "qualnames": list(chunk)}
+
+        for chunk in self._payload_chunks(qualnames, make_payload):
+            payload = make_payload(chunk)
             resp = self._send("POST", "/api/wardline/taint-facts:batch-get", payload)
             if resp is None:
                 return None
@@ -290,8 +335,12 @@ class LoomweaveClient:
         Gate on :meth:`wardline.loomweave.identity.TaintStoreCapability` before calling —
         the route is absent on a pre-0006 Loomweave."""
         views: list[TaintFactBySeiView] = []
-        for chunk in _chunks(seis, self._batch_max):
-            payload = {"project": self._project, "seis": list(chunk)}
+
+        def make_payload(chunk: list[Any]) -> dict[str, Any]:
+            return {"project": self._project, "seis": list(chunk)}
+
+        for chunk in self._payload_chunks(seis, make_payload):
+            payload = make_payload(chunk)
             resp = self._send("POST", "/api/wardline/taint-facts/by-sei", payload)
             if resp is None:
                 return None

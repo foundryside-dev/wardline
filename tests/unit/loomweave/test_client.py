@@ -68,6 +68,27 @@ def test_write_chunks_against_batch_max():
     assert result.written == 6
 
 
+def test_write_chunks_against_serialized_body_size():
+    t = FakeTransport([Response(status=200, body='{"written":1,"unresolved_qualnames":[]}')] * 3)
+    facts = [{"qualname": f"m.f{i}", "wardline_json": {"payload": "x" * 30}} for i in range(3)]
+
+    result = _client(t, batch_max=100, max_body_bytes=180).write_taint_facts(facts)
+
+    assert result.reachable is True
+    assert len(t.calls) > 1
+    assert all(len(body) <= 180 for _method, _url, body, _headers in t.calls)
+
+
+def test_write_oversized_single_fact_is_fail_soft_without_sending():
+    t = FakeTransport()
+    fact = {"qualname": "m.big", "wardline_json": {"payload": "x" * 300}}
+
+    result = _client(t, max_body_bytes=120).write_taint_facts([fact])
+
+    assert result.reachable is False
+    assert t.calls == []
+
+
 def test_batch_get_chunks_and_preserves_input_order():
     r1 = json.dumps([{"qualname": "a", "exists": False}, {"qualname": "b", "exists": False}])
     r2 = json.dumps([{"qualname": "c", "exists": True, "wardline_json": {"x": 1}, "current_content_hash": "deadbeef"}])
@@ -115,6 +136,33 @@ def test_urllib_transport_bounds_http_error_body(monkeypatch) -> None:
 
     monkeypatch.setattr(urllib.request, "urlopen", _raise)
     resp = UrllibTransport().request("POST", "http://loomweave.example/api/wardline/resolve", b"{}", {})
+    assert len(resp.body) < MAX_RESPONSE_BODY_BYTES + 128
+    assert resp.body.endswith("[truncated]")
+
+
+def test_urllib_transport_bounds_success_body(monkeypatch) -> None:
+    import io
+
+    from wardline.core.http import MAX_RESPONSE_BODY_BYTES
+    from wardline.loomweave.client import UrllibTransport
+
+    class HugeResponse(io.BytesIO):
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: HugeResponse(b"x" * (MAX_RESPONSE_BODY_BYTES + 9)),  # noqa: ARG005
+    )
+
+    resp = UrllibTransport().request("POST", "http://loomweave.example/api/wardline/resolve", b"{}", {})
+
     assert len(resp.body) < MAX_RESPONSE_BODY_BYTES + 128
     assert resp.body.endswith("[truncated]")
 
