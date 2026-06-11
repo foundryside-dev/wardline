@@ -161,6 +161,32 @@ def test_trusted_level_assured() -> None:
     assert out["m.f"] == FunctionTaint(T.ASSURED, T.ASSURED)
 
 
+def test_trusted_level_static_kwargs_assured() -> None:
+    out = _seed(
+        "from wardline.decorators import trusted\n@trusted(**{'level': 'ASSURED'})\ndef f():\n    return 1\n"
+    )
+    assert out["m.f"] == FunctionTaint(T.ASSURED, T.ASSURED)
+
+
+def test_trusted_dynamic_kwargs_is_no_opinion() -> None:
+    out = _seed(
+        "from wardline.decorators import trusted\n"
+        "KW = {'level': 'ASSURED'}\n"
+        "@trusted(**KW)\ndef f():\n    return 1\n"
+    )
+    assert out["m.f"] is None
+
+
+def test_trusted_positional_arg_is_no_opinion() -> None:
+    out = _seed("from wardline.decorators import trusted\n@trusted('ASSURED')\ndef f():\n    return 1\n")
+    assert out["m.f"] is None
+
+
+def test_trusted_unexpected_keyword_is_no_opinion() -> None:
+    out = _seed("from wardline.decorators import trusted\n@trusted(other=1)\ndef f():\n    return 1\n")
+    assert out["m.f"] is None
+
+
 def test_trusted_disallowed_level_is_no_opinion() -> None:
     out = _seed("from wardline.decorators import trusted\n@trusted(level='GUARDED')\ndef f():\n    return 1\n")
     assert out["m.f"] is None
@@ -293,14 +319,14 @@ def test_subscript_decorator_is_no_opinion() -> None:
     assert out["m.f"] is None
 
 
-def test_non_matching_keyword_is_skipped_before_level_arg() -> None:
-    # A decorator with an UNRELATED keyword before to_level: the kw loop must skip the
-    # non-matching keyword (118->117) and still read to_level correctly.
+def test_unexpected_keyword_fails_closed_even_with_valid_level_arg() -> None:
+    # Builtin level-bearing decorators are keyword-only with a fixed signature. A
+    # malformed call must not be seeded from the valid-looking level beside it.
     out = _seed(
         "from wardline.decorators import trust_boundary\n"
         "@trust_boundary(other=1, to_level='ASSURED')\ndef v(x):\n    return x\n"
     )
-    assert out["m.v"] == FunctionTaint(T.EXTERNAL_RAW, T.ASSURED)
+    assert out["m.v"] is None
 
 
 def test_invalid_taintstate_token_is_no_opinion() -> None:

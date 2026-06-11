@@ -155,23 +155,42 @@ def _read_level(
 
     Returns ``default`` when the decorator is not called or the arg is absent;
     ``None`` (fail-closed) when the arg is present but unreadable, an invalid
-    state, or outside ``allowed``. Positional args are intentionally ignored —
-    the real decorators are keyword-only, so a positional form is malformed
-    source and reads as ``default`` (fail-closed for required-arg decorators).
+    state, outside ``allowed``, duplicated, or mixed with malformed decorator
+    call syntax. The real level-bearing decorators are keyword-only; positional
+    args and unexpected keywords are not trusted as the default level.
     """
     if not isinstance(deco, ast.Call):
         return default
+    if deco.args:
+        return None
+    values: list[ast.expr] = []
     for kw in deco.keywords:
+        if kw.arg is None:
+            if not isinstance(kw.value, ast.Dict):
+                return None
+            for key, value in zip(kw.value.keys, kw.value.values, strict=True):
+                if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+                    return None
+                if key.value != arg:
+                    return None
+                values.append(value)
+            continue
         if kw.arg == arg:
-            token = _level_token(kw.value, alias_map)
-            if token is None:
-                return None
-            try:
-                level = TaintState(token)
-            except ValueError:
-                return None
-            return level if level in allowed else None
-    return default
+            values.append(kw.value)
+            continue
+        return None
+    if not values:
+        return default
+    if len(values) != 1:
+        return None
+    token = _level_token(values[0], alias_map)
+    if token is None:
+        return None
+    try:
+        level = TaintState(token)
+    except ValueError:
+        return None
+    return level if level in allowed else None
 
 
 def _seed_value_identity(value: object) -> str:
