@@ -158,15 +158,18 @@ To make the gate run on every commit, drop a `.git/hooks/pre-commit` script
 ```bash
 #!/usr/bin/env sh
 # Block a commit if Wardline finds a new ERROR-or-worse defect.
-# Write the findings file outside the working tree so the commit stays clean.
-wardline scan . --fail-on ERROR --output /tmp/wardline-findings.jsonl
+# Use mktemp for the findings file; never write to a predictable shared /tmp path.
+out="$(mktemp "${TMPDIR:-/tmp}/wardline-findings.XXXXXX.jsonl")" || exit 2
+trap 'rm -f "$out"' EXIT
+wardline scan . --fail-on ERROR --output "$out"
 ```
 
 A `scan` always writes a findings file (default `findings.jsonl` in the scan
-path), so point `--output` outside the tree — as above — or at a git-ignored
-path; otherwise the hook litters every commit. The script's exit code becomes
-the hook's exit code: a clean tree commits, a new defect aborts the commit with
-the finding already on screen for the agent to act on.
+path), so point `--output` at a per-run temporary file — as above — or at a
+git-ignored path inside the repository; otherwise the hook litters every commit.
+Avoid predictable filenames in shared directories such as `/tmp`. The script's
+exit code becomes the hook's exit code: a clean tree commits, a new defect
+aborts the commit with the finding already on screen for the agent to act on.
 
 ## Let the agent triage with `wardline judge`
 
