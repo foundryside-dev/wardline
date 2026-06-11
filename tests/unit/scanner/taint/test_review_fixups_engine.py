@@ -25,6 +25,10 @@ Covers four confirmed soundness defects in the L2 walk
 4. **Nested local helper calls** — the bare-name worst-arg conservatism
    (wardline-93d608c997) hit nested defs the engine had already analyzed
    (``m.f.<locals>.helper``), marking validated values raw (PY-WL-101 FP).
+
+5. **Recursive lambda bindings** — call-time lambda body resolution must not
+   re-enter the same bound body indefinitely and skip the whole function before
+   later trust-boundary rules can run.
 """
 
 from __future__ import annotations
@@ -369,3 +373,24 @@ def test_bare_param_callee_still_pessimistic(tmp_path: Path) -> None:
         """,
     )
     assert len(_rule_hits(findings, "PY-WL-108")) == 1
+
+
+# ── 5. Recursive lambda call-time resolution must not skip the function ──────
+
+
+def test_recursive_lambda_binding_does_not_skip_later_trust_boundary_check(tmp_path: Path) -> None:
+    findings = _scan(
+        tmp_path,
+        """
+        @trusted(level='ASSURED', to_level='ASSURED')
+        def f(p):
+            cb = lambda x: cb(x)
+            if False:
+                cb(read_raw(p))
+            return read_raw(p)
+        """,
+    )
+    assert _rule_hits(findings, "WLN-ENGINE-FUNCTION-SKIPPED") == []
+    hits = _rule_hits(findings, "PY-WL-101")
+    assert len(hits) == 1
+    assert hits[0].qualname == "m.f"

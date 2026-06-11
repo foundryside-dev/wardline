@@ -208,6 +208,10 @@ _CURRENT_LAMBDA_BINDINGS: contextvars.ContextVar[dict[str, list[ast.Lambda]] | N
     "_CURRENT_LAMBDA_BINDINGS", default=None
 )
 
+_CURRENT_ACTIVE_LAMBDAS: contextvars.ContextVar[set[int] | None] = contextvars.ContextVar(
+    "_CURRENT_ACTIVE_LAMBDAS", default=None
+)
+
 _CURRENT_MODULE_PREFIX: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "_CURRENT_MODULE_PREFIX", default=None
 )
@@ -458,6 +462,33 @@ def _resolve_lambda_body_at_call(
     Recording the body here prevents a later clean assignment from laundering a
     raw value that was captured when the direct call actually ran.
     """
+    active = _CURRENT_ACTIVE_LAMBDAS.get()
+    token_active = None
+    if active is None:
+        active = set()
+        token_active = _CURRENT_ACTIVE_LAMBDAS.set(active)
+    lam_id = id(lam)
+    if lam_id in active:
+        if token_active is not None:
+            _CURRENT_ACTIVE_LAMBDAS.reset(token_active)
+        return
+    active.add(lam_id)
+    try:
+        _resolve_lambda_body_at_call_inner(lam, function_taint, taint_map, var_taints, pos_taints, kw_taints)
+    finally:
+        active.discard(lam_id)
+        if token_active is not None:
+            _CURRENT_ACTIVE_LAMBDAS.reset(token_active)
+
+
+def _resolve_lambda_body_at_call_inner(
+    lam: ast.Lambda,
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    var_taints: dict[str, TaintState],
+    pos_taints: list[TaintState],
+    kw_taints: dict[str | None, TaintState],
+) -> None:
     scope = dict(var_taints)
     args = lam.args
     # A ``**mapping`` spread arrives as a keyword with ``arg is None``. Its keys
