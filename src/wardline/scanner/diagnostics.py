@@ -215,7 +215,7 @@ def build_unknown_import_findings(
             stdlib_keys=stdlib_keys,
             resolvable_star_modules=resolvable_star_modules,
         ):
-            package = detail.split()[1] if detail.startswith("from ") else detail
+            package = detail.split()[1] if detail.startswith(("from ", "import ")) else detail
             findings.append(
                 Finding(
                     rule_id="WLN-ENGINE-UNKNOWN-IMPORT",
@@ -303,6 +303,8 @@ def diagnose_unknown_imports(
     import, de-duplicated by ``(source_module, target_package)``.
 
     Triggers:
+      * ``import X`` where ``X`` is not a project module, not a Python stdlib
+        module, and no stdlib_taint entry has X as its package.
       * ``from X import *`` where ``X`` is not a project module, not a
         Python stdlib module, and no stdlib_taint entry has X as its
         package.
@@ -321,6 +323,30 @@ def diagnose_unknown_imports(
     findings: list[tuple[str, str, str]] = []
     seen: set[tuple[str, str]] = set()
     for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if _is_type_checking_guarded(node, tree):
+                continue
+            for alias in node.names:
+                mod = alias.name
+                if not mod:
+                    continue
+                if mod in project_modules:
+                    continue
+                if _is_stdlib_module(mod):
+                    continue
+                if any(key[0] == mod for key in stdlib_keys):
+                    continue
+                key = (module_path, mod)
+                if key not in seen:
+                    seen.add(key)
+                    findings.append(
+                        (
+                            module_path,
+                            f"import {mod}",
+                            f"external import {mod!r} cannot be resolved",
+                        )
+                    )
+            continue
         if not isinstance(node, ast.ImportFrom):
             continue
         # Skip relative imports entirely — they resolve inside the

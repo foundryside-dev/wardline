@@ -148,6 +148,31 @@ def test_diagnose_unknown_imports_flags_external_named_import() -> None:
     assert "external_pkg" in out[0][2]
 
 
+def test_diagnose_unknown_imports_flags_external_plain_import() -> None:
+    tree = ast.parse("import external_pkg\n")
+    out = diagnose_unknown_imports(
+        tree=tree,
+        module_path="m",
+        project_modules=frozenset({"m"}),
+        stdlib_keys=frozenset(),
+    )
+    assert len(out) == 1
+    assert out[0][1] == "import external_pkg"
+    assert "external_pkg" in out[0][2]
+
+
+def test_diagnose_unknown_imports_flags_external_aliased_plain_import() -> None:
+    tree = ast.parse("import external_pkg as e\n")
+    out = diagnose_unknown_imports(
+        tree=tree,
+        module_path="m",
+        project_modules=frozenset({"m"}),
+        stdlib_keys=frozenset(),
+    )
+    assert len(out) == 1
+    assert out[0][1] == "import external_pkg"
+
+
 def test_diagnose_unknown_imports_skips_stdlib_and_project_and_relative() -> None:
     tree = ast.parse(
         "import os\n"
@@ -165,7 +190,7 @@ def test_diagnose_unknown_imports_skips_stdlib_and_project_and_relative() -> Non
 
 
 def test_unknown_import_findings_are_facts() -> None:
-    tree = ast.parse("from external_pkg import thing\n")
+    tree = ast.parse("import external_pkg\n")
     findings = build_unknown_import_findings(
         [("pkg/mod.py", "pkg.mod", tree)],
         project_modules=frozenset({"pkg.mod"}),
@@ -173,6 +198,7 @@ def test_unknown_import_findings_are_facts() -> None:
     assert len(findings) == 1
     assert findings[0].kind == Kind.FACT
     assert findings[0].rule_id == "WLN-ENGINE-UNKNOWN-IMPORT"
+    assert findings[0].properties["package"] == "external_pkg"
     # Fingerprint stable from (module, package) — not message text.
     again = build_unknown_import_findings([("pkg/mod.py", "pkg.mod", tree)], project_modules=frozenset({"pkg.mod"}))
     assert findings[0].fingerprint == again[0].fingerprint
