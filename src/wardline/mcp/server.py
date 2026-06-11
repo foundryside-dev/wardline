@@ -20,7 +20,7 @@ from wardline.core.attest import build_attestation, verify_attestation
 from wardline.core.attest_key import load_attest_key
 from wardline.core.baseline import generate_baseline, load_baseline
 from wardline.core.errors import WardlineError
-from wardline.core.explain import explain_chain, explain_finding, explanation_from_context
+from wardline.core.explain import explain_taint_result, explanation_from_context, explanation_to_dict
 from wardline.core.filigree_emit import FiligreeEmitter, filigree_destination, filigree_disabled_reason
 from wardline.core.finding import Finding, Severity
 from wardline.core.finding_query import filter_findings
@@ -35,7 +35,6 @@ from wardline.mcp.protocol import _INVALID_PARAMS, JsonRpcServer, McpError
 from wardline.mcp.resources import list_resources, read_resource
 from wardline.mcp.tooling import Tool, ToolCapability, ToolError, ToolPolicy
 from wardline.mcp.tooling import cfg as _cfg
-from wardline.mcp.tooling import explanation_to_dict as _explanation_to_dict
 from wardline.mcp.tooling import require as _require
 from wardline.mcp.tooling import resolve_under_root as _resolve_under_root
 
@@ -318,7 +317,7 @@ def _scan(
             if f is None or f.qualname is None:
                 continue
             if attached < explain_cap:
-                entry["explanation"] = _explanation_to_dict(explanation_from_context(f, result.context))
+                entry["explanation"] = explanation_to_dict(explanation_from_context(f, result.context))
                 attached += 1
             else:
                 explanations_truncated = True
@@ -454,7 +453,8 @@ def _explain_taint(args: dict[str, Any], root: Path, loomweave: Any = None) -> d
     match_path = args.get("path") if args.get("line") is not None else None
     if match_path is not None:
         _resolve_under_root(root, match_path)  # reject escapes; result discarded
-    exp = explain_finding(
+    max_hops_raw = args.get("max_hops")
+    result_dict = explain_taint_result(
         root,
         fingerprint=args.get("fingerprint"),
         path=match_path,
@@ -463,34 +463,13 @@ def _explain_taint(args: dict[str, Any], root: Path, loomweave: Any = None) -> d
         confine_to_root=True,
         loomweave=loomweave,
         sink_qualname=args.get("sink_qualname"),
+        chain=bool(args.get("chain")),
+        max_hops=int(max_hops_raw) if max_hops_raw is not None else 20,
     )
-    if exp is None:
+    if result_dict is None:
         raise ToolError(
             "fingerprint not in current scan; your code changed since the scan that produced it — re-scan.",
         )
-    result_dict: dict[str, Any] = {
-        "fingerprint": exp.fingerprint,
-        "rule_id": exp.rule_id,
-        "sink_qualname": exp.sink_qualname,
-        "location": {"path": exp.path, "line": exp.line},
-        **_explanation_to_dict(exp),
-    }
-    if args.get("chain") and loomweave is not None and exp.sink_qualname:
-        max_hops_raw = args.get("max_hops")
-        max_hops = int(max_hops_raw) if max_hops_raw is not None else 20
-        ch = explain_chain(root, sink_qualname=exp.sink_qualname, loomweave=loomweave, max_hops=max_hops)
-        result_dict["chain"] = {
-            "hops": [
-                {
-                    "qualname": h.qualname,
-                    "tier_in": h.tier_in,
-                    "tier_out": h.tier_out,
-                    "contributing_callee_qualname": h.contributing_callee_qualname,
-                }
-                for h in ch.hops
-            ],
-            "truncated_at": ch.truncated_at,
-        }
     return result_dict
 
 

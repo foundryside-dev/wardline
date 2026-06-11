@@ -1,5 +1,4 @@
-from wardline.core.explain import TaintExplanation
-from wardline.mcp.tooling import explanation_to_dict
+from wardline.core.explain import TaintExplanation, explanation_to_dict
 
 
 def test_explanation_remediation_degrades_when_source_is_unknown() -> None:

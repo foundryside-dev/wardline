@@ -48,7 +48,7 @@ from wardline.core.sarif import SarifSink
 )
 @click.option("--output", type=click.Path(path_type=Path), default=None)
 # exit 1 if any non-suppressed DEFECT has severity >= this threshold (SP3b)
-@click.option("--fail-on", type=click.Choice(["CRITICAL", "ERROR", "WARN", "INFO"]), default=None)
+@click.option("--fail-on", type=click.Choice(["CRITICAL", "ERROR", "WARN", "INFO"], case_sensitive=False), default=None)
 # Opt-in CI enforcement: exit 1 when any file was discovered but not analysed
 # (parse error / too-deep / missing source root — NOT benign no-module skips).
 # Default FALSE preserves the released exit-code behaviour; the count is ALWAYS

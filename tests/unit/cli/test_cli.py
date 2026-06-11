@@ -1486,3 +1486,15 @@ def test_dossier_help_documents_scan_root_qualname_coupling() -> None:
     assert result.exit_code == 0
     helptext = result.output.lower()
     assert "scan root" in helptext or "project root" in helptext
+
+
+def test_scan_fail_on_accepts_lowercase(tmp_path: Path) -> None:
+    # N-5 (wardline-dc6f44707d): --fail-on was uppercase-only; an agent carrying
+    # filigree's lowercase habit got a usage error. Case-insensitive now; the
+    # canonical (uppercase) form is what the gate output echoes back.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    result = CliRunner().invoke(cli, ["scan", str(proj), "--fail-on", "error"])
+    assert result.exit_code == 1, result.output
+    assert "--fail-on ERROR" in result.stderr

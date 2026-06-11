@@ -14,6 +14,7 @@ from wardline.cli.attest import attest
 from wardline.cli.decorator_coverage import decorator_coverage
 from wardline.cli.doctor import doctor
 from wardline.cli.dossier import dossier
+from wardline.cli.explain_taint import explain_taint
 from wardline.cli.file_finding import file_finding
 from wardline.cli.findings import findings
 from wardline.cli.fix import fix
@@ -47,6 +48,7 @@ cli.add_command(fix)
 cli.add_command(install)
 cli.add_command(doctor)
 cli.add_command(dossier)
+cli.add_command(explain_taint)
 cli.add_command(findings)
 cli.add_command(file_finding)
 cli.add_command(assure)

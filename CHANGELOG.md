@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`wardline explain-taint <fingerprint> [PATH]`** — the CLI twin of the MCP
+  `explain_taint` tool (same core builder, identical JSON: provenance slice,
+  remediation hint, optional `--chain` walk via a Loomweave store), so a
+  CLI-only agent no longer dead-ends at step 2 of the scan → explain → fix →
+  rescan loop (dogfood N-2).
+- **`wardline findings` flat filter flags** `--rule-id` / `--severity` /
+  `--sink` alongside the JSON `--where` blob; a filter given via both is
+  rejected, never silently overridden (dogfood N-5/X-5).
+- **Nested-scan-root guard** (dogfood N-3, `wardline-8669de3576`): scanning a
+  SUBDIRECTORY of a weft project (an ancestor carries `weft.toml` or
+  `.weft/wardline/`) now emits a `WLN-ENGINE-NESTED-SCAN-ROOT` FACT and a loud
+  CLI warning — qualnames are minted relative to the scan root, the project's
+  baseline/waivers are not loaded, and output lands in the subdirectory.
+  `scan --help`/`dossier --help` document the scan-root/qualname coupling, and
+  the dossier's entity-not-found error now names the scan-relative form that
+  WOULD match plus the project root to rerun against (dogfood N-8).
+
+### Changed
+- **Closed-vocabulary query values match case-insensitively** (`severity`,
+  `suppression`, `kind`) in `wardline findings --where` and the MCP
+  `scan(where=)`; an out-of-domain value (e.g. filigree's `medium`) now errors
+  loudly naming the allowed vocabulary instead of silently returning empty
+  (dogfood N-5). `--fail-on` accepts any casing (canonical uppercase echoed).
 - **Six new PREVIEW sink rules, `PY-WL-121`–`PY-WL-126`** (the 2026-06-10
   coverage-gap families; all tier-modulated, argument-slot precise, and
   construct-then-method / callable-alias aware):

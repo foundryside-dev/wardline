@@ -42,14 +42,24 @@ Options:
   --help     Show this message and exit.
 
 Commands:
-  baseline  Manage the finding baseline (.weft/wardline/baseline.yaml).
-  decorator-coverage
-            List every Wardline trust-decorated entity under PATH.
-  file-finding
-            File the finding identified by FINGERPRINT into a tracked...
-  judge     Triage active DEFECTs with the opt-in LLM judge.
-  scan      Scan PATH for findings.
-  vocab     Emit the NG-25 trust-vocabulary descriptor as YAML...
+  assure              Report the trust-surface coverage posture for PATH.
+  attest              Build a signed evidence bundle for PATH (or verify...
+  baseline            Manage the finding baseline...
+  decorator-coverage  List every Wardline trust-decorated entity under PATH.
+  doctor              Check Wardline agent install artifacts and sibling...
+  dossier             Assemble the one-call dossier for ENTITY (a...
+  explain-taint       Explain ONE finding's taint provenance by...
+  file-finding        File the finding identified by FINGERPRINT into a...
+  findings            Scan PATH and print filtered findings as JSONL...
+  fix                 Scan PATH and apply autofixes interactively.
+  install             Install wardline's agent-facing guidance and...
+  judge               Triage active DEFECTs with the opt-in LLM judge.
+  lsp                 Run the Wardline LSP diagnostics server over stdio...
+  mcp                 Run the Wardline MCP server over stdio (JSON-RPC 2.0).
+  rekey               Re-key baseline/waiver/judge verdicts across a...
+  scan                Scan PATH for findings.
+  scan-file-findings  Run the agent workflow from scan to optionally...
+  vocab               Emit the NG-25 trust-vocabulary descriptor as YAML...
 ```
 
 Check the installed version:
@@ -121,6 +131,68 @@ $ wardline scan src/ --format agent-summary --output findings.agent-summary.json
 
 See the [getting-started guide](../getting-started.md) for a first end-to-end
 scan and how to read the findings.
+
+## `wardline explain-taint`
+
+**Purpose:** explain ONE finding's taint provenance — the immediate tainted
+callee, the originating boundary, the trust tiers at the sink, and a
+remediation hint. The CLI twin of the MCP `explain_taint` tool (same core
+builder, identical JSON), so a CLI-only agent can run the full
+scan → explain → fix-at-the-boundary → rescan loop.
+
+```text
+Usage: wardline explain-taint [OPTIONS] FINGERPRINT [PATH]
+```
+
+| Option | What it does |
+|---|---|
+| `--sink-qualname TEXT` | The finding's `qualname`: with a configured Loomweave store this serves the explanation from the store with no re-scan. |
+| `--chain` | Also walk the full taint chain to the originating boundary (needs a Loomweave store; degrades to the single-hop explanation without one). |
+| `--max-hops INTEGER` | Chain-walk hop budget (default 20). |
+| `--loomweave-url TEXT` | Loomweave taint-store URL (opt-in; also resolved from env/published port). |
+| `--config FILE` | Explicit config file. |
+
+Call it right after a scan and before editing: a fingerprint from a stale scan
+errors with exit 2 and asks for a re-scan. `PATH` is the scan root and must
+match the scan that minted the fingerprint (qualnames and fingerprints are
+minted relative to it).
+
+```text
+$ wardline scan . --fail-on ERROR
+$ wardline explain-taint 40dd3530…54619e .
+{
+  "fingerprint": "40dd3530…54619e",
+  "rule_id": "PY-WL-101",
+  "sink_qualname": "specimen.trust_flow.leaks_untrusted",
+  "location": {"path": "specimen/trust_flow.py", "line": 13},
+  "tier_in": "UNKNOWN_RAW",
+  "tier_out": "ASSURED",
+  "immediate_tainted_callee": "read_raw",
+  "source_boundary_qualname": "specimen.trust_flow.read_raw",
+  "remediation": {"kind": "boundary_placement", "summary": "Validate or normalize data from …"}
+}
+```
+
+## `wardline findings`
+
+**Purpose:** read-only filtered query — scan PATH and print matching findings
+as JSONL. The CLI counterpart of the MCP `scan(where=)` filter; no file
+output, no Filigree/Loomweave emission.
+
+```text
+Usage: wardline findings [OPTIONS] [PATH]
+```
+
+| Option | What it does |
+|---|---|
+| `--rule-id TEXT` | Filter by rule id, e.g. `PY-WL-101`. |
+| `--severity TEXT` | Filter by severity, case-insensitive: `CRITICAL`/`ERROR`/`WARN`/`INFO`/`NONE`. An out-of-vocabulary value (e.g. `medium`) errors loudly with the allowed list — never a silent empty result. |
+| `--sink TEXT` | Filter by the finding's `sink` property, e.g. `subprocess.run`. |
+| `--where TEXT` | JSON filter object for the full predicate set (`rule_id`, `qualname`, `severity`, `suppression`, `kind`, `path_glob`, `sink`, `tier`), conjunctive. Closed-vocabulary values (`severity`, `suppression`, `kind`) match case-insensitively. |
+| `--config FILE` | Explicit config file. |
+
+A filter given both as a flag and inside `--where` is rejected (exit 2) rather
+than silently preferring one.
 
 ## `wardline file-finding`
 

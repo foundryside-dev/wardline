@@ -335,3 +335,120 @@ def explain_finding(
         config_path=config_path,
         confine_to_root=confine_to_root,
     )
+
+
+def explanation_to_dict(exp: TaintExplanation) -> dict[str, Any]:
+    """The serialized explanation slice + remediation hint. Single source for the
+    MCP ``explain_taint`` result and the CLI ``wardline explain-taint`` output
+    (identical by construction — the N-2 dead-end was the CLI lacking this)."""
+    return {
+        "tier_in": exp.tier_in,
+        "tier_out": exp.tier_out,
+        "immediate_tainted_callee": exp.immediate_tainted_callee,
+        "source_boundary_qualname": exp.source_boundary_qualname,
+        "resolved_call_count": exp.resolved_call_count,
+        "unresolved_call_count": exp.unresolved_call_count,
+        "remediation": remediation_to_dict(exp),
+    }
+
+
+def remediation_to_dict(exp: TaintExplanation) -> dict[str, Any]:
+    if exp.rule_id != "PY-WL-101":
+        return {
+            "kind": "review_required",
+            "rule_id": exp.rule_id,
+            "summary": (
+                "Review the finding and apply the rule-specific fix; no automated remediation hint is available."
+            ),
+            "sink_qualname": exp.sink_qualname,
+            "source_qualname": exp.source_boundary_qualname,
+            "caveat": "This hint is advisory and does not replace the factual taint explanation.",
+        }
+
+    source = exp.source_boundary_qualname or exp.immediate_tainted_callee
+    sink = exp.sink_qualname
+    if source and sink:
+        summary = (
+            f"Validate or normalize data from {source} before it reaches trusted producer {sink}. "
+            "Add or repair a @trust_boundary only on the function that actually rejects invalid data."
+        )
+    elif sink:
+        summary = (
+            f"Validate or normalize the raw input before it reaches trusted producer {sink}; "
+            "the taint source is unresolved in this explanation. Add or repair a @trust_boundary only where "
+            "the code actually rejects invalid data."
+        )
+    else:
+        summary = (
+            "Validate or normalize the raw input before it reaches the trusted producer; the taint source is "
+            "unresolved in this explanation. Add or repair a @trust_boundary only where the code actually "
+            "rejects invalid data."
+        )
+    return {
+        "kind": "boundary_placement",
+        "rule_id": exp.rule_id,
+        "summary": summary,
+        "sink_qualname": sink,
+        "source_qualname": source,
+        "caveat": (
+            "Do not use blind decorator insertion; mark a trust boundary only on code that validates "
+            "and rejects invalid data."
+        ),
+    }
+
+
+def explain_taint_result(
+    root: Path,
+    *,
+    fingerprint: str | None = None,
+    path: str | None = None,
+    line: int | None = None,
+    config_path: Path | None = None,
+    confine_to_root: bool = True,
+    loomweave: Any | None = None,
+    sink_qualname: str | None = None,
+    chain: bool = False,
+    max_hops: int = 20,
+) -> dict[str, Any] | None:
+    """The full ``explain_taint`` result dict shared by the MCP handler and the
+    CLI command. None means the fingerprint/location is not in the current scan
+    (the caller maps that to its own error channel — ToolError or exit 2).
+
+    ``chain=True`` additionally walks the full taint chain when a Loomweave
+    store is configured; without one it degrades silently to the single-hop
+    explanation (no ``chain`` block), exactly as the MCP tool documents.
+    """
+    exp = explain_finding(
+        root,
+        fingerprint=fingerprint,
+        path=path,
+        line=line,
+        config_path=config_path,
+        confine_to_root=confine_to_root,
+        loomweave=loomweave,
+        sink_qualname=sink_qualname,
+    )
+    if exp is None:
+        return None
+    result: dict[str, Any] = {
+        "fingerprint": exp.fingerprint,
+        "rule_id": exp.rule_id,
+        "sink_qualname": exp.sink_qualname,
+        "location": {"path": exp.path, "line": exp.line},
+        **explanation_to_dict(exp),
+    }
+    if chain and loomweave is not None and exp.sink_qualname:
+        ch = explain_chain(root, sink_qualname=exp.sink_qualname, loomweave=loomweave, max_hops=max_hops)
+        result["chain"] = {
+            "hops": [
+                {
+                    "qualname": h.qualname,
+                    "tier_in": h.tier_in,
+                    "tier_out": h.tier_out,
+                    "contributing_callee_qualname": h.contributing_callee_qualname,
+                }
+                for h in ch.hops
+            ],
+            "truncated_at": ch.truncated_at,
+        }
+    return result

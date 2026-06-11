@@ -81,3 +81,42 @@ def test_conjunction_all_must_match():
 def test_unknown_key_raises_valueerror():
     with pytest.raises(ValueError, match="unknown filter key"):
         filter_findings([_f()], {"bogus": "x"})
+
+
+# --- N-5 (wardline-dc6f44707d): closed-vocab values normalize, never silent-empty ---
+
+
+def test_severity_matches_case_insensitively():
+    a = _f(severity=Severity.WARN)
+    assert filter_findings([a], {"severity": "warn"}) == [a]
+    assert filter_findings([a], {"severity": "WARN"}) == [a]
+    assert filter_findings([a], {"severity": "Warn"}) == [a]
+
+
+def test_kind_and_suppression_match_case_insensitively():
+    a = _f(kind=Kind.FACT, suppressed=SuppressionState.BASELINED, severity=Severity.NONE)
+    assert filter_findings([a], {"kind": "FACT"}) == [a]
+    assert filter_findings([a], {"suppression": "Baselined"}) == [a]
+
+
+def test_severity_out_of_domain_raises_with_allowed_values():
+    # A value that can NEVER match (e.g. filigree's 'medium' scale) must error
+    # loudly with the allowed vocabulary — a silent empty result is the N-5
+    # bad-error an agent cannot diagnose.
+    with pytest.raises(ValueError, match="medium"):
+        filter_findings([_f()], {"severity": "medium"})
+    with pytest.raises(ValueError, match="WARN"):
+        filter_findings([_f()], {"severity": "medium"})
+
+
+def test_suppression_and_kind_out_of_domain_raise():
+    with pytest.raises(ValueError, match="suppression"):
+        filter_findings([_f()], {"suppression": "suppressed"})
+    with pytest.raises(ValueError, match="kind"):
+        filter_findings([_f()], {"kind": "bug"})
+
+
+def test_open_keys_stay_exact_and_silent():
+    # rule_id/qualname/sink/tier are open vocabularies (packs can extend tiers) —
+    # no normalization, no domain error; unmatched simply filters to empty.
+    assert filter_findings([_f()], {"rule_id": "py-wl-101"}) == []
