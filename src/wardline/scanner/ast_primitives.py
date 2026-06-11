@@ -46,7 +46,7 @@ def build_import_alias_map(
     """
     alias_map: dict[str, str] = {}
 
-    for node in ast.iter_child_nodes(tree):
+    for node in fast_iter_child_nodes(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 local_name = alias.asname if alias.asname else alias.name.split(".")[0]
@@ -93,6 +93,21 @@ def build_import_alias_map(
     return alias_map
 
 
+
+def fast_iter_child_nodes(node: ast.AST) -> Iterator[ast.AST]:
+    """Faster alternative to fast_iter_child_nodes() that avoids slow hasattr() checks."""
+    for field in node._fields:
+        try:
+            value = getattr(node, field)
+        except AttributeError:
+            continue
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, ast.AST):
+                    yield item
+        elif isinstance(value, ast.AST):
+            yield value
+
 def iter_calls_in_function_body(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> Iterator[ast.Call]:
@@ -124,7 +139,7 @@ def iter_calls_in_function_body(
             return
         if isinstance(current, ast.Call):
             yield current
-        for child in ast.iter_child_nodes(current):
+        for child in fast_iter_child_nodes(current):
             yield from walk_node(child)
 
     def _walk_argument_defaults(args: ast.arguments) -> Iterator[ast.Call]:

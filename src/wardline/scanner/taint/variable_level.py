@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from wardline.core.taints import _PROVENANCE_CLASH, TRUST_RANK, TaintState, combine
+from wardline.scanner.ast_primitives import fast_iter_child_nodes
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -171,7 +172,7 @@ def _own_scope_lambdas(node: ast.AST) -> Iterator[ast.Lambda]:
     """Yield every ``ast.Lambda`` in *node*'s own scope (descends into lambdas, which
     are not separate entities, but NOT into nested ``def``/``class`` — those are
     analyzed as their own entities)."""
-    for child in ast.iter_child_nodes(node):
+    for child in fast_iter_child_nodes(node):
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
         if isinstance(child, ast.Lambda):
@@ -603,7 +604,7 @@ def _resolve_comprehension(
 def _name_bound_by_walrus(node: ast.AST, name: str) -> bool:
     """True if *name* is the target of a NamedExpr anywhere in *node* (not inside
     a nested Lambda — those bind the lambda's scope)."""
-    for child in ast.iter_child_nodes(node):
+    for child in fast_iter_child_nodes(node):
         if isinstance(child, ast.Lambda):
             continue
         if isinstance(child, ast.NamedExpr) and isinstance(child.target, ast.Name) and child.target.id == name:
@@ -878,7 +879,7 @@ def _walk_exprs_for_walrus(
     function's, so it must not leak into ``var_taints``. Comprehension walruses
     DO bind the enclosing scope (PEP 572) and are intentionally still captured.
     """
-    for child in ast.iter_child_nodes(node):
+    for child in fast_iter_child_nodes(node):
         if isinstance(child, ast.Lambda):
             continue  # separate scope — its walruses don't bind here
         if isinstance(child, ast.NamedExpr):
@@ -1526,7 +1527,7 @@ def collect_attribute_writes(
     var_types: dict[str, str] = {}
 
     def _walk(node: ast.AST) -> None:
-        for child in ast.iter_child_nodes(node):
+        for child in fast_iter_child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
                 continue
 
@@ -1725,7 +1726,7 @@ def _assignment_callee(
             ):
                 result = callee
         nested = _assignment_callee(
-            list(ast.iter_child_nodes(node)), name, worst, function_taint, taint_map, var_taints
+            list(fast_iter_child_nodes(node)), name, worst, function_taint, taint_map, var_taints
         )
         if nested is not None:
             result = nested
@@ -1771,4 +1772,4 @@ def _collect_return_paths(
         if isinstance(node, (ast.Return, ast.Yield, ast.YieldFrom)) and node.value is not None:
             taint = _resolve_expr(node.value, function_taint, taint_map, var_taints)
             out.append((taint, _return_callee(node.value), node.value))
-        _collect_return_paths(list(ast.iter_child_nodes(node)), function_taint, taint_map, var_taints, out)
+        _collect_return_paths(list(fast_iter_child_nodes(node)), function_taint, taint_map, var_taints, out)

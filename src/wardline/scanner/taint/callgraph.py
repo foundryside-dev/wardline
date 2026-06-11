@@ -24,6 +24,7 @@ import ast
 from collections.abc import Iterator, Sequence
 
 from wardline.scanner.ast_primitives import (
+    fast_iter_child_nodes,
     iter_calls_in_function_body,
     resolve_call_fqn,
     resolve_self_method_fqn,
@@ -32,7 +33,7 @@ from wardline.scanner.index import Entity
 
 
 def _own_scope_nodes(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
+    for child in fast_iter_child_nodes(node):
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             continue
         yield child

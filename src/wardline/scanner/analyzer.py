@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity
 from wardline.core.taints import TaintState, combine
+from wardline.scanner.ast_primitives import fast_iter_child_nodes
 from wardline.scanner.context import AnalysisContext, RuleRegistry
 from wardline.scanner.diagnostics import (
     build_diagnostic_findings,
@@ -281,7 +282,7 @@ class WardlineAnalyzer:
 
         def _iter_l2_body_nodes(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.AST]:
             def walk(current: ast.AST) -> Iterator[ast.AST]:
-                for child in ast.iter_child_nodes(current):
+                for child in fast_iter_child_nodes(current):
                     if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
                         continue
                     yield child

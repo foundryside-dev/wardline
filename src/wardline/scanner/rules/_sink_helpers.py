@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 from wardline.core.finding import Finding, Kind, Location, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import RAW_ZONE, TRUST_RANK, TaintState
+from wardline.scanner.ast_primitives import fast_iter_child_nodes
 from wardline.scanner.rules.severity_model import modulate
 
 if TYPE_CHECKING:
@@ -79,7 +80,7 @@ def _own_calls(node: ast.AST) -> Iterator[ast.Call]:
     the entity index does not emit separate lambda entities; skipping them would hide
     dangerous calls from sink rules.
     """
-    for child in ast.iter_child_nodes(node):
+    for child in fast_iter_child_nodes(node):
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
         if isinstance(child, ast.Call):

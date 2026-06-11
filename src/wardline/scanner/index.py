@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from wardline.core.finding import Location
 from wardline.core.qualname import is_overload_stub, reconstruct_qualname
+from wardline.scanner.ast_primitives import fast_iter_child_nodes
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,7 +41,7 @@ def discover_class_qualnames(tree: ast.Module, *, module: str) -> set[str]:
     classes: set[str] = set()
 
     def visit(node: ast.AST, scope: list[ast.AST]) -> None:
-        for child in ast.iter_child_nodes(node):
+        for child in fast_iter_child_nodes(node):
             if isinstance(child, ast.ClassDef):
                 local = reconstruct_qualname(child.name, list(reversed(scope)))
                 classes.add(f"{module}.{local}")
@@ -123,7 +124,7 @@ def discover_file_entities(tree: ast.Module, *, module: str, path: str) -> list[
         entities.append(entity)
 
     def visit(node: ast.AST, scope: list[ast.AST], *, parent_is_class: bool) -> None:
-        for child in ast.iter_child_nodes(node):
+        for child in fast_iter_child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 if not is_overload_stub(child):
                     # ``scope`` is outermost->innermost; reconstruct wants

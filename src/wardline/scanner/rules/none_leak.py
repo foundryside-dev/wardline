@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import RAW_ZONE, TRUST_RANK
+from wardline.scanner.ast_primitives import fast_iter_child_nodes
 from wardline.scanner.rules._ast_helpers import _own_statements
 from wardline.scanner.rules.metadata import RuleMetadata
 
@@ -129,7 +130,7 @@ def _promises_non_none(
 def _is_generator(node: ast.AST) -> bool:
     """True if *node*'s own scope contains a ``yield``/``yield from`` (does not descend
     into nested def/class/lambda — those are separate scopes)."""
-    for child in ast.iter_child_nodes(node):
+    for child in fast_iter_child_nodes(node):
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             continue
         if isinstance(child, (ast.Yield, ast.YieldFrom)) or _is_generator(child):

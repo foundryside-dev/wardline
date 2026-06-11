@@ -12,6 +12,8 @@ from __future__ import annotations
 import ast
 from typing import TYPE_CHECKING
 
+from wardline.scanner.ast_primitives import fast_iter_child_nodes
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -21,7 +23,7 @@ _BROAD_NAMES: frozenset[str] = frozenset({"Exception", "BaseException"})
 def _own_statements(node: ast.AST) -> Iterator[ast.stmt]:
     """Yield every statement in *node*'s own scope, not descending into nested
     def/class bodies. Includes the bodies of if/for/while/try/with at any depth."""
-    for child in ast.iter_child_nodes(node):
+    for child in fast_iter_child_nodes(node):
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
         if isinstance(child, ast.stmt):
@@ -150,7 +152,7 @@ def own_nodes(node: ast.AST) -> Iterator[ast.AST]:
 
 
 def _walk_own(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
+    for child in fast_iter_child_nodes(node):
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             yield child
         else:

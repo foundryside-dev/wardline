@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from wardline.core.finding import Finding, Location
 from wardline.core.qualname import module_dotted_name
 from wardline.core.taints import RAW_ZONE, TRUST_RANK, TaintState
+from wardline.scanner.ast_primitives import fast_iter_child_nodes
 from wardline.scanner.context import AnalysisContext
 from wardline.scanner.rules._sink_helpers import dotted_name
 
@@ -66,7 +67,7 @@ def _find_assignment_callee(nodes: Sequence[ast.AST], name: str, entity_node: as
             callee = _return_callee(node.value)
             if callee is not None and any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
                 result = callee
-        for child in ast.iter_child_nodes(node):
+        for child in fast_iter_child_nodes(node):
             nested = _find_assignment_callee([child] if isinstance(child, ast.stmt) else [], name, entity_node)
             if nested is not None:
                 result = nested
@@ -98,7 +99,7 @@ def _find_sink_contributor(finding: Finding, context: AnalysisContext) -> str | 
             return
         if isinstance(node, ast.Call) and getattr(node, "lineno", None) == line:
             calls_at_line.append(node)
-        for child in ast.iter_child_nodes(node):
+        for child in fast_iter_child_nodes(node):
             visit(child)
 
     visit(entity.node)
@@ -123,7 +124,7 @@ def _find_sink_contributor(finding: Finding, context: AnalysisContext) -> str | 
         if node is call:
             stmt_at_line = new_stmt
             return
-        for child in ast.iter_child_nodes(node):
+        for child in fast_iter_child_nodes(node):
             find_stmt(child, new_stmt)
 
     find_stmt(entity.node)
