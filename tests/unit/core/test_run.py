@@ -624,3 +624,65 @@ def test_run_scan_out_of_root_symlink_yields_finding(tmp_path: Path) -> None:
     assert len(skipped) == 1
     assert skipped[0].location.path == "src/evil.py"
     assert skipped[0].properties.get("reason") == "out_of_root_symlink"
+
+
+# --- N-3 (wardline-8669de3576): nested scan root is surfaced, never silent ---
+
+
+def test_run_scan_nested_scan_root_yields_fact(tmp_path: Path) -> None:
+    # A subdirectory scan of a weft project silently mints scan-relative qualnames,
+    # skips the project baseline, and drops output into the subdir. run_scan must
+    # surface the nested root as a structured FACT (reaching both the CLI warning
+    # and the MCP result).
+    proj = tmp_path / "proj"
+    (proj / ".weft" / "wardline").mkdir(parents=True)
+    sub = proj / "specimen"
+    sub.mkdir()
+    (sub / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    result = run_scan(sub)
+    facts = [f for f in result.findings if f.rule_id == "WLN-ENGINE-NESTED-SCAN-ROOT"]
+    assert len(facts) == 1
+    fact = facts[0]
+    assert fact.kind is Kind.FACT and fact.severity is Severity.NONE
+    assert fact.properties["project_root"] == str(proj.resolve())
+    assert fact.properties["qualname_prefix"] == "specimen"
+    # the qualname hazard and the remedy root are named in the message (the
+    # agent-actionable signal — the CLI warning reuses this verbatim)
+    assert "qualname" in fact.message and str(proj.resolve()) in fact.message
+    # a scope hazard, not an under-scan — never counted as unanalyzed
+    assert result.summary.unanalyzed == 0
+    # the PY-WL-101 defect still fires, with the scan-relative qualname the fact warns about
+    leak = next(f for f in result.findings if f.rule_id == "PY-WL-101")
+    assert leak.qualname == "svc.leaky"
+
+
+def test_run_scan_project_root_scan_has_no_nested_fact(tmp_path: Path) -> None:
+    proj, _ = _leaky_proj(tmp_path)
+    (proj / ".weft" / "wardline").mkdir(parents=True, exist_ok=True)
+    result = run_scan(proj)
+    assert not [f for f in result.findings if f.rule_id == "WLN-ENGINE-NESTED-SCAN-ROOT"]
+
+
+def test_run_scan_fresh_tree_subdir_has_no_nested_fact(tmp_path: Path) -> None:
+    # No weft markers anywhere above: a fresh unfederated tree must not warn —
+    # warning every first-time user would dilute the signal into habitual noise.
+    sub = tmp_path / "plain" / "pkg"
+    sub.mkdir(parents=True)
+    (sub / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
+    result = run_scan(sub)
+    assert not [f for f in result.findings if f.rule_id == "WLN-ENGINE-NESTED-SCAN-ROOT"]
+
+
+def test_run_scan_nested_src_root_has_empty_qualname_prefix(tmp_path: Path) -> None:
+    # Scanning P/src of a src-layout project mints the SAME qualnames as scanning P
+    # (module_dotted_name strips one leading src/ component) — the baseline/output
+    # hazards remain so the FACT still fires, but the prefix must be empty so the
+    # message never claims a phantom 'src.' qualname prefix.
+    proj = tmp_path / "proj"
+    (proj / ".weft" / "wardline").mkdir(parents=True)
+    src = proj / "src"
+    src.mkdir()
+    (src / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
+    result = run_scan(src)
+    fact = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-NESTED-SCAN-ROOT")
+    assert fact.properties["qualname_prefix"] == ""

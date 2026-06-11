@@ -160,7 +160,16 @@ def scan(
     trust_suppressions: bool,
     allow_dirty: bool,
 ) -> None:
-    """Scan PATH for findings."""
+    """Scan PATH for findings.
+
+    PATH is the scan root and GOVERNS finding identity: qualnames and
+    fingerprints are minted relative to it, and baseline/waiver/judged
+    suppression state is read from PATH's .weft/wardline/. Scan the project
+    root — a subdirectory scan mints qualnames other Weft tools
+    (Loomweave/Filigree/dossier) will not match, misses the project's
+    suppression state, and writes output into the subdirectory (wardline
+    warns when it detects this).
+    """
     if lang == "rust":
         # Posture banner: RS-WL-* identity is graduated (frozen, baseline-eligible) but
         # rule coverage is the command-injection slice and weft.toml severity overrides
@@ -407,6 +416,12 @@ def scan(
         f"({s.baselined} baseline / {s.waived} waiver / {s.judged} judged), {s.active} active"
         f"{unanalyzed_segment} -> {output}"
     )
+    # N-3: a scan rooted in a subdirectory of a weft project mints qualnames no
+    # federated tool matches and skips the project's suppression state. The FACT
+    # carries the full explanation — reuse it verbatim so CLI and MCP say the same.
+    nested = next((f for f in result.findings if f.rule_id == "WLN-ENGINE-NESTED-SCAN-ROOT"), None)
+    if nested is not None:
+        click.echo(f"warning: {nested.message}", err=True)
     # A discovered-but-not-analysed file is a silent under-scan; never hide it.
     if s.unanalyzed:
         click.echo(

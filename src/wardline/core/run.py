@@ -30,7 +30,7 @@ from wardline.core.finding import (
 )
 from wardline.core.frontends import FRONTENDS
 from wardline.core.judged import load_judged
-from wardline.core.paths import baseline_path, judged_path, weft_config_path
+from wardline.core.paths import baseline_path, enclosing_project_root, judged_path, weft_config_path
 from wardline.core.protocols import Analyzer
 from wardline.core.suppression import SEVERITY_ORDER, apply_suppressions, gate_trips, severity_gates
 from wardline.core.waivers import WaiverSet, load_project_waivers
@@ -253,6 +253,47 @@ def run_scan(
                 location=Location(path=src),
                 fingerprint=_fp("WLN-ENGINE-SOURCE-ROOT-MISSING", src),
                 properties={"source_root": src},
+            )
+        )
+    # N-3 (wardline-8669de3576): the scan root GOVERNS finding identity — qualnames
+    # are minted relative to it, suppression state is read beneath it, and output
+    # defaults under it. A scan rooted in a SUBDIRECTORY of a weft project silently
+    # mints qualnames no federated tool (Loomweave/Filigree/dossier) matches and
+    # skips the project baseline. Surface it as a FACT so it reaches the CLI
+    # warning, the MCP result, and findings.jsonl alike. Not an under-scan (every
+    # discovered file WAS analysed), so it never counts toward unanalyzed.
+    enclosing = enclosing_project_root(root)
+    if enclosing is not None:
+        rel = root.resolve().relative_to(enclosing)
+        prefix_parts = rel.parts[1:] if rel.parts and rel.parts[0] == "src" else rel.parts
+        # module_dotted_name strips one leading src/ component, so scanning P/src
+        # mints the SAME qualnames as scanning P — the prefix is empty there and
+        # the message must not claim a phantom 'src.' prefix.
+        qualname_prefix = ".".join(prefix_parts)
+        qualname_clause = (
+            f"qualnames are minted relative to the scan root (missing the '{qualname_prefix}.' "
+            "package prefix other Weft tools expect), "
+            if qualname_prefix
+            else "qualnames are minted relative to the scan root, "
+        )
+        raw.append(
+            Finding(
+                rule_id="WLN-ENGINE-NESTED-SCAN-ROOT",
+                message=(
+                    f"scan root '{rel.as_posix()}' is a subdirectory of the weft project at "
+                    f"{enclosing}: {qualname_clause}the project's baseline/waivers/judged state "
+                    "is not loaded, and output defaults under the subdirectory. Scan the project "
+                    "root for federation-stable results."
+                ),
+                severity=Severity.NONE,
+                kind=Kind.FACT,
+                location=Location(path=rel.as_posix()),
+                fingerprint=_fp("WLN-ENGINE-NESTED-SCAN-ROOT", rel.as_posix()),
+                properties={
+                    "scan_root": str(root.resolve()),
+                    "project_root": str(enclosing),
+                    "qualname_prefix": qualname_prefix,
+                },
             )
         )
     if cache is not None:

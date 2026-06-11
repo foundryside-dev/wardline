@@ -1441,3 +1441,48 @@ def test_scan_loomweave_with_unresolved_qualnames(tmp_path, monkeypatch) -> None
     assert result.exit_code == 0, result.output
     assert "wrote 1 taint fact(s)" in result.output
     assert "unresolved" in result.output
+
+
+# --- N-3 (wardline-8669de3576): subdirectory scans warn loudly ---------------
+
+
+def test_scan_subdirectory_of_weft_project_warns(tmp_path: Path) -> None:
+    # Scanning a subdirectory of a weft project mints scan-relative qualnames,
+    # skips the project baseline, and writes output into the subdir. The CLI must
+    # be LOUD about it (stderr warning sourced from the WLN-ENGINE-NESTED-SCAN-ROOT
+    # fact) while the scan itself still succeeds.
+    proj = tmp_path / "proj"
+    (proj / ".weft" / "wardline").mkdir(parents=True)
+    sub = proj / "specimen"
+    sub.mkdir()
+    (sub / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
+    result = CliRunner().invoke(cli, ["scan", str(sub)])
+    assert result.exit_code == 0, result.output
+    assert "warning:" in result.stderr
+    assert "qualname" in result.stderr
+    assert str(proj.resolve()) in result.stderr
+
+
+def test_scan_project_root_does_not_warn_nested(tmp_path: Path) -> None:
+    proj = tmp_path / "proj"
+    (proj / ".weft" / "wardline").mkdir(parents=True)
+    (proj / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
+    result = CliRunner().invoke(cli, ["scan", str(proj)])
+    assert result.exit_code == 0, result.output
+    assert "WLN-ENGINE-NESTED-SCAN-ROOT" not in result.stderr
+    assert "subdirectory" not in result.stderr
+
+
+def test_scan_help_documents_scan_root_qualname_coupling() -> None:
+    result = CliRunner().invoke(cli, ["scan", "--help"])
+    assert result.exit_code == 0
+    helptext = result.output.lower()
+    assert "qualname" in helptext
+    assert "scan root" in helptext
+
+
+def test_dossier_help_documents_scan_root_qualname_coupling() -> None:
+    result = CliRunner().invoke(cli, ["dossier", "--help"])
+    assert result.exit_code == 0
+    helptext = result.output.lower()
+    assert "scan root" in helptext or "project root" in helptext

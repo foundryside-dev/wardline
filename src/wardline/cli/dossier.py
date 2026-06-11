@@ -47,7 +47,13 @@ def dossier(
     loomweave_url: str | None,
     filigree_url: str | None,
 ) -> None:
-    """Assemble the one-call dossier for ENTITY (a function qualname) under PATH."""
+    """Assemble the one-call dossier for ENTITY (a function qualname) under PATH.
+
+    PATH is the scan root and governs qualnames: ENTITY must be qualified
+    relative to it. Run against the project root (the directory holding
+    weft.toml / .weft/wardline/) for the package-qualified form other Weft
+    tools — and the MCP dossier — use.
+    """
     from wardline.weft_dossier import build_weft_dossier
 
     try:

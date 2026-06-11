@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from wardline.core.errors import DossierError
 from wardline.core.finding import UNANALYZED_RULE_IDS, Kind, SuppressionState
 from wardline.core.identity import ContentStatus, EntityBinding, IdentityStatus
+from wardline.core.paths import enclosing_project_root
 from wardline.core.run import run_scan
 from wardline.core.taints import TaintState
 
@@ -629,6 +630,41 @@ def _synthesize(identity: IdentitySection, trust: TrustSection, linkages: Linkag
     return " ".join(bits)
 
 
+def _entity_not_found_message(entity: str, root: Path, context: AnalysisContext | None) -> str:
+    """The entity-not-found error, with the resolve-against-scan-root remedy.
+
+    N-8 (folded into wardline-8669de3576): qualnames are minted relative to the
+    scan root, so a dossier rooted in a SUBDIRECTORY of a weft project rejects the
+    package-qualified qualname the project-rooted call (the MCP server's shape)
+    accepts. When that is detectable, teach the coupling and name both remedies —
+    the scan-relative form that DOES match under this root, and the project root
+    to rerun against. We deliberately do NOT auto-resolve: silently scanning a
+    different root would change suppression state and mint identities the caller
+    did not ask for (the exact silent divergence N-3 is about).
+    """
+    base = f"entity not found in scanned set: {entity}"
+    enclosing = enclosing_project_root(root)
+    if enclosing is None:
+        return base
+    rel = root.resolve().relative_to(enclosing)
+    parts = rel.parts[1:] if rel.parts and rel.parts[0] == "src" else rel.parts
+    prefix = ".".join(parts)
+    coupling = (
+        f"{base}. Qualnames are minted relative to the scan root, and {root.resolve()} is a "
+        f"subdirectory of the weft project at {enclosing}."
+    )
+    stripped = entity[len(prefix) + 1 :] if prefix and entity.startswith(prefix + ".") else None
+    if stripped and context is not None and stripped in context.entities:
+        return (
+            f"{coupling} '{stripped}' matches under this scan root; for the package-qualified "
+            f"form rerun against the project root: wardline dossier {entity} {enclosing}"
+        )
+    return (
+        f"{coupling} Rerun against the project root for package-qualified qualnames: "
+        f"wardline dossier {entity} {enclosing}"
+    )
+
+
 def build_dossier(
     entity: str,
     *,
@@ -654,7 +690,7 @@ def build_dossier(
     result = run_scan(root, config_path=config_path, confine_to_root=confine_to_root)
     context = result.context
     if context is None or entity not in context.entities:
-        raise DossierError(f"entity not found in scanned set: {entity}")
+        raise DossierError(_entity_not_found_message(entity, root, context))
     target = context.entities[entity]
 
     identity = _build_identity(target, binding)

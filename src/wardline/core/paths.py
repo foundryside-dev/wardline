@@ -91,6 +91,41 @@ def migration_journal_path(root: Path) -> Path:
     return weft_state_dir(root) / "migration_journal.yaml"
 
 
+def _has_project_markers(candidate: Path) -> bool:
+    """Whether *candidate* looks like a weft project root for wardline's purposes.
+
+    Markers are exactly the two surfaces that change wardline's behaviour: the
+    operator-authored ``weft.toml`` (config, severity overrides, federation URLs)
+    and the default ``.weft/wardline/`` state subtree (baseline/waivers/judged).
+    A ``.weft/`` holding only SIBLING members (filigree/loomweave) deliberately
+    does NOT count — there is no wardline config or suppression state to miss
+    there, and counting it would make wardline's own repo (``.weft/filigree``)
+    warn on every in-repo fixture scan. A non-default ``store_dir`` override can
+    only be set in ``weft.toml``, so the config marker already covers it.
+    """
+    return (candidate / WEFT_CONFIG_FILE).is_file() or (candidate / _WEFT_DIR / WEFT_MEMBER).is_dir()
+
+
+def enclosing_project_root(root: Path) -> Path | None:
+    """The nearest STRICT ancestor of ``root`` that is a weft project root, or None.
+
+    The scan root governs finding identity: qualnames are minted relative to it
+    and baseline/waiver/judged state is read beneath it (N-3, wardline-8669de3576).
+    A non-None result therefore means ``root`` is a *subdirectory* of a weft
+    project — the scan would mint qualnames no federated tool matches and skip the
+    project's suppression state. Returns None when ``root`` itself carries project
+    markers (it IS a root, including a vendored project inside another) or when no
+    ancestor does (a fresh, unfederated tree — warning there would be pure noise).
+    """
+    root = root.resolve()
+    if _has_project_markers(root):
+        return None
+    for ancestor in root.parents:
+        if _has_project_markers(ancestor):
+            return ancestor
+    return None
+
+
 def sibling_state_dir(root: Path, sibling: str) -> Path:
     """Preferred location of a sibling member's runtime subtree."""
     return root / _WEFT_DIR / sibling
