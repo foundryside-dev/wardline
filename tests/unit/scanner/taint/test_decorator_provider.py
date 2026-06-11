@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import ast
+import types
 
 from wardline.core.registry import REGISTRY_VERSION
 from wardline.core.taints import TaintState as T
 from wardline.scanner.ast_primitives import build_import_alias_map
+from wardline.scanner.grammar import BoundaryType
 from wardline.scanner.index import discover_file_entities
 from wardline.scanner.taint.decorator_provider import DecoratorTaintSourceProvider
 from wardline.scanner.taint.provider import FunctionTaint, SeedContext
@@ -26,6 +28,38 @@ def _seed(
     # .taint: assertions here compare the declared FunctionTaint; the unprovable-
     # boundary signal (Track 2 T2.4) is exercised separately in tests/grammar/.
     return {e.qualname: provider.taint_for(e, ctx).taint for e in entities}
+
+
+def _custom_provider_fingerprint(seed: object) -> str:
+    boundary = BoundaryType("custom_boundary", "custom_pack", 1, (), seed)
+    return DecoratorTaintSourceProvider(boundary_types=(boundary,)).fingerprint()
+
+
+def test_custom_seed_fingerprint_includes_referenced_global_names() -> None:
+    seed_a = eval("lambda levels: safe_seed")  # noqa: S307 - local test fixture, no user input
+    seed_b = eval("lambda levels: raw_seed")  # noqa: S307 - local test fixture, no user input
+
+    assert seed_a.__code__.co_code == seed_b.__code__.co_code
+    assert seed_a.__code__.co_consts == seed_b.__code__.co_consts
+    assert _custom_provider_fingerprint(seed_a) != _custom_provider_fingerprint(seed_b)
+
+
+def test_custom_seed_fingerprint_includes_referenced_global_values() -> None:
+    safe_seed = FunctionTaint(T.INTEGRAL, T.INTEGRAL)
+    raw_seed = FunctionTaint(T.EXTERNAL_RAW, T.EXTERNAL_RAW)
+
+    def template(levels):  # noqa: ANN001, ANN202
+        return SEED  # noqa: F821
+
+    seed_a = types.FunctionType(template.__code__, {"SEED": safe_seed}, name="seed")
+    seed_b = types.FunctionType(template.__code__, {"SEED": raw_seed}, name="seed")
+    seed_a.__module__ = seed_b.__module__ = "custom_pack"
+    seed_a.__qualname__ = seed_b.__qualname__ = "seed"
+
+    assert seed_a.__code__.co_code == seed_b.__code__.co_code
+    assert seed_a.__code__.co_consts == seed_b.__code__.co_consts
+    assert seed_a.__code__.co_names == seed_b.__code__.co_names
+    assert _custom_provider_fingerprint(seed_a) != _custom_provider_fingerprint(seed_b)
 
 
 def test_external_boundary_from_import() -> None:

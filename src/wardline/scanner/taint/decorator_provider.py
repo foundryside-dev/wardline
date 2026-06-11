@@ -174,20 +174,77 @@ def _read_level(
     return default
 
 
+def _seed_value_identity(value: object) -> str:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return repr(value)
+    if isinstance(value, TaintState):
+        return f"TaintState:{value.value}"
+    if isinstance(value, FunctionTaint):
+        return (
+            "FunctionTaint("
+            f"body={_seed_value_identity(value.body_taint)},"
+            f"return={_seed_value_identity(value.return_taint)}"
+            ")"
+        )
+    if isinstance(value, (tuple, list)):
+        return type(value).__name__ + "(" + ",".join(_seed_value_identity(v) for v in value) + ")"
+    if isinstance(value, dict):
+        parts = sorted((_seed_value_identity(k), _seed_value_identity(v)) for k, v in value.items())
+        return "dict(" + ",".join(f"{k}:{v}" for k, v in parts) + ")"
+
+    module = getattr(value, "__module__", None)
+    qualname = getattr(value, "__qualname__", None)
+    if isinstance(module, str) and isinstance(qualname, str):
+        return f"{module}.{qualname}"
+    name = getattr(value, "__name__", None)
+    if isinstance(module, str) and isinstance(name, str):
+        return f"{module}.{name}"
+    return repr(value)
+
+
+def _closure_identity(seed: object) -> tuple[str, ...]:
+    items: list[str] = []
+    for cell in getattr(seed, "__closure__", None) or ():
+        try:
+            items.append(_seed_value_identity(cell.cell_contents))
+        except ValueError:
+            items.append("<empty-cell>")
+    return tuple(items)
+
+
 def _seed_identity(seed: object) -> str:
     """A stable identity string for a boundary type's seed callable.
 
-    For a Python function/lambda, keys on the bytecode + constants
-    (``__code__.co_code`` + ``co_consts``) — so two DISTINCT lambda bodies that share
-    ``__qualname__ == "<lambda>"`` get DISTINCT identities (closing the cache
-    cross-contamination false-green: two grammars differing only in a lambda seed
-    body must not share cached summaries). For a non-function callable (no
-    ``__code__``), falls back to ``__qualname__`` / ``repr``. This only ever
-    OVER-invalidates the summary cache (a changed seed body → a different identity →
-    a cold re-scan), never wrongly reuses — strictly safe."""
+    For a Python function/lambda, keys on bytecode, constants, referenced names,
+    defaults, closures, and the stable identities of referenced globals. Bytecode
+    alone is not enough: ``return SAFE_SEED`` and ``return RAW_SEED`` can share
+    ``co_code``/``co_consts`` while differing only by ``co_names`` or the value bound
+    to that name. For a non-function callable (no ``__code__``), falls back to
+    ``__qualname__`` / ``repr``. This only ever OVER-invalidates the summary cache (a
+    changed seed body/dependency → a different identity → a cold re-scan), never
+    wrongly reuses — strictly safe."""
     code = getattr(seed, "__code__", None)
     if code is not None:
-        return f"{code.co_code.hex()}|{code.co_consts!r}"
+        globals_map = getattr(seed, "__globals__", {})
+        global_parts = []
+        if isinstance(globals_map, dict):
+            for name in code.co_names:
+                global_parts.append(f"{name}={_seed_value_identity(globals_map.get(name, '<missing-global>'))}")
+        return "|".join(
+            (
+                str(getattr(seed, "__module__", "")),
+                str(getattr(seed, "__qualname__", getattr(seed, "__name__", ""))),
+                code.co_code.hex(),
+                repr(code.co_consts),
+                repr(code.co_names),
+                repr(code.co_freevars),
+                repr(code.co_cellvars),
+                repr(getattr(seed, "__defaults__", None)),
+                _seed_value_identity(getattr(seed, "__kwdefaults__", None)),
+                repr(_closure_identity(seed)),
+                repr(tuple(global_parts)),
+            )
+        )
     return str(getattr(seed, "__qualname__", repr(seed)))
 
 
