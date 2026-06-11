@@ -110,6 +110,23 @@ def test_scan_default_output_lands_in_scanned_path(tmp_path: Path) -> None:
     assert (project / "findings.jsonl").exists()
 
 
+def test_scan_jsonl_default_refuses_symlinked_output(tmp_path: Path) -> None:
+    import shutil
+
+    project = tmp_path / "proj"
+    shutil.copytree(FIXTURE, project)
+    outside = tmp_path / "outside.jsonl"
+    outside.write_text("keep\n", encoding="utf-8")
+    (project / "findings.jsonl").unlink(missing_ok=True)
+    (project / "findings.jsonl").symlink_to(outside)
+
+    result = CliRunner().invoke(cli, ["scan", str(project)])
+
+    assert result.exit_code == 2
+    assert "findings.jsonl: refusing to write through a symlink" in result.output
+    assert outside.read_text(encoding="utf-8") == "keep\n"
+
+
 def _git(repo: Path, *args: str) -> None:
     import subprocess
 

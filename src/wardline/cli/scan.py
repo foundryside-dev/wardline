@@ -251,7 +251,7 @@ def scan(
             sarif_sink = SarifSink(output, root=path if output_is_default else None)
             sarif_sink.write(findings, result.context)
         elif fmt == "jsonl":
-            jsonl_sink = JsonlSink(output)
+            jsonl_sink = JsonlSink(output, root=path if output_is_default else None)
             jsonl_sink.write(findings)
         elif fmt == "legis":
             # The signed, verbatim-postable scan for legis's POST /wardline/scan-results.
