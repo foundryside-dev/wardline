@@ -554,6 +554,12 @@ def test_match_subject_walrus_is_captured() -> None:
     assert out["s"] == T.EXTERNAL_RAW
 
 
+def test_match_subject_nested_walrus_is_captured() -> None:
+    src = "def f(p):\n    match (s := tainted())[0]:\n        case _:\n            pass\n"
+    out = _vt(src, function_taint=T.ASSURED, taint_map={"tainted": T.EXTERNAL_RAW})
+    assert out["s"] == T.EXTERNAL_RAW
+
+
 def test_match_does_not_descend_into_nested_function() -> None:
     src = (
         "def f(p):\n"

@@ -55,6 +55,18 @@ def test_walrus_propagates_raw_to_trusted_return(tmp_path: Path) -> None:
     )
 
 
+def test_match_subject_nested_walrus_propagates_raw_to_trusted_return(tmp_path: Path) -> None:
+    assert {"PY-WL-101"} == _defects(
+        tmp_path,
+        "@trusted(level='ASSURED')\n"
+        "def f(p):\n"
+        "    match (s := read_raw(p))[0]:\n"
+        "        case _:\n"
+        "            pass\n"
+        "    return s",
+    )
+
+
 def test_starred_unpack_raw_slice_propagates_to_trusted_return(tmp_path: Path) -> None:
     assert {"PY-WL-101"} == _defects(
         tmp_path,
