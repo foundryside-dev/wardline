@@ -90,3 +90,6 @@ def scan_file_findings(
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
     click.echo(json.dumps(result))
+    exit_class = result.get("gate", {}).get("exit_class", 0)
+    if exit_class:
+        raise SystemExit(exit_class)
