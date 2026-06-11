@@ -84,12 +84,17 @@ def _render_human(posture: object) -> None:
             click.echo("  Unknown boundaries:")
             for u in unknown_list:
                 loc = u.get("location") or {}
-                loc_str = f"  {loc.get('path', '?')}:{loc.get('line', '?')}"
-                reason_str = f"  [{u['reason']}]" if u.get("reason") else ""
-                tier_str = f"  (tier: {u['tier']})" if u.get("tier") else ""
-                click.echo(f"    {u['qualname']}{tier_str}{loc_str}{reason_str}")
+                loc_str = f"  {_human_text(loc.get('path', '?'))}:{_human_text(loc.get('line', '?'))}"
+                reason_str = f"  [{_human_text(u['reason'])}]" if u.get("reason") else ""
+                tier_str = f"  (tier: {_human_text(u['tier'])})" if u.get("tier") else ""
+                click.echo(f"    {_human_text(u['qualname'])}{tier_str}{loc_str}{reason_str}")
 
     _render_waiver_debt(waiver_debt)
+
+
+def _human_text(value: object) -> str:
+    """Escape control characters before writing repository-derived text to terminals."""
+    return ascii(str(value))[1:-1]
 
 
 def _render_waiver_debt(waiver_debt: list[dict[str, Any]]) -> None:
