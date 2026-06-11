@@ -14,6 +14,7 @@ payload bytes.
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 from datetime import date
 from pathlib import Path
@@ -229,6 +230,45 @@ def test_git_state_repo_clean_dirty_and_non_git(tmp_path: Path) -> None:
     commit2, dirty2 = git_state(repo)
     assert commit2 == commit
     assert dirty2 is True
+
+
+def test_git_state_disables_repo_configured_fsmonitor(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "f.py").write_text("x = 1\n", encoding="utf-8")
+    _git(["init"], repo)
+    _git(["add", "-A"], repo)
+    _git(
+        [
+            "-c",
+            "user.email=t@example.com",
+            "-c",
+            "user.name=Test",
+            "commit",
+            "-m",
+            "init",
+        ],
+        repo,
+    )
+
+    log_path = tmp_path / "fsmonitor.log"
+    hook_path = tmp_path / "fsmonitor.sh"
+    hook_path.write_text(
+        f"#!/bin/sh\nprintf 'fsmonitor ran\\n' >> {shlex.quote(str(log_path))}\nprintf 'hook-token\\n'\n",
+        encoding="utf-8",
+    )
+    hook_path.chmod(0o755)
+    _git(["config", "core.fsmonitor", str(hook_path)], repo)
+
+    commit, dirty = git_state(repo)
+
+    assert commit is not None
+    assert dirty is False
+    assert not log_path.exists()
+
+    (repo / "f.py").write_text("x = 2\n", encoding="utf-8")
+    assert git_state(repo) == (commit, True)
+    assert not log_path.exists()
 
 
 # --------------------------------------------------------------------------- #

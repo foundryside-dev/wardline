@@ -60,6 +60,8 @@ from wardline.core.run import run_scan
 from wardline.core.waivers import load_project_waivers
 
 ATTEST_SCHEMA = "wardline-attest-1"
+# `git status` must not execute repo-local helpers while attesting untrusted trees.
+_SAFE_GIT_CONFIG = ("-c", "core.fsmonitor=false")
 
 
 def git_state(root: Path) -> tuple[str | None, bool]:
@@ -74,7 +76,7 @@ def git_state(root: Path) -> tuple[str | None, bool]:
     """
     try:
         rev = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            ["git", *_SAFE_GIT_CONFIG, "rev-parse", "HEAD"],
             cwd=root,
             capture_output=True,
             text=True,
@@ -89,7 +91,7 @@ def git_state(root: Path) -> tuple[str | None, bool]:
 
     try:
         status = subprocess.run(
-            ["git", "status", "--porcelain"],
+            ["git", *_SAFE_GIT_CONFIG, "status", "--porcelain"],
             cwd=root,
             capture_output=True,
             text=True,
