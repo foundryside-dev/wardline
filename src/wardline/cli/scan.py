@@ -21,6 +21,7 @@ from wardline.core.filigree_emit import (
 from wardline.core.finding import Severity
 from wardline.core.paths import weft_config_path
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
+from wardline.core.safe_paths import safe_write_text
 from wardline.core.sarif import SarifSink
 
 
@@ -188,6 +189,7 @@ def scan(
         default_name = "scan.legis.json"
     else:
         default_name = "findings.jsonl"
+    output_is_default = output is None
     output = output if output is not None else (path / default_name)
     emit_result: EmitResult | None = None
     loomweave_result = None
@@ -314,7 +316,7 @@ def scan(
             from wardline.core.agent_summary import build_agent_summary
 
             decision = gate_decision(result, Severity(fail_on)) if fail_on is not None else gate_decision(result, None)
-            output.write_text(
+            agent_summary_json = (
                 json.dumps(
                     build_agent_summary(
                         result,
@@ -325,9 +327,12 @@ def scan(
                     ).to_dict(),
                     sort_keys=True,
                 )
-                + "\n",
-                encoding="utf-8",
+                + "\n"
             )
+            if output_is_default:
+                safe_write_text(path, output, agent_summary_json, label=default_name)
+            else:
+                output.write_text(agent_summary_json, encoding="utf-8")
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
