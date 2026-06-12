@@ -139,6 +139,7 @@
       "path": "identity_stress.py",
       "resolved_call_count": 0,
       "rule_id": "PY-WL-111",
+      "sink": null,
       "sink_qualname": "identity_stress.assert_only_boundary",
       "source_boundary_qualname": null,
       "tier_in": null,

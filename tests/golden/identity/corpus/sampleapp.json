@@ -549,6 +549,7 @@
       "path": "trust_flow.py",
       "resolved_call_count": 1,
       "rule_id": "PY-WL-101",
+      "sink": null,
       "sink_qualname": "trust_flow.unsafe_account_key",
       "source_boundary_qualname": "trust_flow.read_raw_username",
       "tier_in": "EXTERNAL_RAW",

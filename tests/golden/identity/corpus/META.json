@@ -1,5 +1,5 @@
 {
   "corpus_version": 4,
   "fingerprint_scheme": "wlfp2",
-  "reason": "2026-06-10/11 python-plugin hardening (two regens, scheme wlfp2 unchanged): (1) PY-WL-108/112 base severity WARN->ERROR (command injection calibrated to the SQLi exploit class); (2) Compare-position resolution + nested-def return summaries: actual_return precision UNKNOWN_RAW->INTEGRAL for comparison returns and local helpers. Prior rekey provenance: wlfp2/wardline-8654423823 (drop line_start + entity-relative move-stable discriminators)."
+  "reason": "explain_taint B7 fix (weft-0d24cf9152): TaintExplanation gains the additive 'sink' field (dotted sink callable for call-site-anchored sink findings); fingerprint values unchanged"
 }

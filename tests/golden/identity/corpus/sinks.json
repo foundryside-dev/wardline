@@ -129,6 +129,7 @@
       "path": "wardline_sinks.py",
       "resolved_call_count": 1,
       "rule_id": "PY-WL-101",
+      "sink": null,
       "sink_qualname": "wardline_sinks.import_catalog_blob",
       "source_boundary_qualname": null,
       "tier_in": "UNKNOWN_RAW",
