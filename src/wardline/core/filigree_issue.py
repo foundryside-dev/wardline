@@ -21,31 +21,27 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from wardline.core.errors import FiligreeEmitError
+from wardline.core.filigree_emit import filigree_api_base_url
 from wardline.core.finding import FINGERPRINT_SCHEME, format_fingerprint
 from wardline.core.http import read_response_text
 from wardline.loomweave.identity import SeiResolver
 
 _ALLOWED_SCHEMES = ("http", "https")
-_WEFT_MARKER = "/api/weft/"
 
 
 def promote_url_from_weft(weft_url: str) -> str:
-    """Derive the promote route from the configured Weft scan-results URL — both
-    live under /api/weft/. Reject a URL that isn't a Weft endpoint (a clear config
-    error rather than a 404 against a wrong host)."""
-    idx = weft_url.find(_WEFT_MARKER)
-    if idx == -1:
-        raise FiligreeEmitError(f"filigree URL must be a Weft endpoint containing {_WEFT_MARKER!r}: {weft_url!r}")
-    base = weft_url[: idx + len(_WEFT_MARKER)]
-    return base + "findings/promote"
+    """Derive the promote route from the configured Filigree URL. Accepts every form
+    ``filigree_api_base_url`` does; a pinned project (``/api/p/<key>/…`` path or
+    ``?project=`` query) is preserved as the path-scoped dialect, so a scoped emit
+    config can no longer promote into the default project (dogfood-4 A3)."""
+    return api_base_url_from_weft(weft_url) + "/weft/findings/promote"
 
 
 def api_base_url_from_weft(weft_url: str) -> str:
-    """Normalize a Weft scan-results URL to Filigree's ``/api`` base."""
-    idx = weft_url.find(_WEFT_MARKER)
-    if idx == -1:
-        raise FiligreeEmitError(f"filigree URL must be a Weft endpoint containing {_WEFT_MARKER!r}: {weft_url!r}")
-    return weft_url[:idx].rstrip("/") + "/api"
+    """Normalize the configured Filigree URL to its API base — project-scoped when the
+    input pins a project. Thin alias over the shared dialect parser in
+    ``core/filigree_emit.py`` so every derived route agrees with the emit destination."""
+    return filigree_api_base_url(weft_url)
 
 
 def build_promote_body(

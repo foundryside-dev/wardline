@@ -70,9 +70,37 @@ def test_api_base_url_derived_from_scan_results_url():
     assert api_base_url_from_weft("http://h:8628/api/weft/scan-results") == "http://h:8628/api"
 
 
-def test_promote_url_rejects_non_weft_url():
-    with pytest.raises(FiligreeEmitError, match="/api/weft/"):
-        promote_url_from_weft("http://h/api/something/else")
+def test_promote_url_preserves_project_scoped_path_dialect():
+    # Dogfood-4 A3: the installer writes the /api/p/<key>/ scoped endpoint; the promote
+    # route must stay inside that scope or the promote lands in the default project.
+    assert (
+        promote_url_from_weft("http://127.0.0.1:8749/api/p/lacuna/weft/scan-results")
+        == "http://127.0.0.1:8749/api/p/lacuna/weft/findings/promote"
+    )
+
+
+def test_api_base_url_preserves_project_scoped_path_dialect():
+    assert (
+        api_base_url_from_weft("http://127.0.0.1:8749/api/p/lacuna/weft/scan-results")
+        == "http://127.0.0.1:8749/api/p/lacuna"
+    )
+
+
+def test_query_project_dialect_converts_to_path_scope():
+    # ?project= is honored only on weft-scoped routes server-side; derived routes must
+    # carry the scope as the path dialect, which Filigree dual-mounts for ALL routes.
+    assert (
+        api_base_url_from_weft("http://h:8749/api/weft/scan-results?project=lacuna") == "http://h:8749/api/p/lacuna"
+    )
+    assert (
+        promote_url_from_weft("http://h:8749/api/weft/scan-results?project=lacuna")
+        == "http://h:8749/api/p/lacuna/weft/findings/promote"
+    )
+
+
+def test_promote_url_rejects_non_http_scheme():
+    with pytest.raises(FiligreeEmitError, match="http or https"):
+        promote_url_from_weft("file:///etc/passwd")
 
 
 def test_file_returns_issue_id_on_200():

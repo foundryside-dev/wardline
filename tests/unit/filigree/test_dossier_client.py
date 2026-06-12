@@ -67,6 +67,16 @@ def test_scan_results_url_is_normalized_to_api_origin_for_associations() -> None
     assert t.calls[0][0].startswith("http://filigree.example/api/entity-associations?")
 
 
+def test_project_scoped_scan_results_url_keeps_scope_on_associations() -> None:
+    # Dogfood-4 A4: the lacuna config value. The old normalizer appended /api to the
+    # scoped endpoint, 404ing the work-join on every dossier/decorator_coverage row.
+    t = FakeTransport(Response(status=200, body=_rows()))
+
+    FiligreeWorkProvider("http://127.0.0.1:8749/api/p/lacuna/weft/scan-results", transport=t).work(_BINDING)
+
+    assert t.calls[0][0].startswith("http://127.0.0.1:8749/api/p/lacuna/entity-associations?")
+
+
 @pytest.mark.parametrize(
     "url",
     [

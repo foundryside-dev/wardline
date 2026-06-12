@@ -124,6 +124,28 @@ def filigree_destination(url: str | None) -> dict[str, Any]:
     return {"url": url, "project": project, "project_pinned": project is not None}
 
 
+def filigree_api_base_url(url: str) -> str:
+    """Normalize any accepted Filigree URL form — bare origin, ``/api`` base, or a
+    classic / project-scoped ``…/weft/scan-results`` endpoint, with or without
+    ``?project=`` — to the API base every sibling route derives from.
+
+    When the input pins a project (either dialect), the base is the path-scoped
+    ``…/api/p/<key>`` form: Filigree dual-mounts every route under it, whereas the
+    ``?project=`` query is honored only on weft-scoped paths — so the path dialect is
+    the only one that also scopes classic routes (entity-associations, the dossier
+    work-join). The single parser exists so the emit echo, the promote route, and the
+    work-join can never disagree about what one configured URL means (dogfood-4 A3/A4)."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme.lower() not in _ALLOWED_SCHEMES:
+        raise FiligreeEmitError(f"filigree URL must use http or https; got scheme {parts.scheme!r} in {url!r}")
+    segments = [s for s in parts.path.split("/") if s]
+    base = segments[: segments.index("api") + 1] if "api" in segments else [*segments, "api"]
+    project = filigree_url_project(url)
+    if project is not None and base[-2:] != ["p", project]:
+        base += ["p", project]
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, "/" + "/".join(base), "", ""))
+
+
 # --- transport + emitter -----------------------------------------------------
 
 
