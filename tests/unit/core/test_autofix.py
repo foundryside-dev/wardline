@@ -44,6 +44,36 @@ def test_autofix_basic_assert(tmp_path: Path) -> None:
     assert new_content == expected
 
 
+def test_autofix_relative_root_dry_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Dogfood-4 A1: the MCP server launches with the literal `--root .`; the
+    # resolved file path relativized against the unresolved root raised
+    # ValueError ("is not in the subpath of '.'") on ANY invocation, dry-run
+    # included. The relative root must work end to end.
+    content = """def my_func(x):
+    assert x > 0
+    return x
+"""
+    (tmp_path / "test_file.py").write_text(content, encoding="utf-8")
+    findings = [
+        Finding(
+            rule_id="PY-WL-111",
+            message="assert-only boundary check",
+            severity=Severity.ERROR,
+            kind=Kind.DEFECT,
+            location=Location(path="test_file.py", line_start=1),
+            fingerprint="test_fp",
+        )
+    ]
+    config = WardlineConfig(autofix={"boundary_exception": "ValueError"})
+    monkeypatch.chdir(tmp_path)
+
+    result = run_autofix(findings, config, Path("."), dry_run=True)
+
+    assert "test_file.py" in result
+    # dry-run: reported but not written
+    assert (tmp_path / "test_file.py").read_text(encoding="utf-8") == content
+
+
 def test_autofix_assert_with_msg(tmp_path: Path) -> None:
     content = """def my_func(x):
     assert x > 0, "x must be positive"
