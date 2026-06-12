@@ -768,7 +768,9 @@ def _scan(
             if f is None or f.qualname is None:
                 continue
             if attached < explain_cap:
-                entry["explanation"] = explanation_to_dict(explanation_from_context(f, result.context))
+                entry["explanation"] = explanation_to_dict(
+                    explanation_from_context(f, result.context), loomweave_configured=loomweave is not None
+                )
                 attached += 1
             else:
                 explanations_truncated = True
@@ -1481,12 +1483,25 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "tier_out": {"type": ["string", "null"], "description": "Tier the sink declares it returns."},
                 "immediate_tainted_callee": {"type": ["string", "null"]},
                 "source_boundary_qualname": {"type": ["string", "null"]},
+                "source_resolution": {
+                    "type": "object",
+                    "description": "C-10(c) honesty block: explicit resolved/unresolved verdict on the taint source, "
+                    "with reason + missing capability + enablement when unresolved.",
+                    "properties": {
+                        "status": {"type": "string", "enum": ["resolved", "unresolved"]},
+                        "reason": {"type": ["string", "null"]},
+                        "missing_capability": {"type": ["string", "null"]},
+                        "enablement": {"type": ["string", "null"]},
+                    },
+                    "required": ["status", "reason", "missing_capability", "enablement"],
+                    "additionalProperties": False,
+                },
                 "resolved_call_count": {"type": "integer"},
                 "unresolved_call_count": {"type": "integer"},
                 "remediation": {
                     "type": "object",
                     "properties": {
-                        "kind": {"type": "string", "enum": ["boundary_placement", "review_required"]},
+                        "kind": {"type": "string", "enum": ["boundary_placement", "sink_hygiene", "review_required"]},
                         "rule_id": {"type": "string"},
                         "summary": {"type": "string"},
                         "sink_qualname": {"type": ["string", "null"]},
@@ -1502,6 +1517,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "tier_out",
                 "immediate_tainted_callee",
                 "source_boundary_qualname",
+                "source_resolution",
                 "resolved_call_count",
                 "unresolved_call_count",
                 "remediation",
@@ -1830,6 +1846,36 @@ _EXPLAIN_TAINT_OUTPUT_SCHEMA: dict[str, Any] = {
             "function the taint came from (null when not resolvable in one hop). On the store-served path this is the "
             "blob's contributing_callee_qualname.",
         },
+        "source_resolution": {
+            "type": "object",
+            "description": "C-10(c) honesty block: whether the taint source is named above, and when it is NOT, why "
+            "and what capability would resolve it further — an explicit degrade marker, never nulls that read as a "
+            "complete-but-empty answer.",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": ["resolved", "unresolved"],
+                    "description": "resolved when immediate_tainted_callee or source_boundary_qualname is named; "
+                    "unresolved otherwise.",
+                },
+                "reason": {
+                    "type": ["string", "null"],
+                    "description": "unresolved only: why wardline's own single-scan analysis could not name the "
+                    "source; null when resolved.",
+                },
+                "missing_capability": {
+                    "type": ["string", "null"],
+                    "description": "unresolved only: capability that could resolve further — 'loomweave_taint_store' "
+                    "when no store is configured; null when resolved or when nothing more would help.",
+                },
+                "enablement": {
+                    "type": ["string", "null"],
+                    "description": "unresolved only: how to enable the missing capability; null otherwise.",
+                },
+            },
+            "required": ["status", "reason", "missing_capability", "enablement"],
+            "additionalProperties": False,
+        },
         "resolved_call_count": {
             "type": "integer",
             "description": "Number of calls inside the sink the engine resolved during taint computation.",
@@ -1846,9 +1892,10 @@ _EXPLAIN_TAINT_OUTPUT_SCHEMA: dict[str, Any] = {
             "properties": {
                 "kind": {
                     "type": "string",
-                    "enum": ["boundary_placement", "review_required"],
+                    "enum": ["boundary_placement", "sink_hygiene", "review_required"],
                     "description": "boundary_placement for PY-WL-101 (place/repair a @trust_boundary at the "
-                    "validating function); review_required for every other rule (no automated hint).",
+                    "validating function); sink_hygiene for the dangerous-sink family (rule-specific fix guidance "
+                    "naming the source and sink); review_required for rules with no automated hint.",
                 },
                 "rule_id": {
                     "type": "string",
@@ -1875,9 +1922,26 @@ _EXPLAIN_TAINT_OUTPUT_SCHEMA: dict[str, Any] = {
         "chain": {
             "type": "object",
             "description": "Full N-hop taint chain from the sink to the originating boundary, walked from the "
-            "Loomweave store. PRESENT only when the call passed chain=true AND a Loomweave store is configured AND "
-            "the finding has a sink qualname; otherwise absent (silent degradation to the single-hop explanation).",
+            "Loomweave store. Present whenever the call passed chain=true: status 'walked' carries the hops; status "
+            "'unavailable' is the explicit C-10(c) degrade marker (no Loomweave store configured, or no sink "
+            "qualname to anchor on) naming the missing capability and its enablement path — the walk never degrades "
+            "silently.",
             "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": ["walked", "unavailable"],
+                    "description": "walked: the store walk ran (hops below). unavailable: the walk could not run; "
+                    "see missing_capability/enablement.",
+                },
+                "missing_capability": {
+                    "type": ["string", "null"],
+                    "description": "unavailable only: what the walk lacked ('loomweave_taint_store' or "
+                    "'sink_qualname'); null when walked.",
+                },
+                "enablement": {
+                    "type": ["string", "null"],
+                    "description": "unavailable only: how to enable the missing capability; null when walked.",
+                },
                 "hops": {
                     "type": "array",
                     "description": "Ordered hops from the sink toward the boundary leaf. The walk stops cleanly at a "
@@ -1917,7 +1981,7 @@ _EXPLAIN_TAINT_OUTPUT_SCHEMA: dict[str, Any] = {
                     "the boundary cleanly.",
                 },
             },
-            "required": ["hops", "truncated_at"],
+            "required": ["status", "hops", "truncated_at", "missing_capability", "enablement"],
             "additionalProperties": False,
         },
     },
@@ -1930,6 +1994,7 @@ _EXPLAIN_TAINT_OUTPUT_SCHEMA: dict[str, Any] = {
         "tier_out",
         "immediate_tainted_callee",
         "source_boundary_qualname",
+        "source_resolution",
         "resolved_call_count",
         "unresolved_call_count",
         "remediation",
@@ -1948,7 +2013,8 @@ _EXPLAIN_TAINT_TOOL: dict[str, Any] = {
     "is configured this serves the explanation from the store instead of "
     "re-scanning. Pass `chain: true` (needs a configured Loomweave store) to "
     "also walk the full taint chain from the sink to the originating boundary; "
-    "without a store it degrades to the single-hop explanation (no `chain` block).",
+    "without a store the `chain` block is an explicit `status: unavailable` marker "
+    "naming the missing capability and its enablement path.",
     "input_schema": {
         "type": "object",
         "properties": {
