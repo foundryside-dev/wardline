@@ -3263,12 +3263,16 @@ def _doctor(
     *,
     started_at: float,
     filigree_url: str | None = None,
+    loomweave_url: str | None = None,
 ) -> dict[str, Any]:
     """The CLI `doctor --fix` envelope over MCP (A2, wardline-2ee1bbda82's sibling):
     install/federation health checks via the SAME machine_readable_doctor builder,
     plus the running server's self-identification + source-freshness verdict so an
     agent can detect a stale long-lived server without shelling out. Read-only by
-    default; `repair: true` is the explicit WRITE opt-in (mirrors CLI --fix)."""
+    default; `repair: true` is the explicit WRITE opt-in (mirrors CLI --fix).
+
+    Both launch-flag URLs are threaded in so the url checks describe the EFFECTIVE
+    config of THIS server process, with provenance — not just env (dogfood-4 B8)."""
     from wardline.install.doctor import machine_readable_doctor
     from wardline.mcp.freshness import attach_server_identity
 
@@ -3276,7 +3280,9 @@ def _doctor(
     flag = args.get("filigree_url")
     if flag is not None and not isinstance(flag, str):
         raise ToolError("filigree_url must be a string")
-    payload = machine_readable_doctor(root, fix=repair, filigree_url=flag or filigree_url)
+    payload = machine_readable_doctor(
+        root, fix=repair, filigree_url=flag or filigree_url, loomweave_url=loomweave_url
+    )
     return attach_server_identity(payload, root=root, started_at=started_at)
 
 
@@ -4003,7 +4009,11 @@ class WardlineMCPServer:
             Tool(
                 **_DOCTOR_TOOL,
                 handler=lambda args, root: _doctor(
-                    args, root, started_at=self.started_at, filigree_url=self.filigree_url
+                    args,
+                    root,
+                    started_at=self.started_at,
+                    filigree_url=self.filigree_url,
+                    loomweave_url=self.loomweave_url,
                 ),
             )
         )

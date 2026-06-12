@@ -41,6 +41,27 @@ def test_doctor_matches_cli_machine_readable_envelope(tmp_path: Path, monkeypatc
     assert mcp["ok"] == cli["ok"]
 
 
+def test_doctor_url_checks_report_launch_flags_with_provenance(tmp_path: Path, monkeypatch) -> None:
+    """Dogfood-4 B8: doctor said loomweave.url/filigree.url 'not configured' while
+    the answering server was launched with both flags and using them. The url
+    checks must describe THIS process's effective config and name the source."""
+    _isolate(tmp_path, monkeypatch)
+    payload = _doctor(
+        {},
+        tmp_path,
+        started_at=time.time(),
+        filigree_url="http://127.0.0.1:8749/api/p/lacuna/weft/scan-results",
+        loomweave_url="http://127.0.0.1:9730",
+    )
+    by_id = {c["id"]: c for c in payload["checks"]}
+    assert by_id["loomweave.url"]["message"] == "from --loomweave-url launch flag"
+    assert by_id["filigree.url"]["message"] == "from --filigree-url launch flag"
+    # And honest absence names what was checked, not a bare "not configured".
+    bare = _doctor({}, tmp_path, started_at=time.time())
+    by_id = {c["id"]: c for c in bare["checks"]}
+    assert by_id["loomweave.url"]["message"] == "not configured (no launch flag, no env)"
+
+
 def test_doctor_reports_server_identity(tmp_path: Path, monkeypatch) -> None:
     _isolate(tmp_path, monkeypatch)
     now = time.time()

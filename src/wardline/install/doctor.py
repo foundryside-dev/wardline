@@ -172,18 +172,25 @@ def _valid_http_url(url: str) -> bool:
     return parsed.scheme.lower() in {"http", "https"} and bool(parsed.netloc)
 
 
-def _check_url(root: Path, key: str, *, fixed: bool) -> DoctorCheck:
-    # Sibling-endpoint config keys were retired (pending the hub shared-endpoint
-    # schema); a fixed endpoint comes only from the env var now, so that is what we
-    # validate. Live local discovery (.weft/<sibling>/ephemeral.port) is dynamic and
-    # not a doctor concern.
+def _check_url(root: Path, key: str, *, fixed: bool, effective_url: str | None = None) -> DoctorCheck:
+    # Doctor must vouch for the EFFECTIVE config of the process answering it
+    # (dogfood-4 B8: it said "not configured" while the same server was launched
+    # with --loomweave-url/--filigree-url and using them successfully). Precedence
+    # mirrors runtime resolution: the launch flag the caller threads in, then the
+    # env var. Each verdict names its provenance so two surfaces can never
+    # silently disagree about WHICH config they describe. Live local discovery
+    # (.weft/<sibling>/ephemeral.port) is dynamic and not a doctor concern.
     env_key = "WARDLINE_LOOMWEAVE_URL" if key == "loomweave" else "WARDLINE_FILIGREE_URL"
-    url = os.environ.get(env_key)
     check_id = f"{key}.url"
+    if effective_url:
+        if _valid_http_url(effective_url):
+            return DoctorCheck(check_id, "ok", fixed=fixed, message=f"from --{key}-url launch flag")
+        return DoctorCheck(check_id, "error", fixed=False, message=f"invalid URL (launch flag): {effective_url!r}")
+    url = os.environ.get(env_key)
     if not url:
-        return DoctorCheck(check_id, "ok", fixed=fixed, message="not configured")
+        return DoctorCheck(check_id, "ok", fixed=fixed, message="not configured (no launch flag, no env)")
     if _valid_http_url(url):
-        return DoctorCheck(check_id, "ok", fixed=fixed)
+        return DoctorCheck(check_id, "ok", fixed=fixed, message=f"from env {env_key}")
     return DoctorCheck(check_id, "error", fixed=False, message=f"invalid URL: {url!r}")
 
 
@@ -389,6 +396,7 @@ def machine_readable_doctor(
     *,
     fix: bool = False,
     filigree_url: str | None = None,
+    loomweave_url: str | None = None,
     transport: Transport | None = None,
 ) -> dict[str, Any]:
     """Return the shared machine-readable doctor shape, optionally repairing install bindings."""
@@ -408,8 +416,8 @@ def machine_readable_doctor(
     checks.append(_check_config(root, fixed=fix and not weft_config_path(root).exists()))
     checks.append(_check_mcp_registration(root, before=before))
     checks.append(_check_marker_package())
-    checks.append(_check_url(root, "loomweave", fixed=bindings_fixed))
-    checks.append(_check_url(root, "filigree", fixed=bindings_fixed))
+    checks.append(_check_url(root, "loomweave", fixed=bindings_fixed, effective_url=loomweave_url))
+    checks.append(_check_url(root, "filigree", fixed=bindings_fixed, effective_url=filigree_url))
     checks.append(_check_decorator_grammar())
     checks.append(_check_scan_output_path(root))
     checks.append(_check_auth_token(root))
