@@ -33,6 +33,16 @@ SNAPSHOT_DIR_NAME = ".rekey_snapshot"
 # Why a verdict can orphan (NOT only a source move) — the one explanation both
 # surfaces (CLI rekey output, MCP rekey payload) attach to every dropped verdict.
 ORPHAN_CAUSE = "source moved/deleted, or a custom multi-emit rule not surfacing taint_path_v0"
+# Why a CURRENT-scheme entry can fail to match (NOT a migration orphan): the store is
+# already at the live scheme, so a rekey would not touch it — a non-matching entry is
+# baseline drift (the source changed since it was recorded), surfaced separately so a
+# healthy-but-drifted store is never misread as a dead one (A7, weft-dda1a6d8dd).
+STALE_CAUSE = "already at the current scheme but matches no current finding — baseline drift, not a rekey orphan"
+# Bounded-by-default display: surfaces emit COUNTS plus at most this many example
+# fingerprints with an explicit remainder marker (a bounded page never reads as the
+# full set — agent_summary's convention). The full orphan list still lands verbatim
+# in the migration journal on apply; the probe is advisory.
+ORPHAN_SAMPLE_LIMIT = 10
 # (store filename, list-key inside the YAML doc, version constant) — the three YAML
 # legs, in gate-criticality order (baseline first restores the local --fail-on gate).
 _STORES: tuple[tuple[str, str, int], ...] = (
@@ -250,6 +260,10 @@ def _carry_store(snapshot_path: Path, list_key: str, version: int, old_to_new: d
     Deterministic order: (rule_id, path, new fingerprint)."""
     loaded = _read_old_store(snapshot_path)
     raw_entries = loaded.get(list_key) or []
+    # A snapshot store ALREADY at the live scheme needs no remap: its fingerprints are
+    # wlfp2 keys, and pushing them through the wlfp1->wlfp2 map would orphan every one
+    # (the mixed-scheme leg of A7, weft-dda1a6d8dd). Identity-carry it untouched.
+    already_current = loaded.get("fingerprint_scheme") == FINGERPRINT_SCHEME
     carried: list[str] = []
     orphaned: list[str] = []
     new_entries: list[dict[str, Any]] = []
@@ -257,7 +271,7 @@ def _carry_store(snapshot_path: Path, list_key: str, version: int, old_to_new: d
         old_fp = entry.get("fingerprint") if isinstance(entry, dict) else None
         if not isinstance(old_fp, str):
             continue  # not a valid entry — nothing to carry or orphan
-        new_fp = old_to_new.get(old_fp)
+        new_fp = old_fp if already_current else old_to_new.get(old_fp)
         if new_fp is None:
             orphaned.append(old_fp)
             continue
@@ -494,23 +508,27 @@ def _apply_filigree_leg(leg: Leg, findings: Sequence[Finding] | None, filigree: 
 # --- S9: --probe (read-only cross-check; writes NOTHING) --------------------------
 
 
-def _store_fingerprints(root: Path) -> dict[str, set[str]]:
-    """The old_fps each live store currently records, read RAW (the stores are still
-    old-scheme until the migration runs). Read-only."""
-    out: dict[str, set[str]] = {}
+def _store_fingerprints(root: Path) -> dict[str, tuple[str | None, set[str]]]:
+    """Per live store: its ``fingerprint_scheme`` header (None when pre-scheme) and the
+    fingerprints it records, read RAW (a pre-migration store would SCHEME_MISMATCH the
+    enforcing loaders). The scheme is load-bearing: a store ALREADY at the live scheme
+    holds wlfp2 fingerprints, and judging it against the wlfp1-reconstructed remap keys
+    misreads every healthy entry as orphaned (A7, weft-dda1a6d8dd). Read-only."""
+    out: dict[str, tuple[str | None, set[str]]] = {}
     state = paths.weft_state_dir(root)
     for name, key, _ver in _STORES:
         p = state / name
         if not p.is_file():
             continue
         loaded = _read_old_store(p)
+        scheme = loaded.get("fingerprint_scheme")
         fps = {
             e["fingerprint"]
             for e in (loaded.get(key) or [])
             if isinstance(e, dict) and isinstance(e.get("fingerprint"), str)
         }
         if fps:
-            out[name] = fps
+            out[name] = (scheme if isinstance(scheme, str) else None, fps)
     return out
 
 
@@ -539,6 +557,16 @@ class ProbeReport:
     collisions: tuple[RekeyCollision, ...]
     per_store: dict[str, int]  # store name -> count of its old_fps with no current finding
     prescheme: bool = False  # a live store predates the scheme stamp (possible formula drift)
+    # Stores ALREADY stamped with the live scheme (sorted). A rekey is a no-op for
+    # them; their entries are matched against the CURRENT fingerprints, never the
+    # wlfp1 remap keys (A7, weft-dda1a6d8dd).
+    current_scheme_stores: tuple[str, ...] = ()
+    # Current-scheme entries with no current finding — baseline drift (STALE_CAUSE),
+    # not migration orphans; they do not dirty the probe.
+    stale: tuple[str, ...] = ()
+    # True when every populated store already carries the live scheme (vacuously when
+    # none holds fingerprints): no fingerprint migration is pending.
+    no_op: bool = False
 
     @property
     def clean(self) -> bool:
@@ -547,15 +575,28 @@ class ProbeReport:
 
 def probe(root: Path, findings: Sequence[Finding]) -> ProbeReport:
     """Read-only dry run: which stored verdicts will carry, which orphan, any collisions.
-    Writes nothing — no snapshot, no journal, no store rewrite."""
+    Each store is judged against ITS OWN scheme: a store still at wlfp1 (or pre-scheme)
+    against the reconstructed old-fingerprint remap keys, a store already at the live
+    scheme against the current scan's fingerprints (a rekey would not touch it, so a
+    healthy wlfp2 baseline reports matched=N / orphaned=0 / clean — A7,
+    weft-dda1a6d8dd). Writes nothing — no snapshot, no journal, no store rewrite."""
     remaps = compute_old_new_fingerprints(findings)
     result = build_remap(remaps)
     keys = set(result.old_to_new)
-    store_fps = _store_fingerprints(root)
+    new_fps = {r.new_fp for r in remaps}
     matched: set[str] = set()
     orphaned: set[str] = set()
+    stale: set[str] = set()
     per_store: dict[str, int] = {}
-    for name, fps in store_fps.items():
+    current_scheme_stores: list[str] = []
+    migration_pending = False
+    for name, (scheme, fps) in sorted(_store_fingerprints(root).items()):
+        if scheme == FINGERPRINT_SCHEME:
+            current_scheme_stores.append(name)
+            matched |= fps & new_fps
+            stale |= fps - new_fps
+            continue
+        migration_pending = True
         store_orphans = fps - keys
         matched |= fps & keys
         orphaned |= store_orphans
@@ -565,9 +606,16 @@ def probe(root: Path, findings: Sequence[Finding]) -> ProbeReport:
         scanned_findings=len(remaps),
         matched=len(matched),
         orphaned=tuple(sorted(orphaned)),
+        # Collisions stay LOUD even when no migration is pending: >1 old_fp collapsing
+        # to one new_fp means two CURRENT findings share a fingerprint — a discriminator
+        # bug (WLN-ENGINE-FINGERPRINT-COLLISION), not a migration artifact. A healthy
+        # baseline has none, so this never dirties the A7 clean-no-op verdict.
         collisions=result.collisions,
         per_store=per_store,
         prescheme=_dir_has_prescheme_store(paths.weft_state_dir(root)),
+        current_scheme_stores=tuple(current_scheme_stores),
+        stale=tuple(sorted(stale)),
+        no_op=not migration_pending,
     )
 
 
@@ -588,6 +636,17 @@ def run_rekey(root: Path, findings: Sequence[Finding], *, filigree: Any = None) 
             "this project's fingerprint migration is already complete — "
             "use `wardline rekey --rollback` to undo it, or delete "
             f"{snapshot_dir(root)} + {jpath} to migrate afresh."
+        )
+    # Refuse a rekey when every populated store ALREADY carries the live scheme: there
+    # is nothing to migrate, and re-keying wlfp2 entries through the wlfp1 remap would
+    # orphan every healthy verdict (the destructive twin of the A7 probe misread,
+    # weft-dda1a6d8dd). Checked BEFORE the snapshot — a refused run writes nothing.
+    populated_schemes = [scheme for scheme, _fps in _store_fingerprints(root).values()]
+    if populated_schemes and all(s == FINGERPRINT_SCHEME for s in populated_schemes):
+        raise WardlineError(
+            f"every store is already at the {FINGERPRINT_SCHEME} fingerprint scheme — "
+            "no fingerprint migration is pending; a rekey would only orphan healthy "
+            "verdicts. Nothing to do (run `wardline rekey --probe` for the per-store view)."
         )
     snapshot_stores(root)  # must precede any store write
     journal = new_journal(compute_old_new_fingerprints(findings))

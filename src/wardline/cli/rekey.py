@@ -16,6 +16,8 @@ from wardline.core.config import resolve_filigree_url
 from wardline.core.errors import WardlineError
 from wardline.core.filigree_emit import FiligreeEmitter
 from wardline.core.rekey import ORPHAN_CAUSE as _ORPHAN_CAUSE
+from wardline.core.rekey import ORPHAN_SAMPLE_LIMIT as _SAMPLE_LIMIT
+from wardline.core.rekey import STALE_CAUSE as _STALE_CAUSE
 from wardline.core.rekey import Journal, ProbeReport, probe, resume_rekey, rollback, run_rekey
 from wardline.core.run import run_scan
 
@@ -30,18 +32,38 @@ def _print_prescheme_caution() -> None:
     )
 
 
+def _echo_bounded(
+    fingerprints: tuple[str, ...], *, indent: str = "    ", err: bool = True, remainder_hint: str = ""
+) -> None:
+    """Counts + a bounded sample, never the whole list (bounded-by-default; the cut is
+    explicit so a sample never reads as the full set)."""
+    for of in fingerprints[:_SAMPLE_LIMIT]:
+        click.echo(f"{indent}{of}", err=err)
+    if len(fingerprints) > _SAMPLE_LIMIT:
+        more = len(fingerprints) - _SAMPLE_LIMIT
+        click.echo(f"{indent}… and {more} more (sample bounded{remainder_hint})", err=err)
+
+
 def _print_probe(report: ProbeReport) -> None:
-    click.echo(f"probe: {report.scanned_findings} finding(s) scanned; {report.matched} verdict(s) will carry.")
+    verb = "match current findings" if report.no_op else "will carry"
+    click.echo(f"probe: {report.scanned_findings} finding(s) scanned; {report.matched} verdict(s) {verb}.")
+    if report.no_op:
+        stores = ", ".join(report.current_scheme_stores) or "(no populated stores)"
+        click.echo(f"probe: no fingerprint migration pending — store(s) already at the current scheme: {stores}.")
     if report.orphaned:
         click.echo(f"  {len(report.orphaned)} orphaned ({_ORPHAN_CAUSE}) — verdict will NOT carry:", err=True)
-        for of in report.orphaned:
-            click.echo(f"    {of}", err=True)
+        _echo_bounded(report.orphaned)
+    if report.stale:
+        click.echo(f"  {len(report.stale)} stale ({_STALE_CAUSE}):", err=True)
+        _echo_bounded(report.stale)
     for c in report.collisions:
         click.echo(f"  COLLISION: {c.message}", err=True)
     if report.prescheme:
         _print_prescheme_caution()
     if report.clean:
-        click.echo("probe: clean — every stored verdict will carry.")
+        click.echo(
+            "probe: clean — nothing to migrate." if report.no_op else "probe: clean — every stored verdict will carry."
+        )
 
 
 def _print_journal(journal: Journal) -> None:
@@ -54,10 +76,12 @@ def _print_journal(journal: Journal) -> None:
             continue
         status = "done" if leg.done else "PENDING"
         click.echo(f"  {leg.name}: {status} ({len(leg.carried)} carried, {len(leg.orphaned)} orphaned)")
-        # Surface the orphaned fingerprints, not just the count — a dropped verdict must
-        # never be silent (the original is recoverable from .rekey_snapshot/ until rollback).
-        for of in leg.orphaned:
-            click.echo(f"    orphaned ({_ORPHAN_CAUSE}) — verdict NOT carried: {of}", err=True)
+        # Surface dropped verdicts loudly but BOUNDED (count + sample): the FULL orphan
+        # list is recorded verbatim in the migration journal, and the original verdicts
+        # stay recoverable from .rekey_snapshot/ until rollback.
+        if leg.orphaned:
+            click.echo(f"    orphaned ({_ORPHAN_CAUSE}) — verdict NOT carried:", err=True)
+            _echo_bounded(tuple(leg.orphaned), indent="      ")
     for c in journal.collisions:
         click.echo(f"  COLLISION: {c.message}", err=True)
     if journal.snapshot_prescheme:
@@ -139,19 +163,26 @@ def rekey(
             raise SystemExit(0 if journal.complete else 1)
 
         resolved_url = resolve_filigree_url(filigree_url, path, config_path, strict_defaults=strict_defaults)
-        result = run_scan(
-            path,
-            config_path=config_path,
-            cache_dir=cache_dir,
-            trust_local_packs=trust_local_packs,
-            trusted_packs=trusted_packs,
-            strict_defaults=strict_defaults,
-            confine_to_root=True,
-            # Migration scans the project WITHOUT loading the stores it is about to
-            # rekey — they are still old-scheme and would SCHEME_MISMATCH.
-            skip_suppression=True,
-        )
-        findings = result.findings
+        # The stores hold verdicts from EVERY frontend (RS-WL graduated to
+        # baseline-eligible — see core.rekey.is_join_population), so the probe/apply
+        # scan must cover every frontend too: a python-only scan misreads each healthy
+        # Rust verdict as orphaned/stale (A7, weft-dda1a6d8dd).
+        findings = []
+        for lang in ("python", "rust"):
+            result = run_scan(
+                path,
+                config_path=config_path,
+                cache_dir=cache_dir,
+                trust_local_packs=trust_local_packs,
+                trusted_packs=trusted_packs,
+                strict_defaults=strict_defaults,
+                confine_to_root=True,
+                # Migration scans the project WITHOUT loading the stores it is about to
+                # rekey — they are still old-scheme and would SCHEME_MISMATCH.
+                skip_suppression=True,
+                lang=lang,
+            )
+            findings.extend(result.findings)
 
         if probe_only:
             report = probe(path, findings)

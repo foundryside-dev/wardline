@@ -63,7 +63,9 @@ def test_rekey_defaults_to_read_only_probe(tmp_path: Path) -> None:
     result = _rekey({}, project)
     assert result["mode"] == "probe"
     assert result["matched"] == 1
-    assert result["orphaned"] == []
+    assert result["orphaned_count"] == 0
+    assert result["orphaned_sample"] == []
+    assert result["no_op"] is False  # a wlfp1 store pends migration
     assert result["clean"] is True
     # Writes NOTHING: no snapshot, no journal, store untouched (still wlfp1).
     assert not paths.migration_journal_path(project).exists()
@@ -76,9 +78,44 @@ def test_rekey_probe_reports_orphans_with_cause(tmp_path: Path) -> None:
     _seed_wlfp1_baseline(project, extra_fps=("deadbeef" * 8,))
     result = _rekey({}, project)
     assert result["clean"] is False
-    assert result["orphaned"] == ["deadbeef" * 8]
+    assert result["orphaned_count"] == 1
+    assert result["orphaned_sample"] == ["deadbeef" * 8]
     assert result["per_store"] == {"baseline.yaml": 1}
     assert "moved" in result["orphan_cause"]
+
+
+def test_rekey_probe_reports_a_healthy_current_scheme_baseline_as_clean_noop(tmp_path: Path) -> None:
+    # A7 (weft-dda1a6d8dd): the live-lacuna shape — a wlfp2 baseline whose entries all
+    # match the current scan must read matched=N / orphaned=0 / clean, never 100% orphaned.
+    project = _project(tmp_path)
+    leak = next(f for f in run_scan(project).findings if f.rule_id == "PY-WL-101")
+    bp = paths.baseline_path(project)
+    bp.parent.mkdir(parents=True, exist_ok=True)
+    bp.write_text(
+        yaml.safe_dump(
+            {
+                "fingerprint_scheme": "wlfp2",
+                "version": 1,
+                "entries": [
+                    {
+                        "fingerprint": leak.fingerprint,
+                        "rule_id": leak.rule_id,
+                        "path": leak.location.path,
+                        "message": leak.message,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = _rekey({}, project)
+    assert result["mode"] == "probe"
+    assert result["matched"] == 1
+    assert result["orphaned_count"] == 0
+    assert result["stale_count"] == 0
+    assert result["no_op"] is True
+    assert result["current_scheme_stores"] == ["baseline.yaml"]
+    assert result["clean"] is True
 
 
 def test_rekey_apply_migrates_and_reports_journal(tmp_path: Path) -> None:

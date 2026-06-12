@@ -3280,9 +3280,7 @@ def _doctor(
     flag = args.get("filigree_url")
     if flag is not None and not isinstance(flag, str):
         raise ToolError("filigree_url must be a string")
-    payload = machine_readable_doctor(
-        root, fix=repair, filigree_url=flag or filigree_url, loomweave_url=loomweave_url
-    )
+    payload = machine_readable_doctor(root, fix=repair, filigree_url=flag or filigree_url, loomweave_url=loomweave_url)
     return attach_server_identity(payload, root=root, started_at=started_at)
 
 
@@ -3417,7 +3415,16 @@ def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, 
     collisions, write NOTHING); `apply`/`resume`/`rollback` are explicit, mutually
     exclusive, WRITE-gated. The injected Filigree emitter (apply only) re-emits under
     the new fingerprints, best-effort like the CLI's --filigree-url leg."""
-    from wardline.core.rekey import ORPHAN_CAUSE, Journal, probe, resume_rekey, rollback, run_rekey
+    from wardline.core.rekey import (
+        ORPHAN_CAUSE,
+        ORPHAN_SAMPLE_LIMIT,
+        STALE_CAUSE,
+        Journal,
+        probe,
+        resume_rekey,
+        rollback,
+        run_rekey,
+    )
 
     apply_ = _bool_arg(args, "apply", False)
     do_resume = _bool_arg(args, "resume", False)
@@ -3427,8 +3434,9 @@ def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, 
     path = _resolve_under_root(root, args["path"]) if args.get("path") else root
 
     def journal_block(journal: Journal) -> dict[str, Any]:
-        # Lean payload: carried as a COUNT (can be the whole store), orphans VERBATIM
-        # (a dropped verdict must never be silent — mirrors the CLI's per-orphan lines).
+        # Lean payload: carried as a COUNT (can be the whole store), orphans as a count
+        # plus a BOUNDED sample (bounded-by-default; never silent — the FULL list is
+        # recorded verbatim in the migration journal on disk).
         block: dict[str, Any] = {
             "complete": journal.complete,
             "fingerprint_scheme_from": journal.fingerprint_scheme_from,
@@ -3443,7 +3451,8 @@ def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, 
                     "name": leg.name,
                     "done": leg.done,
                     "carried_count": len(leg.carried),
-                    "orphaned": list(leg.orphaned),
+                    "orphaned_count": len(leg.orphaned),
+                    "orphaned_sample": list(leg.orphaned[:ORPHAN_SAMPLE_LIMIT]),
                     "debt": leg.debt,
                 }
                 for leg in journal.legs
@@ -3469,33 +3478,47 @@ def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, 
 
     # Probe (the default) and apply both need the suppression-free scan: migration
     # scans WITHOUT loading the stores it is about to rekey (they are still
-    # old-scheme and would SCHEME_MISMATCH).
-    result = run_scan(
-        path,
-        config_path=_cfg(args, root),
-        cache_dir=_cache_dir_arg(args, root),
-        confine_to_root=True,
-        trust_local_packs=bool(args.get("trust_local_packs", False)),
-        trusted_packs=_trusted_packs_arg(args),
-        strict_defaults=bool(args.get("strict_defaults", False)),
-        skip_suppression=True,
-    )
+    # old-scheme and would SCHEME_MISMATCH). EVERY frontend participates — the
+    # stores hold RS-WL verdicts too, and a python-only scan misreads each healthy
+    # Rust verdict as orphaned/stale (A7, weft-dda1a6d8dd).
+    findings: list[Any] = []
+    for lang in ("python", "rust"):
+        result = run_scan(
+            path,
+            config_path=_cfg(args, root),
+            cache_dir=_cache_dir_arg(args, root),
+            confine_to_root=True,
+            trust_local_packs=bool(args.get("trust_local_packs", False)),
+            trusted_packs=_trusted_packs_arg(args),
+            strict_defaults=bool(args.get("strict_defaults", False)),
+            skip_suppression=True,
+            lang=lang,
+        )
+        findings.extend(result.findings)
     if not apply_:
-        report = probe(path, result.findings)
+        report = probe(path, findings)
         return {
             "mode": "probe",
             "scanned_findings": report.scanned_findings,
             "matched": report.matched,
-            "orphaned": list(report.orphaned),
+            # Counts + a bounded sample (A7, weft-dda1a6d8dd): never the full
+            # fingerprint dump — the cut is explicit via the count.
+            "orphaned_count": len(report.orphaned),
+            "orphaned_sample": list(report.orphaned[:ORPHAN_SAMPLE_LIMIT]),
             "orphan_cause": ORPHAN_CAUSE,
+            "stale_count": len(report.stale),
+            "stale_sample": list(report.stale[:ORPHAN_SAMPLE_LIMIT]),
+            "stale_cause": STALE_CAUSE,
             "collisions": [
                 {"new_fp": c.new_fp, "old_fps": list(c.old_fps), "message": c.message} for c in report.collisions
             ],
             "per_store": dict(report.per_store),
             "prescheme": report.prescheme,
+            "current_scheme_stores": list(report.current_scheme_stores),
+            "no_op": report.no_op,
             "clean": report.clean,
         }
-    return {"mode": "apply", **journal_block(run_rekey(path, result.findings, filigree=filigree))}
+    return {"mode": "apply", **journal_block(run_rekey(path, findings, filigree=filigree))}
 
 
 _REKEY_OUTPUT_SCHEMA: dict[str, Any] = {
@@ -3517,19 +3540,39 @@ _REKEY_OUTPUT_SCHEMA: dict[str, Any] = {
         },
         "matched": {
             "type": "integer",
-            "description": "probe only: count of distinct stored old-scheme fingerprints that map to a current "
-            "finding (will carry).",
+            "description": "probe only: count of distinct stored fingerprints that map to a current finding — each "
+            "store is judged against ITS OWN scheme (a wlfp1 store via the migration remap, a store already at the "
+            "live scheme via the current fingerprints).",
         },
-        "orphaned": {
+        "orphaned_count": {
+            "type": "integer",
+            "description": "probe only: number of stored OLD-SCHEME fingerprints with no current finding — these "
+            "verdicts would be dropped by an apply. Stores already at the live scheme never orphan (see stale_*).",
+        },
+        "orphaned_sample": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "probe only: sorted stored fingerprints with NO current finding — these verdicts would be "
-            "dropped by an apply.",
+            "description": "probe only: bounded sorted sample of the orphaned fingerprints (counts are authoritative; "
+            "an apply records the full list verbatim in the migration journal).",
         },
         "orphan_cause": {
             "type": "string",
             "description": "probe/apply/resume: fixed explanation string for why a stored fingerprint can orphan "
             "(source moved/deleted, or a custom multi-emit rule not surfacing taint_path_v0).",
+        },
+        "stale_count": {
+            "type": "integer",
+            "description": "probe only: number of CURRENT-scheme store entries matching no current finding — baseline "
+            "drift, NOT migration orphans; a rekey would not touch them and they do not dirty the probe.",
+        },
+        "stale_sample": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "probe only: bounded sorted sample of the stale fingerprints.",
+        },
+        "stale_cause": {
+            "type": "string",
+            "description": "probe only: fixed explanation string for why a current-scheme entry can be stale.",
         },
         "collisions": {
             "type": "array",
@@ -3568,10 +3611,21 @@ _REKEY_OUTPUT_SCHEMA: dict[str, Any] = {
             "description": "probe only: true when a live store predates the fingerprint-scheme stamp, so orphans MAY "
             "be a fingerprint-formula change rather than source churn.",
         },
+        "current_scheme_stores": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "probe only: store file names ALREADY at the live fingerprint scheme — a rekey is a no-op "
+            "for them; their entries were matched against the current scan's fingerprints.",
+        },
+        "no_op": {
+            "type": "boolean",
+            "description": "probe only: true when every populated store already carries the live scheme — no "
+            "fingerprint migration is pending and an apply would be refused.",
+        },
         "clean": {
             "type": "boolean",
             "description": "probe only: true when there are no orphans and no collisions — an apply would carry every "
-            "stored verdict.",
+            "stored verdict (or, when no_op, there is simply nothing to migrate).",
         },
         "complete": {"type": "boolean", "description": "apply/resume: true when every migration leg is done."},
         "fingerprint_scheme_from": {
@@ -3605,11 +3659,16 @@ _REKEY_OUTPUT_SCHEMA: dict[str, Any] = {
                         "description": "Number of stored verdicts re-keyed and carried forward by this leg (count "
                         "only; can be the whole store).",
                     },
-                    "orphaned": {
+                    "orphaned_count": {
+                        "type": "integer",
+                        "description": "Number of stored verdicts this leg dropped — never silent; the full verbatim "
+                        "list is recorded in the on-disk migration journal.",
+                    },
+                    "orphaned_sample": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Verbatim old fingerprints this leg dropped — a dropped verdict is never "
-                        "silent.",
+                        "description": "Bounded sample of the old fingerprints this leg dropped (counts are "
+                        "authoritative; full list in the migration journal).",
                     },
                     "debt": {
                         "type": ["string", "null"],
@@ -3617,7 +3676,7 @@ _REKEY_OUTPUT_SCHEMA: dict[str, Any] = {
                         "(re-run with apply to retry); null otherwise.",
                     },
                 },
-                "required": ["name", "done", "carried_count", "orphaned", "debt"],
+                "required": ["name", "done", "carried_count", "orphaned_count", "orphaned_sample", "debt"],
                 "additionalProperties": False,
             },
         },
