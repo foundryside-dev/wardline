@@ -1156,7 +1156,8 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
             "type": "object",
             "description": "OPTIONAL: the verbatim-postable signed scan object for legis POST /wardline/scan-results. "
             "Present only when a WARDLINE_LEGIS_ARTIFACT_KEY is provisioned or legis_artifact:true was passed, AND "
-            "building it did not fail (a signing refusal omits it).",
+            "building it did not fail (a signing refusal omits it). Suppressed under summary_only:true unless "
+            "legis_artifact:true is passed explicitly — summary_only promises the smallest gate payload.",
             "properties": {
                 "scanner_identity": {"type": "string", "description": "wardline@<version>."},
                 "rule_set_version": {"type": "string", "description": "Hash of the effective ruleset."},
@@ -1688,8 +1689,15 @@ def _attach_legis_artifact(
     )
 
     key_str = load_legis_artifact_key(path)
-    if key_str is None and not bool(args.get("legis_artifact")):
+    explicit = bool(args.get("legis_artifact"))
+    if key_str is None and not explicit:
         return  # not requested — default response unchanged
+    if _bool_arg(args, "summary_only", False) and not explicit:
+        # summary_only promises the smallest "did the gate pass?" payload; a
+        # provisioned key must not auto-attach a ~56KB verbatim artifact into it
+        # (dogfood-4 B6 blew the MCP token cap exactly this way). An explicit
+        # legis_artifact:true still wins when the caller asks for both.
+        return
 
     cfg = config_mod.load(
         _cfg(args, path) or weft_config_path(path),
