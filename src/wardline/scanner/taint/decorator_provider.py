@@ -150,6 +150,7 @@ def _read_level(
     allowed: frozenset[TaintState],
     default: TaintState | None,
     alias_map: Mapping[str, str],
+    ignored_args: frozenset[str] = frozenset(),
 ) -> TaintState | None:
     """Read a level keyword arg from a decorator, normalised + allow-checked.
 
@@ -171,12 +172,16 @@ def _read_level(
             for key, value in zip(kw.value.keys, kw.value.values, strict=True):
                 if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
                     return None
+                if key.value in ignored_args:
+                    continue
                 if key.value != arg:
                     return None
                 values.append(value)
             continue
         if kw.arg == arg:
             values.append(kw.value)
+            continue
+        if kw.arg in ignored_args:
             continue
         return None
     if not values:
@@ -392,7 +397,19 @@ class DecoratorTaintSourceProvider:
             levels: dict[str, TaintState] = {}
             unreadable = False
             for la in bt.level_args:
-                lvl = _read_level(deco, la.arg_name, allowed=la.allowed, default=la.default, alias_map=alias_map)
+                # Legacy review fixtures and older sample code sometimes supplied
+                # ``to_level`` on ``@trusted``. Treat it as inert compatibility
+                # only when the real ``level`` argument remains statically readable;
+                # genuinely unknown kwargs still fail closed.
+                ignored = frozenset({"to_level"}) if bt.canonical_name == "trusted" else frozenset()
+                lvl = _read_level(
+                    deco,
+                    la.arg_name,
+                    allowed=la.allowed,
+                    default=la.default,
+                    alias_map=alias_map,
+                    ignored_args=ignored,
+                )
                 if lvl is None:
                     unreadable = True
                     break

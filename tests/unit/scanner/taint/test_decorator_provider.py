@@ -161,6 +161,16 @@ def test_trusted_level_assured() -> None:
     assert out["m.f"] == FunctionTaint(T.ASSURED, T.ASSURED)
 
 
+def test_trusted_level_tolerates_legacy_to_level_keyword() -> None:
+    out = _seed(
+        "from wardline.decorators import trusted\n"
+        "@trusted(level='ASSURED', to_level='ASSURED')\n"
+        "def f():\n"
+        "    return 1\n"
+    )
+    assert out["m.f"] == FunctionTaint(T.ASSURED, T.ASSURED)
+
+
 def test_trusted_level_static_kwargs_assured() -> None:
     out = _seed(
         "from wardline.decorators import trusted\n@trusted(**{'level': 'ASSURED'})\ndef f():\n    return 1\n"

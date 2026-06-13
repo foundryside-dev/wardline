@@ -48,13 +48,17 @@ class AnalysisContext:
     to a source dict) cannot mutate engine output.
 
     ``project_return_taints`` is the effective return tier per function (anchored:
-    declared; non-anchored: refined body). ``function_return_taints`` is the actual
-    least-trusted returned-value taint per function, computed from L2 variable
-    analysis — the precise input for PY-WL-101. ``function_return_callee`` is the
-    callee that contributed each function's actual (least-trusted) return taint, or
-    ``None`` when that worst return path is not a direct call (``return p`` /
-    ``return some_var`` — chain resolution is deferred to SP9). This is the property
-    ``explain_finding`` reports as the immediate tainted callee.
+    declared; non-anchored: refined body). ``declared_body_taints`` is the provider's
+    original body tier for declared functions only, before L3 propagation refines the
+    body map. Rules that need declaration shape (for example, distinguishing
+    ``@trust_boundary`` from a leaky ``@trusted`` producer) must read this snapshot,
+    not ``project_taints``. ``function_return_taints`` is the actual least-trusted
+    returned-value taint per function, computed from L2 variable analysis — the
+    precise input for PY-WL-101. ``function_return_callee`` is the callee that
+    contributed each function's actual (least-trusted) return taint, or ``None`` when
+    that worst return path is not a direct call (``return p`` / ``return some_var`` —
+    chain resolution is deferred to SP9). This is the property ``explain_finding``
+    reports as the immediate tainted callee.
     """
 
     project_taints: Mapping[str, TaintState]
@@ -94,6 +98,10 @@ class AnalysisContext:
     # denominator. Additive + defaulted so direct constructions/tests need not
     # supply it; frozenset is already immutable so no proxy wrap is needed.
     declared_qualnames: frozenset[str] = frozenset()
+    # Provider-declared body tier for trust-surface functions, before L3 callgraph
+    # refinement. ``project_taints`` is the propagated body tier and may become raw
+    # for a leaky ``@trusted`` producer; this declaration snapshot stays stable.
+    declared_body_taints: Mapping[str, TaintState] = field(default_factory=dict)
     # Inter-module call edges: ``{caller: frozenset({callees})}``. Defaulted for
     # direct constructions; absence means no project edges available.
     project_edges: Mapping[str, frozenset[str]] = field(default_factory=dict)
@@ -153,6 +161,7 @@ class AnalysisContext:
             _freeze_mapping(self.call_site_candidate_callees),
         )
         object.__setattr__(self, "class_attr_taints", _freeze_mapping(self.class_attr_taints))
+        object.__setattr__(self, "declared_body_taints", _freeze_mapping(self.declared_body_taints))
         object.__setattr__(
             self,
             "project_edges",

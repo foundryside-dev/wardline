@@ -931,6 +931,9 @@ class WardlineAnalyzer:
             entities=entity_index,
             taint_provenance=dict(result.taint_provenance),
             declared_qualnames=frozenset(q for m in modules for q, s in m.seeds.items() if s.source == "provider"),
+            declared_body_taints={
+                q: s.body_taint for m in modules for q, s in m.seeds.items() if s.source == "provider"
+            },
             project_edges=result.project_edges,
             call_site_implicit_receivers=result.call_site_implicit_receivers,
             alias_maps={m.module_path: m.alias_map for m in modules},
