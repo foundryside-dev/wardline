@@ -9,10 +9,11 @@ identical by construction — same findings, same ``active`` count, same gate.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from wardline.core import config as config_mod
 from wardline.core.baseline import Baseline, load_baseline
@@ -171,6 +172,7 @@ def run_scan(
     trust_suppressions: bool = False,
     skip_suppression: bool = False,
     lang: str = "python",
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> ScanResult:
     """Discover → analyze → apply suppressions. Pure function of (disk + config).
 
@@ -231,6 +233,8 @@ def run_scan(
         warnings.simplefilter("always")
         files = discover(root, cfg, confine_to_root=confine_to_root, suffixes=suffixes)
         captured_warnings = list(w)
+    if progress_callback is not None:
+        progress_callback({"phase": "discovered", "files_discovered": len(files)})
     for warn in captured_warnings:
         msg = str(warn.message)
         if not msg.startswith("WLN-ENGINE-FILE-SKIPPED: "):
@@ -241,7 +245,18 @@ def run_scan(
                 warn.lineno,
             )
     analyzer: Analyzer = frontend.build_analyzer(config=cfg, summary_cache=cache)
+    if progress_callback is not None:
+        progress_callback({"phase": "analyzing", "files_discovered": len(files)})
     raw = list(analyzer.analyze(files, cfg, root=root))
+    if progress_callback is not None:
+        progress_callback(
+            {
+                "phase": "analyzed",
+                "files_discovered": len(files),
+                "files_analyzed": len(files),
+                "findings": len(raw),
+            }
+        )
     for warn in captured_warnings:
         msg = str(warn.message)
         if msg.startswith("WLN-ENGINE-FILE-SKIPPED: "):

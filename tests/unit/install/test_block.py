@@ -18,6 +18,7 @@ def test_render_block_is_fenced_and_mentions_the_gate() -> None:
     block = render_block()
     assert block.startswith("<!-- wardline:instructions:v")
     assert block.rstrip().endswith("<!-- /wardline:instructions -->")
+    assert "<!-- wardline:last-writer:wardline install -->" in block.splitlines()[1]
     assert "wardline scan" in block
     assert "wardline-gate" in block
 

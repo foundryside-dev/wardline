@@ -173,6 +173,121 @@ def test_http_400_raises_filigree_emit_error() -> None:
     assert '{"error":"bad path key"}' in str(exc.value)  # verbatim response body echoed
 
 
+def test_http_400_can_degrade_to_warning_result() -> None:
+    t = _FakeTransport(response=Response(status=400, body='{"error":"payload too large"}'))
+    res = FiligreeEmitter("http://x", transport=t, protocol_errors_loud=False).emit([_f()])
+
+    assert res.reachable is True
+    assert res.failed == 1
+    assert res.warnings
+    assert "payload too large" in res.warnings[0]
+
+
+def test_large_emit_chunks_by_finding_cap() -> None:
+    class _ChunkTransport:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def post(self, url: str, body: bytes, headers: dict[str, str]) -> Response:  # noqa: ARG002
+            self.calls.append(json.loads(body.decode("utf-8")))
+            return Response(status=200, body=_ok_body())
+
+    t = _ChunkTransport()
+    findings = [_f(location=Location(path=f"src/{name}.py", line_start=1)) for name in ("a", "b", "c")]
+
+    res = FiligreeEmitter("http://x", transport=t, max_findings_per_request=2).emit(
+        findings,
+        scanned_paths=("src/a.py", "src/b.py", "src/c.py", "src/clean.py"),
+    )
+
+    assert res.reachable is True
+    assert len(t.calls) == 2
+    assert [len(call["findings"]) for call in t.calls] == [2, 1]
+    assert all(call["mark_unseen"] is True for call in t.calls)
+    assert t.calls[-1]["scanned_paths"] == ["src/c.py", "src/clean.py"]
+
+
+def test_schema_advertised_limit_drives_chunking_when_no_override() -> None:
+    class _SchemaTransport:
+        def __init__(self) -> None:
+            self.gets: list[tuple[str, dict[str, str]]] = []
+            self.posts: list[dict[str, object]] = []
+
+        def get(self, url: str, headers: dict[str, str]) -> Response:
+            self.gets.append((url, dict(headers)))
+            return Response(
+                status=200,
+                body=json.dumps(
+                    {
+                        "endpoints": {
+                            "POST /api/scan-results": {
+                                "limits": {"max_findings_per_request": 2},
+                            }
+                        }
+                    }
+                ),
+            )
+
+        def post(self, url: str, body: bytes, headers: dict[str, str]) -> Response:  # noqa: ARG002
+            self.posts.append(json.loads(body.decode("utf-8")))
+            return Response(status=200, body=_ok_body())
+
+    t = _SchemaTransport()
+    findings = [_f(location=Location(path=f"src/{name}.py", line_start=1)) for name in ("a", "b", "c")]
+
+    FiligreeEmitter("http://x/api/p/demo/weft/scan-results", transport=t).emit(findings)
+
+    assert t.gets == [("http://x/api/p/demo/files/_schema", {"Content-Type": "application/json"})]
+    assert [len(call["findings"]) for call in t.posts] == [2, 1]
+
+
+def test_explicit_limit_takes_precedence_over_schema_limit() -> None:
+    class _SchemaTransport:
+        def __init__(self) -> None:
+            self.get_called = False
+            self.posts: list[dict[str, object]] = []
+
+        def get(self, url: str, headers: dict[str, str]) -> Response:  # noqa: ARG002
+            self.get_called = True
+            return Response(status=200, body=json.dumps({"scan_results": {"max_findings_per_request": 1}}))
+
+        def post(self, url: str, body: bytes, headers: dict[str, str]) -> Response:  # noqa: ARG002
+            self.posts.append(json.loads(body.decode("utf-8")))
+            return Response(status=200, body=_ok_body())
+
+    t = _SchemaTransport()
+    findings = [_f(location=Location(path=f"src/{name}.py", line_start=1)) for name in ("a", "b", "c")]
+
+    FiligreeEmitter("http://x/api/weft/scan-results", transport=t, max_findings_per_request=3).emit(findings)
+
+    assert t.get_called is False
+    assert [len(call["findings"]) for call in t.posts] == [3]
+
+
+def test_oversize_single_file_chunk_disables_mark_unseen() -> None:
+    class _ChunkTransport:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def post(self, url: str, body: bytes, headers: dict[str, str]) -> Response:  # noqa: ARG002
+            self.calls.append(json.loads(body.decode("utf-8")))
+            return Response(status=200, body=_ok_body())
+
+    t = _ChunkTransport()
+    findings = [
+        _f(location=Location(path="src/a.py", line_start=1), fingerprint="b" * 64),
+        _f(location=Location(path="src/a.py", line_start=2), fingerprint="c" * 64),
+    ]
+
+    FiligreeEmitter("http://x", transport=t, max_findings_per_request=1).emit(
+        findings,
+        scanned_paths=("src/a.py",),
+    )
+
+    assert len(t.calls) == 2
+    assert all(call["mark_unseen"] is False for call in t.calls)
+
+
 def test_http_5xx_is_sibling_degraded_not_loud() -> None:
     # A server outage (503) is the sibling's fault, not a Wardline payload bug:
     # warn + continue (reachable=False), never exit-2. (Charter: non-load-bearing.)

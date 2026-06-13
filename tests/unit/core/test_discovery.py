@@ -19,6 +19,18 @@ def test_respects_exclude_globs() -> None:
     assert all(p.name != "mod.py" for p in files)
 
 
+def test_prunes_tool_cache_directories_before_discovery(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("x = 1\n", encoding="utf-8")
+    cache = tmp_path / ".uv-cache" / "archive" / "pkg"
+    cache.mkdir(parents=True)
+    (cache / "cached.py").write_text("y = 2\n", encoding="utf-8")
+
+    files = discover(tmp_path, WardlineConfig(source_roots=(".",)))
+
+    assert [p.relative_to(tmp_path).as_posix() for p in files] == ["src/app.py"]
+
+
 def test_skip_dirs_are_relative_to_source_root_not_absolute_parents(tmp_path: Path) -> None:
     root = tmp_path / ".venv" / "proj"
     root.mkdir(parents=True)

@@ -49,6 +49,19 @@ def test_run_scan_returns_findings_summary_and_context() -> None:
     assert result.context is not None
 
 
+def test_run_scan_reports_discovery_and_analysis_progress(tmp_path: Path) -> None:
+    (tmp_path / "svc.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    events: list[dict[str, object]] = []
+
+    result = run_scan(tmp_path, progress_callback=events.append)
+
+    assert result.files_scanned == 1
+    assert [event["phase"] for event in events] == ["discovered", "analyzing", "analyzed"]
+    assert events[0]["files_discovered"] == 1
+    assert events[-1]["files_analyzed"] == 1
+    assert "findings" in events[-1]
+
+
 def test_gate_decision_trips_on_active_error(tmp_path: Path) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()

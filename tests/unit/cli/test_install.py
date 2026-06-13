@@ -17,7 +17,7 @@ def test_scan_resolves_filigree_url_from_published_port(tmp_path: Path, monkeypa
     captured: dict[str, object] = {}
 
     class _FakeEmitter:
-        def __init__(self, url: str, *, token: str | None = None) -> None:
+        def __init__(self, url: str, *, token: str | None = None, **_kwargs) -> None:
             captured["url"] = url
 
         def emit(self, findings, *, scanned_paths=()):  # noqa: ANN001
@@ -211,7 +211,7 @@ def test_install_rerun_detects_filigree_when_port_appears_after_initial_install(
     captured: dict[str, object] = {}
 
     class _FakeEmitter:
-        def __init__(self, url: str, *, token: str | None = None) -> None:
+        def __init__(self, url: str, *, token: str | None = None, **_kwargs) -> None:
             captured["url"] = url
 
         def emit(self, findings, *, scanned_paths=()):  # noqa: ANN001
@@ -238,7 +238,7 @@ def test_scan_threads_filigree_bearer_token_from_env(tmp_path: Path, monkeypatch
     captured: dict[str, object] = {}
 
     class _FakeEmitter:
-        def __init__(self, url: str, *, token: str | None = None) -> None:
+        def __init__(self, url: str, *, token: str | None = None, **_kwargs) -> None:
             captured["url"] = url
             captured["token"] = token
 
@@ -266,7 +266,7 @@ def test_scan_threads_filigree_bearer_token_from_deprecated_env(tmp_path: Path, 
     captured: dict[str, object] = {}
 
     class _FakeEmitter:
-        def __init__(self, url: str, *, token: str | None = None) -> None:
+        def __init__(self, url: str, *, token: str | None = None, **_kwargs) -> None:
             captured["url"] = url
             captured["token"] = token
 

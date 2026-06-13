@@ -53,10 +53,13 @@ def test_full_client_handshake_and_every_surface() -> None:
     assert init["protocolVersion"] == PROTOCOL_VERSION
     assert init["serverInfo"]["name"] == "wardline"
     assert {"tools", "resources", "prompts"} <= set(init["capabilities"])
-    # tools/list: the fifteen documented tools, no more no less
+    # tools/list: the eighteen documented tools, no more no less
     tool_names = {t["name"] for t in by_id[2]["result"]["tools"]}
     assert tool_names == {
         "scan",
+        "scan_job_start",
+        "scan_job_status",
+        "scan_job_cancel",
         "explain_taint",
         "dossier",
         "assure",

@@ -25,6 +25,7 @@ from wardline.cli.mcp import mcp
 from wardline.cli.rekey import rekey
 from wardline.cli.scan import scan
 from wardline.cli.scan_file_findings import scan_file_findings
+from wardline.cli.scan_job import scan_job
 from wardline.core.baseline import collect_and_write_baseline
 from wardline.core.descriptor import descriptor_to_yaml
 from wardline.core.errors import WardlineError
@@ -39,6 +40,7 @@ def cli() -> None:
 
 
 cli.add_command(scan)
+cli.add_command(scan_job)
 cli.add_command(scan_file_findings)
 cli.add_command(rekey)
 cli.add_command(judge_command)

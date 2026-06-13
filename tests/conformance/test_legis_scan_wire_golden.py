@@ -30,6 +30,7 @@ from pathlib import Path
 
 from wardline.core.config import load as load_config
 from wardline.core.legis import (
+    ARTIFACT_SIGNATURE_FIELD,
     DIRTY_FIELD,
     FINDINGS_FIELD,
     FINGERPRINT_SCHEME_FIELD,
@@ -44,6 +45,7 @@ from wardline.core.run import run_scan
 GOLDEN_KEY = b"weft-shared-conformance-key"
 
 _VECTOR_PATH = Path(__file__).parent / "legis_scan_wire.golden.json"
+_DIRTY_VECTOR_PATH = Path(__file__).parent / "legis_dirty_scan_wire.golden.json"
 
 # Same leaky boundary→sink fixture the freeze test uses: yields one real PY-WL-101
 # defect carrying every per-finding wire key.
@@ -56,6 +58,10 @@ _LEAKY = (
 
 def _vector() -> dict:
     return json.loads(_VECTOR_PATH.read_text(encoding="utf-8"))
+
+
+def _dirty_vector() -> dict:
+    return json.loads(_DIRTY_VECTOR_PATH.read_text(encoding="utf-8"))
 
 
 def _signed_clean_artifact(tmp_path: Path) -> dict:
@@ -73,6 +79,24 @@ def _signed_clean_artifact(tmp_path: Path) -> dict:
     result = run_scan(proj)
     cfg = load_config(proj / "weft.toml")
     return build_legis_artifact(result, root=proj, config=cfg, key=GOLDEN_KEY)
+
+
+def _dirty_unsigned_artifact(tmp_path: Path) -> dict:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    for cmd in (
+        ["git", "init", "-q"],
+        ["git", "config", "user.email", "t@example.com"],
+        ["git", "config", "user.name", "t"],
+        ["git", "add", "-A"],
+        ["git", "commit", "-qm", "init"],
+    ):
+        subprocess.run(cmd, cwd=proj, check=True, capture_output=True)
+    (proj / "svc.py").write_text(_LEAKY + "\n# uncommitted edit\n", encoding="utf-8")
+    result = run_scan(proj)
+    cfg = load_config(proj / "weft.toml")
+    return build_legis_artifact(result, root=proj, config=cfg, key=GOLDEN_KEY, allow_dirty=True)
 
 
 def test_golden_vector_is_a_valid_signed_artifact() -> None:
@@ -116,3 +140,23 @@ def test_vector_defect_routes_as_active(tmp_path: Path) -> None:
     defect = vector[FINDINGS_FIELD][0]
     assert defect["kind"] == "defect"
     assert defect["suppression_state"] == "active"
+
+
+def test_dirty_vector_declares_the_named_dirty_contract() -> None:
+    vector = _dirty_vector()
+    assert vector["contract"] == "weft/wardline-dirty-scan-artifact"
+    assert vector["dirty_key"] == DIRTY_FIELD
+    assert vector["signature_key"] == ARTIFACT_SIGNATURE_FIELD
+
+
+def test_live_dirty_emit_top_level_keys_match_the_dirty_vector(tmp_path: Path) -> None:
+    case = _dirty_vector()["valid"][0]
+    live = _dirty_unsigned_artifact(tmp_path)
+    expected = case["artifact"]
+
+    assert set(live) == set(expected)
+    assert live[DIRTY_FIELD] is True
+    assert ARTIFACT_SIGNATURE_FIELD not in live
+    assert isinstance(live[FINDINGS_FIELD], list)
+    assert live[FINGERPRINT_SCHEME_FIELD] == expected[FINGERPRINT_SCHEME_FIELD]
+    assert set(live[SCAN_SCOPE_FIELD]) == set(expected[SCAN_SCOPE_FIELD])

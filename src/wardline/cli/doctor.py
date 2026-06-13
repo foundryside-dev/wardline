@@ -9,6 +9,7 @@ import click
 
 from wardline.core.errors import WardlineError
 from wardline.install.doctor import (
+    _check_config,
     _check_filigree_auth,
     _resolve_probe_url,
     check_install,
@@ -53,24 +54,30 @@ def doctor(root: Path, repair: bool, fix_json: bool, filigree_url: str | None) -
             click.echo(f"error: {exc}", err=True)
             raise SystemExit(2) from exc
         after = check_install(root)
+        config_check = _check_config(root, fixed=statuses.get("weft.toml") == "created")
         click.echo("wardline doctor:")
         for check in after:
             status = statuses.get(check.name, "checked") if check.ok else f"failed ({check.message})"
             click.echo(f"  {check.name}: {status}")
+        config_status = statuses.get("weft.toml", "checked") if config_check.ok else f"failed ({config_check.message})"
+        click.echo(f"  weft.toml: {config_status}")
         fcheck = _check_filigree_auth(root, repair=True, filigree_url=probe_url)
         fstatus = ("fixed" if fcheck.fixed else fcheck.message) if fcheck.ok else f"failed ({fcheck.message})"
         click.echo(f"  filigree.auth: {fstatus}")
-        if not all(check.ok for check in after) or not fcheck.ok:
+        if not all(check.ok for check in after) or not config_check.ok or not fcheck.ok:
             raise SystemExit(1)
         return
 
     checks = check_install(root)
+    config_check = _check_config(root, fixed=False)
     fcheck = _check_filigree_auth(root, repair=False, filigree_url=filigree_url)
-    ok = all(check.ok for check in checks) and fcheck.ok
+    ok = all(check.ok for check in checks) and config_check.ok and fcheck.ok
     click.echo("wardline doctor: ok" if ok else "wardline doctor:")
     for check in checks:
         if not check.ok:
             click.echo(f"  {check.name}: {check.message}")
+    if not config_check.ok:
+        click.echo(f"  weft.toml: {config_check.message}")
     fmsg = fcheck.message or ("ok" if fcheck.ok else "error")
     click.echo(f"  filigree.auth: {fmsg}")
     if not ok:

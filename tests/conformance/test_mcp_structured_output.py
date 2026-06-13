@@ -1,4 +1,4 @@
-"""B1+B2 conformance: MCP structured output + display metadata across all 15 tools.
+"""B1+B2 conformance: MCP structured output + display metadata across all 18 tools.
 
 Three layers, each pinned for EVERY registered tool:
 
@@ -31,9 +31,12 @@ from wardline.mcp.tooling import ToolCapability
 
 FIXTURE = Path("tests/fixtures/sample_project")
 
-# The published 15-tool surface, in advertisement order.
+# The published 18-tool surface, in advertisement order.
 EXPECTED_TOOLS = (
     "scan",
+    "scan_job_start",
+    "scan_job_status",
+    "scan_job_cancel",
     "explain_taint",
     "dossier",
     "assure",
@@ -52,7 +55,16 @@ EXPECTED_TOOLS = (
 
 # B2 acceptance: the pure-read surface advertises readOnlyHint: true.
 READ_ONLY_TOOLS = frozenset(
-    {"scan", "explain_taint", "dossier", "assure", "decorator_coverage", "attest", "verify_attestation"}
+    {
+        "scan",
+        "scan_job_status",
+        "explain_taint",
+        "dossier",
+        "assure",
+        "decorator_coverage",
+        "attest",
+        "verify_attestation",
+    }
 )
 
 _ANNOTATION_KEYS = {"title", "readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"}
@@ -162,6 +174,52 @@ def test_scan_structured_output(tmp_path: Path) -> None:
     server = WardlineMCPServer(root=_leaky_project(tmp_path))
     out = _validated(server, "scan", {"fail_on": "ERROR"})
     assert out["gate"]["tripped"] is True
+
+
+def _job_status_stub(job_id: str = "a" * 32, status: str = "running") -> dict[str, Any]:
+    """A schema-valid scan-job status payload (the core's _base_status shape)."""
+    return {
+        "job_id": job_id,
+        "status": status,
+        "phase": "scanning",
+        "progress": {"steps_completed": 1, "steps_total": 4},
+        "heartbeat": "2026-06-13T00:00:00Z",
+        "artifacts": {},
+        "failure_kind": None,
+        "error": None,
+        "request": {},
+    }
+
+
+def test_scan_job_start_structured_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Hermetic: never spawn a worker subprocess — pin the core start to a
+    # schema-valid status. local_only keeps the network-fenced default happy.
+    import wardline.mcp.server as server_mod
+
+    monkeypatch.setattr(server_mod, "start_scan_job", lambda root, request, **kw: _job_status_stub())
+    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+    out = _validated(server, "scan_job_start", {"local_only": True})
+    assert out["status"] == "running"
+
+
+def test_scan_job_status_structured_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import wardline.mcp.server as server_mod
+
+    monkeypatch.setattr(server_mod, "read_scan_job_status", lambda root, job_id: _job_status_stub(job_id=job_id))
+    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+    out = _validated(server, "scan_job_status", {"job_id": "b" * 32})
+    assert out["job_id"] == "b" * 32
+
+
+def test_scan_job_cancel_structured_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import wardline.mcp.server as server_mod
+
+    monkeypatch.setattr(
+        server_mod, "cancel_scan_job", lambda root, job_id: _job_status_stub(job_id=job_id, status="cancelled")
+    )
+    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+    out = _validated(server, "scan_job_cancel", {"job_id": "c" * 32})
+    assert out["status"] == "cancelled"
 
 
 def test_explain_taint_structured_output(tmp_path: Path) -> None:
@@ -302,7 +360,7 @@ def test_rekey_structured_output(tmp_path: Path) -> None:
 
 
 def test_execution_conformance_covers_every_advertised_tool(fixture_server: WardlineMCPServer) -> None:
-    """Tripwire: a 16th tool must add an execution-conformance case above."""
+    """Tripwire: a 19th tool must add an execution-conformance case above."""
     assert set(_entries(fixture_server)) == set(EXPECTED_TOOLS)
 
 

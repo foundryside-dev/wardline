@@ -9,8 +9,9 @@ WP6 adds ``analyze(files, config, *, root)`` — the engine ``Analyzer`` protoco
 ``run_scan`` drives under ``--lang rust``. It discovers the tree's Cargo crate roots ONCE
 (SP2, ``wardline.rust.crate_roots`` — the loomweave-oracle-mirroring whole-tree pass),
 routes each ``.rs`` file to its real crate-prefixed module (``_module_for``), runs the
-per-file pipeline, and surfaces a ``WLN-ENGINE-PARSE-ERROR`` FACT for any file
-tree-sitter cannot fully parse (then contributes no findings for it — never half-analyze).
+per-file pipeline, and surfaces a gate-eligible ``WLN-ENGINE-PARSE-ERROR`` defect for
+any file tree-sitter cannot fully parse (then contributes no findings for it — never
+half-analyze).
 
 ``last_context`` is the engine-shaped ``AnalysisContext | None`` (None in slice-1: the
 Rust-native context is incompatible with the delta/SARIF consumers). The Rust-native
@@ -86,7 +87,7 @@ class RustAnalyzer:
         ``config`` is accepted for protocol parity but unused in slice-1 (the Rust rules
         carry hardcoded base severities; ``weft.toml`` severity overrides are a preview
         gap, surfaced in the docs). A file that does not fully parse yields a
-        ``WLN-ENGINE-PARSE-ERROR`` FACT and no ``RS-WL-*`` findings.
+        gate-eligible ``WLN-ENGINE-PARSE-ERROR`` defect and no ``RS-WL-*`` findings.
         """
         resolved_root = root.resolve()
         # SP2 whole-tree pass: discover Cargo crate roots ONCE per scan; every file's
@@ -124,7 +125,7 @@ class RustAnalyzer:
                 # One pathological file (e.g. a RecursionError on a deeply-nested expression)
                 # must not abort the whole scan and lose every other file's findings. Mirror
                 # the Python engine's per-function isolation: degrade to a counted diagnostic
-                # FACT (WLN-ENGINE-FILE-FAILED ∈ UNANALYZED_RULE_IDS) and keep scanning.
+                # DEFECT (WLN-ENGINE-FILE-FAILED ∈ UNANALYZED_RULE_IDS) and keep scanning.
                 findings.append(_file_failed_finding(relpath, f"{type(exc).__name__}: {exc}"))
                 continue
             self._last_rust_context = context
@@ -310,13 +311,13 @@ def _out_route(crate: str, base: Path, file: Path) -> str:
 
 def _parse_error_finding(relpath: str, detail: str) -> Finding:
     # Reuse the engine's parse-error rule id so it counts toward ScanSummary.unanalyzed
-    # and the CLI "see WLN-ENGINE-* facts" line works for free (UNANALYZED_RULE_IDS).
-    return _engine_fact("WLN-ENGINE-PARSE-ERROR", f"{relpath}: could not parse Rust source ({detail})", relpath)
+    # while also tripping the default ERROR gate: unscanned code must not read green.
+    return _engine_defect("WLN-ENGINE-PARSE-ERROR", f"{relpath}: could not parse Rust source ({detail})", relpath)
 
 
 def _file_failed_finding(relpath: str, detail: str) -> Finding:
     # Analysis raised AFTER a clean parse — a per-file under-scan, counted toward unanalyzed.
-    return _engine_fact("WLN-ENGINE-FILE-FAILED", f"{relpath}: Rust analysis failed ({detail})", relpath)
+    return _engine_defect("WLN-ENGINE-FILE-FAILED", f"{relpath}: Rust analysis failed ({detail})", relpath)
 
 
 def _coverage_finding(functions_total: int, functions_declared: int, files_analyzed: int) -> Finding:
@@ -349,13 +350,16 @@ def _coverage_finding(functions_total: int, functions_declared: int, files_analy
     )
 
 
-def _engine_fact(rule_id: str, message: str, relpath: str) -> Finding:
+def _engine_defect(rule_id: str, message: str, relpath: str) -> Finding:
     return Finding(
         rule_id=rule_id,
         message=message,
-        severity=Severity.NONE,
-        kind=Kind.FACT,
-        location=Location(path=relpath),
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        # File-level under-scan defects need a concrete source anchor. A lineless,
+        # non-ENGINE_PATH DEFECT is intentionally downgraded before gate evaluation
+        # to avoid unsafe fingerprint joins, so use the stable file start.
+        location=Location(path=relpath, line_start=1, line_end=1),
         fingerprint=_fp(rule_id, relpath),
         properties={"lang": "rust"},
     )

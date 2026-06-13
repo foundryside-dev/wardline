@@ -8,6 +8,7 @@
     "judged_total": 0,
     "proven": 3,
     "unanalyzed_rule_ids": [],
+    "unanalyzed_total": 0,
     "unknown": [],
     "waiver_debt": []
   },
@@ -20,6 +21,7 @@
     "judged_total": 0,
     "proven": 1,
     "unanalyzed_rule_ids": [],
+    "unanalyzed_total": 0,
     "unknown": [],
     "waiver_debt": []
   },
@@ -32,6 +34,7 @@
     "judged_total": 0,
     "proven": 3,
     "unanalyzed_rule_ids": [],
+    "unanalyzed_total": 0,
     "unknown": [],
     "waiver_debt": []
   }

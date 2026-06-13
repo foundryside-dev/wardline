@@ -32,6 +32,29 @@ def test_scan_writes_findings_and_exits_zero(tmp_path: Path) -> None:
     assert any(_json.loads(ln)["rule_id"] == "WLN-ENGINE-METRICS" for ln in lines)
 
 
+def test_scan_warns_when_weft_toml_is_missing(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    out = tmp_path / "findings.jsonl"
+
+    result = CliRunner().invoke(cli, ["scan", str(tmp_path), "--output", str(out)])
+
+    assert result.exit_code == 0, result.output
+    assert "warning: no weft.toml found" in result.output
+    assert "wardline doctor --repair" in result.output
+    assert "wardline scan-job start" in result.output
+
+
+def test_scan_does_not_warn_when_weft_toml_exists(tmp_path: Path) -> None:
+    (tmp_path / "weft.toml").write_text('[wardline]\nsource_roots = ["."]\n', encoding="utf-8")
+    (tmp_path / "app.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    out = tmp_path / "findings.jsonl"
+
+    result = CliRunner().invoke(cli, ["scan", str(tmp_path), "--output", str(out)])
+
+    assert result.exit_code == 0, result.output
+    assert "warning: no weft.toml found" not in result.output
+
+
 def test_scan_format_sarif_writes_sarif_file(tmp_path: Path) -> None:
     out = tmp_path / "out.sarif"
     result = CliRunner().invoke(cli, ["scan", str(FIXTURE), "--format", "sarif", "--output", str(out)])
@@ -632,6 +655,7 @@ def test_scan_benign_no_module_is_quiet(tmp_path) -> None:
 
     proj = tmp_path / "proj"
     proj.mkdir()
+    (proj / "weft.toml").write_text('[wardline]\nsource_roots = ["."]\n', encoding="utf-8")
     _write(proj, "__init__.py", "VERSION = 1\n")
     _write(proj, "mod.py", "def g(): return 1\n")
     out = tmp_path / "f.jsonl"
@@ -815,6 +839,7 @@ def test_scan_relative_root_emits_relative_path_and_qualname(tmp_path) -> None:
 def test_scan_filigree_emit_success(tmp_path, monkeypatch) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
+    (proj / "weft.toml").write_text('[wardline]\nsource_roots = ["."]\n', encoding="utf-8")
     _write(proj, "svc.py", _LEAKY)
     captured: dict[str, object] = {}
 
@@ -838,26 +863,63 @@ def test_scan_filigree_emit_success(tmp_path, monkeypatch) -> None:
     assert captured["url"] == "http://x/api/weft/scan-results"
     assert captured["scanned_paths"] == ("svc.py",)
     assert "emitted" in result.output and "warning" not in result.output  # stats surfaced, no warning
+    assert "unscoped endpoint" in result.output
+    assert "server-default project" not in result.output
 
 
-def test_scan_filigree_protocol_error_exits_2(tmp_path, monkeypatch) -> None:
+def test_scan_filigree_protocol_error_does_not_preempt_gate(tmp_path, monkeypatch) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
     _write(proj, "svc.py", _LEAKY)
-    from wardline.core.errors import FiligreeEmitError
+    captured: dict[str, object] = {}
 
-    class _BadEmitter:
+    class _RejectedEmitter:
         def __init__(self, url, **kw):
-            pass
+            captured["url"] = url
+            captured["kwargs"] = kw
 
         def emit(self, findings, *, scanned_paths=()):
-            raise FiligreeEmitError("Filigree rejected (400): bad path")
+            from wardline.core.filigree_emit import EmitResult
 
-    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _BadEmitter)
+            return EmitResult(
+                reachable=True,
+                failed=len(findings),
+                warnings=("Filigree rejected scan-results (400): payload too large",),
+            )
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _RejectedEmitter)
     out = tmp_path / "f.jsonl"
-    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--filigree-url", "http://x"])
-    assert result.exit_code == 2, result.output
-    assert "bad path" in result.output
+    result = CliRunner().invoke(
+        scan,
+        [str(proj), "--output", str(out), "--filigree-url", "http://x", "--fail-on", "ERROR"],
+    )
+    assert result.exit_code == 1, result.output
+    assert captured["url"] == "http://x"
+    kwargs = captured["kwargs"]
+    assert isinstance(kwargs, dict)
+    assert kwargs["protocol_errors_loud"] is False
+    assert "Filigree rejected scan-results (400)" in result.output
+    assert "gate: FAILED" in result.output
+
+
+def test_scan_local_only_suppresses_resolved_emit_urls(tmp_path, monkeypatch) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    monkeypatch.setenv("WARDLINE_FILIGREE_URL", "http://x/api/weft/scan-results")
+    monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", "http://loom/api/wardline/taint-facts")
+
+    class _UnexpectedEmitter:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("local-only must not construct FiligreeEmitter")
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _UnexpectedEmitter)
+    out = tmp_path / "f.jsonl"
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--local-only"])
+
+    assert result.exit_code == 0, result.output
+    assert "emitted" not in result.output
+    assert "Filigree" not in result.output
 
 
 def test_scan_filigree_absent_continues(tmp_path, monkeypatch) -> None:

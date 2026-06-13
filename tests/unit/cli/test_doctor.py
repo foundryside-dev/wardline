@@ -38,13 +38,17 @@ def test_doctor_repair_installs_artifacts_and_discovers_bindings(tmp_path: Path,
     assert "CLAUDE.md: repaired" in result.output
     assert ".mcp.json: repaired" in result.output
     assert "Codex MCP: repaired" in result.output
+    assert "weft.toml: created" in result.output
     # Bindings are no longer wired into config — repair only DETECTS siblings and
-    # ensures the .weft/wardline/ state dir exists. No config file is written.
+    # ensures the .weft/wardline/ state dir exists. Doctor now creates Wardline's
+    # bounded local policy when it is missing.
     assert "bindings: detected" in result.output
     assert (tmp_path / ".mcp.json").is_file()
     assert (home / ".codex" / "config.toml").is_file()
     assert (tmp_path / ".weft" / "wardline").is_dir()
-    assert not (tmp_path / "weft.toml").exists()
+    cfg = (tmp_path / "weft.toml").read_text(encoding="utf-8")
+    assert 'source_roots = ["."]' in cfg
+    assert '".uv-cache/**"' in cfg
 
 
 def test_doctor_passes_after_repair(tmp_path: Path, monkeypatch) -> None:
@@ -97,6 +101,10 @@ def test_doctor_fix_emits_shared_machine_readable_shape(tmp_path: Path, monkeypa
         assert checks[check_id]["status"] == "ok"
         assert isinstance(checks[check_id]["fixed"], bool)
     assert checks["mcp.registration"]["fixed"] is True
+    assert checks["wardline.config"]["fixed"] is True
+    cfg = (tmp_path / "weft.toml").read_text(encoding="utf-8")
+    assert 'source_roots = ["."]' in cfg
+    assert '"telemetry/**"' in cfg
 
 
 def test_doctor_reports_present_but_broken_weft_toml_as_error(tmp_path: Path, monkeypatch) -> None:
@@ -125,7 +133,7 @@ def test_doctor_fix_reports_filigree_url_ok_from_env(tmp_path: Path, monkeypatch
     # The "upgrade commented binding when a port appears" feature was removed: doctor
     # no longer writes config and the filigree.url check is now ENV-ONLY (a published
     # port is a scan-time discovery concern, not a doctor concern). When the env var
-    # is set to a valid URL, the check is ok; doctor writes no config file.
+    # is set to a valid URL, the check is ok.
     home = tmp_path / "home"
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_TOKEN", raising=False)
@@ -141,7 +149,41 @@ def test_doctor_fix_reports_filigree_url_ok_from_env(tmp_path: Path, monkeypatch
     payload = json.loads(result.output)
     checks = {check["id"]: check for check in payload["checks"]}
     assert checks["filigree.url"]["status"] == "ok"
-    assert not (tmp_path / "weft.toml").exists()
+    assert (tmp_path / "weft.toml").exists()
+
+
+def test_doctor_repair_creates_src_bounded_weft_toml(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    (tmp_path / "src").mkdir()
+
+    result = CliRunner().invoke(cli, ["doctor", "--root", str(tmp_path), "--repair"])
+
+    assert result.exit_code == 0, result.output
+    cfg = (tmp_path / "weft.toml").read_text(encoding="utf-8")
+    assert 'source_roots = ["src"]' in cfg
+    assert '"telemetry/**"' in cfg
+
+
+def test_doctor_reports_missing_weft_toml_without_repair(tmp_path: Path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    repair = CliRunner().invoke(cli, ["doctor", "--root", str(tmp_path), "--repair"])
+    assert repair.exit_code == 0, repair.output
+    (tmp_path / "weft.toml").unlink()
+
+    result = CliRunner().invoke(cli, ["doctor", "--root", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "weft.toml: missing weft.toml" in result.output
 
 
 def test_doctor_accepts_filigree_url_flag_and_reports_not_configured(tmp_path: Path, monkeypatch) -> None:

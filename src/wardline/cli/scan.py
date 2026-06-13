@@ -73,6 +73,25 @@ from wardline.core.sarif import SarifSink
     help="POST findings to this Filigree Weft scan-results URL (opt-in).",
 )
 @click.option(
+    "--local-only",
+    "--no-emit",
+    "local_only",
+    is_flag=True,
+    default=False,
+    help=(
+        "Disable sibling emission even when Filigree or Loomweave URLs resolve from flags, env, or local install state."
+    ),
+)
+@click.option(
+    "--filigree-max-findings-per-request",
+    type=click.IntRange(min=1),
+    default=None,
+    help=(
+        "Maximum Wardline findings per Filigree scan-results POST "
+        "(default 1000; also configurable with WARDLINE_FILIGREE_MAX_FINDINGS_PER_REQUEST)."
+    ),
+)
+@click.option(
     "--loomweave-url",
     "loomweave_url",
     default=None,
@@ -151,6 +170,8 @@ def scan(
     fail_on_unanalyzed: bool,
     cache_dir: Path | None,
     filigree_url: str | None,
+    local_only: bool,
+    filigree_max_findings_per_request: int | None,
     loomweave_url: str | None,
     new_since: str | None,
     trusted_packs: tuple[str, ...],
@@ -195,8 +216,19 @@ def scan(
     emit_result: EmitResult | None = None
     loomweave_result = None
     try:
+        if config_path is None and not strict_defaults and not weft_config_path(path).is_file():
+            click.echo(
+                "warning: no weft.toml found; using built-in source_roots=['.'], which can make "
+                "project-root scans broad and slow. Run `wardline doctor --repair --root "
+                f"{path}` to create a bounded default policy, or `wardline scan-job start {path}` "
+                "for a pollable long-running scan.",
+                err=True,
+            )
         filigree_url = resolve_filigree_url(filigree_url, path, config_path, strict_defaults=strict_defaults)
         loomweave_url = resolve_loomweave_url(loomweave_url, path, config_path, strict_defaults=strict_defaults)
+        if local_only:
+            filigree_url = None
+            loomweave_url = None
         result = run_scan(
             path,
             config_path=config_path,
@@ -291,14 +323,17 @@ def scan(
                     "(dirty: true, legis records it unverified). Commit for a signed artifact.",
                     err=True,
                 )
-        # Weft emission is additive: a FiligreeEmitError (HTTP >= 400) is a Wardline
-        # payload bug -> caught below -> exit 2; an unreachable sibling warns + continues.
+        # Weft emission is additive: scan uses the emitter's fail-soft protocol mode so
+        # a Filigree reject is reported as upload failure, not as a pre-gate exit 2.
         if filigree_url is not None:
             from wardline.filigree.config import load_filigree_token
 
-            emit_result = FiligreeEmitter(filigree_url, token=load_filigree_token(path)).emit(
-                findings, scanned_paths=result.scanned_paths
-            )
+            emit_result = FiligreeEmitter(
+                filigree_url,
+                token=load_filigree_token(path),
+                max_findings_per_request=filigree_max_findings_per_request,
+                protocol_errors_loud=False,
+            ).emit(findings, scanned_paths=result.scanned_paths)
         # Loomweave taint-store write is fail-soft: an outage/403 returns a not-reachable
         # WriteResult (reported below); a LoomweaveError (missing extra, 4xx, bad scheme)
         # is a WardlineError → caught here → exit 2, exactly as Filigree errors do.
@@ -384,7 +419,7 @@ def scan(
             where = (
                 f"project {dest_project!r}"
                 if dest_project
-                else "server-default project (URL pins none — add ?project= to make it explicit)"
+                else "unscoped endpoint (URL pins no project; add ?project= to make routing explicit)"
             )
             line = (
                 f"emitted {len(findings)} finding(s) to {filigree_url} [{where}] — "
@@ -433,7 +468,7 @@ def scan(
     if s.unanalyzed:
         click.echo(
             f"warning: {s.unanalyzed} file(s) were discovered but could not be analyzed "
-            f"(see WLN-ENGINE-* facts in {output}).",
+            f"(see WLN-ENGINE-* diagnostics in {output}).",
             err=True,
         )
     if lang == "rust":

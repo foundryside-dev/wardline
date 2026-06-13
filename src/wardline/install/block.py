@@ -39,6 +39,7 @@ _BODY = (
 
 _OWN_NS = "wardline"
 _END_MARKER = f"<!-- /{_OWN_NS}:instructions -->"
+_WRITER_MARKER = f"<!-- {_OWN_NS}:last-writer:wardline install -->"
 
 # A complete, well-formed wardline block (open .. close). Own-namespace only, so
 # it can only ever match wardline's own spans (C-4 (b) own-namespace mutation).
@@ -65,7 +66,7 @@ def _body_hash() -> str:
 
 
 def render_block() -> str:
-    return f"<!-- {_OWN_NS}:instructions:v{_BLOCK_VERSION}:{_body_hash()} -->\n{_BODY}\n{_END_MARKER}"
+    return f"<!-- {_OWN_NS}:instructions:v{_BLOCK_VERSION}:{_body_hash()} -->\n{_WRITER_MARKER}\n{_BODY}\n{_END_MARKER}"
 
 
 def _first_real_foreign_block_pos(content: str, search_from: int) -> int:

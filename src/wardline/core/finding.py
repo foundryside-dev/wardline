@@ -260,10 +260,20 @@ _SEVERITY_TO_FILIGREE: dict[Severity, str] = {
     Severity.NONE: "info",
 }
 
+_PROPERTY_ACCESSOR_QUALNAME_SUFFIXES = (":setter", ":deleter")
+
 
 def severity_to_filigree(severity: Severity) -> str:
     """Map Wardline's 4-level (+NONE) vocabulary to Filigree's 5-level set."""
     return _SEVERITY_TO_FILIGREE[severity]
+
+
+def _to_wire_qualname(qualname: str) -> str:
+    """Return the cross-tool reconciliation qualname for Wardline metadata."""
+    for suffix in _PROPERTY_ACCESSOR_QUALNAME_SUFFIXES:
+        if qualname.endswith(suffix):
+            return qualname.removesuffix(suffix)
+    return qualname
 
 
 def to_filigree_metadata(finding: Finding) -> dict[str, Any]:
@@ -274,7 +284,7 @@ def to_filigree_metadata(finding: Finding) -> dict[str, Any]:
         "kind": finding.kind.value,
     }
     if finding.qualname is not None:
-        wardline["qualname"] = finding.qualname
+        wardline["qualname"] = _to_wire_qualname(finding.qualname)
     if finding.confidence is not None:
         wardline["confidence"] = finding.confidence
     if finding.related_entities:

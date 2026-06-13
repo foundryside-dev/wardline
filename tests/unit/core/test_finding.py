@@ -7,6 +7,7 @@ from wardline.core.finding import (
     Location,
     Severity,
     compute_finding_fingerprint,
+    to_filigree_metadata,
 )
 
 
@@ -110,3 +111,11 @@ def test_filigree_metadata_includes_suppression_only_when_suppressed() -> None:
     waived = to_filigree_metadata(_finding(suppressed=SuppressionState.WAIVED, suppression_reason="ok"))["wardline"]
     assert waived["suppression_state"] == "waived"
     assert waived["suppression_reason"] == "ok"
+
+
+def test_filigree_metadata_strips_property_accessor_suffix_from_wire_qualname() -> None:
+    setter = to_filigree_metadata(_finding(qualname="pkg.mod.C.value:setter"))["wardline"]
+    deleter = to_filigree_metadata(_finding(qualname="pkg.mod.C.value:deleter"))["wardline"]
+
+    assert setter["qualname"] == "pkg.mod.C.value"
+    assert deleter["qualname"] == "pkg.mod.C.value"

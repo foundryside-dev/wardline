@@ -25,6 +25,9 @@ def test_mcp_advertisement_snapshot() -> None:
 
     assert [tool["name"] for tool in tools["result"]["tools"]] == [
         "scan",
+        "scan_job_start",
+        "scan_job_status",
+        "scan_job_cancel",
         "explain_taint",
         "dossier",
         "assure",

@@ -5,13 +5,15 @@ A pure body builder (``build_scan_results_body``) plus an injectable-transport
 HTTP emitter (``FiligreeEmitter``). stdlib-only; no runtime dependency on Filigree.
 Federation discipline: a *sibling-absent* network failure warns and continues; a 5xx
 outage and a 401/403 (Filigree present but refusing bearer auth) are likewise treated
-as *enrichment unavailable* (warn + continue). A 400 (Wardline built a bad payload) is
-the one loud band — that is our own bug, not the sibling's posture.
+as *enrichment unavailable* (warn + continue). Client/protocol errors default loud
+for callers that need strict reconciliation, but `wardline scan` opts into fail-soft
+enrichment so an upload reject cannot preempt the local gate verdict.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -32,6 +34,8 @@ from wardline.core.http import read_response_text
 
 _SUGGESTION_LIMIT = 10000
 _ALLOWED_SCHEMES = ("http", "https")
+_DEFAULT_MAX_FINDINGS_PER_REQUEST = 1000
+_MAX_FINDINGS_ENV = "WARDLINE_FILIGREE_MAX_FINDINGS_PER_REQUEST"
 
 
 def _safe_int(value: Any) -> int:
@@ -70,6 +74,7 @@ def build_scan_results_body(
     *,
     scan_source: str = "wardline",
     scanned_paths: Sequence[str] = (),
+    mark_unseen: bool | None = None,
 ) -> dict[str, Any]:
     """Build the ``POST /api/weft/scan-results`` request body. Emits ALL finding kinds.
     ``mark_unseen`` opts into Filigree's per-(file, scan_source) absent-fingerprint sweep:
@@ -83,10 +88,12 @@ def build_scan_results_body(
     findings_wire = [_finding_to_wire(f) for f in findings]
     scanned = list(dict.fromkeys(p for p in scanned_paths if p))
     has_unanalyzed = any(f.rule_id in UNANALYZED_RULE_IDS for f in findings)
+    if mark_unseen is None:
+        mark_unseen = bool(findings_wire or scanned) and not has_unanalyzed
     body = {
         "scan_source": scan_source,
         "fingerprint_scheme": FINGERPRINT_SCHEME,
-        "mark_unseen": bool(findings_wire or scanned) and not has_unanalyzed,
+        "mark_unseen": bool(mark_unseen) and not has_unanalyzed,
         "findings": findings_wire,
     }
     if scanned:
@@ -206,6 +213,112 @@ class ProbeResult:
     status: int | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class _ScanResultChunk:
+    findings: tuple[Finding, ...]
+    scanned_paths: tuple[str, ...]
+    mark_unseen: bool
+
+
+def _scan_result_chunks(
+    findings: Sequence[Finding],
+    scanned_paths: Sequence[str],
+    max_findings_per_request: int,
+) -> tuple[_ScanResultChunk, ...]:
+    """Split large emits without corrupting Filigree's per-file unseen sweep.
+
+    Filigree's ``mark_unseen`` reconciliation is scoped to scanned file paths, so a
+    chunk must carry a complete set of findings for every path it names. Most large
+    scans can be chunked by whole-file groups. If one file alone exceeds the cap, the
+    file has to be split and reconciliation is disabled only for those chunks.
+    """
+    if max_findings_per_request < 1:
+        raise ValueError("max_findings_per_request must be at least 1")
+
+    deduped_scanned_paths = tuple(dict.fromkeys(p for p in scanned_paths if p))
+    can_mark_unseen = not any(f.rule_id in UNANALYZED_RULE_IDS for f in findings)
+    if len(findings) <= max_findings_per_request:
+        return (
+            _ScanResultChunk(
+                tuple(findings),
+                deduped_scanned_paths,
+                bool(findings or deduped_scanned_paths) and can_mark_unseen,
+            ),
+        )
+
+    by_path: dict[str, list[Finding]] = {}
+    path_order: list[str] = []
+    for finding in findings:
+        path = finding.location.path or ""
+        if path not in by_path:
+            by_path[path] = []
+            path_order.append(path)
+        by_path[path].append(finding)
+
+    chunks: list[_ScanResultChunk] = []
+    current_findings: list[Finding] = []
+    current_paths: list[str] = []
+    paths_with_findings = set(path_order)
+    clean_scanned_paths = [p for p in deduped_scanned_paths if p not in paths_with_findings]
+
+    def flush_current() -> None:
+        nonlocal current_findings, current_paths
+        if current_findings or current_paths:
+            chunks.append(
+                _ScanResultChunk(
+                    tuple(current_findings),
+                    tuple(dict.fromkeys(current_paths)),
+                    bool(current_findings or current_paths) and can_mark_unseen,
+                )
+            )
+        current_findings = []
+        current_paths = []
+
+    for path in path_order:
+        group = by_path[path]
+        if len(group) > max_findings_per_request:
+            flush_current()
+            for start in range(0, len(group), max_findings_per_request):
+                # Complete-file reconciliation is impossible for this path under the cap.
+                chunks.append(_ScanResultChunk(tuple(group[start : start + max_findings_per_request]), (path,), False))
+            continue
+        if current_findings and len(current_findings) + len(group) > max_findings_per_request:
+            flush_current()
+        current_findings.extend(group)
+        if path:
+            current_paths.append(path)
+
+    current_paths.extend(clean_scanned_paths)
+    flush_current()
+    return tuple(chunks)
+
+
+def _parse_success_response(resp: Response) -> EmitResult:
+    # 2xx success. Parse defensively: a 2xx with an unreadable body means the POST was
+    # accepted but the report is unparseable — surface a warning, never crash (charter).
+    warnings: list[str] = []
+    try:
+        parsed = json.loads(resp.body) if resp.body else {}
+    except json.JSONDecodeError:
+        parsed = None
+    payload: dict[str, Any] = parsed if isinstance(parsed, dict) else {}
+    if not isinstance(parsed, dict):
+        warnings.append(f"Filigree returned {resp.status} with a non-JSON-object body; stats unavailable.")
+    raw_stats = payload.get("stats")
+    stats: dict[str, Any] = raw_stats if isinstance(raw_stats, dict) else {}
+    raw_warnings = payload.get("warnings")
+    if isinstance(raw_warnings, list):
+        warnings.extend(str(w) for w in raw_warnings)
+    failed = payload.get("failed") or []
+    return EmitResult(
+        reachable=True,
+        created=_safe_int(stats.get("findings_created")),
+        updated=_safe_int(stats.get("findings_updated")),
+        failed=len(failed) if isinstance(failed, list) else 0,
+        warnings=tuple(warnings),
+    )
+
+
 def filigree_disabled_reason(
     *, reachable: bool, status: int | None, token_sent: bool = False, url: str | None = None
 ) -> str | None:
@@ -268,63 +381,186 @@ class UrllibTransport:
             with exc:
                 return Response(status=exc.code, body=read_response_text(exc))
 
+    def get(self, url: str, headers: Mapping[str, str]) -> Response:
+        scheme = urllib.parse.urlsplit(url).scheme.lower()
+        if scheme not in _ALLOWED_SCHEMES:
+            raise FiligreeEmitError(f"filigree URL must use http or https; got scheme {scheme!r} in {url!r}")
+        request = urllib.request.Request(url, headers=dict(headers), method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
+                return Response(status=resp.status, body=read_response_text(resp))
+        except urllib.error.HTTPError as exc:
+            with exc:
+                return Response(status=exc.code, body=read_response_text(exc))
+
+
+def _resolve_operator_max_findings_per_request(explicit: int | None) -> int | None:
+    if explicit is not None:
+        if explicit < 1:
+            raise ValueError("max_findings_per_request must be at least 1")
+        return explicit
+    raw = os.environ.get(_MAX_FINDINGS_ENV)
+    if raw:
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise ValueError(f"{_MAX_FINDINGS_ENV} must be an integer") from exc
+        if value < 1:
+            raise ValueError(f"{_MAX_FINDINGS_ENV} must be at least 1")
+        return value
+    return None
+
+
+def _limit_from_mapping(node: Mapping[str, Any]) -> int | None:
+    for key in (
+        "max_findings_per_request",
+        "max_findings",
+        "findings_per_request",
+        "findings_per_request_limit",
+        "finding_limit",
+        "findings_limit",
+    ):
+        value = node.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            return value
+    for nested_key in ("limits", "request_limits", "chunking_guidance", "scan_results"):
+        nested = node.get(nested_key)
+        if isinstance(nested, Mapping):
+            found = _limit_from_mapping(nested)
+            if found is not None:
+                return found
+    return None
+
+
+def _is_scan_results_node(key: str, node: Mapping[str, Any]) -> bool:
+    haystacks = [key]
+    for field in ("path", "url", "endpoint", "route", "name"):
+        value = node.get(field)
+        if isinstance(value, str):
+            haystacks.append(value)
+    return any("scan-results" in item or "scan_results" in item for item in haystacks)
+
+
+def _extract_scan_results_limit(schema: Mapping[str, Any]) -> int | None:
+    for key in ("scan_results", "scan-results", "scan_results_limits", "scan-results-limits"):
+        value = schema.get(key)
+        if isinstance(value, Mapping):
+            found = _limit_from_mapping(value)
+            if found is not None:
+                return found
+
+    endpoints = schema.get("endpoints")
+    if isinstance(endpoints, Mapping):
+        for key, value in endpoints.items():
+            if isinstance(value, Mapping) and _is_scan_results_node(str(key), value):
+                found = _limit_from_mapping(value)
+                if found is not None:
+                    return found
+    elif isinstance(endpoints, list):
+        for value in endpoints:
+            if isinstance(value, Mapping) and _is_scan_results_node("", value):
+                found = _limit_from_mapping(value)
+                if found is not None:
+                    return found
+    return None
+
+
+def _scan_results_schema_url(url: str) -> str:
+    return f"{filigree_api_base_url(url).rstrip('/')}/files/_schema"
+
+
+def _fetch_scan_results_limit(url: str, transport: Transport, headers: Mapping[str, str]) -> int | None:
+    get = getattr(transport, "get", None)
+    if get is None:
+        return None
+    try:
+        resp = get(_scan_results_schema_url(url), headers)
+    except (FiligreeEmitError, urllib.error.URLError, OSError, json.JSONDecodeError):
+        return None
+    if not 200 <= resp.status < 300:
+        return None
+    try:
+        parsed = json.loads(resp.body) if resp.body else {}
+    except json.JSONDecodeError:
+        return None
+    return _extract_scan_results_limit(parsed) if isinstance(parsed, Mapping) else None
+
 
 class FiligreeEmitter:
     """POST findings to a Filigree Weft scan-results URL with an injectable transport."""
 
-    def __init__(self, url: str, *, transport: Transport | None = None, token: str | None = None) -> None:
+    def __init__(
+        self,
+        url: str,
+        *,
+        transport: Transport | None = None,
+        token: str | None = None,
+        max_findings_per_request: int | None = None,
+        protocol_errors_loud: bool = True,
+    ) -> None:
         self._url = url
         self._transport: Transport = transport if transport is not None else UrllibTransport()
         self._token = token
+        self._operator_max_findings_per_request = _resolve_operator_max_findings_per_request(max_findings_per_request)
+        self._protocol_errors_loud = protocol_errors_loud
 
     def emit(self, findings: Sequence[Finding], *, scanned_paths: Sequence[str] = ()) -> EmitResult:
-        body = json.dumps(build_scan_results_body(findings, scanned_paths=scanned_paths)).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         token_sent = bool(self._token)
         if token_sent:
             headers["Authorization"] = f"Bearer {self._token}"
+        max_findings_per_request = (
+            self._operator_max_findings_per_request
+            or _fetch_scan_results_limit(self._url, self._transport, headers)
+            or _DEFAULT_MAX_FINDINGS_PER_REQUEST
+        )
+        chunks = list(_scan_result_chunks(findings, scanned_paths, max_findings_per_request))
+        created = 0
+        updated = 0
+        failed = 0
+        warnings: list[str] = []
         try:
-            resp = self._transport.post(self._url, body, headers)
+            for chunk_index, chunk in enumerate(chunks, start=1):
+                body = json.dumps(
+                    build_scan_results_body(
+                        chunk.findings,
+                        scanned_paths=chunk.scanned_paths,
+                        mark_unseen=chunk.mark_unseen,
+                    )
+                ).encode("utf-8")
+                resp = self._transport.post(self._url, body, headers)
+                if resp.status in (401, 403):
+                    # Filigree is present but its opt-in bearer auth is on and refusing us.
+                    # Stays SOFT (enrichment unavailable, never exit-2) — but distinguished
+                    # as auth so the caller can say the actionable thing.
+                    return EmitResult(reachable=False, status=resp.status, token_sent=token_sent, url=self._url)
+                if resp.status >= 500:
+                    # Server-side outage (5xx) — the sibling is degraded, not a Wardline
+                    # payload bug. Treat like absent (warn + continue), carrying the status.
+                    return EmitResult(reachable=False, status=resp.status, token_sent=token_sent, url=self._url)
+                if not 200 <= resp.status < 300:
+                    message = f"Filigree rejected scan-results ({resp.status}) at {self._url}: {resp.body}"
+                    if self._protocol_errors_loud:
+                        raise FiligreeEmitError(message)
+                    remaining_findings = sum(len(c.findings) for c in chunks[chunk_index - 1 :])
+                    failed += remaining_findings
+                    warnings.append(message)
+                    break
+                chunk_result = _parse_success_response(resp)
+                created += chunk_result.created
+                updated += chunk_result.updated
+                failed += chunk_result.failed
+                warnings.extend(chunk_result.warnings)
         except (urllib.error.URLError, OSError):
             # Connection refused / DNS / timeout — sibling absent. Enrichment is
             # non-load-bearing: warn (at the CLI) and continue. No status reached us, so
             # this is the genuine "could not reach" case (status=None).
             return EmitResult(reachable=False, token_sent=token_sent, url=self._url)
-        if resp.status in (401, 403):
-            # Filigree is present but its opt-in bearer auth is on and refusing us. Stays
-            # SOFT (enrichment unavailable, never exit-2) — but distinguished as auth (and by
-            # token_sent: no-token vs token-rejected) so the caller can say the actionable
-            # thing instead of "could not reach".
-            return EmitResult(reachable=False, status=resp.status, token_sent=token_sent, url=self._url)
-        if resp.status >= 500:
-            # Server-side outage (5xx) — the sibling is degraded, not a Wardline payload bug.
-            # Treat like absent (warn + continue), carrying the status for an honest message.
-            return EmitResult(reachable=False, status=resp.status, token_sent=token_sent, url=self._url)
-        if not 200 <= resp.status < 300:
-            # 3xx (a redirect reached the client) or any remaining 4xx (notably 400): Wardline
-            # sent a request the server would not accept — bad payload / wrong endpoint. Loud.
-            raise FiligreeEmitError(f"Filigree rejected scan-results ({resp.status}) at {self._url}: {resp.body}")
-        # 2xx success. Parse defensively: a 2xx with an unreadable body means the POST was
-        # accepted but the report is unparseable — surface a warning, never crash (charter).
-        warnings: list[str] = []
-        try:
-            parsed = json.loads(resp.body) if resp.body else {}
-        except json.JSONDecodeError:
-            parsed = None
-        payload: dict[str, Any] = parsed if isinstance(parsed, dict) else {}
-        if not isinstance(parsed, dict):
-            warnings.append(f"Filigree returned {resp.status} with a non-JSON-object body; stats unavailable.")
-        raw_stats = payload.get("stats")
-        stats: dict[str, Any] = raw_stats if isinstance(raw_stats, dict) else {}
-        raw_warnings = payload.get("warnings")
-        if isinstance(raw_warnings, list):
-            warnings.extend(str(w) for w in raw_warnings)
-        failed = payload.get("failed") or []
         return EmitResult(
             reachable=True,
-            created=_safe_int(stats.get("findings_created")),
-            updated=_safe_int(stats.get("findings_updated")),
-            failed=len(failed) if isinstance(failed, list) else 0,
+            created=created,
+            updated=updated,
+            failed=failed,
             warnings=tuple(warnings),
             token_sent=token_sent,
             url=self._url,

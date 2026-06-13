@@ -29,6 +29,7 @@ from wardline.core.judge_run import run_judge
 from wardline.core.paths import baseline_path as baseline_file
 from wardline.core.paths import waivers_path, weft_config_path
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
+from wardline.core.scan_jobs import cancel_scan_job, read_scan_job_status, start_scan_job
 from wardline.core.sei_resolution import resolve_query_filters
 from wardline.core.waivers import add_waiver, load_project_waivers
 from wardline.mcp.prompts import get_prompt, list_prompts
@@ -622,6 +623,10 @@ def _cache_dir_arg(args: dict[str, Any], root: Path) -> Path | None:
     return _resolve_under_root(root, args["cache_dir"]) if args.get("cache_dir") else None
 
 
+def _path_arg(args: dict[str, Any], root: Path) -> Path:
+    return _resolve_under_root(root, args["path"]) if args.get("path") else root
+
+
 def _bool_arg(args: dict[str, Any], name: str, default: bool) -> bool:
     # Reject non-bool values loudly rather than ``bool(...)``-coercing them: a JSON string
     # like "false" would otherwise coerce to True, silently inverting intent. Matches the
@@ -632,6 +637,60 @@ def _bool_arg(args: dict[str, Any], name: str, default: bool) -> bool:
     if not isinstance(val, bool):
         raise ToolError(f"{name} must be a boolean")
     return val
+
+
+def _scan_job_request(args: dict[str, Any], root: Path, filigree_url: str | None) -> dict[str, Any]:
+    fail_on = args.get("fail_on")
+    if fail_on is not None:
+        try:
+            Severity(str(fail_on))
+        except ValueError as exc:
+            raise ToolError("fail_on must be one of CRITICAL/ERROR/WARN/INFO") from exc
+    lang = str(args.get("lang") or "python")
+    if lang not in {"python", "rust"}:
+        raise ToolError("lang must be one of python/rust")
+    fmt = str(args.get("format") or "jsonl")
+    if fmt not in {"jsonl", "sarif", "agent-summary"}:
+        raise ToolError("format must be one of jsonl/sarif/agent-summary")
+    local_only = _bool_arg(args, "local_only", False)
+    trusted_packs = _trusted_packs_arg(args)
+    output = _resolve_under_root(root, args["output"]) if args.get("output") else None
+    config = _cfg(args, root)
+    cache_dir = _cache_dir_arg(args, root)
+    return {
+        "config": str(config) if config is not None else None,
+        "format": fmt,
+        "output": str(output) if output is not None else None,
+        "fail_on": str(fail_on).upper() if fail_on else None,
+        "fail_on_unanalyzed": _bool_arg(args, "fail_on_unanalyzed", False),
+        "cache_dir": str(cache_dir) if cache_dir is not None else None,
+        "filigree_url": None if local_only else filigree_url,
+        "local_only": local_only,
+        "filigree_max_findings_per_request": args.get("filigree_max_findings_per_request"),
+        "timeout_seconds": args.get("timeout_seconds"),
+        "lang": lang,
+        "new_since": args.get("new_since"),
+        "trusted_packs": list(trusted_packs),
+        "trust_local_packs": _bool_arg(args, "trust_local_packs", False),
+        "strict_defaults": _bool_arg(args, "strict_defaults", False),
+        "trust_suppressions": _bool_arg(args, "trust_suppressions", False),
+    }
+
+
+def _scan_job_start(args: dict[str, Any], root: Path, filigree_url: str | None = None) -> dict[str, Any]:
+    path = _path_arg(args, root)
+    request = _scan_job_request(args, root, filigree_url)
+    return start_scan_job(path, request)
+
+
+def _scan_job_status(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    job_id = str(_require(args, "job_id"))
+    return read_scan_job_status(_path_arg(args, root), job_id)
+
+
+def _scan_job_cancel(args: dict[str, Any], root: Path) -> dict[str, Any]:
+    job_id = str(_require(args, "job_id"))
+    return cancel_scan_job(_path_arg(args, root), job_id)
 
 
 def _scan(
@@ -1671,6 +1730,152 @@ _SCAN_TOOL: dict[str, Any] = {
         "idempotentHint": True,
         "openWorldHint": False,
     },
+}
+
+
+_SCAN_JOB_STATUS_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "description": "File-backed scan-job status. Non-terminal jobs include heartbeat/pid/progress; terminal jobs "
+    "include summary/gate/artifacts when the worker reached them.",
+    "properties": {
+        "job_id": {"type": "string"},
+        "status": {
+            "type": "string",
+            "enum": [
+                "queued",
+                "running",
+                "running_stale",
+                "completed",
+                "completed_with_enrichment_failure",
+                "failed",
+                "cancelled",
+            ],
+        },
+        "phase": {"type": "string"},
+        "progress": {"type": "object"},
+        "heartbeat": {"type": "string"},
+        "pid": {"type": "integer"},
+        "artifacts": {"type": "object"},
+        "failure_kind": {"type": ["string", "null"]},
+        "error": {"type": ["string", "null"]},
+        "request": {"type": "object"},
+    },
+    "required": ["job_id", "status", "phase", "progress", "heartbeat", "artifacts", "failure_kind", "error", "request"],
+    "additionalProperties": True,
+}
+
+
+_SCAN_JOB_START_INPUT_PROPERTIES: dict[str, Any] = {
+    "path": {"type": "string", "description": "scan root subdir relative to the MCP server project root"},
+    "config": {"type": "string", "description": "config file relative to project root"},
+    "format": {"type": "string", "enum": ["jsonl", "sarif", "agent-summary"], "description": "artifact format"},
+    "output": {"type": "string", "description": "artifact output path relative to project root"},
+    "fail_on": {"type": "string", "enum": _SEVERITY_ENUM},
+    "fail_on_unanalyzed": {
+        "type": "boolean",
+        "description": "Trip the gate when any file was discovered but could not be analyzed.",
+    },
+    "cache_dir": {"type": "string", "description": "summary-cache directory relative to project root"},
+    "local_only": {
+        "type": "boolean",
+        "description": "Disable sibling emission even when a Filigree URL resolves from launch/env/install state.",
+    },
+    "filigree_max_findings_per_request": {"type": "integer", "minimum": 1},
+    "timeout_seconds": {
+        "type": "number",
+        "minimum": 0,
+        "description": "Fail the background scan job after this many seconds. Defaults to 1800; use 0 to disable.",
+    },
+    "lang": {"type": "string", "enum": ["python", "rust"]},
+    "new_since": {
+        "type": "string",
+        "description": "PR-scoped 'new findings only' gate: only gate on findings in files/entities changed "
+        "since this git ref.",
+    },
+    "trust_packs": {"type": "array", "items": {"type": "string"}},
+    "trust_local_packs": {
+        "type": "boolean",
+        "description": "Allow loading custom trust-grammar packs from the local project directory.",
+    },
+    "strict_defaults": {
+        "type": "boolean",
+        "description": "Ignore repository-supplied custom configuration overrides (weft.toml).",
+    },
+    "trust_suppressions": {
+        "type": "boolean",
+        "description": "Let repository-controlled baseline/waiver/judged files clear the gate.",
+    },
+}
+
+
+_SCAN_JOB_START_TOOL: dict[str, Any] = {
+    "name": "scan_job_start",
+    "title": "Start scan job",
+    "description": "Start a file-backed Wardline scan job and return its stable job id plus initial status. "
+    "Use scan_job_status to poll heartbeat/progress and scan_job_cancel to stop it. This is the MCP-safe "
+    "surface for long scans; prefer it over synchronous scan when the project may take more than a short call.",
+    "input_schema": {
+        "type": "object",
+        "properties": _SCAN_JOB_START_INPUT_PROPERTIES,
+    },
+    "output_schema": _SCAN_JOB_STATUS_OUTPUT_SCHEMA,
+    "annotations": {
+        "title": "Start scan job",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    },
+    "capabilities": frozenset({ToolCapability.READ, ToolCapability.WRITE}),
+}
+
+
+_SCAN_JOB_STATUS_TOOL: dict[str, Any] = {
+    "name": "scan_job_status",
+    "title": "Read scan-job status",
+    "description": "Read the current status JSON for a file-backed Wardline scan job. Reports stale heartbeat "
+    "or dead-worker terminal failure instead of leaving an apparently hung job ambiguous.",
+    "input_schema": {
+        "type": "object",
+        "required": ["job_id"],
+        "properties": {
+            "job_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+            "path": {"type": "string", "description": "scan root subdir relative to the MCP server project root"},
+        },
+    },
+    "output_schema": _SCAN_JOB_STATUS_OUTPUT_SCHEMA,
+    "annotations": {
+        "title": "Read scan-job status",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+    "capabilities": frozenset({ToolCapability.READ}),
+}
+
+
+_SCAN_JOB_CANCEL_TOOL: dict[str, Any] = {
+    "name": "scan_job_cancel",
+    "title": "Cancel scan job",
+    "description": "Cancel a non-terminal file-backed Wardline scan job and return the persisted terminal status.",
+    "input_schema": {
+        "type": "object",
+        "required": ["job_id"],
+        "properties": {
+            "job_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+            "path": {"type": "string", "description": "scan root subdir relative to the MCP server project root"},
+        },
+    },
+    "output_schema": _SCAN_JOB_STATUS_OUTPUT_SCHEMA,
+    "annotations": {
+        "title": "Cancel scan job",
+        "readOnlyHint": False,
+        "destructiveHint": True,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    },
+    "capabilities": frozenset({ToolCapability.READ, ToolCapability.WRITE}),
 }
 
 
@@ -4021,6 +4226,28 @@ class WardlineMCPServer:
         )
         self.add_tool(
             Tool(
+                **_SCAN_JOB_START_TOOL,
+                handler=lambda args, root: _scan_job_start(
+                    args,
+                    root,
+                    None if bool(args.get("local_only") or False) else self._resolved_filigree_url_for_policy(args),
+                ),
+            )
+        )
+        self.add_tool(
+            Tool(
+                **_SCAN_JOB_STATUS_TOOL,
+                handler=_scan_job_status,
+            )
+        )
+        self.add_tool(
+            Tool(
+                **_SCAN_JOB_CANCEL_TOOL,
+                handler=_scan_job_cancel,
+            )
+        )
+        self.add_tool(
+            Tool(
                 **_EXPLAIN_TAINT_TOOL,
                 handler=lambda args, root: _explain_taint(args, root, self._loomweave_client(_cfg(args, root))),
             )
@@ -4217,6 +4444,12 @@ class WardlineMCPServer:
             or self._resolved_filigree_url_for_policy(arguments) is not None
         ):
             capabilities.update({ToolCapability.NETWORK, ToolCapability.WRITE})
+        if (
+            tool.name == "scan_job_start"
+            and not bool(arguments.get("local_only", False))
+            and self._resolved_filigree_url_for_policy(arguments) is not None
+        ):
+            capabilities.add(ToolCapability.NETWORK)
         if (
             tool.name in {"explain_taint", "attest", "verify_attestation"}
             and self._resolved_loomweave_url_for_policy(arguments) is not None

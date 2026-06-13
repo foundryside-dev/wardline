@@ -7,9 +7,10 @@ two protocol invariants the integration depends on:
 * ``last_context`` returns the *Python-shaped* ``AnalysisContext | None`` (None in
   slice-1 — the Rust-native context is incompatible and would crash the delta/SARIF
   consumers; it lives on the separate ``last_rust_context`` accessor); and
-* a file tree-sitter cannot fully parse yields a ``WLN-ENGINE-PARSE-ERROR`` FACT and
-  contributes NO ``RS-WL-*`` findings (never half-analyze a file), mirroring the
-  Python pipeline's parse-error policy so it counts toward ``ScanSummary.unanalyzed``.
+* a file tree-sitter cannot fully parse yields a gate-eligible
+  ``WLN-ENGINE-PARSE-ERROR`` defect and contributes NO ``RS-WL-*`` findings (never
+  half-analyze a file), mirroring the Python pipeline's parse-error policy so it
+  counts toward ``ScanSummary.unanalyzed``.
 """
 
 from __future__ import annotations
@@ -62,7 +63,7 @@ def test_last_context_is_none_but_rust_context_is_retained(tmp_path) -> None:
     assert analyzer.last_rust_context.triggers
 
 
-def test_unparseable_file_emits_parse_error_fact_and_no_rs_findings(tmp_path) -> None:
+def test_unparseable_file_emits_parse_error_defect_and_no_rs_findings(tmp_path) -> None:
     # A truncated fn: tree-sitter recovers a partial tree (root_node.has_error). We must
     # surface the diagnostic and NOT report findings over a half-parsed file.
     (tmp_path / "broken.rs").write_text("fn f( {\n    let t = std::env::var(\n", encoding="utf-8")
@@ -71,7 +72,9 @@ def test_unparseable_file_emits_parse_error_fact_and_no_rs_findings(tmp_path) ->
     parse_errors = [f for f in findings if f.rule_id == "WLN-ENGINE-PARSE-ERROR"]
     assert len(parse_errors) == 1
     assert parse_errors[0].location.path == "broken.rs"
-    assert parse_errors[0].severity.value == "NONE"
+    assert parse_errors[0].location.line_start == 1
+    assert parse_errors[0].severity.value == "ERROR"
+    assert parse_errors[0].kind.value == "defect"
     assert all(not f.rule_id.startswith("RS-WL-") for f in findings)
 
 
@@ -170,8 +173,8 @@ def test_multiple_files_accumulate_findings(tmp_path) -> None:
 def test_one_crashing_file_is_isolated_and_does_not_lose_other_findings(tmp_path) -> None:
     # A clean-parsing but pathologically deep expression overflows the recursive dataflow
     # walk (RecursionError). Per-file isolation must degrade THAT file to a counted
-    # WLN-ENGINE-FILE-FAILED FACT and still emit the OTHER file's real RS-WL-108 — never
-    # abort the whole scan (the engine's per-function isolation, mirrored per-file).
+    # WLN-ENGINE-FILE-FAILED defect and still emit the OTHER file's real RS-WL-108 —
+    # never abort the whole scan (the engine's per-function isolation, mirrored per-file).
     deep_expr = "+".join(["x"] * 6000)  # nested binary_expression depth >> default recursionlimit
     deep = tmp_path / "deep.rs"
     deep.write_text(
@@ -186,7 +189,9 @@ def test_one_crashing_file_is_isolated_and_does_not_lose_other_findings(tmp_path
 
     file_failed = [f for f in findings if f.rule_id == "WLN-ENGINE-FILE-FAILED"]
     assert len(file_failed) == 1 and file_failed[0].location.path == "deep.rs"
-    assert file_failed[0].severity.value == "NONE"
+    assert file_failed[0].location.line_start == 1
+    assert file_failed[0].severity.value == "ERROR"
+    assert file_failed[0].kind.value == "defect"
     # The other file's real finding survived the neighbour's crash.
     survivors = [f for f in findings if f.rule_id == "RS-WL-108"]
     assert len(survivors) == 1 and survivors[0].location.path == "inject.rs"

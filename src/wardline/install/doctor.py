@@ -16,6 +16,7 @@ from wardline.core.config import load
 from wardline.core.errors import ConfigError
 from wardline.core.filigree_emit import FiligreeEmitter, Transport, UrllibTransport
 from wardline.core.paths import weft_config_path, weft_state_dir
+from wardline.core.safe_paths import safe_write_text
 from wardline.filigree.config import load_filigree_token
 from wardline.install.block import inject_block
 from wardline.install.detect import (
@@ -57,6 +58,50 @@ class DoctorCheck:
         if self.message:
             data["message"] = self.message
         return data
+
+
+_DEFAULT_CONFIG_EXCLUDES = (
+    ".git/**",
+    ".venv/**",
+    "venv/**",
+    ".uv-cache/**",
+    ".mypy_cache/**",
+    ".pytest_cache/**",
+    ".ruff_cache/**",
+    ".tox/**",
+    ".nox/**",
+    "node_modules/**",
+    "telemetry/**",
+    "data/**",
+)
+
+
+def _format_toml_array(values: tuple[str, ...]) -> str:
+    return "[" + ", ".join(json.dumps(value) for value in values) + "]"
+
+
+def _default_source_roots(root: Path) -> tuple[str, ...]:
+    return ("src",) if (root / "src").is_dir() else (".",)
+
+
+def _default_weft_config(root: Path) -> str:
+    source_roots = _default_source_roots(root)
+    return (
+        "# Created by `wardline doctor --repair`.\n"
+        "# Keep the scan rooted at the project root for stable identity; bound the\n"
+        "# analyzed source here so agent gates do not traverse caches or run artifacts.\n"
+        "[wardline]\n"
+        f"source_roots = {_format_toml_array(source_roots)}\n"
+        f"exclude = {_format_toml_array(_DEFAULT_CONFIG_EXCLUDES)}\n"
+    )
+
+
+def _ensure_weft_config(root: Path) -> bool:
+    cfg_path = weft_config_path(root)
+    if cfg_path.exists():
+        return False
+    safe_write_text(root, cfg_path, _default_weft_config(root), label="weft.toml")
+    return True
 
 
 def _has_instruction_block(path: Path) -> bool:
@@ -124,6 +169,13 @@ def _check_config(root: Path, *, fixed: bool) -> DoctorCheck:
     # weft.toml (a sibling's section may be broken). doctor restores the operator
     # signal by distinguishing ABSENT (ok — defaults are intentional) from
     # PRESENT-BUT-BROKEN (error — your policy is silently not applying).
+    if not cfg_path.exists():
+        return DoctorCheck(
+            "wardline.config",
+            "error",
+            fixed=False,
+            message="missing weft.toml; run `wardline doctor --repair` to create a bounded default policy",
+        )
     if cfg_path.is_file():
         try:
             parsed = tomllib.loads(cfg_path.read_text(encoding="utf-8"))
@@ -401,6 +453,7 @@ def machine_readable_doctor(
 ) -> dict[str, Any]:
     """Return the shared machine-readable doctor shape, optionally repairing install bindings."""
     before = {check.name: check for check in check_install(root)}
+    config_missing_before = not weft_config_path(root).exists()
     bindings_fixed = False
     if fix:
         repair_install(root)
@@ -413,7 +466,7 @@ def machine_readable_doctor(
     probe_url = _resolve_probe_url(root, filigree_url)
 
     checks: list[DoctorCheck] = []
-    checks.append(_check_config(root, fixed=fix and not weft_config_path(root).exists()))
+    checks.append(_check_config(root, fixed=fix and config_missing_before and weft_config_path(root).exists()))
     checks.append(_check_mcp_registration(root, before=before))
     checks.append(_check_marker_package())
     checks.append(_check_url(root, "loomweave", fixed=bindings_fixed, effective_url=loomweave_url))
@@ -467,7 +520,8 @@ def repair_install(root: Path) -> dict[str, str]:
     statuses["Codex MCP"] = "repaired"
     detect_siblings(root)
     statuses["bindings"] = "detected"
-    # doctor MAY create its OWN state subtree (never weft.toml, never a sibling's).
+    statuses["weft.toml"] = "created" if _ensure_weft_config(root) else "checked"
+    # doctor MAY create its OWN state subtree (never a sibling's).
     weft_state_dir(root).mkdir(parents=True, exist_ok=True)
     statuses["state_dir"] = "ensured"
     return statuses

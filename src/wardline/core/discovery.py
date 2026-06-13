@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import fnmatch
+import os
 import warnings
 from collections.abc import Iterable
 from pathlib import Path
@@ -11,7 +12,21 @@ from pathlib import Path
 from wardline.core.config import WardlineConfig
 from wardline.core.errors import ConfigError
 
-_ALWAYS_SKIP = frozenset({"__pycache__", ".venv", "venv", ".git", ".mypy_cache"})
+_ALWAYS_SKIP = frozenset(
+    {
+        "__pycache__",
+        ".venv",
+        "venv",
+        ".git",
+        ".mypy_cache",
+        ".uv-cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".tox",
+        ".nox",
+        "node_modules",
+    }
+)
 
 
 def discover(
@@ -47,7 +62,13 @@ def discover(
         if not base.exists():
             warnings.warn(f"source root does not exist: {base}", stacklevel=2)
             continue
-        candidates = sorted({path for suffix in suffixes for path in base.rglob(f"*{suffix}")})
+        candidates: list[Path] = []
+        for dirpath, dirnames, filenames in os.walk(base):
+            dirnames[:] = sorted(dirname for dirname in dirnames if dirname not in skip_dirs)
+            current = Path(dirpath)
+            for filename in sorted(filenames):
+                if any(filename.endswith(suffix) for suffix in suffixes):
+                    candidates.append(current / filename)
         for path in candidates:
             rel_parts = path.relative_to(base).parts if path.is_relative_to(base) else path.parts
             if any(part in skip_dirs for part in rel_parts):
