@@ -110,6 +110,8 @@ it at a package root, not a single file.
 | `--fail-on [CRITICAL\|ERROR\|WARN\|INFO]` | Exit non-zero when any finding at or above this severity survives the baseline. Use this as your CI gate. |
 | `--cache-dir PATH` | Store the L3 inter-procedural summary cache here so the next scan can reuse unchanged summaries when `WARDLINE_SUMMARY_CACHE_KEY` is set in the process environment. Unsigned or incorrectly signed files are ignored and the scan falls back to recomputing summaries. Use an operator-owned directory outside untrusted checkouts; do not put the cache in a path that pull-request content can commit or modify. |
 | `--filigree-url TEXT` | Opt-in: POST findings to a Filigree Weft scan-results endpoint as well as emitting them locally. Prefer this native path when agents need Filigree promotion, deduplication, or close/reopen lifecycle state. |
+| `--local-only`, `--no-emit` | Disable sibling emission for this scan, even if Filigree or Loomweave URLs resolve from flags, environment, MCP install state, or local published ports. The scan still writes local output and evaluates the gate. |
+| `--filigree-max-findings-per-request INTEGER` | Cap findings per Filigree scan-results POST. Precedence is explicit CLI value, then `WARDLINE_FILIGREE_MAX_FINDINGS_PER_REQUEST`, then Filigree's advertised scan-results limit from `/api/files/_schema` when reachable, then Wardline's safe default (`1000`). Wardline chunks by complete file groups when possible so Filigree reconciliation does not mark later chunks as fixed. |
 
 Realistic invocation — scan the source tree, emit SARIF to a file, and fail the
 build on any `ERROR`-or-worse finding:
@@ -138,6 +140,35 @@ $ wardline scan src/ --format agent-summary --output findings.agent-summary.json
 
 See the [getting-started guide](../getting-started.md) for a first end-to-end
 scan and how to read the findings.
+
+## `wardline scan-job`
+
+**Purpose:** start a file-backed scan job and poll status without requiring a
+daemon. Job state lives under `.weft/wardline/jobs/<job_id>/status.json`; the
+default findings artifact lives beside it.
+
+```text
+$ wardline scan-job start . --fail-on ERROR --timeout 600
+{"job_id":"...","status":"running","phase":"starting",...}
+
+$ wardline scan-job status <job_id> --path .
+{"job_id":"...","status":"completed","phase":"complete",...}
+
+$ wardline scan-job cancel <job_id> --path .
+{"job_id":"...","status":"cancelled","phase":"cancelled",...}
+```
+
+Status JSON includes `phase`, `progress`, `heartbeat`, `artifacts.findings`,
+`gate`, `filigree_emit`, and a terminal `failure_kind`. Scan/tool errors report
+`failure_kind: "scan"`, gate trips report `"gate"`, and successful scans with
+non-load-bearing upload failure report `status:
+"completed_with_enrichment_failure"` plus `failure_kind: "enrichment"`. Use
+scan jobs default to a 30-minute timeout so a stuck analyzer becomes a terminal
+`failure_kind: "timeout"` status instead of an ambiguous hang. Use
+`--timeout SECONDS` to choose a tighter or looser bound, or `--timeout 0` for an
+intentionally unbounded local run. Polling `status` also reports stale/dead
+workers, and `cancel` persists a terminal `cancelled` status for scans that are
+no longer useful.
 
 ## `wardline explain-taint`
 

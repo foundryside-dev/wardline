@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Wardline — trust-boundary analysis</title>
-<meta name="description" content="Wardline is a generic, lightweight semantic-tainting static analyzer for Python. Zero runtime dependencies. Tracks untrusted data across your codebase and gates trust-boundary violations. Part of the Weft Federation.">
+<title>Wardline — trust-boundary analysis for agents and CI</title>
+<meta name="description" content="Wardline is a lightweight semantic-tainting static analyzer for trust boundaries. It scans Python, includes a Rust command-injection preview, and gives agents and CI a deterministic gate for untrusted data.">
 <!-- Preload brand + product faces before first paint (kills the substitute-font flash). -->
 <link rel="preload" href="fonts/SpaceGrotesk-Variable.ttf" as="font" type="font/ttf" crossorigin>
 <link rel="preload" href="fonts/JetBrainsMono-Variable.ttf" as="font" type="font/ttf" crossorigin>
@@ -32,7 +32,9 @@
     <span class="path-hint">~/wardline</span>
   </div>
   <nav class="hub-nav" aria-label="Primary">
+    <a href="#workflow">Workflow</a>
     <a href="#trust-model">Trust model</a>
+    <a href="#coverage">Coverage</a>
     <a href="#commands">Commands</a>
     <a href="#federation">Federation</a>
     <a class="ext" href="https://wardline.foundryside.dev/docs/" target="_blank" rel="noopener">Docs</a>
@@ -47,16 +49,16 @@
   <section class="hero">
     <div class="eyebrow">
       <span class="eyebrow-dot" aria-hidden="true"></span>
-      <span class="t-label" style="color: var(--thread-wardline);">Trust-boundary analysis · Python · zero runtime dependencies</span>
+      <span class="t-label" style="color: var(--thread-wardline);">Trust-boundary analysis · Python scanner · Rust preview</span>
     </div>
 
-    <h1 class="hero-title">Does this function's data<br>match its trust claim?</h1>
+    <h1 class="hero-title">Give agents and CI a deterministic trust-boundary gate.</h1>
 
     <p class="hero-lede">
-      Wardline reads your Python source statically — it never runs your code — and asks one question
-      of every trust-annotated function: <strong>is the data it works with as trusted as it claims?</strong>
-      It propagates a taint (a trust level) across the whole call graph and flags untrusted data
-      reaching a trusted producer with no validation in between.
+      Wardline reads source statically — it never runs your application — and asks one question
+      of each declared boundary: <strong>is the data flowing through this code as trusted as the
+      code claims?</strong> It catches untrusted data reaching trusted producers, turns the result
+      into structured findings, and gives coding agents an explainable loop from scan to fix.
     </p>
 
     <div class="install-strip">
@@ -123,7 +125,7 @@
       </div>
       <div class="stat">
         <span class="stat-label"><span class="stat-dot t-muted"></span>Output formats</span>
-        <span class="stat-value">SARIF&thinsp;+&thinsp;JSONL</span>
+        <span class="stat-value">4</span>
       </div>
     </div>
 
@@ -138,6 +140,40 @@
       </div>
     </div>
 
+  </section>
+
+  <!-- ============================ WORKFLOW ============================ -->
+  <section class="workflow">
+    <div class="t-label section-label" style="color: var(--thread-wardline);">The product workflow</div>
+    <h2 id="workflow" class="comp-title">Scan, explain, fix at the boundary, rescan.</h2>
+    <p class="comp-lede">
+      Wardline is built for a human reviewing a gate and for an agent doing the mechanical work.
+      The scanner emits structured evidence; the agent asks for the taint path; the fix belongs at
+      the boundary where trust changes, not at a random sink downstream.
+    </p>
+
+    <div class="workflow-steps" aria-label="Wardline workflow">
+      <div class="workflow-step">
+        <span class="workflow-step__num">1</span>
+        <h3>Declare the edge</h3>
+        <p>Use marker decorators in Python, or doc-comment markers in Rust preview code, to name the places where data enters or claims a trust level.</p>
+      </div>
+      <div class="workflow-step">
+        <span class="workflow-step__num">2</span>
+        <h3>Run the gate</h3>
+        <p><code>wardline scan . --fail-on ERROR</code> writes findings and exits cleanly, tripped, or errored with distinct exit codes.</p>
+      </div>
+      <div class="workflow-step">
+        <span class="workflow-step__num">3</span>
+        <h3>Ask why</h3>
+        <p><code>explain-taint</code>, MCP <code>explain_taint</code>, and dossiers show the tainted callee, source boundary, sink, and remediation hint.</p>
+      </div>
+      <div class="workflow-step">
+        <span class="workflow-step__num">4</span>
+        <h3>Keep the evidence</h3>
+        <p>Emit JSONL, SARIF, agent-summary JSON, signed governance artifacts, or Filigree lifecycle updates depending on the workflow.</p>
+      </div>
+    </div>
   </section>
 
   <!-- ============================ TRUST MODEL ============================ -->
@@ -230,13 +266,61 @@
 
   </section>
 
+  <!-- ============================ COVERAGE ============================ -->
+  <section class="coverage">
+    <div class="t-label section-label" style="color: var(--thread-wardline);">What Wardline checks</div>
+    <h2 id="coverage" class="comp-title">A focused trust-boundary scanner, not a broad SAST suite.</h2>
+    <p class="comp-lede">
+      Wardline concentrates on places where trust is declared, transformed, or violated. Python is
+      the full frontend; Rust support is a preview for command-injection findings.
+    </p>
+
+    <div class="capability-grid">
+      <div class="capability-card">
+        <h3>Boundary integrity</h3>
+        <p>Flags trusted producers returning raw data, non-rejecting trust boundaries, assert-only validation, and fail-open handlers around rejection logic.</p>
+      </div>
+      <div class="capability-card">
+        <h3>Python sink families</h3>
+        <p>Covers command execution, dynamic code, dynamic imports, deserialization, path traversal, SSRF, SQL injection, XML parsing, templates, native libraries, logging formats, and SMTP sends.</p>
+      </div>
+      <div class="capability-card">
+        <h3>Rust preview</h3>
+        <p><code>wardline scan --lang rust</code> detects untrusted data choosing a program or reaching a shell command line through <code>std::process::Command</code>.</p>
+      </div>
+      <div class="capability-card">
+        <h3>Suppression with posture</h3>
+        <p>Baselines, waivers, and judged findings stay visible in the gate vocabulary, so a quiet build can still explain what was evaluated and what was trusted.</p>
+      </div>
+    </div>
+
+    <div class="support-matrix" aria-label="Wardline frontend support">
+      <div class="support-row support-row--head">
+        <span>Frontend</span>
+        <span>Primary use</span>
+        <span>Install</span>
+      </div>
+      <div class="support-row">
+        <span>Python</span>
+        <span>Trust lattice, project call graph, boundary and sink rules</span>
+        <span><code>pip install "wardline[scanner]"</code></span>
+      </div>
+      <div class="support-row">
+        <span>Rust preview</span>
+        <span>Command-injection slice with crate-aware finding identity</span>
+        <span><code>pip install "wardline[rust]"</code></span>
+      </div>
+    </div>
+  </section>
+
   <!-- ============================ COMMANDS ============================ -->
   <section class="commands">
     <div class="t-label section-label" style="color: var(--thread-wardline);">The command surface</div>
     <h2 id="commands" class="comp-title">CLI + MCP + agent integration</h2>
     <p class="comp-lede">
-      Wardline is agent-first: the MCP server exposes scan, explain, judge, baseline, and waiver
-      tools over JSON-RPC with no SDK. Agents run the full scan&thinsp;&rarr;&thinsp;explain&thinsp;&rarr;&thinsp;fix-at-boundary&thinsp;&rarr;&thinsp;rescan loop natively.
+      Wardline is agent-first: the MCP server exposes the same scan, explanation, posture, and
+      lifecycle surfaces as the CLI over JSON-RPC with no SDK. Agents can run the full loop without
+      scraping terminal output.
     </p>
 
     <div class="cmd-grid">
@@ -261,12 +345,20 @@
             <td>per-entity trust dossier</td>
           </tr>
           <tr>
+            <td>wardline explain-taint</td>
+            <td>explain one finding's taint path and remediation hint</td>
+          </tr>
+          <tr>
+            <td>wardline rekey</td>
+            <td>migrate baseline, waiver, and judge stores across fingerprint schemes</td>
+          </tr>
+          <tr>
             <td>wardline judge</td>
             <td>opt-in LLM triage — labels findings TRUE/FALSE positive (never runs automatically)</td>
           </tr>
           <tr>
             <td>wardline install</td>
-            <td>wire Wardline into your coding agent (CLAUDE.md, .mcp.json, Loomweave / Filigree bindings)</td>
+            <td>wire Wardline guidance and MCP registration into your coding agent</td>
           </tr>
         </table>
         <p class="cmd-note">The <a class="ext" href="https://wardline.foundryside.dev/docs/reference/cli/" target="_blank" rel="noopener">CLI reference</a> in the docs is authoritative. <code style="font-size: 10.5px; background: var(--surface-overlay); padding: 1px 5px; border-radius: var(--radius-sm);">--fail-on</code> level, output format flags, and suppression options are covered there.</p>
@@ -291,6 +383,18 @@
           <tr>
             <td>dossier</td>
             <td>the per-entity trust dossier over MCP</td>
+          </tr>
+          <tr>
+            <td>findings</td>
+            <td>read-only filtered finding query</td>
+          </tr>
+          <tr>
+            <td>doctor</td>
+            <td>check install wiring, sibling discovery, auth, and server freshness</td>
+          </tr>
+          <tr>
+            <td>rekey</td>
+            <td>probe or apply fingerprint-keyed store migration</td>
           </tr>
           <tr>
             <td>assure</td>
@@ -332,6 +436,10 @@
             <td>pip install "wardline[loomweave]"</td>
             <td>Persist per-entity taint facts to a Loomweave store (adds blake3)</td>
           </tr>
+          <tr>
+            <td>pip install "wardline[rust]"</td>
+            <td>Rust command-injection preview frontend (includes the scanner extra)</td>
+          </tr>
         </tbody>
       </table>
     </div>
@@ -363,7 +471,6 @@
           Wardline keys taint facts and cross-tool bindings on SEI, the durable per-entity identity
           owned by Loomweave. A link survives a rename because it keys on the identity, not the name.
           Degrades gracefully when the <code style="font-size: 11px; background: var(--surface-overlay); padding: 1px 4px; border-radius: 2px;">sei</code> capability is absent from the Loomweave instance.
-          <span class="tag tag-ok">LOCKED · 2026-06-05</span>
         </div>
       </div>
       <div class="fact">
@@ -390,7 +497,6 @@
         <span class="b-arrow">→</span>
         <span class="b-name" style="color: var(--thread-filigree);">Filigree</span>
         <span class="b-desc">findings become tracked work via the native Filigree emitter</span>
-        <span class="tag tag-warn">A-1 · LIVE — until Loomweave-absent path demonstrated end-to-end</span>
       </li>
       <li>
         <span class="b-name" style="color: var(--thread-wardline);">Wardline</span>
@@ -401,9 +507,8 @@
     </ul>
 
     <p class="t-meta weave-foot">
-      Full federation context and the asterisk register:
+      Full federation context:
       <a class="ext" href="https://github.com/foundryside-dev/weft/blob/main/federation-map.md" target="_blank" rel="noopener">federation-map.md</a> ·
-      <a class="ext" href="https://github.com/foundryside-dev/weft/blob/main/asterisk-register.md" target="_blank" rel="noopener">asterisk-register.md</a> ·
       <a class="ext" href="https://github.com/foundryside-dev/weft/blob/main/members/wardline.md" target="_blank" rel="noopener">members/wardline.md</a>
     </p>
 
@@ -432,7 +537,7 @@
         <span style="font-size:11px; color: var(--text-muted);">github.com/foundryside-dev/weft</span>
       </a>
 
-      <a class="bindings-member ext" href="https://github.com/foundryside-dev/clarion" target="_blank" rel="noopener"
+      <a class="bindings-member ext" href="https://loomweave.foundryside.dev" target="_blank" rel="noopener"
          style="display:flex; align-items:center; gap:12px; padding:11px 14px;
                 background: var(--surface-raised); border:1px solid var(--border-default);
                 border-radius: var(--radius); text-decoration:none; color: inherit;
@@ -520,7 +625,7 @@
     </svg>
     <span>part of Foundryside · foundryside.dev</span>
   </a>
-  <span class="foot-meta">MIT · 2026 · v1.0.0rc4</span>
+  <span class="foot-meta">MIT</span>
 </footer>
 
 <script src="main.js"></script>

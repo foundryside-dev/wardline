@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Pollable file-backed scan jobs.** `wardline scan-job start|status|cancel`
+  (CLI) and the matching `scan_job_start` / `scan_job_status` / `scan_job_cancel`
+  MCP tools run a long scan in a daemon-free worker subprocess that persists status
+  JSON under `.weft/wardline/jobs/`, so an agent can start a slow scan and poll its
+  heartbeat/progress instead of blocking a single MCP call. Status reads refresh
+  liveness (dead-worker / stale-heartbeat) so a hung job is never ambiguous. The MCP
+  surface is now 18 tools.
+- **Filigree-emit capping and local-only fencing.** `scan` gains
+  `--filigree-max-findings-per-request` (env `WARDLINE_FILIGREE_MAX_FINDINGS_PER_REQUEST`,
+  default 1000) to bound per-POST payloads, and `--local-only`/`--no-emit` to disable
+  sibling emission even when URLs resolve from flags/env/install state. Emission stays
+  ENRICH-ONLY — a sibling's absence never breaks the core scan or gate.
+- **Top-level documentation refreshed against the 2026-05-29..2026-06-12
+  release-candidate surface.** The README now describes the current product shape:
+  Python remains the full taint-analysis frontend; Rust is a command-injection
+  preview behind `wardline[rust]`; configuration/state live in `weft.toml` and
+  `.weft/wardline/`; the agent/MCP surface includes doctor, rekey, assurance,
+  attestation, dossier, and finding-lifecycle tools; and the docs index points to
+  the Rust, Weft, and assurance guides.
 - **MCP structured tool output on all 15 tools** — every tool now declares an
   `outputSchema` in `tools/list` and returns `structuredContent` alongside the
   (byte-identical) text block on `tools/call`, so MCP-spec clients consume and
@@ -29,6 +48,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   enforcement authority (`wardline-e63204176b`, MCP-primary B2).
 
 ### Fixed
+- **Install, attestation, and local automation hardening from the 2026-06-12
+  security pass.** `wardline install`/doctor paths now refuse unsafe writes through
+  symlinked published-port files, refuse to mint attestation keys into tracked
+  environments, preserve loopback-scope handling without needless churn, and keep
+  operator-pinned sibling URLs intact. Attestation capture disables repository
+  `fsmonitor` while reading git state and fails stale reproduction instead of
+  accepting mismatched evidence. The repo `make clean` target refuses symlinked
+  cleanup targets, and CI pins the `setup-uv` action.
+- **Scan/reporting correctness hardening from the latest review pass.** Grammar
+  fingerprints now include seed dependencies, return-taint resolution uses the
+  statement snapshot for the return being analyzed, recursive lambda taint
+  resolution is guarded, `assure` counts unanalyzed files in coverage, and
+  `scan-file-findings` honors the gate exit status. Default agent-summary output
+  is guarded from oversized or misleading responses.
+- **Filigree/Loomweave federation safety fixes.** Filigree token resolution now
+  prioritizes env aliases over dotenv fallback, mark-unseen lifecycle emission is
+  disabled for unanalyzed scans, strict MCP SEI filters preserve their defaults,
+  and signed scan artifacts include scan scope so a receiver can distinguish
+  evidence from different roots.
 - **Non-string `issue_id` from Filigree promote is normalized to `null`** —
   the promote response is type-narrowed at the wire boundary, so a skewed
   2xx body can no longer leak a non-string `issue_id` into `file_finding` /

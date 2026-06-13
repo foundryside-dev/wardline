@@ -41,7 +41,7 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-
 .ext::after { content: " \2197"; font-size: 0.85em; color: var(--text-muted); }
 
 /* ---- shared section width ------------------------------------------------ */
-.hero, .trust-model, .commands, .federation, .hub-footer {
+.hero, .workflow, .trust-model, .coverage, .commands, .federation, .hub-footer {
   max-width: 980px; margin: 0 auto;
 }
 
@@ -119,8 +119,8 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-
 /* ---- Hero finding panel (the PY-WL-101 motif) --- */
 .finding-panel {
   margin-top: 36px;
-  background: #131E24;                 /* editor-dark surface, pinned dark in both themes */
-  border: 1px solid #223040;
+  background: #1E1A13;                 /* editor-dark surface, pinned dark in both themes */
+  border: 1px solid #332A1F;
   border-left: 3px solid var(--thread-wardline);  /* coral left-rule */
   border-radius: var(--radius-lg);
   overflow: hidden;
@@ -130,9 +130,9 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-
 .finding-panel__bar {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 16px;
-  background: #0F1A20;
-  border-bottom: 1px solid #223040;
-  color: #8FAAB8; font-size: 11px;
+  background: #14110D;
+  border-bottom: 1px solid #332A1F;
+  color: #B6A78E; font-size: 11px;
 }
 .finding-panel__dot {
   width: 9px; height: 9px; border-radius: 50%;
@@ -144,19 +144,19 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-
 .fp-code {
   margin: 0; padding: 16px;
   font-family: var(--font-mono); font-size: 13px; line-height: 1.65;
-  color: #C8D8E0; overflow-x: auto; tab-size: 4;
-  background: #131E24;
+  color: #F2E9D8; overflow-x: auto; tab-size: 4;
+  background: #1E1A13;
 }
 .fp-ln {
   display: inline-block; width: 1.5rem; text-align: right;
-  color: #3A5A6E; user-select: none; margin-right: 14px;
+  color: #7F6F58; user-select: none; margin-right: 14px;
 }
 /* Syntax tokens re-colored onto the warm-Loom palette */
 .fp-kw   { color: #56B7E2; }           /* sky — keyword */
 .fp-dec  { color: #E9B04A; }           /* amber — decorator (Wardline's accent) */
 .fp-fn   { color: #52C9B8; }           /* aqua — function name */
 .fp-str  { color: #5FB98E; }           /* warm-emerald — string */
-.fp-cmt  { color: #4A6070; font-style: italic; }    /* comment — muted */
+.fp-cmt  { color: #7F6F58; font-style: italic; }    /* comment — muted */
 .fp-raw  { color: #E2604E; font-weight: 600; }      /* the trust leak — stale red */
 .fp-arg  { color: #B79BF2; }           /* violet — argument */
 
@@ -164,7 +164,7 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-
 .fp-flow {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 16px;
-  border-top: 1px solid #223040;
+  border-top: 1px solid #332A1F;
   font-size: 11px; flex-wrap: wrap;
 }
 .fp-flow__node {
@@ -174,19 +174,19 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-
 .fp-flow__node--raw   { color: #E2604E; }   /* untrusted — stale red */
 .fp-flow__node--claim { color: #5FB98E; }   /* claimed trusted — warm emerald */
 .fp-flow__node--bad   { color: #E2604E; }   /* bad outcome */
-.fp-flow__arrow { color: #4A6070; flex: none; font-size: 14px; }
+.fp-flow__arrow { color: #7F6F58; flex: none; font-size: 14px; }
 
 /* verdict strip */
 .fp-verdict {
   display: flex; align-items: flex-start; gap: 10px;
   padding: 12px 16px;
-  border-top: 1px solid #223040;
+  border-top: 1px solid #332A1F;
   background: rgba(226, 96, 78, 0.10);   /* stale-red wash on the dark panel */
 }
 .fp-verdict__mark { flex: none; font-weight: 700; color: #E2604E; font-size: 14px; line-height: 1.5; }
 .fp-verdict__body {
   font-family: var(--font-mono); font-size: 12px; line-height: 1.55;
-  color: #C8D8E0;
+  color: #F2E9D8;
 }
 .fp-verdict__rule { font-weight: 700; color: #E2604E; }
 .fp-verdict__body .vt-bad  { color: #E2604E; font-weight: 600; }
@@ -298,6 +298,124 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-
 }
 .optin-block__body { font-size: 14px; color: var(--text-secondary); line-height: 1.6; }
 .optin-block__body strong { color: var(--text-primary); }
+
+/* ============================ WORKFLOW ============================ */
+.workflow { padding: 24px 30px 40px; }
+
+.workflow-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+.workflow-step {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--thread-wardline);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+}
+.workflow-step__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklab, var(--thread-wardline) 18%, transparent);
+  color: var(--thread-wardline);
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.workflow-step h3 {
+  margin: 0 0 7px;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.workflow-step p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+.workflow-step code {
+  font-size: 11px;
+  background: var(--surface-overlay);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+/* ============================ COVERAGE ============================ */
+.coverage { padding: 24px 30px 40px; }
+
+.capability-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+.capability-card {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+}
+.capability-card h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.capability-card p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.capability-card code {
+  font-size: 11px;
+  background: var(--surface-overlay);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+.support-matrix {
+  margin-top: 18px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.support-row {
+  display: grid;
+  grid-template-columns: 0.8fr 1.7fr 1.2fr;
+  gap: 14px;
+  padding: 10px 14px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.support-row + .support-row { border-top: 1px solid var(--border-default); }
+.support-row--head {
+  background: var(--surface-overlay);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.support-row span:first-child {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.support-row--head span:first-child {
+  color: var(--text-muted);
+}
+.support-row code {
+  font-size: 11px;
+  background: var(--surface-overlay);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
 
 /* ============================ COMMANDS ============================ */
 .commands { padding: 16px 30px 40px; }
@@ -411,6 +529,9 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-
   .facts { grid-template-columns: 1fr; }
   .decorators-grid { grid-template-columns: 1fr; }
   .cmd-grid { grid-template-columns: 1fr; }
+  .workflow-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .capability-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .support-row { grid-template-columns: 1fr; gap: 4px; }
 }
 @media (max-width: 640px) {
   .hub-header { gap: 12px; padding: 12px 18px; }
@@ -418,9 +539,13 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-
   .hero { padding: 44px 18px 32px; }
   .hero-stats { gap: 24px 32px; }
   .stat-value { font-size: 28px; }
-  .trust-model, .commands, .federation { padding-left: 18px; padding-right: 18px; }
+  .workflow, .trust-model, .coverage, .commands, .federation { padding-left: 18px; padding-right: 18px; }
   .hub-footer { padding: 18px; }
   .foot-links { margin-left: 0; flex-basis: 100%; }
+}
+@media (max-width: 460px) {
+  .workflow-steps,
+  .capability-grid { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

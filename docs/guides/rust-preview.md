@@ -12,6 +12,14 @@ data reaching the program or shell command line of `std::process::Command`.
     suppression machinery — they match committed baseline/waiver/judged entries
     and are captured by `wardline baseline` like any Python finding.
 
+!!! note "Weft freeze-set posture"
+    The Rust qualname dialect is governed by Loomweave ADR-049 and the vendored
+    `qualnames_rust.json` corpus. It is **out of the clean-break core API freeze
+    set** and versions with the Rust feature, even though Weft PDR-0014 gates the
+    launch cutover on Rust reaching gold. Wardline must adopt ADR-049 amendments
+    in lockstep with Loomweave by re-vendoring the shared corpus; it must not
+    independently reinterpret the dialect.
+
 Finding identity is **keyed to the crate name**: the qualname every fingerprint
 hashes starts with the crate read from `Cargo.toml` (`[package].name`,
 underscored). Adding or removing a `Cargo.toml`, or renaming the crate in the
@@ -140,9 +148,9 @@ slice, documented so you do not mistake silence for safety:
   mechanically by file path — a known gap shared with the Loomweave extractor.
 
 A `.rs` file that tree-sitter cannot fully parse is **not** half-analyzed: it is
-surfaced as a `WLN-ENGINE-PARSE-ERROR` fact, counts toward the "could not be
-analyzed" total, and gates under `--fail-on-unanalyzed` — never reported as a
-clean result. Likewise, a single file whose analysis fails (for example a
-pathologically deep expression that overflows the dataflow walk) is isolated to a
-`WLN-ENGINE-FILE-FAILED` fact and counted as under-scanned; it never aborts the
-run or loses the other files' findings.
+surfaced as a gate-eligible `WLN-ENGINE-PARSE-ERROR` ERROR defect, counts toward
+the "could not be analyzed" total, and trips the default `--fail-on ERROR` gate —
+never reported as a clean result. Likewise, a single file whose analysis fails
+(for example a pathologically deep expression that overflows the dataflow walk)
+is isolated to a gate-eligible `WLN-ENGINE-FILE-FAILED` ERROR defect and counted
+as under-scanned; it never aborts the run or loses the other files' findings.
