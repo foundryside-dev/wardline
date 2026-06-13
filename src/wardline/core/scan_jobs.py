@@ -179,7 +179,8 @@ def _start_heartbeat(
             with lock:
                 if str(status.get("status")) in _TERMINAL_STATUSES:
                     return
-                progress = dict(status.get("progress") if isinstance(status.get("progress"), dict) else {})
+                raw_progress = status.get("progress")
+                progress = dict(raw_progress) if isinstance(raw_progress, dict) else {}
                 progress.setdefault("message", "scan still running")
                 status["progress"] = progress
                 try:
@@ -307,7 +308,8 @@ def run_scan_job_worker(root: Path, job_id: str) -> None:
     output = Path(str(request.get("output") or default_output))
     if not output.is_absolute():
         output = root / output
-    artifacts = dict(status.get("artifacts") if isinstance(status.get("artifacts"), dict) else {})
+    raw_artifacts = status.get("artifacts")
+    artifacts = dict(raw_artifacts) if isinstance(raw_artifacts, dict) else {}
     artifacts["findings"] = str(output)
     lock = threading.Lock()
     heartbeat_stop = threading.Event()
@@ -319,7 +321,8 @@ def run_scan_job_worker(root: Path, job_id: str) -> None:
             phase = event.get("phase")
             if isinstance(phase, str):
                 status["phase"] = phase
-            progress = dict(status.get("progress") if isinstance(status.get("progress"), dict) else {})
+            raw_progress = status.get("progress")
+            progress = dict(raw_progress) if isinstance(raw_progress, dict) else {}
             progress.update(event)
             progress.setdefault("steps_completed", 1)
             progress.setdefault("steps_total", _JOB_STEPS_TOTAL)
@@ -395,16 +398,21 @@ def run_scan_job_worker(root: Path, job_id: str) -> None:
         filigree_block = _filigree_status(emit_result)
         enrichment_failed = emit_result is not None and (not emit_result.reachable or emit_result.failed > 0)
         terminal = "completed"
-        failure_kind = None
-        error = None
+        failure_kind: str | None = None
+        error: str | None = None
         if decision.tripped:
             terminal = "failed"
             failure_kind = "gate"
             error = decision.reason
-        elif enrichment_failed:
+        elif enrichment_failed and emit_result is not None:
             terminal = "completed_with_enrichment_failure"
             failure_kind = "enrichment"
-            error = filigree_block["disabled_reason"] or f"{emit_result.failed} Filigree finding(s) failed"
+            disabled_reason = filigree_block["disabled_reason"]
+            error = (
+                str(disabled_reason)
+                if disabled_reason
+                else f"{emit_result.failed} Filigree finding(s) failed"
+            )
         status.update(
             {
                 "status": terminal,
