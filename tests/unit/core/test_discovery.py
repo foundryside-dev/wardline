@@ -140,6 +140,123 @@ def test_discover_rust_symlink_confined(tmp_path: Path) -> None:
     assert all(p.name != "evil.rs" for p in files)
 
 
+def test_gitignored_dir_is_not_scanned(tmp_path: Path) -> None:
+    # The owner's top blocker: discover() must consult .gitignore and PRUNE matched
+    # directories during the walk, never descending a multi-GB gitignored third-party
+    # tree. A dir listed in the project-root .gitignore yields none of its files.
+    (tmp_path / ".gitignore").write_text("third_party/\n", encoding="utf-8")
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    vendored = tmp_path / "third_party" / "huge" / "deep"
+    vendored.mkdir(parents=True)
+    (vendored / "lib.py").write_text("y = 2\n", encoding="utf-8")
+
+    files = discover(tmp_path, WardlineConfig(source_roots=(".",)))
+
+    rel = [p.relative_to(tmp_path).as_posix() for p in files]
+    assert rel == ["app.py"]
+    assert all("third_party" not in p for p in rel)
+
+
+def test_gitignored_walk_does_not_descend_ignored_dir(tmp_path: Path, monkeypatch) -> None:
+    # Pruning must happen DURING the walk (dirnames[:] in place), so os.walk never
+    # even enters the ignored subtree — not merely a post-filter. Assert the ignored
+    # directory is never yielded by the walk.
+    import wardline.core.discovery as discovery_mod
+
+    (tmp_path / ".gitignore").write_text(".venv-vendor/\n", encoding="utf-8")
+    (tmp_path / "keep.py").write_text("x = 1\n", encoding="utf-8")
+    ignored = tmp_path / ".venv-vendor" / "pkg"
+    ignored.mkdir(parents=True)
+    (ignored / "dep.py").write_text("y = 2\n", encoding="utf-8")
+
+    walked: list[str] = []
+    real_walk = discovery_mod.os.walk
+
+    def spy_walk(top, *args, **kwargs):
+        for dirpath, dirnames, filenames in real_walk(top, *args, **kwargs):
+            walked.append(Path(dirpath).name)
+            yield dirpath, dirnames, filenames
+
+    monkeypatch.setattr(discovery_mod.os, "walk", spy_walk)
+    discover(tmp_path, WardlineConfig(source_roots=(".",)))
+
+    assert ".venv-vendor" not in walked
+    assert "pkg" not in walked
+
+
+def test_negated_gitignore_pattern_keeps_dir(tmp_path: Path) -> None:
+    # Last-match-wins with negation, at a path with no EXCLUDED parent: a dir matched
+    # by a glob and then re-admitted by a later `!` rule is still scanned. (Git cannot
+    # re-include a child of an excluded parent; that limitation is pinned in the
+    # gitignore-matcher unit test, verified against real `git check-ignore`.)
+    (tmp_path / ".gitignore").write_text("build*/\n!build-keep/\n", encoding="utf-8")
+    keep = tmp_path / "build-keep"
+    drop = tmp_path / "build-out"
+    keep.mkdir()
+    drop.mkdir()
+    (keep / "k.py").write_text("x = 1\n", encoding="utf-8")
+    (drop / "d.py").write_text("y = 2\n", encoding="utf-8")
+
+    files = discover(tmp_path, WardlineConfig(source_roots=(".",)))
+
+    rel = [p.relative_to(tmp_path).as_posix() for p in files]
+    assert rel == ["build-keep/k.py"]
+
+
+def test_expanded_floor_prunes_build_dist_eggs(tmp_path: Path) -> None:
+    # The default skip floor now also fences build/, dist/, .eggs/ and *.egg-info/
+    # WITHOUT any .gitignore — these bloat a project-root scan.
+    (tmp_path / "real.py").write_text("x = 1\n", encoding="utf-8")
+    for noisy in ("build", "dist", ".eggs", "mypkg.egg-info"):
+        d = tmp_path / noisy
+        d.mkdir()
+        (d / "junk.py").write_text("y = 2\n", encoding="utf-8")
+
+    files = discover(tmp_path, WardlineConfig(source_roots=(".",)))
+
+    assert [p.relative_to(tmp_path).as_posix() for p in files] == ["real.py"]
+
+
+def test_nested_gitignore_layers(tmp_path: Path) -> None:
+    # A .gitignore in a subdirectory is layered in as the walk descends (git's nested
+    # ignore semantics), pruning only within its own subtree.
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / ".gitignore").write_text("generated/\n", encoding="utf-8")
+    (tmp_path / "pkg" / "real.py").write_text("x = 1\n", encoding="utf-8")
+    gen = tmp_path / "pkg" / "generated"
+    gen.mkdir()
+    (gen / "g.py").write_text("y = 2\n", encoding="utf-8")
+    # A sibling top-level "generated" is NOT ignored — the rule is scoped to pkg/.
+    other = tmp_path / "generated"
+    other.mkdir()
+    (other / "o.py").write_text("z = 3\n", encoding="utf-8")
+
+    files = discover(tmp_path, WardlineConfig(source_roots=(".",)))
+
+    rel = sorted(p.relative_to(tmp_path).as_posix() for p in files)
+    assert rel == ["generated/o.py", "pkg/real.py"]
+
+
+def test_gitignore_does_not_prune_outside_root(tmp_path: Path) -> None:
+    # The gitignore base is the scan ROOT. A source_root that resolves outside the
+    # root (no confinement) has no gitignore context applied — discovery stays the
+    # explicit walk, never silently importing an unrelated tree's ignore rules.
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / ".gitignore").write_text("data/\n", encoding="utf-8")
+    sibling = tmp_path / "sibling"
+    data = sibling / "data"
+    data.mkdir(parents=True)
+    (data / "keep.py").write_text("x = 1\n", encoding="utf-8")
+
+    cfg = WardlineConfig(source_roots=("../sibling",))
+    files = discover(root, cfg)
+
+    # The root's `data/` rule must not reach into the out-of-root sibling tree.
+    rel = sorted(p.name for p in files)
+    assert rel == ["keep.py"]
+
+
 def test_no_confine_keeps_low_level_symlink_escape_behavior(tmp_path: Path) -> None:
     # With the low-level discovery opt-out, behavior is unchanged: the escaping
     # symlink is still discovered.
