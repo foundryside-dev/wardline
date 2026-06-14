@@ -10,8 +10,16 @@ dist/
 build/
 *.egg-info/
 
-# MkDocs build output
-site/
+# MkDocs build output (redirected away from site/, which now holds the Astro
+# member site — see mkdocs.yml site_dir).
+mkdocs-build/
+
+# Astro member site (site/) — track the source, ignore build artifacts & vendored deps.
+site/dist/
+site/.astro/
+site/node_modules/
+site/vendor/site-kit/
+site/public/_site-kit/
 
 # Wardline runtime output
 findings.jsonl

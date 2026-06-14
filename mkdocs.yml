@@ -1,6 +1,9 @@
 site_name: Wardline
 site_description: Lightweight semantic-tainting static analyzer for trust boundaries
 site_url: https://wardline.foundryside.dev/docs/
+# Build into mkdocs-build/ — site/ now holds the Astro member site (the deep MkDocs
+# docs live under the subdomain's own /docs paths; the Astro landing is the root).
+site_dir: mkdocs-build/
 repo_url: https://github.com/foundryside-dev/wardline
 repo_name: foundryside-dev/wardline
 edit_uri: edit/main/docs/

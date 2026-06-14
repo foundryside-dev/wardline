@@ -1,0 +1,522 @@
+---
+// ============================================================
+// wardline.foundryside.dev — the Wardline member site.
+//
+// MEMBER-PAGE TEMPLATE (IA §5.1, §4.2.3): Hero → What it is →
+// Key capabilities → Usage snapshot → How it composes → Status &
+// honest limits → Links → CTA. This is the page the IA names as the
+// one that TEACHES the brand's honesty mechanic: Wardline is silent
+// until you decorate, and silence is not a clean bill — `absent` is
+// never `present`.
+//
+// Everything that could disagree with the hub or a sibling site —
+// the roster facts, the pairing slice, the cross-subdomain links —
+// is sourced from the shared @weft/site-kit data (ROSTER / MATRIX),
+// never hardcoded. Surface facts that MOVE (version, rule count,
+// tool count) are snapshots with a repo pointer, not restated canon.
+// ============================================================
+import Layout from '@weft/site-kit/layouts/Layout.astro';
+import { Button, Badge, Tag, Banner } from '@weft/site-kit/components';
+import { ExitCode, SeiTag, EnrichmentChip, MemberMark } from '@weft/site-kit/components';
+import {
+  getMember,
+  pairingsFor,
+  partnerOf,
+  memberUrl,
+  repoUrl,
+} from '@weft/site-kit/data';
+
+const SELF = 'wardline';
+const me = getMember(SELF);
+
+// Surface facts that move — SNAPSHOTS, each carries a repo pointer.
+// (Verified live: `wardline --version` -> 1.0.0rc4; rule count and tool
+// count are the repo's authority, pointed at, never silently restated.)
+const VERSION = '1.0.0rc4';
+
+const REPO = me.repo;
+const DOCS = `${REPO}/tree/main/docs`;
+const HUB = 'https://weft.foundryside.dev';
+const LACUNA_URL = memberUrl('lacuna');
+
+// This member's slice of the combination matrix (IA §2.2). Each pairing's
+// partner MemberMark is an absolute cross-subdomain link; a partial/planned
+// pairing is NEVER styled as live.
+const pairings = pairingsFor(SELF);
+const statusTone = (s) => (s === 'live' ? 'ok' : s === 'partial' ? 'warn' : 'neutral');
+
+const docLinks = [
+  { label: 'Getting started', href: `${DOCS}/getting-started.md`, note: 'install, first scan, read a finding' },
+  { label: 'The taint & trust model', href: `${DOCS}/concepts/model.md`, note: 'trust tiers, boundaries, how taint flows' },
+  { label: 'Rules', href: `${DOCS}/concepts/rules.md`, note: 'the PY-WL-1xx rule family' },
+  { label: 'CLI reference', href: `${DOCS}/reference/cli.md`, note: 'scan, assure, attest, dossier, …' },
+  { label: 'MCP tool reference', href: `${DOCS}/reference/mcp.md`, note: 'the tools wardline mcp serves' },
+  { label: 'Weft integration', href: `${DOCS}/guides/weft.md`, note: 'SARIF, Filigree, Loomweave, Legis handoff' },
+  { label: 'Arming your coding agent', href: `${DOCS}/guides/agents.md`, note: 'the scan → explain → fix loop' },
+];
+---
+
+<Layout
+  title="Wardline — is the data each trusted function works with as trusted as it claims?"
+  description="A semantic-tainting static analyzer for trust boundaries. It propagates a taint lattice across the call graph and flags untrusted data reaching a trusted producer with no validation between. Silent until you decorate — silence is not a clean bill."
+  member={SELF}
+  breadcrumb
+>
+  {/* ---------------------------------------------------------------- */}
+  {/* 1 · Hero — the question, ExitCode chips, member dossier terminal  */}
+  {/* ---------------------------------------------------------------- */}
+  <section class="hero" style={`--thread: ${me.thread};`}>
+    <div class="wrap">
+      <p class="eyebrow">Wardline · trust-boundary analysis · {me.lang}</p>
+      <h1 class="hero__title">Is the data each trust-annotated function works with as trusted as it claims?</h1>
+      <p class="hero__sub">
+        A semantic-tainting static analyzer with <strong>zero runtime dependencies</strong>.
+        It propagates a taint lattice across the call graph and flags untrusted
+        data reaching a trusted producer with no validation between. It reads your
+        Python statically — it never runs your code.
+      </p>
+
+      <div class="hero__meta">
+        <Tag client:idle>{me.lang}</Tag>
+        <span class="hero__thread"><span class="hero__dot" style={`background:${me.thread};`}></span>{me.threadName}</span>
+        <span class="hero__ver">v{VERSION} <span class="hero__ver-note">· snapshot; see <a href={REPO} rel="noopener">repo</a></span></span>
+      </div>
+
+      <div class="hero__cta">
+        <Button client:idle as="a" href="#usage">Run a scan →</Button>
+        <Button client:idle as="a" variant="secondary" href="#honesty">How the honesty mechanic works →</Button>
+      </div>
+
+      {/* The exit-code contract is the brand's promise on this page: a clean
+          run is EARNED (exit 0), not the default. */}
+      <div class="exitrow">
+        <ExitCode client:visible code={0} />
+        <ExitCode client:visible code={1} />
+        <ExitCode client:visible code={2} />
+      </div>
+
+      {/* member dossier terminal — one entity, typed trust facts. The brand
+          refuses an all-green dossier: it mixes present / absent on purpose. */}
+      <div class="terminal">
+        <div class="terminal__lines">
+          <div><span class="terminal__prompt">$</span> wardline dossier <span class="terminal__arg">service.build_record</span></div>
+          <div class="terminal__dim">one entity → typed trust facts; absent peers shown as absent, never as clean…</div>
+        </div>
+        <div class="terminal__chips">
+          <SeiTag client:visible value="loomweave:eid:7f3a9c2e1b4d" copyable />
+          <EnrichmentChip client:visible state="present" peer="wardline" />
+          <EnrichmentChip client:visible state="present" peer="loomweave" />
+          <EnrichmentChip client:visible state="absent" peer="filigree" />
+          <EnrichmentChip client:visible state="unavailable" peer="legis" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {/* ---------------------------------------------------------------- */}
+  {/* 2 · What it is + the HONESTY MECHANIC (this page's load-bearing   */}
+  {/*     block, IA §4.2.3)                                             */}
+  {/* ---------------------------------------------------------------- */}
+  <section id="honesty" class="band">
+    <div class="wrap">
+      <p class="eyebrow">What it is · the honesty mechanic</p>
+      <h2 class="h2">Silent until you decorate. Silence is not a clean bill.</h2>
+      <p class="lede">
+        Wardline asks one question of every function: is the data it works with as
+        trusted as it claims to be? It answers that by tracking a trust level — a
+        <em>taint</em> — for every value and propagating it across the whole
+        project. But it says <strong>nothing</strong> until you mark a trust
+        boundary.
+      </p>
+
+      <Banner client:visible tone="info" title="absent ≠ clean — the rule this whole page exists to teach.">
+        Code with no trust decorators sits in the developer-freedom zone: the
+        engine treats it as unknown-trust and raises no policy findings about it.
+        An empty result is not a clean bill of health — it means you have not yet
+        told Wardline what to guard. You declare trust on the functions that
+        matter, and only then does it enforce. That is what lets it scan a large
+        untouched codebase, including its own source, with zero noise — and it is
+        why a quiet scan must never be read as a pass.
+      </Banner>
+
+      <div class="declare">
+        <p class="declare__cap">You declare trust with three marker decorators (the only three you write):</p>
+        <div class="declare__grid">
+          <div class="declare__item">
+            <code>@external_boundary</code>
+            <span>marks a <strong>source</strong> — its return carries raw, untrusted data (<code>EXTERNAL_RAW</code>).</span>
+          </div>
+          <div class="declare__item">
+            <code>@trust_boundary(to_level=…)</code>
+            <span>marks a <strong>validator</strong> — it takes raw input and raises its trust on the way out (to <code>GUARDED</code> or <code>ASSURED</code>).</span>
+          </div>
+          <div class="declare__item">
+            <code>@trusted(level=…)</code>
+            <span>marks a <strong>trusted producer</strong> — it works on and returns trusted data (<code>INTEGRAL</code> by default).</span>
+          </div>
+        </div>
+      </div>
+
+      <p class="micro">
+        The full eight-state lattice — <span class="lattice">INTEGRAL → ASSURED → GUARDED →
+        UNKNOWN_ASSURED → UNKNOWN_GUARDED → EXTERNAL_RAW → UNKNOWN_RAW → MIXED_RAW</span>
+        — runs most-trusted to least-trusted; less-trusted always wins. You write
+        only three levels; the <code>UNKNOWN_*</code> and <code>MIXED_RAW</code>
+        states are the engine's honest record of what it could and could not prove.
+        The states, the decorator vocabulary, and the rule IDs are Wardline's
+        authority — see the <a href={`${DOCS}/concepts/model.md`} rel="noopener">model</a> and
+        <a href={`${DOCS}/concepts/rules.md`} rel="noopener"> rules</a> in the repo.
+      </p>
+    </div>
+  </section>
+
+  {/* ---------------------------------------------------------------- */}
+  {/* 3 · Key capabilities                                             */}
+  {/* ---------------------------------------------------------------- */}
+  <section class="section">
+    <div class="wrap">
+      <p class="eyebrow">Key capabilities</p>
+      <h2 class="h2">Scan, gate, explain, attest — and hand the verdict off.</h2>
+      <div class="grid grid--2">
+        <article class="card cap">
+          <h3 class="cap__h">Propagate taint across the call graph</h3>
+          <p class="cap__b">
+            A function is only as trusted as the least-trusted value it returns —
+            and that flows transitively across files. Decorate your boundaries and
+            producers; the engine works out everything in between by following the
+            calls. The boundary-integrity rule family holds a validator to actually
+            being able to reject input — a boundary that cannot say "no" is just
+            relabelling untrusted data.
+          </p>
+        </article>
+        <article class="card cap">
+          <h3 class="cap__h">Gate a build, deterministically</h3>
+          <p class="cap__b">
+            <code>wardline scan . --fail-on ERROR</code> exits non-zero when a
+            finding at or above a level is present. The exit convention is a
+            contract: <code>0</code> clean, <code>1</code> gate tripped,
+            <code>2</code> error.
+          </p>
+          <div class="cap__exit">
+            <ExitCode client:visible code={0} />
+            <ExitCode client:visible code={1} />
+            <ExitCode client:visible code={2} />
+          </div>
+        </article>
+        <article class="card cap">
+          <h3 class="cap__h">Explain a finding's provenance</h3>
+          <p class="cap__b">
+            <code>wardline explain-taint</code> (or the MCP <code>explain_taint</code>
+            tool) walks why the gate tripped — the path the taint took from a source
+            to the trusted producer that declared more than it returns.
+          </p>
+        </article>
+        <article class="card cap">
+          <h3 class="cap__h">Many emitters, one engine</h3>
+          <p class="cap__b">
+            JSONL, SARIF 2.1.0, agent summaries, native Filigree emission, and signed
+            Legis governance artifacts all compose with the same scanner path. The
+            rule family <code>PY-WL-1xx</code> and the decorator vocabulary are the
+            repo's authority — pointers, not restated here.
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  {/* ---------------------------------------------------------------- */}
+  {/* 4 · Usage snapshot (curated quick-start, NOT reference)          */}
+  {/* ---------------------------------------------------------------- */}
+  <section id="usage" class="band">
+    <div class="wrap">
+      <p class="eyebrow">Usage snapshot</p>
+      <h2 class="h2">From install to a gated build.</h2>
+      <p class="lede">
+        The <code>wardline scan</code> CLI lives in the <code>scanner</code> extra.
+        This is the curated quick-start — the deep CLI and MCP reference live under
+        this site's own docs paths.
+      </p>
+
+      <div class="well">
+        <pre class="well__code"><code>{`# install the scanner CLI
+pip install "wardline[scanner]"
+
+# mark a boundary, then scan and gate
+wardline scan . --format jsonl --fail-on ERROR
+
+# scanned 2 file(s); 4 finding(s) — 1 active -> findings.jsonl
+#   PY-WL-101  service.current_user  declares INTEGRAL, returns EXTERNAL_RAW
+
+# ask why the gate tripped
+wardline explain-taint --rule PY-WL-101 service.current_user
+
+# agents run the same loop over MCP — no terminal scraping
+wardline mcp`}</code></pre>
+      </div>
+
+      <p class="micro">
+        The product loop: mark the boundary
+        (<code>@external_boundary</code> / <code>@trust_boundary</code> /
+        <code>@trusted</code>) → <code>wardline scan --fail-on ERROR</code> →
+        <code>explain-taint</code> → fix the validation at the boundary and rescan.
+        See the
+        <a href={`${DOCS}/getting-started.md`} rel="noopener"> getting-started guide</a> and the
+        <a href={`${DOCS}/reference/cli.md`} rel="noopener"> CLI reference</a> for the full surface.
+      </p>
+    </div>
+  </section>
+
+  {/* ---------------------------------------------------------------- */}
+  {/* 5 · How it composes — this member's matrix slice (IA §2.2)       */}
+  {/* ---------------------------------------------------------------- */}
+  <section class="section">
+    <div class="wrap">
+      <p class="eyebrow">How it composes · value is the weave</p>
+      <h2 class="h2">Each pairing lights up a capability Wardline does not have alone.</h2>
+      <p class="lede">
+        Wardline analyses; it does not enforce — Legis governs. Every pairing's
+        status is honest on its face; a <code>partial</code> or <code>planned</code>
+        pair is never rendered as <code>live</code>. The partner mark links to that
+        tool's site.
+      </p>
+
+      <div class="grid grid--2">
+        {pairings.map((p) => {
+          const partner = partnerOf(p, SELF);
+          const partnerUrl = memberUrl(partner);
+          return (
+            <article class="card pair">
+              <div class="pair__head">
+                <MemberMark client:visible member={SELF} />
+                <span class="pair__plus" aria-hidden="true">+</span>
+                <a class="pair__mark" href={partnerUrl}><MemberMark client:visible member={partner} /></a>
+                <span class="pair__status">
+                  <Badge client:visible tone={statusTone(p.status)} dot>{p.status}</Badge>
+                </span>
+              </div>
+              <p class="pair__cap">{p.capability}</p>
+              {p.note && <p class="pair__note">{p.note}</p>}
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  </section>
+
+  {/* ---------------------------------------------------------------- */}
+  {/* 6 · Status & honest limits (mandatory, non-empty — IA §5.1)      */}
+  {/* ---------------------------------------------------------------- */}
+  <section class="band">
+    <div class="wrap">
+      <p class="eyebrow">Status & honest limits</p>
+      <h2 class="h2">What it is, and what it is not.</h2>
+
+      <div class="limits">
+        <Banner client:visible tone="warn" title="A deconfliction and quality gate — not a hardened security boundary.">
+          Wardline is a static analyzer that helps you find untrusted data reaching
+          trusted code. It does not enforce anything at runtime and does not
+          adjudicate trust for the federation — Legis governs, Wardline analyses. Do
+          not read a passing scan as a security guarantee. It is the deterministic
+          gate that makes a trust-boundary leak visible; the rest is your design.
+        </Banner>
+
+        <ul class="limits__list">
+          <li>
+            <strong>Silence is opt-in, not clean.</strong> Undecorated code is
+            unknown-trust by design; an empty result means you have not declared a
+            boundary yet, not that the code is safe.
+          </li>
+          <li>
+            <strong>Exit codes are a contract.</strong> <code>0</code> clean ·
+            <code>1</code> gate tripped · <code>2</code> error. A clean run is
+            earned, never the default.
+          </li>
+          <li>
+            <strong>Findings → work (A-1 asterisk).</strong> The native
+            Wardline→Filigree emitter has shipped, but the asterisk stays live
+            until the Loomweave-absent path is proven end-to-end (currently
+            unit/server-wiring tier) — see the matrix note above.
+          </li>
+          <li>
+            <strong>Identity is consumed, never minted.</strong> Wardline keys its
+            facts on the SEI, treats it as opaque, and never mints one — Loomweave
+            is the identity authority (<a href={`${HUB}/#spine`} rel="noopener">the SEI spine</a>).
+          </li>
+          <li>
+            <strong>Rust support is a preview.</strong> The command-injection
+            frontend is an early preview; Python is the supported surface.
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  {/* ---------------------------------------------------------------- */}
+  {/* 7 · Links / pointers                                            */}
+  {/* ---------------------------------------------------------------- */}
+  <section class="section">
+    <div class="wrap">
+      <p class="eyebrow">Links & pointers</p>
+      <h2 class="h2">The repo owns the moving facts. Start here.</h2>
+      <div class="grid grid--2">
+        {docLinks.map((l) => (
+          <a class="card linkc" href={l.href} rel="noopener">
+            <span class="linkc__label">{l.label} →</span>
+            <span class="linkc__note">{l.note}</span>
+          </a>
+        ))}
+        <a class="card linkc" href={REPO} rel="noopener">
+          <span class="linkc__label">github.com/foundryside-dev/wardline →</span>
+          <span class="linkc__note">source, changelog, the rules and taint engine</span>
+        </a>
+        <a class="card linkc" href={`${HUB}/#doctrine`} rel="noopener">
+          <span class="linkc__label">the weft doctrine →</span>
+          <span class="linkc__note">enrich-only, never load-bearing — the federation framing</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  {/* ---------------------------------------------------------------- */}
+  {/* 8 · CTA — see it on the specimen                                 */}
+  {/* ---------------------------------------------------------------- */}
+  <section class="cta">
+    <div class="wrap cta__inner">
+      <span class="cta__dot" style={`background:${getMember('lacuna').thread};`}></span>
+      <div class="cta__copy">
+        <p class="cta__lead">Want to see it actually run?</p>
+        <p class="cta__sub">
+          Lacuna, the demonstration specimen, seeds <code>PY-WL-101..126</code> for
+          exactly this — watch Wardline analyze a small app with catalogued flaws.
+        </p>
+      </div>
+      <span class="cta__btns">
+        <Button client:idle as="a" variant="secondary" href={LACUNA_URL}>See it on the specimen →</Button>
+        <Button client:idle as="a" variant="ghost" href={`${HUB}/#doctrine`} rel="noopener">Read the doctrine →</Button>
+      </span>
+    </div>
+  </section>
+</Layout>
+
+<style>
+  /* Page-local layout only. Brand atoms (colors, type, motifs) come ONLY from
+     the @weft/site-kit token layer — no new colors, light theme only. */
+  .wrap { max-width: var(--width-content); margin: 0 auto; padding: 0 36px; }
+  .eyebrow {
+    font: var(--type-mono-sm); text-transform: uppercase;
+    letter-spacing: var(--tracking-caps); color: var(--text-muted);
+    font-size: var(--text-xs); margin: 0 0 14px;
+  }
+  .h2 { font: var(--type-h1); color: var(--text-strong); margin: 0 0 16px; max-width: 26ch; }
+  .lede { font: var(--type-body); color: var(--text-body); max-width: 64ch; margin: 0 0 26px; }
+  .lede em { font-style: normal; color: var(--text-strong); }
+  code { font-family: var(--font-mono); font-size: 0.92em; color: var(--text-strong); }
+  .micro { font: var(--type-body-sm); color: var(--text-muted); max-width: 70ch; margin: 18px 0 0; }
+  .micro a, .lede a, .limits__list a { color: var(--member-wardline); text-underline-offset: 3px; }
+
+  .section { padding: 64px 0; }
+  .band {
+    padding: 64px 0; background: var(--bg-sunken);
+    border-top: 1px solid var(--border-hairline);
+    border-bottom: 1px solid var(--border-hairline);
+  }
+
+  /* hero */
+  .hero { padding: 70px 0 60px; border-bottom: 1px solid var(--border-hairline); }
+  .hero__title {
+    font: var(--type-display); color: var(--loom-900);
+    letter-spacing: -0.022em; line-height: 1.06;
+    max-width: 22ch; margin: 0 0 22px;
+  }
+  .hero__sub { font: var(--type-body); font-size: var(--text-lg); color: var(--text-body); max-width: 60ch; margin: 0 0 20px; }
+  .hero__sub strong { color: var(--text-strong); }
+  .hero__meta { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 0 0 24px; font: var(--type-mono-sm); color: var(--text-muted); }
+  .hero__thread { display: inline-flex; align-items: center; gap: 7px; }
+  .hero__dot { width: 9px; height: 9px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+  .hero__ver-note { color: var(--text-faint); }
+  .hero__ver-note a { color: var(--text-muted); }
+  .hero__cta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 22px; }
+  .exitrow { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 30px; }
+
+  .terminal {
+    background: var(--surface-inverse); border-radius: var(--radius-lg);
+    padding: 18px 20px; max-width: 720px; box-shadow: var(--shadow-lg);
+  }
+  .terminal__lines { font: var(--type-mono); color: var(--text-on-inverse); font-size: var(--text-xs); line-height: 1.7; }
+  .terminal__prompt { color: var(--ash-500); }
+  .terminal__arg { color: var(--indigo-300); }
+  .terminal__dim { color: var(--ash-500); }
+  .terminal__chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+
+  /* declare grid (honesty block) */
+  .declare { margin-top: 26px; }
+  .declare__cap { font: var(--type-body-sm); color: var(--text-muted); margin: 0 0 12px; }
+  .declare__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .declare__item {
+    background: var(--surface-card); border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-md); padding: 14px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .declare__item code { font-size: var(--text-sm); color: var(--member-wardline); }
+  .declare__item span { font: var(--type-body-sm); color: var(--text-body); }
+  .lattice { font-family: var(--font-mono); font-size: 0.9em; color: var(--text-muted); }
+
+  /* cards (shared) */
+  .grid { display: grid; gap: 16px; }
+  .grid--2 { grid-template-columns: repeat(2, 1fr); }
+  .card {
+    background: var(--surface-card); border: 1px solid var(--border-hairline);
+    border-radius: var(--radius-lg); box-shadow: var(--shadow-xs);
+  }
+
+  /* capability cards */
+  .cap { padding: 18px; }
+  .cap__h { font: var(--type-h3); color: var(--text-strong); margin: 0 0 8px; }
+  .cap__b { font: var(--type-body-sm); color: var(--text-body); margin: 0; }
+  .cap__exit { display: flex; gap: 8px; margin-top: 12px; }
+
+  /* usage well */
+  .well {
+    background: var(--surface-inverse); border-radius: var(--radius-lg);
+    padding: 18px 20px; box-shadow: var(--shadow-lg); overflow-x: auto;
+  }
+  .well__code { margin: 0; }
+  .well__code code { color: var(--text-on-inverse); font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.7; white-space: pre; }
+
+  /* matrix pair card */
+  .pair { padding: 16px; }
+  .pair__head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .pair__mark { text-decoration: none; }
+  .pair__mark:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .pair__plus { color: var(--text-faint); font-family: var(--font-mono); }
+  .pair__status { margin-left: auto; }
+  .pair__cap { font: var(--type-body-sm); color: var(--text-body); margin: 0; }
+  .pair__note { font: var(--type-mono-sm); color: var(--text-faint); margin: 8px 0 0; line-height: 1.5; }
+
+  /* limits */
+  .limits__list { margin: 18px 0 0; padding-left: 18px; color: var(--text-body); font: var(--type-body-sm); }
+  .limits__list li { margin: 10px 0; }
+  .limits__list strong { color: var(--text-strong); }
+
+  /* link cards */
+  .linkc { display: flex; flex-direction: column; gap: 4px; padding: 16px; text-decoration: none; color: inherit; transition: box-shadow var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out); }
+  .linkc:hover { box-shadow: var(--shadow-lg); transform: translateY(-1px); }
+  .linkc__label { font: var(--type-mono-sm); color: var(--member-wardline); }
+  .linkc__note { font: var(--type-body-sm); color: var(--text-muted); }
+
+  /* cta strip */
+  .cta { padding: 44px 0; background: var(--bg-sunken); border-top: 1px solid var(--border-hairline); }
+  .cta__inner { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .cta__dot { width: 12px; height: 12px; border-radius: 3px; flex: none; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+  .cta__copy { flex: 1 1 360px; }
+  .cta__lead { font: var(--type-body); font-weight: var(--fw-semibold); color: var(--text-strong); margin: 0 0 2px; }
+  .cta__sub { font: var(--type-body-sm); color: var(--text-muted); margin: 0; }
+  .cta__btns { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  @media (max-width: 880px) {
+    .grid--2, .declare__grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 720px) {
+    .wrap { padding: 0 18px; }
+    .hero { padding: 52px 0 44px; }
+  }
+</style>
