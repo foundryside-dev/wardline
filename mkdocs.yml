@@ -76,6 +76,7 @@ nav:
       - Rust support (preview): guides/rust-preview.md
   - Reference:
       - CLI: reference/cli.md
+      - MCP tools: reference/mcp.md
       - Trust vocabulary: reference/vocabulary.md
       - Finding lifecycle & gate vocabulary: reference/finding-lifecycle-vocabulary.md
   - About:

@@ -5,8 +5,9 @@ load-bearing**: `wardline scan` boots, analyzes, writes findings, and gates with
 both siblings absent. The three output paths below are enrichment you opt into.
 
 This "additive, never load-bearing" rule is the federation's enrich-only axiom,
-which is defined authoritatively in the Weft hub (`~/weft/doctrine.md` §5) — the
-canonical source for the suite's roster and composition doctrine.
+which is defined authoritatively in the Weft hub doctrine
+([weft.foundryside.dev/#doctrine](https://weft.foundryside.dev/#doctrine) §5) —
+the canonical source for the suite's roster and composition doctrine.
 
 | Path | How | Consumer |
 |---|---|---|

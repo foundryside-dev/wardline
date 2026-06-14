@@ -5,10 +5,12 @@ prior question a fail-closed tool must own: **how much of the declared trust
 surface did the engine reach a definite verdict on, and how much is honestly
 unknown?**
 
-This is the "prove your coverage" answer an IRAP or SOC 2 assessor will ask
-that a small team otherwise cannot give — and no tool lacking explicit
-`UNKNOWN_*` states can replicate it, because a tool without an honesty gap has
-already silently promoted every undecided case to "clean".
+This is a coverage question, not a compliance claim. Wardline is
+deconfliction-first tooling, not a security or compliance product, and the
+posture object makes no assertion about any assessment regime. What it does
+give you is the honest denominator: a tool lacking explicit `UNKNOWN_*` states
+cannot answer "how much did you actually decide?", because a tool without an
+honesty gap has already silently promoted every undecided case to "clean".
 
 ## The trust surface
 

@@ -511,3 +511,132 @@ $ wardline baseline update src/
 For the full baseline-and-waiver workflow — when to baseline vs. waive, and how
 the baseline interacts with the judge — see the
 [suppression guide](../guides/suppression.md).
+
+## `wardline install`
+
+**Purpose:** install wardline's agent-facing guidance and sibling bindings into
+a project root. Idempotent — re-running refreshes stale artifacts. This is how
+you arm a coding agent with wardline: it writes the instruction blocks, the
+`wardline-gate` skill, the `.mcp.json` / Codex MCP registration, optional
+Loomweave/Filigree bindings, the attest signing key, and a pre-commit hook.
+
+```text
+Usage: wardline install [OPTIONS] [PACK]
+
+  Install wardline's agent-facing guidance and sibling bindings into ROOT.
+
+Options:
+  --root DIRECTORY  Project root to install into (default: cwd).
+  --no-claude-md    Skip the CLAUDE.md instruction block.
+  --no-agents-md    Skip the AGENTS.md instruction block.
+  --no-skill        Skip the wardline-gate skill.
+  --no-mcp          Skip wiring .mcp.json and Codex MCP config.
+  --no-bindings     Skip Loomweave/Filigree detection.
+  --no-attest-key   Skip minting the attest signing key.
+  --no-pre-commit   Skip adding pre-commit hook config.
+  --help            Show this message and exit.
+```
+
+For what the install writes and how agents consume it, see
+[Using Wardline with your coding agent](../guides/agents.md).
+
+## `wardline doctor`
+
+**Purpose:** check the wardline agent-install artifacts and sibling bindings,
+and optionally repair them. `--repair` rewrites missing or stale install
+artifacts; `--fix` repairs the bindings *and* emits the machine-readable JSON
+envelope (the same builder the MCP `doctor` tool returns).
+
+```text
+Usage: wardline doctor [OPTIONS]
+
+  Check Wardline agent install artifacts and sibling bindings.
+
+Options:
+  --root DIRECTORY     Project root to inspect (default: cwd).
+  --repair             Repair missing or stale install artifacts.
+  --fix                Repair install bindings and emit machine-readable JSON.
+  --filigree-url TEXT  Filigree Weft URL to probe (default: resolve from
+                       .mcp.json/env).
+  --help               Show this message and exit.
+```
+
+See [Using Wardline with your coding agent](../guides/agents.md) for the
+install-and-federation health checks doctor runs.
+
+## `wardline mcp`
+
+**Purpose:** run the wardline MCP server over stdio (JSON-RPC 2.0). This is the
+agent transport — it exposes the full tool surface (`scan`, `explain_taint`,
+`assure`, `dossier`, `attest`, and the rest) without scraping terminal output.
+`--read-only` and `--no-network` drop the tools that would write to disk or
+reach a sibling, for a hardened launch.
+
+```text
+Usage: wardline mcp [OPTIONS]
+
+  Run the Wardline MCP server over stdio (JSON-RPC 2.0).
+
+Options:
+  --root DIRECTORY      Project root the server scans (default: cwd).
+  --loomweave-url TEXT  Loomweave taint-store URL: `scan` writes facts;
+                        `explain_taint`/`dossier` query it.
+  --filigree-url TEXT   Filigree URL: `scan` POSTs findings to it (fail-soft);
+                        `dossier` reads entity-associations (open work) from
+                        it.
+  --read-only           Disable MCP tools that require write capability.
+  --no-network          Disable MCP tools that require network capability.
+  --help                Show this message and exit.
+```
+
+For the full tool catalogue this server serves, see the
+[MCP tool reference](mcp.md). For wiring it into a coding agent, see
+[Using Wardline with your coding agent](../guides/agents.md).
+
+## `wardline lsp`
+
+**Purpose:** run the wardline LSP diagnostics server over stdio (JSON-RPC
+2.0), so an editor can surface trust-boundary findings as inline diagnostics.
+
+```text
+Usage: wardline lsp [OPTIONS]
+
+  Run the Wardline LSP diagnostics server over stdio (JSON-RPC 2.0).
+
+Options:
+  --root DIRECTORY  Project root the server scans (default: cwd).
+  --help            Show this message and exit.
+```
+
+## `wardline rekey`
+
+**Purpose:** re-key the baseline / waiver / judged verdicts across a
+**fingerprint-scheme change** — that is, after the engine's fingerprint
+*formula* migrates, not after ordinary refactors (fingerprints are
+line-insensitive). The default `--probe` is a read-only dry run that reports
+which stored verdicts carry, which orphan, and any collisions, writing nothing.
+
+```text
+Usage: wardline rekey [OPTIONS] [PATH]
+
+  Re-key baseline/waiver/judge verdicts across a fingerprint-scheme change.
+
+Options:
+  --config FILE
+  --cache-dir PATH
+  --trust-pack TEXT     Allow a trust-grammar pack from weft.toml. Repeatable.
+  --allow-custom-packs  Allow local custom trust-grammar packs.
+  --strict-defaults     Ignore repository-supplied configuration overrides.
+  --filigree-url TEXT   Re-emit findings under the new fingerprints to this
+                        Filigree URL (last leg, best-effort).
+  --probe               Read-only dry run: report match/orphans/collisions,
+                        write nothing.
+  --resume              Finish an interrupted migration WITHOUT re-scanning.
+  --rollback            Restore the pre-migration stores from the snapshot.
+  --help                Show this message and exit.
+```
+
+`--probe`, `--resume`, and `--rollback` are mutually exclusive. A migration
+snapshots the stores first and writes a resumable journal, so an interrupted
+run can be finished with `--resume` or undone with `--rollback`. The MCP twin
+is the `rekey` tool (see the [MCP tool reference](mcp.md)).

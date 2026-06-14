@@ -5,9 +5,9 @@ boundaries. It scans Python source, includes a Rust command-injection preview,
 and gives agents and CI a deterministic gate for untrusted data reaching trusted
 code.
 
-The product front door lives at
-[wardline.foundryside.dev](https://wardline.foundryside.dev/). These pages are
-the reference docs.
+This is the wardline documentation site — the front door for installing,
+running, and integrating the tool, with the concept, guide, and reference
+material behind it.
 
 ## Install
 
@@ -74,3 +74,4 @@ an application project.
 - [Rust support](guides/rust-preview.md) — command-injection preview for Rust code.
 - [Weft integration](guides/weft.md) — SARIF, Filigree, Loomweave, and signed handoff paths.
 - [Arming agents](guides/agents.md) — using Wardline to give coding agents a trust-boundary check.
+- [MCP tool reference](reference/mcp.md) — all 18 MCP tools the `wardline mcp` server serves.
