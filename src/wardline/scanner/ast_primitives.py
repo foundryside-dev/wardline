@@ -104,39 +104,46 @@ def iter_calls_in_function_body(
     Header expressions that execute in the enclosing scope (decorators, default
     values, base classes, metaclass keywords) are still attributed to ``node``.
     """
+    results: list[ast.Call] = []
 
-    def walk_node(current: ast.AST) -> Iterator[ast.Call]:
-        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            for decorator in current.decorator_list:
-                yield from walk_node(decorator)
-            yield from _walk_argument_defaults(current.args)
+    def walk_node(current: ast.AST) -> None:
+        typ = type(current)
+        if typ is ast.FunctionDef or typ is ast.AsyncFunctionDef:
+            for decorator in current.decorator_list:  # type: ignore[attr-defined]
+                walk_node(decorator)
+            args = current.args  # type: ignore[attr-defined]
+            for default in args.defaults:
+                walk_node(default)
+            for kw_default in args.kw_defaults:
+                if kw_default is not None:
+                    walk_node(kw_default)
             return
-        if isinstance(current, ast.ClassDef):
-            for decorator in current.decorator_list:
-                yield from walk_node(decorator)
-            for base in current.bases:
-                yield from walk_node(base)
-            for keyword in current.keywords:
-                yield from walk_node(keyword.value)
+        if typ is ast.ClassDef:
+            for decorator in current.decorator_list:  # type: ignore[attr-defined]
+                walk_node(decorator)
+            for base in current.bases:  # type: ignore[attr-defined]
+                walk_node(base)
+            for keyword in current.keywords:  # type: ignore[attr-defined]
+                walk_node(keyword.value)
             return
-        if isinstance(current, ast.Lambda):
-            yield from _walk_argument_defaults(current.args)
+        if typ is ast.Lambda:
+            args = current.args  # type: ignore[attr-defined]
+            for default in args.defaults:
+                walk_node(default)
+            for kw_default in args.kw_defaults:
+                if kw_default is not None:
+                    walk_node(kw_default)
             return
-        if isinstance(current, ast.Call):
-            yield current
+        if typ is ast.Call:
+            results.append(current)  # type: ignore[arg-type]
+
         for child in ast.iter_child_nodes(current):
-            yield from walk_node(child)
-
-    def _walk_argument_defaults(args: ast.arguments) -> Iterator[ast.Call]:
-        for default in args.defaults:
-            yield from walk_node(default)
-        for kw_default in args.kw_defaults:
-            if kw_default is None:
-                continue
-            yield from walk_node(kw_default)
+            walk_node(child)
 
     for stmt in node.body:
-        yield from walk_node(stmt)
+        walk_node(stmt)
+
+    return iter(results)
 
 
 def resolve_self_method_fqn(
