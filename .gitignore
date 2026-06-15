@@ -68,3 +68,7 @@ wardline.yaml
 
 # CI-only assembled Pages tree (www root + docs/)
 publish/
+
+# Developer config / local tooling — not part of the solution
+.claude/
+.agents/
