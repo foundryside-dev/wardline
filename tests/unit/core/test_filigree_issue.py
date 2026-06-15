@@ -432,3 +432,73 @@ def test_file_2xx_non_string_issue_id_is_normalized_to_none():
     t = FakeTransport(200, '{"issue_id": 123, "created": true}')
     res = FiligreeIssueFiler("http://h/api/weft/scan-results", transport=t).file("fp")
     assert res.reachable is True and res.issue_id is None and res.created is True
+
+
+# --- resolve_entity_binding_input (doctrine inline SEI-on-entry) -------------------
+
+
+def test_resolve_entity_binding_input_none_when_no_refs():
+    from wardline.core.filigree_issue import resolve_entity_binding_input
+
+    assert (
+        resolve_entity_binding_input(
+            entity_id=None, entity_symbol=None, loomweave_client=SeiLoomweave()
+        )
+        is None
+    )
+
+
+def test_resolve_entity_binding_input_l1_opaque_sei_carried_verbatim():
+    from wardline.core.filigree_issue import resolve_entity_binding_input
+
+    out = resolve_entity_binding_input(
+        entity_id="loomweave:eid:zzz", entity_symbol=None, loomweave_client=None
+    )
+    assert out is not None and out.resolved is True
+    assert out.entity_id == "loomweave:eid:zzz"
+    assert out.binding_kind == "sei"
+
+
+def test_resolve_entity_binding_input_l1_opaque_locator_marked_locator():
+    from wardline.core.filigree_issue import resolve_entity_binding_input
+
+    out = resolve_entity_binding_input(
+        entity_id="python:function:pkg.mod.fn", entity_symbol=None, loomweave_client=None
+    )
+    assert out is not None and out.resolved is True
+    assert out.binding_kind == "locator"
+
+
+def test_resolve_entity_binding_input_l2_symbol_resolves_to_sei():
+    from wardline.core.filigree_issue import resolve_entity_binding_input
+
+    out = resolve_entity_binding_input(
+        entity_id=None, entity_symbol="pkg.mod.leaky", loomweave_client=SeiLoomweave()
+    )
+    assert out is not None and out.resolved is True
+    assert out.entity_id == "loomweave:eid:abc"
+    assert out.content_hash == "hash-v1"
+    assert out.binding_kind == "sei"
+
+
+def test_resolve_entity_binding_input_l2_unresolved_returns_carrier():
+    from wardline.core.filigree_issue import resolve_entity_binding_input
+
+    # A Loomweave with no SEI capability cannot resolve a symbol -> unresolved_input.
+    out = resolve_entity_binding_input(
+        entity_id=None, entity_symbol="pkg.mod.ghost", loomweave_client=DownLoomweave()
+    )
+    assert out is not None and out.resolved is False
+    assert out.reason_class == "unresolved_input"
+    assert out.cause and out.fix
+
+
+def test_resolve_entity_binding_input_l2_no_client_is_unresolved():
+    from wardline.core.filigree_issue import resolve_entity_binding_input
+
+    out = resolve_entity_binding_input(
+        entity_id=None, entity_symbol="pkg.mod.leaky", loomweave_client=None
+    )
+    assert out is not None and out.resolved is False
+    assert out.reason_class == "unresolved_input"
+    assert "no Loomweave URL" in out.cause

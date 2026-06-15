@@ -1068,8 +1068,11 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                         "reachable": {"type": "boolean"},
                         "created": {"type": "integer"},
                         "updated": {"type": "integer"},
-                        "failed": {"type": "integer", "description": "Count of un-ingested findings (derived from "
-                        "`failures`); 0 is earned from real records, not assumed."},
+                        "failed": {
+                            "type": "integer",
+                            "description": "Count of un-ingested findings (derived from "
+                            "`failures`); 0 is earned from real records, not assumed.",
+                        },
                         "failures": {"$ref": "#/$defs/filigree_emit_failures"},
                         "warnings": {"type": "array", "items": {"type": "string"}},
                         "status": {
@@ -1483,8 +1486,10 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "reachable": {"type": ["boolean", "null"], "description": "null when not configured."},
                 "created": {"type": "integer"},
                 "updated": {"type": "integer"},
-                "failed": {"type": "integer", "description": "Count of un-ingested findings (derived from "
-                "`failures`); 0 is earned, not assumed."},
+                "failed": {
+                    "type": "integer",
+                    "description": "Count of un-ingested findings (derived from `failures`); 0 is earned, not assumed.",
+                },
                 "failures": {"$ref": "#/$defs/filigree_emit_failures"},
                 "warnings": {"type": "array", "items": {"type": "string"}},
                 "disabled_reason": {
@@ -3557,7 +3562,7 @@ _BASELINE_TOOL: dict[str, Any] = {
 }
 
 
-def _waiver_add(args: dict[str, Any], root: Path) -> dict[str, Any]:
+def _waiver_add(args: dict[str, Any], root: Path, loomweave: Any = None) -> dict[str, Any]:
     fp = _require(args, "fingerprint")
     reason = _require(args, "reason")
     expires_str = _require(args, "expires")  # mandatory at the tool boundary
@@ -3568,19 +3573,73 @@ def _waiver_add(args: dict[str, Any], root: Path) -> dict[str, Any]:
     except ValueError as exc:
         # A malformed date is something the agent can fix and should see.
         raise ToolError("expires must be an ISO date (YYYY-MM-DD)") from exc
+
+    entity_id_raw = args.get("entity_id")
+    entity_symbol_raw = args.get("entity_symbol")
+    if entity_id_raw is not None and not isinstance(entity_id_raw, str):
+        raise ToolError("entity_id must be a string")
+    if entity_symbol_raw is not None and not isinstance(entity_symbol_raw, str):
+        raise ToolError("entity_symbol must be a string")
+    plugin = args.get("entity_plugin") or "python"
+    if plugin not in ("python", "rust"):
+        raise ToolError("entity_plugin must be 'python' or 'rust'")
+
+    # Doctrine spine: a waiver names a specific defect-in-a-function, so it may carry the
+    # entity's rename-surviving SEI. Resolve the inline reference BEFORE writing — an
+    # entity_symbol that does not resolve returns unresolved_input and we create NOTHING
+    # (never an unbound-but-looks-bound record).
+    from wardline.core.filigree_issue import resolve_entity_binding_input
+
+    binding = resolve_entity_binding_input(
+        entity_id=entity_id_raw or None,
+        entity_symbol=entity_symbol_raw or None,
+        loomweave_client=loomweave,
+        plugin=plugin,
+    )
+    if binding is not None and not binding.resolved:
+        return {
+            "fingerprint": fp,
+            "created": False,
+            "unresolved_input": {
+                "reason_class": binding.reason_class,
+                "cause": binding.cause,
+                "fix": binding.fix,
+            },
+        }
+    entity_sei = binding.entity_id if binding is not None else None
+    entity_locator = binding.locator if binding is not None else None
+
     for existing in load_project_waivers(root):
         if existing.fingerprint == fp:
             return {
                 "fingerprint": existing.fingerprint,
                 "reason": existing.reason,
                 "expires": existing.expires.isoformat() if existing.expires else None,
+                "entity_sei": existing.entity_sei,
+                "entity_locator": existing.entity_locator,
+                "binding_kind": (
+                    None
+                    if existing.entity_sei is None
+                    else ("sei" if existing.entity_sei.startswith("loomweave:eid:") else "locator")
+                ),
                 "already_exists": True,
             }
-    waiver = add_waiver(waivers_path(root), fingerprint=fp, reason=reason, expires=expires, root=root)
+    waiver = add_waiver(
+        waivers_path(root),
+        fingerprint=fp,
+        reason=reason,
+        expires=expires,
+        root=root,
+        entity_sei=entity_sei,
+        entity_locator=entity_locator,
+    )
     return {
         "fingerprint": waiver.fingerprint,
         "reason": waiver.reason,
         "expires": waiver.expires.isoformat() if waiver.expires else None,
+        "entity_sei": waiver.entity_sei,
+        "entity_locator": waiver.entity_locator,
+        "binding_kind": binding.binding_kind if (binding is not None and binding.resolved) else None,
         "already_exists": False,
     }
 
@@ -3588,26 +3647,61 @@ def _waiver_add(args: dict[str, Any], root: Path) -> dict[str, Any]:
 _WAIVER_ADD_OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "description": "Success payload of the wardline MCP `waiver_add` tool: the waiver that now covers the fingerprint "
-    "(newly added, or the pre-existing one when a waiver for the fingerprint was already present).",
+    "(newly added, or the pre-existing one when a waiver for the fingerprint was already present). When an inline "
+    "entity_symbol was supplied but did NOT resolve to a SEI, the waiver is NOT written and only "
+    "{fingerprint, created:false, unresolved_input} is returned (never an unbound-but-looks-bound record).",
     "properties": {
         "fingerprint": {"type": "string", "description": "The finding fingerprint the waiver covers."},
         "reason": {
             "type": "string",
             "description": "The waiver's reason. When already_exists=true this is the EXISTING waiver's reason, which "
-            "may differ from the one passed in this call.",
+            "may differ from the one passed in this call. Absent on an unresolved_input refusal (nothing was written).",
         },
         "expires": {
             "type": ["string", "null"],
             "description": "Waiver expiry as an ISO date (YYYY-MM-DD). Null only when a pre-existing waiver loaded "
-            "from the waivers file carries no expiry (the tool itself requires expires on new waivers).",
+            "from the waivers file carries no expiry (the tool itself requires expires on new waivers). Absent on an "
+            "unresolved_input refusal.",
+        },
+        "entity_sei": {
+            "type": ["string", "null"],
+            "description": "The rename-surviving Loomweave SEI bound to this waiver's code entity, or the opaque "
+            "entity_id supplied verbatim; null when no inline entity binding was supplied.",
+        },
+        "entity_locator": {
+            "type": ["string", "null"],
+            "description": "Human-readable locator for the bound entity (e.g. 'python:function:pkg.mod.fn'); null "
+            "when no inline entity binding was supplied.",
+        },
+        "binding_kind": {
+            "type": ["string", "null"],
+            "enum": ["sei", "locator", None],
+            "description": "Whether the stored binding is a rename-stable SEI or a legacy locator; null when no "
+            "entity binding was supplied.",
+        },
+        "created": {
+            "type": "boolean",
+            "description": "Present only on an unresolved_input refusal: always false (the waiver was NOT written).",
+        },
+        "unresolved_input": {
+            "type": "object",
+            "description": "Present only when an inline entity_symbol was supplied but did not resolve to a SEI. The "
+            "waiver was NOT written. Canonical weft-reason carrier.",
+            "properties": {
+                "reason_class": {"type": "string", "enum": ["unresolved_input"]},
+                "cause": {"type": "string", "description": "Why the supplied entity reference did not resolve."},
+                "fix": {"type": "string", "description": "The actionable next step to make it resolve."},
+            },
+            "required": ["reason_class", "cause", "fix"],
+            "additionalProperties": False,
         },
         "already_exists": {
             "type": "boolean",
             "description": "True when a waiver for this fingerprint already existed and the returned fields describe "
-            "that existing waiver; false when this call added a new waiver.",
+            "that existing waiver; false when this call added a new waiver. Absent on an unresolved_input refusal.",
         },
     },
-    "required": ["fingerprint", "reason", "expires", "already_exists"],
+    "required": ["fingerprint"],
     "additionalProperties": False,
 }
 
@@ -3616,7 +3710,12 @@ _WAIVER_ADD_TOOL: dict[str, Any] = {
     "name": "waiver_add",
     "title": "Add time-boxed waiver",
     "description": "Waive ONE finding by fingerprint with a mandatory reason and expiry. "
-    "Prefer fixing; a waiver is an audited, time-boxed exception.",
+    "Prefer fixing; a waiver is an audited, time-boxed exception. "
+    "OPTIONALLY bind the waiver to the code entity it suppresses so the suppression "
+    "survives rename/move and joins federation: pass `entity_id` (an opaque SEI/locator "
+    "you already hold) or `entity_symbol` (a qualname resolved to a SEI through "
+    "Loomweave). An entity_symbol that does not resolve returns `unresolved_input` and "
+    "writes NOTHING.",
     "input_schema": {
         "type": "object",
         "required": ["fingerprint", "reason", "expires"],
@@ -3624,6 +3723,23 @@ _WAIVER_ADD_TOOL: dict[str, Any] = {
             "fingerprint": {"type": "string"},
             "reason": {"type": "string"},
             "expires": {"type": "string", "description": "YYYY-MM-DD"},
+            "entity_id": {
+                "type": "string",
+                "description": "L1 inline bind: an opaque entity id you already hold (a 'loomweave:eid:...' SEI or a "
+                "legacy locator). Carried verbatim, never re-resolved. Wins over entity_symbol if both are given.",
+            },
+            "entity_symbol": {
+                "type": "string",
+                "description": "L2 inline bind: a qualname (e.g. 'pkg.mod.func') resolved to a rename-stable SEI "
+                "through Loomweave at entry time. A symbol that does not resolve returns unresolved_input and writes "
+                "nothing.",
+            },
+            "entity_plugin": {
+                "type": "string",
+                "enum": ["python", "rust"],
+                "description": "Which frontend the entity_symbol belongs to (defaults to 'python'); selects the "
+                "resolve-hint dialect.",
+            },
         },
     },
     "output_schema": _WAIVER_ADD_OUTPUT_SCHEMA,
@@ -4458,7 +4574,13 @@ class WardlineMCPServer:
         self.add_tool(
             Tool(
                 **_WAIVER_ADD_TOOL,
-                handler=_waiver_add,
+                handler=lambda args, root: _waiver_add(
+                    args,
+                    root,
+                    # An entity_symbol needs Loomweave to resolve; an opaque entity_id does
+                    # not. Build the client only when a symbol is present (None otherwise).
+                    self._loomweave_client(_cfg(args, root)) if args.get("entity_symbol") else None,
+                ),
             )
         )
         self.add_tool(

@@ -271,6 +271,88 @@ def _finding_for_fingerprint(fingerprint: str, root: Path, config_path: Path | N
     return next((finding for finding in result.findings if finding.fingerprint == fingerprint), None)
 
 
+@dataclass(frozen=True, slots=True)
+class EntityBindingInput:
+    """Outcome of resolving an inline entity reference supplied at a manual-entry surface
+    (the doctrine ``entity_id`` L1 / ``entity_symbol`` L2 inputs). On success ``entity_id``
+    is the binding key (a ``loomweave:eid:`` SEI when one resolved, else the opaque value /
+    locator the caller supplied) and ``locator`` is the human-readable name. On failure the
+    weft-reason triple is populated and the caller MUST create nothing."""
+
+    resolved: bool
+    entity_id: str | None = None
+    locator: str | None = None
+    content_hash: str | None = None
+    binding_kind: str | None = None  # "sei" | "locator"
+    # weft-reason carrier (unresolved_input); populated only when resolved is False.
+    reason_class: str | None = None
+    cause: str | None = None
+    fix: str | None = None
+
+    @classmethod
+    def from_opaque(cls, entity_id: str) -> EntityBindingInput:
+        """L1: an opaque id the caller already holds. Carried verbatim, never re-resolved."""
+        return cls(
+            resolved=True,
+            entity_id=entity_id,
+            locator=entity_id,
+            binding_kind="sei" if entity_id.startswith("loomweave:eid:") else "locator",
+        )
+
+    @classmethod
+    def unresolved(cls, *, cause: str, fix: str) -> EntityBindingInput:
+        return cls(resolved=False, reason_class="unresolved_input", cause=cause, fix=fix)
+
+
+def resolve_entity_binding_input(
+    *,
+    entity_id: str | None,
+    entity_symbol: str | None,
+    loomweave_client: Any,
+    plugin: str = "python",
+) -> EntityBindingInput | None:
+    """Resolve an inline entity reference for a manual-entry surface, doctrine-style.
+
+    Returns ``None`` when NEITHER input was supplied (the surface stays entity-free,
+    fully back-compatible). With ``entity_id`` (L1) the value is carried opaque, no
+    transport touched. With ``entity_symbol`` (L2) the symbol is resolved to a SEI via
+    Loomweave (the existing :class:`SeiResolver` transport); a symbol that does not
+    resolve to a live SEI returns an ``unresolved_input`` carrier so the caller can
+    refuse to write a looks-bound-but-isn't record. ``entity_id`` wins if both given.
+    """
+    if entity_id:
+        return EntityBindingInput.from_opaque(entity_id)
+    if not entity_symbol:
+        return None
+    if loomweave_client is None:
+        return EntityBindingInput.unresolved(
+            cause=f"entity_symbol {entity_symbol!r} supplied but no Loomweave URL is configured to resolve it",
+            fix="configure a Loomweave URL (--loomweave-url / loomweave.url), or pass an already-resolved entity_id",
+        )
+    locator = _locator_for_finding_qualname(entity_symbol, plugin)
+    try:
+        resolver = SeiResolver.detect(loomweave_client)
+        binding = resolver.resolve_locator(locator)
+    except Exception as exc:
+        return EntityBindingInput.unresolved(
+            cause=f"Loomweave resolve of entity_symbol {entity_symbol!r} failed: {exc}",
+            fix="check Loomweave reachability, or pass an already-resolved entity_id",
+        )
+    if binding.sei and binding.content_hash:
+        return EntityBindingInput(
+            resolved=True,
+            entity_id=binding.sei,
+            locator=binding.locator or locator,
+            content_hash=binding.content_hash,
+            binding_kind="sei",
+        )
+    return EntityBindingInput.unresolved(
+        cause=f"Loomweave did not resolve entity_symbol {entity_symbol!r} to a live SEI "
+        f"(plugin={plugin}); the symbol may be unknown, renamed, or this Loomweave predates SEI",
+        fix="verify the qualname is indexed in Loomweave, or pass an already-resolved entity_id",
+    )
+
+
 def attach_loomweave_identity_for_finding(
     *,
     fingerprint: str,

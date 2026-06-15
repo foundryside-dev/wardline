@@ -35,6 +35,15 @@ class Waiver:
     fingerprint: str
     reason: str
     expires: date | None = None
+    entity_sei: str | None = None
+    """Optional rename-surviving Loomweave SEI for the code entity this waiver names
+    (the doctrine spine — a waiver about a defect-in-a-function carries the function's
+    stable identity, so the suppression survives rename/move and joins federation
+    joins). Opaque; carried verbatim, never parsed."""
+    entity_locator: str | None = None
+    """Optional human-readable locator (``{plugin}:function:{qualname}`` or the
+    resolved current-locator) captured alongside the SEI for legibility. Never the
+    join key — the SEI is."""
 
     def is_active(self, today: date) -> bool:
         """Active through the expiry day; expired strictly after (today > expires)."""
@@ -73,8 +82,29 @@ def parse_waivers(raw: Sequence[Mapping[str, Any]]) -> tuple[Waiver, ...]:
         reason = item.get("reason")
         if not isinstance(reason, str) or not reason.strip():
             raise ConfigError(f"waivers[{idx}].reason is required (non-empty string)")
-        waivers.append(Waiver(fingerprint=fp, reason=reason, expires=_parse_expiry(item.get("expires"), idx)))
+        entity_sei = _parse_optional_str(item.get("entity_sei"), idx, "entity_sei")
+        entity_locator = _parse_optional_str(item.get("entity_locator"), idx, "entity_locator")
+        waivers.append(
+            Waiver(
+                fingerprint=fp,
+                reason=reason,
+                expires=_parse_expiry(item.get("expires"), idx),
+                entity_sei=entity_sei,
+                entity_locator=entity_locator,
+            )
+        )
     return tuple(waivers)
+
+
+def _parse_optional_str(raw: Any, idx: int, field: str) -> str | None:
+    """An optional string field on a waiver entry: absent → None; a non-empty string
+    is kept; anything else (a number, a mapping, an empty string) is a malformed store
+    and fails loud — a waiver's entity binding must not be silently dropped."""
+    if raw is None:
+        return None
+    if isinstance(raw, str) and raw:
+        return raw
+    raise ConfigError(f"waivers[{idx}].{field} must be a non-empty string when present, got {raw!r}")
 
 
 def build_waivers_document(waivers: Iterable[Waiver]) -> dict[str, Any]:
@@ -87,6 +117,10 @@ def build_waivers_document(waivers: Iterable[Waiver]) -> dict[str, Any]:
         entry: dict[str, Any] = {"fingerprint": w.fingerprint, "reason": w.reason}
         if w.expires is not None:
             entry["expires"] = w.expires.isoformat()
+        if w.entity_sei is not None:
+            entry["entity_sei"] = w.entity_sei
+        if w.entity_locator is not None:
+            entry["entity_locator"] = w.entity_locator
         entries.append(entry)
     return {"fingerprint_scheme": FINGERPRINT_SCHEME, "version": WAIVERS_VERSION, "waivers": entries}
 
@@ -127,6 +161,8 @@ def add_waiver(
     reason: str,
     expires: date | None,
     root: Path | None = None,
+    entity_sei: str | None = None,
+    entity_locator: str | None = None,
 ) -> Waiver:
     """Append a waiver to the ``waivers:`` list in ``path`` — wardline's machine/CLI
     state file ``.weft/wardline/waivers.yaml`` (creating it if absent). Validates via
@@ -135,6 +171,11 @@ def add_waiver(
 
     ``expires`` is stored as an ISO string (``YYYY-MM-DD``); both the in-line
     validation parse and a later ``parse_waivers`` round-trip accept it.
+
+    ``entity_sei`` / ``entity_locator`` (additive, doctrine spine) optionally bind the
+    waiver to the code entity it suppresses so the suppression survives rename/move and
+    joins federation joins. The SEI is carried verbatim (opaque); both are stored only
+    when present, so existing callers (and existing waiver files) are unaffected.
     """
     config_path = path
     if root is not None:
@@ -142,6 +183,10 @@ def add_waiver(
     entry: dict[str, object] = {"fingerprint": fingerprint, "reason": reason}
     if expires is not None:
         entry["expires"] = expires.isoformat()
+    if entity_sei is not None:
+        entry["entity_sei"] = entity_sei
+    if entity_locator is not None:
+        entry["entity_locator"] = entity_locator
     # Validate by parsing the single entry — reuses the canonical rules. Raises
     # ConfigError on a bad fingerprint/reason/expiry BEFORE the file is touched.
     waiver = parse_waivers((entry,))[0]
