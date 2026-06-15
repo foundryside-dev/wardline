@@ -166,6 +166,29 @@ def test_explicit_agent_summary_output_refuses_symlink(tmp_path: Path) -> None:
     assert victim.read_text(encoding="utf-8") == "KEEP\n"  # target untouched
 
 
+def test_scan_job_explicit_agent_summary_output_refuses_symlink(tmp_path: Path) -> None:
+    # The scan-job WORKER agent-summary artifact write must be no-follow too (regression for
+    # the fa1ca063 _write_scan_artifact restructure, which lost the guard): a planted
+    # --output symlink must not truncate an arbitrary target.
+    from click.testing import CliRunner
+
+    from wardline.cli.main import cli
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "svc.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    victim = tmp_path / "victim.json"
+    victim.write_text("KEEP\n", encoding="utf-8")
+    out = tmp_path / "out.json"
+    out.symlink_to(victim)
+    CliRunner().invoke(
+        cli,
+        ["scan-job", "start", str(project), "--format", "agent-summary", "--output", str(out), "--foreground"],
+    )
+    # the job records a failed/errored artifact write rather than clobbering the target
+    assert victim.read_text(encoding="utf-8") == "KEEP\n"
+
+
 def test_pid_is_scan_job_worker_rejects_non_worker_group_leader() -> None:
     # A genuine group-leader that is NOT our worker (cmdline mismatch) is rejected.
     victim = subprocess.Popen(["sleep", "30"], start_new_session=True)  # noqa: S603, S607

@@ -30,7 +30,7 @@ from wardline.core.filigree_emit import (
 )
 from wardline.core.finding import Severity
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
-from wardline.core.safe_paths import safe_project_path, safe_write_text
+from wardline.core.safe_paths import safe_project_path, safe_write_text, write_text_no_follow
 from wardline.core.sarif import SarifSink
 
 _JOB_ID_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -298,9 +298,14 @@ def _write_scan_artifact(
         # Embed the ALREADY-COMPUTED gate decision (which honors fail_on_unanalyzed) and the
         # real Filigree emit block, so the artifact's gate + integration state match the
         # terminal job status instead of an unanalyzed-blind, pre-enrichment snapshot.
-        output.parent.mkdir(parents=True, exist_ok=True)
         summary = build_agent_summary(result, decision, filigree_emit=filigree_emit, migration_hint=migration_hint)
-        output.write_text(json.dumps(summary.to_dict(), sort_keys=True) + "\n")
+        content = json.dumps(summary.to_dict(), sort_keys=True) + "\n"
+        # No-follow, matching the JSONL/SARIF sinks: an untrusted checkout could plant the
+        # worker's --output as a symlink and a raw write_text would truncate its target.
+        if sink_root is not None:
+            safe_write_text(sink_root, output, content, label=output.name)
+        else:
+            write_text_no_follow(output, content, label=output.name)
         return
     JsonlSink(output, root=sink_root).write(result.findings)
 
