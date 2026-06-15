@@ -119,7 +119,13 @@ def collect_and_write_baseline(
         strict_defaults=strict_defaults,
     )
     to_baseline = [f for f in result.findings if f.kind is Kind.DEFECT and f.suppressed is not SuppressionState.WAIVED]
-    write_baseline(baseline_path, to_baseline, root=root)
+    # baseline_path is root-PREFIXED (weft_state_dir(root)/baseline.yaml). Pass it to the
+    # root-confined writer as an ABSOLUTE path: a relative `root` (e.g. `wardline baseline
+    # create pkg`) makes baseline_path `pkg/.weft/.../baseline.yaml`, which safe_write_text
+    # would resolve under `pkg` AGAIN (`pkg/pkg/.weft/...`) — writing a baseline the next
+    # scan of `pkg` never loads. .resolve() is idempotent for the absolute store_dir-override
+    # form. run_scan still gets the original `root`, so finding paths are unchanged.
+    write_baseline(baseline_path.resolve(), to_baseline, root=root)
     return to_baseline
 
 

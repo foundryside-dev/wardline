@@ -133,6 +133,37 @@ def test_scan_default_output_lands_in_scanned_path(tmp_path: Path) -> None:
     assert (project / "findings.jsonl").exists()
 
 
+def test_scan_relative_subdir_default_output_not_double_resolved(tmp_path: Path, monkeypatch) -> None:
+    # Regression: `wardline scan pkg` (relative subdir). The default output is reported as
+    # `pkg/findings.jsonl`, and the root-confined writer must write THERE — not resolve `pkg`
+    # into the already-prefixed path twice (`pkg/pkg/findings.jsonl`), which left the reported
+    # artifact path empty.
+    import shutil
+
+    project = tmp_path / "pkg"
+    shutil.copytree(FIXTURE, project)
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(cli, ["scan", "pkg"])
+    assert result.exit_code == 0, result.output
+    assert (project / "findings.jsonl").exists()  # at the reported path
+    assert not (project / "pkg").exists()  # no double-resolved pkg/pkg/
+
+
+def test_baseline_create_relative_subdir_not_double_resolved(tmp_path: Path, monkeypatch) -> None:
+    # Regression twin for `wardline baseline create pkg`: the baseline must land at the
+    # reported `pkg/.weft/wardline/baseline.yaml`, not `pkg/pkg/.weft/...`, or a later scan
+    # of `pkg` silently never loads it.
+    import shutil
+
+    project = tmp_path / "pkg"
+    shutil.copytree(FIXTURE, project)
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(cli, ["baseline", "create", "pkg"])
+    assert result.exit_code == 0, result.output
+    assert (project / ".weft" / "wardline" / "baseline.yaml").exists()
+    assert not (project / "pkg").exists()
+
+
 def test_scan_jsonl_default_refuses_symlinked_output(tmp_path: Path) -> None:
     import shutil
 

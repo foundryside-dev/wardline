@@ -213,6 +213,13 @@ def scan(
         default_name = "findings.jsonl"
     output_is_default = output is None
     output = output if output is not None else (path / default_name)
+    # The default output is REPORTED as `output` (path/<name>) but WRITTEN through the
+    # root-confined safe writer with root=path. Hand that writer the bare root-relative
+    # name, not `output`: a relative `path` (e.g. `wardline scan pkg`) makes `output`
+    # already `pkg/<name>`, and safe_project_path would resolve it under `pkg` AGAIN
+    # (`pkg/pkg/<name>`) while the CLI prints `pkg/<name>` — a write to a path that does
+    # not exist. Explicit `-o` paths are caller-controlled and written verbatim.
+    confined_name = Path(default_name)
     emit_result: EmitResult | None = None
     loomweave_result = None
     try:
@@ -281,10 +288,14 @@ def scan(
                     )
                     findings = result.findings
         if fmt == "sarif":
-            sarif_sink = SarifSink(output, root=path if output_is_default else None)
+            sarif_sink = SarifSink(
+                confined_name if output_is_default else output, root=path if output_is_default else None
+            )
             sarif_sink.write(findings, result.context)
         elif fmt == "jsonl":
-            jsonl_sink = JsonlSink(output, root=path if output_is_default else None)
+            jsonl_sink = JsonlSink(
+                confined_name if output_is_default else output, root=path if output_is_default else None
+            )
             jsonl_sink.write(findings)
         elif fmt == "legis":
             # The signed, verbatim-postable scan for legis's POST /wardline/scan-results.
@@ -366,7 +377,7 @@ def scan(
                 + "\n"
             )
             if output_is_default:
-                safe_write_text(path, output, agent_summary_json, label=default_name)
+                safe_write_text(path, confined_name, agent_summary_json, label=default_name)
             else:
                 output.write_text(agent_summary_json, encoding="utf-8")
     except WardlineError as exc:
