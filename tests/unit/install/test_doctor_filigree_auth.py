@@ -293,6 +293,49 @@ def test_check_ok_when_url_unresolved(tmp_path: Path, monkeypatch) -> None:
     assert "not configured" in (check.message or "")
 
 
+# --- Stale --filigree-url pin shadowing a LIVE published daemon (rotated port) -------
+
+
+class _PortRoutedTransport:
+    """Reachable only for *live_port*; any other host:port raises (unreachable)."""
+
+    def __init__(self, live_port: int, status: int = 400) -> None:
+        self._live_port = live_port
+        self._status = status
+
+    def post(self, url: str, body: bytes, headers: Mapping[str, str]) -> Response:
+        from urllib.parse import urlsplit
+
+        if urlsplit(url).port != self._live_port:
+            raise OSError("connection refused")
+        return Response(status=self._status, body="")
+
+
+def test_check_flags_stale_pin_shadowing_live_published_daemon(tmp_path: Path, monkeypatch) -> None:
+    # .mcp.json pins a rotated-away port (9229, dead) while Filigree is live on the
+    # published per-project port (9397). Plain `doctor` must NOT mask this as a soft
+    # "not reachable" — it surfaces an error pointing at `--repair` (drop the stale pin).
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setenv("WEFT_FEDERATION_TOKEN", "T")
+    (tmp_path / ".weft" / "filigree").mkdir(parents=True)
+    (tmp_path / ".weft" / "filigree" / "ephemeral.port").write_text("9397", encoding="utf-8")
+    _write_mcp_with_filigree_url(tmp_path, "http://127.0.0.1:9229/api/weft/scan-results")
+    check = _check_filigree_auth(tmp_path, repair=False, transport=_PortRoutedTransport(9397))
+    assert check.status == "error"
+    assert "9397" in (check.message or "")
+    assert "--repair" in (check.message or "")
+
+
+def test_check_stays_soft_when_pin_dead_and_no_live_published(tmp_path: Path, monkeypatch) -> None:
+    # Pinned dead AND nothing live published: a genuinely-absent daemon stays soft "ok".
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setenv("WEFT_FEDERATION_TOKEN", "T")
+    _write_mcp_with_filigree_url(tmp_path, "http://127.0.0.1:9229/api/weft/scan-results")
+    check = _check_filigree_auth(tmp_path, repair=False, transport=_ScriptedTransport({}, unreachable=True))
+    assert check.status == "ok"
+    assert "not reachable" in (check.message or "")
+
+
 def test_check_detects_rejected_token_via_published_port(tmp_path: Path, monkeypatch) -> None:
     # esper-lite shape end-to-end: no pinned --filigree-url, but a live ephemeral
     # daemon is discoverable via the published port. The doctor must probe it and

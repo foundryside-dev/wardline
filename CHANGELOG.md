@@ -48,6 +48,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   enforcement authority (`wardline-e63204176b`, MCP-primary B2).
 
 ### Fixed
+- **`doctor` now self-heals a stale `--filigree-url` / `--loomweave-url` pin that
+  shadows live published-port discovery.** When a sibling rotates ports, a
+  `.mcp.json` flag frozen to the old port (e.g. a legacy `.filigree/ephemeral.port`
+  rung outliving the rotation) silently outranks discovery and breaks emit. Plain
+  `wardline doctor` now reports this as an actionable error — "configured
+  `--filigree-url` is unreachable, but Filigree is live at … (published port)" —
+  instead of masking it as a soft "daemon not reachable". `wardline doctor --repair`
+  DROPS such a stale loopback pin (both siblings) so runtime published-port discovery
+  owns the always-current port; remote (non-loopback) pins, and loopback pins with no
+  live daemon, are left untouched. Filigree server mode still repairs a loopback pin
+  to the live project scope (unscoped writes fail-close there).
 - **PY-WL-108 no longer treats a quoted COMMAND word as sanitized.** The
   `shlex.quote` concat/f-string guard accepted `shlex.quote(raw) + " --version"`
   (and the f-string form) as safe, but quoting sanitizes a shell ARGUMENT, not the

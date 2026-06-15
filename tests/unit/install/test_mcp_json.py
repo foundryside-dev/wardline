@@ -350,6 +350,86 @@ def test_install_preserves_already_scoped_loopback_host_spelling(
     assert _wardline_args(tmp_path)[-1] == canary
 
 
+# --- Drop stale loopback sibling pins when a live per-project published port exists --
+#
+# A frozen --filigree-url / --loomweave-url pinned to a port Filigree/Loomweave has
+# since rotated away (the legacy .filigree/ephemeral.port rung outliving a rotation)
+# becomes an explicit flag that SHADOWS published-port discovery. In per-project mode
+# repair DROPS such a loopback pin so runtime discovery owns the always-current port.
+
+
+def _write_wardline_args(root: Path, args: list[str]) -> None:
+    entry = {"type": "stdio", "command": "/bin/wardline", "args": args}
+    (root / ".mcp.json").write_text(json.dumps({"mcpServers": {"wardline": entry}}), encoding="utf-8")
+
+
+def test_repair_drops_stale_loopback_pins_when_per_project_ports_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    # Live per-project published rungs (new .weft/<sibling>/ephemeral.port).
+    (tmp_path / ".weft" / "filigree").mkdir(parents=True)
+    (tmp_path / ".weft" / "filigree" / "ephemeral.port").write_text("9397", encoding="utf-8")
+    (tmp_path / ".weft" / "loomweave").mkdir(parents=True)
+    (tmp_path / ".weft" / "loomweave" / "ephemeral.port").write_text("39759", encoding="utf-8")
+    # ...but the entry pins the rotated-away ports.
+    _write_wardline_args(
+        tmp_path,
+        [
+            "mcp",
+            "--root",
+            ".",
+            "--loomweave-url",
+            "http://127.0.0.1:10251",
+            "--filigree-url",
+            "http://127.0.0.1:9229/api/weft/scan-results",
+        ],
+    )
+    assert merge_mcp_entry(tmp_path) == "updated"
+    args = _wardline_args(tmp_path)
+    assert "--filigree-url" not in args  # stale loopback pin dropped
+    assert "--loomweave-url" not in args  # stale loopback pin dropped
+    assert args == ["mcp", "--root", "."]  # discovery owns both ports
+
+
+def test_repair_preserves_loopback_pin_when_no_live_daemon(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # No published rung and not server mode: we cannot improve on the pin, so a loopback
+    # value is left verbatim (it may be a daemon that is merely down right now).
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    _write_wardline_args(
+        tmp_path, ["mcp", "--root", ".", "--filigree-url", "http://127.0.0.1:9229/api/weft/scan-results"]
+    )
+    assert merge_mcp_entry(tmp_path) == "unchanged"
+    assert _wardline_args(tmp_path)[-1] == "http://127.0.0.1:9229/api/weft/scan-results"
+
+
+def test_repair_drops_only_filigree_loopback_pin_preserving_remote_loomweave(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A remote (non-loopback) pin is the operator's deliberate endpoint — never dropped,
+    # even while a sibling's stale loopback pin is.
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    (tmp_path / ".weft" / "filigree").mkdir(parents=True)
+    (tmp_path / ".weft" / "filigree" / "ephemeral.port").write_text("9397", encoding="utf-8")
+    remote_loom = "https://loomweave.example.com"
+    _write_wardline_args(
+        tmp_path,
+        [
+            "mcp",
+            "--root",
+            ".",
+            "--loomweave-url",
+            remote_loom,
+            "--filigree-url",
+            "http://127.0.0.1:9229/api/weft/scan-results",
+        ],
+    )
+    assert merge_mcp_entry(tmp_path) == "updated"
+    args = _wardline_args(tmp_path)
+    assert "--filigree-url" not in args  # stale loopback dropped
+    assert args[args.index("--loomweave-url") + 1] == remote_loom  # remote preserved
+
+
 def test_same_scope_target_handles_malformed_port_without_crashing() -> None:
     # A preserved .mcp.json --filigree-url with a malformed loopback port
     # (http://localhost:notaport/...) must read as non-matching (so repair replaces it),

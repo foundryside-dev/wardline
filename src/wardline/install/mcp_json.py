@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from wardline.core.config import filigree_server_scoped_url
+from wardline.core.config import (
+    _filigree_published_url,
+    _loomweave_published_url,
+    filigree_server_scoped_url,
+)
 from wardline.core.errors import WardlineError
 from wardline.core.safe_paths import safe_project_file
 
@@ -37,13 +41,17 @@ def _local_mcp_entry() -> dict[str, object]:
     return {"type": "stdio", "command": _find_wardline_command(), "args": ["mcp", "--root", "."]}
 
 
-# Operator-pinned sibling-endpoint flags. When an existing .mcp.json entry carries
-# these (e.g. a fixed-port / remote filigree whose URL the published-port rung cannot
-# reconstruct), they ARE the runtime emit/discovery target — repair preserves them.
-# The one exception is a default-shaped (loopback) --filigree-url, which is repaired
-# to the live server-mode project scope when one is discovered (see
-# _desired_filigree_url): an unscoped loopback write fail-closes under a multi-project
-# daemon, so leaving it would ship a broken out-of-the-box config.
+# Operator-pinned sibling-endpoint flags, reconciled on repair (see
+# _desired_sibling_url):
+#   - a NON-loopback (remote) pin is the operator's deliberate endpoint — preserved.
+#   - a loopback pin that a live published-port rung can reconstruct is DROPPED, so
+#     runtime discovery owns the always-current port. A frozen pin to a rotated-away
+#     port otherwise shadows the live daemon (the legacy .filigree/ephemeral.port rung
+#     outliving a port rotation is the canonical way this happens). Filigree SERVER
+#     mode is the exception: an unscoped write fail-closes under a multi-project
+#     daemon, so a loopback pin is repaired to the live project scope rather than
+#     dropped.
+#   - a loopback pin with no live daemon is preserved verbatim (cannot be improved).
 _PRESERVED_ARG_FLAGS = ("--filigree-url", "--loomweave-url")
 
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
@@ -100,43 +108,56 @@ def _is_loopback_url(value: str) -> bool:
     return host in _LOOPBACK_HOSTS
 
 
-def _desired_filigree_url(existing: str | None, discovered: str | None) -> str | None:
-    """The ``--filigree-url`` to write. A discovered server-mode scoped URL is
-    authoritative and replaces an absent or *wrongly-targeted* loopback value —
-    repairing a stale, unscoped, or wrong-scoped local target — but it never overrides
-    an operator's non-loopback (remote) endpoint, and it never churns a loopback entry
-    that already names the correct port+scope (only the host spelling might differ;
-    that is left as the operator wrote it). Absent a discovery, preserve verbatim."""
-    if discovered is None:
-        return existing
+def _desired_sibling_url(flag: str, existing: str | None, root: Path) -> str | None:
+    """The value to write for *flag* (``--filigree-url`` / ``--loomweave-url``), or
+    ``None`` to DROP the flag entirely.
+
+    A non-loopback (remote) pin is the operator's deliberate endpoint and is always
+    preserved. A loopback pin is a locally-rebuildable target: when a live published
+    port exists for that sibling the pin is redundant-or-stale, so it is dropped and
+    runtime published-port discovery owns the (always-current) port — except in
+    Filigree server mode, where an unscoped write fail-closes (N1) and the pin is
+    repaired to the live project scope instead. With no live daemon the pin is left
+    verbatim (we cannot improve on it). A fresh entry (no pin) only gains a flag in
+    Filigree server mode, where the scoped target must be baked."""
+    if existing is not None and not _is_loopback_url(existing):
+        return existing  # remote endpoint — operator's deliberate choice, never touched
+    if flag == "--filigree-url":
+        scope = filigree_server_scoped_url(root)
+        if scope is not None:
+            if existing is None:
+                return scope  # fresh server-mode install lands a working scoped target
+            return existing if _same_scope_target(existing, scope) else scope
+        published: str | None = _filigree_published_url(root)
+    else:
+        published = _loomweave_published_url(root)
     if existing is None:
-        return discovered
-    if _is_loopback_url(existing) and not _same_scope_target(existing, discovered):
-        return discovered
-    return existing
+        return None  # per-project discovery owns the port; never bake a loopback pin
+    return None if published is not None else existing
 
 
 def _desired_sibling_args(entry: object, root: Path) -> list[str]:
-    """Sibling-URL args for the desired entry: operator-pinned ``--loomweave-url`` /
-    ``--filigree-url`` preserved in original order, with the filigree target repaired
-    to the live server-mode project scope when one is discovered (see
-    :func:`_desired_filigree_url`). A discovered scope with no existing flag is
-    appended so a fresh install lands a working scoped target out of the box."""
+    """Sibling-URL args for the desired entry: each operator-pinned ``--filigree-url``
+    / ``--loomweave-url`` reconciled by :func:`_desired_sibling_url` (preserved,
+    repaired-to-scope, or DROPPED) in the operator's original order. A Filigree
+    server-mode scope with no existing flag is appended so a fresh install lands a
+    working scoped target out of the box."""
     pairs = _flag_pairs(entry)
-    existing_filigree = next((v for f, v in pairs if f == "--filigree-url"), None)
-    desired_filigree = _desired_filigree_url(existing_filigree, filigree_server_scoped_url(root))
+    existing = {flag: value for flag, value in pairs}
+    desired = {flag: _desired_sibling_url(flag, existing.get(flag), root) for flag in _PRESERVED_ARG_FLAGS}
 
     out: list[str] = []
-    saw_filigree = False
-    for flag, value in pairs:
-        if flag == "--filigree-url":
-            saw_filigree = True
-            if desired_filigree is not None:
-                out.extend(("--filigree-url", desired_filigree))
-        else:
+    seen: set[str] = set()
+    for flag, _value in pairs:
+        seen.add(flag)
+        value = desired[flag]
+        if value is not None:
             out.extend((flag, value))
-    if not saw_filigree and desired_filigree is not None:
-        out.extend(("--filigree-url", desired_filigree))
+    for flag in _PRESERVED_ARG_FLAGS:
+        if flag not in seen:
+            value = desired[flag]
+            if value is not None:
+                out.extend((flag, value))
     return out
 
 
