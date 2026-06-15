@@ -46,4 +46,10 @@ jobs:
         run: |
           cd dist
           sha256sum --check SHA256SUMS
+      - name: Drop checksum file before publish
+        # pypa/gh-action-pypi-publish twine-uploads the ENTIRE packages dir (dist/)
+        # unconditionally; SHA256SUMS is not a distribution, so leaving it here makes
+        # twine reject it ("Unknown distribution format") and blocks the release.
+        # Verification above already consumed it.
+        run: rm -f dist/SHA256SUMS
       - uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0
