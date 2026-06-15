@@ -348,3 +348,13 @@ def test_install_preserves_already_scoped_loopback_host_spelling(
     (tmp_path / ".mcp.json").write_text(json.dumps({"mcpServers": {"wardline": entry}}), encoding="utf-8")
     assert merge_mcp_entry(tmp_path) == "unchanged"
     assert _wardline_args(tmp_path)[-1] == canary
+
+
+def test_same_scope_target_handles_malformed_port_without_crashing() -> None:
+    # A preserved .mcp.json --filigree-url with a malformed loopback port
+    # (http://localhost:notaport/...) must read as non-matching (so repair replaces it),
+    # not raise ValueError out of urlsplit().port and crash `doctor --repair`.
+    from wardline.install.mcp_json import _same_scope_target
+
+    assert _same_scope_target("http://localhost:notaport/x", "http://localhost:8749/x") is False
+    assert _same_scope_target("http://localhost:8749/x", "http://localhost:8749/x") is True

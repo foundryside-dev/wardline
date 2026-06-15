@@ -19,7 +19,7 @@ import pytest
 
 from wardline.core import paths, rekey, scan_jobs
 from wardline.core.errors import WardlineError
-from wardline.install.doctor import _rewrite_env_token
+from wardline.install.doctor import _filigree_token_candidates, _rewrite_env_token
 
 # --- config.py: server-mode scope spoof via a symlinked store ------------------------
 
@@ -126,6 +126,44 @@ def test_cancel_does_not_signal_forged_pid(tmp_path: Path) -> None:
     finally:
         victim.terminate()
         victim.wait()
+
+
+def test_repair_token_candidates_skip_symlinked_project_mint(tmp_path: Path, monkeypatch) -> None:
+    # doctor --repair probes local token candidates by SENDING them to a service. The
+    # project store is repo-controlled in an untrusted checkout; a symlinked mint would
+    # exfil its target's bytes as a Bearer. The symlinked project mint must be skipped.
+    monkeypatch.setattr("wardline.install.doctor.Path.home", lambda: tmp_path / "nohome")
+    root = tmp_path / "proj"
+    mint = root / ".weft" / "filigree"
+    mint.mkdir(parents=True)
+    (tmp_path / "outside_secret").write_text("EXFIL-TOKEN\n", encoding="utf-8")
+    (mint / "federation_token").symlink_to(tmp_path / "outside_secret")
+    assert _filigree_token_candidates(root) == []  # symlinked mint contributes nothing
+    # a real regular mint is still a candidate
+    (mint / "federation_token").unlink()
+    (mint / "federation_token").write_text("GOOD\n", encoding="utf-8")
+    assert _filigree_token_candidates(root) == ["GOOD"]
+
+
+def test_explicit_agent_summary_output_refuses_symlink(tmp_path: Path) -> None:
+    # `scan --format agent-summary -o <path>` must not follow a repo-controlled symlink at
+    # the chosen filename and clobber an arbitrary target (the default + JSONL/SARIF paths
+    # already use the no-follow writer).
+    from click.testing import CliRunner
+
+    from wardline.cli.main import cli
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "svc.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    victim = tmp_path / "victim.json"
+    victim.write_text("KEEP\n", encoding="utf-8")
+    out = tmp_path / "out.json"
+    out.symlink_to(victim)
+    result = CliRunner().invoke(cli, ["scan", str(project), "--format", "agent-summary", "--output", str(out)])
+    assert result.exit_code == 2  # refused at the boundary
+    assert "symlink" in result.output
+    assert victim.read_text(encoding="utf-8") == "KEEP\n"  # target untouched
 
 
 def test_pid_is_scan_job_worker_rejects_non_worker_group_leader() -> None:

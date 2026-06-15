@@ -67,6 +67,24 @@ def test_mcp_scan_gate_trips_on_baselined_defect_by_default(tmp_path: Path) -> N
     assert trusted["gate"]["tripped"] is False
 
 
+def test_mcp_scan_rejects_string_trust_suppressions(tmp_path: Path) -> None:
+    # Without jsonschema the handler runs unvalidated; bool("false") is True, so a client
+    # sending the STRING "false" must NOT silently enable trusted-local suppression. The
+    # tool rejects a non-boolean (the secure default is preserved) instead of coercing.
+    proj = _leaky_project(tmp_path)
+    server = WardlineMCPServer(root=proj)
+    resp = server.rpc.dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "scan", "arguments": {"fail_on": "ERROR", "trust_suppressions": "false"}},
+        }
+    )
+    assert resp["result"]["isError"] is True
+    assert "boolean" in resp["result"]["content"][0]["text"]
+
+
 def test_baseline_optional_reason(tmp_path: Path) -> None:
     proj = _leaky_project(tmp_path)
     server = WardlineMCPServer(root=proj)

@@ -16,7 +16,7 @@ from wardline.core.config import _filigree_published_url, load
 from wardline.core.errors import ConfigError, WardlineError
 from wardline.core.filigree_emit import FiligreeEmitter, Transport, UrllibTransport
 from wardline.core.paths import weft_config_path, weft_state_dir
-from wardline.core.safe_paths import safe_write_text
+from wardline.core.safe_paths import safe_read_text_if_regular, safe_write_text
 from wardline.filigree.config import load_filigree_token
 from wardline.install.block import inject_block
 from wardline.install.detect import (
@@ -391,16 +391,19 @@ def _filigree_token_candidates(root: Path) -> list[str]:
     """Locally-readable federation-token mints, in precedence order: the server-mode
     store (~/.config/filigree) then the project store (<root>/.weft/filigree). Returns
     distinct, non-empty values."""
-    paths = [
-        Path.home() / ".config" / "filigree" / "federation_token",
-        root / ".weft" / "filigree" / "federation_token",
-    ]
     out: list[str] = []
-    for p in paths:
-        try:
-            value = p.read_text(encoding="utf-8").strip()
-        except OSError:
-            continue
+    # Home store: the operator's own config — read normally.
+    home_mint = Path.home() / ".config" / "filigree" / "federation_token"
+    try:
+        candidates = [home_mint.read_text(encoding="utf-8").strip()]
+    except OSError:
+        candidates = [""]
+    # Project store: repo-controlled when wardline scans an untrusted checkout. A symlinked
+    # mint here would have its TARGET's bytes read and sent as a Bearer to the probed local
+    # service (token exfil). Read it regular-only / no-follow — a symlink is skipped.
+    proj = safe_read_text_if_regular(root, root / ".weft" / "filigree" / "federation_token", label="federation_token")
+    candidates.append((proj or "").strip())
+    for value in candidates:
         if value and value not in out:
             out.append(value)
     return out

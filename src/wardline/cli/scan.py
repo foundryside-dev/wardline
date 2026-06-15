@@ -22,7 +22,7 @@ from wardline.core.filigree_emit import (
 from wardline.core.finding import Severity
 from wardline.core.paths import weft_config_path
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
-from wardline.core.safe_paths import safe_write_text
+from wardline.core.safe_paths import safe_write_text, write_text_no_follow
 from wardline.core.sarif import SarifSink
 
 
@@ -379,7 +379,10 @@ def scan(
             if output_is_default:
                 safe_write_text(path, confined_name, agent_summary_json, label=default_name)
             else:
-                output.write_text(agent_summary_json, encoding="utf-8")
+                # Explicit -o path: no-follow, matching the JSONL/SARIF sinks. A raw
+                # write_text would follow a repo-controlled symlink at the chosen filename
+                # and truncate an arbitrary user-writable target in an untrusted checkout.
+                write_text_no_follow(output, agent_summary_json, label=output.name)
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc

@@ -78,11 +78,15 @@ def _same_scope_target(a: str, b: str) -> bool:
     recognised as correct and preserved verbatim, rather than churned every repair."""
     try:
         pa, pb = urlsplit(a), urlsplit(b)
+        # .port lazily parses the authority; a malformed literal (http://localhost:notaport)
+        # raises ValueError HERE, not at urlsplit. Parse both inside the guard so a bad
+        # preserved URL reads as non-matching (and gets replaced) instead of crashing repair.
+        a_port, b_port = pa.port, pb.port
     except ValueError:
         return False
     if pa.hostname not in _LOOPBACK_HOSTS or pb.hostname not in _LOOPBACK_HOSTS:
         return False
-    return (pa.port, pa.path) == (pb.port, pb.path)
+    return (a_port, pa.path) == (b_port, pb.path)
 
 
 def _is_loopback_url(value: str) -> bool:

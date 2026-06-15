@@ -777,7 +777,11 @@ def _scan(
     new_since = args.get("new_since")
     trusted_packs = _trusted_packs_arg(args)
     cache_dir = _cache_dir_arg(args, root)
-    trust_suppressions = bool(args.get("trust_suppressions") or False)
+    # _bool_arg, not bool(...): without jsonschema the handler runs unvalidated, and
+    # bool("false") is True — a client sending the STRING "false" would otherwise enable
+    # trusted-local suppression and let a repo baseline/waiver clear the gate (the scan-job
+    # path already uses _bool_arg).
+    trust_suppressions = _bool_arg(args, "trust_suppressions", False)
     # A1 (wardline-2ee1bbda82): the same frontend selector the CLI's --lang exposes.
     # A bad value is run_scan's ConfigError (names the valid set) -> isError result.
     lang = args.get("lang") or "python"
