@@ -35,6 +35,23 @@ def test_agent_summary_rejects_negative_max_findings(tmp_path: Path) -> None:
         AgentSummary(result=scan, gate=gate, max_findings=-1)
 
 
+def test_agent_summary_zero_max_findings_does_not_stall_pagination(tmp_path: Path) -> None:
+    # Regression: max_findings=0 yields an empty window; the truncation cursor must NOT
+    # report next_offset == offset (a paging agent following it would loop forever). A
+    # zero-progress window reports findings_truncated=False / next_offset=None instead.
+    from wardline.core.agent_summary import AgentSummary
+
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    scan = run_scan(tmp_path)
+    gate = gate_decision(scan, Severity.ERROR)
+    out = AgentSummary(result=scan, gate=gate, max_findings=0, offset=0).to_dict()
+    trunc = out["truncation"]
+    assert trunc["findings_total"] >= 1  # there ARE findings
+    assert trunc["findings_returned"] == 0
+    assert trunc["findings_truncated"] is False
+    assert trunc["next_offset"] is None  # never == offset
+
+
 def test_agent_summary_active_defects_first_and_stable(tmp_path: Path) -> None:
     (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
     scan = run_scan(tmp_path)

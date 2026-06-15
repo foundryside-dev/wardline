@@ -136,6 +136,53 @@ def test_scan_job_status_marks_dead_worker_failed(tmp_path: Path, monkeypatch) -
     assert persisted["failure_kind"] == "stale_worker"
 
 
+def test_scan_job_agent_summary_artifact_matches_terminal_status(tmp_path: Path, monkeypatch) -> None:
+    # Honesty: the agent-summary ARTIFACT must carry the same gate (honoring
+    # fail_on_unanalyzed) and filigree_emit block as the terminal job status — not an
+    # unanalyzed-blind, pre-enrichment `configured: false` snapshot.
+    project = tmp_path / "proj"
+    project.mkdir()
+    _write(project, "ok.py", "def ok():\n    return 1\n")
+    _write(project, "broken.py", "def f(:\n")  # parse error -> an unanalyzed file
+
+    class _OkEmitter:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def emit(self, findings: object, *, scanned_paths: object = ()) -> EmitResult:
+            return EmitResult(reachable=True, created=1, url="http://x/api/weft/scan-results")
+
+    monkeypatch.setattr("wardline.core.scan_jobs.FiligreeEmitter", _OkEmitter)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "scan-job",
+            "start",
+            str(project),
+            "--format",
+            "agent-summary",
+            "--fail-on-unanalyzed",
+            "--filigree-url",
+            "http://x/api/weft/scan-results",
+            "--foreground",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    artifact = json.loads(Path(payload["artifacts"]["findings"]).read_text())
+
+    # the ARTIFACT gate honors fail_on_unanalyzed (tripped on the unanalyzed file),
+    # matching the terminal status — not the unanalyzed-blind snapshot it used to write.
+    assert artifact["summary"]["unanalyzed"] == 1
+    assert artifact["gate"]["tripped"] is True == payload["gate"]["tripped"]
+    assert "fail_on_unanalyzed" in artifact["gate"]["reason"]
+    # integrations.filigree_emit reflects the REAL emit (configured + reachable), not configured:false
+    emit_block = artifact["integrations"]["filigree_emit"]
+    assert emit_block["configured"] is True
+    assert emit_block["reachable"] is True
+
+
 def test_scan_job_cancel_signals_process_group_and_persists_terminal_status(tmp_path: Path, monkeypatch) -> None:
     job_id = "b" * 32
     project = tmp_path / "proj"
@@ -143,6 +190,10 @@ def test_scan_job_cancel_signals_process_group_and_persists_terminal_status(tmp_
     _write_job_status(project, job_id, _base_job(job_id))
     sent: list[tuple[int, int]] = []
     monkeypatch.setattr("wardline.core.scan_jobs._pid_alive", lambda pid: True)
+    # Treat the recorded pid as a validated worker for this path; the rejection of a
+    # forged/non-worker pid is covered by
+    # tests/unit/security/test_symlink_toctou_hardening.py::test_cancel_does_not_signal_forged_pid.
+    monkeypatch.setattr("wardline.core.scan_jobs._pid_is_scan_job_worker", lambda pid, job_id: True)
     monkeypatch.setattr("wardline.core.scan_jobs.os.killpg", lambda pid, sig: sent.append((pid, sig)))
 
     result = CliRunner().invoke(cli, ["scan-job", "cancel", job_id, "--path", str(project)])

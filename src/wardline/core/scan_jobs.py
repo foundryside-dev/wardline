@@ -280,15 +280,27 @@ def _filigree_status(result: EmitResult | None) -> dict[str, object]:
     }
 
 
-def _write_scan_artifact(root: Path, output: Path, fmt: str, result: Any, fail_on: str | None) -> None:
+def _write_scan_artifact(
+    root: Path,
+    output: Path,
+    fmt: str,
+    result: Any,
+    decision: Any,
+    *,
+    filigree_emit: dict[str, Any] | None = None,
+    migration_hint: str | None = None,
+) -> None:
     sink_root = root if output.is_relative_to(root.resolve()) else None
     if fmt == "sarif":
         SarifSink(output, root=sink_root).write(result.findings, result.context)
         return
     if fmt == "agent-summary":
-        decision = gate_decision(result, Severity(fail_on)) if fail_on is not None else gate_decision(result, None)
+        # Embed the ALREADY-COMPUTED gate decision (which honors fail_on_unanalyzed) and the
+        # real Filigree emit block, so the artifact's gate + integration state match the
+        # terminal job status instead of an unanalyzed-blind, pre-enrichment snapshot.
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(build_agent_summary(result, decision).to_dict(), sort_keys=True) + "\n")
+        summary = build_agent_summary(result, decision, filigree_emit=filigree_emit, migration_hint=migration_hint)
+        output.write_text(json.dumps(summary.to_dict(), sort_keys=True) + "\n")
         return
     JsonlSink(output, root=sink_root).write(result.findings)
 
@@ -389,22 +401,15 @@ def run_scan_job_worker(root: Path, job_id: str) -> None:
         heartbeat_stop.set()
         if heartbeat_thread is not None:
             heartbeat_thread.join(timeout=1.0)
-        status.update(
-            {
-                "phase": "writing_artifact",
-                "progress": _progress(2, files_scanned=result.files_scanned, findings=result.summary.total),
-            }
-        )
-        with lock:
-            _write_status(root, job_id, status)
-        fmt = str(request.get("format", "jsonl"))
-        _write_scan_artifact(root, output, fmt, result, str(request["fail_on"]) if request.get("fail_on") else None)
-
+        # Enrich (Filigree emit) and compute the gate decision BEFORE writing the artifact,
+        # so the agent-summary artifact carries the same gate (honoring fail_on_unanalyzed)
+        # and the same filigree_emit block as the terminal job status — not an
+        # unanalyzed-blind, pre-enrichment `configured: false` snapshot.
         emit_result: EmitResult | None = None
         if request.get("filigree_url") and not request.get("local_only"):
             from wardline.filigree.config import load_filigree_token
 
-            status.update({"phase": "emitting_filigree", "progress": _progress(3)})
+            status.update({"phase": "emitting_filigree", "progress": _progress(2)})
             with lock:
                 _write_status(root, job_id, status)
             explicit_cap = request.get("filigree_max_findings_per_request")
@@ -423,6 +428,20 @@ def run_scan_job_worker(root: Path, job_id: str) -> None:
             fail_on_unanalyzed=bool(request.get("fail_on_unanalyzed", False)),
         )
         filigree_block = _filigree_status(emit_result)
+        migration_hint = baseline_migration_hint(result, decision, root=root, new_since=request.get("new_since"))
+
+        status.update(
+            {
+                "phase": "writing_artifact",
+                "progress": _progress(3, files_scanned=result.files_scanned, findings=result.summary.total),
+            }
+        )
+        with lock:
+            _write_status(root, job_id, status)
+        fmt = str(request.get("format", "jsonl"))
+        _write_scan_artifact(
+            root, output, fmt, result, decision, filigree_emit=filigree_block, migration_hint=migration_hint
+        )
         enrichment_failed = emit_result is not None and (not emit_result.reachable or emit_result.failed > 0)
         terminal = "completed"
         failure_kind: str | None = None
@@ -461,12 +480,7 @@ def run_scan_job_worker(root: Path, job_id: str) -> None:
                     "verdict": decision.verdict,
                     "reason": decision.reason,
                     "evaluated": decision.evaluated,
-                    "migration_hint": baseline_migration_hint(
-                        result,
-                        decision,
-                        root=root,
-                        new_since=request.get("new_since"),
-                    ),
+                    "migration_hint": migration_hint,
                 },
                 "filigree_emit": filigree_block,
             }

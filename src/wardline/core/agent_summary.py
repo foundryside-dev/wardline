@@ -114,7 +114,11 @@ class AgentSummary:
             window = union[self.offset :]
         findings_returned = len(window)
         end = self.offset + findings_returned
-        findings_truncated = (not self.summary_only) and end < findings_total
+        # A truncated page MUST advance: next_offset == offset (a zero-progress window,
+        # e.g. max_findings=0) would loop a paging agent forever. Only claim truncation
+        # when the window actually moved the cursor (findings_returned > 0); a degenerate
+        # zero-size window reports untruncated with no next page rather than a stall.
+        findings_truncated = (not self.summary_only) and findings_returned > 0 and end < findings_total
         next_offset = end if findings_truncated else None
         # Re-split the window back into the four display arrays by category (the union was
         # built in category order, so this preserves both order and the page boundary).

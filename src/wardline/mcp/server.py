@@ -844,9 +844,11 @@ def _scan(
     full = _bool_arg(args, "full", False)
     max_findings = args.get("max_findings")
     if max_findings is not None and (
-        not isinstance(max_findings, int) or isinstance(max_findings, bool) or max_findings < 0
+        not isinstance(max_findings, int) or isinstance(max_findings, bool) or max_findings < 1
     ):
-        raise ToolError("max_findings must be a non-negative integer")
+        # A page size of 0 yields an empty window whose truncation cursor cannot advance
+        # (the paging agent would loop). Use summary_only for counts without a findings list.
+        raise ToolError("max_findings must be a positive integer (use summary_only for counts without findings)")
     offset = args.get("offset", 0)
     if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
         raise ToolError("offset must be a non-negative integer")
