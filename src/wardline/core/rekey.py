@@ -26,7 +26,7 @@ from wardline.core.finding import FINGERPRINT_SCHEME, Finding, Kind
 from wardline.core.fingerprint_v0 import compute_finding_fingerprint_v0
 from wardline.core.judged import JUDGED_VERSION
 from wardline.core.optional_deps import require_yaml
-from wardline.core.safe_paths import safe_project_file
+from wardline.core.safe_paths import read_bytes_no_follow, safe_project_file, write_text_no_follow
 from wardline.core.waivers import WAIVERS_VERSION
 
 SNAPSHOT_DIR_NAME = ".rekey_snapshot"
@@ -214,14 +214,20 @@ def snapshot_stores(root: Path) -> tuple[str, ...]:
     present: list[str] = []
     for name, _key, _ver in _STORES:
         live = state / name
-        if not live.is_file():
+        # Read the live store WITHOUT following a symlink: an untrusted checkout could
+        # plant `.weft/wardline/<store>.yaml` as a symlink to a user-readable file outside
+        # the repo, and a naive read would copy that target into the in-project snapshot
+        # (arbitrary file disclosure). A symlinked/non-regular/missing store is simply not
+        # snapshot-eligible.
+        data = read_bytes_no_follow(live)
+        if data is None:
             continue
         present.append(name)
         dest = safe_project_file(root, sdir / name, label=name)
         if dest.exists():
             continue  # never clobber the pre-migration snapshot
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(live.read_bytes())
+        dest.write_bytes(data)
     return tuple(present)
 
 
@@ -375,7 +381,12 @@ def write_journal(path: Path, journal: Journal, *, root: Path) -> None:
     # Atomic write: a crash mid-write must leave the OLD journal intact (or none) — never
     # a truncated doc that load_journal rejects, which would brick --resume.
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(yaml.safe_dump(journal_to_doc(journal), sort_keys=False, allow_unicode=True), encoding="utf-8")
+    # safe_project_file guarded `path` but NOT `tmp`; write the temp file no-follow so a
+    # pre-planted `<journal>.tmp` symlink cannot redirect the write to an arbitrary
+    # user-writable target before os.replace runs.
+    write_text_no_follow(
+        tmp, yaml.safe_dump(journal_to_doc(journal), sort_keys=False, allow_unicode=True), label=tmp.name
+    )
     os.replace(tmp, path)
 
 

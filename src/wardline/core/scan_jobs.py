@@ -79,6 +79,30 @@ def read_scan_job_status(root: Path, job_id: str) -> dict[str, Any]:
     return _refresh_liveness(root, job_id, parsed)
 
 
+def _pid_is_scan_job_worker(pid: int, job_id: str) -> bool:
+    """Best-effort confirmation that *pid* is THIS project's scan-job worker for *job_id*
+    before signaling it, so a forged/stale ``status.json`` (an untrusted checkout can
+    pre-create ``.weft/wardline/jobs/<id>/status.json`` with any ``pid``) cannot make
+    ``cancel`` ``killpg`` an unrelated same-user process group.
+
+    The worker is spawned with ``start_new_session=True``, so it is its own
+    process-group leader: ``os.getpgid(pid) == pid`` is a portable necessary condition a
+    forged pid pointing at an arbitrary process almost never meets. On Linux we ALSO
+    require ``/proc/<pid>/cmdline`` to name the worker module and this exact job id —
+    which a forged target process cannot fake. Where ``/proc`` is absent (non-Linux), the
+    group-leader check stands alone."""
+    try:
+        if os.getpgid(pid) != pid:
+            return False
+    except OSError:
+        return False
+    try:
+        argv = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\x00")
+    except OSError:
+        return True  # no /proc (non-Linux): rely on the group-leader check
+    return b"wardline.cli.scan_job_worker" in argv and job_id.encode() in argv
+
+
 def cancel_scan_job(root: Path, job_id: str) -> dict[str, Any]:
     """Cancel a non-terminal scan job and persist the terminal status."""
     root = root.resolve()
@@ -86,7 +110,7 @@ def cancel_scan_job(root: Path, job_id: str) -> dict[str, Any]:
     if str(status.get("status")) in _TERMINAL_STATUSES:
         return status
     pid = _status_pid(status)
-    if pid is not None and _pid_alive(pid):
+    if pid is not None and _pid_alive(pid) and _pid_is_scan_job_worker(pid, job_id):
         try:
             os.killpg(pid, signal.SIGTERM)
         except ProcessLookupError:

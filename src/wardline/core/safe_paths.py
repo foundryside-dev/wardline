@@ -83,3 +83,27 @@ def safe_read_text_if_regular(
         return safe_path.read_text(encoding=encoding)
     except (OSError, UnicodeDecodeError, WardlineError):
         return None
+
+
+def read_bytes_no_follow(path: Path) -> bytes | None:
+    """Read ``path`` as bytes without following a final-component symlink.
+
+    Path-based twin of :func:`write_text_no_follow` (no ``root`` join — the caller owns
+    a concrete in-state path). Returns ``None`` for a missing, symlinked, non-regular,
+    or unreadable target, so a checkout that plants one of wardline's own state files as
+    a symlink can neither make wardline follow it off-box nor crash. Used for the
+    byte-identical store snapshot, where text decoding is not acceptable."""
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        if not stat.S_ISREG(path.stat(follow_symlinks=False).st_mode):
+            return None
+        fd = os.open(path, flags)
+    except OSError:
+        return None
+    try:
+        with os.fdopen(fd, "rb") as handle:
+            return handle.read()
+    except OSError:
+        return None

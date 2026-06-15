@@ -337,12 +337,23 @@ def _filigree_server_scope(root: Path) -> tuple[int, str] | None:
     projects = data.get("projects")
     if not isinstance(projects, dict):
         return None
+    # Only an in-root, NON-symlink sibling store may claim a registered scope. A
+    # legitimately server-registered project's `.weft/filigree` is a real directory
+    # filigree created; a repository-controlled SYMLINK there could point at another
+    # registered project's store, making this scan auto-select that project's scoped
+    # URL and emit its findings into the wrong project. Skip symlinked stores and any
+    # whose resolved path escapes root (a `.weft` parent-symlink escape).
+    root_resolved = root.resolve()
     candidates: set[Path] = set()
     for base in (sibling_state_dir(root, "filigree"), legacy_sibling_dir(root, "filigree")):
+        if base.is_symlink():
+            continue
         try:
-            candidates.add(base.resolve())
+            resolved = base.resolve()
         except (OSError, RuntimeError):
             continue
+        if resolved == root_resolved or resolved.is_relative_to(root_resolved):
+            candidates.add(resolved)
     for store_path, meta in projects.items():
         if not isinstance(store_path, str) or not isinstance(meta, dict):
             continue

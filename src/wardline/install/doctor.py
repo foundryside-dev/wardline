@@ -13,7 +13,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from wardline.core.config import _filigree_published_url, load
-from wardline.core.errors import ConfigError
+from wardline.core.errors import ConfigError, WardlineError
 from wardline.core.filigree_emit import FiligreeEmitter, Transport, UrllibTransport
 from wardline.core.paths import weft_config_path, weft_state_dir
 from wardline.core.safe_paths import safe_write_text
@@ -292,7 +292,15 @@ def _rewrite_env_token(env_path: Path, value: str) -> None:
     secret) is preserved verbatim rather than corrupted to U+FFFD on a decode round-trip.
     The file is created with mode 0600 from the outset (``os.open`` with O_CREAT), so the
     secret is never briefly written to a world-readable file; the trailing ``chmod`` still
-    tightens an already-existing loose-permission file."""
+    tightens an already-existing loose-permission file.
+
+    Refuses a SYMLINKED ``.env``: an ``O_TRUNC`` open on a symlink would follow it and
+    clobber an arbitrary user-writable file outside the repo (and reading it would
+    disclose that target). We refuse before reading and open the write with O_NOFOLLOW
+    (defends the check->open race), raising ``WardlineError`` so doctor reports a refusal
+    rather than writing through the link."""
+    if env_path.is_symlink():
+        raise WardlineError(f"{env_path.name}: refusing to rewrite a symlinked .env")
     drop = (b"WEFT_FEDERATION_TOKEN=", b"WARDLINE_FILIGREE_TOKEN=")
     kept: list[bytes] = []
     if env_path.is_file():
@@ -302,7 +310,15 @@ def _rewrite_env_token(env_path: Path, value: str) -> None:
             kept.append(raw)
     kept.append(b"WEFT_FEDERATION_TOKEN=" + value.encode("utf-8"))
     payload = b"\n".join(kept) + b"\n"
-    fd = os.open(env_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(env_path, flags, 0o600)
+    except OSError as exc:
+        if env_path.is_symlink():
+            raise WardlineError(f"{env_path.name}: refusing to write through a symlink") from exc
+        raise
     with os.fdopen(fd, "wb") as fh:
         fh.write(payload)
     env_path.chmod(0o600)
@@ -397,7 +413,10 @@ def _repair_filigree_auth(root: Path, url: str, transport: Transport) -> DoctorC
     for candidate in _filigree_token_candidates(root):
         probe = FiligreeEmitter(url, transport=transport, token=candidate).verify_token()
         if probe.reachable and probe.accepted:
-            _rewrite_env_token(root / ".env", candidate)
+            try:
+                _rewrite_env_token(root / ".env", candidate)
+            except WardlineError as exc:
+                return DoctorCheck("filigree.auth", "error", message=str(exc))
             return DoctorCheck(
                 "filigree.auth",
                 "ok",
