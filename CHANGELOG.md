@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.1] - 2026-06-15
 
 ### Added
 - **Pollable file-backed scan jobs.** `wardline scan-job start|status|cancel`
@@ -582,8 +582,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `legis_artifact_outcome` authority instead of being re-derived on each surface;
   the dead `config` input was dropped from the MCP `waiver_add` schema.
 
-## [1.0.0rc2] - 2026-06-06
-
 ### Added
 - **MCP `scan` payload controls — `where` now shrinks the payload, plus
   `summary_only` / `max_findings` / `include_suppressed` and a default explain cap
@@ -865,8 +863,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shadowed by an attacker-committed local package on `sys.path`. (The pre-existing
   `--trust-pack` allowlist already gates this code path, so a default scan never
   reached it.)
-
-## [1.0.0rc1] - 2026-06-02
 
 ### Changed
 
@@ -1231,7 +1227,7 @@ for Python — enterprise-class trust-boundary analysis at small-team weight.
 - **Packaging** — MIT-licensed; optional extras `scanner` (config + CLI) and
   `weft` (HTTP integrations).
 
-[Unreleased]: https://github.com/foundryside-dev/wardline/compare/v0.3.0...HEAD
+[1.0.1]: https://github.com/foundryside-dev/wardline/compare/v0.3.0...v1.0.1
 [0.3.0]: https://github.com/foundryside-dev/wardline/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/foundryside-dev/wardline/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/foundryside-dev/wardline/compare/v0.1.0...v0.2.0

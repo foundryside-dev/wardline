@@ -21,7 +21,7 @@ signature:
 
 ```json
 {
-  "scanner_identity": "wardline@1.0.0rc1",
+  "scanner_identity": "wardline@1.0.1",
   "rule_set_version": "sha256:9f86d0…",
   "commit_sha": "0a4a00e…",
   "tree_sha": "4b825dc…",

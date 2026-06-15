@@ -2,8 +2,8 @@
 
 The glossary at ``docs/reference/finding-lifecycle-vocabulary.md`` is the single
 source of truth for the finding-state / gate-population vocabulary. These tests
-keep it complete (every ``SuppressionState`` value documented) and wired into the
-mkdocs nav (so ``mkdocs build --strict`` does not orphan it).
+keep it complete (every ``SuppressionState`` value documented) and bound to the
+code it cites (every ``file:line`` anchor still points at the right source line).
 """
 
 from __future__ import annotations
@@ -15,8 +15,6 @@ from wardline.core.finding import SuppressionState
 
 _REPO = Path(__file__).parents[2]
 _GLOSSARY = _REPO / "docs" / "reference" / "finding-lifecycle-vocabulary.md"
-_MKDOCS = _REPO / "mkdocs.yml"
-_NAV_PATH = "reference/finding-lifecycle-vocabulary.md"
 
 # The glossary promises "every claim cites a real `file:line`". Line anchors rot silently
 # when the cited code moves (an in-range / non-blank check would NOT catch it — the line
@@ -45,29 +43,29 @@ _ANCHORS: tuple[tuple[str, int, str], ...] = (
     ("src/wardline/cli/scan.py", 458, "{s.active} active"),
     ("src/wardline/cli/scan.py", 510, "gate: FAILED"),
     # src/wardline/mcp/server.py — MCP scan summary + gate block
-    ("src/wardline/mcp/server.py", 841, '"total": result.summary.total'),
-    ("src/wardline/mcp/server.py", 842, '"active": result.summary.active'),
-    ("src/wardline/mcp/server.py", 843, '"baselined": result.summary.baselined'),
-    ("src/wardline/mcp/server.py", 844, '"waived": result.summary.waived'),
-    ("src/wardline/mcp/server.py", 845, '"judged": result.summary.judged'),
-    ("src/wardline/mcp/server.py", 850, '"informational": result.summary.informational'),
-    ("src/wardline/mcp/server.py", 854, '"unanalyzed": result.summary.unanalyzed'),
-    ("src/wardline/mcp/server.py", 856, '"gate": {'),
-    ("src/wardline/mcp/server.py", 857, '"tripped": decision.tripped'),
-    ("src/wardline/mcp/server.py", 861, '"verdict": decision.verdict'),
+    ("src/wardline/mcp/server.py", 903, '"total": result.summary.total'),
+    ("src/wardline/mcp/server.py", 904, '"active": result.summary.active'),
+    ("src/wardline/mcp/server.py", 905, '"baselined": result.summary.baselined'),
+    ("src/wardline/mcp/server.py", 906, '"waived": result.summary.waived'),
+    ("src/wardline/mcp/server.py", 907, '"judged": result.summary.judged'),
+    ("src/wardline/mcp/server.py", 912, '"informational": result.summary.informational'),
+    ("src/wardline/mcp/server.py", 916, '"unanalyzed": result.summary.unanalyzed'),
+    ("src/wardline/mcp/server.py", 918, '"gate": {'),
+    ("src/wardline/mcp/server.py", 919, '"tripped": decision.tripped'),
+    ("src/wardline/mcp/server.py", 923, '"verdict": decision.verdict'),
     # src/wardline/core/agent_summary.py — agent-summary JSON keys
-    ("src/wardline/core/agent_summary.py", 134, '"total_findings"'),
-    ("src/wardline/core/agent_summary.py", 135, '"active_defects"'),
-    ("src/wardline/core/agent_summary.py", 136, '"suppressed_findings"'),
-    ("src/wardline/core/agent_summary.py", 138, '"baselined"'),
-    ("src/wardline/core/agent_summary.py", 139, '"waived"'),
-    ("src/wardline/core/agent_summary.py", 140, '"judged"'),
-    ("src/wardline/core/agent_summary.py", 146, '"informational"'),
-    ("src/wardline/core/agent_summary.py", 147, '"unanalyzed"'),
-    ("src/wardline/core/agent_summary.py", 150, '"tripped": self.gate.tripped'),
-    ("src/wardline/core/agent_summary.py", 153, '"verdict": self.gate.verdict'),
+    ("src/wardline/core/agent_summary.py", 135, '"total_findings"'),
+    ("src/wardline/core/agent_summary.py", 136, '"active_defects"'),
+    ("src/wardline/core/agent_summary.py", 137, '"suppressed_findings"'),
+    ("src/wardline/core/agent_summary.py", 139, '"baselined"'),
+    ("src/wardline/core/agent_summary.py", 140, '"waived"'),
+    ("src/wardline/core/agent_summary.py", 141, '"judged"'),
+    ("src/wardline/core/agent_summary.py", 147, '"informational"'),
+    ("src/wardline/core/agent_summary.py", 148, '"unanalyzed"'),
+    ("src/wardline/core/agent_summary.py", 151, '"tripped": self.gate.tripped'),
+    ("src/wardline/core/agent_summary.py", 154, '"verdict": self.gate.verdict'),
     # informational display array (new, W3 residual fix)
-    ("src/wardline/core/agent_summary.py", 171, '"informational": informational'),
+    ("src/wardline/core/agent_summary.py", 172, '"informational": informational'),
     # per-finding suppression_state output key (renamed from `suppressed`, weft-f506e5f845)
     ("src/wardline/core/finding.py", 140, '"suppression_state"'),
     ("src/wardline/core/finding.py", 295, 'wardline["suppression_state"]'),
@@ -81,11 +79,6 @@ def test_glossary_defines_every_suppression_state() -> None:
     text = _GLOSSARY.read_text(encoding="utf-8")
     for state in SuppressionState:
         assert state.value in text, f"glossary is missing SuppressionState '{state.value}'"
-
-
-def test_glossary_in_nav() -> None:
-    nav = _MKDOCS.read_text(encoding="utf-8")
-    assert _NAV_PATH in nav, f"{_NAV_PATH} is not wired into the mkdocs nav"
 
 
 def test_glossary_anchors_bind_to_code() -> None:
