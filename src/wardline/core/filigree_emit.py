@@ -174,6 +174,40 @@ class Response:
 #                      every finding in it is un-ingested; the cause is the chunk, not the body.
 _FAILURE_REASONS = frozenset({"rejected", "validation_error", "scheme_mismatch", "partial"})
 
+# --- weft-reason vocabulary conformance (G1) ---------------------------------
+# The canonical, cross-member reason vocabulary is the closed set of 11 reason_classes
+# defined in /home/john/weft/contracts/weft-reason-vocab.json (relative to the suite hub:
+# contracts/weft-reason-vocab.json). Every NON-clean federation carrier MUST emit a
+# reason_class drawn from that closed set, plus a cause and a fix; a clean carrier omits
+# cause+fix. wardline's shipped emit-failure ``reason`` field predates the canonical
+# vocabulary and is NOT renamed (it is on the wire and consumed by the CLI/MCP/scan-job
+# status blocks). Instead each shipped ``reason`` maps ADDITIVELY onto a canonical
+# reason_class, keeping the domain term in ``reason``/``cause`` so the wire stays
+# backward-compatible while becoming G1-conformant.
+#
+#   rejected         -> rejected         (peer reached, refused the item)
+#   validation_error -> rejected         (peer reached, refused a malformed body — peer-side
+#                                         refusal, not an internal wardline fault, so 'rejected'
+#                                         not 'error'; the domain term survives in cause)
+#   scheme_mismatch  -> scheme_mismatch  (identity/fingerprint scheme drift — join-miss risk)
+#   partial          -> partial          (chunk-wide bounded/some-failed ingest)
+_REASON_CLASS_BY_REASON: dict[str, str] = {
+    "rejected": "rejected",
+    "validation_error": "rejected",
+    "scheme_mismatch": "scheme_mismatch",
+    "partial": "partial",
+}
+
+# The mandatory ``fix`` for each canonical class a FailedFinding can carry (carrier rule:
+# every non-clean carrier includes a fix). Keyed by the domain ``reason`` so a more specific
+# remedy can be given than the class alone allows (validation_error vs a bare rejection).
+_FIX_BY_REASON: dict[str, str] = {
+    "rejected": "inspect the per-finding reject cause in Filigree's report and re-emit once the finding is acceptable",
+    "validation_error": "correct the malformed finding body Filigree reported, then re-emit",
+    "scheme_mismatch": "align the wardline fingerprint scheme to the scheme Filigree expects, then re-emit (a drift join-misses)",
+    "partial": "resolve the chunk-level rejection (see cause/status), then re-emit the un-ingested findings",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class FailedFinding:
@@ -184,7 +218,12 @@ class FailedFinding:
     than a hardwired count, and a partial ingest names which findings failed and why,
     so "all N emitted" is distinguishable from "M of N emitted, K rejected because R".
     ``fingerprint`` is the wardline join key when Filigree reported it (None when the
-    failure is chunk-wide and not attributable to a single finding)."""
+    failure is chunk-wide and not attributable to a single finding).
+
+    weft-reason (G1): a FailedFinding is always a NON-clean carrier, so it exposes the
+    canonical carrier triple {reason_class, cause, fix} (see ``to_wire``) ALONGSIDE the
+    shipped domain ``reason``/``detail`` fields. ``reason_class`` is one of the canonical
+    11 (contracts/weft-reason-vocab.json); the domain term stays in ``reason``/``cause``."""
 
     reason: str
     detail: str = ""
@@ -194,8 +233,33 @@ class FailedFinding:
         if self.reason not in _FAILURE_REASONS:
             raise ValueError(f"unknown emit-failure reason {self.reason!r}; expected one of {sorted(_FAILURE_REASONS)}")
 
+    @property
+    def reason_class(self) -> str:
+        """The canonical weft-reason class (one of the 11) this domain ``reason`` maps to."""
+        return _REASON_CLASS_BY_REASON[self.reason]
+
+    @property
+    def cause(self) -> str:
+        """The carrier ``cause``: the human-readable why. Filigree's ``detail`` when present,
+        else the domain ``reason`` itself (a FailedFinding is never clean, so cause is always
+        non-empty)."""
+        return self.detail or self.reason
+
+    @property
+    def fix(self) -> str:
+        """The carrier ``fix`` (MANDATORY on a non-clean carrier): the remedial action."""
+        return _FIX_BY_REASON[self.reason]
+
     def to_wire(self) -> dict[str, Any]:
-        wire: dict[str, Any] = {"reason": self.reason, "detail": self.detail}
+        # Shipped fields (reason/detail) are preserved verbatim; the canonical weft-reason
+        # carrier triple {reason_class, cause, fix} is ADDED alongside (G1, additive/non-breaking).
+        wire: dict[str, Any] = {
+            "reason": self.reason,
+            "detail": self.detail,
+            "reason_class": self.reason_class,
+            "cause": self.cause,
+            "fix": self.fix,
+        }
         if self.fingerprint is not None:
             wire["fingerprint"] = self.fingerprint
         return wire

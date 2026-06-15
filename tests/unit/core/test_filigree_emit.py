@@ -477,7 +477,18 @@ def test_failures_serialize_to_wire_with_reason() -> None:
             Response(200, json.dumps({"stats": {}, "failed": [{"fingerprint": "wlfp2:z", "reason": "rejected"}]}))
         ),
     ).emit([_f()])
-    assert [f.to_wire() for f in res.failures] == [{"reason": "rejected", "detail": "", "fingerprint": "wlfp2:z"}]
+    # weft-reason (G1): the wire carries the shipped domain fields (reason/detail) AND the
+    # canonical carrier triple {reason_class, cause, fix} additively (rejected -> rejected).
+    assert [f.to_wire() for f in res.failures] == [
+        {
+            "reason": "rejected",
+            "detail": "",
+            "reason_class": "rejected",
+            "cause": "rejected",
+            "fix": "inspect the per-finding reject cause in Filigree's report and re-emit once the finding is acceptable",
+            "fingerprint": "wlfp2:z",
+        }
+    ]
 
 
 def test_protocol_reject_fail_soft_records_each_pending_finding_as_partial() -> None:

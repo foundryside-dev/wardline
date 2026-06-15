@@ -179,14 +179,20 @@ def test_scan_partial_ingest_surfaces_failures_to_agent(tmp_path):
         ),
     )
     out = _scan({}, tmp_path, None, FakeEmitter(result))
+    # weft-reason (G1): each failure wire carries the shipped domain fields AND the canonical
+    # carrier triple {reason_class, cause, fix} additively (scheme_mismatch -> scheme_mismatch).
+    expected_failure = {
+        "reason": "scheme_mismatch",
+        "detail": "expected wlfp3",
+        "reason_class": "scheme_mismatch",
+        "cause": "expected wlfp3",
+        "fix": "align the wardline fingerprint scheme to the scheme Filigree expects, then re-emit (a drift join-misses)",
+        "fingerprint": "wlfp2:bad",
+    }
     assert out["filigree"]["failed"] == 1
-    assert out["filigree"]["failures"] == [
-        {"reason": "scheme_mismatch", "detail": "expected wlfp3", "fingerprint": "wlfp2:bad"}
-    ]
+    assert out["filigree"]["failures"] == [expected_failure]
     assert out["filigree_emit"]["failed"] == 1
-    assert out["filigree_emit"]["failures"] == [
-        {"reason": "scheme_mismatch", "detail": "expected wlfp3", "fingerprint": "wlfp2:bad"}
-    ]
+    assert out["filigree_emit"]["failures"] == [expected_failure]
 
 
 def test_scan_filigree_5xx_says_server_error_not_unreachable(tmp_path):

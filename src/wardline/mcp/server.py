@@ -401,13 +401,30 @@ _SCAN_FILE_FINDINGS_OUTPUT_SCHEMA: dict[str, Any] = {
                                 "the protocol layer, so the cause is the request not the body).",
                             },
                             "detail": {"type": "string", "description": "Filigree's per-finding reject explanation."},
+                            "reason_class": {
+                                "type": "string",
+                                "enum": ["rejected", "scheme_mismatch", "partial"],
+                                "description": "weft-reason (G1): the canonical reason_class this failure maps to "
+                                "(one of the closed 11 in contracts/weft-reason-vocab.json). validation_error maps to "
+                                "rejected; the domain term stays in `reason`/`cause`.",
+                            },
+                            "cause": {
+                                "type": "string",
+                                "description": "weft-reason carrier `cause`: the why (Filigree's detail, else the "
+                                "domain reason). Always present on a failure (a failure is never clean).",
+                            },
+                            "fix": {
+                                "type": "string",
+                                "description": "weft-reason carrier `fix` (MANDATORY on a non-clean carrier): the "
+                                "remedial action.",
+                            },
                             "fingerprint": {
                                 "type": "string",
                                 "description": "The wardline join key for the failed finding (absent when the "
                                 "failure is chunk-wide and not attributable to one finding).",
                             },
                         },
-                        "required": ["reason", "detail"],
+                        "required": ["reason", "detail", "reason_class", "cause", "fix"],
                         "additionalProperties": False,
                     },
                 },
@@ -1433,12 +1450,28 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                         "request, not the body).",
                     },
                     "detail": {"type": "string", "description": "Filigree's per-finding reject explanation."},
+                    "reason_class": {
+                        "type": "string",
+                        "enum": ["rejected", "scheme_mismatch", "partial"],
+                        "description": "weft-reason (G1): the canonical reason_class this failure maps to (one of the "
+                        "closed 11 in contracts/weft-reason-vocab.json). validation_error maps to rejected; the domain "
+                        "term stays in `reason`/`cause`.",
+                    },
+                    "cause": {
+                        "type": "string",
+                        "description": "weft-reason carrier `cause`: the why (Filigree's detail, else the domain "
+                        "reason). Always present on a failure.",
+                    },
+                    "fix": {
+                        "type": "string",
+                        "description": "weft-reason carrier `fix` (MANDATORY on a non-clean carrier): the remedy.",
+                    },
                     "fingerprint": {
                         "type": "string",
                         "description": "Wardline join key for the failed finding (absent when chunk-wide).",
                     },
                 },
-                "required": ["reason", "detail"],
+                "required": ["reason", "detail", "reason_class", "cause", "fix"],
                 "additionalProperties": False,
             },
         },
