@@ -153,7 +153,36 @@ def test_resolve_probe_url_precedence(tmp_path: Path, monkeypatch) -> None:
 
 def test_resolve_probe_url_none_when_unconfigured(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    # No flag, no env, no .mcp.json arg, and no live filigree daemon (no published
+    # ephemeral.port, project not server-registered) -> nothing to verify.
+    monkeypatch.setattr("wardline.install.doctor.Path.home", lambda: tmp_path / "nohome")
     assert _resolve_probe_url(tmp_path, None) is None
+
+
+def test_resolve_probe_url_falls_back_to_published_port(tmp_path: Path, monkeypatch) -> None:
+    # The real esper-lite shape: filigree runs an ephemeral per-project daemon (it
+    # publishes .weft/filigree/ephemeral.port) but the wardline .mcp.json entry pins
+    # no --filigree-url. The emit path (resolve_filigree_url) auto-discovers that port,
+    # so the doctor probe MUST too -- otherwise doctor is blind to the very daemon
+    # wardline will emit to and report "nothing to verify".
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setattr("wardline.install.doctor.Path.home", lambda: tmp_path / "nohome")
+    port_file = tmp_path / ".weft" / "filigree" / "ephemeral.port"
+    port_file.parent.mkdir(parents=True)
+    port_file.write_text("9189", encoding="ascii")
+    assert _resolve_probe_url(tmp_path, None) == "http://localhost:9189/api/weft/scan-results"
+
+
+def test_resolve_probe_url_mcp_arg_beats_published_port(tmp_path: Path, monkeypatch) -> None:
+    # A pinned --filigree-url (e.g. a fixed-port/remote target the published-port rung
+    # cannot reconstruct) still outranks the auto-discovered ephemeral port.
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setattr("wardline.install.doctor.Path.home", lambda: tmp_path / "nohome")
+    _write_mcp_with_filigree_url(tmp_path, "http://127.0.0.1:8749/api/weft/scan-results")
+    port_file = tmp_path / ".weft" / "filigree" / "ephemeral.port"
+    port_file.parent.mkdir(parents=True)
+    port_file.write_text("9189", encoding="ascii")
+    assert _resolve_probe_url(tmp_path, None) == "http://127.0.0.1:8749/api/weft/scan-results"
 
 
 def test_is_loopback() -> None:
@@ -258,9 +287,28 @@ def test_check_ok_when_non_loopback(tmp_path: Path, monkeypatch) -> None:
 
 def test_check_ok_when_url_unresolved(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setattr("wardline.install.doctor.Path.home", lambda: tmp_path / "nohome")
     check = _check_filigree_auth(tmp_path, repair=False, transport=_ScriptedTransport({}))
     assert check.status == "ok"
     assert "not configured" in (check.message or "")
+
+
+def test_check_detects_rejected_token_via_published_port(tmp_path: Path, monkeypatch) -> None:
+    # esper-lite shape end-to-end: no pinned --filigree-url, but a live ephemeral
+    # daemon is discoverable via the published port. The doctor must probe it and
+    # catch a stale token -- the case the old "nothing to verify" was blind to.
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.delenv("WEFT_FEDERATION_TOKEN", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_TOKEN", raising=False)
+    monkeypatch.setattr("wardline.install.doctor.Path.home", lambda: tmp_path / "nohome")
+    port_file = tmp_path / ".weft" / "filigree" / "ephemeral.port"
+    port_file.parent.mkdir(parents=True)
+    port_file.write_text("9189", encoding="ascii")
+    tmp_path.joinpath(".env").write_text("WARDLINE_FILIGREE_TOKEN=STALE\n", encoding="utf-8")
+    t = _ScriptedTransport({"GOOD": 400})  # daemon accepts GOOD; STALE -> 401
+    check = _check_filigree_auth(tmp_path, repair=False, transport=t)
+    assert check.status == "error"
+    assert "rejected" in (check.message or "")
 
 
 # --- Task 5: repair -----------------------------------------------------------

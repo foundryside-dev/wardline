@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from wardline.core.config import load
+from wardline.core.config import _filigree_published_url, load
 from wardline.core.errors import ConfigError
 from wardline.core.filigree_emit import FiligreeEmitter, Transport, UrllibTransport
 from wardline.core.paths import weft_config_path, weft_state_dir
@@ -335,15 +335,24 @@ def _mcp_filigree_url(root: Path) -> str | None:
 
 def _resolve_probe_url(root: Path, flag: str | None) -> str | None:
     """Probe-URL precedence: flag > WARDLINE_FILIGREE_URL env > .mcp.json wardline
-    --filigree-url arg. None when nothing resolves. The published-port rung is
-    deliberately excluded: doctor probes only a configured emit target, so it does
-    no network unless filigree emit is explicitly wired."""
+    --filigree-url arg > Filigree's published port. None when nothing resolves.
+
+    This mirrors the actual emit path (:func:`core.config.resolve_filigree_url`)
+    exactly: a scan auto-discovers a live Filigree daemon from its published
+    ``ephemeral.port`` (or the server-mode registry), so a project with a running
+    Filigree but no pinned ``--filigree-url`` (the common ethereal/per-project case)
+    *does* emit — and *does* need a valid token. The published-port rung is therefore
+    included so doctor verifies the credential the scan will really use rather than
+    reporting "nothing to verify" and leaving a 401 to surface only at emit time. The
+    rung is read-only and the token is sent only to loopback (the ``_is_loopback``
+    guard in :func:`_check_filigree_auth`), and a published port implies a daemon that
+    bound it, so this still does no speculative network."""
     if flag:
         return flag
     env = os.environ.get(_FILIGREE_URL_ENV)
     if env:
         return env
-    return _mcp_filigree_url(root)
+    return _mcp_filigree_url(root) or _filigree_published_url(root)
 
 
 def _is_loopback(url: str) -> bool:
