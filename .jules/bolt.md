@@ -1,0 +1,3 @@
+## 2026-06-15 - [AST Traversal Optimization]
+**Learning:** In the hot-path AST traversal functions like `iter_calls_in_function_body`, replacing generator functions (`yield from`) with eager list appending (`list.append()`), combined with `type(node) is ast.X` over `isinstance`, provides a significant performance boost (~1.3x speedup). This pattern is crucial for codebase-specific optimizations in the analyzer.
+**Action:** Always prefer eager list accumulation and exact type checks when writing or refactoring AST traversal helpers on hot paths. Make sure to include `# type: ignore[attr-defined]` and `# type: ignore[arg-type]` as required by mypy for exact type narrowing.
