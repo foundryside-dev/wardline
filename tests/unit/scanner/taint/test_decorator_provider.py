@@ -172,17 +172,13 @@ def test_trusted_level_tolerates_legacy_to_level_keyword() -> None:
 
 
 def test_trusted_level_static_kwargs_assured() -> None:
-    out = _seed(
-        "from wardline.decorators import trusted\n@trusted(**{'level': 'ASSURED'})\ndef f():\n    return 1\n"
-    )
+    out = _seed("from wardline.decorators import trusted\n@trusted(**{'level': 'ASSURED'})\ndef f():\n    return 1\n")
     assert out["m.f"] == FunctionTaint(T.ASSURED, T.ASSURED)
 
 
 def test_trusted_dynamic_kwargs_is_no_opinion() -> None:
     out = _seed(
-        "from wardline.decorators import trusted\n"
-        "KW = {'level': 'ASSURED'}\n"
-        "@trusted(**KW)\ndef f():\n    return 1\n"
+        "from wardline.decorators import trusted\nKW = {'level': 'ASSURED'}\n@trusted(**KW)\ndef f():\n    return 1\n"
     )
     assert out["m.f"] is None
 

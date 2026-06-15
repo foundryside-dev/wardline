@@ -485,7 +485,9 @@ def test_failures_serialize_to_wire_with_reason() -> None:
             "detail": "",
             "reason_class": "rejected",
             "cause": "rejected",
-            "fix": "inspect the per-finding reject cause in Filigree's report and re-emit once the finding is acceptable",
+            "fix": (
+                "inspect the per-finding reject cause in Filigree's report and re-emit once the finding is acceptable"
+            ),
             "fingerprint": "wlfp2:z",
         }
     ]

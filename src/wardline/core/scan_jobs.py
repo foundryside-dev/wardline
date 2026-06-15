@@ -411,11 +411,7 @@ def run_scan_job_worker(root: Path, job_id: str) -> None:
             terminal = "completed_with_enrichment_failure"
             failure_kind = "enrichment"
             disabled_reason = filigree_block["disabled_reason"]
-            error = (
-                str(disabled_reason)
-                if disabled_reason
-                else f"{emit_result.failed} Filigree finding(s) failed"
-            )
+            error = str(disabled_reason) if disabled_reason else f"{emit_result.failed} Filigree finding(s) failed"
         status.update(
             {
                 "status": terminal,

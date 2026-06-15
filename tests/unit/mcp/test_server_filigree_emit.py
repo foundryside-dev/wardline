@@ -174,9 +174,7 @@ def test_scan_partial_ingest_surfaces_failures_to_agent(tmp_path):
     result = EmitResult(
         reachable=True,
         created=1,
-        failures=(
-            FailedFinding(reason="scheme_mismatch", detail="expected wlfp3", fingerprint="wlfp2:bad"),
-        ),
+        failures=(FailedFinding(reason="scheme_mismatch", detail="expected wlfp3", fingerprint="wlfp2:bad"),),
     )
     out = _scan({}, tmp_path, None, FakeEmitter(result))
     # weft-reason (G1): each failure wire carries the shipped domain fields AND the canonical
@@ -186,7 +184,9 @@ def test_scan_partial_ingest_surfaces_failures_to_agent(tmp_path):
         "detail": "expected wlfp3",
         "reason_class": "scheme_mismatch",
         "cause": "expected wlfp3",
-        "fix": "align the wardline fingerprint scheme to the scheme Filigree expects, then re-emit (a drift join-misses)",
+        "fix": (
+            "align the wardline fingerprint scheme to the scheme Filigree expects, then re-emit (a drift join-misses)"
+        ),
         "fingerprint": "wlfp2:bad",
     }
     assert out["filigree"]["failed"] == 1

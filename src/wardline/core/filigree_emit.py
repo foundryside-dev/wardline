@@ -204,7 +204,9 @@ _REASON_CLASS_BY_REASON: dict[str, str] = {
 _FIX_BY_REASON: dict[str, str] = {
     "rejected": "inspect the per-finding reject cause in Filigree's report and re-emit once the finding is acceptable",
     "validation_error": "correct the malformed finding body Filigree reported, then re-emit",
-    "scheme_mismatch": "align the wardline fingerprint scheme to the scheme Filigree expects, then re-emit (a drift join-misses)",
+    "scheme_mismatch": (
+        "align the wardline fingerprint scheme to the scheme Filigree expects, then re-emit (a drift join-misses)"
+    ),
     "partial": "resolve the chunk-level rejection (see cause/status), then re-emit the un-ingested findings",
 }
 

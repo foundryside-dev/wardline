@@ -352,10 +352,7 @@ def _deserialise_cache_payload(
     if not hmac.compare_digest(mac, expected_mac):
         raise ValueError("cache entry mac mismatch")
     if payload.get("schema_version") != _CACHE_FILE_SCHEMA_VERSION:
-        raise ValueError(
-            f"cache file schema_version={payload.get('schema_version')!r} "
-            f"!= {_CACHE_FILE_SCHEMA_VERSION}"
-        )
+        raise ValueError(f"cache file schema_version={payload.get('schema_version')!r} != {_CACHE_FILE_SCHEMA_VERSION}")
     if payload.get("cache_key") != expected_cache_key:
         raise ValueError(
             f"envelope cache_key={payload.get('cache_key')!r} does not match filename key {expected_cache_key!r}"

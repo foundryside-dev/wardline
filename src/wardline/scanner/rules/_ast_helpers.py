@@ -251,8 +251,7 @@ def has_rejection_path(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
       - PY-WL-113 — a real rejection exists but a fail-open handler defeats it.
     """
     return any(
-        isinstance(stmt, ast.Assert) or _stmt_is_real_rejection(stmt)
-        for stmt in _own_reachable_statements(node)
+        isinstance(stmt, ast.Assert) or _stmt_is_real_rejection(stmt) for stmt in _own_reachable_statements(node)
     )
 
 

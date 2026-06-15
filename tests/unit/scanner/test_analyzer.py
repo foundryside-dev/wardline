@@ -328,5 +328,9 @@ def test_l2_fixed_point_scales_linearly_with_function_count(tmp_path) -> None:
     # Linear scaling gives ~4x; the pre-fix quadratic gave ~16x. 10x is the alarm
     # threshold with generous headroom for timer noise on a loaded machine.
     assert large < small * 10, f"L2 scan no longer scales linearly: 800→{small:.3f}s, 3200→{large:.3f}s"
-    # Absolute sanity: pre-fix 3200 functions took ~8s+; post-fix it is well under.
-    assert large < 4.0, f"3200-function scan took {large:.2f}s — quadratic regression?"
+    # Absolute backstop for a quadratic regression: pre-fix 3200 functions took ~8s+
+    # (N=4000 ~13.2s), so a real blowup trips this easily. The bound is deliberately
+    # loose — a shared CI runner clocks the linear path at ~3-4.5s with timer noise, so
+    # a tight 4.0s flaked; 8.0s still sits well below any quadratic path. The ratio
+    # check above is the primary linear-scaling guard.
+    assert large < 8.0, f"3200-function scan took {large:.2f}s — quadratic regression?"

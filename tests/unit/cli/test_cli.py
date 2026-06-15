@@ -883,9 +883,7 @@ def test_scan_filigree_protocol_error_does_not_preempt_gate(tmp_path, monkeypatc
 
             return EmitResult(
                 reachable=True,
-                failures=tuple(
-                    FailedFinding(reason="partial", detail="payload too large (400)") for _ in findings
-                ),
+                failures=tuple(FailedFinding(reason="partial", detail="payload too large (400)") for _ in findings),
                 warnings=("Filigree rejected scan-results (400): payload too large",),
             )
 

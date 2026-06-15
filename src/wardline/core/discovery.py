@@ -68,9 +68,7 @@ def discover(
     # base is an empty matcher (not None) so a project with ONLY nested .gitignore files
     # still gets directory pruning.
     root_gitignore = root / ".gitignore"
-    root_ignore = (
-        GitignoreMatcher.from_file(root_gitignore) if root_gitignore.is_file() else GitignoreMatcher.empty()
-    )
+    root_ignore = GitignoreMatcher.from_file(root_gitignore) if root_gitignore.is_file() else GitignoreMatcher.empty()
     found: list[Path] = []
     for src in config.source_roots:
         base = (root / src).resolve()
