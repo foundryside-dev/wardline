@@ -321,9 +321,12 @@ class EmitResult:
 
 @dataclass(frozen=True, slots=True)
 class ProbeResult:
-    """Outcome of an auth probe (verify_token). ``accepted`` is True when the daemon
-    authenticated the bearer (any non-401/403 status, e.g. a 400 from the sentinel body).
-    ``reachable`` is False only on a transport failure (connection refused / timeout)."""
+    """Outcome of an auth probe (verify_token). ``accepted`` is True ONLY on a status that
+    proves the bearer passed the middleware auth check — a 2xx or the 400 the sentinel body
+    earns once authed. 401/403 is reachable-but-rejected. ``reachable`` is False on a
+    transport failure (connection refused / timeout) AND on an inconclusive status (5xx
+    outage, wrong-route 404, redirect) that never exercised auth — so a transient error is
+    never mistaken for an accepted token."""
 
     reachable: bool
     accepted: bool
@@ -754,5 +757,16 @@ class FiligreeEmitter:
             resp = self._transport.post(self._url, body, headers)
         except (urllib.error.URLError, OSError):
             return ProbeResult(reachable=False, accepted=False)
-        accepted = resp.status not in (401, 403)
-        return ProbeResult(reachable=True, accepted=accepted, status=resp.status)
+        status = resp.status
+        if status in (401, 403):
+            return ProbeResult(reachable=True, accepted=False, status=status)
+        if status == 400 or 200 <= status < 300:
+            # Auth runs in middleware BEFORE body validation, so these prove the bearer
+            # was accepted: a 2xx took the sentinel, or a 400 authed then rejected the
+            # deliberately-incomplete body. Either way auth passed.
+            return ProbeResult(reachable=True, accepted=True, status=status)
+        # Any other status (a 5xx outage, a wrong-route 404, a 3xx redirect) does NOT
+        # exercise the bearer check — the request may have failed before or independent
+        # of auth. Report INCONCLUSIVE (reachable=False) so doctor --repair never pins a
+        # local token into .env on an unverified probe.
+        return ProbeResult(reachable=False, accepted=False, status=status)

@@ -167,6 +167,27 @@ def test_success_surfaces_stats_and_warnings() -> None:
     assert json.loads(t.calls[0][1])["scan_source"] == "wardline"
 
 
+def test_verify_token_acceptance_only_on_post_auth_statuses() -> None:
+    # Auth runs before body validation: 2xx and the sentinel-body 400 prove the bearer
+    # passed; 401/403 are reachable-but-rejected; a 5xx outage / wrong-route 404 / redirect
+    # never exercised auth and must be INCONCLUSIVE (reachable=False) so doctor --repair
+    # cannot pin a token on an unverified probe.
+    def probe(status: int):
+        t = _FakeTransport(response=Response(status=status, body=""))
+        return FiligreeEmitter("http://x/api/weft/scan-results", transport=t, token="T").verify_token()
+
+    for ok_status in (200, 204, 400):
+        r = probe(ok_status)
+        assert (r.reachable, r.accepted) == (True, True), ok_status
+    for rejected in (401, 403):
+        r = probe(rejected)
+        assert (r.reachable, r.accepted) == (True, False), rejected
+    for inconclusive in (404, 500, 502, 301):
+        r = probe(inconclusive)
+        assert (r.reachable, r.accepted) == (False, False), inconclusive
+        assert r.status == inconclusive  # status retained for diagnostics
+
+
 def test_http_400_raises_filigree_emit_error() -> None:
     t = _FakeTransport(response=Response(status=400, body='{"error":"bad path key"}'))
     with pytest.raises(FiligreeEmitError) as exc:
