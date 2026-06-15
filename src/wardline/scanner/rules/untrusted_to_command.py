@@ -138,7 +138,22 @@ def _quote_guarded_concat(expr: ast.expr, alias_map: Mapping[str, str]) -> bool:
     has_quote = any(_is_shlex_quote_call(leaf, alias_map) for leaf in leaves)
     if not (has_const and has_quote):
         return False
-    return all(isinstance(leaf, ast.Constant) or _is_shlex_quote_call(leaf, alias_map) for leaf in leaves)
+    if not all(isinstance(leaf, ast.Constant) or _is_shlex_quote_call(leaf, alias_map) for leaf in leaves):
+        return False
+    # The command WORD (the executable) must be constant. shlex.quote sanitizes shell
+    # metacharacters in an ARGUMENT; it does not constrain the identity of the program
+    # run. So `shlex.quote(raw) + ' --version'` is NOT guarded — the attacker still
+    # chooses the executable — whereas `'echo ' + shlex.quote(raw)` is. Require the
+    # first non-whitespace text to come from a string constant (the leading command
+    # word), not from a quoted leaf. Leading whitespace-only constants are skipped so
+    # `' ' + 'echo ' + shlex.quote(raw)` stays guarded without a false positive.
+    for leaf in leaves:
+        if isinstance(leaf, ast.Constant) and isinstance(leaf.value, str):
+            if not leaf.value.strip():
+                continue  # whitespace-only fragment: the command word starts later
+            return True  # command word begins in a constant — genuinely guarded
+        return False  # first non-whitespace contribution is a quote/non-str — unsanitized command
+    return False  # only whitespace constants: no constant command word
 
 
 METADATA = RuleMetadata(

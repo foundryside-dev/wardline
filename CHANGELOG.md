@@ -48,6 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   enforcement authority (`wardline-e63204176b`, MCP-primary B2).
 
 ### Fixed
+- **PY-WL-108 no longer treats a quoted COMMAND word as sanitized.** The
+  `shlex.quote` concat/f-string guard accepted `shlex.quote(raw) + " --version"`
+  (and the f-string form) as safe, but quoting sanitizes a shell ARGUMENT, not the
+  identity of the executable — the attacker still chose the program. The guard now
+  requires the leading command word to be a string constant, so a quoted-command +
+  constant-arg shape fires while the blessed constant-command + quoted-arg
+  remediation (`"echo " + shlex.quote(raw)`) stays clean.
 - **Install, attestation, and local automation hardening from the 2026-06-12
   security pass.** `wardline install`/doctor paths now refuse unsafe writes through
   symlinked published-port files, refuse to mint attestation keys into tracked

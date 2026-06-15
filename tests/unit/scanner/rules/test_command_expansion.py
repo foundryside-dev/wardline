@@ -191,6 +191,38 @@ def test_108_whole_command_quote_still_fires(tmp_path) -> None:
     assert [(x.rule_id, x.qualname) for x in UntrustedToCommand().check(ctx)] == [("PY-WL-108", "m.f")]
 
 
+def test_108_quoted_command_with_constant_arg_still_fires(tmp_path) -> None:
+    # The command WORD is quoted-and-attacker-chosen, with only a CONSTANT arg
+    # suffix: `shlex.quote(raw) + " --version"`. The constant fragment + all-leaves-
+    # quoted-or-constant shape used to look "guarded", but shlex.quote sanitizes an
+    # argument, not the identity of the executable — the attacker still picks the
+    # program. Must fire (regression for the quoted-command-vs-quoted-arg gap).
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            raw = read_raw(p)
+            os.system(shlex.quote(raw) + " --version")
+        """,
+    )
+    assert [(x.rule_id, x.qualname) for x in UntrustedToCommand().check(ctx)] == [("PY-WL-108", "m.f")]
+
+
+def test_108_quoted_command_fstring_with_constant_arg_still_fires(tmp_path) -> None:
+    # Same gap in f-string form: the quoted leaf leads, a constant trails.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            raw = read_raw(p)
+            os.system(f"{shlex.quote(raw)} --version")
+        """,
+    )
+    assert [(x.rule_id, x.qualname) for x in UntrustedToCommand().check(ctx)] == [("PY-WL-108", "m.f")]
+
+
 def test_108_mixed_concat_with_unquoted_raw_leaf_fires(tmp_path) -> None:
     ctx = _analyze(
         tmp_path,
