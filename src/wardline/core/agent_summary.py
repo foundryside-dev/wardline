@@ -36,6 +36,7 @@ def _default_filigree_status() -> dict[str, Any]:
         "created": 0,
         "updated": 0,
         "failed": 0,
+        "failures": [],
         "warnings": [],
         "disabled_reason": "not configured",
     }

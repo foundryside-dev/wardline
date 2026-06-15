@@ -7,6 +7,7 @@ import pytest
 from wardline.core.errors import FiligreeEmitError
 from wardline.core.filigree_emit import (
     EmitResult,
+    FailedFinding,
     FiligreeEmitter,
     Response,
     build_scan_results_body,
@@ -425,6 +426,85 @@ def test_failed_list_surfaced_in_result() -> None:
     body = json.dumps({"stats": {"findings_created": 1}, "failed": ["id9"], "warnings": []})
     res = FiligreeEmitter("http://x", transport=_FakeTransport(Response(200, body))).emit([_f()])
     assert res.failed == 1
+
+
+# --- PDR-0023 honesty invariant: partial ingest carries machine-readable reasons ----------
+
+
+def test_clean_run_reports_empty_failures_earned() -> None:
+    # The earned empty list: a fully-successful emit has no failures, and the derived count
+    # agrees. This is the true-negative half the invariant must stay distinguishable from.
+    body = json.dumps({"stats": {"findings_created": 2}, "failed": [], "warnings": []})
+    res = FiligreeEmitter("http://x", transport=_FakeTransport(Response(200, body))).emit([_f(), _f()])
+    assert res.failures == ()
+    assert res.failed == 0
+
+
+def test_partial_ingest_surfaces_per_finding_reasons() -> None:
+    # The named golden vector: a 2xx where Filigree rejected SOME findings must not read as a
+    # clean emit. Each reject lands in failures[] with a machine-readable reason + its
+    # fingerprint, so an agent can tell "M of N emitted, K failed because R" from success.
+    body = json.dumps(
+        {
+            "stats": {"findings_created": 1, "findings_updated": 0},
+            "failed": [
+                {"fingerprint": "wlfp2:bad1", "reason": "validation-error", "detail": "line_start required"},
+                {"fingerprint": "wlfp2:bad2", "reason": "scheme mismatch", "detail": "expected wlfp3"},
+                {"fingerprint": "wlfp2:bad3"},  # no reason → degrades to a loud 'rejected', not dropped
+            ],
+            "warnings": [],
+        }
+    )
+    res = FiligreeEmitter("http://x", transport=_FakeTransport(Response(200, body))).emit([_f()])
+    assert res.failed == 3
+    assert [(f.reason, f.fingerprint) for f in res.failures] == [
+        ("validation_error", "wlfp2:bad1"),
+        ("scheme_mismatch", "wlfp2:bad2"),
+        ("rejected", "wlfp2:bad3"),
+    ]
+    assert res.failures[0].detail == "line_start required"
+    # The honesty contract: this is NOT byte-indistinguishable from a clean emit.
+    clean = json.dumps({"stats": {"findings_created": 1}, "failed": [], "warnings": []})
+    clean_res = FiligreeEmitter("http://x", transport=_FakeTransport(Response(200, clean))).emit([_f()])
+    assert clean_res.failures == () and clean_res.failed == 0
+    assert clean_res != res  # a partial and a clean emit are distinguishable values
+
+
+def test_failures_serialize_to_wire_with_reason() -> None:
+    res = FiligreeEmitter(
+        "http://x",
+        transport=_FakeTransport(
+            Response(200, json.dumps({"stats": {}, "failed": [{"fingerprint": "wlfp2:z", "reason": "rejected"}]}))
+        ),
+    ).emit([_f()])
+    assert [f.to_wire() for f in res.failures] == [{"reason": "rejected", "detail": "", "fingerprint": "wlfp2:z"}]
+
+
+def test_protocol_reject_fail_soft_records_each_pending_finding_as_partial() -> None:
+    # Fail-soft (protocol_errors_loud=False): a rejected chunk is no longer flattened to an
+    # opaque count. EVERY still-pending finding becomes a 'partial' failure carrying the
+    # status, so the caller reads which findings did not land and why — not "created N" minus
+    # a silent number.
+    t = _FakeTransport(response=Response(status=422, body='{"error":"payload too large"}'))
+    res = FiligreeEmitter("http://x", transport=t, protocol_errors_loud=False).emit([_f(), _f()])
+    assert res.reachable is True
+    assert res.failed == 2
+    assert all(f.reason == "partial" for f in res.failures)
+    assert all("422" in f.detail for f in res.failures)
+    assert all(f.fingerprint == _PREFIXED_A for f in res.failures)
+
+
+def test_failed_count_is_derived_from_failures_and_cannot_disagree() -> None:
+    # The count is a property over failures — there is no setter to hardwire a contradictory
+    # failed=0 while failures is non-empty (the confident-empty defect the invariant forbids).
+    r = EmitResult(reachable=True, created=1, failures=(FailedFinding(reason="rejected", fingerprint="wlfp2:q"),))
+    assert r.failed == 1
+    assert EmitResult(reachable=True).failed == 0
+
+
+def test_failed_finding_rejects_unknown_reason() -> None:
+    with pytest.raises(ValueError, match="unknown emit-failure reason"):
+        FailedFinding(reason="totally-made-up")
 
 
 def test_connection_error_is_sibling_absent() -> None:

@@ -72,6 +72,10 @@ def _emit_filigree(
         "created": er.created,
         "updated": er.updated,
         "failed": er.failed,
+        # PDR-0023 honesty surface: per-finding reject reasons so a partial ingest is
+        # distinguishable from a clean emit. ``failed`` is the count; ``failures`` says which
+        # findings and why (rejected / validation_error / scheme_mismatch / partial).
+        "failures": [f.to_wire() for f in er.failures],
         "warnings": list(er.warnings),
         # Distinguish auth-rejected (401/403) from transport-unreachable so the agent reads
         # an actionable reason, not a flat "unreachable" (dogfood #5). token_sent + url further
@@ -93,6 +97,7 @@ def _filigree_emit_status(block: dict[str, Any] | None) -> dict[str, Any]:
             "created": 0,
             "updated": 0,
             "failed": 0,
+            "failures": [],
             "warnings": [],
             "disabled_reason": "not configured",
             "destination": filigree_destination(None),
@@ -374,7 +379,38 @@ _SCAN_FILE_FINDINGS_OUTPUT_SCHEMA: dict[str, Any] = {
                 },
                 "created": {"type": "integer", "description": "Findings newly created in Filigree."},
                 "updated": {"type": "integer", "description": "Findings updated in Filigree."},
-                "failed": {"type": "integer", "description": "Findings Filigree rejected."},
+                "failed": {
+                    "type": "integer",
+                    "description": "Count of findings that did NOT land in Filigree (derived from `failures`). "
+                    "0 here is earned from real per-finding records, not assumed — see `failures` for which and why.",
+                },
+                "failures": {
+                    "type": "array",
+                    "description": "PDR-0023 honesty surface: one record per finding that failed to land, so a "
+                    "PARTIAL ingest ('M of N emitted, K rejected because R') is distinguishable from a clean emit "
+                    "('all N emitted'). Empty on a clean run — but earned, not hardwired.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "reason": {
+                                "type": "string",
+                                "enum": ["rejected", "validation_error", "scheme_mismatch", "partial"],
+                                "description": "Machine-readable failure case: rejected (Filigree refused this "
+                                "finding), validation_error (malformed body), scheme_mismatch (fingerprint-scheme "
+                                "drift — a join-miss, not a true-negative), partial (the whole chunk was rejected at "
+                                "the protocol layer, so the cause is the request not the body).",
+                            },
+                            "detail": {"type": "string", "description": "Filigree's per-finding reject explanation."},
+                            "fingerprint": {
+                                "type": "string",
+                                "description": "The wardline join key for the failed finding (absent when the "
+                                "failure is chunk-wide and not attributable to one finding).",
+                            },
+                        },
+                        "required": ["reason", "detail"],
+                        "additionalProperties": False,
+                    },
+                },
                 "warnings": {"type": "array", "items": {"type": "string"}, "description": "Non-fatal emit warnings."},
                 "disabled_reason": {
                     "type": ["string", "null"],
@@ -384,7 +420,16 @@ _SCAN_FILE_FINDINGS_OUTPUT_SCHEMA: dict[str, Any] = {
                     "to tell them apart (null = no attempt).",
                 },
             },
-            "required": ["configured", "reachable", "created", "updated", "failed", "warnings", "disabled_reason"],
+            "required": [
+                "configured",
+                "reachable",
+                "created",
+                "updated",
+                "failed",
+                "failures",
+                "warnings",
+                "disabled_reason",
+            ],
             "additionalProperties": False,
         },
         "active_defects": {
@@ -1006,7 +1051,9 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                         "reachable": {"type": "boolean"},
                         "created": {"type": "integer"},
                         "updated": {"type": "integer"},
-                        "failed": {"type": "integer"},
+                        "failed": {"type": "integer", "description": "Count of un-ingested findings (derived from "
+                        "`failures`); 0 is earned from real records, not assumed."},
+                        "failures": {"$ref": "#/$defs/filigree_emit_failures"},
                         "warnings": {"type": "array", "items": {"type": "string"}},
                         "status": {
                             "type": ["integer", "null"],
@@ -1030,6 +1077,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                         "created",
                         "updated",
                         "failed",
+                        "failures",
                         "warnings",
                         "status",
                         "auth_rejected",
@@ -1368,6 +1416,32 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
             "required": ["url", "project", "project_pinned"],
             "additionalProperties": False,
         },
+        "filigree_emit_failures": {
+            "type": "array",
+            "description": "PDR-0023 honesty surface: one record per finding that did NOT land in Filigree, so a "
+            "PARTIAL ingest ('M of N emitted, K rejected because R') is byte-distinguishable from a clean emit. "
+            "Empty on a clean run — but earned from real per-finding records, not hardwired.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "enum": ["rejected", "validation_error", "scheme_mismatch", "partial"],
+                        "description": "Machine-readable failure case: rejected (Filigree refused this finding), "
+                        "validation_error (malformed body), scheme_mismatch (fingerprint-scheme drift — a join-miss, "
+                        "not a true-negative), partial (whole chunk rejected at the protocol layer; cause is the "
+                        "request, not the body).",
+                    },
+                    "detail": {"type": "string", "description": "Filigree's per-finding reject explanation."},
+                    "fingerprint": {
+                        "type": "string",
+                        "description": "Wardline join key for the failed finding (absent when chunk-wide).",
+                    },
+                },
+                "required": ["reason", "detail"],
+                "additionalProperties": False,
+            },
+        },
         "filigree_emit_status": {
             "type": "object",
             "description": "Normalized Filigree emit status (always an object; configured:false when no emitter).",
@@ -1376,7 +1450,9 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "reachable": {"type": ["boolean", "null"], "description": "null when not configured."},
                 "created": {"type": "integer"},
                 "updated": {"type": "integer"},
-                "failed": {"type": "integer"},
+                "failed": {"type": "integer", "description": "Count of un-ingested findings (derived from "
+                "`failures`); 0 is earned, not assumed."},
+                "failures": {"$ref": "#/$defs/filigree_emit_failures"},
                 "warnings": {"type": "array", "items": {"type": "string"}},
                 "disabled_reason": {
                     "type": ["string", "null"],
@@ -1398,6 +1474,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "created",
                 "updated",
                 "failed",
+                "failures",
                 "warnings",
                 "disabled_reason",
                 "destination",

@@ -53,6 +53,7 @@ def _emit_to_dict(result: EmitResult | None, *, configured: bool) -> dict[str, A
             "created": 0,
             "updated": 0,
             "failed": 0,
+            "failures": [],
             "warnings": [],
             "disabled_reason": None if configured else "not configured",
         }
@@ -62,6 +63,8 @@ def _emit_to_dict(result: EmitResult | None, *, configured: bool) -> dict[str, A
         "created": result.created,
         "updated": result.updated,
         "failed": result.failed,
+        # PDR-0023: per-finding reject reasons so a partial ingest is distinguishable from clean.
+        "failures": [f.to_wire() for f in result.failures],
         "warnings": list(result.warnings),
         # Delegate to the shared 401/403-vs-5xx-vs-transport ladder (dogfood #5) instead
         # of flattening every soft failure to "filigree unreachable".

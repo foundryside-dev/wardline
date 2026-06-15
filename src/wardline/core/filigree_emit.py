@@ -162,12 +162,55 @@ class Response:
     body: str
 
 
+# The machine-readable reason vocabulary for a per-finding emit failure (PDR-0023, the
+# honesty invariant). A degraded ``failed`` entry MUST distinguish these cases so a caller
+# can tell "M of N emitted, K rejected because <reason>" from a clean true-negative — a bare
+# count cannot. The set mirrors the invariant's emit-side cases:
+#   rejected         — Filigree accepted the request but refused this finding (its own report).
+#   validation_error — the finding body was malformed/unprocessable (Filigree said why).
+#   scheme_mismatch  — the fingerprint scheme Filigree expects differs from what we sent
+#                      (a wlfp2→wlfp3 drift would join-miss; never read as a real true-negative).
+#   partial          — the whole chunk was rejected at the protocol layer (fail-soft emit), so
+#                      every finding in it is un-ingested; the cause is the chunk, not the body.
+_FAILURE_REASONS = frozenset({"rejected", "validation_error", "scheme_mismatch", "partial"})
+
+
+@dataclass(frozen=True, slots=True)
+class FailedFinding:
+    """One finding that did not land in Filigree, with a machine-readable reason.
+
+    PDR-0023: the honesty surface of the emit seam. A clean run yields an empty
+    ``failures`` tuple — but that emptiness is now EARNED (no finding failed) rather
+    than a hardwired count, and a partial ingest names which findings failed and why,
+    so "all N emitted" is distinguishable from "M of N emitted, K rejected because R".
+    ``fingerprint`` is the wardline join key when Filigree reported it (None when the
+    failure is chunk-wide and not attributable to a single finding)."""
+
+    reason: str
+    detail: str = ""
+    fingerprint: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.reason not in _FAILURE_REASONS:
+            raise ValueError(f"unknown emit-failure reason {self.reason!r}; expected one of {sorted(_FAILURE_REASONS)}")
+
+    def to_wire(self) -> dict[str, Any]:
+        wire: dict[str, Any] = {"reason": self.reason, "detail": self.detail}
+        if self.fingerprint is not None:
+            wire["fingerprint"] = self.fingerprint
+        return wire
+
+
 @dataclass(frozen=True, slots=True)
 class EmitResult:
     reachable: bool
     created: int = 0
     updated: int = 0
-    failed: int = 0
+    # Per-finding emit failures, each carrying a machine-readable reason (PDR-0023). The
+    # scalar ``failed`` count is DERIVED from this so the two can never disagree — the same
+    # construction-time-consistency idiom as ``auth_rejected`` over ``status`` below. A
+    # hardwired ``failed=0`` is now unrepresentable: the count is earned from real records.
+    failures: tuple[FailedFinding, ...] = ()
     warnings: tuple[str, ...] = ()
     # Discriminate WHY enrichment was unavailable so the caller can say the actionable
     # thing instead of a flat "could not reach" (dogfood #5). ``status`` is the HTTP status
@@ -184,6 +227,14 @@ class EmitResult:
     # name WHERE it tried without the caller threading it separately.
     token_sent: bool = False
     url: str | None = None
+
+    @property
+    def failed(self) -> int:
+        # The count of findings that did not land, DERIVED from ``failures`` so a caller's
+        # "K failed" can never disagree with "here are the K reasons". Preserves every existing
+        # integer-count consumer (CLI line, status blocks, scan-job enrichment gate) while the
+        # honest detail lives in ``failures``.
+        return len(self.failures)
 
     @property
     def auth_rejected(self) -> bool:
@@ -293,6 +344,46 @@ def _scan_result_chunks(
     return tuple(chunks)
 
 
+def _normalize_failure_reason(raw: Any) -> str:
+    """Map a Filigree-reported per-finding reason onto the honesty vocabulary.
+
+    Filigree's reject report is not contractually frozen to our reason set, so an
+    unrecognized (or absent) reason degrades to ``rejected`` — the honest "Filigree
+    refused this finding but did not say a more specific why" — rather than being
+    dropped. A drift-shaped reason (the scheme-mismatch the seam-health map flags as
+    the join-miss that cascade-closes issues) is recognized so an agent can tell a
+    fingerprint-scheme drift from a routine rejection."""
+    if not isinstance(raw, str):
+        return "rejected"
+    token = raw.strip().lower().replace("-", "_").replace(" ", "_")
+    if token in _FAILURE_REASONS:
+        return token
+    if "scheme" in token and ("mismatch" in token or "drift" in token or "unknown" in token):
+        return "scheme_mismatch"
+    if "valid" in token or "schema" in token or "unprocessable" in token:
+        return "validation_error"
+    return "rejected"
+
+
+def _parse_failed_entry(entry: Any) -> FailedFinding:
+    """Coerce one element of Filigree's ``failed`` array into a FailedFinding.
+
+    Filigree reports rejects as objects (``{"fingerprint": ..., "reason": ..., ...}``)
+    but tolerates a bare id string for forward/backward wire compatibility. Either way a
+    machine-readable reason is preserved (defaulting to ``rejected``) so a partial ingest
+    is never flattened back into an opaque count."""
+    if isinstance(entry, Mapping):
+        fingerprint = entry.get("fingerprint") or entry.get("id")
+        detail = entry.get("detail") or entry.get("message") or entry.get("error") or ""
+        return FailedFinding(
+            reason=_normalize_failure_reason(entry.get("reason")),
+            detail=str(detail),
+            fingerprint=str(fingerprint) if fingerprint is not None else None,
+        )
+    # A bare scalar (id string): Filigree refused it but gave no structured reason.
+    return FailedFinding(reason="rejected", fingerprint=str(entry) if entry is not None else None)
+
+
 def _parse_success_response(resp: Response) -> EmitResult:
     # 2xx success. Parse defensively: a 2xx with an unreadable body means the POST was
     # accepted but the report is unparseable — surface a warning, never crash (charter).
@@ -309,12 +400,16 @@ def _parse_success_response(resp: Response) -> EmitResult:
     raw_warnings = payload.get("warnings")
     if isinstance(raw_warnings, list):
         warnings.extend(str(w) for w in raw_warnings)
-    failed = payload.get("failed") or []
+    raw_failed = payload.get("failed")
+    # PDR-0023: preserve Filigree's PER-FINDING reject reasons instead of flattening to a
+    # count. A 2xx where Filigree silently dropped K findings is now distinguishable from a
+    # clean emit — the empty ``failures`` tuple is earned, not assumed.
+    failures = tuple(_parse_failed_entry(e) for e in raw_failed) if isinstance(raw_failed, list) else ()
     return EmitResult(
         reachable=True,
         created=_safe_int(stats.get("findings_created")),
         updated=_safe_int(stats.get("findings_updated")),
-        failed=len(failed) if isinstance(failed, list) else 0,
+        failures=failures,
         warnings=tuple(warnings),
     )
 
@@ -517,7 +612,7 @@ class FiligreeEmitter:
         chunks = list(_scan_result_chunks(findings, scanned_paths, max_findings_per_request))
         created = 0
         updated = 0
-        failed = 0
+        failures: list[FailedFinding] = []
         warnings: list[str] = []
         try:
             for chunk_index, chunk in enumerate(chunks, start=1):
@@ -542,14 +637,28 @@ class FiligreeEmitter:
                     message = f"Filigree rejected scan-results ({resp.status}) at {self._url}: {resp.body}"
                     if self._protocol_errors_loud:
                         raise FiligreeEmitError(message)
-                    remaining_findings = sum(len(c.findings) for c in chunks[chunk_index - 1 :])
-                    failed += remaining_findings
+                    # Fail-soft: the chunk (and every chunk after it) is un-ingested. PDR-0023 —
+                    # record EACH still-pending finding as a ``partial`` failure carrying the
+                    # rejecting status, so the caller reads "K findings failed because the chunk
+                    # was rejected (<status>)" instead of an opaque count that looks like success
+                    # minus a number. ``partial`` (chunk-wide) is named distinctly from a
+                    # per-finding ``rejected`` because the cause is the request, not the body.
+                    detail = f"chunk rejected at protocol layer ({resp.status}): {resp.body}"
+                    for pending_chunk in chunks[chunk_index - 1 :]:
+                        for finding in pending_chunk.findings:
+                            failures.append(
+                                FailedFinding(
+                                    reason="partial",
+                                    detail=detail,
+                                    fingerprint=format_fingerprint(FINGERPRINT_SCHEME, finding.fingerprint),
+                                )
+                            )
                     warnings.append(message)
                     break
                 chunk_result = _parse_success_response(resp)
                 created += chunk_result.created
                 updated += chunk_result.updated
-                failed += chunk_result.failed
+                failures.extend(chunk_result.failures)
                 warnings.extend(chunk_result.warnings)
         except (urllib.error.URLError, OSError):
             # Connection refused / DNS / timeout — sibling absent. Enrichment is
@@ -560,7 +669,7 @@ class FiligreeEmitter:
             reachable=True,
             created=created,
             updated=updated,
-            failed=failed,
+            failures=tuple(failures),
             warnings=tuple(warnings),
             token_sent=token_sent,
             url=self._url,

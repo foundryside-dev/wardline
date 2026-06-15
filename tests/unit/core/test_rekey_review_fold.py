@@ -13,7 +13,7 @@ yaml = pytest.importorskip("yaml")
 
 from wardline.core import paths  # noqa: E402
 from wardline.core.errors import WardlineError  # noqa: E402
-from wardline.core.filigree_emit import EmitResult  # noqa: E402
+from wardline.core.filigree_emit import EmitResult, FailedFinding  # noqa: E402
 from wardline.core.finding import Finding, Kind, Location, Severity  # noqa: E402
 from wardline.core.rekey import (  # noqa: E402
     Journal,
@@ -51,7 +51,17 @@ def test_filigree_2xx_with_failures_records_debt_not_done(tmp_path: Path) -> Non
     j = Journal(remap={})
     for n in ("baseline", "judged", "waivers"):
         j.leg(n).done = True
-    partial = _FakeEmitter(EmitResult(reachable=True, created=1, failed=2, url="http://x"))
+    partial = _FakeEmitter(
+        EmitResult(
+            reachable=True,
+            created=1,
+            failures=(
+                FailedFinding(reason="rejected", fingerprint="wlfp2:p1"),
+                FailedFinding(reason="rejected", fingerprint="wlfp2:p2"),
+            ),
+            url="http://x",
+        )
+    )
     apply_pending_legs(tmp_path, j, findings=[_defect("1" * 64, 3, "a@1:2")], filigree=partial)
     assert j.leg("filigree").done is False
     assert j.leg("filigree").debt and "rejected" in j.leg("filigree").debt

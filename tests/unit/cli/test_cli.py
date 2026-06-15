@@ -879,11 +879,13 @@ def test_scan_filigree_protocol_error_does_not_preempt_gate(tmp_path, monkeypatc
             captured["kwargs"] = kw
 
         def emit(self, findings, *, scanned_paths=()):
-            from wardline.core.filigree_emit import EmitResult
+            from wardline.core.filigree_emit import EmitResult, FailedFinding
 
             return EmitResult(
                 reachable=True,
-                failed=len(findings),
+                failures=tuple(
+                    FailedFinding(reason="partial", detail="payload too large (400)") for _ in findings
+                ),
                 warnings=("Filigree rejected scan-results (400): payload too large",),
             )
 
@@ -1596,9 +1598,15 @@ def test_scan_filigree_emit_with_failed_and_warnings(tmp_path, monkeypatch) -> N
             pass
 
         def emit(self, findings, *, scanned_paths=()):
-            from wardline.core.filigree_emit import EmitResult
+            from wardline.core.filigree_emit import EmitResult, FailedFinding
 
-            return EmitResult(reachable=True, created=0, updated=0, failed=1, warnings=("w1", "w2"))
+            return EmitResult(
+                reachable=True,
+                created=0,
+                updated=0,
+                failures=(FailedFinding(reason="rejected", fingerprint="wlfp2:w"),),
+                warnings=("w1", "w2"),
+            )
 
     monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _WarningFailedEmitter)
     out = tmp_path / "f.jsonl"

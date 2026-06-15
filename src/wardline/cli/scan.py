@@ -530,6 +530,7 @@ def _filigree_status(result: EmitResult | None) -> dict[str, object]:
             "created": 0,
             "updated": 0,
             "failed": 0,
+            "failures": [],
             "warnings": [],
             "disabled_reason": "not configured",
             "destination": filigree_destination(None),
@@ -540,6 +541,8 @@ def _filigree_status(result: EmitResult | None) -> dict[str, object]:
         "created": result.created,
         "updated": result.updated,
         "failed": result.failed,
+        # PDR-0023: per-finding reject reasons so a partial ingest is not flattened to a count.
+        "failures": [f.to_wire() for f in result.failures],
         "warnings": list(result.warnings),
         "disabled_reason": filigree_disabled_reason(
             reachable=result.reachable,
