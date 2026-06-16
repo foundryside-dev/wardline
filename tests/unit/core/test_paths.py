@@ -60,3 +60,51 @@ def test_store_dir_absolute_outside_root_falls_back_to_default(tmp_path):
 def test_store_dir_relative_escape_falls_back_to_default(tmp_path):
     (tmp_path / "weft.toml").write_text('[wardline]\nstore_dir = "../escape"\n', encoding="utf-8")
     assert paths.weft_state_dir(tmp_path) == tmp_path / ".weft" / "wardline"
+
+
+# --- enclosing_project_root (N-3: the scan root governs qualnames) -----------
+
+
+def test_enclosing_project_root_none_when_root_has_weft_toml(tmp_path):
+    (tmp_path / "weft.toml").write_text("[wardline]\n", encoding="utf-8")
+    assert paths.enclosing_project_root(tmp_path) is None
+
+
+def test_enclosing_project_root_none_when_root_has_state_dir(tmp_path):
+    (tmp_path / ".weft" / "wardline").mkdir(parents=True)
+    assert paths.enclosing_project_root(tmp_path) is None
+
+
+def test_enclosing_project_root_finds_weft_toml_ancestor(tmp_path):
+    (tmp_path / "weft.toml").write_text("[wardline]\n", encoding="utf-8")
+    sub = tmp_path / "specimen"
+    sub.mkdir()
+    assert paths.enclosing_project_root(sub) == tmp_path.resolve()
+
+
+def test_enclosing_project_root_finds_state_dir_ancestor_deep(tmp_path):
+    (tmp_path / ".weft" / "wardline").mkdir(parents=True)
+    sub = tmp_path / "a" / "b"
+    sub.mkdir(parents=True)
+    assert paths.enclosing_project_root(sub) == tmp_path.resolve()
+
+
+def test_enclosing_project_root_nested_project_is_its_own_root(tmp_path):
+    # A subdirectory that is its OWN weft project root (vendored tree) is not
+    # "nested" — its markers win and no enclosing root is reported.
+    (tmp_path / "weft.toml").write_text("[wardline]\n", encoding="utf-8")
+    sub = tmp_path / "vendored"
+    sub.mkdir()
+    (sub / "weft.toml").write_text("[wardline]\n", encoding="utf-8")
+    assert paths.enclosing_project_root(sub) is None
+
+
+def test_enclosing_project_root_ignores_sibling_only_weft_dir(tmp_path):
+    # A .weft/ holding only SIBLING members (filigree/loomweave) marks nothing for
+    # wardline: neither operator config (weft.toml) nor wardline state exists, so
+    # there is no baseline to miss and no [wardline] config to skip. (This also keeps
+    # wardline's own repo — .weft/filigree only — from warning on in-repo fixture scans.)
+    (tmp_path / ".weft" / "filigree").mkdir(parents=True)
+    sub = tmp_path / "specimen"
+    sub.mkdir()
+    assert paths.enclosing_project_root(sub) is None

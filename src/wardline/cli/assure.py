@@ -54,11 +54,13 @@ def _render_human(posture: object) -> None:
 
     assert isinstance(posture, AssurancePosture)
     d = posture.to_dict()
-    total: int = d["boundaries_total"]
+    boundary_total: int = d["boundaries_total"]
+    unanalyzed_total: int = d["unanalyzed_total"]
+    coverage_total = boundary_total + unanalyzed_total
     unknown_list: list[dict[str, Any]] = d["unknown"]
     waiver_debt: list[dict[str, Any]] = d["waiver_debt"]
 
-    if total == 0:
+    if coverage_total == 0:
         click.echo("No trust surface declared (0 trust-annotated boundaries) — nothing to assure.")
     else:
         pct: float = d["coverage_pct"]
@@ -67,23 +69,32 @@ def _render_human(posture: object) -> None:
         unknown_count = len(unknown_list)
         engine_limited: int = d["engine_limited"]
 
-        definite = total - unknown_count
-        click.echo(f"Trust-surface coverage: {pct}% ({definite}/{total} boundaries reached a definite verdict)")
+        definite = boundary_total - unknown_count
+        click.echo(
+            f"Trust-surface coverage: {pct}% ({definite}/{coverage_total} surface item(s) reached a definite verdict)"
+        )
         click.echo(f"  proven:   {proven}")
         click.echo(f"  defect:   {defect}")
         engine_note = f"  ({engine_limited} engine-limited)" if engine_limited else ""
-        click.echo(f"  unknown:  {unknown_count}{engine_note}")
+        click.echo(f"  unknown:  {unknown_count + unanalyzed_total}{engine_note}")
+        if unanalyzed_total:
+            click.echo(f"  unanalyzed files: {unanalyzed_total}")
 
         if unknown_list:
             click.echo("  Unknown boundaries:")
             for u in unknown_list:
                 loc = u.get("location") or {}
-                loc_str = f"  {loc.get('path', '?')}:{loc.get('line', '?')}"
-                reason_str = f"  [{u['reason']}]" if u.get("reason") else ""
-                tier_str = f"  (tier: {u['tier']})" if u.get("tier") else ""
-                click.echo(f"    {u['qualname']}{tier_str}{loc_str}{reason_str}")
+                loc_str = f"  {_human_text(loc.get('path', '?'))}:{_human_text(loc.get('line', '?'))}"
+                reason_str = f"  [{_human_text(u['reason'])}]" if u.get("reason") else ""
+                tier_str = f"  (tier: {_human_text(u['tier'])})" if u.get("tier") else ""
+                click.echo(f"    {_human_text(u['qualname'])}{tier_str}{loc_str}{reason_str}")
 
     _render_waiver_debt(waiver_debt)
+
+
+def _human_text(value: object) -> str:
+    """Escape control characters before writing repository-derived text to terminals."""
+    return ascii(str(value))[1:-1]
 
 
 def _render_waiver_debt(waiver_debt: list[dict[str, Any]]) -> None:

@@ -9,7 +9,13 @@ import sys
 import tomllib
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
+from wardline.core.config import (
+    _filigree_published_url,
+    _loomweave_published_url,
+    filigree_server_scoped_url,
+)
 from wardline.core.errors import WardlineError
 from wardline.core.safe_paths import safe_project_file
 
@@ -35,12 +41,151 @@ def _local_mcp_entry() -> dict[str, object]:
     return {"type": "stdio", "command": _find_wardline_command(), "args": ["mcp", "--root", "."]}
 
 
-def merge_mcp_entry(root: Path) -> str:
-    """Add/replace the `wardline` entry under mcpServers. Returns created|updated|unchanged."""
-    path = safe_project_file(root, root / ".mcp.json", label=".mcp.json")
+# Operator-pinned sibling-endpoint flags, reconciled on repair (see
+# _desired_sibling_url):
+#   - a NON-loopback (remote) pin is the operator's deliberate endpoint — preserved.
+#   - a loopback pin that a live published-port rung can reconstruct is DROPPED, so
+#     runtime discovery owns the always-current port. A frozen pin to a rotated-away
+#     port otherwise shadows the live daemon (the legacy .filigree/ephemeral.port rung
+#     outliving a port rotation is the canonical way this happens). Filigree SERVER
+#     mode is the exception: an unscoped write fail-closes under a multi-project
+#     daemon, so a loopback pin is repaired to the live project scope rather than
+#     dropped.
+#   - a loopback pin with no live daemon is preserved verbatim (cannot be improved).
+_PRESERVED_ARG_FLAGS = ("--filigree-url", "--loomweave-url")
+
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _flag_pairs(entry: object) -> list[tuple[str, str]]:
+    """Operator-pinned ``(flag, value)`` pairs from an existing wardline entry's args,
+    in the order the operator wrote them. Returns ``[]`` for any shape that isn't a
+    list-of-args. Original order is preserved so an already-correct entry is recognized
+    as ``unchanged`` and is never needlessly reordered on repair."""
+    if not isinstance(entry, dict):
+        return []
+    args = entry.get("args")
+    if not isinstance(args, list):
+        return []
+    pairs: list[tuple[str, str]] = []
+    i = 0
+    while i < len(args):
+        flag = args[i]
+        if flag in _PRESERVED_ARG_FLAGS and i + 1 < len(args) and isinstance(args[i + 1], str):
+            pairs.append((flag, args[i + 1]))
+            i += 2
+            continue
+        i += 1
+    return pairs
+
+
+def _same_scope_target(a: str, b: str) -> bool:
+    """True when two URLs name the same Filigree write target up to loopback host
+    spelling — identical port and path (the scope-bearing parts). Lets an already-
+    correct entry that merely spells the host ``127.0.0.1`` (vs our ``localhost``) be
+    recognised as correct and preserved verbatim, rather than churned every repair."""
+    try:
+        pa, pb = urlsplit(a), urlsplit(b)
+        # .port lazily parses the authority; a malformed literal (http://localhost:notaport)
+        # raises ValueError HERE, not at urlsplit. Parse both inside the guard so a bad
+        # preserved URL reads as non-matching (and gets replaced) instead of crashing repair.
+        a_port, b_port = pa.port, pb.port
+    except ValueError:
+        return False
+    if pa.hostname not in _LOOPBACK_HOSTS or pb.hostname not in _LOOPBACK_HOSTS:
+        return False
+    return (a_port, pa.path) == (b_port, pb.path)
+
+
+def _is_loopback_url(value: str) -> bool:
+    """True when *value* is a loopback HTTP URL (a default-shaped, locally-rebuildable
+    target). A non-loopback host is an operator's deliberate remote endpoint and is
+    never rewritten."""
+    try:
+        host = urlsplit(value).hostname
+    except ValueError:
+        return False
+    return host in _LOOPBACK_HOSTS
+
+
+def _desired_sibling_url(flag: str, existing: str | None, root: Path) -> str | None:
+    """The value to write for *flag* (``--filigree-url`` / ``--loomweave-url``), or
+    ``None`` to DROP the flag entirely.
+
+    A non-loopback (remote) pin is the operator's deliberate endpoint and is always
+    preserved. A loopback pin is a locally-rebuildable target: when a live published
+    port exists for that sibling the pin is redundant-or-stale, so it is dropped and
+    runtime published-port discovery owns the (always-current) port — except in
+    Filigree server mode, where an unscoped write fail-closes (N1) and the pin is
+    repaired to the live project scope instead. With no live daemon the pin is left
+    verbatim (we cannot improve on it). A fresh entry (no pin) only gains a flag in
+    Filigree server mode, where the scoped target must be baked."""
+    if existing is not None and not _is_loopback_url(existing):
+        return existing  # remote endpoint — operator's deliberate choice, never touched
+    if flag == "--filigree-url":
+        scope = filigree_server_scoped_url(root)
+        if scope is not None:
+            if existing is None:
+                return scope  # fresh server-mode install lands a working scoped target
+            return existing if _same_scope_target(existing, scope) else scope
+        published: str | None = _filigree_published_url(root)
+    else:
+        published = _loomweave_published_url(root)
+    if existing is None:
+        return None  # per-project discovery owns the port; never bake a loopback pin
+    return None if published is not None else existing
+
+
+def _desired_sibling_args(entry: object, root: Path) -> list[str]:
+    """Sibling-URL args for the desired entry: each operator-pinned ``--filigree-url``
+    / ``--loomweave-url`` reconciled by :func:`_desired_sibling_url` (preserved,
+    repaired-to-scope, or DROPPED) in the operator's original order. A Filigree
+    server-mode scope with no existing flag is appended so a fresh install lands a
+    working scoped target out of the box."""
+    pairs = _flag_pairs(entry)
+    existing = {flag: value for flag, value in pairs}
+    desired = {flag: _desired_sibling_url(flag, existing.get(flag), root) for flag in _PRESERVED_ARG_FLAGS}
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for flag, _value in pairs:
+        seen.add(flag)
+        value = desired[flag]
+        if value is not None:
+            out.extend((flag, value))
+    for flag in _PRESERVED_ARG_FLAGS:
+        if flag not in seen:
+            value = desired[flag]
+            if value is not None:
+                out.extend((flag, value))
+    return out
+
+
+def _desired_local_entry(existing: object, root: Path) -> dict[str, object]:
+    """The canonical local entry, augmented with the desired sibling-URL args (see
+    :func:`_desired_sibling_args`). Idempotent: re-running over the desired entry
+    reproduces it."""
     entry = _local_mcp_entry()
+    extra = _desired_sibling_args(existing, root)
+    if extra:
+        base_args = entry["args"]
+        assert isinstance(base_args, list)
+        entry["args"] = [*base_args, *extra]
+    return entry
+
+
+def merge_mcp_entry(root: Path) -> str:
+    """Add/replace the `wardline` entry under mcpServers. Returns created|updated|unchanged.
+
+    An existing entry's operator-pinned ``--loomweave-url`` and (remote)
+    ``--filigree-url`` args are preserved (they are the runtime emit/discovery target
+    when the published-port rung cannot reconstruct them). When Filigree runs in
+    server mode for *root*, a default-shaped (loopback) or absent ``--filigree-url`` is
+    set/repaired to the live project scope so a fresh install lands a working,
+    fail-close-safe emit target out of the box."""
+    path = safe_project_file(root, root / ".mcp.json", label=".mcp.json")
     if not path.exists():
-        payload = {"mcpServers": {"wardline": entry}}
+        payload = {"mcpServers": {"wardline": _desired_local_entry(None, root)}}
         path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         return "created"
     try:
@@ -55,6 +200,7 @@ def merge_mcp_entry(root: Path) -> str:
         data["mcpServers"] = servers
     if not isinstance(servers, dict):
         raise WardlineError(".mcp.json mcpServers must be an object")
+    entry = _desired_local_entry(servers.get("wardline"), root)
     if servers.get("wardline") == entry:
         return "unchanged"
     servers["wardline"] = entry

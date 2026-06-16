@@ -68,6 +68,81 @@ def test_mcpservers_null_is_treated_as_absent(tmp_path: Path, monkeypatch: pytes
     assert data["other"] == 1  # unrelated top-level keys preserved
 
 
+def test_preserves_operator_pinned_sibling_url_args(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A fixed-port / server-mode emit target (e.g. lacuna) pins --filigree-url /
+    # --loomweave-url in the wardline entry's args. The published-port rung cannot
+    # reconstruct such a URL, so these args ARE the runtime emit/discovery target.
+    # merge_mcp_entry must keep them rather than normalizing to the bare canonical entry.
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "wardline": {
+                        "type": "stdio",
+                        "command": "OLD",
+                        "args": [
+                            "mcp",
+                            "--root",
+                            ".",
+                            "--loomweave-url",
+                            "http://127.0.0.1:9730",
+                            "--filigree-url",
+                            "http://127.0.0.1:8749/api/p/lacuna/weft/scan-results",
+                        ],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    # command is refreshed to canonical (OLD -> /bin/wardline), but the pinned
+    # sibling-URL args survive in the operator's ORIGINAL order (loomweave-first here).
+    assert merge_mcp_entry(tmp_path) == "updated"
+    entry = json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["wardline"]
+    assert entry["command"] == "/bin/wardline"
+    assert entry["args"] == [
+        "mcp",
+        "--root",
+        ".",
+        "--loomweave-url",
+        "http://127.0.0.1:9730",
+        "--filigree-url",
+        "http://127.0.0.1:8749/api/p/lacuna/weft/scan-results",
+    ]
+    # idempotent: re-running over the already-preserved entry is a no-op (no reorder churn).
+    assert merge_mcp_entry(tmp_path) == "unchanged"
+
+
+def test_already_canonical_lacuna_entry_is_unchanged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The real lacuna ordering (loomweave-first) with the canonical command must be a
+    # no-op for merge_mcp_entry — no spurious reorder churn on every repair.
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "wardline": {
+                        "type": "stdio",
+                        "command": "/bin/wardline",
+                        "args": [
+                            "mcp",
+                            "--root",
+                            ".",
+                            "--loomweave-url",
+                            "http://127.0.0.1:9730",
+                            "--filigree-url",
+                            "http://127.0.0.1:8749/api/p/lacuna/weft/scan-results",
+                        ],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert merge_mcp_entry(tmp_path) == "unchanged"
+
+
 def test_replaces_stale_wardline_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
     (tmp_path / ".mcp.json").write_text(
@@ -133,3 +208,233 @@ def test_install_codex_mcp_replaces_stale_wardline_entry(tmp_path: Path, monkeyp
     assert 'command = "/bin/wardline"' in content
     assert 'args = ["mcp"]' in content
     assert "--root" not in content
+
+
+# --- Filigree server-mode scoped --filigree-url persist/repair ---------------------
+#
+# When Filigree runs in server mode for the project, `merge_mcp_entry` injects (fresh)
+# or repairs (loopback/unscoped) the wardline entry's --filigree-url to the live
+# /api/p/{prefix}/ scope, so a fresh install lands a working, fail-close-safe emit
+# target out of the box. An operator's remote endpoint is never rewritten.
+
+
+# Isolation from the real ~/.config/filigree/server.json is provided by the autouse
+# fixture in tests/unit/conftest.py; the server-mode tests below override it.
+
+
+def _register_filigree_server(monkeypatch: pytest.MonkeyPatch, cfg_home: Path, *, port, projects: dict) -> None:
+    sj = cfg_home / "server.json"
+    sj.parent.mkdir(parents=True, exist_ok=True)
+    sj.write_text(json.dumps({"port": port, "projects": projects}), encoding="utf-8")
+    monkeypatch.setattr("wardline.core.config._filigree_server_config_path", lambda: sj)
+
+
+def _wardline_args(tmp_path: Path) -> list:
+    return json.loads((tmp_path / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["wardline"]["args"]
+
+
+def test_install_injects_server_mode_scoped_filigree_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    store = tmp_path / ".weft" / "filigree"
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=8749, projects={str(store): {"prefix": "lacuna"}})
+    assert merge_mcp_entry(tmp_path) == "created"
+    assert _wardline_args(tmp_path) == [
+        "mcp",
+        "--root",
+        ".",
+        "--filigree-url",
+        "http://localhost:8749/api/p/lacuna/weft/scan-results",
+    ]
+    # Idempotent: the discovered scope matches the persisted flag on re-run.
+    assert merge_mcp_entry(tmp_path) == "unchanged"
+
+
+def test_install_repairs_unscoped_loopback_filigree_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    store = tmp_path / ".weft" / "filigree"
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=8749, projects={str(store): {"prefix": "lacuna"}})
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "wardline": {
+                        "type": "stdio",
+                        "command": "/bin/wardline",
+                        "args": ["mcp", "--root", ".", "--filigree-url", "http://127.0.0.1:8749/api/weft/scan-results"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert merge_mcp_entry(tmp_path) == "updated"
+    assert _wardline_args(tmp_path)[-1] == "http://localhost:8749/api/p/lacuna/weft/scan-results"
+
+
+def test_install_repairs_filigree_url_in_place_preserving_loomweave_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    store = tmp_path / ".weft" / "filigree"
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=8749, projects={str(store): {"prefix": "lacuna"}})
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "wardline": {
+                        "type": "stdio",
+                        "command": "/bin/wardline",
+                        "args": [
+                            "mcp",
+                            "--root",
+                            ".",
+                            "--loomweave-url",
+                            "http://127.0.0.1:9730",
+                            "--filigree-url",
+                            "http://127.0.0.1:8749/api/weft/scan-results",
+                        ],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert merge_mcp_entry(tmp_path) == "updated"
+    assert _wardline_args(tmp_path) == [
+        "mcp",
+        "--root",
+        ".",
+        "--loomweave-url",
+        "http://127.0.0.1:9730",
+        "--filigree-url",
+        "http://localhost:8749/api/p/lacuna/weft/scan-results",
+    ]
+
+
+def test_install_never_rewrites_operator_remote_filigree_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    store = tmp_path / ".weft" / "filigree"
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=8749, projects={str(store): {"prefix": "lacuna"}})
+    remote = "https://filigree.example.com/api/weft/scan-results"
+    (tmp_path / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "wardline": {
+                        "type": "stdio",
+                        "command": "/bin/wardline",
+                        "args": ["mcp", "--root", ".", "--filigree-url", remote],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    # A deliberate non-loopback endpoint is preserved verbatim (no-op).
+    assert merge_mcp_entry(tmp_path) == "unchanged"
+    assert _wardline_args(tmp_path)[-1] == remote
+
+
+def test_install_preserves_already_scoped_loopback_host_spelling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An entry that already names the correct port+scope but spells the host 127.0.0.1
+    # (vs our localhost) is the canary case: same target, must NOT be churned.
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    store = tmp_path / ".weft" / "filigree"
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=8749, projects={str(store): {"prefix": "lacuna"}})
+    canary = "http://127.0.0.1:8749/api/p/lacuna/weft/scan-results"
+    entry = {"type": "stdio", "command": "/bin/wardline", "args": ["mcp", "--root", ".", "--filigree-url", canary]}
+    (tmp_path / ".mcp.json").write_text(json.dumps({"mcpServers": {"wardline": entry}}), encoding="utf-8")
+    assert merge_mcp_entry(tmp_path) == "unchanged"
+    assert _wardline_args(tmp_path)[-1] == canary
+
+
+# --- Drop stale loopback sibling pins when a live per-project published port exists --
+#
+# A frozen --filigree-url / --loomweave-url pinned to a port Filigree/Loomweave has
+# since rotated away (the legacy .filigree/ephemeral.port rung outliving a rotation)
+# becomes an explicit flag that SHADOWS published-port discovery. In per-project mode
+# repair DROPS such a loopback pin so runtime discovery owns the always-current port.
+
+
+def _write_wardline_args(root: Path, args: list[str]) -> None:
+    entry = {"type": "stdio", "command": "/bin/wardline", "args": args}
+    (root / ".mcp.json").write_text(json.dumps({"mcpServers": {"wardline": entry}}), encoding="utf-8")
+
+
+def test_repair_drops_stale_loopback_pins_when_per_project_ports_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    # Live per-project published rungs (new .weft/<sibling>/ephemeral.port).
+    (tmp_path / ".weft" / "filigree").mkdir(parents=True)
+    (tmp_path / ".weft" / "filigree" / "ephemeral.port").write_text("9397", encoding="utf-8")
+    (tmp_path / ".weft" / "loomweave").mkdir(parents=True)
+    (tmp_path / ".weft" / "loomweave" / "ephemeral.port").write_text("39759", encoding="utf-8")
+    # ...but the entry pins the rotated-away ports.
+    _write_wardline_args(
+        tmp_path,
+        [
+            "mcp",
+            "--root",
+            ".",
+            "--loomweave-url",
+            "http://127.0.0.1:10251",
+            "--filigree-url",
+            "http://127.0.0.1:9229/api/weft/scan-results",
+        ],
+    )
+    assert merge_mcp_entry(tmp_path) == "updated"
+    args = _wardline_args(tmp_path)
+    assert "--filigree-url" not in args  # stale loopback pin dropped
+    assert "--loomweave-url" not in args  # stale loopback pin dropped
+    assert args == ["mcp", "--root", "."]  # discovery owns both ports
+
+
+def test_repair_preserves_loopback_pin_when_no_live_daemon(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # No published rung and not server mode: we cannot improve on the pin, so a loopback
+    # value is left verbatim (it may be a daemon that is merely down right now).
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    _write_wardline_args(
+        tmp_path, ["mcp", "--root", ".", "--filigree-url", "http://127.0.0.1:9229/api/weft/scan-results"]
+    )
+    assert merge_mcp_entry(tmp_path) == "unchanged"
+    assert _wardline_args(tmp_path)[-1] == "http://127.0.0.1:9229/api/weft/scan-results"
+
+
+def test_repair_drops_only_filigree_loopback_pin_preserving_remote_loomweave(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A remote (non-loopback) pin is the operator's deliberate endpoint — never dropped,
+    # even while a sibling's stale loopback pin is.
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    (tmp_path / ".weft" / "filigree").mkdir(parents=True)
+    (tmp_path / ".weft" / "filigree" / "ephemeral.port").write_text("9397", encoding="utf-8")
+    remote_loom = "https://loomweave.example.com"
+    _write_wardline_args(
+        tmp_path,
+        [
+            "mcp",
+            "--root",
+            ".",
+            "--loomweave-url",
+            remote_loom,
+            "--filigree-url",
+            "http://127.0.0.1:9229/api/weft/scan-results",
+        ],
+    )
+    assert merge_mcp_entry(tmp_path) == "updated"
+    args = _wardline_args(tmp_path)
+    assert "--filigree-url" not in args  # stale loopback dropped
+    assert args[args.index("--loomweave-url") + 1] == remote_loom  # remote preserved
+
+
+def test_same_scope_target_handles_malformed_port_without_crashing() -> None:
+    # A preserved .mcp.json --filigree-url with a malformed loopback port
+    # (http://localhost:notaport/...) must read as non-matching (so repair replaces it),
+    # not raise ValueError out of urlsplit().port and crash `doctor --repair`.
+    from wardline.install.mcp_json import _same_scope_target
+
+    assert _same_scope_target("http://localhost:notaport/x", "http://localhost:8749/x") is False
+    assert _same_scope_target("http://localhost:8749/x", "http://localhost:8749/x") is True

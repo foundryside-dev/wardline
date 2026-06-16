@@ -133,19 +133,20 @@
   ],
   "explain": {
     "explanation": {
-      "fingerprint": "991cb740809062defefa229ba05a79d04570d46399c846be38224d4cb0f51f9b",
+      "fingerprint": "9c3d7b71f8e1e06b7f22d24db966e05be8b4384d8d538a61e7221231d7d9c6d4",
       "immediate_tainted_callee": null,
       "line": 43,
       "path": "identity_stress.py",
       "resolved_call_count": 0,
       "rule_id": "PY-WL-111",
+      "sink": null,
       "sink_qualname": "identity_stress.assert_only_boundary",
       "source_boundary_qualname": null,
       "tier_in": null,
       "tier_out": null,
       "unresolved_call_count": 0
     },
-    "fingerprint": "991cb740809062defefa229ba05a79d04570d46399c846be38224d4cb0f51f9b"
+    "fingerprint": "9c3d7b71f8e1e06b7f22d24db966e05be8b4384d8d538a61e7221231d7d9c6d4"
   },
   "facts": [
     {
@@ -211,7 +212,7 @@
         },
         "findings": [
           {
-            "fingerprint": "991cb740809062defefa229ba05a79d04570d46399c846be38224d4cb0f51f9b",
+            "fingerprint": "9c3d7b71f8e1e06b7f22d24db966e05be8b4384d8d538a61e7221231d7d9c6d4",
             "line_start": 43,
             "path": "identity_stress.py",
             "rule_id": "PY-WL-111"
@@ -342,7 +343,7 @@
         "qualname": "identity_stress.outer",
         "schema_version": "wardline-taint-1",
         "taint": {
-          "actual_return": "UNKNOWN_RAW",
+          "actual_return": "INTEGRAL",
           "contributing_callee_qualname": null,
           "declared_return": "UNKNOWN_RAW",
           "resolved_call_count": 0,
@@ -466,7 +467,7 @@
         },
         "findings": [
           {
-            "fingerprint": "3db67626b9bcad79c89a95e905a7691cd87c31f8cfe6dd2e0f992edab5819a69",
+            "fingerprint": "7b49218a9f624f5d345f4947ce59746393d3d71bf98588abe823af6d789a945a",
             "line_start": 56,
             "path": "identity_stress.py",
             "rule_id": "PY-WL-101"
@@ -488,7 +489,7 @@
   "findings": [
     {
       "confidence": null,
-      "fingerprint": "991cb740809062defefa229ba05a79d04570d46399c846be38224d4cb0f51f9b",
+      "fingerprint": "9c3d7b71f8e1e06b7f22d24db966e05be8b4384d8d538a61e7221231d7d9c6d4",
       "kind": "defect",
       "location": {
         "col_end": 16,
@@ -508,12 +509,12 @@
       "rule_id": "PY-WL-111",
       "severity": "ERROR",
       "suggestion": null,
-      "suppressed": "active",
-      "suppression_reason": null
+      "suppression_reason": null,
+      "suppression_state": "active"
     },
     {
       "confidence": null,
-      "fingerprint": "3db67626b9bcad79c89a95e905a7691cd87c31f8cfe6dd2e0f992edab5819a69",
+      "fingerprint": "7b49218a9f624f5d345f4947ce59746393d3d71bf98588abe823af6d789a945a",
       "kind": "defect",
       "location": {
         "col_end": 22,
@@ -533,8 +534,8 @@
       "rule_id": "PY-WL-101",
       "severity": "ERROR",
       "suggestion": null,
-      "suppressed": "active",
-      "suppression_reason": null
+      "suppression_reason": null,
+      "suppression_state": "active"
     }
   ],
   "sarif": {
@@ -563,7 +564,7 @@
               "text": "identity_stress.assert_only_boundary declares a trust boundary (EXTERNAL_RAW -> ASSURED) but its only rejection path is assert — stripped under python -O, so the validation vanishes in production"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v1": "991cb740809062defefa229ba05a79d04570d46399c846be38224d4cb0f51f9b"
+              "wardlineFingerprint/v2": "9c3d7b71f8e1e06b7f22d24db966e05be8b4384d8d538a61e7221231d7d9c6d4"
             },
             "properties": {
               "internalSeverity": "ERROR",
@@ -645,7 +646,7 @@
               "text": "identity_stress.untrusted_reaches_trusted declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v1": "3db67626b9bcad79c89a95e905a7691cd87c31f8cfe6dd2e0f992edab5819a69"
+              "wardlineFingerprint/v2": "7b49218a9f624f5d345f4947ce59746393d3d71bf98588abe823af6d789a945a"
             },
             "properties": {
               "internalSeverity": "ERROR",

@@ -28,6 +28,7 @@ from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import RAW_ZONE, TRUST_RANK
 from wardline.scanner.rules._ast_helpers import _own_statements
+from wardline.scanner.rules._sink_helpers import module_for_qualname
 from wardline.scanner.rules.metadata import RuleMetadata
 
 if TYPE_CHECKING:
@@ -48,14 +49,6 @@ METADATA = RuleMetadata(
         "@trusted(level='ASSURED')\ndef f(flag) -> int | None:\n    if flag:\n        return g()\n    return None",
     ),
 )
-
-
-def _module_for_qualname(qualname: str, context: AnalysisContext) -> str | None:
-    modules = context.alias_maps.keys()
-    for module in sorted(modules, key=len, reverse=True):
-        if qualname == module or qualname.startswith(module + "."):
-            return module
-    return None
 
 
 def _is_none_return(stmt: ast.Return) -> bool:
@@ -137,12 +130,40 @@ def _is_generator(node: ast.AST) -> bool:
     return False
 
 
+def _has_loop_break(node: ast.AST) -> bool:
+    """True if *node* is, or contains, a ``break`` that binds to the loop *node* is
+    part of. Stops at nested loops (their breaks bind there) and at nested
+    function/class/lambda scopes (a break there is a separate construct)."""
+    if isinstance(node, ast.Break):
+        return True
+    if isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
+        # A break in a nested loop's body binds to *that* loop; but a break in its
+        # ``else:`` clause binds outward (to ours), so recurse only into orelse.
+        return any(_has_loop_break(stmt) for stmt in node.orelse)
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+        return False  # a break here belongs to a separate scope
+    return any(_has_loop_break(child) for child in ast.iter_child_nodes(node))
+
+
 def _can_fall_through(stmts: list[ast.stmt]) -> bool:
     """True if there is any execution path through stmts that doesn't end with return or raise."""
     if not stmts:
         return True
     for stmt in stmts:
         if isinstance(stmt, (ast.Return, ast.Raise)):
+            return False
+        # A with block is transparent to control flow: it is terminal iff its body
+        # is terminal (the context manager runs, then the body executes).
+        if isinstance(stmt, (ast.With, ast.AsyncWith)) and not _can_fall_through(stmt.body):
+            return False
+        # A constant-true loop with no break targeting it never exits normally to
+        # fall through — the only way out is a return/raise in the body.
+        if (
+            isinstance(stmt, ast.While)
+            and isinstance(stmt.test, ast.Constant)
+            and stmt.test.value
+            and not any(_has_loop_break(b) for b in stmt.body)
+        ):
             return False
         if isinstance(stmt, ast.If):
             if not stmt.orelse:
@@ -195,7 +216,7 @@ class NoneLeak:
                 continue  # trust-raising shape -> PY-WL-102's territory, not 109's
             if _is_generator(entity.node):
                 continue
-            module = _module_for_qualname(qualname, context)
+            module = module_for_qualname(qualname, context)
             alias_map = context.alias_maps.get(module, {}) if module is not None else {}
             if not _promises_non_none(entity.node, alias_map):
                 continue  # no explicit non-None contract -> not a provable leak (FP guard)
@@ -222,9 +243,11 @@ class NoneLeak:
                     fingerprint=_fp(
                         rule_id=self.rule_id,
                         path=entity.location.path,
-                        line_start=entity.location.line_start,
                         qualname=qualname,
-                        taint_path=f"None->{declared.value}",
+                        # Join-key stability (weft-4a9d0f863c): one finding per anchored qualname,
+                        # so (rule, path, line, qualname) is already unique. The declared tier is a
+                        # resolved value that drifts as the suite is extended — keep it off the join key.
+                        taint_path=None,
                     ),
                     qualname=qualname,
                     properties={"declared_return": declared.value},

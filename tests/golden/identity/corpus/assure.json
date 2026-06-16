@@ -8,6 +8,20 @@
     "judged_total": 0,
     "proven": 3,
     "unanalyzed_rule_ids": [],
+    "unanalyzed_total": 0,
+    "unknown": [],
+    "waiver_debt": []
+  },
+  "sinks": {
+    "baselined_total": 0,
+    "boundaries_total": 11,
+    "coverage_pct": 100.0,
+    "defect_total": 10,
+    "engine_limited": 0,
+    "judged_total": 0,
+    "proven": 1,
+    "unanalyzed_rule_ids": [],
+    "unanalyzed_total": 0,
     "unknown": [],
     "waiver_debt": []
   },
@@ -20,6 +34,7 @@
     "judged_total": 0,
     "proven": 3,
     "unanalyzed_rule_ids": [],
+    "unanalyzed_total": 0,
     "unknown": [],
     "waiver_debt": []
   }

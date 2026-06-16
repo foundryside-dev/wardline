@@ -47,6 +47,35 @@ def test_analyzer_emits_metrics_and_computes_transitive_taint(tmp_path) -> None:
     assert ctx.project_taints["pkg.service.fetch"] == T.MIXED_RAW
 
 
+def test_analyze_emits_collision_diagnostic_through_the_real_chokepoint(tmp_path) -> None:
+    # Wiring proof for the no-collision guard (wardline-8fb773a7af). The unit tests
+    # exercise build_collision_findings in isolation; this proves the guard is
+    # actually live on the analyze() return path — that two distinct rule findings
+    # sharing a fingerprint surface a WLN-ENGINE-FINGERPRINT-COLLISION DEFECT in the
+    # emitted set. Without this, an inert wiring would fail SILENTLY — the exact
+    # failure the guard exists to prevent.
+    from wardline.core.finding import Finding, Location, Severity
+
+    _write(tmp_path, "app.py", "def f():\n    return 1\n")
+    shared_fp = "c0ffee" + "0" * 58
+
+    class _CollidingRegistry:
+        def run(self, context):  # noqa: ANN001, ANN202
+            return [
+                Finding("PY-WL-114", "first", Severity.ERROR, Kind.DEFECT, Location("app.py", 1), shared_fp),
+                Finding("PY-WL-114", "second", Severity.ERROR, Kind.DEFECT, Location("app.py", 1), shared_fp),
+            ]
+
+    analyzer = WardlineAnalyzer(registry=_CollidingRegistry())
+    findings = analyzer.analyze([tmp_path / "app.py"], WardlineConfig(), root=tmp_path)
+
+    collisions = [f for f in findings if f.rule_id == "WLN-ENGINE-FINGERPRINT-COLLISION"]
+    assert len(collisions) == 1
+    assert collisions[0].kind == Kind.DEFECT
+    assert collisions[0].severity == Severity.ERROR
+    assert collisions[0].properties["colliding_fingerprint"] == shared_fp
+
+
 def test_analyzer_emits_unknown_import_fact(tmp_path) -> None:
     _write(tmp_path, "app.py", "from some_external_lib import thing\ndef f(): return thing()\n")
     analyzer = WardlineAnalyzer()
@@ -103,12 +132,12 @@ def test_analyzer_l2_recursion_boundary_contains_per_function(monkeypatch) -> No
         assert ctx is not None
         assert ctx.function_var_taints["m.a"] == {}  # L2 contained
         assert "b" in ctx.function_var_taints["m.b"] or ctx.function_var_taints["m.b"] == {}
-        # The contained function is NOT silently dropped — a FACT records the skip
-        # so its absent return taint is observable, not an invisible under-taint.
+        # The contained function is NOT silently dropped: the skip is gate-eligible
+        # and its actual return is pessimistic rather than absent.
         skips = [f for f in findings if f.rule_id == "WLN-ENGINE-FUNCTION-SKIPPED"]
         assert [f.qualname for f in skips] == ["m.a"]
-        assert all(f.kind == Kind.FACT for f in skips)
-        assert "m.a" not in ctx.function_return_taints
+        assert all(f.kind == Kind.DEFECT for f in skips)
+        assert ctx.function_return_taints["m.a"] == T.UNKNOWN_RAW
 
 
 def test_analyzer_default_provider_seeds_from_decorators(tmp_path) -> None:
@@ -164,12 +193,23 @@ def test_analyzer_seeded_taints_drive_transitive_propagation(tmp_path) -> None:
     assert ctx.project_taints["m.mix"] == T.UNKNOWN_RAW  # raw, floored — NOT MIXED_RAW
 
 
-def test_analyzer_skips_unparseable_file_with_fact(tmp_path) -> None:
+def test_analyzer_skips_unparseable_file_with_gating_defect(tmp_path) -> None:
+    # A discovered-but-unparseable file is a GATE-ELIGIBLE ERROR DEFECT (fail-closed:
+    # its sinks were never analyzed, so the default --fail-on ERROR loop must not read
+    # GREEN over it) — was a non-gating NONE FACT before the secure-gate change.
+    from wardline.core.finding import Severity
+
     _write(tmp_path, "bad.py", "def f(:\n")  # syntax error
     _write(tmp_path, "good.py", "def g(): return 1\n")
     analyzer = WardlineAnalyzer()
     findings = analyzer.analyze([tmp_path / "bad.py", tmp_path / "good.py"], WardlineConfig(), root=tmp_path)
-    assert any(f.rule_id == "WLN-ENGINE-PARSE-ERROR" and f.kind == Kind.FACT for f in findings)
+    parse_errors = [f for f in findings if f.rule_id == "WLN-ENGINE-PARSE-ERROR"]
+    assert len(parse_errors) == 1
+    assert parse_errors[0].kind == Kind.DEFECT
+    assert parse_errors[0].severity == Severity.ERROR
+    # line_start is always set, so the lineless-DEFECT downgrade never demotes it.
+    assert parse_errors[0].location.line_start is not None
+    # The unparseable file is isolated; the clean sibling is still analysed.
     assert analyzer.last_context is not None
     assert "good.g" in analyzer.last_context.project_taints
 
@@ -228,3 +268,69 @@ def test_analyzer_exposes_return_taints_and_resolves_validators(tmp_path) -> Non
     # actual returned-value taint per function
     assert ctx.function_return_taints["service.safe"] == T.ASSURED  # validated -> clean
     assert ctx.function_return_taints["service.leaky"] == T.EXTERNAL_RAW  # leaks raw
+
+
+def test_config_source_matching_entity_qualname_is_not_reported_unused(tmp_path) -> None:
+    # An untrusted_sources entry naming a PROJECT ENTITY QUALNAME seeds that entity
+    # EXTERNAL_RAW (the directive takes effect) — it must therefore be recorded as
+    # matched, never reported WLN-CONFIG-UNUSED-SOURCE. Before the fix only the
+    # import/alias path recorded matches, so a WORKING directive was misreported as
+    # a "configuration error" — pushing an agent to delete a load-bearing entry.
+    _write(
+        tmp_path,
+        "m.py",
+        "from wardline.decorators import trusted\n"
+        "def get_input():\n    return 'x'\n"
+        "@trusted(level='ASSURED')\ndef f():\n    return get_input()\n",
+    )
+    config = WardlineConfig(untrusted_sources=("m.get_input",))
+    analyzer = WardlineAnalyzer()
+    findings = analyzer.analyze([tmp_path / "m.py"], config, root=tmp_path)
+    # The seed demonstrably took effect: f leaks the EXTERNAL_RAW source.
+    ctx = analyzer.last_context
+    assert ctx is not None
+    assert ctx.project_return_taints["m.get_input"] == T.EXTERNAL_RAW
+    # ...so the diagnostic must not contradict it.
+    assert not any(f.rule_id == "WLN-CONFIG-UNUSED-SOURCE" for f in findings)
+
+
+def test_config_source_matching_nothing_is_still_reported_unused(tmp_path) -> None:
+    # The diagnostic itself stays live: a source matching neither an import nor a
+    # project entity is still a (probable) configuration error worth surfacing.
+    _write(tmp_path, "m.py", "def f():\n    return 1\n")
+    config = WardlineConfig(untrusted_sources=("nowhere.get_input",))
+    analyzer = WardlineAnalyzer()
+    findings = analyzer.analyze([tmp_path / "m.py"], config, root=tmp_path)
+    unused = [f for f in findings if f.rule_id == "WLN-CONFIG-UNUSED-SOURCE"]
+    assert [f.properties["source"] for f in unused] == ["nowhere.get_input"]
+
+
+def test_l2_fixed_point_scales_linearly_with_function_count(tmp_path) -> None:
+    # Regression pin for the O(n^2) blowup: the L2 fixed-point folded the whole
+    # project's return-taint map into EVERY function's taint map AND memo key, so
+    # each of N functions paid O(N) per iteration (N=2000 took ~3.3s, N=4000
+    # ~13.2s pre-fix — a clean 4x per doubling). With per-function key pruning the
+    # scan must scale ~linearly: a 4x corpus may not cost anywhere near 16x.
+    import time
+
+    def _scan_n(n: int, name: str) -> float:
+        src = "".join(f"def f{i}(x):\n    return x\n" for i in range(n))
+        root = tmp_path / name
+        root.mkdir()
+        (root / "m.py").write_text(src, encoding="utf-8")
+        analyzer = WardlineAnalyzer()
+        start = time.perf_counter()
+        analyzer.analyze([root / "m.py"], WardlineConfig(), root=root)
+        return time.perf_counter() - start
+
+    small = _scan_n(800, "small")
+    large = _scan_n(3200, "large")
+    # Linear scaling gives ~4x; the pre-fix quadratic gave ~16x. 10x is the alarm
+    # threshold with generous headroom for timer noise on a loaded machine.
+    assert large < small * 10, f"L2 scan no longer scales linearly: 800→{small:.3f}s, 3200→{large:.3f}s"
+    # Absolute backstop for a quadratic regression: pre-fix 3200 functions took ~8s+
+    # (N=4000 ~13.2s), so a real blowup trips this easily. The bound is deliberately
+    # loose — a shared CI runner clocks the linear path at ~3-4.5s with timer noise, so
+    # a tight 4.0s flaked; 8.0s still sits well below any quadratic path. The ratio
+    # check above is the primary linear-scaling guard.
+    assert large < 8.0, f"3200-function scan took {large:.2f}s — quadratic regression?"

@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import ast
+import types
 
 from wardline.core.registry import REGISTRY_VERSION
 from wardline.core.taints import TaintState as T
 from wardline.scanner.ast_primitives import build_import_alias_map
+from wardline.scanner.grammar import BoundaryType
 from wardline.scanner.index import discover_file_entities
 from wardline.scanner.taint.decorator_provider import DecoratorTaintSourceProvider
 from wardline.scanner.taint.provider import FunctionTaint, SeedContext
@@ -26,6 +28,38 @@ def _seed(
     # .taint: assertions here compare the declared FunctionTaint; the unprovable-
     # boundary signal (Track 2 T2.4) is exercised separately in tests/grammar/.
     return {e.qualname: provider.taint_for(e, ctx).taint for e in entities}
+
+
+def _custom_provider_fingerprint(seed: object) -> str:
+    boundary = BoundaryType("custom_boundary", "custom_pack", 1, (), seed)
+    return DecoratorTaintSourceProvider(boundary_types=(boundary,)).fingerprint()
+
+
+def test_custom_seed_fingerprint_includes_referenced_global_names() -> None:
+    seed_a = eval("lambda levels: safe_seed")  # noqa: S307 - local test fixture, no user input
+    seed_b = eval("lambda levels: raw_seed")  # noqa: S307 - local test fixture, no user input
+
+    assert seed_a.__code__.co_code == seed_b.__code__.co_code
+    assert seed_a.__code__.co_consts == seed_b.__code__.co_consts
+    assert _custom_provider_fingerprint(seed_a) != _custom_provider_fingerprint(seed_b)
+
+
+def test_custom_seed_fingerprint_includes_referenced_global_values() -> None:
+    safe_seed = FunctionTaint(T.INTEGRAL, T.INTEGRAL)
+    raw_seed = FunctionTaint(T.EXTERNAL_RAW, T.EXTERNAL_RAW)
+
+    def template(levels):  # noqa: ANN001, ANN202
+        return SEED  # noqa: F821
+
+    seed_a = types.FunctionType(template.__code__, {"SEED": safe_seed}, name="seed")
+    seed_b = types.FunctionType(template.__code__, {"SEED": raw_seed}, name="seed")
+    seed_a.__module__ = seed_b.__module__ = "custom_pack"
+    seed_a.__qualname__ = seed_b.__qualname__ = "seed"
+
+    assert seed_a.__code__.co_code == seed_b.__code__.co_code
+    assert seed_a.__code__.co_consts == seed_b.__code__.co_consts
+    assert seed_a.__code__.co_names == seed_b.__code__.co_names
+    assert _custom_provider_fingerprint(seed_a) != _custom_provider_fingerprint(seed_b)
 
 
 def test_external_boundary_from_import() -> None:
@@ -125,6 +159,38 @@ def test_trusted_bare_defaults_integral() -> None:
 def test_trusted_level_assured() -> None:
     out = _seed("from wardline.decorators import trusted\n@trusted(level='ASSURED')\ndef f():\n    return 1\n")
     assert out["m.f"] == FunctionTaint(T.ASSURED, T.ASSURED)
+
+
+def test_trusted_level_tolerates_legacy_to_level_keyword() -> None:
+    out = _seed(
+        "from wardline.decorators import trusted\n"
+        "@trusted(level='ASSURED', to_level='ASSURED')\n"
+        "def f():\n"
+        "    return 1\n"
+    )
+    assert out["m.f"] == FunctionTaint(T.ASSURED, T.ASSURED)
+
+
+def test_trusted_level_static_kwargs_assured() -> None:
+    out = _seed("from wardline.decorators import trusted\n@trusted(**{'level': 'ASSURED'})\ndef f():\n    return 1\n")
+    assert out["m.f"] == FunctionTaint(T.ASSURED, T.ASSURED)
+
+
+def test_trusted_dynamic_kwargs_is_no_opinion() -> None:
+    out = _seed(
+        "from wardline.decorators import trusted\nKW = {'level': 'ASSURED'}\n@trusted(**KW)\ndef f():\n    return 1\n"
+    )
+    assert out["m.f"] is None
+
+
+def test_trusted_positional_arg_is_no_opinion() -> None:
+    out = _seed("from wardline.decorators import trusted\n@trusted('ASSURED')\ndef f():\n    return 1\n")
+    assert out["m.f"] is None
+
+
+def test_trusted_unexpected_keyword_is_no_opinion() -> None:
+    out = _seed("from wardline.decorators import trusted\n@trusted(other=1)\ndef f():\n    return 1\n")
+    assert out["m.f"] is None
 
 
 def test_trusted_disallowed_level_is_no_opinion() -> None:
@@ -241,7 +307,11 @@ def test_star_imported_trust_boundary_fires_end_to_end(tmp_path) -> None:
     )
     result = run_scan(pkg)
     active = {f.rule_id for f in result.findings if f.suppressed.value == "active"}
-    assert "PY-WL-102" in active, "star-imported @trust_boundary was not seeded"
+    # The boundary-integrity family partitions (wardline-718048a518): the bare
+    # ``return p`` shape is PY-WL-119's domain, every other no-rejection shape is
+    # PY-WL-102's. Either member firing proves the star-imported decorator was
+    # seeded — the FN this test guards is the EMPTY intersection.
+    assert {"PY-WL-102", "PY-WL-119"} & active, "star-imported @trust_boundary was not seeded"
 
 
 # ── Coverage: fail-closed arms reached only by unusual / malformed decorator
@@ -255,14 +325,14 @@ def test_subscript_decorator_is_no_opinion() -> None:
     assert out["m.f"] is None
 
 
-def test_non_matching_keyword_is_skipped_before_level_arg() -> None:
-    # A decorator with an UNRELATED keyword before to_level: the kw loop must skip the
-    # non-matching keyword (118->117) and still read to_level correctly.
+def test_unexpected_keyword_fails_closed_even_with_valid_level_arg() -> None:
+    # Builtin level-bearing decorators are keyword-only with a fixed signature. A
+    # malformed call must not be seeded from the valid-looking level beside it.
     out = _seed(
         "from wardline.decorators import trust_boundary\n"
         "@trust_boundary(other=1, to_level='ASSURED')\ndef v(x):\n    return x\n"
     )
-    assert out["m.v"] == FunctionTaint(T.EXTERNAL_RAW, T.ASSURED)
+    assert out["m.v"] is None
 
 
 def test_invalid_taintstate_token_is_no_opinion() -> None:

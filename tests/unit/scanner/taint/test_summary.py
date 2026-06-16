@@ -17,6 +17,7 @@ def _key(**over) -> str:
         schema_version=SUMMARY_SCHEMA_VERSION,
         resolver_version="sp1d",
         provider_fingerprint="default-v1",
+        scan_policy_hash="sha256:policy-a",
     )
     base.update(over)
     return compute_cache_key(**base)
@@ -32,6 +33,10 @@ def test_cache_key_changes_with_each_input() -> None:
     assert _key(provider_fingerprint="sp2-vocab-7") != base
     assert _key(resolver_version="sp1e") != base
     assert _key(schema_version=SUMMARY_SCHEMA_VERSION + 1) != base
+    # The effective-scan-policy identity is part of the key: a config that newly names an
+    # untrusted source (changing ruleset_hash) must not collide with the prior key, else a
+    # warm cache serves a stale-CLEAN summary (wardline-9d6a81b9e7).
+    assert _key(scan_policy_hash="sha256:policy-b") != base
 
 
 def test_cache_key_includes_module_identity() -> None:
@@ -53,12 +58,14 @@ def test_cache_key_length_prefixed_no_collision() -> None:
         schema_version=1,
         resolver_version="c",
         provider_fingerprint="x",
+        scan_policy_hash="p",
     ) != compute_cache_key(
         module_path="m",
         source_bytes=b"a",
         schema_version=1,
         resolver_version="bc",
         provider_fingerprint="x",
+        scan_policy_hash="p",
     )
 
 

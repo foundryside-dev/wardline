@@ -4,8 +4,13 @@
 # FP rate = FALSE_POSITIVE / total active DEFECTs, gated <= 5%.
 # Every active DEFECT the engine produces over the fixtures MUST have an entry here
 # (an unaccounted finding fails the gate — that is how clean-shape regressions surface).
-# Per the 2026-05-31 taint-combination audit the engine has 0 live FP, so every entry
-# below is TRUE_POSITIVE today; the FALSE_POSITIVE label exists to capture a regression.
+# `sentinels:` entries (files under tests/corpus/sentinels, a sibling scan root) are
+# clean-shape FALSE_POSITIVE sentinels: the engine must NOT fire on them. A silent
+# sentinel is passing (not stale); a fired sentinel is a live FP counted against the
+# budget. Sentinels live OUTSIDE fixtures/ so the Track 2 byte-identity golden
+# (tests/grammar, frozen over fixtures/ only) keeps its substrate. Per the 2026-05-31
+# taint-combination audit the engine has 0 live FP, so every sentinel is expected
+# to stay silent.
 fixtures:
   contradictory.py:
     - {rule_id: PY-WL-110, qualname: "contradictory.conflicting", label: TRUE_POSITIVE, note: "@trusted + @external_boundary — two distinct trust markers"}
@@ -17,6 +22,10 @@ fixtures:
     - {rule_id: PY-WL-107, qualname: "exec_sink.evals_untrusted", label: TRUE_POSITIVE, note: "EXTERNAL_RAW reaches eval() in a trusted-tier fn"}
   command_sink.py:
     - {rule_id: PY-WL-108, qualname: "command_sink.runs_untrusted", label: TRUE_POSITIVE, note: "EXTERNAL_RAW reaches os.system in a trusted-tier fn"}
+  shadow_launder.py:
+    - {rule_id: PY-WL-108, qualname: "shadow_launder.shadowed_sink", label: TRUE_POSITIVE, note: "raw local shadows the 'ast' stdlib module; ast.literal_eval (GUARDED) launder closed (wardline-f6a29ce23a) — discriminating: vanishes if the fix regresses"}
+  shadow_launder_bare.py:
+    - {rule_id: PY-WL-108, qualname: "shadow_launder_bare.bare_shadow_sink", label: TRUE_POSITIVE, note: "raw local shadows from-imported 'literal_eval'; bare-name-call launder closed (wardline-f6a29ce23a) — discriminating: vanishes if the fix regresses"}
   trusted_callee.py:
     - {rule_id: PY-WL-105, qualname: "trusted_callee.handler", label: TRUE_POSITIVE, note: "EXTERNAL_RAW passed to the trusted callee store()"}
   aliased_stdlib.py:
@@ -28,8 +37,8 @@ fixtures:
   match_arms.py:
     - {rule_id: PY-WL-101, qualname: "match_arms.match_arm_leaks", label: TRUE_POSITIVE, note: "one match arm binds raw, then returned"}
   validators.py:
-    - {rule_id: PY-WL-102, qualname: "validators.no_rejection", label: TRUE_POSITIVE, note: "trust_boundary(ASSURED) with no rejection path"}
-    - {rule_id: PY-WL-102, qualname: "validators.no_rejection_guarded", label: TRUE_POSITIVE, note: "trust_boundary(GUARDED) with no rejection path"}
+    - {rule_id: PY-WL-102, qualname: "validators.no_rejection", label: TRUE_POSITIVE, note: "trust_boundary(ASSURED) with no rejection path (laundered shape; bare return-p belongs to PY-WL-119)"}
+    - {rule_id: PY-WL-102, qualname: "validators.no_rejection_guarded", label: TRUE_POSITIVE, note: "trust_boundary(GUARDED) with no rejection path (laundered shape)"}
   exceptions.py:
     - {rule_id: PY-WL-101, qualname: "exceptions.broad_handler", label: TRUE_POSITIVE, note: "returns undecorated work() (UNKNOWN_RAW) while declaring INTEGRAL"}
     - {rule_id: PY-WL-101, qualname: "exceptions.silent_handler", label: TRUE_POSITIVE, note: "returns undecorated work()/None while declaring INTEGRAL"}
@@ -46,3 +55,13 @@ fixtures:
     - {rule_id: PY-WL-101, qualname: "more_shapes.augassign_raw", label: TRUE_POSITIVE, note: "augmented assignment merges raw in"}
     - {rule_id: PY-WL-101, qualname: "more_shapes.launders_through_broken_boundary", label: TRUE_POSITIVE, note: "declared ASSURED but body re-derives raw"}
     - {rule_id: PY-WL-102, qualname: "more_shapes.passthrough_no_check", label: TRUE_POSITIVE, note: "boundary that cannot reject"}
+sentinels:
+  clean_sql_parameterized.py:
+    - {rule_id: PY-WL-118, qualname: "clean_sql_parameterized.parameterized_query", label: FALSE_POSITIVE, note: "sentinel: placeholder SQL with the raw value confined to the parameter tuple — must stay silent"}
+  clean_boundary_rejection.py:
+    - {rule_id: PY-WL-102, qualname: "clean_boundary_rejection.validate_token", label: FALSE_POSITIVE, note: "sentinel: boundary with a real raise-on-invalid rejection path — must stay silent"}
+  clean_exec_const.py:
+    - {rule_id: PY-WL-107, qualname: "clean_exec_const.const_eval", label: FALSE_POSITIVE, note: "sentinel: eval over a constant-only argument — must stay silent"}
+  clean_command_const.py:
+    - {rule_id: PY-WL-108, qualname: "clean_command_const.const_system", label: FALSE_POSITIVE, note: "sentinel: os.system over a literal command — must stay silent"}
+    - {rule_id: PY-WL-108, qualname: "clean_command_const.quoted_const_run", label: FALSE_POSITIVE, note: "sentinel: shlex-quoted constant through subprocess.run(shell=True) — must stay silent"}

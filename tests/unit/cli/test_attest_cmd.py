@@ -187,6 +187,29 @@ def test_verify_mode_valid_and_tampered(tmp_path: Path, monkeypatch: pytest.Monk
     assert json.loads(bad.output)["signature_valid"] is False
 
 
+def test_verify_reproduce_stale_bundle_exits_1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("WARDLINE_ATTEST_KEY", raising=False)
+    _make_clean_repo(tmp_path)
+
+    runner = CliRunner()
+    bundle_path = tmp_path / "attest.json"
+    built = runner.invoke(cli, ["attest", str(tmp_path), "--out", str(bundle_path)])
+    assert built.exit_code == 0, built.output
+
+    (tmp_path / "m.py").write_text(
+        _MODULE + "\n@trusted(level='INTEGRAL')\ndef extra():\n    return 2\n",
+        encoding="utf-8",
+    )
+
+    stale = runner.invoke(cli, ["attest", str(tmp_path), "--verify", str(bundle_path), "--reproduce"])
+
+    assert stale.exit_code == 1
+    result = json.loads(stale.output)
+    assert result["signature_valid"] is True
+    assert result["reproduced"] is False
+    assert "boundaries" in result["mismatches"]
+
+
 def test_verify_reproduce_refuses_escaping_source_roots_by_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

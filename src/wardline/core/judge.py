@@ -104,31 +104,54 @@ Trust vocabulary (three decorators a project applies to declare boundaries):
   @trust_boundary(to_level=L)  -> raw input in, trusted level L out (a validator).
   @trusted(level=L)            -> the function is asserted to operate at level L.
 
-The four rules you will see:
-  PY-WL-101 untrusted-reaches-trusted: a @trusted(level=L) PRODUCER whose ACTUAL
-      returned taint is strictly less-trusted than its declared level L. Note:
-      trust-RAISING validators (@trust_boundary, where the body is less-trusted
-      than the declared return) are EXEMPT from 101 and handled by 102 instead —
-      so 101 fires on @trusted/@external producers, NOT on @trust_boundary
-      validators. TRUE positive: a @trusted(level=ASSURED) function that actually
-      returns raw / MIXED_RAW data. FALSE positive: the engine could not narrow
-      taint through a guard or helper it cannot model, so the body looks raw though
-      it is in fact validated.
-  PY-WL-102 boundary-without-rejection: a trust-raising @trust_boundary that lacks
-      any raise / falsy-return rejection path. TRUE: a validator that declares it
-      raises input to GUARDED but never rejects (returns raw input unchanged).
-      FALSE: rejection happens via a helper the engine did not resolve.
-  PY-WL-103 broad-except: a broad `except Exception` / bare except at a trusted
-      tier. TRUE: swallowing errors at a trust boundary. FALSE: re-raised or
-      handled deliberately in a way the tier modulation over-weighted.
-  PY-WL-104 silent-except: an except handler that suppresses the error with no
-      re-raise / log / handling — tier-modulated like 103. TRUE: swallowing an
-      error at a trusted tier hides a real failure. FALSE: a deliberate, documented
-      swallow the tier modulation over-weighted.
+The rule families you will see (rule_id is in the finding):
+  Producer integrity — PY-WL-101 untrusted-reaches-trusted: a @trusted(level=L)
+      PRODUCER whose ACTUAL returned taint is strictly less-trusted than its
+      declared level L. Note: trust-RAISING validators (@trust_boundary, where the
+      body is less-trusted than the declared return) are EXEMPT from 101 and
+      handled by the boundary-integrity family instead — so 101 fires on
+      @trusted/@external producers, NOT on @trust_boundary validators. TRUE
+      positive: a @trusted(level=ASSURED) function that actually returns raw /
+      MIXED_RAW data. FALSE positive: the engine could not narrow taint through a
+      guard or helper it cannot model, so the body looks raw though it is in fact
+      validated.
+  Boundary integrity — a FOUR-WAY PARTITION (exactly one fires per defective
+      boundary): PY-WL-119 a bare degenerate `return <param>` boundary;
+      PY-WL-102 any other trust-raising @trust_boundary with no rejection path
+      (no raise — including one-hop same-module raising helpers and raising
+      conversions like int()/Enum lookup — and no falsy return); PY-WL-111 the
+      ONLY rejection is `assert` (vanishes under python -O); PY-WL-113 a real
+      rejection exists but a fail-open except handler swallows it and substitutes
+      a value. TRUE: the boundary really cannot reject (or its rejection is
+      defeated). FALSE: rejection happens via a helper/path the engine did not
+      resolve (cross-module helpers are NOT resolved).
+  Exception handling (tier-modulated) — PY-WL-103 broad `except Exception` /
+      bare except at a trusted tier; PY-WL-104 a handler that suppresses the
+      error with no re-raise / log / handling. TRUE: swallowing errors at a trust
+      boundary. FALSE: re-raised or handled deliberately in a way the tier
+      modulation over-weighted.
+  Tainted-sink rules — untrusted data reaching a dangerous sink inside a
+      trust-declared function: PY-WL-105 (trusted callee), 106 (deserialization:
+      pickle/yaml/marshal incl. Unpickler/shelve and curated third-party loaders),
+      107 (eval/exec/compile), 108 (command/program execution: os.system family,
+      os.exec*/spawn*, pty.spawn; shlex.quote'd fragments are treated GUARDED),
+      112 (subprocess shell=True), 115 (dynamic import/code load incl. runpy),
+      116 (path traversal: open/mutation/Path-method/archive-extraction sinks),
+      117 (SSRF — URL-position-aware, incl. instance methods on constructed
+      clients/sessions), 118 (SQL execution; parameterized queries and constant
+      sqlalchemy text() do NOT fire), 121 XML/XXE, 122 template injection (SSTI),
+      123 setattr/getattr with a tainted NAME, 124 native-library load (ctypes),
+      125 log injection (message-position only), 126 mail injection (smtplib).
+      TRUE: attacker-influenceable data reaches the sink. FALSE: the value is
+      provably constrained by validation the engine could not model, or the taint
+      is an UNKNOWN_RAW pessimism artefact (unresolved helper), not a real flow.
+  Declaration hygiene — PY-WL-109 (None leak from a trusted producer),
+      110/114 (contradictory or spoofed trust markers), 120 (stored/persisted
+      data read at a trusted tier without re-validation).
 
-Why undecorated code is silent: 101/102 fire ONLY on explicitly anchored /
-declared functions (the @trusted / @trust_boundary / @external decorators);
-103/104 are silenced on undecorated code by tier modulation in the UNKNOWN_RAW
+Why undecorated code is silent: anchored rules fire ONLY on explicitly declared
+functions (the @trusted / @trust_boundary / @external decorators); the
+tier-modulated rules are silenced on undecorated code in the UNKNOWN_RAW
 freedom zone. So a finding only exists where a trust boundary was declared.
 
 ================================================================

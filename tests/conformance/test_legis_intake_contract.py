@@ -126,9 +126,13 @@ class _LegisFinding:
         qualname = d.get("qualname")
         if qualname is not None and not isinstance(qualname, str):
             raise _LegisPayloadError("finding qualname must be a string or null")
-        suppressed = d.get("suppressed", "active")
+        # W3 (weft-f506e5f845): the per-finding wire key was renamed suppressed ->
+        # suppression_state. This vendored guard tracks the NEW contract; the real legis
+        # ingest must adopt the same key (tracked in the W3 legis weft ticket) for the live
+        # legis_e2e oracle to pass again.
+        suppressed = d.get("suppression_state", "active")
         if not isinstance(suppressed, str):
-            raise _LegisPayloadError("finding suppressed must be a string")
+            raise _LegisPayloadError("finding suppression_state must be a string")
         for key in ("rule_id", "message", "kind", "fingerprint"):
             if not isinstance(d[key], str) or not d[key]:
                 raise _LegisPayloadError(f"finding {key} must be a non-empty string")
@@ -145,6 +149,18 @@ class _LegisFinding:
 
 
 def active_defects(scan: Mapping[str, Any]) -> list[_LegisFinding]:
+    # KNOWN UPSTREAM FAIL-OPEN (weft foundation seam S8 / G1), mirrored FAITHFULLY:
+    # legis reads findings with an empty default, and verify_wardline_artifact (below)
+    # does NOT require the key, so a producer that renamed/dropped `findings` would
+    # verify `verified` with zero routed defects. Closing that is legis's job (add
+    # `findings` to the required set, validate before signature). We keep this mirror
+    # faithful-to-current-legis on purpose and freeze OUR side independently in
+    # test_legis_artifact_contract_freeze.py so the trigger can never originate here.
+    # When legis closes G1, invert HERE: require the key — `if "findings" not in scan:
+    # raise _LegisPayloadError(...)` then read `scan["findings"]` — dropping the empty
+    # default. NOT via _ARTIFACT_PROVENANCE_FIELDS (verify_wardline_artifact): that tuple
+    # is validated as non-empty STRINGS, and `findings` is a LIST, so it would reject
+    # every valid artifact; and the fail-open is this empty default, not that signature path.
     raw_findings = scan.get("findings", [])
     if not isinstance(raw_findings, list):
         raise _LegisPayloadError("scan findings must be a list")
@@ -318,7 +334,7 @@ def test_secure_default_gate_defect_is_enforced_by_legis(tmp_path: Path) -> None
     scan = wl_legis.build_legis_artifact(result, root=repo, config=cfg, key=None)
     # gate_findings != findings here (active vs baselined) — that asymmetry is the point.
     (projected,) = scan["findings"]
-    assert projected["suppressed"] == "active"
+    assert projected["suppression_state"] == "active"
     legis_active = active_defects(scan)
     assert len(legis_active) == 1
     assert legis_active[0].fingerprint == "b" * 64
@@ -342,7 +358,7 @@ def test_trust_suppressions_path_projects_the_suppressed_view(tmp_path: Path) ->
     cfg = load_config(repo / "weft.toml")
     scan = wl_legis.build_legis_artifact(result, root=repo, config=cfg, key=None)
     (projected,) = scan["findings"]
-    assert projected["suppressed"] == "suppressed"
+    assert projected["suppression_state"] == "suppressed"
     assert _has_suppression_proof(projected["properties"])
     assert active_defects(scan) == []
 

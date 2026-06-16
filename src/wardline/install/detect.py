@@ -16,7 +16,9 @@ import os
 import shutil
 from pathlib import Path
 
+from wardline.core.config import filigree_server_scoped_url
 from wardline.core.paths import legacy_sibling_dir, sibling_state_dir
+from wardline.core.safe_paths import safe_read_text_if_regular
 
 
 def _strip_scalar(value: str) -> str:
@@ -80,10 +82,10 @@ def _filigree_url_from_project(root: Path) -> str | None:
         # ascii read, mirroring core/config._read_published_port: ephemeral.port is
         # an ASCII integer by protocol, so non-ASCII bytes (incl. Unicode "digit"
         # chars that pass isdigit() but raise in int()) are rejected at decode time.
-        try:
-            text = (base / "ephemeral.port").read_text(encoding="ascii").strip()
-        except (OSError, UnicodeDecodeError):
+        port_text = safe_read_text_if_regular(root, base / "ephemeral.port", label="ephemeral.port", encoding="ascii")
+        if port_text is None:
             continue
+        text = port_text.strip()
         # Guard int(): isdigit() is a superset of what int() parses, so an all-digit
         # payload over CPython's 4300-digit cap raises ValueError (the ascii read
         # above already excludes Unicode digits). Catch it so a planted ephemeral.port
@@ -111,6 +113,13 @@ def _detect_filigree(root: Path) -> tuple[bool, str | None, str | None]:
     url = os.environ.get("WARDLINE_FILIGREE_URL") or None
     if url:
         return True, url, "env"
+    # Server mode first: a multi-project daemon publishes no per-project ephemeral.port,
+    # so its project scope is discoverable only from the home-global registry. Report the
+    # SCOPED URL so install output matches the scoped target merge_mcp_entry persists
+    # (without it, install would print "filigree absent" right after wiring it).
+    scoped = filigree_server_scoped_url(root)
+    if scoped is not None:
+        return True, scoped, "server-mode scope"
     discovered = _filigree_url_from_project(root)
     present = discovered is not None or (root / ".filigree.conf").is_file()
     return present, discovered, "discovered" if discovered else None

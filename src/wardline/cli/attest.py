@@ -138,7 +138,9 @@ def attest(
             click.echo(f"error: invalid attestation bundle: {exc}", err=True)
             raise SystemExit(2) from exc
         click.echo(json.dumps(result))
-        raise SystemExit(0 if result["signature_valid"] else 1)
+        if not result["signature_valid"] or (reproduce and result.get("reproduced") is not True):
+            raise SystemExit(1)
+        raise SystemExit(0)
 
     from wardline.core.attest import build_attestation
 

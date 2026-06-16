@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from wardline.core.baseline import write_baseline
-from wardline.core.decorator_coverage import build_decorator_coverage
+from wardline.core.decorator_coverage import build_decorator_coverage, decorator_coverage_from_scan
 from wardline.core.dossier import TicketRef, WorkSection
 from wardline.core.identity import ContentStatus, EntityBinding, IdentityStatus
 from wardline.core.paths import baseline_path
@@ -113,3 +113,21 @@ def test_decorator_coverage_surfaces_suppressed_defects(tmp_path: Path) -> None:
     assert rows["svc.leaky"].finding_state == "suppressed"
     assert rows["svc.leaky"].active_finding_fingerprints == []
     assert rows["svc.leaky"].suppressed_finding_fingerprints == [leak.fingerprint]
+
+
+def test_decorator_coverage_degrades_when_decorator_unparse_recurses(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    root = _project(tmp_path)
+    result = run_scan(root)
+    assert result.context is not None
+
+    def raise_recursion(_node) -> str:
+        raise RecursionError("simulated decorator depth")
+
+    monkeypatch.setattr("wardline.core.decorator_coverage.ast.unparse", raise_recursion)
+
+    rows = {row.qualname: row for row in decorator_coverage_from_scan(result, result.context).rows}
+
+    assert rows["svc.clean"].decorators == ["@<unparseable:Name>"]

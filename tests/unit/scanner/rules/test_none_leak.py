@@ -133,6 +133,22 @@ def test_unannotated_does_not_fire(tmp_path) -> None:
     assert _ids(ctx) == []
 
 
+def test_undecorated_does_not_fire(tmp_path) -> None:
+    # Tier-suppression matrix slot (wardline-e159060db7): PY-WL-109 is gated on
+    # an ANCHORED trusted producer. The identical annotated mixed-return shape
+    # without a trust marker makes no trusted-output claim -> silent.
+    ctx = _analyze(
+        tmp_path,
+        """
+        def maybe(flag) -> int:
+            if flag:
+                return 1
+            return
+        """,
+    )
+    assert _ids(ctx) == []
+
+
 def test_all_value_returns_do_not_fire(tmp_path) -> None:
     ctx = _analyze(
         tmp_path,
@@ -164,6 +180,149 @@ def test_try_except_all_value_returns_do_not_fire(tmp_path) -> None:
         """,
     )
     assert _ids(ctx) == []
+
+
+def test_with_wrapped_all_value_returns_do_not_fire(tmp_path) -> None:
+    # A with body where every path returns a value cannot leak None — the with
+    # block is transparent to control flow (terminal iff its body is terminal).
+    ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def always(flag) -> int:
+            with open("x") as fh:
+                if flag:
+                    return 1
+                else:
+                    return 2
+        """,
+    )
+    assert _ids(ctx) == []
+
+
+def test_async_with_wrapped_all_value_returns_do_not_fire(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        async def always(flag) -> int:
+            async with ctxmgr() as fh:
+                if flag:
+                    return 1
+                else:
+                    return 2
+        """,
+    )
+    assert _ids(ctx) == []
+
+
+def test_with_body_falls_through_still_fires(tmp_path) -> None:
+    # SOUNDNESS GUARD: a with body that does NOT always return still leaks None.
+    ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def maybe(flag) -> int:
+            with open("x") as fh:
+                if flag:
+                    return 1
+        """,
+    )
+    assert _ids(ctx) == [("PY-WL-109", "m.maybe")]
+
+
+def test_while_true_no_break_single_value_return_does_not_fire(tmp_path) -> None:
+    # A constant-true loop with no break never exits to fall through — the only
+    # way out is the value-bearing return, so None cannot leak.
+    ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def f(flag) -> int:
+            while True:
+                if flag:
+                    return 1
+        """,
+    )
+    assert _ids(ctx) == []
+
+
+def test_while_true_with_break_can_fall_through_fires(tmp_path) -> None:
+    # SOUNDNESS GUARD: a break exits the loop, so control can fall through to the
+    # implicit None return — this is a real leak.
+    ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def f(flag) -> int:
+            while True:
+                if flag:
+                    return 1
+                break
+        """,
+    )
+    assert _ids(ctx) == [("PY-WL-109", "m.f")]
+
+
+def test_while_non_constant_test_can_fall_through_fires(tmp_path) -> None:
+    # SOUNDNESS GUARD: a non-constant test can be false from the start (or become
+    # false), so the loop can be skipped and fall through to implicit None.
+    ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def f(flag) -> int:
+            while flag:
+                return 1
+        """,
+    )
+    assert _ids(ctx) == [("PY-WL-109", "m.f")]
+
+
+def test_while_true_break_in_nested_loop_does_not_fall_through(tmp_path) -> None:
+    # SOUNDNESS GUARD (no over-firing): a break that binds to a NESTED loop does
+    # not let the outer constant-true loop fall through.
+    ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def f(flag) -> int:
+            while True:
+                for _ in range(3):
+                    break
+                if flag:
+                    return 1
+        """,
+    )
+    assert _ids(ctx) == []
+
+
+def test_while_true_break_in_nested_loop_else_can_fall_through_fires(tmp_path) -> None:
+    # SOUNDNESS GUARD: a break in a nested loop's else-clause binds to the OUTER
+    # while, so that loop can exit and fall through to implicit None — real leak.
+    ctx = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted
+        @trusted(level='ASSURED')
+        def f(flag) -> int:
+            while True:
+                for _ in range(3):
+                    pass
+                else:
+                    break
+                if flag:
+                    return 1
+        """,
+    )
+    assert _ids(ctx) == [("PY-WL-109", "m.f")]
 
 
 def test_guarded_wildcard_match_can_fall_through(tmp_path) -> None:

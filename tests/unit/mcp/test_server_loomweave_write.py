@@ -56,7 +56,7 @@ def test_scan_tool_survives_loomweave_write_error(tmp_path):
     # The scan payload itself is intact, NOT discarded — assert on real scan keys
     # that _scan always returns.
     assert "summary" in out
-    assert "findings" in out
+    assert "agent_summary" in out
     assert "gate" in out
     # PY-WL-101 fires on _LEAKY, so the scan found real findings.
     assert out["summary"]["total"] >= 1
@@ -76,7 +76,14 @@ def _fresh_view(proj, qualname, callee_qualname):
             "resolved_call_count": 1,
             "unresolved_call_count": 0,
         },
-        "findings": [],
+        "findings": [
+            {
+                "rule_id": "PY-WL-101",
+                "fingerprint": "f" * 64,
+                "path": "svc.py",
+                "line_start": 5,
+            }
+        ],
     }
     return TaintFactView(qualname=qualname, exists=True, wardline_json=blob, current_content_hash=h)
 
@@ -102,4 +109,51 @@ def test_explain_taint_chain_block_with_store(tmp_path):
     out = _explain_taint({"sink_qualname": "svc.leaky", "chain": True}, tmp_path, client)
     assert "chain" in out
     assert [h["qualname"] for h in out["chain"]["hops"]] == ["svc.leaky", "svc.read_raw"]
+    assert out["chain"]["truncated_at"] is None
+
+
+def _type_skewed_view(proj, qualname):
+    # A hand-edited / version-skewed blob: tiers and callee carry non-string types.
+    h = blake3.blake3((proj / "svc.py").read_bytes()).hexdigest()
+    blob = {
+        "schema_version": "wardline-taint-1",
+        "qualname": qualname,
+        "content_hash_at_compute": h,
+        "taint": {
+            "declared_return": 7,
+            "actual_return": ["EXTERNAL_RAW"],
+            "source": "anchored",
+            "contributing_callee_qualname": 99,
+            "resolved_call_count": 1,
+            "unresolved_call_count": 0,
+        },
+        "findings": [
+            {
+                "rule_id": "PY-WL-101",
+                "fingerprint": "f" * 64,
+                "path": "svc.py",
+                "line_start": 5,
+            }
+        ],
+    }
+    return TaintFactView(qualname=qualname, exists=True, wardline_json=blob, current_content_hash=h)
+
+
+def test_explain_taint_type_skewed_blob_fields_coerce_to_none(tmp_path):
+    # The store blob is external input: non-string tiers/callee must coerce to None
+    # (the fields are string|null in the published outputSchema), matching the
+    # adjacent fingerprint/rule_id/path guards — never flow through verbatim.
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    client = MapClient({"svc.leaky": _type_skewed_view(tmp_path, "svc.leaky")})
+
+    out = _explain_taint({"sink_qualname": "svc.leaky", "chain": True}, tmp_path, client)
+
+    assert out["tier_in"] is None
+    assert out["tier_out"] is None
+    assert out["immediate_tainted_callee"] is None
+    assert out["source_boundary_qualname"] is None
+    hop = out["chain"]["hops"][0]
+    assert hop["tier_in"] is None
+    assert hop["tier_out"] is None
+    assert hop["contributing_callee_qualname"] is None
     assert out["chain"]["truncated_at"] is None

@@ -25,12 +25,24 @@ _HERE = Path(__file__).parent
 _INPUTS = {
     "sampleapp": _HERE / "fixtures" / "sampleapp",
     "stress": _HERE / "fixtures" / "stress",
+    "sinks": _HERE / "fixtures" / "sinks",
 }
 _REGEN_HINT = (
     "identity corpus drift. If this is an INTENTIONAL, versioned rekey, regenerate with:\n"
     "  cd tests && PYTHONPATH=. python -m golden.identity.regen --reason '<why>'\n"
     "Otherwise this is a real regression — see /tmp/corpus_actual_<name>.json for the diff."
 )
+
+
+def test_corpus_meta_has_engine_scheme() -> None:
+    # P1 scheme-infra: META records the scheme the corpus was captured under so a
+    # future scheme bump is a visible, accountable corpus delta.
+    import json
+
+    from wardline.core.finding import FINGERPRINT_SCHEME
+
+    meta = json.loads((_HERE / "corpus" / "META.json").read_text(encoding="utf-8"))
+    assert meta["fingerprint_scheme"] == FINGERPRINT_SCHEME
 
 
 @pytest.mark.parametrize("name", sorted(_INPUTS))
@@ -89,6 +101,35 @@ def test_stress_freezes_span_edge_construct_spans() -> None:
 def test_stress_covers_multiple_rules() -> None:
     rules = {f["rule_id"] for f in _capture("stress")["findings"]}
     assert len(rules) >= 2, f"stress fixture should exercise >=2 identity rules, got {sorted(rules)}"
+
+
+@pytest.mark.parametrize("name", sorted(_INPUTS))
+def test_corpus_fingerprints_are_collision_free(name: str) -> None:
+    # The join-key soundness gate (weft-4a9d0f863c). The fingerprint is the
+    # cross-tool JOIN KEY into the baseline store and Filigree; if two DISTINCT
+    # active findings share one fingerprint, one is silently dropped on the join —
+    # a soundness regression worse than the instability this fix closes. Stripping
+    # resolved-tier components from taint_path must NEVER collapse two findings, so
+    # distinct-fingerprint-count MUST equal active-finding-count over the corpus.
+    # The ``sinks`` fixture deliberately plants same-(rule,line,qualname) pairs that
+    # only stay distinct via the per-call source discriminator, so this gate is
+    # non-vacuous for every call-site-anchored rule:
+    #   - PY-WL-118 ``chained_queries``: a CHAINED ``execute(a).execute(b)`` whose two
+    #     calls share a start column — distinct ONLY via the full span end-column, so
+    #     this line guards specifically against a span -> start-column-only regression.
+    #   - PY-WL-106 ``double_deserialize`` and PY-WL-105/PY-WL-120 ``fan_out_stored``:
+    #     sibling calls on one line — guard against a discriminator -> None regression.
+    # All four call-site rules share the identical ``@{col_offset}:{end_col_offset}``
+    # pattern, so the chained PY-WL-118 line is representative of the span requirement
+    # for the family.
+    findings = _capture(name)["findings"]
+    fps = [f["fingerprint"] for f in findings]
+    dupes = {fp for fp in fps if fps.count(fp) > 1}
+    assert not dupes, (
+        f"{name}: {len(fps) - len(set(fps))} fingerprint collision(s) — two distinct active findings "
+        f"share a join key and one would be silently dropped. Colliding: "
+        f"{[(f['rule_id'], f['qualname'], f['location']['line_start']) for f in findings if f['fingerprint'] in dupes]}"
+    )
 
 
 def test_assure_corpus_has_no_waiver_debt() -> None:

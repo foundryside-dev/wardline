@@ -20,6 +20,11 @@ that makes the family injectable: a literal ``shell=True`` keyword (CWE-78).
 
 Tier-modulated and trusted-tier-gated exactly like 106/107/108 (silent in the
 undecorated developer-freedom zone, speaking only where trust is declared).
+
+Sink matching is BINDING-AWARE (the consolidated :class:`TaintedSinkRule` base):
+a function-local callable alias — ``runner = subprocess.run; runner(raw,
+shell=True)`` — resolves to the sink FQN and fires (wardline-13cfdd7b31). The
+literal ``shell=True`` gate applies to binding-resolved calls identically.
 """
 
 from __future__ import annotations
@@ -55,8 +60,11 @@ def _has_literal_shell_true(call: ast.Call) -> bool:
 
 METADATA = RuleMetadata(
     rule_id="PY-WL-112",
-    base_severity=Severity.WARN,  # matches the 108 OS-command family; ERROR is defensible
+    # Calibrated with 108 and PY-WL-118 (SQLi): tainted shell=True command
+    # execution is the same exploit class (CWE-78 ≅ CWE-89 in blast radius).
+    base_severity=Severity.ERROR,
     kind=Kind.DEFECT,
+    multi_emit=True,
     description=(
         "Untrusted data reaches a subprocess call with a literal shell=True "
         "(conditionally-shell OS-command injection, CWE-78)."
@@ -80,7 +88,7 @@ class UntrustedToShellSubprocess(TaintedSinkRule):
     SINKS = _SINKS
     sink_label = "shell=True subprocess"
 
-    def _accept_call(self, call: ast.Call) -> bool:  # noqa: PLR6301
+    def _accept_call(self, call: ast.Call, fqn: str) -> bool:  # noqa: ARG002, PLR6301
         """Extra per-call gate beyond the SINK-name match: require literal shell=True
         so the safe argv-list default (shell=False) never trips this family."""
         return _has_literal_shell_true(call)

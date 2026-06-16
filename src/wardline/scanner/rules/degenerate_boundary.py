@@ -4,42 +4,27 @@
 A trust boundary (raises declared trust on return) that simply returns its input
 parameter directly without any conditional checks, assertions, or validations is a
 degenerate boundary. It does not perform any validation.
+
+**The boundary-integrity family partitions FOUR ways** (wardline-718048a518) —
+at most one of {102, 111, 113, 119} fires per boundary. The degenerate shape is a
+strict structural subset of PY-WL-102's "no rejection path", so 119 WINS on it
+(more-specific rule) and 102 suppresses itself there — the same boundary is never
+counted twice at ERROR in the gate population. The shared shape predicate is
+``_ast_helpers.is_degenerate_boundary``.
 """
 
 from __future__ import annotations
 
-import ast
 from typing import TYPE_CHECKING
 
 from wardline.core.finding import Finding, Kind, Maturity, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import TRUST_RANK
+from wardline.scanner.rules._ast_helpers import is_degenerate_boundary
 from wardline.scanner.rules.metadata import RuleMetadata
 
 if TYPE_CHECKING:
     from wardline.scanner.context import AnalysisContext
-
-
-def _is_degenerate(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    param_names = {arg.arg for arg in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)}
-    if node.args.vararg:
-        param_names.add(node.args.vararg.arg)
-    if node.args.kwarg:
-        param_names.add(node.args.kwarg.arg)
-
-    non_trivial_stmts = []
-    for stmt in node.body:
-        if isinstance(stmt, ast.Pass):
-            continue
-        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant):
-            continue
-        non_trivial_stmts.append(stmt)
-
-    if len(non_trivial_stmts) == 1 and isinstance(non_trivial_stmts[0], ast.Return):
-        ret_val = non_trivial_stmts[0].value
-        if isinstance(ret_val, ast.Name) and ret_val.id in param_names:
-            return True
-    return False
 
 
 METADATA = RuleMetadata(
@@ -75,7 +60,7 @@ class DegenerateBoundary:
             # Trust-raising transition (== @trust_boundary): body less-trusted than return.
             if TRUST_RANK[body] <= TRUST_RANK[ret]:
                 continue
-            if not _is_degenerate(entity.node):
+            if not is_degenerate_boundary(entity.node):
                 continue
             findings.append(
                 Finding(
@@ -90,9 +75,11 @@ class DegenerateBoundary:
                     fingerprint=_fp(
                         rule_id=self.rule_id,
                         path=entity.location.path,
-                        line_start=entity.location.line_start,
                         qualname=qualname,
-                        taint_path=f"{body.value}->{ret.value}",
+                        # Join-key stability (weft-4a9d0f863c): one finding per anchored qualname,
+                        # so (rule, path, line, qualname) is already unique. body/return tiers are
+                        # resolved values that drift as the suite is extended — keep them off the key.
+                        taint_path=None,
                     ),
                     qualname=qualname,
                     properties={"body_taint": body.value, "return_taint": ret.value},

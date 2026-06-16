@@ -6,8 +6,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from wardline.core.errors import ConfigError
-from wardline.core.judged import JudgedFP, load_judged, write_judged
+from wardline.core.errors import ConfigError, SchemeMismatchError
+from wardline.core.finding import FINGERPRINT_SCHEME
+from wardline.core.judged import JudgedFP, build_judged_document, load_judged, write_judged
+
+_SCHEME = f"fingerprint_scheme: {FINGERPRINT_SCHEME}\n"
 
 
 def _fp(**kw: object) -> JudgedFP:
@@ -49,16 +52,55 @@ def test_write_is_rule_then_fingerprint_sorted(tmp_path: Path) -> None:
 
 def test_malformed_version_raises(tmp_path: Path) -> None:
     path = tmp_path / "judged.yaml"
-    path.write_text("version: 999\nfindings: []\n")
+    path.write_text(_SCHEME + "version: 999\nfindings: []\n")
     with pytest.raises(ConfigError):
         load_judged(path)
 
 
 def test_bad_fingerprint_raises(tmp_path: Path) -> None:
     path = tmp_path / "judged.yaml"
-    path.write_text("version: 1\nfindings:\n  - fingerprint: short\n    rationale: x\n")
+    path.write_text(_SCHEME + "version: 1\nfindings:\n  - fingerprint: short\n    rationale: x\n")
     with pytest.raises(ConfigError):
         load_judged(path)
+
+
+def test_build_document_carries_scheme_and_bare_fp(tmp_path: Path) -> None:
+    doc = build_judged_document([_fp()])
+    assert doc["fingerprint_scheme"] == FINGERPRINT_SCHEME == "wlfp2"
+    assert ":" not in doc["findings"][0]["fingerprint"]  # entry stays bare
+
+
+def test_missing_scheme_raises_scheme_mismatch_not_version(tmp_path: Path) -> None:
+    path = tmp_path / "judged.yaml"
+    path.write_text("version: 999\nfindings: []\n")  # header-less, like an old store
+    with pytest.raises(SchemeMismatchError) as ei:
+        load_judged(path)
+    assert "wardline rekey" in str(ei.value)
+
+
+def test_wrong_scheme_raises_scheme_mismatch(tmp_path: Path) -> None:
+    path = tmp_path / "judged.yaml"
+    path.write_text("fingerprint_scheme: wlfp1\nversion: 1\nfindings: []\n")
+    with pytest.raises(SchemeMismatchError):
+        load_judged(path)
+
+
+def test_empty_mapping_is_empty_no_scheme_error(tmp_path: Path) -> None:
+    path = tmp_path / "judged.yaml"
+    path.write_text("{}\n")
+    assert load_judged(path).match("a" * 64) is None
+
+
+def test_roundtrip_preserves_all_provenance(tmp_path: Path) -> None:
+    path = tmp_path / "judged.yaml"
+    write_judged(path, [_fp()])
+    m = load_judged(path).match("a" * 64)
+    assert m is not None
+    assert m.rationale == "constructor over-taint floor"
+    assert m.model_id == "anthropic/claude-opus-4-8"
+    assert m.policy_hash == "sha256:abc"
+    assert m.confidence == 0.9
+    assert m.recorded_at == datetime(2026, 5, 30, tzinfo=UTC)
 
 
 def test_rejudge_updates_existing_record(tmp_path: Path) -> None:
@@ -74,7 +116,8 @@ def test_missing_provenance_raises(tmp_path: Path) -> None:
     # verdict is present so this exercises the PROVENANCE guard, not the verdict guard.
     path = tmp_path / "judged.yaml"
     path.write_text(
-        f"version: 1\nfindings:\n  - fingerprint: {'a' * 64}\n    verdict: FALSE_POSITIVE\n    rationale: x\n",
+        _SCHEME + "version: 1\nfindings:\n"
+        f"  - fingerprint: {'a' * 64}\n    verdict: FALSE_POSITIVE\n    rationale: x\n",
         encoding="utf-8",
     )
     with pytest.raises(ConfigError):
@@ -85,7 +128,7 @@ def test_out_of_range_confidence_raises(tmp_path: Path) -> None:
     # verdict is present so this reaches the confidence range check, not the verdict guard.
     path = tmp_path / "judged.yaml"
     path.write_text(
-        "version: 1\nfindings:\n"
+        _SCHEME + "version: 1\nfindings:\n"
         f"  - fingerprint: {'a' * 64}\n    verdict: FALSE_POSITIVE\n    rationale: x\n    model_id: m\n"
         "    policy_hash: sha256:x\n    confidence: 1.5\n",
         encoding="utf-8",
@@ -98,7 +141,7 @@ def test_missing_verdict_raises(tmp_path: Path) -> None:
     # A judged record with no verdict cannot be trusted as a FALSE_POSITIVE suppression.
     path = tmp_path / "judged.yaml"
     path.write_text(
-        "version: 1\nfindings:\n"
+        _SCHEME + "version: 1\nfindings:\n"
         f"  - fingerprint: {'a' * 64}\n    rationale: x\n    model_id: m\n"
         "    policy_hash: sha256:x\n    confidence: 0.9\n",
         encoding="utf-8",
@@ -112,7 +155,7 @@ def test_non_false_positive_verdict_rejected(tmp_path: Path) -> None:
     # silent suppression — judged.yaml only ever records FALSE_POSITIVE.
     path = tmp_path / "judged.yaml"
     path.write_text(
-        "version: 1\nfindings:\n"
+        _SCHEME + "version: 1\nfindings:\n"
         f"  - fingerprint: {'a' * 64}\n    verdict: TRUE_POSITIVE\n    rationale: x\n    model_id: m\n"
         "    policy_hash: sha256:x\n    confidence: 0.9\n",
         encoding="utf-8",

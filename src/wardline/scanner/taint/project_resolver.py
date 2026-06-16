@@ -24,6 +24,9 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
+from wardline.core.config import WardlineConfig
+from wardline.core.ruleset import ruleset_hash
+from wardline.core.taints import combine
 from wardline.scanner.taint.callgraph import build_call_edges
 from wardline.scanner.taint.module_summariser import summarise_module
 from wardline.scanner.taint.propagation import propagate_callgraph_taints
@@ -40,7 +43,10 @@ if TYPE_CHECKING:
     from wardline.scanner.taint.function_level import FunctionSeed
     from wardline.scanner.taint.summary import FunctionSummary
 
-_RESOLVER_VERSION = "sp1d"
+# Bumped sp1d→sp1e: engine taint behaviour changed (DB-fetch source seed, container-mutator
+# write-back, loop fixpoint convergence, branch-conditional candidate callees) — invalidates
+# persisted/warm summary caches so they cannot serve stale-CLEAN results (cf. wardline-9d6a81b9e7).
+_RESOLVER_VERSION = "sp1e"
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +75,70 @@ def _cached_summaries_match_module(
     return frozenset(actual) == expected
 
 
+def _duplicate_fqn_diagnostics(modules: Sequence[ModuleInput]) -> tuple[tuple[str, str], ...]:
+    locations_by_fqn: dict[str, list[str]] = {}
+    for module in modules:
+        for entity in module.entities:
+            line = entity.location.line_start if entity.location.line_start is not None else 1
+            locations_by_fqn.setdefault(entity.qualname, []).append(
+                f"{module.module_path} ({entity.location.path}:{line})"
+            )
+
+    diagnostics: list[tuple[str, str]] = []
+    for fqn in sorted(locations_by_fqn):
+        locations = locations_by_fqn[fqn]
+        if len(locations) < 2:
+            continue
+        preview = ", ".join(locations[:5])
+        if len(locations) > 5:
+            preview += f", ... ({len(locations)} total)"
+        diagnostics.append(
+            (
+                "DUPLICATE_FQN",
+                (
+                    f"Duplicate function qualname {fqn!r} across {len(locations)} entities: {preview}; "
+                    "project taint summaries are keyed by qualname and cannot disambiguate these definitions"
+                ),
+            )
+        )
+    return tuple(diagnostics)
+
+
+def _merge_edges(target: dict[str, frozenset[str]], new: dict[str, frozenset[str]]) -> None:
+    for fqn, callees in new.items():
+        existing = target.get(fqn)
+        target[fqn] = callees if existing is None else frozenset((*existing, *callees))
+
+
+def _add_counts(target: dict[str, int], new: dict[str, int]) -> None:
+    for fqn, count in new.items():
+        target[fqn] = target.get(fqn, 0) + count
+
+
+def _merge_taint_source(existing: TaintSourceClass, incoming: TaintSourceClass) -> TaintSourceClass:
+    if existing == incoming:
+        return existing
+    return "fallback"
+
+
+def _merge_summary_maps(
+    summaries: Sequence[FunctionSummary],
+) -> tuple[dict[str, TaintState], dict[str, TaintState], dict[str, TaintSourceClass]]:
+    taint_map: dict[str, TaintState] = {}
+    return_taint_map: dict[str, TaintState] = {}
+    taint_sources: dict[str, TaintSourceClass] = {}
+    for summary in summaries:
+        if summary.fqn in taint_map:
+            taint_map[summary.fqn] = combine(taint_map[summary.fqn], summary.body_taint)
+            return_taint_map[summary.fqn] = combine(return_taint_map[summary.fqn], summary.return_taint)
+            taint_sources[summary.fqn] = _merge_taint_source(taint_sources[summary.fqn], summary.taint_source)
+            continue
+        taint_map[summary.fqn] = summary.body_taint
+        return_taint_map[summary.fqn] = summary.return_taint
+        taint_sources[summary.fqn] = summary.taint_source
+    return taint_map, return_taint_map, taint_sources
+
+
 def resolve_project_taints(
     *,
     modules: Sequence[ModuleInput],
@@ -91,6 +161,7 @@ def resolve_project_taints(
             "dirty_modules=frozenset() explicitly if nothing has changed"
         )
 
+    resolver_diagnostics = list(_duplicate_fqn_diagnostics(modules))
     project_fqns = frozenset(e.qualname for m in modules for e in m.entities)
     all_classes = frozenset(c for m in modules for c in m.class_qualnames)
 
@@ -99,30 +170,48 @@ def resolve_project_taints(
     unresolved_counts: dict[str, int] = {}
     call_site_callees: dict[int, str] = {}
     call_site_implicit_receivers: dict[int, str] = {}
+    call_site_candidate_callees: dict[int, frozenset[str]] = {}
     for m in modules:
-        m_edges, m_resolved, m_unresolved, m_callees, m_implicit_receivers = build_call_edges(
+        (
+            m_edges,
+            m_resolved,
+            m_unresolved,
+            m_callees,
+            m_implicit_receivers,
+            m_candidate_callees,
+        ) = build_call_edges(
             entities=m.entities,
             class_qualnames=all_classes,
             alias_map=m.alias_map,
             module_prefix=m.module_path,
             project_fqns=project_fqns,
         )
-        edges.update(m_edges)
-        resolved_counts.update(m_resolved)
-        unresolved_counts.update(m_unresolved)
+        _merge_edges(edges, m_edges)
+        _add_counts(resolved_counts, m_resolved)
+        _add_counts(unresolved_counts, m_unresolved)
         call_site_callees.update(m_callees)
         call_site_implicit_receivers.update(m_implicit_receivers)
+        call_site_candidate_callees.update(m_candidate_callees)
 
     # Transitive dirty frontier (performance over-approximation — bounds which
     # clean modules skip provider re-invocation; NOT a correctness gate).
     if summary_cache is not None and dirty_modules is not None:
-        fqn_to_module = {e.qualname: m.module_path for m in modules for e in m.entities}
+        fqn_to_module: dict[str, str] = {}
+        for m in modules:
+            for e in m.entities:
+                fqn_to_module.setdefault(e.qualname, m.module_path)
         frontier = ReverseModuleIndex.from_forward_edges(
             {k: set(v) for k, v in edges.items()},
             fqn_to_module=fqn_to_module,
         ).transitive_callers(dirty_modules)
     else:
         frontier = frozenset()
+
+    # The effective-scan-policy identity (untrusted_sources / sanitisers / provenance_clash
+    # shape summaries without changing source bytes). MUST match the dirty-detection key the
+    # parse stage computed from the same config, exactly as provider_fingerprint must — else a
+    # summary computed under one policy could be served under another (wardline-9d6a81b9e7).
+    scan_policy_hash = ruleset_hash(config if config is not None else WardlineConfig())
 
     # Per-module summaries: reuse cached for clean cache-hit modules, else fresh.
     summaries: list[FunctionSummary] = []
@@ -133,6 +222,7 @@ def resolve_project_taints(
             schema_version=SUMMARY_SCHEMA_VERSION,
             resolver_version=_RESOLVER_VERSION,
             provider_fingerprint=provider_fingerprint,
+            scan_policy_hash=scan_policy_hash,
         )
         cached: tuple[FunctionSummary, ...] | None = None
         if summary_cache is not None and m.module_path not in frontier:
@@ -150,14 +240,13 @@ def resolve_project_taints(
             source_bytes=m.source_bytes,
             resolver_version=_RESOLVER_VERSION,
             provider_fingerprint=provider_fingerprint,
+            scan_policy_hash=scan_policy_hash,
         )
         summaries.extend(fresh)
         if summary_cache is not None:
             summary_cache.put(cache_key, fresh)
 
-    taint_map: dict[str, TaintState] = {s.fqn: s.body_taint for s in summaries}
-    return_taint_map: dict[str, TaintState] = {s.fqn: s.return_taint for s in summaries}
-    taint_sources: dict[str, TaintSourceClass] = {s.fqn: s.taint_source for s in summaries}
+    taint_map, return_taint_map, taint_sources = _merge_summary_maps(summaries)
 
     refined, provenance, diagnostics, scc_iteration_counts = propagate_callgraph_taints(
         edges={k: set(v) for k, v in edges.items()},
@@ -201,7 +290,8 @@ def resolve_project_taints(
         project_edges=MappingProxyType({fqn: frozenset(callees) for fqn, callees in edges.items()}),
         call_site_callees=MappingProxyType(call_site_callees),
         call_site_implicit_receivers=MappingProxyType(call_site_implicit_receivers),
+        call_site_candidate_callees=MappingProxyType(call_site_candidate_callees),
         taint_provenance=MappingProxyType(dict(provenance)),
-        diagnostics=tuple(diagnostics),
+        diagnostics=(*resolver_diagnostics, *diagnostics),
         metadata=metadata,
     )

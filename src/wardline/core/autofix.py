@@ -98,12 +98,18 @@ def run_autofix(
     Returns a mapping of relative_path -> list of description strings of applied fixes.
     """
     applied: dict[str, list[str]] = defaultdict(list)
+    # Resolve once up front: the MCP server passes the literal `--root .`, and
+    # relativizing a resolved file path against the UNRESOLVED root raises
+    # ValueError ("is not in the subpath of '.'") — dogfood-4 A1, the crash that
+    # made the only autofix verb unusable. Every comparison below works on the
+    # resolved root.
+    root = root.resolve()
     # Group findings by file path (resolved relative to root)
     by_file: dict[Path, list[Finding]] = defaultdict(list)
     for f in findings:
         if f.rule_id == "PY-WL-111" and f.location.path:
             full_path = (root / f.location.path).resolve()
-            if full_path.is_relative_to(root.resolve()):
+            if full_path.is_relative_to(root):
                 by_file[full_path].append(f)
 
     exception_name = config.boundary_exception

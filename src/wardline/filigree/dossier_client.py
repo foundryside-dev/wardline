@@ -26,6 +26,7 @@ from typing import Any, Protocol
 
 from wardline.core.dossier import TicketRef, WorkSection
 from wardline.core.errors import FiligreeEmitError
+from wardline.core.filigree_emit import filigree_api_base_url
 from wardline.core.http import read_response_text
 from wardline.core.identity import ContentStatus, EntityBinding, content_status
 
@@ -80,17 +81,11 @@ def _rows_of(parsed: Any) -> list[dict[str, Any]]:
 
 
 def _api_base_url(url: str) -> str:
-    """Normalize an origin/API/scan-results URL to the Filigree API base."""
-    parsed = urllib.parse.urlsplit(url.rstrip("/"))
-    scheme = parsed.scheme.lower()
-    if scheme not in _ALLOWED_SCHEMES:
-        raise FiligreeEmitError(f"filigree dossier URL must use http or https; got scheme {scheme!r} in {url!r}")
-    path = parsed.path.rstrip("/")
-    if path.endswith("/api/weft/scan-results"):
-        path = path[: -len("/weft/scan-results")]
-    elif not path.endswith("/api"):
-        path = f"{path}/api" if path else "/api"
-    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", "")).rstrip("/")
+    """Normalize an origin/API/scan-results URL (classic or project-scoped, either
+    dialect) to the Filigree API base, via the shared parser in
+    ``core/filigree_emit.py``. Dogfood-4 A4 was this function appending ``/api`` to a
+    project-scoped endpoint, 404ing every work-join on the wired-up repo."""
+    return filigree_api_base_url(url)
 
 
 class FiligreeWorkProvider:

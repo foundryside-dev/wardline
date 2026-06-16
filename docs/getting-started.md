@@ -20,7 +20,7 @@ wardline --version
 ```
 
 ```text
-wardline, version 1.0.0rc4
+wardline, version 1.0.1
 ```
 
 ## 2. Run a first scan
@@ -61,7 +61,7 @@ readability):
   "location": {"path": "service.py", "line_start": 7, "line_end": 8, "col_start": 0, "col_end": 26},
   "message": "service.current_user declares return trust INTEGRAL but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer",
   "properties": {"declared_return": "INTEGRAL", "actual_return": "EXTERNAL_RAW"},
-  "suppressed": "active",
+  "suppression_state": "active",
   "suppression_reason": null,
   "confidence": null,
   "suggestion": null,

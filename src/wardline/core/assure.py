@@ -10,9 +10,11 @@ developer-freedom zone and never counts.
 Coverage measures "verdict reached EITHER WAY". A defect is COVERED: the engine
 reached a definite (negative) verdict. The honesty gap is the ``unknown`` set —
 entities whose trust could not be proven (no computed return taint, an undeclared /
-``UNKNOWN_*`` tier, or an engine under-scan). ``engine_limited`` is the sub-count of
-those that are unknown specifically because the engine under-scanned them (a parse /
-recursion skip), as distinct from a developer simply not declaring trust.
+``UNKNOWN_*`` tier, or an engine under-scan). ``unanalyzed_total`` counts files the
+engine discovered but never analyzed; coverage treats each as at least one uncovered
+surface item because trust declarations in that file are unknown. ``engine_limited``
+is the total under-scan pressure: entity-level unknowns with a skip reason plus
+``unanalyzed_total``.
 
 Per-entity verdicts are delegated WHOLESALE to
 :func:`wardline.core.dossier.classify_entity_trust` — the single source of truth —
@@ -90,13 +92,20 @@ class WaiverDebtEntry:
 @dataclass(frozen=True, slots=True)
 class AssurancePosture:
     """The trust-surface coverage rollup. ``boundaries_total`` is the denominator
-    (anchored entities only); ``proven`` + ``defect_total`` + ``len(unknown)`` ==
+    for known anchored entities; ``proven`` + ``defect_total`` + ``len(unknown)`` ==
     ``boundaries_total``. ``coverage_pct`` is the share with a definite verdict
-    (defects counted as covered); ``unknown`` is the honesty gap.
+    (defects counted as covered) over known boundaries plus ``unanalyzed_total``;
+    ``unknown`` is the known-entity honesty gap.
 
-    ``coverage_pct`` is ``None`` when ``boundaries_total == 0`` — no trust surface to
-    cover means coverage is null, never a vacuous 100% that reads as a false-green to
-    an agent using a numeric gate (the project's #1 forbidden failure mode)."""
+    ``unanalyzed_total`` is discovered source the engine never analysed. Because
+    those files may contain trust declarations the parser could not recover,
+    coverage treats each as at least one uncovered surface item instead of silently
+    shrinking the denominator.
+
+    ``coverage_pct`` is ``None`` when there are no known boundaries and no
+    unanalyzed files — no trust surface to cover means coverage is null, never a
+    vacuous 100% that reads as a false-green to an agent using a numeric gate (the
+    project's #1 forbidden failure mode)."""
 
     boundaries_total: int
     proven: int
@@ -104,6 +113,7 @@ class AssurancePosture:
     unknown: list[UnknownBoundary]
     engine_limited: int
     coverage_pct: float | None
+    unanalyzed_total: int
     unanalyzed_rule_ids: list[str]
     waiver_debt: list[WaiverDebtEntry]
     baselined_total: int
@@ -117,6 +127,7 @@ class AssurancePosture:
             "unknown": [u.to_dict() for u in self.unknown],
             "engine_limited": self.engine_limited,
             "coverage_pct": self.coverage_pct,
+            "unanalyzed_total": self.unanalyzed_total,
             "unanalyzed_rule_ids": list(self.unanalyzed_rule_ids),
             "waiver_debt": [w.to_dict() for w in self.waiver_debt],
             "baselined_total": self.baselined_total,
@@ -141,6 +152,7 @@ def _empty_posture(waivers: tuple[Waiver, ...], today: date) -> AssurancePosture
         unknown=[],
         engine_limited=0,
         coverage_pct=None,
+        unanalyzed_total=0,
         unanalyzed_rule_ids=[],
         waiver_debt=_waiver_debt(waivers, today),
         baselined_total=0,
@@ -208,10 +220,13 @@ def posture_from_scan(
 
     unknown.sort(key=lambda u: u.qualname)
 
-    if boundaries_total == 0:
+    unanalyzed_total = result.summary.unanalyzed
+    engine_limited += unanalyzed_total
+    coverage_denominator = boundaries_total + unanalyzed_total
+    if coverage_denominator == 0:
         coverage_pct: float | None = None
     else:
-        coverage_pct = round(100 * (boundaries_total - len(unknown)) / boundaries_total, 1)
+        coverage_pct = round(100 * (boundaries_total - len(unknown)) / coverage_denominator, 1)
 
     unanalyzed_rule_ids = sorted({f.rule_id for f in result.findings if f.rule_id in UNDER_SCAN_RULE_IDS})
 
@@ -222,6 +237,7 @@ def posture_from_scan(
         unknown=unknown,
         engine_limited=engine_limited,
         coverage_pct=coverage_pct,
+        unanalyzed_total=unanalyzed_total,
         unanalyzed_rule_ids=unanalyzed_rule_ids,
         waiver_debt=_waiver_debt(waivers, today),
         baselined_total=result.summary.baselined,

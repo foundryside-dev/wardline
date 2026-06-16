@@ -1,6 +1,8 @@
 # Wardline
 
-Generic, lightweight semantic-tainting static analyzer for Python — track untrusted data across your codebase and gate trust-boundary violations, with zero runtime dependencies.
+Generic, lightweight semantic-tainting static analyzer for trust boundaries. Wardline's full analyzer targets
+Python; its Rust preview catches command-injection defects over crate-aware identity. The base package has zero
+runtime dependencies, and scanner/front-end functionality stays behind opt-in extras.
 
 [![CI](https://github.com/foundryside-dev/wardline/actions/workflows/ci.yml/badge.svg)](https://github.com/foundryside-dev/wardline/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/wardline)](https://pypi.org/project/wardline/)
@@ -39,11 +41,13 @@ engine facts):
 
 ## What is Wardline?
 
-Wardline reads your Python statically — it never runs your code — and asks one
-question of every trust-annotated function: **is the data this function works
-with as trusted as it claims?** It tracks a *taint* (a trust level) for every
-value and propagates it across the whole project, flagging the places where
-untrusted data reaches a trusted producer with no validation in between.
+Wardline reads your code statically — it never runs it — and asks one question
+of every trust-annotated boundary: **is the data this function works with as
+trusted as it claims?** For Python, it tracks a *taint* (a trust level) for
+values through function bodies and the project call graph, flagging places where
+untrusted data reaches a trusted producer with no validation in between. For
+Rust, the preview frontend currently focuses on command-injection sinks around
+`std::process::Command`.
 
 Wardline is part of **Weft** — an agent-first suite of small, local-first
 developer tools, each driven by a coding agent as much as a person, giving small
@@ -59,21 +63,34 @@ lets it scan a large untouched codebase (including its own) with zero noise.
 
 ## Key Features
 
-- **Deterministic whole-program taint** — function-, variable-, and project-level
-  analysis over an inter-module call graph; no runtime instrumentation.
-- **Opt-in trust model** — three decorators (`@external_boundary`,
-  `@trust_boundary`, `@trusted`) mark your boundaries; the engine infers the rest.
-- **Four policy rules** — untrusted-reaches-trusted, non-rejecting boundary,
-  broad exception handler, and silently-swallowed exception.
-- **Zero-dependency base** — `pip install wardline` pulls nothing; functionality
-  lives behind small extras.
-- **Structured output** — JSONL, SARIF (generic interchange/GitHub
-  code-scanning), and native Filigree emit for finding lifecycle work.
-- **Agent-native** — `wardline mcp` is a dependency-free MCP-over-stdio server;
-  `wardline install` wires Wardline into your coding agent in one command.
+- **Deterministic Python taint analysis** — function-, variable-, and
+  project-level analysis over an inter-module call graph; no runtime
+  instrumentation.
+- **Rust command-injection preview** — `wardline scan --lang rust` finds
+  `RS-WL-108`/`RS-WL-112` over `.rs` trees with crate-prefixed, baseline-eligible
+  finding identity.
+- **Opt-in trust model** — Python decorators (`@external_boundary`,
+  `@trust_boundary`, `@trusted`) and Rust doc-comment markers declare the
+  boundary surface; undecorated code stays quiet.
+- **Trust-boundary and sink rules** — boundary-integrity rules, exception-flow
+  rules, and expanded sink families for command execution, dynamic code/imports,
+  deserialization, path traversal, SSRF, SQL injection, XML parsing, templates,
+  native library loads, logging format strings, and SMTP sends.
+- **Zero-dependency base** — `pip install wardline` pulls nothing; scanner,
+  Loomweave, Rust, and docs functionality live behind small extras.
+- **Structured output** — JSONL, SARIF, agent-summary JSON, signed legis scan
+  artifacts, and native Filigree emission for finding lifecycle work.
+- **MCP-primary agent surface** — `wardline mcp` is a dependency-free
+  MCP-over-stdio server with structured tool output, schema declarations, and
+  tools for scan, explain, fix, judge, doctor, rekey, assurance, attestation,
+  dossier, and finding lifecycle work.
+- **Reproducible evidence and migrations** — `assure`, `attest`, and `rekey`
+  report trust-surface coverage, sign reproducible posture bundles, and migrate
+  fingerprint-keyed stores across scheme changes.
 - **Opt-in LLM triage** — `wardline judge` labels findings TRUE/FALSE positive
   (dependency-free; never runs automatically).
-- **Light-touch suppression** — baselines and time-boxed, reasoned waivers.
+- **Light-touch suppression** — baselines, time-boxed waivers, and judged
+  findings with explicit gate semantics.
 - **Loomweave integration** — persist per-entity taint facts to a Loomweave store.
 
 ## Quick Start
@@ -107,6 +124,7 @@ Fix findings at the **boundary** (validate before returning), not at the sink.
 pip install weft-markers          # tiny runtime marker package for application code
 pip install wardline              # zero-dependency base (library + decorators)
 pip install 'wardline[scanner]'   # the scan/judge/baseline CLI + MCP server (quote for zsh)
+pip install 'wardline[rust]'      # Rust command-injection preview frontend
 ```
 
 Prefer `weft_markers` in application code. Wardline still recognizes
@@ -117,6 +135,7 @@ Prefer `weft_markers` in application code. Wardline still recognizes
 |-------|-------|---------|
 | `scanner` | pyyaml, jsonschema, click | the `wardline` CLI and `wardline mcp` server |
 | `loomweave` | blake3 | persisting taint facts to a Loomweave store |
+| `rust` | scanner extra, tree-sitter, tree-sitter-rust | `wardline scan --lang rust` |
 | `docs` | mkdocs, mkdocs-material | building the documentation site |
 
 The LLM triage judge (`wardline judge`) is dependency-free (stdlib `urllib` →
@@ -130,12 +149,11 @@ wardline install
 
 This injects a hash-fenced instruction block into `CLAUDE.md`/`AGENTS.md`,
 installs the `wardline-gate` skill, merges a `wardline` entry into `.mcp.json`,
-writes Codex's `~/.codex/config.toml` MCP entry, and records Loomweave/Filigree
-bindings if present. When local sibling config exposes a URL, `install` wires it
-directly; otherwise it leaves a commented stanza to fill in. Agents then run the
-scan → explain → fix-at-boundary → rescan loop natively. The `wardline mcp`
-server exposes `scan`, `explain_taint`, `fix`, `judge`, baseline, and waiver
-tools over JSON-RPC with no SDK.
+and writes Codex's `~/.codex/config.toml` MCP entry. Agents then run the scan →
+explain → fix-at-boundary → rescan loop natively. The `wardline mcp` server
+exposes the primary tool surface over JSON-RPC with no SDK, including scan,
+filtered findings, explain-taint, fix, judge, baseline/waiver, doctor, rekey,
+assure, attest, dossier, and Filigree filing tools.
 
 `wardline install` also reminds application projects to install `weft-markers`
 and import from `weft_markers` when they want runtime-importable trust markers
@@ -144,6 +162,17 @@ without depending on the full Wardline scanner package.
 Run `wardline doctor` to check those artifacts later, or `wardline doctor
 --repair` to refresh stale/missing wiring after moving tools or starting a
 Filigree dashboard.
+
+## Configuration and state
+
+Wardline reads operator configuration from the `[wardline]` table in
+`weft.toml`. Machine-written state lives under `.weft/wardline/`: baselines,
+waivers, judged findings, and cache data stay out of the authored config file.
+
+Sibling URLs are resolved at runtime from flags, environment variables, or
+published local Weft port files. `wardline install` and `wardline doctor` detect
+sibling tools such as Filigree and Loomweave, but they do not persist endpoint
+bindings into project config.
 
 ## Where Wardline fits
 
@@ -158,9 +187,11 @@ It is **not** the right tool when you need:
 - **A broad SAST suite.** Wardline checks trust boundaries and a small set of
   exception-handling rules; it is not a replacement for a general-purpose
   scanner that covers dozens of vulnerability classes.
-- **Non-Python code.** Wardline analyzes Python ≥3.12 only.
+- **Full non-Python coverage.** Wardline's Rust frontend is a preview for
+  command-injection findings only; it is not a general Rust SAST engine.
 - **Zero-config coverage.** Wardline is silent until you declare trust — that is
-  the point, but it means it finds nothing on an un-annotated codebase.
+  the point, but it means it finds nothing meaningful on an un-annotated
+  codebase.
 
 ## Documentation
 
@@ -170,10 +201,13 @@ Full documentation lives at **<https://foundryside-dev.github.io/wardline/>**.
 |----------|-------------|
 | [Getting Started](https://foundryside-dev.github.io/wardline/getting-started/) | Install, decorate, first scan |
 | [Taint & Trust Model](https://foundryside-dev.github.io/wardline/concepts/model/) | The lattice, decorators, and propagation |
-| [Rules](https://foundryside-dev.github.io/wardline/concepts/rules/) | The four policy rules |
+| [Rules](https://foundryside-dev.github.io/wardline/concepts/rules/) | The boundary, exception-flow, and sink rules |
 | [Configuration](https://foundryside-dev.github.io/wardline/guides/configuration/) | `weft.toml` `[wardline]`: rules, severity, excludes |
 | [Suppression](https://foundryside-dev.github.io/wardline/guides/suppression/) | Baselines and waivers |
 | [LLM Triage Judge](https://foundryside-dev.github.io/wardline/guides/judge/) | Opt-in TRUE/FALSE-positive labelling |
+| [Rust Support](https://foundryside-dev.github.io/wardline/guides/rust-preview/) | Preview Rust command-injection frontend |
+| [Weft Integration](https://foundryside-dev.github.io/wardline/guides/weft/) | SARIF, Filigree, Loomweave, and sibling URL resolution |
+| [Assurance Posture](https://foundryside-dev.github.io/wardline/guides/assurance-posture/) | Coverage posture, attestations, and trust-surface evidence |
 | [Loomweave Taint Store](https://foundryside-dev.github.io/wardline/guides/loomweave-taint-store/) | Persisting taint facts |
 | [CLI Reference](https://foundryside-dev.github.io/wardline/reference/cli/) | Every command and flag |
 | [Trust Vocabulary](https://foundryside-dev.github.io/wardline/reference/vocabulary/) | The decorators and their arguments |

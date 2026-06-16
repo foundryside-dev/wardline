@@ -7,6 +7,7 @@ from wardline.core.finding import (
     Location,
     Severity,
     compute_finding_fingerprint,
+    to_filigree_metadata,
 )
 
 
@@ -53,26 +54,20 @@ def test_to_jsonl_round_trips_collections() -> None:
 
 
 def test_finding_fingerprint_is_deterministic_and_discriminating() -> None:
-    a = compute_finding_fingerprint(
-        rule_id="PY-WL-101", path="a.py", line_start=1, qualname="m.f", taint_path="EXTERNAL_RAW|g"
-    )
-    b = compute_finding_fingerprint(
-        rule_id="PY-WL-101", path="a.py", line_start=1, qualname="m.f", taint_path="EXTERNAL_RAW|g"
-    )
+    a = compute_finding_fingerprint(rule_id="PY-WL-101", path="a.py", qualname="m.f", taint_path="EXTERNAL_RAW|g")
+    b = compute_finding_fingerprint(rule_id="PY-WL-101", path="a.py", qualname="m.f", taint_path="EXTERNAL_RAW|g")
     # same inputs -> stable
     assert a == b
     assert len(a) == 64
     # path-sensitive
     assert a != compute_finding_fingerprint(
-        rule_id="PY-WL-101", path="b.py", line_start=1, qualname="m.f", taint_path="EXTERNAL_RAW|g"
+        rule_id="PY-WL-101", path="b.py", qualname="m.f", taint_path="EXTERNAL_RAW|g"
     )
-    # TWO TAINT PATHS INTO ONE SINK: same (rule, file, line, qualname) but a
-    # different taint path -> DISTINCT fingerprint (Filigree constraint, §7).
-    assert a != compute_finding_fingerprint(
-        rule_id="PY-WL-101", path="a.py", line_start=1, qualname="m.f", taint_path="MIXED_RAW|h"
-    )
+    # TWO TAINT PATHS INTO ONE SINK: same (rule, file, qualname) but a different
+    # taint path -> DISTINCT fingerprint (Filigree constraint, §7).
+    assert a != compute_finding_fingerprint(rule_id="PY-WL-101", path="a.py", qualname="m.f", taint_path="MIXED_RAW|h")
     # optional fields default cleanly
-    assert len(compute_finding_fingerprint(rule_id="WLN-ENGINE-X", path="a.py", line_start=None)) == 64
+    assert len(compute_finding_fingerprint(rule_id="WLN-ENGINE-X", path="a.py")) == 64
 
 
 def test_finding_defaults_to_active_suppression() -> None:
@@ -87,13 +82,13 @@ def test_suppressed_serializes_in_jsonl() -> None:
 
     f = _finding(suppressed=SuppressionState.WAIVED, suppression_reason="reviewed")
     obj = json.loads(f.to_jsonl())
-    assert obj["suppressed"] == "waived"
+    assert obj["suppression_state"] == "waived"
     assert obj["suppression_reason"] == "reviewed"
 
 
 def test_active_suppression_serializes_too() -> None:
     obj = json.loads(_finding().to_jsonl())
-    assert obj["suppressed"] == "active"
+    assert obj["suppression_state"] == "active"
     assert obj["suppression_reason"] is None
 
 
@@ -112,7 +107,15 @@ def test_filigree_metadata_includes_suppression_only_when_suppressed() -> None:
     from wardline.core.finding import SuppressionState, to_filigree_metadata
 
     active = to_filigree_metadata(_finding())["wardline"]
-    assert "suppressed" not in active
+    assert "suppression_state" not in active
     waived = to_filigree_metadata(_finding(suppressed=SuppressionState.WAIVED, suppression_reason="ok"))["wardline"]
-    assert waived["suppressed"] == "waived"
+    assert waived["suppression_state"] == "waived"
     assert waived["suppression_reason"] == "ok"
+
+
+def test_filigree_metadata_strips_property_accessor_suffix_from_wire_qualname() -> None:
+    setter = to_filigree_metadata(_finding(qualname="pkg.mod.C.value:setter"))["wardline"]
+    deleter = to_filigree_metadata(_finding(qualname="pkg.mod.C.value:deleter"))["wardline"]
+
+    assert setter["qualname"] == "pkg.mod.C.value"
+    assert deleter["qualname"] == "pkg.mod.C.value"

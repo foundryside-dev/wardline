@@ -59,6 +59,12 @@ def test_default_registry_has_all_builtin_rules() -> None:
         "PY-WL-118",
         "PY-WL-119",
         "PY-WL-120",
+        "PY-WL-121",
+        "PY-WL-122",
+        "PY-WL-123",
+        "PY-WL-124",
+        "PY-WL-125",
+        "PY-WL-126",
     }
 
 
@@ -140,7 +146,7 @@ def test_preview_rules_are_non_gating() -> None:
                     severity=Severity.ERROR,
                     kind=Kind.DEFECT,
                     location=Location(path="test.py", line_start=1),
-                    fingerprint=_fp(rule_id=self.rule_id, path="test.py", line_start=1),
+                    fingerprint=_fp(rule_id=self.rule_id, path="test.py"),
                 )
             ]
 

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from wardline.install.detect import detect_siblings
+from wardline.install.detect import _filigree_url_from_project, detect_siblings
 
 
 def _assert_no_config_written(root: Path) -> None:
@@ -60,6 +60,25 @@ def test_filigree_hostile_port_payload_is_soft(tmp_path: Path, monkeypatch, payl
 
     assert results["filigree"] == "absent"
     _assert_no_config_written(tmp_path)
+
+
+@pytest.mark.skipif(not hasattr(Path, "symlink_to"), reason="symlink support unavailable")
+def test_filigree_published_port_symlink_is_not_opened(tmp_path: Path, monkeypatch) -> None:
+    port_dir = tmp_path / ".weft" / "filigree"
+    port_dir.mkdir(parents=True)
+    port_path = port_dir / "ephemeral.port"
+    port_path.symlink_to(Path("/dev/zero"))
+
+    real_read_text = Path.read_text
+
+    def _read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self == port_path:
+            raise AssertionError("symlinked ephemeral.port must not be opened")
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _read_text)
+
+    assert _filigree_url_from_project(tmp_path) is None
 
 
 def test_filigree_legacy_dot_dir_port_is_detected(tmp_path: Path, monkeypatch) -> None:

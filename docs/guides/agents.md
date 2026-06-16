@@ -54,10 +54,14 @@ wardline install:
   runtime markers: install `weft-markers` and import from `weft_markers`
 ```
 
-It is idempotent (re-run to refresh after upgrading wardline) and non-interactive
-(safe in CI). Opt out of any piece with `--no-claude-md`, `--no-agents-md`,
-`--no-skill`, `--no-mcp`, or `--no-bindings`. There is no SessionStart hook —
-freshness is enforced only when you re-run `wardline install`.
+It is idempotent (re-run to refresh after upgrading wardline) and
+non-interactive, but it writes project-local agent and MCP files. Run it only
+on a trusted checkout or as an operator-controlled bootstrap step. For
+untrusted pull-request CI, use `wardline scan ... --fail-on ERROR`; do not run
+`wardline install` against attacker-controlled working-tree contents. Opt out
+of any piece with `--no-claude-md`, `--no-agents-md`, `--no-skill`, `--no-mcp`,
+or `--no-bindings`. There is no SessionStart hook — freshness is enforced only
+when you re-run `wardline install`.
 
 Once installed, the MCP server resolves a Loomweave/Filigree URL at runtime from
 the flag, env var, or published `.weft/<sibling>/ephemeral.port` rung — not from
@@ -76,6 +80,14 @@ Use `wardline doctor --repair` after moving binaries, starting a Filigree
 dashboard, or changing sibling tool config. It refreshes the instruction blocks,
 skills, and MCP entries, and re-detects siblings using the same discovery rules
 as `wardline install` — it never writes `weft.toml` or a sibling binding.
+
+Over MCP, the `doctor` tool returns the same machine-readable envelope
+(read-only by default; pass `repair: true` for the write-gated repair) **plus
+the running server's self-identification**: package version, pid, start time,
+and a source-freshness verdict. If `server.fresh` is `false`, the long-lived
+MCP server process predates the on-disk wardline code — every result it serves
+is stale; restart the server. Call it whenever federation writes fail or after
+upgrading/editing wardline itself.
 
 ## Gate the agent's work with `wardline scan`
 
@@ -146,15 +158,18 @@ To make the gate run on every commit, drop a `.git/hooks/pre-commit` script
 ```bash
 #!/usr/bin/env sh
 # Block a commit if Wardline finds a new ERROR-or-worse defect.
-# Write the findings file outside the working tree so the commit stays clean.
-wardline scan . --fail-on ERROR --output /tmp/wardline-findings.jsonl
+# Use mktemp for the findings file; never write to a predictable shared /tmp path.
+out="$(mktemp "${TMPDIR:-/tmp}/wardline-findings.XXXXXX.jsonl")" || exit 2
+trap 'rm -f "$out"' EXIT
+wardline scan . --fail-on ERROR --output "$out"
 ```
 
 A `scan` always writes a findings file (default `findings.jsonl` in the scan
-path), so point `--output` outside the tree — as above — or at a git-ignored
-path; otherwise the hook litters every commit. The script's exit code becomes
-the hook's exit code: a clean tree commits, a new defect aborts the commit with
-the finding already on screen for the agent to act on.
+path), so point `--output` at a per-run temporary file — as above — or at a
+git-ignored path inside the repository; otherwise the hook litters every commit.
+Avoid predictable filenames in shared directories such as `/tmp`. The script's
+exit code becomes the hook's exit code: a clean tree commits, a new defect
+aborts the commit with the finding already on screen for the agent to act on.
 
 ## Let the agent triage with `wardline judge`
 
@@ -284,3 +299,20 @@ For shell workflows, `wardline scan --format agent-summary` writes the same
 versioned handoff shape (`wardline-agent-summary-1`) to disk: active defects
 first with fingerprints and next tool calls, plus suppressed findings, engine
 facts, and Loomweave/Filigree write status when configured.
+
+## Scanning Rust
+
+For a Rust codebase, add `--lang rust` (install the `wardline[rust]` extra first);
+over MCP, pass `lang: "rust"` to the `scan` tool — the two surfaces share the
+engine and return identical findings.
+It sweeps `*.rs` and flags command-injection defects (`RS-WL-108` program
+injection / `RS-WL-112` shell injection) through the same gate, formats, and
+emission paths as the Python frontend. Rust finding identity is frozen and
+crate-prefixed, so RS-WL-* findings are **baseline-eligible** — baseline, waivers,
+and judged verdicts apply exactly as for Python findings. Read the result at the
+right scope: rule coverage is the command-injection slice, and `weft.toml`
+severity overrides do not yet apply. Declare a function's trust tier
+with a `/// @trusted(level=ASSURED|GUARDED)` doc-comment marker so the
+default-clean analysis knows which functions are part of your trust surface. See
+the [Rust support guide](rust-preview.md) for the boundary sources, the trust
+marker, and the documented false-negative families.

@@ -134,6 +134,85 @@ def test_fresh_fact_missing_requested_fingerprint_falls_back_to_reanalysis(tmp_p
     assert calls["n"] == 1
 
 
+def test_spoofed_remote_hash_falls_back_to_reanalysis(tmp_path, monkeypatch):
+    proj = _proj(tmp_path)
+    local_finding = next(
+        f
+        for f in run_scan(proj).findings
+        if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE and f.rule_id == "PY-WL-101"
+    )
+    blob, _h = _fresh_blob(proj, "svc.leaky")
+    spoofed = "f" * 64
+    blob["content_hash_at_compute"] = spoofed
+    blob["findings"] = [{"rule_id": "PY-WL-101", "fingerprint": "fp-forged", "path": "svc.py", "line_start": 6}]
+    view = TaintFactView(qualname="svc.leaky", exists=True, wardline_json=blob, current_content_hash=spoofed)
+
+    import wardline.core.explain as explain_mod
+
+    calls = {"n": 0}
+    real = explain_mod.run_scan
+
+    def counting(*a, **k):
+        calls["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(explain_mod, "run_scan", counting)
+
+    exp = explain_finding(proj, path="svc.py", line=6, loomweave=SpyClient([view]), sink_qualname="svc.leaky")
+
+    assert exp is not None
+    assert exp.fingerprint == local_finding.fingerprint
+    assert exp.fingerprint != "fp-forged"
+    assert calls["n"] == 1
+
+
+def test_blob_qualname_mismatch_falls_back_to_reanalysis(tmp_path, monkeypatch):
+    proj = _proj(tmp_path)
+    blob, h = _fresh_blob(proj, "svc.other")
+    view = TaintFactView(qualname="svc.leaky", exists=True, wardline_json=blob, current_content_hash=h)
+
+    import wardline.core.explain as explain_mod
+
+    calls = {"n": 0}
+    real = explain_mod.run_scan
+
+    def counting(*a, **k):
+        calls["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(explain_mod, "run_scan", counting)
+
+    exp = explain_finding(proj, path="svc.py", line=6, loomweave=SpyClient([view]), sink_qualname="svc.leaky")
+
+    assert exp is not None
+    assert exp.sink_qualname == "svc.leaky"
+    assert calls["n"] == 1
+
+
+def test_malformed_blob_counts_fall_back_to_reanalysis(tmp_path, monkeypatch):
+    proj = _proj(tmp_path)
+    blob, h = _fresh_blob(proj, "svc.leaky")
+    blob["taint"]["resolved_call_count"] = "not-an-int"
+    view = TaintFactView(qualname="svc.leaky", exists=True, wardline_json=blob, current_content_hash=h)
+
+    import wardline.core.explain as explain_mod
+
+    calls = {"n": 0}
+    real = explain_mod.run_scan
+
+    def counting(*a, **k):
+        calls["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(explain_mod, "run_scan", counting)
+
+    exp = explain_finding(proj, path="svc.py", line=6, loomweave=SpyClient([view]), sink_qualname="svc.leaky")
+
+    assert exp is not None
+    assert exp.resolved_call_count == 1
+    assert calls["n"] == 1
+
+
 def test_stale_hash_falls_back_to_reanalysis(tmp_path):
     proj = _proj(tmp_path)
     blob, h = _fresh_blob(proj, "svc.leaky")

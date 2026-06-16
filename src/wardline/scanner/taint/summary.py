@@ -60,6 +60,7 @@ def compute_cache_key(
     schema_version: int,
     resolver_version: str,
     provider_fingerprint: str,
+    scan_policy_hash: str,
 ) -> str:
     """Content-addressed cache key for a module's summaries.
 
@@ -71,6 +72,16 @@ def compute_cache_key(
     from the taint map (silent under-taint). Module identity, NOT call topology,
     is what is added here: cross-module *dependency* changes are still handled by
     always recomputing the call graph fresh, never by this key.
+
+    Binds ``scan_policy_hash`` — the ``attest.ruleset_hash`` over the effective scan
+    policy — because seed-shaping config (``untrusted_sources`` declares extra
+    EXTERNAL_RAW sources, ``sanitisers``, ``provenance_clash``) changes a function's
+    computed summary without changing its source bytes. Omitting it let a warm/persisted
+    cache serve a stale-CLEAN summary when the policy newly named a source, suppressing a
+    real defect (wardline-9d6a81b9e7). Reusing attest's *single* policy identity (rather
+    than enumerating fields here) keeps the cache key and the attestation hash from
+    diverging; it is intentionally conservative (a severity/exclude change that cannot
+    alter a summary still invalidates — more recompute, never a stale serve).
 
     Each component is length-prefixed before hashing so distinct inputs cannot
     collide (without it, ``(b"ab", "c")`` and ``(b"a", "bc")`` would hash alike).
@@ -85,6 +96,7 @@ def compute_cache_key(
     _write_len_prefixed(hasher, str(schema_version).encode("ascii"))
     _write_len_prefixed(hasher, resolver_version.encode("utf-8"))
     _write_len_prefixed(hasher, provider_fingerprint.encode("utf-8"))
+    _write_len_prefixed(hasher, scan_policy_hash.encode("utf-8"))
     return hasher.hexdigest()
 
 

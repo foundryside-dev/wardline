@@ -25,8 +25,11 @@ system, a governance plugin like legis, or an agent making a deploy decision.
 
 `wardline install` mints a 64-hex signing key and appends it to `.env` at the
 project root as `WARDLINE_ATTEST_KEY="<key>"`. It also ensures `.env` is listed
-in `.gitignore` — the key must never be committed. This is the only setup step.
-Pass `--no-attest-key` to `wardline install` if you want to skip minting.
+in `.gitignore` — the key must never be committed. If `.env` is already tracked
+by Git, install refuses to mint into it; untrack `.env` first or pass
+`--no-attest-key` and provide the key through the environment. This is the only
+setup step. Pass `--no-attest-key` to `wardline install` if you want to skip
+minting.
 
 The key lookup order at run time: environment variable `WARDLINE_ATTEST_KEY` →
 `root/.env` line `WARDLINE_ATTEST_KEY=<value>`. An already-set environment value

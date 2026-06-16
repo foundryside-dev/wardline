@@ -68,6 +68,27 @@ def test_write_chunks_against_batch_max():
     assert result.written == 6
 
 
+def test_write_chunks_against_serialized_body_size():
+    t = FakeTransport([Response(status=200, body='{"written":1,"unresolved_qualnames":[]}')] * 3)
+    facts = [{"qualname": f"m.f{i}", "wardline_json": {"payload": "x" * 30}} for i in range(3)]
+
+    result = _client(t, batch_max=100, max_body_bytes=180).write_taint_facts(facts)
+
+    assert result.reachable is True
+    assert len(t.calls) > 1
+    assert all(len(body) <= 180 for _method, _url, body, _headers in t.calls)
+
+
+def test_write_oversized_single_fact_is_fail_soft_without_sending():
+    t = FakeTransport()
+    fact = {"qualname": "m.big", "wardline_json": {"payload": "x" * 300}}
+
+    result = _client(t, max_body_bytes=120).write_taint_facts([fact])
+
+    assert result.reachable is False
+    assert t.calls == []
+
+
 def test_batch_get_chunks_and_preserves_input_order():
     r1 = json.dumps([{"qualname": "a", "exists": False}, {"qualname": "b", "exists": False}])
     r2 = json.dumps([{"qualname": "c", "exists": True, "wardline_json": {"x": 1}, "current_content_hash": "deadbeef"}])
@@ -119,9 +140,74 @@ def test_urllib_transport_bounds_http_error_body(monkeypatch) -> None:
     assert resp.body.endswith("[truncated]")
 
 
+def test_urllib_transport_bounds_success_body(monkeypatch) -> None:
+    import io
+
+    from wardline.core.http import MAX_RESPONSE_BODY_BYTES
+    from wardline.loomweave.client import UrllibTransport
+
+    class HugeResponse(io.BytesIO):
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: HugeResponse(b"x" * (MAX_RESPONSE_BODY_BYTES + 9)),  # noqa: ARG005
+    )
+
+    resp = UrllibTransport().request("POST", "http://loomweave.example/api/wardline/resolve", b"{}", {})
+
+    assert len(resp.body) < MAX_RESPONSE_BODY_BYTES + 128
+    assert resp.body.endswith("[truncated]")
+
+
 def test_connection_error_is_soft():
     class Boom:
         def request(self, *a, **k):
             raise OSError("connection refused")
 
     assert _client(Boom()).batch_get(["a"]) is None
+
+
+def test_resolve_sends_batch_scoped_plugin_hint():
+    # ADR-036 plugin-aware resolution: the OPTIONAL batch-scoped hint rides the
+    # request verbatim (docs/integration/2026-06-11-wardline-resolve-plugin-hint-
+    # proposal.md). One hint per request — never per qualname.
+    t = FakeTransport([Response(status=200, body='{"resolved":{},"unresolved":["m.f"]}')])
+    _client(t).resolve(["m.f"], plugin="rust")
+    assert json.loads(t.calls[0][2])["plugin"] == "rust"
+
+
+def test_resolve_omits_plugin_field_when_unhinted():
+    # Omission is today's behavior FOREVER (the contract never fabricates a hint) —
+    # and an absent field is what keeps unhinted requests valid against any server
+    # version under deny_unknown_fields.
+    t = FakeTransport([Response(status=200, body='{"resolved":{},"unresolved":["m.f"]}')])
+    _client(t).resolve(["m.f"])
+    assert "plugin" not in json.loads(t.calls[0][2])
+
+
+def test_resolve_hinted_4xx_downgrades_chunk_to_unresolved():
+    # Fail-soft: an older Loomweave whose ResolveRequest is deny_unknown_fields 400s
+    # on the hint field — identity enrichment must degrade to unresolved, not crash
+    # the dossier/attach path.
+    t = FakeTransport([Response(status=400, body='{"error":"unknown field `plugin`"}')])
+    result = _client(t).resolve(["m.f", "m.g"], plugin="rust")
+    assert result is not None
+    assert result.resolved == {}
+    assert result.unresolved == ["m.f", "m.g"]
+
+
+def test_resolve_unhinted_4xx_stays_loud():
+    # An unhinted 4xx cannot be hint-field version skew — it is a real request bug
+    # and must stay diagnosable (the pre-existing INVALID_PATH pin, re-asserted
+    # against the hint-conditional soft band).
+    t = FakeTransport([Response(status=400, body='{"code":"INVALID_PATH"}')])
+    with pytest.raises(LoomweaveError, match="INVALID_PATH"):
+        _client(t).resolve(["m.f"])

@@ -19,9 +19,13 @@ from pathlib import Path
 from typing import Any
 
 from wardline.core.errors import ConfigError
+from wardline.core.finding import FINGERPRINT_SCHEME, require_fingerprint_scheme
 from wardline.core.optional_deps import require_yaml
 from wardline.core.paths import waivers_path
-from wardline.core.safe_paths import safe_project_file
+from wardline.core.safe_paths import safe_project_file, safe_write_text, write_text_no_follow
+
+WAIVERS_VERSION: int = 1
+"""Bumped on a format change; validated on load (mirrors BASELINE_VERSION)."""
 
 _HEX = frozenset("0123456789abcdef")
 
@@ -31,6 +35,15 @@ class Waiver:
     fingerprint: str
     reason: str
     expires: date | None = None
+    entity_sei: str | None = None
+    """Optional rename-surviving Loomweave SEI for the code entity this waiver names
+    (the doctrine spine — a waiver about a defect-in-a-function carries the function's
+    stable identity, so the suppression survives rename/move and joins federation
+    joins). Opaque; carried verbatim, never parsed."""
+    entity_locator: str | None = None
+    """Optional human-readable locator (``{plugin}:function:{qualname}`` or the
+    resolved current-locator) captured alongside the SEI for legibility. Never the
+    join key — the SEI is."""
 
     def is_active(self, today: date) -> bool:
         """Active through the expiry day; expired strictly after (today > expires)."""
@@ -69,8 +82,47 @@ def parse_waivers(raw: Sequence[Mapping[str, Any]]) -> tuple[Waiver, ...]:
         reason = item.get("reason")
         if not isinstance(reason, str) or not reason.strip():
             raise ConfigError(f"waivers[{idx}].reason is required (non-empty string)")
-        waivers.append(Waiver(fingerprint=fp, reason=reason, expires=_parse_expiry(item.get("expires"), idx)))
+        entity_sei = _parse_optional_str(item.get("entity_sei"), idx, "entity_sei")
+        entity_locator = _parse_optional_str(item.get("entity_locator"), idx, "entity_locator")
+        waivers.append(
+            Waiver(
+                fingerprint=fp,
+                reason=reason,
+                expires=_parse_expiry(item.get("expires"), idx),
+                entity_sei=entity_sei,
+                entity_locator=entity_locator,
+            )
+        )
     return tuple(waivers)
+
+
+def _parse_optional_str(raw: Any, idx: int, field: str) -> str | None:
+    """An optional string field on a waiver entry: absent → None; a non-empty string
+    is kept; anything else (a number, a mapping, an empty string) is a malformed store
+    and fails loud — a waiver's entity binding must not be silently dropped."""
+    if raw is None:
+        return None
+    if isinstance(raw, str) and raw:
+        return raw
+    raise ConfigError(f"waivers[{idx}].{field} must be a non-empty string when present, got {raw!r}")
+
+
+def build_waivers_document(waivers: Iterable[Waiver]) -> dict[str, Any]:
+    """Pure: the YAML-shaped dict (scheme header + version + waivers) for the
+    given waivers, preserving caller order. ``add_waiver`` writes its own
+    header inline (it preserves existing raw entries verbatim); this is the
+    object→document path the rekey migration (P4) writes through."""
+    entries: list[dict[str, Any]] = []
+    for w in waivers:
+        entry: dict[str, Any] = {"fingerprint": w.fingerprint, "reason": w.reason}
+        if w.expires is not None:
+            entry["expires"] = w.expires.isoformat()
+        if w.entity_sei is not None:
+            entry["entity_sei"] = w.entity_sei
+        if w.entity_locator is not None:
+            entry["entity_locator"] = w.entity_locator
+        entries.append(entry)
+    return {"fingerprint_scheme": FINGERPRINT_SCHEME, "version": WAIVERS_VERSION, "waivers": entries}
 
 
 def load_project_waivers(root: Path) -> tuple[Waiver, ...]:
@@ -90,6 +142,12 @@ def load_project_waivers(root: Path) -> tuple[Waiver, ...]:
         raise ConfigError(f"malformed {path.name}: {exc}") from exc
     if not isinstance(loaded, dict):
         raise ConfigError(f"{path.name} is not a mapping")
+    # Loader order is load-bearing: empty-guard → scheme → version → entries.
+    if not loaded:
+        return ()
+    require_fingerprint_scheme(loaded, store_name=path.name)
+    if loaded.get("version") != WAIVERS_VERSION:
+        raise ConfigError(f"{path.name}: version mismatch — expected {WAIVERS_VERSION}, got {loaded.get('version')!r}")
     raw = loaded.get("waivers")
     if raw is not None and not isinstance(raw, list):
         raise ConfigError(f"malformed {path.name}: 'waivers' must be a list")
@@ -103,6 +161,8 @@ def add_waiver(
     reason: str,
     expires: date | None,
     root: Path | None = None,
+    entity_sei: str | None = None,
+    entity_locator: str | None = None,
 ) -> Waiver:
     """Append a waiver to the ``waivers:`` list in ``path`` — wardline's machine/CLI
     state file ``.weft/wardline/waivers.yaml`` (creating it if absent). Validates via
@@ -111,6 +171,11 @@ def add_waiver(
 
     ``expires`` is stored as an ISO string (``YYYY-MM-DD``); both the in-line
     validation parse and a later ``parse_waivers`` round-trip accept it.
+
+    ``entity_sei`` / ``entity_locator`` (additive, doctrine spine) optionally bind the
+    waiver to the code entity it suppresses so the suppression survives rename/move and
+    joins federation joins. The SEI is carried verbatim (opaque); both are stored only
+    when present, so existing callers (and existing waiver files) are unaffected.
     """
     config_path = path
     if root is not None:
@@ -118,6 +183,10 @@ def add_waiver(
     entry: dict[str, object] = {"fingerprint": fingerprint, "reason": reason}
     if expires is not None:
         entry["expires"] = expires.isoformat()
+    if entity_sei is not None:
+        entry["entity_sei"] = entity_sei
+    if entity_locator is not None:
+        entry["entity_locator"] = entity_locator
     # Validate by parsing the single entry — reuses the canonical rules. Raises
     # ConfigError on a bad fingerprint/reason/expiry BEFORE the file is touched.
     waiver = parse_waivers((entry,))[0]
@@ -131,6 +200,11 @@ def add_waiver(
             raise ConfigError(f"malformed {config_path.name}: {exc}") from exc
         if not isinstance(loaded, dict):
             raise ConfigError(f"{config_path.name} is not a mapping")
+        # A non-empty existing store must already carry the current scheme — else
+        # appending a current-scheme fingerprint to an old-scheme file would mint a
+        # mixed, silently-orphaning store. (Empty/absent → fresh write below.)
+        if loaded:
+            require_fingerprint_scheme(loaded, store_name=config_path.name)
         raw = loaded
     existing = raw.get("waivers")
     if existing is not None and not isinstance(existing, list):
@@ -139,12 +213,13 @@ def add_waiver(
     if any(isinstance(w, Mapping) and w.get("fingerprint") == fingerprint for w in waivers):
         raise ConfigError(f"waiver for {fingerprint} already exists")
     waivers.append(entry)
-    raw["waivers"] = waivers
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        yaml.safe_dump(raw, sort_keys=False, default_flow_style=False, allow_unicode=True),
-        encoding="utf-8",
-    )
+    # Re-stamp the scheme header (idempotent) and place it first for readability.
+    document = {"fingerprint_scheme": FINGERPRINT_SCHEME, "version": WAIVERS_VERSION, "waivers": waivers}
+    content = yaml.safe_dump(document, sort_keys=False, default_flow_style=False, allow_unicode=True)
+    if root is not None:
+        safe_write_text(root, config_path, content, label=config_path.name)
+    else:
+        write_text_no_follow(config_path, content, label=config_path.name)
     return waiver
 
 

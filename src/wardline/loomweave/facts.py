@@ -21,6 +21,7 @@ base package stays zero-dependency.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -57,7 +58,6 @@ def build_taint_facts(result: ScanResult, root: Path) -> list[dict[str, Any]]:
     context = result.context
     if context is None:
         return []
-    blake3 = require_blake3()
     hash_cache: dict[str, str] = {}
 
     findings_by_qualname: dict[str, list[dict[str, Any]]] = {}
@@ -76,22 +76,9 @@ def build_taint_facts(result: ScanResult, root: Path) -> list[dict[str, Any]]:
     facts: list[dict[str, Any]] = []
     for qualname, entity in context.entities.items():
         rel_path = entity.location.path
-        if rel_path not in hash_cache:
-            hash_cache[rel_path] = blake3.blake3(_read_bytes(root / rel_path)).hexdigest()
-        # RESIDUAL (builtin-marker shadow false-green): ``content_hash_at_compute``
-        # is whole-file raw-byte blake3 ONLY — it cannot observe the shadow state of
-        # a builtin marker root. So identical file bytes scanned once UNSHADOWED then
-        # under a project that shadows ``wardline``/``weft_markers`` could serve a
-        # stale TRUSTED fact via the MCP explain_taint / Loomweave read path. We do NOT
-        # fold the shadow bit / provider fingerprint into this hash: it is a
-        # CROSS-TOOL contract value — Loomweave's read path INDEPENDENTLY recomputes
-        # the whole-file blake3 (loomweave_storage::current_file_hash) and compares it
-        # against the in-blob copy. Mixing in a Wardline-private bit would make every
-        # comparison mismatch and break fact reconciliation entirely; there is no
-        # separate Wardline-owned compute-key the freshness gate consults. Closing
-        # this fully needs a Loomweave read-path contract change. Lower impact: this
-        # path is opt-in (--loomweave-url) and not the scan gate. See CHANGELOG.
-        content_hash = hash_cache[rel_path]
+        content_hash = _content_hash_for_analyzed_file(root, rel_path, context, hash_cache)
+        if content_hash is None:
+            continue
 
         declared = context.project_return_taints.get(qualname)
         actual = context.function_return_taints.get(qualname)
@@ -132,3 +119,24 @@ def _dead_code_root_blob(is_declared: bool) -> dict[str, Any]:
         "tags": ["entry-point"],
         "reason": _ROOT_REASON,
     }
+
+
+def _content_hash_for_analyzed_file(
+    root: Path,
+    rel_path: str,
+    context: AnalysisContext,
+    hash_cache: dict[str, str],
+) -> str | None:
+    if rel_path in hash_cache:
+        return hash_cache[rel_path]
+    try:
+        current_bytes = _read_bytes(root / rel_path)
+    except OSError:
+        return None
+    analyzed_sha256 = context.analyzed_source_sha256.get(rel_path)
+    if analyzed_sha256 is not None and hashlib.sha256(current_bytes).hexdigest() != analyzed_sha256:
+        return None
+    blake3 = require_blake3()
+    content_hash = str(blake3.blake3(current_bytes).hexdigest())
+    hash_cache[rel_path] = content_hash
+    return content_hash

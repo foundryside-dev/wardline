@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from wardline import __version__
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
+from wardline.core.safe_paths import safe_write_text, write_text_no_follow
 from wardline.scanner.flow_trace import build_finding_code_flow
 
 if TYPE_CHECKING:
@@ -107,7 +108,7 @@ def _result(finding: Finding, rule_index: int, context: AnalysisContext | None =
         "level": _LEVEL[finding.severity],
         "message": {"text": finding.message},
         "locations": [{"physicalLocation": physical}],
-        "partialFingerprints": {"wardlineFingerprint/v1": finding.fingerprint},
+        "partialFingerprints": {"wardlineFingerprint/v2": finding.fingerprint},
         "properties": props,
     }
     if finding.suppressed is not SuppressionState.ACTIVE:
@@ -160,10 +161,13 @@ def build_sarif(findings: Sequence[Finding], context: AnalysisContext | None = N
 
 
 class SarifSink:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, root: Path | None = None) -> None:
         self._path = path
+        self._root = root
 
     def write(self, findings: Sequence[Finding], context: AnalysisContext | None = None) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
         content = json.dumps(build_sarif(findings, context), indent=2, ensure_ascii=False)
-        self._path.write_text(content, encoding="utf-8")
+        if self._root is not None:
+            safe_write_text(self._root, self._path, content, label=self._path.name)
+        else:
+            write_text_no_follow(self._path, content, label=self._path.name)

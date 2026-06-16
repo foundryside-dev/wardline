@@ -139,7 +139,13 @@ def _locator_for(qualname: str) -> str:
 
 
 def _decorators_of(entity: Entity) -> list[str]:
-    return [f"@{ast.unparse(dec)}" for dec in entity.node.decorator_list]
+    decorators: list[str] = []
+    for dec in entity.node.decorator_list:
+        try:
+            decorators.append(f"@{ast.unparse(dec)}")
+        except RecursionError:
+            decorators.append(f"@<unparseable:{type(dec).__name__}>")
+    return decorators
 
 
 def _identity_for(provider: BindingProvider | None, qualname: str) -> tuple[IdentityCoverage, EntityBinding | None]:

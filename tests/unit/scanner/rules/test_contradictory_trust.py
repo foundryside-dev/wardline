@@ -198,3 +198,41 @@ def test_weft_markers_call_form_fires(tmp_path) -> None:
     )
     findings = _run(ctx)
     assert [(f.rule_id, f.qualname) for f in findings] == [("PY-WL-110", "m.conflicting")]
+
+
+def test_nested_path_marker_engine_rejects_does_not_fire(tmp_path) -> None:
+    # wardline-09c09f14df: PY-WL-110 must not count a marker the engine's seeding
+    # (`_is_builtin_decorator_fqn`) rejects. `wardline.decorators.sub.external_boundary`
+    # is an arbitrarily-nested path the engine does NOT recognise as a builtin export,
+    # so it is never seeded; only `wardline.decorators.trust_boundary` anchors the
+    # entity. With exactly one recognised marker there is no clash — the rule must stay
+    # silent. (Before the fix the loose `startswith(prefix + ".")` test counted both,
+    # firing a false PY-WL-110.)
+    ctx = _analyze(
+        tmp_path,
+        """
+        import wardline.decorators
+        import wardline.decorators.sub
+        @wardline.decorators.trust_boundary(to_level='ASSURED')
+        @wardline.decorators.sub.external_boundary
+        def f(p):
+            if not p:
+                raise ValueError
+            return p
+        """,
+    )
+    assert _run(ctx) == []
+
+    # Control (false-negative guard): a GENUINE two-valid-marker clash — two EXACT
+    # builtin exports the engine DOES both seed — must STILL fire PY-WL-110.
+    ctx2 = _analyze(
+        tmp_path,
+        """
+        from wardline.decorators import trusted, external_boundary
+        @trusted
+        @external_boundary
+        def g(p):
+            return p
+        """,
+    )
+    assert [(x.rule_id, x.qualname) for x in _run(ctx2)] == [("PY-WL-110", "m.g")]

@@ -430,6 +430,67 @@ def test_107_lambda_bound_in_match_arm_does_not_leak_to_sibling(tmp_path) -> Non
     assert UntrustedToExec().check(ctx) == []
 
 
+def test_107_sink_lambda_in_non_last_if_arm_fires_after_branch(tmp_path) -> None:
+    # wardline-383f83fafe (single-slot ceiling): the sink-lambda is bound in the
+    # NON-last (if) arm; a BENIGN lambda rebinds ``cb`` in the last (else) arm. With the
+    # old single-slot binding map the benign last arm overwrote the sink binding, so the
+    # post-branch ``cb(raw)`` resolved only the benign body and the eval(x) sink was a
+    # silent false-negative. The candidate-set merge keeps both → PY-WL-107 fires.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p, cond):
+            raw = read_raw(p)
+            if cond:
+                cb = lambda x: eval(x)
+            else:
+                cb = lambda x: x
+            cb(raw)
+        """,
+    )
+    assert [(x.rule_id, x.qualname) for x in UntrustedToExec().check(ctx)] == [("PY-WL-107", "m.f")]
+
+
+def test_107_sink_lambda_in_non_last_try_arm_fires_after_branch(tmp_path) -> None:
+    # Same single-slot ceiling for try/except: sink-lambda in the try-success arm, benign
+    # rebind in the handler arm, tainted ``cb(raw)`` after the whole try/except.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p):
+            raw = read_raw(p)
+            try:
+                cb = lambda x: eval(x)
+            except Exception:
+                cb = lambda x: x
+            cb(raw)
+        """,
+    )
+    assert [(x.rule_id, x.qualname) for x in UntrustedToExec().check(ctx)] == [("PY-WL-107", "m.f")]
+
+
+def test_107_sink_lambda_in_non_last_match_arm_fires_after_branch(tmp_path) -> None:
+    # Same single-slot ceiling for match/case: sink-lambda in a non-last case-arm, benign
+    # rebind in the catch-all arm, tainted ``cb(raw)`` after the match.
+    ctx = _analyze(
+        tmp_path,
+        """
+        @trusted(level='ASSURED')
+        def f(p, kind):
+            raw = read_raw(p)
+            match kind:
+                case "a":
+                    cb = lambda x: eval(x)
+                case _:
+                    cb = lambda x: x
+            cb(raw)
+        """,
+    )
+    assert [(x.rule_id, x.qualname) for x in UntrustedToExec().check(ctx)] == [("PY-WL-107", "m.f")]
+
+
 def test_108_raw_reaches_os_system_in_lambda_body(tmp_path) -> None:
     # The engine fix is sink-agnostic (shared _resolve_expr / worst_arg_taint): a
     # command sink in a lambda body fires flow-sensitively on real taint too.
@@ -477,6 +538,21 @@ def test_108_trusted_literal_arg_does_not_fire(tmp_path) -> None:
     assert UntrustedToCommand().check(ctx) == []
 
 
+def test_108_undecorated_is_suppressed(tmp_path) -> None:
+    # Matrix slot (wardline-e159060db7): the suite pinned 106/112 undecorated
+    # suppression but not 108's — an undecorated (UNKNOWN_RAW freedom-zone)
+    # function must stay silent even with raw data at the always-shell sink.
+    ctx = _analyze(
+        tmp_path,
+        """
+        def f(p):
+            os.system(read_raw(p))
+            return 1
+        """,
+    )
+    assert UntrustedToCommand().check(ctx) == []
+
+
 def test_107_self_method_call_arg_fires(tmp_path) -> None:
     # Sibling method call (self.get_raw) should resolve to EXTERNAL_RAW and trigger PY-WL-107.
     ctx = _analyze(
@@ -493,6 +569,53 @@ def test_107_self_method_call_arg_fires(tmp_path) -> None:
     )
     findings = UntrustedToExec().check(ctx)
     assert [(x.rule_id, x.qualname) for x in findings] == [("PY-WL-107", "m.Service.run")]
+
+
+def test_107_stale_var_type_does_not_launder_raw_receiver(tmp_path) -> None:
+    # A name re-bound to an untyped RHS (a subscript here) holds raw, but its STALE recorded
+    # type (Box) let ``x.val()`` resolve Box.val's clean @trusted summary, laundering raw past
+    # the RAW_ZONE receiver guard (wardline-5ba7ce0f98). The reassignment must invalidate the
+    # type so the receiver stays raw and eval(out) fires.
+    ctx = _analyze(
+        tmp_path,
+        """
+        class Box:
+            @trusted(level='ASSURED')
+            def val(self):
+                return "literal"
+
+        @trusted(level='ASSURED')
+        def f(p):
+            x = Box()
+            lst = [read_raw(p)]
+            x = lst[0]
+            out = x.val()
+            eval(out)
+        """,
+    )
+    findings = UntrustedToExec().check(ctx)
+    assert [(x.rule_id, x.qualname) for x in findings] == [("PY-WL-107", "m.f")]
+
+
+def test_107_genuinely_typed_clean_receiver_still_resolves_clean(tmp_path) -> None:
+    # The no-FP guard for the stale-type fix: a receiver whose type is current (never
+    # re-bound) must still resolve its clean @trusted method summary — no PY-WL-107.
+    ctx = _analyze(
+        tmp_path,
+        """
+        class Box:
+            @trusted(level='ASSURED')
+            def val(self):
+                return "literal"
+
+        @trusted(level='ASSURED')
+        def f():
+            x = Box()
+            out = x.val()
+            eval(out)
+        """,
+    )
+    assert UntrustedToExec().check(ctx) == []
 
 
 def test_112_raw_reaches_subprocess_shell_true(tmp_path) -> None:
@@ -659,8 +782,11 @@ def test_112_resolves_aliased_shell_subprocess_sinks(tmp_path) -> None:
     ]
 
 
-def test_fallback_flow_insensitive_warnings() -> None:
-    # If flow-sensitive map is missing, we warn and pessimistically assume UNKNOWN_RAW.
+def test_fallback_flow_insensitive_records_on_the_context() -> None:
+    # If the flow-sensitive map is missing, the resolver records the degradation on
+    # the context (one WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK FACT per scan, emitted
+    # by the analyzer) and pessimistically assumes UNKNOWN_RAW. Never a warning —
+    # a warnings-as-error embedder must not lose a whole rule to the diagnostic.
     import ast
     import warnings
 
@@ -680,9 +806,8 @@ def test_fallback_flow_insensitive_warnings() -> None:
         taint_provenance={},
     )  # Empty context has no flow-sensitive mappings
 
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
         res = worst_arg_taint(call, "m.f", context)
-        assert len(w) == 1
-        assert "WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK" in str(w[0].message)
-        assert res == TaintState.UNKNOWN_RAW
+    assert res == TaintState.UNKNOWN_RAW
+    assert context.flow_insensitive_fallbacks == {"m.f"}

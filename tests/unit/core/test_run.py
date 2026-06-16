@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from wardline.core.errors import ConfigError
-from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
+from wardline.core.finding import FINGERPRINT_SCHEME, Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.judged import JudgedFP, write_judged
 from wardline.core.paths import baseline_path, judged_path, waivers_path
 from wardline.core.run import (
@@ -47,6 +47,19 @@ def test_run_scan_returns_findings_summary_and_context() -> None:
     assert result.summary.active == active
     # context is carried for explain_finding to reuse
     assert result.context is not None
+
+
+def test_run_scan_reports_discovery_and_analysis_progress(tmp_path: Path) -> None:
+    (tmp_path / "svc.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    events: list[dict[str, object]] = []
+
+    result = run_scan(tmp_path, progress_callback=events.append)
+
+    assert result.files_scanned == 1
+    assert [event["phase"] for event in events] == ["discovered", "analyzing", "analyzed"]
+    assert events[0]["files_discovered"] == 1
+    assert events[-1]["files_analyzed"] == 1
+    assert "findings" in events[-1]
 
 
 def test_gate_decision_trips_on_active_error(tmp_path: Path) -> None:
@@ -113,7 +126,7 @@ def test_run_scan_baselined_count_distinguishes_categories(tmp_path: Path) -> No
     bl = baseline_path(proj)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
-        "version: 1\nentries:\n"
+        f"fingerprint_scheme: {FINGERPRINT_SCHEME}\nversion: 1\nentries:\n"
         f"  - fingerprint: {leak.fingerprint}\n"
         "    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
         encoding="utf-8",
@@ -146,7 +159,8 @@ def _write_baseline(proj: Path, fp: str) -> None:
     bl = baseline_path(proj)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
-        f"version: 1\nentries:\n  - fingerprint: {fp}\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
+        f"fingerprint_scheme: {FINGERPRINT_SCHEME}\nversion: 1\n"
+        f"entries:\n  - fingerprint: {fp}\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
         encoding="utf-8",
     )
 
@@ -251,17 +265,32 @@ def test_gate_decision_reason_names_both_active_and_suppressed_on_mixed_trip(tmp
 
 def test_gate_decision_rejects_contradictory_construction() -> None:
     # The __post_init__ invariant guard: GateDecision must make "tripped gate that reads
-    # as passed" (dogfood #2) unconstructible, not merely avoided by the factory.
+    # as passed" (dogfood #2) unconstructible, not merely avoided by the factory. The guards
+    # are now verdict-keyed (weft-b937e53854).
     with pytest.raises(ValueError, match="exit_class"):
-        GateDecision(tripped=True, fail_on="ERROR", exit_class=0, reason="x", evaluated="y")
+        GateDecision(tripped=True, fail_on="ERROR", exit_class=0, verdict="FAILED", reason="x", evaluated="y")
     with pytest.raises(ValueError, match="reason"):
-        GateDecision(tripped=True, fail_on="ERROR", exit_class=1, reason=None, evaluated="y")
-    with pytest.raises(ValueError, match="reason"):
-        # fail_on set but no verdict — the no-gate shape leaking into a gated decision.
-        GateDecision(tripped=False, fail_on="ERROR", exit_class=0, reason=None, evaluated=None)
-    # The two legitimate shapes the factory produces still construct cleanly.
-    GateDecision(tripped=False, fail_on=None, exit_class=0)
-    GateDecision(tripped=True, fail_on="ERROR", exit_class=1, reason="1 active", evaluated="unsuppressed")
+        GateDecision(tripped=True, fail_on="ERROR", exit_class=1, verdict="FAILED", reason=None, evaluated="y")
+    with pytest.raises(ValueError, match="NOT_EVALUATED"):
+        # NOT_EVALUATED but a threshold IS set — the no-gate shape leaking into a gated decision.
+        GateDecision(tripped=False, fail_on="ERROR", exit_class=0, verdict="NOT_EVALUATED", reason="x", evaluated="y")
+    with pytest.raises(ValueError, match="FAILED"):
+        # tripped but verdict says PASSED — the dogfood #2 regression made unconstructible.
+        GateDecision(tripped=True, fail_on="ERROR", exit_class=1, verdict="PASSED", reason="x", evaluated="y")
+    # The three legitimate shapes the factory produces still construct cleanly.
+    GateDecision(tripped=False, fail_on=None, exit_class=0, verdict="NOT_EVALUATED", reason="no threshold")
+    GateDecision(
+        tripped=False, fail_on="ERROR", exit_class=0, verdict="PASSED", reason="clean", evaluated="unsuppressed"
+    )
+    GateDecision(
+        tripped=True,
+        fail_on="ERROR",
+        exit_class=1,
+        verdict="FAILED",
+        reason="1 active",
+        evaluated="unsuppressed",
+        severity_tripped=True,
+    )
 
 
 def test_gate_decision_evaluated_reflects_trust_suppressions(tmp_path: Path) -> None:
@@ -272,10 +301,118 @@ def test_gate_decision_evaluated_reflects_trust_suppressions(tmp_path: Path) -> 
     assert decision.evaluated is not None and "honored" in decision.evaluated
 
 
-def test_gate_decision_no_threshold_has_no_reason() -> None:
+def test_gate_decision_no_threshold_is_not_evaluated() -> None:
+    # weft-b937e53854: a bare scan is NOT a clean pass — it never ran the gate.
     result = ScanResult(findings=[], summary=ScanSummary(0, 0, 0, 0, 0), files_scanned=0, context=None)
     decision = gate_decision(result, None)
-    assert decision.reason is None and decision.evaluated is None
+    assert decision.verdict == "NOT_EVALUATED"
+    assert decision.tripped is False and decision.exit_class == 0
+    # Empty tree: nothing would trip, but the decision still carries an honest reason + population.
+    assert decision.would_trip_at is None
+    assert decision.reason is not None and "did not evaluate" in decision.reason
+    assert decision.evaluated is not None
+
+
+def _unanalyzed_result(unanalyzed: int) -> ScanResult:
+    # The unanalyzed overlay counts non-gating engine FACTs (file-skipped / missing source
+    # root), so the severity gate population can be empty while unanalyzed > 0.
+    return ScanResult(
+        findings=[],
+        summary=ScanSummary(unanalyzed, 0, 0, 0, 0, informational=unanalyzed, unanalyzed=unanalyzed),
+        files_scanned=1,
+        context=None,
+    )
+
+
+def test_gate_decision_fail_on_unanalyzed_trips_without_threshold() -> None:
+    # A4 (wardline-7fd0f3a82c): the unanalyzed gate is part of the decision itself, not a
+    # CLI-only exit-code OR — so the MCP surface (no exit code) can express it too.
+    decision = gate_decision(_unanalyzed_result(2), None, fail_on_unanalyzed=True)
+    assert decision.tripped is True and decision.exit_class == 1
+    assert decision.verdict == "FAILED"
+    assert decision.fail_on is None
+    assert decision.fail_on_unanalyzed is True
+    assert decision.unanalyzed_tripped is True and decision.severity_tripped is False
+    assert decision.reason is not None and "2" in decision.reason and "not analyzed" in decision.reason
+    # The severity gate still never ran — the reason must say so (no vacuous severity green).
+    assert "no --fail-on threshold set" in decision.reason
+
+
+def test_gate_decision_fail_on_unanalyzed_clean_passes_without_threshold() -> None:
+    # The knob alone makes the gate EVALUATED (it judged the unanalyzed count), but the
+    # reason must still flag that no severity threshold ran.
+    decision = gate_decision(_unanalyzed_result(0), None, fail_on_unanalyzed=True)
+    assert decision.tripped is False and decision.exit_class == 0
+    assert decision.verdict == "PASSED"
+    assert decision.fail_on is None and decision.fail_on_unanalyzed is True
+    assert decision.unanalyzed_tripped is False and decision.severity_tripped is False
+    assert decision.reason is not None and "no --fail-on threshold set" in decision.reason
+
+
+def test_gate_decision_fail_on_unanalyzed_composes_with_severity_gate(tmp_path: Path) -> None:
+    # Both sub-gates configured: a severity-clean tree with an unanalyzed file still FAILS,
+    # and the reason names BOTH outcomes.
+    proj, _fp_ = _leaky_proj(tmp_path)
+    result = run_scan(proj)
+    decision = gate_decision(result, Severity.ERROR, fail_on_unanalyzed=True)
+    # The leaky fixture has no unanalyzed files: severity trips, unanalyzed does not.
+    assert decision.severity_tripped is True and decision.unanalyzed_tripped is False
+    assert decision.tripped is True and decision.verdict == "FAILED"
+    clean = gate_decision(_unanalyzed_result(1), Severity.ERROR, fail_on_unanalyzed=True)
+    assert clean.severity_tripped is False and clean.unanalyzed_tripped is True
+    assert clean.tripped is True and clean.verdict == "FAILED"
+    assert clean.fail_on == "ERROR"
+    assert clean.reason is not None and "not analyzed" in clean.reason
+
+
+def test_gate_decision_default_ignores_unanalyzed() -> None:
+    # Default (knob off) preserves released behaviour on BOTH surfaces: unanalyzed is
+    # reported, never gated.
+    decision = gate_decision(_unanalyzed_result(3), None)
+    assert decision.tripped is False and decision.verdict == "NOT_EVALUATED"
+    assert decision.fail_on_unanalyzed is False and decision.unanalyzed_tripped is False
+
+
+def test_gate_decision_unanalyzed_invariants_unconstructible() -> None:
+    # The sub-trip decomposition is guarded the same way dogfood #2 is: an overall trip
+    # that no sub-gate explains (or vice versa) must not construct.
+    with pytest.raises(ValueError, match="severity_tripped|unanalyzed_tripped|tripped"):
+        # tripped with NEITHER sub-gate tripping.
+        GateDecision(tripped=True, fail_on="ERROR", exit_class=1, verdict="FAILED", reason="x", evaluated="y")
+    with pytest.raises(ValueError, match="unanalyzed_tripped"):
+        # unanalyzed trip without the knob on.
+        GateDecision(
+            tripped=True,
+            fail_on="ERROR",
+            exit_class=1,
+            verdict="FAILED",
+            reason="x",
+            evaluated="y",
+            unanalyzed_tripped=True,
+        )
+    with pytest.raises(ValueError, match="severity_tripped"):
+        # severity trip without a threshold.
+        GateDecision(
+            tripped=True,
+            fail_on=None,
+            exit_class=1,
+            verdict="FAILED",
+            reason="x",
+            evaluated="y",
+            fail_on_unanalyzed=True,
+            severity_tripped=True,
+        )
+    with pytest.raises(ValueError, match="NOT_EVALUATED"):
+        # The knob alone makes the gate evaluated — NOT_EVALUATED is no longer its shape.
+        GateDecision(
+            tripped=False,
+            fail_on=None,
+            exit_class=0,
+            verdict="NOT_EVALUATED",
+            reason="x",
+            evaluated="y",
+            fail_on_unanalyzed=True,
+        )
 
 
 def _hint(proj: Path, *, new_since=None, trust=False):
@@ -419,7 +556,8 @@ def test_new_since_scopes_both_populations_and_resists_suppression(tmp_path: Pat
     bl = baseline_path(tmp_path)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
-        f"version: 1\nentries:\n  - fingerprint: {new_fp}\n    rule_id: PY-WL-101\n    path: caller.py\n"
+        f"fingerprint_scheme: {FINGERPRINT_SCHEME}\nversion: 1\n"
+        f"entries:\n  - fingerprint: {new_fp}\n    rule_id: PY-WL-101\n    path: caller.py\n"
         "    message: m\n",
         encoding="utf-8",
     )
@@ -522,12 +660,60 @@ def test_gate_decision_rejects_unknown_fail_on() -> None:
     # fail_on is always a Severity value; an arbitrary string is an illegal state the
     # other guards would otherwise let through (it satisfies "reason iff fail_on").
     with pytest.raises(ValueError, match="fail_on"):
-        GateDecision(tripped=True, fail_on="banana", exit_class=1, reason="x", evaluated="y")
+        GateDecision(
+            tripped=True,
+            fail_on="banana",
+            exit_class=1,
+            verdict="FAILED",
+            reason="x",
+            evaluated="y",
+            severity_tripped=True,
+        )
 
 
 def test_gate_decision_accepts_valid_severity_value() -> None:
-    dec = GateDecision(tripped=True, fail_on=Severity.ERROR.value, exit_class=1, reason="x", evaluated="y")
+    dec = GateDecision(
+        tripped=True,
+        fail_on=Severity.ERROR.value,
+        exit_class=1,
+        verdict="FAILED",
+        reason="x",
+        evaluated="y",
+        severity_tripped=True,
+    )
     assert dec.fail_on == "ERROR"
+
+
+def test_would_trip_at_names_highest_severity_on_bare_scan(tmp_path: Path) -> None:
+    # weft-b937e53854: a bare scan reports would_trip_at = the worst active severity, so the
+    # agent's first call is not a vacuous green. The leaky proj has a PY-WL-101 ERROR defect.
+    proj, _ = _leaky_proj(tmp_path)
+    decision = gate_decision(run_scan(proj), None)
+    assert decision.verdict == "NOT_EVALUATED"
+    assert decision.would_trip_at == "ERROR"
+    assert decision.tripped is False and decision.exit_class == 0
+    assert decision.reason is not None and "ERROR" in decision.reason
+
+
+def test_verdict_passed_vs_failed_and_would_trip_at_is_threshold_independent(tmp_path: Path) -> None:
+    proj, _ = _leaky_proj(tmp_path)
+    result = run_scan(proj)
+    failed = gate_decision(result, Severity.ERROR)
+    assert failed.verdict == "FAILED" and failed.tripped is True and failed.would_trip_at == "ERROR"
+    # A threshold ABOVE the worst active severity passes; would_trip_at still names the worst.
+    passed = gate_decision(result, Severity.CRITICAL)
+    assert passed.verdict == "PASSED" and passed.tripped is False
+    assert passed.would_trip_at == "ERROR"
+
+
+def test_summary_buckets_sum_to_total(tmp_path: Path) -> None:
+    # weft-f506e5f845: active+baselined+waived+judged+informational == total exactly;
+    # unanalyzed is an overlay, not a partition member.
+    proj, fp = _leaky_proj(tmp_path)
+    _write_baseline(proj, fp)
+    s = run_scan(proj).summary
+    assert s.active + s.baselined + s.waived + s.judged + s.informational == s.total
+    assert s.informational >= 1  # the engine metric/fact is a non-defect finding
 
 
 def test_run_scan_explicit_malformed_config_raises(tmp_path: Path) -> None:
@@ -573,3 +759,65 @@ def test_run_scan_out_of_root_symlink_yields_finding(tmp_path: Path) -> None:
     assert len(skipped) == 1
     assert skipped[0].location.path == "src/evil.py"
     assert skipped[0].properties.get("reason") == "out_of_root_symlink"
+
+
+# --- N-3 (wardline-8669de3576): nested scan root is surfaced, never silent ---
+
+
+def test_run_scan_nested_scan_root_yields_fact(tmp_path: Path) -> None:
+    # A subdirectory scan of a weft project silently mints scan-relative qualnames,
+    # skips the project baseline, and drops output into the subdir. run_scan must
+    # surface the nested root as a structured FACT (reaching both the CLI warning
+    # and the MCP result).
+    proj = tmp_path / "proj"
+    (proj / ".weft" / "wardline").mkdir(parents=True)
+    sub = proj / "specimen"
+    sub.mkdir()
+    (sub / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    result = run_scan(sub)
+    facts = [f for f in result.findings if f.rule_id == "WLN-ENGINE-NESTED-SCAN-ROOT"]
+    assert len(facts) == 1
+    fact = facts[0]
+    assert fact.kind is Kind.FACT and fact.severity is Severity.NONE
+    assert fact.properties["project_root"] == str(proj.resolve())
+    assert fact.properties["qualname_prefix"] == "specimen"
+    # the qualname hazard and the remedy root are named in the message (the
+    # agent-actionable signal — the CLI warning reuses this verbatim)
+    assert "qualname" in fact.message and str(proj.resolve()) in fact.message
+    # a scope hazard, not an under-scan — never counted as unanalyzed
+    assert result.summary.unanalyzed == 0
+    # the PY-WL-101 defect still fires, with the scan-relative qualname the fact warns about
+    leak = next(f for f in result.findings if f.rule_id == "PY-WL-101")
+    assert leak.qualname == "svc.leaky"
+
+
+def test_run_scan_project_root_scan_has_no_nested_fact(tmp_path: Path) -> None:
+    proj, _ = _leaky_proj(tmp_path)
+    (proj / ".weft" / "wardline").mkdir(parents=True, exist_ok=True)
+    result = run_scan(proj)
+    assert not [f for f in result.findings if f.rule_id == "WLN-ENGINE-NESTED-SCAN-ROOT"]
+
+
+def test_run_scan_fresh_tree_subdir_has_no_nested_fact(tmp_path: Path) -> None:
+    # No weft markers anywhere above: a fresh unfederated tree must not warn —
+    # warning every first-time user would dilute the signal into habitual noise.
+    sub = tmp_path / "plain" / "pkg"
+    sub.mkdir(parents=True)
+    (sub / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
+    result = run_scan(sub)
+    assert not [f for f in result.findings if f.rule_id == "WLN-ENGINE-NESTED-SCAN-ROOT"]
+
+
+def test_run_scan_nested_src_root_has_empty_qualname_prefix(tmp_path: Path) -> None:
+    # Scanning P/src of a src-layout project mints the SAME qualnames as scanning P
+    # (module_dotted_name strips one leading src/ component) — the baseline/output
+    # hazards remain so the FACT still fires, but the prefix must be empty so the
+    # message never claims a phantom 'src.' qualname prefix.
+    proj = tmp_path / "proj"
+    (proj / ".weft" / "wardline").mkdir(parents=True)
+    src = proj / "src"
+    src.mkdir()
+    (src / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
+    result = run_scan(src)
+    fact = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-NESTED-SCAN-ROOT")
+    assert fact.properties["qualname_prefix"] == ""

@@ -9,7 +9,7 @@ the MCP scan must not return a successful payload that hides tracker drift.
 import pytest
 
 from wardline.core.errors import FiligreeEmitError
-from wardline.core.filigree_emit import EmitResult
+from wardline.core.filigree_emit import EmitResult, FailedFinding
 from wardline.mcp.server import WardlineMCPServer, _scan
 
 _LEAKY = (
@@ -60,10 +60,14 @@ def test_scan_emits_to_filigree_when_emitter_present(tmp_path):
         "created": 2,
         "updated": 1,
         "failed": 0,
+        "failures": [],
         "warnings": [],
         "status": None,
         "auth_rejected": False,
+        "token_sent": False,
+        "url": None,
         "disabled_reason": None,
+        "destination": {"url": None, "project": None, "project_pinned": False},
     }
     assert emitter.scanned_paths == ("svc.py",)
 
@@ -80,10 +84,14 @@ def test_scan_reports_both_integrations_successful(tmp_path):
         "created": 2,
         "updated": 1,
         "failed": 0,
+        "failures": [],
         "warnings": [],
         "status": None,
         "auth_rejected": False,
+        "token_sent": False,
+        "url": None,
         "disabled_reason": None,
+        "destination": {"url": None, "project": None, "project_pinned": False},
     }
 
 
@@ -97,8 +105,10 @@ def test_scan_filigree_block_null_when_no_emitter(tmp_path):
         "created": 0,
         "updated": 0,
         "failed": 0,
+        "failures": [],
         "warnings": [],
         "disabled_reason": "not configured",
+        "destination": {"url": None, "project": None, "project_pinned": False},
     }
 
 
@@ -154,6 +164,35 @@ def test_scan_filigree_403_says_forbidden_not_set_a_token(tmp_path):
     assert "403" in reason and "forbidden" in reason
     assert "WEFT_FEDERATION_TOKEN" not in reason
     assert "unreachable" not in reason
+
+
+def test_scan_partial_ingest_surfaces_failures_to_agent(tmp_path):
+    # PDR-0023: a partial ingest (some findings rejected) must NOT read as a clean emit on
+    # the agent-facing MCP surface. The `failures` array names which findings failed and why,
+    # so an agent can distinguish "all emitted" from "M of N emitted, K failed because R".
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    result = EmitResult(
+        reachable=True,
+        created=1,
+        failures=(FailedFinding(reason="scheme_mismatch", detail="expected wlfp3", fingerprint="wlfp2:bad"),),
+    )
+    out = _scan({}, tmp_path, None, FakeEmitter(result))
+    # weft-reason (G1): each failure wire carries the shipped domain fields AND the canonical
+    # carrier triple {reason_class, cause, fix} additively (scheme_mismatch -> scheme_mismatch).
+    expected_failure = {
+        "reason": "scheme_mismatch",
+        "detail": "expected wlfp3",
+        "reason_class": "scheme_mismatch",
+        "cause": "expected wlfp3",
+        "fix": (
+            "align the wardline fingerprint scheme to the scheme Filigree expects, then re-emit (a drift join-misses)"
+        ),
+        "fingerprint": "wlfp2:bad",
+    }
+    assert out["filigree"]["failed"] == 1
+    assert out["filigree"]["failures"] == [expected_failure]
+    assert out["filigree_emit"]["failed"] == 1
+    assert out["filigree_emit"]["failures"] == [expected_failure]
 
 
 def test_scan_filigree_5xx_says_server_error_not_unreachable(tmp_path):

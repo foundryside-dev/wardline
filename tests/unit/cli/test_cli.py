@@ -10,6 +10,7 @@ from click.testing import CliRunner
 from wardline.cli.main import cli
 from wardline.cli.main import cli as _cli
 from wardline.cli.scan import scan
+from wardline.core.finding import FINGERPRINT_SCHEME
 from wardline.core.paths import baseline_path, judged_path
 
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "sample_project"
@@ -31,6 +32,29 @@ def test_scan_writes_findings_and_exits_zero(tmp_path: Path) -> None:
     assert any(_json.loads(ln)["rule_id"] == "WLN-ENGINE-METRICS" for ln in lines)
 
 
+def test_scan_warns_when_weft_toml_is_missing(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    out = tmp_path / "findings.jsonl"
+
+    result = CliRunner().invoke(cli, ["scan", str(tmp_path), "--output", str(out)])
+
+    assert result.exit_code == 0, result.output
+    assert "warning: no weft.toml found" in result.output
+    assert "wardline doctor --repair" in result.output
+    assert "wardline scan-job start" in result.output
+
+
+def test_scan_does_not_warn_when_weft_toml_exists(tmp_path: Path) -> None:
+    (tmp_path / "weft.toml").write_text('[wardline]\nsource_roots = ["."]\n', encoding="utf-8")
+    (tmp_path / "app.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    out = tmp_path / "findings.jsonl"
+
+    result = CliRunner().invoke(cli, ["scan", str(tmp_path), "--output", str(out)])
+
+    assert result.exit_code == 0, result.output
+    assert "warning: no weft.toml found" not in result.output
+
+
 def test_scan_format_sarif_writes_sarif_file(tmp_path: Path) -> None:
     out = tmp_path / "out.sarif"
     result = CliRunner().invoke(cli, ["scan", str(FIXTURE), "--format", "sarif", "--output", str(out)])
@@ -48,6 +72,22 @@ def test_scan_format_sarif_default_output_path(tmp_path: Path) -> None:
     result = CliRunner().invoke(cli, ["scan", str(project), "--format", "sarif"])
     assert result.exit_code == 0, result.output
     assert (project / "findings.sarif").exists()
+
+
+def test_scan_format_sarif_default_refuses_symlinked_output(tmp_path: Path) -> None:
+    import shutil
+
+    project = tmp_path / "proj"
+    shutil.copytree(FIXTURE, project)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("keep\n", encoding="utf-8")
+    (project / "findings.sarif").symlink_to(outside)
+
+    result = CliRunner().invoke(cli, ["scan", str(project), "--format", "sarif"])
+
+    assert result.exit_code == 2
+    assert "refusing to write through a symlink" in result.output
+    assert outside.read_text(encoding="utf-8") == "keep\n"
 
 
 def test_scan_format_sarif_still_gates(tmp_path: Path) -> None:
@@ -91,6 +131,54 @@ def test_scan_default_output_lands_in_scanned_path(tmp_path: Path) -> None:
     result = CliRunner().invoke(cli, ["scan", str(project)])
     assert result.exit_code == 0, result.output
     assert (project / "findings.jsonl").exists()
+
+
+def test_scan_relative_subdir_default_output_not_double_resolved(tmp_path: Path, monkeypatch) -> None:
+    # Regression: `wardline scan pkg` (relative subdir). The default output is reported as
+    # `pkg/findings.jsonl`, and the root-confined writer must write THERE — not resolve `pkg`
+    # into the already-prefixed path twice (`pkg/pkg/findings.jsonl`), which left the reported
+    # artifact path empty.
+    import shutil
+
+    project = tmp_path / "pkg"
+    shutil.copytree(FIXTURE, project)
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(cli, ["scan", "pkg"])
+    assert result.exit_code == 0, result.output
+    assert (project / "findings.jsonl").exists()  # at the reported path
+    assert not (project / "pkg").exists()  # no double-resolved pkg/pkg/
+
+
+def test_baseline_create_relative_subdir_not_double_resolved(tmp_path: Path, monkeypatch) -> None:
+    # Regression twin for `wardline baseline create pkg`: the baseline must land at the
+    # reported `pkg/.weft/wardline/baseline.yaml`, not `pkg/pkg/.weft/...`, or a later scan
+    # of `pkg` silently never loads it.
+    import shutil
+
+    project = tmp_path / "pkg"
+    shutil.copytree(FIXTURE, project)
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(cli, ["baseline", "create", "pkg"])
+    assert result.exit_code == 0, result.output
+    assert (project / ".weft" / "wardline" / "baseline.yaml").exists()
+    assert not (project / "pkg").exists()
+
+
+def test_scan_jsonl_default_refuses_symlinked_output(tmp_path: Path) -> None:
+    import shutil
+
+    project = tmp_path / "proj"
+    shutil.copytree(FIXTURE, project)
+    outside = tmp_path / "outside.jsonl"
+    outside.write_text("keep\n", encoding="utf-8")
+    (project / "findings.jsonl").unlink(missing_ok=True)
+    (project / "findings.jsonl").symlink_to(outside)
+
+    result = CliRunner().invoke(cli, ["scan", str(project)])
+
+    assert result.exit_code == 2
+    assert "findings.jsonl: refusing to write through a symlink" in result.output
+    assert outside.read_text(encoding="utf-8") == "keep\n"
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -384,10 +472,11 @@ def test_scan_cache_dir_persists_warm_taints_equal_cold(tmp_path) -> None:
     out1 = tmp_path / "f1.jsonl"
     out2 = tmp_path / "f2.jsonl"
     runner = CliRunner()
-    r1 = runner.invoke(scan, [str(proj), "--cache-dir", str(cache), "--output", str(out1)])
+    env = {"WARDLINE_SUMMARY_CACHE_KEY": "unit-test-summary-cache-key"}
+    r1 = runner.invoke(scan, [str(proj), "--cache-dir", str(cache), "--output", str(out1)], env=env)
     assert r1.exit_code == 0, r1.output
     assert cache.exists() and any(cache.iterdir())  # cache written to disk
-    r2 = runner.invoke(scan, [str(proj), "--cache-dir", str(cache), "--output", str(out2)])
+    r2 = runner.invoke(scan, [str(proj), "--cache-dir", str(cache), "--output", str(out2)], env=env)
     assert r2.exit_code == 0, r2.output
 
     def _parse(p: Path) -> list[dict]:
@@ -406,6 +495,70 @@ def test_scan_cache_dir_persists_warm_taints_equal_cold(tmp_path) -> None:
     # The cache metric meaningfully varies: cold all-miss, warm served from disk.
     assert _hit_rate(f1) == 0.0
     assert _hit_rate(f2) > 0.0
+
+
+def test_scan_cache_dir_ignores_unsigned_forged_cache(tmp_path: Path) -> None:
+    import json
+
+    from wardline.core.config import WardlineConfig
+    from wardline.core.ruleset import ruleset_hash
+    from wardline.core.taints import TaintState as T
+    from wardline.scanner.taint.decorator_provider import DecoratorTaintSourceProvider
+    from wardline.scanner.taint.project_resolver import _RESOLVER_VERSION
+    from wardline.scanner.taint.summary import SUMMARY_SCHEMA_VERSION, FunctionSummary, compute_cache_key
+    from wardline.scanner.taint.summary_cache import _serialise_summary
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    source = (
+        "from wardline.decorators import external_boundary, trusted\n"
+        "@external_boundary\n"
+        "def read_raw(p):\n"
+        "    return p\n"
+        "@trusted(level='ASSURED')\n"
+        "def sink(x):\n"
+        "    return x\n"
+        "def f(p):\n"
+        "    return sink(read_raw(p))\n"
+    )
+    (proj / "m.py").write_text(source, encoding="utf-8")
+
+    cache = tmp_path / "repo-controlled-cache"
+    cache.mkdir()
+    key = compute_cache_key(
+        module_path="m",
+        source_bytes=source.encode("utf-8"),
+        schema_version=SUMMARY_SCHEMA_VERSION,
+        resolver_version=_RESOLVER_VERSION,
+        provider_fingerprint=DecoratorTaintSourceProvider().fingerprint(),
+        scan_policy_hash=ruleset_hash(WardlineConfig()),
+    )
+    forged = tuple(
+        FunctionSummary(
+            fqn=fqn,
+            body_taint=T.INTEGRAL,
+            return_taint=T.INTEGRAL,
+            taint_source="anchored",
+            unresolved_calls=0,
+            schema_version=SUMMARY_SCHEMA_VERSION,
+            cache_key=key,
+        )
+        for fqn in ("m.read_raw", "m.sink", "m.f")
+    )
+    (cache / f"{key}.json").write_text(json.dumps([_serialise_summary(s) for s in forged]), encoding="utf-8")
+
+    out = tmp_path / "findings.jsonl"
+    result = CliRunner().invoke(
+        scan,
+        [str(proj), "--cache-dir", str(cache), "--output", str(out)],
+        env={"WARDLINE_SUMMARY_CACHE_KEY": "unit-test-summary-cache-key"},
+    )
+
+    assert result.exit_code == 0, result.output
+    findings = [_json.loads(line) for line in out.read_text().splitlines() if line.strip()]
+    metrics = next(f for f in findings if f["rule_id"] == "WLN-ENGINE-METRICS")
+    assert metrics["properties"]["cache_hit_rate"] == 0.0
+    assert any(f["rule_id"] == "PY-WL-101" for f in findings)
 
 
 def _write(project, name, src):
@@ -453,7 +606,9 @@ def test_scan_baseline_annotates_but_does_not_clear_gate(tmp_path) -> None:
     bl = baseline_path(proj)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
-        "version: 1\nentries:\n  - fingerprint: " + fp + "\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
+        f"fingerprint_scheme: {FINGERPRINT_SCHEME}\nversion: 1\nentries:\n  - fingerprint: "
+        + fp
+        + "\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
         encoding="utf-8",
     )
     # SECURITY default: the defect is baselined for REPORTING (annotated), but the
@@ -462,7 +617,7 @@ def test_scan_baseline_annotates_but_does_not_clear_gate(tmp_path) -> None:
     assert res.exit_code == 1, res.output
     findings2 = [_json.loads(ln) for ln in out.read_text().splitlines() if ln.strip()]
     leak = next(f for f in findings2 if f["rule_id"] == "PY-WL-101")
-    assert leak["suppressed"] == "baselined"  # annotate-and-keep
+    assert leak["suppression_state"] == "baselined"  # annotate-and-keep
     assert "1 suppressed" in res.output
 
 
@@ -478,7 +633,9 @@ def test_scan_baseline_clears_gate_with_trust_suppressions(tmp_path) -> None:
     bl = baseline_path(proj)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
-        "version: 1\nentries:\n  - fingerprint: " + fp + "\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
+        f"fingerprint_scheme: {FINGERPRINT_SCHEME}\nversion: 1\nentries:\n  - fingerprint: "
+        + fp
+        + "\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
         encoding="utf-8",
     )
     res = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--fail-on", "ERROR", "--trust-suppressions"])
@@ -529,6 +686,7 @@ def test_scan_benign_no_module_is_quiet(tmp_path) -> None:
 
     proj = tmp_path / "proj"
     proj.mkdir()
+    (proj / "weft.toml").write_text('[wardline]\nsource_roots = ["."]\n', encoding="utf-8")
     _write(proj, "__init__.py", "VERSION = 1\n")
     _write(proj, "mod.py", "def g(): return 1\n")
     out = tmp_path / "f.jsonl"
@@ -712,6 +870,7 @@ def test_scan_relative_root_emits_relative_path_and_qualname(tmp_path) -> None:
 def test_scan_filigree_emit_success(tmp_path, monkeypatch) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
+    (proj / "weft.toml").write_text('[wardline]\nsource_roots = ["."]\n', encoding="utf-8")
     _write(proj, "svc.py", _LEAKY)
     captured: dict[str, object] = {}
 
@@ -735,26 +894,63 @@ def test_scan_filigree_emit_success(tmp_path, monkeypatch) -> None:
     assert captured["url"] == "http://x/api/weft/scan-results"
     assert captured["scanned_paths"] == ("svc.py",)
     assert "emitted" in result.output and "warning" not in result.output  # stats surfaced, no warning
+    assert "unscoped endpoint" in result.output
+    assert "server-default project" not in result.output
 
 
-def test_scan_filigree_protocol_error_exits_2(tmp_path, monkeypatch) -> None:
+def test_scan_filigree_protocol_error_does_not_preempt_gate(tmp_path, monkeypatch) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()
     _write(proj, "svc.py", _LEAKY)
-    from wardline.core.errors import FiligreeEmitError
+    captured: dict[str, object] = {}
 
-    class _BadEmitter:
+    class _RejectedEmitter:
         def __init__(self, url, **kw):
-            pass
+            captured["url"] = url
+            captured["kwargs"] = kw
 
         def emit(self, findings, *, scanned_paths=()):
-            raise FiligreeEmitError("Filigree rejected (400): bad path")
+            from wardline.core.filigree_emit import EmitResult, FailedFinding
 
-    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _BadEmitter)
+            return EmitResult(
+                reachable=True,
+                failures=tuple(FailedFinding(reason="partial", detail="payload too large (400)") for _ in findings),
+                warnings=("Filigree rejected scan-results (400): payload too large",),
+            )
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _RejectedEmitter)
     out = tmp_path / "f.jsonl"
-    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--filigree-url", "http://x"])
-    assert result.exit_code == 2, result.output
-    assert "bad path" in result.output
+    result = CliRunner().invoke(
+        scan,
+        [str(proj), "--output", str(out), "--filigree-url", "http://x", "--fail-on", "ERROR"],
+    )
+    assert result.exit_code == 1, result.output
+    assert captured["url"] == "http://x"
+    kwargs = captured["kwargs"]
+    assert isinstance(kwargs, dict)
+    assert kwargs["protocol_errors_loud"] is False
+    assert "Filigree rejected scan-results (400)" in result.output
+    assert "gate: FAILED" in result.output
+
+
+def test_scan_local_only_suppresses_resolved_emit_urls(tmp_path, monkeypatch) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    monkeypatch.setenv("WARDLINE_FILIGREE_URL", "http://x/api/weft/scan-results")
+    monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", "http://loom/api/wardline/taint-facts")
+
+    class _UnexpectedEmitter:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("local-only must not construct FiligreeEmitter")
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _UnexpectedEmitter)
+    out = tmp_path / "f.jsonl"
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--local-only"])
+
+    assert result.exit_code == 0, result.output
+    assert "emitted" not in result.output
+    assert "Filigree" not in result.output
 
 
 def test_scan_filigree_absent_continues(tmp_path, monkeypatch) -> None:
@@ -894,6 +1090,28 @@ def test_scan_loomweave_soft_outage_does_not_change_exit(tmp_path, monkeypatch) 
     assert "Loomweave taint store not written" in result.output
     assert "http://x/api/taint" in result.output
     assert "scan unaffected" in result.output
+
+
+def test_scan_loomweave_soft_outage_redacts_url_secrets(tmp_path, monkeypatch) -> None:
+    from wardline.loomweave.client import WriteResult
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    monkeypatch.setattr(
+        "wardline.loomweave.write.write_facts_to_loomweave",
+        lambda *a, **k: WriteResult(reachable=False, disabled_reason="connection refused"),
+    )
+    out = tmp_path / "f.jsonl"
+    secret_url = "https://user:secret@loomweave.example/api/taint?token=abc#frag"
+
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--loomweave-url", secret_url])
+
+    assert result.exit_code == 0, result.output
+    assert "https://<redacted>@loomweave.example/api/taint" in result.output
+    assert "user:secret" not in result.output
+    assert "token=abc" not in result.output
+    assert "#frag" not in result.output
 
 
 def test_scan_reports_filigree_success_and_loomweave_unreachable_independently(tmp_path, monkeypatch) -> None:
@@ -1409,9 +1627,15 @@ def test_scan_filigree_emit_with_failed_and_warnings(tmp_path, monkeypatch) -> N
             pass
 
         def emit(self, findings, *, scanned_paths=()):
-            from wardline.core.filigree_emit import EmitResult
+            from wardline.core.filigree_emit import EmitResult, FailedFinding
 
-            return EmitResult(reachable=True, created=0, updated=0, failed=1, warnings=("w1", "w2"))
+            return EmitResult(
+                reachable=True,
+                created=0,
+                updated=0,
+                failures=(FailedFinding(reason="rejected", fingerprint="wlfp2:w"),),
+                warnings=("w1", "w2"),
+            )
 
     monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _WarningFailedEmitter)
     out = tmp_path / "f.jsonl"
@@ -1436,3 +1660,60 @@ def test_scan_loomweave_with_unresolved_qualnames(tmp_path, monkeypatch) -> None
     assert result.exit_code == 0, result.output
     assert "wrote 1 taint fact(s)" in result.output
     assert "unresolved" in result.output
+
+
+# --- N-3 (wardline-8669de3576): subdirectory scans warn loudly ---------------
+
+
+def test_scan_subdirectory_of_weft_project_warns(tmp_path: Path) -> None:
+    # Scanning a subdirectory of a weft project mints scan-relative qualnames,
+    # skips the project baseline, and writes output into the subdir. The CLI must
+    # be LOUD about it (stderr warning sourced from the WLN-ENGINE-NESTED-SCAN-ROOT
+    # fact) while the scan itself still succeeds.
+    proj = tmp_path / "proj"
+    (proj / ".weft" / "wardline").mkdir(parents=True)
+    sub = proj / "specimen"
+    sub.mkdir()
+    (sub / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
+    result = CliRunner().invoke(cli, ["scan", str(sub)])
+    assert result.exit_code == 0, result.output
+    assert "warning:" in result.stderr
+    assert "qualname" in result.stderr
+    assert str(proj.resolve()) in result.stderr
+
+
+def test_scan_project_root_does_not_warn_nested(tmp_path: Path) -> None:
+    proj = tmp_path / "proj"
+    (proj / ".weft" / "wardline").mkdir(parents=True)
+    (proj / "m.py").write_text("def f(): return 1\n", encoding="utf-8")
+    result = CliRunner().invoke(cli, ["scan", str(proj)])
+    assert result.exit_code == 0, result.output
+    assert "WLN-ENGINE-NESTED-SCAN-ROOT" not in result.stderr
+    assert "subdirectory" not in result.stderr
+
+
+def test_scan_help_documents_scan_root_qualname_coupling() -> None:
+    result = CliRunner().invoke(cli, ["scan", "--help"])
+    assert result.exit_code == 0
+    helptext = result.output.lower()
+    assert "qualname" in helptext
+    assert "scan root" in helptext
+
+
+def test_dossier_help_documents_scan_root_qualname_coupling() -> None:
+    result = CliRunner().invoke(cli, ["dossier", "--help"])
+    assert result.exit_code == 0
+    helptext = result.output.lower()
+    assert "scan root" in helptext or "project root" in helptext
+
+
+def test_scan_fail_on_accepts_lowercase(tmp_path: Path) -> None:
+    # N-5 (wardline-dc6f44707d): --fail-on was uppercase-only; an agent carrying
+    # filigree's lowercase habit got a usage error. Case-insensitive now; the
+    # canonical (uppercase) form is what the gate output echoes back.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    result = CliRunner().invoke(cli, ["scan", str(proj), "--fail-on", "error"])
+    assert result.exit_code == 1, result.output
+    assert "--fail-on ERROR" in result.stderr

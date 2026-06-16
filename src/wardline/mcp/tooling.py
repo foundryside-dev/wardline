@@ -7,12 +7,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from wardline.core.finding import Finding
-
-if TYPE_CHECKING:
-    from wardline.core.explain import TaintExplanation
 
 
 class ToolError(Exception):
@@ -54,6 +51,19 @@ class Tool:
     handler: Callable[[dict[str, Any], Path], Any]
     network: bool = False
     capabilities: frozenset[ToolCapability] = frozenset({ToolCapability.READ})
+    # B1/B2 (wardline-47ff226ebe / wardline-e63204176b): MCP rev 2025-06-18 structured
+    # output + 2025-03-26 display metadata. ``annotations`` is the standard MCP
+    # ToolAnnotations object (title, readOnlyHint, destructiveHint, idempotentHint,
+    # openWorldHint). CONVENTION: the hints describe the tool's integration-free
+    # baseline posture — readOnlyHint mirrors the DECLARED capability set, and
+    # openWorldHint mirrors the declared NETWORK capability. Opt-in federation reach
+    # (a configured Filigree/Loomweave URL widening scan/dossier/attest at runtime)
+    # is deliberately NOT reflected here: hints are static, untrusted UX advisories,
+    # and ToolPolicy + _effective_tool_capabilities remain the enforcement authority
+    # over what a call may actually do.
+    title: str | None = None
+    output_schema: dict[str, Any] | None = None
+    annotations: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         capabilities = set(self.capabilities) or {ToolCapability.READ}
@@ -65,63 +75,6 @@ class Tool:
 def finding_to_dict(finding: Finding) -> dict[str, Any]:
     parsed: dict[str, Any] = json.loads(finding.to_jsonl())
     return parsed
-
-
-def explanation_to_dict(exp: TaintExplanation) -> dict[str, Any]:
-    return {
-        "tier_in": exp.tier_in,
-        "tier_out": exp.tier_out,
-        "immediate_tainted_callee": exp.immediate_tainted_callee,
-        "source_boundary_qualname": exp.source_boundary_qualname,
-        "resolved_call_count": exp.resolved_call_count,
-        "unresolved_call_count": exp.unresolved_call_count,
-        "remediation": remediation_to_dict(exp),
-    }
-
-
-def remediation_to_dict(exp: TaintExplanation) -> dict[str, Any]:
-    if exp.rule_id != "PY-WL-101":
-        return {
-            "kind": "review_required",
-            "rule_id": exp.rule_id,
-            "summary": (
-                "Review the finding and apply the rule-specific fix; no automated remediation hint is available."
-            ),
-            "sink_qualname": exp.sink_qualname,
-            "source_qualname": exp.source_boundary_qualname,
-            "caveat": "This hint is advisory and does not replace the factual taint explanation.",
-        }
-
-    source = exp.source_boundary_qualname or exp.immediate_tainted_callee
-    sink = exp.sink_qualname
-    if source and sink:
-        summary = (
-            f"Validate or normalize data from {source} before it reaches trusted producer {sink}. "
-            "Add or repair a @trust_boundary only on the function that actually rejects invalid data."
-        )
-    elif sink:
-        summary = (
-            f"Validate or normalize the raw input before it reaches trusted producer {sink}; "
-            "the taint source is unresolved in this explanation. Add or repair a @trust_boundary only where "
-            "the code actually rejects invalid data."
-        )
-    else:
-        summary = (
-            "Validate or normalize the raw input before it reaches the trusted producer; the taint source is "
-            "unresolved in this explanation. Add or repair a @trust_boundary only where the code actually "
-            "rejects invalid data."
-        )
-    return {
-        "kind": "boundary_placement",
-        "rule_id": exp.rule_id,
-        "summary": summary,
-        "sink_qualname": sink,
-        "source_qualname": source,
-        "caveat": (
-            "Do not use blind decorator insertion; mark a trust boundary only on code that validates "
-            "and rejects invalid data."
-        ),
-    }
 
 
 def resolve_under_root(root: Path, arg: str) -> Path:

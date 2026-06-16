@@ -14,6 +14,7 @@ from wardline.cli.attest import attest
 from wardline.cli.decorator_coverage import decorator_coverage
 from wardline.cli.doctor import doctor
 from wardline.cli.dossier import dossier
+from wardline.cli.explain_taint import explain_taint
 from wardline.cli.file_finding import file_finding
 from wardline.cli.findings import findings
 from wardline.cli.fix import fix
@@ -21,8 +22,10 @@ from wardline.cli.install import install
 from wardline.cli.judge import judge as judge_command
 from wardline.cli.lsp import lsp
 from wardline.cli.mcp import mcp
+from wardline.cli.rekey import rekey
 from wardline.cli.scan import scan
 from wardline.cli.scan_file_findings import scan_file_findings
+from wardline.cli.scan_job import scan_job
 from wardline.core.baseline import collect_and_write_baseline
 from wardline.core.descriptor import descriptor_to_yaml
 from wardline.core.errors import WardlineError
@@ -37,7 +40,9 @@ def cli() -> None:
 
 
 cli.add_command(scan)
+cli.add_command(scan_job)
 cli.add_command(scan_file_findings)
+cli.add_command(rekey)
 cli.add_command(judge_command)
 cli.add_command(mcp)
 cli.add_command(lsp)
@@ -45,6 +50,7 @@ cli.add_command(fix)
 cli.add_command(install)
 cli.add_command(doctor)
 cli.add_command(dossier)
+cli.add_command(explain_taint)
 cli.add_command(findings)
 cli.add_command(file_finding)
 cli.add_command(assure)

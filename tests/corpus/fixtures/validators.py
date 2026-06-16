@@ -5,13 +5,15 @@ from wardline.decorators import trust_boundary
 
 
 @trust_boundary(to_level="ASSURED")
-def no_rejection(p):  # TP: cannot reject → PY-WL-102
-    return p
+def no_rejection(p):  # TP: cannot reject → PY-WL-102 (laundered shape; bare return-p is PY-WL-119's)
+    cleaned = p
+    return cleaned
 
 
 @trust_boundary(to_level="GUARDED")
-def no_rejection_guarded(p):  # TP: cannot reject → PY-WL-102
-    return p
+def no_rejection_guarded(p):  # TP: cannot reject → PY-WL-102 (laundered shape; bare return-p is PY-WL-119's)
+    cleaned = p
+    return cleaned
 
 
 @trust_boundary(to_level="ASSURED")

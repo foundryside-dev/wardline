@@ -17,7 +17,7 @@ def test_scan_resolves_filigree_url_from_published_port(tmp_path: Path, monkeypa
     captured: dict[str, object] = {}
 
     class _FakeEmitter:
-        def __init__(self, url: str, *, token: str | None = None) -> None:
+        def __init__(self, url: str, *, token: str | None = None, **_kwargs) -> None:
             captured["url"] = url
 
         def emit(self, findings, *, scanned_paths=()):  # noqa: ANN001
@@ -40,9 +40,19 @@ def test_mcp_resolves_loomweave_url_from_env(tmp_path: Path, monkeypatch) -> Non
     captured: dict[str, object] = {}
 
     class _FakeServer:
-        def __init__(self, *, root: Path, loomweave_url: str | None = None, filigree_url: str | None = None) -> None:
+        def __init__(
+            self,
+            *,
+            root: Path,
+            loomweave_url: str | None = None,
+            filigree_url: str | None = None,
+            allow_write: bool = True,
+            allow_network: bool = True,
+        ) -> None:
             captured["loomweave_url"] = loomweave_url
             captured["filigree_url"] = filigree_url
+            captured["allow_write"] = allow_write
+            captured["allow_network"] = allow_network
             self.rpc = self
 
         def run_stdio(self) -> None:
@@ -130,6 +140,28 @@ def test_install_summary_includes_binding_lines(tmp_path: Path, monkeypatch) -> 
     assert "filigree:" in result.output
 
 
+def test_install_refuses_symlinked_skill_parent_escape(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside_skill = outside / "skills" / "wardline-gate"
+    outside_skill.mkdir(parents=True)
+    sentinel = outside_skill / "keep.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    (root / ".claude").symlink_to(outside, target_is_directory=True)
+
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: tmp_path / "home")
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+
+    result = CliRunner().invoke(cli, ["install", "--root", str(root)])
+
+    assert result.exit_code == 2
+    assert "escapes project root" in result.output
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+    assert not (outside_skill / "SKILL.md").exists()
+
+
 def test_install_detects_filigree_from_ephemeral_port(tmp_path: Path, monkeypatch) -> None:
     # The "wire config" feature was removed: install DETECTS the sibling from its
     # published port and REPORTS it, writing no config file.
@@ -179,7 +211,7 @@ def test_install_rerun_detects_filigree_when_port_appears_after_initial_install(
     captured: dict[str, object] = {}
 
     class _FakeEmitter:
-        def __init__(self, url: str, *, token: str | None = None) -> None:
+        def __init__(self, url: str, *, token: str | None = None, **_kwargs) -> None:
             captured["url"] = url
 
         def emit(self, findings, *, scanned_paths=()):  # noqa: ANN001
@@ -206,7 +238,7 @@ def test_scan_threads_filigree_bearer_token_from_env(tmp_path: Path, monkeypatch
     captured: dict[str, object] = {}
 
     class _FakeEmitter:
-        def __init__(self, url: str, *, token: str | None = None) -> None:
+        def __init__(self, url: str, *, token: str | None = None, **_kwargs) -> None:
             captured["url"] = url
             captured["token"] = token
 
@@ -234,7 +266,7 @@ def test_scan_threads_filigree_bearer_token_from_deprecated_env(tmp_path: Path, 
     captured: dict[str, object] = {}
 
     class _FakeEmitter:
-        def __init__(self, url: str, *, token: str | None = None) -> None:
+        def __init__(self, url: str, *, token: str | None = None, **_kwargs) -> None:
             captured["url"] = url
             captured["token"] = token
 

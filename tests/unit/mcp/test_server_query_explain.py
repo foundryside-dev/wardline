@@ -36,13 +36,13 @@ _SRC = (
 
 def test_where_filters_findings_by_qualname(tmp_path):
     (tmp_path / "svc.py").write_text(_SRC, encoding="utf-8")
-    full = _scan({}, tmp_path)
-    qualnames = {f["qualname"] for f in full["findings"] if f["rule_id"] == "PY-WL-101"}
+    full = _scan({"full": True}, tmp_path)
+    qualnames = {e["qualname"] for e in full["agent_summary"]["active_defects"] if e["rule_id"] == "PY-WL-101"}
     assert "svc.leak_a" in qualnames and "svc.leak_b" in qualnames
 
-    filtered = _scan({"where": {"qualname": "svc.leak_a"}}, tmp_path)
-    got = [f for f in filtered["findings"] if f["rule_id"] == "PY-WL-101"]
-    assert {f["qualname"] for f in got} == {"svc.leak_a"}
+    filtered = _scan({"where": {"qualname": "svc.leak_a"}, "full": True}, tmp_path)
+    got = [e for e in filtered["agent_summary"]["active_defects"] if e["rule_id"] == "PY-WL-101"]
+    assert {e["qualname"] for e in got} == {"svc.leak_a"}
 
 
 def test_where_summary_and_gate_describe_whole_project(tmp_path):
@@ -60,10 +60,29 @@ def test_where_unknown_key_is_toolerror(tmp_path):
         _scan({"where": {"bogus": "x"}}, tmp_path)
 
 
+def test_where_sei_filter_honors_strict_defaults(tmp_path, monkeypatch):
+    from wardline.core import config as config_mod
+
+    (tmp_path / "svc.py").write_text(_SRC, encoding="utf-8")
+    seen: dict[str, bool] = {}
+
+    def fake_resolve_loomweave_url(flag, root, config_path, *, strict_defaults=False):
+        seen["strict_defaults"] = strict_defaults
+        if not strict_defaults:
+            raise AssertionError("strict_defaults was not propagated to SEI filter resolution")
+        return None
+
+    monkeypatch.setattr(config_mod, "resolve_loomweave_url", fake_resolve_loomweave_url)
+
+    with pytest.raises(ToolError, match="no Loomweave URL configured"):
+        _scan({"where": {"qualname": "sei:python:function:svc.leak_a"}}, tmp_path, strict_defaults=True)
+    assert seen["strict_defaults"] is True
+
+
 def test_explain_inlines_provenance_on_active_defects(tmp_path):
     (tmp_path / "svc.py").write_text(_SRC, encoding="utf-8")
     out = _scan({"explain": True}, tmp_path)
-    by_q = {f["qualname"]: f for f in out["findings"] if f["rule_id"] == "PY-WL-101"}
+    by_q = {e["qualname"]: e for e in out["agent_summary"]["active_defects"] if e["rule_id"] == "PY-WL-101"}
     exp = by_q["svc.leak_a"]["explanation"]
     assert exp["immediate_tainted_callee"] == "read_a"
     assert exp["source_boundary_qualname"] == "svc.read_a"
@@ -73,7 +92,7 @@ def test_explain_inlines_provenance_on_active_defects(tmp_path):
 def test_explain_absent_by_default(tmp_path):
     (tmp_path / "svc.py").write_text(_SRC, encoding="utf-8")
     out = _scan({}, tmp_path)
-    assert all("explanation" not in f for f in out["findings"])
+    assert all("explanation" not in e for e in out["agent_summary"]["active_defects"])
 
 
 def test_explain_matches_single_finding_explain(tmp_path):
@@ -82,7 +101,11 @@ def test_explain_matches_single_finding_explain(tmp_path):
 
     (tmp_path / "svc.py").write_text(_SRC, encoding="utf-8")
     out = _scan({"explain": True}, tmp_path)
-    f = next(f for f in out["findings"] if f["qualname"] == "svc.leak_a" and f["rule_id"] == "PY-WL-101")
+    f = next(
+        e
+        for e in out["agent_summary"]["active_defects"]
+        if e["qualname"] == "svc.leak_a" and e["rule_id"] == "PY-WL-101"
+    )
     single = _explain_taint({"fingerprint": f["fingerprint"]}, tmp_path)
     # All six explanation keys must match the single-finding explain projection.
     assert f["explanation"] == {k: single[k] for k in f["explanation"]}
@@ -97,9 +120,8 @@ def test_where_filters_agent_summary_arrays(tmp_path):
     (tmp_path / "svc.py").write_text(_many_leaks(5), encoding="utf-8")
     _baseline_all(tmp_path)
     out = _scan({"where": {"suppression": "active", "severity": "CRITICAL"}}, tmp_path)
-    assert out["findings"] == []  # 0 active CRITICAL
     summ = out["agent_summary"]
-    assert summ["suppressed_findings"] == []
+    assert summ["suppressed_findings"] == []  # 0 active CRITICAL
     assert summ["active_defects"] == []
     # but the whole-project counts are preserved
     assert summ["summary"]["suppressed_findings"] == 5
@@ -112,9 +134,9 @@ def test_explain_true_has_default_cap(tmp_path):
     # truncation is announced — never silent.
     (tmp_path / "svc.py").write_text(_many_leaks(40), encoding="utf-8")
     out = _scan({"explain": True}, tmp_path)
-    explained = [f for f in out["findings"] if "explanation" in f]
-    assert 0 < len(explained) <= 10  # default cap
-    assert out["truncation"]["explanations_truncated"] is True
+    explained = [e for e in out["agent_summary"]["active_defects"] if "explanation" in e]
+    assert 0 < len(explained) <= 10  # default explanation cap (independent of the body page size)
+    assert out["agent_summary"]["truncation"]["explanations_truncated"] is True
     # the true total is still reported, so nothing is silently hidden
     assert out["summary"]["active"] == 40
 
@@ -124,22 +146,26 @@ def test_max_findings_can_raise_explain_cap_above_default(tmp_path):
     # the conservative default (10) when the agent accepts the larger payload.
     (tmp_path / "svc.py").write_text(_many_leaks(20), encoding="utf-8")
     out = _scan({"explain": True, "max_findings": 20}, tmp_path)
-    explained = [f for f in out["findings"] if "explanation" in f]
+    explained = [e for e in out["agent_summary"]["active_defects"] if "explanation" in e]
     assert len(explained) > 10  # exceeded the default cap
-    assert out["truncation"]["explanations_truncated"] is False
+    assert out["agent_summary"]["truncation"]["explanations_truncated"] is False
 
 
 def test_summary_only_omits_finding_arrays(tmp_path):
     # (d): the "did the gate pass?" payload — counts + gate, no finding bodies.
     (tmp_path / "svc.py").write_text(_many_leaks(5), encoding="utf-8")
     out = _scan({"summary_only": True, "fail_on": "ERROR"}, tmp_path)
-    assert out["findings"] == []
     summ = out["agent_summary"]
-    assert summ["active_defects"] == [] and summ["suppressed_findings"] == [] and summ["engine_facts"] == []
+    assert (
+        summ["active_defects"] == []
+        and summ["suppressed_findings"] == []
+        and summ["engine_facts"] == []
+        and summ["informational"] == []
+    )
     # counts + gate intact
     assert out["summary"]["active"] == 5
     assert out["gate"]["tripped"] is True
-    assert out["truncation"]["summary_only"] is True
+    assert summ["truncation"]["summary_only"] is True
 
 
 def test_include_suppressed_false_drops_suppressed(tmp_path):
@@ -147,7 +173,8 @@ def test_include_suppressed_false_drops_suppressed(tmp_path):
     (tmp_path / "svc.py").write_text(_many_leaks(5), encoding="utf-8")
     _baseline_all(tmp_path)
     out = _scan({"include_suppressed": False}, tmp_path)
-    assert all(f["suppressed"] == "active" for f in out["findings"])
+    # suppressed bodies are dropped from the page; any shown defect body is active.
+    assert all(e["suppression_state"] == "active" for e in out["agent_summary"]["active_defects"])
     assert out["agent_summary"]["suppressed_findings"] == []
     # whole-project count still visible
     assert out["summary"]["baselined"] == 5
@@ -157,10 +184,12 @@ def test_max_findings_caps_and_marks(tmp_path):
     # (b): bound the returned list and announce the cut.
     (tmp_path / "svc.py").write_text(_many_leaks(10), encoding="utf-8")
     out = _scan({"max_findings": 3}, tmp_path)
-    assert len(out["findings"]) == 3
-    assert out["truncation"]["findings_truncated"] is True
-    assert out["truncation"]["findings_returned"] == 3
-    assert out["truncation"]["findings_total"] >= 10
+    ag = out["agent_summary"]
+    shown = len(ag["active_defects"]) + len(ag["suppressed_findings"]) + len(ag["engine_facts"])
+    assert shown == 3
+    assert ag["truncation"]["findings_truncated"] is True
+    assert ag["truncation"]["findings_returned"] == 3
+    assert ag["truncation"]["findings_total"] >= 10
 
 
 @pytest.mark.parametrize("bad", [-1, 1.5, "3", True])
@@ -179,3 +208,48 @@ def test_boolean_payload_controls_reject_non_bool(tmp_path, name):
     (tmp_path / "svc.py").write_text(_SRC, encoding="utf-8")
     with pytest.raises(ToolError, match=name):
         _scan({name: "false"}, tmp_path)
+
+
+# --- W1: bounded default + offset pagination (weft-439d09fc8d) ---------------
+
+
+def _shown(ag) -> int:
+    return (
+        len(ag["active_defects"]) + len(ag["suppressed_findings"]) + len(ag["engine_facts"]) + len(ag["informational"])
+    )
+
+
+def test_default_scan_is_bounded_to_25(tmp_path):
+    # A bare scan over 30 active defects returns at most the bounded page (25), so the
+    # agent's first natural call cannot overflow its context — the ~123KB dump is gone.
+    (tmp_path / "svc.py").write_text(_many_leaks(30), encoding="utf-8")
+    out = _scan({}, tmp_path)
+    ag = out["agent_summary"]
+    assert _shown(ag) == 25
+    t = ag["truncation"]
+    assert t["findings_returned"] == 25 and t["findings_truncated"] is True and t["next_offset"] == 25
+    # whole-project count stays honest regardless of the page bound
+    assert out["summary"]["active"] == 30
+
+
+def test_offset_pages_are_disjoint_and_full_is_uncapped(tmp_path):
+    (tmp_path / "svc.py").write_text(_many_leaks(30), encoding="utf-8")
+    page1 = _scan({}, tmp_path)["agent_summary"]
+    nxt = page1["truncation"]["next_offset"]
+    assert nxt == 25
+    page2 = _scan({"offset": nxt}, tmp_path)["agent_summary"]
+    fp1 = {e["fingerprint"] for e in page1["active_defects"]}
+    fp2 = {e["fingerprint"] for e in page2["active_defects"]}
+    assert fp1 and fp2 and fp1.isdisjoint(fp2)  # no finding appears on both pages
+    assert page2["truncation"]["offset"] == 25
+    assert page2["truncation"]["next_offset"] is None  # 30 actives → page 2 is the last
+    # full=true returns every body in one call, untruncated.
+    full = _scan({"full": True}, tmp_path)["agent_summary"]
+    assert len(full["active_defects"]) == 30
+    assert full["truncation"]["findings_truncated"] is False and full["truncation"]["next_offset"] is None
+
+
+def test_offset_rejects_non_negative_integer(tmp_path):
+    (tmp_path / "svc.py").write_text(_SRC, encoding="utf-8")
+    with pytest.raises(ToolError, match="offset"):
+        _scan({"offset": -1}, tmp_path)

@@ -1,0 +1,6 @@
+[package]
+# The hyphenated package name is deliberate: the SP2 crate-root pass must
+# normalise it to the underscored crate `rust_app` (the identity the corpus pins).
+name = "rust-app"
+version = "0.1.0"
+edition = "2021"

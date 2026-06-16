@@ -22,6 +22,7 @@ def test_summaries_map_provider_seed_to_anchored() -> None:
         source_bytes=b"x\n",
         resolver_version="sp1d",
         provider_fingerprint="default-v1",
+        scan_policy_hash="sha256:policy-a",
     )
     by_fqn = {s.fqn: s for s in summaries}
     assert by_fqn["m.a"].taint_source == "anchored"
@@ -43,6 +44,7 @@ def test_all_summaries_in_module_share_cache_key() -> None:
         source_bytes=b"x\n",
         resolver_version="sp1d",
         provider_fingerprint="default-v1",
+        scan_policy_hash="sha256:policy-a",
     )
     keys = {s.cache_key for s in summaries}
     assert len(keys) == 1  # cache_key is module-granular
@@ -57,6 +59,7 @@ def test_missing_unresolved_count_defaults_zero() -> None:
         source_bytes=b"x\n",
         resolver_version="sp1d",
         provider_fingerprint="default-v1",
+        scan_policy_hash="sha256:policy-a",
     )
     assert summaries[0].unresolved_calls == 0
 
@@ -70,6 +73,7 @@ def test_identical_source_distinct_modules_get_distinct_keys() -> None:
         source_bytes=b"def f(): pass\n",
         resolver_version="sp1d",
         provider_fingerprint="default-v1",
+        scan_policy_hash="sha256:policy-a",
     )
     key_a = summarise_module(module_path="a", seeds=seeds_a, **common)[0].cache_key
     key_b = summarise_module(module_path="b", seeds=seeds_b, **common)[0].cache_key

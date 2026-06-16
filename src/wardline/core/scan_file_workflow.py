@@ -7,12 +7,13 @@ from typing import Any
 
 from wardline.core.errors import WardlineError
 from wardline.core.explain import TaintExplanation, explanation_from_context
-from wardline.core.filigree_emit import EmitResult
+from wardline.core.filigree_emit import EmitResult, filigree_disabled_reason
 from wardline.core.filigree_issue import (
     FileResult,
     IdentityAttachResult,
     attach_loomweave_identity_for_qualname,
     identity_attach_result_to_json,
+    plugin_for_finding,
 )
 from wardline.core.finding import Finding, Kind, Severity, SuppressionState
 from wardline.core.run import gate_decision, run_scan
@@ -52,6 +53,7 @@ def _emit_to_dict(result: EmitResult | None, *, configured: bool) -> dict[str, A
             "created": 0,
             "updated": 0,
             "failed": 0,
+            "failures": [],
             "warnings": [],
             "disabled_reason": None if configured else "not configured",
         }
@@ -61,8 +63,17 @@ def _emit_to_dict(result: EmitResult | None, *, configured: bool) -> dict[str, A
         "created": result.created,
         "updated": result.updated,
         "failed": result.failed,
+        # PDR-0023: per-finding reject reasons so a partial ingest is distinguishable from clean.
+        "failures": [f.to_wire() for f in result.failures],
         "warnings": list(result.warnings),
-        "disabled_reason": None if result.reachable else "filigree unreachable",
+        # Delegate to the shared 401/403-vs-5xx-vs-transport ladder (dogfood #5) instead
+        # of flattening every soft failure to "filigree unreachable".
+        "disabled_reason": filigree_disabled_reason(
+            reachable=result.reachable,
+            status=result.status,
+            token_sent=result.token_sent,
+            url=result.url,
+        ),
     }
 
 
@@ -174,11 +185,15 @@ def scan_file_findings(
                         issue_id=file_result.issue_id,
                         filer=filigree_filer,
                         loomweave_client=loomweave_client,
+                        plugin=plugin_for_finding(finding),
                     )
                 else:
                     identity_result = IdentityAttachResult.skipped("finding has no qualname")
             else:
-                identity_result = IdentityAttachResult.not_attempted("no issue_id from Filigree promote")
+                # No promote was ever attempted on this branch — name the actual cause,
+                # matching _file_to_dict's configured=False wording (the old "no issue_id
+                # from Filigree promote" misattributed the failure).
+                identity_result = IdentityAttachResult.not_attempted("no Filigree URL configured")
         item = _finding_base(finding, explanation)
         item["promotion"] = _file_to_dict(file_result, selected=selected_here, configured=filigree_filer is not None)
         item["identity_attach"] = identity_attach_result_to_json(identity_result)
@@ -193,9 +208,16 @@ def scan_file_findings(
             "baselined": result.summary.baselined,
             "waived": result.summary.waived,
             "judged": result.summary.judged,
+            "informational": result.summary.informational,
             "unanalyzed": result.summary.unanalyzed,
         },
-        "gate": {"tripped": decision.tripped, "fail_on": decision.fail_on, "exit_class": decision.exit_class},
+        "gate": {
+            "tripped": decision.tripped,
+            "fail_on": decision.fail_on,
+            "exit_class": decision.exit_class,
+            "verdict": decision.verdict,
+            "would_trip_at": decision.would_trip_at,
+        },
         "filigree_emit": _emit_to_dict(emit_result, configured=filigree_emitter is not None),
         "active_defects": active_out,
         "selected_count": len(selected & known_active),

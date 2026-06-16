@@ -3,3 +3,7 @@
 # and treat the frozen corpus as binary so no autocrlf/normalization rewrites it.
 tests/golden/identity/fixtures/** text eol=lf
 tests/golden/identity/corpus/** -text
+# Same discipline for the Rust oracle (tests/golden/identity/rust/): LF-pinned
+# fixtures (tree-sitter byte offsets are frozen in edge spans), binary-frozen corpus.
+tests/golden/identity/rust/fixtures/** text eol=lf
+tests/golden/identity/rust/corpus/** -text

@@ -1,17 +1,20 @@
 # src/wardline/scanner/taint/summary_cache.py
-"""In-memory (+ optional disk) summary cache for L3 project-scope transitive taint.
+"""In-memory (+ authenticated optional disk) summary cache for L3 project-scope transitive taint.
 
 Keyed on the SP1d module ``cache_key`` (every FunctionSummary in a module shares
 one key), so the store maps ``cache_key -> tuple[FunctionSummary, ...]``.
 
-Disk persistence: construct with ``cache_dir=Path(...)`` then call ``load()``
-before analysis and ``save()`` after. Malformed / stale-schema / non-hex-stem
-files are silently dropped on load (cold-cache fallback). Atomic write-then-
-replace so a crash leaves the prior file or none — never a partial file.
+Disk persistence: construct with ``cache_dir=Path(...)`` and a process-controlled
+``cache_auth_secret`` then call ``load()`` before analysis and ``save()`` after.
+Malformed / stale-schema / non-hex-stem / unauthenticated files are silently
+dropped on load (cold-cache fallback). Atomic write-then-replace so a crash
+leaves the prior file or none — never a partial file.
 
-No governance: ``.old``'s CI-attestation / GOVERNANCE-CACHE-UNATTESTED path is
-discarded outright. The 64-char hex key validation is retained: it is cheap and
-guards the persistent-cache file path against traversal.
+No repository governance: ``.old``'s CI-attestation / GOVERNANCE-CACHE-UNATTESTED
+path is discarded outright. The 64-char hex key validation is retained: it is
+cheap and guards the persistent-cache file path against traversal. Disk cache
+files are integrity-checked with an operator-held HMAC key before they can
+rehydrate summaries, so repository-controlled JSON cannot become analyzer truth.
 
 Correctness note: this cache memoizes only the source-determined taint contract
 (body/return/source), which ``cache_key`` fully captures. The resolver always
@@ -22,11 +25,14 @@ taint — see project_resolver's module docstring.
 from __future__ import annotations
 
 import contextlib
+import hashlib
+import hmac
 import json
 import logging
 import os
 import re
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, cast
 
@@ -40,6 +46,11 @@ if TYPE_CHECKING:
     pass
 
 _logger = logging.getLogger(__name__)
+
+SUMMARY_CACHE_KEY_ENV = "WARDLINE_SUMMARY_CACHE_KEY"
+"""Process environment key used to authenticate disk summary-cache entries."""
+
+_CACHE_FILE_SCHEMA_VERSION = 1
 
 # The full reachable taint set for an analyzed function's cached body/return
 # taint. Unlike the stdlib table, a cached summary CAN be INTEGRAL (a @trusted
@@ -93,15 +104,20 @@ class SummaryCache:
     # its directory via a crafted key.
     _CACHE_KEY_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"^[0-9a-f]{64}$")
 
-    def __init__(self, *, cache_dir: Path | None = None) -> None:
+    def __init__(self, *, cache_dir: Path | None = None, cache_auth_secret: bytes | None = None) -> None:
         self._entries: dict[str, tuple[FunctionSummary, ...]] = {}
         self._hits: int = 0
         self._misses: int = 0
         self._cache_dir: Path | None = cache_dir
+        self._cache_auth_secret: bytes | None = cache_auth_secret
 
     @property
     def cache_dir(self) -> Path | None:
         return self._cache_dir
+
+    @property
+    def has_disk_auth(self) -> bool:
+        return self._cache_auth_secret is not None
 
     @property
     def schema_version(self) -> int:
@@ -191,14 +207,19 @@ class SummaryCache:
         """Atomically write every in-memory entry to ``<cache_dir>/<key>.json``.
 
         Write-temp-then-os.replace, so a crash leaves the prior file or none —
-        never a partial file. Raises ValueError if no cache_dir was set.
+        never a partial file. Raises ValueError if no cache_dir was set. Without
+        a ``cache_auth_secret``, disk persistence is disabled and save is a no-op
+        after ensuring the directory exists.
         """
         if self._cache_dir is None:
             raise ValueError("SummaryCache.save() requires cache_dir")
         self._cache_dir.mkdir(parents=True, exist_ok=True)
+        if self._cache_auth_secret is None:
+            return
         for cache_key, summaries in self._entries.items():
             target = self._cache_dir / f"{cache_key}.json"
-            payload = [_serialise_summary(s) for s in summaries]
+            payload = _cache_payload(cache_key, summaries)
+            payload["mac"] = _cache_payload_mac(self._cache_auth_secret, payload)
             # Opened outside a `with` so temp_path is known for cleanup-on-failure;
             # the `with tf:` below is the actual context manager. (SIM115)
             tf = tempfile.NamedTemporaryFile(  # noqa: SIM115
@@ -211,7 +232,7 @@ class SummaryCache:
             temp_path = Path(tf.name)
             try:
                 with tf:
-                    json.dump(payload, tf)
+                    json.dump(payload, tf, sort_keys=True, separators=(",", ":"))
                 os.replace(temp_path, target)
             except (OSError, ValueError, TypeError):
                 # Clean up the temp file on ANY failure (dump or replace) so the
@@ -221,12 +242,18 @@ class SummaryCache:
                 raise
 
     def load(self) -> None:
-        """Populate the store from ``<cache_dir>/*.json``. Malformed / stale /
-        non-hex-stem files are silently dropped (cold-cache fallback). Raises
-        ValueError if no cache_dir was set."""
+        """Populate the store from ``<cache_dir>/*.json``.
+
+        Malformed / stale / non-hex-stem / unauthenticated files are silently
+        dropped (cold-cache fallback). Raises ValueError if no cache_dir was set.
+        Without a ``cache_auth_secret``, disk loading is disabled and load is a
+        no-op after ensuring the directory exists.
+        """
         if self._cache_dir is None:
             raise ValueError("SummaryCache.load() requires cache_dir")
         self._cache_dir.mkdir(parents=True, exist_ok=True)
+        if self._cache_auth_secret is None:
+            return
         for path in sorted(self._cache_dir.iterdir()):
             if path.suffix != ".json":
                 continue
@@ -235,7 +262,11 @@ class SummaryCache:
                 continue
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
-                summaries = tuple(_deserialise_summary(d) for d in payload)
+                summaries = _deserialise_cache_payload(
+                    payload,
+                    expected_cache_key=cache_key,
+                    cache_auth_secret=self._cache_auth_secret,
+                )
                 _validate_loaded_entry(cache_key, summaries)
             except (json.JSONDecodeError, ValueError, KeyError, TypeError) as exc:
                 _logger.warning("SummaryCache.load: dropping malformed entry %s: %s", path, exc)
@@ -248,6 +279,13 @@ class SummaryCache:
             if any(s.schema_version != SUMMARY_SCHEMA_VERSION for s in summaries):  # pragma: no cover
                 continue
             self._entries[cache_key] = summaries
+
+
+def summary_cache_auth_secret_from_env() -> bytes | None:
+    value = os.environ.get(SUMMARY_CACHE_KEY_ENV)
+    if value is None or value == "":
+        return None
+    return value.encode("utf-8")
 
 
 def _validate_loaded_entry(cache_key: str, summaries: tuple[FunctionSummary, ...]) -> None:
@@ -283,3 +321,43 @@ def _deserialise_summary(d: dict[str, object]) -> FunctionSummary:
         schema_version=int(cast("int", d["schema_version"])),
         cache_key=str(d["cache_key"]),
     )
+
+
+def _cache_payload(cache_key: str, summaries: tuple[FunctionSummary, ...]) -> dict[str, object]:
+    return {
+        "schema_version": _CACHE_FILE_SCHEMA_VERSION,
+        "cache_key": cache_key,
+        "summaries": [_serialise_summary(s) for s in summaries],
+    }
+
+
+def _cache_payload_mac(cache_auth_secret: bytes, payload: Mapping[str, object]) -> str:
+    payload_without_mac = {key: value for key, value in payload.items() if key != "mac"}
+    encoded = json.dumps(payload_without_mac, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return hmac.new(cache_auth_secret, encoded, hashlib.sha256).hexdigest()
+
+
+def _deserialise_cache_payload(
+    payload: object,
+    *,
+    expected_cache_key: str,
+    cache_auth_secret: bytes,
+) -> tuple[FunctionSummary, ...]:
+    if not isinstance(payload, dict):
+        raise ValueError("cache entry is not an authenticated envelope")
+    mac = payload.get("mac")
+    if not isinstance(mac, str):
+        raise ValueError("cache entry missing mac")
+    expected_mac = _cache_payload_mac(cache_auth_secret, cast("Mapping[str, object]", payload))
+    if not hmac.compare_digest(mac, expected_mac):
+        raise ValueError("cache entry mac mismatch")
+    if payload.get("schema_version") != _CACHE_FILE_SCHEMA_VERSION:
+        raise ValueError(f"cache file schema_version={payload.get('schema_version')!r} != {_CACHE_FILE_SCHEMA_VERSION}")
+    if payload.get("cache_key") != expected_cache_key:
+        raise ValueError(
+            f"envelope cache_key={payload.get('cache_key')!r} does not match filename key {expected_cache_key!r}"
+        )
+    raw_summaries = payload.get("summaries")
+    if not isinstance(raw_summaries, list):
+        raise ValueError("cache entry summaries must be a list")
+    return tuple(_deserialise_summary(cast("dict[str, object]", item)) for item in raw_summaries)

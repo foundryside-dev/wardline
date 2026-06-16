@@ -8,12 +8,15 @@ from wardline.core.taints import TaintState as T
 from wardline.scanner.taint.summary import SUMMARY_SCHEMA_VERSION, FunctionSummary
 from wardline.scanner.taint.summary_cache import (
     SummaryCache,
+    _cache_payload,
+    _cache_payload_mac,
     _deserialise_summary,
     _serialise_summary,
 )
 
 _KEY = "a" * 64
 _KEY2 = "b" * 64
+_SECRET = b"unit-test-summary-cache-key"
 
 
 def _summary(fqn: str, *, schema: int = SUMMARY_SCHEMA_VERSION, key: str = _KEY) -> FunctionSummary:
@@ -121,22 +124,147 @@ def test_schema_version_property() -> None:
 
 
 def test_save_and_load_roundtrip(tmp_path) -> None:
-    c = SummaryCache(cache_dir=tmp_path)
+    c = SummaryCache(cache_dir=tmp_path, cache_auth_secret=_SECRET)
     summaries = (_summary("m.a"), _summary("m.b"))
     c.put(_KEY, summaries)
     c.save()
-    c2 = SummaryCache(cache_dir=tmp_path)
+    c2 = SummaryCache(cache_dir=tmp_path, cache_auth_secret=_SECRET)
     c2.load()
     assert c2.get(_KEY) == summaries
+
+
+def test_save_without_auth_secret_does_not_persist_entries(tmp_path) -> None:
+    c = SummaryCache(cache_dir=tmp_path)
+    c.put(_KEY, (_summary("m.a"),))
+    c.save()
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_load_drops_unsigned_cache_file_with_matching_key(tmp_path) -> None:
+    import json
+
+    payload = [_serialise_summary(_summary("m.a"))]
+    (tmp_path / f"{_KEY}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    c = SummaryCache(cache_dir=tmp_path, cache_auth_secret=_SECRET)
+    c.load()
+
+    assert len(c) == 0
+    assert c.get(_KEY) is None
+
+
+def test_load_drops_bad_mac_cache_file(tmp_path) -> None:
+    import json
+
+    payload = _cache_payload(_KEY, (_summary("m.a"),))
+    payload["mac"] = "0" * 64
+    (tmp_path / f"{_KEY}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    c = SummaryCache(cache_dir=tmp_path, cache_auth_secret=_SECRET)
+    c.load()
+
+    assert len(c) == 0
+    assert c.get(_KEY) is None
+
+
+def test_warm_cache_honours_untrusted_sources_policy_change(tmp_path) -> None:
+    # A warm run whose config newly names a function as an untrusted source must produce the
+    # SAME defects as a cold run with that config — the cache key binds the effective-scan-
+    # policy hash, so the prior policy-free CLEAN summary is not served (wardline-9d6a81b9e7).
+    from wardline.core.config import WardlineConfig
+    from wardline.core.finding import Kind
+    from wardline.scanner.analyzer import WardlineAnalyzer
+
+    src = tmp_path / "example.py"
+    src.write_text(
+        "from wardline.decorators import trusted\n"
+        "@trusted(level='ASSURED')\n"
+        "def read_raw(p):\n    return p\n"
+        "@trusted(level='ASSURED')\n"
+        "def f(p, cursor):\n    cursor.execute(read_raw(p))\n",
+        encoding="utf-8",
+    )
+
+    def defects(az: WardlineAnalyzer, cfg: WardlineConfig) -> list[str]:
+        fs = list(az.analyze([src], cfg, root=tmp_path))
+        return sorted({x.rule_id for x in fs if x.kind is Kind.DEFECT})
+
+    cfg_clean = WardlineConfig()
+    cfg_src = WardlineConfig(untrusted_sources=("example.read_raw",))
+
+    cold = defects(WardlineAnalyzer(summary_cache=SummaryCache()), cfg_src)
+    assert cold == ["PY-WL-118"]
+
+    # Warm the cache with the policy-FREE run first, then re-run under the source policy.
+    az = WardlineAnalyzer(summary_cache=SummaryCache())
+    assert defects(az, cfg_clean) == []
+    assert defects(az, cfg_src) == cold  # must NOT serve the stale-clean summary
+
+
+def test_run_scan_ignores_unsigned_forged_summary_cache(tmp_path) -> None:
+    import json
+
+    from wardline.core.config import WardlineConfig
+    from wardline.core.ruleset import ruleset_hash
+    from wardline.core.run import run_scan
+    from wardline.scanner.taint.decorator_provider import DecoratorTaintSourceProvider
+    from wardline.scanner.taint.project_resolver import _RESOLVER_VERSION
+    from wardline.scanner.taint.summary import compute_cache_key
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    source = (
+        "from wardline.decorators import external_boundary, trusted\n"
+        "@external_boundary\n"
+        "def read_raw(p):\n"
+        "    return p\n"
+        "@trusted(level='ASSURED')\n"
+        "def sink(x):\n"
+        "    return x\n"
+        "def f(p):\n"
+        "    return sink(read_raw(p))\n"
+    )
+    (proj / "m.py").write_text(source, encoding="utf-8")
+
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    key = compute_cache_key(
+        module_path="m",
+        source_bytes=source.encode("utf-8"),
+        schema_version=SUMMARY_SCHEMA_VERSION,
+        resolver_version=_RESOLVER_VERSION,
+        provider_fingerprint=DecoratorTaintSourceProvider().fingerprint(),
+        scan_policy_hash=ruleset_hash(WardlineConfig()),
+    )
+    forged = tuple(
+        FunctionSummary(
+            fqn=fqn,
+            body_taint=T.INTEGRAL,
+            return_taint=T.INTEGRAL,
+            taint_source="anchored",
+            unresolved_calls=0,
+            schema_version=SUMMARY_SCHEMA_VERSION,
+            cache_key=key,
+        )
+        for fqn in ("m.read_raw", "m.sink", "m.f")
+    )
+    (cache_dir / f"{key}.json").write_text(json.dumps([_serialise_summary(s) for s in forged]), encoding="utf-8")
+
+    result = run_scan(proj, cache_dir=cache_dir)
+    metrics = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-METRICS")
+
+    assert metrics.properties["cache_hit_rate"] == 0.0
+    assert any(f.rule_id == "PY-WL-101" for f in result.findings)
 
 
 def test_load_drops_file_when_internal_cache_key_mismatches_filename(tmp_path) -> None:
     import json
 
-    payload = [_serialise_summary(_summary("m.a", key=_KEY2))]
+    payload = _cache_payload(_KEY, (_summary("m.a", key=_KEY2),))
+    payload["mac"] = _cache_payload_mac(_SECRET, payload)
     (tmp_path / f"{_KEY}.json").write_text(json.dumps(payload), encoding="utf-8")
 
-    c = SummaryCache(cache_dir=tmp_path)
+    c = SummaryCache(cache_dir=tmp_path, cache_auth_secret=_SECRET)
     c.load()
 
     assert len(c) == 0
@@ -146,13 +274,17 @@ def test_load_drops_file_when_internal_cache_key_mismatches_filename(tmp_path) -
 def test_load_drops_file_when_records_mix_cache_keys(tmp_path) -> None:
     import json
 
-    payload = [
-        _serialise_summary(_summary("m.a", key=_KEY)),
-        _serialise_summary(_summary("m.b", key=_KEY2)),
-    ]
+    payload = _cache_payload(
+        _KEY,
+        (
+            _summary("m.a", key=_KEY),
+            _summary("m.b", key=_KEY2),
+        ),
+    )
+    payload["mac"] = _cache_payload_mac(_SECRET, payload)
     (tmp_path / f"{_KEY}.json").write_text(json.dumps(payload), encoding="utf-8")
 
-    c = SummaryCache(cache_dir=tmp_path)
+    c = SummaryCache(cache_dir=tmp_path, cache_auth_secret=_SECRET)
     c.load()
 
     assert len(c) == 0
@@ -161,14 +293,14 @@ def test_load_drops_file_when_records_mix_cache_keys(tmp_path) -> None:
 
 def test_load_drops_malformed_json(tmp_path) -> None:
     (tmp_path / f"{_KEY}.json").write_text("{not json", encoding="utf-8")
-    c = SummaryCache(cache_dir=tmp_path)
+    c = SummaryCache(cache_dir=tmp_path, cache_auth_secret=_SECRET)
     c.load()  # must not raise
     assert len(c) == 0
 
 
 def test_load_ignores_non_hex_stem_files(tmp_path) -> None:
     (tmp_path / "notes.json").write_text("[]", encoding="utf-8")
-    c = SummaryCache(cache_dir=tmp_path)
+    c = SummaryCache(cache_dir=tmp_path, cache_auth_secret=_SECRET)
     c.load()
     assert len(c) == 0
 
@@ -239,7 +371,7 @@ def test_deserialise_integral_roundtrips() -> None:
 def test_integral_survives_full_save_load_cycle(tmp_path) -> None:
     # End-to-end: a poisoned-but-valid trio state would be dropped by load(),
     # but a legitimate INTEGRAL summary must survive the disk round-trip.
-    c = SummaryCache(cache_dir=tmp_path)
+    c = SummaryCache(cache_dir=tmp_path, cache_auth_secret=_SECRET)
     s = FunctionSummary(
         fqn="m.f",
         body_taint=T.INTEGRAL,
@@ -251,7 +383,7 @@ def test_integral_survives_full_save_load_cycle(tmp_path) -> None:
     )
     c.put(_KEY, (s,))
     c.save()
-    c2 = SummaryCache(cache_dir=tmp_path)
+    c2 = SummaryCache(cache_dir=tmp_path, cache_auth_secret=_SECRET)
     c2.load()
     assert c2.get(_KEY) == (s,)
 
@@ -261,8 +393,14 @@ def test_load_drops_poisoned_trio_cache_file(tmp_path, caplog) -> None:
     # dropped (cold-cache fallback), not injected — load() catches the ValueError.
     import json
 
-    (tmp_path / f"{_KEY}.json").write_text(json.dumps([_summary_dict("MIXED_RAW", "MIXED_RAW")]), encoding="utf-8")
-    c = SummaryCache(cache_dir=tmp_path)
+    payload: dict[str, object] = {
+        "schema_version": 1,
+        "cache_key": _KEY,
+        "summaries": [_summary_dict("MIXED_RAW", "MIXED_RAW")],
+    }
+    payload["mac"] = _cache_payload_mac(_SECRET, payload)
+    (tmp_path / f"{_KEY}.json").write_text(json.dumps(payload), encoding="utf-8")
+    c = SummaryCache(cache_dir=tmp_path, cache_auth_secret=_SECRET)
     c.load()  # must not raise
     assert len(c) == 0
 
@@ -275,7 +413,7 @@ def test_save_cleans_up_temp_file_when_replace_fails(tmp_path, monkeypatch) -> N
     # and the error re-raised — the except cleanup arm.
     import os
 
-    c = SummaryCache(cache_dir=tmp_path)
+    c = SummaryCache(cache_dir=tmp_path, cache_auth_secret=_SECRET)
     c.put(_KEY, (_summary("m.a"),))
 
     def boom(_src, _dst):
@@ -291,7 +429,7 @@ def test_save_cleans_up_temp_file_when_replace_fails(tmp_path, monkeypatch) -> N
 def test_load_skips_non_json_files(tmp_path) -> None:
     # A non-.json file in the cache dir must be skipped (the suffix guard), not parsed.
     (tmp_path / f"{_KEY}.txt").write_text("garbage", encoding="utf-8")
-    c = SummaryCache(cache_dir=tmp_path)
+    c = SummaryCache(cache_dir=tmp_path, cache_auth_secret=_SECRET)
     c.load()  # must not raise
     assert len(c) == 0
 
@@ -305,9 +443,10 @@ def test_load_drops_stale_schema_entry_from_disk(tmp_path) -> None:
 
     stale = _summary("m.a")
     object.__setattr__(stale, "schema_version", SUMMARY_SCHEMA_VERSION + 1)
-    payload = [_serialise_summary(stale)]
+    payload = _cache_payload(_KEY, (stale,))
+    payload["mac"] = _cache_payload_mac(_SECRET, payload)
     (tmp_path / f"{_KEY}.json").write_text(json.dumps(payload), encoding="utf-8")
-    c = SummaryCache(cache_dir=tmp_path)
+    c = SummaryCache(cache_dir=tmp_path, cache_auth_secret=_SECRET)
     c.load()
     assert len(c) == 0  # stale-schema file dropped (not rehydrated)
 

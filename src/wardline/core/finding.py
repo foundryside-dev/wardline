@@ -28,9 +28,9 @@ ENGINE_PATH = "<engine>"
 
 # Rule ids for files where analysis was ATTEMPTED OR EXPECTED but FAILED / never
 # happened — a genuine under-scan: parse/read failures, files too deep to walk
-# (recursion), and missing source roots. These are Severity.NONE FACTs that never
-# trip the severity gate, so callers count them separately (ScanSummary.unanalyzed)
-# to surface the silent under-scan and (opt-in) gate on it.
+# (recursion), and missing source roots. Some are gate-eligible DEFECTs and some
+# are non-gating FACTs, so callers also count them separately
+# (ScanSummary.unanalyzed) to expose the under-scan independent of severity.
 #
 # WLN-ENGINE-NO-MODULE is DELIBERATELY EXCLUDED: a file that maps to no module
 # (e.g. a top-level / src/__init__.py) is a benign layout artifact with nothing to
@@ -44,6 +44,10 @@ UNANALYZED_RULE_IDS = frozenset(
         "WLN-ENGINE-PARSE-ERROR",
         "WLN-ENGINE-FILE-SKIPPED",
         "WLN-ENGINE-SOURCE-ROOT-MISSING",
+        # A file that parsed but whose analysis raised (per-file isolation, e.g. the Rust
+        # frontend catching a RecursionError on a pathologically deep expression) — a
+        # genuine under-scan, counted so it never reads as a clean result.
+        "WLN-ENGINE-FILE-FAILED",
     }
 )
 
@@ -103,6 +107,16 @@ class Finding:
     suppressed: SuppressionState = SuppressionState.ACTIVE
     suppression_reason: str | None = None
     maturity: Maturity = Maturity.STABLE
+    # MIGRATION-ONLY breadcrumb (P4 / `wardline rekey`), NEVER serialized — no
+    # serializer references it (``to_jsonl``/SARIF/``to_filigree_metadata``/store-doc
+    # builders are all explicit-field dicts), so it stays out of the frozen identity
+    # corpus and every wire payload. It carries the OLD (wlfp1) ``taint_path`` string
+    # so the migration can recompute a finding's pre-rekey fingerprint
+    # (``compute_finding_fingerprint_v0``) from the same scan. ``None`` for rules whose
+    # old taint_path was ``None`` (singletons / PY-WL-103 / PY-WL-104 / PY-WL-120-return);
+    # set by the multi-emit rules whose old taint_path was non-empty. Removable once
+    # every project has migrated (a no-corpus-impact cleanup).
+    taint_path_v0: str | None = None
 
     def to_jsonl(self) -> str:
         payload: dict[str, Any] = {
@@ -123,7 +137,7 @@ class Finding:
             "confidence": self.confidence,
             "related_entities": list(self.related_entities),
             "properties": dict(self.properties),
-            "suppressed": self.suppressed.value,
+            "suppression_state": self.suppressed.value,
             "suppression_reason": self.suppression_reason,
             "maturity": self.maturity.value,
         }
@@ -131,24 +145,110 @@ class Finding:
 
 
 # --- Finding fingerprint (SP2 §7) --------------------------------------------
-# Stable cross-run identity that folds in qualname + a taint-path signature so
-# two taint paths into one sink (same file/rule/line, different path) get
-# DISTINCT fingerprints (Filigree drift constraint). Discrimination is only as
-# fine as the supplied ``taint_path`` — callers derive it from ``taint_provenance``
-# (a single best-callee, not a full path), so two paths sharing best-callee AND
-# returned taint will still collide. That is the spec's accepted granularity.
+# Stable cross-run identity. The fingerprint is the cross-tool JOIN KEY: Filigree
+# associates issues to it and the baseline/waiver stores key on it, so it MUST be
+# invariant to taint-resolution drift — it must not move across builds while the
+# source is byte-identical (weft-4a9d0f863c: it moved across three builds because
+# resolved taint tiers and ``via_callee`` were folded in, and those legitimately
+# change as the rule suite is extended/refined).
+#
+# INVARIANT (enforce at every call site — see tests/golden/identity): ``taint_path``
+# carries ONLY a SOURCE-DERIVED discriminator and exists SOLELY to separate two
+# distinct findings that share (rule_id, path, line_start, qualname). A component
+# may appear in ``taint_path`` only if it is BOTH (a) derived purely from source
+# tokens / lexical position (a sink dotted-name, a callee spelling as written, a
+# decorator marker/level token, a call's ``col_offset``) — NOT a resolved
+# ``TaintState`` tier and NOT ``via_callee`` — AND (b) load-bearing: actually
+# needed to tell two co-located findings apart. A rule that emits at most one
+# finding per (rule_id, path, qualname) passes ``taint_path=None``.
+# Resolved tiers belong in ``message``/``properties``, never the join key.
+# This invariant is no longer convention-only: ``scanner.diagnostics.build_collision_findings``
+# enforces it at runtime over the full emitted set (wardline-8fb773a7af) — two DISTINCT
+# findings sharing a fingerprint surface a loud WLN-ENGINE-FINGERPRINT-COLLISION DEFECT
+# that trips the gate, instead of one silently masking the other on the joins.
+#
+# ``line_start`` is DELIBERATELY NOT hashed (wlfp2, wardline-8654423823): a benign
+# comment above an entity shifts every line below it but is the same source, so it
+# must not churn the cross-tool join key. Multi-emit rules therefore discriminate
+# co-located findings with an ENTITY-RELATIVE position — ``node.lineno -
+# entity.location.line_start`` plus the call's ``col_offset:end_col_offset`` — which
+# is invariant to the whole entity moving (a comment above it). NOTE: it is
+# entity-relative, NOT move-stable in the strong sense — a comment inserted INSIDE
+# the entity above the node still shifts the relative offset (accepted; the contract
+# is identical-source -> identical-fingerprint, and that edit is not identical source).
+# ``line_start`` remains on ``Finding.location`` for SARIF regions and display.
 def compute_finding_fingerprint(
     *,
     rule_id: str,
     path: str,
-    line_start: int | None,
     qualname: str | None = None,
     taint_path: str | None = None,
 ) -> str:
     digest = hashlib.sha256()
-    parts = (rule_id, path, str(line_start), qualname or "", taint_path or "")
+    parts = (rule_id, path, qualname or "", taint_path or "")
     digest.update("\x00".join(parts).encode())
     return digest.hexdigest()
+
+
+# --- Self-describing fingerprint scheme (P1 scheme-infra) --------------------
+# The fingerprint is the cross-tool JOIN KEY (baseline / waiver / judged stores
+# and the Filigree wire). Stamping a scheme onto it at the wire/store boundary
+# lets a store that was written under a different hash formula LOUD-FAIL on load
+# (``SchemeMismatchError``) instead of silently joining stale values and
+# orphaning every verdict. The IN-MEMORY ``Finding.fingerprint`` stays bare
+# 64-hex; the prefix is applied only when serialising to a store/wire and
+# stripped (``parse_fingerprint``) when reading one back. ``wlfp1`` is this
+# (line_start-IN) formula; the move-stability rekey will bump it to ``wlfp2``.
+FINGERPRINT_SCHEME = "wlfp2"
+
+_HEX_DIGITS = frozenset("0123456789abcdef")
+
+
+def format_fingerprint(scheme: str, fingerprint: str) -> str:
+    """Stamp a bare 64-hex fingerprint with its scheme for the wire/store.
+
+    The inverse of :func:`parse_fingerprint`. Does not validate ``fingerprint``
+    here — callers pass ``Finding.fingerprint``, already a bare digest.
+    """
+    return f"{scheme}:{fingerprint}"
+
+
+def parse_fingerprint(value: str) -> tuple[str, str]:
+    """Split a ``scheme:hex`` fingerprint into ``(scheme, bare_hex)``.
+
+    Pure FORMAT parser: it returns whatever scheme token is present and does
+    NOT judge whether that scheme is the one this build expects — scheme
+    *mismatch* is the store loaders' concern (``SchemeMismatchError``). Raises
+    ``ValueError`` on a structurally malformed value: no colon, empty scheme, or
+    a hex part that is not exactly 64 lowercase hex characters.
+    """
+    scheme, sep, hexpart = value.partition(":")
+    if sep != ":" or not scheme:
+        raise ValueError(f"not a scheme-prefixed fingerprint: {value!r}")
+    if len(hexpart) != 64 or any(c not in _HEX_DIGITS for c in hexpart):
+        raise ValueError(f"invalid fingerprint hex (need 64 lowercase hex): {hexpart!r}")
+    return scheme, hexpart
+
+
+def require_fingerprint_scheme(document: Mapping[str, Any], *, store_name: str) -> None:
+    """Loud-fail (``SchemeMismatchError``) if ``document``'s ``fingerprint_scheme``
+    header is absent or differs from this build's :data:`FINGERPRINT_SCHEME`.
+
+    The baseline/judged/waivers loaders all call this. **Loader order is
+    load-bearing:** call it AFTER the empty-guard (a fresh/empty store must
+    return empty, never raise) and BEFORE the version check (a version-mismatch
+    raised first would hide the actionable ``wardline rekey`` hint). A non-string
+    header is treated as missing.
+    """
+    # Imported lazily-at-module-load: errors imports nothing from wardline, so
+    # this top-of-module import would be acyclic, but the symbol is only needed
+    # here — keep it local to avoid widening finding.py's import surface.
+    from wardline.core.errors import SchemeMismatchError
+
+    raw = document.get("fingerprint_scheme")
+    found = raw if isinstance(raw, str) else None
+    if found != FINGERPRINT_SCHEME:
+        raise SchemeMismatchError(store_name=store_name, found=found, expected=FINGERPRINT_SCHEME)
 
 
 # --- Weft wire mapping (pure; SP4 uses these to build the scan-results body) -
@@ -160,21 +260,31 @@ _SEVERITY_TO_FILIGREE: dict[Severity, str] = {
     Severity.NONE: "info",
 }
 
+_PROPERTY_ACCESSOR_QUALNAME_SUFFIXES = (":setter", ":deleter")
+
 
 def severity_to_filigree(severity: Severity) -> str:
     """Map Wardline's 4-level (+NONE) vocabulary to Filigree's 5-level set."""
     return _SEVERITY_TO_FILIGREE[severity]
 
 
+def _to_wire_qualname(qualname: str) -> str:
+    """Return the cross-tool reconciliation qualname for Wardline metadata."""
+    for suffix in _PROPERTY_ACCESSOR_QUALNAME_SUFFIXES:
+        if qualname.endswith(suffix):
+            return qualname.removesuffix(suffix)
+    return qualname
+
+
 def to_filigree_metadata(finding: Finding) -> dict[str, Any]:
     """Build the ``metadata.wardline.*`` subtree (semantic JSON, not byte-stable)."""
     wardline: dict[str, Any] = {
-        "fingerprint": finding.fingerprint,
+        "fingerprint": format_fingerprint(FINGERPRINT_SCHEME, finding.fingerprint),
         "internal_severity": finding.severity.value,
         "kind": finding.kind.value,
     }
     if finding.qualname is not None:
-        wardline["qualname"] = finding.qualname
+        wardline["qualname"] = _to_wire_qualname(finding.qualname)
     if finding.confidence is not None:
         wardline["confidence"] = finding.confidence
     if finding.related_entities:
@@ -182,7 +292,7 @@ def to_filigree_metadata(finding: Finding) -> dict[str, Any]:
     if finding.properties:
         wardline["properties"] = dict(finding.properties)
     if finding.suppressed is not SuppressionState.ACTIVE:
-        wardline["suppressed"] = finding.suppressed.value
+        wardline["suppression_state"] = finding.suppressed.value
         if finding.suppression_reason is not None:
             wardline["suppression_reason"] = finding.suppression_reason
     return {"wardline": wardline}

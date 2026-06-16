@@ -60,6 +60,27 @@ def test_legis_artifact_unsigned_when_no_key(tmp_path, monkeypatch) -> None:
     assert "artifact_signature" not in out["legis_artifact"]
 
 
+def test_legis_suppressed_under_summary_only_even_with_key(tmp_path, monkeypatch) -> None:
+    # Dogfood-4 B6: summary_only promises the smallest gate payload, but a
+    # provisioned key auto-attached a ~56KB artifact into it (blew the MCP token
+    # cap). With a key and summary_only:true the artifact must stay off.
+    monkeypatch.setenv(LEGIS_ARTIFACT_KEY_ENV, "testsecret")
+    repo = _committed_repo(tmp_path)
+    out = _scan({"summary_only": True}, repo, None, None)
+    assert "legis_artifact" not in out
+    assert "legis_artifact_status" not in out
+
+
+def test_legis_explicit_opt_in_wins_over_summary_only(tmp_path, monkeypatch) -> None:
+    # The caller who asks for both gets both: explicit legis_artifact:true still
+    # attaches under summary_only.
+    monkeypatch.setenv(LEGIS_ARTIFACT_KEY_ENV, "testsecret")
+    repo = _committed_repo(tmp_path)
+    out = _scan({"summary_only": True, "legis_artifact": True}, repo, None, None)
+    assert "legis_artifact" in out
+    assert out["legis_artifact_status"]["signed"] is True
+
+
 def test_legis_clean_tree_with_key_is_signed(tmp_path, monkeypatch) -> None:
     # The positive arm of `signed = key and not dirty`: a key present on a CLEAN tree signs.
     monkeypatch.setenv(LEGIS_ARTIFACT_KEY_ENV, "testsecret")

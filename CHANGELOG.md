@@ -5,9 +5,395 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.1] - 2026-06-17
+
+### Added
+- **Pollable file-backed scan jobs.** `wardline scan-job start|status|cancel`
+  (CLI) and the matching `scan_job_start` / `scan_job_status` / `scan_job_cancel`
+  MCP tools run a long scan in a daemon-free worker subprocess that persists status
+  JSON under `.weft/wardline/jobs/`, so an agent can start a slow scan and poll its
+  heartbeat/progress instead of blocking a single MCP call. Status reads refresh
+  liveness (dead-worker / stale-heartbeat) so a hung job is never ambiguous. The MCP
+  surface is now 18 tools.
+- **Filigree-emit capping and local-only fencing.** `scan` gains
+  `--filigree-max-findings-per-request` (env `WARDLINE_FILIGREE_MAX_FINDINGS_PER_REQUEST`,
+  default 1000) to bound per-POST payloads, and `--local-only`/`--no-emit` to disable
+  sibling emission even when URLs resolve from flags/env/install state. Emission stays
+  ENRICH-ONLY — a sibling's absence never breaks the core scan or gate.
+- **Top-level documentation refreshed against the 2026-05-29..2026-06-12
+  release-candidate surface.** The README now describes the current product shape:
+  Python remains the full taint-analysis frontend; Rust is a command-injection
+  preview behind `wardline[rust]`; configuration/state live in `weft.toml` and
+  `.weft/wardline/`; the agent/MCP surface includes doctor, rekey, assurance,
+  attestation, dossier, and finding-lifecycle tools; and the docs index points to
+  the Rust, Weft, and assurance guides.
+- **MCP structured tool output on all 15 tools** — every tool now declares an
+  `outputSchema` in `tools/list` and returns `structuredContent` alongside the
+  (byte-identical) text block on `tools/call`, so MCP-spec clients consume and
+  validate results without parsing JSON out of a text blob. Tool-execution
+  errors stay `isError` results and never carry `structuredContent`. The
+  server now negotiates the MCP protocol revision (`2025-06-18` /
+  `2025-03-26` / `2024-11-05`; previously hard-pinned to `2024-11-05`).
+  Per-tool declarations (schemas, annotations, capabilities) moved out of
+  `_register_tools` to module level next to their handlers
+  (`wardline-47ff226ebe`, MCP-primary B1; declaration colocation from
+  `wardline-80e457bc41`).
+- **Standard MCP tool `annotations` + `title`** — each tool's `tools/list`
+  entry now carries a human `title` and the standard `ToolAnnotations` hints
+  (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`)
+  derived from the existing capability model, so standard MCP clients see the
+  read-only/destructive signal wardline already computes. The homegrown
+  `capabilities` key is still emitted for existing consumers; hints describe
+  the integration-free baseline posture and `ToolPolicy` remains the
+  enforcement authority (`wardline-e63204176b`, MCP-primary B2).
+
+### Fixed
+- **`doctor` now self-heals a stale `--filigree-url` / `--loomweave-url` pin that
+  shadows live published-port discovery.** When a sibling rotates ports, a
+  `.mcp.json` flag frozen to the old port (e.g. a legacy `.filigree/ephemeral.port`
+  rung outliving the rotation) silently outranks discovery and breaks emit. Plain
+  `wardline doctor` now reports this as an actionable error — "configured
+  `--filigree-url` is unreachable, but Filigree is live at … (published port)" —
+  instead of masking it as a soft "daemon not reachable". `wardline doctor --repair`
+  DROPS such a stale loopback pin (both siblings) so runtime published-port discovery
+  owns the always-current port; remote (non-loopback) pins, and loopback pins with no
+  live daemon, are left untouched. Filigree server mode still repairs a loopback pin
+  to the live project scope (unscoped writes fail-close there).
+- **PY-WL-108 no longer treats a quoted COMMAND word as sanitized.** The
+  `shlex.quote` concat/f-string guard accepted `shlex.quote(raw) + " --version"`
+  (and the f-string form) as safe, but quoting sanitizes a shell ARGUMENT, not the
+  identity of the executable — the attacker still chose the program. The guard now
+  requires the leading command word to be a string constant, so a quoted-command +
+  constant-arg shape fires while the blessed constant-command + quoted-arg
+  remediation (`"echo " + shlex.quote(raw)`) stays clean.
+- **Install, attestation, and local automation hardening from the 2026-06-12
+  security pass.** `wardline install`/doctor paths now refuse unsafe writes through
+  symlinked published-port files, refuse to mint attestation keys into tracked
+  environments, preserve loopback-scope handling without needless churn, and keep
+  operator-pinned sibling URLs intact. Attestation capture disables repository
+  `fsmonitor` while reading git state and fails stale reproduction instead of
+  accepting mismatched evidence. The repo `make clean` target refuses symlinked
+  cleanup targets, and CI pins the `setup-uv` action.
+- **Scan/reporting correctness hardening from the latest review pass.** Grammar
+  fingerprints now include seed dependencies, return-taint resolution uses the
+  statement snapshot for the return being analyzed, recursive lambda taint
+  resolution is guarded, `assure` counts unanalyzed files in coverage, and
+  `scan-file-findings` honors the gate exit status. Default agent-summary output
+  is guarded from oversized or misleading responses.
+- **Filigree/Loomweave federation safety fixes.** Filigree token resolution now
+  prioritizes env aliases over dotenv fallback, mark-unseen lifecycle emission is
+  disabled for unanalyzed scans, strict MCP SEI filters preserve their defaults,
+  and signed scan artifacts include scan scope so a receiver can distinguish
+  evidence from different roots.
+- **Non-string `issue_id` from Filigree promote is normalized to `null`** —
+  the promote response is type-narrowed at the wire boundary, so a skewed
+  2xx body can no longer leak a non-string `issue_id` into `file_finding` /
+  `scan_file_findings` payloads (violating their published output schemas).
+- **Type-skewed Loomweave store blobs coerce to `null` in `explain_taint`** —
+  `tier_in`/`tier_out`/callee qualnames read from a store blob now get the
+  same isinstance guards as the adjacent fingerprint/path fields.
+- **`scan_file_findings` federation honesty** — the emit block's
+  `disabled_reason` now uses the shared 401/403-vs-5xx-vs-transport ladder
+  instead of a flat `filigree unreachable`, and the no-Filigree-URL branch no
+  longer misattributes the identity-attach skip to a promote that never ran.
+
+- **MCP `scan` tool `fail_on_unanalyzed` argument** — the CLI's
+  `--fail-on-unanalyzed` knob over the MCP surface (default off, same as the
+  CLI), so gate semantics are fully controllable on the primary surface. The
+  unanalyzed gate now lives **inside** `gate_decision` (one shared
+  implementation; the CLI exit-code OR is gone), and the gate block/decision
+  gained sub-gate attribution: `gate.fail_on_unanalyzed`,
+  `gate.severity_tripped`, `gate.unanalyzed_tripped` — so an agent can tell a
+  severity trip from an under-scan trip without parsing `reason`. An
+  unanalyzed trip's `next_actions` point at fixing what blocked analysis
+  (suppressions cannot clear it). Side fix: CLI `--fail-on-unanalyzed` alone
+  no longer prints `gate: NOT_EVALUATED` while exiting 1 — the verdict is now
+  an honest `FAILED`/`PASSED` whenever either sub-gate ran
+  (`wardline-7fd0f3a82c`, MCP-primary A4).
+- **MCP `rekey` tool** — fingerprint-scheme migration over MCP via the same
+  `core.rekey` the CLI drives (no second migration path). Probe-by-default
+  (read-only match/orphan/collision report, writes nothing); `apply` /
+  `resume` / `rollback` are explicit, mutually exclusive, write-gated args;
+  `apply` re-emits to a configured Filigree (network-gated) like the CLI's
+  `--filigree-url` leg. Orphaned verdicts are listed verbatim with the shared
+  orphan-cause explanation (`wardline-d8cc650ab9`, MCP-primary A3).
+- **MCP `doctor` tool** — the CLI `doctor --fix` health envelope over MCP
+  (install artifacts, MCP registration, config parseability, sibling URLs,
+  Filigree emit-auth probe; read-only by default, `repair: true` is the
+  explicit write-gated opt-in) **plus server self-identification**: package
+  version, pid, project root, start time, and a source-freshness verdict
+  (`server.fresh` / `server.freshness` check) that detects a long-lived MCP
+  server serving code older than the on-disk tree — the 2026-06-06
+  stale-server incident class (`wardline-4c5165e896`, MCP-primary A2).
+- **MCP `scan` tool `lang` argument** (`python` | `rust`, default `python`) —
+  the same frontend selector as CLI `--lang`, so the Rust command-injection
+  slice (`RS-WL-108`/`RS-WL-112`) is reachable over the MCP surface; CLI and
+  MCP Rust scans return identical findings (pinned by a parity test). An
+  unknown value is rejected loudly naming the valid set
+  (`wardline-2ee1bbda82`, MCP-primary A1).
+- **`wardline explain-taint <fingerprint> [PATH]`** — the CLI twin of the MCP
+  `explain_taint` tool (same core builder, identical JSON: provenance slice,
+  remediation hint, optional `--chain` walk via a Loomweave store), so a
+  CLI-only agent no longer dead-ends at step 2 of the scan → explain → fix →
+  rescan loop (dogfood N-2).
+- **`wardline findings` flat filter flags** `--rule-id` / `--severity` /
+  `--sink` alongside the JSON `--where` blob; a filter given via both is
+  rejected, never silently overridden (dogfood N-5/X-5).
+- **Nested-scan-root guard** (dogfood N-3, `wardline-8669de3576`): scanning a
+  SUBDIRECTORY of a weft project (an ancestor carries `weft.toml` or
+  `.weft/wardline/`) now emits a `WLN-ENGINE-NESTED-SCAN-ROOT` FACT and a loud
+  CLI warning — qualnames are minted relative to the scan root, the project's
+  baseline/waivers are not loaded, and output lands in the subdirectory.
+  `scan --help`/`dossier --help` document the scan-root/qualname coupling, and
+  the dossier's entity-not-found error now names the scan-relative form that
+  WOULD match plus the project root to rerun against (dogfood N-8).
 
 ### Changed
+- **Closed-vocabulary query values match case-insensitively** (`severity`,
+  `suppression`, `kind`) in `wardline findings --where` and the MCP
+  `scan(where=)`; an out-of-domain value (e.g. filigree's `medium`) now errors
+  loudly naming the allowed vocabulary instead of silently returning empty
+  (dogfood N-5). `--fail-on` accepts any casing (canonical uppercase echoed).
+- **Six new PREVIEW sink rules, `PY-WL-121`–`PY-WL-126`** (the 2026-06-10
+  coverage-gap families; all tier-modulated, argument-slot precise, and
+  construct-then-method / callable-alias aware):
+  - `PY-WL-121` — untrusted data reaches an **XML parsing** sink (CWE-611);
+    per-sink severity calibrated to default parser posture (`lxml.etree.*` at
+    ERROR — entity-resolving by default; stdlib etree/minidom/sax at WARN —
+    billion-laughs DoS only since CPython 3.7.1). Only the document slot fires.
+  - `PY-WL-122` — untrusted data **compiled into a server-side template**
+    (jinja2 `Template`/`Environment.from_string`, mako `Template`; SSTI,
+    CWE-1336, ERROR). A tainted *render variable* is the safe idiom and never fires.
+  - `PY-WL-123` — untrusted **attribute NAME** in `setattr`/`getattr`
+    (dynamic attribute injection / mass assignment, CWE-915, WARN). Fixed-name
+    writes of untrusted *values* stay silent.
+  - `PY-WL-124` — untrusted path reaches a **native-library load**
+    (`ctypes.CDLL`/`WinDLL`/`OleDLL`/`PyDLL`, `ctypes.cdll.LoadLibrary`;
+    CWE-114, ERROR).
+  - `PY-WL-125` — untrusted data as the **log MESSAGE format string**
+    (`logging.*` module-level and Logger-method forms; CWE-117, INFO — visible
+    to an explicit `--fail-on INFO` without tripping the default gate). The
+    lazy `%`-args parameterization (`logging.info('u=%s', raw)`) never fires.
+  - `PY-WL-126` — untrusted **recipient/message** in `smtplib`
+    `SMTP`/`SMTP_SSL` `.sendmail` (mail/CRLF header injection, CWE-93, WARN).
+- **Per-file isolation: `WLN-ENGINE-FILE-FAILED`.** An unexpected exception
+  while analyzing one file no longer aborts the whole scan (losing every other
+  file's findings) — and is not a silent skip either: the scan continues and the
+  failed file is named by a gate-eligible `WLN-ENGINE-FILE-FAILED` ERROR defect,
+  counted toward `ScanSummary.unanalyzed` (the Rust frontend's per-file contract,
+  now on the Python path).
+- **New config diagnostic `WLN-CONFIG-SANITISER-SINK-COLLISION`.** A configured
+  sanitiser that collides with a built-in serialisation sink of the same name
+  (e.g. declaring `pickle.loads` a sanitiser) can never take effect — the
+  conservative sink classification wins — yet it previously also suppressed
+  `WLN-CONFIG-UNUSED-SANITISER`, making the dead declaration a silent no-op. One
+  FACT per colliding sanitiser now names the collision so the operator learns
+  their suppression attempt was overridden, not honoured.
+- **Sink-family expansions across the existing sink rules** (each fires on more
+  real-world shapes; shared machinery in `_sink_helpers` — construct-then-method
+  receiver resolution, callable-alias bindings, `ArgSpec` argument-position
+  matching, and a fail-closed per-argument taint resolver):
+  - `PY-WL-118` (SQLi) adds **`executescript`** (sqlite3 cursor AND connection —
+    multi-statement, no parameter binding at all), a fail-closed **receiver
+    heuristic** (DB-driver binding/name evidence fires, executor/pool evidence
+    suppresses, unknown receivers fire), and the **constant `text()` clause
+    exemption** for the canonical SQLAlchemy parameterized pattern.
+  - `PY-WL-117` (SSRF) now resolves **constructed client/session instance
+    methods** (`httpx.Client()`, `requests.Session()`, `aiohttp.ClientSession`,
+    chained and `with`-bound forms) plus client `base_url=`, and is **URL-slot
+    precise** — a tainted `timeout=`/`headers=` with a clean URL no longer fires.
+  - `PY-WL-116` (path traversal) adds the **filesystem-mutation** APIs
+    (`os.remove`/`rename`/`makedirs`/…, `shutil.rmtree`/`copy*`/`move`),
+    **`pathlib.Path` methods** on a tainted-constructed `Path`, and **archive
+    extraction** (`tarfile`/`zipfile` `extract`/`extractall` — Zip Slip), with a
+    literal **`filter="data"` exemption** (tarfile's safe extraction filter).
+  - `PY-WL-106` (deserialization) adds the **OO streaming-unpickle API**
+    (`pickle.Unpickler(stream).load()`), **`shelve.open`** (path slot only), and
+    a curated **third-party CWE-502 table** (`dill`, `jsonpickle.decode`,
+    `joblib.load`, `torch.load`, `numpy.load`) with two literal-keyword gates:
+    `numpy.load` fires only with a literal `allow_pickle=True`; `torch.load` is
+    suppressed by a literal `weights_only=True`.
+  - `PY-WL-115` (dynamic import) adds **`runpy.run_path`/`run_module`** and
+    **`importlib.util.spec_from_file_location`** (import-and-execute class).
+  - `PY-WL-108` (command execution) adds the **argv-style program-execution
+    family** (`os.exec*`/`os.spawn*`/`os.posix_spawn*`/`pty.spawn`) and decides
+    **`shlex.quote` GUARDED semantics**: a quote call as a fragment of a
+    constant-shaped concatenation/f-string guards the always-shell sinks
+    (`os.system("echo " + shlex.quote(raw))` is clean); a bare whole-command
+    quote still fires, and the guard never applies to the argv sinks.
+  - `PY-WL-107` (eval/exec/compile) adds the `builtins.` and `__builtins__.`
+    spellings.
+- **Rust support.** A new `--lang rust` frontend (behind the
+  `wardline[rust]` extra: tree-sitter, no base dependency) sweeps `*.rs` and flags
+  command-injection trust-boundary defects — `RS-WL-108` (program injection, ERROR:
+  untrusted data chooses the executable of `std::process::Command`) and `RS-WL-112`
+  (shell injection, WARN: untrusted data reaches a `sh -c` command line). Trust is
+  declared with a `/// @trusted(level=ASSURED|GUARDED)` doc-comment marker; analysis
+  is default-clean and reuses the Python engine's taint lattice, severity modulation,
+  and finding/gate machinery. A `.rs` file that does not fully parse is surfaced as
+  `WLN-ENGINE-PARSE-ERROR` and never half-analyzed. The Python default path is
+  byte-identical (identity oracle green). Rule coverage is the command-injection
+  slice and `weft.toml` severity overrides do not yet apply to Rust findings. See
+  the [Rust support guide](docs/guides/rust-preview.md).
+- **Rust finding identity is graduated — RS-WL-* findings are baseline-eligible.**
+  The whole-tree SP2 pass reads the real crate name from `Cargo.toml`
+  (`[package].name`, `-`→`_`, two-branch crate-root registration mirroring the
+  Loomweave extractor, symlink-safe) and routes cross-file modules, so every
+  qualname/fingerprint carries its real crate prefix. Identity is frozen by a new
+  byte-exact golden corpus (`tests/golden/identity/rust/`, the SP2 completion
+  gate); the pre-SP2 `provisional_identity` plumbing (never-baseline-match /
+  never-baseline-capture) is removed — baseline, waivers, and judged verdicts now
+  apply to Rust findings exactly as for Python. (Pre-graduation RS-WL-*
+  fingerprints change once; they were never baseline-eligible, so no migration.)
+  Finding identity is keyed to the crate name: adding/removing a `Cargo.toml` or
+  renaming the crate in the manifest rekeys RS-WL-* fingerprints (re-baseline
+  after such a change); non-conformance files — outside `src/`, or in a
+  manifest-less tree — carry a reserved `#out` route segment
+  (`{crate}.#out.{...}` / `crate.#out.{...}`) so their qualnames can never
+  collide with a Loomweave-conformant locator.
+- **Rust frontend is a full ADR-049 producer (Loomweave Phase 1b).** The entity
+  surface grows from callables-only to the full ten-kind contract set —
+  `enum`/`trait`/`type_alias`/`const`/`static`/`macro` leaf entities, the `impl`
+  block as its own entity with `module → impl → method` containment, per-kind
+  `@cfg` twin discrimination (stacked `#[cfg]` attributes fold sorted-`&`-joined;
+  reserved chars escape `%`→`%25`, `:`→`%3A`; comments are token-stream-invisible)
+  — plus the two anchored edge kinds (`imports`, `implements`; resolved-or-dropped,
+  never `inferred`), under `plugin_id rust` / `ontology_version 0.4.0`. Conformance
+  against the Loomweave-hosted corpus graduates from the subset-consumer rule to
+  the full-set ordered byte-for-byte rule, with eight new oracle rows vendored
+  upstream this sprint and a corpus **drift alarm** (upstream blob byte-pin in the
+  default suite + an opt-in `loomweave_drift` live recheck against a sibling
+  checkout). The path-typed-generic-arg reserved-colon case and const-generic-arg
+  spacing remain a pending cross-tool ADR-049 decision (drafted amendment-request
+  letter in `docs/integration/`); the frozen identity corpus deliberately avoids
+  both shapes.
+- **Gate verdict is now explicit (no vacuous green).** `GateDecision` carries a
+  `verdict` (`NOT_EVALUATED` / `PASSED` / `FAILED`) and a `would_trip_at` (the
+  highest severity that would trip on the evaluated population, or null). A bare
+  scan with no `--fail-on` reports `verdict: NOT_EVALUATED` + `would_trip_at`
+  instead of a clean-looking `tripped: false`, so an agent's first scan is never a
+  false green. Surfaced on every gate block (MCP `scan`, agent-summary,
+  `scan_file_findings`) and on the CLI as a `gate: NOT_EVALUATED — …` line
+  (weft-b937e53854).
+- **Bounded default scan output + pagination.** The MCP `scan` tool returns a
+  bounded page (≤25 finding bodies) by default so a bare call cannot overflow an
+  agent's context (previously ~123KB on one line). New `full: true` lifts the cap;
+  new `offset` pages through the rest via `agent_summary.truncation.next_offset`.
+  `explain: true` inlines provenance into the `agent_summary.active_defects`
+  entries (capped, announced) (weft-439d09fc8d).
+- **Emit destination is now echoed (no silent misroute).** Every Filigree emit
+  status block (MCP `scan`, agent-summary, CLI) carries a `destination`
+  (`{url, project, project_pinned}`) naming where findings were sent; the CLI
+  success line names the destination project. When the URL pins no project,
+  `project_pinned: false` surfaces that Filigree resolves it server-side — the
+  silent-misroute shape behind the lacuna→filigree contamination — so a
+  wrong-project write is visible at the caller (C-10(a)).
+- `wardline doctor` now verifies the Filigree federation token: it probes the
+  configured daemon (URL resolved from `.mcp.json`/env) with the token wardline
+  would emit and reports a `filigree.auth` check. `--repair` recovers the
+  daemon-accepted token from local mints and pins it as `WEFT_FEDERATION_TOKEN`
+  in `.env`, removing a stale `WARDLINE_FILIGREE_TOKEN` line.
+- **Zero-ceremony Filigree auth on a same-host install (F1).** The outbound token
+  resolver now reads Filigree's auto-minted `<root>/.weft/filigree/federation_token`
+  (the C-9e same-host cross-member read) as a middle rung — after the canonical
+  `WEFT_FEDERATION_TOKEN` (env then `.env`) and before the deprecated
+  `WARDLINE_FILIGREE_TOKEN` fallback. A fresh same-host install with no
+  env/`.env`/`.mcp.json` token now authenticates against the per-project daemon
+  with no operator config, mirroring filigree's own 3-tier resolution. The mint
+  file is read-only (wardline never mints it); a missing/unreadable file falls
+  through cleanly to the legacy/off rungs (emit stays soft-fail) (weft-23574069a1).
+
+### Changed
+- **Loomweave resolve client: ADR-036 plugin hint + hinted fail-soft.**
+  `LoomweaveClient.resolve()` accepts an optional batch-scoped `plugin` hint
+  (contract: `docs/integration/2026-06-11-wardline-resolve-plugin-hint-proposal.md`)
+  and threads it from every call site that knows the producer: attest boundary
+  enrichment and decorator coverage send `python` (Python-surface by
+  construction); the Filigree identity-attach path derives the producer from
+  the finding's rule family (`RS-WL-*` → `rust`), so a Rust finding now mints a
+  `rust:function:` locator and a `rust:function` entity association instead of
+  the previously hardcoded `python:function`. A 4xx on a *hinted* request
+  degrades fail-soft to `unresolved` (an older Loomweave under
+  `deny_unknown_fields` rejects the new field; identity enrichment must
+  degrade, not crash); an unhinted 4xx stays loud. User-supplied dossier
+  entities stay unhinted — the contract never fabricates a hint.
+- **Rust qualname dialect: ADR-049 Amendments 6–9 (Loomweave lockstep, one
+  batched re-vendor covering 4–9).** Closes the four Sprint-4 gold-blocker
+  collision families at the dialect level, mirroring the authoritative
+  Loomweave producer byte-for-byte (49-entity corpus + the new `module_mounts`
+  section, blob `d81fb975…`):
+  - **Amendments 6+7 — the residual-collision ladder** (`@cfg` → stage S
+    self-type written path → stage T trait written path → method-`@cfg`):
+    same-key impl twins split on their *written* self-type path
+    (`impl T for a::X` / `b::X` → `a%3A%3AX.impl[T]` / `b%3A%3AX.impl[T]`) and
+    then on their written trait path (`Compat<$0>.impl[a%3A%3AAsyncRead]`).
+    Twin-gated end to end: only already-colliding ids change; a lone impl and
+    every un-fired group render byte-identically to before (the frozen RS-WL
+    identity corpus is unchanged).
+  - **Amendment 8 — `#[path]` mount overlay** (`wardline.rust.mounts`): literal
+    `#[path = "…"] mod name;` declarations now route mounted files/subtrees to
+    their *logical* module path (rustc's relative-path rule; chains, cfg-twin
+    `@cfg` composition, R5 first-wins determinism; macro-wrapped and
+    `cfg_attr`-delivered mounts stay invisible by dialect rule). Mounted files
+    re-key from their filesystem route — `rust_module_route` itself is
+    unchanged and remains the no-mount default.
+  - **Amendment 9 — `const _` skip-emission:** an unnamed `const _` is no
+    longer an entity (unconditional — nothing can ever name it; findings inside
+    one attribute to the enclosing module).
+- **BREAKING (gate): parse failures are now gate-eligible.**
+  `WLN-ENGINE-PARSE-ERROR` (a discovered file that could not be read/parsed) is
+  promoted from a NONE FACT to an **ERROR DEFECT**: its sinks were never
+  analyzed, so a default `--fail-on ERROR` reading green over it was a fail-open
+  (e.g. a latin-1 coding cookie CPython runs but the UTF-8 reader rejects hid
+  live code from the scan). Baseline/waiver still annotate it but cannot clear
+  the secure gate; `--trust-suppressions` can (an explicit operator trust
+  decision). A tree with unparseable files now trips `--fail-on ERROR` until the
+  files are fixed or the suppression is explicitly trusted. (Python frontend;
+  the Rust frontend's parse-error surfacing is unchanged — still a FACT.)
+- **BREAKING (severity): `PY-WL-108` and `PY-WL-112` base severity WARN → ERROR.**
+  Tainted command/program execution (always-shell APIs, argv exec/spawn,
+  literal-`shell=True` subprocess) is the same blast-radius exploit class as
+  SQLi (CWE-78 ≅ CWE-89), so both calibrate with `PY-WL-118`'s ERROR. Findings
+  from these rules now trip a default `--fail-on ERROR` gate in fully-trusted
+  functions; override per project via `rules.severity` if needed.
+- **BREAKING (fingerprints): the boundary-integrity family now partitions
+  four ways — bare `return p` boundaries re-key from `PY-WL-102` to `PY-WL-119`.**
+  At most one of {102, 111, 113, 119} fires per boundary: 119 wins the bare
+  degenerate shape (`return <param>`), 102 keeps every other no-rejection shape,
+  111 keeps assert-only (including an assert inside a substituting `try` —
+  documented precedence over 113), 113 fires only when a real rejection exists
+  and a fail-open handler can swallow it. Because `rule_id` is part of the
+  fingerprint, **baselined/waived/judged `PY-WL-102` entries for bare `return p`
+  boundaries go stale** (the finding now carries `PY-WL-119`) — re-baseline /
+  re-waive once after upgrade. The same boundary is no longer double-counted at
+  ERROR in the gate population.
+- **`PY-WL-102`/`PY-WL-111` recognise more genuine rejection shapes (fewer
+  FPs on real validators):** a ONE-HOP same-module call to a raising helper
+  (a factored-out validator, raising staticmethod, or delegation to another
+  raising boundary — the helper must have a production-surviving rejection;
+  assert-only helpers never count), curated **raising conversions**
+  (`return int(p)` / `float`/`complex`/`Decimal`/`Fraction`/`UUID` over a
+  non-constant argument, and non-constant subscript lookups `Color[p]` /
+  `ALLOWED[p]` — validate-by-construction), and **conditional-expression falsy
+  returns** (`return m.group(0) if m else None`).
+- **BREAKING (wire): per-finding `suppressed` key renamed to `suppression_state`.**
+  The JSONL stream, the Filigree `metadata.wardline.*` subtree, and the signed
+  **legis scan artifact** now emit `suppression_state` (values unchanged:
+  `active`/`baselined`/`waived`/`judged`). This eliminates the "active" overload
+  (the per-finding *state* vs the summary `active` *count*). Because the legis
+  artifact is signed, the canonical bytes — and the golden signature — change;
+  **legis must adopt `suppression_state` on its ingest/co-sign side** before the
+  signed hop verifies again (the opt-in `legis_e2e` oracle stays red until then)
+  (weft-f506e5f845).
+- The MCP `scan` response no longer carries a top-level `findings` array; finding
+  bodies live solely in `agent_summary` (the single canonical carrier). The
+  `truncation` block moved under `agent_summary` (weft-439d09fc8d).
+- The MCP `summary` block adds an `informational` bucket so
+  `active + baselined + waived + judged + informational == total`
+  (weft-f506e5f845).
+- The Filigree emit `disabled_reason` now distinguishes *no token sent* from
+  *token sent but rejected (401)* and names the URL it tried, instead of a flat
+  "set WEFT_FEDERATION_TOKEN" that implied absence (weft-23574069a1 / C-7).
 - **BREAKING: Weft config/store consolidation.** Operator config moved from
   `wardline.yaml` (YAML) to the `[wardline]` table of a shared, operator-authored
   `weft.toml` (TOML), read via stdlib `tomllib` (zero new dependency). An
@@ -43,8 +429,162 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is honored as a **deprecated fallback** (read after the new name), so existing
   deployments keep working with no change; migrate at leisure. Only the token *value*
   must match what the Filigree operator configured.
+- **`wardline doctor --repair`/`install` now preserves operator-pinned
+  `--filigree-url`/`--loomweave-url` args** in the `.mcp.json` wardline server entry
+  (in the order the operator wrote them) instead of normalizing them away. Previously
+  every repair rewrote the entry to the bare canonical args, silently stripping a
+  fixed-port sibling emit/discovery target the published-port rung cannot reconstruct.
 
 ### Fixed
+- **Raw-receiver taint laundering via name-collision shadowing (wardline-f6a29ce23a).**
+  In the L2 per-variable resolver (`_resolve_call`), the early `taint_map`
+  short-circuits returned a MODULE-LEVEL symbol's clean return-taint without checking
+  the call's receiver, so a local/parameter that **shadowed** a module/import name
+  (`import ast; ast = read_raw(p); ast.literal_eval(p)`) laundered raw data through the
+  shadowed-module's clean entry — an end-to-end soundness false negative (a tainted
+  value reached an `os.system`/`PY-WL-108` sink unflagged). Each early short-circuit
+  (the imported-fqn path, the direct dotted lookup, the bare-name call path, the
+  context-encoder path, and the attribute-READ path in `_resolve_expr`) now defers
+  when the call/read's chain-ROOT name is a tracked local/parameter currently in the
+  RAW_ZONE — covering chained receivers (`a.b.method()`) and bare-name shadows
+  (`foo()`) as well as the one-level case.
+  `self`/`cls` roots are excluded so analyzer-injected cross-method summaries are
+  preserved, and the var-types (`Type.method`) path is intentionally left ungated (a
+  legitimately typed object carries a raw-ish value taint from an unmodeled
+  constructor — gating it would false-positive `h = Helper(); h.get_assured()`).
+  Genuine module sanitisers are untouched (the root is never tracked in `var_taints`);
+  the Python default path stays identity-oracle byte-identical, with two discriminating
+  corpus fixtures added.
+- **Finding fingerprint is now invariant to taint-resolution drift (weft-4a9d0f863c).**
+  The `fingerprint` — the cross-tool JOIN KEY into the baseline/waiver/judged stores
+  and the Filigree tracker — folded engine-RESOLUTION outputs (resolved `TaintState`
+  tiers and `via_callee`) into its `taint_path` component, so it moved across builds
+  for byte-identical source as the rule suite was extended (a baselined finding
+  escaped its baseline, tripped the gate, and minted a federation-wide duplicate).
+  Every rule's `taint_path` now carries only a SOURCE-derived discriminator: rules
+  emitting ≤1 finding per `(rule_id, path, line_start, qualname)` pass `taint_path=None`;
+  call-site-anchored rules (PY-WL-105/106/108/115/116/117/118/120) discriminate by the
+  sink/callee spelling plus the call's full lexical span (`col_offset:end_col_offset`,
+  collision-free even for chained calls). PY-WL-114 is unchanged (its `name:token`
+  path is already source-derived and load-bearing). The invariant is documented at
+  `compute_finding_fingerprint` and enforced by a new identity-corpus collision gate
+  (distinct-fingerprint-count == active-finding-count, exercised by a `sinks` fixture
+  with same-line and chained sinks) plus a PY-WL-101 resolved-tier-swap invariance test.
+  - **MIGRATION (one-time).** This is an intentional, reviewed fingerprint rekey
+    (identity corpus `corpus_version` 1→2). It stabilises a key that was *already*
+    drifting on every build, so it converts ongoing unbounded orphaning into a single
+    bounded event. All four fingerprint-keyed stores must be refreshed once after
+    upgrade: regenerate `baseline.yaml` (`wardline baseline update`) and re-run the
+    LLM judge to repopulate `judged.yaml`; previously-waived findings will resurface
+    (loudly — re-waive intentionally); and Filigree finding↔issue associations keyed
+    on the old fingerprint orphan until re-associated. Perform across the federation in
+    lockstep. After this, the key is stable across engine-precision changes.
+- **Three PY-WL-118 false-negatives from the `scrub-2026-06-08` regression set
+  (`scrub-regression`).** Surfaced by adversarial verification of the six P1 scrub
+  fixes (`24b0a3e`); empirically reproduced and regression-tested.
+  - **Tainted SQL via `**kwargs` dict-unpacking now fires** (`wardline-8c31463f9f`). The
+    engine collapses a `**` unpack to a single taint under the `None` arg-key, which the
+    narrowed `_SQL_STRING_KEYS` gate ignored. `_sql_string_taint` now treats the `None` key
+    as the SQL-string slot when a `**` unpack could supply the `operation` — by inspecting the
+    literal-dict keys (`**{"operation": …}` fires, `**{"parameters": …}` stays silent,
+    preserving `wardline-e0e44852e7`) and failing closed on any opaque/non-static `**`. The
+    snapshot's per-`**`-key taint collapse means a literal dict mixing a clean operation with a
+    tainted parameter over-approximates (fires) — a deliberate fail-closed choice, never an FN.
+  - **Nested defs now honor their OWN trust decorator** (`wardline-bb8396f96e`). The
+    unconditional `.<locals>.` strip made a nested `@trusted` def inherit its parent's
+    (suppressed) tier. The new shared `_sink_helpers.enclosing_declared_tier` walks outward
+    through enclosing scopes and uses the nearest scope carrying an explicit declaration
+    (`declared_qualnames`), so a nested def's own decorator governs while a genuinely
+    undeclared nested def still inherits its enclosing trusted tier (`wardline-9b88ec5419`).
+    Applied family-wide (PY-WL-106/107/108/115/116/117 share the base).
+  - **PY-WL-118 now inspects sink calls inside lambda bodies** (`wardline-b8a94cf0ac`). The
+    rule walked `own_nodes`, which treats `ast.Lambda` as a scope boundary, so a tainted
+    `execute()` in a lambda escaped — while its sink-family siblings descend into lambdas. It
+    now uses the shared lambda-descending `sink_method_calls`, attributing the finding to the
+    enclosing entity as the siblings do.
+- **Six P1 correctness defects from the pre-1.0 rule scrub (`scrub-2026-06-08`).** All
+  empirically reproduced and regression-tested; a new shared fail-closed argument resolver
+  (`_sink_helpers.resolved_arg_taints`) gives the sink rules per-argument taint with a single
+  fail-closed implementation (`worst_arg_taint` is now a thin selector over it).
+  - **PY-WL-118 no longer false-fires on parameterized queries** (`wardline-e0e44852e7`). SQLi
+    is a property of the SQL-string argument only; untrusted data passed as a *bound parameter*
+    (the OWASP-canonical mitigation) cannot alter query structure, so the rule now gates on the
+    operation-string position and ignores the parameter position. A tainted SQL string still
+    fires (fail-closed on a splatted operation).
+  - **PY-WL-118 nested-def evasion closed** (`wardline-9b88ec5419`). The rule now applies the
+    family-wide `.<locals>.` tier-strip, so a tainted `execute()` wrapped in a nested function
+    inherits its enclosing trusted tier and fires — matching siblings 108/115/116/117.
+  - **PY-WL-105 co-argument masking closed** (`wardline-836dcef5b4`). The rule fires when *any*
+    resolved argument is provably untrusted, not the single `worst_arg_taint`: the
+    `_PROVABLY_UNTRUSTED` predicate is not upward-closed (a hole at `UNKNOWN_RAW`), so a max-rank
+    collapse let an `UNKNOWN_RAW` co-argument mask a provably-untrusted one.
+  - **PY-WL-114 now gates on the resolved builtin FQN** (`wardline-0267c31cd8`), not the trailing
+    identifier — fixing both the alias-blind false negative (`@t(level='ASURED')` where `t`
+    aliases the builtin) and the foreign-same-name false positive (a non-wardline decorator
+    merely spelled `trusted`). Mirrors PY-WL-110's resolver + builtin-prefix check.
+  - **Engine fail-open: stale `var_types` no longer launders a raw receiver** (`wardline-5ba7ce0f98`).
+    A name re-bound to an imprecisely-typed RHS (subscript / BinOp / f-string / …) now invalidates
+    its recorded type, so a method call on a now-raw value can no longer resolve a clean `@trusted`
+    summary past the RAW_ZONE receiver guard. Conservative direction (more FPs at worst, never an FN).
+  - **Engine fail-open: summary cache key now binds the effective-scan-policy hash**
+    (`wardline-9d6a81b9e7`). `compute_cache_key` folds in `attest.ruleset_hash(config)` — the same
+    single policy identity `attest` signs — so seed-shaping config (`untrusted_sources`,
+    `sanitisers`, `provenance_clash`) can no longer let a warm/persisted cache serve a stale-CLEAN
+    summary that suppresses a real defect. Warm runs are byte-identical to cold runs across policy.
+- **Six P2 correctness defects from the pre-1.0 rule scrub (`scrub-2026-06-08`).** All
+  empirically reproduced with a control (the safe near-identical shape that must stay silent),
+  regression-tested, and hardened across three adversarial review panels. Five make the engine
+  fire MORE (4 false-negatives + 1 soundness + 1 coverage); one removes a false positive.
+  - **PY-WL-109 with/`while True` fall-through** (`wardline-786a4ec647`). `_can_fall_through` now
+    models `with`/`async with` (terminal iff body) and a constant `while True` with no break, so
+    the None-leak rule no longer false-fires on returns wrapped in those constructs.
+  - **PY-WL-113 assign-then-fall-through substitution** (`wardline-c314a7140b`). The fail-open
+    rule now also matches an in-handler ASSIGNMENT of a value to a name the function returns by
+    fall-through (not just an in-handler `return`). Gated on the handler having no *unconditional*
+    top-level return (a conditional nested return does not stop fall-through) and excluding
+    idempotent self-assignment, so a fail-CLOSED `result = p; return None` stays silent.
+  - **PY-WL-110 nested-path false positive closed** (`wardline-09c09f14df`). Marker recognition
+    now keys on the engine's exact-export predicate (`_is_builtin_decorator_fqn`), so a nested
+    attribute path the engine never seeds is no longer counted as a contradictory-marker clash.
+  - **Engine soundness: loop fixpoint iterates to convergence** (`wardline-e04db6e656`). The
+    `range(8)` cap in `_handle_for`/`_handle_while` was lattice *height*, not propagation *depth*;
+    a loop-carried rebind chain longer than 8 links left the head under-tainted (a fail-open). The
+    walk now iterates to a genuine fixpoint with a `num_vars × lattice_height` backstop.
+  - **Engine: branch-conditional dispatch resolved flow-sensitively** (`wardline-499c22bbdd`). A
+    receiver assigned a project class in more than one branch arm is resolved to the SET of
+    candidate callees via a flow-sensitive reaching-definitions pass (branch arms unioned at
+    joins, straight-line reassignment replaces, loop body to a fixpoint, walrus replaces), so
+    PY-WL-105 and PY-WL-120 fire on any anchored trusted-sink candidate regardless of AST order
+    and emit one finding per call site. Replaces the AST-order-dependent flat last-write-wins.
+  - **PY-WL-120 DB-cursor fetches now fire** (`wardline-e7c7cda31a`). `cursor.fetch{one,all,many}()`
+    is seeded `EXTERNAL_RAW` (a curated method set), closing a dead matcher branch so DB reads
+    trip the stored-taint rule exactly as `open()`/`read_text()` already do.
+  - **Engine: container mutators contaminate the receiver** (`wardline-67c7498931`).
+    `.append`/`.add`/`.extend`/`.update`/`.insert` with a tainted argument now write that taint
+    back onto the receiver variable (matching the container-literal `box = [raw]`); `list.insert`'s
+    index argument is excluded (position metadata, not stored content).
+- **`agent_summary` display arrays now fully partition `total_findings` (W3 residual).** The
+  pagination union was `active_defects + suppressed_findings + engine_facts`, which excluded
+  non-defect findings that are not engine facts (metrics, classifications, suggestions, and
+  non-engine facts). Those findings were counted in `summary.total_findings` / `informational`
+  but occupied no display slot — an agent paginating `offset → next_offset` believed it had
+  covered all findings while never seeing metrics or classifications. A new `informational`
+  display array (parallel to `summary.informational`) captures this population. The union is
+  now `active_defects + suppressed_findings + engine_facts + informational`, and
+  `len(union) == truncation.findings_total == summary.total_findings` holds within the
+  `display_findings` contract. The `engine_facts` display array is unchanged (engine facts
+  only; non-engine facts go to `informational`). Closes the W3 pagination residual left open
+  by `weft-f506e5f845`, which added the `informational` summary *count* but not the
+  display-array complement.
+- **Lambda taint: a sink-lambda bound in a non-last branch arm is no longer lost.**
+  The Level-2 taint engine tracked lambda bindings one-per-name, so at a branch merge
+  only the last arm's binding survived; a name rebound to a sink-lambda in a non-last
+  `if`/`try`/`match` arm was overwritten by a later arm's benign lambda, and a tainted
+  call after the branch resolved the wrong body — a silent false negative. Lambda
+  bindings are now a per-name candidate set: a call resolves against every body the
+  name may hold across arms (sink-agnostic; surfaces e.g. PY-WL-106/107/108 on the
+  newly-covered shapes). May raise new findings on code matching this pattern under
+  `--fail-on`. (`wardline-383f83fafe`; orthogonal loop zero-trip FN tracked separately)
 - **Explicit `--config` pointing at a malformed (but existing) `weft.toml` no longer
   silently falls back to default policy.** The guard previously covered only a
   *missing* explicit path; a present-but-unparseable one slipped through C-9c's
@@ -59,8 +599,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no longer expressible); legis `signed`/`dirty` status is read through one shared
   `legis_artifact_outcome` authority instead of being re-derived on each surface;
   the dead `config` input was dropped from the MCP `waiver_add` schema.
-
-## [1.0.0rc2] - 2026-06-06
 
 ### Added
 - **MCP `scan` payload controls — `where` now shrinks the payload, plus
@@ -343,8 +881,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shadowed by an attacker-committed local package on `sys.path`. (The pre-existing
   `--trust-pack` allowlist already gates this code path, so a default scan never
   reached it.)
-
-## [1.0.0rc1] - 2026-06-02
 
 ### Changed
 
@@ -709,7 +1245,7 @@ for Python — enterprise-class trust-boundary analysis at small-team weight.
 - **Packaging** — MIT-licensed; optional extras `scanner` (config + CLI) and
   `weft` (HTTP integrations).
 
-[Unreleased]: https://github.com/foundryside-dev/wardline/compare/v0.3.0...HEAD
+[1.0.1]: https://github.com/foundryside-dev/wardline/compare/v0.3.0...v1.0.1
 [0.3.0]: https://github.com/foundryside-dev/wardline/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/foundryside-dev/wardline/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/foundryside-dev/wardline/compare/v0.1.0...v0.2.0

@@ -5,8 +5,9 @@ load-bearing**: `wardline scan` boots, analyzes, writes findings, and gates with
 both siblings absent. The three output paths below are enrichment you opt into.
 
 This "additive, never load-bearing" rule is the federation's enrich-only axiom,
-which is defined authoritatively in the Weft hub (`~/weft/doctrine.md` §5) — the
-canonical source for the suite's roster and composition doctrine.
+which is defined authoritatively in the Weft hub doctrine
+([weft.foundryside.dev/#doctrine](https://weft.foundryside.dev/#doctrine) §5) —
+the canonical source for the suite's roster and composition doctrine.
 
 | Path | How | Consumer |
 |---|---|---|
@@ -52,7 +53,7 @@ Suppressed findings (baseline / waiver / judged) emit a SARIF
 reason as the justification.
 
 Downstream importers should preserve
-`partialFingerprints["wardlineFingerprint/v1"]` as the finding's lifecycle
+`partialFingerprints["wardlineFingerprint/v2"]` as the finding's lifecycle
 identity. If that field arrives empty or is discarded, the imported finding may
 still be visible as a generic SARIF result, but Filigree promotion,
 deduplication, and close/reopen behavior cannot rely on the same stable identity
@@ -88,20 +89,31 @@ $ wardline scan . --filigree-url http://localhost:8377/api/weft/scan-results
 
 This is layered on top of the normal local output — Wardline still writes
 `findings.jsonl` (or your `--output`) and runs the gate; emission is additive.
+Use `--local-only` (alias `--no-emit`) when a scan must stay local even though a
+Filigree or Loomweave endpoint is discoverable from the environment or project
+install state.
 The emitter is stdlib `urllib` only (no new dependency). Findings of **all**
 kinds are sent; each goes on the wire with `path`, `rule_id`, `message`, mapped
 lowercase `severity`, line range, a **top-level `fingerprint`** (Filigree's
 cross-run identity key), and a `metadata.wardline.*` namespace carrying qualname,
 kind, internal severity, and per-rule properties.
 
+Large finding sets are chunked before upload. Wardline uses the explicit
+`--filigree-max-findings-per-request` value first, then
+`WARDLINE_FILIGREE_MAX_FINDINGS_PER_REQUEST`, then Filigree's advertised
+scan-results limit from `/api/files/_schema` when reachable, and finally a safe
+default of 1000. Chunking keeps complete file groups together whenever possible
+so Filigree's `mark_unseen` reconciliation does not treat a later chunk as a fix.
+
 The outcome split is **load-bearing for the charter guarantee**:
 
 - **Sibling absent / outage** — connection refused, timeout, or any 5xx: warn and
   continue. The scan proceeds to its gate; the exit code is unaffected. A Filigree
   outage must never make Wardline's gate load-bearing.
-- **Client/protocol error** — a 4xx (or stray 3xx): loud failure. Wardline sent a
-  request the server rejected — a payload/config bug — so the response body is
-  echoed and the command exits `2`, even if findings are otherwise clean.
+- **Client/protocol error** — a 4xx (or stray 3xx): warn and continue for
+  `wardline scan`, after the local findings and gate remain authoritative.
+  Wardline reports the rejected upload as failed enrichment instead of exiting
+  `2` before the gate verdict.
 - **Success** — a one-line summary reports created/updated counts plus any
   server-side `warnings` (Filigree reports severity coercions and line clamps
   there) and partial-ingest failures.

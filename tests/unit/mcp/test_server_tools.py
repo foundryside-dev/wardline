@@ -75,8 +75,11 @@ def test_scan_tool_returns_summary_and_gate(tmp_path: Path) -> None:
     root = _leaky_project(tmp_path)
     server = WardlineMCPServer(root=root)
     out = _call(server, "scan", {"fail_on": "ERROR"})
-    assert "findings" in out and "summary" in out and "gate" in out
-    assert out["summary"]["total"] == len(out["findings"])
+    assert "agent_summary" in out and "summary" in out and "gate" in out
+    # Finding bodies live in agent_summary now (no top-level findings array, W1). The
+    # whole-project buckets partition the total exactly (weft-f506e5f845).
+    s = out["summary"]
+    assert s["active"] + s["baselined"] + s["waived"] + s["judged"] + s["informational"] == s["total"]
     assert out["summary"]["active"] >= 1
     assert out["gate"]["tripped"] is True
     # The agent-facing dogfood gate fields are assembled in server.py separately from
@@ -88,7 +91,7 @@ def test_scan_tool_returns_summary_and_gate(tmp_path: Path) -> None:
     # No committed baseline here, so the migration hint must be present AND None (a
     # spurious fire would be a regression in the secure-default rollout signal).
     assert "migration_hint" in out["gate"] and out["gate"]["migration_hint"] is None
-    assert any(f["rule_id"] == "PY-WL-101" for f in out["findings"])
+    assert any(e["rule_id"] == "PY-WL-101" for e in out["agent_summary"]["active_defects"])
 
 
 def test_scan_tool_summary_includes_unanalyzed(tmp_path: Path) -> None:
@@ -127,7 +130,7 @@ def test_explain_taint_success_through_mcp(tmp_path: Path) -> None:
     root = _leaky_project(tmp_path)
     server = WardlineMCPServer(root=root)
     scan_out = _call(server, "scan", {})
-    leak = next(f for f in scan_out["findings"] if f["rule_id"] == "PY-WL-101")
+    leak = next(e for e in scan_out["agent_summary"]["active_defects"] if e["rule_id"] == "PY-WL-101")
     fp = leak["fingerprint"]
 
     resp = server.rpc.dispatch(

@@ -28,26 +28,20 @@ _BUILTIN_MARKER_IMPORTS: dict[str, frozenset[str]] = {
     "weft_markers": frozenset({"external_boundary", "trust_boundary", "trusted"}),
 }
 
-# Declarative native / first-party module prefixes. An import whose dotted module
-# equals one of these or sits under it resolves cleanly EVEN WHEN it has no Python
-# AST in the scanned tree — e.g. a compiled ``wardline.core`` extension after the
-# Rust migration, which is definitionally unresolvable to an AST import analyzer.
-# This is the SEAM the Rust migration extends: add the compiled submodule's dotted
-# prefix here. Distinct from _BUILTIN_MARKER_IMPORTS (alias-specific, for the
-# statically-modelled marker decorators); this is "any import from this prefix is
-# first-party, resolve it". Matching is on dotted-component boundaries, so
-# ``wardline.core`` does NOT swallow an unrelated ``wardline.core_helpers``.
-_NATIVE_FIRST_PARTY_PREFIXES: frozenset[str] = frozenset(
-    {
-        "wardline.core",
-        "wardline.decorators",
-    }
-)
+# Declarative native / first-party imports. A compiled module may have no Python
+# AST in the scanned tree, so exact known exports can resolve cleanly even when
+# absent from ``project_modules``. This is alias-specific on purpose: a broad
+# ``wardline.core`` or ``wardline.decorators`` prefix would hide misspelled exports
+# and bogus submodules, which are real diagnostic coverage gaps.
+_NATIVE_FIRST_PARTY_IMPORTS: dict[str, frozenset[str]] = {
+    "wardline.core.registry": frozenset({"REGISTRY", "REGISTRY_VERSION", "RegistryEntry"}),
+}
 
 
-def _is_native_first_party(mod: str) -> bool:
-    """True if ``mod`` is, or is under, a declared native/first-party prefix."""
-    return any(mod == prefix or mod.startswith(prefix + ".") for prefix in _NATIVE_FIRST_PARTY_PREFIXES)
+def _is_native_first_party_import(mod: str, alias: str) -> bool:
+    """True for exact declared native/first-party imports."""
+    names = _NATIVE_FIRST_PARTY_IMPORTS.get(mod)
+    return names is not None and alias in names
 
 
 # code -> (rule_id, severity, kind)
@@ -55,6 +49,7 @@ _DIAG_MAP: dict[str, tuple[str, Severity, Kind]] = {
     "L3_CONVERGENCE_BOUND": ("WLN-L3-CONVERGENCE-BOUND", Severity.WARN, Kind.METRIC),
     "L3_MONOTONICITY_VIOLATION": ("WLN-L3-MONOTONICITY-VIOLATION", Severity.ERROR, Kind.DEFECT),
     "L3_LOW_RESOLUTION": ("WLN-L3-LOW-RESOLUTION", Severity.INFO, Kind.METRIC),
+    "DUPLICATE_FQN": ("WLN-ENGINE-DUPLICATE-FQN", Severity.ERROR, Kind.DEFECT),
 }
 
 
@@ -108,6 +103,96 @@ def build_diagnostic_findings(diagnostics: list[tuple[str, str]]) -> list[Findin
     return findings
 
 
+def build_collision_findings(findings: list[Finding]) -> list[Finding]:
+    """Defense-in-depth fingerprint-collision guard (wardline-8fb773a7af).
+
+    The soundness bar "two DISTINCT findings must never share a fingerprint" is
+    otherwise asserted only by a COMMENT (``finding.py``) and by the REACTIVE
+    identity corpus (which only covers shapes a fixture happens to exercise —
+    PY-WL-114's collision lived undetected precisely because no fixture hit it).
+    This is the PROACTIVE guard: it runs over the full emitted finding set at the
+    single analyzer chokepoint and converts a silent mask into a loud signal.
+
+    Why it matters: every fingerprint consumer treats ``Finding.fingerprint`` as a
+    UNIQUE join key. ``baseline.generate_baseline`` collapses same-fp findings with
+    ``setdefault`` (keep first); ``judged`` is last-write-wins; the baseline/waiver/
+    judged YAML loaders REJECT a duplicate fingerprint outright; SARIF
+    (``partialFingerprints``) and Filigree dedup downstream. So when two findings
+    that a consumer would treat as DIFFERENT share a fingerprint, one silently
+    masks the other on all four joins — a real trust-boundary false-negative.
+
+    Distinctness oracle: ``Finding.to_jsonl()`` (deterministic, ``sort_keys``)
+    captures exactly the consumer-visible surface. Two findings in a same-fp group
+    with differing ``to_jsonl()`` are a lossy collision; byte-identical findings are
+    a benign duplicate (collapsing loses nothing) and do NOT fire — a rule may
+    legitimately emit the same finding twice.
+
+    Posture: one ``WLN-ENGINE-FINGERPRINT-COLLISION`` DEFECT per colliding
+    fingerprint, ``Severity.ERROR`` at ``ENGINE_PATH`` — the same engine-soundness
+    posture as ``WLN-L3-MONOTONICITY-VIOLATION``. A lineless DEFECT at
+    ``ENGINE_PATH`` is NOT downgraded to a non-gating FACT (``suppression.py`` only
+    downgrades lineless DEFECTs OFF ``ENGINE_PATH``), so this trips ``--fail-on
+    ERROR``: fail-loud / deconfliction-first. It is engine-diagnostic kind, so the
+    identity corpus (PY-WL-* ∧ DEFECT only) excludes it and the frozen contract is
+    untouched. Each diagnostic's own fingerprint is keyed on the colliding fp, so
+    the guard's own output can never collide.
+
+    Scope boundary: this sees the analyzer-return population. The lineless-DEFECT
+    downgrade in ``suppression.py`` runs DOWNSTREAM, so this guard does not police
+    findings minted after ``analyze()`` returns.
+    """
+    by_fp: dict[str, list[Finding]] = {}
+    for f in findings:
+        by_fp.setdefault(f.fingerprint, []).append(f)
+
+    out: list[Finding] = []
+    for fp in sorted(by_fp):
+        group = by_fp[fp]
+        if len(group) < 2:
+            continue
+        # Benign exact-duplicates collapse to one canonical form; a collision has >=2.
+        # ``to_jsonl()`` is the SINGLE distinctness key — both the count and the
+        # member list derive from it, so a collision that differs only in
+        # properties/severity (not in the 5-tuple below) is still counted AND listed.
+        reps: dict[str, Finding] = {}
+        for f in group:
+            reps.setdefault(f.to_jsonl(), f)
+        if len(reps) < 2:
+            continue
+        distinct = [reps[k] for k in sorted(reps)]
+        summary = "; ".join(f"{f.rule_id}@{f.location.path}:{f.location.line_start}" for f in distinct)
+        out.append(
+            Finding(
+                rule_id="WLN-ENGINE-FINGERPRINT-COLLISION",
+                message=(
+                    f"{len(distinct)} distinct findings share fingerprint {fp} — one silently masks "
+                    f"the other on the baseline/waiver/judge/Filigree joins: {summary}"
+                ),
+                severity=Severity.ERROR,
+                kind=Kind.DEFECT,
+                location=Location(path=_ENGINE_PATH),
+                fingerprint=_fingerprint("WLN-ENGINE-FINGERPRINT-COLLISION", fp),
+                properties={
+                    "colliding_fingerprint": fp,
+                    "finding_count": len(distinct),
+                    "members": [
+                        {
+                            "rule_id": f.rule_id,
+                            "path": f.location.path,
+                            "line_start": f.location.line_start,
+                            "qualname": f.qualname,
+                            "severity": f.severity.value,
+                            "message": f.message,
+                            "properties": dict(f.properties),
+                        }
+                        for f in distinct
+                    ],
+                },
+            )
+        )
+    return out
+
+
 def build_unknown_import_findings(
     file_trees: list[tuple[str, str, ast.Module]],
     *,
@@ -131,7 +216,7 @@ def build_unknown_import_findings(
             stdlib_keys=stdlib_keys,
             resolvable_star_modules=resolvable_star_modules,
         ):
-            package = detail.split()[1] if detail.startswith("from ") else detail
+            package = detail.split()[1] if detail.startswith(("from ", "import ")) else detail
             findings.append(
                 Finding(
                     rule_id="WLN-ENGINE-UNKNOWN-IMPORT",
@@ -219,6 +304,8 @@ def diagnose_unknown_imports(
     import, de-duplicated by ``(source_module, target_package)``.
 
     Triggers:
+      * ``import X`` where ``X`` is not a project module, not a Python stdlib
+        module, and no stdlib_taint entry has X as its package.
       * ``from X import *`` where ``X`` is not a project module, not a
         Python stdlib module, and no stdlib_taint entry has X as its
         package.
@@ -237,6 +324,30 @@ def diagnose_unknown_imports(
     findings: list[tuple[str, str, str]] = []
     seen: set[tuple[str, str]] = set()
     for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if _is_type_checking_guarded(node, tree):
+                continue
+            for alias in node.names:
+                mod = alias.name
+                if not mod:
+                    continue
+                if mod in project_modules:
+                    continue
+                if _is_stdlib_module(mod):
+                    continue
+                if any(key[0] == mod for key in stdlib_keys):
+                    continue
+                key = (module_path, mod)
+                if key not in seen:
+                    seen.add(key)
+                    findings.append(
+                        (
+                            module_path,
+                            f"import {mod}",
+                            f"external import {mod!r} cannot be resolved",
+                        )
+                    )
+            continue
         if not isinstance(node, ast.ImportFrom):
             continue
         # Skip relative imports entirely — they resolve inside the
@@ -256,13 +367,6 @@ def diagnose_unknown_imports(
         if not mod:
             continue
         if mod in project_modules:
-            continue
-        # Skip declared native / first-party modules. A compiled wardline.core
-        # extension has no Python AST so it is absent from project_modules, but it
-        # is first-party, not an external precision gap — resolve it via the
-        # declarative allowlist. (Only DECLARED prefixes; a genuine unknown
-        # third-party import still falls through to a FACT below.)
-        if _is_native_first_party(mod):
             continue
         # Skip Python stdlib modules — any import whose top-level name
         # appears in ``sys.stdlib_module_names`` is resolvable at runtime
@@ -293,6 +397,8 @@ def diagnose_unknown_imports(
         unresolved_aliases: list[str] = []
         for alias in node.names:
             if _is_builtin_marker_import(mod, alias.name):
+                continue
+            if _is_native_first_party_import(mod, alias.name):
                 continue
             if (mod, alias.name) in stdlib_keys:
                 continue

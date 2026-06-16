@@ -10,15 +10,26 @@ dist/
 build/
 *.egg-info/
 
-# MkDocs build output
-site/
+# MkDocs build output (redirected away from site/, which now holds the Astro
+# member site — see mkdocs.yml site_dir).
+mkdocs-build/
+
+# Astro member site (site/) — track the source, ignore build artifacts & vendored deps.
+site/dist/
+site/.astro/
+site/node_modules/
+site/vendor/site-kit/
+site/public/_site-kit/
 
 # Wardline runtime output
 findings.jsonl
+# Transient scan/scratch output (e.g. Playwright captures from the site work).
+output/
 
 # Sibling legacy locations (transition window — .weft/<sibling>/ is preferred but
 # the old dot-dirs may still be present until siblings finish migrating).
 .loomweave
+.clarion
 
 # NOTE: do NOT ignore .weft/ — wardline's own .weft/wardline/{baseline,judged,waivers}.yaml
 # are deliberately committed; weft.toml is operator-authored and tracked.
@@ -42,3 +53,24 @@ CLAUDE.md
 .coverage
 coverage.json
 loomweave.yaml
+
+# Filigree issue tracker
+.weft/
+.filigree.conf
+.agents/skills/loomweave-workflow/.fingerprint
+.agents/skills/loomweave-workflow/SKILL.md
+.claude/skills/loomweave-workflow/.fingerprint
+.claude/skills/loomweave-workflow/SKILL.md
+wardline.yaml
+.agents/skills/wardline-gate/SKILL.md
+.claude/skills/wardline-gate/SKILL.md
+
+# git worktrees (isolated feature workspaces)
+.worktrees/
+
+# CI-only assembled Pages tree (www root + docs/)
+publish/
+
+# Developer config / local tooling — not part of the solution
+.claude/
+.agents/

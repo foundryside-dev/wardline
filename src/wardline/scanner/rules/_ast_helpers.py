@@ -4,7 +4,10 @@
 All helpers operate on a single function's *own* scope — they never descend into
 nested ``FunctionDef``/``AsyncFunctionDef``/``ClassDef`` bodies, so a finding is
 attributed to the function that lexically owns the construct (nested functions
-are separate entities and are analysed in their own right).
+are separate entities and are analysed in their own right). The single sanctioned
+exception is :func:`rejecting_helper_calls`, a ONE-HOP, SAME-MODULE inspection of
+a called helper's body — bounded interprocedural sight so factored-out validators
+(``_require_nonempty(p)``) are not misread as "no rejection path".
 """
 
 from __future__ import annotations
@@ -13,9 +16,20 @@ import ast
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Mapping
+
+    from wardline.scanner.index import Entity
 
 _BROAD_NAMES: frozenset[str] = frozenset({"Exception", "BaseException"})
+
+# CURATED raising-conversion callables: constructors that raise (ValueError /
+# decimal.InvalidOperation / ...) on EVERY invalid input and return a value of
+# guaranteed shape — the canonical validate-by-construction idiom
+# (``@trust_boundary def to_port(p): return int(p)``). Deliberately a small
+# allowlist matched by (possibly dotted) final name: treating ARBITRARY calls as
+# rejections would be an FN hole (any helper call would silence PY-WL-102).
+# ``str``/``bool``/``repr`` are absent on purpose — they accept everything.
+_RAISING_CONVERSION_NAMES: frozenset[str] = frozenset({"int", "float", "complex", "Decimal", "Fraction", "UUID"})
 
 
 def _own_statements(node: ast.AST) -> Iterator[ast.stmt]:
@@ -27,6 +41,86 @@ def _own_statements(node: ast.AST) -> Iterator[ast.stmt]:
         if isinstance(child, ast.stmt):
             yield child
         yield from _own_statements(child)
+
+
+def _own_reachable_statements(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.stmt]:
+    yield from _reachable_statements_in_block(node.body)
+
+
+def _own_reachable_nodes(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.AST]:
+    for stmt in _own_reachable_statements(node):
+        yield from _own_nodes_in_reachable_stmt(stmt)
+
+
+def _own_nodes_in_reachable_stmt(stmt: ast.stmt) -> Iterator[ast.AST]:
+    yield stmt
+    if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return
+    yield from _walk_own_non_stmt_children(stmt)
+
+
+def _walk_own_non_stmt_children(node: ast.AST) -> Iterator[ast.AST]:
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            yield child
+        elif isinstance(child, ast.stmt):
+            continue
+        else:
+            yield child
+            yield from _walk_own_non_stmt_children(child)
+
+
+def _reachable_statements_in_block(stmts: list[ast.stmt]) -> Iterator[ast.stmt]:
+    for stmt in stmts:
+        yield stmt
+        if not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            for block in _child_statement_blocks(stmt):
+                yield from _reachable_statements_in_block(block)
+        if _stmt_always_terminates(stmt):
+            break
+
+
+def _child_statement_blocks(stmt: ast.stmt) -> Iterator[list[ast.stmt]]:
+    if isinstance(stmt, (ast.If, ast.For, ast.AsyncFor, ast.While)):
+        yield stmt.body
+        yield stmt.orelse
+    elif isinstance(stmt, (ast.With, ast.AsyncWith)):
+        yield stmt.body
+    elif isinstance(stmt, (ast.Try, ast.TryStar)):
+        yield stmt.body
+        yield stmt.orelse
+        yield stmt.finalbody
+        for handler in stmt.handlers:
+            yield handler.body
+    elif isinstance(stmt, ast.Match):
+        for case in stmt.cases:
+            yield case.body
+
+
+def _block_always_terminates(stmts: list[ast.stmt]) -> bool:
+    return any(_stmt_always_terminates(stmt) for stmt in stmts)
+
+
+def _match_has_irrefutable_case(stmt: ast.Match) -> bool:
+    return any(
+        isinstance(case.pattern, ast.MatchAs) and case.pattern.pattern is None and case.guard is None
+        for case in stmt.cases
+    )
+
+
+def _stmt_always_terminates(stmt: ast.stmt) -> bool:
+    if isinstance(stmt, (ast.Return, ast.Raise)):
+        return True
+    if isinstance(stmt, ast.If):
+        return (
+            bool(stmt.body)
+            and bool(stmt.orelse)
+            and _block_always_terminates(stmt.body)
+            and _block_always_terminates(stmt.orelse)
+        )
+    if isinstance(stmt, ast.Match):
+        return _match_has_irrefutable_case(stmt) and all(_block_always_terminates(case.body) for case in stmt.cases)
+    return False
 
 
 def own_except_handlers(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.ExceptHandler]:
@@ -86,44 +180,211 @@ def _is_falsy_constant_return(value: ast.expr | None) -> bool:
     return False
 
 
+def _is_raising_conversion(value: ast.expr) -> bool:
+    """True for a CURATED raising-expression: a :data:`_RAISING_CONVERSION_NAMES`
+    constructor applied to at least one non-constant argument (``int(p)`` — a
+    constant argument validates nothing), or a Subscript lookup with a
+    non-constant key (``Color[p]`` raises ``KeyError``; ``ALLOWED[p]`` likewise —
+    a CONSTANT index like ``parts[0]`` is positional access, not a validating
+    lookup of the input)."""
+    if isinstance(value, ast.Call):
+        func = value.func
+        if isinstance(func, ast.Name):
+            name = func.id
+        elif isinstance(func, ast.Attribute):
+            name = func.attr
+        else:
+            return False
+        return name in _RAISING_CONVERSION_NAMES and any(not isinstance(arg, ast.Constant) for arg in value.args)
+    if isinstance(value, ast.Subscript):
+        return isinstance(value.value, (ast.Name, ast.Attribute)) and not isinstance(value.slice, ast.Constant)
+    return False
+
+
+def _is_rejection_return(value: ast.expr | None) -> bool:
+    """A ``return`` value that constitutes a rejection path: a falsy constant, a
+    conditional expression with a rejecting branch (``return m.group(0) if m else
+    None`` is the ternary form of ``if not m: return None``), or a curated
+    raising-conversion (``return int(p)`` rejects-by-construction)."""
+    if _is_falsy_constant_return(value):
+        return True
+    if isinstance(value, ast.IfExp):
+        return _is_rejection_return(value.body) or _is_rejection_return(value.orelse)
+    return value is not None and _is_raising_conversion(value)
+
+
+def _stmt_is_real_rejection(stmt: ast.stmt) -> bool:
+    """A statement that rejects IN PRODUCTION: a ``raise`` or a rejection-shaped
+    ``return``. Excludes ``assert`` (stripped under ``python -O`` — PY-WL-111's
+    hazard, never a *real* rejection)."""
+    if isinstance(stmt, ast.Raise):
+        return True
+    return isinstance(stmt, ast.Return) and _is_rejection_return(stmt.value)
+
+
+def has_real_rejection(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """True when *node*'s own scope contains a production-surviving rejection —
+    a ``raise`` or a rejection-shaped ``return`` — i.e. NOT counting ``assert``.
+    This is PY-WL-113's premise half: a rejection must EXIST (and survive ``-O``)
+    before a fail-open handler can be said to defeat it."""
+    return any(_stmt_is_real_rejection(stmt) for stmt in _own_reachable_statements(node))
+
+
 def has_rejection_path(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    """True when *node* can reject: any ``raise``, any falsy-constant ``return``,
-    or any ``assert`` in its own scope. Deliberately generous — PY-WL-102 is
-    always-on, so we err toward SEEING a rejection path (risk a missed finding)
-    over firing on a real validator.
+    """True when *node* can reject: any ``raise``, any rejection-shaped ``return``
+    (falsy constant, rejecting ternary branch, curated raising-conversion), or any
+    ``assert`` in its own scope. Deliberately generous — PY-WL-102 is always-on,
+    so we err toward SEEING a rejection path (risk a missed finding) over firing
+    on a real validator.
 
     ``assert`` counts as a rejection here so PY-WL-102 does NOT fire on a boundary
     whose only reject is an assert — that boundary DOES reject at runtime. The
     distinct hazard (asserts are stripped under ``python -O``, so the validation
     silently vanishes in production) is PY-WL-111's job, via
-    :func:`asserts_are_sole_rejection`. The two rules partition the space cleanly:
-    102 fires on "no rejection of any shape", 111 on "the only rejection is an
-    assert" — never both on one boundary."""
-    for stmt in _own_statements(node):
-        if isinstance(stmt, (ast.Raise, ast.Assert)):
-            return True
-        if isinstance(stmt, ast.Return) and _is_falsy_constant_return(stmt.value):
-            return True
-    return False
+    :func:`asserts_are_sole_rejection`.
+
+    **The boundary-integrity family partitions FOUR ways** (wardline-718048a518),
+    at most one of which fires per boundary:
+      - PY-WL-119 — the bare degenerate shape (:func:`is_degenerate_boundary`);
+      - PY-WL-102 — any other shape with no rejection path of any kind;
+      - PY-WL-111 — the only rejection is ``assert``;
+      - PY-WL-113 — a real rejection exists but a fail-open handler defeats it.
+    """
+    return any(
+        isinstance(stmt, ast.Assert) or _stmt_is_real_rejection(stmt) for stmt in _own_reachable_statements(node)
+    )
 
 
 def asserts_are_sole_rejection(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     """True when *node*'s ONLY rejection mechanism is ``assert`` — at least one
-    ``assert`` in its own scope, and NO ``raise`` and NO falsy-constant ``return``.
+    ``assert`` in its own scope, and NO real rejection (``raise`` /
+    rejection-shaped ``return``).
 
     This is PY-WL-111's predicate: such a boundary validates in development but is
     stripped under ``python -O`` (CWE-617), so the rejection silently vanishes in
     production. Mutually exclusive with PY-WL-102 (which fires only when
-    :func:`has_rejection_path` is False, i.e. NO assert either)."""
+    :func:`has_rejection_path` is False, i.e. NO assert either). Callers that can
+    see the project context additionally consult :func:`rejecting_helper_calls` —
+    a raising same-module helper survives ``-O`` and rescues the boundary."""
     has_assert = False
-    for stmt in _own_statements(node):
-        if isinstance(stmt, ast.Raise):
-            return False
-        if isinstance(stmt, ast.Return) and _is_falsy_constant_return(stmt.value):
+    for stmt in _own_reachable_statements(node):
+        if _stmt_is_real_rejection(stmt):
             return False
         if isinstance(stmt, ast.Assert):
             has_assert = True
     return has_assert
+
+
+def is_degenerate_boundary(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """True for the bare degenerate boundary: the body is (modulo docstrings /
+    ``pass``) a single ``return <param>``. PY-WL-119's shape — a strict subset of
+    "no rejection path", carved out of PY-WL-102's domain so the family partitions
+    cleanly (119 wins on this shape; 102 owns every other no-rejection shape)."""
+    param_names = {arg.arg for arg in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)}
+    if node.args.vararg:
+        param_names.add(node.args.vararg.arg)
+    if node.args.kwarg:
+        param_names.add(node.args.kwarg.arg)
+
+    non_trivial_stmts = [
+        stmt for stmt in node.body if not isinstance(stmt, ast.Pass) and not _is_ellipsis_or_constant(stmt)
+    ]
+    if len(non_trivial_stmts) == 1 and isinstance(non_trivial_stmts[0], ast.Return):
+        ret_val = non_trivial_stmts[0].value
+        if isinstance(ret_val, ast.Name) and ret_val.id in param_names:
+            return True
+    return False
+
+
+def _resolve_one_hop_callee(
+    call: ast.Call,
+    entity: Entity,
+    entities: Mapping[str, Entity],
+    call_site_callees: Mapping[int, str],
+) -> Entity | None:
+    """Resolve *call* to a SAME-MODULE project entity, or None.
+
+    The engine's resolved target (``call_site_callees``) wins when present; a
+    resolved CROSS-module callee is deliberately discarded (one-hop stays
+    same-module — cheap and conservative). Otherwise a lexical fallback maps a
+    bare ``helper(...)`` or single-attribute ``Cls.method(...)`` callee onto the
+    boundary's enclosing qualname prefixes, shortest first (module scope is what
+    a bare name actually resolves to; class scopes are tried later only as a
+    static/class-method courtesy)."""
+    resolved = call_site_callees.get(id(call))
+    if resolved is not None:
+        callee = entities.get(resolved)
+        if callee is not None and callee.location.path == entity.location.path and callee.qualname != entity.qualname:
+            return callee
+        return None
+    func = call.func
+    if isinstance(func, ast.Name):
+        suffix = func.id
+    elif isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+        suffix = f"{func.value.id}.{func.attr}"
+    else:
+        return None
+    parts = entity.qualname.split(".")
+    for i in range(1, len(parts)):
+        candidate = entities.get(".".join((*parts[:i], suffix)))
+        if (
+            candidate is not None
+            and candidate.location.path == entity.location.path
+            and candidate.qualname != entity.qualname
+        ):
+            return candidate
+    return None
+
+
+def rejecting_helper_calls(
+    entity: Entity,
+    entities: Mapping[str, Entity],
+    call_site_callees: Mapping[int, str],
+) -> frozenset[int]:
+    """The ``id()``s of own-scope ``Call`` nodes in *entity* that resolve (one hop,
+    same module) to a callee whose OWN body has a real rejection — a factored-out
+    validator (``_require_nonempty(p)``), a raising staticmethod helper, or
+    wholesale delegation to another raising boundary (``return inner(p)``).
+
+    Bounded interprocedural sight for the boundary-integrity family: such a call
+    IS the boundary's rejection path, so PY-WL-102/111 must stay silent and
+    PY-WL-113 can locate the rejection inside a ``try``. Strictly ONE hop (the
+    callee's body is inspected with the own-scope :func:`has_real_rejection`,
+    never recursively) and strictly same-module (same ``location.path``).
+
+    SOUNDNESS: the callee must have a REAL rejection — a helper that cannot raise
+    (logs and returns) never counts, and an assert-only helper never counts (its
+    assert vanishes under ``python -O`` exactly like an inline one, which would
+    falsely silence PY-WL-111)."""
+    ids: set[int] = set()
+    for n in _own_reachable_nodes(entity.node):
+        if isinstance(n, ast.Call):
+            callee = _resolve_one_hop_callee(n, entity, entities, call_site_callees)
+            if callee is not None and has_real_rejection(callee.node):
+                ids.add(id(n))
+    return frozenset(ids)
+
+
+def _own_reachable_nodes_in_blocks(stmts: list[ast.stmt]) -> Iterator[ast.AST]:
+    for stmt in _reachable_statements_in_block(stmts):
+        yield from _own_nodes_in_reachable_stmt(stmt)
+
+
+def block_has_real_rejection(stmts: list[ast.stmt], rejecting_call_ids: frozenset[int] = frozenset()) -> bool:
+    """True when the statement list *stmts* (a ``try`` body or handler body)
+    lexically contains a reachable real rejection — a ``raise`` / rejection-shaped
+    ``return`` in its own scope, or a reachable call whose ``id()`` is in
+    *rejecting_call_ids* (a one-hop rejecting helper, see
+    :func:`rejecting_helper_calls`). PY-WL-113's per-``try`` premise: a handler
+    can only swallow a rejection that lives inside its own ``try``."""
+    for stmt in _reachable_statements_in_block(stmts):
+        if _stmt_is_real_rejection(stmt):
+            return True
+    if rejecting_call_ids:
+        for n in _own_reachable_nodes_in_blocks(stmts):
+            if isinstance(n, ast.Call) and id(n) in rejecting_call_ids:
+                return True
+    return False
 
 
 def _contains_reraise(handler: ast.ExceptHandler) -> bool:
@@ -132,15 +393,73 @@ def _contains_reraise(handler: ast.ExceptHandler) -> bool:
     return any(isinstance(stmt, ast.Raise) for stmt in _own_statements(handler))
 
 
-def handler_substitutes_on_failure(handler: ast.ExceptHandler) -> bool:
-    """FAIL-OPEN: does not re-raise and returns a value-bearing (non-rejection)
-    result. A falsy/bare ``return`` is a REJECTION signal, not substitution, so it
-    does not match; a (even conditional) re-raise never matches. PY-WL-113."""
+def returned_var_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> frozenset[str]:
+    """The set of local names *node* returns by value (``return result``) anywhere in
+    its own scope. Used to recognise the assign-then-fall-through substitution shape
+    in :func:`handler_substitutes_on_failure` — a handler that rebinds a name the
+    function later returns substitutes a value just as ``return name`` would."""
+    return frozenset(
+        stmt.value.id
+        for stmt in _own_statements(node)
+        if isinstance(stmt, ast.Return) and isinstance(stmt.value, ast.Name)
+    )
+
+
+def _is_self_assignment(stmt: ast.Assign) -> bool:
+    """True for an idempotent ``x = x`` — the RHS is a bare Name equal to a target.
+    Such an assignment substitutes nothing new, so it is not a fail-open substitution."""
+    return isinstance(stmt.value, ast.Name) and any(
+        isinstance(t, ast.Name) and t.id == stmt.value.id for t in stmt.targets
+    )
+
+
+def handler_substitutes_on_failure(handler: ast.ExceptHandler, returned_names: frozenset[str] = frozenset()) -> bool:
+    """FAIL-OPEN: does not re-raise and substitutes a value-bearing (non-rejection)
+    result. Two substitution shapes match, both bypassing the boundary:
+
+      - an in-handler ``return X`` of a non-falsy value (``return p`` / ``return DEFAULT``);
+      - an in-handler ASSIGNMENT of a non-falsy value to a name in *returned_names* —
+        a name the owning function then returns by FALL-THROUGH (``result = p`` here,
+        ``return result`` after the ``try``). Structurally identical to the return form.
+
+    A falsy/bare ``return`` (or assignment of a falsy value) is a REJECTION signal, not
+    substitution, so it does not match; a (even conditional) re-raise never matches.
+
+    The assignment shape is FALL-THROUGH only: it is gated on the handler having no
+    UNCONDITIONAL (top-level) ``return`` of its own, because a handler that always exits via
+    its own ``return`` (a rejecting ``return None`` or a value-return handled by the first
+    branch) never lets an in-handler assignment escape to the function's post-``try`` return
+    (wardline-c314a7140b panel-1: ``result = p`` then ``return None`` is fail-CLOSED). The
+    gate is TOP-LEVEL only (``handler.body``, NOT the depth-descending ``_own_statements``):
+    a merely CONDITIONAL ``return`` nested in an ``if`` does not prevent fall-through, so the
+    assignment can still escape on the other path and must match (panel-2: ``if flag: return
+    None`` then ``result = p``). A self-assignment (``result = result``) substitutes nothing
+    new and is excluded. *returned_names* defaults empty, so the assignment shape is inert
+    unless the caller supplies the function's fall-through-returned names. PY-WL-113."""
     if _contains_reraise(handler):
         return False
-    return any(
-        isinstance(stmt, ast.Return) and not _is_falsy_constant_return(stmt.value) for stmt in _own_statements(handler)
-    )
+    handler_returns = any(isinstance(s, ast.Return) for s in handler.body)
+    for stmt in _own_statements(handler):
+        if isinstance(stmt, ast.Return) and not _is_falsy_constant_return(stmt.value):
+            return True
+        if handler_returns:
+            continue  # the handler exits via its own return — no assignment falls through
+        if (
+            isinstance(stmt, ast.Assign)
+            and not _is_falsy_constant_return(stmt.value)
+            and not _is_self_assignment(stmt)
+            and any(isinstance(t, ast.Name) and t.id in returned_names for t in stmt.targets)
+        ):
+            return True
+        if (
+            isinstance(stmt, ast.AnnAssign)
+            and stmt.value is not None
+            and not _is_falsy_constant_return(stmt.value)
+            and isinstance(stmt.target, ast.Name)
+            and stmt.target.id in returned_names
+        ):
+            return True
+    return False
 
 
 def own_nodes(node: ast.AST) -> Iterator[ast.AST]:

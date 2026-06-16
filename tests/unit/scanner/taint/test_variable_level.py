@@ -351,6 +351,128 @@ def test_lambda_rebinding_in_try_survives_for_post_block_call() -> None:
     assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
 
 
+def test_sink_lambda_in_non_last_if_arm_survives_for_post_branch_call() -> None:
+    # wardline-383f83fafe: the single-slot ceiling. A sink-lambda bound in a NON-last
+    # branch arm and a BENIGN lambda bound to the same name in the last arm — the old
+    # single-slot ``dict[str, ast.Lambda]`` kept only the last-arm-in-source-order
+    # binding, so the benign last arm overwrote the sink binding and the post-branch
+    # ``cb(raw)`` resolved only the benign body → the taint→sink flow was MISSED (FN).
+    # The candidate-set model keeps BOTH bindings (``cb`` MAY be either lambda after the
+    # branch), so the body's ``sink(c)`` arg must stay EXTERNAL_RAW.
+    src = (
+        "def handler(raw):\n"
+        "    if flag:\n"
+        "        cb = lambda c: sink(c)\n"  # sink-lambda — NON-last arm
+        "    else:\n"
+        "        cb = lambda c: c\n"  # benign — last arm in source order
+        "    cb(raw)\n"  # raw reaches sink() via the if-arm lambda
+    )
+    assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
+
+
+def test_sink_lambda_in_non_last_try_arm_survives_for_post_branch_call() -> None:
+    # Same single-slot ceiling for try/except: the sink-lambda is bound in the try-success
+    # arm (a non-last arm) and a benign lambda rebinds ``cb`` in the handler arm. The
+    # candidate-set merge keeps both for the post-block ``cb(raw)``.
+    src = (
+        "def handler(raw):\n"
+        "    try:\n"
+        "        cb = lambda c: sink(c)\n"
+        "    except Exception:\n"
+        "        cb = lambda c: c\n"
+        "    cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
+
+
+def test_sink_lambda_in_non_last_match_arm_survives_for_post_branch_call() -> None:
+    # Same single-slot ceiling for match/case: the sink-lambda is bound in a non-last
+    # case-arm and a benign lambda rebinds ``cb`` in the catch-all arm.
+    src = (
+        "def handler(raw, kind):\n"
+        "    match kind:\n"
+        "        case 'a':\n"
+        "            cb = lambda c: sink(c)\n"
+        "        case _:\n"
+        "            cb = lambda c: c\n"
+        "    cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
+
+
+def test_lambda_rebind_after_branch_replaces_candidate_set() -> None:
+    # wardline-383f83fafe FP guard: the candidate-set model must NOT accumulate stale
+    # bindings across a LINEAR rebind. After the branch, ``cb`` is rebound to a fresh
+    # benign lambda; that REPLACES the (sink + benign) post-branch candidate set, so the
+    # subsequent ``cb(raw)`` resolves ONLY the ``log`` body — the if-arm sink lambda is
+    # gone and ``sink(c)`` must stay INTEGRAL (the floor pass's neutral recording only).
+    src = (
+        "def handler(raw):\n"
+        "    if flag:\n"
+        "        cb = lambda c: sink(c)\n"
+        "    else:\n"
+        "        cb = lambda c: c\n"
+        "    cb = lambda c: log(c)\n"  # linear rebind — REPLACES the candidate set
+        "    cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.INTEGRAL
+
+
+def test_all_arms_rebind_to_non_lambda_drops_candidate_set() -> None:
+    # wardline-383f83fafe, claim-#4 lock: when EVERY mutually-exclusive arm rebinds the
+    # name to a non-lambda, ``cb`` is provably not a lambda on any post-branch path, so
+    # the union drops it (the candidate set is empty) and ``cb(raw)`` resolves nothing —
+    # only the floor pass records the orphaned sink lambda neutrally → INTEGRAL. This
+    # pins the union's DROP semantics against a regression to the old delta-merge
+    # "left in place" over-approximation (which would have spuriously stayed EXTERNAL_RAW).
+    src = (
+        "def handler(raw, flag):\n"
+        "    cb = lambda c: sink(c)\n"
+        "    if flag:\n"
+        "        cb = 1\n"
+        "    else:\n"
+        "        cb = 2\n"
+        "    cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.INTEGRAL
+
+
+def test_sink_lambda_in_elif_middle_arm_survives_for_post_branch_call() -> None:
+    # wardline-383f83fafe: the sink-lambda is in the MIDDLE arm of an if/elif/else (elif
+    # is a nested ``If`` in the outer ``orelse``), so the union/merge must compose through
+    # the nesting. ``cb(raw)`` after the branch must see the elif-arm sink body.
+    src = (
+        "def handler(raw, k):\n"
+        "    if k == 1:\n"
+        "        cb = lambda c: c\n"
+        "    elif k == 2:\n"
+        "        cb = lambda c: sink(c)\n"
+        "    else:\n"
+        "        cb = lambda c: c\n"
+        "    cb(raw)\n"
+    )
+    assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
+
+
+def test_sink_lambda_in_loop_body_survives_for_post_loop_call() -> None:
+    # wardline-383f83fafe coverage: loops take a structurally different path from
+    # if/try/match — ``_handle_for`` walks the body via ``_walk_body`` directly on the
+    # shared bindings map (the linear-rebind REPLACE), no _branch_copy/_merge. A
+    # sink-lambda bound in the loop body persists in the post-loop bindings, so a tainted
+    # ``cb(raw)`` after the loop must fire. (Pins the loop path the candidate-set's FP
+    # concern names; verified it neither hangs nor accumulates — rebinds are idempotent.)
+    src = "def handler(raw):\n    for i in items:\n        cb = lambda c: sink(c)\n    cb(raw)\n"
+    assert _lambda_body_sink_arg(src) == T.EXTERNAL_RAW
+
+
+def test_benign_rebind_after_loop_replaces_lambda_candidate() -> None:
+    # wardline-383f83fafe FP guard on the loop path: a benign linear rebind AFTER the loop
+    # REPLACES the loop body's sink binding, so ``cb(raw)`` resolves only the benign body
+    # — no stale accumulation across the loop boundary.
+    src = "def handler(raw):\n    for i in items:\n        cb = lambda c: sink(c)\n    cb = lambda c: c\n    cb(raw)\n"
+    assert _lambda_body_sink_arg(src) == T.INTEGRAL
+
+
 def test_compute_return_taint_all_shapes() -> None:
     import ast
     import textwrap
@@ -429,6 +551,12 @@ def test_match_guard_walrus_is_captured() -> None:
 def test_match_subject_walrus_is_captured() -> None:
     src = "def f(p):\n    match (s := tainted()):\n        case _:\n            pass\n"
     out = _vt(src, function_taint=T.INTEGRAL, taint_map={"tainted": T.EXTERNAL_RAW})
+    assert out["s"] == T.EXTERNAL_RAW
+
+
+def test_match_subject_nested_walrus_is_captured() -> None:
+    src = "def f(p):\n    match (s := tainted())[0]:\n        case _:\n            pass\n"
+    out = _vt(src, function_taint=T.ASSURED, taint_map={"tainted": T.EXTERNAL_RAW})
     assert out["s"] == T.EXTERNAL_RAW
 
 
@@ -944,12 +1072,17 @@ def test_dict_pop_joins_tainted_default_arg() -> None:
 
 
 def test_unknown_builtin_call_still_falls_back_to_function_taint() -> None:
-    # HARD BOUNDARY: len()/int()/validate() are NOT curated — they must STILL fall
-    # back to function_taint, or we explode in false positives.
+    # HARD BOUNDARY: len()/int() are curated NON-propagators (validators/
+    # measurers) — they keep the function_taint fallback. An unknown bare call
+    # like validate() (absent from the taint_map) is the OPPOSITE: it now
+    # propagates the worst of (caller seed, args) — an unmodeled callee cannot
+    # be assumed to clean a raw argument (wardline-93d608c997; the unresolved
+    # bare-name launder closure). See test_engine_precision.py for the family.
     assert _vt("def f(p):\n    x = len(read_raw(p))\n", function_taint=T.GUARDED, taint_map=_RAW_TM)["x"] == T.GUARDED
     assert _vt("def f(p):\n    x = int(read_raw(p))\n", function_taint=T.GUARDED, taint_map=_RAW_TM)["x"] == T.GUARDED
     assert (
-        _vt("def f(p):\n    x = validate(read_raw(p))\n", function_taint=T.GUARDED, taint_map=_RAW_TM)["x"] == T.GUARDED
+        _vt("def f(p):\n    x = validate(read_raw(p))\n", function_taint=T.GUARDED, taint_map=_RAW_TM)["x"]
+        == T.UNKNOWN_RAW
     )
 
 
@@ -1401,3 +1534,277 @@ def test_unresolved_nested_imported_call_returns_unknown_raw() -> None:
         alias_map={"vendor": "vendor"},
     )
     assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_loop_carried_chain_deeper_than_lattice_height_propagates() -> None:
+    # wardline-e04db6e656: the loop fixpoint cap was range(8) — lattice HEIGHT, not
+    # propagation DEPTH. A read-before-write rebind chain propagates one link per
+    # iteration, so an N-link chain needs N(+1) iterations; at cap=8 a chain > 8 links
+    # left the head under-tainted (a fail-open soundness FN). Iterate-to-convergence
+    # (num_vars × lattice_height backstop) fixes it for both for and while.
+    def chain(n: int, loop: str) -> tuple[str, str]:
+        names = [f"v{i}" for i in range(n)]
+        body = [f"        {names[i]} = {names[i - 1]}" for i in range(n - 1, 0, -1)]
+        body.append(f"        {names[0]} = read_raw(p)")
+        head = "for _ in p:" if loop == "for" else "while p:"
+        src = f"def f(p):\n    {names[n - 1]} = ''\n    {head}\n" + "\n".join(body) + "\n"
+        return src, names[n - 1]
+
+    for loop in ("for", "while"):
+        for n in (9, 25):
+            src, sink = chain(n, loop)
+            out = _vt(src, function_taint=T.INTEGRAL, taint_map={"read_raw": T.EXTERNAL_RAW})
+            assert out[sink] == T.EXTERNAL_RAW, (loop, n, out[sink])
+
+    # CONTROL (FP guard): a deep chain whose head is a constant literal — never a raw
+    # source — must stay clean regardless of iteration count.
+    names = [f"v{i}" for i in range(12)]
+    body = [f"        {names[i]} = {names[i - 1]}" for i in range(11, 0, -1)]
+    body.append(f"        {names[0]} = ''")
+    src = f"def f(p):\n    {names[11]} = ''\n    for _ in p:\n" + "\n".join(body) + "\n"
+    out = _vt(src, function_taint=T.INTEGRAL, taint_map={})
+    assert out[names[11]] == T.INTEGRAL, out[names[11]]
+
+
+def test_storage_read_methods_seed_external_raw() -> None:
+    # wardline-e7c7cda31a: cursor.fetch{one,all,many}() loads stored/external data and
+    # must seed EXTERNAL_RAW (the formerly-dead PY-WL-120 branch). Clean function_taint
+    # so only the seed can introduce taint.
+    for method in ("fetchone", "fetchall", "fetchmany"):
+        out = _vt(f"def f(cursor):\n    rows = cursor.{method}()\n", function_taint=T.ASSURED)
+        assert out["rows"] == T.EXTERNAL_RAW, (method, out["rows"])
+
+
+def test_container_mutator_writes_arg_taint_back_to_receiver() -> None:
+    # wardline-67c7498931: a container mutator called with a tainted arg contaminates the
+    # receiver (box.append(raw) matches the literal box=[raw]). Clean ASSURED seed + raw
+    # via taint_map so only the mutated arg carries taint.
+    tm = {"read_raw": T.UNKNOWN_RAW}
+    for stmt, recv in (
+        ("box = []\n    box.append(raw)", "box"),
+        ("box = []\n    box.extend([raw])", "box"),
+        ("s = set()\n    s.add(raw)", "s"),
+        ("d = {}\n    d.update({'k': raw})", "d"),
+        ("d = {}\n    d.update(k=raw)", "d"),
+        ("self.cache.append(raw)", "self"),
+    ):
+        out = _vt(f"def f(self, p):\n    raw = read_raw(p)\n    {stmt}\n", function_taint=T.ASSURED, taint_map=tm)
+        assert out[recv] == T.UNKNOWN_RAW, (stmt, out.get(recv))
+
+    # CONTROL: a clean arg must NOT taint the receiver (FP guard).
+    out = _vt(
+        "def f(p):\n    box = []\n    box.append('safe')\n    box.append(42)\n", function_taint=T.ASSURED, taint_map=tm
+    )
+    assert out["box"] == T.INTEGRAL
+    # CONTROL: list.insert's INDEX arg is positional metadata, not content — a tainted
+    # index must not contaminate the container (panel finding wardline-67c7498931).
+    out = _vt(
+        "def f(p):\n    raw = read_raw(p)\n    lst = ['a']\n    lst.insert(raw, 'clean')\n",
+        function_taint=T.ASSURED,
+        taint_map=tm,
+    )
+    assert out["lst"] == T.INTEGRAL, out["lst"]
+    # but a tainted VALUE in insert DOES contaminate.
+    out = _vt(
+        "def f(p):\n    raw = read_raw(p)\n    lst = []\n    lst.insert(0, raw)\n",
+        function_taint=T.ASSURED,
+        taint_map=tm,
+    )
+    assert out["lst"] == T.UNKNOWN_RAW, out["lst"]
+
+
+# ── Receiver shadow laundering: a raw local/param that shadows a module name ──
+#
+# wardline-f6a29ce23a. A dotted/imported ``taint_map`` entry describes a
+# MODULE-LEVEL symbol (``mod.fn`` / from-imported func / config sanitiser). When a
+# tracked LOCAL or PARAMETER named the same as the module holds RAW data, the early
+# ``taint_map`` short-circuits in ``_resolve_call`` used to return the module's
+# clean taint — laundering the raw receiver before the RAW_ZONE receiver guard
+# could fire. The discriminator: a real module import is never in ``var_taints``,
+# whereas an assigned/param local IS; suppress the short-circuit only when the
+# receiver is a tracked raw local, leaving genuine module sanitisers untouched.
+
+_SHADOW_TM = {"read_raw": T.UNKNOWN_RAW, "cfg.validate": T.ASSURED}
+
+
+def test_raw_local_shadowing_module_does_not_launder_dotted_path() -> None:
+    # Direct dotted-lookup path (no alias_map): cfg is a raw LOCAL shadowing the
+    # ``cfg`` module; cfg.validate() must NOT inherit the module entry's ASSURED.
+    out = _vt(
+        "def f(p):\n    cfg = read_raw(p)\n    x = cfg.validate()\n",
+        function_taint=T.INTEGRAL,
+        taint_map=_SHADOW_TM,
+    )
+    assert out["cfg"] == T.UNKNOWN_RAW
+    assert out["x"] == T.UNKNOWN_RAW, out["x"]
+
+
+def test_raw_local_shadowing_module_does_not_launder_imported_fqn_path() -> None:
+    # imported_fqn path (alias_map present): same shadow, resolved via the alias
+    # map to the fqn ``cfg.validate`` — must still defer to the raw receiver.
+    out = _vt(
+        "def f(p):\n    cfg = read_raw(p)\n    x = cfg.validate()\n",
+        function_taint=T.INTEGRAL,
+        taint_map=_SHADOW_TM,
+        alias_map={"cfg": "cfg"},
+    )
+    assert out["x"] == T.UNKNOWN_RAW, out["x"]
+
+
+def test_raw_param_shadowing_module_does_not_launder() -> None:
+    # A PARAMETER (not just an assigned local) named like the module, seeded raw.
+    out = _vt(
+        "def f(cfg):\n    x = cfg.validate()\n",
+        function_taint=T.UNKNOWN_RAW,
+        taint_map={"cfg.validate": T.ASSURED},
+        alias_map={"cfg": "cfg"},
+    )
+    assert out["x"] == T.UNKNOWN_RAW, out["x"]
+
+
+def test_genuine_module_sanitiser_stays_clean_dotted() -> None:
+    # FP GUARD: ``cfg`` is NOT a tracked local (a real ``import cfg``), so
+    # cfg.validate(p) is the genuine module sanitiser and must stay ASSURED even
+    # when the function/arg is raw — the fix must not over-fire here.
+    out = _vt(
+        "def f(p):\n    x = cfg.validate(p)\n",
+        function_taint=T.UNKNOWN_RAW,
+        taint_map={"cfg.validate": T.ASSURED},
+        alias_map={"cfg": "cfg"},
+    )
+    assert out["x"] == T.ASSURED, out["x"]
+
+
+def test_genuine_module_sanitiser_stays_clean_no_alias() -> None:
+    # Same guard via the direct dotted-lookup path (no alias_map).
+    out = _vt(
+        "def f(p):\n    x = cfg.validate(p)\n",
+        function_taint=T.UNKNOWN_RAW,
+        taint_map={"cfg.validate": T.ASSURED},
+    )
+    assert out["x"] == T.ASSURED, out["x"]
+
+
+def test_clean_local_shadow_keeps_module_entry() -> None:
+    # A tracked local that is NOT raw (INTEGRAL) does not trigger suppression — the
+    # module entry still resolves (both are clean, so no soundness issue and no
+    # spurious change). Confirms suppression is gated on RAW_ZONE, not mere tracking.
+    out = _vt(
+        "def f():\n    cfg = 42\n    x = cfg.validate()\n",
+        function_taint=T.INTEGRAL,
+        taint_map={"cfg.validate": T.ASSURED},
+    )
+    assert out["x"] == T.ASSURED, out["x"]
+
+
+# ── Receiver-shadow family: chained receivers, self/cls preservation, bare-name,
+#    var_types typed-receiver (wardline-f6a29ce23a, consolidated) ──────────────
+
+
+def test_chained_receiver_shadow_does_not_launder() -> None:
+    # a.b.method(): node.func.value is ast.Attribute. The guard must walk to the
+    # ROOT name 'a'; a raw 'a' shadowing a multi-component module must not inherit
+    # the module entry's clean taint.
+    out = _vt(
+        "def f(p):\n    a = read_raw(p)\n    x = a.b.urlopen()\n",
+        function_taint=T.INTEGRAL,
+        taint_map={"read_raw": T.UNKNOWN_RAW, "a.b.urlopen": T.ASSURED},
+        alias_map={"a": "a"},
+    )
+    assert out["x"] == T.UNKNOWN_RAW, out["x"]
+
+
+def test_self_method_cross_summary_preserved_when_self_raw() -> None:
+    # self.sibling() with self seeded RAW must STILL read the analyzer-injected
+    # cross-method summary (self/cls are never module shadows). The guard must
+    # exclude self/cls roots, else it demotes a legitimate clean sibling summary.
+    out = _vt(
+        "def m(self, p):\n    x = self.sanitize()\n",
+        function_taint=T.UNKNOWN_RAW,
+        taint_map={"self.sanitize": T.ASSURED},
+    )
+    assert out["x"] == T.ASSURED, out["x"]
+
+
+def test_cls_method_cross_summary_preserved_when_cls_raw() -> None:
+    out = _vt(
+        "def m(cls, p):\n    x = cls.sanitize()\n",
+        function_taint=T.UNKNOWN_RAW,
+        taint_map={"cls.sanitize": T.ASSURED},
+    )
+    assert out["x"] == T.ASSURED, out["x"]
+
+
+def test_bare_name_shadow_does_not_launder() -> None:
+    # foo() where foo is a raw local shadowing a clean from-imported function:
+    # calling raw data yields raw, never the import's clean taint.
+    out = _vt(
+        "def f(p):\n    validate = read_raw(p)\n    x = validate()\n",
+        function_taint=T.INTEGRAL,
+        taint_map={"read_raw": T.UNKNOWN_RAW, "validate": T.ASSURED},
+    )
+    assert out["x"] == T.UNKNOWN_RAW, out["x"]
+
+
+def test_bare_name_genuine_import_call_stays_clean() -> None:
+    # FP GUARD: a genuine (un-shadowed) from-imported sanitiser stays clean.
+    out = _vt(
+        "def f(p):\n    x = validate(p)\n",
+        function_taint=T.UNKNOWN_RAW,
+        taint_map={"validate": T.ASSURED},
+    )
+    assert out["x"] == T.ASSURED, out["x"]
+
+
+def test_var_types_typed_receiver_resolves_via_type_when_value_raw() -> None:
+    # The var_types path is DELIBERATELY NOT shadow-gated: a legitimately typed
+    # object routinely carries a RAW-ZONE value taint (an unmodeled ``Type()``
+    # constructor defaults to UNKNOWN_RAW), yet must still resolve ``Type.method``
+    # via its type. Gating on the value taint would FP the ``h = Helper();
+    # h.get_assured()`` pattern (test_helper_method_returning_assured_does_not_
+    # false_positive). The var_types path serves typed objects, never module
+    # shadows (a raw ``cfg = read_raw(p)`` carries no tracked type), so leaving it
+    # ungated costs no shadow coverage. The narrow raw-typed-PARAMETER +
+    # config-sanitiser residual is accepted over that FP cost (wardline-f6a29ce23a).
+    out = _vt(
+        "def f(obj: mymod.Schema):\n    x = obj.validate()\n",
+        function_taint=T.UNKNOWN_RAW,
+        taint_map={"mymod.Schema.validate": T.ASSURED},
+        alias_map={"mymod": "mymod"},
+    )
+    assert out["x"] == T.ASSURED, out["x"]
+
+
+def test_encoder_method_shadow_does_not_launder() -> None:
+    # shlex = raw; shlex.quote(x): the _CONTEXT_ENCODERS branch must not encode a
+    # raw shadowed receiver into a clean GUARDED result.
+    out = _vt(
+        "def f(p):\n    shlex = read_raw(p)\n    x = shlex.quote(p)\n",
+        function_taint=T.INTEGRAL,
+        taint_map={"read_raw": T.UNKNOWN_RAW},
+        alias_map={"shlex": "shlex"},
+    )
+    assert out["x"] in (T.UNKNOWN_RAW, T.EXTERNAL_RAW), out["x"]
+
+
+def test_read_path_raw_local_shadow_does_not_launder() -> None:
+    # Sibling of the call-path fix on the attribute-READ path (_resolve_expr): a raw
+    # local shadowing a module name, READ as ``cfg.validate`` (not called), must not
+    # inherit the module entry's clean taint (wardline-f6a29ce23a / -6b79150e79).
+    out = _vt(
+        "def f(p):\n    cfg = read_raw(p)\n    x = cfg.validate\n",
+        function_taint=T.INTEGRAL,
+        taint_map={"read_raw": T.UNKNOWN_RAW, "cfg.validate": T.ASSURED},
+    )
+    assert out["x"] == T.UNKNOWN_RAW, out["x"]
+
+
+def test_read_path_self_attr_cross_summary_preserved_when_self_raw() -> None:
+    # self.<attr> cross-method summary must STILL be read even when self is raw —
+    # the read-path guard must exclude self/cls (same as the call path).
+    out = _vt(
+        "def m(self, p):\n    x = self.cache\n",
+        function_taint=T.UNKNOWN_RAW,
+        taint_map={"self.cache": T.ASSURED},
+    )
+    assert out["x"] == T.ASSURED, out["x"]

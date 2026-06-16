@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import urllib.parse
 from pathlib import Path
 
 import click
@@ -11,10 +12,17 @@ import click
 from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
 from wardline.core.emit import JsonlSink
 from wardline.core.errors import WardlineError
-from wardline.core.filigree_emit import EmitResult, FiligreeEmitter, filigree_disabled_reason
+from wardline.core.filigree_emit import (
+    EmitResult,
+    FiligreeEmitter,
+    filigree_destination,
+    filigree_disabled_reason,
+    filigree_url_project,
+)
 from wardline.core.finding import Severity
 from wardline.core.paths import weft_config_path
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
+from wardline.core.safe_paths import safe_write_text, write_text_no_follow
 from wardline.core.sarif import SarifSink
 
 
@@ -31,9 +39,18 @@ from wardline.core.sarif import SarifSink
     default=None,
 )
 @click.option("--format", "fmt", type=click.Choice(["jsonl", "sarif", "agent-summary", "legis"]), default="jsonl")
+@click.option(
+    "--lang",
+    type=click.Choice(["python", "rust"]),
+    default="python",
+    help=(
+        "Language frontend. 'rust' scans .rs files for RS-WL-* command-injection findings "
+        "(frozen identity, baseline-eligible; config severity overrides not yet applied)."
+    ),
+)
 @click.option("--output", type=click.Path(path_type=Path), default=None)
 # exit 1 if any non-suppressed DEFECT has severity >= this threshold (SP3b)
-@click.option("--fail-on", type=click.Choice(["CRITICAL", "ERROR", "WARN", "INFO"]), default=None)
+@click.option("--fail-on", type=click.Choice(["CRITICAL", "ERROR", "WARN", "INFO"], case_sensitive=False), default=None)
 # Opt-in CI enforcement: exit 1 when any file was discovered but not analysed
 # (parse error / too-deep / missing source root — NOT benign no-module skips).
 # Default FALSE preserves the released exit-code behaviour; the count is ALWAYS
@@ -54,6 +71,25 @@ from wardline.core.sarif import SarifSink
     "filigree_url",
     default=None,
     help="POST findings to this Filigree Weft scan-results URL (opt-in).",
+)
+@click.option(
+    "--local-only",
+    "--no-emit",
+    "local_only",
+    is_flag=True,
+    default=False,
+    help=(
+        "Disable sibling emission even when Filigree or Loomweave URLs resolve from flags, env, or local install state."
+    ),
+)
+@click.option(
+    "--filigree-max-findings-per-request",
+    type=click.IntRange(min=1),
+    default=None,
+    help=(
+        "Maximum Wardline findings per Filigree scan-results POST "
+        "(default 1000; also configurable with WARDLINE_FILIGREE_MAX_FINDINGS_PER_REQUEST)."
+    ),
 )
 @click.option(
     "--loomweave-url",
@@ -128,11 +164,14 @@ def scan(
     path: Path,
     config_path: Path | None,
     fmt: str,
+    lang: str,
     output: Path | None,
     fail_on: str | None,
     fail_on_unanalyzed: bool,
     cache_dir: Path | None,
     filigree_url: str | None,
+    local_only: bool,
+    filigree_max_findings_per_request: int | None,
     loomweave_url: str | None,
     new_since: str | None,
     trusted_packs: tuple[str, ...],
@@ -144,7 +183,26 @@ def scan(
     trust_suppressions: bool,
     allow_dirty: bool,
 ) -> None:
-    """Scan PATH for findings."""
+    """Scan PATH for findings.
+
+    PATH is the scan root and GOVERNS finding identity: qualnames and
+    fingerprints are minted relative to it, and baseline/waiver/judged
+    suppression state is read from PATH's .weft/wardline/. Scan the project
+    root — a subdirectory scan mints qualnames other Weft tools
+    (Loomweave/Filigree/dossier) will not match, misses the project's
+    suppression state, and writes output into the subdirectory (wardline
+    warns when it detects this).
+    """
+    if lang == "rust":
+        # Posture banner: RS-WL-* identity is graduated (frozen, baseline-eligible) but
+        # rule coverage is the command-injection slice and weft.toml severity overrides
+        # do not yet apply to Rust findings (analyzer accepts config for protocol parity
+        # only). Surface the remaining gaps so a green gate is read at the right scope.
+        click.echo(
+            "note: --lang rust covers the command-injection slice (RS-WL-108/112); "
+            "config severity overrides do not yet apply to Rust findings.",
+            err=True,
+        )
     if fmt == "sarif":
         default_name = "findings.sarif"
     elif fmt == "agent-summary":
@@ -153,12 +211,31 @@ def scan(
         default_name = "scan.legis.json"
     else:
         default_name = "findings.jsonl"
+    output_is_default = output is None
     output = output if output is not None else (path / default_name)
+    # The default output is REPORTED as `output` (path/<name>) but WRITTEN through the
+    # root-confined safe writer with root=path. Hand that writer the bare root-relative
+    # name, not `output`: a relative `path` (e.g. `wardline scan pkg`) makes `output`
+    # already `pkg/<name>`, and safe_project_path would resolve it under `pkg` AGAIN
+    # (`pkg/pkg/<name>`) while the CLI prints `pkg/<name>` — a write to a path that does
+    # not exist. Explicit `-o` paths are caller-controlled and written verbatim.
+    confined_name = Path(default_name)
     emit_result: EmitResult | None = None
     loomweave_result = None
     try:
+        if config_path is None and not strict_defaults and not weft_config_path(path).is_file():
+            click.echo(
+                "warning: no weft.toml found; using built-in source_roots=['.'], which can make "
+                "project-root scans broad and slow. Run `wardline doctor --repair --root "
+                f"{path}` to create a bounded default policy, or `wardline scan-job start {path}` "
+                "for a pollable long-running scan.",
+                err=True,
+            )
         filigree_url = resolve_filigree_url(filigree_url, path, config_path, strict_defaults=strict_defaults)
         loomweave_url = resolve_loomweave_url(loomweave_url, path, config_path, strict_defaults=strict_defaults)
+        if local_only:
+            filigree_url = None
+            loomweave_url = None
         result = run_scan(
             path,
             config_path=config_path,
@@ -169,6 +246,7 @@ def scan(
             strict_defaults=strict_defaults,
             confine_to_root=not allow_source_root_escape,
             trust_suppressions=trust_suppressions,
+            lang=lang,
         )
         findings = result.findings
         if fix:
@@ -206,13 +284,18 @@ def scan(
                         strict_defaults=strict_defaults,
                         confine_to_root=not allow_source_root_escape,
                         trust_suppressions=trust_suppressions,
+                        lang=lang,
                     )
                     findings = result.findings
         if fmt == "sarif":
-            sarif_sink = SarifSink(output)
+            sarif_sink = SarifSink(
+                confined_name if output_is_default else output, root=path if output_is_default else None
+            )
             sarif_sink.write(findings, result.context)
         elif fmt == "jsonl":
-            jsonl_sink = JsonlSink(output)
+            jsonl_sink = JsonlSink(
+                confined_name if output_is_default else output, root=path if output_is_default else None
+            )
             jsonl_sink.write(findings)
         elif fmt == "legis":
             # The signed, verbatim-postable scan for legis's POST /wardline/scan-results.
@@ -251,14 +334,17 @@ def scan(
                     "(dirty: true, legis records it unverified). Commit for a signed artifact.",
                     err=True,
                 )
-        # Weft emission is additive: a FiligreeEmitError (HTTP >= 400) is a Wardline
-        # payload bug -> caught below -> exit 2; an unreachable sibling warns + continues.
+        # Weft emission is additive: scan uses the emitter's fail-soft protocol mode so
+        # a Filigree reject is reported as upload failure, not as a pre-gate exit 2.
         if filigree_url is not None:
             from wardline.filigree.config import load_filigree_token
 
-            emit_result = FiligreeEmitter(filigree_url, token=load_filigree_token(path)).emit(
-                findings, scanned_paths=result.scanned_paths
-            )
+            emit_result = FiligreeEmitter(
+                filigree_url,
+                token=load_filigree_token(path),
+                max_findings_per_request=filigree_max_findings_per_request,
+                protocol_errors_loud=False,
+            ).emit(findings, scanned_paths=result.scanned_paths)
         # Loomweave taint-store write is fail-soft: an outage/403 returns a not-reachable
         # WriteResult (reported below); a LoomweaveError (missing extra, 4xx, bad scheme)
         # is a WardlineError → caught here → exit 2, exactly as Filigree errors do.
@@ -277,7 +363,7 @@ def scan(
             from wardline.core.agent_summary import build_agent_summary
 
             decision = gate_decision(result, Severity(fail_on)) if fail_on is not None else gate_decision(result, None)
-            output.write_text(
+            agent_summary_json = (
                 json.dumps(
                     build_agent_summary(
                         result,
@@ -288,9 +374,15 @@ def scan(
                     ).to_dict(),
                     sort_keys=True,
                 )
-                + "\n",
-                encoding="utf-8",
+                + "\n"
             )
+            if output_is_default:
+                safe_write_text(path, confined_name, agent_summary_json, label=default_name)
+            else:
+                # Explicit -o path: no-follow, matching the JSONL/SARIF sinks. A raw
+                # write_text would follow a repo-controlled symlink at the chosen filename
+                # and truncate an arbitrary user-writable target in an untrusted checkout.
+                write_text_no_follow(output, agent_summary_json, label=output.name)
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
@@ -307,10 +399,19 @@ def scan(
                         "Findings written locally only.",
                         err=True,
                     )
+                elif emit_result.token_sent:
+                    # A token WAS sent and rejected — the value is wrong, not absent. Saying
+                    # "set the token" here is the C-7 misdiagnosis (weft-23574069a1).
+                    click.echo(
+                        f"warning: Filigree rejected the token (401) at {filigree_url}; a token WAS sent but "
+                        "its value is wrong — align WEFT_FEDERATION_TOKEN (env or .env) to the canonical "
+                        "federation token. Findings written locally only.",
+                        err=True,
+                    )
                 else:
                     click.echo(
-                        f"warning: Filigree returned {emit_result.status} (auth rejected) at {filigree_url}; "
-                        "set WEFT_FEDERATION_TOKEN (or .env) to the project token. Findings written locally only.",
+                        f"warning: Filigree returned 401 (auth rejected) at {filigree_url}; no token was sent — "
+                        "set WEFT_FEDERATION_TOKEN (env or .env) to the project token. Findings written locally only.",
                         err=True,
                     )
             elif emit_result.status is not None:
@@ -325,8 +426,17 @@ def scan(
                     err=True,
                 )
         else:
+            # N1 / C-10(a): name the destination project so a wrong-project write is visible
+            # rather than reading as silent success. An unpinned URL means Filigree resolves
+            # the project server-side — surface that ambiguity explicitly.
+            dest_project = filigree_url_project(filigree_url)
+            where = (
+                f"project {dest_project!r}"
+                if dest_project
+                else "unscoped endpoint (URL pins no project; add ?project= to make routing explicit)"
+            )
             line = (
-                f"emitted {len(findings)} finding(s) to {filigree_url} — "
+                f"emitted {len(findings)} finding(s) to {filigree_url} [{where}] — "
                 f"{emit_result.created} created / {emit_result.updated} updated"
             )
             if emit_result.failed:
@@ -335,14 +445,15 @@ def scan(
                 line += f"; {len(emit_result.warnings)} warning(s): " + "; ".join(emit_result.warnings)
             click.echo(line)
     if loomweave_result is not None:
+        logged_loomweave_url = _redact_url_for_log(loomweave_url)
         if not loomweave_result.reachable:
             reason = loomweave_result.disabled_reason or "unreachable"
             click.echo(
-                f"warning: Loomweave taint store not written at {loomweave_url} ({reason}); scan unaffected.",
+                f"warning: Loomweave taint store not written at {logged_loomweave_url} ({reason}); scan unaffected.",
                 err=True,
             )
         else:
-            line = f"wrote {loomweave_result.written} taint fact(s) to {loomweave_url}"
+            line = f"wrote {loomweave_result.written} taint fact(s) to {logged_loomweave_url}"
             if loomweave_result.unresolved_qualnames:
                 line += (
                     f"; {len(loomweave_result.unresolved_qualnames)} qualname(s) unresolved (not indexed by Loomweave)"
@@ -361,26 +472,67 @@ def scan(
         f"({s.baselined} baseline / {s.waived} waiver / {s.judged} judged), {s.active} active"
         f"{unanalyzed_segment} -> {output}"
     )
+    # N-3: a scan rooted in a subdirectory of a weft project mints qualnames no
+    # federated tool matches and skips the project's suppression state. The FACT
+    # carries the full explanation — reuse it verbatim so CLI and MCP say the same.
+    nested = next((f for f in result.findings if f.rule_id == "WLN-ENGINE-NESTED-SCAN-ROOT"), None)
+    if nested is not None:
+        click.echo(f"warning: {nested.message}", err=True)
     # A discovered-but-not-analysed file is a silent under-scan; never hide it.
     if s.unanalyzed:
         click.echo(
             f"warning: {s.unanalyzed} file(s) were discovered but could not be analyzed "
-            f"(see WLN-ENGINE-* facts in {output}).",
+            f"(see WLN-ENGINE-* diagnostics in {output}).",
             err=True,
         )
-    gate_dec = gate_decision(result, Severity(fail_on)) if fail_on is not None else None
-    gate_tripped = gate_dec is not None and gate_dec.tripped
-    if gate_dec is not None and gate_dec.tripped:
+    if lang == "rust":
+        # Coverage posture: Rust analysis is default-clean, so a scan over a repo with no
+        # @trusted markers is vacuously green. Surface the trust surface explicitly so
+        # "0 active" is never mistaken for "analyzed and safe" (the anti-false-green line).
+        coverage = next((f for f in result.findings if f.rule_id == "WLN-RUST-COVERAGE"), None)
+        if coverage is not None:
+            declared = coverage.properties["functions_declared"]
+            total = coverage.properties["functions_total"]
+            click.echo(f"trust surface: {declared} of {total} function(s) declared @trusted", err=True)
+            if total > 0 and declared == 0:
+                click.echo(
+                    "warning: no function declares @trusted — the scan analyzed 0 of "
+                    f"{total} function(s) for trust; a clean result here proves nothing. "
+                    "Add /// @trusted(level=ASSURED) markers to your boundary functions.",
+                    err=True,
+                )
+    # Both sub-gates (severity + opt-in unanalyzed) live in the ONE shared decision —
+    # the same one the MCP scan tool serialises — so the surfaces cannot drift (A4).
+    gate_dec = gate_decision(
+        result,
+        Severity(fail_on) if fail_on is not None else None,
+        fail_on_unanalyzed=fail_on_unanalyzed,
+    )
+    if gate_dec.verdict == "NOT_EVALUATED":
+        # A bare scan never ran the gate — say so explicitly so a clean-looking exit is not
+        # mistaken for a PASS (weft-b937e53854). Carries would_trip_at via the reason.
+        click.echo(f"gate: NOT_EVALUATED — {gate_dec.reason}", err=True)
+    elif gate_dec.tripped:
         # Never let "0 active + gate FAILED" read as a bug: say why and which population.
-        click.echo(f"gate: FAILED (--fail-on {gate_dec.fail_on}) — {gate_dec.reason}", err=True)
+        # Name only the knob(s) that actually tripped — an unanalyzed-only trip must not
+        # print "--fail-on None".
+        knobs = []
+        if gate_dec.severity_tripped:
+            knobs.append(f"--fail-on {gate_dec.fail_on}")
+        if gate_dec.unanalyzed_tripped:
+            knobs.append("--fail-on-unanalyzed")
+        click.echo(f"gate: FAILED ({', '.join(knobs)}) — {gate_dec.reason}", err=True)
         click.echo(f"gate: evaluated {gate_dec.evaluated}", err=True)
         # The secure-gate-default rollout signal: a committed baseline that used to clear
         # the gate now re-enters it. Loud + separable from the generic reason above.
         hint = baseline_migration_hint(result, gate_dec, root=path, new_since=new_since)
         if hint is not None:
             click.echo(hint, err=True)
-    # Independent of the severity gate: opt-in enforcement of "everything analysed".
-    if gate_tripped or (fail_on_unanalyzed and s.unanalyzed):
+    elif gate_dec.fail_on is None:
+        # Only the unanalyzed gate ran and it passed — keep the no-vacuous-severity-green
+        # signal a NOT_EVALUATED verdict used to carry here.
+        click.echo(f"gate: PASSED (--fail-on-unanalyzed only) — {gate_dec.reason}", err=True)
+    if gate_dec.tripped:
         raise SystemExit(1)
 
 
@@ -392,8 +544,10 @@ def _filigree_status(result: EmitResult | None) -> dict[str, object]:
             "created": 0,
             "updated": 0,
             "failed": 0,
+            "failures": [],
             "warnings": [],
             "disabled_reason": "not configured",
+            "destination": filigree_destination(None),
         }
     return {
         "configured": True,
@@ -401,11 +555,17 @@ def _filigree_status(result: EmitResult | None) -> dict[str, object]:
         "created": result.created,
         "updated": result.updated,
         "failed": result.failed,
+        # PDR-0023: per-finding reject reasons so a partial ingest is not flattened to a count.
+        "failures": [f.to_wire() for f in result.failures],
         "warnings": list(result.warnings),
         "disabled_reason": filigree_disabled_reason(
             reachable=result.reachable,
             status=result.status,
+            token_sent=result.token_sent,
+            url=result.url,
         ),
+        # N1 / C-10(a): name where findings went so a wrong-project write is visible.
+        "destination": filigree_destination(result.url),
     }
 
 
@@ -425,3 +585,23 @@ def _loomweave_status(result: object | None) -> dict[str, object]:
         "unresolved_qualnames": list(getattr(result, "unresolved_qualnames", ())),
         "disabled_reason": getattr(result, "disabled_reason", None),
     }
+
+
+def _redact_url_for_log(url: str | None) -> str:
+    if url is None:
+        return "<not configured>"
+    parts = urllib.parse.urlsplit(url)
+    if not parts.scheme or not parts.netloc:
+        return url.split("?", 1)[0].split("#", 1)[0]
+    try:
+        host = parts.hostname or ""
+        port = parts.port
+    except ValueError:
+        return f"{parts.scheme}://<redacted>"
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    if port is not None:
+        host = f"{host}:{port}"
+    if parts.username is not None or parts.password is not None:
+        host = f"<redacted>@{host}"
+    return urllib.parse.urlunsplit((parts.scheme, host, parts.path, "", ""))

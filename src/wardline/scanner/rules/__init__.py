@@ -35,8 +35,14 @@ from wardline.scanner.rules.untrusted_to_command import UntrustedToCommand
 from wardline.scanner.rules.untrusted_to_deserialization import UntrustedToDeserialization
 from wardline.scanner.rules.untrusted_to_exec import UntrustedToExec
 from wardline.scanner.rules.untrusted_to_import import UntrustedToImport
+from wardline.scanner.rules.untrusted_to_log import UntrustedToLog
+from wardline.scanner.rules.untrusted_to_mail import UntrustedToMail
+from wardline.scanner.rules.untrusted_to_native import UntrustedToNative
+from wardline.scanner.rules.untrusted_to_reflection import UntrustedToReflection
 from wardline.scanner.rules.untrusted_to_shell_subprocess import UntrustedToShellSubprocess
+from wardline.scanner.rules.untrusted_to_template import UntrustedToTemplate
 from wardline.scanner.rules.untrusted_to_trusted_callee import UntrustedReachesTrustedCallee
+from wardline.scanner.rules.untrusted_to_xml import UntrustedToXML
 
 if TYPE_CHECKING:
     from wardline.core.config import WardlineConfig
@@ -64,6 +70,13 @@ _ALL_RULE_CLASSES = (
     SQLInjection,
     DegenerateBoundary,
     StoredTaint,
+    # PY-WL-121…126 — the 2026-06-10 coverage-gap sink families (all PREVIEW).
+    UntrustedToXML,
+    UntrustedToTemplate,
+    UntrustedToReflection,
+    UntrustedToNative,
+    UntrustedToLog,
+    UntrustedToMail,
 )
 
 
@@ -77,6 +90,7 @@ _POLICY_CONFIG_METADATA = RuleMetadata(
     rule_id=_POLICY_CONFIG_RULE_ID,
     base_severity=Severity.ERROR,
     kind=Kind.DEFECT,
+    multi_emit=True,
     description="Project policy configuration weakens or disables Wardline policy rules.",
 )
 
@@ -101,9 +115,10 @@ def _policy_config_finding(message: str, *, reason: str, taint_path: str, **prop
         fingerprint=compute_finding_fingerprint(
             rule_id=_POLICY_CONFIG_RULE_ID,
             path=ENGINE_PATH,
-            line_start=None,
             taint_path=taint_path,
         ),
+        # OLD (wlfp1) taint_path == NEW (unchanged by P3), but ephemeral — recompute for rekey (P4).
+        taint_path_v0=taint_path,
         properties={"reason": reason, **properties},
     )
 

@@ -74,6 +74,7 @@ class ResolverResult:
     diagnostics: tuple[tuple[str, str], ...]
     metadata: ResolverRunMetadata
     call_site_implicit_receivers: Mapping[int, str] = field(default_factory=dict)
+    call_site_candidate_callees: Mapping[int, frozenset[str]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "taint_map", MappingProxyType(dict(self.taint_map)))
@@ -84,5 +85,10 @@ class ResolverResult:
             self,
             "call_site_implicit_receivers",
             MappingProxyType(dict(self.call_site_implicit_receivers)),
+        )
+        object.__setattr__(
+            self,
+            "call_site_candidate_callees",
+            MappingProxyType(dict(self.call_site_candidate_callees)),
         )
         object.__setattr__(self, "taint_provenance", MappingProxyType(dict(self.taint_provenance)))

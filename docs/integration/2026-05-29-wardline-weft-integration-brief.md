@@ -38,6 +38,7 @@ Wardline's internal `Finding` is a pure analysis fact. It is designed as a **sup
 | `kind` (`defect\|fact\|classification\|metric\|suggestion`) | `metadata.wardline.kind` |
 | `confidence`, `related_entities` | `metadata.wardline.*` |
 | `properties` (per-rule extension) | `metadata.wardline.properties.*` |
+| `suppressed` / `suppression_reason` (the `SuppressionState`) | `metadata.wardline.suppression_state` (`baselined\|waived\|judged`) / `metadata.wardline.suppression_reason` — carried only when not active; absent ⇒ active (see [finding-lifecycle-vocabulary.md](../reference/finding-lifecycle-vocabulary.md)) |
 
 ### The `metadata.wardline.*` namespace
 
@@ -52,7 +53,9 @@ All Wardline-specific richness lands under a single namespaced key, preserved ve
     "internal_severity": "ERROR",          // round-trips the 4-level original
     "confidence": 0.92,                      // optional
     "related_entities": [],                  // optional
-    "properties": { "cwe": "CWE-200" }       // arbitrary per-rule extension
+    "properties": { "cwe": "CWE-200" },      // arbitrary per-rule extension
+    "suppression_state": "baselined",        // optional; OMITTED when active (absent ⇒ active) — one of baselined|waived|judged
+    "suppression_reason": "in baseline"      // optional; rides only a non-active suppression_state
   }
 }
 ```

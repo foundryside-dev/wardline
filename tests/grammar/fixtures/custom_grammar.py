@@ -89,7 +89,6 @@ class SanitizerReturnsRaw:
                     fingerprint=_fp(
                         rule_id=self.rule_id,
                         path=entity.location.path,
-                        line_start=entity.location.line_start,
                         qualname=qualname,
                         taint_path=f"{actual.value}->{declared.value}",
                     ),

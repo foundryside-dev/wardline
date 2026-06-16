@@ -1,7 +1,7 @@
 import io
 import json
 
-from wardline.mcp.protocol import PROTOCOL_VERSION, JsonRpcServer, McpError
+from wardline.mcp.protocol import PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS, JsonRpcServer, McpError
 
 
 def _server() -> JsonRpcServer:
@@ -25,6 +25,37 @@ def test_initialize_returns_capabilities_and_protocol_version() -> None:
     assert resp["result"]["protocolVersion"] == PROTOCOL_VERSION
     assert "capabilities" in resp["result"]
     assert resp["result"]["serverInfo"]["name"] == "wardline"
+
+
+def test_initialize_negotiates_each_supported_protocol_version() -> None:
+    # Spec negotiation: a supported requested revision is echoed VERBATIM, so an
+    # older client (e.g. pinned to 2024-11-05) keeps its own revision.
+    srv = _server()
+    for requested in SUPPORTED_PROTOCOL_VERSIONS:
+        resp = srv.dispatch(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": requested, "capabilities": {}},
+            }
+        )
+        assert resp["result"]["protocolVersion"] == requested
+
+
+def test_initialize_unknown_protocol_version_answers_latest() -> None:
+    # An unsupported revision gets the newest revision this server speaks.
+    srv = _server()
+    resp = srv.dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": "1999-01-01", "capabilities": {}},
+        }
+    )
+    assert resp["result"]["protocolVersion"] == PROTOCOL_VERSION
+    assert SUPPORTED_PROTOCOL_VERSIONS[0] == PROTOCOL_VERSION  # newest first
 
 
 def test_notification_initialized_returns_none() -> None:

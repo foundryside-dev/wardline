@@ -17,7 +17,7 @@ extension plane is a *code* seam, the same shape as ``TaintSourceProvider``.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -28,6 +28,7 @@ from wardline.scanner.taint.provider import FunctionTaint
 if TYPE_CHECKING:
     # Annotation-only (lazy under `from __future__ import annotations`); kept out of
     # the runtime import surface so the zero-dep contract above stays literally true.
+    from wardline.core.finding import Finding
     from wardline.scanner.context import _RuleClass
 
 _VOCAB_PREFIX = "wardline.decorators"
@@ -171,6 +172,52 @@ class TrustGrammar:
             self.boundary_types + tuple(boundary_types),
             self.rules + tuple(rules),
         )
+
+
+def build_sanitiser_collision_findings(sanitisers: Iterable[str]) -> list[Finding]:
+    """WLN-CONFIG-* diagnostic: configured sanitisers shadowed by a serialisation sink.
+
+    A config sanitiser whose dotted name IS a built-in serialisation sink (e.g.
+    ``json.loads``) can never take effect: the sink override is inserted into the
+    call-taint map before the config pass (which uses ``setdefault``), and
+    ``_resolve_call`` consults the sink set ahead of the taint map. Yet the
+    sanitiser still generates map keys and so counts as "matched", which
+    suppresses ``WLN-CONFIG-UNUSED-SANITISER`` — the declaration becomes a silent
+    no-op. This emits one ``WLN-CONFIG-SANITISER-SINK-COLLISION`` FACT per
+    colliding sanitiser (sorted, deterministic), naming the collision so the user
+    learns their suppression attempt was overridden, not honoured.
+
+    Pure function of the config value (no scan state); the analyzer appends the
+    result alongside the other ``WLN-CONFIG-*`` diagnostics.
+    """
+    # Local imports: keep this module's runtime import surface exactly the grammar
+    # meta-model (same pattern as default_grammar's rules import).
+    from wardline.core.finding import Finding, Kind, Location, Severity, compute_finding_fingerprint
+    from wardline.scanner.taint.variable_level import _SERIALISATION_SINKS
+
+    findings: list[Finding] = []
+    for san in sorted(set(sanitisers) & _SERIALISATION_SINKS):
+        findings.append(
+            Finding(
+                rule_id="WLN-CONFIG-SANITISER-SINK-COLLISION",
+                message=(
+                    f"Configuration error: sanitiser '{san}' collides with the built-in "
+                    "serialisation sink of the same name; the conservative sink "
+                    "classification (UNKNOWN_RAW) takes precedence, so this sanitiser "
+                    "declaration has no effect"
+                ),
+                severity=Severity.NONE,
+                kind=Kind.FACT,
+                location=Location(path="weft.toml"),
+                fingerprint=compute_finding_fingerprint(
+                    rule_id="WLN-CONFIG-SANITISER-SINK-COLLISION",
+                    path="weft.toml",
+                    taint_path=san,
+                ),
+                properties={"sanitiser": san},
+            )
+        )
+    return findings
 
 
 def default_grammar() -> TrustGrammar:

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -18,6 +19,10 @@ _SKIP_ALL_OTHER = [
     "--no-mcp",
     "--no-bindings",
 ]
+
+
+def _git(args: list[str], cwd: Path) -> None:
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
 
 
 def test_install_mints_attest_key(tmp_path: Path, monkeypatch) -> None:
@@ -69,3 +74,23 @@ def test_install_attest_key_idempotent(tmp_path: Path, monkeypatch) -> None:
     second = runner.invoke(cli, args)
     assert second.exit_code == 0, second.output
     assert "attest key: present" in second.output
+
+
+def test_install_refuses_to_mint_into_tracked_dotenv(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_ATTEST_KEY", raising=False)
+    _git(["init"], tmp_path)
+    _git(["config", "user.email", "test@example.com"], tmp_path)
+    _git(["config", "user.name", "Test"], tmp_path)
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("EXISTING=1\n", encoding="utf-8")
+    _git(["add", ".env"], tmp_path)
+    _git(["commit", "-m", "track env"], tmp_path)
+
+    result = CliRunner().invoke(
+        cli,
+        ["install", "--root", str(tmp_path), *_SKIP_ALL_OTHER],
+    )
+
+    assert result.exit_code == 2
+    assert "tracked .env" in result.stderr
+    assert dotenv.read_text(encoding="utf-8") == "EXISTING=1\n"

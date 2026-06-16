@@ -14,7 +14,6 @@ concurrency:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   lint:
@@ -23,13 +22,20 @@ jobs:
     if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           python-version: "3.13"
       - run: uv sync --all-extras --group dev
       - run: uv run ruff check src tests
       - run: uv run ruff format --check src tests
+      - name: Layering contracts (import-linter, report-only)
+        # Report-only: `|| true` keeps this non-blocking. Encodes intended core/ layering
+        # (taint engine must not import the attestation layer). BROKEN today; the layering
+        # agent moves the code (wardline-9ec283d168). Surfaces drift without gating CI.
+        run: uv run lint-imports || true
 
   typecheck:
     name: Types (mypy strict)
@@ -37,7 +43,9 @@ jobs:
     if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           python-version: "3.13"
@@ -53,7 +61,9 @@ jobs:
         python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
@@ -67,16 +77,40 @@ jobs:
     if: github.event_name != 'schedule'
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           python-version: "3.13"
       - run: uv sync --all-extras --group dev
-      - name: Scan self -> SARIF
-        run: uv run wardline scan src/ --format sarif --output results.sarif
+      - name: Scan self -> SARIF (gated)
+        # --fail-on ERROR makes the dogfood scan a real gate: src/ is clean today so this
+        # stays green, but a genuinely-introduced ERROR trust-boundary finding now goes red
+        # instead of being silently uploaded. (wardline-751a9ae71b)
+        run: uv run wardline scan src/ --format sarif --output results.sarif --fail-on ERROR
+      - name: Preserve SARIF for trusted upload
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: self-hosting-sarif
+          path: results.sarif
+
+  self-hosting-sarif-upload:
+    name: Upload Self-Hosting SARIF
+    runs-on: ubuntu-latest
+    needs: self-hosting-scan
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      actions: read
+      security-events: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: self-hosting-sarif
+          path: .
       - name: Upload SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@b0c4fd77f6c559021d78430ec4d0d169ae74a4eb # v3
         with:
           sarif_file: results.sarif
           category: wardline-self-hosting
@@ -87,7 +121,9 @@ jobs:
     if: github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           python-version: "3.13"
@@ -98,6 +134,18 @@ jobs:
           WARDLINE_LIVE_ORACLE_REQUIRED: "1"
           WARDLINE_OPENROUTER_API_KEY: ${{ secrets.WARDLINE_OPENROUTER_API_KEY }}
 
+  # Live wire-oracles (loomweave/legis/filigree) require compiled sibling binaries
+  # (`loomweave serve`) and live servers (WARDLINE_LEGIS_URL / WARDLINE_FILIGREE_URL
+  # secrets) that a GitHub Actions PR runner cannot host, so they run ONLY on schedule
+  # / workflow_dispatch — never on PRs. Two guarantees keep that from masking failure:
+  #   (a) PR runs rely on the HERMETIC pins that run by default (legis scan-artifact
+  #       key-set freeze; loomweave HMAC + blake3 golden vectors) — see
+  #       tests/conformance/test_legis_artifact_contract_freeze.py and
+  #       tests/unit/loomweave/. Those run on every PR (no e2e marker).
+  #   (b) The scheduled/dispatch oracle jobs are FAIL-CLOSED: WARDLINE_LIVE_ORACLE_REQUIRED=1
+  #       makes the conftest hook (pytest_runtest_makereport) turn a SKIP into a FAILURE,
+  #       so a missing binary/secret/capability fails the required run instead of passing
+  #       green. (wardline-83d08aee75)
   live-oracles:
     name: Live ${{ matrix.name }} e2e (weekly/manual)
     runs-on: ubuntu-latest
@@ -114,7 +162,9 @@ jobs:
             marker: filigree_e2e
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           python-version: "3.13"
@@ -135,39 +185,3 @@ jobs:
             echo "- Trigger: \`${{ github.event_name }}\`"
             echo "- Missing local services, secrets, or capabilities fail this required oracle run."
           } >> "$GITHUB_STEP_SUMMARY"
-
-  docs-build:
-    name: Docs (build)
-    runs-on: ubuntu-latest
-    needs: test
-    if: github.event_name != 'schedule'
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-          python-version: "3.13"
-      - run: uv sync --extra docs
-      - name: Build (strict)
-        run: uv run mkdocs build --strict
-
-  docs-deploy:
-    name: Docs (deploy)
-    runs-on: ubuntu-latest
-    needs: docs-build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-          python-version: "3.13"
-      - run: uv sync --extra docs
-      - name: Deploy
-        run: uv run mkdocs gh-deploy --force

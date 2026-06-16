@@ -20,19 +20,24 @@ from wardline.core.config import WardlineConfig
 from wardline.core.finding import Finding, Kind
 from wardline.scanner.analyzer import WardlineAnalyzer
 
+# Shared file preamble. Line-number assertions below are expressed relative to
+# _HEADER_LINES (wardline-e159060db7): adding a line here used to silently shift
+# four absolute line-number assertions with no engine change.
+_HEADER = (
+    "from wardline.decorators import external_boundary, trust_boundary, trusted\n"
+    "@external_boundary\ndef read_raw(p):\n    return p\n"
+    "@trust_boundary(to_level='ASSURED')\n"
+    "def validate(x):\n"
+    "    if not x:\n        raise ValueError\n    return x\n"
+)
+_HEADER_LINES = _HEADER.count("\n")
+
 
 def _analyze_files(tmp_path: Path, files: dict[str, str]) -> Sequence[Finding]:
     for name, content in files.items():
         p = tmp_path / name
         p.parent.mkdir(parents=True, exist_ok=True)
-        header = (
-            "from wardline.decorators import external_boundary, trust_boundary, trusted\n"
-            "@external_boundary\ndef read_raw(p):\n    return p\n"
-            "@trust_boundary(to_level='ASSURED')\n"
-            "def validate(x):\n"
-            "    if not x:\n        raise ValueError\n    return x\n"
-        )
-        p.write_text(header + textwrap.dedent(content), encoding="utf-8")
+        p.write_text(_HEADER + textwrap.dedent(content), encoding="utf-8")
 
     analyzer = WardlineAnalyzer()
     file_paths = [tmp_path / name for name in files]
@@ -64,7 +69,8 @@ def test_flow_sensitive_args_resolves_sinks_correctly(tmp_path: Path) -> None:
     # Check that PY-WL-107 is raised, but only for the first eval.
     py_wl_107_findings = [f for f in defects if f.rule_id == "PY-WL-107"]
     assert len(py_wl_107_findings) == 1
-    assert py_wl_107_findings[0].location.line_start == 14
+    # Snippet line 5 (leading blank, @trusted, def, x=, eval) after the header.
+    assert py_wl_107_findings[0].location.line_start == _HEADER_LINES + 5
 
 
 def test_starred_args_and_kwargs_resolution_flow_sensitive(tmp_path: Path) -> None:
@@ -93,7 +99,8 @@ def test_starred_args_and_kwargs_resolution_flow_sensitive(tmp_path: Path) -> No
     assert len(py_wl_107_findings) == 1
     assert all(f.qualname == "m.target" for f in py_wl_107_findings)
     lines = sorted((f.location.line_start or 0) for f in py_wl_107_findings)
-    assert lines == [13]
+    # eval(a) is snippet line 4 (leading blank, @trusted, def, eval) after the header.
+    assert lines == [_HEADER_LINES + 4]
 
 
 def test_kwargs_unpack_only_taints_unfilled_keyword_capable_parameters(tmp_path: Path) -> None:
@@ -122,7 +129,8 @@ def test_kwargs_unpack_only_taints_unfilled_keyword_capable_parameters(tmp_path:
     defects = [f for f in findings if f.kind is Kind.DEFECT]
     py_wl_107_findings = [f for f in defects if f.rule_id == "PY-WL-107" and f.qualname == "m.target"]
     lines = sorted((f.location.line_start or 0) for f in py_wl_107_findings)
-    assert lines == [18, 20]
+    # eval(c) / eval(extra) are snippet lines 9 and 11 after the header.
+    assert lines == [_HEADER_LINES + 9, _HEADER_LINES + 11]
 
 
 # ── WP8: Cross-Module Call-Argument Taint ──────────────────────────────────

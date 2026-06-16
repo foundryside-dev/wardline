@@ -44,6 +44,44 @@ def test_trusted_returning_raw_fires(tmp_path) -> None:
     assert all(f.kind == Kind.DEFECT for f in findings)
 
 
+def test_trusted_returning_project_submodule_imported_raw_fires(tmp_path) -> None:
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "pkg/sources.py": "from wardline.decorators import external_boundary\n"
+            "@external_boundary\ndef read(p):\n    return p\n",
+            "svc.py": "import pkg.sources\n"
+            "from wardline.decorators import trusted\n"
+            "@trusted(level='ASSURED')\n"
+            "def leaky(p):\n    return pkg.sources.read(p)\n",
+        },
+    )
+    assert ctx.function_return_taints["svc.leaky"] == TaintState.EXTERNAL_RAW
+    assert ("PY-WL-101", "svc.leaky") in {(f.rule_id, f.qualname) for f in _run(ctx)}
+
+
+def test_trusted_early_returning_raw_before_later_clean_reassignment_fires(tmp_path) -> None:
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "io.py": "from wardline.decorators import external_boundary\n"
+            "@external_boundary\ndef read_raw(p):\n    return p\n",
+            "svc.py": "from wardline.decorators import trusted\n"
+            "from io import read_raw\n"
+            "@trusted(level='ASSURED', to_level='ASSURED')\n"
+            "def leaky(p, cond):\n"
+            "    x = read_raw(p)\n"
+            "    if cond:\n"
+            "        return x\n"
+            "    x = 1\n"
+            "    return x\n",
+        },
+    )
+    assert ctx.function_return_taints["svc.leaky"] == TaintState.EXTERNAL_RAW
+    findings = _run(ctx)
+    assert ("PY-WL-101", "svc.leaky") in {(f.rule_id, f.qualname) for f in findings}
+
+
 def test_duplicate_trusted_function_uses_second_definition_for_py_wl_101(tmp_path) -> None:
     ctx, _ = _analyze(
         tmp_path,
@@ -362,3 +400,42 @@ def test_correct_trust_boundary_does_not_fire_101(tmp_path) -> None:
     # Exemption holds: no PY-WL-101, and 102 is satisfied by the raise guard.
     assert _run(ctx) == []
     assert BoundaryWithoutRejection().check(ctx) == []
+
+
+def test_py_wl_101_fingerprint_invariant_to_resolved_return_tier(tmp_path) -> None:
+    # weft-4a9d0f863c regression: the fingerprint is the cross-tool JOIN KEY, and it
+    # MUST NOT move when only the resolved actual-return TIER changes for the same
+    # source. The reported bug moved it across three builds (UNKNOWN_RAW<->EXTERNAL_RAW)
+    # for byte-identical source because the tier was folded into taint_path. Reproduce
+    # by swapping the resolved tier under an unchanged source position and asserting the
+    # join key holds while the diagnostic property genuinely differs.
+    import dataclasses
+
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "io.py": "from wardline.decorators import external_boundary\n"
+            "@external_boundary\ndef raw(p):\n    return p\n",
+            "svc.py": "from wardline.decorators import trusted\nfrom io import raw\n"
+            "@trusted(level='ASSURED')\ndef f(p):\n    return raw(p)\n",
+        },
+    )
+    base = [f for f in _run(ctx) if f.rule_id == "PY-WL-101"]
+    assert len(base) == 1
+    f0 = base[0]
+    assert f0.properties["actual_return"] == TaintState.EXTERNAL_RAW.value
+
+    # Swap ONLY the resolved actual-return tier to a different raw tier; UNKNOWN_RAW is
+    # still in the raw zone and ranks above the ASSURED declaration, so the rule still
+    # fires — the finding is "the same" defect, just classified one tier differently.
+    swapped_ctx = dataclasses.replace(
+        ctx,
+        function_return_taints={**ctx.function_return_taints, "svc.f": TaintState.UNKNOWN_RAW},
+    )
+    swapped = [f for f in UntrustedReachesTrusted().check(swapped_ctx) if f.rule_id == "PY-WL-101"]
+    assert len(swapped) == 1
+    f1 = swapped[0]
+
+    assert f1.properties["actual_return"] == TaintState.UNKNOWN_RAW.value  # the tier really changed
+    assert f1.properties["actual_return"] != f0.properties["actual_return"]
+    assert f1.fingerprint == f0.fingerprint  # ...but the JOIN KEY did not move

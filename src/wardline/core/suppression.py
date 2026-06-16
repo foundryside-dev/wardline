@@ -14,8 +14,15 @@ from datetime import date
 
 from wardline.core.baseline import Baseline
 from wardline.core.finding import ENGINE_PATH, Finding, Kind, Maturity, Severity, SuppressionState
+from wardline.core.finding_identity import resolve_identity
 from wardline.core.judged import JudgedSet
 from wardline.core.waivers import WaiverSet
+
+_MATCH_STATE: dict[str, SuppressionState] = {
+    "waiver": SuppressionState.WAIVED,
+    "judged": SuppressionState.JUDGED,
+    "baseline": SuppressionState.BASELINED,
+}
 
 # Ascending trust-cost order for the --fail-on threshold. NONE is absent — facts
 # and metrics never participate in the gate.
@@ -58,18 +65,16 @@ def apply_suppressions(
                 )
             )
             continue
-        # Precedence: waiver (explicit human intent, carries expiry) > judged (LLM
-        # FP-verdict, carries the rationale) > baseline (silent).
-        waiver = waivers.match(f.fingerprint, today)
-        judged_fp = judged.match(f.fingerprint)
-        if waiver is not None:
-            out.append(replace(f, suppressed=SuppressionState.WAIVED, suppression_reason=waiver.reason))
-        elif judged_fp is not None:
-            out.append(replace(f, suppressed=SuppressionState.JUDGED, suppression_reason=judged_fp.rationale))
-        elif baseline.contains(f.fingerprint):
+        # Precedence (waiver > judged > baseline) lives in resolve_identity — the
+        # single JOIN predicate. BASELINED carries no reason (matches the historical
+        # inline behaviour); WAIVED/JUDGED carry the resolver's reason.
+        resolution = resolve_identity(f.fingerprint, baseline=baseline, waivers=waivers, judged=judged, today=today)
+        if resolution.matched_on is None:
+            out.append(f)
+        elif resolution.matched_on == "baseline":
             out.append(replace(f, suppressed=SuppressionState.BASELINED))
         else:
-            out.append(f)
+            out.append(replace(f, suppressed=_MATCH_STATE[resolution.matched_on], suppression_reason=resolution.reason))
     return out
 
 

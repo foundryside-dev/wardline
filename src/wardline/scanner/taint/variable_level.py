@@ -3,8 +3,11 @@
 
 Given a function AST node and its Level 1 (function-level) taint, walks the body
 tracking taint per variable through assignments, control-flow joins, and call
-sites. Pure (returns a new dict); conservative (unknown expressions inherit the
-function's L1 taint). Both expression/value combiners (BinOp, IfExp, BoolOp,
+sites. Pure (returns a new dict); conservative (an unknown NON-CALL expression
+inherits the function's L1 taint; an unresolved bare-name CALL propagates the
+worst of the caller seed and its argument taints, so a trusted seed cannot
+launder a raw argument through an unmodeled callee). Both expression/value
+combiners (BinOp, IfExp, BoolOp,
 containers, ``.get`` defaults, ``+=``, container writes) AND control-flow MERGES
 (if/else, loop back-edges, match arms, try/except handlers) use the rank-meet
 ``least_trusted`` (weakest-link): at a merge a variable holds the value of ONE
@@ -23,10 +26,11 @@ from __future__ import annotations
 
 import ast
 import contextvars
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from wardline.core.taints import _PROVENANCE_CLASH, TRUST_RANK, TaintState, combine
+from wardline.core.taints import _PROVENANCE_CLASH, RAW_ZONE, TRUST_RANK, TaintState, combine
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -64,21 +68,90 @@ _SERIALISATION_SINKS: frozenset[str] = frozenset(
     }
 )
 
-# Curated taint-PROPAGATING builtins. A small explicit table (NOT a general rule
-# — bare unknown calls still fall back to function_taint, so len/int/validate stay
-# unaffected and there is no false-positive explosion). These return the join of
-# their argument taints: a string conversion / iterator advance carries whatever
-# taint went in. ``next`` closes the ``next(genexp)`` shape (the iterator arg).
-_PROPAGATING_BUILTINS: frozenset[str] = frozenset({"str", "repr", "ascii", "bytes", "bytearray", "format", "next"})
+# Curated taint-PROPAGATING builtins. These return the join of their argument
+# taints (no args → INTEGRAL): a string/container conversion or iterator advance
+# carries whatever taint went in. ``next`` closes the ``next(genexp)`` shape (the
+# iterator arg); the container conversions (list/tuple/set/frozenset/dict/sorted/
+# reversed) return a container holding the SAME untrusted elements, so omitting
+# them laundered ``subprocess.run(sorted(raw))`` — the idiomatic argv shape.
+_PROPAGATING_BUILTINS: frozenset[str] = frozenset(
+    {
+        "str",
+        "repr",
+        "ascii",
+        "bytes",
+        "bytearray",
+        "format",
+        "next",
+        "list",
+        "tuple",
+        "set",
+        "frozenset",
+        "dict",
+        "sorted",
+        "reversed",
+    }
+)
 
-# Curated taint-PROPAGATING methods, keyed by attribute name. ``.format``/``.join``
-# combine the receiver with the arguments (``"sep".join(parts)`` carries both);
+# Curated NON-propagating builtins: validators/measurers whose result is derived
+# FROM the data but does not carry it (a length, a parsed number, a predicate).
+# These keep the caller-seed fallback; every OTHER unresolved bare-name call
+# propagates the worst of (caller seed, argument taints) — an unknown callee
+# cannot be assumed to clean a raw argument (see _resolve_call's bare-name
+# fallback; matches the imported-but-unmodeled path's conservatism).
+_NON_PROPAGATING_BUILTINS: frozenset[str] = frozenset(
+    {
+        "len",
+        "int",
+        "float",
+        "bool",
+        "complex",
+        "ord",
+        "hash",
+        "id",
+        "abs",
+        "round",
+        "isinstance",
+        "issubclass",
+        "callable",
+        "hasattr",
+        "any",
+        "all",
+    }
+)
+
+# Curated taint-PROPAGATING methods, keyed by attribute name. ``.format``/
+# ``.format_map``/``.join`` combine the receiver with the arguments
+# (``"sep".join(parts)`` carries both; ``.format_map(mapping)`` embeds the
+# mapping's values exactly like ``.format``);
 # ``.get``/``.pop``/``.setdefault`` carry the RECEIVER's taint — a container access
 # is the same shape as the ``Subscript`` read handler (``d['k']`` propagating while
 # ``d.get('k')`` did not was an inconsistency, not a feature). These do NOT add a
 # new SOURCE: ``.get`` returns the container's existing taint, nothing more.
-_PROPAGATING_METHODS_WITH_ARGS: frozenset[str] = frozenset({"format", "join"})
+_PROPAGATING_METHODS_WITH_ARGS: frozenset[str] = frozenset({"format", "format_map", "join"})
 _PROPAGATING_METHODS_RECEIVER: frozenset[str] = frozenset({"get", "pop", "setdefault"})
+
+# Curated DB-API storage-read methods. A ``cursor.fetchone/fetchall/fetchmany()`` loads
+# stored/external data the same way ``open()``/``Path.read_text()`` do, so it seeds
+# ``EXTERNAL_RAW`` — without this the PY-WL-120 fetch* matcher was a dead branch (the
+# RAW_ZONE gate was unsatisfiable: the result was never seeded raw — wardline-e7c7cda31a).
+# Scoped to the three DBAPI-specific names (near-zero collision); bare ``.read`` is
+# deliberately NOT seeded (BytesIO/response/buffer ``.read()`` would over-fire, and the
+# file case already fires via receiver propagation below).
+# Residual FP (accepted, documented): a receiver whose type is NOT statically resolvable
+# (a bare param, a chained ``.query(...).fetchall()``) and is NOT a DB cursor but has a
+# coincidental fetch* method (SQLAlchemy Result, custom paginators) is seeded raw. A
+# project-typed receiver is shadowed by the var_types/taint_map lookups above (they run
+# first), so the common case is correct; the residual cuts toward soundness.
+_STORAGE_READ_METHODS: frozenset[str] = frozenset({"fetchone", "fetchall", "fetchmany"})
+
+# Curated in-place container MUTATORS. Calling one with a tainted argument contaminates
+# the RECEIVER (``box.append(raw)`` makes ``box`` carry ``raw``'s taint), mirroring the
+# container-literal ``box = [raw]`` which already taints ``box``. Without this, receiver
+# mutation was unmodelled — the mutator form silently dropped the taint the literal form
+# kept (wardline-67c7498931). A curated set (NOT a general "any attribute call mutates its
+# receiver" rule, which would over-fire on ``.strip()``/``.lower()``/in-place validators).
+_RECEIVER_MUTATING_METHODS: frozenset[str] = frozenset({"append", "add", "extend", "update", "insert"})
 
 _CURRENT_ALIAS_MAP: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
     "_CURRENT_ALIAS_MAP", default=None
@@ -88,12 +161,55 @@ _CURRENT_CALL_SITE_ARG_TAINTS: contextvars.ContextVar[dict[int, dict[int | str |
     contextvars.ContextVar("_CURRENT_CALL_SITE_ARG_TAINTS", default=None)
 )
 
-_CURRENT_VAR_TYPES: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
+# Maps a local name to the CANDIDATE SET of class/type FQNs it MAY hold. A single
+# slot per name lost a receiver class rebound in one branch arm only: the write
+# ``box.token = raw`` after ``box = Vault(); if flag: box = Ledger()`` attributed
+# only to Ledger while on the no-flag path the receiver is still the Vault
+# instance (wardline-b369c7d06c). Straight-line rebind is a STRONG update (the
+# set is replaced); a branch join UNIONS the arms' sets. ``list`` not ``set`` for
+# deterministic iteration order (mirrors _CURRENT_LAMBDA_BINDINGS).
+_CURRENT_VAR_TYPES: contextvars.ContextVar[dict[str, list[str]] | None] = contextvars.ContextVar(
     "_CURRENT_VAR_TYPES", default=None
 )
 
-_CURRENT_LAMBDA_BINDINGS: contextvars.ContextVar[dict[str, ast.Lambda] | None] = contextvars.ContextVar(
+# Side channel for attribute-write recording DURING the main statement walk —
+# ``{receiver_key: {attr: least_trusted write taint}}`` where receiver_key is a
+# class FQN candidate (from _CURRENT_VAR_TYPES) or SELF_ATTRIBUTE_KEY for the
+# implicit ``self``/``cls`` receiver. Recording at the write statement resolves
+# the RHS against the CURRENT per-statement var_taints — a later reassignment of
+# the RHS variable can no longer launder the recorded taint, which the post-hoc
+# final-state second walk allowed (wardline-b369c7d06c).
+_CURRENT_ATTR_WRITES: contextvars.ContextVar[dict[str, dict[str, TaintState]] | None] = contextvars.ContextVar(
+    "_CURRENT_ATTR_WRITES", default=None
+)
+
+# Recording key for writes through the implicit instance/class receiver
+# (``self.x = ...`` / ``cls.x = ...``). Not a valid dotted FQN, so it can never
+# collide with a class-candidate key.
+SELF_ATTRIBUTE_KEY = "<self>"
+
+# Poison candidate marking a receiver-type set where SOME branch arm rebound the
+# name to an untypeable value (see :func:`_merge_branch_types`). Not a valid
+# dotted FQN, so it never resolves in any taint map — its presence makes the
+# typed method dispatch's all-candidates completeness check fail, forcing the
+# conservative generic resolution on the maybe-untyped path.
+UNTYPED_ARM_CANDIDATE = "<untyped>"
+
+# Maps a local name to the CANDIDATE SET of lambda bodies it MAY hold. A single
+# slot per name would lose a sink-lambda bound in a non-last branch arm when a later
+# arm rebinds the same name (wardline-383f83fafe): only one survived the merge, so a
+# post-branch ``cb(raw)`` resolved the wrong body and missed the sink. Within a linear
+# scope a name holds exactly one lambda (a rebind REPLACES the list); the set grows
+# only across mutually-exclusive branch arms at the merge, where the name MAY be any of
+# them. Calls resolve against EVERY candidate (sound over-approximation: an extra body
+# only records arg-taints, it never masks a sink). ``list`` not ``set`` — ast nodes are
+# id-hashed, so set iteration is non-deterministic and would destabilise the golden corpora.
+_CURRENT_LAMBDA_BINDINGS: contextvars.ContextVar[dict[str, list[ast.Lambda]] | None] = contextvars.ContextVar(
     "_CURRENT_LAMBDA_BINDINGS", default=None
+)
+
+_CURRENT_ACTIVE_LAMBDAS: contextvars.ContextVar[set[int] | None] = contextvars.ContextVar(
+    "_CURRENT_ACTIVE_LAMBDAS", default=None
 )
 
 _CURRENT_MODULE_PREFIX: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -108,6 +224,24 @@ _CONTEXT_ENCODERS: frozenset[str] = frozenset(
         "urllib.parse.quote_plus",
     }
 )
+
+# Curated WORST-ARG constructors: in-memory buffer ctors whose result holds
+# exactly the data poured in. ``io.StringIO("const")`` is NOT external data —
+# the unresolved-import UNKNOWN_RAW default was a documented PY-WL-101 FP on
+# returning an in-memory constant read — while ``io.StringIO(raw)`` must keep
+# carrying the raw content so a later ``.read()`` propagates it (the receiver
+# RAW_ZONE path). No args → INTEGRAL (an empty buffer holds nothing).
+_WORST_ARG_CONSTRUCTORS: frozenset[str] = frozenset({"io.StringIO", "io.BytesIO"})
+
+
+def _worst_arg_taint(arg_taints: list[TaintState]) -> TaintState:
+    """The weakest-link (least-trusted) of *arg_taints*; INTEGRAL when empty."""
+    if not arg_taints:
+        return TaintState.INTEGRAL
+    result = arg_taints[0]
+    for at in arg_taints[1:]:
+        result = combine(result, at)
+    return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +261,71 @@ class VariableTaintResult:
     variable_taints: dict[str, TaintState]
     return_taint: TaintState | None
     return_callee: str | None
+
+
+@contextmanager
+def attribute_write_recording(out: dict[str, dict[str, TaintState]]) -> Iterator[dict[str, dict[str, TaintState]]]:
+    """Record attribute writes into *out* for the duration of the block.
+
+    Wrap around a :func:`compute_variable_taints` / L2-stage run. Every
+    ``<receiver>.<attr> = ...`` (plain, annotated, or augmented) the statement
+    walk processes is recorded with its RHS resolved against the CURRENT
+    per-statement ``var_taints`` (branch-local inside arms), keyed by the
+    receiver's class-FQN candidates — or :data:`SELF_ATTRIBUTE_KEY` for
+    ``self``/``cls`` — and joined per attribute via :func:`combine`
+    (least-trusted wins). Map keys onto class qualnames with
+    :func:`project_attribute_writes`."""
+    token = _CURRENT_ATTR_WRITES.set(out)
+    try:
+        yield out
+    finally:
+        _CURRENT_ATTR_WRITES.reset(token)
+
+
+def project_attribute_writes(
+    recorded: dict[str, dict[str, TaintState]],
+    class_qualnames: frozenset[str],
+    enclosing_class: str | None,
+) -> dict[str, dict[str, TaintState]]:
+    """Map a recording's receiver keys onto class qualnames.
+
+    :data:`SELF_ATTRIBUTE_KEY` writes attribute to *enclosing_class* (dropped when
+    ``None`` — outside a method there is no instance to attribute to); candidate
+    keys are kept only when they name a known project class. Buckets landing on
+    the same class (a ``self`` write and a typed-receiver write) join per
+    attribute via :func:`combine`."""
+    out: dict[str, dict[str, TaintState]] = {}
+    for key, attrs in recorded.items():
+        target = enclosing_class if key == SELF_ATTRIBUTE_KEY else (key if key in class_qualnames else None)
+        if target is None:
+            continue
+        bucket = out.setdefault(target, {})
+        for attr, taint in attrs.items():
+            bucket[attr] = combine(bucket[attr], taint) if attr in bucket else taint
+    return out
+
+
+def _record_attribute_write(target: ast.Attribute, rhs: TaintState) -> None:
+    """Record one attribute write into the active side channel (no-op when off).
+
+    A ``self``/``cls`` receiver records under :data:`SELF_ATTRIBUTE_KEY`; a
+    tracked receiver records under EVERY class candidate it may hold — a write
+    through a branch-joined receiver is factually a write to whichever class the
+    taken path bound, so attributing to all candidates is the sound
+    over-approximation (wardline-b369c7d06c). Only a direct ``Name.attr`` target
+    is a class-attribute write (deeper chains would need container modelling)."""
+    out = _CURRENT_ATTR_WRITES.get()
+    if out is None or not isinstance(target.value, ast.Name):
+        return
+    receiver = target.value.id
+    keys: list[str] = [SELF_ATTRIBUTE_KEY] if receiver in ("self", "cls") else []
+    var_types = _CURRENT_VAR_TYPES.get()
+    if var_types is not None:
+        keys.extend(var_types.get(receiver, ()))
+    attr = target.attr
+    for key in keys:
+        bucket = out.setdefault(key, {})
+        bucket[attr] = combine(bucket[attr], rhs) if attr in bucket else rhs
 
 
 def analyze_function_variables(
@@ -152,8 +351,31 @@ def analyze_function_variables(
             param_meets=context.param_meets,
             provenance_clash=context.provenance_clash,
         )
-        return_taint = compute_return_taint(func_node, function_taint, dict(taint_map), variable_taints)
-        return_callee = compute_return_callee(func_node, function_taint, dict(taint_map), dict(variable_taints))
+        return_taint = compute_return_taint(
+            func_node,
+            function_taint,
+            dict(taint_map),
+            variable_taints,
+            call_site_taints,
+        )
+        # compute_return_callee is PROVENANCE-ONLY: _assignment_callee re-resolves
+        # every direct-call assignment RHS against the FINAL var_taints, and letting
+        # that re-resolution record would COMBINE post-call taint into the at-call
+        # snapshot (a clean-at-the-call value re-read as raw → PY-WL-105/108 FPs;
+        # review 2026-06-10). Suppress recording for its duration — return-position
+        # sink calls already recorded during compute_return_taint above, which is
+        # the only recording they get.
+        token_no_record = _CURRENT_CALL_SITE_ARG_TAINTS.set(None)
+        try:
+            return_callee = compute_return_callee(
+                func_node,
+                function_taint,
+                dict(taint_map),
+                dict(variable_taints),
+                call_site_taints,
+            )
+        finally:
+            _CURRENT_CALL_SITE_ARG_TAINTS.reset(token_no_record)
         return VariableTaintResult(
             call_site_taints=call_site_taints,
             call_site_arg_taints=call_site_arg_taints,
@@ -252,25 +474,87 @@ def _resolve_lambda_body_at_call(
     Recording the body here prevents a later clean assignment from laundering a
     raw value that was captured when the direct call actually ran.
     """
+    active = _CURRENT_ACTIVE_LAMBDAS.get()
+    token_active = None
+    if active is None:
+        active = set()
+        token_active = _CURRENT_ACTIVE_LAMBDAS.set(active)
+    lam_id = id(lam)
+    if lam_id in active:
+        if token_active is not None:
+            _CURRENT_ACTIVE_LAMBDAS.reset(token_active)
+        return
+    active.add(lam_id)
+    try:
+        _resolve_lambda_body_at_call_inner(lam, function_taint, taint_map, var_taints, pos_taints, kw_taints)
+    finally:
+        active.discard(lam_id)
+        if token_active is not None:
+            _CURRENT_ACTIVE_LAMBDAS.reset(token_active)
+
+
+def _resolve_lambda_body_at_call_inner(
+    lam: ast.Lambda,
+    function_taint: TaintState,
+    taint_map: dict[str, TaintState],
+    var_taints: dict[str, TaintState],
+    pos_taints: list[TaintState],
+    kw_taints: dict[str | None, TaintState],
+) -> None:
     scope = dict(var_taints)
     args = lam.args
+    # A ``**mapping`` spread arrives as a keyword with ``arg is None``. Its keys
+    # are unknown statically, so it MAY bind ANY named parameter not otherwise
+    # supplied (and lands in ``**kw``) — the unmatched-parameter fallback is the
+    # spread's taint when one is present, else the neutral seed
+    # (wardline-93d608c997: ``(lambda **kw: ...)(**raw)`` previously laundered).
+    spread_taint = kw_taints.get(None)
+    unmatched_seed = spread_taint if spread_taint is not None else function_taint
     positional_params = [*args.posonlyargs, *args.args]
+    # A parameter OMITTED at the call site evaluates its DEFAULT, so the default
+    # expression's taint seeds the param (``cb = lambda x=raw: os.system(x); cb()``
+    # must fire — the default previously fell back to the neutral seed, a fail-open
+    # FN). Defaults resolve against the pristine enclosing scope (def-time
+    # semantics, before any param binding shadows the names). When a ``**spread``
+    # is present the param MAY be bound by it instead — either/or, so the two
+    # alternatives combine (weakest-link). A param actually SUPPLIED at the call
+    # site never evaluates its default, so the matched paths below are untouched
+    # (no FP: ``cb("clean")`` / ``cb(x="clean")`` stay clean).
+    default_taints: dict[str, TaintState] = {}
+    defaulted_params = positional_params[len(positional_params) - len(args.defaults) :]
+    for param, default in zip(defaulted_params, args.defaults, strict=True):
+        default_taints[param.arg] = _resolve_expr(default, function_taint, taint_map, scope)
+    for param, kw_default in zip(args.kwonlyargs, args.kw_defaults, strict=True):
+        if kw_default is not None:
+            default_taints[param.arg] = _resolve_expr(kw_default, function_taint, taint_map, scope)
+
+    def _omitted_seed(param_name: str) -> TaintState:
+        default = default_taints.get(param_name)
+        if default is None:
+            return unmatched_seed
+        return combine(default, spread_taint) if spread_taint is not None else default
+
     for param, taint in zip(positional_params, pos_taints, strict=False):
         scope[param.arg] = taint
     for param in positional_params[len(pos_taints) :]:
-        scope[param.arg] = function_taint
+        # A param supplied by KEYWORD below keeps the neutral unmatched seed here
+        # (its default never evaluates); the keyword taint combines in afterwards.
+        scope[param.arg] = unmatched_seed if param.arg in kw_taints else _omitted_seed(param.arg)
     if args.vararg is not None:
         extra = pos_taints[len(positional_params) :]
         scope[args.vararg.arg] = extra[0] if extra else function_taint
         for taint in extra[1:]:
             scope[args.vararg.arg] = combine(scope[args.vararg.arg], taint)
     for param in args.kwonlyargs:
-        scope[param.arg] = kw_taints.get(param.arg, function_taint)
+        kw_hit = kw_taints.get(param.arg)
+        scope[param.arg] = kw_hit if kw_hit is not None else _omitted_seed(param.arg)
     for param in positional_params:
         if param.arg in kw_taints:
             scope[param.arg] = combine(scope.get(param.arg, function_taint), kw_taints[param.arg])
     if args.kwarg is not None:
-        keyword_values = [taint for name, taint in kw_taints.items() if name is not None]
+        # Every keyword value — named (the over-approximation: non-param names
+        # land in ``**kw``) AND the ``**spread`` itself — feeds the kwarg dict.
+        keyword_values = list(kw_taints.values())
         scope[args.kwarg.arg] = keyword_values[0] if keyword_values else function_taint
         for taint in keyword_values[1:]:
             scope[args.kwarg.arg] = combine(scope[args.kwarg.arg], taint)
@@ -297,9 +581,12 @@ def compute_variable_taints(
         taint_map: call-resolution map keyed by the call-site name AS WRITTEN —
             bare (``"foo"``) for ``foo()``, dotted (``"mod.fn"``) for
             ``mod.fn()`` — mapping to that call's return taint. Bare calls whose
-            name is absent fall back to ``function_taint``; imported-but-unmodeled
-            calls resolve to ``UNKNOWN_RAW`` so external code cannot inherit a
-            trusted caller seed.
+            name is absent resolve to the WORST of ``function_taint`` and their
+            argument taints (an unknown callee cannot be assumed to clean a raw
+            argument — only the curated ``_NON_PROPAGATING_BUILTINS`` validators/
+            measurers keep the plain ``function_taint`` fallback);
+            imported-but-unmodeled calls resolve to ``UNKNOWN_RAW`` so external
+            code cannot inherit a trusted caller seed.
         call_site_taints: optional out-dict for FLOW-SENSITIVE reads. When given,
             records ``{id(stmt): snapshot}`` — the per-variable taint map AS IT IS
             on entry to each statement (in branches, the branch-local copy). A sink
@@ -395,7 +682,7 @@ def _seed_parameters(
         if arg.annotation and var_types is not None:
             fqn = _resolve_expr_fqn(arg.annotation, alias_map)
             if fqn:
-                var_types[arg.arg] = fqn
+                var_types[arg.arg] = [fqn]
 
     for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs):
         handle_arg(arg)
@@ -413,6 +700,18 @@ def _dotted_name(node: ast.expr) -> str | None:
         parent = _dotted_name(node.value)
         return f"{parent}.{node.attr}" if parent else None
     return None
+
+
+def _call_root_name(func: ast.expr) -> str | None:
+    """Root receiver/callee name of a call's ``func``: for an attribute call
+    ``X.Y.method()`` the chain root ``X``; for a bare call ``foo()`` the name
+    ``foo``. ``None`` when the root is not a plain Name (e.g. a subscript or call
+    receiver). Used to detect a raw local/parameter shadowing a module/import name
+    (wardline-f6a29ce23a)."""
+    cur = func
+    while isinstance(cur, ast.Attribute):
+        cur = cur.value
+    return cur.id if isinstance(cur, ast.Name) else None
 
 
 def _resolve_expr(
@@ -461,7 +760,25 @@ def _resolve_expr(
         # (``(x := ...)``), so the False branch is unreachable by any parseable source.
         if isinstance(node.target, ast.Name):  # pragma: no branch
             var_taints[node.target.id] = taint
+            # A walrus REBINDS the name in the enclosing scope, so the receiver-type
+            # candidate must follow: a ctor RHS is a typed strong update, anything
+            # else invalidates the stale candidate — leaving it let a clean @trusted
+            # method summary resolve on a rebound raw receiver (review 2026-06-10,
+            # the _assign_target/NamedExpr stale-type launder).
+            _update_var_type(node.target.id, node.value)
         return taint
+    if isinstance(node, ast.Compare):
+        # Resolve the left operand and every comparator so calls nested in a
+        # comparison position record their flow-sensitive arg-taint snapshots
+        # (``if store(read_raw(p)) == 1:`` previously never resolved, so
+        # PY-WL-105 missed it and constant-arg sink calls degraded to the
+        # pessimistic UNKNOWN_RAW fallback). The comparison RESULT is a bool —
+        # derived from the data but not carrying it — so it is INTEGRAL, the
+        # same posture as the curated validator/measurer builtins.
+        _resolve_expr(node.left, function_taint, taint_map, var_taints)
+        for comparator in node.comparators:
+            _resolve_expr(comparator, function_taint, taint_map, var_taints)
+        return TaintState.INTEGRAL
     if isinstance(node, ast.IfExp):
         # ``a if c else b`` evaluates to ONE of its arms — combine via the rank-meet
         # least_trusted (weakest-link), so two clean arms stay clean (no MIXED_RAW
@@ -487,7 +804,16 @@ def _resolve_expr(
         # value path; the call-receiver path is handled in _resolve_call).
         dotted = _dotted_name(node)
         if dotted is not None and dotted in taint_map:
-            return taint_map[dotted]
+            # Same shadow guard as the call path (wardline-f6a29ce23a): a raw local
+            # shadowing a module name, read as ``cfg.attr``, must not inherit the
+            # module entry's clean taint. ``self``/``cls`` are excluded so the
+            # cross-method summary above is preserved even when ``self`` is raw, and a
+            # genuine module read (root not tracked in ``var_taints``) is untouched.
+            # No typed-object FP analog exists here — an instance read ``h.attr`` is
+            # never minted into ``taint_map`` (only module-/self-rooted keys are).
+            root = _call_root_name(node)
+            if not (root is not None and root not in ("self", "cls") and var_taints.get(root) in RAW_ZONE):
+                return taint_map[dotted]
         return _resolve_expr(node.value, function_taint, taint_map, var_taints)
     if isinstance(node, ast.Await):
         # Unwrap — the inner expression (typically a Call) is already handled.
@@ -580,7 +906,9 @@ def _resolve_comprehension(
     local = dict(var_taints)
     for gen in node.generators:
         iter_t = _resolve_expr(gen.iter, function_taint, taint_map, local)
-        _assign_target(gen.target, iter_t, local)
+        # Comprehension targets bind a comprehension-LOCAL scope (Py3) — they must
+        # not invalidate the enclosing name's receiver-type candidate.
+        _assign_target(gen.target, iter_t, local, invalidate_types=False)
         for cond in gen.ifs:
             # Resolve conditions for walrus side-effects (PEP 572 → enclosing scope,
             # leaked back below).
@@ -657,14 +985,18 @@ def _resolve_call(
 
     lambda_bindings = _CURRENT_LAMBDA_BINDINGS.get()
     if isinstance(node.func, ast.Name) and lambda_bindings is not None and node.func.id in lambda_bindings:
-        _resolve_lambda_body_at_call(
-            lambda_bindings[node.func.id],
-            function_taint,
-            taint_map,
-            var_taints,
-            pos_taints,
-            kw_arg_taints,
-        )
+        # Resolve against EVERY candidate body the name MAY hold (one per linear scope;
+        # several only after a branch merge). Each records its own sink calls' arg-taints
+        # — distinct AST nodes, so the recordings never collide (wardline-383f83fafe).
+        for lam in lambda_bindings[node.func.id]:
+            _resolve_lambda_body_at_call(
+                lam,
+                function_taint,
+                taint_map,
+                var_taints,
+                pos_taints,
+                kw_arg_taints,
+            )
     elif isinstance(node.func, ast.Lambda):
         _resolve_lambda_body_at_call(
             node.func,
@@ -675,6 +1007,28 @@ def _resolve_call(
             kw_arg_taints,
         )
 
+    # A dotted/imported/bare ``taint_map`` entry always describes a MODULE-LEVEL
+    # symbol (``mod.fn`` / from-imported func / config sanitiser / ``Type.method`` —
+    # every key minted by ``build_call_taint_map`` is rooted in an import alias or a
+    # top-level/bare callable, never a runtime object). When the call's RECEIVER or
+    # CALLEE name is instead a tracked LOCAL or PARAMETER holding RAW data, that local
+    # SHADOWS the module/import name: the clean entry does NOT describe the raw object,
+    # so returning it would launder the raw taint (wardline-f6a29ce23a). The
+    # discriminator is membership in ``var_taints`` (a real import is never tracked
+    # there; an assigned local / parameter is) plus the RAW_ZONE check, which limits
+    # suppression to the only unsound case — a genuine module sanitiser (root not in
+    # ``var_taints``, or tracked-but-clean) is untouched. The chain ROOT is used so a
+    # chained receiver (``a.b.method()``, root ``a``) is covered, not only one-level
+    # ``a.method()``. ``self``/``cls`` are EXCLUDED: their dotted keys are
+    # analyzer-injected cross-method summaries (analyzer.py), not module shadows, and
+    # must still be read even when the method's ``self`` seed is raw. The early
+    # ``taint_map`` short-circuits below defer to the RAW_ZONE receiver guard (and the
+    # bare-call path returns the raw callee taint) when this is set.
+    _call_root = _call_root_name(node.func)
+    root_shadows_raw_local = (
+        _call_root is not None and _call_root not in ("self", "cls") and var_taints.get(_call_root) in RAW_ZONE
+    )
+
     alias_map = _CURRENT_ALIAS_MAP.get()
     imported_fqn: str | None = None
     if alias_map is not None:
@@ -682,7 +1036,7 @@ def _resolve_call(
 
         module_prefix = _CURRENT_MODULE_PREFIX.get() or ""
         imported_fqn = resolve_call_fqn(node, alias_map, frozenset(taint_map.keys()), module_prefix)
-        if imported_fqn in _CONTEXT_ENCODERS:
+        if imported_fqn in _CONTEXT_ENCODERS and not root_shadows_raw_local:
             if not arg_taints:
                 return TaintState.GUARDED
             result = arg_taints[0]
@@ -691,8 +1045,13 @@ def _resolve_call(
             return combine(result, TaintState.GUARDED)
         if imported_fqn in _SERIALISATION_SINKS:
             return TaintState.UNKNOWN_RAW
-        if imported_fqn in taint_map:
+        if imported_fqn in taint_map and not root_shadows_raw_local:
             return taint_map[imported_fqn]
+        if imported_fqn in _WORST_ARG_CONSTRUCTORS and not root_shadows_raw_local:
+            # In-memory buffer ctor: result = worst arg taint (INTEGRAL when
+            # empty). Gated on the shadow guard — a raw local shadowing ``io``
+            # must not launder through the clean ctor model.
+            return _worst_arg_taint(arg_taints)
 
     if isinstance(node.func, ast.Attribute):
         dotted = _dotted_name(node.func)
@@ -703,17 +1062,75 @@ def _resolve_call(
             if dotted in _SERIALISATION_SINKS:
                 return TaintState.UNKNOWN_RAW
             taint_hit = taint_map.get(dotted)
-            if taint_hit is not None:
+            if taint_hit is not None and not root_shadows_raw_local:
+                # ``not root_shadows_raw_local``: a raw local/param shadowing the
+                # module name must not inherit the module entry (see above).
                 return taint_hit
+            if dotted in _WORST_ARG_CONSTRUCTORS and not root_shadows_raw_local:
+                # Dotted form without an alias-map resolution (degraded caller):
+                # same worst-arg in-memory buffer ctor model as the imported_fqn
+                # path above, behind the same shadow guard.
+                return _worst_arg_taint(arg_taints)
         if isinstance(node.func.value, ast.Name):
             var_types = _CURRENT_VAR_TYPES.get()
             if var_types is not None and node.func.value.id in var_types:
-                type_prefix = var_types[node.func.value.id]
-                resolved_dotted = f"{type_prefix}.{node.func.attr}"
-                taint_hit = taint_map.get(resolved_dotted)
-                if taint_hit is not None:
-                    return taint_hit
+                # This path is reached ONLY for a receiver with a TRACKED TYPE
+                # (annotation or ``x = Type()`` constructor) — never a module shadow
+                # (a raw ``cfg = read_raw(p)`` carries no tracked type). It is
+                # deliberately NOT gated by ``root_shadows_raw_local``: a legitimately
+                # typed object routinely has a RAW-ZONE value taint (an unmodeled
+                # ``Type()`` constructor defaults to ``UNKNOWN_RAW``), and that object
+                # must still resolve ``Type.method`` via its type — gating on the
+                # whole RAW_ZONE false-positives the ``h = Helper(); h.get_assured()``
+                # pattern (test_helper_method_returning_assured_does_not_false_positive).
+                # A DECLARED-raw receiver (EXTERNAL_RAW/MIXED_RAW — a boundary-seeded
+                # typed parameter, not a constructor default) is the launder case the
+                # provenance distinguishes: its clean ``Type.method`` summary describes
+                # a trustworthy instance, not the attacker-controlled object actually
+                # flowing in, so the receiver's own taint wins (wardline-03c8805449;
+                # closes the residual previously accepted under wardline-f6a29ce23a).
+                # The receiver may hold SEVERAL class candidates (branch-joined set,
+                # wardline-b369c7d06c): dispatch returns the candidates' combined
+                # summaries (least-trusted wins) only when EVERY candidate resolves;
+                # a partial hit falls through to the conservative generic handling
+                # (an unresolved candidate has no summary to honour, and the
+                # fall-through never launders — FN-safe).
+                candidates = var_types[node.func.value.id]
+                hits = [
+                    taint_map[resolved]
+                    for prefix in candidates
+                    if (resolved := f"{prefix}.{node.func.attr}") in taint_map
+                ]
+                if hits and len(hits) == len(candidates):
+                    receiver_value = var_taints.get(node.func.value.id)
+                    if receiver_value in (TaintState.EXTERNAL_RAW, TaintState.MIXED_RAW):
+                        return receiver_value
+                    result = hits[0]
+                    for hit in hits[1:]:
+                        result = combine(result, hit)
+                    return result
         attr = node.func.attr
+        if attr in _STORAGE_READ_METHODS:
+            # DB-cursor fetch loads stored/external data → seed EXTERNAL_RAW, like a file
+            # read (wardline-e7c7cda31a). Placed AFTER the taint_map / var_types-resolved
+            # lookups above so a project-summarised ``self.fetchall``/typed receiver still
+            # wins; ahead of the generic propagating-method handling.
+            return TaintState.EXTERNAL_RAW
+        if attr in _RECEIVER_MUTATING_METHODS:
+            # In-place container mutation: write the worst (least-trusted) CONTENT-argument
+            # taint back onto the receiver variable, so a later read of the container sees
+            # it (wardline-67c7498931). Do NOT return — a mutator evaluates to None and the
+            # call's own value is discarded; let control fall through unchanged.
+            # ``list.insert(index, value)`` is the one outlier whose FIRST positional arg is
+            # an index (position metadata, not stored content), so a tainted index must not
+            # contaminate the container — skip it (panel finding wardline-67c7498931).
+            content_taints = (pos_taints[1:] if attr == "insert" else pos_taints) + kw_taints
+            base = _container_base_name(node.func.value)
+            if base is not None and content_taints:
+                worst = content_taints[0]
+                for at in content_taints[1:]:
+                    worst = combine(worst, at)
+                var_taints[base] = combine(var_taints.get(base, function_taint), worst)
         if attr in _PROPAGATING_METHODS_WITH_ARGS:
             # ``.format``/``.join`` are string-BUILDING value flows: combine the
             # receiver with the args via the rank-meet least_trusted (weakest-link),
@@ -744,6 +1161,12 @@ def _resolve_call(
                 result = combine(result, default_taint)
             return result
     if isinstance(node.func, ast.Name):
+        if root_shadows_raw_local:
+            # ``foo()`` where ``foo`` is a raw local/param shadowing a clean import:
+            # calling raw data yields raw, never the import's clean ``taint_map``
+            # entry (wardline-f6a29ce23a). ``var_taints`` holds ``foo`` (the root
+            # check passed), so the lookup is safe.
+            return var_taints[node.func.id]
         try:
             return taint_map[node.func.id]
         except KeyError:
@@ -760,8 +1183,6 @@ def _resolve_call(
                 result = combine(result, at)
             return result
     if isinstance(node.func, ast.Attribute):
-        from wardline.core.taints import RAW_ZONE
-
         receiver_taint = _resolve_expr(node.func.value, function_taint, taint_map, var_taints)
         if receiver_taint in RAW_ZONE:
             return receiver_taint
@@ -769,6 +1190,18 @@ def _resolve_call(
         # An imported call that was not modeled by project summaries, stdlib_taint,
         # config, sink handling, or propagation rules returns data we cannot prove.
         return TaintState.UNKNOWN_RAW
+    if isinstance(node.func, ast.Name) and node.func.id not in _NON_PROPAGATING_BUILTINS:
+        # Unresolved bare-name call (an unannotated parameter, a runtime-bound
+        # callable): the callee is unknown, so its result is the WORST of the
+        # caller seed and the argument taints — an unknown callee cannot be
+        # assumed to clean a raw argument (``os.system(transform(raw))`` with a
+        # bare-param ``transform`` previously inherited the trusted seed —
+        # wardline-93d608c997). Mirrors the imported-but-unmodeled conservatism;
+        # the curated validator/measurer builtins above keep the plain seed.
+        result = function_taint
+        for at in arg_taints:
+            result = combine(result, at)
+        return result
     return function_taint
 
 
@@ -820,15 +1253,20 @@ def _process_stmt(
             lambda_bindings = _CURRENT_LAMBDA_BINDINGS.get()
             if lambda_bindings is not None:
                 if isinstance(value, ast.Lambda):
-                    lambda_bindings[stmt.target.id] = value
+                    # Linear rebind REPLACES the candidate set (a fresh single-element
+                    # list), never appends — only a branch merge unions arms.
+                    lambda_bindings[stmt.target.id] = [value]
                 else:
                     lambda_bindings.pop(stmt.target.id, None)
+            _update_var_type(stmt.target.id, value)
         elif isinstance(stmt.target, (ast.Subscript, ast.Attribute)):
             # Annotated container/attribute write (``self.x: str = expr``,
             # ``d['k']: T = expr``) — same fail-open shape as the plain-Assign Part
             # B case: contaminate the base variable so a later read sees it.
             rhs = _resolve_expr(value, function_taint, taint_map, var_taints)
             _taint_container_base(stmt.target, rhs, function_taint, var_taints)
+            if isinstance(stmt.target, ast.Attribute):
+                _record_attribute_write(stmt.target, rhs)
         else:  # pragma: no cover
             # Unreachable: an AnnAssign target is always Name/Attribute/Subscript by
             # the Python grammar, so the two branches above are exhaustive. Kept as a
@@ -860,8 +1298,36 @@ def _process_stmt(
     elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
         pass  # Nested function/class — don't descend (separate scope).
 
+    elif isinstance(stmt, ast.Raise):
+        # Resolve the full exception/cause expressions (not just walruses) so calls
+        # nested in a raise position record their flow-sensitive arg-taint snapshots
+        # (``raise ValueError(store(read_raw(p)))`` was invisible to PY-WL-105 and
+        # degraded sink rules to the pessimistic fallback — review 2026-06-10).
+        if stmt.exc is not None:
+            _resolve_expr(stmt.exc, function_taint, taint_map, var_taints)
+        if stmt.cause is not None:
+            _resolve_expr(stmt.cause, function_taint, taint_map, var_taints)
+
+    elif isinstance(stmt, ast.Assert):
+        # Same snapshot rationale as Raise: the test and message are real
+        # expression positions whose calls must record.
+        _resolve_expr(stmt.test, function_taint, taint_map, var_taints)
+        if stmt.msg is not None:
+            _resolve_expr(stmt.msg, function_taint, taint_map, var_taints)
+
+    elif isinstance(stmt, ast.Delete):
+        for target in stmt.targets:
+            # Resolve the target expressions (a ``del d[key_call()]`` slice is an
+            # expression position) and drop the deleted NAME's receiver-type
+            # candidate — after ``del v`` any later rebind starts untyped.
+            _resolve_expr(target, function_taint, taint_map, var_taints)
+            if isinstance(target, ast.Name):
+                var_types = _CURRENT_VAR_TYPES.get()
+                if var_types is not None:
+                    var_types.pop(target.id, None)
+
     else:
-        # Return, Raise, Import, Pass, Break, Continue, etc.
+        # Return, Import, Pass, Break, Continue, etc.
         _walk_exprs_for_walrus(stmt, function_taint, taint_map, var_taints)
 
 
@@ -887,6 +1353,9 @@ def _walk_exprs_for_walrus(
             # False branch is unreachable by any parseable source.
             if isinstance(child.target, ast.Name):  # pragma: no branch
                 var_taints[child.target.id] = taint
+                # Walrus rebind — receiver-type strong update / invalidation, the
+                # same discipline as _resolve_expr's NamedExpr branch.
+                _update_var_type(child.target.id, child.value)
         _walk_exprs_for_walrus(child, function_taint, taint_map, var_taints)
 
 
@@ -903,6 +1372,35 @@ def _resolve_expr_fqn(node: ast.expr, alias_map: dict[str, str] | None) -> str |
         if base:
             return f"{base}.{node.attr}"
     return None
+
+
+def _update_var_type(target_id: str, value: ast.expr) -> None:
+    """Strong-update the receiver-type candidate set for a straight-line assignment.
+
+    ``x = Type()`` binds the single candidate ``[Type_fqn]``; ``x = y`` copies
+    ``y``'s candidate set. Reassignment to an RHS we cannot type precisely
+    (Subscript / BinOp / IfExp / f-string / comprehension / unresolvable Call /
+    typeless Name) INVALIDATES any prior recorded type: keeping the stale type let
+    a method call on a now-raw value resolve a clean @trusted summary, laundering
+    raw past the RAW_ZONE receiver guard (wardline-5ba7ce0f98). Dropping it falls
+    back to conservative resolution (more FPs at worst, never an FN). Multi-class
+    candidate sets arise only at branch joins (:func:`_merge_branch_types`)."""
+    var_types = _CURRENT_VAR_TYPES.get()
+    if var_types is None:
+        return
+    new_types: list[str] | None = None
+    if isinstance(value, ast.Call):
+        fqn = _resolve_expr_fqn(value.func, _CURRENT_ALIAS_MAP.get())
+        if fqn:
+            new_types = [fqn]
+    elif isinstance(value, ast.Name):
+        prior = var_types.get(value.id)
+        if prior:
+            new_types = list(prior)
+    if new_types is not None:
+        var_types[target_id] = new_types
+    else:
+        var_types.pop(target_id, None)
 
 
 def _handle_assign(
@@ -926,20 +1424,13 @@ def _handle_assign(
             lambda_bindings = _CURRENT_LAMBDA_BINDINGS.get()
             if lambda_bindings is not None:
                 if isinstance(stmt.value, ast.Lambda):
-                    lambda_bindings[target.id] = stmt.value
+                    # Linear rebind REPLACES the candidate set (see _resolve_call /
+                    # _merge_branch_bindings); only a branch merge unions arms.
+                    lambda_bindings[target.id] = [stmt.value]
                 else:
                     lambda_bindings.pop(target.id, None)
 
-            var_types = _CURRENT_VAR_TYPES.get()
-            if var_types is not None:
-                alias_map = _CURRENT_ALIAS_MAP.get()
-                if isinstance(stmt.value, ast.Call):
-                    fqn = _resolve_expr_fqn(stmt.value.func, alias_map)
-                    if fqn:
-                        var_types[target.id] = fqn
-                elif isinstance(stmt.value, ast.Name):
-                    if stmt.value.id in var_types:
-                        var_types[target.id] = var_types[stmt.value.id]
+            _update_var_type(target.id, stmt.value)
 
         elif isinstance(target, (ast.Tuple, ast.List)):
             # Tuple unpacking: a, b = ...
@@ -962,6 +1453,10 @@ def _handle_assign(
             # read back at its creation taint — a fail-open under-taint.
             rhs = _resolve_expr(stmt.value, function_taint, taint_map, var_taints)
             _taint_container_base(target, rhs, function_taint, var_taints)
+            if isinstance(target, ast.Attribute):
+                # Class-attribute side channel: the RHS taint at THIS statement,
+                # before any later reassignment can launder it (wardline-b369c7d06c).
+                _record_attribute_write(target, rhs)
 
 
 def _handle_unpack(
@@ -981,6 +1476,9 @@ def _handle_unpack(
         return
     else:
         # RHS is not a matching literal tuple — all targets get RHS taint.
+        # _assign_target recurses into nested Tuple/List targets (``a, (b, c) =
+        # raw`` must taint b and c — skipping them was a fail-open under-taint)
+        # and contaminates the base container of a Subscript/Attribute target.
         rhs_taint = _resolve_expr(
             value,
             function_taint,
@@ -988,10 +1486,7 @@ def _handle_unpack(
             var_taints,
         )
         for tgt in target.elts:
-            if isinstance(tgt, ast.Name):
-                var_taints[tgt.id] = rhs_taint
-            elif isinstance(tgt, ast.Starred) and isinstance(tgt.value, ast.Name):
-                var_taints[tgt.value.id] = rhs_taint
+            _assign_target(tgt, rhs_taint, var_taints)
 
 
 def _handle_literal_unpack(
@@ -1006,16 +1501,12 @@ def _handle_literal_unpack(
         if len(value.elts) != len(target.elts):
             return False
         for tgt, val in zip(target.elts, value.elts, strict=False):
-            if isinstance(tgt, ast.Name):
-                taint = _resolve_expr(
-                    val,
-                    function_taint,
-                    taint_map,
-                    var_taints,
-                )
-                var_taints[tgt.id] = taint
-            elif isinstance(tgt, (ast.Tuple, ast.List)):
+            if isinstance(tgt, (ast.Tuple, ast.List)):
                 _handle_unpack(tgt, val, function_taint, taint_map, var_taints)
+            else:
+                # Name binds; a Subscript/Attribute target (``d['k'], _ = raw, 1``)
+                # contaminates its base container via _assign_target.
+                _assign_target(tgt, _resolve_expr(val, function_taint, taint_map, var_taints), var_taints)
         return True
 
     fixed_targets = len(target.elts) - 1
@@ -1024,10 +1515,10 @@ def _handle_literal_unpack(
 
     suffix_count = len(target.elts) - starred_idx - 1
     for tgt, val in zip(target.elts[:starred_idx], value.elts[:starred_idx], strict=False):
-        if isinstance(tgt, ast.Name):
-            var_taints[tgt.id] = _resolve_expr(val, function_taint, taint_map, var_taints)
-        elif isinstance(tgt, (ast.Tuple, ast.List)):
+        if isinstance(tgt, (ast.Tuple, ast.List)):
             _handle_unpack(tgt, val, function_taint, taint_map, var_taints)
+        else:
+            _assign_target(tgt, _resolve_expr(val, function_taint, taint_map, var_taints), var_taints)
 
     slice_end = len(value.elts) - suffix_count if suffix_count else len(value.elts)
     captured = value.elts[starred_idx:slice_end]
@@ -1044,10 +1535,10 @@ def _handle_literal_unpack(
     for offset in range(suffix_count):
         tgt = target.elts[starred_idx + 1 + offset]
         val = value.elts[len(value.elts) - suffix_count + offset]
-        if isinstance(tgt, ast.Name):
-            var_taints[tgt.id] = _resolve_expr(val, function_taint, taint_map, var_taints)
-        elif isinstance(tgt, (ast.Tuple, ast.List)):
+        if isinstance(tgt, (ast.Tuple, ast.List)):
             _handle_unpack(tgt, val, function_taint, taint_map, var_taints)
+        else:
+            _assign_target(tgt, _resolve_expr(val, function_taint, taint_map, var_taints), var_taints)
     return True
 
 
@@ -1078,6 +1569,8 @@ def _handle_augassign(
     elif isinstance(stmt.target, (ast.Subscript, ast.Attribute)):  # pragma: no branch
         # d[k] += expr / obj.x += expr — contaminate the base container.
         _taint_container_base(stmt.target, rhs_taint, function_taint, var_taints)
+        if isinstance(stmt.target, ast.Attribute):
+            _record_attribute_write(stmt.target, rhs_taint)
 
 
 def _container_base_name(target: ast.expr) -> str | None:
@@ -1115,12 +1608,67 @@ def _taint_container_base(
 # ── Control flow handlers ────────────────────────────────────────
 
 
-def _branch_copy(parent: dict[str, ast.Lambda] | None) -> dict[str, ast.Lambda] | None:
+def _branch_copy(parent: dict[str, list[ast.Lambda]] | None) -> dict[str, list[ast.Lambda]] | None:
     """An arm-local copy of the lambda-bindings map for one branch arm (``None`` when
     bindings are not being tracked — a degraded caller). Copying per arm is what keeps
     a lambda bound inside one arm from leaking into a mutually-exclusive sibling arm
-    (wardline-36016d26f3), mirroring how ``var_taints`` is copied per arm."""
-    return dict(parent) if parent is not None else None
+    (wardline-36016d26f3), mirroring how ``var_taints`` is copied per arm. The candidate
+    LISTS are copied too, so an arm's rebind/removal cannot mutate the parent's or a
+    sibling's set in place (wardline-383f83fafe)."""
+    return {name: list(lams) for name, lams in parent.items()} if parent is not None else None
+
+
+def _types_branch_copy(parent: dict[str, list[str]] | None) -> dict[str, list[str]] | None:
+    """An arm-local copy of the receiver-type candidate map for one branch arm
+    (``None`` when types are not being tracked). Candidate LISTS are copied too,
+    so an arm's strong update cannot mutate the parent's or a sibling's set in
+    place — branch-local exactly like ``var_taints`` (wardline-b369c7d06c)."""
+    return {name: list(types) for name, types in parent.items()} if parent is not None else None
+
+
+def _merge_branch_types(
+    parent: dict[str, list[str]] | None,
+    arms: list[dict[str, list[str]] | None],
+) -> None:
+    """Merge mutually-exclusive branch arms' receiver-type candidates back into
+    *parent* in place. Post-branch a receiver MAY hold whichever class the taken
+    arm bound, so its candidate set is the UNION of every arm's set (dedup by
+    equality — FQNs are strings). An arm that never touched a name carries its
+    pre-branch set (each arm is a full copy of *parent*), so a class binding made
+    before the branch survives an arm that rebound the name — that surviving
+    candidate is what attributes a post-branch attribute write to the
+    not-rebound class too (wardline-b369c7d06c). A name EVERY arm rebound to an
+    untypeable value drops out (absent from all arms — sound: no path still
+    holds a tracked class). Mirrors :func:`_merge_branch_bindings`, including the
+    absent-or-non-empty invariant.
+
+    A name SOME-but-not-all arms dropped (rebound to an untypeable value — a
+    for/with/unpack/handler rebind) keeps the surviving arms' candidates for the
+    attribute-write channel but gains the :data:`UNTYPED_ARM_CANDIDATE` poison
+    marker: on the dropped arm's path the receiver holds an object of UNKNOWN
+    type, so a method-summary READ must not resolve cleanly through the other
+    arm's class (the launder PY-WL-101 closed in the 2026-06-10 review). The
+    marker never resolves in any taint map, so the dispatch's all-candidates
+    completeness check fails and resolution falls through to the conservative
+    generic handling; the write recorder's bucket for it is dropped by
+    :func:`project_attribute_writes` (not a known class)."""
+    if parent is None:
+        return
+    merged: dict[str, list[str]] = {}
+    tracked_arms = [arm for arm in arms if arm is not None]
+    for arm in tracked_arms:
+        for name, types in arm.items():
+            if not types:
+                continue  # uphold the absent-or-non-empty invariant
+            bucket = merged.setdefault(name, [])
+            for fqn in types:
+                if fqn not in bucket:
+                    bucket.append(fqn)
+    for name, bucket in merged.items():
+        if UNTYPED_ARM_CANDIDATE not in bucket and any(not arm.get(name) for arm in tracked_arms):
+            bucket.append(UNTYPED_ARM_CANDIDATE)
+    parent.clear()
+    parent.update(merged)
 
 
 def _walk_branch_body(
@@ -1129,52 +1677,72 @@ def _walk_branch_body(
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
     call_site_taints: dict[int, dict[str, TaintState]] | None,
-    arm_bindings: dict[str, ast.Lambda] | None,
+    arm_bindings: dict[str, list[ast.Lambda]] | None,
+    arm_types: dict[str, list[str]] | None,
 ) -> None:
-    """Walk one branch arm's body with *arm_bindings* as the active (arm-local)
-    lambda-bindings map, so lambda assignments inside the arm mutate the copy, not the
-    shared parent. A plain ``_walk_body`` when bindings aren't tracked."""
-    if arm_bindings is None:
-        _walk_body(body, function_taint, taint_map, var_taints, call_site_taints)
-        return
-    token = _CURRENT_LAMBDA_BINDINGS.set(arm_bindings)
+    """Walk one branch arm's body with *arm_bindings* / *arm_types* as the active
+    (arm-local) lambda-bindings and receiver-type maps, so lambda assignments and
+    class rebinds inside the arm mutate the copies, not the shared parent. A plain
+    ``_walk_body`` for whichever map isn't tracked."""
+    token_bindings = _CURRENT_LAMBDA_BINDINGS.set(arm_bindings) if arm_bindings is not None else None
+    token_types = _CURRENT_VAR_TYPES.set(arm_types) if arm_types is not None else None
     try:
         _walk_body(body, function_taint, taint_map, var_taints, call_site_taints)
     finally:
-        _CURRENT_LAMBDA_BINDINGS.reset(token)
+        if token_types is not None:
+            _CURRENT_VAR_TYPES.reset(token_types)
+        if token_bindings is not None:
+            _CURRENT_LAMBDA_BINDINGS.reset(token_bindings)
 
 
 def _merge_branch_bindings(
-    parent: dict[str, ast.Lambda] | None,
-    arms: list[dict[str, ast.Lambda] | None],
+    parent: dict[str, list[ast.Lambda]] | None,
+    arms: list[dict[str, list[ast.Lambda]] | None],
 ) -> None:
     """Merge mutually-exclusive branch arms' lambda bindings back into *parent* in
     place. Each arm was walked against an arm-local *copy* of *parent*, so a binding
     made in one arm cannot leak into a sibling arm during the walk
     (wardline-36016d26f3); this re-converges the arms into the post-branch state.
 
-    We layer each arm's *delta relative to the pre-branch state* onto *parent* in
-    source order — we do NOT clear and re-union. The distinction is load-bearing: an
-    arm is a full copy of the pre-branch bindings, so a name an arm never touched still
-    carries its pre-branch lambda. A clear-then-union (or a union that lets the implicit
-    no-``else`` / no-match-catch-all fall-through arm win last) would let such an
-    untouched arm *revert* a rebinding done in another arm — silently dropping a binding
-    the engine kept before branch-locality was added, i.e. a NEW false negative for a
-    sink reached through the rebound name after the branch. Applying only net
-    added/changed bindings, last-arm-in-source-order wins, reproduces the prior
-    after-branch bindings for every rebinding case (so no new false negative) while
-    keeping the branch-local leak fix. A name an arm *removed* (rebound to a non-lambda)
-    is left in place: that can only over-approximate (an extra resolution), never miss a
-    sink."""
+    Post-branch a name MAY hold whichever lambda the taken arm bound it to, so its
+    candidate set is the UNION of every arm's set for that name (wardline-383f83fafe).
+    We rebuild *parent* from that union rather than overwriting slot-by-slot: the old
+    single-slot map kept only the last arm's binding, dropping a sink-lambda bound in a
+    non-last arm and missing the post-branch sink (the FN this closes).
+
+    The union also subsumes the no-false-negative guard the prior delta-merge protected
+    (wardline-36016d26f3): an arm that never touched a name still carries its pre-branch
+    set (each arm is a full copy of *parent*), and the implicit no-``else`` /
+    no-match-catch-all fall-through arm is exactly such a copy — so a rebinding made in
+    one arm is preserved in the union, never reverted by an untouched sibling. A name
+    that EVERY arm rebound to a non-lambda is absent from all arm sets and so drops out
+    of the union — sound, because on no post-branch path is it still a lambda. (The prior
+    delta-merge left such a name in place; that was a harmless over-approximation, not a
+    pinned behaviour.) Resolving an extra candidate only records arg-taints — it can
+    over-approximate, never mask a sink — so the union is FP-safe.
+
+    Invariant: a name is either ABSENT from the map or maps to a NON-EMPTY list. An empty
+    list would make ``_resolve_call``'s ``name in bindings`` check pass while the
+    candidate loop does nothing — silently skipping all bodies, a latent FN. Writers
+    uphold it (linear rebind stores ``[lam]`` or pops; this merge never buckets an empty
+    arm list), so the map never holds an empty list."""
     if parent is None:
         return
-    pre = dict(parent)
+    merged: dict[str, list[ast.Lambda]] = {}
     for arm in arms:
         if arm is None:
             continue
-        for name, lam in arm.items():
-            if pre.get(name) is not lam:
-                parent[name] = lam
+        for name, lams in arm.items():
+            if not lams:
+                continue  # uphold the empty-list-never-stored invariant (see docstring)
+            bucket = merged.setdefault(name, [])
+            for lam in lams:
+                # Dedup by identity (ast nodes don't define __eq__): the same lambda
+                # carried unchanged through several arms should be resolved once.
+                if not any(lam is seen for seen in bucket):
+                    bucket.append(lam)
+    parent.clear()
+    parent.update(merged)
 
 
 def _handle_if(
@@ -1191,24 +1759,32 @@ def _handle_if(
     # Snapshot before branches.
     pre_if = dict(var_taints)
     parent_lambdas = _CURRENT_LAMBDA_BINDINGS.get()
+    parent_types = _CURRENT_VAR_TYPES.get()
 
-    # Walk the if-body with an arm-local lambda-bindings copy — branch-local like
-    # var_taints, so a lambda bound here cannot leak into the else arm.
+    # Walk the if-body with arm-local lambda-bindings and receiver-type copies —
+    # branch-local like var_taints, so a lambda bound or class rebound here cannot
+    # leak into the else arm.
     if_taints = dict(var_taints)
     if_lambdas = _branch_copy(parent_lambdas)
-    _walk_branch_body(stmt.body, function_taint, taint_map, if_taints, call_site_taints, if_lambdas)
+    if_types = _types_branch_copy(parent_types)
+    _walk_branch_body(stmt.body, function_taint, taint_map, if_taints, call_site_taints, if_lambdas, if_types)
 
     if stmt.orelse:
-        # Walk the else-body on its own arm-local bindings copy.
+        # Walk the else-body on its own arm-local copies.
         else_taints = dict(var_taints)
         else_lambdas = _branch_copy(parent_lambdas)
-        _walk_branch_body(stmt.orelse, function_taint, taint_map, else_taints, call_site_taints, else_lambdas)
+        else_types = _types_branch_copy(parent_types)
+        _walk_branch_body(
+            stmt.orelse, function_taint, taint_map, else_taints, call_site_taints, else_lambdas, else_types
+        )
     else:
-        # No else — the "else" branch is the pre-if state with bindings unchanged.
+        # No else — the "else" branch is the pre-if state with bindings/types unchanged.
         else_taints = pre_if
         else_lambdas = _branch_copy(parent_lambdas)
+        else_types = _types_branch_copy(parent_types)
 
     _merge_branch_bindings(parent_lambdas, [if_lambdas, else_lambdas])
+    _merge_branch_types(parent_types, [if_types, else_types])
 
     # Merge: for each variable, combine the two branch values. The var holds ONE
     # branch's value (an alternative), so combine via the rank-meet least_trusted
@@ -1245,8 +1821,37 @@ def _handle_for(
     # Snapshot pre-loop.
     pre_loop = dict(var_taints)
 
-    # Iterate walk until convergence (WLN-MED-09)
-    for _ in range(8):
+    # Lambda bindings are mutated in place on the shared map across iterations (no per-arm
+    # copy WITHIN the fixpoint — the body's in-place resolution is what gives a sound
+    # loop-carried binding: a cb(raw) call placed BEFORE an in-body rebind sees the prior
+    # iteration's candidate). A rebind REPLACES with the SAME ast.Lambda node every
+    # iteration (parsed once) and in-body branch merges dedup by identity, so the binding
+    # state is idempotent across iterations — the var_taints convergence check below is a
+    # sufficient fixpoint for the bindings too (no unbounded candidate growth, see
+    # wardline-383f83fafe).
+    #
+    # The loop body is, however, a CONDITIONALLY-executed arm: a reachable 0-iteration path
+    # means the post-loop binding for a name MAY still be its pre-loop value. Snapshot the
+    # pre-loop bindings (the "loop did not run" arm) and union them back AFTER the fixpoint
+    # (see below), exactly like a no-`else` ``if`` — otherwise a sink-lambda bound before
+    # the loop and rebound clean inside it is silently dropped on the zero-trip path, and a
+    # post-loop call through the name misses the sink (the FN this closes,
+    # wardline-d6af917bde).
+    pre_loop_lambdas = _branch_copy(_CURRENT_LAMBDA_BINDINGS.get())
+    # Same zero-trip arm for receiver-type candidates: a class rebound inside the
+    # body MAY not have run, so the pre-loop candidates are unioned back below
+    # (wardline-b369c7d06c).
+    pre_loop_types = _types_branch_copy(_CURRENT_VAR_TYPES.get())
+
+    # Iterate the walk until var_taints genuinely converges (WLN-MED-09). The bound is
+    # num_vars × lattice_height, NOT lattice_height (8) alone: 8 caps a SINGLE variable's
+    # monotone rank climb, but a read-before-write loop-carried chain propagates taint one
+    # link per iteration, so an N-variable chain needs N iterations to reach the head — a
+    # range(8) cap silently dropped chains longer than 8 (a fail-open FN, wardline-e04db6e656).
+    # The convergence break below is the real terminator; the backstop is a never-hit-in-
+    # practice safety net (finite monotone lattice over a fixed local-name set guarantees it).
+    iterations = 0
+    while True:
         current_state = dict(var_taints)
         # Assign the loop variable.
         _assign_target(stmt.target, iter_taint, var_taints)
@@ -1255,8 +1860,27 @@ def _handle_for(
         # Merge body state with pre-loop
         for var in set(var_taints) | set(pre_loop):
             var_taints[var] = combine(var_taints.get(var, function_taint), pre_loop.get(var, function_taint))
+        iterations += 1
         if var_taints == current_state:
             break
+        if iterations >= len(var_taints) * len(TRUST_RANK) + 1:
+            break
+
+    # Union the converged "loop ran" binding arm with the "loop did not run" arm so the
+    # post-loop candidate set covers BOTH the zero-trip path (pre_loop_lambdas) and the
+    # body's rebinds — the faithful mirror of a no-`else` ``if`` join (wardline-d6af917bde).
+    # _merge_branch_bindings preserves the dedup-by-identity and never-empty-list
+    # invariants. This lands BEFORE the orelse walk, so a `for...else` body that further
+    # rebinds the name still mutates the unioned state in place (accepted limitation: the
+    # break-vs-normal-exit distinction is not modelled — orelse is walked unconditionally).
+    parent_lambdas = _CURRENT_LAMBDA_BINDINGS.get()
+    if parent_lambdas is not None:
+        post_body_arm = _branch_copy(parent_lambdas)
+        _merge_branch_bindings(parent_lambdas, [post_body_arm, pre_loop_lambdas])
+    parent_types = _CURRENT_VAR_TYPES.get()
+    if parent_types is not None:
+        post_body_types = _types_branch_copy(parent_types)
+        _merge_branch_types(parent_types, [post_body_types, pre_loop_types])
 
     # Walk orelse (runs after normal loop completion).
     if stmt.orelse:
@@ -1273,14 +1897,38 @@ def _handle_while(
     """Handle while loops — body merges with pre-loop state."""
     pre_loop = dict(var_taints)
 
-    for _ in range(8):
+    # The body is a conditionally-executed arm (a reachable 0-iteration path), so snapshot
+    # the pre-loop lambda bindings (the "loop did not run" arm) and union them back after
+    # the fixpoint — the no-`else` ``if`` mirror that keeps a pre-loop sink-lambda visible
+    # on the zero-trip path (wardline-d6af917bde; see _handle_for for the full rationale).
+    pre_loop_lambdas = _branch_copy(_CURRENT_LAMBDA_BINDINGS.get())
+    pre_loop_types = _types_branch_copy(_CURRENT_VAR_TYPES.get())
+
+    # Iterate to genuine convergence with a num_vars × lattice_height backstop — see
+    # _handle_for: a range(8) cap was unsound for loop-carried chains > 8 links
+    # (wardline-e04db6e656).
+    iterations = 0
+    while True:
         current_state = dict(var_taints)
         _resolve_expr(stmt.test, function_taint, taint_map, var_taints)
         _walk_body(stmt.body, function_taint, taint_map, var_taints, call_site_taints)
         for var in set(var_taints) | set(pre_loop):
             var_taints[var] = combine(var_taints.get(var, function_taint), pre_loop.get(var, function_taint))
+        iterations += 1
         if var_taints == current_state:
             break
+        if iterations >= len(var_taints) * len(TRUST_RANK) + 1:
+            break
+
+    # Union the converged "loop ran" arm with the "loop did not run" arm (wardline-d6af917bde).
+    parent_lambdas = _CURRENT_LAMBDA_BINDINGS.get()
+    if parent_lambdas is not None:
+        post_body_arm = _branch_copy(parent_lambdas)
+        _merge_branch_bindings(parent_lambdas, [post_body_arm, pre_loop_lambdas])
+    parent_types = _CURRENT_VAR_TYPES.get()
+    if parent_types is not None:
+        post_body_types = _types_branch_copy(parent_types)
+        _merge_branch_types(parent_types, [post_body_types, pre_loop_types])
 
     if stmt.orelse:
         _walk_body(stmt.orelse, function_taint, taint_map, var_taints, call_site_taints)
@@ -1317,28 +1965,67 @@ def _handle_try(
     """Handle try/except/else/finally — snapshot-branch-join pattern."""
     pre_try = dict(var_taints)
     parent_lambdas = _CURRENT_LAMBDA_BINDINGS.get()
+    parent_types = _CURRENT_VAR_TYPES.get()
 
-    # Walk try body on a copy (arm-local lambda bindings — branch-local like var_taints).
+    # Walk try body on a copy (arm-local lambda bindings/receiver types —
+    # branch-local like var_taints).
+    pre_try_snapshot_ids = set(call_site_taints) if call_site_taints is not None else None
     try_taints = dict(pre_try)
     try_lambdas = _branch_copy(parent_lambdas)
-    _walk_branch_body(stmt.body, function_taint, taint_map, try_taints, call_site_taints, try_lambdas)
+    try_types = _types_branch_copy(parent_types)
+    _walk_branch_body(stmt.body, function_taint, taint_map, try_taints, call_site_taints, try_lambdas, try_types)
 
-    # Walk each handler on separate copies (mutually exclusive with try body).
+    # A handler runs after an exception raised at ANY point in the try body, so
+    # it can observe pre-try state OR any try-body prefix's state — handler arms
+    # are NOT mutually exclusive with the try body's assignments. Seed each arm
+    # with the per-variable WORST over the pre-try snapshot, every per-statement
+    # snapshot the try-body walk recorded (each is a reachable prefix state, so a
+    # value assigned raw and cleaned mid-body stays visible), and the body's
+    # post-walk state (the degraded no-snapshot fallback). Seeding from
+    # ``dict(pre_try)`` alone dropped taint assigned before a raising call — a
+    # fail-open under-taint. Lambda-binding/receiver-type arms keep their
+    # pre-try copies: those channels resolve call shapes, not data values, and
+    # extra candidates only over-approximate (the var-taint seed is the
+    # soundness fix).
+    handler_seed = dict(pre_try)
+    prefix_states: list[dict[str, TaintState]] = [try_taints]
+    if call_site_taints is not None and pre_try_snapshot_ids is not None:
+        prefix_states.extend(
+            snapshot for stmt_id, snapshot in call_site_taints.items() if stmt_id not in pre_try_snapshot_ids
+        )
+    for state in prefix_states:
+        for name, taint in state.items():
+            current = handler_seed.get(name)
+            if current is None or TRUST_RANK[taint] > TRUST_RANK[current]:
+                handler_seed[name] = taint
+
+    # Walk each handler on separate copies.
     handler_branches: list[dict[str, TaintState]] = [try_taints]  # try-success is one branch
-    arm_bindings: list[dict[str, ast.Lambda] | None] = [try_lambdas]
+    arm_bindings: list[dict[str, list[ast.Lambda]] | None] = [try_lambdas]
+    arm_types: list[dict[str, list[str]] | None] = [try_types]
     for handler in stmt.handlers:
-        handler_taints = dict(pre_try)
+        handler_taints = dict(handler_seed)
+        handler_lambdas = _branch_copy(parent_lambdas)
+        handler_types = _types_branch_copy(parent_types)
         if handler.name:
             handler_taints[handler.name] = function_taint
-        handler_lambdas = _branch_copy(parent_lambdas)
-        _walk_branch_body(handler.body, function_taint, taint_map, handler_taints, call_site_taints, handler_lambdas)
+            # ``except E as name`` REBINDS name to the exception instance — any
+            # receiver-type candidate the name carried describes an object it no
+            # longer holds, so the handler arm's copy drops it (review 2026-06-10;
+            # mirrors collect_sink_bindings' handler-name invalidation).
+            if handler_types is not None:
+                handler_types.pop(handler.name, None)
+        _walk_branch_body(
+            handler.body, function_taint, taint_map, handler_taints, call_site_taints, handler_lambdas, handler_types
+        )
         handler_branches.append(handler_taints)
         arm_bindings.append(handler_lambdas)
+        arm_types.append(handler_types)
 
     # Walk orelse on the try-success branch (runs only if no exception) — continue the
-    # try arm's bindings, not a fresh copy.
+    # try arm's bindings/types, not fresh copies.
     if stmt.orelse:
-        _walk_branch_body(stmt.orelse, function_taint, taint_map, try_taints, call_site_taints, try_lambdas)
+        _walk_branch_body(stmt.orelse, function_taint, taint_map, try_taints, call_site_taints, try_lambdas, try_types)
 
     # Merge all branches.
     all_vars: set[str] = set()
@@ -1365,9 +2052,11 @@ def _handle_try(
             except KeyError:
                 _taint_val = None  # var absent from pre-try state — leave unset
 
-    # Lambda bindings: union the mutually-exclusive arms (try-success + each handler)
-    # back into the parent, mirroring the var_taints join above.
+    # Lambda bindings / receiver types: union the mutually-exclusive arms
+    # (try-success + each handler) back into the parent, mirroring the var_taints
+    # join above.
     _merge_branch_bindings(parent_lambdas, arm_bindings)
+    _merge_branch_types(parent_types, arm_types)
 
     # finalbody runs unconditionally after merge — with the merged bindings (in place,
     # the active contextvar dict, since the function body continues into it).
@@ -1398,16 +2087,21 @@ def _handle_match(
 
     pre_match = dict(var_taints)
     parent_lambdas = _CURRENT_LAMBDA_BINDINGS.get()
+    parent_types = _CURRENT_VAR_TYPES.get()
     branches: list[dict[str, TaintState]] = []
-    arm_bindings: list[dict[str, ast.Lambda] | None] = []
+    arm_bindings: list[dict[str, list[ast.Lambda]] | None] = []
+    arm_types: list[dict[str, list[str]] | None] = []
     for case in stmt.cases:
         case_taints = dict(pre_match)
         for name in _collect_pattern_targets(case.pattern):
             case_taints[name] = subject_taint
-        # Arm-local lambda bindings (guard + body share the arm), branch-local like
-        # var_taints so a lambda bound in one case cannot leak into a sibling case.
+        # Arm-local lambda bindings / receiver types (guard + body share the arm),
+        # branch-local like var_taints so a lambda bound or class rebound in one
+        # case cannot leak into a sibling case.
         case_lambdas = _branch_copy(parent_lambdas)
+        case_types = _types_branch_copy(parent_types)
         token = _CURRENT_LAMBDA_BINDINGS.set(case_lambdas) if case_lambdas is not None else None
+        token_types = _CURRENT_VAR_TYPES.set(case_types) if case_types is not None else None
         try:
             if case.guard is not None:
                 # The guard is tested with the arm's captures in scope; resolve it for
@@ -1415,14 +2109,18 @@ def _handle_match(
                 _resolve_expr(case.guard, function_taint, taint_map, case_taints)
             _walk_body(case.body, function_taint, taint_map, case_taints, call_site_taints)
         finally:
+            if token_types is not None:
+                _CURRENT_VAR_TYPES.reset(token_types)
             if token is not None:
                 _CURRENT_LAMBDA_BINDINGS.reset(token)
         branches.append(case_taints)
         arm_bindings.append(case_lambdas)
+        arm_types.append(case_types)
 
-    # The implicit "no arm matched" path keeps the pre-match state and bindings.
+    # The implicit "no arm matched" path keeps the pre-match state, bindings, and types.
     branches.append(pre_match)
     arm_bindings.append(_branch_copy(parent_lambdas))
+    arm_types.append(_types_branch_copy(parent_types))
 
     all_vars: set[str] = set()
     for branch in branches:
@@ -1434,8 +2132,10 @@ def _handle_match(
             merged = combine(merged, v)
         var_taints[var] = merged
 
-    # Lambda bindings: union the mutually-exclusive case arms (+ no-match) into parent.
+    # Lambda bindings / receiver types: union the mutually-exclusive case arms
+    # (+ no-match) into parent.
     _merge_branch_bindings(parent_lambdas, arm_bindings)
+    _merge_branch_types(parent_types, arm_types)
 
 
 # ── Helpers ──────────────────────────────────────────────────────
@@ -1481,135 +2181,48 @@ def _assign_target(
     target: ast.expr,
     taint: TaintState,
     var_taints: dict[str, TaintState],
+    *,
+    invalidate_types: bool = True,
 ) -> None:
-    """Assign taint to a target node (Name, Tuple, or List)."""
+    """Assign taint to a target node (Name, Tuple/List, Starred, Subscript, Attribute).
+
+    Nested Tuple/List targets recurse so every leaf Name inherits the taint; a
+    Subscript/Attribute target (``for d['k'] in raws`` / ``d['k'], _ = raw``)
+    is a container WRITE, so its root Name absorbs the taint via the
+    weakest-link combine — silently skipping it left the container clean, a
+    fail-open under-taint (wardline-93d608c997). An Attribute target ALSO
+    records into the attribute-write side channel: ``self.x, y = raw, 1`` is
+    the same class-attribute write as ``self.x = raw``, and the recorder only
+    saw direct ``ast.Attribute`` Assign targets — the unpack form silently
+    skipped the cross-method summary (a fail-open under-taint).
+
+    Every Name leaf bound here is a REBIND through a form that carries no
+    statically-typeable RHS (a for/with target, a tuple-unpack leaf, a starred
+    slice), so its receiver-type candidate is INVALIDATED — keeping the stale
+    class let a clean ``@trusted`` method summary launder a rebound raw
+    receiver past PY-WL-101 (review 2026-06-10; mirrors the invalidation
+    discipline ``collect_sink_bindings`` applies to the same binding forms).
+    ``invalidate_types=False`` is for COMPREHENSION generator targets, which
+    bind a comprehension-local scope and must not drop the enclosing name's
+    candidate.
+    """
     if isinstance(target, ast.Name):
         var_taints[target.id] = taint
+        if invalidate_types:
+            var_types = _CURRENT_VAR_TYPES.get()
+            if var_types is not None:
+                var_types.pop(target.id, None)
     elif isinstance(target, (ast.Tuple, ast.List)):
         for elt in target.elts:
-            _assign_target(elt, taint, var_taints)
-    elif isinstance(target, ast.Starred) and isinstance(target.value, ast.Name):
-        var_taints[target.value.id] = taint
-
-
-def _self_attr_name(target: ast.expr) -> str | None:
-    """The attribute name of a ``self.<attr>`` / ``cls.<attr>`` write target, else None.
-
-    Only a direct attribute of the instance/class receiver (``self.x = ...``) — a
-    subscript-into-attribute (``self.cache[k] = ...``) or deeper chain is NOT a direct
-    attribute write and is deliberately excluded (it would need container modelling)."""
-    if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id in ("self", "cls"):
-        return target.attr
-    return None
-
-
-def collect_attribute_writes(
-    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
-    function_taint: TaintState,
-    taint_map: dict[str, TaintState],
-    var_taints: dict[str, TaintState],
-    class_qualnames: frozenset[str],
-    alias_map: dict[str, str],
-    module_prefix: str,
-    enclosing_class: str | None = None,
-) -> dict[str, dict[str, TaintState]]:
-    """Return ``{class_qualname: {attr_name: least_trusted RHS taint}}`` for every
-    instance attribute assignment in *func_node*'s body.
-
-    Handles both internal ``self.x = ...`` writes (enclosing class) and external
-    ``obj.x = ...`` writes where ``obj`` was instantiated via a class constructor
-    call.
-    """
-    from wardline.scanner.ast_primitives import resolve_call_fqn
-
-    out: dict[str, dict[str, TaintState]] = {}
-    var_types: dict[str, str] = {}
-
-    def _walk(node: ast.AST) -> None:
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-                continue
-
-            # 1. Track variable types assigned to constructors or copied
-            targets: list[ast.expr] = []
-            value: ast.expr | None = None
-            if isinstance(child, ast.Assign):
-                targets = child.targets
-                value = child.value
-            elif isinstance(child, ast.AnnAssign):
-                targets = [child.target]
-                value = child.value
-
-            class_fqn = None
-            if value is not None:
-                if isinstance(value, ast.Call):
-                    fqn = resolve_call_fqn(value, alias_map, class_qualnames, module_prefix)
-                    if fqn in class_qualnames:
-                        class_fqn = fqn
-                elif isinstance(value, ast.Name):
-                    class_fqn = var_types.get(value.id)
-
-            if class_fqn is not None:
-                for tgt in targets:
-                    if isinstance(tgt, ast.Name):
-                        var_types[tgt.id] = class_fqn
-
-            # 2. Record attribute writes
-            targets_to_check: list[ast.expr] = []
-            if isinstance(child, ast.Assign):
-                targets_to_check = child.targets
-                value = child.value
-            elif isinstance(child, (ast.AnnAssign, ast.AugAssign)):
-                targets_to_check = [child.target]
-                value = child.value
-
-            for tgt in targets_to_check:
-                if isinstance(tgt, ast.Attribute) and isinstance(tgt.value, ast.Name):
-                    var_name = tgt.value.id
-                    attr_name = tgt.attr
-                    target_class = None
-                    if var_name in ("self", "cls") and enclosing_class:
-                        target_class = enclosing_class
-                    elif var_name in var_types:
-                        target_class = var_types[var_name]
-
-                    if target_class is not None and value is not None:
-                        rhs_taint = _resolve_expr(value, function_taint, taint_map, var_taints)
-                        cls_writes = out.setdefault(target_class, {})
-                        cls_writes[attr_name] = (
-                            combine(cls_writes[attr_name], rhs_taint) if attr_name in cls_writes else rhs_taint
-                        )
-
-            _walk(child)
-
-    token_types = _CURRENT_VAR_TYPES.set(var_types)
-    token_alias = _CURRENT_ALIAS_MAP.set(alias_map)
-    try:
-        _walk(func_node)
-    finally:
-        _CURRENT_VAR_TYPES.reset(token_types)
-        _CURRENT_ALIAS_MAP.reset(token_alias)
-    return out
-
-
-def collect_self_attr_writes(
-    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
-    function_taint: TaintState,
-    taint_map: dict[str, TaintState],
-    var_taints: dict[str, TaintState],
-) -> dict[str, TaintState]:
-    """Compatibility wrapper for internal-only writes."""
-    writes = collect_attribute_writes(
-        func_node,
-        function_taint,
-        taint_map,
-        var_taints,
-        class_qualnames=frozenset(),
-        alias_map={},
-        module_prefix="",
-        enclosing_class="dummy",
-    )
-    return writes.get("dummy", {})
+            _assign_target(elt, taint, var_taints, invalidate_types=invalidate_types)
+    elif isinstance(target, ast.Starred):
+        _assign_target(target.value, taint, var_taints, invalidate_types=invalidate_types)
+    elif isinstance(target, (ast.Subscript, ast.Attribute)):
+        base = _container_base_name(target)
+        if base is not None:
+            var_taints[base] = combine(var_taints.get(base, taint), taint)
+        if isinstance(target, ast.Attribute):
+            _record_attribute_write(target, taint)
 
 
 def compute_return_taint(
@@ -1617,21 +2230,23 @@ def compute_return_taint(
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
+    return_snapshots: dict[int, dict[str, TaintState]] | None = None,
 ) -> TaintState | None:
     """Compute the *actual* taint a function returns (least-trusted of all paths).
 
     Resolves every value-bearing ``return`` statement in *func_node*'s own scope
-    (nested functions/lambdas excluded) against the already-computed ``var_taints``
-    and the call-resolution ``taint_map``, and joins them with :func:`least_trusted`
-    — the worst (least-trusted) value any path can return. Returns ``None`` when the
-    function has no value-bearing ``return`` (implicit ``None`` / bare ``return`` /
-    pure side-effect): there is no returned data to police.
+    (nested functions/lambdas excluded) against the statement snapshot for that
+    return when available, falling back to the already-computed final
+    ``var_taints``. It then joins paths with :func:`least_trusted` — the worst
+    (least-trusted) value any path can return. Returns ``None`` when the function
+    has no value-bearing ``return`` (implicit ``None`` / bare ``return`` / pure
+    side-effect): there is no returned data to police.
 
     This is the precise input PY-WL-101 needs — distinct from ``project_taints``
     (the function's anchored *body* taint, pinned to its declaration).
     """
     returns: list[tuple[TaintState, str | None, ast.expr]] = []
-    _collect_return_paths(list(func_node.body), function_taint, taint_map, var_taints, returns)
+    _collect_return_paths(list(func_node.body), function_taint, taint_map, var_taints, returns, return_snapshots)
     if not returns:
         return None
     result = returns[0][0]
@@ -1645,6 +2260,7 @@ def compute_return_callee(
     function_taint: TaintState,
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
+    return_snapshots: dict[int, dict[str, TaintState]] | None = None,
 ) -> str | None:
     """Identify the callee that contributes a function's *actual* (least-trusted)
     return taint — the property ``explain_finding`` reports for a PY-WL-101 sink.
@@ -1670,7 +2286,7 @@ def compute_return_callee(
     beyond one hop stay ``None`` (the N-hop walk lives in the Loomweave stored-fact path).
     """
     returns: list[tuple[TaintState, str | None, ast.expr]] = []
-    _collect_return_paths(list(func_node.body), function_taint, taint_map, var_taints, returns)
+    _collect_return_paths(list(func_node.body), function_taint, taint_map, var_taints, returns, return_snapshots)
     if not returns:
         return None
     worst = returns[0][0]
@@ -1748,6 +2364,7 @@ def _collect_return_paths(
     taint_map: dict[str, TaintState],
     var_taints: dict[str, TaintState],
     out: list[tuple[TaintState, str | None, ast.expr]],
+    return_snapshots: dict[int, dict[str, TaintState]] | None = None,
 ) -> None:
     """Recurse the AST collecting ``(taint, callee_or_None, value_node)`` for each
     value-bearing return, descending into ALL children EXCEPT nested ``FunctionDef``/
@@ -1769,6 +2386,14 @@ def _collect_return_paths(
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             continue
         if isinstance(node, (ast.Return, ast.Yield, ast.YieldFrom)) and node.value is not None:
-            taint = _resolve_expr(node.value, function_taint, taint_map, var_taints)
+            snapshot = return_snapshots.get(id(node)) if return_snapshots is not None else None
+            taint = _resolve_expr(node.value, function_taint, taint_map, dict(snapshot or var_taints))
             out.append((taint, _return_callee(node.value), node.value))
-        _collect_return_paths(list(ast.iter_child_nodes(node)), function_taint, taint_map, var_taints, out)
+        _collect_return_paths(
+            list(ast.iter_child_nodes(node)),
+            function_taint,
+            taint_map,
+            var_taints,
+            out,
+            return_snapshots,
+        )

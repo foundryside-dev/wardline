@@ -1,4 +1,5 @@
 {
-  "corpus_version": 1,
-  "reason": "Federation rebrand: corpus docstring brand text changed the whole-file content_hash (no identity/structure change)"
+  "corpus_version": 4,
+  "fingerprint_scheme": "wlfp2",
+  "reason": "assure posture gains additive unanalyzed_total coverage field (pollable scan-job + coverage WIP)"
 }

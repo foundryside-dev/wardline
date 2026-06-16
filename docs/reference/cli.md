@@ -1,6 +1,6 @@
 # CLI reference
 
-Complete reference for the `wardline` command-line interface, version `1.0.0rc4`.
+Complete reference for the `wardline` command-line interface, version `1.0.1`.
 Every `--help` block below is the verbatim output of the installed CLI; every
 example is a realistic invocation.
 
@@ -42,21 +42,31 @@ Options:
   --help     Show this message and exit.
 
 Commands:
-  baseline  Manage the finding baseline (.weft/wardline/baseline.yaml).
-  decorator-coverage
-            List every Wardline trust-decorated entity under PATH.
-  file-finding
-            File the finding identified by FINGERPRINT into a tracked...
-  judge     Triage active DEFECTs with the opt-in LLM judge.
-  scan      Scan PATH for findings.
-  vocab     Emit the NG-25 trust-vocabulary descriptor as YAML...
+  assure              Report the trust-surface coverage posture for PATH.
+  attest              Build a signed evidence bundle for PATH (or verify...
+  baseline            Manage the finding baseline...
+  decorator-coverage  List every Wardline trust-decorated entity under PATH.
+  doctor              Check Wardline agent install artifacts and sibling...
+  dossier             Assemble the one-call dossier for ENTITY (a...
+  explain-taint       Explain ONE finding's taint provenance by...
+  file-finding        File the finding identified by FINGERPRINT into a...
+  findings            Scan PATH and print filtered findings as JSONL...
+  fix                 Scan PATH and apply autofixes interactively.
+  install             Install wardline's agent-facing guidance and...
+  judge               Triage active DEFECTs with the opt-in LLM judge.
+  lsp                 Run the Wardline LSP diagnostics server over stdio...
+  mcp                 Run the Wardline MCP server over stdio (JSON-RPC 2.0).
+  rekey               Re-key baseline/waiver/judge verdicts across a...
+  scan                Scan PATH for findings.
+  scan-file-findings  Run the agent workflow from scan to optionally...
+  vocab               Emit the NG-25 trust-vocabulary descriptor as YAML...
 ```
 
 Check the installed version:
 
 ```text
 $ wardline --version
-wardline, version 1.0.0rc4
+wardline, version 1.0.1
 ```
 
 Use `--version` in CI before a scan to pin the toolchain in your build log; the
@@ -76,10 +86,13 @@ Options:
   --config FILE                   Path to a weft.toml whose [wardline] table
                                   supplies configuration overrides (weft.toml).
   --format [jsonl|sarif|agent-summary|legis]
+  --lang [python|rust]            Language frontend. 'rust' (PREVIEW) scans
+                                  .rs files for command-injection findings.
   --output PATH
   --fail-on [CRITICAL|ERROR|WARN|INFO]
-  --cache-dir PATH                Persist L3 summary cache here for faster
-                                  incremental scans.
+  --cache-dir PATH                Store authenticated L3 summary-cache entries
+                                  here for faster incremental scans when
+                                  WARDLINE_SUMMARY_CACHE_KEY is set.
   --filigree-url TEXT             POST findings to this Filigree Weft scan-
                                   results URL (opt-in).
   --help                          Show this message and exit.
@@ -91,11 +104,14 @@ it at a package root, not a single file.
 | Option | Effect |
 | --- | --- |
 | `--config FILE` | Path to a `weft.toml` config file; Wardline reads its `[wardline]` table for rule enable/severity and judge settings (defaults to `weft.toml` in the scan path). |
-| `--format [jsonl\|sarif\|agent-summary\|legis]` | Output shape. `jsonl` is one finding per line; `sarif` is SARIF 2.1.0 for GitHub code-scanning and other generic SARIF consumers; `agent-summary` is stable versioned JSON for agents (`schema: wardline-agent-summary-1`) with active defects first, suppressed findings, engine facts, integration status, and suggested next tool calls; `legis` is the signed, verbatim-postable `scan` for legis's `POST /wardline/scan-results` (signed when `WARDLINE_LEGIS_ARTIFACT_KEY` is provisioned — write it **outside** the working tree, see the [legis handoff guide](../guides/legis-handoff.md)). SARIF carries Wardline identity in `partialFingerprints["wardlineFingerprint/v1"]`; downstream Filigree lifecycle quality depends on importers preserving that field. |
+| `--format [jsonl\|sarif\|agent-summary\|legis]` | Output shape. `jsonl` is one finding per line; `sarif` is SARIF 2.1.0 for GitHub code-scanning and other generic SARIF consumers; `agent-summary` is stable versioned JSON for agents (`schema: wardline-agent-summary-1`) with active defects first, suppressed findings, engine facts, integration status, and suggested next tool calls; `legis` is the signed, verbatim-postable `scan` for legis's `POST /wardline/scan-results` (signed when `WARDLINE_LEGIS_ARTIFACT_KEY` is provisioned and `PATH` is the git repository root — write it **outside** the working tree, see the [legis handoff guide](../guides/legis-handoff.md)). SARIF carries Wardline identity in `partialFingerprints["wardlineFingerprint/v2"]`; downstream Filigree lifecycle quality depends on importers preserving that field. |
+| `--lang [python\|rust]` | Language frontend (default `python`). `rust` sweeps `*.rs` and covers the **command-injection slice** (`RS-WL-108`/`RS-WL-112`); needs the `wardline[rust]` extra. Finding identity is frozen and crate-prefixed (baseline-eligible); config severity overrides do not yet apply to Rust findings — see the [Rust support guide](../guides/rust-preview.md). |
 | `--output PATH` | Write findings to a file instead of stdout. |
 | `--fail-on [CRITICAL\|ERROR\|WARN\|INFO]` | Exit non-zero when any finding at or above this severity survives the baseline. Use this as your CI gate. |
-| `--cache-dir PATH` | Persist the L3 inter-procedural summary cache here so the next scan reuses unchanged summaries. |
+| `--cache-dir PATH` | Store the L3 inter-procedural summary cache here so the next scan can reuse unchanged summaries when `WARDLINE_SUMMARY_CACHE_KEY` is set in the process environment. Unsigned or incorrectly signed files are ignored and the scan falls back to recomputing summaries. Use an operator-owned directory outside untrusted checkouts; do not put the cache in a path that pull-request content can commit or modify. |
 | `--filigree-url TEXT` | Opt-in: POST findings to a Filigree Weft scan-results endpoint as well as emitting them locally. Prefer this native path when agents need Filigree promotion, deduplication, or close/reopen lifecycle state. |
+| `--local-only`, `--no-emit` | Disable sibling emission for this scan, even if Filigree or Loomweave URLs resolve from flags, environment, MCP install state, or local published ports. The scan still writes local output and evaluates the gate. |
+| `--filigree-max-findings-per-request INTEGER` | Cap findings per Filigree scan-results POST. Precedence is explicit CLI value, then `WARDLINE_FILIGREE_MAX_FINDINGS_PER_REQUEST`, then Filigree's advertised scan-results limit from `/api/files/_schema` when reachable, then Wardline's safe default (`1000`). Wardline chunks by complete file groups when possible so Filigree reconciliation does not mark later chunks as fixed. |
 
 Realistic invocation — scan the source tree, emit SARIF to a file, and fail the
 build on any `ERROR`-or-worse finding:
@@ -107,8 +123,14 @@ $ wardline scan src/ --format sarif --output wardline.sarif --fail-on ERROR
 Incremental local run reusing a warm cache:
 
 ```text
-$ wardline scan src/ --cache-dir .weft/wardline/cache
+$ export WARDLINE_SUMMARY_CACHE_KEY="$(openssl rand -hex 32)"
+$ wardline scan src/ --cache-dir ~/.cache/wardline/my-project
 ```
+
+Only reuse a disk summary cache when `WARDLINE_SUMMARY_CACHE_KEY` is provisioned
+from trusted process environment. Unsigned cache files are never loaded, and a
+cache directory inside an untrusted checkout is still a poor CI choice because
+repository content can force cold-cache behavior by deleting or replacing files.
 
 Agent handoff summary:
 
@@ -118,6 +140,97 @@ $ wardline scan src/ --format agent-summary --output findings.agent-summary.json
 
 See the [getting-started guide](../getting-started.md) for a first end-to-end
 scan and how to read the findings.
+
+## `wardline scan-job`
+
+**Purpose:** start a file-backed scan job and poll status without requiring a
+daemon. Job state lives under `.weft/wardline/jobs/<job_id>/status.json`; the
+default findings artifact lives beside it.
+
+```text
+$ wardline scan-job start . --fail-on ERROR --timeout 600
+{"job_id":"...","status":"running","phase":"starting",...}
+
+$ wardline scan-job status <job_id> --path .
+{"job_id":"...","status":"completed","phase":"complete",...}
+
+$ wardline scan-job cancel <job_id> --path .
+{"job_id":"...","status":"cancelled","phase":"cancelled",...}
+```
+
+Status JSON includes `phase`, `progress`, `heartbeat`, `artifacts.findings`,
+`gate`, `filigree_emit`, and a terminal `failure_kind`. Scan/tool errors report
+`failure_kind: "scan"`, gate trips report `"gate"`, and successful scans with
+non-load-bearing upload failure report `status:
+"completed_with_enrichment_failure"` plus `failure_kind: "enrichment"`. Use
+scan jobs default to a 30-minute timeout so a stuck analyzer becomes a terminal
+`failure_kind: "timeout"` status instead of an ambiguous hang. Use
+`--timeout SECONDS` to choose a tighter or looser bound, or `--timeout 0` for an
+intentionally unbounded local run. Polling `status` also reports stale/dead
+workers, and `cancel` persists a terminal `cancelled` status for scans that are
+no longer useful.
+
+## `wardline explain-taint`
+
+**Purpose:** explain ONE finding's taint provenance — the immediate tainted
+callee, the originating boundary, the trust tiers at the sink, and a
+remediation hint. The CLI twin of the MCP `explain_taint` tool (same core
+builder, identical JSON), so a CLI-only agent can run the full
+scan → explain → fix-at-the-boundary → rescan loop.
+
+```text
+Usage: wardline explain-taint [OPTIONS] FINGERPRINT [PATH]
+```
+
+| Option | What it does |
+|---|---|
+| `--sink-qualname TEXT` | The finding's `qualname`: with a configured Loomweave store this serves the explanation from the store with no re-scan. |
+| `--chain` | Also walk the full taint chain to the originating boundary (needs a Loomweave store; degrades to the single-hop explanation without one). |
+| `--max-hops INTEGER` | Chain-walk hop budget (default 20). |
+| `--loomweave-url TEXT` | Loomweave taint-store URL (opt-in; also resolved from env/published port). |
+| `--config FILE` | Explicit config file. |
+
+Call it right after a scan and before editing: a fingerprint from a stale scan
+errors with exit 2 and asks for a re-scan. `PATH` is the scan root and must
+match the scan that minted the fingerprint (qualnames and fingerprints are
+minted relative to it).
+
+```text
+$ wardline scan . --fail-on ERROR
+$ wardline explain-taint 40dd3530…54619e .
+{
+  "fingerprint": "40dd3530…54619e",
+  "rule_id": "PY-WL-101",
+  "sink_qualname": "specimen.trust_flow.leaks_untrusted",
+  "location": {"path": "specimen/trust_flow.py", "line": 13},
+  "tier_in": "UNKNOWN_RAW",
+  "tier_out": "ASSURED",
+  "immediate_tainted_callee": "read_raw",
+  "source_boundary_qualname": "specimen.trust_flow.read_raw",
+  "remediation": {"kind": "boundary_placement", "summary": "Validate or normalize data from …"}
+}
+```
+
+## `wardline findings`
+
+**Purpose:** read-only filtered query — scan PATH and print matching findings
+as JSONL. The CLI counterpart of the MCP `scan(where=)` filter; no file
+output, no Filigree/Loomweave emission.
+
+```text
+Usage: wardline findings [OPTIONS] [PATH]
+```
+
+| Option | What it does |
+|---|---|
+| `--rule-id TEXT` | Filter by rule id, e.g. `PY-WL-101`. |
+| `--severity TEXT` | Filter by severity, case-insensitive: `CRITICAL`/`ERROR`/`WARN`/`INFO`/`NONE`. An out-of-vocabulary value (e.g. `medium`) errors loudly with the allowed list — never a silent empty result. |
+| `--sink TEXT` | Filter by the finding's `sink` property, e.g. `subprocess.run`. |
+| `--where TEXT` | JSON filter object for the full predicate set (`rule_id`, `qualname`, `severity`, `suppression`, `kind`, `path_glob`, `sink`, `tier`), conjunctive. Closed-vocabulary values (`severity`, `suppression`, `kind`) match case-insensitively. |
+| `--config FILE` | Explicit config file. |
+
+A filter given both as a flag and inside `--where` is rejected (exit 2) rather
+than silently preferring one.
 
 ## `wardline file-finding`
 
@@ -398,3 +511,132 @@ $ wardline baseline update src/
 For the full baseline-and-waiver workflow — when to baseline vs. waive, and how
 the baseline interacts with the judge — see the
 [suppression guide](../guides/suppression.md).
+
+## `wardline install`
+
+**Purpose:** install wardline's agent-facing guidance and sibling bindings into
+a project root. Idempotent — re-running refreshes stale artifacts. This is how
+you arm a coding agent with wardline: it writes the instruction blocks, the
+`wardline-gate` skill, the `.mcp.json` / Codex MCP registration, optional
+Loomweave/Filigree bindings, the attest signing key, and a pre-commit hook.
+
+```text
+Usage: wardline install [OPTIONS] [PACK]
+
+  Install wardline's agent-facing guidance and sibling bindings into ROOT.
+
+Options:
+  --root DIRECTORY  Project root to install into (default: cwd).
+  --no-claude-md    Skip the CLAUDE.md instruction block.
+  --no-agents-md    Skip the AGENTS.md instruction block.
+  --no-skill        Skip the wardline-gate skill.
+  --no-mcp          Skip wiring .mcp.json and Codex MCP config.
+  --no-bindings     Skip Loomweave/Filigree detection.
+  --no-attest-key   Skip minting the attest signing key.
+  --no-pre-commit   Skip adding pre-commit hook config.
+  --help            Show this message and exit.
+```
+
+For what the install writes and how agents consume it, see
+[Using Wardline with your coding agent](../guides/agents.md).
+
+## `wardline doctor`
+
+**Purpose:** check the wardline agent-install artifacts and sibling bindings,
+and optionally repair them. `--repair` rewrites missing or stale install
+artifacts; `--fix` repairs the bindings *and* emits the machine-readable JSON
+envelope (the same builder the MCP `doctor` tool returns).
+
+```text
+Usage: wardline doctor [OPTIONS]
+
+  Check Wardline agent install artifacts and sibling bindings.
+
+Options:
+  --root DIRECTORY     Project root to inspect (default: cwd).
+  --repair             Repair missing or stale install artifacts.
+  --fix                Repair install bindings and emit machine-readable JSON.
+  --filigree-url TEXT  Filigree Weft URL to probe (default: resolve from
+                       .mcp.json/env).
+  --help               Show this message and exit.
+```
+
+See [Using Wardline with your coding agent](../guides/agents.md) for the
+install-and-federation health checks doctor runs.
+
+## `wardline mcp`
+
+**Purpose:** run the wardline MCP server over stdio (JSON-RPC 2.0). This is the
+agent transport — it exposes the full tool surface (`scan`, `explain_taint`,
+`assure`, `dossier`, `attest`, and the rest) without scraping terminal output.
+`--read-only` and `--no-network` drop the tools that would write to disk or
+reach a sibling, for a hardened launch.
+
+```text
+Usage: wardline mcp [OPTIONS]
+
+  Run the Wardline MCP server over stdio (JSON-RPC 2.0).
+
+Options:
+  --root DIRECTORY      Project root the server scans (default: cwd).
+  --loomweave-url TEXT  Loomweave taint-store URL: `scan` writes facts;
+                        `explain_taint`/`dossier` query it.
+  --filigree-url TEXT   Filigree URL: `scan` POSTs findings to it (fail-soft);
+                        `dossier` reads entity-associations (open work) from
+                        it.
+  --read-only           Disable MCP tools that require write capability.
+  --no-network          Disable MCP tools that require network capability.
+  --help                Show this message and exit.
+```
+
+For the full tool catalogue this server serves, see the
+[MCP tool reference](mcp.md). For wiring it into a coding agent, see
+[Using Wardline with your coding agent](../guides/agents.md).
+
+## `wardline lsp`
+
+**Purpose:** run the wardline LSP diagnostics server over stdio (JSON-RPC
+2.0), so an editor can surface trust-boundary findings as inline diagnostics.
+
+```text
+Usage: wardline lsp [OPTIONS]
+
+  Run the Wardline LSP diagnostics server over stdio (JSON-RPC 2.0).
+
+Options:
+  --root DIRECTORY  Project root the server scans (default: cwd).
+  --help            Show this message and exit.
+```
+
+## `wardline rekey`
+
+**Purpose:** re-key the baseline / waiver / judged verdicts across a
+**fingerprint-scheme change** — that is, after the engine's fingerprint
+*formula* migrates, not after ordinary refactors (fingerprints are
+line-insensitive). The default `--probe` is a read-only dry run that reports
+which stored verdicts carry, which orphan, and any collisions, writing nothing.
+
+```text
+Usage: wardline rekey [OPTIONS] [PATH]
+
+  Re-key baseline/waiver/judge verdicts across a fingerprint-scheme change.
+
+Options:
+  --config FILE
+  --cache-dir PATH
+  --trust-pack TEXT     Allow a trust-grammar pack from weft.toml. Repeatable.
+  --allow-custom-packs  Allow local custom trust-grammar packs.
+  --strict-defaults     Ignore repository-supplied configuration overrides.
+  --filigree-url TEXT   Re-emit findings under the new fingerprints to this
+                        Filigree URL (last leg, best-effort).
+  --probe               Read-only dry run: report match/orphans/collisions,
+                        write nothing.
+  --resume              Finish an interrupted migration WITHOUT re-scanning.
+  --rollback            Restore the pre-migration stores from the snapshot.
+  --help                Show this message and exit.
+```
+
+`--probe`, `--resume`, and `--rollback` are mutually exclusive. A migration
+snapshots the stores first and writes a resumable journal, so an interrupted
+run can be finished with `--resume` or undone with `--rollback`. The MCP twin
+is the `rekey` tool (see the [MCP tool reference](mcp.md)).

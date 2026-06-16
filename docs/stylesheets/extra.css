@@ -7,15 +7,15 @@
    headings, links, admonitions, tables, radii. We do NOT re-declare any of that.
 
    What stays here is purely Wardline's bespoke landing-page identity:
-   - The Wardline thread accent: CORAL (#F4845F), the federation's trust-boundary
+   - The Wardline thread accent: CORAL (#F0875E), the federation's trust-boundary
      strand — a deliberate change from the previous teal. It repaints the hero
      CTA, eyebrow, links inside the landing, decorator names, section eyebrows,
-     and the "you are here" badge. (In the LIGHT scheme it deepens to #C2410C so
+     and the "you are here" badge. (In the LIGHT scheme it deepens to #CF5630 so
      coral-as-text clears WCAG AA on white — mirroring how weft-mkdocs deepens
      its sky accent for light.)
    - The .wl-* landing components (hero, finding panel, feature cards, the
      eight-state trust lattice, the Weft suite grid), recolored onto the Weft
-     dark-teal surface ramp + 3/6/8 radii.
+     warm espresso / paper surface ramp + 3/6/8 radii.
    - The eight-state lattice swatches are SEMANTIC, not brand: they ride the
      design-system semantic ramp — most-trusted (INTEGRAL) = --ready emerald,
      least-trusted (MIXED_RAW) = --stale red, midpoints through --aging amber.
@@ -60,9 +60,9 @@
      the --ready emerald, least-trusted end the --stale red, gradient through the
      --aging amber. Pinned here (not per-scheme) so the ramp reads identically in
      both light and dark — it is a fixed semantic legend, not a chrome surface. */
-  --ds-ready: #10B981;  /* emerald — most trusted   */
-  --ds-aging: #F59E0B;  /* amber   — intermediate   */
-  --ds-stale: #EF4444;  /* red     — least trusted  */
+  --ds-ready: #5FB98E;  /* emerald — most trusted   */
+  --ds-aging: #E9B04A;  /* amber   — intermediate   */
+  --ds-stale: #E2604E;  /* red     — least trusted  */
 }
 
 /* ==========================================================================
@@ -79,71 +79,71 @@
   /* Repaint Material's interactive accent to the Wardline coral thread so the
      chrome weft-mkdocs styles (links, nav active rail, TOC marker, headerlinks)
      read in Wardline's identity colour rather than the suite's default sky. */
-  --md-accent-fg-color:  var(--thread-wardline);  /* #F4845F coral */
+  --md-accent-fg-color:  var(--thread-wardline);  /* #F0875E coral */
   --md-typeset-a-color:  var(--thread-wardline);
 
   /* Weft dark surface ramp (design-system: base / raised / overlay / hover) */
-  --wl-bg:           #0B1215;  /* surface-base    */
-  --wl-bg-subtle:    #131E24;  /* surface-raised  */
-  --wl-bg-card:      #1A2B34;  /* surface-overlay */
-  --wl-bg-hover:     #243A45;  /* surface-hover   */
+  --wl-bg:           #14110D;  /* surface-base    */
+  --wl-bg-subtle:    #1E1A13;  /* surface-raised  */
+  --wl-bg-card:      #2A2319;  /* surface-overlay */
+  --wl-bg-hover:     #39301F;  /* surface-hover   */
 
   /* Code surfaces stay dark in both schemes (editor-screenshot motif) */
-  --wl-bg-code:      #0B1215;
-  --wl-fg-code:      #E2EEF2;
+  --wl-bg-code:      #14110D;
+  --wl-fg-code:      #F2E9D8;
 
   /* Text ramp */
-  --wl-text:         #E2EEF2;  /* text-primary    */
-  --wl-text-muted:   #8FAAB8;  /* text-secondary  */
+  --wl-text:         #F2E9D8;  /* text-primary    */
+  --wl-text-muted:   #B6A78E;  /* text-secondary  */
 
   /* Borders — Weft hairlines */
-  --wl-border:        #1E3340;  /* border-default  */
-  --wl-border-strong: #2A4454;  /* border-strong   */
+  --wl-border:        #332A1F;  /* border-default  */
+  --wl-border-strong: #4A3C2A;  /* border-strong   */
 
   /* Coral accent (the Wardline thread) + a soft tint for chips/pills */
-  --wl-accent:       var(--thread-wardline);             /* #F4845F */
-  --wl-accent-soft:  rgba(244, 132, 95, 0.14);
-  --wl-on-accent:    #0B1215;                            /* text on coral fill */
+  --wl-accent:       var(--thread-wardline);             /* #F0875E */
+  --wl-accent-soft:  rgba(240, 135, 94, 0.14);
+  --wl-on-accent:    #14110D;                            /* text on coral fill */
 
   /* Semantic signal colours (verdict ✓/✗) from the design-system ramp */
-  --wl-danger:       var(--ds-stale);   /* #EF4444 */
-  --wl-danger-soft:  rgba(239, 68, 68, 0.14);
-  --wl-ok:           var(--ds-ready);   /* #10B981 */
-  --wl-ok-soft:      rgba(16, 185, 129, 0.14);
+  --wl-danger:       var(--ds-stale);   /* #E2604E */
+  --wl-danger-soft:  rgba(226, 96, 78, 0.14);
+  --wl-ok:           var(--ds-ready);   /* #5FB98E */
+  --wl-ok-soft:      rgba(95, 185, 142, 0.14);
 }
 
 /* ---- LIGHT (default) scheme — the documented alternate ---- */
 [data-md-color-scheme="default"] {
-  /* Coral-as-text fails AA on white; deepen to #C2410C (the same darker coral
+  /* Coral-as-text fails AA on white; deepen to #CF5630 (the same darker coral
      weft-mkdocs uses for the light-scheme code-constant colour) so links and
      the eyebrow clear 4.5:1. Brand reads coral; contrast holds. */
-  --md-accent-fg-color:  #C2410C;
-  --md-typeset-a-color:  #C2410C;
+  --md-accent-fg-color:  #CF5630;
+  --md-typeset-a-color:  #CF5630;
 
   /* Weft light surface ramp */
-  --wl-bg:           #F0F6F8;  /* surface-base    */
-  --wl-bg-subtle:    #E8F1F4;  /* surface-overlay */
-  --wl-bg-card:      #FFFFFF;  /* surface-raised  */
-  --wl-bg-hover:     #DCE9EE;  /* surface-hover   */
+  --wl-bg:           #ECE3D1;  /* surface-base    */
+  --wl-bg-subtle:    #E2D7BF;  /* surface-overlay */
+  --wl-bg-card:      #F8F1E3;  /* surface-raised  */
+  --wl-bg-hover:     #D8CBB1;  /* surface-hover   */
 
   /* Code surfaces deliberately stay dark in both schemes */
-  --wl-bg-code:      #0B1215;
-  --wl-fg-code:      #E2EEF2;
+  --wl-bg-code:      #14110D;
+  --wl-fg-code:      #F2E9D8;
 
-  --wl-text:         #0F2027;  /* text-primary (light) */
-  --wl-text-muted:   #3D6070;  /* text-secondary       */
+  --wl-text:         #241E13;  /* text-primary (light) */
+  --wl-text-muted:   #5C5238;  /* text-secondary       */
 
-  --wl-border:        #C5D8E0;  /* border-default (light) */
-  --wl-border-strong: #9BBBC8;  /* border-strong          */
+  --wl-border:        #CDBE9F;  /* border-default (light) */
+  --wl-border-strong: #A8966F;  /* border-strong          */
 
-  --wl-accent:       #C2410C;                            /* deepened coral */
-  --wl-accent-soft:  rgba(194, 65, 12, 0.10);
-  --wl-on-accent:    #FFFFFF;                            /* text on coral fill */
+  --wl-accent:       #CF5630;                            /* deepened coral */
+  --wl-accent-soft:  rgba(207, 86, 48, 0.10);
+  --wl-on-accent:    #F8F1E3;                            /* text on coral fill */
 
-  --wl-danger:       #B91C1C;   /* deepened red for AA on light */
-  --wl-danger-soft:  rgba(239, 68, 68, 0.10);
-  --wl-ok:           #047857;   /* deepened emerald for AA on light */
-  --wl-ok-soft:      rgba(16, 185, 129, 0.12);
+  --wl-danger:       #B23A28;   /* deepened red for AA on light */
+  --wl-danger-soft:  rgba(226, 96, 78, 0.10);
+  --wl-ok:           #2E7D52;   /* deepened emerald for AA on light */
+  --wl-ok-soft:      rgba(95, 185, 142, 0.12);
 }
 
 /* ==========================================================================
@@ -317,9 +317,9 @@
   align-items: center;
   gap: var(--wl-space-2);
   padding: var(--wl-space-3) var(--wl-space-4);
-  background: #131E24;             /* surface-raised — one step up from base */
+  background: #1E1A13;             /* surface-raised — one step up from base */
   border-bottom: 1px solid var(--wl-border);
-  color: #8FAAB8;
+  color: #B6A78E;
   font-size: 0.72rem;
 }
 .wl-finding__dot {
@@ -345,7 +345,7 @@
   display: inline-block;
   width: 1.4rem;
   text-align: right;
-  color: #5A7D8C;                  /* text-muted */
+  color: #7F6F58;                  /* text-muted */
   user-select: none;
   margin-right: var(--wl-space-3);
 }
@@ -358,12 +358,12 @@
 
 /* Syntax tokens — terminal-grade, tuned to the design-system code-highlight
    palette (sky / violet / aqua / gold / coral). */
-.wl-tok-kw   { color: #38BDF8; }                 /* keyword — sky          */
-.wl-tok-dec  { color: #E3B341; }                 /* decorator — gold       */
-.wl-tok-fn   { color: #4ECDC4; }                 /* function — aqua        */
-.wl-tok-str  { color: #10B981; }                 /* string — emerald       */
-.wl-tok-cmt  { color: #5A7D8C; font-style: italic; }  /* comment — muted   */
-.wl-tok-raw  { color: #EF4444; font-weight: 600; }    /* the raw leak — red */
+.wl-tok-kw   { color: #56B7E2; }                 /* keyword — sky          */
+.wl-tok-dec  { color: #E9B04A; }                 /* decorator — gold       */
+.wl-tok-fn   { color: #52C9B8; }                 /* function — aqua        */
+.wl-tok-str  { color: #5FB98E; }                 /* string — emerald       */
+.wl-tok-cmt  { color: #7F6F58; font-style: italic; }  /* comment — muted   */
+.wl-tok-raw  { color: #E2604E; font-weight: 600; }    /* the raw leak — red */
 
 /* The verdict strip under the code */
 .wl-verdict {
@@ -372,12 +372,12 @@
   gap: var(--wl-space-3);
   padding: var(--wl-space-3) var(--wl-space-4);
   border-top: 1px solid var(--wl-border);
-  background: rgba(239, 68, 68, 0.12);   /* stale-red wash, on the dark panel */
+  background: rgba(226, 96, 78, 0.12);   /* stale-red wash, on the dark panel */
 }
 .wl-verdict__mark {
   flex: none;
   font-weight: 700;
-  color: #EF4444;
+  color: #E2604E;
   font-size: 1rem;
   line-height: 1.5;
 }
@@ -385,17 +385,17 @@
   font-family: var(--wl-font-mono);
   font-size: 0.74rem;
   line-height: 1.5;
-  color: #E2EEF2;                 /* always on the dark panel */
+  color: #F2E9D8;                 /* always on the dark panel */
   text-align: left;
 }
 .wl-verdict__rule {
-  color: #EF4444;
+  color: #E2604E;
   font-weight: 700;
 }
 /* INTEGRAL (claimed, trusted) reads green; EXTERNAL_RAW (actual, untrusted)
    reads red — the same most→least-trusted semantics as the lattice. */
-.wl-verdict__body .wl-tier-bad  { color: #EF4444; font-weight: 600; }
-.wl-verdict__body .wl-tier-good { color: #10B981; font-weight: 600; }
+.wl-verdict__body .wl-tier-bad  { color: #E2604E; font-weight: 600; }
+.wl-verdict__body .wl-tier-good { color: #5FB98E; font-weight: 600; }
 
 /* ---- Trust-flow motif: EXTERNAL_RAW flowing into a trusted producer ---- */
 .wl-flow {
@@ -414,10 +414,10 @@
   border: 1px solid currentColor;
   white-space: nowrap;
 }
-.wl-flow__node--raw   { color: #EF4444; }   /* untrusted — stale red   */
-.wl-flow__node--claim { color: #10B981; }   /* claimed trusted — green */
+.wl-flow__node--raw   { color: #E2604E; }   /* untrusted — stale red   */
+.wl-flow__node--claim { color: #5FB98E; }   /* claimed trusted — green */
 .wl-flow__arrow {
-  color: #5A7D8C;
+  color: #7F6F58;
   flex: none;
 }
 
@@ -610,16 +610,16 @@
 .wl-tier__tag--inf  { color: var(--wl-text-muted); }
 
 /* Swatch hues — SEMANTIC ramp most→least trusted, anchored on the design-system
-   triplet: --ready emerald (#10B981) → --aging amber (#F59E0B) → --stale red
-   (#EF4444). The endpoints are the exact tokens; the interior steps interpolate
+   triplet: --ready emerald (#5FB98E) → --aging amber (#E9B04A) → --stale red
+   (#E2604E). The endpoints are the exact tokens; the interior steps interpolate
    in hue so the eight ordered states stay distinguishable. */
-.wl-sw-1 { background: #10B981; }   /* INTEGRAL        — --ready emerald     */
+.wl-sw-1 { background: #5FB98E; }   /* INTEGRAL        — --ready emerald     */
 .wl-sw-2 { background: #34C77E; }   /* ASSURED                                */
 .wl-sw-3 { background: #74C66A; }   /* GUARDED                                */
 .wl-sw-4 { background: #C2BE4A; }   /* UNKNOWN_ASSURED — nearing --aging      */
-.wl-sw-5 { background: #F59E0B; }   /* UNKNOWN_GUARDED — --aging amber        */
+.wl-sw-5 { background: #E9B04A; }   /* UNKNOWN_GUARDED — --aging amber        */
 .wl-sw-6 { background: #F4762A; }   /* EXTERNAL_RAW                           */
-.wl-sw-7 { background: #EF4444; }   /* UNKNOWN_RAW     — --stale red          */
+.wl-sw-7 { background: #E2604E; }   /* UNKNOWN_RAW     — --stale red          */
 .wl-sw-8 { background: #C0303A; }   /* MIXED_RAW       — deepest (most stale)  */
 
 /* ==========================================================================

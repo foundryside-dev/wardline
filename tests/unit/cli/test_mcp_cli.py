@@ -38,6 +38,67 @@ def test_mcp_command_is_registered() -> None:
     result = CliRunner().invoke(cli, ["mcp", "--help"])
     assert result.exit_code == 0
     assert "stdio" in result.output.lower() or "mcp" in result.output.lower()
+    assert "--read-only" in result.output
+    assert "--no-network" in result.output
+
+
+def test_mcp_command_passes_policy_flags(tmp_path, monkeypatch) -> None:
+    from click.testing import CliRunner
+
+    import wardline.cli.mcp as mcp_cli
+    from wardline.cli.main import cli
+
+    captured: dict[str, object] = {}
+
+    class FakeRpc:
+        def run_stdio(self) -> None:
+            captured["ran"] = True
+
+    class FakeServer:
+        def __init__(
+            self,
+            *,
+            root,
+            loomweave_url=None,
+            filigree_url=None,
+            allow_write=True,
+            allow_network=True,
+        ) -> None:
+            captured.update(
+                {
+                    "root": root,
+                    "loomweave_url": loomweave_url,
+                    "filigree_url": filigree_url,
+                    "allow_write": allow_write,
+                    "allow_network": allow_network,
+                }
+            )
+            self.rpc = FakeRpc()
+
+    monkeypatch.setattr(mcp_cli, "WardlineMCPServer", FakeServer)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "mcp",
+            "--root",
+            str(tmp_path),
+            "--loomweave-url",
+            "http://localhost:9100",
+            "--filigree-url",
+            "http://localhost:8628/api/weft/scan-results",
+            "--read-only",
+            "--no-network",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert captured["root"] == tmp_path
+    assert captured["loomweave_url"] == "http://localhost:9100"
+    assert captured["filigree_url"] == "http://localhost:8628/api/weft/scan-results"
+    assert captured["allow_write"] is False
+    assert captured["allow_network"] is False
+    assert captured["ran"] is True
 
 
 def test_mcp_command_runs_stdio_end_to_end(tmp_path) -> None:

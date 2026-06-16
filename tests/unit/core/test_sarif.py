@@ -4,6 +4,9 @@ import ast
 import json
 from pathlib import Path
 
+import pytest
+
+from wardline.core.errors import WardlineError
 from wardline.core.finding import Finding, Kind, Location, Severity, SuppressionState
 from wardline.core.sarif import SarifSink, build_sarif
 from wardline.core.taints import TaintState
@@ -61,9 +64,12 @@ def test_severity_maps_to_level() -> None:
     assert levels == {"CRITICAL": "error", "ERROR": "error", "WARN": "warning", "INFO": "note", "NONE": "none"}
 
 
-def test_partial_fingerprint_and_location() -> None:
+def test_partial_fingerprint_key_is_v2() -> None:
     res = build_sarif([_f(line_start=42)])["runs"][0]["results"][0]
-    assert res["partialFingerprints"] == {"wardlineFingerprint/v1": "a" * 64}
+    # The KEY versions to /v2 to signal the scheme change; the VALUE stays bare
+    # (SARIF consumers read the value, not a prefixed form).
+    assert res["partialFingerprints"] == {"wardlineFingerprint/v2": "a" * 64}
+    assert ":" not in res["partialFingerprints"]["wardlineFingerprint/v2"]
     region = res["locations"][0]["physicalLocation"]["region"]
     # _f sets line_start == line_end and no columns -> exactly these two keys, no null cols
     assert set(region) == {"startLine", "endLine"}
@@ -110,6 +116,18 @@ def test_sink_writes_valid_json(tmp_path: Path) -> None:
     SarifSink(out).write([_f()])
     loaded = json.loads(out.read_text("utf-8"))
     assert loaded["version"] == "2.1.0"
+
+
+def test_sink_refuses_symlink_target(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.txt"
+    outside.write_text("keep\n", encoding="utf-8")
+    out = tmp_path / "findings.sarif"
+    out.symlink_to(outside)
+
+    with pytest.raises(WardlineError, match="refusing to write through a symlink"):
+        SarifSink(out).write([_f()])
+
+    assert outside.read_text(encoding="utf-8") == "keep\n"
 
 
 def test_metric_findings_excluded_from_sarif() -> None:

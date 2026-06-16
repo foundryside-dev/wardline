@@ -2,8 +2,8 @@
 
 The glossary at ``docs/reference/finding-lifecycle-vocabulary.md`` is the single
 source of truth for the finding-state / gate-population vocabulary. These tests
-keep it complete (every ``SuppressionState`` value documented) and wired into the
-mkdocs nav (so ``mkdocs build --strict`` does not orphan it).
+keep it complete (every ``SuppressionState`` value documented) and bound to the
+code it cites (every ``file:line`` anchor still points at the right source line).
 """
 
 from __future__ import annotations
@@ -15,8 +15,6 @@ from wardline.core.finding import SuppressionState
 
 _REPO = Path(__file__).parents[2]
 _GLOSSARY = _REPO / "docs" / "reference" / "finding-lifecycle-vocabulary.md"
-_MKDOCS = _REPO / "mkdocs.yml"
-_NAV_PATH = "reference/finding-lifecycle-vocabulary.md"
 
 # The glossary promises "every claim cites a real `file:line`". Line anchors rot silently
 # when the cited code moves (an in-range / non-blank check would NOT catch it — the line
@@ -26,43 +24,54 @@ _NAV_PATH = "reference/finding-lifecycle-vocabulary.md"
 # ``(repo-relative path, 1-based line, substring required on that line)``.
 _ANCHORS: tuple[tuple[str, int, str], ...] = (
     # src/wardline/core/run.py — ScanSummary fields, gate population, delta-scope, gate_decision
-    ("src/wardline/core/run.py", 49, "total: int"),
-    ("src/wardline/core/run.py", 50, "active: int"),
-    ("src/wardline/core/run.py", 52, "baselined: int"),
-    ("src/wardline/core/run.py", 53, "waived: int"),
-    ("src/wardline/core/run.py", 54, "judged: int"),
-    ("src/wardline/core/run.py", 60, "unanalyzed: int"),
-    ("src/wardline/core/run.py", 79, "gate_findings:"),
-    ("src/wardline/core/run.py", 86, "class GateDecision"),
-    ("src/wardline/core/run.py", 254, "Baseline(frozenset())"),
-    ("src/wardline/core/run.py", 264, "def apply_delta_scope"),
-    ("src/wardline/core/run.py", 288, "active=sum"),
-    ("src/wardline/core/run.py", 315, "honors_suppressions"),
+    ("src/wardline/core/run.py", 51, "total: int"),
+    ("src/wardline/core/run.py", 52, "active: int"),
+    ("src/wardline/core/run.py", 54, "baselined: int"),
+    ("src/wardline/core/run.py", 55, "waived: int"),
+    ("src/wardline/core/run.py", 56, "judged: int"),
+    ("src/wardline/core/run.py", 62, "informational: int"),
+    ("src/wardline/core/run.py", 70, "unanalyzed: int"),
+    ("src/wardline/core/run.py", 89, "gate_findings:"),
+    ("src/wardline/core/run.py", 99, "class GateDecision"),
+    ("src/wardline/core/run.py", 108, "verdict: str"),
+    ("src/wardline/core/run.py", 341, "Baseline(frozenset())"),
+    ("src/wardline/core/run.py", 369, "def apply_delta_scope"),
+    ("src/wardline/core/run.py", 393, "active=sum"),
+    ("src/wardline/core/run.py", 452, "honors_suppressions"),
     # src/wardline/cli/scan.py — CLI summary line + gate stderr
-    ("src/wardline/cli/scan.py", 360, "suppressed"),
-    ("src/wardline/cli/scan.py", 361, "{s.active} active"),
-    ("src/wardline/cli/scan.py", 375, "gate: FAILED"),
+    ("src/wardline/cli/scan.py", 471, "suppressed"),
+    ("src/wardline/cli/scan.py", 472, "{s.active} active"),
+    ("src/wardline/cli/scan.py", 524, "gate: FAILED"),
     # src/wardline/mcp/server.py — MCP scan summary + gate block
-    ("src/wardline/mcp/server.py", 312, '"total": result.summary.total'),
-    ("src/wardline/mcp/server.py", 313, '"active": result.summary.active'),
-    ("src/wardline/mcp/server.py", 314, '"baselined": result.summary.baselined'),
-    ("src/wardline/mcp/server.py", 315, '"waived": result.summary.waived'),
-    ("src/wardline/mcp/server.py", 316, '"judged": result.summary.judged'),
-    ("src/wardline/mcp/server.py", 320, '"unanalyzed": result.summary.unanalyzed'),
-    ("src/wardline/mcp/server.py", 332, '"gate": {'),
-    ("src/wardline/mcp/server.py", 333, '"tripped": decision.tripped'),
+    ("src/wardline/mcp/server.py", 909, '"total": result.summary.total'),
+    ("src/wardline/mcp/server.py", 910, '"active": result.summary.active'),
+    ("src/wardline/mcp/server.py", 911, '"baselined": result.summary.baselined'),
+    ("src/wardline/mcp/server.py", 912, '"waived": result.summary.waived'),
+    ("src/wardline/mcp/server.py", 913, '"judged": result.summary.judged'),
+    ("src/wardline/mcp/server.py", 918, '"informational": result.summary.informational'),
+    ("src/wardline/mcp/server.py", 922, '"unanalyzed": result.summary.unanalyzed'),
+    ("src/wardline/mcp/server.py", 924, '"gate": {'),
+    ("src/wardline/mcp/server.py", 925, '"tripped": decision.tripped'),
+    ("src/wardline/mcp/server.py", 929, '"verdict": decision.verdict'),
     # src/wardline/core/agent_summary.py — agent-summary JSON keys
-    ("src/wardline/core/agent_summary.py", 98, '"total_findings"'),
-    ("src/wardline/core/agent_summary.py", 99, '"active_defects"'),
-    ("src/wardline/core/agent_summary.py", 100, '"suppressed_findings"'),
-    ("src/wardline/core/agent_summary.py", 102, '"baselined"'),
-    ("src/wardline/core/agent_summary.py", 103, '"waived"'),
-    ("src/wardline/core/agent_summary.py", 104, '"judged"'),
-    ("src/wardline/core/agent_summary.py", 105, '"unanalyzed"'),
-    ("src/wardline/core/agent_summary.py", 108, '"tripped": self.gate.tripped'),
+    ("src/wardline/core/agent_summary.py", 139, '"total_findings"'),
+    ("src/wardline/core/agent_summary.py", 140, '"active_defects"'),
+    ("src/wardline/core/agent_summary.py", 141, '"suppressed_findings"'),
+    ("src/wardline/core/agent_summary.py", 143, '"baselined"'),
+    ("src/wardline/core/agent_summary.py", 144, '"waived"'),
+    ("src/wardline/core/agent_summary.py", 145, '"judged"'),
+    ("src/wardline/core/agent_summary.py", 151, '"informational"'),
+    ("src/wardline/core/agent_summary.py", 152, '"unanalyzed"'),
+    ("src/wardline/core/agent_summary.py", 155, '"tripped": self.gate.tripped'),
+    ("src/wardline/core/agent_summary.py", 158, '"verdict": self.gate.verdict'),
+    # informational display array (new, W3 residual fix)
+    ("src/wardline/core/agent_summary.py", 176, '"informational": informational'),
+    # per-finding suppression_state output key (renamed from `suppressed`, weft-f506e5f845)
+    ("src/wardline/core/finding.py", 140, '"suppression_state"'),
+    ("src/wardline/core/finding.py", 295, 'wardline["suppression_state"]'),
     # stable-file anchors (lower churn, but locked for free)
-    ("src/wardline/core/finding.py", 68, 'ACTIVE = "active"'),
-    ("src/wardline/core/suppression.py", 70, "SuppressionState.BASELINED"),
+    ("src/wardline/core/finding.py", 72, 'ACTIVE = "active"'),
+    ("src/wardline/core/suppression.py", 24, "SuppressionState.BASELINED"),
 )
 
 
@@ -70,11 +79,6 @@ def test_glossary_defines_every_suppression_state() -> None:
     text = _GLOSSARY.read_text(encoding="utf-8")
     for state in SuppressionState:
         assert state.value in text, f"glossary is missing SuppressionState '{state.value}'"
-
-
-def test_glossary_in_nav() -> None:
-    nav = _MKDOCS.read_text(encoding="utf-8")
-    assert _NAV_PATH in nav, f"{_NAV_PATH} is not wired into the mkdocs nav"
 
 
 def test_glossary_anchors_bind_to_code() -> None:

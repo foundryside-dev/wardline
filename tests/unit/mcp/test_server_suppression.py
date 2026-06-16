@@ -13,6 +13,7 @@ from types import ModuleType
 import pytest
 import yaml
 
+from wardline.core.finding import FINGERPRINT_SCHEME
 from wardline.core.judge import JudgeResponse, JudgeVerdict
 from wardline.core.paths import baseline_path
 from wardline.mcp.server import WardlineMCPServer
@@ -48,21 +49,40 @@ def test_mcp_scan_gate_trips_on_baselined_defect_by_default(tmp_path: Path) -> N
     proj = _leaky_project(tmp_path)
     server = WardlineMCPServer(root=proj)
     first = _call(server, "scan", {})
-    fp = next(f["fingerprint"] for f in first["findings"] if f["rule_id"] == "PY-WL-101")
+    fp = next(e["fingerprint"] for e in first["agent_summary"]["active_defects"] if e["rule_id"] == "PY-WL-101")
     bl = baseline_path(proj)
     bl.parent.mkdir(parents=True, exist_ok=True)
     bl.write_text(
-        f"version: 1\nentries:\n  - fingerprint: {fp}\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
+        f"fingerprint_scheme: {FINGERPRINT_SCHEME}\nversion: 1\n"
+        f"entries:\n  - fingerprint: {fp}\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
         encoding="utf-8",
     )
     # Default: annotated baselined, but the gate trips.
     default = _call(server, "scan", {"fail_on": "ERROR"})
-    leak = next(f for f in default["findings"] if f["rule_id"] == "PY-WL-101")
-    assert leak["suppressed"] == "baselined"
+    leak = next(e for e in default["agent_summary"]["suppressed_findings"] if e["rule_id"] == "PY-WL-101")
+    assert leak["suppression_state"] == "baselined"
     assert default["gate"]["tripped"] is True
     # trust_suppressions restores the trusted-local behaviour: the gate clears.
     trusted = _call(server, "scan", {"fail_on": "ERROR", "trust_suppressions": True})
     assert trusted["gate"]["tripped"] is False
+
+
+def test_mcp_scan_rejects_string_trust_suppressions(tmp_path: Path) -> None:
+    # Without jsonschema the handler runs unvalidated; bool("false") is True, so a client
+    # sending the STRING "false" must NOT silently enable trusted-local suppression. The
+    # tool rejects a non-boolean (the secure default is preserved) instead of coercing.
+    proj = _leaky_project(tmp_path)
+    server = WardlineMCPServer(root=proj)
+    resp = server.rpc.dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "scan", "arguments": {"fail_on": "ERROR", "trust_suppressions": "false"}},
+        }
+    )
+    assert resp["result"]["isError"] is True
+    assert "boolean" in resp["result"]["content"][0]["text"]
 
 
 def test_baseline_optional_reason(tmp_path: Path) -> None:
@@ -104,7 +124,9 @@ def test_baseline_create_trusted_pack_matches_scan_mcp(tmp_path: Path, monkeypat
         server = WardlineMCPServer(root=proj)
 
         scan = _call(server, "scan", {"trust_packs": ["baseline_mcp_pack"], "trust_local_packs": True})
-        assert any(f["rule_id"] == "PY-WL-901" for f in scan["findings"])
+        ag = scan["agent_summary"]
+        shown = ag["active_defects"] + ag["suppressed_findings"] + ag["engine_facts"] + ag["informational"]
+        assert any(e["rule_id"] == "PY-WL-901" for e in shown)
 
         baseline = _call(
             server,

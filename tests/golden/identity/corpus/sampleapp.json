@@ -543,19 +543,20 @@
   ],
   "explain": {
     "explanation": {
-      "fingerprint": "67252346d2858a1b6546cc6178f0582604a77fab1b429e4b9a36f650c8dbdd2a",
+      "fingerprint": "a3664243f41893d7f4d5272d1b1a4f98a383bf67a78cd15b1e2f851782753b5f",
       "immediate_tainted_callee": "read_raw_username",
       "line": 41,
       "path": "trust_flow.py",
       "resolved_call_count": 1,
       "rule_id": "PY-WL-101",
+      "sink": null,
       "sink_qualname": "trust_flow.unsafe_account_key",
       "source_boundary_qualname": "trust_flow.read_raw_username",
       "tier_in": "EXTERNAL_RAW",
       "tier_out": "ASSURED",
       "unresolved_call_count": 0
     },
-    "fingerprint": "67252346d2858a1b6546cc6178f0582604a77fab1b429e4b9a36f650c8dbdd2a"
+    "fingerprint": "a3664243f41893d7f4d5272d1b1a4f98a383bf67a78cd15b1e2f851782753b5f"
   },
   "facts": [
     {
@@ -981,7 +982,7 @@
         "qualname": "models.Money.__lt__",
         "schema_version": "wardline-taint-1",
         "taint": {
-          "actual_return": "UNKNOWN_RAW",
+          "actual_return": "INTEGRAL",
           "contributing_callee_qualname": null,
           "declared_return": "UNKNOWN_RAW",
           "resolved_call_count": 0,
@@ -1149,7 +1150,7 @@
         "qualname": "repository.Repository.__contains__",
         "schema_version": "wardline-taint-1",
         "taint": {
-          "actual_return": "UNKNOWN_RAW",
+          "actual_return": "INTEGRAL",
           "contributing_callee_qualname": null,
           "declared_return": "UNKNOWN_RAW",
           "resolved_call_count": 0,
@@ -1825,7 +1826,7 @@
         },
         "findings": [
           {
-            "fingerprint": "67252346d2858a1b6546cc6178f0582604a77fab1b429e4b9a36f650c8dbdd2a",
+            "fingerprint": "a3664243f41893d7f4d5272d1b1a4f98a383bf67a78cd15b1e2f851782753b5f",
             "line_start": 41,
             "path": "trust_flow.py",
             "rule_id": "PY-WL-101"
@@ -1873,7 +1874,7 @@
   "findings": [
     {
       "confidence": null,
-      "fingerprint": "67252346d2858a1b6546cc6178f0582604a77fab1b429e4b9a36f650c8dbdd2a",
+      "fingerprint": "a3664243f41893d7f4d5272d1b1a4f98a383bf67a78cd15b1e2f851782753b5f",
       "kind": "defect",
       "location": {
         "col_end": 34,
@@ -1893,8 +1894,8 @@
       "rule_id": "PY-WL-101",
       "severity": "ERROR",
       "suggestion": null,
-      "suppressed": "active",
-      "suppression_reason": null
+      "suppression_reason": null,
+      "suppression_state": "active"
     }
   ],
   "sarif": {
@@ -1971,7 +1972,7 @@
               "text": "trust_flow.unsafe_account_key declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v1": "67252346d2858a1b6546cc6178f0582604a77fab1b429e4b9a36f650c8dbdd2a"
+              "wardlineFingerprint/v2": "a3664243f41893d7f4d5272d1b1a4f98a383bf67a78cd15b1e2f851782753b5f"
             },
             "properties": {
               "internalSeverity": "ERROR",

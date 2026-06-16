@@ -20,7 +20,7 @@ from wardline.loomweave.config import load_loomweave_token, resolve_project_name
 @click.command(name="scan-file-findings")
 @click.argument("path", type=click.Path(exists=True, file_okay=False, path_type=Path), default=".")
 @click.option("--config", "config_path", type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path))
-@click.option("--fail-on", type=click.Choice(["CRITICAL", "ERROR", "WARN", "INFO"]), default=None)
+@click.option("--fail-on", type=click.Choice(["CRITICAL", "ERROR", "WARN", "INFO"], case_sensitive=False), default=None)
 @click.option("--cache-dir", type=click.Path(path_type=Path), default=None)
 @click.option("--filigree-url", "filigree_url", default=None, help="Filigree Weft URL (else flag/env).")
 @click.option("--loomweave-url", "loomweave_url", default=None, help="Loomweave URL for optional identity attachment.")
@@ -90,3 +90,6 @@ def scan_file_findings(
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
     click.echo(json.dumps(result))
+    exit_class = result.get("gate", {}).get("exit_class", 0)
+    if exit_class:
+        raise SystemExit(exit_class)

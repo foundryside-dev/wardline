@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from wardline.core.errors import ConfigError
+from wardline.core.errors import ConfigError, WardlineError
 from wardline.core.paths import waivers_path
 from wardline.core.waivers import add_waiver, load_project_waivers
 
@@ -80,3 +80,68 @@ def test_add_waiver_no_expiry_omits_field(tmp_path: Path) -> None:
     assert w.expires is None
     waivers = load_project_waivers(tmp_path)
     assert waivers[0].expires is None
+
+
+def test_add_waiver_persists_entity_binding_and_roundtrips(tmp_path: Path) -> None:
+    w = add_waiver(
+        waivers_path(tmp_path),
+        fingerprint=FP,
+        reason="false positive: validated upstream",
+        expires=None,
+        root=tmp_path,
+        entity_sei="loomweave:eid:abc",
+        entity_locator="python:function:pkg.mod.leaky",
+    )
+    assert w.entity_sei == "loomweave:eid:abc"
+    assert w.entity_locator == "python:function:pkg.mod.leaky"
+    (loaded,) = load_project_waivers(tmp_path)
+    assert loaded.entity_sei == "loomweave:eid:abc"
+    assert loaded.entity_locator == "python:function:pkg.mod.leaky"
+
+
+def test_add_waiver_without_entity_binding_omits_fields(tmp_path: Path) -> None:
+    add_waiver(waivers_path(tmp_path), fingerprint=FP, reason="ok", expires=None, root=tmp_path)
+    raw = waivers_path(tmp_path).read_text(encoding="utf-8")
+    assert "entity_sei" not in raw and "entity_locator" not in raw
+    (loaded,) = load_project_waivers(tmp_path)
+    assert loaded.entity_sei is None and loaded.entity_locator is None
+
+
+def test_load_waivers_rejects_malformed_entity_sei(tmp_path: Path) -> None:
+    from wardline.core.finding import FINGERPRINT_SCHEME
+
+    wp = waivers_path(tmp_path)
+    wp.parent.mkdir(parents=True, exist_ok=True)
+    wp.write_text(
+        f"fingerprint_scheme: {FINGERPRINT_SCHEME}\nversion: 1\n"
+        f"waivers:\n- fingerprint: {FP}\n  reason: ok\n  entity_sei: 123\n",
+        encoding="utf-8",
+    )
+    # A non-string entity_sei is a corrupt binding; it must fail loud, never drop silently.
+    with pytest.raises(ConfigError, match="entity_sei"):
+        load_project_waivers(tmp_path)
+
+
+def test_add_waiver_refuses_direct_symlink_target(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.yaml"
+    outside.write_text("", encoding="utf-8")
+    link = tmp_path / "waivers.yaml"
+    link.symlink_to(outside)
+
+    with pytest.raises(WardlineError, match="symlink"):
+        add_waiver(link, fingerprint=FP, reason="ok", expires=None)
+
+    assert outside.read_text(encoding="utf-8") == ""
+
+
+def test_add_waiver_refuses_rooted_symlink_target(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.yaml"
+    outside.write_text("", encoding="utf-8")
+    wp = waivers_path(tmp_path)
+    wp.parent.mkdir(parents=True)
+    wp.symlink_to(outside)
+
+    with pytest.raises(WardlineError, match="symlink"):
+        add_waiver(wp, fingerprint=FP, reason="ok", expires=None, root=tmp_path)
+
+    assert outside.read_text(encoding="utf-8") == ""

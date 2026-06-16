@@ -53,10 +53,13 @@ def test_full_client_handshake_and_every_surface() -> None:
     assert init["protocolVersion"] == PROTOCOL_VERSION
     assert init["serverInfo"]["name"] == "wardline"
     assert {"tools", "resources", "prompts"} <= set(init["capabilities"])
-    # tools/list: the eleven documented tools, no more no less
+    # tools/list: the eighteen documented tools, no more no less
     tool_names = {t["name"] for t in by_id[2]["result"]["tools"]}
     assert tool_names == {
         "scan",
+        "scan_job_start",
+        "scan_job_status",
+        "scan_job_cancel",
         "explain_taint",
         "dossier",
         "assure",
@@ -69,6 +72,8 @@ def test_full_client_handshake_and_every_surface() -> None:
         "baseline",
         "fix",
         "waiver_add",
+        "doctor",
+        "rekey",
     }
     # resources/list: the four stable URIs
     resource_uris = {r["uri"] for r in by_id[3]["result"]["resources"]}
@@ -80,7 +85,9 @@ def test_full_client_handshake_and_every_surface() -> None:
     call = by_id[5]["result"]
     assert call["content"][0]["type"] == "text"
     payload = json.loads(call["content"][0]["text"])
-    assert {"findings", "summary", "gate"} <= set(payload)
+    assert {"agent_summary", "summary", "gate"} <= set(payload)
+    # B1 dual emission: structuredContent carries the SAME payload as the text block
+    assert call["structuredContent"] == payload
     # resources/read: the vocab resource round-trips non-empty text through the loop
     read = by_id[6]["result"]
     assert read["contents"][0]["uri"] == "wardline://vocab"
@@ -135,6 +142,8 @@ def test_tool_execution_error_is_iserror_result_not_jsonrpc_error() -> None:
     assert "error" not in resp  # NOT a JSON-RPC error
     assert resp["result"]["isError"] is True  # IS an isError result
     assert "re-scan" in resp["result"]["content"][0]["text"].lower()
+    # B1: isError results never carry structuredContent
+    assert "structuredContent" not in resp["result"]
 
 
 def test_unknown_method_is_a_jsonrpc_error() -> None:

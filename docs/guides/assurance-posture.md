@@ -5,10 +5,12 @@ prior question a fail-closed tool must own: **how much of the declared trust
 surface did the engine reach a definite verdict on, and how much is honestly
 unknown?**
 
-This is the "prove your coverage" answer an IRAP or SOC 2 assessor will ask
-that a small team otherwise cannot give — and no tool lacking explicit
-`UNKNOWN_*` states can replicate it, because a tool without an honesty gap has
-already silently promoted every undecided case to "clean".
+This is a coverage question, not a compliance claim. Wardline is
+deconfliction-first tooling, not a security or compliance product, and the
+posture object makes no assertion about any assessment regime. What it does
+give you is the honest denominator: a tool lacking explicit `UNKNOWN_*` states
+cannot answer "how much did you actually decide?", because a tool without an
+honesty gap has already silently promoted every undecided case to "clean".
 
 ## The trust surface
 
@@ -28,7 +30,9 @@ fires, and it never enters the coverage denominator. `assure` is not about
 ## Coverage: definite verdict vs. the honesty gap
 
 ```
-coverage_pct = 100 × (boundaries_total − unknown_count) / boundaries_total
+coverage_pct =
+  100 × (boundaries_total − unknown_count)
+  / (boundaries_total + unanalyzed_total)
 ```
 
 A **definite verdict** is either:
@@ -40,11 +44,15 @@ A **definite verdict** is either:
 
 The **honesty gap** is `unknown` — entities whose trust the engine could not
 determine. Wardline records these explicitly rather than silently passing them.
+`unanalyzed_total` counts source files discovered but never analyzed; each counts
+as at least one uncovered surface item because the engine could not know whether
+the skipped file contained trust declarations.
 
-When `boundaries_total == 0` (no trust annotations in the scanned path),
-`coverage_pct` is `null` — no trust surface to cover means coverage is null,
-never a vacuous `100.0` that reads as a false-green to an agent using a numeric
-gate. The human format prints "nothing to assure" to make this explicit.
+When `boundaries_total == 0` and `unanalyzed_total == 0` (no trust annotations
+and no skipped source in the scanned path), `coverage_pct` is `null` — no trust
+surface to cover means coverage is null, never a vacuous `100.0` that reads as a
+false-green to an agent using a numeric gate. The human format prints "nothing
+to assure" to make this explicit.
 
 ## The structured posture object
 
@@ -73,6 +81,7 @@ return the same object (identical by construction — both call the same
   ],
   "engine_limited": 1,
   "coverage_pct": 83.3,
+  "unanalyzed_total": 0,
   "unanalyzed_rule_ids": ["WLN-ENGINE-PARSE-ERROR"],
   "waiver_debt": [
     {
@@ -91,12 +100,13 @@ return the same object (identical by construction — both call the same
 
 | Field | Type | Meaning |
 |---|---|---|
-| `boundaries_total` | int | Count of anchored (trust-declared) entities — the denominator |
+| `boundaries_total` | int | Count of known anchored (trust-declared) entities |
 | `proven` | int | Entities with a clean verdict (no active defect) |
 | `defect_total` | int | Entities with an active defect (covered — a definite negative verdict) |
 | `unknown` | list | Entities with no definite verdict — the honesty gap |
-| `engine_limited` | int | Subset of `unknown` caused by engine under-scan (parse/recursion skip → `WLN-ENGINE-*` FACT) |
-| `coverage_pct` | float \| null | `100 × (boundaries_total − unknown_count) / boundaries_total`; `null` when `boundaries_total == 0` (no trust surface → not a false-green 100%) |
+| `engine_limited` | int | Unknown known entities plus unanalyzed files caused by engine under-scan (parse/recursion skip → `WLN-ENGINE-*` FACT) |
+| `coverage_pct` | float \| null | `100 × (boundaries_total − unknown_count) / (boundaries_total + unanalyzed_total)`; `null` when both counts are zero (no trust surface → not a false-green 100%) |
+| `unanalyzed_total` | int | Files discovered but never analyzed; each counts as at least one uncovered surface item |
 | `unanalyzed_rule_ids` | list[str] | Distinct `WLN-ENGINE-*` rule ids seen in findings — indicates *why* engine-limited unknowns occurred |
 | `waiver_debt` | list | Every waiver from `.weft/wardline/waivers.yaml`, with days-to-expiry |
 | `baselined_total` | int | Findings suppressed via the accepted baseline |
@@ -148,6 +158,7 @@ When the scanned path contains no trust-annotated functions:
   "unknown": [],
   "engine_limited": 0,
   "coverage_pct": null,
+  "unanalyzed_total": 0,
   "unanalyzed_rule_ids": [],
   "waiver_debt": [],
   "baselined_total": 0,
@@ -202,6 +213,9 @@ if posture["unknown"]:
         # Engine reached these but trust is undeclared or unprovable.
         # May be a missing decorator or a complex data-flow pattern.
         report_unprovable_boundaries(unprovable)
+
+if posture["unanalyzed_total"]:
+    report_parse_failures([], posture["unanalyzed_rule_ids"])
 
 lapsed = [w for w in posture["waiver_debt"] if w["days_left"] is not None and w["days_left"] < 0]
 if lapsed:

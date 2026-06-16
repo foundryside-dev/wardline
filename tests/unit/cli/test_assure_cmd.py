@@ -15,8 +15,9 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
+from wardline.cli.assure import _render_human
 from wardline.cli.main import cli
-from wardline.core.assure import build_posture
+from wardline.core.assure import AssurancePosture, UnknownBoundary, build_posture
 
 # Identical decorated module used by test_assure.py so the engine produces
 # boundaries_total >= 1 (two @trusted producers + one @external_boundary = 3).
@@ -40,6 +41,9 @@ _MODULE = (
 )
 
 _PLAIN = "def f():\n    return 1\n"
+_BAD_DECORATED = (
+    "from wardline.decorators.trust import trusted\n\n@trusted(level='INTEGRAL')\ndef broken(:\n    return 1\n"
+)
 
 
 def test_json_output_equals_core(tmp_path: Path) -> None:
@@ -72,6 +76,51 @@ def test_human_format_empty_surface(tmp_path: Path) -> None:
     assert "nothing to assure" in result.output.lower()
     # Must not mislead the user with a bare coverage claim on an empty surface.
     assert "100% coverage" not in result.output
+
+
+def test_human_format_unanalyzed_files_are_not_full_coverage(tmp_path: Path) -> None:
+    (tmp_path / "good.py").write_text(_MODULE, encoding="utf-8")
+    (tmp_path / "bad.py").write_text(_BAD_DECORATED, encoding="utf-8")
+
+    result = CliRunner().invoke(cli, ["assure", str(tmp_path), "--format", "human"])
+
+    assert result.exit_code == 0, result.output
+    assert "100.0%" not in result.output
+    assert "75.0%" in result.output
+    assert "unanalyzed files: 1" in result.output
+
+
+def test_human_format_escapes_repository_control_chars(capsys) -> None:
+    posture = AssurancePosture(
+        boundaries_total=1,
+        proven=0,
+        defect_total=0,
+        unknown=[
+            UnknownBoundary(
+                qualname="svc.\x1b]52;clipboard",
+                tier="ASSURED",
+                path="evil\nname.py",
+                line=7,
+                reason="\x1b[31mrecursion",
+            )
+        ],
+        engine_limited=1,
+        coverage_pct=0.0,
+        unanalyzed_total=0,
+        unanalyzed_rule_ids=[],
+        waiver_debt=[],
+        baselined_total=0,
+        judged_total=0,
+    )
+
+    _render_human(posture)
+    out = capsys.readouterr().out
+
+    assert "\x1b" not in out
+    assert "evil\nname.py" not in out
+    assert r"svc.\x1b]52;clipboard" in out
+    assert r"evil\nname.py" in out
+    assert r"\x1b[31mrecursion" in out
 
 
 def test_human_lapsed_waiver_wording(tmp_path: Path) -> None:

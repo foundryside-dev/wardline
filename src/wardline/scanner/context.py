@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from wardline.core.finding import Finding, Severity
     from wardline.core.taints import TaintState
     from wardline.scanner.index import Entity
+    from wardline.scanner.rules._sink_helpers import SinkBindings
     from wardline.scanner.taint.propagation import TaintProvenance
 
 
@@ -47,13 +48,17 @@ class AnalysisContext:
     to a source dict) cannot mutate engine output.
 
     ``project_return_taints`` is the effective return tier per function (anchored:
-    declared; non-anchored: refined body). ``function_return_taints`` is the actual
-    least-trusted returned-value taint per function, computed from L2 variable
-    analysis — the precise input for PY-WL-101. ``function_return_callee`` is the
-    callee that contributed each function's actual (least-trusted) return taint, or
-    ``None`` when that worst return path is not a direct call (``return p`` /
-    ``return some_var`` — chain resolution is deferred to SP9). This is the property
-    ``explain_finding`` reports as the immediate tainted callee.
+    declared; non-anchored: refined body). ``declared_body_taints`` is the provider's
+    original body tier for declared functions only, before L3 propagation refines the
+    body map. Rules that need declaration shape (for example, distinguishing
+    ``@trust_boundary`` from a leaky ``@trusted`` producer) must read this snapshot,
+    not ``project_taints``. ``function_return_taints`` is the actual least-trusted
+    returned-value taint per function, computed from L2 variable analysis — the
+    precise input for PY-WL-101. ``function_return_callee`` is the callee that
+    contributed each function's actual (least-trusted) return taint, or ``None`` when
+    that worst return path is not a direct call (``return p`` / ``return some_var`` —
+    chain resolution is deferred to SP9). This is the property ``explain_finding``
+    reports as the immediate tainted callee.
     """
 
     project_taints: Mapping[str, TaintState]
@@ -78,6 +83,11 @@ class AnalysisContext:
     # Bound method call sites whose explicit args start after an implicit receiver:
     # ``{id(call): "instance" | "class"}``.
     call_site_implicit_receivers: Mapping[int, str] = field(default_factory=dict)
+    # Branch-conditional dispatch: the FULL candidate callee set at a call site whose
+    # receiver may hold >1 project class (``{id(call): frozenset(callee_qn)}``). A
+    # superset of ``call_site_callees`` for those sites; sink rules consult it so they
+    # fire on any trusted-sink candidate regardless of AST order (wardline-499c22bbdd).
+    call_site_candidate_callees: Mapping[int, frozenset[str]] = field(default_factory=dict)
     # Cross-method class-attribute summary (closure A): ``{class_qualname: {attr: taint}}``,
     # the least-trusted value written to ``self.<attr>`` across the class's methods. Rules
     # resolve a ``self.<attr>``/``cls.<attr>`` read against it. Defaulted for direct
@@ -88,11 +98,42 @@ class AnalysisContext:
     # denominator. Additive + defaulted so direct constructions/tests need not
     # supply it; frozenset is already immutable so no proxy wrap is needed.
     declared_qualnames: frozenset[str] = frozenset()
+    # Provider-declared body tier for trust-surface functions, before L3 callgraph
+    # refinement. ``project_taints`` is the propagated body tier and may become raw
+    # for a leaky ``@trusted`` producer; this declaration snapshot stays stable.
+    declared_body_taints: Mapping[str, TaintState] = field(default_factory=dict)
     # Inter-module call edges: ``{caller: frozenset({callees})}``. Defaulted for
     # direct constructions; absence means no project edges available.
     project_edges: Mapping[str, frozenset[str]] = field(default_factory=dict)
     # Import alias maps per module: ``{module: {alias: target_fqn}}``.
     alias_maps: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    # SHA-256 of the exact source bytes parsed for each project-relative file. Optional
+    # consumers that stamp external facts use this to refuse post-scan disk races without
+    # making the scanner depend on optional BLAKE3.
+    analyzed_source_sha256: Mapping[str, str] = field(default_factory=dict)
+    # MODULE-SCOPE name bindings per module: ``{module: SinkBindings}`` — module-level
+    # callable aliases (``runner = subprocess.run``) and constructed instances
+    # (``client = httpx.Client()``), collected from each module's top-level scope by the
+    # analyzer. The sink machinery layers a function's own bindings OVER these
+    # (``resolved_sink_calls(..., module_bindings=...)``), closing the documented
+    # module-level false negatives (wardline-13cfdd7b31 / wardline-66b2c91470).
+    # Defaulted so direct constructions (tests) need not supply it; absence degrades to
+    # function-scope-only binding resolution.
+    module_bindings: Mapping[str, SinkBindings] = field(default_factory=dict)
+    # Rule ids selected for THIS run (``rules.enable``), or ``None`` when unknown
+    # (direct constructions / duck-typed registry seams without a ``rules``
+    # property). A rule that suppresses-and-delegates to a sibling (PY-WL-120 →
+    # PY-WL-101) consults this so it never delegates to a rule that will not run;
+    # ``None`` preserves the historical assume-enabled behavior.
+    enabled_rule_ids: frozenset[str] | None = None
+    # Per-scan degradation channel: qualnames whose sink-argument resolution fell
+    # back to the pessimistic flow-INSENSITIVE map (no L2 snapshot — an L2-skipped
+    # function). ``resolved_arg_taints`` records here instead of warning from
+    # inside rule ``check()`` calls; the analyzer surfaces the collected set as ONE
+    # ``WLN-ENGINE-FLOW-INSENSITIVE-FALLBACK`` NONE/FACT finding per scan.
+    # Deliberately a mutable set on a
+    # frozen context: it is a diagnostics side channel, not engine output.
+    flow_insensitive_fallbacks: set[str] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "project_taints", _freeze_mapping(self.project_taints))
@@ -114,7 +155,13 @@ class AnalysisContext:
             "call_site_implicit_receivers",
             _freeze_mapping(self.call_site_implicit_receivers),
         )
+        object.__setattr__(
+            self,
+            "call_site_candidate_callees",
+            _freeze_mapping(self.call_site_candidate_callees),
+        )
         object.__setattr__(self, "class_attr_taints", _freeze_mapping(self.class_attr_taints))
+        object.__setattr__(self, "declared_body_taints", _freeze_mapping(self.declared_body_taints))
         object.__setattr__(
             self,
             "project_edges",
@@ -125,6 +172,9 @@ class AnalysisContext:
             "alias_maps",
             _freeze_mapping(self.alias_maps),
         )
+        object.__setattr__(self, "analyzed_source_sha256", _freeze_mapping(self.analyzed_source_sha256))
+        # SinkBindings values are frozen dataclasses — only the outer map needs the proxy.
+        object.__setattr__(self, "module_bindings", _freeze_mapping(self.module_bindings))
 
 
 class _RuleClass(Protocol):

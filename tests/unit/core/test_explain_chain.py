@@ -103,3 +103,14 @@ def test_chain_truncates_on_loud_read_error(tmp_path):
     chain = explain_chain(proj, sink_qualname="svc.leaky", loomweave=RaisingClient(), max_hops=10)
     assert chain.hops == []
     assert chain.truncated_at == "svc.leaky"
+
+
+def test_chain_treats_malformed_callee_qualname_as_boundary_leaf(tmp_path):
+    proj = _proj(tmp_path)
+    client = MapClient({"svc.leaky": _fresh_view(proj, "svc.leaky", {"not": "a qualname"})})
+
+    chain = explain_chain(proj, sink_qualname="svc.leaky", loomweave=client, max_hops=10)
+
+    assert [hop.qualname for hop in chain.hops] == ["svc.leaky"]
+    assert chain.hops[0].contributing_callee_qualname is None
+    assert chain.truncated_at is None

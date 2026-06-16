@@ -14,6 +14,7 @@ payload bytes.
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 from datetime import date
 from pathlib import Path
@@ -27,12 +28,12 @@ from wardline.core.attest import (
     _canonical_bytes,
     build_attestation,
     git_state,
-    ruleset_hash,
     verify_attestation,
 )
 from wardline.core.config import WardlineConfig
 from wardline.core.errors import AttestError, WardlineError
 from wardline.core.paths import waivers_path
+from wardline.core.ruleset import ruleset_hash
 from wardline.core.taints import TaintState
 from wardline.core.waivers import add_waiver
 from wardline.scanner.grammar import BoundaryType, TrustGrammar
@@ -229,6 +230,45 @@ def test_git_state_repo_clean_dirty_and_non_git(tmp_path: Path) -> None:
     commit2, dirty2 = git_state(repo)
     assert commit2 == commit
     assert dirty2 is True
+
+
+def test_git_state_disables_repo_configured_fsmonitor(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "f.py").write_text("x = 1\n", encoding="utf-8")
+    _git(["init"], repo)
+    _git(["add", "-A"], repo)
+    _git(
+        [
+            "-c",
+            "user.email=t@example.com",
+            "-c",
+            "user.name=Test",
+            "commit",
+            "-m",
+            "init",
+        ],
+        repo,
+    )
+
+    log_path = tmp_path / "fsmonitor.log"
+    hook_path = tmp_path / "fsmonitor.sh"
+    hook_path.write_text(
+        f"#!/bin/sh\nprintf 'fsmonitor ran\\n' >> {shlex.quote(str(log_path))}\nprintf 'hook-token\\n'\n",
+        encoding="utf-8",
+    )
+    hook_path.chmod(0o755)
+    _git(["config", "core.fsmonitor", str(hook_path)], repo)
+
+    commit, dirty = git_state(repo)
+
+    assert commit is not None
+    assert dirty is False
+    assert not log_path.exists()
+
+    (repo / "f.py").write_text("x = 2\n", encoding="utf-8")
+    assert git_state(repo) == (commit, True)
+    assert not log_path.exists()
 
 
 # --------------------------------------------------------------------------- #
@@ -455,7 +495,8 @@ class _FakeLoomweave:
     def capabilities(self) -> dict[str, object]:
         return {"sei": {"supported": True, "version": 1}}
 
-    def resolve(self, qualnames: list[str]) -> ResolveResult:
+    def resolve(self, qualnames: list[str], *, plugin: str | None = None) -> ResolveResult:
+        self.plugin_hints = [*getattr(self, "plugin_hints", []), plugin]
         resolved = {q: f"python:function:{q}" for q in qualnames if q == self._hit}
         unresolved = [q for q in qualnames if q != self._hit]
         return ResolveResult(resolved=resolved, unresolved=unresolved)
@@ -476,10 +517,14 @@ class _RaisingLoomweave(_FakeLoomweave):
 
 def test_sei_keyed_bundle_fills_resolved_boundary_only(tmp_path: Path) -> None:
     tree = _annotated_tree(tmp_path)
-    bundle = build_attestation(tree, _KEY, loomweave_client=_FakeLoomweave(hit="m.leak"), today=_PINNED)
+    client = _FakeLoomweave(hit="m.leak")
+    bundle = build_attestation(tree, _KEY, loomweave_client=client, today=_PINNED)
 
     payload = bundle["payload"]
     assert payload["sei_source"] == "loomweave"
+    # Boundaries come from the Python AnalysisContext, so every resolve hop carries
+    # the ADR-036 plugin hint (constraint, never fabricated).
+    assert set(client.plugin_hints) == {"python"}
     by_qn = {b["qualname"]: b for b in payload["boundaries"]}
     assert by_qn["m.leak"]["sei"] == _SEI  # the one resolvable qualname is keyed
     assert by_qn["m.clean"]["sei"] is None  # unresolved → honestly None

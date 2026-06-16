@@ -8,6 +8,16 @@ from click.testing import CliRunner
 
 from wardline.cli.main import cli
 
+_LEAKY = (
+    "from wardline.decorators import external_boundary, trusted\n"
+    "@external_boundary\n"
+    "def read_raw(p):\n"
+    "    return p\n"
+    "@trusted\n"
+    "def leaky(p):\n"
+    "    return read_raw(p)\n"
+)
+
 
 def test_scan_file_findings_cli_defaults_to_dry_run(tmp_path, monkeypatch):
     from wardline.cli import scan_file_findings as mod
@@ -56,3 +66,14 @@ def test_scan_file_findings_cli_selected_fingerprint_wires_urls(tmp_path, monkey
     assert seen["dry_run"] is False
     assert seen["filigree_emitter"] == ("emitter", "http://f/api/weft/scan-results")
     assert isinstance(seen["loomweave_client"], FakeLoomweave)
+
+
+def test_scan_file_findings_cli_fail_on_uses_gate_exit_class(tmp_path):
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+
+    res = CliRunner().invoke(cli, ["scan-file-findings", str(tmp_path), "--fail-on", "ERROR"])
+
+    assert res.exit_code == 1
+    payload = json.loads(res.output)
+    assert payload["gate"]["tripped"] is True
+    assert payload["gate"]["exit_class"] == 1

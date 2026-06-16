@@ -21,7 +21,9 @@ class LoomweaveBindingProvider:
         self._resolver = SeiResolver(loomweave_client, SeiCapability.from_capabilities(capabilities))
 
     def binding_for(self, qualname: str) -> EntityBinding | None:
-        return resolve_entity_binding(self._client, self._resolver, qualname)
+        # Decorator coverage is a Python-surface report (@trust_boundary/@trusted
+        # decorators), so the producer is known — send the ADR-036 plugin hint.
+        return resolve_entity_binding(self._client, self._resolver, qualname, plugin="python")
 
 
 def build_weft_decorator_coverage(

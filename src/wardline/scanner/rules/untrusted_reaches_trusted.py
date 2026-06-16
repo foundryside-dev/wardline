@@ -9,15 +9,16 @@ declared return must NOT be in the raw/freedom zone, which excludes
 is what makes the strict rank comparison safe. Declaration-gated, so it emits at
 base severity (NOT tier-modulated).
 
-**Trust-boundary delegation.** A trust-RAISING transition — a function whose body
-taint is strictly less-trusted than its declared return (the taint shape unique
-to ``@trust_boundary``) — is EXEMPT from this rule and delegated to PY-WL-102.
+**Trust-boundary delegation.** A declared trust-RAISING transition — a function
+whose provider-declared body taint is strictly less-trusted than its declared
+return (the taint shape unique to ``@trust_boundary``) — is EXEMPT from this rule
+and delegated to PY-WL-102.
 Reason: such a validator's parameters seed at the raw body taint, and the engine
 does not narrow taint after a ``raise`` guard, so the L2 actual return is always
 the raw body taint — meaning *every* ``@trust_boundary`` (correct or not) would
 fire here. That is noise, not signal: the statically-decidable property for a
 validator is "can it reject at all", which is exactly PY-WL-102's check. So
-PY-WL-101 polices ``@trusted`` producers (body == declared) only.
+PY-WL-101 polices ``@trusted`` producers (declared body == declared return) only.
 """
 
 from __future__ import annotations
@@ -87,20 +88,22 @@ class UntrustedReachesTrusted:
             prov = context.taint_provenance.get(qualname)
             if prov is None or prov.source != "anchored":
                 continue
-            body = context.project_taints.get(qualname)
             declared = context.project_return_taints.get(qualname)
             if declared is None or declared in RAW_ZONE:
                 continue  # trust-claim gate
-            # Trust-RAISING transition (body less trusted than return) is
-            # @trust_boundary's shape — covered by PY-WL-102, not PY-WL-101.
-            if body is not None and TRUST_RANK[body] > TRUST_RANK[declared]:
+            declared_body = context.declared_body_taints.get(qualname)
+            # Declared trust-RAISING transition (body less trusted than return) is
+            # @trust_boundary's shape — covered by PY-WL-102, not PY-WL-101. Do
+            # not read context.project_taints here: L3 propagation can make a
+            # leaky @trusted producer's body raw, but that is evidence for 101,
+            # not a declaration that turns the producer into a validator.
+            if declared_body is not None and TRUST_RANK[declared_body] > TRUST_RANK[declared]:
                 continue
             actual = context.function_return_taints.get(qualname)
             if actual is None:
                 continue  # no value-bearing return -> nothing to police
             if TRUST_RANK[actual] <= TRUST_RANK[declared]:
                 continue  # returns data at-least-as-trusted as declared
-            taint_path = f"{actual.value}->{declared.value}|{prov.via_callee or ''}"
             findings.append(
                 Finding(
                     rule_id=self.rule_id,
@@ -115,9 +118,12 @@ class UntrustedReachesTrusted:
                     fingerprint=_fp(
                         rule_id=self.rule_id,
                         path=entity.location.path,
-                        line_start=entity.location.line_start,
                         qualname=qualname,
-                        taint_path=taint_path,
+                        # Join-key stability (weft-4a9d0f863c): one finding per anchored qualname,
+                        # so (rule, path, line, qualname) is already unique. actual/declared tiers and
+                        # via_callee are resolved values that drift across builds for identical source
+                        # (the reported bug) — they live in message/properties, never the join key.
+                        taint_path=None,
                     ),
                     qualname=qualname,
                     properties={"declared_return": declared.value, "actual_return": actual.value},

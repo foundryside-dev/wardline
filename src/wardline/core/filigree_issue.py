@@ -21,30 +21,27 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from wardline.core.errors import FiligreeEmitError
+from wardline.core.filigree_emit import filigree_api_base_url
+from wardline.core.finding import FINGERPRINT_SCHEME, format_fingerprint
 from wardline.core.http import read_response_text
 from wardline.loomweave.identity import SeiResolver
 
 _ALLOWED_SCHEMES = ("http", "https")
-_WEFT_MARKER = "/api/weft/"
 
 
 def promote_url_from_weft(weft_url: str) -> str:
-    """Derive the promote route from the configured Weft scan-results URL — both
-    live under /api/weft/. Reject a URL that isn't a Weft endpoint (a clear config
-    error rather than a 404 against a wrong host)."""
-    idx = weft_url.find(_WEFT_MARKER)
-    if idx == -1:
-        raise FiligreeEmitError(f"filigree URL must be a Weft endpoint containing {_WEFT_MARKER!r}: {weft_url!r}")
-    base = weft_url[: idx + len(_WEFT_MARKER)]
-    return base + "findings/promote"
+    """Derive the promote route from the configured Filigree URL. Accepts every form
+    ``filigree_api_base_url`` does; a pinned project (``/api/p/<key>/…`` path or
+    ``?project=`` query) is preserved as the path-scoped dialect, so a scoped emit
+    config can no longer promote into the default project (dogfood-4 A3)."""
+    return api_base_url_from_weft(weft_url) + "/weft/findings/promote"
 
 
 def api_base_url_from_weft(weft_url: str) -> str:
-    """Normalize a Weft scan-results URL to Filigree's ``/api`` base."""
-    idx = weft_url.find(_WEFT_MARKER)
-    if idx == -1:
-        raise FiligreeEmitError(f"filigree URL must be a Weft endpoint containing {_WEFT_MARKER!r}: {weft_url!r}")
-    return weft_url[:idx].rstrip("/") + "/api"
+    """Normalize the configured Filigree URL to its API base — project-scoped when the
+    input pins a project. Thin alias over the shared dialect parser in
+    ``core/filigree_emit.py`` so every derived route agrees with the emit destination."""
+    return filigree_api_base_url(weft_url)
 
 
 def build_promote_body(
@@ -54,7 +51,15 @@ def build_promote_body(
     priority: str | None = None,
     labels: Sequence[str] | None = None,
 ) -> dict[str, Any]:
-    body: dict[str, Any] = {"scan_source": scan_source, "fingerprint": fingerprint}
+    # The promote join key MUST match the form the scan-results INGEST wire writes
+    # (filigree_emit._finding_to_wire emits the scheme-prefixed value), or Filigree's
+    # exact-match promote lookup 404s against the finding it just ingested. Callers
+    # pass the BARE in-memory fingerprint (agent_summary / CLI arg); we prefix it here
+    # at the wire boundary, symmetric with ingest.
+    body: dict[str, Any] = {
+        "scan_source": scan_source,
+        "fingerprint": format_fingerprint(FINGERPRINT_SCHEME, fingerprint),
+    }
     if priority is not None:
         body["priority"] = priority
     if labels:
@@ -184,7 +189,11 @@ class FiligreeIssueFiler:
             payload = json.loads(resp.body) if resp.body else {}
         except json.JSONDecodeError:
             payload = {}
-        issue_id = payload.get("issue_id") if isinstance(payload, dict) else None
+        # Type-narrow at the wire boundary like the emit path does (_safe_int): a 2xx
+        # body carrying a non-string issue_id must not flow verbatim into tool payloads
+        # that publish issue_id as string|null in their MCP outputSchema.
+        raw_issue_id = payload.get("issue_id") if isinstance(payload, dict) else None
+        issue_id = raw_issue_id if isinstance(raw_issue_id, str) else None
         created = bool(payload.get("created")) if isinstance(payload, dict) else False
         return FileResult(reachable=True, issue_id=issue_id, created=created)
 
@@ -240,8 +249,19 @@ def identity_attach_result_to_json(result: IdentityAttachResult) -> dict[str, An
     }
 
 
-def _locator_for_finding_qualname(qualname: str) -> str:
-    return f"python:function:{qualname}"
+def plugin_for_finding(finding: Any) -> str:
+    """The ADR-049 plugin id that minted ``finding`` — the resolve-hint discriminator
+    (ADR-036). Rust rules are the ``RS-WL-`` family; everything else with a qualname is
+    the Python frontend. Derived from the rule id (findings carry no ``lang`` field;
+    the rule family IS the producer)."""
+    rule_id = getattr(finding, "rule_id", "") or ""
+    return "rust" if rule_id.startswith("RS-WL-") else "python"
+
+
+def _locator_for_finding_qualname(qualname: str, plugin: str) -> str:
+    # Both frontends' callable findings carry function-kind qualnames (Wardline's
+    # semantic `method` maps to the id-kind `function` in both dialects).
+    return f"{plugin}:function:{qualname}"
 
 
 def _finding_for_fingerprint(fingerprint: str, root: Path, config_path: Path | None) -> Any | None:
@@ -249,6 +269,88 @@ def _finding_for_fingerprint(fingerprint: str, root: Path, config_path: Path | N
 
     result = run_scan(root, config_path=config_path)
     return next((finding for finding in result.findings if finding.fingerprint == fingerprint), None)
+
+
+@dataclass(frozen=True, slots=True)
+class EntityBindingInput:
+    """Outcome of resolving an inline entity reference supplied at a manual-entry surface
+    (the doctrine ``entity_id`` L1 / ``entity_symbol`` L2 inputs). On success ``entity_id``
+    is the binding key (a ``loomweave:eid:`` SEI when one resolved, else the opaque value /
+    locator the caller supplied) and ``locator`` is the human-readable name. On failure the
+    weft-reason triple is populated and the caller MUST create nothing."""
+
+    resolved: bool
+    entity_id: str | None = None
+    locator: str | None = None
+    content_hash: str | None = None
+    binding_kind: str | None = None  # "sei" | "locator"
+    # weft-reason carrier (unresolved_input); populated only when resolved is False.
+    reason_class: str | None = None
+    cause: str | None = None
+    fix: str | None = None
+
+    @classmethod
+    def from_opaque(cls, entity_id: str) -> EntityBindingInput:
+        """L1: an opaque id the caller already holds. Carried verbatim, never re-resolved."""
+        return cls(
+            resolved=True,
+            entity_id=entity_id,
+            locator=entity_id,
+            binding_kind="sei" if entity_id.startswith("loomweave:eid:") else "locator",
+        )
+
+    @classmethod
+    def unresolved(cls, *, cause: str, fix: str) -> EntityBindingInput:
+        return cls(resolved=False, reason_class="unresolved_input", cause=cause, fix=fix)
+
+
+def resolve_entity_binding_input(
+    *,
+    entity_id: str | None,
+    entity_symbol: str | None,
+    loomweave_client: Any,
+    plugin: str = "python",
+) -> EntityBindingInput | None:
+    """Resolve an inline entity reference for a manual-entry surface, doctrine-style.
+
+    Returns ``None`` when NEITHER input was supplied (the surface stays entity-free,
+    fully back-compatible). With ``entity_id`` (L1) the value is carried opaque, no
+    transport touched. With ``entity_symbol`` (L2) the symbol is resolved to a SEI via
+    Loomweave (the existing :class:`SeiResolver` transport); a symbol that does not
+    resolve to a live SEI returns an ``unresolved_input`` carrier so the caller can
+    refuse to write a looks-bound-but-isn't record. ``entity_id`` wins if both given.
+    """
+    if entity_id:
+        return EntityBindingInput.from_opaque(entity_id)
+    if not entity_symbol:
+        return None
+    if loomweave_client is None:
+        return EntityBindingInput.unresolved(
+            cause=f"entity_symbol {entity_symbol!r} supplied but no Loomweave URL is configured to resolve it",
+            fix="configure a Loomweave URL (--loomweave-url / loomweave.url), or pass an already-resolved entity_id",
+        )
+    locator = _locator_for_finding_qualname(entity_symbol, plugin)
+    try:
+        resolver = SeiResolver.detect(loomweave_client)
+        binding = resolver.resolve_locator(locator)
+    except Exception as exc:
+        return EntityBindingInput.unresolved(
+            cause=f"Loomweave resolve of entity_symbol {entity_symbol!r} failed: {exc}",
+            fix="check Loomweave reachability, or pass an already-resolved entity_id",
+        )
+    if binding.sei and binding.content_hash:
+        return EntityBindingInput(
+            resolved=True,
+            entity_id=binding.sei,
+            locator=binding.locator or locator,
+            content_hash=binding.content_hash,
+            binding_kind="sei",
+        )
+    return EntityBindingInput.unresolved(
+        cause=f"Loomweave did not resolve entity_symbol {entity_symbol!r} to a live SEI "
+        f"(plugin={plugin}); the symbol may be unknown, renamed, or this Loomweave predates SEI",
+        fix="verify the qualname is indexed in Loomweave, or pass an already-resolved entity_id",
+    )
 
 
 def attach_loomweave_identity_for_finding(
@@ -279,6 +381,7 @@ def attach_loomweave_identity_for_finding(
         issue_id=issue_id,
         filer=filer,
         loomweave_client=loomweave_client,
+        plugin=plugin_for_finding(finding),
     )
 
 
@@ -288,12 +391,13 @@ def attach_loomweave_identity_for_qualname(
     issue_id: str | None,
     filer: FiligreeIssueFiler,
     loomweave_client: Any,
+    plugin: str = "python",
 ) -> IdentityAttachResult:
     if not issue_id:
         return IdentityAttachResult.not_attempted("no issue_id from Filigree promote")
     if loomweave_client is None:
         return IdentityAttachResult.not_attempted("no Loomweave URL configured")
-    locator = _locator_for_finding_qualname(qualname)
+    locator = _locator_for_finding_qualname(qualname, plugin)
     try:
         resolver = SeiResolver.detect(loomweave_client)
         binding = resolver.resolve_locator(locator)
@@ -305,25 +409,29 @@ def attach_loomweave_identity_for_qualname(
             issue_id=issue_id,
             entity_id=binding.sei,
             content_hash=binding.content_hash,
-            entity_kind="python:function",
+            entity_kind=f"{plugin}:function",
         )
 
-    legacy = _legacy_locator_binding(loomweave_client, qualname, fallback_locator=binding.locator or locator)
+    legacy = _legacy_locator_binding(
+        loomweave_client, qualname, fallback_locator=binding.locator or locator, plugin=plugin
+    )
     if legacy.entity_id and legacy.content_hash:
         return filer.attach_entity_association(
             issue_id=issue_id,
             entity_id=legacy.entity_id,
             content_hash=legacy.content_hash,
-            entity_kind="python:function",
+            entity_kind=f"{plugin}:function",
         )
     return legacy
 
 
-def _legacy_locator_binding(loomweave_client: Any, qualname: str, *, fallback_locator: str) -> IdentityAttachResult:
+def _legacy_locator_binding(
+    loomweave_client: Any, qualname: str, *, fallback_locator: str, plugin: str = "python"
+) -> IdentityAttachResult:
     entity_id: str | None = fallback_locator
     content_hash: str | None = None
     try:
-        resolved = loomweave_client.resolve([qualname])
+        resolved = loomweave_client.resolve([qualname], plugin=plugin)
     except Exception as exc:
         return IdentityAttachResult.skipped(
             f"Loomweave legacy locator resolve failed: {exc}",

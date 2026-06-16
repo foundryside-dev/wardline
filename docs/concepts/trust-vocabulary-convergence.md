@@ -29,7 +29,7 @@ the Weft mechanism that delivers it (or the reason it is declined).
 
 | Effect / idea | Verdict | Weft mechanism (or reason) |
 |---|---|---|
-| **Fabrication test** — a trust boundary must be able to say *no* (reject), or it isn't a boundary | **Covered** | **PY-WL-102** (`boundary_without_rejection`): a `@trust_boundary` with no rejection path is flagged — it cannot say no, so it cannot be trusted to raise trust |
+| **Fabrication test** — a trust boundary must be able to say *no* (reject), or it isn't a boundary | **Covered** | the **boundary-integrity family PY-WL-102/111/113/119** (anchored by `boundary_without_rejection`): a `@trust_boundary` with no rejection path — or only an `-O`-stripped `assert`, a fail-open handler, or a bare `return p` — is flagged; it cannot say no, so it cannot be trusted to raise trust |
 | **Custody / provenance** — trust is earned and tracked, never assumed | **Covered** | the trust **lattice** (a value is only as trusted as its least-trusted contributor; `least_trusted` weakest-link meet) + `taint_provenance` (source + contributing callee), carried on every finding and in the dossier |
 | **Fail-closed boundaries** — what cannot be proven is not trusted | **Covered** | the `UNKNOWN_*` states + observable `WLN-ENGINE-*` FACTs; a custom boundary the engine cannot prove seeds `UNKNOWN_RAW` and emits `WLN-ENGINE-UNPROVABLE-BOUNDARY` (T2.4) — the extension plane inherits the no-false-green guarantee |
 | **Tiered boundary** — a validated boundary *raises* trust to a named tier | **Covered** | `@trust_boundary(to_level=GUARDED\|ASSURED)` — named Weft levels rather than integer tiers, the same "raise trust at a validated boundary" effect expressed in the lattice |

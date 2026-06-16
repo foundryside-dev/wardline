@@ -32,7 +32,15 @@ from wardline.mcp.server import WardlineMCPServer
         "`dossier` reads entity-associations (open work) from it."
     ),
 )
-def mcp(root: Path, loomweave_url: str | None, filigree_url: str | None) -> None:
+@click.option("--read-only", is_flag=True, help="Disable MCP tools that require write capability.")
+@click.option("--no-network", is_flag=True, help="Disable MCP tools that require network capability.")
+def mcp(
+    root: Path,
+    loomweave_url: str | None,
+    filigree_url: str | None,
+    read_only: bool,
+    no_network: bool,
+) -> None:
     """Run the Wardline MCP server over stdio (JSON-RPC 2.0)."""
     from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
 
@@ -42,4 +50,10 @@ def mcp(root: Path, loomweave_url: str | None, filigree_url: str | None) -> None
     # point thread the real path here too for parity. See resolve_loomweave_url's docstring.
     loomweave_url = resolve_loomweave_url(loomweave_url, root, None)
     filigree_url = resolve_filigree_url(filigree_url, root, None)
-    WardlineMCPServer(root=root, loomweave_url=loomweave_url, filigree_url=filigree_url).rpc.run_stdio()
+    WardlineMCPServer(
+        root=root,
+        loomweave_url=loomweave_url,
+        filigree_url=filigree_url,
+        allow_write=not read_only,
+        allow_network=not no_network,
+    ).rpc.run_stdio()

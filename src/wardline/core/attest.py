@@ -44,26 +44,24 @@ import hashlib
 import hmac
 import json
 import subprocess
-from collections.abc import Mapping
-from dataclasses import fields, is_dataclass
 from datetime import date
-from enum import Enum
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 from wardline._version import __version__
 from wardline.core import config as config_mod
 from wardline.core.assure import _empty_posture, posture_from_scan
 from wardline.core.attest_key import key_id
-from wardline.core.config import WardlineConfig
 from wardline.core.dossier import classify_entity_trust
 from wardline.core.errors import AttestError
 from wardline.core.paths import weft_config_path
+from wardline.core.ruleset import ruleset_hash
 from wardline.core.run import run_scan
 from wardline.core.waivers import load_project_waivers
 
 ATTEST_SCHEMA = "wardline-attest-1"
+# `git status` must not execute repo-local helpers while attesting untrusted trees.
+_SAFE_GIT_CONFIG = ("-c", "core.fsmonitor=false")
 
 
 def git_state(root: Path) -> tuple[str | None, bool]:
@@ -78,7 +76,7 @@ def git_state(root: Path) -> tuple[str | None, bool]:
     """
     try:
         rev = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            ["git", *_SAFE_GIT_CONFIG, "rev-parse", "HEAD"],
             cwd=root,
             capture_output=True,
             text=True,
@@ -93,7 +91,7 @@ def git_state(root: Path) -> tuple[str | None, bool]:
 
     try:
         status = subprocess.run(
-            ["git", "status", "--porcelain"],
+            ["git", *_SAFE_GIT_CONFIG, "status", "--porcelain"],
             cwd=root,
             capture_output=True,
             text=True,
@@ -104,128 +102,6 @@ def git_state(root: Path) -> tuple[str | None, bool]:
         return commit, False
     dirty = bool(status.stdout.strip())
     return commit, dirty
-
-
-def _file_sha256(path: Path | None) -> str | None:
-    if path is None or not path.is_file():
-        return None
-    digest = hashlib.sha256()
-    try:
-        with path.open("rb") as fh:
-            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-                digest.update(chunk)
-    except OSError:
-        return None
-    return digest.hexdigest()
-
-
-def _module_origin(module: ModuleType) -> Path | None:
-    spec = getattr(module, "__spec__", None)
-    origin = getattr(spec, "origin", None) or getattr(module, "__file__", None)
-    if not isinstance(origin, str) or origin in {"built-in", "frozen"}:
-        return None
-    return Path(origin)
-
-
-def _callable_policy_identity(value: Any) -> dict[str, Any]:
-    code = getattr(value, "__code__", None)
-    code_hash = None
-    if code is not None:
-        digest = hashlib.sha256()
-        digest.update(code.co_code)
-        digest.update(repr(code.co_consts).encode("utf-8", "backslashreplace"))
-        digest.update(repr(code.co_names).encode("utf-8", "backslashreplace"))
-        digest.update(repr(code.co_varnames).encode("utf-8", "backslashreplace"))
-        code_hash = digest.hexdigest()
-    return {
-        "module": getattr(value, "__module__", None),
-        "qualname": getattr(value, "__qualname__", getattr(value, "__name__", repr(value))),
-        "code_sha256": code_hash,
-    }
-
-
-def _class_policy_identity(value: type) -> dict[str, Any]:
-    source_path = None
-    try:
-        import inspect
-
-        source = inspect.getsourcefile(value)
-        source_path = Path(source) if source is not None else None
-    except (OSError, TypeError):
-        source_path = None
-    return {
-        "module": getattr(value, "__module__", None),
-        "qualname": getattr(value, "__qualname__", value.__name__),
-        "rule_id": getattr(value, "rule_id", None),
-        "source_sha256": _file_sha256(source_path),
-    }
-
-
-def _jsonable_policy_value(value: Any) -> Any:
-    if value is None or isinstance(value, str | int | float | bool):
-        return value
-    if isinstance(value, Enum):
-        return value.value
-    if isinstance(value, Mapping):
-        return {str(k): _jsonable_policy_value(v) for k, v in sorted(value.items(), key=lambda item: str(item[0]))}
-    if isinstance(value, tuple | list):
-        return [_jsonable_policy_value(v) for v in value]
-    if isinstance(value, set | frozenset):
-        rendered = [_jsonable_policy_value(v) for v in value]
-        return sorted(rendered, key=lambda item: json.dumps(item, sort_keys=True, default=str))
-    if isinstance(value, type):
-        return _class_policy_identity(value)
-    if is_dataclass(value) and not isinstance(value, type):
-        return {field.name: _jsonable_policy_value(getattr(value, field.name)) for field in fields(value)}
-    if callable(value):
-        return _callable_policy_identity(value)
-    return repr(value)
-
-
-def _pack_policy_identity(name: str, module: Any) -> dict[str, Any]:
-    if not isinstance(module, ModuleType):
-        return {"name": name, "loaded": False, "module_repr": repr(module)}
-    origin = _module_origin(module)
-    return {
-        "name": name,
-        "loaded": True,
-        "module": getattr(module, "__name__", name),
-        "version": getattr(module, "__version__", None),
-        "source_sha256": _file_sha256(origin),
-        "config": _jsonable_policy_value(getattr(module, "config", None)),
-        "grammar": _jsonable_policy_value(getattr(module, "grammar", None)),
-    }
-
-
-def _effective_scan_policy(config: WardlineConfig) -> dict[str, Any]:
-    return {
-        "schema": "wardline-effective-scan-policy-v1",
-        "wardline_version": __version__,
-        "source_roots": list(config.source_roots),
-        "exclude": list(config.exclude),
-        "rules": {
-            "enable": sorted(config.rules_enable),
-            "severity": {str(k): str(v) for k, v in sorted(config.rules_severity.items())},
-        },
-        "provenance_clash": config.provenance_clash,
-        "untrusted_sources": sorted(config.untrusted_sources),
-        "sanitisers": sorted(config.sanitisers),
-        "packs": [_pack_policy_identity(name, config.pack_modules.get(name)) for name in config.packs],
-    }
-
-
-def ruleset_hash(config: WardlineConfig) -> str:
-    """A deterministic ``"sha256:<hex>"`` over the effective scan policy.
-
-    The signed identity covers the analyzer version, source scope, excludes, rule
-    enablement/severity, provenance policy, custom source/sanitiser trust semantics,
-    and trusted pack identity/config/grammar. Two attestations with the same hash are
-    therefore comparable evidence bundles under the policy inputs that materially shape
-    scan results.
-    """
-    canonical = json.dumps(_effective_scan_policy(config), sort_keys=True, separators=(",", ":"))
-    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-    return f"sha256:{digest}"
 
 
 def _canonical_bytes(payload: dict[str, Any]) -> bytes:
@@ -273,7 +149,9 @@ def _enrich_seis(boundaries: list[dict[str, Any]], loomweave_client: Any) -> str
         resolved_any = False
         for boundary in boundaries:
             try:
-                binding = resolve_entity_binding(loomweave_client, resolver, boundary["qualname"])
+                # Boundaries come from the Python AnalysisContext (declared_qualnames),
+                # so the producer is known — send the ADR-036 plugin hint.
+                binding = resolve_entity_binding(loomweave_client, resolver, boundary["qualname"], plugin="python")
             except Exception:  # noqa: BLE001 — per-boundary fail-soft, see docstring
                 continue
             if binding is not None and binding.sei:

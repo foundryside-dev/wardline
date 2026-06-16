@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.30.1"]
 build-backend = "hatchling.build"
 
 [project]
@@ -14,7 +14,7 @@ dependencies = []
 authors = [{ name = "John Morrissey" }]
 keywords = ["static-analysis", "taint-analysis", "trust-boundaries", "security"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.12",
     "Typing :: Typed",
@@ -24,6 +24,15 @@ classifiers = [
 scanner = ["pyyaml>=6.0", "jsonschema>=4.0", "click>=8.0"]
 docs = ["mkdocs>=1.6", "mkdocs-material>=9.5"]
 loomweave = ["blake3>=1.0"]
+# Rust frontend (preview, Tier-A command-injection). tree-sitter-rust 0.24.2's
+# parser is ABI 15, loadable only by tree-sitter core >=0.25.0 — do NOT trust the
+# grammar's stale self-declared `tree-sitter~=0.22`. Both ship cp39-abi3 stable-ABI
+# wheels (one wheel per platform, CPython 3.9+, no compiler at install). The <0.26
+# cap is conservative: 0.26.x ABI/API compat is unverified — relax after a smoke test.
+# The frontend plugs into the scanner pipeline (run_scan, the `--lang rust` click CLI)
+# and loads rust_taint.yaml, so it pulls `wardline[scanner]` (pyyaml/click/jsonschema):
+# `pip install wardline[rust]` is then usable standalone, not merely additive to [scanner].
+rust = ["wardline[scanner]", "tree-sitter>=0.25,<0.26", "tree-sitter-rust==0.24.2"]
 # The SP5 LLM triage judge is dependency-free (stdlib urllib -> OpenRouter); no extra needed.
 
 [dependency-groups]
@@ -39,6 +48,7 @@ dev = [
     "types-PyYAML",
     "types-jsonschema",
     "hypothesis",
+    "import-linter>=2.0",
 ]
 
 [project.scripts]
@@ -53,12 +63,33 @@ Changelog = "https://github.com/foundryside-dev/wardline/blob/main/CHANGELOG.md"
 [tool.hatch.version]
 path = "src/wardline/_version.py"
 
+# Constrain the source distribution to the package, its test suite, and the
+# canonical metadata. Without an explicit sdist target hatchling ships every
+# non-VCS-ignored path in the repo root (docs/, site/, www/, packages/,
+# overrides/, internal audits, uv.lock) — fine for the working tree, wrong for
+# a published v1.0 artifact.
+[tool.hatch.build.targets.sdist]
+# Leading slash anchors each pattern to the repo root — an unanchored
+# "README.md"/"pyproject.toml" would also match those filenames nested under
+# docs/, packages/, www/ and pull those trees in.
+include = [
+    "/src/wardline",
+    "/tests",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/UPGRADING.md",
+    "/CONTRIBUTING.md",
+    "/LICENSE",
+    "/pyproject.toml",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/wardline"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "src/wardline/scanner/taint/stdlib_taint.yaml" = "wardline/scanner/taint/stdlib_taint.yaml"
 "src/wardline/core/vocabulary.yaml" = "wardline/core/vocabulary.yaml"
+"src/wardline/rust/rust_taint.yaml" = "wardline/rust/rust_taint.yaml"
 "src/wardline/skills/wardline-gate/SKILL.md" = "wardline/skills/wardline-gate/SKILL.md"
 
 [tool.ruff]
@@ -108,12 +139,14 @@ disable_error_code = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not network and not loomweave_e2e and not legis_e2e and not filigree_e2e'"
+addopts = "-m 'not network and not loomweave_e2e and not legis_e2e and not filigree_e2e and not rust_e2e and not loomweave_drift'"
 markers = [
     "network: tests that need network (live OpenRouter judge e2e — SP5)",
     "loomweave_e2e: tests that need a real `loomweave serve` binary (SP9 round-trip)",
     "legis_e2e: tests that need a real `legis` server (Track 5 intake round-trip)",
     "filigree_e2e: tests that need a real Filigree with the promote route (WS-A2 round-trip)",
+    "rust_e2e: live `wardline scan --lang rust` CLI subprocess over the .rs corpus (WP6)",
+    "loomweave_drift: live recheck of the vendored Rust qualname corpus against the sibling loomweave checkout (release-gate drift alarm)",
 ]
 
 [tool.coverage.run]
@@ -122,3 +155,17 @@ branch = true
 
 [tool.coverage.report]
 show_missing = true
+
+[tool.importlinter]
+root_package = "wardline"
+
+# REPORT-ONLY layering contracts (CI runs `lint-imports || true`). They encode the
+# intended core/ layering: the taint engine must not depend on the attestation layer.
+# This contract is BROKEN today (wardline.scanner.pipeline / .taint.project_resolver
+# import wardline.core.attest); the layering agent moves that code (wardline-9ec283d168
+# code half). Until then the non-blocking step surfaces the violation without gating CI.
+[[tool.importlinter.contracts]]
+name = "Taint engine must not import the attestation layer"
+type = "forbidden"
+source_modules = ["wardline.scanner"]
+forbidden_modules = ["wardline.core.attest"]

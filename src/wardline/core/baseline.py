@@ -15,10 +15,17 @@ from pathlib import Path
 from typing import Any
 
 from wardline.core.errors import ConfigError
-from wardline.core.finding import Finding, Kind, Severity, SuppressionState
+from wardline.core.finding import (
+    FINGERPRINT_SCHEME,
+    Finding,
+    Kind,
+    Severity,
+    SuppressionState,
+    require_fingerprint_scheme,
+)
 from wardline.core.optional_deps import require_yaml
 from wardline.core.paths import baseline_path as baseline_file
-from wardline.core.safe_paths import safe_project_file
+from wardline.core.safe_paths import safe_write_text, write_text_no_follow
 
 BASELINE_VERSION: int = 1
 """Bumped on a format change; validated on load (mirrors STDLIB_TAINT_VERSION)."""
@@ -52,6 +59,7 @@ def build_baseline_document(findings: Iterable[Finding]) -> dict[str, Any]:
         key=lambda f: (_SEVERITY_SORT[f.severity], f.rule_id, f.location.path, f.fingerprint),
     )
     return {
+        "fingerprint_scheme": FINGERPRINT_SCHEME,
         "version": BASELINE_VERSION,
         "entries": [
             {"fingerprint": f.fingerprint, "rule_id": f.rule_id, "path": f.location.path, "message": f.message}
@@ -62,13 +70,13 @@ def build_baseline_document(findings: Iterable[Finding]) -> dict[str, Any]:
 
 def write_baseline(path: Path, findings: Iterable[Finding], root: Path | None = None) -> None:
     yaml = require_yaml("writing baseline.yaml")
-    if root is not None:
-        path = safe_project_file(root, path, label=path.name)
-    path.parent.mkdir(parents=True, exist_ok=True)
     text = yaml.safe_dump(
         build_baseline_document(findings), sort_keys=False, default_flow_style=False, allow_unicode=True
     )
-    path.write_text(text, encoding="utf-8")
+    if root is not None:
+        safe_write_text(root, path, text, label=path.name)
+    else:
+        write_text_no_follow(path, text, label=path.name)
 
 
 def collect_and_write_baseline(
@@ -111,7 +119,13 @@ def collect_and_write_baseline(
         strict_defaults=strict_defaults,
     )
     to_baseline = [f for f in result.findings if f.kind is Kind.DEFECT and f.suppressed is not SuppressionState.WAIVED]
-    write_baseline(baseline_path, to_baseline, root=root)
+    # baseline_path is root-PREFIXED (weft_state_dir(root)/baseline.yaml). Pass it to the
+    # root-confined writer as an ABSOLUTE path: a relative `root` (e.g. `wardline baseline
+    # create pkg`) makes baseline_path `pkg/.weft/.../baseline.yaml`, which safe_write_text
+    # would resolve under `pkg` AGAIN (`pkg/pkg/.weft/...`) — writing a baseline the next
+    # scan of `pkg` never loads. .resolve() is idempotent for the absolute store_dir-override
+    # form. run_scan still gets the original `root`, so finding paths are unchanged.
+    write_baseline(baseline_path.resolve(), to_baseline, root=root)
     return to_baseline
 
 
@@ -160,6 +174,8 @@ def _build_baseline(raw: Any, name: str = "baseline.yaml") -> Baseline:
         raise ConfigError(f"{name}: must be a mapping at top level")
     if not raw:
         return Baseline(frozenset())
+    # Loader order is load-bearing: empty-guard (above) → scheme → version.
+    require_fingerprint_scheme(raw, store_name=name)
     if raw.get("version") != BASELINE_VERSION:
         raise ConfigError(f"{name}: version mismatch — expected {BASELINE_VERSION}, got {raw.get('version')!r}")
     entries = raw.get("entries")

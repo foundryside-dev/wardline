@@ -1,0 +1,37 @@
+{
+  "scanner_identity": "wardline@CONFORMANCE",
+  "rule_set_version": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "fingerprint_scheme": "wlfp2",
+  "findings": [
+    {
+      "rule_id": "PY-WL-101",
+      "message": "svc.leaky declares return trust INTEGRAL but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer",
+      "severity": "ERROR",
+      "kind": "defect",
+      "fingerprint": "9a291cac4a30b2cd8353f89eb428e184b01cb3919563ebeffd672745bf9cc665",
+      "qualname": "svc.leaky",
+      "properties": {
+        "actual_return": "EXTERNAL_RAW",
+        "declared_return": "INTEGRAL"
+      },
+      "suppression_state": "active"
+    }
+  ],
+  "scan_scope": {
+    "schema": "wardline-legis-scan-scope-1",
+    "scan_root": ".",
+    "is_git_root": true,
+    "source_roots": [
+      "."
+    ],
+    "resolved_source_roots": [
+      "."
+    ],
+    "scanned_paths": [
+      "svc.py"
+    ]
+  },
+  "commit_sha": "0000000000000000000000000000000000000000",
+  "tree_sha": "1111111111111111111111111111111111111111",
+  "artifact_signature": "hmac-sha256:v2:15ffe67f96e2298d608d901cfd72328b77ee7235b9418ff0c190a168f0e429b5"
+}

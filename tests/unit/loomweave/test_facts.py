@@ -53,6 +53,15 @@ def test_content_hash_is_blake3_whole_file_and_top_level_and_in_blob(tmp_path):
     assert len(expected) == 64
 
 
+def test_fact_emission_refuses_files_changed_after_scan(tmp_path):
+    proj, result = _scan_leaky(tmp_path)
+    (proj / "svc.py").write_text("def replacement():\n    return 1\n", encoding="utf-8")
+
+    facts = build_taint_facts(result, proj)
+
+    assert facts == []
+
+
 def test_per_file_hash_is_memoized(tmp_path, monkeypatch):
     proj, result = _scan_leaky(tmp_path)
     import wardline.loomweave.facts as facts_mod

@@ -42,9 +42,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from wardline._version import __version__
-from wardline.core.attest import git_state, ruleset_hash
+from wardline.core.attest import git_state
 from wardline.core.errors import LegisArtifactError
-from wardline.core.finding import Finding, SuppressionState
+from wardline.core.finding import FINGERPRINT_SCHEME, Finding, SuppressionState
+from wardline.core.ruleset import ruleset_hash
 from wardline.core.safe_paths import safe_project_file
 from wardline.core.taints import TaintState
 
@@ -55,6 +56,22 @@ if TYPE_CHECKING:
 LEGIS_ARTIFACT_KEY_ENV = "WARDLINE_LEGIS_ARTIFACT_KEY"
 SIG_PREFIX = "hmac-sha256:v2:"
 ARTIFACT_SIGNATURE_FIELD = "artifact_signature"
+
+# Cross-member scan-artifact keys that legis reads with a DEFAULT, not a hard
+# requirement (``findings`` -> empty list, ``dirty`` -> false). A silent rename of one
+# of these routes zero defects into legis under a green ``verified`` status — the
+# consumer never errors, it just governs an empty scan (weft foundation seam S8 / G1;
+# the ``dirty``-key analog is the hub's dirty-freeze issue). The fail-open is legis's to
+# close, but the trigger — a producer key drifting — is ours to prevent: the full
+# emitted key-set is frozen by tests/conformance/test_legis_artifact_contract_freeze.py.
+# Change a value here ONLY in lockstep with the legis hub. ``fingerprint_scheme`` is an
+# ignored-unknown envelope field today, frozen alongside so it cannot silently become a
+# drifted required key tomorrow.
+FINDINGS_FIELD = "findings"
+DIRTY_FIELD = "dirty"
+FINGERPRINT_SCHEME_FIELD = "fingerprint_scheme"
+SCAN_SCOPE_FIELD = "scan_scope"
+SCAN_SCOPE_SCHEMA = "wardline-legis-scan-scope-1"
 
 # The one shared vocabulary — legis carries these 8 tiers verbatim (TRUST_TIERS in
 # legis ingest.py). Sourced from the lattice so the two can never drift.
@@ -169,7 +186,7 @@ def project_finding(finding: Finding) -> dict[str, Any]:
         "fingerprint": wire["fingerprint"],
         "qualname": wire["qualname"],
         "properties": properties,
-        "suppressed": suppressed,
+        "suppression_state": suppressed,
     }
 
 
@@ -192,6 +209,55 @@ def _git_tree_sha(root: Path) -> str | None:
     if rev.returncode != 0:
         return None
     return rev.stdout.strip() or None
+
+
+def _git_repo_root(root: Path) -> Path | None:
+    """The containing git repository root, or None when unavailable."""
+    try:
+        rev = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
+        return None
+    if rev.returncode != 0:
+        return None
+    value = rev.stdout.strip()
+    if not value:
+        return None
+    try:
+        return Path(value).resolve()
+    except OSError:
+        return None
+
+
+def _relative_posix(path: Path, base: Path) -> str:
+    """Return *path* relative to *base* in stable POSIX form, allowing ``..``."""
+    try:
+        rel = path.relative_to(base)
+    except ValueError:
+        rel = Path(os.path.relpath(path, base))
+    return rel.as_posix() if rel.parts else "."
+
+
+def _scan_scope(result: ScanResult, *, root: Path, config: WardlineConfig) -> dict[str, Any]:
+    """Signed description of the exact scan scope carried by the artifact."""
+    resolved_root = root.resolve()
+    repo_root = _git_repo_root(root)
+    scope_base = repo_root if repo_root is not None else resolved_root
+    resolved_source_roots = [
+        _relative_posix((resolved_root / source_root).resolve(), scope_base) for source_root in config.source_roots
+    ]
+    return {
+        "schema": SCAN_SCOPE_SCHEMA,
+        "scan_root": _relative_posix(resolved_root, scope_base),
+        "is_git_root": repo_root is not None and resolved_root == repo_root,
+        "source_roots": list(config.source_roots),
+        "resolved_source_roots": resolved_source_roots,
+        "scanned_paths": list(result.scanned_paths),
+    }
 
 
 def build_legis_artifact(
@@ -245,9 +311,18 @@ def build_legis_artifact(
     scan: dict[str, Any] = {
         "scanner_identity": f"wardline@{__version__}",
         "rule_set_version": ruleset_hash(config),
-        "findings": findings,
+        # Envelope scheme signal (legis ignores unknown top-level fields; it is part
+        # of the signed body so the artifact_signature covers it). Per-finding
+        # fingerprints stay BARE — legis reads them from to_jsonl (SARIF-style value).
+        FINGERPRINT_SCHEME_FIELD: FINGERPRINT_SCHEME,
+        FINDINGS_FIELD: findings,
+        # Bind the artifact to the requested and realized scope. This prevents a
+        # signed subdirectory or narrowed-source-root scan from being indistinguishable
+        # from a full-repository scan carrying the same commit/tree provenance.
+        SCAN_SCOPE_FIELD: _scan_scope(result, root=root, config=config),
     }
     commit, dirty = git_state(root)
+    repo_root = _git_repo_root(root)
 
     # Signing is CLEAN-TREE-ONLY. A key + clean tree produces the signed, verified
     # artifact. A key + dirty tree is refused loudly UNLESS ``allow_dirty`` — and even
@@ -261,6 +336,11 @@ def build_legis_artifact(
         if commit is None:
             raise LegisArtifactError(
                 "cannot sign legis artifact: not a git repository, so commit/tree provenance is unavailable"
+            )
+        if repo_root is None or root.resolve() != repo_root:
+            raise LegisArtifactError(
+                "cannot sign legis artifact: scan root is not the git repository root; "
+                "scan the repository root so commit/tree provenance and scan scope match"
             )
         tree = _git_tree_sha(root)
         if tree is None:
@@ -285,7 +365,7 @@ def build_legis_artifact(
         if tree is not None:
             scan["tree_sha"] = tree
     if dirty:
-        scan["dirty"] = True
+        scan[DIRTY_FIELD] = True
     return scan
 
 
@@ -313,7 +393,7 @@ def legis_artifact_outcome(artifact: Mapping[str, Any]) -> LegisArtifactOutcome:
     producer). ``signed`` is read from the presence of the signature field — the
     authoritative record of what :func:`build_legis_artifact` did — not re-computed
     from key presence."""
-    dirty = bool(artifact.get("dirty"))
+    dirty = bool(artifact.get(DIRTY_FIELD))
     signed = ARTIFACT_SIGNATURE_FIELD in artifact
     return LegisArtifactOutcome(
         signed=signed,

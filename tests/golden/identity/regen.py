@@ -18,13 +18,19 @@ import argparse
 from pathlib import Path
 
 from golden.identity import _capture as c  # type: ignore[import-not-found]
+from wardline.core.finding import FINGERPRINT_SCHEME
 
 _HERE = Path(__file__).parent
 _INPUTS = {
     "sampleapp": _HERE / "fixtures" / "sampleapp",
     "stress": _HERE / "fixtures" / "stress",
+    "sinks": _HERE / "fixtures" / "sinks",
 }
-CORPUS_VERSION = 1
+# 2->3: P1 scheme-infra (format-only — fingerprint VALUES byte-identical).
+# 3->4: P3 value-rekey (wardline-8654423823) — line_start dropped from the hash +
+# move-stable entity-relative discriminators, so every PY-WL-*/RS-WL-* fingerprint
+# VALUE changes and META.fingerprint_scheme advances wlfp1->wlfp2.
+CORPUS_VERSION = 4
 
 
 def main() -> None:
@@ -41,7 +47,7 @@ def main() -> None:
         encoding="utf-8",
     )
     (out / "META.json").write_text(
-        c.to_json({"corpus_version": CORPUS_VERSION, "reason": args.reason}),
+        c.to_json({"corpus_version": CORPUS_VERSION, "fingerprint_scheme": FINGERPRINT_SCHEME, "reason": args.reason}),
         encoding="utf-8",
     )
     print(f"wrote identity corpus ({len(_INPUTS)} inputs + assure + META) to {out}")

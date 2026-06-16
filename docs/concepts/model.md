@@ -135,8 +135,11 @@ return is the higher trust level you declare.
 Boundaries matter because they are where trust is *earned*. A function that
 raises its declared trust but cannot actually reject anything — no `raise`, no
 early failing return — is not validating; it is just relabelling untrusted data
-as trusted. Wardline flags exactly that case (rule [PY-WL-102](rules.md)), so a
-boundary that claims to validate is held to actually being able to say "no."
+as trusted. Wardline flags exactly that case with its boundary-integrity family
+(rules [PY-WL-102 / 111 / 113 / 119](rules.md) — no rejection path, assert-only
+rejection, fail-open handler, and the bare no-op `return p` shape, exactly one
+of which fires per boundary), so a boundary that claims to validate is held to
+actually being able to say "no."
 
 Get your boundaries right and the trust propagation does the rest: everything
 downstream of a real boundary is trusted, everything upstream is raw, and
