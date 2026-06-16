@@ -23,6 +23,8 @@ site/public/_site-kit/
 
 # Wardline runtime output
 findings.jsonl
+# Transient scan/scratch output (e.g. Playwright captures from the site work).
+output/
 
 # Sibling legacy locations (transition window — .weft/<sibling>/ is preferred but
 # the old dot-dirs may still be present until siblings finish migrating).

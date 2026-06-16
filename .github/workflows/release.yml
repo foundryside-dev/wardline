@@ -21,6 +21,13 @@ jobs:
           python-version: "3.13"
       - name: Build
         run: uv build
+      - name: Guard tag matches built version
+        # Refuse to publish if the pushed tag (vX.Y.Z) doesn't match the version
+        # hatchling stamped into the built distributions — prevents tagging one
+        # version while _version.py says another.
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          test -f "dist/wardline-${TAG}.tar.gz" || { echo "tag $TAG does not match built dist:"; ls -1 dist; exit 1; }
       - name: Record artifact hashes
         run: |
           cd dist

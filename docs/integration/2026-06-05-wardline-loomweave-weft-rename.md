@@ -115,7 +115,7 @@ Preserve case: `Loom`→`Weft`, `loom`→`weft`, `LOOM`→`WEFT`; `Clarion`→`L
 - **Out of scope (historical/working records, left as-is):** `docs/**/archive/**`,
   all of `docs/superpowers/**` (working specs/plans + progress tracker — internal
   design history, cross-linked by exact name), and point-in-time audit files
-  (`wardline-readonly-audit-*.md`, `AUDIT.md`). Renaming these rewrites the record
+  (`wardline-readonly-audit-*.md`, `docs/audits/2026-06-08-comprehensive-audit.md`). Renaming these rewrites the record
   for no live value and risks cross-link breakage.
 
 ## Deferred (NOT a rename — flagged, not done here)

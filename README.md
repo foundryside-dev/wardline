@@ -201,7 +201,7 @@ Full documentation lives at **<https://foundryside-dev.github.io/wardline/>**.
 |----------|-------------|
 | [Getting Started](https://foundryside-dev.github.io/wardline/getting-started/) | Install, decorate, first scan |
 | [Taint & Trust Model](https://foundryside-dev.github.io/wardline/concepts/model/) | The lattice, decorators, and propagation |
-| [Rules](https://foundryside-dev.github.io/wardline/concepts/rules/) | The four policy rules |
+| [Rules](https://foundryside-dev.github.io/wardline/concepts/rules/) | The boundary, exception-flow, and sink rules |
 | [Configuration](https://foundryside-dev.github.io/wardline/guides/configuration/) | `weft.toml` `[wardline]`: rules, severity, excludes |
 | [Suppression](https://foundryside-dev.github.io/wardline/guides/suppression/) | Baselines and waivers |
 | [LLM Triage Judge](https://foundryside-dev.github.io/wardline/guides/judge/) | Opt-in TRUE/FALSE-positive labelling |
