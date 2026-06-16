@@ -104,39 +104,45 @@ def iter_calls_in_function_body(
     Header expressions that execute in the enclosing scope (decorators, default
     values, base classes, metaclass keywords) are still attributed to ``node``.
     """
+    # Performance optimization: iterative append with explicit type checks avoids
+    # recursive `yield from` overhead and is significantly faster for hot paths.
+    result: list[ast.Call] = []
 
-    def walk_node(current: ast.AST) -> Iterator[ast.Call]:
-        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            for decorator in current.decorator_list:
-                yield from walk_node(decorator)
-            yield from _walk_argument_defaults(current.args)
+    def walk_node(current: ast.AST) -> None:
+        t = type(current)
+        if t is ast.FunctionDef or t is ast.AsyncFunctionDef:
+            for decorator in current.decorator_list:  # type: ignore[attr-defined]
+                walk_node(decorator)
+            _walk_argument_defaults(current.args)  # type: ignore[attr-defined]
             return
-        if isinstance(current, ast.ClassDef):
-            for decorator in current.decorator_list:
-                yield from walk_node(decorator)
-            for base in current.bases:
-                yield from walk_node(base)
-            for keyword in current.keywords:
-                yield from walk_node(keyword.value)
+        if t is ast.ClassDef:
+            for decorator in current.decorator_list:  # type: ignore[attr-defined]
+                walk_node(decorator)
+            for base in current.bases:  # type: ignore[attr-defined]
+                walk_node(base)
+            for keyword in current.keywords:  # type: ignore[attr-defined]
+                walk_node(keyword.value)
             return
-        if isinstance(current, ast.Lambda):
-            yield from _walk_argument_defaults(current.args)
+        if t is ast.Lambda:
+            _walk_argument_defaults(current.args)  # type: ignore[attr-defined]
             return
-        if isinstance(current, ast.Call):
-            yield current
+        if t is ast.Call:
+            result.append(current)  # type: ignore[arg-type]
         for child in ast.iter_child_nodes(current):
-            yield from walk_node(child)
+            walk_node(child)
 
-    def _walk_argument_defaults(args: ast.arguments) -> Iterator[ast.Call]:
+    def _walk_argument_defaults(args: ast.arguments) -> None:
         for default in args.defaults:
-            yield from walk_node(default)
+            walk_node(default)
         for kw_default in args.kw_defaults:
             if kw_default is None:
                 continue
-            yield from walk_node(kw_default)
+            walk_node(kw_default)
 
     for stmt in node.body:
-        yield from walk_node(stmt)
+        walk_node(stmt)
+
+    return iter(result)
 
 
 def resolve_self_method_fqn(
