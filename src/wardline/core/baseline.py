@@ -127,9 +127,7 @@ def collect_and_write_baseline(
         strict_defaults=strict_defaults,
     )
     to_baseline = [
-        f
-        for f in result.findings
-        if _is_baselineable_finding(f) and f.suppressed is not SuppressionState.WAIVED
+        f for f in result.findings if _is_baselineable_finding(f) and f.suppressed is not SuppressionState.WAIVED
     ]
     # baseline_path is root-PREFIXED (weft_state_dir(root)/baseline.yaml). Pass it to the
     # root-confined writer as an ABSOLUTE path: a relative `root` (e.g. `wardline baseline

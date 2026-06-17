@@ -59,8 +59,7 @@ _WHERE_SUPPRESSION_INPUT_SCHEMA = {
 _WHERE_KIND_INPUT_SCHEMA = {
     "type": "string",
     "description": (
-        "Finding kind filter. Allowed values, case-insensitive: "
-        "defect, fact, classification, metric, suggestion."
+        "Finding kind filter. Allowed values, case-insensitive: defect, fact, classification, metric, suggestion."
     ),
 }
 

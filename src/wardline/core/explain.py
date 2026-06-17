@@ -94,9 +94,7 @@ def _sink_taint_source(finding: Finding, context: AnalysisContext) -> str | None
     if entity is None:
         return None
     sink_calls = [
-        n
-        for n in ast.walk(entity.node)
-        if isinstance(n, ast.Call) and _call_matches_finding_span(n, finding, line)
+        n for n in ast.walk(entity.node) if isinstance(n, ast.Call) and _call_matches_finding_span(n, finding, line)
     ]
     if not sink_calls:
         return None
