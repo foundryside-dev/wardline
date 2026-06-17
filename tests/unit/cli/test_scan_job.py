@@ -1,5 +1,7 @@
 import json
 import signal
+import subprocess
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -253,3 +255,36 @@ def test_scan_job_start_allows_timeout_opt_out(tmp_path: Path) -> None:
     payload = json.loads(result.output)
     assert payload["status"] == "completed"
     assert payload["request"]["timeout_seconds"] == 0.0
+
+
+def test_scan_job_background_worker_does_not_run_from_untrusted_root(tmp_path: Path, monkeypatch) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    _write(project, "svc.py", "def ok():\n    return 1\n")
+
+    calls: list[dict[str, object]] = []
+
+    class _FakePopen:
+        pid = 4321
+
+        def __init__(self, args: list[str], **kwargs: object) -> None:
+            calls.append({"args": args, **kwargs})
+
+    monkeypatch.setattr(subprocess, "Popen", _FakePopen)
+
+    result = CliRunner().invoke(cli, ["scan-job", "start", str(project)])
+
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+    call = calls[0]
+    assert call["args"] == [
+        sys.executable,
+        "-m",
+        "wardline.cli.scan_job_worker",
+        str(project.resolve()),
+        json.loads(result.output)["job_id"],
+    ]
+    worker_cwd = call["cwd"]
+    assert isinstance(worker_cwd, Path)
+    assert worker_cwd != project.resolve()
+    assert (worker_cwd / "wardline").is_dir()

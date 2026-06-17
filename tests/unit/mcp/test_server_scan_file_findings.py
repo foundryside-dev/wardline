@@ -38,7 +38,7 @@ def test_scan_file_findings_selected_wires_dependencies(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "scan_file_findings", fake_workflow)
 
     out = _scan_file_findings(
-        {"fingerprints": ["f" * 64], "priority": "P2", "labels": ["x"]},
+        {"fingerprints": ["f" * 64], "priority": "P2", "labels": ["x"], "fail_on": "error", "lang": "rust"},
         tmp_path,
         filigree_emitter=object(),
         filigree_filer=object(),
@@ -48,5 +48,7 @@ def test_scan_file_findings_selected_wires_dependencies(tmp_path, monkeypatch):
     assert out["mode"] == "fingerprints"
     assert seen["fingerprints"] == ("f" * 64,)
     assert seen["dry_run"] is False
+    assert seen["fail_on"] == "ERROR"
+    assert seen["lang"] == "rust"
     assert seen["priority"] == "P2"
     assert seen["labels"] == ("x",)

@@ -69,6 +69,16 @@ def _sink_arg_exprs(call: ast.Call) -> list[ast.expr]:
     return [*call.args, *[kw.value for kw in call.keywords]]
 
 
+def _call_matches_finding_span(call: ast.Call, finding: Finding, line: int) -> bool:
+    if getattr(call, "lineno", None) != line:
+        return False
+    if finding.location.col_start is not None and getattr(call, "col_offset", None) != finding.location.col_start:
+        return False
+    return not (
+        finding.location.col_end is not None and getattr(call, "end_col_offset", None) != finding.location.col_end
+    )
+
+
 def _sink_taint_source(finding: Finding, context: AnalysisContext) -> str | None:
     """For a call-site-anchored sink finding, the in-project call that introduced the
     untrusted value into the sink's arguments — derived from wardline's OWN analysis
@@ -83,7 +93,11 @@ def _sink_taint_source(finding: Finding, context: AnalysisContext) -> str | None
     entity = context.entities.get(qualname)
     if entity is None:
         return None
-    sink_calls = [n for n in ast.walk(entity.node) if isinstance(n, ast.Call) and getattr(n, "lineno", None) == line]
+    sink_calls = [
+        n
+        for n in ast.walk(entity.node)
+        if isinstance(n, ast.Call) and _call_matches_finding_span(n, finding, line)
+    ]
     if not sink_calls:
         return None
     # (a) a raw-returning call nested directly in the sink's own arguments.

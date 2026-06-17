@@ -104,6 +104,23 @@ def test_has_real_rejection_excludes_assert() -> None:
     assert not has_real_rejection(_fn("def f(p):\n return p\n"))
 
 
+def test_type_checking_guarded_raise_is_not_runtime_rejection() -> None:
+    alias_map = {"TC": "typing.TYPE_CHECKING", "t": "typing"}
+
+    by_import_alias = _fn("def f(p):\n if TC:\n  raise ValueError\n x = p\n return x\n")
+    by_module_alias = _fn("def f(p):\n if t.TYPE_CHECKING:\n  raise ValueError\n x = p\n return x\n")
+
+    assert not has_rejection_path(by_import_alias, alias_map)
+    assert not has_real_rejection(by_import_alias, alias_map)
+    assert not has_rejection_path(by_module_alias, alias_map)
+    assert not has_real_rejection(by_module_alias, alias_map)
+
+
+def test_type_checking_guarded_raise_does_not_defeat_assert_only() -> None:
+    fn = _fn("def f(p):\n assert p\n if TC:\n  raise ValueError\n return p\n")
+    assert asserts_are_sole_rejection(fn, {"TC": "typing.TYPE_CHECKING"})
+
+
 def _entities(src: str):
     tree = ast.parse(textwrap.dedent(src))
     ents = discover_file_entities(tree, module="m", path="m.py")
@@ -185,6 +202,20 @@ def test_rejecting_helper_calls_assert_only_helper_does_not_count() -> None:
     assert rejecting_helper_calls(ents["m.v"], ents, {}) == frozenset()
 
 
+def test_rejecting_helper_calls_type_checking_raise_does_not_count() -> None:
+    ents = _entities(
+        """
+        def _check(p):
+            if TC:
+                raise ValueError
+        def v(p):
+            _check(p)
+            return p
+        """
+    )
+    assert rejecting_helper_calls(ents["m.v"], ents, {}, {"TC": "typing.TYPE_CHECKING"}) == frozenset()
+
+
 def test_rejecting_helper_calls_is_same_module_only() -> None:
     # One-hop SAME-MODULE only: a resolved cross-module callee does not count.
     ents_m = _entities("def v(p):\n    helper(p)\n    return p\n")
@@ -214,6 +245,23 @@ def test_block_has_real_rejection_scans_statement_lists() -> None:
     assert isinstance(try_stmt, ast.Try)
     assert block_has_real_rejection(try_stmt.body)
     assert not block_has_real_rejection(try_stmt.handlers[0].body)
+
+
+def test_block_has_real_rejection_ignores_type_checking_body() -> None:
+    fn = _fn(
+        """
+        def f(p):
+            try:
+                if TC:
+                    raise ValueError
+                return p
+            except ValueError:
+                return None
+        """
+    )
+    try_stmt = fn.body[0]
+    assert isinstance(try_stmt, ast.Try)
+    assert not block_has_real_rejection(try_stmt.body, alias_map={"TC": "typing.TYPE_CHECKING"})
 
 
 def test_is_degenerate_boundary_shapes() -> None:

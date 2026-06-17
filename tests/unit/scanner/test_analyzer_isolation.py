@@ -24,6 +24,7 @@ from pathlib import Path
 from wardline.core.config import WardlineConfig
 from wardline.core.finding import ENGINE_PATH, UNANALYZED_RULE_IDS, Kind, Severity
 from wardline.core.run import gate_decision, run_scan
+from wardline.core.taints import TaintState
 from wardline.scanner.analyzer import WardlineAnalyzer
 from wardline.scanner.context import RuleRegistry
 
@@ -49,6 +50,24 @@ def _boom_on_marker(monkeypatch, exc: Exception) -> None:
     def _boom(stage_input):  # noqa: ANN001, ANN202
         if any(isinstance(n, ast.Name) and n.id == "boom" for n in ast.walk(stage_input.node)):
             raise exc
+        return real(stage_input)
+
+    monkeypatch.setattr(analyzer_mod, "run_l2_function_stage", _boom)
+
+
+def _boom_on_second_marker_l2(monkeypatch, exc: Exception) -> None:
+    """Make the L2 stage raise ``exc`` for marker functions only on the fixpoint rerun."""
+    import wardline.scanner.analyzer as analyzer_mod
+
+    real = analyzer_mod.run_l2_function_stage
+    calls_by_name: dict[str, int] = {}
+
+    def _boom(stage_input):  # noqa: ANN001, ANN202
+        if any(isinstance(n, ast.Name) and n.id == "boom" for n in ast.walk(stage_input.node)):
+            name = str(stage_input.node.name)
+            calls_by_name[name] = calls_by_name.get(name, 0) + 1
+            if calls_by_name[name] == 2:
+                raise exc
         return real(stage_input)
 
     monkeypatch.setattr(analyzer_mod, "run_l2_function_stage", _boom)
@@ -107,6 +126,22 @@ def test_recursion_error_still_yields_function_skip_fact(tmp_path, monkeypatch) 
     assert skipped[0].kind == Kind.DEFECT
     assert skipped[0].severity == Severity.ERROR
     assert not any(f.rule_id == "WLN-ENGINE-FILE-FAILED" for f in findings)
+
+
+def test_fixpoint_recursion_error_yields_function_skip_and_unknown_return(tmp_path, monkeypatch) -> None:
+    # The fixpoint rerun must not silently retain pass-1 results. It surfaces the same
+    # function-level skip diagnostic and overwrites the affected function with UNKNOWN_RAW.
+    _boom_on_second_marker_l2(monkeypatch, RecursionError("simulated fixpoint recursion"))
+    _write(tmp_path, "deep.py", "def a():\n    boom = 1\n    return 1\n")
+    analyzer = WardlineAnalyzer()
+    findings = analyzer.analyze([tmp_path / "deep.py"], WardlineConfig(), root=tmp_path)
+
+    skipped = [f for f in findings if f.rule_id == "WLN-ENGINE-FUNCTION-SKIPPED"]
+    assert len(skipped) == 1
+    assert skipped[0].properties["reason"] == "fixpoint_recursion"
+    ctx = analyzer.last_context
+    assert ctx is not None
+    assert ctx.function_return_taints["deep.a"] is TaintState.UNKNOWN_RAW
 
 
 def test_parse_stage_engine_exception_fails_file_not_scan(tmp_path, monkeypatch) -> None:

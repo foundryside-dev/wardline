@@ -648,9 +648,9 @@
       "fingerprint": "5ee6a352fd2713e30f8d3a8d5d2f374dfe486b5dc2a0299e77975bf4c9ea14bc",
       "kind": "defect",
       "location": {
-        "col_end": null,
-        "col_start": null,
-        "line_end": null,
+        "col_end": 29,
+        "col_start": 11,
+        "line_end": 34,
         "line_start": 34,
         "path": "wardline_sinks.py"
       },
@@ -699,9 +699,9 @@
       "fingerprint": "13c25150c1e15425e6ae5f9d99f67ec09dd5ffb4b60ac49e20367a0ad6240c6f",
       "kind": "defect",
       "location": {
-        "col_end": null,
-        "col_start": null,
-        "line_end": null,
+        "col_end": 55,
+        "col_start": 11,
+        "line_end": 41,
         "line_start": 41,
         "path": "wardline_sinks.py"
       },
@@ -750,9 +750,9 @@
       "fingerprint": "0dcfc65cd0c5381cbd62bc4646ea5b34f358be072431e3877213362e587cf8e9",
       "kind": "defect",
       "location": {
-        "col_end": null,
-        "col_start": null,
-        "line_end": null,
+        "col_end": 40,
+        "col_start": 11,
+        "line_end": 48,
         "line_start": 48,
         "path": "wardline_sinks.py"
       },
@@ -801,9 +801,9 @@
       "fingerprint": "9284a27b61ef23301fa372ac36c6385ec711fd26ed22a455eeea993981d5002e",
       "kind": "defect",
       "location": {
-        "col_end": null,
-        "col_start": null,
-        "line_end": null,
+        "col_end": 37,
+        "col_start": 9,
+        "line_end": 55,
         "line_start": 55,
         "path": "wardline_sinks.py"
       },
@@ -1028,9 +1028,9 @@
       "fingerprint": "3d8057c1001d1a882d3c85dbe04379d2a25bc6a4b5fca842497b19fddc4609fa",
       "kind": "defect",
       "location": {
-        "col_end": null,
-        "col_start": null,
-        "line_end": null,
+        "col_end": 29,
+        "col_start": 11,
+        "line_end": 84,
         "line_start": 84,
         "path": "wardline_sinks.py"
       },
@@ -1054,9 +1054,9 @@
       "fingerprint": "8b74d4819f60cc2f30acecedbf63b69dd512f00178f19e3e43ee4d4b6026444f",
       "kind": "defect",
       "location": {
-        "col_end": null,
-        "col_start": null,
-        "line_end": null,
+        "col_end": 49,
+        "col_start": 31,
+        "line_end": 84,
         "line_start": 84,
         "path": "wardline_sinks.py"
       },
@@ -1105,9 +1105,9 @@
       "fingerprint": "1f9174a59ff725857a5574eb57a4f1b31f7212ece7589d1b46721f2fd31edc9d",
       "kind": "defect",
       "location": {
-        "col_end": null,
-        "col_start": null,
-        "line_end": null,
+        "col_end": 76,
+        "col_start": 11,
+        "line_end": 95,
         "line_start": 95,
         "path": "wardline_sinks.py"
       },
@@ -1131,9 +1131,9 @@
       "fingerprint": "41d07bddca738298bd5d85c8db731766f44812033f01af7bc7d83941b2073759",
       "kind": "defect",
       "location": {
-        "col_end": null,
-        "col_start": null,
-        "line_end": null,
+        "col_end": 50,
+        "col_start": 11,
+        "line_end": 95,
         "line_start": 95,
         "path": "wardline_sinks.py"
       },
@@ -1232,9 +1232,9 @@
       "fingerprint": "5d3200b5f9d4418398cda8f3f830f716794dae3c1e0a3ec97af0f526735dbee9",
       "kind": "defect",
       "location": {
-        "col_end": null,
-        "col_start": null,
-        "line_end": null,
+        "col_end": 63,
+        "col_start": 4,
+        "line_end": 118,
         "line_start": 118,
         "path": "wardline_sinks.py"
       },
@@ -1363,6 +1363,9 @@
                               "uri": "wardline_sinks.py"
                             },
                             "region": {
+                              "endColumn": 29,
+                              "endLine": 34,
+                              "startColumn": 11,
                               "startLine": 34
                             }
                           }
@@ -1381,6 +1384,9 @@
                     "uri": "wardline_sinks.py"
                   },
                   "region": {
+                    "endColumn": 29,
+                    "endLine": 34,
+                    "startColumn": 11,
                     "startLine": 34
                   }
                 }
@@ -1503,6 +1509,9 @@
                               "uri": "wardline_sinks.py"
                             },
                             "region": {
+                              "endColumn": 55,
+                              "endLine": 41,
+                              "startColumn": 11,
                               "startLine": 41
                             }
                           }
@@ -1521,6 +1530,9 @@
                     "uri": "wardline_sinks.py"
                   },
                   "region": {
+                    "endColumn": 55,
+                    "endLine": 41,
+                    "startColumn": 11,
                     "startLine": 41
                   }
                 }
@@ -1643,6 +1655,9 @@
                               "uri": "wardline_sinks.py"
                             },
                             "region": {
+                              "endColumn": 40,
+                              "endLine": 48,
+                              "startColumn": 11,
                               "startLine": 48
                             }
                           }
@@ -1661,6 +1676,9 @@
                     "uri": "wardline_sinks.py"
                   },
                   "region": {
+                    "endColumn": 40,
+                    "endLine": 48,
+                    "startColumn": 11,
                     "startLine": 48
                   }
                 }
@@ -1783,6 +1801,9 @@
                               "uri": "wardline_sinks.py"
                             },
                             "region": {
+                              "endColumn": 37,
+                              "endLine": 55,
+                              "startColumn": 9,
                               "startLine": 55
                             }
                           }
@@ -1801,6 +1822,9 @@
                     "uri": "wardline_sinks.py"
                   },
                   "region": {
+                    "endColumn": 37,
+                    "endLine": 55,
+                    "startColumn": 9,
                     "startLine": 55
                   }
                 }
@@ -2221,6 +2245,9 @@
                     "uri": "wardline_sinks.py"
                   },
                   "region": {
+                    "endColumn": 29,
+                    "endLine": 84,
+                    "startColumn": 11,
                     "startLine": 84
                   }
                 }
@@ -2253,6 +2280,9 @@
                     "uri": "wardline_sinks.py"
                   },
                   "region": {
+                    "endColumn": 49,
+                    "endLine": 84,
+                    "startColumn": 31,
                     "startLine": 84
                   }
                 }
@@ -2319,6 +2349,9 @@
                     "uri": "wardline_sinks.py"
                   },
                   "region": {
+                    "endColumn": 76,
+                    "endLine": 95,
+                    "startColumn": 11,
                     "startLine": 95
                   }
                 }
@@ -2351,6 +2384,9 @@
                     "uri": "wardline_sinks.py"
                   },
                   "region": {
+                    "endColumn": 50,
+                    "endLine": 95,
+                    "startColumn": 11,
                     "startLine": 95
                   }
                 }
@@ -2522,6 +2558,9 @@
                               "uri": "wardline_sinks.py"
                             },
                             "region": {
+                              "endColumn": 63,
+                              "endLine": 118,
+                              "startColumn": 4,
                               "startLine": 118
                             }
                           }
@@ -2540,6 +2579,9 @@
                     "uri": "wardline_sinks.py"
                   },
                   "region": {
+                    "endColumn": 63,
+                    "endLine": 118,
+                    "startColumn": 4,
                     "startLine": 118
                   }
                 }

@@ -76,6 +76,7 @@ from wardline.scanner.rules._ast_helpers import (
     rejecting_helper_calls,
     returned_var_names,
 )
+from wardline.scanner.rules._sink_helpers import module_alias_map
 from wardline.scanner.rules.metadata import RuleMetadata
 
 if TYPE_CHECKING:
@@ -125,8 +126,9 @@ class FailOpenBoundary:
                 continue
             # Premise 1 (the family partition): a REAL rejection must exist. None at
             # all -> PY-WL-102's domain; assert-only -> PY-WL-111's domain.
-            rejecting_calls = rejecting_helper_calls(entity, context.entities, context.call_site_callees)
-            if not (has_real_rejection(entity.node) or rejecting_calls):
+            alias_map = module_alias_map(qualname, context)
+            rejecting_calls = rejecting_helper_calls(entity, context.entities, context.call_site_callees, alias_map)
+            if not (has_real_rejection(entity.node, alias_map) or rejecting_calls):
                 continue
             # Premise 2: the rejection must be SWALLOWABLE by the substituting
             # handler — inside its own try body, or inside the handler itself.
@@ -134,8 +136,8 @@ class FailOpenBoundary:
             if not any(
                 handler_substitutes_on_failure(handler, returned)
                 and (
-                    block_has_real_rejection(try_stmt.body, rejecting_calls)
-                    or block_has_real_rejection(handler.body, rejecting_calls)
+                    block_has_real_rejection(try_stmt.body, rejecting_calls, alias_map)
+                    or block_has_real_rejection(handler.body, rejecting_calls, alias_map)
                 )
                 for try_stmt in _own_statements(entity.node)
                 if isinstance(try_stmt, (ast.Try, ast.TryStar))

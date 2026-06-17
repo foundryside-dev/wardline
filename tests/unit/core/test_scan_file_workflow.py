@@ -22,8 +22,8 @@ class FakeEmitter:
         self.result = result
         self.calls: list[dict] = []
 
-    def emit(self, findings, *, scanned_paths=()):
-        self.calls.append({"count": len(findings), "scanned_paths": tuple(scanned_paths)})
+    def emit(self, findings, *, scanned_paths=(), language="python"):
+        self.calls.append({"count": len(findings), "scanned_paths": tuple(scanned_paths), "language": language})
         return self.result
 
 
@@ -63,6 +63,21 @@ def test_scan_file_findings_dry_run_lists_active_defects_without_promoting(tmp_p
     assert out["active_defects"][0]["explanation"]["source_boundary_qualname"] == "svc.read_raw"
     assert out["active_defects"][0]["promotion"]["attempted"] is False
     assert filer.calls == []
+
+
+def test_scan_file_findings_lang_rust_lists_rust_defects(tmp_path):
+    import pytest
+
+    pytest.importorskip("tree_sitter", reason="wardline[rust] extra not installed")
+    trusted = "/// @trusted(level=ASSURED)\n"
+    (tmp_path / "hot.rs").write_text(
+        trusted + 'fn run() {\n    let t = std::env::var("X").unwrap();\n    Command::new(t).output();\n}\n',
+        encoding="utf-8",
+    )
+
+    out = scan_file_findings(tmp_path, lang="rust")
+
+    assert out["active_defects"][0]["rule_id"] == "RS-WL-108"
 
 
 def test_scan_file_findings_selected_fingerprint_emits_and_promotes(tmp_path):

@@ -1,8 +1,9 @@
 """WS-B1/B2: MCP `scan` server-side `where` filter and `explain` inliner."""
 
+import jsonschema
 import pytest
 
-from wardline.mcp.server import ToolError, _scan
+from wardline.mcp.server import ToolError, WardlineMCPServer, _scan
 
 
 def _many_leaks(n: int) -> str:
@@ -58,6 +59,37 @@ def test_where_unknown_key_is_toolerror(tmp_path):
     (tmp_path / "svc.py").write_text(_SRC, encoding="utf-8")
     with pytest.raises(ToolError, match="unknown filter key"):
         _scan({"where": {"bogus": "x"}}, tmp_path)
+
+
+def test_scan_schema_and_runtime_accept_case_insensitive_where_filters(tmp_path):
+    (tmp_path / "svc.py").write_text(_SRC, encoding="utf-8")
+    server = WardlineMCPServer(root=tmp_path)
+    tools = server.rpc.dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
+    schema = next(t for t in tools["result"]["tools"] if t["name"] == "scan")["inputSchema"]
+
+    args = {"where": {"severity": "error", "suppression": "ACTIVE", "kind": "DEFECT"}}
+    jsonschema.validate(args, schema)
+    where_props = schema["properties"]["where"]["properties"]
+    assert "enum" not in where_props["severity"]
+    assert "enum" not in where_props["suppression"]
+    assert "enum" not in where_props["kind"]
+
+    out = _scan({**args, "full": True}, tmp_path)
+    got = [e for e in out["agent_summary"]["active_defects"] if e["rule_id"] == "PY-WL-101"]
+    assert {e["qualname"] for e in got} == {"svc.leak_a", "svc.leak_b"}
+
+
+def test_scan_schema_and_runtime_accept_case_insensitive_fail_on(tmp_path):
+    (tmp_path / "svc.py").write_text(_SRC, encoding="utf-8")
+    server = WardlineMCPServer(root=tmp_path)
+    tools = server.rpc.dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
+    schema = next(t for t in tools["result"]["tools"] if t["name"] == "scan")["inputSchema"]
+
+    jsonschema.validate({"fail_on": "error"}, schema)
+    assert "enum" not in schema["properties"]["fail_on"]
+    out = _scan({"fail_on": "error"}, tmp_path)
+    assert out["gate"]["fail_on"] == "ERROR"
+    assert out["gate"]["tripped"] is True
 
 
 def test_where_sei_filter_honors_strict_defaults(tmp_path, monkeypatch):

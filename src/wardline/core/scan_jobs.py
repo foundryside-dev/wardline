@@ -39,6 +39,7 @@ _HEARTBEAT_INTERVAL_SECONDS = 5.0
 _STALE_AFTER_SECONDS = 30.0
 DEFAULT_SCAN_JOB_TIMEOUT_SECONDS = 30 * 60
 _TERMINAL_STATUSES = {"completed", "completed_with_enrichment_failure", "failed", "cancelled"}
+_WORKER_MODULE = "wardline.cli.scan_job_worker"
 
 
 class _ScanJobTimeout(WardlineError):
@@ -240,6 +241,12 @@ def _base_status(job_id: str, request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _trusted_worker_cwd() -> Path:
+    """Return the trusted import root for the background worker module."""
+
+    return Path(__file__).resolve().parents[2]
+
+
 def _normalize_request(request: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(request)
     timeout_seconds = normalized.get("timeout_seconds")
@@ -327,8 +334,11 @@ def start_scan_job(root: Path, request: dict[str, Any], *, foreground: bool = Fa
     stderr_path = directory / "stderr.log"
     with stdout_path.open("ab") as stdout, stderr_path.open("ab") as stderr:
         proc = subprocess.Popen(  # noqa: S603
-            [sys.executable, "-m", "wardline.cli.scan_job_worker", str(root), job_id],
-            cwd=root,
+            [sys.executable, "-m", _WORKER_MODULE, str(root), job_id],
+            # Scan roots are untrusted. If cwd is the scanned repository, Python's
+            # ``-m`` import resolution can execute a repo-local ``wardline`` package
+            # before the real worker module is loaded.
+            cwd=_trusted_worker_cwd(),
             stdout=stdout,
             stderr=stderr,
             start_new_session=True,

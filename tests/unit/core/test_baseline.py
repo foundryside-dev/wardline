@@ -12,8 +12,9 @@ from wardline.core.baseline import (
     write_baseline,
 )
 from wardline.core.errors import ConfigError, SchemeMismatchError, WardlineError
-from wardline.core.finding import FINGERPRINT_SCHEME, Finding, Kind, Location, Severity
+from wardline.core.finding import FINGERPRINT_SCHEME, Finding, Kind, Location, Maturity, Severity
 from wardline.core.paths import baseline_path
+from wardline.core.suppression import gate_trips
 
 _FP_A = "a" * 64
 _FP_B = "b" * 64
@@ -27,6 +28,18 @@ def _finding(fp: str, *, rule: str = "PY-WL-101", sev: Severity = Severity.ERROR
         kind=Kind.DEFECT,
         location=Location(path=path, line_start=1),
         fingerprint=fp,
+    )
+
+
+def _preview_finding(fp: str) -> Finding:
+    return Finding(
+        rule_id="PY-WL-119",
+        message="preview taint",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path="src/m.py", line_start=1),
+        fingerprint=fp,
+        maturity=Maturity.PREVIEW,
     )
 
 
@@ -95,6 +108,16 @@ def test_build_document_is_order_independent() -> None:
     # Git-stability: the committed file must not churn on finding order.
     fs = [_finding(_FP_A, sev=Severity.WARN), _finding(_FP_B, sev=Severity.CRITICAL)]
     assert build_baseline_document(fs) == build_baseline_document(list(reversed(fs)))
+
+
+def test_build_document_excludes_preview_findings_that_never_gate() -> None:
+    preview = _preview_finding(_FP_A)
+    stable = _finding(_FP_B)
+
+    doc = build_baseline_document([preview, stable])
+
+    assert gate_trips([preview], Severity.ERROR) is False
+    assert [entry["fingerprint"] for entry in doc["entries"]] == [_FP_B]
 
 
 def test_write_then_load_round_trips(tmp_path: Path) -> None:

@@ -120,6 +120,17 @@ _SINK_LEAKY_INLINE = (
     "@trusted\ndef log_it(p):\n    logger.info(read_raw(p))\n"
 )
 
+# Two sink findings on the same physical line. The selected LATER finding must explain
+# its own sink call, not the first call sharing the line.
+_SINK_TWO_INLINE_ONE_LINE = (
+    "import logging\n"
+    "from wardline.decorators import external_boundary, trusted\n"
+    "logger = logging.getLogger(__name__)\n"
+    "@external_boundary\ndef read_a(p):\n    return p\n"
+    "@external_boundary\ndef read_b(p):\n    return p\n"
+    "@trusted\ndef log_it(p):\n    logger.info(read_a(p)); logger.info(read_b(p))\n"
+)
+
 # The tainted argument comes from an IMPORTED callee wardline cannot resolve — the
 # source is genuinely underivable from the single-scan analysis.
 _SINK_UNDERIVABLE = (
@@ -168,6 +179,20 @@ def test_explain_sink_finding_names_an_inline_call_source(tmp_path: Path) -> Non
     assert exp is not None
     assert exp.immediate_tainted_callee == "read_raw"
     assert exp.source_boundary_qualname == "svc.read_raw"
+
+
+def test_explain_later_same_line_sink_uses_that_sink_span(tmp_path: Path) -> None:
+    root = _sink_project(tmp_path, _SINK_TWO_INLINE_ONE_LINE)
+    findings = [f for f in run_scan(root).findings if f.rule_id == "PY-WL-125"]
+    assert len(findings) == 2
+    assert len({f.location.line_start for f in findings}) == 1
+    later = max(findings, key=lambda f: int((f.taint_path_v0 or "@0:0").split("@", 1)[1].split(":", 1)[0]))
+
+    exp = explain_finding(root, fingerprint=later.fingerprint)
+
+    assert exp is not None
+    assert exp.immediate_tainted_callee == "read_b"
+    assert exp.source_boundary_qualname == "svc.read_b"
 
 
 def test_explain_taint_result_marks_source_resolution_resolved(tmp_path: Path) -> None:

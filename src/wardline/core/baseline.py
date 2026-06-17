@@ -19,6 +19,7 @@ from wardline.core.finding import (
     FINGERPRINT_SCHEME,
     Finding,
     Kind,
+    Maturity,
     Severity,
     SuppressionState,
     require_fingerprint_scheme,
@@ -49,10 +50,16 @@ class Baseline:
         return fingerprint in self.fingerprints
 
 
+def _is_baselineable_finding(finding: Finding) -> bool:
+    return finding.kind is Kind.DEFECT and finding.maturity is not Maturity.PREVIEW
+
+
 def build_baseline_document(findings: Iterable[Finding]) -> dict[str, Any]:
     """Pure: the YAML-shaped dict for the given findings (deduped, severity-sorted)."""
     unique: dict[str, Finding] = {}
     for f in findings:
+        if not _is_baselineable_finding(f):
+            continue
         unique.setdefault(f.fingerprint, f)
     ordered = sorted(
         unique.values(),
@@ -93,8 +100,9 @@ def collect_and_write_baseline(
     """Derive the baselineable findings for ``root`` and write them to
     ``.weft/wardline/baseline.yaml``. Returns the findings that were baselined.
 
-    Captures current DEFECTs, EXCLUDING any with an active waiver (else the
-    baseline swallows them and their expiry never resurfaces — spec §8).
+    Captures current stable DEFECTs, EXCLUDING preview findings that never gate
+    and any with an active waiver (else the baseline swallows them and their
+    expiry never resurfaces — spec §8).
     Honors ``config_path`` exactly as ``scan`` does, so the baseline is built
     from the same waiver set the scans will consume.
 
@@ -118,7 +126,11 @@ def collect_and_write_baseline(
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
     )
-    to_baseline = [f for f in result.findings if f.kind is Kind.DEFECT and f.suppressed is not SuppressionState.WAIVED]
+    to_baseline = [
+        f
+        for f in result.findings
+        if _is_baselineable_finding(f) and f.suppressed is not SuppressionState.WAIVED
+    ]
     # baseline_path is root-PREFIXED (weft_state_dir(root)/baseline.yaml). Pass it to the
     # root-confined writer as an ABSOLUTE path: a relative `root` (e.g. `wardline baseline
     # create pkg`) makes baseline_path `pkg/.weft/.../baseline.yaml`, which safe_write_text

@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import jsonschema
+
 import wardline.mcp.server as server_mod
 from wardline.mcp.server import WardlineMCPServer
 
@@ -96,6 +98,29 @@ def test_scan_job_start_threads_request_to_core(tmp_path: Path, monkeypatch) -> 
             False,
         )
     ]
+
+
+def test_scan_job_start_schema_and_runtime_accept_case_insensitive_fail_on(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_start(root: Path, request: dict[str, Any], *, foreground: bool = False) -> dict[str, Any]:
+        calls.append(request)
+        return _status()
+
+    monkeypatch.setattr(server_mod, "start_scan_job", fake_start)
+    server = WardlineMCPServer(root=tmp_path)
+    tools = server.rpc.dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
+    schema = next(t for t in tools["result"]["tools"] if t["name"] == "scan_job_start")["inputSchema"]
+
+    jsonschema.validate({"fail_on": "error"}, schema)
+    assert "enum" not in schema["properties"]["fail_on"]
+    out = _tool_call(server, "scan_job_start", {"fail_on": "error"})
+
+    assert out["job_id"] == "a" * 32
+    assert calls[0]["fail_on"] == "ERROR"
 
 
 def test_scan_job_status_and_cancel_call_core(tmp_path: Path, monkeypatch) -> None:

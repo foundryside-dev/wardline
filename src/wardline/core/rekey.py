@@ -642,12 +642,15 @@ def run_rekey(root: Path, findings: Sequence[Finding], *, filigree: Any = None) 
     # STALE wlfp1 snapshot and DROP any verdict added since the migration. (Incomplete — e.g.
     # a deferred Filigree leg — still re-runs, preserving the converge/retry path.)
     jpath = paths.migration_journal_path(root)
-    if jpath.is_file() and load_journal(jpath).complete:
+    existing_journal = load_journal(jpath) if jpath.is_file() else None
+    if existing_journal is not None and existing_journal.complete:
         raise WardlineError(
             "this project's fingerprint migration is already complete — "
             "use `wardline rekey --rollback` to undo it, or delete "
             f"{snapshot_dir(root)} + {jpath} to migrate afresh."
         )
+    if existing_journal is not None:
+        return apply_pending_legs(root, existing_journal, findings=findings, filigree=filigree)
     # Refuse a rekey when every populated store ALREADY carries the live scheme: there
     # is nothing to migrate, and re-keying wlfp2 entries through the wlfp1 remap would
     # orphan every healthy verdict (the destructive twin of the A7 probe misread,

@@ -51,7 +51,15 @@ def _cap_suggestion(suggestion: str | None) -> str | None:
     return suggestion if len(suggestion) <= _SUGGESTION_LIMIT else suggestion[:_SUGGESTION_LIMIT]
 
 
-def _finding_to_wire(finding: Finding) -> dict[str, Any]:
+def _language_for_finding(finding: Finding) -> str:
+    path = finding.location.path.lower()
+    rule_id = finding.rule_id.upper()
+    if rule_id.startswith("RS-") or path.endswith(".rs"):
+        return "rust"
+    return "python"
+
+
+def _finding_to_wire(finding: Finding, *, language: str | None = None) -> dict[str, Any]:
     wire: dict[str, Any] = {
         "path": finding.location.path,
         "rule_id": finding.rule_id,
@@ -61,7 +69,7 @@ def _finding_to_wire(finding: Finding) -> dict[str, Any]:
         "line_end": finding.location.line_end,
         "fingerprint": format_fingerprint(FINGERPRINT_SCHEME, finding.fingerprint),
         "metadata": to_filigree_metadata(finding),
-        "language": "python",
+        "language": language or _language_for_finding(finding),
     }
     suggestion = _cap_suggestion(finding.suggestion)
     if suggestion is not None:
@@ -75,6 +83,7 @@ def build_scan_results_body(
     scan_source: str = "wardline",
     scanned_paths: Sequence[str] = (),
     mark_unseen: bool | None = None,
+    language: str | None = None,
 ) -> dict[str, Any]:
     """Build the ``POST /api/weft/scan-results`` request body. Emits ALL finding kinds.
     ``mark_unseen`` opts into Filigree's per-(file, scan_source) absent-fingerprint sweep:
@@ -85,7 +94,7 @@ def build_scan_results_body(
     If any file was discovered but not analyzed, do not run the absent-fingerprint
     sweep: a parse/file failure means missing findings are not proof of a fix.
     """
-    findings_wire = [_finding_to_wire(f) for f in findings]
+    findings_wire = [_finding_to_wire(f, language=language) for f in findings]
     scanned = list(dict.fromkeys(p for p in scanned_paths if p))
     has_unanalyzed = any(f.rule_id in UNANALYZED_RULE_IDS for f in findings)
     if mark_unseen is None:
@@ -311,12 +320,14 @@ class EmitResult:
 
     def __post_init__(self) -> None:
         # Mirror GateDecision's construction-time guard so a second constructor cannot
-        # express a contradictory outcome: a reached/success result carries no error status,
-        # and a soft-failure (unreachable) created/updated/failed nothing.
+        # express a contradictory outcome: a reached/success result carries no error status.
+        # A transport-unreachable result has no status and cannot have accepted counts;
+        # status-bearing soft failures may carry counts from chunks that landed before the
+        # failing chunk and ``partial`` failures for the chunks that did not.
         if self.reachable and self.status is not None:
             raise ValueError(f"a reachable EmitResult carries no error status (got {self.status})")
-        if not self.reachable and (self.created or self.updated or self.failed):
-            raise ValueError("an unreachable EmitResult must have zero created/updated/failed")
+        if not self.reachable and self.status is None and (self.created or self.updated or self.failed):
+            raise ValueError("a transport-unreachable EmitResult must have zero created/updated/failed")
 
 
 @dataclass(frozen=True, slots=True)
@@ -481,6 +492,24 @@ def _parse_success_response(resp: Response) -> EmitResult:
         failures=failures,
         warnings=tuple(warnings),
     )
+
+
+def _record_pending_partial_failures(
+    failures: list[FailedFinding],
+    chunks: Sequence[_ScanResultChunk],
+    start_index: int,
+    *,
+    detail: str,
+) -> None:
+    for pending_chunk in chunks[start_index:]:
+        for finding in pending_chunk.findings:
+            failures.append(
+                FailedFinding(
+                    reason="partial",
+                    detail=detail,
+                    fingerprint=format_fingerprint(FINGERPRINT_SCHEME, finding.fingerprint),
+                )
+            )
 
 
 def filigree_disabled_reason(
@@ -668,7 +697,13 @@ class FiligreeEmitter:
         self._operator_max_findings_per_request = _resolve_operator_max_findings_per_request(max_findings_per_request)
         self._protocol_errors_loud = protocol_errors_loud
 
-    def emit(self, findings: Sequence[Finding], *, scanned_paths: Sequence[str] = ()) -> EmitResult:
+    def emit(
+        self,
+        findings: Sequence[Finding],
+        *,
+        scanned_paths: Sequence[str] = (),
+        language: str | None = None,
+    ) -> EmitResult:
         headers = {"Content-Type": "application/json"}
         token_sent = bool(self._token)
         if token_sent:
@@ -690,6 +725,7 @@ class FiligreeEmitter:
                         chunk.findings,
                         scanned_paths=chunk.scanned_paths,
                         mark_unseen=chunk.mark_unseen,
+                        language=language,
                     )
                 ).encode("utf-8")
                 resp = self._transport.post(self._url, body, headers)
@@ -697,11 +733,33 @@ class FiligreeEmitter:
                     # Filigree is present but its opt-in bearer auth is on and refusing us.
                     # Stays SOFT (enrichment unavailable, never exit-2) — but distinguished
                     # as auth so the caller can say the actionable thing.
-                    return EmitResult(reachable=False, status=resp.status, token_sent=token_sent, url=self._url)
+                    detail = f"chunk rejected at auth layer ({resp.status}): {resp.body}"
+                    _record_pending_partial_failures(failures, chunks, chunk_index - 1, detail=detail)
+                    return EmitResult(
+                        reachable=False,
+                        created=created,
+                        updated=updated,
+                        failures=tuple(failures),
+                        warnings=tuple(warnings),
+                        status=resp.status,
+                        token_sent=token_sent,
+                        url=self._url,
+                    )
                 if resp.status >= 500:
                     # Server-side outage (5xx) — the sibling is degraded, not a Wardline
                     # payload bug. Treat like absent (warn + continue), carrying the status.
-                    return EmitResult(reachable=False, status=resp.status, token_sent=token_sent, url=self._url)
+                    detail = f"chunk rejected at server layer ({resp.status}): {resp.body}"
+                    _record_pending_partial_failures(failures, chunks, chunk_index - 1, detail=detail)
+                    return EmitResult(
+                        reachable=False,
+                        created=created,
+                        updated=updated,
+                        failures=tuple(failures),
+                        warnings=tuple(warnings),
+                        status=resp.status,
+                        token_sent=token_sent,
+                        url=self._url,
+                    )
                 if not 200 <= resp.status < 300:
                     message = f"Filigree rejected scan-results ({resp.status}) at {self._url}: {resp.body}"
                     if self._protocol_errors_loud:
@@ -713,15 +771,7 @@ class FiligreeEmitter:
                     # minus a number. ``partial`` (chunk-wide) is named distinctly from a
                     # per-finding ``rejected`` because the cause is the request, not the body.
                     detail = f"chunk rejected at protocol layer ({resp.status}): {resp.body}"
-                    for pending_chunk in chunks[chunk_index - 1 :]:
-                        for finding in pending_chunk.findings:
-                            failures.append(
-                                FailedFinding(
-                                    reason="partial",
-                                    detail=detail,
-                                    fingerprint=format_fingerprint(FINGERPRINT_SCHEME, finding.fingerprint),
-                                )
-                            )
+                    _record_pending_partial_failures(failures, chunks, chunk_index - 1, detail=detail)
                     warnings.append(message)
                     break
                 chunk_result = _parse_success_response(resp)

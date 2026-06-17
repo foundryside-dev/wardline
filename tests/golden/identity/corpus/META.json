@@ -1,5 +1,5 @@
 {
   "corpus_version": 4,
   "fingerprint_scheme": "wlfp2",
-  "reason": "assure posture gains additive unanalyzed_total coverage field (pollable scan-job + coverage WIP)"
+  "reason": "record sink call spans in finding locations"
 }

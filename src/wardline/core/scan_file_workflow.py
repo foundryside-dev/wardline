@@ -124,6 +124,7 @@ def scan_file_findings(
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
     strict_defaults: bool = False,
+    lang: str = "python",
     fingerprints: tuple[str, ...] = (),
     all_active: bool = False,
     dry_run: bool = True,
@@ -142,6 +143,7 @@ def scan_file_findings(
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
+        lang=lang,
     )
     decision = gate_decision(result, threshold)
     active_defects = [
@@ -160,7 +162,7 @@ def scan_file_findings(
 
     emit_result: EmitResult | None = None
     if selected and filigree_emitter is not None:
-        emit_result = filigree_emitter.emit(result.findings, scanned_paths=result.scanned_paths)
+        emit_result = filigree_emitter.emit(result.findings, scanned_paths=result.scanned_paths, language=lang)
 
     active_out: list[dict[str, Any]] = []
     for finding in active_defects:

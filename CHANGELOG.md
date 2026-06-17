@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-06-18
+
+### Fixed
+- **Scanner boundary classification is stricter around runtime reachability.**
+  Rejections guarded by `typing.TYPE_CHECKING` no longer rescue production
+  trust boundaries, assert-only helper validators are attributed to
+  `PY-WL-111` rather than `PY-WL-102`, and L2 fixpoint recursion now records a
+  function skip with an `UNKNOWN_RAW` return instead of retaining stale pass-1
+  facts.
+- **Sink findings now carry call-site spans.** Python sink rules populate
+  `line_end`, `col_start`, and `col_end`, allowing `explain-taint` to resolve
+  the correct sink when multiple calls share one physical line. Frozen golden
+  fixtures were refreshed to record the new span metadata without changing
+  fingerprint values.
+- **Filigree and Rust file-finding paths preserve language identity.**
+  `scan-file-findings` and `file-finding` accept `--lang`, MCP mirrors the
+  same argument, Rust findings emit `language: rust`, and Loomweave identity
+  attachment re-scans in the requested frontend.
+- **Federation and migration status is more honest.** Chunked Filigree emission
+  preserves counts from already-accepted chunks and records pending findings as
+  partial failures on auth/server/protocol rejection; incomplete rekey journals
+  now resume deferred legs instead of refusing a forward rerun.
+- **Discovery, baseline, and scan-job hardening.** Nested `.gitignore` anchors
+  are scoped to their own directory, `build`/`dist` package names under source
+  roots are scanned, preview findings are excluded from baselines because they
+  never gate, and background scan jobs import Wardline from a trusted package
+  root instead of the untrusted scanned repository.
+- **MCP input schemas match runtime parsing.** `fail_on` and `where` filters
+  advertise case-insensitive string inputs instead of closed uppercase-only
+  enums, matching the server-side normalization used by agents.
+
 ## [1.0.1] - 2026-06-17
 
 ### Added
@@ -1245,6 +1276,7 @@ for Python — enterprise-class trust-boundary analysis at small-team weight.
 - **Packaging** — MIT-licensed; optional extras `scanner` (config + CLI) and
   `weft` (HTTP integrations).
 
+[1.0.2]: https://github.com/foundryside-dev/wardline/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/foundryside-dev/wardline/compare/v0.3.0...v1.0.1
 [0.3.0]: https://github.com/foundryside-dev/wardline/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/foundryside-dev/wardline/compare/v0.2.0...v0.2.1

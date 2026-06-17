@@ -78,6 +78,27 @@ def test_file_finding_can_attach_loomweave_identity(tmp_path, monkeypatch):
     }
 
 
+def test_file_finding_threads_lang_to_identity_attach(tmp_path, monkeypatch):
+    from wardline.core import filigree_issue as mod
+
+    seen = {}
+
+    def fake_attach(**kw):
+        seen.update(kw)
+        return IdentityAttachResult.skipped("done")
+
+    monkeypatch.setattr(mod, "attach_loomweave_identity_for_finding", fake_attach)
+
+    _file_finding(
+        {"fingerprint": "fp1", "attach_loomweave_identity": True, "lang": "rust"},
+        tmp_path,
+        FakeFiler(FileResult(reachable=True, issue_id="wardline-abc", created=True)),
+        loomweave=object(),
+    )
+
+    assert seen["lang"] == "rust"
+
+
 def test_server_filer_none_without_url(tmp_path):
     assert WardlineMCPServer(root=tmp_path)._filigree_filer() is None
 

@@ -68,6 +68,19 @@ def test_boundary_with_raise_is_clean(tmp_path) -> None:
     assert _run(ctx) == []
 
 
+def test_type_checking_guarded_raise_does_not_rescue_boundary(tmp_path) -> None:
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": "from typing import TYPE_CHECKING as TC\n"
+            "from wardline.decorators import trust_boundary\n"
+            "@trust_boundary(to_level='ASSURED')\n"
+            "def v(p):\n    if TC:\n        raise ValueError\n    x = p\n    return x\n",
+        },
+    )
+    assert [(f.rule_id, f.qualname) for f in _run(ctx)] == [("PY-WL-102", "m.v")]
+
+
 def test_unreachable_raise_does_not_rescue_boundary(tmp_path) -> None:
     ctx, _ = _analyze(
         tmp_path,
@@ -175,6 +188,19 @@ def test_non_raising_helper_does_not_count_as_rejection(tmp_path) -> None:
             "m.py": "from wardline.decorators import trust_boundary\n"
             "def _log(p):\n    print(p)\n    return p\n"
             "@trust_boundary(to_level='ASSURED')\ndef v(p):\n    _log(p)\n    return p\n",
+        },
+    )
+    assert [(f.rule_id, f.qualname) for f in _run(ctx)] == [("PY-WL-102", "m.v")]
+
+
+def test_type_checking_guarded_raise_in_helper_does_not_rescue_boundary(tmp_path) -> None:
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": "import typing as t\n"
+            "from wardline.decorators import trust_boundary\n"
+            "def _check(p):\n    if t.TYPE_CHECKING:\n        raise ValueError\n"
+            "@trust_boundary(to_level='ASSURED')\ndef v(p):\n    _check(p)\n    return p\n",
         },
     )
     assert [(f.rule_id, f.qualname) for f in _run(ctx)] == [("PY-WL-102", "m.v")]

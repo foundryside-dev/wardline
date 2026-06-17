@@ -59,11 +59,12 @@ def test_scan_file_findings_cli_selected_fingerprint_wires_urls(tmp_path, monkey
     monkeypatch.setattr(mod, "load_loomweave_token", lambda root: None)
     monkeypatch.setattr(mod, "resolve_project_name", lambda root: "proj")
 
-    res = CliRunner().invoke(cli, ["scan-file-findings", str(tmp_path), "--fingerprint", "f" * 64])
+    res = CliRunner().invoke(cli, ["scan-file-findings", str(tmp_path), "--fingerprint", "f" * 64, "--lang", "rust"])
 
     assert res.exit_code == 0
     assert seen["fingerprints"] == ("f" * 64,)
     assert seen["dry_run"] is False
+    assert seen["lang"] == "rust"
     assert seen["filigree_emitter"] == ("emitter", "http://f/api/weft/scan-results")
     assert isinstance(seen["loomweave_client"], FakeLoomweave)
 

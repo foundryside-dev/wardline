@@ -21,6 +21,13 @@ def test_leading_slash_anchors_to_base() -> None:
     assert not m.match("pkg/build", is_dir=True)
 
 
+def test_nested_base_scopes_anchored_patterns() -> None:
+    m = GitignoreMatcher.from_text("/generated\n", base="pkg")
+    assert m.match("pkg/generated", is_dir=True)
+    assert not m.match("generated", is_dir=True)
+    assert not m.match("pkg/sub/generated", is_dir=True)
+
+
 def test_internal_slash_anchors() -> None:
     m = GitignoreMatcher.from_text("foo/bar\n")
     assert m.match("foo/bar", is_dir=True)

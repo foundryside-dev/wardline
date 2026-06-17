@@ -69,19 +69,22 @@ def test_file_finding_can_attach_loomweave_identity(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "FiligreeIssueFiler", FakeFiler)
     monkeypatch.setattr(mod, "resolve_filigree_url", lambda flag, root, cfg: "http://h/api/weft/scan-results")
     monkeypatch.setattr(mod, "resolve_loomweave_url", lambda flag, root, cfg: "http://loomweave")
-    monkeypatch.setattr(
-        mod,
-        "attach_loomweave_identity_for_finding",
-        lambda **kw: IdentityAttachResult.success(
+    seen = {}
+
+    def fake_attach(**kw):
+        seen.update(kw)
+        return IdentityAttachResult.success(
             entity_id="loomweave:eid:abc",
             content_hash="hash-v1",
             binding_kind="sei",
-        ),
-    )
+        )
 
-    res = CliRunner().invoke(mod.file_finding, ["fp1", str(tmp_path), "--attach-loomweave-identity"])
+    monkeypatch.setattr(mod, "attach_loomweave_identity_for_finding", fake_attach)
+
+    res = CliRunner().invoke(mod.file_finding, ["fp1", str(tmp_path), "--attach-loomweave-identity", "--lang", "rust"])
 
     assert res.exit_code == 0
+    assert seen["lang"] == "rust"
     payload = json.loads(res.output)
     assert payload["issue_id"] == "wardline-xyz"
     assert payload["identity_attach"] == {

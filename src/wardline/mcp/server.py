@@ -44,6 +44,25 @@ from wardline.mcp.tooling import resolve_under_root as _resolve_under_root
 # (the "facts carry no defect severity" sentinel), deliberately excluded here:
 # fail_on=NONE is not a meaningful gate threshold.
 _SEVERITY_ENUM = ["CRITICAL", "ERROR", "WARN", "INFO"]
+_FAIL_ON_INPUT_SCHEMA = {
+    "type": "string",
+    "description": "Gate threshold. Allowed values, case-insensitive: CRITICAL, ERROR, WARN, INFO.",
+}
+_WHERE_SEVERITY_INPUT_SCHEMA = {
+    "type": "string",
+    "description": "Severity filter. Allowed values, case-insensitive: CRITICAL, ERROR, WARN, INFO, NONE.",
+}
+_WHERE_SUPPRESSION_INPUT_SCHEMA = {
+    "type": "string",
+    "description": "Suppression-state filter. Allowed values, case-insensitive: active, baselined, waived, judged.",
+}
+_WHERE_KIND_INPUT_SCHEMA = {
+    "type": "string",
+    "description": (
+        "Finding kind filter. Allowed values, case-insensitive: "
+        "defect, fact, classification, metric, suggestion."
+    ),
+}
 
 # Default ceiling on the number of active-defect provenances inlined by `explain: true`
 # on the MCP `scan`. Bounds the one-shot payload (the dogfood report hit 56,820 chars on
@@ -129,6 +148,7 @@ def _file_finding(args: dict[str, Any], root: Path, filer: Any, loomweave: Any =
     if filer is None:
         raise ToolError("no Filigree URL configured; launch `wardline mcp --filigree-url ...`")
     fp = _require(args, "fingerprint")
+    lang = _lang_arg(args)
     labels = args.get("labels")
     if labels is not None and not isinstance(labels, list):
         raise ToolError("labels must be an array of strings")
@@ -152,6 +172,7 @@ def _file_finding(args: dict[str, Any], root: Path, filer: Any, loomweave: Any =
                 filer=filer,
                 loomweave_client=loomweave,
                 config_path=_cfg(args, root),
+                lang=lang,
             )
         )
     return payload
@@ -246,6 +267,7 @@ _FILE_FINDING_TOOL: dict[str, Any] = {
             "fingerprint": {"type": "string"},
             "priority": {"type": "string", "description": "Filigree priority, e.g. P2"},
             "labels": {"type": "array", "items": {"type": "string"}},
+            "lang": {"type": "string", "enum": ["python", "rust"], "default": "python"},
             "attach_loomweave_identity": {
                 "type": "boolean",
                 "description": (
@@ -281,18 +303,21 @@ def _scan_file_findings(
     labels_raw = args.get("labels") or []
     if not isinstance(labels_raw, list) or not all(isinstance(label, str) for label in labels_raw):
         raise ToolError("labels must be an array of strings")
+    lang = _lang_arg(args)
     dry_run = bool(args.get("dry_run", not (bool(args.get("all_active")) or bool(fingerprints_raw))))
     path = _resolve_under_root(root, args["path"]) if args.get("path") else root
     from wardline.core.scan_file_workflow import scan_file_findings
 
+    fail_on = _fail_on_arg(args.get("fail_on"))
     return scan_file_findings(
         root=path,
         config_path=_cfg(args, root),
         cache_dir=_cache_dir_arg(args, root),
-        fail_on=args.get("fail_on"),
+        fail_on=fail_on.value if fail_on else None,
         trust_local_packs=bool(args.get("trust_local_packs", False)),
         trusted_packs=_trusted_packs_arg(args),
         strict_defaults=bool(args.get("strict_defaults", False)),
+        lang=lang,
         fingerprints=tuple(fingerprints_raw),
         all_active=bool(args.get("all_active", False)),
         dry_run=dry_run,
@@ -646,7 +671,7 @@ _SCAN_FILE_FINDINGS_TOOL: dict[str, Any] = {
         "type": "object",
         "properties": {
             "path": {"type": "string", "description": "subdir relative to project root"},
-            "fail_on": {"type": "string", "enum": _SEVERITY_ENUM},
+            "fail_on": _FAIL_ON_INPUT_SCHEMA,
             "config": {"type": "string"},
             "cache_dir": {
                 "type": "string",
@@ -657,6 +682,7 @@ _SCAN_FILE_FINDINGS_TOOL: dict[str, Any] = {
             "dry_run": {"type": "boolean"},
             "priority": {"type": "string", "description": "Filigree priority, e.g. P2"},
             "labels": {"type": "array", "items": {"type": "string"}},
+            "lang": {"type": "string", "enum": ["python", "rust"], "default": "python"},
             "trust_packs": {"type": "array", "items": {"type": "string"}},
             "trust_local_packs": {"type": "boolean"},
             "strict_defaults": {"type": "boolean"},
@@ -689,6 +715,13 @@ def _path_arg(args: dict[str, Any], root: Path) -> Path:
     return _resolve_under_root(root, args["path"]) if args.get("path") else root
 
 
+def _lang_arg(args: dict[str, Any]) -> str:
+    lang = str(args.get("lang") or "python")
+    if lang not in {"python", "rust"}:
+        raise ToolError("lang must be one of python/rust")
+    return lang
+
+
 def _bool_arg(args: dict[str, Any], name: str, default: bool) -> bool:
     # Reject non-bool values loudly rather than ``bool(...)``-coercing them: a JSON string
     # like "false" would otherwise coerce to True, silently inverting intent. Matches the
@@ -701,16 +734,18 @@ def _bool_arg(args: dict[str, Any], name: str, default: bool) -> bool:
     return val
 
 
+def _fail_on_arg(raw: Any) -> Severity | None:
+    if raw is None:
+        return None
+    try:
+        return Severity(str(raw).upper())
+    except ValueError as exc:
+        raise ToolError("fail_on must be one of CRITICAL/ERROR/WARN/INFO") from exc
+
+
 def _scan_job_request(args: dict[str, Any], root: Path, filigree_url: str | None) -> dict[str, Any]:
-    fail_on = args.get("fail_on")
-    if fail_on is not None:
-        try:
-            Severity(str(fail_on))
-        except ValueError as exc:
-            raise ToolError("fail_on must be one of CRITICAL/ERROR/WARN/INFO") from exc
-    lang = str(args.get("lang") or "python")
-    if lang not in {"python", "rust"}:
-        raise ToolError("lang must be one of python/rust")
+    fail_on = _fail_on_arg(args.get("fail_on"))
+    lang = _lang_arg(args)
     fmt = str(args.get("format") or "jsonl")
     if fmt not in {"jsonl", "sarif", "agent-summary"}:
         raise ToolError("format must be one of jsonl/sarif/agent-summary")
@@ -723,7 +758,7 @@ def _scan_job_request(args: dict[str, Any], root: Path, filigree_url: str | None
         "config": str(config) if config is not None else None,
         "format": fmt,
         "output": str(output) if output is not None else None,
-        "fail_on": str(fail_on).upper() if fail_on else None,
+        "fail_on": fail_on.value if fail_on else None,
         "fail_on_unanalyzed": _bool_arg(args, "fail_on_unanalyzed", False),
         "cache_dir": str(cache_dir) if cache_dir is not None else None,
         "filigree_url": None if local_only else filigree_url,
@@ -765,13 +800,7 @@ def _scan(
     strict_defaults: bool = False,
 ) -> dict[str, Any]:
     path = _resolve_under_root(root, args["path"]) if args.get("path") else root
-    fail_on = args.get("fail_on")
-    try:
-        threshold = Severity(fail_on) if fail_on else None
-    except ValueError as exc:
-        # A bad enum value is agent-actionable — give it the valid set rather than
-        # letting it surface as an opaque generic JSON-RPC -32603.
-        raise ToolError("fail_on must be one of CRITICAL/ERROR/WARN/INFO") from exc
+    threshold = _fail_on_arg(args.get("fail_on"))
     # A4 (wardline-7fd0f3a82c): the CLI's --fail-on-unanalyzed knob, same default (off).
     fail_on_unanalyzed = _bool_arg(args, "fail_on_unanalyzed", False)
     new_since = args.get("new_since")
@@ -1726,7 +1755,7 @@ _SCAN_TOOL: dict[str, Any] = {
         "type": "object",
         "properties": {
             "path": {"type": "string", "description": "subdir relative to project root"},
-            "fail_on": {"type": "string", "enum": _SEVERITY_ENUM},
+            "fail_on": _FAIL_ON_INPUT_SCHEMA,
             "fail_on_unanalyzed": {
                 "type": "boolean",
                 "description": "Also trip the gate when any file was discovered but could "
@@ -1754,12 +1783,9 @@ _SCAN_TOOL: dict[str, Any] = {
                 "properties": {
                     "rule_id": {"type": "string"},
                     "qualname": {"type": "string"},
-                    "severity": {"type": "string", "enum": _SEVERITY_ENUM},
-                    "suppression": {"type": "string", "enum": ["active", "baselined", "waived", "judged"]},
-                    "kind": {
-                        "type": "string",
-                        "enum": ["defect", "fact", "classification", "metric", "suggestion"],
-                    },
+                    "severity": _WHERE_SEVERITY_INPUT_SCHEMA,
+                    "suppression": _WHERE_SUPPRESSION_INPUT_SCHEMA,
+                    "kind": _WHERE_KIND_INPUT_SCHEMA,
                     "path_glob": {"type": "string"},
                     "sink": {"type": "string"},
                     "tier": {"type": "string"},
@@ -1891,7 +1917,7 @@ _SCAN_JOB_START_INPUT_PROPERTIES: dict[str, Any] = {
     "config": {"type": "string", "description": "config file relative to project root"},
     "format": {"type": "string", "enum": ["jsonl", "sarif", "agent-summary"], "description": "artifact format"},
     "output": {"type": "string", "description": "artifact output path relative to project root"},
-    "fail_on": {"type": "string", "enum": _SEVERITY_ENUM},
+    "fail_on": _FAIL_ON_INPUT_SCHEMA,
     "fail_on_unanalyzed": {
         "type": "boolean",
         "description": "Trip the gate when any file was discovered but could not be analyzed.",

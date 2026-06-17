@@ -695,7 +695,13 @@ def build_sink_finding(
         or (f"{qualname}: {worst.value} (untrusted) data reaches the {sink_label} sink {dotted}() at line {line}"),
         severity=severity,
         kind=Kind.DEFECT,
-        location=Location(path=entity.location.path, line_start=line),
+        location=Location(
+            path=entity.location.path,
+            line_start=line,
+            line_end=getattr(call, "end_lineno", line),
+            col_start=getattr(call, "col_offset", None),
+            col_end=getattr(call, "end_col_offset", None),
+        ),
         fingerprint=_fp(
             rule_id=rule_id,
             path=entity.location.path,

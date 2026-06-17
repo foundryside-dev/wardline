@@ -32,6 +32,7 @@ from wardline.loomweave.config import load_loomweave_token, resolve_project_name
 @click.option("--trust-pack", "trusted_packs", multiple=True)
 @click.option("--allow-custom-packs", "trust_local_packs", is_flag=True, default=False)
 @click.option("--strict-defaults", is_flag=True, default=False)
+@click.option("--lang", type=click.Choice(["python", "rust"], case_sensitive=False), default="python")
 def scan_file_findings(
     path: Path,
     config_path: Path | None,
@@ -47,6 +48,7 @@ def scan_file_findings(
     trusted_packs: tuple[str, ...],
     trust_local_packs: bool,
     strict_defaults: bool,
+    lang: str,
 ) -> None:
     """Run the agent workflow from scan to optionally filed Filigree issues."""
     dry = dry_run or (not fingerprints and not all_active)
@@ -77,6 +79,7 @@ def scan_file_findings(
             trust_local_packs=trust_local_packs,
             trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,
+            lang=lang,
             fingerprints=fingerprints,
             all_active=all_active,
             dry_run=dry,

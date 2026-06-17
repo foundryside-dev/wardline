@@ -33,7 +33,13 @@ from typing import TYPE_CHECKING
 from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import TRUST_RANK
-from wardline.scanner.rules._ast_helpers import asserts_are_sole_rejection, rejecting_helper_calls
+from wardline.scanner.rules._ast_helpers import (
+    assert_only_helper_calls,
+    asserts_are_sole_rejection,
+    has_real_rejection,
+    rejecting_helper_calls,
+)
+from wardline.scanner.rules._sink_helpers import module_alias_map
 from wardline.scanner.rules.metadata import RuleMetadata
 
 if TYPE_CHECKING:
@@ -75,11 +81,15 @@ class AssertOnlyBoundary:
             # Trust-raising transition (== @trust_boundary): body less-trusted than return.
             if TRUST_RANK[body] <= TRUST_RANK[ret]:
                 continue
-            if not asserts_are_sole_rejection(entity.node):
+            alias_map = module_alias_map(qualname, context)
+            if has_real_rejection(entity.node, alias_map):
+                continue
+            helper_asserts = assert_only_helper_calls(entity, context.entities, context.call_site_callees, alias_map)
+            if not asserts_are_sole_rejection(entity.node, alias_map) and not helper_asserts:
                 continue
             # One-hop: a same-module raising helper survives `python -O`, so the
             # assert is NOT the sole rejection and the CWE-617 claim would be false.
-            if rejecting_helper_calls(entity, context.entities, context.call_site_callees):
+            if rejecting_helper_calls(entity, context.entities, context.call_site_callees, alias_map):
                 continue
             findings.append(
                 Finding(

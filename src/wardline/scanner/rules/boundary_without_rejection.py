@@ -35,10 +35,12 @@ from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import TRUST_RANK
 from wardline.scanner.rules._ast_helpers import (
+    assert_only_helper_calls,
     has_rejection_path,
     is_degenerate_boundary,
     rejecting_helper_calls,
 )
+from wardline.scanner.rules._sink_helpers import module_alias_map
 from wardline.scanner.rules.metadata import RuleMetadata
 
 if TYPE_CHECKING:
@@ -81,13 +83,18 @@ class BoundaryWithoutRejection:
             # Trust-raising transition (== @trust_boundary): body less-trusted than return.
             if TRUST_RANK[body] <= TRUST_RANK[ret]:
                 continue
-            if has_rejection_path(entity.node):
+            alias_map = module_alias_map(qualname, context)
+            if has_rejection_path(entity.node, alias_map):
                 continue
             # The bare degenerate shape is PY-WL-119's domain (more-specific wins).
             if is_degenerate_boundary(entity.node):
                 continue
             # One-hop: a same-module raising helper IS this boundary's rejection path.
-            if rejecting_helper_calls(entity, context.entities, context.call_site_callees):
+            if rejecting_helper_calls(entity, context.entities, context.call_site_callees, alias_map):
+                continue
+            # One-hop assert-only helpers are also rejection paths, but PY-WL-111 owns
+            # the "-O strips validation" attribution.
+            if assert_only_helper_calls(entity, context.entities, context.call_site_callees, alias_map):
                 continue
             findings.append(
                 Finding(

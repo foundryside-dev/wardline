@@ -217,6 +217,22 @@ def test_expanded_floor_prunes_build_dist_eggs(tmp_path: Path) -> None:
     assert [p.relative_to(tmp_path).as_posix() for p in files] == ["real.py"]
 
 
+def test_build_and_dist_package_names_under_source_root_are_scanned(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    src = root / "src"
+    pkg_build = src / "build"
+    pkg_dist = src / "dist"
+    pkg_build.mkdir(parents=True)
+    pkg_dist.mkdir()
+    (pkg_build / "api.py").write_text("x = 1\n", encoding="utf-8")
+    (pkg_dist / "artifact.py").write_text("y = 2\n", encoding="utf-8")
+
+    files = discover(root, WardlineConfig(source_roots=("src",)))
+
+    rel = sorted(p.relative_to(root).as_posix() for p in files)
+    assert rel == ["src/build/api.py", "src/dist/artifact.py"]
+
+
 def test_nested_gitignore_layers(tmp_path: Path) -> None:
     # A .gitignore in a subdirectory is layered in as the walk descends (git's nested
     # ignore semantics), pruning only within its own subtree.
@@ -235,6 +251,23 @@ def test_nested_gitignore_layers(tmp_path: Path) -> None:
 
     rel = sorted(p.relative_to(tmp_path).as_posix() for p in files)
     assert rel == ["generated/o.py", "pkg/real.py"]
+
+
+def test_nested_anchored_gitignore_pattern_is_relative_to_its_own_directory(tmp_path: Path) -> None:
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / ".gitignore").write_text("/generated/\n", encoding="utf-8")
+    (tmp_path / "pkg" / "real.py").write_text("x = 1\n", encoding="utf-8")
+    nested = tmp_path / "pkg" / "generated"
+    nested.mkdir()
+    (nested / "skip.py").write_text("y = 2\n", encoding="utf-8")
+    sibling = tmp_path / "generated"
+    sibling.mkdir()
+    (sibling / "keep.py").write_text("z = 3\n", encoding="utf-8")
+
+    files = discover(tmp_path, WardlineConfig(source_roots=(".",)))
+
+    rel = sorted(p.relative_to(tmp_path).as_posix() for p in files)
+    assert rel == ["generated/keep.py", "pkg/real.py"]
 
 
 def test_gitignore_does_not_prune_outside_root(tmp_path: Path) -> None:

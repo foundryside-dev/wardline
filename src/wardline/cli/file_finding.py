@@ -43,6 +43,7 @@ from wardline.core.filigree_issue import (
 )
 @click.option("--priority", default=None, help="Filigree priority, e.g. P2.")
 @click.option("--label", "labels", multiple=True, help="Label to attach (repeatable).")
+@click.option("--lang", type=click.Choice(["python", "rust"], case_sensitive=False), default="python")
 def file_finding(
     fingerprint: str,
     path: Path,
@@ -52,6 +53,7 @@ def file_finding(
     attach_loomweave_identity: bool,
     priority: str | None,
     labels: tuple[str, ...],
+    lang: str,
 ) -> None:
     """File the finding identified by FINGERPRINT into a tracked Filigree issue."""
     url = resolve_filigree_url(filigree_url, path, config_path)
@@ -87,6 +89,7 @@ def file_finding(
                 filer=filer,
                 loomweave_client=loomweave_client,
                 config_path=config_path,
+                lang=lang,
             )
         except WardlineError as exc:
             click.echo(f"error: {exc}", err=True)

@@ -26,20 +26,29 @@ _ALWAYS_SKIP = frozenset(
         ".tox",
         ".nox",
         "node_modules",
-        ".eggs",
-        "build",
-        "dist",
     }
 )
 
-# Glob-shaped floor entries (matched against a single directory NAME, not a path).
-# ``*.egg-info`` is the canonical packaging-metadata tree that bloats a project-root
-# scan; it is a name pattern, so it cannot live in the exact-name ``_ALWAYS_SKIP`` set.
-_ALWAYS_SKIP_GLOBS = ("*.egg-info",)
+# Python packaging output names are pruned only when they are direct children of the
+# scan root. Under a configured source root, `build` and `dist` can be legitimate
+# package names and must not silently disappear from the scan.
+_ROOT_BUILD_ARTIFACTS = frozenset({".eggs", "build", "dist"})
+_ROOT_BUILD_ARTIFACT_GLOBS = ("*.egg-info",)
 
 
 def _is_floored_dir(name: str, skip_dirs: frozenset[str]) -> bool:
-    return name in skip_dirs or any(fnmatch.fnmatch(name, pat) for pat in _ALWAYS_SKIP_GLOBS)
+    return name in skip_dirs
+
+
+def _is_root_build_artifact(child: Path, root: Path) -> bool:
+    return child.parent == root and (
+        child.name in _ROOT_BUILD_ARTIFACTS
+        or any(fnmatch.fnmatch(child.name, pat) for pat in _ROOT_BUILD_ARTIFACT_GLOBS)
+    )
+
+
+def _should_prune_dir(child: Path, root: Path, skip_dirs: frozenset[str]) -> bool:
+    return _is_floored_dir(child.name, skip_dirs) or _is_root_build_artifact(child, root)
 
 
 def discover(
@@ -91,9 +100,10 @@ def discover(
             ignore = _ignore_for(current, root, ignore_under_root, dir_ignores)
             kept: list[str] = []
             for dirname in sorted(dirnames):
-                if _is_floored_dir(dirname, skip_dirs):
+                child = current / dirname
+                if _should_prune_dir(child, root, skip_dirs):
                     continue
-                if ignore is not None and _gitignored_dir(current / dirname, root, ignore):
+                if ignore is not None and _gitignored_dir(child, root, ignore):
                     continue
                 kept.append(dirname)
             dirnames[:] = kept
@@ -139,7 +149,11 @@ def _ignore_for(
         parent_rel = current.parent.relative_to(root).as_posix()
         parent_matcher = dir_ignores.get(parent_rel, base_ignore)
     local = current / ".gitignore"
-    matcher = parent_matcher.extend(GitignoreMatcher.from_file(local)) if local.is_file() else parent_matcher
+    matcher = (
+        parent_matcher.extend(GitignoreMatcher.from_file(local, base=relposix))
+        if local.is_file() and relposix not in (".", "")
+        else parent_matcher
+    )
     dir_ignores[relposix] = matcher
     return matcher
 

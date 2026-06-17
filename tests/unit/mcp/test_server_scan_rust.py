@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 
 from wardline.core.errors import ConfigError
+from wardline.core.filigree_emit import FiligreeEmitter, Response
 from wardline.mcp.server import WardlineMCPServer, _scan
 
 _TRUSTED = "/// @trusted(level=ASSURED)\n"
@@ -26,6 +27,28 @@ def test_scan_lang_rust_finds_injection_and_trips_gate(tmp_path) -> None:
     assert "RS-WL-108" in rule_ids
     assert response["gate"]["tripped"] is True
     assert response["gate"]["verdict"] == "FAILED"
+
+
+def test_scan_lang_rust_threads_language_to_filigree_emit(tmp_path) -> None:
+    pytest.importorskip("tree_sitter", reason="wardline[rust] extra not installed")
+    (tmp_path / "m.rs").write_text(_INJECTION, encoding="utf-8")
+
+    class _Capture:
+        body: dict | None = None
+
+        def post(self, url, body, headers):
+            import json
+
+            self.body = json.loads(body.decode())
+            return Response(status=200, body='{"stats": {"findings_created": 1, "findings_updated": 0}}')
+
+    cap = _Capture()
+    emitter = FiligreeEmitter("http://x/api/weft/scan-results", transport=cap)
+
+    _scan({"lang": "rust", "fail_on": "ERROR", "full": True}, root=tmp_path, filigree=emitter)
+
+    assert cap.body is not None
+    assert cap.body["findings"][0]["language"] == "rust"
 
 
 def test_scan_default_lang_is_python_and_ignores_rs(tmp_path) -> None:

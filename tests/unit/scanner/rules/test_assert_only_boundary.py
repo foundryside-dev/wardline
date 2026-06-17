@@ -52,6 +52,18 @@ def test_assert_plus_real_raise_is_clean(tmp_path) -> None:
     assert _ids(ctx) == set()
 
 
+def test_assert_plus_type_checking_raise_still_fires_111(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        "from typing import TYPE_CHECKING as TC\n"
+        "from wardline.decorators import trust_boundary\n"
+        "@trust_boundary(to_level='ASSURED')\n"
+        "def v(p):\n    assert p\n    if TC:\n        raise ValueError\n    return p\n",
+    )
+    assert [(f.rule_id, f.qualname) for f in AssertOnlyBoundary().check(ctx)] == [("PY-WL-111", "m.v")]
+    assert _ids(ctx) == {"PY-WL-111"}
+
+
 def test_assert_plus_falsy_return_is_clean(tmp_path) -> None:
     ctx = _analyze(
         tmp_path,
@@ -113,3 +125,28 @@ def test_assert_plus_assert_only_helper_still_fires_111(tmp_path) -> None:
         "def v(p):\n    assert isinstance(p, str)\n    _check(p)\n    return p\n",
     )
     assert [(f.rule_id, f.qualname) for f in AssertOnlyBoundary().check(ctx)] == [("PY-WL-111", "m.v")]
+
+
+def test_assert_only_helper_without_inline_assert_fires_111_not_102(tmp_path) -> None:
+    # The rejection exists, but only inside a one-hop helper and only as assert.
+    # That is PY-WL-111's "-O strips validation" domain, not PY-WL-102's
+    # "cannot reject at all" domain.
+    ctx = _analyze(
+        tmp_path,
+        "from wardline.decorators import trust_boundary\n"
+        "def _check(p):\n    assert p\n"
+        "@trust_boundary(to_level='ASSURED')\n"
+        "def v(p):\n    _check(p)\n    return p\n",
+    )
+    assert _ids(ctx) == {"PY-WL-111"}
+
+
+def test_assert_only_helper_plus_real_raise_is_clean(tmp_path) -> None:
+    ctx = _analyze(
+        tmp_path,
+        "from wardline.decorators import trust_boundary\n"
+        "def _check(p):\n    assert p\n"
+        "@trust_boundary(to_level='ASSURED')\n"
+        "def v(p):\n    _check(p)\n    if not p:\n        raise ValueError\n    return p\n",
+    )
+    assert _ids(ctx) == set()

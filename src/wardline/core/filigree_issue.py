@@ -264,10 +264,16 @@ def _locator_for_finding_qualname(qualname: str, plugin: str) -> str:
     return f"{plugin}:function:{qualname}"
 
 
-def _finding_for_fingerprint(fingerprint: str, root: Path, config_path: Path | None) -> Any | None:
+def _finding_for_fingerprint(
+    fingerprint: str,
+    root: Path,
+    config_path: Path | None,
+    *,
+    lang: str = "python",
+) -> Any | None:
     from wardline.core.run import run_scan
 
-    result = run_scan(root, config_path=config_path)
+    result = run_scan(root, config_path=config_path, lang=lang)
     return next((finding for finding in result.findings if finding.fingerprint == fingerprint), None)
 
 
@@ -361,6 +367,7 @@ def attach_loomweave_identity_for_finding(
     filer: FiligreeIssueFiler,
     loomweave_client: Any,
     config_path: Path | None = None,
+    lang: str = "python",
 ) -> IdentityAttachResult:
     if not issue_id:
         return IdentityAttachResult.not_attempted("no issue_id from Filigree promote")
@@ -368,7 +375,7 @@ def attach_loomweave_identity_for_finding(
         return IdentityAttachResult.not_attempted("no Loomweave URL configured")
 
     try:
-        finding = _finding_for_fingerprint(fingerprint, root, config_path)
+        finding = _finding_for_fingerprint(fingerprint, root, config_path, lang=lang)
     except Exception as exc:
         return IdentityAttachResult.skipped(f"scan failed while resolving finding identity: {exc}")
     if finding is None:

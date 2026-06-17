@@ -34,6 +34,7 @@ class _Pattern:
     regex: re.Pattern[str]
     negated: bool
     dir_only: bool
+    base: str
 
 
 def _translate(pattern: str) -> str:
@@ -86,7 +87,7 @@ def _translate(pattern: str) -> str:
     return "".join(out)
 
 
-def _compile(raw: str) -> _Pattern | None:
+def _compile(raw: str, *, base: str = "") -> _Pattern | None:
     line = raw.rstrip("\n")
     # A trailing backslash escapes a space; otherwise trailing whitespace is trimmed.
     if not line.endswith("\\ "):
@@ -115,7 +116,7 @@ def _compile(raw: str) -> _Pattern | None:
     else:
         # A bare name matches at any depth (git matches the basename anywhere).
         regex = re.compile(r"(?:\A|/)" + body + r"\Z")
-    return _Pattern(regex=regex, negated=negated, dir_only=dir_only)
+    return _Pattern(regex=regex, negated=negated, dir_only=dir_only, base=base)
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,17 +130,18 @@ class GitignoreMatcher:
         return cls(_patterns=())
 
     @classmethod
-    def from_text(cls, text: str) -> GitignoreMatcher:
-        compiled = tuple(p for p in (_compile(line) for line in text.splitlines()) if p is not None)
+    def from_text(cls, text: str, *, base: str = "") -> GitignoreMatcher:
+        base = "" if base in (".", "/") else base.strip("/")
+        compiled = tuple(p for p in (_compile(line, base=base) for line in text.splitlines()) if p is not None)
         return cls(_patterns=compiled)
 
     @classmethod
-    def from_file(cls, path: Path) -> GitignoreMatcher:
+    def from_file(cls, path: Path, *, base: str = "") -> GitignoreMatcher:
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             return cls.empty()
-        return cls.from_text(text)
+        return cls.from_text(text, base=base)
 
     def extend(self, other: GitignoreMatcher) -> GitignoreMatcher:
         """Layer ``other``'s patterns AFTER this matcher's (later wins, git ordering)."""
@@ -160,7 +162,13 @@ class GitignoreMatcher:
         for pat in self._patterns:
             if pat.dir_only and not is_dir:
                 continue
-            if pat.regex.search(relposix):
+            if pat.base:
+                if not relposix.startswith(pat.base + "/"):
+                    continue
+                candidate = relposix.removeprefix(pat.base + "/")
+            else:
+                candidate = relposix
+            if pat.regex.search(candidate):
                 matched = True
                 ignored = not pat.negated
         if not matched:

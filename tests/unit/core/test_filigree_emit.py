@@ -100,6 +100,14 @@ def test_fingerprint_is_top_level_and_severity_lowercased() -> None:
     assert wire["line_start"] == 5 and wire["line_end"] == 6
 
 
+def test_scan_results_body_uses_selected_language() -> None:
+    rust = _f(rule_id="RS-WL-108", location=Location(path="src/main.rs", line_start=1))
+
+    wire = build_scan_results_body([rust])["findings"][0]
+
+    assert wire["language"] == "rust"
+
+
 def test_metadata_fingerprint_is_prefixed() -> None:
     meta = to_filigree_metadata(_f())
     assert meta["wardline"]["fingerprint"] == _PREFIXED_A
@@ -146,6 +154,17 @@ class _FakeTransport:
         return self._response
 
 
+class _SequenceTransport:
+    def __init__(self, responses: list[Response]) -> None:
+        self._responses = responses
+        self.calls: list[tuple[str, bytes, dict[str, str]]] = []
+
+    def post(self, url: str, body: bytes, headers: dict[str, str]) -> Response:
+        self.calls.append((url, body, dict(headers)))
+        assert self._responses
+        return self._responses.pop(0)
+
+
 def _ok_body() -> str:
     return json.dumps(
         {
@@ -165,6 +184,15 @@ def test_success_surfaces_stats_and_warnings() -> None:
     assert res.warnings == ("severity coerced",)
     assert t.calls[0][0] == "http://x/api/weft/scan-results"
     assert json.loads(t.calls[0][1])["scan_source"] == "wardline"
+
+
+def test_emitter_threads_selected_language_to_body() -> None:
+    t = _FakeTransport(response=Response(status=200, body=_ok_body()))
+    rust = _f(rule_id="RS-WL-108", location=Location(path="src/main.rs", line_start=1))
+
+    FiligreeEmitter("http://x/api/weft/scan-results", transport=t).emit([rust])
+
+    assert json.loads(t.calls[0][1])["findings"][0]["language"] == "rust"
 
 
 def test_verify_token_acceptance_only_on_post_auth_statuses() -> None:
@@ -349,6 +377,32 @@ def test_http_5xx_carries_status_but_is_not_auth_rejected() -> None:
     assert res.reachable is False
     assert res.status == 503
     assert res.auth_rejected is False
+
+
+@pytest.mark.parametrize("status", [401, 403, 500])
+def test_mid_stream_soft_failure_preserves_prior_counts_and_records_pending(status: int) -> None:
+    first = json.dumps({"stats": {"findings_created": 2, "findings_updated": 0}, "failed": [], "warnings": []})
+    t = _SequenceTransport([Response(status=200, body=first), Response(status=status, body="temporary failure")])
+    findings = [
+        _f(location=Location(path="src/a.py", line_start=1), fingerprint="a" * 64),
+        _f(location=Location(path="src/b.py", line_start=1), fingerprint="b" * 64),
+        _f(location=Location(path="src/c.py", line_start=1), fingerprint="c" * 64),
+    ]
+
+    res = FiligreeEmitter("http://x", transport=t, token="sekret", max_findings_per_request=2).emit(findings)
+
+    assert len(t.calls) == 2
+    assert res.reachable is False
+    assert res.status == status
+    assert res.token_sent is True
+    assert res.auth_rejected is (status in (401, 403))
+    assert res.created == 2
+    assert res.updated == 0
+    assert res.failed == 1
+    assert [(failure.reason, failure.fingerprint) for failure in res.failures] == [
+        ("partial", f"{FINGERPRINT_SCHEME}:{'c' * 64}")
+    ]
+    assert str(status) in res.failures[0].detail
 
 
 def test_emit_result_auth_rejected_is_derived_from_status() -> None:

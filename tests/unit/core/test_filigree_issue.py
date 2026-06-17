@@ -250,7 +250,9 @@ class LegacyLoomweave:
 def test_attach_loomweave_identity_attaches_resolved_sei(monkeypatch, tmp_path):
     from wardline.core import filigree_issue as mod
 
-    monkeypatch.setattr(mod, "_finding_for_fingerprint", lambda fp, root, cfg: FakeFinding("pkg.mod.leaky"))
+    monkeypatch.setattr(
+        mod, "_finding_for_fingerprint", lambda fp, root, cfg, *, lang="python": FakeFinding("pkg.mod.leaky")
+    )
     transport = RecordingTransport()
     filer = FiligreeIssueFiler("http://f/api/weft/scan-results", transport=transport)
 
@@ -284,7 +286,7 @@ def test_attach_loomweave_identity_attaches_resolved_sei(monkeypatch, tmp_path):
 def test_attach_loomweave_identity_reports_missing_qualname(monkeypatch, tmp_path):
     from wardline.core import filigree_issue as mod
 
-    monkeypatch.setattr(mod, "_finding_for_fingerprint", lambda fp, root, cfg: FakeFinding(None))
+    monkeypatch.setattr(mod, "_finding_for_fingerprint", lambda fp, root, cfg, *, lang="python": FakeFinding(None))
     filer = FiligreeIssueFiler("http://f/api/weft/scan-results", transport=RecordingTransport())
 
     res = attach_loomweave_identity_for_finding(
@@ -300,10 +302,35 @@ def test_attach_loomweave_identity_reports_missing_qualname(monkeypatch, tmp_pat
     assert res.reason == "finding has no qualname"
 
 
+def test_attach_loomweave_identity_uses_requested_scan_language(monkeypatch, tmp_path):
+    from wardline.core import filigree_issue as mod
+
+    seen = {}
+    monkeypatch.setattr(
+        mod,
+        "_finding_for_fingerprint",
+        lambda fp, root, cfg, *, lang="python": seen.setdefault("lang", lang) or FakeFinding(None),
+    )
+    filer = FiligreeIssueFiler("http://f/api/weft/scan-results", transport=RecordingTransport())
+
+    attach_loomweave_identity_for_finding(
+        fingerprint="fp1",
+        issue_id="wardline-1",
+        root=tmp_path,
+        filer=filer,
+        loomweave_client=SeiLoomweave(),
+        lang="rust",
+    )
+
+    assert seen["lang"] == "rust"
+
+
 def test_attach_loomweave_identity_reports_unavailable_loomweave(monkeypatch, tmp_path):
     from wardline.core import filigree_issue as mod
 
-    monkeypatch.setattr(mod, "_finding_for_fingerprint", lambda fp, root, cfg: FakeFinding("pkg.mod.leaky"))
+    monkeypatch.setattr(
+        mod, "_finding_for_fingerprint", lambda fp, root, cfg, *, lang="python": FakeFinding("pkg.mod.leaky")
+    )
     filer = FiligreeIssueFiler("http://f/api/weft/scan-results", transport=RecordingTransport())
 
     res = attach_loomweave_identity_for_finding(
@@ -323,7 +350,9 @@ def test_attach_loomweave_identity_reports_unavailable_loomweave(monkeypatch, tm
 def test_attach_loomweave_identity_can_attach_legacy_locator_with_hash(monkeypatch, tmp_path):
     from wardline.core import filigree_issue as mod
 
-    monkeypatch.setattr(mod, "_finding_for_fingerprint", lambda fp, root, cfg: FakeFinding("pkg.mod.leaky"))
+    monkeypatch.setattr(
+        mod, "_finding_for_fingerprint", lambda fp, root, cfg, *, lang="python": FakeFinding("pkg.mod.leaky")
+    )
     transport = RecordingTransport()
     filer = FiligreeIssueFiler("http://f/api/weft/scan-results", transport=transport)
 
@@ -347,7 +376,9 @@ def test_attach_loomweave_identity_can_attach_legacy_locator_with_hash(monkeypat
 def test_attach_loomweave_identity_reports_association_failure(monkeypatch, tmp_path):
     from wardline.core import filigree_issue as mod
 
-    monkeypatch.setattr(mod, "_finding_for_fingerprint", lambda fp, root, cfg: FakeFinding("pkg.mod.leaky"))
+    monkeypatch.setattr(
+        mod, "_finding_for_fingerprint", lambda fp, root, cfg, *, lang="python": FakeFinding("pkg.mod.leaky")
+    )
     filer = FiligreeIssueFiler("http://f/api/weft/scan-results", transport=RecordingTransport(status=500, body="down"))
 
     res = attach_loomweave_identity_for_finding(
@@ -384,7 +415,9 @@ def test_attach_threads_rust_plugin_through_locator_resolve_and_entity_kind(monk
     # and stamps the association entity_kind as rust:function.
     from wardline.core import filigree_issue as mod
 
-    monkeypatch.setattr(mod, "_finding_for_fingerprint", lambda fp, root, cfg: RustFakeFinding("demo.m.leaky"))
+    monkeypatch.setattr(
+        mod, "_finding_for_fingerprint", lambda fp, root, cfg, *, lang="python": RustFakeFinding("demo.m.leaky")
+    )
 
     class RustLegacyLoomweave:
         def __init__(self):

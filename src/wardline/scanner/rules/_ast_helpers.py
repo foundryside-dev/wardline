@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from wardline.scanner.index import Entity
 
 _BROAD_NAMES: frozenset[str] = frozenset({"Exception", "BaseException"})
+_TYPE_CHECKING_FQN = "typing.TYPE_CHECKING"
 
 # CURATED raising-conversion callables: constructors that raise (ValueError /
 # decimal.InvalidOperation / ...) on EVERY invalid input and return a value of
@@ -43,12 +44,18 @@ def _own_statements(node: ast.AST) -> Iterator[ast.stmt]:
         yield from _own_statements(child)
 
 
-def _own_reachable_statements(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.stmt]:
-    yield from _reachable_statements_in_block(node.body)
+def _own_reachable_statements(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    alias_map: Mapping[str, str] | None = None,
+) -> Iterator[ast.stmt]:
+    yield from _reachable_statements_in_block(node.body, alias_map)
 
 
-def _own_reachable_nodes(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.AST]:
-    for stmt in _own_reachable_statements(node):
+def _own_reachable_nodes(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    alias_map: Mapping[str, str] | None = None,
+) -> Iterator[ast.AST]:
+    for stmt in _own_reachable_statements(node, alias_map):
         yield from _own_nodes_in_reachable_stmt(stmt)
 
 
@@ -70,18 +77,27 @@ def _walk_own_non_stmt_children(node: ast.AST) -> Iterator[ast.AST]:
             yield from _walk_own_non_stmt_children(child)
 
 
-def _reachable_statements_in_block(stmts: list[ast.stmt]) -> Iterator[ast.stmt]:
+def _reachable_statements_in_block(
+    stmts: list[ast.stmt],
+    alias_map: Mapping[str, str] | None = None,
+) -> Iterator[ast.stmt]:
     for stmt in stmts:
         yield stmt
         if not isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            for block in _child_statement_blocks(stmt):
-                yield from _reachable_statements_in_block(block)
-        if _stmt_always_terminates(stmt):
+            for block in _child_statement_blocks(stmt, alias_map):
+                yield from _reachable_statements_in_block(block, alias_map)
+        if _stmt_always_terminates(stmt, alias_map):
             break
 
 
-def _child_statement_blocks(stmt: ast.stmt) -> Iterator[list[ast.stmt]]:
-    if isinstance(stmt, (ast.If, ast.For, ast.AsyncFor, ast.While)):
+def _child_statement_blocks(stmt: ast.stmt, alias_map: Mapping[str, str] | None = None) -> Iterator[list[ast.stmt]]:
+    if isinstance(stmt, ast.If):
+        if _is_type_checking_guard(stmt.test, alias_map):
+            yield stmt.orelse
+            return
+        yield stmt.body
+        yield stmt.orelse
+    elif isinstance(stmt, (ast.For, ast.AsyncFor, ast.While)):
         yield stmt.body
         yield stmt.orelse
     elif isinstance(stmt, (ast.With, ast.AsyncWith)):
@@ -97,8 +113,8 @@ def _child_statement_blocks(stmt: ast.stmt) -> Iterator[list[ast.stmt]]:
             yield case.body
 
 
-def _block_always_terminates(stmts: list[ast.stmt]) -> bool:
-    return any(_stmt_always_terminates(stmt) for stmt in stmts)
+def _block_always_terminates(stmts: list[ast.stmt], alias_map: Mapping[str, str] | None = None) -> bool:
+    return any(_stmt_always_terminates(stmt, alias_map) for stmt in stmts)
 
 
 def _match_has_irrefutable_case(stmt: ast.Match) -> bool:
@@ -108,19 +124,45 @@ def _match_has_irrefutable_case(stmt: ast.Match) -> bool:
     )
 
 
-def _stmt_always_terminates(stmt: ast.stmt) -> bool:
+def _stmt_always_terminates(stmt: ast.stmt, alias_map: Mapping[str, str] | None = None) -> bool:
     if isinstance(stmt, (ast.Return, ast.Raise)):
         return True
     if isinstance(stmt, ast.If):
+        if _is_type_checking_guard(stmt.test, alias_map):
+            return bool(stmt.orelse) and _block_always_terminates(stmt.orelse, alias_map)
         return (
             bool(stmt.body)
             and bool(stmt.orelse)
-            and _block_always_terminates(stmt.body)
-            and _block_always_terminates(stmt.orelse)
+            and _block_always_terminates(stmt.body, alias_map)
+            and _block_always_terminates(stmt.orelse, alias_map)
         )
     if isinstance(stmt, ast.Match):
-        return _match_has_irrefutable_case(stmt) and all(_block_always_terminates(case.body) for case in stmt.cases)
+        return _match_has_irrefutable_case(stmt) and all(
+            _block_always_terminates(case.body, alias_map) for case in stmt.cases
+        )
     return False
+
+
+def _dotted_expr_name(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _dotted_expr_name(node.value)
+        return f"{base}.{node.attr}" if base is not None else None
+    return None
+
+
+def _resolve_dotted_expr(node: ast.expr, alias_map: Mapping[str, str] | None = None) -> str | None:
+    dotted = _dotted_expr_name(node)
+    if dotted is None:
+        return None
+    head, sep, rest = dotted.partition(".")
+    resolved_head = alias_map.get(head, head) if alias_map is not None else head
+    return f"{resolved_head}{sep}{rest}" if sep else resolved_head
+
+
+def _is_type_checking_guard(test: ast.expr, alias_map: Mapping[str, str] | None = None) -> bool:
+    return _resolve_dotted_expr(test, alias_map) == _TYPE_CHECKING_FQN
 
 
 def own_except_handlers(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.ExceptHandler]:
@@ -222,15 +264,21 @@ def _stmt_is_real_rejection(stmt: ast.stmt) -> bool:
     return isinstance(stmt, ast.Return) and _is_rejection_return(stmt.value)
 
 
-def has_real_rejection(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+def has_real_rejection(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    alias_map: Mapping[str, str] | None = None,
+) -> bool:
     """True when *node*'s own scope contains a production-surviving rejection —
     a ``raise`` or a rejection-shaped ``return`` — i.e. NOT counting ``assert``.
     This is PY-WL-113's premise half: a rejection must EXIST (and survive ``-O``)
     before a fail-open handler can be said to defeat it."""
-    return any(_stmt_is_real_rejection(stmt) for stmt in _own_reachable_statements(node))
+    return any(_stmt_is_real_rejection(stmt) for stmt in _own_reachable_statements(node, alias_map))
 
 
-def has_rejection_path(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+def has_rejection_path(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    alias_map: Mapping[str, str] | None = None,
+) -> bool:
     """True when *node* can reject: any ``raise``, any rejection-shaped ``return``
     (falsy constant, rejecting ternary branch, curated raising-conversion), or any
     ``assert`` in its own scope. Deliberately generous — PY-WL-102 is always-on,
@@ -251,11 +299,15 @@ def has_rejection_path(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
       - PY-WL-113 — a real rejection exists but a fail-open handler defeats it.
     """
     return any(
-        isinstance(stmt, ast.Assert) or _stmt_is_real_rejection(stmt) for stmt in _own_reachable_statements(node)
+        isinstance(stmt, ast.Assert) or _stmt_is_real_rejection(stmt)
+        for stmt in _own_reachable_statements(node, alias_map)
     )
 
 
-def asserts_are_sole_rejection(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+def asserts_are_sole_rejection(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    alias_map: Mapping[str, str] | None = None,
+) -> bool:
     """True when *node*'s ONLY rejection mechanism is ``assert`` — at least one
     ``assert`` in its own scope, and NO real rejection (``raise`` /
     rejection-shaped ``return``).
@@ -267,7 +319,7 @@ def asserts_are_sole_rejection(node: ast.FunctionDef | ast.AsyncFunctionDef) -> 
     see the project context additionally consult :func:`rejecting_helper_calls` —
     a raising same-module helper survives ``-O`` and rescues the boundary."""
     has_assert = False
-    for stmt in _own_reachable_statements(node):
+    for stmt in _own_reachable_statements(node, alias_map):
         if _stmt_is_real_rejection(stmt):
             return False
         if isinstance(stmt, ast.Assert):
@@ -340,6 +392,7 @@ def rejecting_helper_calls(
     entity: Entity,
     entities: Mapping[str, Entity],
     call_site_callees: Mapping[int, str],
+    alias_map: Mapping[str, str] | None = None,
 ) -> frozenset[int]:
     """The ``id()``s of own-scope ``Call`` nodes in *entity* that resolve (one hop,
     same module) to a callee whose OWN body has a real rejection — a factored-out
@@ -357,31 +410,60 @@ def rejecting_helper_calls(
     assert vanishes under ``python -O`` exactly like an inline one, which would
     falsely silence PY-WL-111)."""
     ids: set[int] = set()
-    for n in _own_reachable_nodes(entity.node):
+    for n in _own_reachable_nodes(entity.node, alias_map):
         if isinstance(n, ast.Call):
             callee = _resolve_one_hop_callee(n, entity, entities, call_site_callees)
-            if callee is not None and has_real_rejection(callee.node):
+            if callee is not None and has_real_rejection(callee.node, alias_map):
                 ids.add(id(n))
     return frozenset(ids)
 
 
-def _own_reachable_nodes_in_blocks(stmts: list[ast.stmt]) -> Iterator[ast.AST]:
-    for stmt in _reachable_statements_in_block(stmts):
+def assert_only_helper_calls(
+    entity: Entity,
+    entities: Mapping[str, Entity],
+    call_site_callees: Mapping[int, str],
+    alias_map: Mapping[str, str] | None = None,
+) -> frozenset[int]:
+    """The ``id()``s of own-scope ``Call`` nodes in *entity* that resolve (one hop,
+    same module) to a callee whose only rejection is ``assert``.
+
+    This is the PY-WL-111 mirror of :func:`rejecting_helper_calls`: a factored-out
+    assert-only validator is still a rejection path, but it disappears under
+    ``python -O`` just like an inline assert. It therefore belongs to 111, not 102.
+    """
+    ids: set[int] = set()
+    for n in _own_reachable_nodes(entity.node, alias_map):
+        if isinstance(n, ast.Call):
+            callee = _resolve_one_hop_callee(n, entity, entities, call_site_callees)
+            if callee is not None and asserts_are_sole_rejection(callee.node, alias_map):
+                ids.add(id(n))
+    return frozenset(ids)
+
+
+def _own_reachable_nodes_in_blocks(
+    stmts: list[ast.stmt],
+    alias_map: Mapping[str, str] | None = None,
+) -> Iterator[ast.AST]:
+    for stmt in _reachable_statements_in_block(stmts, alias_map):
         yield from _own_nodes_in_reachable_stmt(stmt)
 
 
-def block_has_real_rejection(stmts: list[ast.stmt], rejecting_call_ids: frozenset[int] = frozenset()) -> bool:
+def block_has_real_rejection(
+    stmts: list[ast.stmt],
+    rejecting_call_ids: frozenset[int] = frozenset(),
+    alias_map: Mapping[str, str] | None = None,
+) -> bool:
     """True when the statement list *stmts* (a ``try`` body or handler body)
     lexically contains a reachable real rejection — a ``raise`` / rejection-shaped
     ``return`` in its own scope, or a reachable call whose ``id()`` is in
     *rejecting_call_ids* (a one-hop rejecting helper, see
     :func:`rejecting_helper_calls`). PY-WL-113's per-``try`` premise: a handler
     can only swallow a rejection that lives inside its own ``try``."""
-    for stmt in _reachable_statements_in_block(stmts):
+    for stmt in _reachable_statements_in_block(stmts, alias_map):
         if _stmt_is_real_rejection(stmt):
             return True
     if rejecting_call_ids:
-        for n in _own_reachable_nodes_in_blocks(stmts):
+        for n in _own_reachable_nodes_in_blocks(stmts, alias_map):
             if isinstance(n, ast.Call) and id(n) in rejecting_call_ids:
                 return True
     return False

@@ -601,7 +601,7 @@ class WardlineAnalyzer:
                 )
             )
 
-        def _record_l2_recursion(ent: Entity) -> None:
+        def _record_l2_recursion(ent: Entity, *, reason: str = "recursion_limit") -> None:
             l2_failed.add(ent.qualname)
             if ent.qualname in function_skip_recorded:
                 return
@@ -615,7 +615,7 @@ class WardlineAnalyzer:
                     location=ent.location,
                     fingerprint=_fp("WLN-ENGINE-FUNCTION-SKIPPED", ent.qualname),
                     qualname=ent.qualname,
-                    properties={"reason": "recursion_limit"},
+                    properties={"reason": reason},
                 )
             )
 
@@ -817,7 +817,7 @@ class WardlineAnalyzer:
                             recorded_writes, all_classes, enclosing_class if is_method else None
                         )
                     except RecursionError:
-                        _record_l2_recursion(ent)
+                        _record_l2_recursion(ent, reason="fixpoint_recursion")
                         call_sites, call_args, var_taints, ret_taint, ret_callee, writes = (
                             {},
                             {},
