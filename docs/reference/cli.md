@@ -1,6 +1,6 @@
 # CLI reference
 
-Complete reference for the `wardline` command-line interface, version `1.0.2`.
+Complete reference for the `wardline` command-line interface, version `1.0.3`.
 Every `--help` block below is the verbatim output of the installed CLI; every
 example is a realistic invocation.
 
@@ -66,7 +66,7 @@ Check the installed version:
 
 ```text
 $ wardline --version
-wardline, version 1.0.2
+wardline, version 1.0.3
 ```
 
 Use `--version` in CI before a scan to pin the toolchain in your build log; the

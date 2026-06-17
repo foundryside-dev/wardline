@@ -20,7 +20,7 @@ wardline --version
 ```
 
 ```text
-wardline, version 1.0.2
+wardline, version 1.0.3
 ```
 
 ## 2. Run a first scan
