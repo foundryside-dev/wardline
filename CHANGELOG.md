@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-06-19
+
 ### Added
 - **Warpline delta scan (`wardline scan --affected`).** A new `--affected
   <file|->` option scopes analysis to the entities named in a `warpline.
@@ -1314,6 +1316,7 @@ for Python — enterprise-class trust-boundary analysis at small-team weight.
 - **Packaging** — MIT-licensed; optional extras `scanner` (config + CLI) and
   `weft` (HTTP integrations).
 
+[1.0.4]: https://github.com/foundryside-dev/wardline/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/foundryside-dev/wardline/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/foundryside-dev/wardline/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/foundryside-dev/wardline/compare/v0.3.0...v1.0.1
