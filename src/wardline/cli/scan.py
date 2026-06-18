@@ -119,9 +119,11 @@ if TYPE_CHECKING:
     default=None,
     help=(
         "Scan only entities in this warpline reverify-worklist / entity-list "
-        "(file path, or '-' for stdin). Speed, not truth: out-of-scope cross-file "
-        "flows are not analyzed (see the scope block). Empty/unresolvable -> full scan. "
-        "Mutually exclusive with --new-since."
+        "(file path, or '-' for stdin). Advisory delta, not a gate: out-of-scope "
+        "cross-file flows are not analyzed (see the scope block), so it cannot drive "
+        "--fail-on (use --new-since to gate changed code, or a full scan for the gate "
+        "of record). Empty/unresolvable -> full scan. Mutually exclusive with "
+        "--new-since and --fail-on."
     ),
 )
 @click.option(
@@ -271,6 +273,18 @@ def scan(
             # too — there is no --since flag yet, so nothing to check beyond --new-since.
             if new_since is not None:
                 raise WardlineError("--affected and --new-since are mutually exclusive")
+            # --affected is an ADVISORY delta: it analyzes only the scoped subset, so it can
+            # never authoritatively PASS a severity gate (an ERROR in an unanalyzed file
+            # would go unseen — exit 0 would be an unearned green). Refuse to gate it. Use
+            # --new-since for an authoritative change-scoped gate (full analysis, gates the
+            # changed subset), or a full scan for the gate of record.
+            if fail_on is not None:
+                raise WardlineError(
+                    "--affected (advisory delta) cannot drive --fail-on: a delta scan analyzes "
+                    "only part of the tree, so it cannot certify a green gate. Use --new-since "
+                    "<ref> to gate only changed code (full analysis), or run a full scan for the "
+                    "gate of record."
+                )
             # Bound the read at the byte cap BEFORE json.loads: read at most cap+1 chars
             # from the (possibly stdin) handle and reject an over-cap blob pre-parse. A
             # huge VALID JSON payload must not force a full unbounded read + parse before

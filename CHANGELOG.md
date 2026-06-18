@@ -16,11 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   computed; the displayed findings are filtered to the requested entities while
   the severity gate evaluates the full unsuppressed population **of the analyzed
   files**, so an attacker-influenceable scope cannot hide an in-analyzed-file
-  finding from the gate (INV-4). Speed, not truth: delta analyzes only the
-  scoped (caller-closure-expanded) files, so a delta `--fail-on` pass is
-  **advisory** — it does not certify files it never analyzed (the stderr line
-  reports `analyzed N of M discovered file(s)`). The full scan remains the gate
-  of record. An empty or all-unresolvable scope falls back to a full scan. A `scope` block (mode,
+  finding from the gate (INV-4). Advisory, not a gate: delta analyzes only the
+  scoped (caller-closure-expanded) files, so it cannot certify files it never
+  analyzed — `--affected` is therefore **rejected together with `--fail-on`**
+  (and over MCP, `affected` with `fail_on`); use `--new-since` for an
+  authoritative change-scoped gate (full analysis, gates the changed subset) or
+  a full scan for the gate of record. An empty or all-unresolvable scope falls
+  back to a full scan. A `scope` block (mode,
   gate authority, file counts, unresolved/fell-back/stale-SEI accounting, and a
   boundary caveat) is attached to every output format (agent-summary JSON,
   SARIF `run.properties`, MCP structured content). Delta emits on both the CLI

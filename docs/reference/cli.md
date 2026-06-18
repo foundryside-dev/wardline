@@ -116,10 +116,13 @@ Options:
                                   since this git ref.
   --affected FILENAME             Scan only entities in this warpline
                                   reverify-worklist / entity-list (file path,
-                                  or '-' for stdin). Speed, not truth: out-of-
-                                  scope cross-file flows are not analyzed (see
-                                  the scope block). Empty/unresolvable -> full
-                                  scan. Mutually exclusive with --new-since.
+                                  or '-' for stdin). Advisory delta, not a gate:
+                                  out-of-scope cross-file flows are not analyzed
+                                  (see the scope block), so it cannot drive
+                                  --fail-on (use --new-since to gate changed
+                                  code, or a full scan for the gate of record).
+                                  Empty/unresolvable -> full scan. Mutually
+                                  exclusive with --new-since and --fail-on.
   --trust-pack TEXT               Allow importing this trust-grammar pack from
                                   weft.toml [wardline]. May be repeated.
   --allow-custom-packs            Allow loading custom trust-grammar packs
@@ -160,7 +163,7 @@ it at a package root, not a single file.
 | `--loomweave-url TEXT` | Opt-in, fail-soft: persist per-entity taint facts to a Loomweave taint-store endpoint alongside local output. |
 | `--fail-on-unanalyzed` / `--no-fail-on-unanalyzed` | Exit `1` if any file was discovered but could not be analyzed (e.g. a parse failure), even when no finding trips `--fail-on`. |
 | `--new-since TEXT` | PR-scoped "new findings only" gate: gate only on findings in files/entities changed since this git ref. Mutually exclusive with `--affected`. |
-| `--affected FILENAME` | Scope analysis to the entities named in a `warpline.reverify_worklist.v1` worklist (or a bare entity list; file path, or `-` for stdin) — the inner-loop fast path. The affected set is caller-closure expanded so cross-file taint into a changed callee is still computed. **Speed, not truth:** only the scoped files are analyzed, so a delta `--fail-on` pass is **advisory** and does not certify out-of-scope files — the full scan stays the gate of record (a `scope` block records the mode, gate authority, and `analyzed N of M` accounting). An empty or all-unresolvable scope falls back to a full scan. Mutually exclusive with `--new-since`. |
+| `--affected FILENAME` | Scope analysis to the entities named in a `warpline.reverify_worklist.v1` worklist (or a bare entity list; file path, or `-` for stdin) — the inner-loop fast path. The affected set is caller-closure expanded so cross-file taint into a changed callee is still computed. **Advisory, not a gate:** only the scoped files are analyzed, so it cannot certify out-of-scope files and is **rejected together with `--fail-on`** — use `--new-since` for an authoritative change-scoped gate (full analysis, gates the changed subset) or a full scan for the gate of record (a `scope` block records the mode, gate authority, and `analyzed N of M` accounting). An empty or all-unresolvable scope falls back to a full scan. Mutually exclusive with `--new-since` and `--fail-on`. |
 | `--trust-pack TEXT` (repeatable), `--allow-custom-packs` | Allow loading trust-grammar packs declared in `weft.toml [wardline]` (`--trust-pack`) or from the local project directory (`--allow-custom-packs`). |
 | `--fix`, `-y`/`--yes` | Apply mechanical autofixes during the scan; `-y` auto-confirms every fix. |
 | `--strict-defaults` | Ignore repository-supplied custom configuration overrides in `weft.toml`. |
