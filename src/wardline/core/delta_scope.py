@@ -12,8 +12,8 @@ payloads fail LOUD (``ScopeParseError`` → exit 2), oversized payloads are reje
 (DoS guard on the uncapped stdin/inline ingress), but an *empty* or zero-entity payload
 is **not** an error — it returns ``source_kind="empty"`` and the fail-closed full-fallback
 rule (spec §5.4, applied in ``run_scan``) takes over. The trust level of the scope never
-relaxes the gate: the severity gate runs over the full population (INV-4), so an
-attacker-influenceable scope cannot forge a green.
+turns a clean subset into an authoritative pass: the entity filter cannot narrow the
+analyzed gate population (INV-4), and skipped files keep a true delta advisory.
 """
 
 from __future__ import annotations
@@ -247,9 +247,9 @@ class DeltaScopeReport:
     when the scope resolved zero files (empty / all-unresolvable / loomweave-absent +
     qualname-miss) and ``run_scan`` fell back to a full scan (fail-closed honesty,
     INV-3). ``gate_authority`` is the **machine-readable** companion an automated
-    consumer can gate on without parsing prose: ``"advisory"`` in delta mode (the gate
-    still runs over the full population per INV-4, but a delta pass is type-distinguishable
-    from a full pass), ``"gate-of-record"`` in full-fallback.
+    consumer can gate on without parsing prose: ``"advisory"`` in delta mode (only the
+    scoped files were analyzed, so a clean delta is not a full-tree pass), ``"gate-of-record"``
+    in full-fallback.
 
     ``fell_back_count`` / ``stale_sei_count`` surface how much of the scope rests on the
     spoofable qualname-locator path or a stale SEI, so a consumer can judge trust without

@@ -6,9 +6,9 @@ These tests pin the wiring ``run_scan`` adds between discovery and analysis:
 * the full path is unchanged when ``affected is None`` (INV-1) — proven by a spy that
   ``build_qualname_index`` is NOT called on the full-scan path;
 * ``affected`` + ``new_since`` together is a loud ``ScopeParseError``;
-* in delta mode ``gate_findings`` RETAINS an out-of-scope ERROR finding (the gate
-  population is NEVER narrowed — INV-4 / THREAT-001) and the gate verdict equals the
-  full scan's, so a surgical worklist cannot forge a green.
+* in delta mode ``gate_findings`` RETAINS a display-excluded ERROR in an analyzed file
+  (the gate population is NEVER narrowed by the entity filter — INV-4 / THREAT-001);
+* a clean advisory delta subset is NOT a gate-of-record PASS for skipped files.
 """
 
 from __future__ import annotations
@@ -41,6 +41,8 @@ _TWO_ENTITY = (
     "@trusted\ndef beta(p):\n    return read_raw(p)\n"
 )
 
+_CLEAN = "def touched():\n    return 'safe'\n"
+
 
 def _two_file_proj(tmp_path: Path) -> Path:
     """A project with two structurally-identical leaky modules, ``good.py`` + ``evil.py``,
@@ -58,6 +60,15 @@ def _co_located_proj(tmp_path: Path) -> Path:
     proj = tmp_path / "proj"
     proj.mkdir()
     (proj / "svc.py").write_text(_TWO_ENTITY, encoding="utf-8")
+    return proj
+
+
+def _clean_plus_skipped_error_proj(tmp_path: Path) -> Path:
+    """A project where the affected file is clean but an unanalyzed file has an ERROR."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "good.py").write_text(_CLEAN, encoding="utf-8")
+    (proj / "evil.py").write_text(_LEAKY, encoding="utf-8")
     return proj
 
 
@@ -179,6 +190,37 @@ def test_delta_gate_verdict_equals_full_scan(tmp_path: Path) -> None:
     assert delta_decision.tripped == full_decision.tripped
     assert delta_decision.verdict == full_decision.verdict == "FAILED"
     assert delta_decision.exit_class == full_decision.exit_class == 1
+
+
+def test_delta_gate_decision_is_not_evaluated_for_advisory_subset(tmp_path: Path) -> None:
+    """A delta scan that skips files is advisory and cannot certify a severity PASS.
+
+    The analyzed affected file is clean, but the full tree contains an ERROR in a skipped
+    file. ``gate_decision(..., ERROR)`` must not report PASSED for the advisory subset; a
+    full scan or ``--new-since`` is the gate of record.
+    """
+    proj = _clean_plus_skipped_error_proj(tmp_path)
+    scope = parse_affected_scope([{"locator": "python:function:good.touched"}])
+
+    full = run_scan(proj)
+    delta = run_scan(proj, affected=scope)
+
+    full_decision = gate_decision(full, Severity.ERROR)
+    delta_decision = gate_decision(delta, Severity.ERROR)
+
+    assert full_decision.verdict == "FAILED"
+    assert full_decision.tripped is True
+    assert delta.scope is not None
+    assert delta.scope.mode == "delta"
+    assert delta.scope.gate_authority == "advisory"
+    assert delta.scope.files_discovered == 2
+    assert delta.scope.files_analyzed == 1
+    assert _py101_paths(delta.findings) == set()
+    assert delta_decision.verdict == "NOT_EVALUATED"
+    assert delta_decision.tripped is False
+    assert delta_decision.exit_class == 0
+    assert delta_decision.fail_on == "ERROR"
+    assert delta_decision.reason is not None and "advisory" in delta_decision.reason
 
 
 def test_delta_trust_suppressions_gate_population_is_unfiltered(tmp_path: Path) -> None:

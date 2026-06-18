@@ -156,9 +156,9 @@ loss is inter-file and real. Two consequences for the plan:
   omission of out-of-scope entities — because an agent acts on the findings that
   ARE present.
 - **The honesty contract is enforceable, not just readable:** the severity gate
-  in delta mode runs over the full unsuppressed population (INV-4), so the
-  `gate_authority="advisory"` label and the full-population gate together make a
-  forged green structurally impossible.
+  population in delta mode is never narrowed by the entity-display filter (INV-4),
+  so co-located findings in analyzed files still trip. A clean true delta is still
+  advisory because skipped files were not analyzed; it is not a gate-of-record pass.
 
 ## 6. Surface
 
@@ -185,8 +185,8 @@ puts it in run-level `properties`.
 | Empty/zero-resolvable scope | Full-fallback scan, declared in scope block |
 | loomweave absent | Qualname-index resolution; note in scope block |
 | Some entities unresolved | Scan the resolved subset; list unresolved in scope block; if **none** resolved → full-fallback |
-| Scope **surgically excludes** a sink-bearing file (malicious or stale worklist) | NOT a fail-closed condition (>0 files resolve → normal delta). Protection is INV-4: the severity gate runs over the FULL population, so the gate cannot green a real ERROR. Fail-closed-on-empty does **not** cover this case. |
-| `--affected` + `--fail-on` composed | Allowed; the gate evaluates the full unsuppressed population (INV-4), `gate_authority="advisory"`. A delta scan can surface a trip as data but cannot emit an authoritative full-scan PASS. |
+| Scope **skips** a sink-bearing file (malicious or stale worklist) | NOT a fail-closed condition (>0 files resolve → normal delta). Protection is the advisory contract: a clean delta cannot certify skipped files and must not be reported as an authoritative pass. Fail-closed-on-empty does **not** cover this case. |
+| `--affected` + `--fail-on` composed | Rejected at CLI/MCP surfaces because a delta scan analyzes only part of the tree and cannot certify a green gate. The shared core can still surface an analyzed-subset trip as data, but a clean advisory subset is `NOT_EVALUATED`, not `PASSED`. |
 | `--affected` + `--new-since` composed | Mutually exclusive at CLI **and** MCP (loud `ScopeParseError`/`ToolError`). They scope different things (analysis vs gate) via different mechanisms; composing them is rejected, not silently double-scoped. |
 | Oversized scope payload | `ScopeParseError` above a byte/`item_count` cap (DoS guard on the uncapped stdin/inline ingress). |
 

@@ -12,11 +12,11 @@ the ``run_scan`` seam, end-to-end, independently of the focused per-phase unit t
   (``mode="full-fallback"``, ``gate_authority="gate-of-record"``) and the finding set
   equals a plain full scan's.
 * **INV-4 (THREAT-001, the load-bearing security test)** — an untrusted scope that
-  surgically EXCLUDES the one file carrying a real ERROR sink stays ``mode="delta"``
-  (NOT full-fallback — fail-closed does not catch a precise exclusion), narrows the
-  DISPLAYED findings to omit that ERROR, but CANNOT forge a green: the severity gate
-  evaluates the full unsuppressed population, so the verdict/exit are IDENTICAL to the
-  full scan's (FAILED / tripped / exit_class 1).
+  surgically EXCLUDES a real ERROR sink from the DISPLAYED findings while still analyzing
+  its file stays ``mode="delta"`` (NOT full-fallback — fail-closed does not catch a
+  precise exclusion), narrows the DISPLAYED findings to omit that ERROR, but CANNOT forge
+  a green: the severity gate evaluates the unfiltered analyzed population, so the
+  verdict/exit are IDENTICAL to the full scan's (FAILED / tripped / exit_class 1).
 * **INV-5 (mark_unseen)** — a delta CLI Filigree emit builds the request body with
   ``mark_unseen=False`` so out-of-scope findings (absent from the FILTERED ``findings``
   list but present in the FULL ``scanned_paths``) are never read as fixed and closed.

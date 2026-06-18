@@ -71,9 +71,9 @@ consistently, on every surface:
 | Surface | Where | Term |
 | --- | --- | --- |
 | Enum | `src/wardline/core/finding.py:72` | `SuppressionState.ACTIVE = "active"` |
-| Summary field | `src/wardline/core/run.py:71`, built at `src/wardline/core/run.py:536` | `ScanSummary.active` |
+| Summary field | `src/wardline/core/run.py:71`, built at `src/wardline/core/run.py:551` | `ScanSummary.active` |
 | CLI summary line | `src/wardline/cli/scan.py:562` | `… {s.active} active` |
-| MCP scan response | `src/wardline/mcp/server.py:1009` | `summary.active` |
+| MCP scan response | `src/wardline/mcp/server.py:1010` | `summary.active` |
 | Agent-summary JSON | `src/wardline/core/agent_summary.py:140` | `summary.active_defects` |
 | `wardline:loop` prompt | `src/wardline/mcp/prompts.py:13` | "Read `summary.active`" |
 
@@ -101,8 +101,8 @@ So `active + baselined + waived + judged + informational == total`
 (`src/wardline/core/run.py:70` for `total: int`). `unanalyzed`
 (`src/wardline/core/run.py:89`) is an **overlay** — a subset of `informational`
 that surfaces a silent under-scan — and is deliberately **not** a partition member.
-The MCP `summary` block exposes `informational` (`src/wardline/mcp/server.py:1017`)
-and `unanalyzed` (`src/wardline/mcp/server.py:1021`); the agent-summary block mirrors
+The MCP `summary` block exposes `informational` (`src/wardline/mcp/server.py:1018`)
+and `unanalyzed` (`src/wardline/mcp/server.py:1022`); the agent-summary block mirrors
 both (`src/wardline/core/agent_summary.py:151`, `src/wardline/core/agent_summary.py:152`).
 
 ## Emitted-active vs the gate population
@@ -111,19 +111,19 @@ There are **two distinct populations** of defects in one scan, and they can
 differ on purpose:
 
 1. **Emitted-active** — `summary.active` counts `active` defects in the
-   **emitted** (post-annotation) findings (built at `src/wardline/core/run.py:536`).
+   **emitted** (post-annotation) findings (built at `src/wardline/core/run.py:551`).
    Baseline / waiver / judged annotate these findings in place; a suppressed
    defect is still emitted, just not counted as `active`.
 
 2. **Gate population** — the `--fail-on` gate evaluates a **separate**
    `ScanResult.gate_findings` list: the *unsuppressed* population
-   (`src/wardline/core/run.py:456`). By default, repository-controlled
+   (`src/wardline/core/run.py:486`). By default, repository-controlled
    baseline / waiver / judged entries **annotate** the emitted findings but do
    **not** clear the gate — so a malicious PR cannot green the gate by committing
    a suppression keyed to its own new defect. `gate_decision` evaluates
    `gate_findings` when present, else falls back to `findings` (the trusted
    `--trust-suppressions` / directly-constructed path), selected at
-   `src/wardline/core/run.py:619` (`honors_suppressions`).
+   `src/wardline/core/run.py:643` (`honors_suppressions`).
 
 This is why **`summary.active: 0` can co-exist with `gate.tripped: true`**: every
 defect was suppressed by a committed baseline (so emitted-active is 0), but those
@@ -132,8 +132,8 @@ bug.
 
 ### The gate verdict is explicit (never a vacuous green)
 
-`GateDecision` (`src/wardline/core/run.py:148`) carries `tripped` / `fail_on` /
-`exit_class` **plus** an explicit `verdict` (`src/wardline/core/run.py:157`) and a
+`GateDecision` (`src/wardline/core/run.py:152`) carries `tripped` / `fail_on` /
+`exit_class` **plus** an explicit `verdict` (`src/wardline/core/run.py:162`) and a
 `would_trip_at`, alongside a human `reason` and the `evaluated` population it
 judged. The `verdict` is one of:
 
@@ -150,10 +150,10 @@ trips when any file was discovered but never analysed; benign no-module skips
 excluded). `severity_tripped` / `unanalyzed_tripped` attribute an overall
 `tripped` to its sub-gate(s) so no consumer has to parse `reason`.
 
-The MCP `scan` gate block exposes `gate.tripped` (`src/wardline/mcp/server.py:1024`),
-`gate.fail_on_unanalyzed`, `gate.verdict` (`src/wardline/mcp/server.py:1028`),
+The MCP `scan` gate block exposes `gate.tripped` (`src/wardline/mcp/server.py:1025`),
+`gate.fail_on_unanalyzed`, `gate.verdict` (`src/wardline/mcp/server.py:1029`),
 `gate.severity_tripped`, `gate.unanalyzed_tripped`, `would_trip_at`, `reason`,
-`evaluated`, and `migration_hint`, opened at `src/wardline/mcp/server.py:1023`
+`evaluated`, and `migration_hint`, opened at `src/wardline/mcp/server.py:1024`
 (`"gate": {`); the agent-summary mirrors them at
 `src/wardline/core/agent_summary.py:155` (`tripped`) and
 `src/wardline/core/agent_summary.py:158` (`verdict`). The CLI prints
@@ -163,7 +163,7 @@ The MCP `scan` gate block exposes `gate.tripped` (`src/wardline/mcp/server.py:10
 
 `--new-since` scopes **both** populations identically: any `active` defect
 outside the delta is re-marked `baselined` in both the emitted and gate lists
-(`src/wardline/core/run.py:484`, `def apply_delta_scope`).
+(`src/wardline/core/run.py:496`, `def apply_delta_scope`).
 
 ## The three meanings of "new"
 
@@ -174,7 +174,7 @@ still legitimately means three different things depending on the surface:
 | "new" on this surface | Means | Owner / anchor |
 | --- | --- | --- |
 | Filigree store | An **unseen fingerprint** — first time this finding identity is seen for a `(file, scan_source)`. | **Filigree-owned** lifecycle (`src/wardline/core/filigree_emit.py:68-76`) |
-| `wardline scan --new-since <ref>` | **Delta-scope**: the gate fires only on defects in files/entities changed since a git ref; everything else is re-marked `baselined`. | `src/wardline/core/run.py:484`; help text `src/wardline/cli/scan.py` (`--new-since`) |
+| `wardline scan --new-since <ref>` | **Delta-scope**: the gate fires only on defects in files/entities changed since a git ref; everything else is re-marked `baselined`. | `src/wardline/core/run.py:496`; help text `src/wardline/cli/scan.py` (`--new-since`) |
 | (historical) CLI summary | Formerly relabelled the `active` count as "N new". **Corrected to "N active"**. | `src/wardline/cli/scan.py:561` |
 
 The first-seen Filigree sense and the delta-scope `--new-since` sense are
@@ -186,19 +186,19 @@ How each concept appears on each surface:
 
 | Concept | CLI summary text | `ScanSummary` field | MCP `summary` key | Agent-summary key | Filigree store |
 | --- | --- | --- | --- | --- | --- |
-| every finding | `N finding(s)` | `total` (`run.py:70`) | `total` (`server.py:1008`) | `total_findings` (`agent_summary.py:139`) | one finding per wire entry |
-| live defect | `N active` (`scan.py:562`) | `active` (`run.py:71,496`) | `active` (`server.py:1009`) | `active_defects` (`agent_summary.py:140`) | no `suppression_state` key (`finding.py:295`) |
+| every finding | `N finding(s)` | `total` (`run.py:70`) | `total` (`server.py:1009`) | `total_findings` (`agent_summary.py:139`) | one finding per wire entry |
+| live defect | `N active` (`scan.py:562`) | `active` (`run.py:71,551`) | `active` (`server.py:1010`) | `active_defects` (`agent_summary.py:140`) | no `suppression_state` key (`finding.py:295`) |
 | suppressed (sum) | `N suppressed` (`scan.py:561`) | `baselined+waived+judged` | the three keys | `suppressed_findings` (`agent_summary.py:141`) | `metadata.wardline.suppression_state` (`finding.py:295`) |
-| baselined | `N baseline` | `baselined` (`run.py:73`) | `baselined` (`server.py:1010`) | `baselined` (`agent_summary.py:143`) | `suppression_state: "baselined"` |
-| waived | `N waiver` | `waived` (`run.py:74`) | `waived` (`server.py:1011`) | `waived` (`agent_summary.py:144`) | `suppression_state: "waived"` |
-| judged | `N judged` | `judged` (`run.py:75`) | `judged` (`server.py:1012`) | `judged` (`agent_summary.py:145`) | `suppression_state: "judged"` |
-| informational (summary) | (the remainder of `total`) | `informational` (`run.py:81`) | `informational` (`server.py:1017`) | `informational` (`agent_summary.py:151`) | facts/metrics |
+| baselined | `N baseline` | `baselined` (`run.py:73`) | `baselined` (`server.py:1011`) | `baselined` (`agent_summary.py:143`) | `suppression_state: "baselined"` |
+| waived | `N waiver` | `waived` (`run.py:74`) | `waived` (`server.py:1012`) | `waived` (`agent_summary.py:144`) | `suppression_state: "waived"` |
+| judged | `N judged` | `judged` (`run.py:75`) | `judged` (`server.py:1013`) | `judged` (`agent_summary.py:145`) | `suppression_state: "judged"` |
+| informational (summary) | (the remainder of `total`) | `informational` (`run.py:81`) | `informational` (`server.py:1018`) | `informational` (`agent_summary.py:151`) | facts/metrics |
 | informational (display) | n/a | n/a | n/a | `informational` display array (`agent_summary.py:176`) — non-defect, non-engine-fact findings (metrics, classifications, suggestions, non-engine facts); excludes `engine_facts` which has its own display slot | facts/metrics |
-| under-scan | `N file(s) could not be analyzed` | `unanalyzed` (`run.py:89`) | `unanalyzed` (`server.py:1021`) | `unanalyzed` (`agent_summary.py:152`) | `WLN-ENGINE-*` facts |
-| gate verdict | exit code + `--fail-on` | (`gate_findings`, `run.py:108`; `GateDecision`, `run.py:148`, `verdict` `run.py:157`) | `gate` (`server.py:1023`), `gate.tripped` (`server.py:1024`), `gate.verdict` (`server.py:1028`) | `gate.tripped` (`agent_summary.py:155`), `gate.verdict` (`agent_summary.py:158`) | not emitted to Filigree |
+| under-scan | `N file(s) could not be analyzed` | `unanalyzed` (`run.py:89`) | `unanalyzed` (`server.py:1022`) | `unanalyzed` (`agent_summary.py:152`) | `WLN-ENGINE-*` facts |
+| gate verdict | exit code + `--fail-on` | (`gate_findings`, `run.py:110`; `GateDecision`, `run.py:152`, `verdict` `run.py:162`) | `gate` (`server.py:1024`), `gate.tripped` (`server.py:1025`), `gate.verdict` (`server.py:1029`) | `gate.tripped` (`agent_summary.py:155`), `gate.verdict` (`agent_summary.py:158`) | not emitted to Filigree |
 
 The unsuppressed gate population is built from `Baseline(frozenset())`
-(`src/wardline/core/run.py:456`).
+(`src/wardline/core/run.py:486`).
 
 ## For the suite
 

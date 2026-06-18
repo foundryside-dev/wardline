@@ -393,8 +393,9 @@ _SCAN_FILE_FINDINGS_OUTPUT_SCHEMA: dict[str, Any] = {
                 "verdict": {
                     "type": "string",
                     "enum": ["NOT_EVALUATED", "PASSED", "FAILED"],
-                    "description": "NOT_EVALUATED = no threshold ran; PASSED/FAILED = a threshold ran. Never reads a "
-                    "bare scan as a clean pass.",
+                    "description": "NOT_EVALUATED = no authoritative severity threshold judged the full gate "
+                    "population; PASSED/FAILED = configured gate(s) judged authoritatively. Never reads a bare scan "
+                    "or advisory delta as a clean pass.",
                 },
                 "would_trip_at": {
                     "type": ["string", "null"],
@@ -822,9 +823,9 @@ def _scan(
     new_since = args.get("new_since")
     # --affected delta scope: an inline worklist/entity-list object|array, or a path under
     # root to one. The inline form is the MCP-primary ergonomic and bypasses
-    # _resolve_under_root confinement — acceptable because INV-4 makes the scope's trust
-    # level moot for the gate (the gate always evaluates the full population). A malformed
-    # payload is the loud ScopeParseError -> isError result, matching the CLI's exit-2 posture.
+    # _resolve_under_root confinement. The scope is advisory and cannot drive fail_on; a
+    # malformed payload is the loud ScopeParseError -> isError result, matching the CLI's
+    # exit-2 posture.
     affected_arg = args.get("affected")
     affected = None
     if affected_arg is not None:
@@ -1110,7 +1111,8 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "verdict": {
                     "type": "string",
                     "enum": ["NOT_EVALUATED", "PASSED", "FAILED"],
-                    "description": "NOT_EVALUATED when neither sub-gate was configured; FAILED iff tripped.",
+                    "description": "NOT_EVALUATED when no authoritative severity gate judged the full gate "
+                    "population; FAILED iff tripped.",
                 },
                 "severity_tripped": {
                     "type": "boolean",
@@ -1398,8 +1400,8 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
             "description": "OPTIONAL: the delta-scan (--affected) honesty/provenance block. Present only when an "
             "`affected` scope was supplied; absent on a full scan. Declares whether the run analyzed a scoped subset "
             "(mode='delta', gate_authority='advisory') or fell back to a full scan (mode='full-fallback', "
-            "gate_authority='gate-of-record'). The severity gate ALWAYS evaluates the full population regardless of "
-            "scope (INV-4) — a delta pass is advisory, not a verdict.",
+            "gate_authority='gate-of-record'). In delta mode, only scoped files were analyzed; a clean delta is "
+            "advisory and not a gate-of-record pass.",
             "properties": {
                 "mode": {
                     "type": "string",
@@ -1410,8 +1412,8 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "gate_authority": {
                     "type": "string",
                     "enum": ["advisory", "gate-of-record"],
-                    "description": "Machine-readable companion to mode: advisory in delta mode (a delta pass is "
-                    "type-distinguishable from a full pass), gate-of-record in full-fallback.",
+                    "description": "Machine-readable companion to mode: advisory in delta mode (a clean delta is "
+                    "not a full-tree pass), gate-of-record in full-fallback.",
                 },
                 "entities_requested": {
                     "type": "integer",

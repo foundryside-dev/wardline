@@ -272,13 +272,29 @@ def test_gate_decision_rejects_contradictory_construction() -> None:
     with pytest.raises(ValueError, match="reason"):
         GateDecision(tripped=True, fail_on="ERROR", exit_class=1, verdict="FAILED", reason=None, evaluated="y")
     with pytest.raises(ValueError, match="NOT_EVALUATED"):
-        # NOT_EVALUATED but a threshold IS set — the no-gate shape leaking into a gated decision.
-        GateDecision(tripped=False, fail_on="ERROR", exit_class=0, verdict="NOT_EVALUATED", reason="x", evaluated="y")
+        # NOT_EVALUATED cannot hide a real trip.
+        GateDecision(
+            tripped=True,
+            fail_on="ERROR",
+            exit_class=1,
+            verdict="NOT_EVALUATED",
+            reason="x",
+            evaluated="y",
+            severity_tripped=True,
+        )
     with pytest.raises(ValueError, match="FAILED"):
         # tripped but verdict says PASSED — the dogfood #2 regression made unconstructible.
         GateDecision(tripped=True, fail_on="ERROR", exit_class=1, verdict="PASSED", reason="x", evaluated="y")
     # The three legitimate shapes the factory produces still construct cleanly.
     GateDecision(tripped=False, fail_on=None, exit_class=0, verdict="NOT_EVALUATED", reason="no threshold")
+    GateDecision(
+        tripped=False,
+        fail_on="ERROR",
+        exit_class=0,
+        verdict="NOT_EVALUATED",
+        reason="advisory delta",
+        evaluated="unsuppressed",
+    )
     GateDecision(
         tripped=False, fail_on="ERROR", exit_class=0, verdict="PASSED", reason="clean", evaluated="unsuppressed"
     )

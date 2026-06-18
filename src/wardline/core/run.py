@@ -104,15 +104,19 @@ class ScanResult:
     # gate by committing a suppression keyed to its own new defect. ``gate_decision``
     # evaluates this when it is not None, else falls back to ``findings`` (the trusted,
     # local ``--trust-suppressions`` / directly-constructed-ScanResult behaviour). It is
-    # scoped by ``--new-since`` identically to ``findings``.
+    # scoped by ``--new-since`` identically to ``findings``. In ``--affected`` delta mode
+    # this population is bounded by the analyzed files; a clean subset is advisory and
+    # cannot certify a severity PASS for the full tree.
     gate_findings: list[Finding] | None = None
     # Whether the gate population HONORS the repository suppressions (the
     # ``--trust-suppressions`` posture). Historically this was inferred from the
     # ``gate_findings is None`` sentinel, but a delta scan under ``--trust-suppressions``
     # must MATERIALISE a concrete gate population (the post-suppression, pre-delta-filter
     # findings) so the gate is never the delta-FILTERED display set — an attacker-
-    # influenceable ``--affected`` scope must not forge a green (INV-4 / THREAT-001). That
-    # materialisation breaks the ``is None`` proxy, so the posture is carried EXPLICITLY
+    # influenceable ``--affected`` scope cannot hide a co-located finding from the analyzed
+    # population. Delta mode still cannot certify the skipped files, so ``gate_decision``
+    # reports a clean advisory delta as NOT_EVALUATED rather than PASSED. Materialising the
+    # analyzed population breaks the ``is None`` proxy, so the posture is carried EXPLICITLY
     # here. ``None`` ⇒ derive from the legacy sentinel (``gate_findings is None``), so a
     # directly-constructed ScanResult keeps its prior meaning. Read via ``honors_suppressions``.
     gate_honors_suppressions: bool | None = None
@@ -149,11 +153,12 @@ class GateDecision:
     tripped: bool
     fail_on: str | None
     exit_class: int  # 0 clean, 1 gate tripped, 2 reserved for tool errors (CLI layer)
-    # An explicit verdict so a bare scan (no --fail-on) never reads as a clean PASS: a
-    # vacuous green is the worst false signal for a governance suite (weft-b937e53854).
-    #   NOT_EVALUATED — no threshold ran (fail_on is None); the gate did not judge.
-    #   PASSED        — a threshold ran and nothing tripped.
-    #   FAILED        — a threshold ran and tripped.
+    # An explicit verdict so a bare scan (no --fail-on) or advisory delta never reads as a
+    # clean PASS: a vacuous green is the worst false signal for a governance suite
+    # (weft-b937e53854).
+    #   NOT_EVALUATED — no authoritative severity threshold judged the full gate population.
+    #   PASSED        — configured gate(s) judged authoritatively and nothing tripped.
+    #   FAILED        — configured gate(s) judged authoritatively and tripped.
     verdict: str
     # A human-readable verdict so "summary.active:0 + gate.tripped:true" never reads as
     # a bug: ``reason`` names the count and class of defects that decided it (and, for
@@ -183,10 +188,15 @@ class GateDecision:
         if self.verdict not in _VERDICT_VALUES:
             raise ValueError(f"verdict {self.verdict!r} is not one of {sorted(_VERDICT_VALUES)}")
         # The verdict is keyed to the gate state — these guards are what stop a tripped gate
-        # from ever serialising as a pass (the dogfood #2 regression). The gate is evaluated
-        # when EITHER sub-gate is configured (a severity threshold or the unanalyzed knob).
-        if (self.verdict == "NOT_EVALUATED") != (self.fail_on is None and not self.fail_on_unanalyzed):
-            raise ValueError("verdict NOT_EVALUATED iff neither --fail-on nor --fail-on-unanalyzed is set")
+        # from ever serialising as a pass (the dogfood #2 regression). ``NOT_EVALUATED`` is
+        # also the honest shape for advisory ``--affected`` delta scans: a threshold may be
+        # configured, but a clean analyzed subset is not a gate-of-record for skipped files.
+        if self.verdict == "NOT_EVALUATED" and self.tripped:
+            raise ValueError("verdict NOT_EVALUATED requires an untripped decision")
+        if self.verdict == "NOT_EVALUATED" and self.fail_on is None and self.fail_on_unanalyzed:
+            raise ValueError("verdict NOT_EVALUATED with only --fail-on-unanalyzed would hide an evaluated gate")
+        if self.verdict == "PASSED" and self.fail_on is None and not self.fail_on_unanalyzed:
+            raise ValueError("verdict PASSED requires a configured gate")
         if (self.verdict == "FAILED") != self.tripped:
             raise ValueError("verdict FAILED iff the gate tripped")
         # Every decision carries its reason now — including NOT_EVALUATED (what would trip).
@@ -250,11 +260,13 @@ def run_scan(
     When supplied, discovery still walks the whole tree but only the files containing an
     affected entity (caller-closure-expanded) reach the analyzer, and the EMITTED findings
     are narrowed to those entities. The severity gate still evaluates the FULL unsuppressed
-    population (``gate_findings`` is NEVER narrowed — INV-4 / THREAT-001), so an attacker-
-    influenceable scope cannot forge a green. An empty/all-unresolvable scope falls back to
-    a full scan (fail-closed honesty, INV-3). Mutually exclusive with ``new_since``
-    (composing them is a ``ScopeParseError``). The ``scope`` block on the result records the
-    mode/counts/caveat.
+    analyzed population (``gate_findings`` is NEVER narrowed by the entity-display filter —
+    INV-4 / THREAT-001), so an attacker-influenceable scope cannot hide a co-located
+    finding from the gate. A clean delta subset still cannot certify skipped files, and
+    ``gate_decision`` reports that advisory shape as NOT_EVALUATED rather than PASSED. An
+    empty/all-unresolvable scope falls back to a full scan (fail-closed honesty, INV-3).
+    Mutually exclusive with ``new_since`` (composing them is a ``ScopeParseError``). The
+    ``scope`` block on the result records the mode/counts/caveat.
 
     ``sei_resolver`` (default None) is the loomweave SEI resolver, INJECTED by the caller
     (CLI/MCP) — ``run_scan`` never constructs one, so it stays network-free. Used only to
@@ -515,8 +527,11 @@ def run_scan(
     # display set — an attacker-influenceable ``--affected`` scope must not forge a green
     # (INV-4 / THREAT-001).
     #
-    # Secure default (trust_suppressions off): ``gate_findings`` already holds the full
-    # UNSUPPRESSED analyzed population, unfiltered — leave it untouched.
+    # Secure default (trust_suppressions off): ``gate_findings`` already holds the
+    # UNSUPPRESSED analyzed-file population, unfiltered by affected entity — leave it
+    # untouched. The separate ``scope.gate_authority`` flag tells the decision layer
+    # whether that analyzed population is authoritative (full-fallback) or advisory
+    # (true delta).
     #
     # ``--trust-suppressions`` on (``gate_findings is None`` by design): the gate would
     # otherwise FALL BACK to ``result.findings`` — which is about to be delta-filtered, so
@@ -541,9 +556,9 @@ def run_scan(
         unanalyzed=sum(1 for f in findings if f.rule_id in UNANALYZED_RULE_IDS),
     )
     # The delta scope honesty block (spec §5.4), attached only when --affected was supplied.
-    # ``gate_authority`` is the machine-readable companion: a delta scan is ADVISORY (the
-    # gate still runs over the full population, but a delta pass is type-distinguishable from
-    # a full pass), a full-fallback is the gate-of-record.
+    # ``gate_authority`` is the machine-readable companion: a delta scan is ADVISORY (only
+    # the affected files were analyzed, so a clean subset is not a full-tree pass), while a
+    # full-fallback is the gate-of-record.
     scope: DeltaScopeReport | None = None
     if scope_mode is not None:
         scope = DeltaScopeReport(
@@ -597,6 +612,15 @@ def _not_evaluated_reason(would_trip_at: str | None, evaluated: str, *, gate: st
     )
 
 
+def _advisory_delta_reason(scope: DeltaScopeReport, fail_on: Severity, evaluated: str) -> str:
+    return (
+        f"--affected delta scan is advisory: analyzed {scope.files_analyzed} of "
+        f"{scope.files_discovered} discovered file(s), so --fail-on {fail_on.value} cannot "
+        f"certify skipped files; run a full scan or --new-since for a gate-of-record; "
+        f"evaluated {evaluated}"
+    )
+
+
 def gate_decision(result: ScanResult, fail_on: Severity | None, *, fail_on_unanalyzed: bool = False) -> GateDecision:
     """Translate a scan into a pass/fail verdict. A trip is data, not an error.
 
@@ -640,8 +664,14 @@ def gate_decision(result: ScanResult, fail_on: Severity | None, *, fail_on_unana
     severity_tripped = fail_on is not None and gate_trips(gate_population, fail_on)
     unanalyzed_tripped = bool(fail_on_unanalyzed and result.summary.unanalyzed)
     tripped = severity_tripped or unanalyzed_tripped
+    advisory_scope = result.scope if result.scope is not None and result.scope.mode == "delta" else None
+    advisory_delta = fail_on is not None and advisory_scope is not None and advisory_scope.gate_authority == "advisory"
     if fail_on is not None:
-        reason = _gate_reason(result, fail_on, tripped=severity_tripped, honors_suppressions=honors_suppressions)
+        if advisory_delta and not severity_tripped:
+            assert advisory_scope is not None
+            reason = _advisory_delta_reason(advisory_scope, fail_on, evaluated)
+        else:
+            reason = _gate_reason(result, fail_on, tripped=severity_tripped, honors_suppressions=honors_suppressions)
     else:
         # Unanalyzed-only gate: the unanalyzed sub-gate evaluated but the severity gate
         # never ran — the reason must say so, or a PASSED here is a vacuous severity green.
@@ -658,7 +688,7 @@ def gate_decision(result: ScanResult, fail_on: Severity | None, *, fail_on_unana
         tripped=tripped,
         fail_on=fail_on.value if fail_on is not None else None,
         exit_class=1 if tripped else 0,
-        verdict="FAILED" if tripped else "PASSED",
+        verdict="FAILED" if tripped else ("NOT_EVALUATED" if advisory_delta else "PASSED"),
         reason=reason,
         evaluated=evaluated,
         would_trip_at=would_trip_at,
