@@ -167,10 +167,10 @@ def _is_type_checking_guard(test: ast.expr, alias_map: Mapping[str, str] | None 
 
 def _local_binding_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[str]:
     """Yield names bound in *node*'s OWN scope that can shadow an outer binding —
-    parameters and non-import local assignment targets. ``from typing import
-    TYPE_CHECKING`` / ``import typing`` are deliberately EXCLUDED here: those bind
-    the real typing constant and are restored by :func:`_local_typing_imports`,
-    which wins over a shadow. Walks the own scope (skips nested def/class)."""
+    parameters, imports, and local assignment targets. ``from typing import
+    TYPE_CHECKING`` / ``import typing`` are yielded here first, then restored by
+    :func:`_local_typing_imports`, so only genuine typing bindings keep typing
+    semantics. Walks the own scope (skips nested def/class)."""
     args = node.args
     for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs):
         yield arg.arg
@@ -179,12 +179,31 @@ def _local_binding_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterat
     if args.kwarg:
         yield args.kwarg.arg
     for stmt in _own_statements(node):
-        if isinstance(stmt, ast.Assign):
+        if isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            for alias in stmt.names:
+                yield alias.asname or alias.name.split(".", 1)[0]
+        elif isinstance(stmt, ast.Assign):
             for target in stmt.targets:
-                if isinstance(target, ast.Name):
-                    yield target.id
-        elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
-            yield stmt.target.id
+                yield from _binding_target_names(target)
+        elif isinstance(stmt, (ast.AnnAssign, ast.AugAssign, ast.For, ast.AsyncFor)):
+            yield from _binding_target_names(stmt.target)
+        elif isinstance(stmt, (ast.With, ast.AsyncWith)):
+            for item in stmt.items:
+                if item.optional_vars is not None:
+                    yield from _binding_target_names(item.optional_vars)
+        elif isinstance(stmt, ast.ExceptHandler) and stmt.name:
+            yield stmt.name
+
+
+def _binding_target_names(target: ast.AST) -> Iterator[str]:
+    """Yield names bound by an assignment-like target, including destructuring."""
+    if isinstance(target, ast.Name):
+        yield target.id
+    elif isinstance(target, ast.Starred):
+        yield from _binding_target_names(target.value)
+    elif isinstance(target, (ast.Tuple, ast.List)):
+        for elt in target.elts:
+            yield from _binding_target_names(elt)
 
 
 def _local_typing_imports(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[tuple[str, str]]:

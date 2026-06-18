@@ -294,6 +294,33 @@ def test_caller_closure_pulls_callers_file(tmp_path: Path) -> None:
     assert resolved.affected_qualnames == frozenset({"b.source"})
 
 
+def test_caller_closure_does_not_expand_from_unrelated_entities_in_same_file(tmp_path: Path) -> None:
+    # b.py defines the affected callee and an unrelated helper. Only callers of
+    # b.source should expand the analyzed files; callers of b.unrelated must not
+    # be swept in just because they share the base file.
+    b = _write(
+        tmp_path,
+        "b.py",
+        "def source():\n    return input()\n\ndef unrelated():\n    return 'noise'\n",
+    )
+    a = _write(
+        tmp_path,
+        "a.py",
+        "from b import source\n\ndef sink():\n    return source()\n",
+    )
+    noise = _write(
+        tmp_path,
+        "noise.py",
+        "from b import unrelated\n\ndef caller():\n    return unrelated()\n",
+    )
+    index = build_qualname_index([a, b, noise], tmp_path)
+
+    scope = _scope(AffectedEntity(sei=None, locator="python:function:b.source"))
+    resolved = resolve_affected_scope(scope, index=index, sei_resolver=None)
+
+    assert resolved.files == frozenset({"a.py", "b.py"})
+
+
 def test_caller_closure_self_method(tmp_path: Path) -> None:
     src = (
         "class Svc:\n    def sink(self):\n        return self.source()\n    def source(self):\n        return input()\n"

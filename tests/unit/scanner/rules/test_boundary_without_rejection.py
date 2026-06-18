@@ -309,3 +309,21 @@ def test_function_local_type_checking_import_is_honored_as_dead_branch(tmp_path)
         },
     )
     assert [(f.rule_id, f.qualname) for f in _run(ctx)] == [("PY-WL-102", "m.v")]
+
+
+def test_non_typing_local_import_shadowing_type_checking_is_runtime_reachable(tmp_path) -> None:
+    # A function-local import with alias ``TYPE_CHECKING`` shadows the module-level
+    # typing constant. The guard is runtime-reachable, so its ``raise`` is a real
+    # rejection and must not be treated as a dead typing-only branch.
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": "from typing import TYPE_CHECKING\n"
+            "from wardline.decorators import trust_boundary\n"
+            "@trust_boundary(to_level='ASSURED')\n"
+            "def v(p):\n"
+            "    import os as TYPE_CHECKING\n"
+            "    if TYPE_CHECKING:\n        raise ValueError\n    x = p\n    return x\n",
+        },
+    )
+    assert _run(ctx) == []

@@ -49,12 +49,11 @@ analyzed.
 from __future__ import annotations
 
 import ast
-from collections.abc import Mapping, Sequence
+from collections import deque
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
-from wardline.core.delta import get_affected_entities
 from wardline.core.delta_scope import AffectedEntity, AffectedScope
 from wardline.core.finding import (
     _PROPERTY_ACCESSOR_QUALNAME_SUFFIXES,
@@ -264,7 +263,7 @@ def resolve_affected_scope(
         # missed is unresolved, recorded in exactly one bucket).
         unresolved.append(entity)
 
-    files = _expand_callers(base_files, index)
+    files = _expand_callers(base_files, base_qualnames, index)
 
     return ResolvedScope(
         files=files,
@@ -357,22 +356,32 @@ def _resolve_sei_qualname(sei_resolver: SeiResolver, sei: str) -> str | None:
     return canonical_qualname(locator_to_qualname(locator))
 
 
-def _expand_callers(base_files: frozenset[str] | set[str], index: QualnameIndex) -> frozenset[str]:
-    """Expand a base file set with the files of every caller of an affected entity.
+def _expand_callers(
+    base_files: frozenset[str] | set[str],
+    base_qualnames: frozenset[str] | set[str],
+    index: QualnameIndex,
+) -> frozenset[str]:
+    """Expand a base file set with files of callers of the affected entities.
 
-    Reuses :func:`wardline.core.delta.get_affected_entities` (the reverse callee→caller
-    BFS) over the index's structural call graph so a worklist naming a changed callee
-    pulls in the caller-side files that carry the taint finding (spec §5.3a). The base
-    files are always retained; only callers are added."""
+    Seeds the reverse callee→caller BFS from ``base_qualnames`` rather than from every
+    entity in ``base_files``. A file can contain unrelated entities; callers of those
+    unrelated co-file entities must not inflate a "scan only these entities" delta."""
     if not base_files:
         return frozenset(base_files)
-    entity_map = {qualname: _IndexEntity(_IndexLocation(path)) for qualname, path in index.entities.items()}
-    # get_affected_entities reads only ``entity.location.path``; _IndexEntity provides
-    # exactly that, so the cast bridges the concrete-Entity annotation without building
-    # real AST-backed Entity objects in this taint-free pass.
-    affected_qualnames = get_affected_entities(
-        set(base_files), cast("Mapping[str, Entity]", entity_map), index.project_edges
-    )
+    affected_qualnames = _closure_seed_qualnames(base_qualnames, index)
+    reverse_edges: dict[str, set[str]] = {}
+    for caller, callees in index.project_edges.items():
+        for callee in callees:
+            reverse_edges.setdefault(callee, set()).add(caller)
+
+    queue = deque(affected_qualnames)
+    while queue:
+        current = queue.popleft()
+        for caller in reverse_edges.get(current, set()):
+            if caller not in affected_qualnames:
+                affected_qualnames.add(caller)
+                queue.append(caller)
+
     files = set(base_files)
     for qualname in affected_qualnames:
         path = index.entities.get(qualname)
@@ -381,22 +390,18 @@ def _expand_callers(base_files: frozenset[str] | set[str], index: QualnameIndex)
     return frozenset(files)
 
 
-@dataclass(frozen=True, slots=True)
-class _IndexLocation:
-    """The minimal ``.path`` surface :func:`get_affected_entities` reads off an entity."""
+def _closure_seed_qualnames(base_qualnames: frozenset[str] | set[str], index: QualnameIndex) -> set[str]:
+    """Return concrete entity qualnames to seed caller closure.
 
-    path: str
-
-
-@dataclass(frozen=True, slots=True)
-class _IndexEntity:
-    """A lightweight stand-in exposing only ``.location.path`` for the caller closure.
-
-    :func:`wardline.core.delta.get_affected_entities` reads only ``entity.location.path``,
-    so the caller closure runs off the cheap structural index without constructing real
-    :class:`~wardline.scanner.index.Entity` objects (which would need an AST node)."""
-
-    location: _IndexLocation
+    Exact function/method locators seed that entity. Class-level locators seed every
+    indexed method below the class prefix so callers of any class member are included."""
+    seeds: set[str] = set()
+    for qualname in base_qualnames:
+        if qualname in index.entities:
+            seeds.add(qualname)
+        prefix = f"{qualname}."
+        seeds.update(candidate for candidate in index.entities if candidate.startswith(prefix))
+    return seeds
 
 
 def _relpath(file: Path, root: Path) -> str:
