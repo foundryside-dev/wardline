@@ -273,3 +273,39 @@ def test_arbitrary_call_return_still_fires(tmp_path) -> None:
         },
     )
     assert [(f.rule_id, f.qualname) for f in _run(ctx)] == [("PY-WL-102", "m.v")]
+
+
+def test_parameter_shadowing_type_checking_is_runtime_reachable(tmp_path) -> None:
+    # Defect #3(a) — FALSE POSITIVE. A PARAMETER named ``TYPE_CHECKING`` shadows the
+    # module-level ``typing.TYPE_CHECKING`` import, so ``if TYPE_CHECKING:`` is a real
+    # RUNTIME branch — its ``raise`` IS reachable and rejects bad input. The guard must
+    # NOT be treated as the dead typing-only branch when the name is locally shadowed.
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": "from typing import TYPE_CHECKING\n"
+            "from wardline.decorators import trust_boundary\n"
+            "@trust_boundary(to_level='ASSURED')\n"
+            "def v(p, TYPE_CHECKING=True):\n"
+            "    if TYPE_CHECKING:\n        raise ValueError\n    x = p\n    return x\n",
+        },
+    )
+    assert _run(ctx) == []
+
+
+def test_function_local_type_checking_import_is_honored_as_dead_branch(tmp_path) -> None:
+    # Defect #3(b) — FALSE NEGATIVE. A FUNCTION-LOCAL ``from typing import TYPE_CHECKING``
+    # is still the real typing constant (False at runtime), so ``if TYPE_CHECKING: raise``
+    # is the statically-dead typing branch and does NOT rescue the boundary — PY-WL-102
+    # must fire exactly as it does for a module-level import.
+    ctx, _ = _analyze(
+        tmp_path,
+        {
+            "m.py": "from wardline.decorators import trust_boundary\n"
+            "@trust_boundary(to_level='ASSURED')\n"
+            "def v(p):\n"
+            "    from typing import TYPE_CHECKING\n"
+            "    if TYPE_CHECKING:\n        raise ValueError\n    x = p\n    return x\n",
+        },
+    )
+    assert [(f.rule_id, f.qualname) for f in _run(ctx)] == [("PY-WL-102", "m.v")]

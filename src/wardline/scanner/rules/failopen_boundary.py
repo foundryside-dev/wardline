@@ -70,6 +70,7 @@ from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import TRUST_RANK
 from wardline.scanner.rules._ast_helpers import (
     _own_statements,
+    _scope_alias_map,
     block_has_real_rejection,
     handler_substitutes_on_failure,
     has_real_rejection,
@@ -127,6 +128,11 @@ class FailOpenBoundary:
             # Premise 1 (the family partition): a REAL rejection must exist. None at
             # all -> PY-WL-102's domain; assert-only -> PY-WL-111's domain.
             alias_map = module_alias_map(qualname, context)
+            # Correct the module alias_map for this boundary's own-scope bindings so a
+            # shadowed / function-local ``TYPE_CHECKING`` guard is read correctly when
+            # block_has_real_rejection walks the try/handler bodies directly (the
+            # node-taking helpers self-correct, but these take raw stmt lists).
+            scoped = _scope_alias_map(entity.node, alias_map)
             rejecting_calls = rejecting_helper_calls(entity, context.entities, context.call_site_callees, alias_map)
             if not (has_real_rejection(entity.node, alias_map) or rejecting_calls):
                 continue
@@ -136,8 +142,8 @@ class FailOpenBoundary:
             if not any(
                 handler_substitutes_on_failure(handler, returned)
                 and (
-                    block_has_real_rejection(try_stmt.body, rejecting_calls, alias_map)
-                    or block_has_real_rejection(handler.body, rejecting_calls, alias_map)
+                    block_has_real_rejection(try_stmt.body, rejecting_calls, scoped)
+                    or block_has_real_rejection(handler.body, rejecting_calls, scoped)
                 )
                 for try_stmt in _own_statements(entity.node)
                 if isinstance(try_stmt, (ast.Try, ast.TryStar))
