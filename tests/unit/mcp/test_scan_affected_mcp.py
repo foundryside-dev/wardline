@@ -151,36 +151,26 @@ def test_delta_structured_content_validates_with_scope_present(tmp_path: Path) -
     assert json.loads(result["content"][0]["text"]) == structured
 
 
-def test_affected_with_trust_suppressions_cannot_forge_a_pass(tmp_path: Path) -> None:
-    """INV-4 / THREAT-001 over the MCP primary surface, under ``trust_suppressions=True``.
+def test_affected_with_fail_on_is_rejected(tmp_path: Path) -> None:
+    """``affected`` (advisory delta) cannot drive ``fail_on`` (the gate of record).
 
-    The MCP ``scan`` handler delegates to the same ``run_scan`` + ``gate_decision`` as the
-    CLI, so the engine-level fix covers it: a surgical-exclusion worklist (names only
-    ``svc.alpha``, drops the co-located ``svc.beta`` ERROR from display) with
-    ``trust_suppressions=True`` and ``fail_on=ERROR`` MUST surface ``verdict=FAILED`` —
-    identical to the full scan — and CANNOT forge a PASS by narrowing the gate population."""
+    A delta scan analyzes only the scoped subset, so a green gate would be unearned (an
+    ERROR in an unanalyzed file would never be seen). The MCP handler refuses the
+    combination with a ToolError — symmetric with the CLI's exit-2 rejection. The
+    engine-level INV-4 guarantee (the gate population is never narrowed, even under
+    ``trust_suppressions``) is covered by the ``run_scan`` / ``gate_decision`` unit tests
+    (tests/unit/core/test_run_affected.py, test_affected_invariants.py); here the surface
+    simply refuses to gate an advisory scope at all."""
     proj = _co_located_project(tmp_path)
 
-    full = _scan({"fail_on": "ERROR", "trust_suppressions": True}, root=proj)
-    delta = _scan(
-        {
-            "fail_on": "ERROR",
-            "trust_suppressions": True,
-            "affected": [{"locator": "python:function:svc.alpha"}],
-        },
-        root=proj,
-    )
-
-    # Delta narrowed the DISPLAYED defects to alpha only...
-    shown = {e["qualname"] for e in delta["agent_summary"]["active_defects"]}
-    assert shown == {"svc.alpha"}
-    assert delta["scope"]["mode"] == "delta"
-    # ...but the gate verdict is unforgeable: identical to the full scan's FAILED.
-    assert full["gate"]["verdict"] == "FAILED"
-    assert full["gate"]["tripped"] is True
-    assert delta["gate"]["verdict"] == "FAILED"
-    assert delta["gate"]["tripped"] is True
-    assert delta["gate"]["exit_class"] == full["gate"]["exit_class"] == 1
+    with pytest.raises(ToolError, match="fail_on"):
+        _scan(
+            {
+                "fail_on": "ERROR",
+                "affected": [{"locator": "python:function:svc.alpha"}],
+            },
+            root=proj,
+        )
 
 
 def test_affected_schema_declared_on_scan_tool(tmp_path: Path) -> None:

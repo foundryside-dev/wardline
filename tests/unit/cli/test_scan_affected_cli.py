@@ -153,6 +153,26 @@ def test_affected_with_new_since_exits_2(tmp_path: Path) -> None:
     assert "mutually exclusive" in result.stderr
 
 
+def test_affected_with_fail_on_exits_2(tmp_path: Path) -> None:
+    """``--affected`` (advisory delta) cannot drive ``--fail-on`` (the gate of record).
+
+    A delta scan analyzes only the scoped subset of the tree, so a green gate would be
+    unearned (an ERROR in an unanalyzed file would never be seen). The combination is
+    rejected at the surface → exit 2, pointing the user at ``--new-since`` (the
+    authoritative change-scoped gate) or a full scan."""
+    proj = _two_file_proj(tmp_path)
+    worklist = _worklist_file(tmp_path, "python:function:good.leaky")
+
+    result = CliRunner().invoke(
+        scan,
+        [str(proj), "--affected", str(worklist), "--fail-on", "ERROR"],
+    )
+
+    assert result.exit_code == 2
+    assert "--fail-on" in result.stderr
+    assert "--new-since" in result.stderr
+
+
 def test_affected_sarif_carries_scope_run_properties(tmp_path: Path) -> None:
     """``--format sarif`` threads the scope block into ``runs[0].properties.
     wardline_delta_scope`` (the SARIF run-properties channel)."""

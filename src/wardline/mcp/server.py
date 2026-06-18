@@ -832,6 +832,16 @@ def _scan(
             # --affected and --new-since scope different things via different mechanisms;
             # composing them is rejected loudly, never silently double-scoped (mirrors the CLI).
             raise ToolError("affected and new_since are mutually exclusive")
+        if threshold is not None:
+            # affected is an ADVISORY delta (analyzes only the scoped subset), so it can never
+            # authoritatively PASS a severity gate — a green here would be unearned. Refuse to
+            # gate it (symmetric with the CLI's exit-2 rejection). Use new_since for an
+            # authoritative change-scoped gate (full analysis), or a full scan for the gate of record.
+            raise ToolError(
+                "affected (advisory delta) cannot drive fail_on: a delta scan analyzes only part "
+                "of the tree, so it cannot certify a green gate. Use new_since to gate only changed "
+                "code (full analysis), or a full scan for the gate of record."
+            )
         try:
             if isinstance(affected_arg, str):
                 affected = load_affected_scope(str(_resolve_under_root(root, affected_arg)))
@@ -1990,9 +2000,11 @@ _SCAN_TOOL: dict[str, Any] = {
             "affected": {
                 "type": ["object", "array", "string"],
                 "description": "Scan only entities in this warpline reverify-worklist (warpline."
-                "reverify_worklist.v1) or bare entity list, or a path to one. Speed, not truth: "
-                "cross-file flows outside the affected set are not analyzed (see scope block). "
-                "Empty/unresolvable input falls back to a full scan.",
+                "reverify_worklist.v1) or bare entity list, or a path to one. Advisory delta, not "
+                "a gate: cross-file flows outside the affected set are not analyzed (see scope "
+                "block), so it cannot be combined with fail_on (use new_since to gate changed "
+                "code, or a full scan for the gate of record). Empty/unresolvable input falls "
+                "back to a full scan.",
             },
             "cache_dir": {
                 "type": "string",
