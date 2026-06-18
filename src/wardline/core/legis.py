@@ -302,10 +302,14 @@ def build_legis_artifact(
     Sign last, over the otherwise-complete scan: ``artifact_signature`` is added after
     the rest is in place, exactly as legis verifies (scan-minus-signature).
     """
-    # Mirror gate_decision's exact fallback so the artifact tracks the operator's
-    # posture: secure-default -> gate_findings (baselined/judged/waived ride as
-    # active -> legis enforces them, the one-judge property); --trust-suppressions
-    # -> gate_findings is None -> honour the repo suppressions in ``findings``.
+    # Mirror gate_decision's exact population selection so the artifact tracks the gate:
+    # use ``gate_findings`` whenever it is present, falling back to ``findings`` only for
+    # the legacy ``None`` sentinel. Secure-default -> the unsuppressed population (baselined/
+    # judged/waived ride as active -> legis enforces them, the one-judge property). A full
+    # --trust-suppressions scan -> ``gate_findings is None`` -> honour the repo suppressions
+    # in ``findings``. A delta --trust-suppressions scan MATERIALISES a concrete (post-
+    # suppression, pre-delta-filter) ``gate_findings`` so the artifact, like the gate, is the
+    # unfiltered analyzed population — never the delta display set (INV-4 / THREAT-001).
     gate_population = result.gate_findings if result.gate_findings is not None else result.findings
     findings = [project_finding(f) for f in gate_population]
     scan: dict[str, Any] = {

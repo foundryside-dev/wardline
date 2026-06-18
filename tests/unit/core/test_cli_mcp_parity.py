@@ -117,7 +117,7 @@ def test_cli_and_mcp_emit_identical_filigree_body() -> None:
             self.seen: list = []
             self.scanned_paths: tuple[str, ...] = ()
 
-        def emit(self, findings, *, scanned_paths=()):
+        def emit(self, findings, *, scanned_paths=(), mark_unseen=None):
             self.seen = list(findings)
             self.scanned_paths = tuple(scanned_paths)
             return EmitResult(reachable=True)

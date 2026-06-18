@@ -20,7 +20,7 @@ def test_scan_resolves_filigree_url_from_published_port(tmp_path: Path, monkeypa
         def __init__(self, url: str, *, token: str | None = None, **_kwargs) -> None:
             captured["url"] = url
 
-        def emit(self, findings, *, scanned_paths=()):  # noqa: ANN001
+        def emit(self, findings, *, scanned_paths=(), language=None, mark_unseen=None):  # noqa: ANN001
             from wardline.core.filigree_emit import EmitResult
 
             captured["scanned_paths"] = tuple(scanned_paths)
@@ -214,7 +214,7 @@ def test_install_rerun_detects_filigree_when_port_appears_after_initial_install(
         def __init__(self, url: str, *, token: str | None = None, **_kwargs) -> None:
             captured["url"] = url
 
-        def emit(self, findings, *, scanned_paths=()):  # noqa: ANN001
+        def emit(self, findings, *, scanned_paths=(), language=None, mark_unseen=None):  # noqa: ANN001
             from wardline.core.filigree_emit import EmitResult
 
             captured["scanned_paths"] = tuple(scanned_paths)
@@ -242,7 +242,7 @@ def test_scan_threads_filigree_bearer_token_from_env(tmp_path: Path, monkeypatch
             captured["url"] = url
             captured["token"] = token
 
-        def emit(self, findings, *, scanned_paths=()):  # noqa: ANN001
+        def emit(self, findings, *, scanned_paths=(), language=None, mark_unseen=None):  # noqa: ANN001
             from wardline.core.filigree_emit import EmitResult
 
             return EmitResult(reachable=True)
@@ -270,7 +270,7 @@ def test_scan_threads_filigree_bearer_token_from_deprecated_env(tmp_path: Path, 
             captured["url"] = url
             captured["token"] = token
 
-        def emit(self, findings, *, scanned_paths=()):  # noqa: ANN001
+        def emit(self, findings, *, scanned_paths=(), language=None, mark_unseen=None):  # noqa: ANN001
             from wardline.core.filigree_emit import EmitResult
 
             return EmitResult(reachable=True)

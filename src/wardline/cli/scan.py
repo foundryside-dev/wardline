@@ -6,10 +6,16 @@ from __future__ import annotations
 import json
 import urllib.parse
 from pathlib import Path
+from typing import IO, TYPE_CHECKING
 
 import click
 
 from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
+from wardline.core.delta_scope import (
+    _MAX_PAYLOAD_BYTES,
+    AffectedScope,
+    parse_affected_scope_text,
+)
 from wardline.core.emit import JsonlSink
 from wardline.core.errors import WardlineError
 from wardline.core.filigree_emit import (
@@ -24,6 +30,9 @@ from wardline.core.paths import weft_config_path
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
 from wardline.core.safe_paths import safe_write_text, write_text_no_follow
 from wardline.core.sarif import SarifSink
+
+if TYPE_CHECKING:
+    from wardline.loomweave.identity import SeiResolver
 
 
 @click.command()
@@ -104,6 +113,18 @@ from wardline.core.sarif import SarifSink
     help="PR-scoped 'new findings only' gate: only gate on findings in files/entities changed since this git ref.",
 )
 @click.option(
+    "--affected",
+    "affected_file",
+    type=click.File("r"),
+    default=None,
+    help=(
+        "Scan only entities in this warpline reverify-worklist / entity-list "
+        "(file path, or '-' for stdin). Speed, not truth: out-of-scope cross-file "
+        "flows are not analyzed (see the scope block). Empty/unresolvable -> full scan. "
+        "Mutually exclusive with --new-since."
+    ),
+)
+@click.option(
     "--trust-pack",
     "trusted_packs",
     multiple=True,
@@ -174,6 +195,7 @@ def scan(
     filigree_max_findings_per_request: int | None,
     loomweave_url: str | None,
     new_since: str | None,
+    affected_file: IO[str] | None,
     trusted_packs: tuple[str, ...],
     trust_local_packs: bool,
     fix: bool,
@@ -236,11 +258,38 @@ def scan(
         if local_only:
             filigree_url = None
             loomweave_url = None
+        # --affected delta scope (Phase 7): read the producer-supplied worklist / entity
+        # list (a real path, or '-' for stdin — click.File resolved the stream) and parse
+        # it INSIDE this try so ScopeParseError (invalid JSON / over-cap) lands on the shared
+        # SystemExit(2) path (malformed scope -> exit 2, spec §7). The hand-supplied JSON is
+        # untrusted; INV-4 keeps it off the gate population, so trust is moot for the verdict.
+        affected: AffectedScope | None = None
+        if affected_file is not None:
+            # --affected is mutually exclusive with --new-since (they scope different things
+            # via different mechanisms; run_scan also rejects the pair as ScopeParseError).
+            # When a git-driven --since lands (Phase 12) it MUST reject against --affected here
+            # too — there is no --since flag yet, so nothing to check beyond --new-since.
+            if new_since is not None:
+                raise WardlineError("--affected and --new-since are mutually exclusive")
+            # Bound the read at the byte cap BEFORE json.loads: read at most cap+1 chars
+            # from the (possibly stdin) handle and reject an over-cap blob pre-parse. A
+            # huge VALID JSON payload must not force a full unbounded read + parse before
+            # the DoS cap fires. parse_affected_scope_text enforces the byte-accurate cap
+            # and maps invalid JSON / over-cap to ScopeParseError (a WardlineError), so it
+            # lands on the shared SystemExit(2) malformed-scope path (§7).
+            raw = affected_file.read(_MAX_PAYLOAD_BYTES + 1)
+            affected = parse_affected_scope_text(raw)
+        # Inject the SEI resolver (run_scan stays network-free). Built only when a delta
+        # scope is requested and a loomweave URL resolves; any loomweave error -> None
+        # (fail-soft, recorded as "loomweave unavailable" in the scope block).
+        sei_resolver = _build_sei_resolver(loomweave_url, path) if affected is not None else None
         result = run_scan(
             path,
             config_path=config_path,
             cache_dir=cache_dir,
             new_since=new_since,
+            affected=affected,
+            sei_resolver=sei_resolver,
             trust_local_packs=trust_local_packs,
             trusted_packs=trusted_packs,
             strict_defaults=strict_defaults,
@@ -279,6 +328,8 @@ def scan(
                         config_path=config_path,
                         cache_dir=cache_dir,
                         new_since=new_since,
+                        affected=affected,
+                        sei_resolver=sei_resolver,
                         trust_local_packs=trust_local_packs,
                         trusted_packs=trusted_packs,
                         strict_defaults=strict_defaults,
@@ -287,11 +338,17 @@ def scan(
                         lang=lang,
                     )
                     findings = result.findings
+        # Delta-scope honesty block (--affected): threaded into every --format channel as a
+        # run-level property (SARIF), a top-level key (agent-summary), and a stderr line.
+        # jsonl carries findings only (unchanged), but the stderr summary still prints.
+        scope_props: dict[str, object] | None = (
+            {"wardline_delta_scope": result.scope.to_dict()} if result.scope is not None else None
+        )
         if fmt == "sarif":
             sarif_sink = SarifSink(
                 confined_name if output_is_default else output, root=path if output_is_default else None
             )
-            sarif_sink.write(findings, result.context)
+            sarif_sink.write(findings, result.context, run_properties=scope_props)
         elif fmt == "jsonl":
             jsonl_sink = JsonlSink(
                 confined_name if output_is_default else output, root=path if output_is_default else None
@@ -339,12 +396,22 @@ def scan(
         if filigree_url is not None:
             from wardline.filigree.config import load_filigree_token
 
+            # INV-5: a delta scan emits the FULL discovery list as scanned_paths but a
+            # FILTERED findings list, so Filigree's auto mark_unseen would read every
+            # out-of-scope finding as fixed and close its issue (irreversible signal loss).
+            # Force mark_unseen=False in delta mode; full / full-fallback scans reconcile
+            # normally (mark_unseen=None -> auto).
+            delta_mode = result.scope is not None and result.scope.mode == "delta"
             emit_result = FiligreeEmitter(
                 filigree_url,
                 token=load_filigree_token(path),
                 max_findings_per_request=filigree_max_findings_per_request,
                 protocol_errors_loud=False,
-            ).emit(findings, scanned_paths=result.scanned_paths)
+            ).emit(
+                findings,
+                scanned_paths=result.scanned_paths,
+                mark_unseen=False if delta_mode else None,
+            )
         # Loomweave taint-store write is fail-soft: an outage/403 returns a not-reachable
         # WriteResult (reported below); a LoomweaveError (missing extra, 4xx, bad scheme)
         # is a WardlineError → caught here → exit 2, exactly as Filigree errors do.
@@ -363,19 +430,18 @@ def scan(
             from wardline.core.agent_summary import build_agent_summary
 
             decision = gate_decision(result, Severity(fail_on)) if fail_on is not None else gate_decision(result, None)
-            agent_summary_json = (
-                json.dumps(
-                    build_agent_summary(
-                        result,
-                        decision,
-                        filigree_emit=_filigree_status(emit_result),
-                        loomweave_write=_loomweave_status(loomweave_result),
-                        migration_hint=baseline_migration_hint(result, decision, root=path, new_since=new_since),
-                    ).to_dict(),
-                    sort_keys=True,
-                )
-                + "\n"
-            )
+            agent_summary_dict = build_agent_summary(
+                result,
+                decision,
+                filigree_emit=_filigree_status(emit_result),
+                loomweave_write=_loomweave_status(loomweave_result),
+                migration_hint=baseline_migration_hint(result, decision, root=path, new_since=new_since),
+            ).to_dict()
+            # Surface the --affected delta-scope honesty block alongside the summary (the
+            # same block SARIF carries in run_properties; absent for a full scan, INV-1).
+            if result.scope is not None:
+                agent_summary_dict["scope"] = result.scope.to_dict()
+            agent_summary_json = json.dumps(agent_summary_dict, sort_keys=True) + "\n"
             if output_is_default:
                 safe_write_text(path, confined_name, agent_summary_json, label=default_name)
             else:
@@ -459,6 +525,16 @@ def scan(
                     f"; {len(loomweave_result.unresolved_qualnames)} qualname(s) unresolved (not indexed by Loomweave)"
                 )
             click.echo(line)
+    # --affected delta-scope one-liner (stderr). Prints for EVERY --format when a scope
+    # block exists; a full scan (no --affected) prints nothing new (INV-1).
+    if result.scope is not None:
+        sc = result.scope
+        click.echo(
+            f"scope: {sc.mode} ({sc.gate_authority}) — analyzed {sc.files_analyzed} of "
+            f"{sc.files_discovered} discovered file(s); {sc.in_scope_findings} in-scope "
+            f"finding(s); {len(sc.unresolved_entities)} entity(ies) unresolved",
+            err=True,
+        )
     s = result.summary
     unanalyzed_segment = f"; {s.unanalyzed} file(s) could not be analyzed" if s.unanalyzed else ""
     # "active" = non-suppressed DEFECTs in the EMITTED findings — the canonical term
@@ -534,6 +610,33 @@ def scan(
         click.echo(f"gate: PASSED (--fail-on-unanalyzed only) — {gate_dec.reason}", err=True)
     if gate_dec.tripped:
         raise SystemExit(1)
+
+
+def _build_sei_resolver(loomweave_url: str | None, root: Path) -> SeiResolver | None:
+    """Construct a loomweave :class:`SeiResolver` for the ``--affected`` SEI path, or None.
+
+    Built only when a loomweave URL resolved. Fail-soft (Phase 3 injection contract): any
+    loomweave error — missing extra, bad scheme, unreachable, capabilities probe failure —
+    yields ``None`` so a delta scan degrades to the spoofable qualname-locator path rather
+    than exiting 2. ``run_scan`` records ``loomweave_used=False`` in the scope block. The
+    resolver is injected so ``run_scan`` stays network-free.
+    """
+    if loomweave_url is None:
+        return None
+    try:
+        from wardline.core.errors import LoomweaveError
+        from wardline.loomweave.client import LoomweaveClient
+        from wardline.loomweave.config import load_loomweave_token, resolve_project_name
+        from wardline.loomweave.identity import SeiCapability, SeiResolver
+
+        client = LoomweaveClient(
+            loomweave_url,
+            secret=load_loomweave_token(root),
+            project=resolve_project_name(root),
+        )
+        return SeiResolver(client, SeiCapability.from_capabilities(client.capabilities()))
+    except (LoomweaveError, OSError):
+        return None
 
 
 def _filigree_status(result: EmitResult | None) -> dict[str, object]:

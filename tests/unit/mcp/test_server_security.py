@@ -90,12 +90,13 @@ def test_waiver_add_default_config_symlink_escape_is_iserror(tmp_path: Path) -> 
 
 def test_scan_bad_fail_on_enum_is_actionable_iserror(tmp_path: Path) -> None:
     # A bad fail_on used to surface as an opaque -32603; now it is an actionable
-    # isError naming the valid set.
+    # isError. Defect #5: the closed-vocab `pattern` on the input schema rejects it at the
+    # jsonschema layer, so the actionable message names the valid set (case-insensitively).
     server = WardlineMCPServer(root=tmp_path)
     resp = _dispatch(server, "scan", {"fail_on": "BOGUS"})
     _assert_iserror(resp, "")
-    text = resp["result"]["content"][0]["text"]
-    for w in ["CRITICAL", "ERROR", "WARN", "INFO"]:
+    text = resp["result"]["content"][0]["text"].lower()
+    for w in ["critical", "error", "warn", "info"]:
         assert w in text
 
 

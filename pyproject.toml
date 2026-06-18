@@ -95,9 +95,13 @@ packages = ["src/wardline"]
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-# Frozen identity-oracle fixtures are parsed-not-imported corpus inputs; never
-# let lint/format rewrite them (that would silently drift the golden corpus).
-extend-exclude = ["tests/golden/identity/fixtures"]
+# Frozen identity-oracle fixtures and the warpline-delta sample tree are
+# parsed-not-imported corpus inputs; never let lint/format rewrite them (that
+# would silently drift the golden corpus).
+extend-exclude = [
+    "tests/golden/identity/fixtures",
+    "tests/conformance/fixtures/warpline_delta",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
@@ -110,6 +114,7 @@ exclude = [
     '^tests/grammar/fixtures/',
     '^tests/unit/install/mock_pack/',
     '^tests/golden/identity/fixtures/',
+    '^tests/conformance/fixtures/warpline_delta/',
 ]
 mypy_path = ["src", "."]
 explicit_package_bases = true
@@ -139,7 +144,7 @@ disable_error_code = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not network and not loomweave_e2e and not legis_e2e and not filigree_e2e and not rust_e2e and not loomweave_drift'"
+addopts = "-m 'not network and not loomweave_e2e and not legis_e2e and not filigree_e2e and not rust_e2e and not loomweave_drift and not warpline_e2e'"
 markers = [
     "network: tests that need network (live OpenRouter judge e2e — SP5)",
     "loomweave_e2e: tests that need a real `loomweave serve` binary (SP9 round-trip)",
@@ -147,6 +152,7 @@ markers = [
     "filigree_e2e: tests that need a real Filigree with the promote route (WS-A2 round-trip)",
     "rust_e2e: live `wardline scan --lang rust` CLI subprocess over the .rs corpus (WP6)",
     "loomweave_drift: live recheck of the vendored Rust qualname corpus against the sibling loomweave checkout (release-gate drift alarm)",
+    "warpline_e2e: live `warpline reverify | wardline scan --affected -` round-trip (delta scope; weekly/manual)",
 ]
 
 [tool.coverage.run]

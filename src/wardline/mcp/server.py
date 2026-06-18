@@ -20,6 +20,7 @@ from wardline.core.assure import build_posture
 from wardline.core.attest import build_attestation, verify_attestation
 from wardline.core.attest_key import load_attest_key
 from wardline.core.baseline import generate_baseline, load_baseline
+from wardline.core.delta_scope import ScopeParseError, load_affected_scope, parse_affected_scope
 from wardline.core.errors import WardlineError
 from wardline.core.explain import explain_taint_result, explanation_from_context, explanation_to_dict
 from wardline.core.filigree_emit import FiligreeEmitter, filigree_destination, filigree_disabled_reason
@@ -44,20 +45,28 @@ from wardline.mcp.tooling import resolve_under_root as _resolve_under_root
 # (the "facts carry no defect severity" sentinel), deliberately excluded here:
 # fail_on=NONE is not a meaningful gate threshold.
 _SEVERITY_ENUM = ["CRITICAL", "ERROR", "WARN", "INFO"]
+# Closed vocabularies are pinned with a case-insensitive `pattern` so jsonschema rejects an
+# off-vocab string (fail_on="BOGUS") at the argument-validation layer, not only at runtime.
+# The `(?i)` inline flag is honoured by jsonschema's Python-`re` pattern backend; the vocab is
+# case-insensitive (runtime lowercases) so a plain upper-case enum would wrongly reject "error".
 _FAIL_ON_INPUT_SCHEMA = {
     "type": "string",
+    "pattern": "(?i)^(critical|error|warn|info)$",
     "description": "Gate threshold. Allowed values, case-insensitive: CRITICAL, ERROR, WARN, INFO.",
 }
 _WHERE_SEVERITY_INPUT_SCHEMA = {
     "type": "string",
+    "pattern": "(?i)^(critical|error|warn|info|none)$",
     "description": "Severity filter. Allowed values, case-insensitive: CRITICAL, ERROR, WARN, INFO, NONE.",
 }
 _WHERE_SUPPRESSION_INPUT_SCHEMA = {
     "type": "string",
+    "pattern": "(?i)^(active|baselined|waived|judged)$",
     "description": "Suppression-state filter. Allowed values, case-insensitive: active, baselined, waived, judged.",
 }
 _WHERE_KIND_INPUT_SCHEMA = {
     "type": "string",
+    "pattern": "(?i)^(defect|fact|classification|metric|suggestion)$",
     "description": (
         "Finding kind filter. Allowed values, case-insensitive: defect, fact, classification, metric, suggestion."
     ),
@@ -74,17 +83,25 @@ _DEFAULT_MAX_FINDINGS = 25
 
 
 def _emit_filigree(
-    findings: list[Finding], filigree: Any, *, scanned_paths: tuple[str, ...] = ()
+    findings: list[Finding],
+    filigree: Any,
+    *,
+    scanned_paths: tuple[str, ...] = (),
+    mark_unseen: bool | None = None,
 ) -> dict[str, Any] | None:
     """Emit to Filigree for the MCP `scan`, returning None when no emitter is injected.
 
     Sibling-unreachable / 5xx results are already soft in FiligreeEmitter as
     ``reachable=False``. Protocol/client rejections stay loud by letting
     ``FiligreeEmitError`` propagate into the tool's isError result.
+
+    ``mark_unseen`` forwards the reconciliation control: None lets the emitter
+    auto-enable mark_unseen for a full scan; False suppresses it for a delta scan
+    (INV-5 — see the call site).
     """
     if filigree is None:
         return None
-    er = filigree.emit(findings, scanned_paths=scanned_paths)
+    er = filigree.emit(findings, scanned_paths=scanned_paths, mark_unseen=mark_unseen)
     return {
         "reachable": er.reachable,
         "created": er.created,
@@ -803,6 +820,25 @@ def _scan(
     # A4 (wardline-7fd0f3a82c): the CLI's --fail-on-unanalyzed knob, same default (off).
     fail_on_unanalyzed = _bool_arg(args, "fail_on_unanalyzed", False)
     new_since = args.get("new_since")
+    # --affected delta scope: an inline worklist/entity-list object|array, or a path under
+    # root to one. The inline form is the MCP-primary ergonomic and bypasses
+    # _resolve_under_root confinement — acceptable because INV-4 makes the scope's trust
+    # level moot for the gate (the gate always evaluates the full population). A malformed
+    # payload is the loud ScopeParseError -> isError result, matching the CLI's exit-2 posture.
+    affected_arg = args.get("affected")
+    affected = None
+    if affected_arg is not None:
+        if new_since is not None:
+            # --affected and --new-since scope different things via different mechanisms;
+            # composing them is rejected loudly, never silently double-scoped (mirrors the CLI).
+            raise ToolError("affected and new_since are mutually exclusive")
+        try:
+            if isinstance(affected_arg, str):
+                affected = load_affected_scope(str(_resolve_under_root(root, affected_arg)))
+            else:
+                affected = parse_affected_scope(affected_arg)
+        except ScopeParseError as exc:
+            raise ToolError(str(exc)) from exc
     trusted_packs = _trusted_packs_arg(args)
     cache_dir = _cache_dir_arg(args, root)
     # _bool_arg, not bool(...): without jsonschema the handler runs unvalidated, and
@@ -813,12 +849,26 @@ def _scan(
     # A1 (wardline-2ee1bbda82): the same frontend selector the CLI's --lang exposes.
     # A bad value is run_scan's ConfigError (names the valid set) -> isError result.
     lang = args.get("lang") or "python"
+    # The SEI resolver is INJECTED, never self-constructed by run_scan (which stays
+    # network-free). Build it from the already-injected loomweave client when a delta scope
+    # is in play; absent/unsupported loomweave degrades to the spoofable qualname-locator path.
+    sei_resolver = None
+    if affected is not None and loomweave is not None:
+        from wardline.loomweave.identity import SeiResolver
+
+        try:
+            sei_resolver = SeiResolver.detect(loomweave)
+        except WardlineError:
+            # Loomweave probe failed (outage / pre-SEI 404) — fail-soft to qualname fallback.
+            sei_resolver = None
     result = run_scan(
         path,
         config_path=_cfg(args, root),
         cache_dir=cache_dir,
         confine_to_root=True,
         new_since=new_since,
+        affected=affected,
+        sei_resolver=sei_resolver,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
@@ -848,7 +898,18 @@ def _scan(
         }
     decision = gate_decision(result, threshold, fail_on_unanalyzed=fail_on_unanalyzed)
     migration_hint = baseline_migration_hint(result, decision, root=path, new_since=new_since)
-    filigree_block = _emit_filigree(result.findings, filigree, scanned_paths=result.scanned_paths)
+    # INV-5: a delta scan emits the FULL discovery list as scanned_paths but a FILTERED
+    # findings list, so Filigree's auto mark_unseen would read every out-of-scope finding as
+    # fixed and close its issue (irreversible signal loss). Force mark_unseen=False in delta
+    # mode; full / full-fallback scans reconcile normally (mark_unseen=None -> auto). Mirrors
+    # the CLI guard at cli/scan.py.
+    delta_mode = result.scope is not None and result.scope.mode == "delta"
+    filigree_block = _emit_filigree(
+        result.findings,
+        filigree,
+        scanned_paths=result.scanned_paths,
+        mark_unseen=False if delta_mode else None,
+    )
     filigree_status = _filigree_emit_status(filigree_block)
     loomweave_status = _loomweave_write_status(loomweave_block)
     where = args.get("where")
@@ -970,6 +1031,10 @@ def _scan(
         "filigree_emit": filigree_status,
         "agent_summary": agent_summary,
     }
+    # The delta-scan honesty/provenance block (--affected); absent on a full scan so the
+    # structured payload is byte-identical to today when no scope was requested (INV-1).
+    if result.scope is not None:
+        response["scope"] = result.scope.to_dict()
     _attach_legis_artifact(
         response,
         result,
@@ -987,7 +1052,10 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
     "description": "Success payload of the wardline MCP `scan` tool (the dict _scan returns, served verbatim as "
     "structuredContent).",
     "properties": {
-        "files_scanned": {"type": "integer", "description": "Number of files discovered and handed to the analyzer."},
+        "files_scanned": {
+            "type": "integer",
+            "description": "Number of files discovered (see scope.files_analyzed for the delta-mode analyzed count).",
+        },
         "summary": {
             "type": "object",
             "description": "Whole-project finding counts. active+baselined+waived+judged+informational == total; "
@@ -1312,6 +1380,91 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "informational",
                 "truncation",
                 "next_actions",
+            ],
+            "additionalProperties": False,
+        },
+        "scope": {
+            "type": "object",
+            "description": "OPTIONAL: the delta-scan (--affected) honesty/provenance block. Present only when an "
+            "`affected` scope was supplied; absent on a full scan. Declares whether the run analyzed a scoped subset "
+            "(mode='delta', gate_authority='advisory') or fell back to a full scan (mode='full-fallback', "
+            "gate_authority='gate-of-record'). The severity gate ALWAYS evaluates the full population regardless of "
+            "scope (INV-4) — a delta pass is advisory, not a verdict.",
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": ["delta", "full-fallback"],
+                    "description": "delta = a scoped file subset was analyzed; full-fallback = the scope resolved zero "
+                    "files (empty / all-unresolvable) so a full scan ran (fail-closed honesty).",
+                },
+                "gate_authority": {
+                    "type": "string",
+                    "enum": ["advisory", "gate-of-record"],
+                    "description": "Machine-readable companion to mode: advisory in delta mode (a delta pass is "
+                    "type-distinguishable from a full pass), gate-of-record in full-fallback.",
+                },
+                "entities_requested": {
+                    "type": "integer",
+                    "description": "Number of input items in the supplied affected scope.",
+                },
+                "files_discovered": {
+                    "type": "integer",
+                    "description": "Files discovered (== top-level files_scanned).",
+                },
+                "files_analyzed": {
+                    "type": "integer",
+                    "description": "Files actually analyzed; the scoped subset in delta mode, == files_discovered in "
+                    "full-fallback.",
+                },
+                "in_scope_findings": {
+                    "type": "integer",
+                    "description": "Displayed (post-filter) finding count for the affected entities.",
+                },
+                "fell_back_count": {
+                    "type": "integer",
+                    "description": "Entities resolved via the spoofable qualname-locator path rather than an "
+                    "authoritative SEI.",
+                },
+                "stale_sei_count": {
+                    "type": "integer",
+                    "description": "Entities whose SEI resolved to a now-absent qualname (loomweave stale vs working "
+                    "tree).",
+                },
+                "unresolved_entities": {
+                    "type": "array",
+                    "description": "Entities that did not resolve to any file even in delta mode (scanned subset, not "
+                    "fallback).",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "locator": {"type": ["string", "null"]},
+                            "sei": {"type": ["string", "null"]},
+                        },
+                        "additionalProperties": False,
+                    },
+                },
+                "loomweave_used": {
+                    "type": "boolean",
+                    "description": "Whether the authoritative SEI (loomweave) resolution path fired for any entity.",
+                },
+                "boundary_caveat": {
+                    "type": "string",
+                    "description": "The fixed honesty caveat naming the in-scope-correctness hazard (cross-file taint "
+                    "outside the analyzed set is not computed).",
+                },
+            },
+            "required": [
+                "mode",
+                "gate_authority",
+                "entities_requested",
+                "files_discovered",
+                "files_analyzed",
+                "in_scope_findings",
+                "fell_back_count",
+                "stale_sei_count",
+                "unresolved_entities",
+                "loomweave_used",
+                "boundary_caveat",
             ],
             "additionalProperties": False,
         },
@@ -1833,6 +1986,13 @@ _SCAN_TOOL: dict[str, Any] = {
                 "type": "string",
                 "description": "PR-scoped 'new findings only' gate: only gate on findings in "
                 "files/entities changed since this git ref",
+            },
+            "affected": {
+                "type": ["object", "array", "string"],
+                "description": "Scan only entities in this warpline reverify-worklist (warpline."
+                "reverify_worklist.v1) or bare entity list, or a path to one. Speed, not truth: "
+                "cross-file flows outside the affected set are not analyzed (see scope block). "
+                "Empty/unresolvable input falls back to a full scan.",
             },
             "cache_dir": {
                 "type": "string",

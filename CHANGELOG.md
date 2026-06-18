@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Warpline delta scan (`wardline scan --affected`).** A new `--affected
+  <file|->` option scopes analysis to the entities named in a `warpline.
+  reverify_worklist.v1` worklist (or a bare entity list, file or stdin), so an
+  agent's inner loop can re-verify only what changed. The affected set is
+  caller-closure expanded so cross-file taint into a changed callee is still
+  computed; the displayed findings are filtered to the requested entities while
+  the severity gate evaluates the full unsuppressed population **of the analyzed
+  files**, so an attacker-influenceable scope cannot hide an in-analyzed-file
+  finding from the gate (INV-4). Speed, not truth: delta analyzes only the
+  scoped (caller-closure-expanded) files, so a delta `--fail-on` pass is
+  **advisory** — it does not certify files it never analyzed (the stderr line
+  reports `analyzed N of M discovered file(s)`). The full scan remains the gate
+  of record. An empty or all-unresolvable scope falls back to a full scan. A `scope` block (mode,
+  gate authority, file counts, unresolved/fell-back/stale-SEI accounting, and a
+  boundary caveat) is attached to every output format (agent-summary JSON,
+  SARIF `run.properties`, MCP structured content). Delta emits on both the CLI
+  and MCP surfaces force `mark_unseen=False` so a scoped run never poisons
+  Filigree reconciliation.
+- **MCP `scan` gains an `affected` parameter.** The same delta scope (inline
+  object/array worklist or a path under root) is available over MCP, with the
+  `scope` block surfaced in structured content.
+- **`warpline_e2e` live oracle.** A scheduled/manual CI oracle runs the real
+  `warpline reverify` → `wardline scan --affected -` round-trip; the marker is
+  fail-closed under `WARDLINE_LIVE_ORACLE_REQUIRED`.
+
 ## [1.0.3] - 2026-06-18
 
 ### Fixed

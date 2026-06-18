@@ -20,13 +20,16 @@ def test_ci_exposes_scheduled_and_manual_live_oracles() -> None:
         "WARDLINE_LOOMWEAVE_BIN",
         "WARDLINE_LEGIS_URL",
         "WARDLINE_FILIGREE_URL",
+        "WARDLINE_WARPLINE_BIN",
     ):
         assert f"{key}: ${{{{ secrets.{key} }}}}" in workflow
     assert f'{LIVE_ORACLE_REQUIRED_ENV}: "1"' in workflow
     assert "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'" in workflow
-    for marker in ("loomweave_e2e", "legis_e2e", "filigree_e2e"):
+    for marker in ("loomweave_e2e", "legis_e2e", "filigree_e2e", "warpline_e2e"):
         assert "-m ${{ matrix.marker }}" in workflow
         assert marker in workflow
+    assert "warpline_e2e" in workflow
+    assert "WARDLINE_WARPLINE_BIN" in workflow
     assert "GITHUB_STEP_SUMMARY" in workflow
     assert "fail this required oracle run" in workflow
 

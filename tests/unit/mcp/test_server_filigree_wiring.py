@@ -16,9 +16,10 @@ class CapturingEmitter:
         self.seen = None
         self.scanned_paths = None
 
-    def emit(self, findings, *, scanned_paths=()):
+    def emit(self, findings, *, scanned_paths=(), mark_unseen=None):
         self.seen = list(findings)
         self.scanned_paths = tuple(scanned_paths)
+        self.mark_unseen = mark_unseen
         return EmitResult(reachable=True, created=len(self.seen))
 
 

@@ -27,15 +27,17 @@ class FakeEmitter:
         self._result = result
         self.seen = None
         self.scanned_paths = None
+        self.mark_unseen = "UNSET"
 
-    def emit(self, findings, *, scanned_paths=()):
+    def emit(self, findings, *, scanned_paths=(), mark_unseen=None):
         self.seen = list(findings)
         self.scanned_paths = tuple(scanned_paths)
+        self.mark_unseen = mark_unseen
         return self._result
 
 
 class RaisingEmitter:
-    def emit(self, findings, *, scanned_paths=()):
+    def emit(self, findings, *, scanned_paths=(), mark_unseen=None):
         raise FiligreeEmitError("Filigree rejected scan-results (400) at http://x: bad payload")
 
 
@@ -206,3 +208,40 @@ def test_scan_filigree_5xx_says_server_error_not_unreachable(tmp_path):
     assert "503" in reason and "server error" in reason
     assert "unreachable" not in reason
     assert "WEFT_FEDERATION_TOKEN" not in reason
+
+
+_TWO_FILE_OTHER = (
+    "from wardline.decorators import external_boundary, trusted\n"
+    "@external_boundary\ndef rr(p):\n    return p\n"
+    "@trusted\ndef otherleak(p):\n    return rr(p)\n"
+)
+
+
+def test_delta_scan_forces_mark_unseen_false(tmp_path):
+    # INV-5: a delta scan emits the FULL discovery list as scanned_paths but a FILTERED
+    # findings list. If Filigree's auto mark_unseen runs, every out-of-scope finding reads as
+    # "fixed" and its tracker issue closes (irreversible). The MCP path must force
+    # mark_unseen=False in delta mode, exactly as the CLI does.
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    (tmp_path / "other.py").write_text(_TWO_FILE_OTHER, encoding="utf-8")
+    emitter = FakeEmitter(EmitResult(reachable=True, created=1))
+    out = _scan(
+        {"full": True, "affected": [{"locator": "python:function:svc.leaky"}]},
+        tmp_path,
+        None,
+        emitter,
+    )
+    assert out["scope"]["mode"] == "delta"
+    # The full discovery list is handed to the emitter (both files)...
+    assert len(emitter.scanned_paths) == 2
+    # ...so mark_unseen MUST be forced False, never left to auto.
+    assert emitter.mark_unseen is False
+
+
+def test_full_scan_leaves_mark_unseen_auto(tmp_path):
+    # A full / full-fallback scan must still reconcile normally: mark_unseen=None (auto), not
+    # forced False — otherwise the tracker never closes genuinely-fixed findings.
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    emitter = FakeEmitter(EmitResult(reachable=True, created=1))
+    _scan({}, tmp_path, None, emitter)
+    assert emitter.mark_unseen is None

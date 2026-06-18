@@ -160,6 +160,8 @@ jobs:
             marker: legis_e2e
           - name: Filigree
             marker: filigree_e2e
+          - name: Warpline
+            marker: warpline_e2e
     steps:
       - uses: actions/checkout@v4
         with:
@@ -176,6 +178,7 @@ jobs:
           WARDLINE_LOOMWEAVE_BIN: ${{ secrets.WARDLINE_LOOMWEAVE_BIN }}
           WARDLINE_LEGIS_URL: ${{ secrets.WARDLINE_LEGIS_URL }}
           WARDLINE_FILIGREE_URL: ${{ secrets.WARDLINE_FILIGREE_URL }}
+          WARDLINE_WARPLINE_BIN: ${{ secrets.WARDLINE_WARPLINE_BIN }}
       - name: Summarize live oracle
         if: always()
         run: |

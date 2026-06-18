@@ -355,6 +355,8 @@ def _scan_result_chunks(
     findings: Sequence[Finding],
     scanned_paths: Sequence[str],
     max_findings_per_request: int,
+    *,
+    force_no_mark_unseen: bool = False,
 ) -> tuple[_ScanResultChunk, ...]:
     """Split large emits without corrupting Filigree's per-file unseen sweep.
 
@@ -362,12 +364,18 @@ def _scan_result_chunks(
     chunk must carry a complete set of findings for every path it names. Most large
     scans can be chunked by whole-file groups. If one file alone exceeds the cap, the
     file has to be split and reconciliation is disabled only for those chunks.
+
+    ``force_no_mark_unseen`` hard-disables reconciliation on every chunk (INV-5): a
+    delta ``--affected`` scan emits the FULL discovery list as ``scanned_paths`` but a
+    FILTERED ``findings`` list, so Filigree's absent-fingerprint sweep would read every
+    out-of-scope finding as fixed and close its issue — irreversible signal loss. A delta
+    scan never reconciles closure; only a full scan may.
     """
     if max_findings_per_request < 1:
         raise ValueError("max_findings_per_request must be at least 1")
 
     deduped_scanned_paths = tuple(dict.fromkeys(p for p in scanned_paths if p))
-    can_mark_unseen = not any(f.rule_id in UNANALYZED_RULE_IDS for f in findings)
+    can_mark_unseen = not force_no_mark_unseen and not any(f.rule_id in UNANALYZED_RULE_IDS for f in findings)
     if len(findings) <= max_findings_per_request:
         return (
             _ScanResultChunk(
@@ -703,7 +711,16 @@ class FiligreeEmitter:
         *,
         scanned_paths: Sequence[str] = (),
         language: str | None = None,
+        mark_unseen: bool | None = None,
     ) -> EmitResult:
+        """Emit ``findings`` to the configured Filigree scan-results URL.
+
+        ``mark_unseen`` is the reconciliation override. ``None`` (default) keeps the
+        auto-derived per-chunk behaviour (sweep absent fingerprints on scanned paths).
+        ``False`` hard-disables reconciliation on every chunk — required by INV-5 for a
+        delta ``--affected`` scan, whose ``findings`` are a filtered subset of the
+        ``scanned_paths`` it names; auto-sweep would close out-of-scope issues.
+        """
         headers = {"Content-Type": "application/json"}
         token_sent = bool(self._token)
         if token_sent:
@@ -713,7 +730,14 @@ class FiligreeEmitter:
             or _fetch_scan_results_limit(self._url, self._transport, headers)
             or _DEFAULT_MAX_FINDINGS_PER_REQUEST
         )
-        chunks = list(_scan_result_chunks(findings, scanned_paths, max_findings_per_request))
+        chunks = list(
+            _scan_result_chunks(
+                findings,
+                scanned_paths,
+                max_findings_per_request,
+                force_no_mark_unseen=mark_unseen is False,
+            )
+        )
         created = 0
         updated = 0
         failures: list[FailedFinding] = []
