@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-06-19
+
+### Fixed
+- **Python boundary reachability.** Function-local imports that shadow
+  `TYPE_CHECKING` are now treated as real runtime bindings, so reachable
+  rejection branches are honored instead of producing a false `PY-WL-102`.
+  Reviewed regression source: `19089461`; fix commit: `cfacf8cb`.
+- **Warpline delta scope precision.** `wardline scan --affected` now expands
+  caller files from the resolved affected entities, not from every entity in
+  the same file, so callers of unrelated co-file helpers no longer inflate the
+  advisory delta scan. Reviewed regression source: `117649ca`; fix commit:
+  `cfacf8cb`.
+
 ## [1.0.4] - 2026-06-19
 
 ### Added
@@ -1316,6 +1329,7 @@ for Python — enterprise-class trust-boundary analysis at small-team weight.
 - **Packaging** — MIT-licensed; optional extras `scanner` (config + CLI) and
   `weft` (HTTP integrations).
 
+[1.0.5]: https://github.com/foundryside-dev/wardline/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/foundryside-dev/wardline/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/foundryside-dev/wardline/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/foundryside-dev/wardline/compare/v1.0.1...v1.0.2
