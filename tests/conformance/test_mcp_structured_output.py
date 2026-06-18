@@ -176,6 +176,16 @@ def test_scan_structured_output(tmp_path: Path) -> None:
     assert out["gate"]["tripped"] is True
 
 
+def test_scan_delta_structured_output_pins_scope_present(tmp_path: Path) -> None:
+    # The OPTIONAL scope block stays schema-valid only if a delta invocation actually
+    # exercises it — an absent optional property would pass even if its sub-schema were
+    # malformed. This is the one execution-conformance case that pins scope PRESENT.
+    server = WardlineMCPServer(root=_leaky_project(tmp_path))
+    out = _validated(server, "scan", {"full": True, "affected": [{"locator": "python:function:svc.leaky"}]})
+    assert out["scope"]["mode"] == "delta"
+    assert out["scope"]["gate_authority"] == "advisory"
+
+
 def _job_status_stub(job_id: str = "a" * 32, status: str = "running") -> dict[str, Any]:
     """A schema-valid scan-job status payload (the core's _base_status shape)."""
     return {

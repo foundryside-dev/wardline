@@ -1,0 +1,27 @@
+{
+  "schema": "warpline.reverify_worklist.v1",
+  "data": {
+    "generated_at": "2026-06-18T00:00:00Z",
+    "items": [
+      {
+        "entity": {
+          "locator": "python:function:a.alpha",
+          "sei": null
+        },
+        "priority": "high",
+        "reason": "changed",
+        "depth": 0,
+        "why": ["edited in HEAD"],
+        "suggested_verification": [
+          {"kind": "scan", "command": "wardline scan . --affected -"}
+        ],
+        "enrichment": {
+          "work": null,
+          "risk": "medium",
+          "governance": null,
+          "requirements": []
+        }
+      }
+    ]
+  }
+}

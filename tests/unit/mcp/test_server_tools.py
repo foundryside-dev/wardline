@@ -314,3 +314,52 @@ def test_fix_tool_requires_explicit_apply(tmp_path: Path) -> None:
     modified_src = (proj / "svc.py").read_text(encoding="utf-8")
     assert "assert val is not None" not in modified_src
     assert "raise ValueError" in modified_src
+
+
+# Defect #5: the closed-vocabulary input schemas must REJECT off-vocab strings at the
+# jsonschema layer (not just at the runtime). The vocab is case-insensitive, so both
+# "ERROR" and "error" must be ACCEPTED while "BOGUS"/"urgent" are REJECTED.
+import jsonschema  # noqa: E402
+
+from wardline.mcp.server import (  # noqa: E402
+    _FAIL_ON_INPUT_SCHEMA,
+    _WHERE_KIND_INPUT_SCHEMA,
+    _WHERE_SEVERITY_INPUT_SCHEMA,
+    _WHERE_SUPPRESSION_INPUT_SCHEMA,
+)
+
+
+def _accepts(schema: dict[str, Any], value: str) -> bool:
+    try:
+        jsonschema.validate(value, schema)
+        return True
+    except jsonschema.ValidationError:
+        return False
+
+
+def test_fail_on_schema_constrains_closed_vocab() -> None:
+    for ok in ("CRITICAL", "ERROR", "error", "Warn", "info"):
+        assert _accepts(_FAIL_ON_INPUT_SCHEMA, ok), ok
+    for bad in ("BOGUS", "urgent", "none", "NONE", ""):
+        assert not _accepts(_FAIL_ON_INPUT_SCHEMA, bad), bad
+
+
+def test_where_severity_schema_constrains_closed_vocab() -> None:
+    for ok in ("CRITICAL", "ERROR", "error", "WARN", "info", "NONE", "none"):
+        assert _accepts(_WHERE_SEVERITY_INPUT_SCHEMA, ok), ok
+    for bad in ("BOGUS", "urgent", ""):
+        assert not _accepts(_WHERE_SEVERITY_INPUT_SCHEMA, bad), bad
+
+
+def test_where_suppression_schema_constrains_closed_vocab() -> None:
+    for ok in ("active", "ACTIVE", "baselined", "waived", "judged"):
+        assert _accepts(_WHERE_SUPPRESSION_INPUT_SCHEMA, ok), ok
+    for bad in ("BOGUS", "suppressed", ""):
+        assert not _accepts(_WHERE_SUPPRESSION_INPUT_SCHEMA, bad), bad
+
+
+def test_where_kind_schema_constrains_closed_vocab() -> None:
+    for ok in ("defect", "DEFECT", "fact", "classification", "metric", "suggestion"):
+        assert _accepts(_WHERE_KIND_INPUT_SCHEMA, ok), ok
+    for bad in ("BOGUS", "finding", ""):
+        assert not _accepts(_WHERE_KIND_INPUT_SCHEMA, bad), bad

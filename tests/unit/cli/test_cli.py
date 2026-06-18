@@ -878,7 +878,7 @@ def test_scan_filigree_emit_success(tmp_path, monkeypatch) -> None:
         def __init__(self, url, **kw):
             captured["url"] = url
 
-        def emit(self, findings, *, scanned_paths=()):
+        def emit(self, findings, *, scanned_paths=(), language=None, mark_unseen=None):
             from wardline.core.filigree_emit import EmitResult
 
             captured["n"] = len(findings)
@@ -909,7 +909,7 @@ def test_scan_filigree_protocol_error_does_not_preempt_gate(tmp_path, monkeypatc
             captured["url"] = url
             captured["kwargs"] = kw
 
-        def emit(self, findings, *, scanned_paths=()):
+        def emit(self, findings, *, scanned_paths=(), language=None, mark_unseen=None):
             from wardline.core.filigree_emit import EmitResult, FailedFinding
 
             return EmitResult(
@@ -962,7 +962,7 @@ def test_scan_filigree_absent_continues(tmp_path, monkeypatch) -> None:
         def __init__(self, url, **kw):
             pass
 
-        def emit(self, findings, *, scanned_paths=()):
+        def emit(self, findings, *, scanned_paths=(), language=None, mark_unseen=None):
             from wardline.core.filigree_emit import EmitResult
 
             return EmitResult(reachable=False)
@@ -986,7 +986,7 @@ def test_scan_filigree_401_says_auth_not_unreachable(tmp_path, monkeypatch) -> N
         def __init__(self, url, **kw):
             pass
 
-        def emit(self, findings, *, scanned_paths=()):
+        def emit(self, findings, *, scanned_paths=(), language=None, mark_unseen=None):
             from wardline.core.filigree_emit import EmitResult
 
             return EmitResult(reachable=False, status=401)  # auth_rejected derived from status
@@ -1012,7 +1012,7 @@ def _emitter_returning(status):
         def __init__(self, url, **kw):
             pass
 
-        def emit(self, findings, *, scanned_paths=()):
+        def emit(self, findings, *, scanned_paths=(), language=None, mark_unseen=None):
             from wardline.core.filigree_emit import EmitResult
 
             return EmitResult(reachable=False, status=status)
@@ -1125,7 +1125,7 @@ def test_scan_reports_filigree_success_and_loomweave_unreachable_independently(t
         def __init__(self, url, **kw):
             pass
 
-        def emit(self, findings, *, scanned_paths=()):
+        def emit(self, findings, *, scanned_paths=(), language=None, mark_unseen=None):
             from wardline.core.filigree_emit import EmitResult
 
             return EmitResult(reachable=True, created=1, updated=2)
@@ -1626,7 +1626,7 @@ def test_scan_filigree_emit_with_failed_and_warnings(tmp_path, monkeypatch) -> N
         def __init__(self, url, **kw):
             pass
 
-        def emit(self, findings, *, scanned_paths=()):
+        def emit(self, findings, *, scanned_paths=(), language=None, mark_unseen=None):
             from wardline.core.filigree_emit import EmitResult, FailedFinding
 
             return EmitResult(

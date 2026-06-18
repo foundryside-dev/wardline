@@ -13,9 +13,13 @@ logger = logging.getLogger(__name__)
 def locator_to_qualname(locator: str) -> str:
     """Extract a Wardline qualname from a Loomweave locator string.
 
-    A locator looks like 'python:function:pkg.mod.func' or 'python:class:pkg.mod.Class'.
+    A locator looks like 'python:function:pkg.mod.func', 'python:method:pkg.mod.Cls.m',
+    or 'python:class:pkg.mod.Class'.
     """
-    for prefix in ("python:function:", "python:class:", "python:"):
+    # 'python:method:' MUST precede the generic 'python:' catch-all: loomweave emits
+    # kind="method" for class members (scanner/index.py: Entity.kind), and the catch-all
+    # would otherwise return 'method:pkg.mod.Cls.m', which never matches the qualname index.
+    for prefix in ("python:function:", "python:method:", "python:class:", "python:"):
         if locator.startswith(prefix):
             return locator[len(prefix) :]
     return locator

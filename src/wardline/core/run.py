@@ -18,6 +18,12 @@ from typing import TYPE_CHECKING, Any
 from wardline.core import config as config_mod
 from wardline.core.baseline import Baseline, load_baseline
 from wardline.core.delta import get_affected_entities, get_changed_files_since
+from wardline.core.delta_resolve import (
+    build_qualname_index,
+    filter_to_affected,
+    resolve_affected_scope,
+)
+from wardline.core.delta_scope import AffectedScope, DeltaScopeReport, ScopeParseError
 from wardline.core.discovery import discover, missing_source_roots
 from wardline.core.errors import ConfigError
 from wardline.core.finding import (
@@ -37,6 +43,7 @@ from wardline.core.suppression import SEVERITY_ORDER, apply_suppressions, gate_t
 from wardline.core.waivers import WaiverSet, load_project_waivers
 
 if TYPE_CHECKING:
+    from wardline.loomweave.identity import SeiResolver
     from wardline.scanner.context import AnalysisContext
 
 
@@ -44,6 +51,18 @@ def _fp(*parts: str) -> str:
     digest = hashlib.sha256()
     digest.update("\x00".join(parts).encode("utf-8"))
     return digest.hexdigest()
+
+
+def _relpath(file: Path, root: Path) -> str:
+    """Repo-relative POSIX path for ``file`` — the discovery/finding-location convention.
+
+    Matches ``ScanResult.scanned_paths`` and ``delta_resolve._relpath`` so the delta scope's
+    ``resolved.files`` (which are these relpaths) line up with the discovered ``files``."""
+    resolved_root = root.resolve()
+    resolved_file = file.resolve()
+    if resolved_file.is_relative_to(resolved_root):
+        return resolved_file.relative_to(resolved_root).as_posix()
+    return file.as_posix()
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +106,36 @@ class ScanResult:
     # local ``--trust-suppressions`` / directly-constructed-ScanResult behaviour). It is
     # scoped by ``--new-since`` identically to ``findings``.
     gate_findings: list[Finding] | None = None
+    # Whether the gate population HONORS the repository suppressions (the
+    # ``--trust-suppressions`` posture). Historically this was inferred from the
+    # ``gate_findings is None`` sentinel, but a delta scan under ``--trust-suppressions``
+    # must MATERIALISE a concrete gate population (the post-suppression, pre-delta-filter
+    # findings) so the gate is never the delta-FILTERED display set — an attacker-
+    # influenceable ``--affected`` scope must not forge a green (INV-4 / THREAT-001). That
+    # materialisation breaks the ``is None`` proxy, so the posture is carried EXPLICITLY
+    # here. ``None`` ⇒ derive from the legacy sentinel (``gate_findings is None``), so a
+    # directly-constructed ScanResult keeps its prior meaning. Read via ``honors_suppressions``.
+    gate_honors_suppressions: bool | None = None
+    # The delta-scan honesty/provenance block (``--affected``), or None for a full scan
+    # (so a full scan serialises no scope block — INV-1). Constructed by ``run_scan`` from
+    # the resolved scope + post-filter counts when ``affected`` is supplied. Carries
+    # ``files_discovered``/``files_analyzed`` and the boundary caveat — see
+    # ``wardline.core.delta_scope.DeltaScopeReport``.
+    scope: DeltaScopeReport | None = None
+
+    @property
+    def honors_suppressions(self) -> bool:
+        """Whether the gate honors the repository suppressions (``--trust-suppressions``).
+
+        Explicit when ``gate_honors_suppressions`` is set; otherwise derived from the legacy
+        ``gate_findings is None`` sentinel so a directly-constructed ScanResult is unchanged.
+        Decoupling the posture from the sentinel is what lets a delta scan materialise a
+        concrete (post-suppression, pre-delta-filter) gate population without flipping the
+        gate into "ignore suppressions" mode (INV-4: the gate is never the delta display set).
+        """
+        if self.gate_honors_suppressions is not None:
+            return self.gate_honors_suppressions
+        return self.gate_findings is None
 
 
 _SEVERITY_VALUES: frozenset[str] = frozenset(s.value for s in Severity)
@@ -166,6 +215,8 @@ def run_scan(
     cache_dir: Path | None = None,
     confine_to_root: bool = True,
     new_since: str | None = None,
+    affected: AffectedScope | None = None,
+    sei_resolver: SeiResolver | None = None,
     trust_local_packs: bool = False,
     trusted_packs: tuple[str, ...] = (),
     strict_defaults: bool = False,
@@ -193,10 +244,32 @@ def run_scan(
     only for a trusted checkout, never for enforcement on untrusted PR content. The
     secure CI ratchet is the operator-supplied, unforgeable ``--new-since`` instead.
 
+    ``affected`` (default None) is the ``--affected`` delta scope: a parsed, producer-
+    supplied :class:`~wardline.core.delta_scope.AffectedScope`. When None the path is the
+    byte-identical full scan (INV-1 — no qualname index is built, no resolver is probed).
+    When supplied, discovery still walks the whole tree but only the files containing an
+    affected entity (caller-closure-expanded) reach the analyzer, and the EMITTED findings
+    are narrowed to those entities. The severity gate still evaluates the FULL unsuppressed
+    population (``gate_findings`` is NEVER narrowed — INV-4 / THREAT-001), so an attacker-
+    influenceable scope cannot forge a green. An empty/all-unresolvable scope falls back to
+    a full scan (fail-closed honesty, INV-3). Mutually exclusive with ``new_since``
+    (composing them is a ``ScopeParseError``). The ``scope`` block on the result records the
+    mode/counts/caveat.
+
+    ``sei_resolver`` (default None) is the loomweave SEI resolver, INJECTED by the caller
+    (CLI/MCP) — ``run_scan`` never constructs one, so it stays network-free. Used only to
+    resolve an affected entity's SEI to a current locator; absent/unavailable resolvers
+    degrade to the qualname-locator fallback.
+
     ``lang`` (default ``"python"``) selects the language frontend: ``"python"`` is the
     released path (byte-identical to before this parameter existed); ``"rust"`` routes
     ``.rs`` discovery to the preview ``RustAnalyzer``. Any other value is a ``ConfigError``.
     """
+    if affected is not None and new_since is not None:
+        # --affected and --new-since scope different things via different mechanisms
+        # (discovery/analysis pre-filter vs. operator-supplied gate ratchet); composing
+        # them is rejected loudly, never silently double-scoped.
+        raise ScopeParseError("--affected and --new-since are mutually exclusive")
     if lang not in FRONTENDS:
         known = ", ".join(f"'{k}'" for k in sorted(FRONTENDS))
         raise ConfigError(f"unknown language {lang!r}; expected one of {known}")
@@ -245,15 +318,57 @@ def run_scan(
                 warn.lineno,
             )
     analyzer: Analyzer = frontend.build_analyzer(config=cfg, summary_cache=cache)
+    # Delta scoping (--affected) lives BETWEEN discovery and analysis. When ``affected``
+    # is None this whole block is short-circuited (INV-1): no qualname index is built and
+    # no SEI resolver is probed, so the full-scan path pays zero delta cost. When supplied,
+    # the engine analyzes only the files containing an affected entity (caller-closure-
+    # expanded). Each scoped file is still analyzed in FULL (whole-module context), so the
+    # only soundness gap is the declared inter-file one (spec §5.3a). Fail-closed: an empty
+    # resolution → analyze EVERYTHING (full-fallback, INV-3).
+    scope_mode: str | None = None
+    affected_qualnames: frozenset[str] = frozenset()
+    affected_files: frozenset[str] = frozenset()
+    entities_requested = 0
+    fell_back_count = 0
+    stale_sei_count = 0
+    unresolved_entities: tuple[dict[str, str | None], ...] = ()
+    loomweave_used = False
+    analyze_files = files
+    if affected is not None:
+        entities_requested = affected.item_count
+        index = build_qualname_index(files, root)
+        resolved = resolve_affected_scope(affected, index=index, sei_resolver=sei_resolver)
+        fell_back_count = len(resolved.fell_back)
+        stale_sei_count = len(resolved.stale_sei)
+        loomweave_used = resolved.loomweave_used
+        unresolved_entities = tuple({"locator": e.locator, "sei": e.sei} for e in resolved.unresolved)
+        if resolved.files:
+            scope_mode = "delta"
+            affected_qualnames = resolved.affected_qualnames
+            affected_files = resolved.files
+            analyze_files = [f for f in files if _relpath(f, root) in resolved.files]
+        else:
+            # Fail-closed: zero files resolved (empty / all-unresolvable / loomweave-absent
+            # + qualname-miss) → run the FULL analysis, declared as full-fallback (INV-3).
+            scope_mode = "full-fallback"
     if progress_callback is not None:
-        progress_callback({"phase": "analyzing", "files_discovered": len(files)})
-    raw = list(analyzer.analyze(files, cfg, root=root))
+        if scope_mode == "delta":
+            progress_callback(
+                {
+                    "phase": "analyzing",
+                    "files_discovered": len(files),
+                    "files_analyzed": len(analyze_files),
+                }
+            )
+        else:
+            progress_callback({"phase": "analyzing", "files_discovered": len(files)})
+    raw = list(analyzer.analyze(analyze_files, cfg, root=root))
     if progress_callback is not None:
         progress_callback(
             {
                 "phase": "analyzed",
                 "files_discovered": len(files),
-                "files_analyzed": len(files),
+                "files_analyzed": len(analyze_files),
                 "findings": len(raw),
             }
         )
@@ -362,9 +477,9 @@ def run_scan(
         changed_files = get_changed_files_since(new_since, root)
         context = analyzer.last_context
         if context is not None:
-            affected = get_affected_entities(changed_files, context.entities, context.project_edges)
+            new_since_affected = get_affected_entities(changed_files, context.entities, context.project_edges)
         else:
-            affected = set()
+            new_since_affected = set()
 
         def apply_delta_scope(candidates: list[Finding]) -> list[Finding]:
             # Suppress any ACTIVE defect outside the delta so the gate only fires on
@@ -373,7 +488,9 @@ def run_scan(
             scoped: list[Finding] = []
             for f in candidates:
                 if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE:
-                    is_new = (f.location.path in changed_files) or (f.qualname is not None and f.qualname in affected)
+                    is_new = (f.location.path in changed_files) or (
+                        f.qualname is not None and f.qualname in new_since_affected
+                    )
                     if not is_new:
                         f = replace(
                             f,
@@ -387,6 +504,32 @@ def run_scan(
         if gate_findings is not None:
             gate_findings = apply_delta_scope(gate_findings)
 
+    # The gate posture is carried EXPLICITLY (not inferred from ``gate_findings is None``)
+    # so delta mode can materialise a concrete gate population without flipping the gate
+    # into "ignore suppressions" mode. ``None`` here ⇒ ScanResult derives the legacy
+    # sentinel meaning, preserving the full-scan path byte-for-byte (INV-1).
+    gate_honors_suppressions: bool | None = None
+
+    # --affected finding filter: narrow the EMITTED findings to the affected entities only
+    # in delta mode (NOT full-fallback). The gate population is NEVER the delta-FILTERED
+    # display set — an attacker-influenceable ``--affected`` scope must not forge a green
+    # (INV-4 / THREAT-001).
+    #
+    # Secure default (trust_suppressions off): ``gate_findings`` already holds the full
+    # UNSUPPRESSED analyzed population, unfiltered — leave it untouched.
+    #
+    # ``--trust-suppressions`` on (``gate_findings is None`` by design): the gate would
+    # otherwise FALL BACK to ``result.findings`` — which is about to be delta-filtered, so
+    # a surgical-exclusion worklist could hide an in-analyzed-file ERROR from the gate.
+    # MATERIALISE the gate population HERE as the post-suppression / pre-delta-filter
+    # snapshot, and record that the posture still honors suppressions. Only the DISPLAYED
+    # ``findings`` then get the delta filter.
+    if scope_mode == "delta":
+        if trust_suppressions and gate_findings is None:
+            gate_findings = list(findings)
+            gate_honors_suppressions = True
+        findings = filter_to_affected(findings, affected_qualnames, affected_files)
+
     defects = [f for f in findings if f.kind is Kind.DEFECT]
     summary = ScanSummary(
         total=len(findings),
@@ -397,6 +540,24 @@ def run_scan(
         informational=len(findings) - len(defects),
         unanalyzed=sum(1 for f in findings if f.rule_id in UNANALYZED_RULE_IDS),
     )
+    # The delta scope honesty block (spec §5.4), attached only when --affected was supplied.
+    # ``gate_authority`` is the machine-readable companion: a delta scan is ADVISORY (the
+    # gate still runs over the full population, but a delta pass is type-distinguishable from
+    # a full pass), a full-fallback is the gate-of-record.
+    scope: DeltaScopeReport | None = None
+    if scope_mode is not None:
+        scope = DeltaScopeReport(
+            mode=scope_mode,
+            gate_authority="advisory" if scope_mode == "delta" else "gate-of-record",
+            entities_requested=entities_requested,
+            files_discovered=len(files),
+            files_analyzed=len(analyze_files),
+            in_scope_findings=len(findings),
+            fell_back_count=fell_back_count,
+            stale_sei_count=stale_sei_count,
+            unresolved_entities=unresolved_entities,
+            loomweave_used=loomweave_used,
+        )
     resolved_root = root.resolve()
     return ScanResult(
         findings=findings,
@@ -408,6 +569,8 @@ def run_scan(
             for path in files
         ),
         gate_findings=gate_findings,
+        gate_honors_suppressions=gate_honors_suppressions,
+        scope=scope,
     )
 
 
@@ -444,13 +607,17 @@ def gate_decision(result: ScanResult, fail_on: Severity | None, *, fail_on_unana
     surfaces share it: the CLI exits on ``tripped`` and the MCP gate block serialises the
     same decision, so neither can drift.
     """
-    # None SENTINEL: evaluate the unsuppressed gate population when present (secure
-    # default), else the suppressed ``findings`` (trusted ``--trust-suppressions`` /
-    # a directly-constructed ScanResult with no gate_findings). Population selection is
-    # LIFTED above the no-threshold branch so even a bare scan computes would_trip_at over
-    # the SAME population an actual --fail-on would judge (weft-b937e53854).
-    honors_suppressions = result.gate_findings is None
-    gate_population = result.findings if honors_suppressions else result.gate_findings
+    # Population selection is DECOUPLED from the suppression posture: the gate ALWAYS
+    # evaluates ``gate_findings`` when present, falling back to ``findings`` only when it is
+    # the legacy ``None`` sentinel (a full ``--trust-suppressions`` scan or a directly-
+    # constructed ScanResult). A delta ``--trust-suppressions`` scan MATERIALISES a concrete
+    # ``gate_findings`` (post-suppression, pre-delta-filter) so the gate is never the delta-
+    # FILTERED display set — an attacker-influenceable scope cannot forge a green (INV-4).
+    # ``honors_suppressions`` (the explicit posture, NOT the sentinel) only labels the
+    # ``evaluated`` string. Selection is LIFTED above the no-threshold branch so even a bare
+    # scan computes would_trip_at over the SAME population an actual --fail-on would judge.
+    honors_suppressions = result.honors_suppressions
+    gate_population = result.findings if result.gate_findings is None else result.gate_findings
     assert gate_population is not None  # narrow for mypy; the sentinel branch set findings
     would_trip_at = _would_trip_at(gate_population)
     evaluated = (
@@ -520,7 +687,10 @@ def baseline_migration_hint(
     if not decision.tripped or decision.fail_on is None or new_since is not None:
         return None
     # --trust-suppressions honors the baseline, so there is no surprise to migrate from.
-    if result.gate_findings is None:
+    # Use the explicit posture, NOT the ``gate_findings is None`` sentinel: a delta
+    # --trust-suppressions scan materialises a concrete gate population but still honors
+    # suppressions, so it must be treated identically to a full trusted run here.
+    if result.honors_suppressions:
         return None
     if not baseline_path(root).is_file():
         return None
@@ -558,9 +728,14 @@ def _gate_reason(result: ScanResult, fail_on: Severity, *, tripped: bool, honors
         return f"no {sev}+ defects in the evaluated population"
     # Under --trust-suppressions the gate IS the annotated findings (suppressions
     # honored), so only genuinely-active defects can have tripped it; never misdirect to
-    # the suppression flags.
+    # the suppression flags. Count over the GATE population, not the emitted ``findings``:
+    # a delta scan materialises a concrete (post-suppression, pre-delta-filter) gate
+    # population while ``findings`` is the narrowed display set — counting the display set
+    # would understate the trip. For a full scan ``gate_findings`` is the ``None`` sentinel,
+    # so this falls back to ``findings`` and is byte-identical to before.
     if honors_suppressions:
-        active, _ = gate_breakdown(result.findings, fail_on)
+        honored_pop = result.gate_findings if result.gate_findings is not None else result.findings
+        active, _ = gate_breakdown(honored_pop, fail_on)
         return f"{active} active {sev}+ defect(s) at or above {sev}"
     # Secure default: classify the defects that ACTUALLY gate (the unsuppressed gate
     # population) by their state in the emitted findings. A ``--new-since`` delta scopes

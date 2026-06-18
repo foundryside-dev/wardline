@@ -1,0 +1,27 @@
+{
+  "schema": "warpline.reverify_worklist.v1",
+  "data": {
+    "generated_at": "2026-06-18T00:00:00Z",
+    "items": [
+      {
+        "entity": {
+          "locator": "python:function:source_mod.tainted_source",
+          "sei": null
+        },
+        "priority": "high",
+        "reason": "changed",
+        "depth": 0,
+        "why": ["the @external_boundary source was edited"],
+        "suggested_verification": [
+          {"kind": "scan", "command": "wardline scan . --affected -"}
+        ],
+        "enrichment": {
+          "work": null,
+          "risk": "high",
+          "governance": null,
+          "requirements": []
+        }
+      }
+    ]
+  }
+}

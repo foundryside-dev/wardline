@@ -82,19 +82,64 @@ Usage: wardline scan [OPTIONS] [PATH]
 
   Scan PATH for findings.
 
+  PATH is the scan root and GOVERNS finding identity: qualnames and
+  fingerprints are minted relative to it, and baseline/waiver/judged
+  suppression state is read from PATH's .weft/wardline/. Scan the project root.
+
 Options:
-  --config FILE                   Path to a weft.toml whose [wardline] table
-                                  supplies configuration overrides (weft.toml).
+  --config FILE
   --format [jsonl|sarif|agent-summary|legis]
-  --lang [python|rust]            Language frontend. 'rust' (PREVIEW) scans
-                                  .rs files for command-injection findings.
+  --lang [python|rust]            Language frontend. 'rust' scans .rs files
+                                  for RS-WL-* command-injection findings
+                                  (frozen identity, baseline-eligible; config
+                                  severity overrides not yet applied).
   --output PATH
-  --fail-on [CRITICAL|ERROR|WARN|INFO]
-  --cache-dir PATH                Store authenticated L3 summary-cache entries
-                                  here for faster incremental scans when
-                                  WARDLINE_SUMMARY_CACHE_KEY is set.
+  --fail-on [critical|error|warn|info]
+  --fail-on-unanalyzed / --no-fail-on-unanalyzed
+                                  Exit 1 if any file was discovered but could
+                                  not be analyzed.
+  --cache-dir PATH                Persist L3 summary cache here for faster
+                                  incremental scans.
   --filigree-url TEXT             POST findings to this Filigree Weft scan-
                                   results URL (opt-in).
+  --local-only, --no-emit         Disable sibling emission even when Filigree
+                                  or Loomweave URLs resolve from flags, env,
+                                  or local install state.
+  --filigree-max-findings-per-request INTEGER RANGE
+                                  Maximum Wardline findings per Filigree scan-
+                                  results POST (default 1000).  [x>=1]
+  --loomweave-url TEXT            Persist per-entity taint facts to this
+                                  Loomweave taint-store URL (opt-in, fail-
+                                  soft).
+  --new-since TEXT                PR-scoped 'new findings only' gate: only
+                                  gate on findings in files/entities changed
+                                  since this git ref.
+  --affected FILENAME             Scan only entities in this warpline
+                                  reverify-worklist / entity-list (file path,
+                                  or '-' for stdin). Speed, not truth: out-of-
+                                  scope cross-file flows are not analyzed (see
+                                  the scope block). Empty/unresolvable -> full
+                                  scan. Mutually exclusive with --new-since.
+  --trust-pack TEXT               Allow importing this trust-grammar pack from
+                                  weft.toml [wardline]. May be repeated.
+  --allow-custom-packs            Allow loading custom trust-grammar packs
+                                  from the local project directory.
+  --fix                           Apply mechanical autofixes during the scan.
+  -y, --yes                       Automatically confirm all fixes when --fix
+                                  is specified.
+  --strict-defaults               Ignore repository-supplied custom
+                                  configuration overrides (weft.toml).
+  --allow-source-root-escape      Allow weft.toml [wardline] source_roots to
+                                  resolve outside PATH.
+  --trust-suppressions            Let repository-controlled
+                                  baseline/waiver/judged files clear the
+                                  --fail-on gate (always annotate findings
+                                  regardless). Default off: the gate evaluates
+                                  the unsuppressed population so a PR cannot
+                                  self-suppress.
+  --allow-dirty                   For --format legis only: on a dirty working
+                                  tree, emit an UNSIGNED, clearly-marked dev
+                                  artifact instead of refusing.
   --help                          Show this message and exit.
 ```
 
@@ -112,6 +157,16 @@ it at a package root, not a single file.
 | `--filigree-url TEXT` | Opt-in: POST findings to a Filigree Weft scan-results endpoint as well as emitting them locally. Prefer this native path when agents need Filigree promotion, deduplication, or close/reopen lifecycle state. |
 | `--local-only`, `--no-emit` | Disable sibling emission for this scan, even if Filigree or Loomweave URLs resolve from flags, environment, MCP install state, or local published ports. The scan still writes local output and evaluates the gate. |
 | `--filigree-max-findings-per-request INTEGER` | Cap findings per Filigree scan-results POST. Precedence is explicit CLI value, then `WARDLINE_FILIGREE_MAX_FINDINGS_PER_REQUEST`, then Filigree's advertised scan-results limit from `/api/files/_schema` when reachable, then Wardline's safe default (`1000`). Wardline chunks by complete file groups when possible so Filigree reconciliation does not mark later chunks as fixed. |
+| `--loomweave-url TEXT` | Opt-in, fail-soft: persist per-entity taint facts to a Loomweave taint-store endpoint alongside local output. |
+| `--fail-on-unanalyzed` / `--no-fail-on-unanalyzed` | Exit `1` if any file was discovered but could not be analyzed (e.g. a parse failure), even when no finding trips `--fail-on`. |
+| `--new-since TEXT` | PR-scoped "new findings only" gate: gate only on findings in files/entities changed since this git ref. Mutually exclusive with `--affected`. |
+| `--affected FILENAME` | Scope analysis to the entities named in a `warpline.reverify_worklist.v1` worklist (or a bare entity list; file path, or `-` for stdin) — the inner-loop fast path. The affected set is caller-closure expanded so cross-file taint into a changed callee is still computed. **Speed, not truth:** only the scoped files are analyzed, so a delta `--fail-on` pass is **advisory** and does not certify out-of-scope files — the full scan stays the gate of record (a `scope` block records the mode, gate authority, and `analyzed N of M` accounting). An empty or all-unresolvable scope falls back to a full scan. Mutually exclusive with `--new-since`. |
+| `--trust-pack TEXT` (repeatable), `--allow-custom-packs` | Allow loading trust-grammar packs declared in `weft.toml [wardline]` (`--trust-pack`) or from the local project directory (`--allow-custom-packs`). |
+| `--fix`, `-y`/`--yes` | Apply mechanical autofixes during the scan; `-y` auto-confirms every fix. |
+| `--strict-defaults` | Ignore repository-supplied custom configuration overrides in `weft.toml`. |
+| `--allow-source-root-escape` | Allow `weft.toml [wardline] source_roots` to resolve outside `PATH`. |
+| `--trust-suppressions` | Let repository-controlled baseline/waiver/judged files clear the `--fail-on` gate (they always annotate findings regardless). Use only for trusted local checkouts; in CI prefer the unforgeable `--new-since <merge-base>` ratchet. Default off, so the gate evaluates the unsuppressed population and a PR cannot self-suppress. |
+| `--allow-dirty` | `--format legis` only: on a dirty working tree, emit an UNSIGNED, clearly-marked (`dirty: true`) dev artifact instead of refusing. Signing stays clean-tree-only. |
 
 Realistic invocation — scan the source tree, emit SARIF to a file, and fail the
 build on any `ERROR`-or-worse finding:

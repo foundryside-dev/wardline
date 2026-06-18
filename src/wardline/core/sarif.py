@@ -125,7 +125,12 @@ def _result(finding: Finding, rule_index: int, context: AnalysisContext | None =
     return result
 
 
-def build_sarif(findings: Sequence[Finding], context: AnalysisContext | None = None) -> dict[str, Any]:
+def build_sarif(
+    findings: Sequence[Finding],
+    context: AnalysisContext | None = None,
+    *,
+    run_properties: dict[str, object] | None = None,
+) -> dict[str, Any]:
     """Build a SARIF 2.1.0 log with a single run from *findings* (pure).
 
     ``Kind.METRIC`` findings (engine telemetry such as WLN-L3-LOW-RESOLUTION
@@ -133,6 +138,13 @@ def build_sarif(findings: Sequence[Finding], context: AnalysisContext | None = N
     diagnostic statistics about the scan run itself — not actionable code
     issues — and pollute GitHub Code Scanning with noise alerts. The full
     picture (including METRIC findings) is always available in the JSONL sink.
+
+    ``run_properties`` (default None) is an optional run-level ``properties`` bag
+    threaded into ``runs[0].properties``. The CLI passes
+    ``{"wardline_delta_scope": result.scope.to_dict()}`` for a ``--affected`` delta
+    scan so the SARIF carries the same scope/honesty block as the other formats.
+    Defaulted/optional so existing callers (dogfood self-scan, other ``SarifSink``
+    users) are unaffected — a full scan emits no ``runs[0].properties`` key.
     """
     included = [f for f in findings if f.kind is not Kind.METRIC]
     rule_index: dict[str, int] = {}
@@ -141,22 +153,23 @@ def build_sarif(findings: Sequence[Finding], context: AnalysisContext | None = N
             rule_index[finding.rule_id] = len(rule_index)
     rules = [{"id": rid} for rid in rule_index]
     results = [_result(f, rule_index[f.rule_id], context) for f in included]
+    run: dict[str, Any] = {
+        "tool": {
+            "driver": {
+                "name": "wardline",
+                "informationUri": _INFO_URI,
+                "version": __version__,
+                "rules": rules,
+            }
+        },
+        "results": results,
+    }
+    if run_properties is not None:
+        run["properties"] = dict(run_properties)
     return {
         "version": "2.1.0",
         "$schema": _SCHEMA,
-        "runs": [
-            {
-                "tool": {
-                    "driver": {
-                        "name": "wardline",
-                        "informationUri": _INFO_URI,
-                        "version": __version__,
-                        "rules": rules,
-                    }
-                },
-                "results": results,
-            }
-        ],
+        "runs": [run],
     }
 
 
@@ -165,8 +178,16 @@ class SarifSink:
         self._path = path
         self._root = root
 
-    def write(self, findings: Sequence[Finding], context: AnalysisContext | None = None) -> None:
-        content = json.dumps(build_sarif(findings, context), indent=2, ensure_ascii=False)
+    def write(
+        self,
+        findings: Sequence[Finding],
+        context: AnalysisContext | None = None,
+        *,
+        run_properties: dict[str, object] | None = None,
+    ) -> None:
+        content = json.dumps(
+            build_sarif(findings, context, run_properties=run_properties), indent=2, ensure_ascii=False
+        )
         if self._root is not None:
             safe_write_text(self._root, self._path, content, label=self._path.name)
         else:
