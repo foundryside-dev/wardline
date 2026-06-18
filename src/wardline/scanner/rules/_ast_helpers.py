@@ -48,7 +48,7 @@ def _own_reachable_statements(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     alias_map: Mapping[str, str] | None = None,
 ) -> Iterator[ast.stmt]:
-    yield from _reachable_statements_in_block(node.body, alias_map)
+    yield from _reachable_statements_in_block(node.body, _scope_alias_map(node, alias_map))
 
 
 def _own_reachable_nodes(
@@ -163,6 +163,75 @@ def _resolve_dotted_expr(node: ast.expr, alias_map: Mapping[str, str] | None = N
 
 def _is_type_checking_guard(test: ast.expr, alias_map: Mapping[str, str] | None = None) -> bool:
     return _resolve_dotted_expr(test, alias_map) == _TYPE_CHECKING_FQN
+
+
+def _local_binding_names(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[str]:
+    """Yield names bound in *node*'s OWN scope that can shadow an outer binding —
+    parameters and non-import local assignment targets. ``from typing import
+    TYPE_CHECKING`` / ``import typing`` are deliberately EXCLUDED here: those bind
+    the real typing constant and are restored by :func:`_local_typing_imports`,
+    which wins over a shadow. Walks the own scope (skips nested def/class)."""
+    args = node.args
+    for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs):
+        yield arg.arg
+    if args.vararg:
+        yield args.vararg.arg
+    if args.kwarg:
+        yield args.kwarg.arg
+    for stmt in _own_statements(node):
+        if isinstance(stmt, ast.Assign):
+            for target in stmt.targets:
+                if isinstance(target, ast.Name):
+                    yield target.id
+        elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+            yield stmt.target.id
+
+
+def _local_typing_imports(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[tuple[str, str]]:
+    """Yield ``(local_name, fqn)`` for FUNCTION-LOCAL ``typing`` imports that bind
+    the real typing constant: ``from typing import TYPE_CHECKING [as X]`` and
+    ``import typing [as t]``. These ARE the genuine constant, so a function-local
+    guard built on them is honored as the dead typing-only branch exactly like a
+    module-level import."""
+    for stmt in _own_statements(node):
+        if isinstance(stmt, ast.ImportFrom) and stmt.module == "typing" and (stmt.level or 0) == 0:
+            for alias in stmt.names:
+                if alias.name == "TYPE_CHECKING":
+                    yield (alias.asname or alias.name, _TYPE_CHECKING_FQN)
+        elif isinstance(stmt, ast.Import):
+            for alias in stmt.names:
+                if alias.name == "typing":
+                    yield (alias.asname or "typing", "typing")
+
+
+def _scope_alias_map(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    alias_map: Mapping[str, str] | None = None,
+) -> Mapping[str, str] | None:
+    """The module *alias_map* corrected for *node*'s OWN-SCOPE bindings, so
+    ``if TYPE_CHECKING:`` is read as the dead typing-only branch ONLY when the name
+    actually refers to the typing constant at that point.
+
+    Three corrections, applied in order:
+      1. start from the module-level *alias_map* (module ``import typing`` /
+         ``from typing import TYPE_CHECKING`` keep working);
+      2. a parameter or local assignment that SHADOWS such a name removes its
+         module binding (a ``def f(..., TYPE_CHECKING=True)`` makes the guard a real
+         runtime branch — defect #3a);
+      3. a function-LOCAL ``typing`` import restores the genuine constant, winning
+         over a same-name shadow (defect #3b).
+
+    Returns the unchanged *alias_map* when no own-scope binding touches a
+    typing-relevant name, so the common case allocates nothing."""
+    shadows = set(_local_binding_names(node))
+    local_imports = dict(_local_typing_imports(node))
+    if not shadows and not local_imports:
+        return alias_map
+    effective: dict[str, str] = dict(alias_map or {})
+    for name in shadows:
+        effective.pop(name, None)
+    effective.update(local_imports)
+    return effective
 
 
 def own_except_handlers(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.ExceptHandler]:
