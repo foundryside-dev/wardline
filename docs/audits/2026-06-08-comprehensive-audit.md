@@ -8,36 +8,36 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 | Finding ID | Title | Severity | Location | Focus Area |
 | :--- | :--- | :--- | :--- | :--- |
-| **WLN-CRIT-01** | [Parameter Default Expressions Ignored](file:///home/john/wardline/src/wardline/scanner/taint/variable_level.py#L163-L185) | **Critical** | `src/wardline/scanner/taint/variable_level.py` | Systems / Taint Propagation |
-| **WLN-HIGH-01** | [Python Standard Input Buffer blocking in MCP Server](file:///home/john/wardline/src/wardline/mcp/protocol.py#L107-L108) | **High** | `src/wardline/mcp/protocol.py` | CLI & MCP |
-| **WLN-HIGH-02** | [Fragile Skip Invariant in File Discovery](file:///home/john/wardline/src/wardline/core/discovery.py#L32-L34) | **High** | `src/wardline/core/discovery.py` | Quality / Discovery |
-| **WLN-HIGH-03** | [Lack of Import Alias Resolution in TaintedSinkRule](file:///home/john/wardline/src/wardline/scanner/rules/_sink_helpers.py#L76-L82) | **High** | `src/wardline/scanner/rules/_sink_helpers.py` | Static Analysis / Soundness |
-| **WLN-HIGH-04** | [Soundness Gap for Generators Yielding Untrusted Data](file:///home/john/wardline/src/wardline/scanner/taint/variable_level.py#L1337-L1367) | **High** | `src/wardline/scanner/taint/variable_level.py` | Static Analysis / Soundness |
-| **WLN-HIGH-05** | [Module-level import-time dependency on pyyaml in core modules](file:///home/john/wardline/src/wardline/core/baseline.py#L18) | **High** | `src/wardline/core/*` | Architecture / Layering |
-| **WLN-HIGH-06** | [Static Analysis Bypass via Undecorated Nested Helper Functions](file:///home/john/wardline/src/wardline/scanner/rules/_sink_helpers.py#L215-L219) | **High** | `src/wardline/scanner/rules/*` | Python Engineering |
-| **WLN-HIGH-07** | [Static Analysis Evasion via Lambda Expressions](file:///home/john/wardline/src/wardline/scanner/ast_primitives.py#L102-L103) | **High** | `src/wardline/scanner/ast_primitives.py` | Python Engineering |
-| **WLN-MED-01** | [Transitive Import-Time Dependency on scanner from Base Core Modules](file:///home/john/wardline/src/wardline/core/assure.py#L40) | **Medium** | `src/wardline/core/*` | Architecture / Layering |
-| **WLN-MED-02** | [Module-level Import of Optional Dependency (pyyaml) in Base Install](file:///home/john/wardline/src/wardline/install/pack.py#L8) | **Medium** | `src/wardline/install/pack.py` | Architecture / Layering |
-| **WLN-MED-03** | [Import-Time Coupling in Dependency-Free MCP Server](file:///home/john/wardline/src/wardline/mcp/server.py#L24) | **Medium** | `src/wardline/mcp/*` | Architecture / Layering |
-| **WLN-MED-04** | [Waiver Tool in MCP Server hardcodes configuration path](file:///home/john/wardline/src/wardline/mcp/server.py#L402) | **Medium** | `src/wardline/mcp/server.py` | CLI & MCP |
-| **WLN-MED-05** | [Missing context_lines option in MCP judge tool](file:///home/john/wardline/src/wardline/mcp/server.py#L344-L356) | **Medium** | `src/wardline/mcp/server.py` | CLI & MCP |
-| **WLN-MED-06** | [Absolute Path Match Failure in explain_finding](file:///home/john/wardline/src/wardline/core/explain.py#L77-L92) | **Medium** | `src/wardline/core/explain.py` | Quality / Explanations |
-| **WLN-MED-07** | [Inconsistent Defaults for confine_to_root in Attestation](file:///home/john/wardline/src/wardline/core/attest.py#L270-L288) | **Medium** | `src/wardline/core/attest.py` | Quality / Integrity |
-| **WLN-MED-08** | [Under-Tainting with **kwargs Unpacking](file:///home/john/wardline/src/wardline/scanner/analyzer.py#L317-L318) | **Medium** | `src/wardline/scanner/analyzer.py` | Static Analysis / Taint |
-| **WLN-MED-09** | [Under-Tainting via Loop-Carried Dependencies](file:///home/john/wardline/src/wardline/scanner/taint/variable_level.py#L826-L897) | **Medium** | `src/wardline/scanner/taint/variable_level.py` | Static Analysis / Taint |
-| **WLN-MED-10** | [Ineffective Caching / Performance Architecture Flaw](file:///home/john/wardline/src/wardline/scanner/analyzer.py#L111-L200) | **Medium** | `src/wardline/scanner/*` | Systems / Caching |
-| **WLN-MED-11** | [Inert Configuration Option provenance_clash](file:///home/john/wardline/src/wardline/scanner/taint/propagation.py#L160-L182) | **Medium** | `src/wardline/scanner/*` | Systems / Taint Algebra |
-| **WLN-MED-12** | [Git Ref Option/Argument Injection in get_changed_files_since](file:///home/john/wardline/src/wardline/core/delta.py#L34-L44) | **Medium** | `src/wardline/core/delta.py` | Security |
-| **WLN-LOW-01** | [Incomplete MCP Handshake verification/enforcement](file:///home/john/wardline/src/wardline/mcp/protocol.py#L67-L78) | **Low** | `src/wardline/mcp/protocol.py` | CLI & MCP |
-| **WLN-LOW-02** | [Undocumented path property in verify_attestation schema](file:///home/john/wardline/src/wardline/mcp/server.py#L607-L615) | **Low** | `src/wardline/mcp/server.py` | CLI & MCP |
-| **WLN-LOW-03** | [Test Coverage Gaps in Error Hierarchy and Path Rejection](file:///home/john/wardline/tests/unit/core/test_errors.py#L1-L14) | **Low** | `tests/unit/core/*` | Quality / Robustness |
-| **WLN-LOW-04** | [FQN Resolution Limitation for Nested/Dotted Attribute Calls](file:///home/john/wardline/src/wardline/scanner/ast_primitives.py#L171-L197) | **Low** | `src/wardline/scanner/ast_primitives.py` | Python / Static Analysis |
-| **WLN-LOW-05** | [Redundant/Dead Code in SCC Propagation](file:///home/john/wardline/src/wardline/scanner/taint/propagation.py#L337-L347) | **Low** | `src/wardline/scanner/taint/propagation.py` | Static Analysis / Tarjan |
-| **WLN-LOW-06** | [Transitive Core-Scanner Coupling in Clarion Extra](file:///home/john/wardline/src/wardline/clarion/facts.py#L25) | **Low** | `src/wardline/clarion/*` | Architecture / Coupling |
-| **WLN-LOW-07** | [False-Positive Local Pack Detection for Built-ins](file:///home/john/wardline/src/wardline/core/config.py#L64-L91) | **Low** | `src/wardline/core/config.py` | Security / Custom Packs |
-| **WLN-LOW-08** | [Untrusted Custom Pack Loading via wardline.yaml](file:///home/john/wardline/src/wardline/core/config.py#L112-L133) | **Low** | `src/wardline/core/config.py` | Security |
-| **WLN-LOW-09** | [Uncontrolled Resource Consumption (OOM) in JSON-RPC stdio](file:///home/john/wardline/src/wardline/mcp/protocol.py#L100-L115) | **Low** | `src/wardline/mcp/protocol.py` | Security / DoS |
-| **WLN-LOW-10** | [Fragile Assignment Type Suppression in Variable-Level Control Flow](file:///home/john/wardline/src/wardline/scanner/taint/variable_level.py#L823) | **Low** | `src/wardline/scanner/taint/variable_level.py` | Python Engineering |
+| **WLN-CRIT-01** | [Parameter Default Expressions Ignored](/src/wardline/scanner/taint/variable_level.py#L163-L185) | **Critical** | `src/wardline/scanner/taint/variable_level.py` | Systems / Taint Propagation |
+| **WLN-HIGH-01** | [Python Standard Input Buffer blocking in MCP Server](/src/wardline/mcp/protocol.py#L107-L108) | **High** | `src/wardline/mcp/protocol.py` | CLI & MCP |
+| **WLN-HIGH-02** | [Fragile Skip Invariant in File Discovery](/src/wardline/core/discovery.py#L32-L34) | **High** | `src/wardline/core/discovery.py` | Quality / Discovery |
+| **WLN-HIGH-03** | [Lack of Import Alias Resolution in TaintedSinkRule](/src/wardline/scanner/rules/_sink_helpers.py#L76-L82) | **High** | `src/wardline/scanner/rules/_sink_helpers.py` | Static Analysis / Soundness |
+| **WLN-HIGH-04** | [Soundness Gap for Generators Yielding Untrusted Data](/src/wardline/scanner/taint/variable_level.py#L1337-L1367) | **High** | `src/wardline/scanner/taint/variable_level.py` | Static Analysis / Soundness |
+| **WLN-HIGH-05** | [Module-level import-time dependency on pyyaml in core modules](/src/wardline/core/baseline.py#L18) | **High** | `src/wardline/core/*` | Architecture / Layering |
+| **WLN-HIGH-06** | [Static Analysis Bypass via Undecorated Nested Helper Functions](/src/wardline/scanner/rules/_sink_helpers.py#L215-L219) | **High** | `src/wardline/scanner/rules/*` | Python Engineering |
+| **WLN-HIGH-07** | [Static Analysis Evasion via Lambda Expressions](/src/wardline/scanner/ast_primitives.py#L102-L103) | **High** | `src/wardline/scanner/ast_primitives.py` | Python Engineering |
+| **WLN-MED-01** | [Transitive Import-Time Dependency on scanner from Base Core Modules](/src/wardline/core/assure.py#L40) | **Medium** | `src/wardline/core/*` | Architecture / Layering |
+| **WLN-MED-02** | [Module-level Import of Optional Dependency (pyyaml) in Base Install](/src/wardline/install/pack.py#L8) | **Medium** | `src/wardline/install/pack.py` | Architecture / Layering |
+| **WLN-MED-03** | [Import-Time Coupling in Dependency-Free MCP Server](/src/wardline/mcp/server.py#L24) | **Medium** | `src/wardline/mcp/*` | Architecture / Layering |
+| **WLN-MED-04** | [Waiver Tool in MCP Server hardcodes configuration path](/src/wardline/mcp/server.py#L402) | **Medium** | `src/wardline/mcp/server.py` | CLI & MCP |
+| **WLN-MED-05** | [Missing context_lines option in MCP judge tool](/src/wardline/mcp/server.py#L344-L356) | **Medium** | `src/wardline/mcp/server.py` | CLI & MCP |
+| **WLN-MED-06** | [Absolute Path Match Failure in explain_finding](/src/wardline/core/explain.py#L77-L92) | **Medium** | `src/wardline/core/explain.py` | Quality / Explanations |
+| **WLN-MED-07** | [Inconsistent Defaults for confine_to_root in Attestation](/src/wardline/core/attest.py#L270-L288) | **Medium** | `src/wardline/core/attest.py` | Quality / Integrity |
+| **WLN-MED-08** | [Under-Tainting with **kwargs Unpacking](/src/wardline/scanner/analyzer.py#L317-L318) | **Medium** | `src/wardline/scanner/analyzer.py` | Static Analysis / Taint |
+| **WLN-MED-09** | [Under-Tainting via Loop-Carried Dependencies](/src/wardline/scanner/taint/variable_level.py#L826-L897) | **Medium** | `src/wardline/scanner/taint/variable_level.py` | Static Analysis / Taint |
+| **WLN-MED-10** | [Ineffective Caching / Performance Architecture Flaw](/src/wardline/scanner/analyzer.py#L111-L200) | **Medium** | `src/wardline/scanner/*` | Systems / Caching |
+| **WLN-MED-11** | [Inert Configuration Option provenance_clash](/src/wardline/scanner/taint/propagation.py#L160-L182) | **Medium** | `src/wardline/scanner/*` | Systems / Taint Algebra |
+| **WLN-MED-12** | [Git Ref Option/Argument Injection in get_changed_files_since](/src/wardline/core/delta.py#L34-L44) | **Medium** | `src/wardline/core/delta.py` | Security |
+| **WLN-LOW-01** | [Incomplete MCP Handshake verification/enforcement](/src/wardline/mcp/protocol.py#L67-L78) | **Low** | `src/wardline/mcp/protocol.py` | CLI & MCP |
+| **WLN-LOW-02** | [Undocumented path property in verify_attestation schema](/src/wardline/mcp/server.py#L607-L615) | **Low** | `src/wardline/mcp/server.py` | CLI & MCP |
+| **WLN-LOW-03** | [Test Coverage Gaps in Error Hierarchy and Path Rejection](/tests/unit/core/test_errors.py#L1-L14) | **Low** | `tests/unit/core/*` | Quality / Robustness |
+| **WLN-LOW-04** | [FQN Resolution Limitation for Nested/Dotted Attribute Calls](/src/wardline/scanner/ast_primitives.py#L171-L197) | **Low** | `src/wardline/scanner/ast_primitives.py` | Python / Static Analysis |
+| **WLN-LOW-05** | [Redundant/Dead Code in SCC Propagation](/src/wardline/scanner/taint/propagation.py#L337-L347) | **Low** | `src/wardline/scanner/taint/propagation.py` | Static Analysis / Tarjan |
+| **WLN-LOW-06** | [Transitive Core-Scanner Coupling in Clarion Extra](/src/wardline/clarion/facts.py#L25) | **Low** | `src/wardline/clarion/*` | Architecture / Coupling |
+| **WLN-LOW-07** | [False-Positive Local Pack Detection for Built-ins](/src/wardline/core/config.py#L64-L91) | **Low** | `src/wardline/core/config.py` | Security / Custom Packs |
+| **WLN-LOW-08** | [Untrusted Custom Pack Loading via wardline.yaml](/src/wardline/core/config.py#L112-L133) | **Low** | `src/wardline/core/config.py` | Security |
+| **WLN-LOW-09** | [Uncontrolled Resource Consumption (OOM) in JSON-RPC stdio](/src/wardline/mcp/protocol.py#L100-L115) | **Low** | `src/wardline/mcp/protocol.py` | Security / DoS |
+| **WLN-LOW-10** | [Fragile Assignment Type Suppression in Variable-Level Control Flow](/src/wardline/scanner/taint/variable_level.py#L823) | **Low** | `src/wardline/scanner/taint/variable_level.py` | Python Engineering |
 
 ---
 
@@ -45,7 +45,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-CRIT-01: Parameter Default Expressions Ignored
 * **Focus Area**: Systems / Taint Propagation
-* **Target Location**: [_seed_parameters in variable_level.py](file:///home/john/wardline/src/wardline/scanner/taint/variable_level.py#L163-L185)
+* **Target Location**: [_seed_parameters in variable_level.py](/src/wardline/scanner/taint/variable_level.py#L163-L185)
 * **Description**:
   Parameter default value expressions (e.g., `def func(x=get_untrusted_data())`) are evaluated at the call site at runtime when the argument is omitted. However, Wardline's L2 taint analysis does not evaluate the taint of parameter default expressions. In `_seed_parameters`, if a parameter is not bound in `param_meets` (meaning it wasn't supplied at the call site), it defaults to `function_taint`.
   
@@ -96,11 +96,11 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-HIGH-01: Python Standard Input Buffer blocking in MCP Server
 * **Focus Area**: CLI & MCP
-* **Target Location**: [protocol.py](file:///home/john/wardline/src/wardline/mcp/protocol.py#L107-L108)
+* **Target Location**: [protocol.py](/src/wardline/mcp/protocol.py#L107-L108)
 * **Description**:
   The MCP server uses `for raw in in_stream:` (where `in_stream` defaults to `sys.stdin`) to read incoming JSON-RPC messages. Because Python's file iterator implements internal read-ahead block buffering when standard input is a pipe (non-TTY), it blocks/buffers input data (up to 8KB) instead of yielding lines immediately as they are flushed by the client. This causes the MCP server to hang or experience high latency in interactive stdio sessions.
 * **Concrete Remediation**:
-  Modify `run_stdio` in [protocol.py](file:///home/john/wardline/src/wardline/mcp/protocol.py#L107-L108) to use a `while True:` loop calling `.readline()` to prevent read-ahead buffering:
+  Modify `run_stdio` in [protocol.py](/src/wardline/mcp/protocol.py#L107-L108) to use a `while True:` loop calling `.readline()` to prevent read-ahead buffering:
   ```diff
   -        for raw in in_stream:
   -            line = raw.strip()
@@ -113,7 +113,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-HIGH-02: Fragile Skip Invariant in File Discovery
 * **Focus Area**: Quality / Discovery
-* **Target Location**: [discovery.py](file:///home/john/wardline/src/wardline/core/discovery.py#L32-L34)
+* **Target Location**: [discovery.py](/src/wardline/core/discovery.py#L32-L34)
 * **Description**:
   In `discover`, files are skipped using:
   ```python
@@ -137,12 +137,12 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-HIGH-03: Lack of Import Alias Resolution in TaintedSinkRule
 * **Focus Area**: Static Analysis / Soundness
-* **Target Location**: [_sink_helpers.py](file:///home/john/wardline/src/wardline/scanner/rules/_sink_helpers.py#L76-L82)
+* **Target Location**: [_sink_helpers.py](/src/wardline/scanner/rules/_sink_helpers.py#L76-L82)
 * **Description**:
   Rules extending `TaintedSinkRule` identify matching sink calls by checking whether `dotted_name(call.func)` is in their static `SINKS` set. `dotted_name` merely extracts the raw AST name chain as written. It does not resolve imports or aliases. Any import alias or direct function import—such as `from subprocess import run; run(..., shell=True)` or `import pickle as p; p.loads(raw)`—completely bypasses the checks, leading to severe False Negatives.
 * **Concrete Remediation**:
   Resolve aliases using `resolve_call_fqn` against the module's `alias_map` retrieved from `context.alias_maps`.
-  Update `sink_calls` in [_sink_helpers.py](file:///home/john/wardline/src/wardline/scanner/rules/_sink_helpers.py#L76-L82) to:
+  Update `sink_calls` in [_sink_helpers.py](/src/wardline/scanner/rules/_sink_helpers.py#L76-L82) to:
   ```python
   def sink_calls(
       func_node: ast.AST,
@@ -171,7 +171,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-HIGH-04: Soundness Gap for Generators Yielding Untrusted Data
 * **Focus Area**: Static Analysis / Soundness
-* **Target Location**: [variable_level.py](file:///home/john/wardline/src/wardline/scanner/taint/variable_level.py#L1337-L1367)
+* **Target Location**: [variable_level.py](/src/wardline/scanner/taint/variable_level.py#L1337-L1367)
 * **Description**:
   In Python, generators yield values to their callers via `yield` or `yield from` rather than `return`. However, `_collect_return_paths` only extracts `ast.Return` statements. Consequently, any `@trusted` generator that yields untrusted data (e.g., `yield read_raw(p)`) completely escapes return-taint validation under `PY-WL-101`.
 * **Concrete Remediation**:
@@ -199,10 +199,10 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 ### WLN-HIGH-05: Module-Level Import-Time Dependency on `pyyaml` in Base Core Package
 * **Focus Area**: Architecture / Layering
 * **Target Location**:
-  - [baseline.py](file:///home/john/wardline/src/wardline/core/baseline.py#L18)
-  - [descriptor.py](file:///home/john/wardline/src/wardline/core/descriptor.py#L27)
-  - [judged.py](file:///home/john/wardline/src/wardline/core/judged.py#L19)
-  - [waivers.py](file:///home/john/wardline/src/wardline/core/waivers.py#L18)
+  - [baseline.py](/src/wardline/core/baseline.py#L18)
+  - [descriptor.py](/src/wardline/core/descriptor.py#L27)
+  - [judged.py](/src/wardline/core/judged.py#L19)
+  - [waivers.py](/src/wardline/core/waivers.py#L18)
 * **Description**:
   The core package is designed to be dependency-free. However, several modules in `core/` import `yaml` (provided by the optional `scanner` extra) at module-level. When the package is imported or used as a lightweight base library (e.g. for trust decorators only) without the `scanner` extra, it fails with an `ImportError` on these modules at import time.
 * **Concrete Remediation**:
@@ -211,9 +211,9 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 ### WLN-HIGH-06: Static Analysis Bypass via Undecorated Nested Helper Functions
 * **Focus Area**: Python Engineering
 * **Target Location**:
-  - [_sink_helpers.py](file:///home/john/wardline/src/wardline/scanner/rules/_sink_helpers.py#L215-L219)
-  - [broad_exception.py](file:///home/john/wardline/src/wardline/scanner/rules/broad_exception.py#L44-L46)
-  - [silent_exception.py](file:///home/john/wardline/src/wardline/scanner/rules/silent_exception.py#L44-L46)
+  - [_sink_helpers.py](/src/wardline/scanner/rules/_sink_helpers.py#L215-L219)
+  - [broad_exception.py](/src/wardline/scanner/rules/broad_exception.py#L44-L46)
+  - [silent_exception.py](/src/wardline/scanner/rules/silent_exception.py#L44-L46)
 * **Description**:
   In `TaintedSinkRule` and exception rules, checks and severity modulation are determined by looking up the function's `qualname` in `context.project_taints`. Nested helper functions (e.g., `def helper()`) inside a decorated `@trusted` function are indexed as separate entities (e.g., `module.parent.<locals>.helper`) but do not have decorators. Thus, their trust level resolves to `TaintState.UNKNOWN_RAW`. This causes all modulated rules (sink checks, broad exceptions) to downgrade their severity to `Severity.NONE`, suppressing all findings inside the helper. A developer can bypass any of these checks by nesting a dangerous sink call (such as `pickle.loads`) in a nested helper function.
 * **Concrete Remediation**:
@@ -226,9 +226,9 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 ### WLN-HIGH-07: Static Analysis Evasion via Lambda Expressions
 * **Focus Area**: Python Engineering
 * **Target Location**:
-  - [ast_primitives.py](file:///home/john/wardline/src/wardline/scanner/ast_primitives.py#L102-L103)
-  - [ast_primitives.py](file:///home/john/wardline/src/wardline/scanner/ast_primitives.py#L122-L124)
-  - [_sink_helpers.py](file:///home/john/wardline/src/wardline/scanner/rules/_sink_helpers.py#L69-L70)
+  - [ast_primitives.py](/src/wardline/scanner/ast_primitives.py#L102-L103)
+  - [ast_primitives.py](/src/wardline/scanner/ast_primitives.py#L122-L124)
+  - [_sink_helpers.py](/src/wardline/scanner/rules/_sink_helpers.py#L69-L70)
 * **Description**:
   The AST iterator and the sink helper search explicitly skip `ast.Lambda` nodes and do not traverse their bodies for calls. Since lambda expressions are also not indexed as independent entities, any dangerous sinks or violations wrapped in a lambda (e.g. `lambda x: exec(x)`) completely evade detection by sink rules.
 * **Concrete Remediation**:
@@ -241,13 +241,13 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 ### WLN-MED-01: Transitive Import-Time Dependency on `scanner` from Base Core Modules
 * **Focus Area**: Architecture / Layering
 * **Target Location**:
-  - [assure.py](file:///home/john/wardline/src/wardline/core/assure.py#L40)
-  - [attest.py](file:///home/john/wardline/src/wardline/core/attest.py#L56)
-  - [dossier.py](file:///home/john/wardline/src/wardline/core/dossier.py#L42)
-  - [explain.py](file:///home/john/wardline/src/wardline/core/explain.py#L20)
-  - [judge_run.py](file:///home/john/wardline/src/wardline/core/judge_run.py#L35)
-  - [delta.py](file:///home/john/wardline/src/wardline/core/delta.py#L9)
-  - [run.py](file:///home/john/wardline/src/wardline/core/run.py#L33-L36)
+  - [assure.py](/src/wardline/core/assure.py#L40)
+  - [attest.py](/src/wardline/core/attest.py#L56)
+  - [dossier.py](/src/wardline/core/dossier.py#L42)
+  - [explain.py](/src/wardline/core/explain.py#L20)
+  - [judge_run.py](/src/wardline/core/judge_run.py#L35)
+  - [delta.py](/src/wardline/core/delta.py#L9)
+  - [run.py](/src/wardline/core/run.py#L33-L36)
 * **Description**:
   Base package modules import `run_scan` at import time, which in turn imports `scanner` modules at import time in `core/run.py`. Additionally, `delta.py` and `judge_run.py` import `scanner` modules directly at the module level. This forces an import-time load of `scanner` (and transitively `yaml`), which triggers `ImportError` when `scanner` is not installed.
 * **Concrete Remediation**:
@@ -258,7 +258,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-MED-02: Module-Level Import of Optional Dependency (`pyyaml`) in Base Install Subpackage
 * **Focus Area**: Architecture / Layering
-* **Target Location**: [pack.py](file:///home/john/wardline/src/wardline/install/pack.py#L8)
+* **Target Location**: [pack.py](/src/wardline/install/pack.py#L8)
 * **Description**:
   The `install` package is part of the base package. Importing `install/pack.py` at import time will raise an `ImportError` if `pyyaml` is not installed.
 * **Concrete Remediation**:
@@ -267,9 +267,9 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 ### WLN-MED-03: Import-Time Coupling in Dependency-Free MCP Server
 * **Focus Area**: Architecture / Layering
 * **Target Location**:
-  - [server.py](file:///home/john/wardline/src/wardline/mcp/server.py#L24)
-  - [server.py](file:///home/john/wardline/src/wardline/mcp/server.py#L35)
-  - [lsp.py](file:///home/john/wardline/src/wardline/mcp/lsp.py#L14)
+  - [server.py](/src/wardline/mcp/server.py#L24)
+  - [server.py](/src/wardline/mcp/server.py#L35)
+  - [lsp.py](/src/wardline/mcp/lsp.py#L14)
 * **Description**:
   The MCP server is intended to be a dependency-free stdlib-only server. However, it imports `descriptor_to_yaml`, `_ALL_RULE_CLASSES`, and `run_scan` at import time. This causes the MCP module to crash on startup if `scanner` and PyYAML are not installed.
 * **Concrete Remediation**:
@@ -279,7 +279,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-MED-04: Waiver Tool in MCP Server hardcodes configuration path to `wardline.yaml`
 * **Focus Area**: CLI & MCP
-* **Target Location**: [server.py](file:///home/john/wardline/src/wardline/mcp/server.py#L402) & [server.py](file:///home/john/wardline/src/wardline/mcp/server.py#L687-L698)
+* **Target Location**: [server.py](/src/wardline/mcp/server.py#L402) & [server.py](/src/wardline/mcp/server.py#L687-L698)
 * **Description**:
   The MCP server's `waiver_add` tool does not support a custom configuration path (it is missing the `config` property in its schema). The tool handler `_waiver_add` hardcodes the config path to `root / "wardline.yaml"`. If a user is running scans using a custom configuration path, waivers added via this tool will be written to `wardline.yaml` instead, having no effect on the custom configuration path scans.
 * **Concrete Remediation**:
@@ -288,7 +288,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-MED-05: Missing `context_lines` option in MCP `judge` tool
 * **Focus Area**: CLI & MCP
-* **Target Location**: [server.py](file:///home/john/wardline/src/wardline/mcp/server.py#L344-L356) & [server.py](file:///home/john/wardline/src/wardline/mcp/server.py#L645-L653)
+* **Target Location**: [server.py](/src/wardline/mcp/server.py#L344-L356) & [server.py](/src/wardline/mcp/server.py#L645-L653)
 * **Description**:
   The CLI `judge` command accepts a `--context-lines` option to customize the context window excerpt radius sent to the LLM. However, the MCP `judge` tool does not define `context_lines` in its `input_schema` and does not pass it from `args` to `run_judge`.
 * **Concrete Remediation**:
@@ -296,7 +296,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-MED-06: Absolute Path Match Failure in `explain_finding`
 * **Focus Area**: Quality / Explanations
-* **Target Location**: [explain.py](file:///home/john/wardline/src/wardline/core/explain.py#L77-L92)
+* **Target Location**: [explain.py](/src/wardline/core/explain.py#L77-L92)
 * **Description**:
   The private helper `_match` matches findings using `f.location.path == path`. Since `f.location.path` is normalized as a project-relative POSIX path (e.g. `src/main.py`), passing an absolute path for `path` causes the comparison to fail.
 * **Concrete Remediation**:
@@ -304,7 +304,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-MED-07: Inconsistent Defaults for `confine_to_root` in Attestation
 * **Focus Area**: Quality / Integrity
-* **Target Location**: [attest.py](file:///home/john/wardline/src/wardline/core/attest.py#L270-L288)
+* **Target Location**: [attest.py](/src/wardline/core/attest.py#L270-L288)
 * **Description**:
   In `build_attestation`, the parameter `confine_to_root` defaults to `False`. However, in `verify_attestation`, the parameter `confine_to_root` defaults to `True`. This inconsistency causes programmatic verification with `reproduce=True` (using defaults) to re-run the scan with differing root confinement rules compared to the build step, potentially causing verification to fail with `reproduced=False`.
 * **Concrete Remediation**:
@@ -312,7 +312,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-MED-08: Under-Tainting in L3 parameter-meet generation with `**kwargs` Unpacking
 * **Focus Area**: Static Analysis / Taint
-* **Target Location**: [analyzer.py](file:///home/john/wardline/src/wardline/scanner/analyzer.py#L317-L318)
+* **Target Location**: [analyzer.py](/src/wardline/scanner/analyzer.py#L317-L318)
 * **Description**:
   During L2 analysis parameter-meet collection, when a caller passes keyword arguments via dictionary unpack (e.g. `callee(**kwargs)`), the argument taints contain `None: taint`. If the callee signature does not have a `**kwargs` dictionary collector parameter (i.e. `args_node.kwarg` is `None`), this taint is completely ignored. Consequently, callee's named parameters do not receive the taint of the unpacked dictionary.
 * **Concrete Remediation**:
@@ -320,7 +320,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-MED-09: Under-Tainting via Loop-Carried Dependencies
 * **Focus Area**: Static Analysis / Taint
-* **Target Location**: [variable_level.py](file:///home/john/wardline/src/wardline/scanner/taint/variable_level.py#L826-L897)
+* **Target Location**: [variable_level.py](/src/wardline/scanner/taint/variable_level.py#L826-L897)
 * **Description**:
   Loop statements (`_handle_for` and `_handle_while`) are only walked a single time. Any loop-carried data dependency where a variable is read before it is written in the loop body (e.g., `y = x; x = raw`) will use the pre-loop value of the variable, resulting in an under-tainted final state for `y` after the loop.
 * **Concrete Remediation**:
@@ -329,8 +329,8 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 ### WLN-MED-10: Ineffective Caching / Performance Architecture Flaw
 * **Focus Area**: Systems / Caching
 * **Target Location**:
-  - [analyzer.py](file:///home/john/wardline/src/wardline/scanner/analyzer.py#L111-L200)
-  - [project_resolver.py](file:///home/john/wardline/src/wardline/scanner/taint/project_resolver.py#L111-L137)
+  - [analyzer.py](/src/wardline/scanner/analyzer.py#L111-L200)
+  - [project_resolver.py](/src/wardline/scanner/taint/project_resolver.py#L111-L137)
 * **Description**:
   The `SummaryCache` mechanism is designed to cache module summaries to avoid re-invoking analysis for unchanged files. However, the current execution pipeline runs parsing and L2 analysis unconditionally for all files before checking/resolving project taints. The cache is only used to bypass `summarise_module`, which merely packages already-computed seeds and counts, saving virtually zero CPU cycles.
 * **Concrete Remediation**:
@@ -339,8 +339,8 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 ### WLN-MED-11: Inert Configuration Option `provenance_clash` (Dead Engine Path)
 * **Focus Area**: Systems / Taint Algebra
 * **Target Location**:
-  - [propagation.py](file:///home/john/wardline/src/wardline/scanner/taint/propagation.py#L160-L182)
-  - [variable_level.py](file:///home/john/wardline/src/wardline/scanner/taint/variable_level.py#L777-L824)
+  - [propagation.py](/src/wardline/scanner/taint/propagation.py#L160-L182)
+  - [variable_level.py](/src/wardline/scanner/taint/variable_level.py#L777-L824)
 * **Description**:
   The configuration parameter `provenance_clash` is designed to switch combinations from rank-meet (`least_trusted`) to provenance-clash (`taint_join`). Although unit tests verify `combine()` delegates correctly, all production code paths in both L2 (expression combiners, control-flow joins) and L3 (callee sets, external influence, SCC seeds) call `least_trusted` directly. As a result, enabling `provenance_clash: true` has zero effect on the static analysis.
 * **Concrete Remediation**:
@@ -348,7 +348,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-MED-12: Git Ref Option/Argument Injection in `get_changed_files_since`
 * **Focus Area**: Security
-* **Target Location**: [delta.py](file:///home/john/wardline/src/wardline/core/delta.py#L34-L44)
+* **Target Location**: [delta.py](/src/wardline/core/delta.py#L34-L44)
 * **Description**:
   The `new_since` parameter is passed directly to the `subprocess.run` command line as `["git", "diff", "--name-only", ref]`. Although `shell=False` blocks shell command injection, there is no validation on the `ref` string. If an attacker controls the `ref` argument, they can pass git options like `--output=filename` to write diff output to arbitrary locations in the filesystem.
 * **Concrete Remediation**:
@@ -364,7 +364,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-LOW-01: Incomplete MCP Handshake verification/enforcement
 * **Focus Area**: CLI & MCP
-* **Target Location**: [protocol.py](file:///home/john/wardline/src/wardline/mcp/protocol.py#L67-L78)
+* **Target Location**: [protocol.py](/src/wardline/mcp/protocol.py#L67-L78)
 * **Description**:
   The MCP specification requires that no requests be processed by the server until the full initialization handshake is complete (`initialize` request followed by `notifications/initialized`). However, `JsonRpcServer.dispatch` sets `self._initialized = True` immediately upon receiving the `initialize` request, prematurely accepting requests sent before the `notifications/initialized` handshake notification is received.
 * **Concrete Remediation**:
@@ -372,7 +372,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-LOW-02: Undocumented `path` property in `verify_attestation` tool schema
 * **Focus Area**: CLI & MCP
-* **Target Location**: [server.py](file:///home/john/wardline/src/wardline/mcp/server.py#L607-L615)
+* **Target Location**: [server.py](/src/wardline/mcp/server.py#L607-L615)
 * **Description**:
   The `_verify_attestation` handler fetches the optional `path` property from the tool arguments via `args.get("path")` and resolves it using `_resolve_under_root`. However, the `verify_attestation` tool's `input_schema` does not list `path` in its `properties` block.
 * **Concrete Remediation**:
@@ -380,7 +380,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-LOW-03: Test Coverage Gaps in Error Hierarchy and Path Rejection
 * **Focus Area**: Quality / Robustness
-* **Target Location**: [test_errors.py](file:///home/john/wardline/tests/unit/core/test_errors.py#L1-L14) & [test_source_excerpt.py](file:///home/john/wardline/tests/unit/core/test_source_excerpt.py#L30-L34)
+* **Target Location**: [test_errors.py](/tests/unit/core/test_errors.py#L1-L14) & [test_source_excerpt.py](/tests/unit/core/test_source_excerpt.py#L30-L34)
 * **Description**:
   `test_errors.py` only validates inheritance for `ConfigError` and `DiscoveryError`, leaving several `WardlineError` subclasses unverified. Additionally, `test_source_excerpt.py` does not explicitly test absolute escapes (e.g. `/etc/passwd`).
 * **Concrete Remediation**:
@@ -388,7 +388,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-LOW-04: FQN Resolution Limitation for Nested/Dotted Attribute Calls
 * **Focus Area**: Python / Static Analysis
-* **Target Location**: [resolve_call_fqn in ast_primitives.py](file:///home/john/wardline/src/wardline/scanner/ast_primitives.py#L171-L197)
+* **Target Location**: [resolve_call_fqn in ast_primitives.py](/src/wardline/scanner/ast_primitives.py#L171-L197)
 * **Description**:
   `resolve_call_fqn` only resolves call targets of the form `mod.func()`. For nested paths (e.g. `package.submodule.func()`), the receiver is an `ast.Attribute` node, causing resolution to fail and return `None`.
 * **Concrete Remediation**:
@@ -396,7 +396,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-LOW-05: Redundant/Dead Code in SCC Propagation
 * **Focus Area**: Static Analysis / Tarjan
-* **Target Location**: [propagation.py](file:///home/john/wardline/src/wardline/scanner/taint/propagation.py#L337-L347)
+* **Target Location**: [propagation.py](/src/wardline/scanner/taint/propagation.py#L337-L347)
 * **Description**:
   The unresolved calls floor check in `propagation.py` is redundant because a previous floor check already pins the refined taint to be at least as severe as the L1/unresolved floor.
 * **Concrete Remediation**:
@@ -404,7 +404,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-LOW-06: Transitive Core-Scanner Coupling in Optional Clarion Extra
 * **Focus Area**: Architecture / Coupling
-* **Target Location**: [facts.py](file:///home/john/wardline/src/wardline/clarion/facts.py#L25) & [write.py](file:///home/john/wardline/src/wardline/clarion/write.py#L17)
+* **Target Location**: [facts.py](/src/wardline/clarion/facts.py#L25) & [write.py](/src/wardline/clarion/write.py#L17)
 * **Description**:
   Even if a user installs `wardline[clarion]` (which does not declare a dependency on `scanner`), importing `clarion/facts.py` or `clarion/write.py` will trigger the import of `core/run.py` at import time, leading to `ImportError` because `yaml` is missing.
 * **Concrete Remediation**:
@@ -412,7 +412,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-LOW-07: False-Positive Local Pack Detection for Built-in/Frozen Modules
 * **Focus Area**: Security / Custom Packs
-* **Target Location**: [config.py](file:///home/john/wardline/src/wardline/core/config.py#L64-L91)
+* **Target Location**: [config.py](/src/wardline/core/config.py#L64-L91)
 * **Description**:
   For built-in/frozen modules like `sys` or `os`, the `spec.origin` is `'built-in'` or `'frozen'`. Calling `Path('built-in').resolve()` resolves it relative to the current working directory, e.g. `/path/to/project/built-in`. Since this resolved path falls within the current directory, it is incorrectly flagged as a local pack, raising a false-positive `ConfigError`.
 * **Concrete Remediation**:
@@ -425,7 +425,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-LOW-08: Untrusted Custom Pack Loading via `wardline.yaml`
 * **Focus Area**: Security
-* **Target Location**: [config.py](file:///home/john/wardline/src/wardline/core/config.py#L112-L133)
+* **Target Location**: [config.py](/src/wardline/core/config.py#L112-L133)
 * **Description**:
   If `wardline scan` or the MCP server's `scan` tool is run on an untrusted workspace containing a `wardline.yaml`, the `packs` key allows specifying custom packages to import. While `trust_local_packs=False` blocks imports under the root, it does not block importing globally installed Python packages.
 * **Concrete Remediation**:
@@ -433,7 +433,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-LOW-09: Uncontrolled Resource Consumption (OOM) in JSON-RPC stdio transport
 * **Focus Area**: Security / DoS
-* **Target Location**: [protocol.py](file:///home/john/wardline/src/wardline/mcp/protocol.py#L100-L115)
+* **Target Location**: [protocol.py](/src/wardline/mcp/protocol.py#L100-L115)
 * **Description**:
   The stdio read loop iterates over `in_stream` directly using `for raw in in_stream: line = raw.strip()`. Python's stdio stream reading doesn't limit the line length. A massive line payload sent over stdin will consume a huge amount of memory during parsing, causing an Out Of Memory (OOM) crash.
 * **Concrete Remediation**:
@@ -441,7 +441,7 @@ This report compiles, synthesizes, and categorizes findings from a comprehensive
 
 ### WLN-LOW-10: Fragile Assignment Type Suppression in Variable-Level Control Flow Merge
 * **Focus Area**: Python Engineering
-* **Target Location**: [variable_level.py](file:///home/john/wardline/src/wardline/scanner/taint/variable_level.py#L823)
+* **Target Location**: [variable_level.py](/src/wardline/scanner/taint/variable_level.py#L823)
 * **Description**:
   Mypy type-ignore is used because of set-keys mismatch inference. This can be cleanly written in a type-safe manner without type ignores.
 * **Concrete Remediation**:

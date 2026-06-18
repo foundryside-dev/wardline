@@ -81,7 +81,7 @@ The fields:
 | `location` | The source `path` plus `line_start`/`line_end` and `col_start`/`col_end`. |
 | `message` | A human-readable description of the violation. |
 | `properties` | Rule-specific detail. Here, the declared vs. actually-returned trust tier. |
-| `suppressed` | `active` means the finding is live (not suppressed). |
+| `suppression_state` | `active` means the finding is live (not suppressed); other states are `baselined`, `waived`, `judged`. |
 | `suppression_reason` | Why it was suppressed, if it was; `null` for a live finding. |
 | `confidence`, `suggestion` | Optional extras, `null` when the rule does not supply them. |
 | `related_entities` | Other entities involved in the finding, if any. |
