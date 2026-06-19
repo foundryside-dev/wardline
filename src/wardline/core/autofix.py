@@ -50,12 +50,16 @@ def has_comment_in_span(
 
 
 def _own_statements(node: ast.AST) -> Iterator[ast.stmt]:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+    result: list[ast.stmt] = []
+    stack: list[ast.AST] = list(reversed(list(ast.iter_child_nodes(node))))
+    while stack:
+        current = stack.pop()
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
-        if isinstance(child, ast.stmt):
-            yield child
-        yield from _own_statements(child)
+        if isinstance(current, ast.stmt):
+            result.append(current)
+        stack.extend(reversed(list(ast.iter_child_nodes(current))))
+    return iter(result)
 
 
 def get_assert_nodes_for_function(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.Assert]:

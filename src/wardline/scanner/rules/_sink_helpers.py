@@ -126,12 +126,16 @@ def _own_calls(node: ast.AST) -> Iterator[ast.Call]:
     the entity index does not emit separate lambda entities; skipping them would hide
     dangerous calls from sink rules.
     """
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+    result: list[ast.Call] = []
+    stack: list[ast.AST] = list(reversed(list(ast.iter_child_nodes(node))))
+    while stack:
+        current = stack.pop()
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
-        if isinstance(child, ast.Call):
-            yield child
-        yield from _own_calls(child)
+        if isinstance(current, ast.Call):
+            result.append(current)
+        stack.extend(reversed(list(ast.iter_child_nodes(current))))
+    return iter(result)
 
 
 def _direct_sink_fqn(

@@ -393,12 +393,16 @@ def _own_scope_lambdas(node: ast.AST) -> Iterator[ast.Lambda]:
     """Yield every ``ast.Lambda`` in *node*'s own scope (descends into lambdas, which
     are not separate entities, but NOT into nested ``def``/``class`` — those are
     analyzed as their own entities)."""
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+    result: list[ast.Lambda] = []
+    stack: list[ast.AST] = list(reversed(list(ast.iter_child_nodes(node))))
+    while stack:
+        current = stack.pop()
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
-        if isinstance(child, ast.Lambda):
-            yield child
-        yield from _own_scope_lambdas(child)
+        if isinstance(current, ast.Lambda):
+            result.append(current)
+        stack.extend(reversed(list(ast.iter_child_nodes(current))))
+    return iter(result)
 
 
 def _worst_ever_var_taints(
