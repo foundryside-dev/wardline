@@ -38,12 +38,12 @@ wardline scan . --format jsonl
 ```
 
 ```text
-scanned 2 file(s); 4 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> findings.jsonl
+scanned 2 file(s); 4 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> .wardline/20260620T153012Z-findings.jsonl
 ```
 
-In JSONL mode the findings are written to `findings.jsonl` in the current
-directory; the line above is the run summary. One of those findings flags a
-trust-boundary violation:
+In JSONL mode the findings are written to a timestamped artifact under
+`.wardline/` by default; the line above is the run summary. One of those
+findings flags a trust-boundary violation:
 
 ```json
 {"rule_id": "PY-WL-101", "severity": "ERROR", "kind": "defect", "qualname": "service.current_user", "location": {"path": "service.py", "line_start": 7, "line_end": 8, "col_start": 0, "col_end": 26}, "message": "service.current_user declares return trust INTEGRAL but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer", "properties": {"declared_return": "INTEGRAL", "actual_return": "EXTERNAL_RAW"}, "suppression_state": "active"}

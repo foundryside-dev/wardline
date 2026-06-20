@@ -47,6 +47,14 @@ WARDLINE_SCHEMA: dict[str, Any] = {
                 "write_confidence_floor": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             },
         },
+        "artifacts": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "dir": {"type": "string", "minLength": 1},
+                "retain": {"type": "integer", "minimum": 1},
+            },
+        },
         "autofix": {
             "type": "object",
             "additionalProperties": False,

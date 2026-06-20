@@ -1,6 +1,6 @@
 # CLI reference
 
-Complete reference for the `wardline` command-line interface, version `1.0.5`.
+Complete reference for the `wardline` command-line interface, version `1.0.6`.
 Every `--help` block below is the verbatim output of the installed CLI; every
 example is a realistic invocation.
 
@@ -66,7 +66,7 @@ Check the installed version:
 
 ```text
 $ wardline --version
-wardline, version 1.0.5
+wardline, version 1.0.6
 ```
 
 Use `--version` in CI before a scan to pin the toolchain in your build log; the
@@ -154,7 +154,7 @@ it at a package root, not a single file.
 | `--config FILE` | Path to a `weft.toml` config file; Wardline reads its `[wardline]` table for rule enable/severity and judge settings (defaults to `weft.toml` in the scan path). |
 | `--format [jsonl\|sarif\|agent-summary\|legis]` | Output shape. `jsonl` is one finding per line; `sarif` is SARIF 2.1.0 for GitHub code-scanning and other generic SARIF consumers; `agent-summary` is stable versioned JSON for agents (`schema: wardline-agent-summary-1`) with active defects first, suppressed findings, engine facts, integration status, and suggested next tool calls; `legis` is the signed, verbatim-postable `scan` for legis's `POST /wardline/scan-results` (signed when `WARDLINE_LEGIS_ARTIFACT_KEY` is provisioned and `PATH` is the git repository root — write it **outside** the working tree, see the [legis handoff guide](../guides/legis-handoff.md)). SARIF carries Wardline identity in `partialFingerprints["wardlineFingerprint/v2"]`; downstream Filigree lifecycle quality depends on importers preserving that field. |
 | `--lang [python\|rust]` | Language frontend (default `python`). `rust` sweeps `*.rs` and covers the **command-injection slice** (`RS-WL-108`/`RS-WL-112`); needs the `wardline[rust]` extra. Finding identity is frozen and crate-prefixed (baseline-eligible); config severity overrides do not yet apply to Rust findings — see the [Rust support guide](../guides/rust-preview.md). |
-| `--output PATH` | Write findings to a file instead of stdout. |
+| `--output PATH` | Write findings to an exact file path. When omitted, `scan` writes a timestamped artifact under `[wardline.artifacts].dir` (default `.wardline/`) and applies that format's retention window. |
 | `--fail-on [CRITICAL\|ERROR\|WARN\|INFO]` | Exit non-zero when any finding at or above this severity survives the baseline. Use this as your CI gate. |
 | `--cache-dir PATH` | Store the L3 inter-procedural summary cache here so the next scan can reuse unchanged summaries when `WARDLINE_SUMMARY_CACHE_KEY` is set in the process environment. Unsigned or incorrectly signed files are ignored and the scan falls back to recomputing summaries. Use an operator-owned directory outside untrusted checkouts; do not put the cache in a path that pull-request content can commit or modify. |
 | `--filigree-url TEXT` | Opt-in: POST findings to a Filigree Weft scan-results endpoint as well as emitting them locally. Prefer this native path when agents need Filigree promotion, deduplication, or close/reopen lifecycle state. |

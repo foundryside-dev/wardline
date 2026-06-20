@@ -22,6 +22,9 @@ from wardline.core.paths import (
 )
 from wardline.core.safe_paths import safe_read_text_if_regular
 
+DEFAULT_ARTIFACT_DIR = ".wardline"
+DEFAULT_ARTIFACT_RETAIN = 20
+
 
 def validate_boundary_exception_name(value: str) -> str:
     parts = value.split(".")
@@ -31,6 +34,12 @@ def validate_boundary_exception_name(value: str) -> str:
             "for example ValueError or mypkg.ValidationError"
         )
     return value
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactSettings:
+    dir: str = DEFAULT_ARTIFACT_DIR
+    retain: int = DEFAULT_ARTIFACT_RETAIN
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +55,7 @@ class WardlineConfig:
     sanitisers: tuple[str, ...] = ()
     provenance_clash: bool = False
     autofix: Mapping[str, Any] = field(default_factory=dict)
+    artifacts: ArtifactSettings = field(default_factory=ArtifactSettings)
 
     @property
     def boundary_exception(self) -> str:
@@ -232,6 +242,15 @@ def load(
         if isinstance(boundary_exception, str):
             validate_boundary_exception_name(boundary_exception)
 
+    artifacts_raw = merged_raw.get("artifacts") or {}
+    if isinstance(artifacts_raw, Mapping):
+        artifact_dir = artifacts_raw.get("dir", DEFAULT_ARTIFACT_DIR)
+        if not isinstance(artifact_dir, str) or not artifact_dir.strip():
+            raise ConfigError("artifacts.dir must be a non-empty string")
+        artifact_retain = artifacts_raw.get("retain", DEFAULT_ARTIFACT_RETAIN)
+        if isinstance(artifact_retain, bool) or not isinstance(artifact_retain, int) or artifact_retain <= 0:
+            raise ConfigError("artifacts.retain must be a positive integer")
+
     try:
         jsonschema.validate(merged_raw, WARDLINE_SCHEMA)
     except jsonschema.ValidationError as exc:
@@ -241,6 +260,20 @@ def load(
     boundary_exception = autofix.get("boundary_exception")
     if isinstance(boundary_exception, str):
         validate_boundary_exception_name(boundary_exception)
+    artifact_dir_value = (
+        str(artifacts_raw.get("dir", DEFAULT_ARTIFACT_DIR))
+        if isinstance(artifacts_raw, Mapping)
+        else DEFAULT_ARTIFACT_DIR
+    )
+    artifact_retain_value = (
+        int(artifacts_raw.get("retain", DEFAULT_ARTIFACT_RETAIN))
+        if isinstance(artifacts_raw, Mapping)
+        else DEFAULT_ARTIFACT_RETAIN
+    )
+    artifact_settings = ArtifactSettings(
+        dir=artifact_dir_value,
+        retain=artifact_retain_value,
+    )
 
     rules = merged_raw.get("rules") or {}
     return WardlineConfig(
@@ -255,6 +288,7 @@ def load(
         sanitisers=tuple(merged_raw.get("sanitisers") or ()),
         provenance_clash=bool(merged_raw.get("provenance_clash") or False),
         autofix=autofix,
+        artifacts=artifact_settings,
     )
 
 

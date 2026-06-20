@@ -24,16 +24,17 @@ def build_record(req):
 
 ```console
 $ wardline scan . --fail-on ERROR
-scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> findings.jsonl
+scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> .wardline/20260620T153012Z-findings.jsonl
 $ echo $?
 1
 ```
 
-The gate trips (exit 1) and the findings land in `findings.jsonl` (JSON Lines;
-`--format sarif` for GitHub code scanning). Wardline is agent-first — you don't
-read that file by hand. Your coding agent does: ask it *"why did the scan fail?"*
-and it surfaces the one active defect (the other two findings are `NONE`-severity
-engine facts):
+The gate trips (exit 1) and the findings land in timestamped JSON Lines under
+`.wardline/` by default (`--output PATH` writes to an exact path; `--format
+sarif` emits SARIF for GitHub code scanning). Wardline is agent-first — you
+don't read that file by hand. Your coding agent does: ask it *"why did the scan
+fail?"* and it surfaces the one active defect (the other two findings are
+`NONE`-severity engine facts):
 
 > **`demo.build_record`** declares return trust `ASSURED` but actually returns
 > `EXTERNAL_RAW` (less trusted) — untrusted data reaches a trusted producer.

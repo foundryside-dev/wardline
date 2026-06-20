@@ -10,6 +10,8 @@ from typing import IO, TYPE_CHECKING
 
 import click
 
+from wardline.core.artifacts import write_scan_artifact
+from wardline.core.config import load as load_config
 from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
 from wardline.core.delta_scope import (
     _MAX_PAYLOAD_BYTES,
@@ -28,8 +30,8 @@ from wardline.core.filigree_emit import (
 from wardline.core.finding import Severity
 from wardline.core.paths import weft_config_path
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
-from wardline.core.safe_paths import safe_write_text, write_text_no_follow
-from wardline.core.sarif import SarifSink
+from wardline.core.safe_paths import write_text_no_follow
+from wardline.core.sarif import SarifSink, build_sarif
 
 if TYPE_CHECKING:
     from wardline.loomweave.identity import SeiResolver
@@ -227,23 +229,7 @@ def scan(
             "config severity overrides do not yet apply to Rust findings.",
             err=True,
         )
-    if fmt == "sarif":
-        default_name = "findings.sarif"
-    elif fmt == "agent-summary":
-        default_name = "findings.agent-summary.json"
-    elif fmt == "legis":
-        default_name = "scan.legis.json"
-    else:
-        default_name = "findings.jsonl"
     output_is_default = output is None
-    output = output if output is not None else (path / default_name)
-    # The default output is REPORTED as `output` (path/<name>) but WRITTEN through the
-    # root-confined safe writer with root=path. Hand that writer the bare root-relative
-    # name, not `output`: a relative `path` (e.g. `wardline scan pkg`) makes `output`
-    # already `pkg/<name>`, and safe_project_path would resolve it under `pkg` AGAIN
-    # (`pkg/pkg/<name>`) while the CLI prints `pkg/<name>` — a write to a path that does
-    # not exist. Explicit `-o` paths are caller-controlled and written verbatim.
-    confined_name = Path(default_name)
     emit_result: EmitResult | None = None
     loomweave_result = None
     try:
@@ -255,6 +241,13 @@ def scan(
                 "for a pollable long-running scan.",
                 err=True,
             )
+        cfg = load_config(
+            config_path or weft_config_path(path),
+            explicit=config_path is not None,
+            trust_local_packs=trust_local_packs,
+            trusted_packs=trusted_packs,
+            strict_defaults=strict_defaults,
+        )
         filigree_url = resolve_filigree_url(filigree_url, path, config_path, strict_defaults=strict_defaults)
         loomweave_url = resolve_loomweave_url(loomweave_url, path, config_path, strict_defaults=strict_defaults)
         if local_only:
@@ -314,16 +307,8 @@ def scan(
         findings = result.findings
         if fix:
             from wardline.core.autofix import run_autofix
-            from wardline.core.config import load
             from wardline.core.finding import Finding
 
-            cfg = load(
-                config_path or weft_config_path(path),
-                explicit=config_path is not None,
-                trust_local_packs=trust_local_packs,
-                trusted_packs=trusted_packs,
-                strict_defaults=strict_defaults,
-            )
             fixable = [f for f in findings if f.rule_id == "PY-WL-111"]
             if fixable:
 
@@ -359,43 +344,51 @@ def scan(
             {"wardline_delta_scope": result.scope.to_dict()} if result.scope is not None else None
         )
         if fmt == "sarif":
-            sarif_sink = SarifSink(
-                confined_name if output_is_default else output, root=path if output_is_default else None
-            )
-            sarif_sink.write(findings, result.context, run_properties=scope_props)
+            if output_is_default:
+                output = write_scan_artifact(
+                    path,
+                    fmt,
+                    cfg,
+                    json.dumps(
+                        build_sarif(findings, result.context, run_properties=scope_props),
+                        indent=2,
+                        ensure_ascii=False,
+                    ),
+                )
+            else:
+                assert output is not None
+                SarifSink(output).write(findings, result.context, run_properties=scope_props)
         elif fmt == "jsonl":
-            jsonl_sink = JsonlSink(
-                confined_name if output_is_default else output, root=path if output_is_default else None
-            )
-            jsonl_sink.write(findings)
+            if output_is_default:
+                output = write_scan_artifact(path, fmt, cfg, "".join(f"{finding.to_jsonl()}\n" for finding in findings))
+            else:
+                assert output is not None
+                JsonlSink(output).write(findings)
         elif fmt == "legis":
             # The signed, verbatim-postable scan for legis's POST /wardline/scan-results.
             # Signs when WARDLINE_LEGIS_ARTIFACT_KEY is provisioned (env/.env); else emits
             # unsigned provenance (legis records it unverified). A dirty/non-repo tree under
             # signing raises LegisArtifactError -> exit 2 (CLI is loud by design).
-            from wardline.core.config import load as load_cfg
             from wardline.core.legis import (
                 build_legis_artifact,
                 legis_artifact_outcome,
                 load_legis_artifact_key,
             )
 
-            legis_cfg = load_cfg(
-                config_path or weft_config_path(path),
-                explicit=config_path is not None,
-                trust_local_packs=trust_local_packs,
-                trusted_packs=trusted_packs,
-                strict_defaults=strict_defaults,
-            )
             legis_key = load_legis_artifact_key(path)
             artifact = build_legis_artifact(
                 result,
                 root=path,
-                config=legis_cfg,
+                config=cfg,
                 key=legis_key.encode("utf-8") if legis_key else None,
                 allow_dirty=allow_dirty,
             )
-            output.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            artifact_json = json.dumps(artifact, indent=2, sort_keys=True) + "\n"
+            if output_is_default:
+                output = write_scan_artifact(path, fmt, cfg, artifact_json)
+            else:
+                assert output is not None
+                write_text_no_follow(output, artifact_json, label=output.name)
             # Loud signal: an artifact marked dirty is UNSIGNED (dev/tour only). legis
             # records it `unverified`; never gate CI on it. The dirty/signed status comes
             # from the shared authority; the human stderr wording stays CLI-specific.
@@ -457,12 +450,14 @@ def scan(
                 agent_summary_dict["scope"] = result.scope.to_dict()
             agent_summary_json = json.dumps(agent_summary_dict, sort_keys=True) + "\n"
             if output_is_default:
-                safe_write_text(path, confined_name, agent_summary_json, label=default_name)
+                output = write_scan_artifact(path, fmt, cfg, agent_summary_json)
             else:
                 # Explicit -o path: no-follow, matching the JSONL/SARIF sinks. A raw
                 # write_text would follow a repo-controlled symlink at the chosen filename
                 # and truncate an arbitrary user-writable target in an untrusted checkout.
+                assert output is not None
                 write_text_no_follow(output, agent_summary_json, label=output.name)
+        assert output is not None
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
