@@ -22,6 +22,8 @@ def test_load_missing_returns_defaults(tmp_path) -> None:
     assert cfg.source_roots == (".",)
     assert cfg.exclude == ()
     assert cfg.rules_enable == ("*",)
+    assert cfg.artifacts.dir == ".wardline"
+    assert cfg.artifacts.retain == 20
 
 
 def test_load_parses_known_keys_and_reserved_blocks(tmp_path) -> None:
@@ -31,6 +33,10 @@ def test_load_parses_known_keys_and_reserved_blocks(tmp_path) -> None:
 [wardline]
 source_roots = ["src"]
 exclude = ["**/x/**"]
+
+[wardline.artifacts]
+dir = ".scan-output"
+retain = 7
 
 [wardline.rules]
 enable = ["WLN-001"]
@@ -42,6 +48,8 @@ severity = { "WLN-001" = "WARN" }
     assert cfg.exclude == ("**/x/**",)
     assert cfg.rules_enable == ("WLN-001",)
     assert cfg.rules_severity == {"WLN-001": "WARN"}
+    assert cfg.artifacts.dir == ".scan-output"
+    assert cfg.artifacts.retain == 7
 
 
 def test_malformed_toml_falls_back_to_defaults(tmp_path) -> None:
@@ -161,6 +169,24 @@ def test_out_of_range_floor_raises(tmp_path) -> None:
 
 def test_unknown_judge_key_raises(tmp_path) -> None:
     p = _write_cfg(tmp_path, "[wardline.judge]\nbogus_setting = 1\n")
+    with pytest.raises(ConfigError):
+        load(p)
+
+
+def test_artifacts_retain_must_be_positive(tmp_path) -> None:
+    p = _write_cfg(tmp_path, "[wardline.artifacts]\nretain = 0\n")
+    with pytest.raises(ConfigError):
+        load(p)
+
+
+def test_artifacts_dir_must_be_non_empty(tmp_path) -> None:
+    p = _write_cfg(tmp_path, '[wardline.artifacts]\ndir = ""\n')
+    with pytest.raises(ConfigError, match="artifacts.dir"):
+        load(p)
+
+
+def test_unknown_artifacts_key_raises(tmp_path) -> None:
+    p = _write_cfg(tmp_path, "[wardline.artifacts]\nretention = 5\n")
     with pytest.raises(ConfigError):
         load(p)
 

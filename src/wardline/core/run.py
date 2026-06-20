@@ -419,7 +419,7 @@ def run_scan(
     # defaults under it. A scan rooted in a SUBDIRECTORY of a weft project silently
     # mints qualnames no federated tool (Loomweave/Filigree/dossier) matches and
     # skips the project baseline. Surface it as a FACT so it reaches the CLI
-    # warning, the MCP result, and findings.jsonl alike. Not an under-scan (every
+    # warning, the MCP result, and scan artifacts alike. Not an under-scan (every
     # discovered file WAS analysed), so it never counts toward unanalyzed.
     enclosing = enclosing_project_root(root)
     if enclosing is not None:

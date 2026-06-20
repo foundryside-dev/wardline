@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-06-20
+
+### Changed
+- **Scan artifacts are timestamped and retained under `.wardline/` by default.**
+  `wardline scan` now writes default JSONL, SARIF, agent-summary, and legis
+  artifacts to configurable timestamped paths under `[wardline.artifacts].dir`
+  (default `.wardline`) and prunes older Wardline-managed artifacts according to
+  `[wardline.artifacts].retain` (default `20`). Explicit `--output` paths remain
+  exact and bypass timestamping/retention.
+
 ## [1.0.5] - 2026-06-19
 
 ### Fixed
@@ -1329,6 +1339,7 @@ for Python — enterprise-class trust-boundary analysis at small-team weight.
 - **Packaging** — MIT-licensed; optional extras `scanner` (config + CLI) and
   `weft` (HTTP integrations).
 
+[1.0.6]: https://github.com/foundryside-dev/wardline/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/foundryside-dev/wardline/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/foundryside-dev/wardline/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/foundryside-dev/wardline/compare/v1.0.2...v1.0.3

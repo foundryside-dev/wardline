@@ -44,6 +44,7 @@ Everything nests under the `[wardline]` table.
 | `packs` | array of strings | Trust-grammar packs to load. Operator-authored only (packs import and execute code). |
 | `rules` | table | Enable/disable rules and override severities. |
 | `judge` | table | Settings for the opt-in LLM triage judge. |
+| `artifacts` | table | Default scan artifact directory and retention. |
 | `autofix` | table | Settings for the interactive autofix (`wardline fix`). |
 
 !!! note "Sibling URLs are not config keys"
@@ -82,6 +83,21 @@ store_dir = ".weft/wardline"   # the default; set to a path of your choosing
 
 A relative `store_dir` resolves under the scan root. The attest signing key is
 **not** part of this subtree — it lives in `.env` (see [Attestation](attestation.md)).
+
+### `[wardline.artifacts]`
+
+Scan outputs are written under `.wardline/` by default using timestamped names
+such as `20260620T153012Z-findings.jsonl`. Wardline prunes older artifacts for
+the same output format after each default-output scan:
+
+```toml
+[wardline.artifacts]
+dir = ".wardline"  # the default; relative paths resolve under the scan root
+retain = 20        # keep the newest 20 artifacts per format
+```
+
+Use `--output PATH` when a workflow needs an exact file path; explicit output
+paths bypass artifact timestamping and retention.
 
 ### `packs`
 

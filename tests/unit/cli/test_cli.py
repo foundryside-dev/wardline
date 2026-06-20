@@ -1,5 +1,7 @@
 import json as _json
+import re
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
 
@@ -14,6 +16,17 @@ from wardline.core.finding import FINGERPRINT_SCHEME
 from wardline.core.paths import baseline_path, judged_path
 
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "sample_project"
+_STAMPED_JSONL_RE = re.compile(r"^\d{8}T\d{6}Z-findings\.jsonl$")
+
+
+def _scan_artifacts(project: Path, suffix: str) -> list[Path]:
+    return sorted((project / ".wardline").glob(f"*-{suffix}"))
+
+
+def _only_scan_artifact(project: Path, suffix: str) -> Path:
+    paths = _scan_artifacts(project, suffix)
+    assert len(paths) == 1
+    return paths[0]
 
 
 def test_version() -> None:
@@ -71,7 +84,9 @@ def test_scan_format_sarif_default_output_path(tmp_path: Path) -> None:
     shutil.copytree(FIXTURE, project)
     result = CliRunner().invoke(cli, ["scan", str(project), "--format", "sarif"])
     assert result.exit_code == 0, result.output
-    assert (project / "findings.sarif").exists()
+    artifact = _only_scan_artifact(project, "findings.sarif")
+    assert artifact.parent == project / ".wardline"
+    assert str(artifact) in result.output
 
 
 def test_scan_format_sarif_default_refuses_symlinked_output(tmp_path: Path) -> None:
@@ -79,15 +94,15 @@ def test_scan_format_sarif_default_refuses_symlinked_output(tmp_path: Path) -> N
 
     project = tmp_path / "proj"
     shutil.copytree(FIXTURE, project)
-    outside = tmp_path / "outside.txt"
-    outside.write_text("keep\n", encoding="utf-8")
-    (project / "findings.sarif").symlink_to(outside)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (project / ".wardline").symlink_to(outside)
 
     result = CliRunner().invoke(cli, ["scan", str(project), "--format", "sarif"])
 
     assert result.exit_code == 2
     assert "refusing to write through a symlink" in result.output
-    assert outside.read_text(encoding="utf-8") == "keep\n"
+    assert list(outside.iterdir()) == []
 
 
 def test_scan_format_sarif_still_gates(tmp_path: Path) -> None:
@@ -122,22 +137,166 @@ def test_scan_fail_on_clean_fixture_exits_zero(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
 
 
-def test_scan_default_output_lands_in_scanned_path(tmp_path: Path) -> None:
-    # copy the fixture into tmp so the default output doesn't pollute the repo
+def test_scan_default_output_lands_in_timestamped_artifacts_dir(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "app.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    result = CliRunner().invoke(cli, ["scan", str(project)])
+    assert result.exit_code == 0, result.output
+    artifact = _only_scan_artifact(project, "findings.jsonl")
+    assert artifact.parent == project / ".wardline"
+    assert _STAMPED_JSONL_RE.match(artifact.name)
+    assert str(artifact) in result.output
+    assert not (project / "findings.jsonl").exists()
+
+
+def test_scan_default_output_honors_configured_artifact_dir(tmp_path: Path) -> None:
     import shutil
 
     project = tmp_path / "proj"
     shutil.copytree(FIXTURE, project)
+    (project / "weft.toml").write_text(
+        '[wardline]\nsource_roots = ["."]\n\n[wardline.artifacts]\ndir = "scan-output"\nretain = 20\n',
+        encoding="utf-8",
+    )
+
     result = CliRunner().invoke(cli, ["scan", str(project)])
+
     assert result.exit_code == 0, result.output
-    assert (project / "findings.jsonl").exists()
+    artifact = sorted((project / "scan-output").glob("*-findings.jsonl"))[0]
+    assert artifact.exists()
+    assert str(artifact) in result.output
+    assert not (project / ".wardline").exists()
+
+
+def test_scan_explicit_output_bypasses_artifact_dir_and_retention(tmp_path: Path) -> None:
+    import shutil
+
+    project = tmp_path / "proj"
+    shutil.copytree(FIXTURE, project)
+    (project / "weft.toml").write_text(
+        '[wardline]\nsource_roots = ["."]\n\n[wardline.artifacts]\ndir = "scan-output"\nretain = 1\n',
+        encoding="utf-8",
+    )
+    out = tmp_path / "findings.jsonl"
+
+    result = CliRunner().invoke(cli, ["scan", str(project), "--output", str(out)])
+
+    assert result.exit_code == 0, result.output
+    assert out.exists()
+    assert "findings.jsonl" in result.output
+    assert not (project / "scan-output").exists()
+
+
+def test_scan_default_artifact_retention_prunes_oldest_jsonl(tmp_path: Path) -> None:
+    import shutil
+
+    project = tmp_path / "proj"
+    shutil.copytree(FIXTURE, project)
+    (project / "weft.toml").write_text(
+        '[wardline]\nsource_roots = ["."]\n\n[wardline.artifacts]\nretain = 2\n',
+        encoding="utf-8",
+    )
+    artifact_dir = project / ".wardline"
+    artifact_dir.mkdir()
+    for stamp in ("20200101T000000Z", "20200102T000000Z", "20200103T000000Z"):
+        (artifact_dir / f"{stamp}-findings.jsonl").write_text("{}\n", encoding="utf-8")
+
+    result = CliRunner().invoke(cli, ["scan", str(project)])
+
+    assert result.exit_code == 0, result.output
+    names = [p.name for p in _scan_artifacts(project, "findings.jsonl")]
+    assert len(names) == 2
+    assert "20200101T000000Z-findings.jsonl" not in names
+    assert "20200102T000000Z-findings.jsonl" not in names
+
+
+def test_scan_default_artifact_retention_only_counts_managed_regular_artifacts(tmp_path: Path) -> None:
+    import shutil
+
+    project = tmp_path / "proj"
+    shutil.copytree(FIXTURE, project)
+    (project / "weft.toml").write_text(
+        '[wardline]\nsource_roots = ["."]\n\n[wardline.artifacts]\nretain = 2\n',
+        encoding="utf-8",
+    )
+    artifact_dir = project / ".wardline"
+    artifact_dir.mkdir()
+    (artifact_dir / "manual-findings.jsonl").write_text("keep\n", encoding="utf-8")
+    outside = tmp_path / "outside.jsonl"
+    outside.write_text("outside\n", encoding="utf-8")
+    (artifact_dir / "20200104T000000Z-findings.jsonl").symlink_to(outside)
+    for stamp in ("20200101T000000Z", "20200102T000000Z", "20200103T000000Z"):
+        (artifact_dir / f"{stamp}-findings.jsonl").write_text("{}\n", encoding="utf-8")
+
+    result = CliRunner().invoke(cli, ["scan", str(project)])
+
+    assert result.exit_code == 0, result.output
+    names = {p.name for p in artifact_dir.iterdir()}
+    assert "manual-findings.jsonl" in names
+    assert "20200104T000000Z-findings.jsonl" in names
+    assert "20200103T000000Z-findings.jsonl" in names
+    assert "20200101T000000Z-findings.jsonl" not in names
+    assert "20200102T000000Z-findings.jsonl" not in names
+
+
+def test_scan_default_artifact_retention_keeps_current_with_future_artifact(tmp_path: Path) -> None:
+    import shutil
+
+    project = tmp_path / "proj"
+    shutil.copytree(FIXTURE, project)
+    (project / "weft.toml").write_text(
+        '[wardline]\nsource_roots = ["."]\n\n[wardline.artifacts]\nretain = 1\n',
+        encoding="utf-8",
+    )
+    artifact_dir = project / ".wardline"
+    artifact_dir.mkdir()
+    (artifact_dir / "29990101T000000Z-findings.jsonl").write_text("{}\n", encoding="utf-8")
+
+    result = CliRunner().invoke(cli, ["scan", str(project)])
+
+    assert result.exit_code == 0, result.output
+    reported = result.output.rsplit(" -> ", 1)[1].strip().splitlines()[0]
+    artifact = Path(reported)
+    assert artifact.exists()
+    assert artifact.parent == artifact_dir
+    assert artifact.name != "29990101T000000Z-findings.jsonl"
+    assert not (artifact_dir / "29990101T000000Z-findings.jsonl").exists()
+
+
+def test_scan_default_artifact_same_second_collision_uses_counter(tmp_path: Path, monkeypatch) -> None:
+    import wardline.core.artifacts as artifacts
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "app.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+
+    class FixedDateTime:
+        @classmethod
+        def now(cls, tz=UTC):
+            return datetime(2026, 6, 20, 15, 30, 12, tzinfo=tz)
+
+    monkeypatch.setattr(artifacts, "datetime", FixedDateTime)
+
+    first = CliRunner().invoke(cli, ["scan", str(project)])
+    second = CliRunner().invoke(cli, ["scan", str(project)])
+
+    assert first.exit_code == 0, first.output
+    assert second.exit_code == 0, second.output
+    names = [p.name for p in _scan_artifacts(project, "findings.jsonl")]
+    assert names == [
+        "20260620T153012Z-001-findings.jsonl",
+        "20260620T153012Z-findings.jsonl",
+    ]
+    assert str(project / ".wardline" / "20260620T153012Z-findings.jsonl") in first.output
+    assert str(project / ".wardline" / "20260620T153012Z-001-findings.jsonl") in second.output
 
 
 def test_scan_relative_subdir_default_output_not_double_resolved(tmp_path: Path, monkeypatch) -> None:
     # Regression: `wardline scan pkg` (relative subdir). The default output is reported as
-    # `pkg/findings.jsonl`, and the root-confined writer must write THERE — not resolve `pkg`
-    # into the already-prefixed path twice (`pkg/pkg/findings.jsonl`), which left the reported
-    # artifact path empty.
+    # `pkg/.wardline/<stamp>-findings.jsonl`, and the root-confined writer must write THERE
+    # — not resolve `pkg` into the already-prefixed path twice (`pkg/pkg/...`), which left
+    # the reported artifact path empty.
     import shutil
 
     project = tmp_path / "pkg"
@@ -145,7 +304,8 @@ def test_scan_relative_subdir_default_output_not_double_resolved(tmp_path: Path,
     monkeypatch.chdir(tmp_path)
     result = CliRunner().invoke(cli, ["scan", "pkg"])
     assert result.exit_code == 0, result.output
-    assert (project / "findings.jsonl").exists()  # at the reported path
+    artifact = _only_scan_artifact(project, "findings.jsonl")
+    assert str(artifact) in result.output
     assert not (project / "pkg").exists()  # no double-resolved pkg/pkg/
 
 
@@ -169,16 +329,15 @@ def test_scan_jsonl_default_refuses_symlinked_output(tmp_path: Path) -> None:
 
     project = tmp_path / "proj"
     shutil.copytree(FIXTURE, project)
-    outside = tmp_path / "outside.jsonl"
-    outside.write_text("keep\n", encoding="utf-8")
-    (project / "findings.jsonl").unlink(missing_ok=True)
-    (project / "findings.jsonl").symlink_to(outside)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (project / ".wardline").symlink_to(outside)
 
     result = CliRunner().invoke(cli, ["scan", str(project)])
 
     assert result.exit_code == 2
-    assert "findings.jsonl: refusing to write through a symlink" in result.output
-    assert outside.read_text(encoding="utf-8") == "keep\n"
+    assert "refusing to write through a symlink" in result.output
+    assert list(outside.iterdir()) == []
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -231,6 +390,20 @@ def test_scan_format_legis_allow_dirty_emits_unsigned_marked_artifact(tmp_path: 
     assert "artifact_signature" not in artifact
     assert artifact["dirty"] is True
     assert "UNSIGNED legis dev artifact" in result.output
+
+
+def test_scan_format_legis_default_output_path(tmp_path: Path) -> None:
+    repo = _legis_committed_repo(tmp_path)
+
+    result = CliRunner().invoke(cli, ["scan", str(repo), "--format", "legis"])
+
+    assert result.exit_code == 0, result.output
+    artifact = _only_scan_artifact(repo, "scan.legis.json")
+    payload = _json.loads(artifact.read_text(encoding="utf-8"))
+    assert payload["scanner_identity"].startswith("wardline@")
+    assert payload["scan_scope"]["schema"] == "wardline-legis-scan-scope-1"
+    assert str(artifact) in result.output
+    assert not (repo / "scan.legis.json").exists()
 
 
 _LEAKY_SRC = (

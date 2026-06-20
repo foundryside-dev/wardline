@@ -20,7 +20,7 @@ wardline --version
 ```
 
 ```text
-wardline, version 1.0.5
+wardline, version 1.0.6
 ```
 
 ## 2. Run a first scan
@@ -32,14 +32,14 @@ wardline scan . --format jsonl
 ```
 
 ```text
-scanned 2 file(s); 4 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> findings.jsonl
+scanned 2 file(s); 4 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> .wardline/20260620T153012Z-findings.jsonl
 ```
 
 !!! note "Where the findings go"
     In `jsonl` mode the findings are written to a file, not printed. The summary
-    line names the destination — here, `findings.jsonl` in the current
-    directory. Use `--output PATH` to write somewhere else, or `--format sarif`
-    for SARIF. The summary itself is printed to standard output.
+    line names the destination — here, a timestamped artifact under `.wardline/`.
+    Use `--output PATH` to write to an exact path, or `--format sarif` for SARIF.
+    The summary itself is printed to standard output.
 
 The other format is SARIF (`--format sarif`), for tools that consume the SARIF
 standard. If you are sending findings to Filigree for promotion, deduplication,
@@ -49,8 +49,8 @@ importer preserving Wardline's SARIF fingerprint field.
 
 ## 3. Read one finding
 
-Each line of `findings.jsonl` is one finding. Here is a real one (re-flowed for
-readability):
+Each line of the JSONL artifact is one finding. Here is a real one (re-flowed
+for readability):
 
 ```json
 {

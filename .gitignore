@@ -23,6 +23,7 @@ site/public/_site-kit/
 
 # Wardline runtime output
 findings.jsonl
+.wardline/
 # Transient scan/scratch output (e.g. Playwright captures from the site work).
 output/
 

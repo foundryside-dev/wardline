@@ -120,7 +120,7 @@ By default a scan reports but never fails — the gate is opt-in:
 
 ```console
 $ wardline scan .
-scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> findings.jsonl
+scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> .wardline/20260620T153012Z-findings.jsonl
 ```
 
 ```console
@@ -133,7 +133,7 @@ at or above the threshold drives a non-zero exit:
 
 ```console
 $ wardline scan . --fail-on ERROR
-scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> findings.jsonl
+scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> .wardline/20260620T153012Z-findings.jsonl
 ```
 
 ```console
@@ -164,12 +164,12 @@ trap 'rm -f "$out"' EXIT
 wardline scan . --fail-on ERROR --output "$out"
 ```
 
-A `scan` always writes a findings file (default `findings.jsonl` in the scan
-path), so point `--output` at a per-run temporary file — as above — or at a
-git-ignored path inside the repository; otherwise the hook litters every commit.
-Avoid predictable filenames in shared directories such as `/tmp`. The script's
-exit code becomes the hook's exit code: a clean tree commits, a new defect
-aborts the commit with the finding already on screen for the agent to act on.
+A `scan` always writes a findings file. By default it goes to a timestamped
+artifact under `.wardline/` with retention; point `--output` at a per-run
+temporary file — as above — when a hook needs exact cleanup semantics. Avoid
+predictable filenames in shared directories such as `/tmp`. The script's exit
+code becomes the hook's exit code: a clean tree commits, a new defect aborts the
+commit with the finding already on screen for the agent to act on.
 
 ## Let the agent triage with `wardline judge`
 

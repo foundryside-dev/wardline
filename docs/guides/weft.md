@@ -42,9 +42,10 @@ path.
 $ wardline scan src/wardline --format sarif --output results.sarif
 ```
 
-With `--format sarif` and no `--output`, the default file is `findings.sarif` in
-the scan path. The log carries one run with a `wardline` driver, minimal rule
-descriptors (the distinct rule IDs seen), and one result per finding —
+With `--format sarif` and no `--output`, the default file is a timestamped SARIF
+artifact under `.wardline/` (or `[wardline.artifacts].dir`). The log carries one
+run with a `wardline` driver, minimal rule descriptors (the distinct rule IDs
+seen), and one result per finding —
 `ruleId` + `ruleIndex`, a `level` mapped from severity (`CRITICAL`/`ERROR` →
 `error`, `WARN` → `warning`, `INFO` → `note`, `NONE` → `none`), a physical
 location, and `partialFingerprints` carrying Wardline's stable fingerprint.
@@ -87,8 +88,9 @@ the analysis fact and the local baseline. Pass the full endpoint URL:
 $ wardline scan . --filigree-url http://localhost:8377/api/weft/scan-results
 ```
 
-This is layered on top of the normal local output — Wardline still writes
-`findings.jsonl` (or your `--output`) and runs the gate; emission is additive.
+This is layered on top of the normal local output — Wardline still writes a
+timestamped JSONL artifact (or your exact `--output`) and runs the gate;
+emission is additive.
 Use `--local-only` (alias `--no-emit`) when a scan must stay local even though a
 Filigree or Loomweave endpoint is discoverable from the environment or project
 install state.
