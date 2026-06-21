@@ -151,6 +151,54 @@ def test_plain_command_builder_still_fires_after_the_rebind_fix() -> None:
     assert trig.program_taint in RAW_ZONE
 
 
+def test_shadow_rebind_initializer_can_extend_previous_builder() -> None:
+    # Rust evaluates the initializer before the shadowing binding takes effect. The
+    # right-hand `c` below is the previous Command builder, so the rebinding must keep
+    # the tracked builder alive for the later terminal.
+    (trig,) = _triggers(
+        _SEED
+        + "    let c = Command::new(t);\n"
+        + '    let c = c.arg("--flag");\n'
+        + "    c.output();\n"
+    )
+    assert trig.program_taint in RAW_ZONE
+
+
+def test_terminal_result_rebind_drops_previous_same_name_builder() -> None:
+    trigs = _triggers(
+        _SEED
+        + "    let cmd = Command::new(t);\n"
+        + '    let cmd = Command::new("/usr/bin/ls").output();\n'
+        + "    cmd.output();\n"
+    )
+    assert len(trigs) == 1
+    assert trigs[0].program_literal == "/usr/bin/ls"
+    assert trigs[0].program_taint not in RAW_ZONE
+
+
+def test_terminal_result_rebind_to_new_name_is_not_a_builder_alias() -> None:
+    trigs = _triggers(
+        _SEED
+        + "    let cmd = Command::new(t);\n"
+        + "    let result = cmd.output();\n"
+        + "    result.output();\n"
+    )
+    assert len(trigs) == 1
+    assert trigs[0].program_taint in RAW_ZONE
+
+
+def test_terminal_result_rebind_clears_existing_builder_on_bound_name() -> None:
+    trigs = _triggers(
+        _SEED
+        + "    let cmd = Command::new(t);\n"
+        + "    let result = Command::new(t);\n"
+        + "    let result = cmd.output();\n"
+        + "    result.output();\n"
+    )
+    assert len(trigs) == 1
+    assert trigs[0].program_taint in RAW_ZONE
+
+
 # --------------------------------------------------------------------------- #
 # Format-family macros — write!/writeln!/format_args! value-taint (issue 8a34187941)
 # --------------------------------------------------------------------------- #

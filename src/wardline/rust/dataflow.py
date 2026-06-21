@@ -116,19 +116,20 @@ class _Analyzer:
     def _bind(self, name: str | None, value: Node | None) -> None:
         """(Re)bind ``name`` to ``value`` — the shared core of ``let`` and assignment.
 
-        A fresh binding to a tracked name clears BOTH its prior taint and any stale Command
-        builder; if the new value is itself a builder, ``_try_command_chain`` re-adds it. This
-        symmetry is what keeps a shadowing/reassignment from stranding a dead constructor."""
+        Rust evaluates a shadowing ``let`` initializer before the new binding takes effect, so
+        the RHS must still be able to see the previous local/Command builder. Once the new value
+        is classified, non-Command bindings clear stale builders and taints."""
         if value is None:
             return
-        if name is not None:
-            self._local_taints.pop(name, None)
-            self._commands.pop(name, None)
         call = _unwrap_to_call(value)
         if call is not None and self._try_command_chain(call, bound_name=name):
+            if name is not None:
+                self._local_taints.pop(name, None)
             return  # a Command builder bound to `name` (or terminated inline)
         if name is not None:
             taint = self._expr_taint(value)  # taint over the ORIGINAL value (wrappers and all)
+            self._local_taints.pop(name, None)
+            self._commands.pop(name, None)
             if taint != _CLEAN:  # record only proven taint
                 self._local_taints[name] = taint
 
@@ -138,14 +139,23 @@ class _Analyzer:
         if base.type == "call_expression" and self._is_command_new(base):
             accum = self._accum_from_new(base)
             self._apply_steps(accum, steps)
-            if bound_name is not None and not any(m in _TERMINALS for m, _ in steps):
-                self._commands[bound_name] = accum  # a live builder bound to a local
+            if bound_name is not None:
+                if any(m in _TERMINALS for m, _ in steps):
+                    self._commands.pop(bound_name, None)
+                else:
+                    self._commands[bound_name] = accum  # a live builder bound to a local
             return True
         if base.type == "identifier":
-            tracked = self._commands.get(_text(base))
+            base_name = _text(base)
+            tracked = self._commands.get(base_name)
             if tracked is None:
                 return False  # not a tracked command local
             self._apply_steps(tracked, steps)
+            if bound_name is not None:
+                if any(m in _TERMINALS for m, _ in steps):
+                    self._commands.pop(bound_name, None)
+                else:
+                    self._commands[bound_name] = tracked
             return True
         return False
 

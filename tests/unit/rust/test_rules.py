@@ -160,6 +160,17 @@ def test_assignment_reassign_to_tainted_command_fires() -> None:
     assert [f.rule_id for f in _findings(src)] == ["RS-WL-108"]
 
 
+def test_shadow_rebind_extending_command_builder_still_fires() -> None:
+    # Rust evaluates the initializer before shadowing the old binding, so the RHS `cmd`
+    # is still the tainted Command builder and the later terminal must remain visible.
+    src = (
+        _TRUSTED + "fn f() {\n" + _SEED + "    let cmd = Command::new(t);\n"
+        '    let cmd = cmd.arg("--flag");\n'
+        "    cmd.output();\n}\n"
+    )
+    assert [f.rule_id for f in _findings(src)] == ["RS-WL-108"]
+
+
 def test_assignment_reassign_to_non_command_drops_the_builder() -> None:
     # Reassigning a Command-bound name to a non-command must drop the tracked builder entirely;
     # a later `.output()` on it is a method call on some other value, not a phantom spawn.
