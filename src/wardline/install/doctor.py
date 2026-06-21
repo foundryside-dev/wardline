@@ -436,34 +436,6 @@ def _repair_filigree_auth(root: Path, url: str, transport: Transport) -> DoctorC
     )
 
 
-def _same_target(a: str, b: str) -> bool:
-    """True when two URLs name the same write target up to host spelling — identical
-    port and path. A bad literal reads as non-matching rather than crashing the check."""
-    try:
-        pa, pb = urlsplit(a), urlsplit(b)
-        return (pa.port, pa.path) == (pb.port, pb.path)
-    except ValueError:
-        return False
-
-
-def _live_published_url_behind_stale_pin(
-    root: Path, probed_url: str, transport: Transport, token: str | None
-) -> str | None:
-    """When the probed (pinned) Filigree URL is unreachable, return a DIFFERENT
-    published-port URL that IS reachable — the signature of a stale ``.mcp.json``
-    ``--filigree-url`` pin shadowing a daemon that rotated to a new port (the common
-    legacy ``.filigree/ephemeral.port`` rung outliving a rotation). ``None`` when there
-    is no pin, no live published target, or the published target names the same port (a
-    genuinely-absent daemon — left as the soft "not reachable" result)."""
-    if _mcp_filigree_url(root) is None:
-        return None  # no pin: the probed URL already IS the published one
-    published = _filigree_published_url(root)
-    if published is None or _same_target(probed_url, published) or not _is_loopback(published):
-        return None
-    probe = FiligreeEmitter(published, transport=transport, token=token).verify_token()
-    return published if probe.reachable else None
-
-
 def _check_filigree_auth(
     root: Path,
     *,
@@ -483,17 +455,6 @@ def _check_filigree_auth(
     token = load_filigree_token(root)  # may be None — probe anyway (the daemon may have auth off)
     probe = FiligreeEmitter(url, transport=probe_transport, token=token).verify_token()
     if not probe.reachable:
-        live = _live_published_url_behind_stale_pin(root, url, probe_transport, token)
-        if live is not None:
-            return DoctorCheck(
-                "filigree.auth",
-                "error",
-                message=(
-                    f"configured --filigree-url ({url}) is unreachable, but Filigree is live at "
-                    f"{live} (published port); run `wardline doctor --repair` to drop the stale pin "
-                    "so discovery follows the live port"
-                ),
-            )
         return DoctorCheck("filigree.auth", "ok", message="filigree daemon not reachable; token not verified")
     if probe.accepted:
         return DoctorCheck("filigree.auth", "ok")

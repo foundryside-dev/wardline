@@ -389,12 +389,11 @@ def test_install_preserves_already_scoped_loopback_host_spelling(
     assert _wardline_args(tmp_path)[-1] == canary
 
 
-# --- Drop stale loopback sibling pins when a live per-project published port exists --
+# --- Preserve explicit loopback sibling pins when only a project port file exists ---
 #
-# A frozen --filigree-url / --loomweave-url pinned to a port Filigree/Loomweave has
-# since rotated away (the legacy .filigree/ephemeral.port rung outliving a rotation)
-# becomes an explicit flag that SHADOWS published-port discovery. In per-project mode
-# repair DROPS such a loopback pin so runtime discovery owns the always-current port.
+# A repository-owned .weft/<sibling>/ephemeral.port proves only that a file exists; it
+# does not prove a sibling daemon is currently live or owns that port. Repair must not
+# delete an explicit loopback pin based on that unverified project state alone.
 
 
 def _write_wardline_args(root: Path, args: list[str]) -> None:
@@ -402,16 +401,15 @@ def _write_wardline_args(root: Path, args: list[str]) -> None:
     (root / ".mcp.json").write_text(json.dumps({"mcpServers": {"wardline": entry}}), encoding="utf-8")
 
 
-def test_repair_drops_stale_loopback_pins_when_per_project_ports_live(
+def test_repair_preserves_loopback_pins_when_only_project_ports_exist(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
-    # Live per-project published rungs (new .weft/<sibling>/ephemeral.port).
+    # Project-controlled published-port rungs may be stale or planted.
     (tmp_path / ".weft" / "filigree").mkdir(parents=True)
     (tmp_path / ".weft" / "filigree" / "ephemeral.port").write_text("9397", encoding="utf-8")
     (tmp_path / ".weft" / "loomweave").mkdir(parents=True)
     (tmp_path / ".weft" / "loomweave" / "ephemeral.port").write_text("39759", encoding="utf-8")
-    # ...but the entry pins the rotated-away ports.
     _write_wardline_args(
         tmp_path,
         [
@@ -424,11 +422,17 @@ def test_repair_drops_stale_loopback_pins_when_per_project_ports_live(
             "http://127.0.0.1:9229/api/weft/scan-results",
         ],
     )
-    assert merge_mcp_entry(tmp_path) == "updated"
+    assert merge_mcp_entry(tmp_path) == "unchanged"
     args = _wardline_args(tmp_path)
-    assert "--filigree-url" not in args  # stale loopback pin dropped
-    assert "--loomweave-url" not in args  # stale loopback pin dropped
-    assert args == ["mcp", "--root", "."]  # discovery owns both ports
+    assert args == [
+        "mcp",
+        "--root",
+        ".",
+        "--loomweave-url",
+        "http://127.0.0.1:10251",
+        "--filigree-url",
+        "http://127.0.0.1:9229/api/weft/scan-results",
+    ]
 
 
 def test_repair_preserves_loopback_pin_when_no_live_daemon(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -446,7 +450,7 @@ def test_repair_drops_remote_loomweave_pin_and_stale_filigree_loopback_pin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Remote sibling pins come from repository-controlled .mcp.json and are dropped; the
-    # stale Filigree loopback pin is also dropped because a live published port exists.
+    # Filigree loopback pin is preserved because a project port file is not live proof.
     monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
     (tmp_path / ".weft" / "filigree").mkdir(parents=True)
     (tmp_path / ".weft" / "filigree" / "ephemeral.port").write_text("9397", encoding="utf-8")
@@ -465,9 +469,9 @@ def test_repair_drops_remote_loomweave_pin_and_stale_filigree_loopback_pin(
     )
     assert merge_mcp_entry(tmp_path) == "updated"
     args = _wardline_args(tmp_path)
-    assert "--filigree-url" not in args  # stale loopback dropped
+    assert "--filigree-url" in args  # explicit loopback pin preserved
+    assert args[args.index("--filigree-url") + 1] == "http://127.0.0.1:9229/api/weft/scan-results"
     assert "--loomweave-url" not in args  # remote repo pin dropped
-    assert args == ["mcp", "--root", "."]
 
 
 def test_same_scope_target_handles_malformed_port_without_crashing() -> None:

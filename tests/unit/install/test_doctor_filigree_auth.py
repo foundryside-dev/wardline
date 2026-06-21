@@ -302,28 +302,31 @@ class _PortRoutedTransport:
     def __init__(self, live_port: int, status: int = 400) -> None:
         self._live_port = live_port
         self._status = status
+        self.calls: list[tuple[str, str]] = []
 
     def post(self, url: str, body: bytes, headers: Mapping[str, str]) -> Response:
         from urllib.parse import urlsplit
 
+        self.calls.append((url, headers.get("Authorization", "")))
         if urlsplit(url).port != self._live_port:
             raise OSError("connection refused")
         return Response(status=self._status, body="")
 
 
-def test_check_flags_stale_pin_shadowing_live_published_daemon(tmp_path: Path, monkeypatch) -> None:
-    # .mcp.json pins a rotated-away port (9229, dead) while Filigree is live on the
-    # published per-project port (9397). Plain `doctor` must NOT mask this as a soft
-    # "not reachable" — it surfaces an error pointing at `--repair` (drop the stale pin).
+def test_check_does_not_follow_published_port_after_pinned_url_fails(tmp_path: Path, monkeypatch) -> None:
+    # .mcp.json pins an explicit loopback target. A repository-owned published-port
+    # file may be stale or planted, so doctor must not follow it with the bearer after
+    # the explicit pin is unreachable.
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setenv("WEFT_FEDERATION_TOKEN", "T")
     (tmp_path / ".weft" / "filigree").mkdir(parents=True)
     (tmp_path / ".weft" / "filigree" / "ephemeral.port").write_text("9397", encoding="utf-8")
     _write_mcp_with_filigree_url(tmp_path, "http://127.0.0.1:9229/api/weft/scan-results")
-    check = _check_filigree_auth(tmp_path, repair=False, transport=_PortRoutedTransport(9397))
-    assert check.status == "error"
-    assert "9397" in (check.message or "")
-    assert "--repair" in (check.message or "")
+    transport = _PortRoutedTransport(9397)
+    check = _check_filigree_auth(tmp_path, repair=False, transport=transport)
+    assert check.status == "ok"
+    assert "not reachable" in (check.message or "")
+    assert transport.calls == [("http://127.0.0.1:9229/api/weft/scan-results", "Bearer T")]
 
 
 def test_check_stays_soft_when_pin_dead_and_no_live_published(tmp_path: Path, monkeypatch) -> None:
