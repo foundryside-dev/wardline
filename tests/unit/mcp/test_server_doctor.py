@@ -62,6 +62,30 @@ def test_doctor_url_checks_report_launch_flags_with_provenance(tmp_path: Path, m
     assert by_id["loomweave.url"]["message"] == "not configured (no launch flag, no env)"
 
 
+def test_doctor_rejects_caller_supplied_filigree_url(tmp_path: Path, monkeypatch) -> None:
+    _isolate(tmp_path, monkeypatch)
+    captured: dict[str, Any] = {}
+
+    def fake_machine_readable_doctor(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"ok": True, "checks": [], "next_actions": []}
+
+    monkeypatch.setattr("wardline.install.doctor.machine_readable_doctor", fake_machine_readable_doctor)
+
+    payload = _doctor(
+        {"filigree_url": "http://127.0.0.1:9999/api/weft/scan-results"},
+        tmp_path,
+        started_at=time.time(),
+        filigree_url="http://127.0.0.1:8749/api/weft/scan-results",
+    )
+
+    assert captured["filigree_url"] == "http://127.0.0.1:8749/api/weft/scan-results"
+    by_id = {c["id"]: c for c in payload["checks"]}
+    assert by_id["doctor.filigree_url"]["status"] == "error"
+    assert "launch flag" in by_id["doctor.filigree_url"]["message"]
+    assert payload["ok"] is False
+
+
 def test_doctor_reports_server_identity(tmp_path: Path, monkeypatch) -> None:
     _isolate(tmp_path, monkeypatch)
     now = time.time()
@@ -140,6 +164,21 @@ def test_doctor_with_probe_url_is_denied_by_no_network_policy(tmp_path: Path, mo
     result = _tool_call(server, "doctor")
     assert result["isError"] is True
     assert "network" in result["content"][0]["text"].lower()
+
+
+def test_doctor_caller_supplied_filigree_url_is_rejected_before_network_policy(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import json
+
+    _isolate(tmp_path, monkeypatch)
+    server = WardlineMCPServer(root=tmp_path, allow_network=False)
+    result = _tool_call(server, "doctor", {"filigree_url": "http://127.0.0.1:9/weft"})
+    assert "isError" not in result
+    payload = json.loads(result["content"][0]["text"])
+    by_id = {c["id"]: c for c in payload["checks"]}
+    assert by_id["doctor.filigree_url"]["status"] == "error"
+    assert payload["ok"] is False
 
 
 def test_doctor_registered_with_served_schema(tmp_path: Path, monkeypatch) -> None:

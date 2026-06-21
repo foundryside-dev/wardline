@@ -3982,7 +3982,17 @@ def _doctor(
     flag = args.get("filigree_url")
     if flag is not None and not isinstance(flag, str):
         raise ToolError("filigree_url must be a string")
-    payload = machine_readable_doctor(root, fix=repair, filigree_url=flag or filigree_url, loomweave_url=loomweave_url)
+    payload = machine_readable_doctor(root, fix=repair, filigree_url=filigree_url, loomweave_url=loomweave_url)
+    if flag is not None:
+        message = (
+            "caller-supplied filigree_url is not accepted over MCP; configure the "
+            "wardline MCP server launch flag or WARDLINE_FILIGREE_URL instead"
+        )
+        payload["checks"].append(
+            {"id": "doctor.filigree_url", "status": "error", "fixed": False, "message": message}
+        )
+        payload["ok"] = False
+        payload["next_actions"].append(f"doctor.filigree_url: {message}")
     return attach_server_identity(payload, root=root, started_at=started_at)
 
 
@@ -3999,8 +4009,8 @@ _DOCTOR_OUTPUT_SCHEMA: dict[str, Any] = {
         "checks": {
             "type": "array",
             "description": "Uniform health-check verdicts: wardline.config, mcp.registration, marker_package, "
-            "loomweave.url, filigree.url, decorator_grammar, scan.output_path, auth.token, filigree.auth, then "
-            "server.freshness last.",
+            "loomweave.url, filigree.url, decorator_grammar, scan.output_path, auth.token, filigree.auth, "
+            "optionally doctor.filigree_url for rejected MCP caller input, then server.freshness last.",
             "items": {
                 "type": "object",
                 "properties": {
@@ -4094,9 +4104,9 @@ _DOCTOR_TOOL: dict[str, Any] = {
             },
             "filigree_url": {
                 "type": "string",
-                "description": "Filigree URL to probe for emit auth (default: the server's "
-                "configured URL, then WARDLINE_FILIGREE_URL, then the .mcp.json arg). "
-                "Only loopback origins are ever probed with a token.",
+                "description": "Deprecated and rejected over MCP: caller-supplied probe URLs "
+                "are not trusted with Filigree credentials. Configure the server launch "
+                "flag, WARDLINE_FILIGREE_URL, or the project .mcp.json entry instead.",
             },
         },
     },
@@ -4904,9 +4914,7 @@ class WardlineMCPServer:
                 capabilities.add(ToolCapability.WRITE)
             from wardline.install.doctor import _resolve_probe_url
 
-            flag = arguments.get("filigree_url")
-            probe_url = flag if isinstance(flag, str) and flag else None
-            if _resolve_probe_url(self.root, probe_url or self.filigree_url) is not None:
+            if _resolve_probe_url(self.root, self.filigree_url) is not None:
                 # The filigree-auth probe will touch the (loopback-only) network.
                 capabilities.add(ToolCapability.NETWORK)
         if tool.name == "rekey":
