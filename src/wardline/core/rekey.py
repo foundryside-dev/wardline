@@ -204,6 +204,63 @@ def snapshot_dir(root: Path) -> Path:
     return paths.weft_state_dir(root) / SNAPSHOT_DIR_NAME
 
 
+def _has_path_or_symlink(path: Path) -> bool:
+    return path.exists() or path.is_symlink()
+
+
+def _read_project_store_bytes(root: Path, path: Path) -> bytes | None:
+    """Read an optional project-local store without following symlinks.
+
+    Missing, non-regular, symlinked, or escaping paths are not snapshot/probe inputs.
+    """
+    if path.is_symlink():
+        return None
+    try:
+        safe = safe_project_file(root, path, label=path.name)
+    except WardlineError:
+        return None
+    return read_bytes_no_follow(safe)
+
+
+def _read_required_snapshot_bytes(root: Path, path: Path) -> bytes:
+    """Read a snapshot store that must exist and must be a regular in-project file."""
+    try:
+        if path.is_symlink():
+            raise WardlineError(f"{path.name}: refusing to read through a symlink")
+        safe = safe_project_file(root, path, label=path.name)
+    except WardlineError as exc:
+        raise WardlineError(f"non-regular rekey snapshot {path.name} under {path.parent}: {exc}") from exc
+    data = read_bytes_no_follow(safe)
+    if data is None:
+        raise WardlineError(f"non-regular rekey snapshot {path.name} under {path.parent}")
+    return data
+
+
+def _refuse_preexisting_snapshot_without_journal(root: Path) -> None:
+    """Fresh rekey runs must create their own snapshot provenance.
+
+    A snapshot without a journal is not resumable state; trusting it would let an
+    untrusted checkout pre-plant old fingerprints that a fresh run would carry into
+    live stores.
+    """
+    sdir = snapshot_dir(root)
+    if sdir.is_symlink():
+        raise WardlineError(f"pre-existing rekey snapshot at {sdir} is a symlink; refusing to trust it")
+    if not sdir.exists():
+        return
+    if not sdir.is_dir():
+        raise WardlineError(f"pre-existing rekey snapshot at {sdir} is not a directory; refusing to trust it")
+    try:
+        entries = tuple(sdir.iterdir())
+    except OSError as exc:
+        raise WardlineError(f"could not inspect pre-existing rekey snapshot at {sdir}: {exc}") from exc
+    if entries:
+        raise WardlineError(
+            f"pre-existing rekey snapshot at {sdir} has no migration journal; "
+            "refusing to trust stale or caller-planted provenance."
+        )
+
+
 def snapshot_stores(root: Path) -> tuple[str, ...]:
     """Copy each EXISTING YAML store into ``.rekey_snapshot/`` byte-identical. The
     snapshot is the immutable provenance source the carry legs read — resume NEVER
@@ -219,7 +276,7 @@ def snapshot_stores(root: Path) -> tuple[str, ...]:
         # the repo, and a naive read would copy that target into the in-project snapshot
         # (arbitrary file disclosure). A symlinked/non-regular/missing store is simply not
         # snapshot-eligible.
-        data = read_bytes_no_follow(live)
+        data = _read_project_store_bytes(root, live)
         if data is None:
             continue
         present.append(name)
@@ -247,24 +304,42 @@ def _read_old_store(path: Path) -> dict[str, Any]:
     """Read an OLD-scheme (wlfp1) store RAW — bypassing the scheme-enforcing loaders,
     which would (correctly) reject the pre-rekey snapshot. The migration is the one
     place that reads an old-scheme store on purpose."""
-    if not path.is_file():
+    data = read_bytes_no_follow(path)
+    if data is None:
         return {}
+    return _load_old_store_bytes(data, path.name)
+
+
+def _load_old_store_bytes(data: bytes, name: str) -> dict[str, Any]:
     yaml = require_yaml("reading the rekey snapshot")
     try:
-        loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        loaded = yaml.safe_load(data.decode("utf-8")) or {}
+    except UnicodeDecodeError as exc:
+        raise ConfigError(f"malformed snapshot {name}: not valid UTF-8") from exc
     except yaml.YAMLError as exc:  # pragma: no cover - defensive
-        raise ConfigError(f"malformed snapshot {path.name}: {exc}") from exc
+        raise ConfigError(f"malformed snapshot {name}: {exc}") from exc
     if not isinstance(loaded, dict):
-        raise ConfigError(f"snapshot {path.name} is not a mapping")
+        raise ConfigError(f"snapshot {name} is not a mapping")
     return loaded
 
 
 def _carry_store(snapshot_path: Path, list_key: str, version: int, old_to_new: dict[str, str]) -> CarryResult:
+    loaded = _read_old_store(snapshot_path)
+    return _carry_loaded_store(loaded, list_key, version, old_to_new)
+
+
+def _carry_store_bytes(
+    data: bytes, snapshot_name: str, list_key: str, version: int, old_to_new: dict[str, str]
+) -> CarryResult:
+    loaded = _load_old_store_bytes(data, snapshot_name)
+    return _carry_loaded_store(loaded, list_key, version, old_to_new)
+
+
+def _carry_loaded_store(loaded: dict[str, Any], list_key: str, version: int, old_to_new: dict[str, str]) -> CarryResult:
     """Remap one store: swap each entry's ``fingerprint`` old->new while byte-preserving
     every OTHER field (rationale/reason/expires/rule_id/path/message/...), drop entries
     whose old_fp is not in the remap (orphans), and re-stamp the wlfp2 scheme header.
     Deterministic order: (rule_id, path, new fingerprint)."""
-    loaded = _read_old_store(snapshot_path)
     raw_entries = loaded.get(list_key) or []
     # A snapshot store ALREADY at the live scheme needs no remap: its fingerprints are
     # wlfp2 keys, and pushing them through the wlfp1->wlfp2 map would orphan every one
@@ -306,11 +381,11 @@ JOURNAL_SCHEMA_VERSION = 1
 # Legs in apply order: YAML first (gate-critical — baseline restores the local gate),
 # Filigree last (reconciliation debt, no remap endpoint).
 LEG_NAMES: tuple[str, ...] = ("baseline", "judged", "waivers", "filigree")
-# Maps a YAML leg to (carry fn, snapshot filename, live-store path fn).
-_YAML_LEGS: dict[str, tuple[Any, str, Any]] = {
-    "baseline": (carry_baseline_forward, "baseline.yaml", paths.baseline_path),
-    "judged": (carry_judged_forward, "judged.yaml", paths.judged_path),
-    "waivers": (carry_waivers_forward, "waivers.yaml", paths.waivers_path),
+# Maps a YAML leg to (snapshot filename, live-store path fn, list key, store version).
+_YAML_LEGS: dict[str, tuple[str, Any, str, int]] = {
+    "baseline": ("baseline.yaml", paths.baseline_path, "entries", BASELINE_VERSION),
+    "judged": ("judged.yaml", paths.judged_path, "findings", JUDGED_VERSION),
+    "waivers": ("waivers.yaml", paths.waivers_path, "waivers", WAIVERS_VERSION),
 }
 
 
@@ -450,14 +525,15 @@ def apply_pending_legs(
             _apply_filigree_leg(leg, findings, filigree)
             write_journal(jpath, journal, root=root)
             continue
-        carry_fn, snap_name, live_path_fn = _YAML_LEGS[leg.name]
+        snap_name, live_path_fn, list_key, version = _YAML_LEGS[leg.name]
         snap = sdir / snap_name
-        if not snap.is_file():
+        if not _has_path_or_symlink(snap):
             # The store never existed pre-migration — nothing to carry, create nothing.
             leg.done = True
             write_journal(jpath, journal, root=root)
             continue
-        result = carry_fn(snap, journal.remap)
+        snapshot_data = _read_required_snapshot_bytes(root, snap)
+        result = _carry_store_bytes(snapshot_data, snap_name, list_key, version, journal.remap)
         _write_store_doc(root, live_path_fn(root), result.document)
         leg.carried = list(result.carried)
         leg.orphaned = list(result.orphaned)
@@ -529,9 +605,10 @@ def _store_fingerprints(root: Path) -> dict[str, tuple[str | None, set[str]]]:
     state = paths.weft_state_dir(root)
     for name, key, _ver in _STORES:
         p = state / name
-        if not p.is_file():
+        data = _read_project_store_bytes(root, p)
+        if data is None:
             continue
-        loaded = _read_old_store(p)
+        loaded = _load_old_store_bytes(data, p.name)
         scheme = loaded.get("fingerprint_scheme")
         fps = {
             e["fingerprint"]
@@ -543,7 +620,7 @@ def _store_fingerprints(root: Path) -> dict[str, tuple[str | None, set[str]]]:
     return out
 
 
-def _dir_has_prescheme_store(dir_path: Path) -> bool:
+def _dir_has_prescheme_store(dir_path: Path, *, root: Path | None = None) -> bool:
     """True iff a store in ``dir_path`` holds entries but carries NO ``fingerprint_scheme``
     header — i.e. it predates P1's scheme stamp. Such a store MAY also predate the
     taint-resolution-drift fix (705acfe), in which case its fingerprints fold resolved-taint
@@ -552,9 +629,10 @@ def _dir_has_prescheme_store(dir_path: Path) -> bool:
     eras, so callers surface the possibility rather than mislabel every orphan a source move."""
     for name, key, _ver in _STORES:
         p = dir_path / name
-        if not p.is_file():
+        data = _read_project_store_bytes(root, p) if root is not None else read_bytes_no_follow(p)
+        if data is None:
             continue
-        loaded = _read_old_store(p)
+        loaded = _load_old_store_bytes(data, p.name)
         if loaded.get(key) and not loaded.get("fingerprint_scheme"):
             return True
     return False
@@ -623,7 +701,7 @@ def probe(root: Path, findings: Sequence[Finding]) -> ProbeReport:
         # baseline has none, so this never dirties the A7 clean-no-op verdict.
         collisions=result.collisions,
         per_store=per_store,
-        prescheme=_dir_has_prescheme_store(paths.weft_state_dir(root)),
+        prescheme=_dir_has_prescheme_store(paths.weft_state_dir(root), root=root),
         current_scheme_stores=tuple(current_scheme_stores),
         stale=tuple(sorted(stale)),
         no_op=not migration_pending,
@@ -662,11 +740,12 @@ def run_rekey(root: Path, findings: Sequence[Finding], *, filigree: Any = None) 
             "no fingerprint migration is pending; a rekey would only orphan healthy "
             "verdicts. Nothing to do (run `wardline rekey --probe` for the per-store view)."
         )
+    _refuse_preexisting_snapshot_without_journal(root)
     snapshot_stores(root)  # must precede any store write
     journal = new_journal(compute_old_new_fingerprints(findings))
     # Detect from the immutable snapshot (byte-identical to the pre-migration live stores)
     # so the caution persists onto the journal for --resume display too.
-    journal.snapshot_prescheme = _dir_has_prescheme_store(snapshot_dir(root))
+    journal.snapshot_prescheme = _dir_has_prescheme_store(snapshot_dir(root), root=root)
     write_journal(jpath, journal, root=root)
     return apply_pending_legs(root, journal, findings=findings, filigree=filigree)
 
@@ -695,21 +774,25 @@ def rollback(root: Path) -> RollbackResult:
     forward run are NOT reversed (no remap endpoint; re-emitting would need the old scan)
     — the caller warns about that orphan risk."""
     sdir = snapshot_dir(root)
-    snap_files = [name for name, _k, _v in _STORES if (sdir / name).is_file()]
+    snap_payloads = [
+        (name, _read_required_snapshot_bytes(root, sdir / name))
+        for name, _k, _v in _STORES
+        if _has_path_or_symlink(sdir / name)
+    ]
     jpath = paths.migration_journal_path(root)
-    if not snap_files and not jpath.is_file():
+    if not snap_payloads and not jpath.is_file():
         raise WardlineError(f"no rekey snapshot under {sdir} — nothing to roll back")
     state = paths.weft_state_dir(root)
     restored: list[str] = []
-    for name in snap_files:
+    for name, data in snap_payloads:
         live = safe_project_file(root, state / name, label=name)
         live.parent.mkdir(parents=True, exist_ok=True)
-        live.write_bytes((sdir / name).read_bytes())
+        live.write_bytes(data)
         restored.append(name)
     # Remove the journal, then the snapshot files + dir (best-effort cleanup).
     jpath.unlink(missing_ok=True)
     for name, _k, _v in _STORES:
         (sdir / name).unlink(missing_ok=True)
-    if sdir.is_dir() and not any(sdir.iterdir()):
+    if not sdir.is_symlink() and sdir.is_dir() and not any(sdir.iterdir()):
         sdir.rmdir()
     return RollbackResult(restored=tuple(restored))

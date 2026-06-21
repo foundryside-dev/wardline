@@ -28,6 +28,8 @@ yaml = pytest.importorskip("yaml")
 from wardline.core import paths  # noqa: E402
 from wardline.core.baseline import load_baseline  # noqa: E402
 from wardline.core.errors import WardlineError  # noqa: E402
+from wardline.core.finding import Finding, Kind, Location, Severity  # noqa: E402
+from wardline.core.fingerprint_v0 import compute_finding_fingerprint_v0  # noqa: E402
 from wardline.core.judged import load_judged  # noqa: E402
 from wardline.core.rekey import (  # noqa: E402
     Journal,
@@ -35,6 +37,7 @@ from wardline.core.rekey import (  # noqa: E402
     carry_baseline_forward,
     resume_rekey,
     rollback,
+    run_rekey,
     snapshot_dir,
     write_journal,
 )
@@ -42,6 +45,29 @@ from wardline.core.rekey import (  # noqa: E402
 # Old (wlfp1) / new (wlfp2) fingerprints for two distinct verdicts.
 A_OLD, A_NEW = "a" * 64, "1" * 64
 B_OLD, B_NEW = "b" * 64, "2" * 64
+
+
+def _join_finding() -> Finding:
+    return Finding(
+        rule_id="PY-WL-108",
+        message="m",
+        severity=Severity.WARN,
+        kind=Kind.DEFECT,
+        location=Location(path="m.py", line_start=3),
+        fingerprint="9" * 64,
+        qualname="m.f",
+        taint_path_v0="os.system@4:20",
+    )
+
+
+def _old_fp_for(finding: Finding) -> str:
+    return compute_finding_fingerprint_v0(
+        rule_id=finding.rule_id,
+        path=finding.location.path,
+        line_start=finding.location.line_start,
+        qualname=finding.qualname,
+        taint_path=finding.taint_path_v0,
+    )
 
 
 def _seed_snapshot(root: Path) -> None:
@@ -80,6 +106,97 @@ def _seed_snapshot(root: Path) -> None:
         ),
         encoding="utf-8",
     )
+
+
+# --- (0) untrusted snapshot provenance -------------------------------------------
+
+
+def test_fresh_rekey_refuses_preexisting_snapshot_without_journal(tmp_path: Path) -> None:
+    """A snapshot is trusted migration provenance only if this run created it. A repo
+    cannot pre-plant old fingerprints under `.rekey_snapshot` and have a fresh rekey
+    mint a baseline when no live old baseline existed."""
+    root = tmp_path
+    finding = _join_finding()
+    old_fp = _old_fp_for(finding)
+    sdir = snapshot_dir(root)
+    sdir.mkdir(parents=True, exist_ok=True)
+    (sdir / "baseline.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "fingerprint_scheme": "wlfp1",
+                "version": 1,
+                "entries": [
+                    {
+                        "fingerprint": old_fp,
+                        "rule_id": finding.rule_id,
+                        "path": finding.location.path,
+                        "message": finding.message,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WardlineError, match="pre-existing rekey snapshot"):
+        run_rekey(root, [finding])
+
+    assert not paths.baseline_path(root).exists()
+    assert not paths.migration_journal_path(root).exists()
+
+
+def test_rollback_refuses_symlinked_snapshot_store(tmp_path: Path) -> None:
+    """Rollback must restore from regular snapshot files only. A symlink in the
+    snapshot directory must not be followed into a caller-readable file."""
+    root = tmp_path
+    state = paths.weft_state_dir(root)
+    state.mkdir(parents=True)
+    sdir = snapshot_dir(root)
+    sdir.mkdir(parents=True)
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-baseline.yaml"
+    outside.write_bytes(b"OUTSIDE-BYTES")
+    (sdir / "baseline.yaml").symlink_to(outside)
+    live_before = b"REKEYED-wlfp2-CONTENT"
+    (state / "baseline.yaml").write_bytes(live_before)
+    paths.migration_journal_path(root).write_text("schema_version: 1\nremap: {}\n", encoding="utf-8")
+
+    with pytest.raises(WardlineError, match="non-regular rekey snapshot"):
+        rollback(root)
+
+    assert (state / "baseline.yaml").read_bytes() == live_before
+    assert (sdir / "baseline.yaml").is_symlink()
+    assert paths.migration_journal_path(root).exists()
+
+
+def test_resume_refuses_symlinked_snapshot_store(tmp_path: Path) -> None:
+    """Resume/apply must use the same no-follow snapshot boundary as rollback."""
+    root = tmp_path
+    state = paths.weft_state_dir(root)
+    state.mkdir(parents=True)
+    sdir = snapshot_dir(root)
+    sdir.mkdir(parents=True)
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-resume-baseline.yaml"
+    outside.write_bytes(b"fingerprint_scheme: wlfp1\nversion: 1\nentries: []\n")
+    (sdir / "baseline.yaml").symlink_to(outside)
+    live_before = b"REKEYED-wlfp2-CONTENT"
+    (state / "baseline.yaml").write_bytes(live_before)
+    journal = Journal(
+        remap={},
+        legs=[
+            Leg("baseline", done=False),
+            Leg("judged", done=True),
+            Leg("waivers", done=True),
+            Leg("filigree", done=True),
+        ],
+    )
+    write_journal(paths.migration_journal_path(root), journal, root=root)
+
+    with pytest.raises(WardlineError, match="non-regular rekey snapshot"):
+        resume_rekey(root)
+
+    assert (state / "baseline.yaml").read_bytes() == live_before
+    assert (sdir / "baseline.yaml").is_symlink()
+    assert paths.migration_journal_path(root).exists()
 
 
 # --- (a) mixed-scheme partial migration + pre-resume source change ----------------
