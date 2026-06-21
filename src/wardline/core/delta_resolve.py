@@ -396,11 +396,18 @@ def _closure_seed_qualnames(base_qualnames: frozenset[str] | set[str], index: Qu
     Exact function/method locators seed that entity. Class-level locators seed every
     indexed method below the class prefix so callers of any class member are included."""
     seeds: set[str] = set()
+    class_member_prefixes: dict[str, set[str]] | None = None
     for qualname in base_qualnames:
         if qualname in index.entities:
             seeds.add(qualname)
-        prefix = f"{qualname}."
-        seeds.update(candidate for candidate in index.entities if candidate.startswith(prefix))
+            continue
+        if class_member_prefixes is None:
+            class_member_prefixes = {}
+            for candidate in index.entities:
+                parts = candidate.split(".")
+                for i in range(2, len(parts)):
+                    class_member_prefixes.setdefault(".".join(parts[:i]), set()).add(candidate)
+        seeds.update(class_member_prefixes.get(qualname, ()))
     return seeds
 
 

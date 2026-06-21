@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from wardline.core.delta_resolve import (
+    QualnameIndex,
     build_qualname_index,
     canonical_qualname,
     resolve_affected_scope,
@@ -58,6 +59,16 @@ def _write(root: Path, rel: str, body: str) -> Path:
 
 def _scope(*entities: AffectedEntity, source_kind: str = "entity_list") -> AffectedScope:
     return AffectedScope(frozenset(entities), source_kind, len(entities))
+
+
+class CountingEntities(dict[str, str]):
+    def __init__(self, items: dict[str, str]) -> None:
+        super().__init__(items)
+        self.iterations = 0
+
+    def __iter__(self):  # type: ignore[override]
+        self.iterations += 1
+        return super().__iter__()
 
 
 # --- canonicalization helper -------------------------------------------------
@@ -319,6 +330,24 @@ def test_caller_closure_does_not_expand_from_unrelated_entities_in_same_file(tmp
     resolved = resolve_affected_scope(scope, index=index, sei_resolver=None)
 
     assert resolved.files == frozenset({"a.py", "b.py"})
+
+
+def test_caller_closure_exact_locators_do_not_scan_every_entity_per_locator() -> None:
+    # Exact function/method locators should seed the reverse-call closure directly. The
+    # class-prefix expansion is the only path that needs a full entity scan; doing that
+    # for every exact locator makes large worklists O(N affected * N indexed entities).
+    entities = CountingEntities({f"pkg.f{i}": f"f{i}.py" for i in range(50)})
+    index = QualnameIndex(
+        by_qualname=dict(entities),
+        project_edges={},
+        entities=entities,  # type: ignore[arg-type]
+    )
+    scope = _scope(*(AffectedEntity(sei=None, locator=f"python:function:pkg.f{i}") for i in range(50)))
+
+    resolved = resolve_affected_scope(scope, index=index, sei_resolver=None)
+
+    assert len(resolved.files) == 50
+    assert entities.iterations <= 1
 
 
 def test_caller_closure_self_method(tmp_path: Path) -> None:
