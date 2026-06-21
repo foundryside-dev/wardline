@@ -57,6 +57,7 @@ def discover(
     *,
     confine_to_root: bool = False,
     suffixes: frozenset[str] = frozenset({".py"}),
+    respect_gitignore: bool = False,
 ) -> list[Path]:
     """Discover source files under the configured roots.
 
@@ -65,19 +66,25 @@ def discover(
     all requested suffixes are gathered and yielded in one combined sorted order, so
     finding/entity order stays deterministic and the single-suffix Python case is
     unchanged.
+
+    Repository ``.gitignore`` files are not honored by default. They are checkout
+    content, not operator scan policy, and Git still allows tracked files below
+    ignored paths. Trusted callers that need Git-like pruning may opt in with
+    ``respect_gitignore=True``.
     """
     root = root.resolve()
     # `target` is cargo build output — skip it only in `.rs` mode. It is a legitimate
     # Python package name, so adding it to the global skip set would silently under-scan
     # Python projects (the very failure wardline surfaces loudly elsewhere).
     skip_dirs = _ALWAYS_SKIP | {"target"} if ".rs" in suffixes else _ALWAYS_SKIP
-    # Read the project-root .gitignore ONCE so a multi-GB gitignored tree (third-party
-    # deps, build output) is never descended. Per-directory .gitignore files are layered
-    # in as the top-down walk reaches them, mirroring git's nested-ignore semantics. The
-    # base is an empty matcher (not None) so a project with ONLY nested .gitignore files
-    # still gets directory pruning.
-    root_gitignore = root / ".gitignore"
-    root_ignore = GitignoreMatcher.from_file(root_gitignore) if root_gitignore.is_file() else GitignoreMatcher.empty()
+    root_ignore: GitignoreMatcher | None = None
+    if respect_gitignore:
+        # Trusted opt-in only: .gitignore is repository-controlled and can hide tracked
+        # source files, so the normal scan path must not treat it as a discovery boundary.
+        root_gitignore = root / ".gitignore"
+        root_ignore = (
+            GitignoreMatcher.from_file(root_gitignore) if root_gitignore.is_file() else GitignoreMatcher.empty()
+        )
     found: list[Path] = []
     for src in config.source_roots:
         base = (root / src).resolve()
@@ -91,7 +98,7 @@ def discover(
         if not base.exists():
             warnings.warn(f"source root does not exist: {base}", stacklevel=2)
             continue
-        ignore_under_root = root_ignore if base.is_relative_to(root) else None
+        ignore_under_root = root_ignore if root_ignore is not None and base.is_relative_to(root) else None
         # Per-directory ignore layers, keyed by the dir's POSIX path relative to root.
         dir_ignores: dict[str, GitignoreMatcher] = {}
         candidates: list[Path] = []
