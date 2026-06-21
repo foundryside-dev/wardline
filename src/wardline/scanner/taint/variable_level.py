@@ -57,6 +57,8 @@ _SERIALISATION_SINKS: frozenset[str] = frozenset(
         "yaml.load",
         "yaml.safe_load_all",
         "yaml.load_all",
+        "yaml.unsafe_load",
+        "yaml.full_load",
         "marshal.dumps",
         "marshal.dump",
         "marshal.loads",
