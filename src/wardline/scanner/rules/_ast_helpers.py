@@ -36,12 +36,14 @@ _RAISING_CONVERSION_NAMES: frozenset[str] = frozenset({"int", "float", "complex"
 def _own_statements(node: ast.AST) -> Iterator[ast.stmt]:
     """Yield every statement in *node*'s own scope, not descending into nested
     def/class bodies. Includes the bodies of if/for/while/try/with at any depth."""
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+    stack = list(reversed(list(ast.iter_child_nodes(node))))
+    while stack:
+        current = stack.pop()
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
-        if isinstance(child, ast.stmt):
-            yield child
-        yield from _own_statements(child)
+        if isinstance(current, ast.stmt):
+            yield current
+        stack.extend(reversed(list(ast.iter_child_nodes(current))))
 
 
 def _own_reachable_statements(
@@ -635,13 +637,17 @@ def handler_substitutes_on_failure(handler: ast.ExceptHandler, returned_names: f
 def own_nodes(node: ast.AST) -> Iterator[ast.AST]:
     """Yield *node* itself and all descendant nodes in its own scope (skipping nested scopes)."""
     yield node
-    yield from _walk_own(node)
+
+    # We maintain yield-based traversal to enable short circuiting which is critical for rules engine performance.
+    stack = list(reversed(list(ast.iter_child_nodes(node))))
+    while stack:
+        current = stack.pop()
+        yield current
+        if not isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            stack.extend(reversed(list(ast.iter_child_nodes(current))))
 
 
 def _walk_own(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            yield child
-        else:
-            yield child
-            yield from _walk_own(child)
+    iterator = own_nodes(node)
+    next(iterator)
+    return iterator
