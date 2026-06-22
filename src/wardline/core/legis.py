@@ -53,6 +53,8 @@ if TYPE_CHECKING:
     from wardline.core.config import WardlineConfig
     from wardline.core.run import ScanResult
 
+_SAFE_GIT_CONFIG = ("-c", "core.fsmonitor=false")
+
 LEGIS_ARTIFACT_KEY_ENV = "WARDLINE_LEGIS_ARTIFACT_KEY"
 SIG_PREFIX = "hmac-sha256:v2:"
 ARTIFACT_SIGNATURE_FIELD = "artifact_signature"
@@ -199,7 +201,7 @@ def _git_tree_sha(root: Path) -> str | None:
     """
     try:
         rev = subprocess.run(
-            ["git", "rev-parse", "HEAD^{tree}"],
+            ["git", *_SAFE_GIT_CONFIG, "rev-parse", "HEAD^{tree}"],
             cwd=root,
             capture_output=True,
             text=True,
@@ -215,7 +217,7 @@ def _git_repo_root(root: Path) -> Path | None:
     """The containing git repository root, or None when unavailable."""
     try:
         rev = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
+            ["git", *_SAFE_GIT_CONFIG, "rev-parse", "--show-toplevel"],
             cwd=root,
             capture_output=True,
             text=True,
