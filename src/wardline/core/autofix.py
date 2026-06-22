@@ -8,7 +8,7 @@ import io
 import logging
 import tokenize
 from collections import defaultdict
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from wardline.core.config import WardlineConfig
@@ -49,13 +49,19 @@ def has_comment_in_span(
     return False
 
 
-def _own_statements(node: ast.AST) -> Iterator[ast.stmt]:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            continue
-        if isinstance(child, ast.stmt):
-            yield child
-        yield from _own_statements(child)
+def _own_statements(node: ast.AST) -> list[ast.stmt]:
+    stmts: list[ast.stmt] = []
+
+    def walk(current: ast.AST) -> None:
+        for child in ast.iter_child_nodes(current):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            if isinstance(child, ast.stmt):
+                stmts.append(child)
+            walk(child)
+
+    walk(node)
+    return stmts
 
 
 def get_assert_nodes_for_function(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.Assert]:

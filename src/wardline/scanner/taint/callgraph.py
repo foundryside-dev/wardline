@@ -40,14 +40,20 @@ from wardline.scanner.ast_primitives import (
 from wardline.scanner.index import Entity
 
 
-def _own_nodes_in(node: ast.AST) -> Iterator[ast.AST]:
-    """Yield *node* and every descendant in its own scope (including *node* itself), not
+def _own_nodes_in(node: ast.AST) -> list[ast.AST]:
+    """Return *node* and every descendant in its own scope (including *node* itself), not
     descending into nested def/class/lambda scopes."""
-    yield node
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            continue
-        yield from _own_nodes_in(child)
+    nodes: list[ast.AST] = []
+
+    def walk(current: ast.AST) -> None:
+        nodes.append(current)
+        for child in ast.iter_child_nodes(current):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                continue
+            walk(child)
+
+    walk(node)
+    return nodes
 
 
 def _target_names(target: ast.expr) -> Iterator[str]:

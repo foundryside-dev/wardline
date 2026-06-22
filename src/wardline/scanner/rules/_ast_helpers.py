@@ -33,15 +33,21 @@ _TYPE_CHECKING_FQN = "typing.TYPE_CHECKING"
 _RAISING_CONVERSION_NAMES: frozenset[str] = frozenset({"int", "float", "complex", "Decimal", "Fraction", "UUID"})
 
 
-def _own_statements(node: ast.AST) -> Iterator[ast.stmt]:
-    """Yield every statement in *node*'s own scope, not descending into nested
+def _own_statements(node: ast.AST) -> list[ast.stmt]:
+    """Return every statement in *node*'s own scope, not descending into nested
     def/class bodies. Includes the bodies of if/for/while/try/with at any depth."""
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            continue
-        if isinstance(child, ast.stmt):
-            yield child
-        yield from _own_statements(child)
+    stmts: list[ast.stmt] = []
+
+    def walk(current: ast.AST) -> None:
+        for child in ast.iter_child_nodes(current):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            if isinstance(child, ast.stmt):
+                stmts.append(child)
+            walk(child)
+
+    walk(node)
+    return stmts
 
 
 def _own_reachable_statements(
@@ -66,15 +72,21 @@ def _own_nodes_in_reachable_stmt(stmt: ast.stmt) -> Iterator[ast.AST]:
     yield from _walk_own_non_stmt_children(stmt)
 
 
-def _walk_own_non_stmt_children(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            yield child
-        elif isinstance(child, ast.stmt):
-            continue
-        else:
-            yield child
-            yield from _walk_own_non_stmt_children(child)
+def _walk_own_non_stmt_children(node: ast.AST) -> list[ast.AST]:
+    nodes: list[ast.AST] = []
+
+    def walk(current: ast.AST) -> None:
+        for child in ast.iter_child_nodes(current):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                nodes.append(child)
+            elif isinstance(child, ast.stmt):
+                continue
+            else:
+                nodes.append(child)
+                walk(child)
+
+    walk(node)
+    return nodes
 
 
 def _reachable_statements_in_block(
@@ -638,10 +650,16 @@ def own_nodes(node: ast.AST) -> Iterator[ast.AST]:
     yield from _walk_own(node)
 
 
-def _walk_own(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            yield child
-        else:
-            yield child
-            yield from _walk_own(child)
+def _walk_own(node: ast.AST) -> list[ast.AST]:
+    nodes: list[ast.AST] = []
+
+    def walk(current: ast.AST) -> None:
+        for child in ast.iter_child_nodes(current):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                nodes.append(child)
+            else:
+                nodes.append(child)
+                walk(child)
+
+    walk(node)
+    return nodes
