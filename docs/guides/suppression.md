@@ -31,7 +31,7 @@ precise meaning of every state word — `active`, `baselined`, `waived`, `judged
 and the three distinct meanings of "new" — see
 [Finding lifecycle & gate vocabulary](../reference/finding-lifecycle-vocabulary.md).
 
-## Suppressions and the `--fail-on` gate (read this first)
+## Suppressions and the fail-on gate (read this first)
 
 All three layers — baseline, waiver, judged — live in **committed repository
 content** (`.weft/wardline/baseline.yaml`, `.weft/wardline/waivers.yaml`,

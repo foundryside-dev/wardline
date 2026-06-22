@@ -1353,6 +1353,7 @@ for Python — enterprise-class trust-boundary analysis at small-team weight.
 - **Packaging** — MIT-licensed; optional extras `scanner` (config + CLI) and
   `weft` (HTTP integrations).
 
+[Unreleased]: https://github.com/foundryside-dev/wardline/compare/v1.0.6...HEAD
 [1.0.6]: https://github.com/foundryside-dev/wardline/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/foundryside-dev/wardline/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/foundryside-dev/wardline/compare/v1.0.3...v1.0.4

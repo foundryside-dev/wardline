@@ -59,6 +59,7 @@ Commands:
   rekey               Re-key baseline/waiver/judge verdicts across a...
   scan                Scan PATH for findings.
   scan-file-findings  Run the agent workflow from scan to optionally...
+  scan-job            Start and poll file-backed Wardline scan jobs.
   vocab               Emit the NG-25 trust-vocabulary descriptor as YAML...
 ```
 
@@ -309,6 +310,7 @@ Options:
                              association.
   --priority TEXT            Filigree priority, e.g. P2.
   --label TEXT               Label to attach (repeatable).
+  --lang [python|rust]
   --help                     Show this message and exit.
 ```
 
@@ -382,6 +384,7 @@ Options:
   --trust-pack TEXT
   --allow-custom-packs
   --strict-defaults
+  --lang [python|rust]
   --help                          Show this message and exit.
 ```
 
@@ -392,6 +395,27 @@ first; each entry includes fingerprint, rule, qualname, path/line, an
 whole active set. Partial failures stay visible in the JSON: Filigree emission,
 per-finding promotion, unknown fingerprints, and Loomweave identity attachment are
 reported independently.
+
+## `wardline fix`
+
+**Purpose:** scan PATH and apply autofixes interactively — Wardline proposes a
+change per fixable finding and applies the ones you accept.
+
+```text
+Usage: wardline fix [OPTIONS] [PATH]
+
+  Scan PATH and apply autofixes interactively.
+
+Options:
+  --config FILE
+  -y, --yes      Automatically apply all fixes without prompting.
+  --dry-run      Print the changes that would be made without modifying files.
+  --help         Show this message and exit.
+```
+
+`PATH` is the directory to scan (current directory if omitted). Use `--dry-run`
+to preview the changes without touching files, or `-y`/`--yes` to apply every
+fix without prompting.
 
 ## `wardline judge`
 
@@ -406,18 +430,28 @@ Usage: wardline judge [OPTIONS] [PATH]
   Triage active DEFECTs with the opt-in LLM judge.
 
 Options:
-  --config PATH
+  --config FILE
   --model TEXT             OpenRouter model slug (overrides config).
   --context-lines INTEGER  Excerpt radius (default 30).
   --max-findings INTEGER   Cap findings triaged this run.
   --write                  Append FALSE_POSITIVE verdicts to
                            .weft/wardline/judged.yaml (default: dry-run).
+  --trust-judge-policy     Allow loading judge.policy_file from the scanned
+                           project as untrusted judge context.
+  --trust-judge-config     Allow project judge config to select model,
+                           context, cap, and write confidence floor.
+  --trust-pack TEXT        Allow importing this trust-grammar pack from
+                           weft.toml [wardline]. May be repeated.
+  --allow-custom-packs     Allow loading custom trust-grammar packs from the
+                           local project directory.
+  --strict-defaults        Ignore repository-supplied custom configuration
+                           overrides (weft.toml).
   --help                   Show this message and exit.
 ```
 
 | Option | Effect |
 | --- | --- |
-| `--config PATH` | Path to a `weft.toml` config; its `[wardline]` table supplies the default model slug and other judge settings. The API key is **never** read from config — it comes only from the `WARDLINE_OPENROUTER_API_KEY` environment variable or a `.env` in the scan root. |
+| `--config FILE` | Path to a `weft.toml` config; its `[wardline]` table supplies the default model slug and other judge settings. The API key is **never** read from config — it comes only from the `WARDLINE_OPENROUTER_API_KEY` environment variable or a `.env` in the scan root. |
 | `--model TEXT` | OpenRouter model slug, overriding whatever the config sets for this one run. |
 | `--context-lines INTEGER` | How many source lines on each side of a finding to include in the excerpt sent to the model. Default is `30`. |
 | `--max-findings INTEGER` | Hard cap on how many findings to triage this run — useful to bound token spend. |
@@ -461,6 +495,7 @@ It takes no arguments. The output is the canonical descriptor:
 
 ```text
 $ wardline vocab
+schema: wardline.vocabulary/v1
 version: wardline-generic-2
 entries:
 - canonical_name: external_boundary
@@ -519,8 +554,16 @@ Usage: wardline baseline create [OPTIONS] [PATH]
   Write a new baseline from current findings (refuses if one exists).
 
 Options:
-  --config PATH
-  --help         Show this message and exit.
+  --config FILE
+  --cache-dir PATH      Persist L3 summary cache here for faster incremental
+                        scans.
+  --trust-pack TEXT     Allow importing this trust-grammar pack from weft.toml
+                        [wardline]. May be repeated.
+  --allow-custom-packs  Allow loading custom trust-grammar packs from the
+                        local project directory.
+  --strict-defaults     Ignore repository-supplied custom configuration
+                        overrides (weft.toml).
+  --help                Show this message and exit.
 ```
 
 `PATH` is the directory to scan (current directory if omitted). `--config`
@@ -548,8 +591,16 @@ Usage: wardline baseline update [OPTIONS] [PATH]
   Re-derive and overwrite the baseline from current findings.
 
 Options:
-  --config PATH
-  --help         Show this message and exit.
+  --config FILE
+  --cache-dir PATH      Persist L3 summary cache here for faster incremental
+                        scans.
+  --trust-pack TEXT     Allow importing this trust-grammar pack from weft.toml
+                        [wardline]. May be repeated.
+  --allow-custom-packs  Allow loading custom trust-grammar packs from the
+                        local project directory.
+  --strict-defaults     Ignore repository-supplied custom configuration
+                        overrides (weft.toml).
+  --help                Show this message and exit.
 ```
 
 Unlike `create`, `update` expects a baseline to exist and replaces it

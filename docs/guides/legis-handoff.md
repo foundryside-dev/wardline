@@ -151,7 +151,7 @@ lowercase hex, where `fields` is the whole scan **minus** `artifact_signature`, 
 `canonical_json` is sorted-key, tight-separator (`,`/`:`), non-ASCII-preserving,
 NaN-rejecting JSON — byte-identical to legis's `canonical.py`. The signer is pinned by
 a golden vector captured from the real legis signer and a hermetic conformance test
-([`tests/conformance/test_legis_intake_contract.py`](https://github.com/foundryside-dev/wardline)).
+([`tests/conformance/test_legis_intake_contract.py`](https://github.com/foundryside-dev/wardline/blob/main/tests/conformance/test_legis_intake_contract.py)).
 
 !!! warning "Threat model"
     HMAC-SHA256 with a **shared secret** is tamper-evidence within a key-holding trust
