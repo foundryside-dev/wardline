@@ -55,7 +55,7 @@ def test_no_network_policy_denies_network_tool_before_handler(tmp_path: Path) ->
 
     result = _tool_call(server, "net_tool")
 
-    assert result["isError"] is True
+    assert result.get("isError") is True
     assert "network" in result["content"][0]["text"].lower()
     assert called is False
 
@@ -104,6 +104,92 @@ def test_builtin_baseline_is_denied_by_no_write_policy(tmp_path: Path) -> None:
     text = result["content"][0]["text"].lower()
     assert "baseline" in text
     assert "write" in text
+
+
+def test_waiver_add_entity_symbol_is_denied_by_no_network_policy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", "http://localhost:9100")
+    called = False
+
+    def fake_waiver_add(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        nonlocal called
+        called = True
+        return {"ok": True}
+
+    monkeypatch.setattr(server_mod, "_waiver_add", fake_waiver_add)
+    server = WardlineMCPServer(root=tmp_path, allow_network=False)
+    result = _tool_call(
+        server,
+        "waiver_add",
+        {
+            "fingerprint": "a" * 64,
+            "reason": "validated upstream",
+            "expires": "2026-12-31",
+            "entity_symbol": "pkg.mod.leaky",
+        },
+    )
+
+    assert result["isError"] is True
+    assert "network" in result["content"][0]["text"].lower()
+    assert called is False
+
+
+def test_waiver_add_entity_id_is_not_network_gated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", "http://localhost:9100")
+    called = False
+
+    def fake_waiver_add(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        nonlocal called
+        called = True
+        return {"ok": True}
+
+    monkeypatch.setattr(server_mod, "_waiver_add", fake_waiver_add)
+    server = WardlineMCPServer(root=tmp_path, allow_network=False)
+    result = _tool_call(
+        server,
+        "waiver_add",
+        {
+            "fingerprint": "a" * 64,
+            "reason": "validated upstream",
+            "expires": "2026-12-31",
+            "entity_id": "loomweave:eid:held",
+        },
+    )
+
+    assert result.get("isError") is not True
+    assert result["structuredContent"] == {"ok": True}
+    assert called is True
+
+
+def test_waiver_add_entity_id_wins_over_symbol_without_network_gate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WARDLINE_LOOMWEAVE_URL", "http://localhost:9100")
+    called = False
+
+    def fake_waiver_add(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        nonlocal called
+        called = True
+        return {"ok": True}
+
+    monkeypatch.setattr(server_mod, "_waiver_add", fake_waiver_add)
+    server = WardlineMCPServer(root=tmp_path, allow_network=False)
+    result = _tool_call(
+        server,
+        "waiver_add",
+        {
+            "fingerprint": "a" * 64,
+            "reason": "validated upstream",
+            "expires": "2026-12-31",
+            "entity_id": "loomweave:eid:held",
+            "entity_symbol": "pkg.mod.leaky",
+        },
+    )
+
+    assert result.get("isError") is not True
+    assert result["structuredContent"] == {"ok": True}
+    assert called is True
 
 
 # Sibling URL config keys (`[wardline.filigree].url`) were removed: URLs resolve only

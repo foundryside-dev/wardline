@@ -4792,9 +4792,10 @@ class WardlineMCPServer:
                 handler=lambda args, root: _waiver_add(
                     args,
                     root,
-                    # An entity_symbol needs Loomweave to resolve; an opaque entity_id does
-                    # not. Build the client only when a symbol is present (None otherwise).
-                    self._loomweave_client(_cfg(args, root)) if args.get("entity_symbol") else None,
+                    # entity_id wins over entity_symbol; only L2 symbol binding needs Loomweave.
+                    self._loomweave_client(_cfg(args, root))
+                    if args.get("entity_symbol") and not args.get("entity_id")
+                    else None,
                 ),
             )
         )
@@ -4909,6 +4910,13 @@ class WardlineMCPServer:
             capabilities.add(ToolCapability.NETWORK)
         if tool.name == "judge" and bool(arguments.get("write", False)):
             capabilities.add(ToolCapability.WRITE)
+        if (
+            tool.name == "waiver_add"
+            and bool(arguments.get("entity_symbol"))
+            and not bool(arguments.get("entity_id"))
+            and self._resolved_loomweave_url_for_policy(arguments) is not None
+        ):
+            capabilities.add(ToolCapability.NETWORK)
         if tool.name == "doctor":
             if bool(arguments.get("repair", False)):
                 capabilities.add(ToolCapability.WRITE)
