@@ -1655,14 +1655,23 @@ def _merge_branch_types(
     if parent is None:
         return
     merged: dict[str, list[str]] = {}
+    # Dedup FQNs (strings) via a per-name equality-set, NOT a nested ``fqn not in
+    # bucket`` scan: a chain of one-armed ``if flagK: x = ClsK()`` rebinds grows the
+    # candidate set to N, and the linear rescan made each merge O(bucket**2) →
+    # O(N**3) cumulative, the same DoS class as the lambda-binding merge
+    # (wardline-c797baf28b). The set is O(1) per insert and preserves the exact
+    # candidate set and first-seen insertion order the nested scan produced.
+    seen_fqns: dict[str, set[str]] = {}
     tracked_arms = [arm for arm in arms if arm is not None]
     for arm in tracked_arms:
         for name, types in arm.items():
             if not types:
                 continue  # uphold the absent-or-non-empty invariant
             bucket = merged.setdefault(name, [])
+            seen = seen_fqns.setdefault(name, set())
             for fqn in types:
-                if fqn not in bucket:
+                if fqn not in seen:
+                    seen.add(fqn)
                     bucket.append(fqn)
     for name, bucket in merged.items():
         if UNTYPED_ARM_CANDIDATE not in bucket and any(not arm.get(name) for arm in tracked_arms):
@@ -1729,6 +1738,16 @@ def _merge_branch_bindings(
     if parent is None:
         return
     merged: dict[str, list[ast.Lambda]] = {}
+    # Dedup by identity (ast nodes don't define __eq__) via a per-name id-set, NOT a
+    # nested ``any(... is ...)`` scan of the growing bucket: a chain of one-armed
+    # branches rebinding the same name grows the candidate set to N, and the linear
+    # rescan made each merge O(bucket**2), so an attacker-authored file with ~1100
+    # such branches drove a DEFAULT-gate scan to O(N**3) / ~15s (wardline-c797baf28b).
+    # The id-set is O(1) per insert → O(bucket) per merge, and preserves the exact
+    # candidate set and first-seen insertion order the nested scan produced. ast nodes
+    # are live for the whole analysis (held by the tree), so an id can't be reused
+    # mid-merge — identity membership is sound.
+    seen_ids: dict[str, set[int]] = {}
     for arm in arms:
         if arm is None:
             continue
@@ -1736,10 +1755,10 @@ def _merge_branch_bindings(
             if not lams:
                 continue  # uphold the empty-list-never-stored invariant (see docstring)
             bucket = merged.setdefault(name, [])
+            seen = seen_ids.setdefault(name, set())
             for lam in lams:
-                # Dedup by identity (ast nodes don't define __eq__): the same lambda
-                # carried unchanged through several arms should be resolved once.
-                if not any(lam is seen for seen in bucket):
+                if id(lam) not in seen:
+                    seen.add(id(lam))
                     bucket.append(lam)
     parent.clear()
     parent.update(merged)
