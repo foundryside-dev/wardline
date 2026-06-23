@@ -3988,9 +3988,7 @@ def _doctor(
             "caller-supplied filigree_url is not accepted over MCP; configure the "
             "wardline MCP server launch flag or WARDLINE_FILIGREE_URL instead"
         )
-        payload["checks"].append(
-            {"id": "doctor.filigree_url", "status": "error", "fixed": False, "message": message}
-        )
+        payload["checks"].append({"id": "doctor.filigree_url", "status": "error", "fixed": False, "message": message})
         payload["ok"] = False
         payload["next_actions"].append(f"doctor.filigree_url: {message}")
     return attach_server_identity(payload, root=root, started_at=started_at)
@@ -4920,9 +4918,9 @@ class WardlineMCPServer:
         if tool.name == "doctor":
             if bool(arguments.get("repair", False)):
                 capabilities.add(ToolCapability.WRITE)
-            from wardline.install.doctor import _resolve_probe_url
+            from wardline.install.doctor import _filigree_auth_probe_would_network
 
-            if _resolve_probe_url(self.root, self.filigree_url) is not None:
+            if _filigree_auth_probe_would_network(self.root, self.filigree_url):
                 # The filigree-auth probe will touch the (loopback-only) network.
                 capabilities.add(ToolCapability.NETWORK)
         if tool.name == "rekey":

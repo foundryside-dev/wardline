@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from wardline.core.config import _filigree_published_url, load
+from wardline.core.config import _filigree_published_url, filigree_server_scoped_url, load
 from wardline.core.errors import ConfigError, WardlineError
 from wardline.core.filigree_emit import FiligreeEmitter, Transport, UrllibTransport
 from wardline.core.paths import weft_config_path, weft_state_dir
@@ -351,26 +351,48 @@ def _mcp_filigree_url(root: Path) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _resolve_probe_url(root: Path, flag: str | None) -> str | None:
-    """Probe-URL precedence: flag > WARDLINE_FILIGREE_URL env > .mcp.json wardline
-    --filigree-url arg > Filigree's published port. None when nothing resolves.
+@dataclass(frozen=True, slots=True)
+class _ProbeTarget:
+    url: str
+    source: str
+    token_probe_allowed: bool = True
 
-    This mirrors the actual emit path (:func:`core.config.resolve_filigree_url`)
-    exactly: a scan auto-discovers a live Filigree daemon from its published
-    ``ephemeral.port`` (or the server-mode registry), so a project with a running
-    Filigree but no pinned ``--filigree-url`` (the common ethereal/per-project case)
-    *does* emit — and *does* need a valid token. The published-port rung is therefore
-    included so doctor verifies the credential the scan will really use rather than
-    reporting "nothing to verify" and leaving a 401 to surface only at emit time. The
-    rung is read-only and the token is sent only to loopback (the ``_is_loopback``
-    guard in :func:`_check_filigree_auth`), and a published port implies a daemon that
-    bound it, so this still does no speculative network."""
+
+def _resolve_probe_target(root: Path, flag: str | None) -> _ProbeTarget | None:
+    """Resolve the Filigree auth-probe target while preserving URL provenance."""
     if flag:
-        return flag
+        return _ProbeTarget(flag, "flag")
     env = os.environ.get(_FILIGREE_URL_ENV)
     if env:
-        return env
-    return _mcp_filigree_url(root) or _filigree_published_url(root)
+        return _ProbeTarget(env, "env")
+    mcp = _mcp_filigree_url(root)
+    if mcp:
+        return _ProbeTarget(mcp, "mcp")
+    scoped = filigree_server_scoped_url(root)
+    if scoped is not None:
+        return _ProbeTarget(scoped, "server-registry")
+    published = _filigree_published_url(root)
+    if published is not None:
+        return _ProbeTarget(published, "project-published-port", token_probe_allowed=False)
+    return None
+
+
+def _resolve_probe_url(root: Path, flag: str | None) -> str | None:
+    """Probe-URL precedence: flag > WARDLINE_FILIGREE_URL env > .mcp.json wardline
+    --filigree-url arg > Filigree's server registry. None when nothing safe resolves.
+
+    Compatibility wrapper for callers that only need the URL. The auth-probe path
+    uses :func:`_resolve_probe_target` so it can distinguish operator-pinned targets
+    from repository-owned ``ephemeral.port`` discovery before sending a bearer."""
+    target = _resolve_probe_target(root, flag)
+    if target is None or not target.token_probe_allowed:
+        return None
+    return target.url
+
+
+def _filigree_auth_probe_would_network(root: Path, flag: str | None) -> bool:
+    target = _resolve_probe_target(root, flag)
+    return bool(target and target.token_probe_allowed and _is_loopback(target.url))
 
 
 def _is_loopback(url: str) -> bool:
@@ -442,16 +464,24 @@ def _check_filigree_auth(
     repair: bool,
     filigree_url: str | None = None,
     transport: Transport | None = None,
+    probe_target: _ProbeTarget | None = None,
 ) -> DoctorCheck:
     """Verify the token wardline would emit is accepted by the configured Filigree
     daemon. Read-only probe; under *repair*, recover the accepted token from local
     mints and pin it in .env. The probe targets only loopback origins."""
     probe_transport = transport if transport is not None else UrllibTransport(timeout=2.0)
-    url = _resolve_probe_url(root, filigree_url)
-    if url is None:
+    target = probe_target or _resolve_probe_target(root, filigree_url)
+    if target is None:
         return DoctorCheck("filigree.auth", "ok", message="filigree not configured; nothing to verify")
+    url = target.url
     if not _is_loopback(url):
         return DoctorCheck("filigree.auth", "ok", message="non-loopback filigree; token not probed")
+    if not target.token_probe_allowed:
+        return DoctorCheck(
+            "filigree.auth",
+            "ok",
+            message="filigree resolved from project published port; token not probed",
+        )
     token = load_filigree_token(root)  # may be None — probe anyway (the daemon may have auth off)
     probe = FiligreeEmitter(url, transport=probe_transport, token=token).verify_token()
     if not probe.reachable:
@@ -496,7 +526,7 @@ def machine_readable_doctor(
     # project scope, so the post-repair value is the URL the agent will actually emit
     # to — and the one whose auth the filigree-auth check should probe. Without fix,
     # repair is a no-op and this is just the recorded emit target.
-    probe_url = _resolve_probe_url(root, filigree_url)
+    probe_target = _resolve_probe_target(root, filigree_url)
 
     checks: list[DoctorCheck] = []
     checks.append(_check_config(root, fixed=fix and config_missing_before and weft_config_path(root).exists()))
@@ -507,7 +537,7 @@ def machine_readable_doctor(
     checks.append(_check_decorator_grammar())
     checks.append(_check_scan_output_path(root))
     checks.append(_check_auth_token(root))
-    checks.append(_check_filigree_auth(root, repair=fix, filigree_url=probe_url, transport=transport))
+    checks.append(_check_filigree_auth(root, repair=fix, probe_target=probe_target, transport=transport))
 
     next_actions = [f"{check.id}: {check.message}" for check in checks if not check.ok and check.message]
     return {
