@@ -84,6 +84,24 @@ def test_scan_results_body_disables_mark_unseen_when_scan_is_unanalyzed() -> Non
     assert body["findings"][0]["rule_id"] == "WLN-ENGINE-PARSE-ERROR"
 
 
+def test_scan_results_body_disables_mark_unseen_for_function_skip() -> None:
+    function_skip = _f(
+        rule_id="WLN-ENGINE-FUNCTION-SKIPPED",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path="src/m.py", line_start=7),
+        fingerprint="c" * 64,
+        qualname="pkg.m.leaky",
+        properties={"reason": "taint_budget_exceeded"},
+    )
+
+    body = build_scan_results_body([function_skip], scanned_paths=("src/m.py",))
+
+    assert body["mark_unseen"] is False
+    assert body["scanned_paths"] == ["src/m.py"]
+    assert body["findings"][0]["rule_id"] == "WLN-ENGINE-FUNCTION-SKIPPED"
+
+
 def test_finding_uses_path_not_file_path() -> None:
     wire = build_scan_results_body([_f()])["findings"][0]
     assert wire["path"] == "src/m.py"

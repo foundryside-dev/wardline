@@ -38,7 +38,7 @@ from wardline.scanner.taint.decorator_provider import (
 from wardline.scanner.taint.module_summariser import collect_module_global_raw_seeds, own_scope_global_names
 from wardline.scanner.taint.project_resolver import resolve_project_taints
 from wardline.scanner.taint.provider import TaintSourceProvider
-from wardline.scanner.taint.variable_level import attribute_write_recording, project_attribute_writes
+from wardline.scanner.taint.variable_level import L2BudgetExceeded, attribute_write_recording, project_attribute_writes
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -74,9 +74,10 @@ type _L2Result = tuple[
     dict[str, dict[str, TaintState]],
 ]
 
-# Above this many candidate-key probes, fall back to the full (unpruned) per-function
-# taint map — a sound, slower path for a single pathologically token-dense function.
-_CANDIDATE_KEY_BUDGET = 50_000
+# Above this many candidate-key probes, stop the function-level L2 run and emit a
+# loud function-skip finding. Falling back to the full project taint map would
+# re-open the super-linear path this budget is meant to bound.
+_CANDIDATE_KEY_BUDGET = 250_000
 
 
 def _pruned_method_taint_map(
@@ -132,9 +133,11 @@ def _pruned_method_taint_map(
         if module_prefix:
             forms.add(f"{module_prefix}.{chain}")
     if len(forms) * (len(attrs) + 1) > _CANDIDATE_KEY_BUDGET:
-        merged = dict(call_tm)
-        merged.update(project_return_taints)
-        return merged
+        raise L2BudgetExceeded(
+            budget=_CANDIDATE_KEY_BUDGET,
+            attempted=len(forms) * (len(attrs) + 1),
+            operation="candidate_key_probe",
+        )
 
     tm: dict[str, TaintState] = {}
 
@@ -601,22 +604,48 @@ class WardlineAnalyzer:
                 )
             )
 
-        def _record_l2_recursion(ent: Entity, *, reason: str = "recursion_limit") -> None:
+        def _record_l2_skip(
+            ent: Entity,
+            *,
+            reason: str,
+            message_detail: str,
+            budget_error: L2BudgetExceeded | None = None,
+        ) -> None:
             l2_failed.add(ent.qualname)
             if ent.qualname in function_skip_recorded:
                 return
             function_skip_recorded.add(ent.qualname)
+            properties: dict[str, object] = {"reason": reason}
+            if budget_error is not None:
+                properties.update(
+                    {
+                        "budget": budget_error.budget,
+                        "attempted": budget_error.attempted,
+                        "operation": budget_error.operation,
+                    }
+                )
             func_skip_findings.append(
                 Finding(
                     rule_id="WLN-ENGINE-FUNCTION-SKIPPED",
-                    message=f"{ent.qualname}: skipped L2 — expression too deep to analyze safely",
+                    message=f"{ent.qualname}: skipped L2 — {message_detail}",
                     severity=Severity.ERROR,
                     kind=Kind.DEFECT,
                     location=ent.location,
                     fingerprint=_fp("WLN-ENGINE-FUNCTION-SKIPPED", ent.qualname),
                     qualname=ent.qualname,
-                    properties={"reason": reason},
+                    properties=properties,
                 )
+            )
+
+        def _record_l2_recursion(ent: Entity, *, reason: str = "recursion_limit") -> None:
+            _record_l2_skip(ent, reason=reason, message_detail="expression too deep to analyze safely")
+
+        def _record_l2_budget(ent: Entity, exc: L2BudgetExceeded) -> None:
+            _record_l2_skip(
+                ent,
+                reason="taint_budget_exceeded",
+                message_detail="function too large to analyze soundly",
+                budget_error=exc,
             )
 
         for parsed in file_meta:
@@ -678,6 +707,16 @@ class WardlineAnalyzer:
                     writes = project_attribute_writes(
                         recorded_writes, all_classes, enclosing_class if is_method else None
                     )
+                except L2BudgetExceeded as exc:
+                    _record_l2_budget(ent, exc)
+                    call_sites, call_args, var_taints, ret_taint, ret_callee = (
+                        {},
+                        {},
+                        {},
+                        TaintState.UNKNOWN_RAW,
+                        None,
+                    )
+                    writes = {}
                 except RecursionError:
                     _record_l2_recursion(ent)
                     call_sites, call_args, var_taints, ret_taint, ret_callee = (
@@ -815,6 +854,16 @@ class WardlineAnalyzer:
                             )
                         writes = project_attribute_writes(
                             recorded_writes, all_classes, enclosing_class if is_method else None
+                        )
+                    except L2BudgetExceeded as exc:
+                        _record_l2_budget(ent, exc)
+                        call_sites, call_args, var_taints, ret_taint, ret_callee, writes = (
+                            {},
+                            {},
+                            {},
+                            TaintState.UNKNOWN_RAW,
+                            None,
+                            {},
                         )
                     except RecursionError:
                         _record_l2_recursion(ent, reason="fixpoint_recursion")

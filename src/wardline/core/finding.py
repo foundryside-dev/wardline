@@ -51,6 +51,11 @@ UNANALYZED_RULE_IDS = frozenset(
     }
 )
 
+# Rule ids that mean the scan result is not complete enough to reconcile absent
+# fingerprints as fixed. This deliberately includes per-function under-analysis
+# while leaving ScanSummary.unanalyzed scoped to file/source-root under-scans.
+INCOMPLETE_ANALYSIS_RULE_IDS = UNANALYZED_RULE_IDS | {"WLN-ENGINE-FUNCTION-SKIPPED"}
+
 
 class Severity(StrEnum):
     CRITICAL = "CRITICAL"

@@ -24,7 +24,7 @@ from typing import Any, Protocol
 from wardline.core.errors import FiligreeEmitError
 from wardline.core.finding import (
     FINGERPRINT_SCHEME,
-    UNANALYZED_RULE_IDS,
+    INCOMPLETE_ANALYSIS_RULE_IDS,
     Finding,
     format_fingerprint,
     severity_to_filigree,
@@ -91,18 +91,18 @@ def build_scan_results_body(
     ``unseen_in_latest``. Clean files are represented by ``scanned_paths`` so
     close-on-fixed can reconcile a file whose last finding disappeared.
 
-    If any file was discovered but not analyzed, do not run the absent-fingerprint
-    sweep: a parse/file failure means missing findings are not proof of a fix.
+    If any file or function was not soundly analyzed, do not run the absent-fingerprint
+    sweep: missing findings are not proof of a fix.
     """
     findings_wire = [_finding_to_wire(f, language=language) for f in findings]
     scanned = list(dict.fromkeys(p for p in scanned_paths if p))
-    has_unanalyzed = any(f.rule_id in UNANALYZED_RULE_IDS for f in findings)
+    has_incomplete_analysis = any(f.rule_id in INCOMPLETE_ANALYSIS_RULE_IDS for f in findings)
     if mark_unseen is None:
-        mark_unseen = bool(findings_wire or scanned) and not has_unanalyzed
+        mark_unseen = bool(findings_wire or scanned) and not has_incomplete_analysis
     body = {
         "scan_source": scan_source,
         "fingerprint_scheme": FINGERPRINT_SCHEME,
-        "mark_unseen": bool(mark_unseen) and not has_unanalyzed,
+        "mark_unseen": bool(mark_unseen) and not has_incomplete_analysis,
         "findings": findings_wire,
     }
     if scanned:
@@ -375,7 +375,7 @@ def _scan_result_chunks(
         raise ValueError("max_findings_per_request must be at least 1")
 
     deduped_scanned_paths = tuple(dict.fromkeys(p for p in scanned_paths if p))
-    can_mark_unseen = not force_no_mark_unseen and not any(f.rule_id in UNANALYZED_RULE_IDS for f in findings)
+    can_mark_unseen = not force_no_mark_unseen and not any(f.rule_id in INCOMPLETE_ANALYSIS_RULE_IDS for f in findings)
     if len(findings) <= max_findings_per_request:
         return (
             _ScanResultChunk(

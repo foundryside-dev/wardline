@@ -216,6 +216,45 @@ _CURRENT_MODULE_PREFIX: contextvars.ContextVar[str | None] = contextvars.Context
     "_CURRENT_MODULE_PREFIX", default=None
 )
 
+# Per-function L2 work ceiling. The counter is deliberately coarse but tied to
+# the attacker-amplifiable operations: statement snapshots, branch candidate
+# copies/merges, and loop fixpoint state work.
+L2_WORK_BUDGET = 50_000_000
+
+
+class L2BudgetExceeded(RuntimeError):
+    """Raised when one function's L2 taint walk exceeds the work budget."""
+
+    def __init__(self, *, budget: int, attempted: int, operation: str) -> None:
+        super().__init__(f"L2 work budget exceeded during {operation}: {attempted}>{budget}")
+        self.budget = budget
+        self.attempted = attempted
+        self.operation = operation
+
+
+@dataclass(slots=True)
+class _L2WorkBudget:
+    budget: int
+    used: int = 0
+
+
+_CURRENT_L2_WORK_BUDGET: contextvars.ContextVar[_L2WorkBudget | None] = contextvars.ContextVar(
+    "_CURRENT_L2_WORK_BUDGET", default=None
+)
+
+
+def _charge_l2_work(amount: int, operation: str) -> None:
+    if amount <= 0:
+        return
+    budget = _CURRENT_L2_WORK_BUDGET.get()
+    if budget is None or budget.budget <= 0:
+        return
+    attempted = budget.used + amount
+    if attempted > budget.budget:
+        raise L2BudgetExceeded(budget=budget.budget, attempted=attempted, operation=operation)
+    budget.used = attempted
+
+
 _CONTEXT_ENCODERS: frozenset[str] = frozenset(
     {
         "html.escape",
@@ -607,6 +646,7 @@ def compute_variable_taints(
     token = None
     token_args = None
     token_clash = None
+    token_budget = _CURRENT_L2_WORK_BUDGET.set(_L2WorkBudget(L2_WORK_BUDGET))
     if provenance_clash is not None:
         token_clash = _PROVENANCE_CLASH.set(provenance_clash)
     token_types = _CURRENT_VAR_TYPES.set({})
@@ -641,6 +681,7 @@ def compute_variable_taints(
             _CURRENT_ALIAS_MAP.reset(token)
         if token_args is not None:
             _CURRENT_CALL_SITE_ARG_TAINTS.reset(token_args)
+        _CURRENT_L2_WORK_BUDGET.reset(token_budget)
 
 
 def _seed_parameters(
@@ -1232,10 +1273,12 @@ def _process_stmt(
     Uses isinstance dispatch rather than match/case to avoid PY-WL-003
     structural-gate findings at ASSURED taint (UNCONDITIONAL severity).
     """
+    _charge_l2_work(1, "statement")
     if call_site_taints is not None:
         # Flow-sensitive snapshot: var taints AS THEY ARE before this statement
         # executes (after all prior siblings; branch-local inside if/try/match arms).
         # A sink rule reads this for a sink call's enclosing statement.
+        _charge_l2_work(len(var_taints), "statement_snapshot")
         call_site_taints[id(stmt)] = dict(var_taints)
 
     if isinstance(stmt, ast.Assign):
@@ -1615,6 +1658,8 @@ def _branch_copy(parent: dict[str, list[ast.Lambda]] | None) -> dict[str, list[a
     (wardline-36016d26f3), mirroring how ``var_taints`` is copied per arm. The candidate
     LISTS are copied too, so an arm's rebind/removal cannot mutate the parent's or a
     sibling's set in place (wardline-383f83fafe)."""
+    if parent is not None:
+        _charge_l2_work(sum(1 + len(lams) for lams in parent.values()), "lambda_branch_copy")
     return {name: list(lams) for name, lams in parent.items()} if parent is not None else None
 
 
@@ -1623,6 +1668,8 @@ def _types_branch_copy(parent: dict[str, list[str]] | None) -> dict[str, list[st
     (``None`` when types are not being tracked). Candidate LISTS are copied too,
     so an arm's strong update cannot mutate the parent's or a sibling's set in
     place — branch-local exactly like ``var_taints`` (wardline-b369c7d06c)."""
+    if parent is not None:
+        _charge_l2_work(sum(1 + len(types) for types in parent.values()), "type_branch_copy")
     return {name: list(types) for name, types in parent.items()} if parent is not None else None
 
 
@@ -1667,6 +1714,7 @@ def _merge_branch_types(
         for name, types in arm.items():
             if not types:
                 continue  # uphold the absent-or-non-empty invariant
+            _charge_l2_work(1 + len(types), "type_branch_merge")
             bucket = merged.setdefault(name, [])
             seen = seen_fqns.setdefault(name, set())
             for fqn in types:
@@ -1754,6 +1802,7 @@ def _merge_branch_bindings(
         for name, lams in arm.items():
             if not lams:
                 continue  # uphold the empty-list-never-stored invariant (see docstring)
+            _charge_l2_work(1 + len(lams), "lambda_branch_merge")
             bucket = merged.setdefault(name, [])
             seen = seen_ids.setdefault(name, set())
             for lam in lams:
@@ -1776,6 +1825,7 @@ def _handle_if(
     _resolve_expr(stmt.test, function_taint, taint_map, var_taints)
 
     # Snapshot before branches.
+    _charge_l2_work(len(var_taints), "branch_snapshot")
     pre_if = dict(var_taints)
     parent_lambdas = _CURRENT_LAMBDA_BINDINGS.get()
     parent_types = _CURRENT_VAR_TYPES.get()
@@ -1783,6 +1833,7 @@ def _handle_if(
     # Walk the if-body with arm-local lambda-bindings and receiver-type copies —
     # branch-local like var_taints, so a lambda bound or class rebound here cannot
     # leak into the else arm.
+    _charge_l2_work(len(var_taints), "branch_var_copy")
     if_taints = dict(var_taints)
     if_lambdas = _branch_copy(parent_lambdas)
     if_types = _types_branch_copy(parent_types)
@@ -1790,6 +1841,7 @@ def _handle_if(
 
     if stmt.orelse:
         # Walk the else-body on its own arm-local copies.
+        _charge_l2_work(len(var_taints), "branch_var_copy")
         else_taints = dict(var_taints)
         else_lambdas = _branch_copy(parent_lambdas)
         else_types = _types_branch_copy(parent_types)
@@ -1811,6 +1863,7 @@ def _handle_if(
     # not clash to MIXED_RAW; a raw branch still propagates (least_trusted keeps
     # its rank).
     all_vars = set(if_taints) | set(else_taints)
+    _charge_l2_work(len(all_vars), "branch_merge")
     for var in all_vars:
         if_val = if_taints.get(var)
         else_val = else_taints.get(var)
@@ -1838,6 +1891,7 @@ def _handle_for(
     )
 
     # Snapshot pre-loop.
+    _charge_l2_work(len(var_taints), "loop_pre_state")
     pre_loop = dict(var_taints)
 
     # Lambda bindings are mutated in place on the shared map across iterations (no per-arm
@@ -1871,13 +1925,16 @@ def _handle_for(
     # practice safety net (finite monotone lattice over a fixed local-name set guarantees it).
     iterations = 0
     while True:
+        _charge_l2_work(1 + len(var_taints), "loop_iteration")
         current_state = dict(var_taints)
         # Assign the loop variable.
         _assign_target(stmt.target, iter_taint, var_taints)
         # Walk body.
         _walk_body(stmt.body, function_taint, taint_map, var_taints, call_site_taints)
         # Merge body state with pre-loop
-        for var in set(var_taints) | set(pre_loop):
+        merge_vars = set(var_taints) | set(pre_loop)
+        _charge_l2_work(len(merge_vars), "loop_merge")
+        for var in merge_vars:
             var_taints[var] = combine(var_taints.get(var, function_taint), pre_loop.get(var, function_taint))
         iterations += 1
         if var_taints == current_state:
@@ -1914,6 +1971,7 @@ def _handle_while(
     call_site_taints: dict[int, dict[str, TaintState]] | None = None,
 ) -> None:
     """Handle while loops — body merges with pre-loop state."""
+    _charge_l2_work(len(var_taints), "loop_pre_state")
     pre_loop = dict(var_taints)
 
     # The body is a conditionally-executed arm (a reachable 0-iteration path), so snapshot
@@ -1928,10 +1986,13 @@ def _handle_while(
     # (wardline-e04db6e656).
     iterations = 0
     while True:
+        _charge_l2_work(1 + len(var_taints), "loop_iteration")
         current_state = dict(var_taints)
         _resolve_expr(stmt.test, function_taint, taint_map, var_taints)
         _walk_body(stmt.body, function_taint, taint_map, var_taints, call_site_taints)
-        for var in set(var_taints) | set(pre_loop):
+        merge_vars = set(var_taints) | set(pre_loop)
+        _charge_l2_work(len(merge_vars), "loop_merge")
+        for var in merge_vars:
             var_taints[var] = combine(var_taints.get(var, function_taint), pre_loop.get(var, function_taint))
         iterations += 1
         if var_taints == current_state:
