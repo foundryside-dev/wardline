@@ -45,7 +45,7 @@ waiver > judged > baseline** — explicit human intent wins, then the LLM verdic
 (so its rationale is the visible reason), then the silent baseline. The precedence
 itself lives in the single JOIN predicate `resolve_identity`
 (`src/wardline/core/finding_identity.py`); the suppression layer maps its verdict
-onto the state (`src/wardline/core/suppression.py:78-87`).
+onto the state (`src/wardline/core/suppression.py:72-77`).
 
 ### The per-finding key is `suppression_state` (not `suppressed`)
 
@@ -173,7 +173,7 @@ still legitimately means three different things depending on the surface:
 
 | "new" on this surface | Means | Owner / anchor |
 | --- | --- | --- |
-| Filigree store | An **unseen fingerprint** — first time this finding identity is seen for a `(file, scan_source)`. | **Filigree-owned** lifecycle (`src/wardline/core/filigree_emit.py:68-76`) |
+| Filigree store | An **unseen fingerprint** — first time this finding identity is seen for a `(file, scan_source)`. | **Filigree-owned** lifecycle (`src/wardline/core/filigree_emit.py:89-105`) |
 | `wardline scan --new-since <ref>` | **Delta-scope**: the gate fires only on defects in files/entities changed since a git ref; everything else is re-marked `baselined`. | `src/wardline/core/run.py:496`; help text `src/wardline/cli/scan.py` (`--new-since`) |
 | (historical) CLI summary | Formerly relabelled the `active` count as "N new". **Corrected to "N active"**. | `src/wardline/cli/scan.py:556` |
 

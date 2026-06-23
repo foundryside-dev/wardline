@@ -165,7 +165,7 @@ Verification is two separable checks:
    true`. A mismatch may mean the tree moved on since the bundle was produced — not
    necessarily tamper. The `note` field in the result says so explicitly.
 
-The result object from both CLI and MCP `verify_attestation`:
+The result object from both CLI (`attest --verify`) and MCP (`verify_attestation`):
 
 ```json
 {
@@ -193,8 +193,10 @@ The result object from both CLI and MCP `verify_attestation`:
 The `bundle` argument is required (the parsed JSON object, not a path). `reproduce`
 defaults to `false`. The tool returns the result object above.
 
-CLI exit codes for `--verify`: `0` if `signature_valid`, `1` if not. The
-reproducibility result does not affect the exit code.
+CLI exit codes for `--verify`: `0` if `signature_valid` (and, when `--reproduce`
+is passed, also `reproduced`); `1` otherwise. So without `--reproduce` the
+reproducibility result does not affect the exit code, but with `--reproduce` a
+reproducibility mismatch yields exit `1` even when the signature is valid.
 
 ### CLI
 

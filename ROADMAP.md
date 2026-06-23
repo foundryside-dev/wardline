@@ -5,24 +5,26 @@ a direction sketch, not a commitment — dates are deliberately omitted.
 
 ## Where we are
 
-**0.3.0 — shipped.** The staged build (SP0–SP9) is complete:
+**1.0.6 — shipped.** The staged build (SP0–SP9) is complete:
 
 - Function-, variable-, and project-level taint over an inter-module call graph
   (L1–L2 with an L3 fixed point).
 - The NG-25 trust vocabulary and three opt-in decorators.
-- Four policy rules (PY-WL-101..104), severity/enable config, baselines + waivers.
+- 26 Python policy rules (PY-WL-101..126) plus Rust preview rules
+  (RS-WL-108/112), severity/enable config, baselines + waivers.
 - JSONL + SARIF + native Filigree emit.
 - Dependency-free MCP-over-stdio server (`wardline mcp`).
 - Opt-in LLM triage judge (`wardline judge`).
 - `wardline install` agent enablement.
 - Opt-in Loomweave taint-store integration.
-- Published to PyPI; docs site live; CI dogfoods Wardline on its own source.
+- Published to PyPI; CI dogfoods Wardline on its own source.
 
 ## Scope
 
 Wardline is deliberately **L1–L2 with an L3 project fixed point**, not an
-exhaustive path-sensitive whole-program prover, and Python-only. We favor a
-small, precise, opt-in rule set over broad SAST coverage.
+exhaustive path-sensitive whole-program prover, and Python-first (with a Rust
+preview, `wardline scan --lang rust`). We favor a small, precise, opt-in rule
+set over broad SAST coverage.
 
 ## Near-term threads
 
@@ -39,6 +41,6 @@ Tracked in the project's Filigree issues:
 
 ## Out of scope (for now)
 
-- Languages other than Python.
+- Broad multi-language coverage beyond the Python core and Rust preview.
 - A general-purpose, dozens-of-rules SAST suite.
 - A hosted/cloud service — Wardline stays local-first.

@@ -30,19 +30,21 @@ For the matching command-line surface, see the [CLI reference](cli.md).
 | `dossier` | yes | — | opt | one-call entity trust dossier |
 | `assure` | yes | — | — | trust-surface coverage posture |
 | `decorator_coverage` | yes | — | opt | inventory of trust-decorated entities |
-| `attest` | yes | — | — | build a signed evidence bundle |
-| `verify_attestation` | yes | — | — | verify an attestation bundle |
+| `attest` | yes | — | opt | build a signed evidence bundle |
+| `verify_attestation` | yes | — | opt | verify an attestation bundle |
 | `file_finding` | yes | yes | yes | promote ONE finding to a Filigree issue |
 | `scan_file_findings` | yes | yes | yes | scan → emit → promote, one call |
 | `judge` | yes | yes | yes | opt-in LLM triage of active defects |
 | `baseline` | yes | yes | — | snapshot findings as the baseline |
 | `waiver_add` | yes | yes | — | add a time-boxed waiver for ONE finding |
 | `fix` | yes | yes | — | apply mechanical autofixes |
-| `doctor` | yes | opt | — | install + federation health check |
+| `doctor` | yes | opt | opt | install + federation health check |
 | `rekey` | yes | opt | opt | migrate verdicts across a fingerprint-scheme change |
 
 "opt" = the capability is exercised only when the relevant URL/flag is
-configured (or, for `doctor`/`rekey`, only under the explicit write opt-in).
+configured — a sibling URL (`attest`/`verify_attestation` reach Loomweave for
+SEI keying; `doctor` probes a loopback Filigree for emit auth), or, for the
+write column of `doctor`/`rekey`, the explicit write opt-in.
 
 ---
 

@@ -18,9 +18,10 @@ defaults: it scans `.` with all rules enabled.
 !!! warning "But unknown keys and out-of-range values in a *present* `[wardline]` table are hard errors"
     Once a `[wardline]` table parses, it is validated against a JSON Schema
     (draft 2020-12). The table, the `[wardline.rules]` block, the
-    `[wardline.judge]` block, and the `[wardline.autofix]` block all set
-    `additionalProperties: false`, so a typo'd key or an out-of-range value
-    **fails loud** — Wardline exits `2` rather than silently ignoring it.
+    `[wardline.judge]` block, the `[wardline.artifacts]` block, and the
+    `[wardline.autofix]` block all set `additionalProperties: false`, so a
+    typo'd key or an out-of-range value **fails loud** — Wardline exits `2`
+    rather than silently ignoring it.
 
     ```console
     $ wardline scan .
