@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 _SAFE_GIT_CONFIG = ("-c", "core.fsmonitor=false")
 
+
 def get_changed_files_since(ref: str, root: Path) -> set[str]:
     """Get the set of file paths (repo-relative, POSIX-style matching Location.path)
     that have changed since `ref`, including staged, unstaged, and untracked changes.
