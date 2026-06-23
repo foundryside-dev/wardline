@@ -29,7 +29,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from wardline.core.safe_paths import safe_project_file
+from wardline.core.safe_paths import safe_project_file, safe_read_text_if_regular
 
 WEFT_FEDERATION_TOKEN_ENV = "WEFT_FEDERATION_TOKEN"
 # Deprecated fallback — read after the federation-scoped name so existing
@@ -69,11 +69,10 @@ def _read_filigree_mint(root: Path) -> str | None:
     boot / install / doctor). Missing or unreadable falls through cleanly to None so
     the emit path degrades to the legacy/off rungs rather than crashing the scan.
     """
-    path = safe_project_file(root, root.joinpath(*_FILIGREE_MINT_RELPATH), label="federation_token")
-    try:
-        value = path.read_text(encoding="utf-8").strip()
-    except OSError:
+    text = safe_read_text_if_regular(root, root.joinpath(*_FILIGREE_MINT_RELPATH), label="federation_token")
+    if text is None:
         return None
+    value = text.strip()
     return value or None
 
 

@@ -5,6 +5,7 @@ Mirrors the loomweave token loader (tests/unit/loomweave/test_config.py shape)."
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -140,9 +141,35 @@ def test_empty_mint_file_falls_through(tmp_path: Path) -> None:
 
 
 def test_unreadable_mint_dir_falls_through_cleanly(tmp_path: Path) -> None:
-    # A directory where the file should be (or any OSError) must not crash — emit
-    # soft-fails, never hard-fails the scan.
+    # A directory where the file should be must not be opened — emit soft-fails,
+    # never hard-fails the scan.
     store = tmp_path / ".weft" / "filigree"
     store.mkdir(parents=True, exist_ok=True)
-    (store / "federation_token").mkdir()  # a dir, not a file → read_text raises OSError
+    (store / "federation_token").mkdir()
+    assert load_filigree_token(tmp_path) is None
+
+
+def test_invalid_utf8_mint_file_falls_through_cleanly(tmp_path: Path) -> None:
+    store = tmp_path / ".weft" / "filigree"
+    store.mkdir(parents=True, exist_ok=True)
+    (store / "federation_token").write_bytes(b"\xff\xfe\x00")
+    assert load_filigree_token(tmp_path) is None
+
+
+def test_non_regular_mint_file_is_not_opened(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("mkfifo unavailable")
+    store = tmp_path / ".weft" / "filigree"
+    store.mkdir(parents=True, exist_ok=True)
+    token_path = store / "federation_token"
+    os.mkfifo(token_path)
+    real_read_text = Path.read_text
+
+    def _read_text(self: Path, *args: object, **kwargs: object) -> str:
+        if self == token_path:
+            raise AssertionError("non-regular federation_token must not be opened")
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", _read_text)
+
     assert load_filigree_token(tmp_path) is None

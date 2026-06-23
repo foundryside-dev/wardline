@@ -56,15 +56,14 @@ def test_filigree_dotenv_symlink_escape_refused(tmp_path: Path) -> None:
 
 
 def test_filigree_mint_symlink_escape_refused(tmp_path: Path) -> None:
-    """_read_filigree_mint: a federation_token symlinked outside root is refused."""
+    """_read_filigree_mint: a federation_token symlinked outside root is soft-refused."""
     root = tmp_path / "root"
     root.mkdir()
     secret = _outside_secret(tmp_path, "stolen_token", "EXFIL-MINT")
     mint = root.joinpath(*_FILIGREE_MINT_RELPATH)
     mint.parent.mkdir(parents=True)
     mint.symlink_to(secret)
-    with pytest.raises(WardlineError, match="symlink"):
-        load_filigree_token(root)
+    assert load_filigree_token(root) is None
 
 
 def test_judge_dotenv_symlink_escape_refused(tmp_path: Path) -> None:
