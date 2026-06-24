@@ -4931,7 +4931,9 @@ class WardlineMCPServer:
                 # The filigree-auth probe will touch the (loopback-only) network.
                 capabilities.add(ToolCapability.NETWORK)
         if tool.name == "rekey":
-            if any(bool(arguments.get(k, False)) for k in ("apply", "resume", "rollback")):
+            if bool(arguments.get("cache_dir")) or any(
+                bool(arguments.get(k, False)) for k in ("apply", "resume", "rollback")
+            ):
                 capabilities.add(ToolCapability.WRITE)
             if bool(arguments.get("apply", False)) and self._resolved_filigree_url_for_policy(arguments) is not None:
                 # apply's last leg re-emits the rekeyed findings to Filigree.

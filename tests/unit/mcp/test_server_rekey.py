@@ -197,6 +197,18 @@ def test_rekey_apply_denied_by_no_write_policy(tmp_path: Path) -> None:
     assert "isError" not in ok
 
 
+def test_rekey_probe_with_cache_dir_denied_by_no_write_policy(tmp_path: Path) -> None:
+    project = _project(tmp_path)
+    _seed_wlfp1_baseline(project)
+    server = WardlineMCPServer(root=project, allow_write=False)
+
+    result = _tool_call(server, "rekey", {"cache_dir": "cache"})
+
+    assert result["isError"] is True
+    assert "write" in result["content"][0]["text"].lower()
+    assert not (project / "cache").exists()
+
+
 def test_rekey_apply_with_filigree_url_denied_by_no_network_policy(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     project = _project(tmp_path)
