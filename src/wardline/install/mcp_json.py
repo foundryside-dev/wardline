@@ -75,9 +75,10 @@ def _flag_pairs(entry: object) -> list[tuple[str, str]]:
 
 def _same_scope_target(a: str, b: str) -> bool:
     """True when two URLs name the same Filigree write target up to loopback host
-    spelling — identical port and path (the scope-bearing parts). Lets an already-
-    correct entry that merely spells the host ``127.0.0.1`` (vs our ``localhost``) be
-    recognised as correct and preserved verbatim, rather than churned every repair."""
+    spelling — identical scheme, port, path, and query (the scope-bearing parts).
+    Lets an already-correct entry that merely spells the host ``127.0.0.1`` (vs
+    our ``localhost``) be recognised as correct and preserved verbatim, rather
+    than churned every repair."""
     try:
         pa, pb = urlsplit(a), urlsplit(b)
         # .port lazily parses the authority; a malformed literal (http://localhost:notaport)
@@ -86,9 +87,11 @@ def _same_scope_target(a: str, b: str) -> bool:
         a_port, b_port = pa.port, pb.port
     except ValueError:
         return False
+    if pa.scheme.lower() != pb.scheme.lower():
+        return False
     if pa.hostname not in _LOOPBACK_HOSTS or pb.hostname not in _LOOPBACK_HOSTS:
         return False
-    return (a_port, pa.path) == (b_port, pb.path)
+    return (a_port, pa.path, pa.query) == (b_port, pb.path, pb.query)
 
 
 def _is_loopback_url(value: str) -> bool:
@@ -96,10 +99,13 @@ def _is_loopback_url(value: str) -> bool:
     target). Non-loopback project-config endpoints are not treated as trusted repair
     input."""
     try:
-        host = urlsplit(value).hostname
+        parsed = urlsplit(value)
+        # Parse the port inside the guard too; a malformed loopback URL is not a
+        # trustworthy operator pin and should be repaired or dropped, not preserved.
+        _port = parsed.port
     except ValueError:
         return False
-    return host in _LOOPBACK_HOSTS
+    return parsed.scheme.lower() in {"http", "https"} and parsed.hostname in _LOOPBACK_HOSTS
 
 
 def _desired_sibling_url(flag: str, existing: str | None, root: Path) -> str | None:

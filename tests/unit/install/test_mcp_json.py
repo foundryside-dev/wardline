@@ -389,6 +389,52 @@ def test_install_preserves_already_scoped_loopback_host_spelling(
     assert _wardline_args(tmp_path)[-1] == canary
 
 
+def test_install_repairs_non_http_loopback_filigree_url_in_server_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    store = tmp_path / ".weft" / "filigree"
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=8749, projects={str(store): {"prefix": "lacuna"}})
+    broken = "ftp://127.0.0.1:8749/api/p/lacuna/weft/scan-results"
+    entry = {"type": "stdio", "command": "/bin/wardline", "args": ["mcp", "--root", ".", "--filigree-url", broken]}
+    (tmp_path / ".mcp.json").write_text(json.dumps({"mcpServers": {"wardline": entry}}), encoding="utf-8")
+
+    assert merge_mcp_entry(tmp_path) == "updated"
+    assert _wardline_args(tmp_path)[-1] == "http://localhost:8749/api/p/lacuna/weft/scan-results"
+
+
+def test_install_repairs_query_mismatched_loopback_filigree_url_in_server_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    store = tmp_path / ".weft" / "filigree"
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=8749, projects={str(store): {"prefix": "lacuna"}})
+    wrong_scope = "http://127.0.0.1:8749/api/p/lacuna/weft/scan-results?project=other"
+    entry = {
+        "type": "stdio",
+        "command": "/bin/wardline",
+        "args": ["mcp", "--root", ".", "--filigree-url", wrong_scope],
+    }
+    (tmp_path / ".mcp.json").write_text(json.dumps({"mcpServers": {"wardline": entry}}), encoding="utf-8")
+
+    assert merge_mcp_entry(tmp_path) == "updated"
+    assert _wardline_args(tmp_path)[-1] == "http://localhost:8749/api/p/lacuna/weft/scan-results"
+
+
+def test_install_repairs_malformed_loopback_filigree_url_in_server_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    store = tmp_path / ".weft" / "filigree"
+    _register_filigree_server(monkeypatch, tmp_path / "cfg", port=8749, projects={str(store): {"prefix": "lacuna"}})
+    broken = "http://localhost:notaport/api/p/lacuna/weft/scan-results"
+    entry = {"type": "stdio", "command": "/bin/wardline", "args": ["mcp", "--root", ".", "--filigree-url", broken]}
+    (tmp_path / ".mcp.json").write_text(json.dumps({"mcpServers": {"wardline": entry}}), encoding="utf-8")
+
+    assert merge_mcp_entry(tmp_path) == "updated"
+    assert _wardline_args(tmp_path)[-1] == "http://localhost:8749/api/p/lacuna/weft/scan-results"
+
+
 # --- Preserve explicit loopback sibling pins when only a project port file exists ---
 #
 # A repository-owned .weft/<sibling>/ephemeral.port proves only that a file exists; it
@@ -482,3 +528,5 @@ def test_same_scope_target_handles_malformed_port_without_crashing() -> None:
 
     assert _same_scope_target("http://localhost:notaport/x", "http://localhost:8749/x") is False
     assert _same_scope_target("http://localhost:8749/x", "http://localhost:8749/x") is True
+    assert _same_scope_target("ftp://localhost:8749/x", "http://localhost:8749/x") is False
+    assert _same_scope_target("http://localhost:8749/x?project=a", "http://localhost:8749/x?project=b") is False
