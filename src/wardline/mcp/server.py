@@ -3969,7 +3969,9 @@ def _doctor(
     *,
     started_at: float,
     filigree_url: str | None = None,
+    filigree_url_source: str | None = None,
     loomweave_url: str | None = None,
+    loomweave_url_source: str | None = None,
 ) -> dict[str, Any]:
     """The CLI `doctor --fix` envelope over MCP (A2, wardline-2ee1bbda82's sibling):
     install/federation health checks via the SAME machine_readable_doctor builder,
@@ -3986,7 +3988,14 @@ def _doctor(
     flag = args.get("filigree_url")
     if flag is not None and not isinstance(flag, str):
         raise ToolError("filigree_url must be a string")
-    payload = machine_readable_doctor(root, fix=repair, filigree_url=filigree_url, loomweave_url=loomweave_url)
+    payload = machine_readable_doctor(
+        root,
+        fix=repair,
+        filigree_url=filigree_url,
+        filigree_url_source=filigree_url_source,
+        loomweave_url=loomweave_url,
+        loomweave_url_source=loomweave_url_source,
+    )
     if flag is not None:
         message = (
             "caller-supplied filigree_url is not accepted over MCP; configure the "
@@ -4583,13 +4592,17 @@ class WardlineMCPServer:
         *,
         root: Path,
         loomweave_url: str | None = None,
+        loomweave_url_source: str | None = None,
         filigree_url: str | None = None,
+        filigree_url_source: str | None = None,
         allow_write: bool = True,
         allow_network: bool = True,
     ) -> None:
         self.root = Path(root)
         self.loomweave_url = loomweave_url
+        self.loomweave_url_source = loomweave_url_source
         self.filigree_url = filigree_url
+        self.filigree_url_source = filigree_url_source
         # Recorded once at construction: the doctor tool's freshness verdict compares
         # on-disk source mtimes against this to expose a stale long-lived server.
         self.started_at = time.time()
@@ -4831,7 +4844,9 @@ class WardlineMCPServer:
                     root,
                     started_at=self.started_at,
                     filigree_url=self.filigree_url,
+                    filigree_url_source=self.filigree_url_source,
                     loomweave_url=self.loomweave_url,
+                    loomweave_url_source=self.loomweave_url_source,
                 ),
             )
         )

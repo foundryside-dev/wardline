@@ -43,6 +43,12 @@ class ArtifactSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class ResolvedUrl:
+    url: str
+    source: str
+
+
+@dataclass(frozen=True, slots=True)
 class WardlineConfig:
     source_roots: tuple[str, ...] = (".",)
     exclude: tuple[str, ...] = ()
@@ -296,12 +302,15 @@ _LOOMWEAVE_URL_ENV = "WARDLINE_LOOMWEAVE_URL"
 _FILIGREE_URL_ENV = "WARDLINE_FILIGREE_URL"
 
 
-def _read_published_port(root: Path, sibling: str) -> int | None:
+def _read_published_port_with_source(root: Path, sibling: str) -> tuple[int, str] | None:
     """Read a sibling's live ``ephemeral.port``, preferring the consolidated
     ``.weft/<sibling>/`` location and tolerating the legacy ``.<sibling>/`` dot-dir
-    during the federation transition window. Returns a valid port or ``None``
-    (missing / unreadable / malformed / out-of-range) — fail-soft."""
-    for base in (sibling_state_dir(root, sibling), legacy_sibling_dir(root, sibling)):
+    during the federation transition window. Returns ``(port, provenance)`` or
+    ``None`` (missing / unreadable / malformed / out-of-range) — fail-soft."""
+    for base, source in (
+        (sibling_state_dir(root, sibling), f"published .weft/{sibling}/ephemeral.port"),
+        (legacy_sibling_dir(root, sibling), f"published .{sibling}/ephemeral.port"),
+    ):
         text = safe_read_text_if_regular(root, base / "ephemeral.port", label="ephemeral.port", encoding="ascii")
         if text is None:
             continue
@@ -316,25 +325,39 @@ def _read_published_port(root: Path, sibling: str) -> int | None:
             except ValueError:
                 continue
             if 1 <= port <= 65535:
-                return port
+                return port, source
     return None
 
 
-def _loomweave_published_url(root: Path) -> str | None:
+def _read_published_port(root: Path, sibling: str) -> int | None:
+    found = _read_published_port_with_source(root, sibling)
+    return found[0] if found is not None else None
+
+
+def _loomweave_published_url_with_source(root: Path) -> ResolvedUrl | None:
     """Loomweave's live read-API origin from its published ``ephemeral.port``.
 
     Consumer half of Loomweave **ADR-044** (Read-API Ephemeral Port Publication).
     Loomweave writes its live bound port on a successful loopback bind (atomically;
     removed on clean shutdown; present only while serving). We *read* it — never
     derive or guess a port. Prefers ``.weft/loomweave/ephemeral.port`` and falls
-    back to the legacy ``.loomweave/ephemeral.port``. Returns
-    ``http://127.0.0.1:<port>`` or ``None``; fail-soft falls through to config.
+    back to the legacy ``.loomweave/ephemeral.port``. Returns a ``ResolvedUrl``
+    carrying ``http://127.0.0.1:<port>`` and the matched port-file source, or
+    ``None``; fail-soft falls through to config.
 
     The host is loopback by construction: ADR-034's ``allow_non_loopback`` bind
     publishes *no* file, so a port-only value can never under-specify the host.
     """
-    port = _read_published_port(root, "loomweave")
-    return f"http://127.0.0.1:{port}" if port is not None else None
+    found = _read_published_port_with_source(root, "loomweave")
+    if found is None:
+        return None
+    port, source = found
+    return ResolvedUrl(f"http://127.0.0.1:{port}", source)
+
+
+def _loomweave_published_url(root: Path) -> str | None:
+    resolved = _loomweave_published_url_with_source(root)
+    return resolved.url if resolved is not None else None
 
 
 def _filigree_server_config_path() -> Path:
@@ -402,7 +425,7 @@ def _filigree_server_scope(root: Path) -> tuple[int, str] | None:
     return None
 
 
-def filigree_server_scoped_url(root: Path) -> str | None:
+def _filigree_server_scoped_url_with_source(root: Path) -> ResolvedUrl | None:
     """The project-scoped Weft scan-results URL when Filigree runs in *server* mode
     for *root*, else ``None``.
 
@@ -416,10 +439,15 @@ def filigree_server_scoped_url(root: Path) -> str | None:
     if scope is None:
         return None
     port, prefix = scope
-    return f"http://localhost:{port}/api/p/{prefix}/weft/scan-results"
+    return ResolvedUrl(f"http://localhost:{port}/api/p/{prefix}/weft/scan-results", "Filigree server registry")
 
 
-def _filigree_published_url(root: Path) -> str | None:
+def filigree_server_scoped_url(root: Path) -> str | None:
+    resolved = _filigree_server_scoped_url_with_source(root)
+    return resolved.url if resolved is not None else None
+
+
+def _filigree_published_url_with_source(root: Path) -> ResolvedUrl | None:
     """Filigree's live Weft scan-results URL, project-scoped when it runs in server mode.
 
     Server mode first: one shared daemon serves many projects on a single port and
@@ -434,27 +462,35 @@ def _filigree_published_url(root: Path) -> str | None:
     legacy ``.filigree/ephemeral.port``. Fail-soft on any defect.
 
     Unlike Loomweave's bare-origin contract, Filigree's URL carries the full Weft
-    route, so this returns the route-suffixed
+    route, so this returns a ``ResolvedUrl`` carrying the route-suffixed
     ``http://localhost:<port>/api/[p/<prefix>/]weft/scan-results`` (loopback by
     construction). The ``localhost`` host self-heals transparently over an
     install-stamped literal — Filigree's loopback spelling, distinct from
     Loomweave's ``127.0.0.1``.
     """
-    scoped = filigree_server_scoped_url(root)
+    scoped = _filigree_server_scoped_url_with_source(root)
     if scoped is not None:
         return scoped
-    port = _read_published_port(root, "filigree")
-    return f"http://localhost:{port}/api/weft/scan-results" if port is not None else None
+    found = _read_published_port_with_source(root, "filigree")
+    if found is None:
+        return None
+    port, source = found
+    return ResolvedUrl(f"http://localhost:{port}/api/weft/scan-results", source)
 
 
-def resolve_loomweave_url(
+def _filigree_published_url(root: Path) -> str | None:
+    resolved = _filigree_published_url_with_source(root)
+    return resolved.url if resolved is not None else None
+
+
+def resolve_loomweave_url_with_source(
     flag: str | None,
     root: Path,
     config_path: Path | None = None,
     *,
     strict_defaults: bool = False,
-) -> str | None:
-    """Loomweave URL by precedence: explicit flag > env var > published port.
+) -> ResolvedUrl | None:
+    """Loomweave URL + provenance by precedence: explicit flag > env var > published port.
 
     Sibling-endpoint *config keys* are NOT read here: a persisted operator-declared
     endpoint is an instance of the still-pending Weft shared-endpoint fact
@@ -469,23 +505,34 @@ def resolve_loomweave_url(
     sibling-endpoint key once its layout is pinned; it is not read today.
     """
     if flag is not None:
-        return flag
+        return ResolvedUrl(flag, "--loomweave-url launch flag")
     env = os.environ.get(_LOOMWEAVE_URL_ENV)
     if env:
-        return env
+        return ResolvedUrl(env, f"env {_LOOMWEAVE_URL_ENV}")
     if not strict_defaults:
-        return _loomweave_published_url(root)
+        return _loomweave_published_url_with_source(root)
     return None
 
 
-def resolve_filigree_url(
+def resolve_loomweave_url(
     flag: str | None,
     root: Path,
     config_path: Path | None = None,
     *,
     strict_defaults: bool = False,
 ) -> str | None:
-    """Filigree Weft URL by precedence: explicit flag > env var > published port.
+    resolved = resolve_loomweave_url_with_source(flag, root, config_path, strict_defaults=strict_defaults)
+    return resolved.url if resolved is not None else None
+
+
+def resolve_filigree_url_with_source(
+    flag: str | None,
+    root: Path,
+    config_path: Path | None = None,
+    *,
+    strict_defaults: bool = False,
+) -> ResolvedUrl | None:
+    """Filigree Weft URL + provenance by precedence: explicit flag > env var > published port.
 
     Twin of :func:`resolve_loomweave_url`: no ``[wardline.filigree].url`` config key
     is read (pending the hub shared-endpoint schema ``weft-a2f4cf95c7``). The
@@ -497,13 +544,24 @@ def resolve_filigree_url(
     :func:`resolve_loomweave_url`); it is accepted but not read today.
     """
     if flag is not None:
-        return flag
+        return ResolvedUrl(flag, "--filigree-url launch flag")
     env = os.environ.get(_FILIGREE_URL_ENV)
     if env:
-        return env
+        return ResolvedUrl(env, f"env {_FILIGREE_URL_ENV}")
     if not strict_defaults:
-        return _filigree_published_url(root)
+        return _filigree_published_url_with_source(root)
     return None
+
+
+def resolve_filigree_url(
+    flag: str | None,
+    root: Path,
+    config_path: Path | None = None,
+    *,
+    strict_defaults: bool = False,
+) -> str | None:
+    resolved = resolve_filigree_url_with_source(flag, root, config_path, strict_defaults=strict_defaults)
+    return resolved.url if resolved is not None else None
 
 
 @dataclass(frozen=True, slots=True)

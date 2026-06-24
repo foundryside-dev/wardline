@@ -42,18 +42,20 @@ def mcp(
     no_network: bool,
 ) -> None:
     """Run the Wardline MCP server over stdio (JSON-RPC 2.0)."""
-    from wardline.core.config import resolve_filigree_url, resolve_loomweave_url
+    from wardline.core.config import resolve_filigree_url_with_source, resolve_loomweave_url_with_source
 
     # 3rd positional (config_path) is the reserved hook for the pending hub
     # sibling-endpoint key (weft-a2f4cf95c7); not read today. We pass None here whereas the
     # CLI scan path threads weft_config_path(root) — harmless until the hook lands, at which
     # point thread the real path here too for parity. See resolve_loomweave_url's docstring.
-    loomweave_url = resolve_loomweave_url(loomweave_url, root, None)
-    filigree_url = resolve_filigree_url(filigree_url, root, None)
+    resolved_loomweave = resolve_loomweave_url_with_source(loomweave_url, root, None)
+    resolved_filigree = resolve_filigree_url_with_source(filigree_url, root, None)
     WardlineMCPServer(
         root=root,
-        loomweave_url=loomweave_url,
-        filigree_url=filigree_url,
+        loomweave_url=resolved_loomweave.url if resolved_loomweave is not None else None,
+        loomweave_url_source=resolved_loomweave.source if resolved_loomweave is not None else None,
+        filigree_url=resolved_filigree.url if resolved_filigree is not None else None,
+        filigree_url_source=resolved_filigree.source if resolved_filigree is not None else None,
         allow_write=not read_only,
         allow_network=not no_network,
     ).rpc.run_stdio()
