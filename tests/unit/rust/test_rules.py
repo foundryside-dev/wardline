@@ -63,6 +63,22 @@ def test_shell_injection_fires_warn_anchored_at_trigger() -> None:
     assert f.location.line_start == 4
 
 
+def test_shell_injection_fires_through_args_array() -> None:
+    src = _TRUSTED + "fn f() {\n" + _SEED + '    Command::new("sh").args(["-c", t]).output();\n}\n'
+    assert [f.rule_id for f in _findings(src)] == ["RS-WL-112"]
+
+
+def test_shell_injection_fires_through_captured_format_identifier() -> None:
+    src = (
+        _TRUSTED
+        + "fn f() {\n"
+        + _SEED
+        + '    let s = format!("rm {t}");\n'
+        + '    Command::new("sh").arg("-c").arg(s).output();\n}\n'
+    )
+    assert [f.rule_id for f in _findings(src)] == ["RS-WL-112"]
+
+
 def test_pinned_taint_path_golden_strings() -> None:
     (prog,) = _findings(_PROGRAM_INJECTION)
     (shell,) = _findings(_SHELL_INJECTION)

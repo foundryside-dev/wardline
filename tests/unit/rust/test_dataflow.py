@@ -4,8 +4,9 @@ Drives ``analyze_command_dataflow`` over hand-built specimens and asserts the pe
 ``CommandTrigger`` state (program literal/taint, shell-flag, arg taints keyed by NodeId).
 This is the genuinely-new core: taint flows ONLY from known sources / tainted locals
 (default-clean, a finding-producer flags provable taint, not fail-closed unknowns), the
-``format!`` heuristic matches direct interpolation-arg tokens only, and ``.args`` is an
-opaque vec. Specimens seed taint with ``std::env::var(...).unwrap()`` (a vocab source).
+``format!`` propagates from both explicit interpolation args and captured identifiers,
+and ``.args`` introspects common literal argument lists. Specimens seed taint with
+``std::env::var(...).unwrap()`` (a vocab source).
 """
 
 from __future__ import annotations
@@ -95,10 +96,18 @@ def test_shell_without_dash_c_sees_no_shell_flag() -> None:
     assert trig.shell_flag_seen is False  # RS-WL-112 must not fire without the -c flag
 
 
-def test_dot_args_is_an_opaque_vec_no_arg_taint() -> None:
+@pytest.mark.parametrize("args_expr", ['["-c", t]', '&["-c", t]', 'vec!["-c", t]'])
+def test_dot_args_literal_collection_tracks_shell_flag_and_arg_taint(args_expr: str) -> None:
+    (trig,) = _triggers(_SEED + f'    Command::new("sh").args({args_expr}).output();\n')
+    assert trig.program_literal == "sh"
+    assert trig.shell_flag_seen is True
+    assert _has_raw_arg(trig)
+
+
+def test_dot_args_opaque_iterable_remains_unexpanded() -> None:
     (trig,) = _triggers(_SEED + '    Command::new("ls").args(t).output();\n')
     assert trig.shell_flag_seen is False
-    assert not _has_raw_arg(trig)  # .args is opaque (a vec) — not introspected in slice 1
+    assert not _has_raw_arg(trig)
 
 
 def test_sanitizer_is_an_accepted_bounded_fp() -> None:
@@ -115,10 +124,15 @@ def test_clean_literal_format_propagates_no_taint() -> None:
     assert not _has_raw_arg(trig)
 
 
-def test_captured_identifier_format_is_a_documented_fn() -> None:
-    # format!("rm {t}") has no explicit interpolation arg token — the captured `{t}` is
-    # invisible to the direct-arg heuristic, so `s` stays clean (documented FN).
+def test_captured_identifier_format_carries_taint() -> None:
     (trig,) = _triggers(_SEED + '    let s = format!("rm {t}");\n    Command::new("sh").arg("-c").arg(s).output();\n')
+    assert _has_raw_arg(trig)
+
+
+def test_escaped_format_braces_do_not_capture_identifier() -> None:
+    (trig,) = _triggers(
+        _SEED + '    let s = format!("rm {{t}}");\n    Command::new("sh").arg("-c").arg(s).output();\n'
+    )
     assert not _has_raw_arg(trig)
 
 

@@ -8,10 +8,11 @@ per terminal (``.output()``/``.spawn()``/``.status()``) that the rules (WP5) jud
 Taint model (slice-1, Tier-A): taint flows ONLY from known vocabulary sources and from
 locals proven tainted by a prior ``let`` — default-clean, because a finding-producer
 flags *provable* taint, not fail-closed unknowns (that would flood FPs). ``format!``
-contributes the worst taint of its **direct interpolation-arg tokens** only (the captured
-``{x}`` form carries no arg token → a documented FN); ``.args`` is an opaque vec; a
-sanitizer is invisible (an accepted bounded FP). Intra-function, single-block — nested
-control flow is a documented limitation. tree-sitter types are TYPE_CHECKING-only.
+contributes the worst taint of its direct interpolation-arg tokens plus simple captured
+locals (``format!("{x}")``); ``.args`` introspects literal argument lists but keeps opaque
+iterables opaque; a sanitizer is invisible (an accepted bounded FP). Intra-function,
+single-block — nested control flow is a documented limitation. tree-sitter types are
+TYPE_CHECKING-only.
 """
 
 from __future__ import annotations
@@ -38,7 +39,8 @@ _SHELL_FLAGS = frozenset({"-c", "/c", "-command"})
 # command beneath is not silently invisible.
 _WRAPPERS = frozenset({"try_expression", "await_expression", "return_expression"})
 _CLEAN = TaintState.ASSURED  # the default "not proven tainted" tier (not in RAW_ZONE)
-# Format-family macros whose value-taint = worst over their direct interpolation-arg tokens.
+# Format-family macros whose value-taint = worst over captured locals plus direct
+# interpolation-arg tokens.
 # `write!`/`writeln!` take a leading WRITER (the destination) before the format string — it is
 # NOT a value-taint contributor, so it is dropped. `format!`/`format_args!` have no writer.
 _FORMAT_MACROS = frozenset({"format", "write", "writeln", "format_args"})
@@ -164,11 +166,10 @@ class _Analyzer:
             if method == "arg":
                 arg = _first_arg(call_node)
                 if arg is not None:
-                    if arg.type == "string_literal" and _string_value(arg).lower() in _SHELL_FLAGS:
-                        accum.shell_flag_seen = True
-                    accum.arg_taints.append((self._nmap.node_id(arg), self._expr_taint(arg)))
+                    self._record_arg(accum, arg)
             elif method == "args":
-                continue  # an opaque vec — not introspected in slice 1
+                for arg in _literal_args(_first_arg(call_node)):
+                    self._record_arg(accum, arg)
             elif method in _TERMINALS:
                 self._triggers.append(
                     CommandTrigger(
@@ -181,6 +182,11 @@ class _Analyzer:
                         arg_taints=tuple(accum.arg_taints),
                     )
                 )
+
+    def _record_arg(self, accum: _CmdAccum, arg: Node) -> None:
+        if arg.type == "string_literal" and _string_value(arg).lower() in _SHELL_FLAGS:
+            accum.shell_flag_seen = True
+        accum.arg_taints.append((self._nmap.node_id(arg), self._expr_taint(arg)))
 
     def _accum_from_new(self, new_call: Node) -> _CmdAccum:
         prog = _first_arg(new_call)
@@ -226,9 +232,13 @@ class _Analyzer:
             # write!/writeln! lead with a WRITER (the destination) — drop it; only the
             # subsequent format string + interpolation args contribute value-taint. A simple
             # `dst` identifier writer is one named child; a compound writer (`&mut s`) may leave
-            # a stray token (a bounded slice-1 limitation, like the captured-`{x}` FN).
+            # a stray token (a bounded slice-1 limitation).
             children = children[1:]
         worst = _CLEAN
+        fmt = next((child for child in children if child.type == "string_literal"), None)
+        if fmt is not None:
+            for captured in _format_captures(_string_value(fmt)):
+                worst = least_trusted(worst, self._local_taints.get(captured, _CLEAN))
         for child in children:
             if child.type == "string_literal":
                 continue  # the format string (and any literal arg) is clean
@@ -303,9 +313,59 @@ def _first_arg(call_node: Node) -> Node | None:
     return args.named_children[0] if args.named_children else None
 
 
+def _literal_args(node: Node | None) -> tuple[Node, ...]:
+    """Literal argv elements from ``.args([...])`` / ``.args(&[...])`` / ``.args(vec![...])``.
+
+    Opaque iterables stay opaque: without their element syntax we cannot prove where shell
+    flags or tainted command strings sit in argv.
+    """
+    if node is None:
+        return ()
+    if node.type == "array_expression":
+        return tuple(node.named_children)
+    if node.type == "reference_expression" and node.named_children:
+        return _literal_args(node.named_children[0])
+    if node.type == "macro_invocation":
+        name = node.child_by_field_name("macro")
+        if name is not None and _text(name) == "vec":
+            tree = next((c for c in node.named_children if c.type == "token_tree"), None)
+            if tree is not None:
+                return tuple(tree.named_children)
+    return ()
+
+
 def _string_value(node: Node) -> str:
     content = next((c for c in node.named_children if c.type == "string_content"), None)
     return _text(content) if content is not None else ""
+
+
+def _format_captures(fmt: str) -> tuple[str, ...]:
+    captures: list[str] = []
+    i = 0
+    while i < len(fmt):
+        char = fmt[i]
+        if char == "{" and i + 1 < len(fmt) and fmt[i + 1] == "{":
+            i += 2
+            continue
+        if char != "{":
+            i += 1
+            continue
+        end = fmt.find("}", i + 1)
+        if end == -1:
+            break
+        inner = fmt[i + 1 : end].strip()
+        name = inner.partition(":")[0].strip()
+        if _is_simple_identifier(name):
+            captures.append(name)
+        i = end + 1
+    return tuple(captures)
+
+
+def _is_simple_identifier(value: str) -> bool:
+    if not value:
+        return False
+    first = value[0]
+    return (first == "_" or first.isalpha()) and all(ch == "_" or ch.isalnum() for ch in value[1:])
 
 
 def _name_of(node: Node | None) -> str | None:
