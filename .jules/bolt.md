@@ -1,0 +1,3 @@
+## 2024-06-22 - Generator Short-circuiting in AST Rules
+**Learning:** In a static analysis rules engine, replacing recursive `yield from` with eager list building (like `list.append()`) sacrifices short-circuiting capabilities. While lists are faster to build, many rules only need the first matching node (using `any()` or `next()`). If we eagerly compute the whole AST subtree list, we can cause major performance regressions on large AST blocks when a match is early.
+**Action:** When optimizing `yield from` recursion in hot-path generators, use an explicit stack combined with `yield` instead of building eager lists, ensuring lazy evaluation is preserved so that short-circuiting works correctly.
