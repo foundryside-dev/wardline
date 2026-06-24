@@ -68,12 +68,19 @@ def test_normalize_cfg_strips_whitespace() -> None:
 
 
 def test_normalize_cfg_sorts_a_single_flat_any_all_like_the_oracle() -> None:
-    # The single top-level any()/all() case (the in-corpus shape) sorts its args. This
-    # mirrors qualname.rs normalise_pred's NAIVE split(',') byte-for-byte — we do NOT
-    # enshrine the deeper-nesting case, which the oracle deliberately mangles (the
-    # contract is byte-equality with the oracle, not a "nicer" canonical form).
+    # The single top-level any()/all() case (the in-corpus shape) sorts its args and
+    # keeps the flat oracle bytes stable.
     assert normalize_cfg_predicate("(any(windows, unix))") == "any(unix,windows)"
     assert normalize_cfg_predicate("(all(unix, windows))") == "all(unix,windows)"
+
+
+def test_normalize_cfg_sorts_nested_any_all_without_colliding() -> None:
+    left = normalize_cfg_predicate("(any(all(a, a), all(c, b)))")
+    right = normalize_cfg_predicate("(any(all(a, b), all(c, a)))")
+
+    assert left == "any(all(a,a),all(b,c))"
+    assert right == "any(all(a,b),all(a,c))"
+    assert left != right
 
 
 def test_normalize_cfg_predicate_escapes_reserved_chars() -> None:
