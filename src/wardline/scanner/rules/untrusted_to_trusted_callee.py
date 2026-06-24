@@ -38,6 +38,7 @@ from wardline.scanner.rules._sink_helpers import (
     RAW_ZONE,
     _own_calls,
     dotted_name,
+    entity_relative_span,
     resolved_arg_taints,
 )
 from wardline.scanner.rules.metadata import RuleMetadata
@@ -174,8 +175,8 @@ class UntrustedReachesTrustedCallee:
                             # offset (call line - def line, invariant to a comment ABOVE the function:
                             # wlfp2/wardline-8654423823) + the call's full lexical SPAN + the callee spelling
                             # AS WRITTEN. Never the resolved arg taint or resolved callee qualname (both
-                            # drift). The span (start:end) separates a chain's outer/inner calls.
-                            taint_path=f"{line - (entity.location.line_start or 0)}:{call.col_offset}:{call.end_col_offset}:{dotted_name(call.func)}",  # noqa: E501
+                            # drift). The span separates multiline chain calls that differ only by end line.
+                            taint_path=f"{entity_relative_span(call, entity.location.line_start)}:{dotted_name(call.func)}",  # noqa: E501
                         ),
                         # OLD (wlfp1) taint_path, byte-exact, for `wardline rekey` (P4).
                         taint_path_v0=f"{dotted_name(call.func)}@{call.col_offset}:{call.end_col_offset}",

@@ -68,7 +68,7 @@ _ANCHORS: tuple[tuple[str, int, str], ...] = (
     ("src/wardline/core/agent_summary.py", 176, '"informational": informational'),
     # per-finding suppression_state output key (renamed from `suppressed`, weft-f506e5f845)
     ("src/wardline/core/finding.py", 145, '"suppression_state"'),
-    ("src/wardline/core/finding.py", 304, 'wardline["suppression_state"]'),
+    ("src/wardline/core/finding.py", 305, 'wardline["suppression_state"]'),
     # stable-file anchors (lower churn, but locked for free)
     ("src/wardline/core/finding.py", 77, 'ACTIVE = "active"'),
     ("src/wardline/core/suppression.py", 24, "SuppressionState.BASELINED"),

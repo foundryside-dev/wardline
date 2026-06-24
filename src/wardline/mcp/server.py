@@ -4123,6 +4123,17 @@ _DOCTOR_TOOL: dict[str, Any] = {
 }
 
 
+def _rekey_collision_wire(collision: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "new_fp": collision.new_fp,
+        "old_fps": list(collision.old_fps),
+        "message": collision.message,
+    }
+    if getattr(collision, "new_fps", ()):
+        payload["new_fps"] = list(collision.new_fps)
+    return payload
+
+
 def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, Any]:
     """Fingerprint-scheme migration over MCP (A3): the same core.rekey the CLI drives —
     no second migration path. Probe-by-default (read-only: report match/orphans/
@@ -4157,9 +4168,7 @@ def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, 
             "fingerprint_scheme_to": journal.fingerprint_scheme_to,
             "snapshot_prescheme": journal.snapshot_prescheme,
             "orphan_cause": ORPHAN_CAUSE,
-            "collisions": [
-                {"new_fp": c.new_fp, "old_fps": list(c.old_fps), "message": c.message} for c in journal.collisions
-            ],
+            "collisions": [_rekey_collision_wire(c) for c in journal.collisions],
             "legs": [
                 {
                     "name": leg.name,
@@ -4223,9 +4232,7 @@ def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, 
             "stale_count": len(report.stale),
             "stale_sample": list(report.stale[:ORPHAN_SAMPLE_LIMIT]),
             "stale_cause": STALE_CAUSE,
-            "collisions": [
-                {"new_fp": c.new_fp, "old_fps": list(c.old_fps), "message": c.message} for c in report.collisions
-            ],
+            "collisions": [_rekey_collision_wire(c) for c in report.collisions],
             "per_store": dict(report.per_store),
             "prescheme": report.prescheme,
             "current_scheme_stores": list(report.current_scheme_stores),
@@ -4290,24 +4297,33 @@ _REKEY_OUTPUT_SCHEMA: dict[str, Any] = {
         },
         "collisions": {
             "type": "array",
-            "description": "probe/apply/resume: pre-rekey fingerprints that collapse to the same new fingerprint "
-            "under the new scheme; all involved old fingerprints are orphaned, not carried.",
+            "description": "probe/apply/resume: ambiguous rekey mappings. Either multiple pre-rekey fingerprints "
+            "collapse to one new fingerprint, or one pre-rekey fingerprint fans out to multiple new fingerprints. "
+            "All involved old fingerprints are orphaned, not carried.",
             "items": {
                 "type": "object",
                 "properties": {
                     "new_fp": {
-                        "type": "string",
-                        "description": "The new-scheme fingerprint that more than one old fingerprint maps onto.",
+                        "type": ["string", "null"],
+                        "description": "Collapse: the new-scheme fingerprint that more than one old fingerprint maps "
+                        "onto. Fan-out: null, with new_fps carrying the candidate new fingerprints.",
+                    },
+                    "new_fps": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Fan-out only: the candidate new-scheme fingerprints one old fingerprint maps "
+                        "onto. Omitted for collapse collisions.",
                     },
                     "old_fps": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "The colliding pre-rekey fingerprints (sorted).",
+                        "description": "The ambiguous pre-rekey fingerprints (sorted). Fan-out entries contain one old "
+                        "fingerprint.",
                     },
                     "message": {
                         "type": "string",
-                        "description": "WLN-ENGINE-FINGERPRINT-COLLISION diagnostic explaining that the colliding "
-                        "verdicts are orphaned.",
+                        "description": "WLN-ENGINE-FINGERPRINT-COLLISION or WLN-ENGINE-FINGERPRINT-FANOUT diagnostic "
+                        "explaining that the verdicts are orphaned.",
                     },
                 },
                 "required": ["new_fp", "old_fps", "message"],

@@ -150,18 +150,26 @@ def compute_old_new_fingerprints(findings: Iterable[Finding]) -> list[Fingerprin
 
 @dataclass(frozen=True, slots=True)
 class RekeyCollision:
-    """Two findings DISTINCT under wlfp1 (different ``old_fp``) that collapse to one
-    ``new_fp`` under wlfp2. P2/P3 guarantee no two CURRENT findings share a ``new_fp``,
-    so this can only mean a discriminator bug — it is reported LOUD (shares the
-    WLN-ENGINE-FINGERPRINT-COLLISION invariant) and BOTH old_fps are orphaned (neither
-    verdict is carried), but the rest of the migration proceeds. A whole-run abort
-    would brick a real project permanently, so we never abort."""
+    """Ambiguous fingerprint migration that must orphan instead of carrying.
 
-    new_fp: str
+    Collapse: two findings DISTINCT under wlfp1 (different ``old_fp``) collapse to
+    one ``new_fp`` under wlfp2. Fan-out: one legacy ``old_fp`` reconstructs for two
+    current findings after a discriminator split. Both are reported LOUD and the
+    ambiguous old fingerprint(s) are orphaned, but the rest of the migration proceeds.
+    A whole-run abort would brick a real project permanently, so we never abort."""
+
+    new_fp: str | None
     old_fps: tuple[str, ...]
+    new_fps: tuple[str, ...] = ()
 
     @property
     def message(self) -> str:
+        if self.new_fps:
+            return (
+                f"WLN-ENGINE-FINGERPRINT-FANOUT: pre-rekey fingerprint {self.old_fps[0]} maps to "
+                f"{len(self.new_fps)} wlfp2 fingerprints ({', '.join(self.new_fps)}); "
+                "verdict orphaned, not carried."
+            )
         return (
             f"WLN-ENGINE-FINGERPRINT-COLLISION: {len(self.old_fps)} pre-rekey fingerprints collapse to "
             f"{self.new_fp} under wlfp2 ({', '.join(self.old_fps)}); both verdicts orphaned, not carried."
@@ -177,20 +185,31 @@ class RemapResult:
 
 
 def build_remap(remaps: Iterable[FingerprintRemap]) -> RemapResult:
-    """Build the ``old_fp -> new_fp`` map. ``old_fp`` is a function of the finding's
-    inputs (incl. line_start), so it never maps to two new_fps. The inverse CAN
-    collide (wlfp2 dropped line_start): if >1 distinct old_fp shares a new_fp, ALL
-    those old_fps are excluded from the map and recorded as a collision."""
+    """Build the ``old_fp -> new_fp`` map.
+
+    The map is carried only for 1:1 keys. The inverse can collide (wlfp2 dropped
+    line_start): if >1 distinct old_fp shares a new_fp, all those old_fps are
+    excluded. A later source-discriminator split can also fan one old_fp out to
+    multiple new_fps; that old_fp is excluded too because choosing a carried verdict
+    target would be arbitrary.
+    """
     new_to_olds: dict[str, set[str]] = {}
-    old_to_new: dict[str, str] = {}
+    old_to_news: dict[str, set[str]] = {}
     for r in remaps:
         new_to_olds.setdefault(r.new_fp, set()).add(r.old_fp)
-        old_to_new[r.old_fp] = r.new_fp
-    collisions = tuple(
+        old_to_news.setdefault(r.old_fp, set()).add(r.new_fp)
+    old_to_new: dict[str, str] = {old: next(iter(news)) for old, news in old_to_news.items() if len(news) == 1}
+    collapse_collisions = tuple(
         RekeyCollision(new_fp=nf, old_fps=tuple(sorted(olds)))
         for nf, olds in sorted(new_to_olds.items())
         if len(olds) > 1
     )
+    fanout_collisions = tuple(
+        RekeyCollision(new_fp=None, old_fps=(old,), new_fps=tuple(sorted(news)))
+        for old, news in sorted(old_to_news.items())
+        if len(news) > 1
+    )
+    collisions = collapse_collisions + fanout_collisions
     for c in collisions:
         for of in c.old_fps:
             old_to_new.pop(of, None)
@@ -440,7 +459,14 @@ def journal_to_doc(journal: Journal) -> dict[str, Any]:
         "fingerprint_scheme_to": journal.fingerprint_scheme_to,
         "snapshot_prescheme": journal.snapshot_prescheme,
         "remap": dict(journal.remap),
-        "collisions": [{"new_fp": c.new_fp, "old_fps": list(c.old_fps)} for c in journal.collisions],
+        "collisions": [
+            {
+                "new_fp": c.new_fp,
+                "old_fps": list(c.old_fps),
+                **({"new_fps": list(c.new_fps)} if c.new_fps else {}),
+            }
+            for c in journal.collisions
+        ],
         "legs": [
             {"name": leg.name, "done": leg.done, "carried": leg.carried, "orphaned": leg.orphaned, "debt": leg.debt}
             for leg in journal.legs
@@ -481,7 +507,11 @@ def load_journal(path: Path) -> Journal:
         for d in loaded.get("legs") or []
     ]
     collisions = [
-        RekeyCollision(new_fp=str(c["new_fp"]), old_fps=tuple(c.get("old_fps") or []))
+        RekeyCollision(
+            new_fp=None if c.get("new_fp") is None else str(c["new_fp"]),
+            old_fps=tuple(c.get("old_fps") or []),
+            new_fps=tuple(c.get("new_fps") or []),
+        )
         for c in loaded.get("collisions") or []
     ]
     return Journal(

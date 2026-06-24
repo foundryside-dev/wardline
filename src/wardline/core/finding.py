@@ -161,7 +161,7 @@ class Finding:
 # carries ONLY a SOURCE-DERIVED discriminator. A component may appear in
 # ``taint_path`` only if it is derived purely from source tokens / lexical position
 # (a sink dotted-name, a callee spelling as written, a decorator marker/level token,
-# a call's ``col_offset``, or a singleton entity body discriminator) — NOT a
+# a call's full lexical span, or a singleton entity body discriminator) — NOT a
 # resolved ``TaintState`` tier and NOT ``via_callee`` — and is load-bearing. For
 # multi-emit rules, it separates two distinct findings that share (rule_id, path,
 # qualname). For singleton entity-level rules, it may bind the finding to the
@@ -178,8 +178,9 @@ class Finding:
 # comment above an entity shifts every line below it but is the same source, so it
 # must not churn the cross-tool join key. Multi-emit rules therefore discriminate
 # co-located findings with an ENTITY-RELATIVE position — ``node.lineno -
-# entity.location.line_start`` plus the call's ``col_offset:end_col_offset`` — which
-# is invariant to the whole entity moving (a comment above it). NOTE: it is
+# entity.location.line_start`` plus the call's
+# ``col_offset:end_lineno-entity.location.line_start:end_col_offset`` — which is
+# invariant to the whole entity moving (a comment above it). NOTE: it is
 # entity-relative, NOT move-stable in the strong sense — a comment inserted INSIDE
 # the entity above the node still shifts the relative offset (accepted; the contract
 # is identical-source -> identical-fingerprint, and that edit is not identical source).

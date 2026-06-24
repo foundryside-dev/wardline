@@ -50,14 +50,14 @@ onto the state (`src/wardline/core/suppression.py:72-77`).
 ### The per-finding key is `suppression_state` (not `suppressed`)
 
 Each serialized finding carries its state under the key **`suppression_state`**
-(`src/wardline/core/finding.py:145` in `to_jsonl`; `src/wardline/core/finding.py:304`
+(`src/wardline/core/finding.py:145` in `to_jsonl`; `src/wardline/core/finding.py:305`
 in the Filigree `metadata.wardline.*` subtree; the agent-summary entries and the
 legis artifact use the same key). The key was renamed from `suppressed` →
 `suppression_state` (weft-f506e5f845) so the per-finding **state** never reads as
 the opposite of the summary's `active` **count**: `suppression_state: "active"`
 clearly names a state, while `summary.active` is a count of unsuppressed defects.
 The Filigree metadata only carries the key when the state is not `active`
-(`src/wardline/core/finding.py:304`).
+(`src/wardline/core/finding.py:305`).
 
 **"suppressed"** survives only as the umbrella *word* for "any state other than
 `active`": `baselined` + `waived` + `judged`. The CLI prints this sum as the
@@ -187,8 +187,8 @@ How each concept appears on each surface:
 | Concept | CLI summary text | `ScanSummary` field | MCP `summary` key | Agent-summary key | Filigree store |
 | --- | --- | --- | --- | --- | --- |
 | every finding | `N finding(s)` | `total` (`run.py:70`) | `total` (`server.py:1009`) | `total_findings` (`agent_summary.py:139`) | one finding per wire entry |
-| live defect | `N active` (`scan.py:557`) | `active` (`run.py:71,551`) | `active` (`server.py:1010`) | `active_defects` (`agent_summary.py:140`) | no `suppression_state` key (`finding.py:304`) |
-| suppressed (sum) | `N suppressed` (`scan.py:556`) | `baselined+waived+judged` | the three keys | `suppressed_findings` (`agent_summary.py:141`) | `metadata.wardline.suppression_state` (`finding.py:304`) |
+| live defect | `N active` (`scan.py:557`) | `active` (`run.py:71,551`) | `active` (`server.py:1010`) | `active_defects` (`agent_summary.py:140`) | no `suppression_state` key (`finding.py:305`) |
+| suppressed (sum) | `N suppressed` (`scan.py:556`) | `baselined+waived+judged` | the three keys | `suppressed_findings` (`agent_summary.py:141`) | `metadata.wardline.suppression_state` (`finding.py:305`) |
 | baselined | `N baseline` | `baselined` (`run.py:73`) | `baselined` (`server.py:1011`) | `baselined` (`agent_summary.py:143`) | `suppression_state: "baselined"` |
 | waived | `N waiver` | `waived` (`run.py:74`) | `waived` (`server.py:1012`) | `waived` (`agent_summary.py:144`) | `suppression_state: "waived"` |
 | judged | `N judged` | `judged` (`run.py:75`) | `judged` (`server.py:1013`) | `judged` (`agent_summary.py:145`) | `suppression_state: "judged"` |

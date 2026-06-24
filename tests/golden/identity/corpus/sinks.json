@@ -226,13 +226,13 @@
             "rule_id": "PY-WL-101"
           },
           {
-            "fingerprint": "1f9174a59ff725857a5574eb57a4f1b31f7212ece7589d1b46721f2fd31edc9d",
+            "fingerprint": "1f8fdcf9972ad1748bb5ee8ce8ba9496186f811d5f2d1891f7783b7bdaf79e2c",
             "line_start": 95,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-118"
           },
           {
-            "fingerprint": "41d07bddca738298bd5d85c8db731766f44812033f01af7bc7d83941b2073759",
+            "fingerprint": "a2de51062f5d833bbf3954abcdd1e3fc84b2875ff7c7be035191130d09cecd99",
             "line_start": 95,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-118"
@@ -271,13 +271,13 @@
             "rule_id": "PY-WL-101"
           },
           {
-            "fingerprint": "3d8057c1001d1a882d3c85dbe04379d2a25bc6a4b5fca842497b19fddc4609fa",
+            "fingerprint": "007ba30e97b15fd8055ac7c652be4b2021adda2642d1d3fa3cafc61ac1778d5e",
             "line_start": 84,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-106"
           },
           {
-            "fingerprint": "8b74d4819f60cc2f30acecedbf63b69dd512f00178f19e3e43ee4d4b6026444f",
+            "fingerprint": "4786a059c48494884be9adf0724a74c3151c58993afd127be1deec71be3035cd",
             "line_start": 84,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-106"
@@ -310,25 +310,25 @@
         },
         "findings": [
           {
-            "fingerprint": "5b727e8b47a7e7216468308658740001d5062d4292ce012f03a50ef96e523cbb",
+            "fingerprint": "27ec1873b1ae31dbe18a43165431a450058d15c76cbb45f598e232dc177eb6a6",
             "line_start": 75,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-105"
           },
           {
-            "fingerprint": "a94cef80695a44e753a0f5dc71d632fb3d329a10da3acc62dc2f4151d8856179",
+            "fingerprint": "73b99d4b3e6ff105346ab83c64d5fa6de278d375bee80beea31875ffa269ef4b",
             "line_start": 75,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-105"
           },
           {
-            "fingerprint": "272b6408714850250d4890e81911e3db808b0aa8f894db916d5a0f73a4670215",
+            "fingerprint": "65f131f25419060a668c645a576dff8111d2999e229e8e99e08bd51293288c15",
             "line_start": 75,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-120"
           },
           {
-            "fingerprint": "8d45425ca46245baa235e857f42513c1e77cd3e7b2bb0b19fc65ab3687f25e8a",
+            "fingerprint": "a815a406d510a2ff878803617c98d642f6ab7b39e06dbb372435918919288f21",
             "line_start": 75,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-120"
@@ -367,7 +367,7 @@
             "rule_id": "PY-WL-101"
           },
           {
-            "fingerprint": "5ee6a352fd2713e30f8d3a8d5d2f374dfe486b5dc2a0299e77975bf4c9ea14bc",
+            "fingerprint": "a8d833be3f2852428f0d7ef8bb89918f47dc4ce69f58166c98678cc79f5be15f",
             "line_start": 34,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-106"
@@ -406,7 +406,7 @@
             "rule_id": "PY-WL-101"
           },
           {
-            "fingerprint": "0dcfc65cd0c5381cbd62bc4646ea5b34f358be072431e3877213362e587cf8e9",
+            "fingerprint": "dcb49d57938f6ac07d9203c095c0ed610c2033dde6e63b7cf75a6562fb49cffd",
             "line_start": 48,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-115"
@@ -445,13 +445,13 @@
             "rule_id": "PY-WL-101"
           },
           {
-            "fingerprint": "5d3200b5f9d4418398cda8f3f830f716794dae3c1e0a3ec97af0f526735dbee9",
+            "fingerprint": "027bb1beb78ab6aa09620acc62e39055e56324cd3af714724ed1bac2fb7bf751",
             "line_start": 118,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-118"
           },
           {
-            "fingerprint": "b85f44e814c9271c6cd3129c2146bdf9b50e87c312cf862b9aa62c5b3f5c5768",
+            "fingerprint": "81ae07ca0f1b9be894a643637901e3b8fcc434b1cc086b309d7b6e2fed1efea6",
             "line_start": 119,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-120"
@@ -490,13 +490,13 @@
             "rule_id": "PY-WL-101"
           },
           {
-            "fingerprint": "9284a27b61ef23301fa372ac36c6385ec711fd26ed22a455eeea993981d5002e",
+            "fingerprint": "0649daf6e7c1fd3b491a513862f1f3c55be239ff2426f7199c7c72ac7963f791",
             "line_start": 55,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-116"
           },
           {
-            "fingerprint": "1840d80d73b71ae6d77a5399229adb8b644508a7e8d4f400236a8a698a60a364",
+            "fingerprint": "b8d104e6587abeec86d889d391c0c6a67bfb6b79b7807dbacb94ab755246acce",
             "line_start": 56,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-120"
@@ -561,7 +561,7 @@
             "rule_id": "PY-WL-101"
           },
           {
-            "fingerprint": "13c25150c1e15425e6ae5f9d99f67ec09dd5ffb4b60ac49e20367a0ad6240c6f",
+            "fingerprint": "7b306b0603f82ac94b0174ccaa82e305032e7a79382d9979bd27eaebf7406d93",
             "line_start": 41,
             "path": "wardline_sinks.py",
             "rule_id": "PY-WL-112"
@@ -645,7 +645,7 @@
     },
     {
       "confidence": null,
-      "fingerprint": "5ee6a352fd2713e30f8d3a8d5d2f374dfe486b5dc2a0299e77975bf4c9ea14bc",
+      "fingerprint": "a8d833be3f2852428f0d7ef8bb89918f47dc4ce69f58166c98678cc79f5be15f",
       "kind": "defect",
       "location": {
         "col_end": 29,
@@ -696,7 +696,7 @@
     },
     {
       "confidence": null,
-      "fingerprint": "13c25150c1e15425e6ae5f9d99f67ec09dd5ffb4b60ac49e20367a0ad6240c6f",
+      "fingerprint": "7b306b0603f82ac94b0174ccaa82e305032e7a79382d9979bd27eaebf7406d93",
       "kind": "defect",
       "location": {
         "col_end": 55,
@@ -747,7 +747,7 @@
     },
     {
       "confidence": null,
-      "fingerprint": "0dcfc65cd0c5381cbd62bc4646ea5b34f358be072431e3877213362e587cf8e9",
+      "fingerprint": "dcb49d57938f6ac07d9203c095c0ed610c2033dde6e63b7cf75a6562fb49cffd",
       "kind": "defect",
       "location": {
         "col_end": 40,
@@ -798,7 +798,7 @@
     },
     {
       "confidence": null,
-      "fingerprint": "9284a27b61ef23301fa372ac36c6385ec711fd26ed22a455eeea993981d5002e",
+      "fingerprint": "0649daf6e7c1fd3b491a513862f1f3c55be239ff2426f7199c7c72ac7963f791",
       "kind": "defect",
       "location": {
         "col_end": 37,
@@ -824,7 +824,7 @@
     },
     {
       "confidence": null,
-      "fingerprint": "1840d80d73b71ae6d77a5399229adb8b644508a7e8d4f400236a8a698a60a364",
+      "fingerprint": "b8d104e6587abeec86d889d391c0c6a67bfb6b79b7807dbacb94ab755246acce",
       "kind": "defect",
       "location": {
         "col_end": null,
@@ -898,7 +898,7 @@
     },
     {
       "confidence": null,
-      "fingerprint": "5b727e8b47a7e7216468308658740001d5062d4292ce012f03a50ef96e523cbb",
+      "fingerprint": "27ec1873b1ae31dbe18a43165431a450058d15c76cbb45f598e232dc177eb6a6",
       "kind": "defect",
       "location": {
         "col_end": null,
@@ -924,7 +924,7 @@
     },
     {
       "confidence": null,
-      "fingerprint": "a94cef80695a44e753a0f5dc71d632fb3d329a10da3acc62dc2f4151d8856179",
+      "fingerprint": "73b99d4b3e6ff105346ab83c64d5fa6de278d375bee80beea31875ffa269ef4b",
       "kind": "defect",
       "location": {
         "col_end": null,
@@ -950,7 +950,7 @@
     },
     {
       "confidence": null,
-      "fingerprint": "272b6408714850250d4890e81911e3db808b0aa8f894db916d5a0f73a4670215",
+      "fingerprint": "65f131f25419060a668c645a576dff8111d2999e229e8e99e08bd51293288c15",
       "kind": "defect",
       "location": {
         "col_end": null,
@@ -975,7 +975,7 @@
     },
     {
       "confidence": null,
-      "fingerprint": "8d45425ca46245baa235e857f42513c1e77cd3e7b2bb0b19fc65ab3687f25e8a",
+      "fingerprint": "a815a406d510a2ff878803617c98d642f6ab7b39e06dbb372435918919288f21",
       "kind": "defect",
       "location": {
         "col_end": null,
@@ -1025,7 +1025,7 @@
     },
     {
       "confidence": null,
-      "fingerprint": "3d8057c1001d1a882d3c85dbe04379d2a25bc6a4b5fca842497b19fddc4609fa",
+      "fingerprint": "007ba30e97b15fd8055ac7c652be4b2021adda2642d1d3fa3cafc61ac1778d5e",
       "kind": "defect",
       "location": {
         "col_end": 29,
@@ -1051,7 +1051,7 @@
     },
     {
       "confidence": null,
-      "fingerprint": "8b74d4819f60cc2f30acecedbf63b69dd512f00178f19e3e43ee4d4b6026444f",
+      "fingerprint": "4786a059c48494884be9adf0724a74c3151c58993afd127be1deec71be3035cd",
       "kind": "defect",
       "location": {
         "col_end": 49,
@@ -1102,10 +1102,10 @@
     },
     {
       "confidence": null,
-      "fingerprint": "1f9174a59ff725857a5574eb57a4f1b31f7212ece7589d1b46721f2fd31edc9d",
+      "fingerprint": "1f8fdcf9972ad1748bb5ee8ce8ba9496186f811d5f2d1891f7783b7bdaf79e2c",
       "kind": "defect",
       "location": {
-        "col_end": 76,
+        "col_end": 50,
         "col_start": 11,
         "line_end": 95,
         "line_start": 95,
@@ -1128,10 +1128,10 @@
     },
     {
       "confidence": null,
-      "fingerprint": "41d07bddca738298bd5d85c8db731766f44812033f01af7bc7d83941b2073759",
+      "fingerprint": "a2de51062f5d833bbf3954abcdd1e3fc84b2875ff7c7be035191130d09cecd99",
       "kind": "defect",
       "location": {
-        "col_end": 50,
+        "col_end": 76,
         "col_start": 11,
         "line_end": 95,
         "line_start": 95,
@@ -1229,7 +1229,7 @@
     },
     {
       "confidence": null,
-      "fingerprint": "5d3200b5f9d4418398cda8f3f830f716794dae3c1e0a3ec97af0f526735dbee9",
+      "fingerprint": "027bb1beb78ab6aa09620acc62e39055e56324cd3af714724ed1bac2fb7bf751",
       "kind": "defect",
       "location": {
         "col_end": 63,
@@ -1255,7 +1255,7 @@
     },
     {
       "confidence": null,
-      "fingerprint": "b85f44e814c9271c6cd3129c2146bdf9b50e87c312cf862b9aa62c5b3f5c5768",
+      "fingerprint": "81ae07ca0f1b9be894a643637901e3b8fcc434b1cc086b309d7b6e2fed1efea6",
       "kind": "defect",
       "location": {
         "col_end": null,
@@ -1396,7 +1396,7 @@
               "text": "wardline_sinks.import_catalog_blob: EXTERNAL_RAW (untrusted) data reaches the deserialization sink pickle.loads() at line 34"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "5ee6a352fd2713e30f8d3a8d5d2f374dfe486b5dc2a0299e77975bf4c9ea14bc"
+              "wardlineFingerprint/v2": "a8d833be3f2852428f0d7ef8bb89918f47dc4ce69f58166c98678cc79f5be15f"
             },
             "properties": {
               "internalSeverity": "WARN",
@@ -1542,7 +1542,7 @@
               "text": "wardline_sinks.run_export: EXTERNAL_RAW (untrusted) data reaches the shell=True subprocess sink subprocess.run() at line 41"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "13c25150c1e15425e6ae5f9d99f67ec09dd5ffb4b60ac49e20367a0ad6240c6f"
+              "wardlineFingerprint/v2": "7b306b0603f82ac94b0174ccaa82e305032e7a79382d9979bd27eaebf7406d93"
             },
             "properties": {
               "internalSeverity": "ERROR",
@@ -1688,7 +1688,7 @@
               "text": "wardline_sinks.load_report_plugin: EXTERNAL_RAW (untrusted) data reaches the dynamic import sink importlib.import_module() at line 48"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "0dcfc65cd0c5381cbd62bc4646ea5b34f358be072431e3877213362e587cf8e9"
+              "wardlineFingerprint/v2": "dcb49d57938f6ac07d9203c095c0ed610c2033dde6e63b7cf75a6562fb49cffd"
             },
             "properties": {
               "internalSeverity": "WARN",
@@ -1834,7 +1834,7 @@
               "text": "wardline_sinks.open_catalog_file: EXTERNAL_RAW (untrusted) data reaches the path-traversal sink open() at line 55"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "9284a27b61ef23301fa372ac36c6385ec711fd26ed22a455eeea993981d5002e"
+              "wardlineFingerprint/v2": "0649daf6e7c1fd3b491a513862f1f3c55be239ff2426f7199c7c72ac7963f791"
             },
             "properties": {
               "internalSeverity": "WARN",
@@ -1892,7 +1892,7 @@
               "text": "wardline_sinks.open_catalog_file returns stored/persisted data (EXTERNAL_RAW) without validation at line 56"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "1840d80d73b71ae6d77a5399229adb8b644508a7e8d4f400236a8a698a60a364"
+              "wardlineFingerprint/v2": "b8d104e6587abeec86d889d391c0c6a67bfb6b79b7807dbacb94ab755246acce"
             },
             "properties": {
               "internalSeverity": "ERROR",
@@ -2016,7 +2016,7 @@
               "text": "wardline_sinks.fan_out_stored: EXTERNAL_RAW (untrusted) data passed to trusted producer wardline_sinks._refine_b() at line 75"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "5b727e8b47a7e7216468308658740001d5062d4292ce012f03a50ef96e523cbb"
+              "wardlineFingerprint/v2": "27ec1873b1ae31dbe18a43165431a450058d15c76cbb45f598e232dc177eb6a6"
             },
             "properties": {
               "internalSeverity": "ERROR",
@@ -2074,7 +2074,7 @@
               "text": "wardline_sinks.fan_out_stored: EXTERNAL_RAW (untrusted) data passed to trusted producer wardline_sinks._refine_a() at line 75"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "a94cef80695a44e753a0f5dc71d632fb3d329a10da3acc62dc2f4151d8856179"
+              "wardlineFingerprint/v2": "73b99d4b3e6ff105346ab83c64d5fa6de278d375bee80beea31875ffa269ef4b"
             },
             "properties": {
               "internalSeverity": "ERROR",
@@ -2132,7 +2132,7 @@
               "text": "wardline_sinks.fan_out_stored passes stored/persisted data (EXTERNAL_RAW) to trusted callee wardline_sinks._refine_b without validation at line 75"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "272b6408714850250d4890e81911e3db808b0aa8f894db916d5a0f73a4670215"
+              "wardlineFingerprint/v2": "65f131f25419060a668c645a576dff8111d2999e229e8e99e08bd51293288c15"
             },
             "properties": {
               "internalSeverity": "ERROR",
@@ -2189,7 +2189,7 @@
               "text": "wardline_sinks.fan_out_stored passes stored/persisted data (EXTERNAL_RAW) to trusted callee wardline_sinks._refine_a without validation at line 75"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "8d45425ca46245baa235e857f42513c1e77cd3e7b2bb0b19fc65ab3687f25e8a"
+              "wardlineFingerprint/v2": "a815a406d510a2ff878803617c98d642f6ab7b39e06dbb372435918919288f21"
             },
             "properties": {
               "internalSeverity": "ERROR",
@@ -2257,7 +2257,7 @@
               "text": "wardline_sinks.double_deserialize: EXTERNAL_RAW (untrusted) data reaches the deserialization sink pickle.loads() at line 84"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "3d8057c1001d1a882d3c85dbe04379d2a25bc6a4b5fca842497b19fddc4609fa"
+              "wardlineFingerprint/v2": "007ba30e97b15fd8055ac7c652be4b2021adda2642d1d3fa3cafc61ac1778d5e"
             },
             "properties": {
               "internalSeverity": "WARN",
@@ -2292,7 +2292,7 @@
               "text": "wardline_sinks.double_deserialize: EXTERNAL_RAW (untrusted) data reaches the deserialization sink pickle.loads() at line 84"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "8b74d4819f60cc2f30acecedbf63b69dd512f00178f19e3e43ee4d4b6026444f"
+              "wardlineFingerprint/v2": "4786a059c48494884be9adf0724a74c3151c58993afd127be1deec71be3035cd"
             },
             "properties": {
               "internalSeverity": "WARN",
@@ -2349,7 +2349,7 @@
                     "uri": "wardline_sinks.py"
                   },
                   "region": {
-                    "endColumn": 76,
+                    "endColumn": 50,
                     "endLine": 95,
                     "startColumn": 11,
                     "startLine": 95
@@ -2361,7 +2361,7 @@
               "text": "wardline_sinks.chained_queries: EXTERNAL_RAW (untrusted) data reaches the SQL-injection sink execute() at line 95"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "1f9174a59ff725857a5574eb57a4f1b31f7212ece7589d1b46721f2fd31edc9d"
+              "wardlineFingerprint/v2": "1f8fdcf9972ad1748bb5ee8ce8ba9496186f811d5f2d1891f7783b7bdaf79e2c"
             },
             "properties": {
               "internalSeverity": "ERROR",
@@ -2384,7 +2384,7 @@
                     "uri": "wardline_sinks.py"
                   },
                   "region": {
-                    "endColumn": 50,
+                    "endColumn": 76,
                     "endLine": 95,
                     "startColumn": 11,
                     "startLine": 95
@@ -2396,7 +2396,7 @@
               "text": "wardline_sinks.chained_queries: EXTERNAL_RAW (untrusted) data reaches the SQL-injection sink execute() at line 95"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "41d07bddca738298bd5d85c8db731766f44812033f01af7bc7d83941b2073759"
+              "wardlineFingerprint/v2": "a2de51062f5d833bbf3954abcdd1e3fc84b2875ff7c7be035191130d09cecd99"
             },
             "properties": {
               "internalSeverity": "ERROR",
@@ -2591,7 +2591,7 @@
               "text": "wardline_sinks.lookup_member: EXTERNAL_RAW (untrusted) data reaches the SQL-injection sink execute() at line 118"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "5d3200b5f9d4418398cda8f3f830f716794dae3c1e0a3ec97af0f526735dbee9"
+              "wardlineFingerprint/v2": "027bb1beb78ab6aa09620acc62e39055e56324cd3af714724ed1bac2fb7bf751"
             },
             "properties": {
               "internalSeverity": "ERROR",
@@ -2649,7 +2649,7 @@
               "text": "wardline_sinks.lookup_member returns stored/persisted data (EXTERNAL_RAW) without validation at line 119"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "b85f44e814c9271c6cd3129c2146bdf9b50e87c312cf862b9aa62c5b3f5c5768"
+              "wardlineFingerprint/v2": "81ae07ca0f1b9be894a643637901e3b8fcc434b1cc086b309d7b6e2fed1efea6"
             },
             "properties": {
               "internalSeverity": "ERROR",

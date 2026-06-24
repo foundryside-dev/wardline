@@ -33,7 +33,10 @@ _INPUTS = {
 # 4->5: singleton rule value-rekey (wardline-31540f8492) — singleton entity-level
 # findings fold a line-independent source-body discriminator into taint_path so old
 # same-qualname suppressions cannot apply to a different body or signature.
-CORPUS_VERSION = 5
+# 5->6: call-site span value-rekey (wardline-a1bcb70c15) — multi-emit call-site
+# findings fold entity-relative end_lineno into taint_path so multiline chained calls
+# that share start line/column and end column cannot collide.
+CORPUS_VERSION = 6
 
 
 def main() -> None:

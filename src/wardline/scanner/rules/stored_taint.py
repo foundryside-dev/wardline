@@ -40,6 +40,7 @@ from wardline.scanner.rules._sink_helpers import (
     SinkBindings,
     collect_sink_bindings,
     dotted_name,
+    entity_relative_span,
     module_alias_map,
     resolve_bound_call_fqn,
     worst_arg_taint,
@@ -243,12 +244,11 @@ class StoredTaint:
                                         rule_id=self.rule_id,
                                         path=entity.location.path,
                                         qualname=qualname,
-                                        # >1 return per function is possible. Discriminate ENTITY-RELATIVE
-                                        # (return line - def line, invariant to a comment ABOVE the function:
-                                        # wlfp2/wardline-8654423823) + the return's lexical span + a ``return``
-                                        # token. The ``:return`` token keeps this DISJOINT from the call-arg
-                                        # site below (which ends in a callee name), so the two never collide.
-                                        taint_path=f"{node.lineno - (entity.location.line_start or 0)}:{node.col_offset}:{node.end_col_offset}:return",  # noqa: E501
+                                        # >1 return per function is possible. Discriminate with the
+                                        # ENTITY-RELATIVE full lexical span + a ``return`` token. The
+                                        # ``:return`` token keeps this DISJOINT from the call-arg site below
+                                        # (which ends in a callee name), so the two never collide.
+                                        taint_path=f"{entity_relative_span(node, entity.location.line_start)}:return",
                                     ),
                                     qualname=qualname,
                                     properties={"return_taint": ret_taint.value},
@@ -315,8 +315,9 @@ class StoredTaint:
                                             # offset (call line - def line, invariant to a comment ABOVE the
                                             # function: wlfp2/wardline-8654423823) + the call's full lexical
                                             # SPAN + the callee spelling AS WRITTEN. Never the RESOLVED callee
-                                            # qualname (drifts). The span separates a chain's outer/inner calls.
-                                            taint_path=f"{node.lineno - (entity.location.line_start or 0)}:{node.col_offset}:{node.end_col_offset}:{dotted_name(node.func)}",  # noqa: E501
+                                            # qualname (drifts). The span separates multiline chain calls that
+                                            # differ only by end line.
+                                            taint_path=f"{entity_relative_span(node, entity.location.line_start)}:{dotted_name(node.func)}",  # noqa: E501
                                         ),
                                         # OLD (wlfp1) taint_path, byte-exact, for `wardline rekey` (P4).
                                         taint_path_v0=f"{dotted_name(node.func)}@{node.col_offset}:{node.end_col_offset}",

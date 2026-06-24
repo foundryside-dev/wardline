@@ -14,13 +14,14 @@ import pytest
 
 yaml = pytest.importorskip("yaml")
 pytest.importorskip("blake3", reason="run_scan needs wardline[loomweave]")
+jsonschema = pytest.importorskip("jsonschema")
 
 from wardline.core import paths  # noqa: E402
 from wardline.core.baseline import load_baseline  # noqa: E402
 from wardline.core.fingerprint_v0 import compute_finding_fingerprint_v0  # noqa: E402
 from wardline.core.rekey import load_journal, snapshot_dir, write_journal  # noqa: E402
 from wardline.core.run import run_scan  # noqa: E402
-from wardline.mcp.server import WardlineMCPServer, _rekey  # noqa: E402
+from wardline.mcp.server import _REKEY_OUTPUT_SCHEMA, WardlineMCPServer, _rekey  # noqa: E402
 from wardline.mcp.tooling import ToolError  # noqa: E402
 
 _LEAKY = (
@@ -34,6 +35,26 @@ def _project(tmp_path: Path) -> Path:
     project = tmp_path / "proj"
     project.mkdir()
     (project / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    return project
+
+
+def _fanout_project(tmp_path: Path) -> Path:
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "m.py").write_text(
+        "from wardline.decorators import external_boundary, trusted\n"
+        "@external_boundary\ndef read_raw(p):\n    return p\n"
+        "@trusted(level='ASSURED')\n"
+        "def f(p, conn):\n"
+        "    a = read_raw(p)\n"
+        "    b = read_raw(p)\n"
+        "    return conn.cursor().execute(\n"
+        "        a\n"
+        "    ).execute(\n"
+        "        b\n"
+        "    )\n",
+        encoding="utf-8",
+    )
     return project
 
 
@@ -82,6 +103,21 @@ def test_rekey_probe_reports_orphans_with_cause(tmp_path: Path) -> None:
     assert result["orphaned_sample"] == ["deadbeef" * 8]
     assert result["per_store"] == {"baseline.yaml": 1}
     assert "moved" in result["orphan_cause"]
+
+
+def test_rekey_probe_reports_fanout_collision_schema_valid(tmp_path: Path) -> None:
+    project = _fanout_project(tmp_path)
+    result = _rekey({}, project)
+
+    assert result["mode"] == "probe"
+    assert result["clean"] is False
+    assert len(result["collisions"]) == 1
+    collision = result["collisions"][0]
+    assert collision["new_fp"] is None
+    assert len(collision["old_fps"]) == 1
+    assert len(collision["new_fps"]) == 2
+    assert "WLN-ENGINE-FINGERPRINT-FANOUT" in collision["message"]
+    jsonschema.validate(result, _REKEY_OUTPUT_SCHEMA)
 
 
 def test_rekey_probe_reports_a_healthy_current_scheme_baseline_as_clean_noop(tmp_path: Path) -> None:
