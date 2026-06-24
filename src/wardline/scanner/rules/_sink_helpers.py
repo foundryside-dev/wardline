@@ -48,6 +48,7 @@ __all__ = [
     "collect_sink_bindings",
     "dotted_name",
     "enclosing_declared_tier",
+    "entity_relative_span",
     "module_alias_map",
     "module_for_qualname",
     "receiver_ctor_call",
@@ -132,6 +133,21 @@ def _own_calls(node: ast.AST) -> Iterator[ast.Call]:
         if isinstance(child, ast.Call):
             yield child
         yield from _own_calls(child)
+
+
+def entity_relative_span(node: ast.AST, entity_line_start: int | None) -> str:
+    """Source span discriminator relative to the containing entity's first line.
+
+    CPython's ``end_col_offset`` is relative to ``end_lineno``. A multiline inner
+    and outer call can share start line/column and ending column while differing only
+    by end line, so the full ``start:col:end:end_col`` span is the call-site key.
+    """
+    start_line = getattr(node, "lineno", 0)
+    end_line = getattr(node, "end_lineno", start_line)
+    return (
+        f"{start_line - (entity_line_start or 0)}:{getattr(node, 'col_offset', 0)}:"
+        f"{end_line - (entity_line_start or 0)}:{getattr(node, 'end_col_offset', 0)}"
+    )
 
 
 def _direct_sink_fqn(
@@ -682,8 +698,9 @@ def build_sink_finding(
     offset (call line - the enclosing def's line, invariant to a comment ABOVE the
     function: wlfp2/wardline-8654423823) plus the call's full lexical SPAN and the
     sink dotted-name. The span (start:end), not the start column alone, separates
-    the outer/inner calls of a chain (``a.sink(x).sink(y)``), which share a start
-    column. Never the resolved arg taint (it drifts across builds: weft-4a9d0f863c).
+    the outer/inner calls of a multiline chain (``a.sink(x).sink(y)``), which may
+    share a start line/column and ending column. Never the resolved arg taint (it
+    drifts across builds: weft-4a9d0f863c).
 
     *message* overrides the standard message text only — fingerprint and
     properties stay uniform (PathTraversal's receiver-anchored explanations).
@@ -706,7 +723,7 @@ def build_sink_finding(
             rule_id=rule_id,
             path=entity.location.path,
             qualname=qualname,
-            taint_path=f"{line - (entity.location.line_start or 0)}:{call.col_offset}:{call.end_col_offset}:{dotted}",
+            taint_path=f"{entity_relative_span(call, entity.location.line_start)}:{dotted}",
         ),
         # OLD (wlfp1) taint_path, byte-exact, for `wardline rekey` (P4).
         taint_path_v0=f"{dotted}@{call.col_offset}:{call.end_col_offset}",

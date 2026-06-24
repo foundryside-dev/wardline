@@ -49,3 +49,23 @@ def test_journal_persists_collisions(tmp_path: Path) -> None:
     loaded = load_journal(p)
     assert len(loaded.collisions) == 1
     assert loaded.collisions[0].old_fps == ("a" * 64, "b" * 64)
+
+
+def test_journal_persists_fanout_collisions(tmp_path: Path) -> None:
+    j = Journal(
+        remap={},
+        collisions=[
+            RekeyCollision(
+                new_fp=None,
+                old_fps=("a" * 64,),
+                new_fps=("1" * 64, "2" * 64),
+            )
+        ],
+    )
+    p = tmp_path / "j.yaml"
+    write_journal(p, j, root=tmp_path)
+    loaded = load_journal(p)
+    assert len(loaded.collisions) == 1
+    assert loaded.collisions[0].new_fp is None
+    assert loaded.collisions[0].old_fps == ("a" * 64,)
+    assert loaded.collisions[0].new_fps == ("1" * 64, "2" * 64)

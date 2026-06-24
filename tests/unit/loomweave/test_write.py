@@ -37,6 +37,24 @@ def test_write_reports_written_and_unresolved(tmp_path):
     assert client.written_payloads is not None
 
 
+def test_write_crlf_file_sends_fresh_facts(tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    raw = _LEAKY.replace("\n", "\r\n").encode("utf-8")
+    (proj / "svc.py").write_bytes(raw)
+    result = run_scan(proj)
+    client = FakeClient(WriteResult(reachable=True, written=2))
+
+    import blake3
+
+    outcome = write_facts_to_loomweave(result, proj, client)
+    facts = {f["qualname"]: f for f in client.written_payloads or []}
+
+    assert outcome.written == 2
+    assert "svc.leaky" in facts
+    assert facts["svc.leaky"]["content_hash_at_compute"] == blake3.blake3(raw).hexdigest()
+
+
 def test_write_disabled_is_soft(tmp_path):
     proj = _proj(tmp_path)
     result = run_scan(proj)

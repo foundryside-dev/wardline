@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ast
+import time
+from collections.abc import Callable
 
 import pytest
 
@@ -471,6 +473,84 @@ def test_benign_rebind_after_loop_replaces_lambda_candidate() -> None:
     # — no stale accumulation across the loop boundary.
     src = "def handler(raw):\n    for i in items:\n        cb = lambda c: sink(c)\n    cb = lambda c: c\n    cb(raw)\n"
     assert _lambda_body_sink_arg(src) == T.INTEGRAL
+
+
+def _time_chained_rebind_analysis(make_src: Callable[[int], str]) -> tuple[float, float]:
+    """Analyze a chained-rebind source (built by *make_src(n)*) at N=700 and N=2000;
+    return ``(t_small, t_big)`` wall-clock seconds.
+
+    The ``t_big / t_small`` ratio discriminates the merge's complexity CLASS
+    independent of hardware speed — a uniform slow-CI factor cancels in the ratio.
+    The eliminated nested-scan dedup was O(N**3): ~(2000/700)**3 ≈ 23x from small to
+    big. The set-based dedup is O(N**2): ~(2000/700)**2 ≈ 8x. A reversion to cubic
+    lands well above the 16x gate below on any box; first-run cold-cache noise only
+    inflates ``t_small`` (shrinks the ratio — the safe direction for an upper bound)."""
+
+    def run(n: int) -> float:
+        func = ast.parse(make_src(n)).body[0]
+        assert isinstance(func, ast.FunctionDef)
+        start = time.perf_counter()
+        compute_variable_taints(func, T.UNKNOWN_RAW, {}, call_site_taints={}, alias_map={}, call_site_arg_taints={})
+        return time.perf_counter() - start
+
+    return run(700), run(2000)
+
+
+def test_lambda_candidate_merge_is_not_cubic_on_chained_rebinds() -> None:
+    # wardline-c797baf28b (DoS): a sequence of one-armed branches each rebinding the
+    # SAME name to a fresh lambda grows the candidate set to N, and the per-merge
+    # identity dedup was a nested linear scan — O(bucket) per insert, O(bucket**2)
+    # per merge, O(N**3) cumulative. At ~1100 branches a single attacker-authored
+    # file made a DEFAULT-gate scan take ~15s. The merge dedups via an identity set
+    # now (O(bucket) per merge, O(N**2) cumulative). The primary guard is the
+    # hardware-independent scaling ratio (see _time_chained_rebind_analysis); the
+    # absolute backstop only trips on absurd slowness (nominal ~0.26s at N=2000).
+    def make_src(n: int) -> str:
+        lines = ["def f(raw):", "    cb = lambda c: noop(c)"]
+        for i in range(n):
+            lines.append(f"    if flag{i}:")
+            lines.append(f"        cb = lambda c: sink{i}(c)")
+        lines.append("    cb(raw)")
+        return "\n".join(lines)
+
+    t_small, t_big = _time_chained_rebind_analysis(make_src)
+    assert t_big / t_small < 16.0  # ~8x quadratic vs ~23x cubic — catches a cubic reversion on any box
+    assert t_big < 8.0
+
+
+def test_var_type_candidate_merge_is_not_cubic_on_chained_rebinds() -> None:
+    # wardline-c797baf28b sibling: ``_merge_branch_types`` unions receiver-type FQN
+    # candidate sets with the IDENTICAL nested-linear-scan dedup, so a chain of
+    # one-armed ``if flagK: x = ClsK()`` rebinds had the same O(N**3) blowup. The
+    # equality-set dedup makes it O(N**2). Same ratio + backstop guards.
+    def make_src(n: int) -> str:
+        lines = ["def f(raw):", "    x = Base()"]
+        for i in range(n):
+            lines.append(f"    if flag{i}:")
+            lines.append(f"        x = Cls{i}()")
+        lines.append("    x.method(raw)")
+        return "\n".join(lines)
+
+    t_small, t_big = _time_chained_rebind_analysis(make_src)
+    assert t_big / t_small < 16.0
+    assert t_big < 8.0
+
+
+def test_chained_one_armed_rebinds_keep_every_lambda_candidate() -> None:
+    # wardline-c797baf28b SOUNDNESS lock (NOT the cubic-regression guard — this also
+    # passed pre-fix, where distinct lambdas were never wrongly coalesced). It pins
+    # the two ways the set-based dedup could silently change behavior: (1) a candidate
+    # CAP being introduced, or (2) the id-set coalescing distinct lambda bodies. A
+    # sink-lambda bound in the FIRST of many one-armed branches must remain a live
+    # candidate at the post-branch ``cb(raw)`` even though 39 later branches rebind the
+    # same name to benign lambdas — ``cb`` MAY still hold the first body on the path
+    # where only ``f0`` was taken, so the full union must survive (sink arg EXTERNAL_RAW).
+    lines = ["def handler(raw):", "    if f0:", "        cb = lambda c: sink(c)"]
+    for i in range(1, 40):
+        lines.append(f"    if f{i}:")
+        lines.append(f"        cb = lambda c: noop{i}(c)")
+    lines.append("    cb(raw)")
+    assert _lambda_body_sink_arg("\n".join(lines)) == T.EXTERNAL_RAW
 
 
 def test_compute_return_taint_all_shapes() -> None:

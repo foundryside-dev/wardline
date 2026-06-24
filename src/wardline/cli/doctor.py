@@ -11,7 +11,7 @@ from wardline.core.errors import WardlineError
 from wardline.install.doctor import (
     _check_config,
     _check_filigree_auth,
-    _resolve_probe_url,
+    _resolve_probe_target,
     check_install,
     machine_readable_doctor,
     repair_install,
@@ -47,7 +47,7 @@ def doctor(root: Path, repair: bool, fix_json: bool, filigree_url: str | None) -
     if repair:
         # Resolve the probe URL BEFORE repair_install rewrites .mcp.json (which would
         # erase a configured --filigree-url arg), so repair can still probe/recover.
-        probe_url = _resolve_probe_url(root, filigree_url)
+        probe_target = _resolve_probe_target(root, filigree_url)
         try:
             statuses = repair_install(root)
         except WardlineError as exc:
@@ -61,7 +61,7 @@ def doctor(root: Path, repair: bool, fix_json: bool, filigree_url: str | None) -
             click.echo(f"  {check.name}: {status}")
         config_status = statuses.get("weft.toml", "checked") if config_check.ok else f"failed ({config_check.message})"
         click.echo(f"  weft.toml: {config_status}")
-        fcheck = _check_filigree_auth(root, repair=True, filigree_url=probe_url)
+        fcheck = _check_filigree_auth(root, repair=True, probe_target=probe_target)
         fstatus = ("fixed" if fcheck.fixed else fcheck.message) if fcheck.ok else f"failed ({fcheck.message})"
         click.echo(f"  filigree.auth: {fstatus}")
         if not all(check.ok for check in after) or not config_check.ok or not fcheck.ok:

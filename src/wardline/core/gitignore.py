@@ -1,10 +1,11 @@
-"""Stdlib-only ``.gitignore`` matcher for discovery-time directory pruning.
+"""Stdlib-only ``.gitignore`` matcher for trusted directory-pruning callers.
 
-This is a *pruning* matcher: ``discover`` consults it to decide whether to descend
-into a directory during the ``os.walk``, so a multi-GB third-party tree listed in
-``.gitignore`` (``.venv``, ``node_modules``, ``build``…) is never traversed instead of
-being walked and post-filtered. It deliberately implements the subset of the
-gitignore spec that governs *directory* decisions deterministically:
+This is a *pruning* matcher: callers use it to decide whether to descend into a
+directory during ``os.walk``. Wardline's normal source discovery deliberately does
+not honor repository ``.gitignore`` files, because those files are checkout content
+and can hide tracked source. The matcher remains available for explicit trusted
+opt-in paths. It implements the subset of the gitignore spec that governs
+*directory* decisions deterministically:
 
 * blank lines and ``#`` comments are ignored;
 * a leading ``!`` negates (un-ignores) a later-matched pattern;
@@ -16,10 +17,8 @@ gitignore spec that governs *directory* decisions deterministically:
 
 Patterns are accumulated per-directory as the top-down walk descends, exactly as git
 layers nested ``.gitignore`` files. The matcher is intentionally conservative: it is
-used ONLY to prune directories, never to drop individual analyzable files from a scan
-(file-level exclusion stays the operator's explicit ``exclude`` globs), so a partial
-gitignore-grammar gap can only ever UNDER-prune (walk a dir git would skip) — never
-silently under-scan tracked source.
+used ONLY for directory decisions, never to drop individual analyzable files after
+discovery.
 """
 
 from __future__ import annotations

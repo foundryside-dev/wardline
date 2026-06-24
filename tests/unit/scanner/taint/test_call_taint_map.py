@@ -157,6 +157,74 @@ def test_l2_project_plain_submodule_import_carries_return_taint_end_to_end() -> 
     assert out["x"] == T.EXTERNAL_RAW
 
 
+def test_stdlib_plain_import_does_not_trust_project_submodule_spoof_end_to_end() -> None:
+    src = "import os\ndef f(p):\n    x = os.path.normpath(p)\n"
+    func = ast.parse(src).body[1]
+    assert isinstance(func, ast.FunctionDef)
+    aliases = build_import_alias_map(ast.parse(src), module_path="m")
+    tm = build_call_taint_map(
+        module_path="m",
+        alias_map=aliases,
+        project_by_module={"os.path": {"normpath": T.ASSURED}},
+    )
+    assert "os.path.normpath" not in tm
+
+    out = compute_variable_taints(func, T.INTEGRAL, dict(tm), alias_map=aliases)
+
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_stdlib_alias_import_does_not_trust_project_submodule_spoof_end_to_end() -> None:
+    src = "import os.path as op\ndef f(p):\n    x = op.normpath(p)\n"
+    func = ast.parse(src).body[1]
+    assert isinstance(func, ast.FunctionDef)
+    aliases = build_import_alias_map(ast.parse(src), module_path="m")
+    tm = build_call_taint_map(
+        module_path="m",
+        alias_map=aliases,
+        project_by_module={"os.path": {"normpath": T.ASSURED}},
+    )
+    assert "op.normpath" not in tm
+
+    out = compute_variable_taints(func, T.INTEGRAL, dict(tm), alias_map=aliases)
+
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_stdlib_from_import_parent_does_not_trust_project_submodule_spoof_end_to_end() -> None:
+    src = "from os import path\ndef f(p):\n    x = path.normpath(p)\n"
+    func = ast.parse(src).body[1]
+    assert isinstance(func, ast.FunctionDef)
+    aliases = build_import_alias_map(ast.parse(src), module_path="m")
+    tm = build_call_taint_map(
+        module_path="m",
+        alias_map=aliases,
+        project_by_module={"os.path": {"normpath": T.ASSURED}},
+    )
+    assert "path.normpath" not in tm
+
+    out = compute_variable_taints(func, T.INTEGRAL, dict(tm), alias_map=aliases)
+
+    assert out["x"] == T.UNKNOWN_RAW
+
+
+def test_stdlib_from_import_function_does_not_trust_project_spoof_end_to_end() -> None:
+    src = "from os.path import normpath\ndef f(p):\n    x = normpath(p)\n"
+    func = ast.parse(src).body[1]
+    assert isinstance(func, ast.FunctionDef)
+    aliases = build_import_alias_map(ast.parse(src), module_path="m")
+    tm = build_call_taint_map(
+        module_path="m",
+        alias_map=aliases,
+        project_by_module={"os.path": {"normpath": T.ASSURED}},
+    )
+    assert "normpath" not in tm
+
+    out = compute_variable_taints(func, T.INTEGRAL, dict(tm), alias_map=aliases)
+
+    assert out["x"] == T.UNKNOWN_RAW
+
+
 # ── PART D: aliased serialisation sinks NOT in stdlib_taint resolve to UNKNOWN_RAW ──
 #
 # json.dumps/json.dump are in _SERIALISATION_SINKS but ABSENT from stdlib_taint

@@ -258,7 +258,8 @@ handler to the specific exception you expect (`except ValueError:`).
 
 ### PY-WL-104 — silently swallowed exception in a trusted-tier function
 
-Fires on a handler whose body only `pass`/`...`/`continue`/`break` — it discards
+Fires on a handler whose body is only `pass`/`...`/`continue`/`break` or a bare
+constant expression (a docstring-like string literal or a number) — it discards
 the error with no logging, re-raise, or recovery. The failure vanishes
 silently.
 

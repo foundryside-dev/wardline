@@ -53,10 +53,12 @@ EXPECTED_TOOLS = (
     "rekey",
 )
 
-# B2 acceptance: the pure-read surface advertises readOnlyHint: true.
+# B2 acceptance: the pure-read surface advertises readOnlyHint: true. ``scan`` is
+# excluded even though a local-only scan reads the checkout: configured
+# Filigree/Loomweave integrations can add outbound writes at call time, so its
+# tools/list hints must be conservative.
 READ_ONLY_TOOLS = frozenset(
     {
-        "scan",
         "scan_job_status",
         "explain_taint",
         "dossier",

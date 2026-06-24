@@ -28,6 +28,7 @@ from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import RAW_ZONE, TRUST_RANK
 from wardline.scanner.rules._ast_helpers import _own_statements
+from wardline.scanner.rules._fingerprint import entity_source_fingerprint
 from wardline.scanner.rules._sink_helpers import module_for_qualname
 from wardline.scanner.rules.metadata import RuleMetadata
 
@@ -244,10 +245,10 @@ class NoneLeak:
                         rule_id=self.rule_id,
                         path=entity.location.path,
                         qualname=qualname,
-                        # Join-key stability (weft-4a9d0f863c): one finding per anchored qualname,
-                        # so (rule, path, line, qualname) is already unique. The declared tier is a
-                        # resolved value that drifts as the suite is extended — keep it off the join key.
-                        taint_path=None,
+                        # Line-independent source-body discriminator: one finding per anchored
+                        # qualname, but a different same-qualname entity body must not inherit
+                        # an old suppression. The declared tier remains out of the key.
+                        taint_path=entity_source_fingerprint(entity.node),
                     ),
                     qualname=qualname,
                     properties={"declared_return": declared.value},

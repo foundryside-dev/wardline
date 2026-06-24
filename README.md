@@ -24,7 +24,7 @@ def build_record(req):
 
 ```console
 $ wardline scan . --fail-on ERROR
-scanned 1 file(s); 3 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> .wardline/20260620T153012Z-findings.jsonl
+scanned 1 file(s); 2 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judged), 1 active -> .wardline/20260620T153012Z-findings.jsonl
 $ echo $?
 1
 ```
@@ -33,8 +33,8 @@ The gate trips (exit 1) and the findings land in timestamped JSON Lines under
 `.wardline/` by default (`--output PATH` writes to an exact path; `--format
 sarif` emits SARIF for GitHub code scanning). Wardline is agent-first — you
 don't read that file by hand. Your coding agent does: ask it *"why did the scan
-fail?"* and it surfaces the one active defect (the other two findings are
-`NONE`-severity engine facts):
+fail?"* and it surfaces the one active defect (the other finding is a
+`NONE`-severity engine fact):
 
 > **`demo.build_record`** declares return trust `ASSURED` but actually returns
 > `EXTERNAL_RAW` (less trusted) — untrusted data reaches a trusted producer.
@@ -137,7 +137,7 @@ Prefer `weft_markers` in application code. Wardline still recognizes
 | `scanner` | pyyaml, jsonschema, click | the `wardline` CLI and `wardline mcp` server |
 | `loomweave` | blake3 | persisting taint facts to a Loomweave store |
 | `rust` | scanner extra, tree-sitter, tree-sitter-rust | `wardline scan --lang rust` |
-| `docs` | mkdocs, mkdocs-material | building the documentation site |
+| `docs` | mkdocs, mkdocs-material | a local MkDocs render of `docs/` |
 
 The LLM triage judge (`wardline judge`) is dependency-free (stdlib `urllib` →
 OpenRouter) and needs no extra.
@@ -150,8 +150,9 @@ wardline install
 
 This injects a hash-fenced instruction block into `CLAUDE.md`/`AGENTS.md`,
 installs the `wardline-gate` skill, merges a `wardline` entry into `.mcp.json`,
-and writes Codex's `~/.codex/config.toml` MCP entry. Agents then run the scan →
-explain → fix-at-boundary → rescan loop natively. The `wardline mcp` server
+writes Codex's `~/.codex/config.toml` MCP entry, detects Loomweave/Filigree
+siblings, mints an attest signing key, and adds pre-commit hook config. Agents
+then run the scan → explain → fix-at-boundary → rescan loop natively. The `wardline mcp` server
 exposes the primary tool surface over JSON-RPC with no SDK, including scan,
 filtered findings, explain-taint, fix, judge, baseline/waiver, doctor, rekey,
 assure, attest, dossier, and Filigree filing tools.
@@ -196,23 +197,23 @@ It is **not** the right tool when you need:
 
 ## Documentation
 
-Full documentation lives at **<https://foundryside-dev.github.io/wardline/>**.
+Full documentation lives in the [`docs/`](https://github.com/foundryside-dev/wardline/tree/main/docs) tree.
 
 | Document | Description |
 |----------|-------------|
-| [Getting Started](https://foundryside-dev.github.io/wardline/getting-started/) | Install, decorate, first scan |
-| [Taint & Trust Model](https://foundryside-dev.github.io/wardline/concepts/model/) | The lattice, decorators, and propagation |
-| [Rules](https://foundryside-dev.github.io/wardline/concepts/rules/) | The boundary, exception-flow, and sink rules |
-| [Configuration](https://foundryside-dev.github.io/wardline/guides/configuration/) | `weft.toml` `[wardline]`: rules, severity, excludes |
-| [Suppression](https://foundryside-dev.github.io/wardline/guides/suppression/) | Baselines and waivers |
-| [LLM Triage Judge](https://foundryside-dev.github.io/wardline/guides/judge/) | Opt-in TRUE/FALSE-positive labelling |
-| [Rust Support](https://foundryside-dev.github.io/wardline/guides/rust-preview/) | Preview Rust command-injection frontend |
-| [Weft Integration](https://foundryside-dev.github.io/wardline/guides/weft/) | SARIF, Filigree, Loomweave, and sibling URL resolution |
-| [Assurance Posture](https://foundryside-dev.github.io/wardline/guides/assurance-posture/) | Coverage posture, attestations, and trust-surface evidence |
-| [Loomweave Taint Store](https://foundryside-dev.github.io/wardline/guides/loomweave-taint-store/) | Persisting taint facts |
-| [CLI Reference](https://foundryside-dev.github.io/wardline/reference/cli/) | Every command and flag |
-| [Trust Vocabulary](https://foundryside-dev.github.io/wardline/reference/vocabulary/) | The decorators and their arguments |
-| [Agent Integration](https://foundryside-dev.github.io/wardline/guides/agents/) | Using Wardline from a coding agent |
+| [Getting Started](https://github.com/foundryside-dev/wardline/blob/main/docs/getting-started.md) | Install, decorate, first scan |
+| [Taint & Trust Model](https://github.com/foundryside-dev/wardline/blob/main/docs/concepts/model.md) | The lattice, decorators, and propagation |
+| [Rules](https://github.com/foundryside-dev/wardline/blob/main/docs/concepts/rules.md) | The boundary, exception-flow, and sink rules |
+| [Configuration](https://github.com/foundryside-dev/wardline/blob/main/docs/guides/configuration.md) | `weft.toml` `[wardline]`: rules, severity, excludes |
+| [Suppression](https://github.com/foundryside-dev/wardline/blob/main/docs/guides/suppression.md) | Baselines and waivers |
+| [LLM Triage Judge](https://github.com/foundryside-dev/wardline/blob/main/docs/guides/judge.md) | Opt-in TRUE/FALSE-positive labelling |
+| [Rust Support](https://github.com/foundryside-dev/wardline/blob/main/docs/guides/rust-preview.md) | Preview Rust command-injection frontend |
+| [Weft Integration](https://github.com/foundryside-dev/wardline/blob/main/docs/guides/weft.md) | SARIF, Filigree, Loomweave, and sibling URL resolution |
+| [Assurance Posture](https://github.com/foundryside-dev/wardline/blob/main/docs/guides/assurance-posture.md) | Coverage posture, attestations, and trust-surface evidence |
+| [Loomweave Taint Store](https://github.com/foundryside-dev/wardline/blob/main/docs/guides/loomweave-taint-store.md) | Persisting taint facts |
+| [CLI Reference](https://github.com/foundryside-dev/wardline/blob/main/docs/reference/cli.md) | Every command and flag |
+| [Trust Vocabulary](https://github.com/foundryside-dev/wardline/blob/main/docs/reference/vocabulary.md) | The decorators and their arguments |
+| [Agent Integration](https://github.com/foundryside-dev/wardline/blob/main/docs/guides/agents.md) | Using Wardline from a coding agent |
 
 ## Development
 

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Candidate-set merge no longer scales cubically (scan DoS).** The Level-2
+  branch-join merges for lambda bindings (`_merge_branch_bindings`) and
+  receiver-type candidates (`_merge_branch_types`) deduplicated with a nested
+  linear scan of the growing candidate list — O(bucket²) per merge, O(N³)
+  across a chain of `N` one-armed branches rebinding the same name. An
+  attacker-authored file (~1100 such branches) could drive a default-gate scan
+  to ~15s and exhaust CPU on every local and CI run. Both merges now dedup via
+  an identity/equality set (O(bucket) per merge, O(N²) cumulative), preserving
+  the exact candidate set and insertion order; the demonstrated 1100-branch case
+  drops from seconds to milliseconds. No analysis behavior changes — the
+  candidate sets are identical, so no false negative is introduced.
+  Reviewed regression source: `eff4eed2` (wardline-c797baf28b).
+
 ## [1.0.6] - 2026-06-20
 
 ### Changed
@@ -1339,6 +1353,7 @@ for Python — enterprise-class trust-boundary analysis at small-team weight.
 - **Packaging** — MIT-licensed; optional extras `scanner` (config + CLI) and
   `weft` (HTTP integrations).
 
+[Unreleased]: https://github.com/foundryside-dev/wardline/compare/v1.0.6...HEAD
 [1.0.6]: https://github.com/foundryside-dev/wardline/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/foundryside-dev/wardline/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/foundryside-dev/wardline/compare/v1.0.3...v1.0.4

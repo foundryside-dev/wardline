@@ -54,7 +54,7 @@ from wardline.rust import qualname as q
 from wardline.rust.parse import has_errors, parse_rust
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Callable, Iterable, Mapping
 
     from tree_sitter import Node
 
@@ -149,23 +149,38 @@ class MountOverlay:
         return q.rust_module_route(crate=self._crate, src_root=self._src_root, file=file)
 
 
-def build_mount_overlay(sources: Mapping[str, str], *, crate: str, src_root: str) -> MountOverlay:
+def build_mount_overlay(
+    sources: Mapping[str, str],
+    *,
+    crate: str,
+    src_root: str,
+    error_callback: Callable[[str, Exception], None] | None = None,
+) -> MountOverlay:
     """Discover every literal ``#[path]`` mount across ``sources`` (path -> source text,
     paths project-root-relative posix) and build the crate's routing overlay."""
     mounts: list[_Mount] = []
     for file in sorted(sources):
         if not file.endswith(".rs"):
             continue
-        tree = parse_rust(sources[file])
-        if has_errors(tree):
-            continue  # fail-closed: no routing derived from a file we refuse to analyze
-        file_dir = posixpath.dirname(file)
-        # rustc's relative-path rule: a top-level #[path] resolves against the declaring
-        # FILE's directory; one declared inside inline mods resolves against the would-be
-        # directory of the nesting — anchored at the file's own dir for a mod-rs file
-        # (lib.rs/main.rs/mod.rs), at the file's stem directory otherwise.
-        stem_base = file_dir if posixpath.basename(file) in _ROOT_BASENAMES else file[: -len(".rs")]
-        _collect_mounts(tree.root_node.children, file, attr_dir=file_dir, nest_base=stem_base, prefix=(), out=mounts)
+        try:
+            tree = parse_rust(sources[file])
+            if has_errors(tree):
+                continue  # fail-closed: no routing derived from a file we refuse to analyze
+            file_dir = posixpath.dirname(file)
+            # rustc's relative-path rule: a top-level #[path] resolves against the declaring
+            # FILE's directory; one declared inside inline mods resolves against the would-be
+            # directory of the nesting — anchored at the file's own dir for a mod-rs file
+            # (lib.rs/main.rs/mod.rs), at the file's stem directory otherwise.
+            stem_base = file_dir if posixpath.basename(file) in _ROOT_BASENAMES else file[: -len(".rs")]
+            file_mounts: list[_Mount] = []
+            _collect_mounts(
+                tree.root_node.children, file, attr_dir=file_dir, nest_base=stem_base, prefix=(), out=file_mounts
+            )
+            mounts.extend(file_mounts)
+        except Exception as exc:  # noqa: BLE001 - hostile source must not crash the scan
+            if error_callback is None:
+                raise
+            error_callback(file, exc)
     return MountOverlay(mounts, crate=crate, src_root=src_root)
 
 

@@ -39,20 +39,20 @@ _ANCHORS: tuple[tuple[str, int, str], ...] = (
     ("src/wardline/core/run.py", 551, "active=sum"),
     ("src/wardline/core/run.py", 643, "honors_suppressions"),
     # src/wardline/cli/scan.py — CLI summary line + gate stderr
-    ("src/wardline/cli/scan.py", 556, "suppressed"),
-    ("src/wardline/cli/scan.py", 557, "{s.active} active"),
-    ("src/wardline/cli/scan.py", 609, "gate: FAILED"),
+    ("src/wardline/cli/scan.py", 559, "suppressed"),
+    ("src/wardline/cli/scan.py", 560, "{s.active} active"),
+    ("src/wardline/cli/scan.py", 612, "gate: FAILED"),
     # src/wardline/mcp/server.py — MCP scan summary + gate block
-    ("src/wardline/mcp/server.py", 1009, '"total": result.summary.total'),
-    ("src/wardline/mcp/server.py", 1010, '"active": result.summary.active'),
-    ("src/wardline/mcp/server.py", 1011, '"baselined": result.summary.baselined'),
-    ("src/wardline/mcp/server.py", 1012, '"waived": result.summary.waived'),
-    ("src/wardline/mcp/server.py", 1013, '"judged": result.summary.judged'),
-    ("src/wardline/mcp/server.py", 1018, '"informational": result.summary.informational'),
-    ("src/wardline/mcp/server.py", 1022, '"unanalyzed": result.summary.unanalyzed'),
-    ("src/wardline/mcp/server.py", 1024, '"gate": {'),
-    ("src/wardline/mcp/server.py", 1025, '"tripped": decision.tripped'),
-    ("src/wardline/mcp/server.py", 1029, '"verdict": decision.verdict'),
+    ("src/wardline/mcp/server.py", 1026, '"total": result.summary.total'),
+    ("src/wardline/mcp/server.py", 1027, '"active": result.summary.active'),
+    ("src/wardline/mcp/server.py", 1028, '"baselined": result.summary.baselined'),
+    ("src/wardline/mcp/server.py", 1029, '"waived": result.summary.waived'),
+    ("src/wardline/mcp/server.py", 1030, '"judged": result.summary.judged'),
+    ("src/wardline/mcp/server.py", 1035, '"informational": result.summary.informational'),
+    ("src/wardline/mcp/server.py", 1039, '"unanalyzed": result.summary.unanalyzed'),
+    ("src/wardline/mcp/server.py", 1041, '"gate": {'),
+    ("src/wardline/mcp/server.py", 1042, '"tripped": decision.tripped'),
+    ("src/wardline/mcp/server.py", 1046, '"verdict": decision.verdict'),
     # src/wardline/core/agent_summary.py — agent-summary JSON keys
     ("src/wardline/core/agent_summary.py", 139, '"total_findings"'),
     ("src/wardline/core/agent_summary.py", 140, '"active_defects"'),
@@ -67,10 +67,10 @@ _ANCHORS: tuple[tuple[str, int, str], ...] = (
     # informational display array (new, W3 residual fix)
     ("src/wardline/core/agent_summary.py", 176, '"informational": informational'),
     # per-finding suppression_state output key (renamed from `suppressed`, weft-f506e5f845)
-    ("src/wardline/core/finding.py", 140, '"suppression_state"'),
-    ("src/wardline/core/finding.py", 295, 'wardline["suppression_state"]'),
+    ("src/wardline/core/finding.py", 145, '"suppression_state"'),
+    ("src/wardline/core/finding.py", 305, 'wardline["suppression_state"]'),
     # stable-file anchors (lower churn, but locked for free)
-    ("src/wardline/core/finding.py", 72, 'ACTIVE = "active"'),
+    ("src/wardline/core/finding.py", 77, 'ACTIVE = "active"'),
     ("src/wardline/core/suppression.py", 24, "SuppressionState.BASELINED"),
 )
 

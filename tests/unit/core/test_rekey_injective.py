@@ -32,6 +32,20 @@ def test_clean_remap_has_no_collisions() -> None:
     assert res.old_to_new == {a: "1" * 64, b: "2" * 64}
 
 
+def test_fanout_remap_reports_and_orphans_old_fingerprint() -> None:
+    old, new_a, new_b, c, ok = "a" * 64, "1" * 64, "2" * 64, "c" * 64, "3" * 64
+    # One legacy fingerprint split into two current findings. Carrying the old verdict to
+    # either one would be arbitrary, so the old fingerprint must orphan loudly.
+    res = build_remap([_rm(old, new_a), _rm(old, new_b), _rm(c, ok)])
+
+    assert len(res.collisions) == 1
+    assert res.collisions[0].old_fps == (old,)
+    assert res.collisions[0].new_fps == (new_a, new_b)
+    assert "WLN-ENGINE-FINGERPRINT-FANOUT" in res.collisions[0].message
+    assert old not in res.old_to_new
+    assert res.old_to_new == {c: ok}
+
+
 def test_identical_finding_seen_twice_is_not_a_collision() -> None:
     # Same (old_fp, new_fp) twice is idempotent, not a collision.
     a = "a" * 64

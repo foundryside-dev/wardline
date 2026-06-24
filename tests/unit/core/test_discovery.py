@@ -76,24 +76,49 @@ def test_confine_excludes_symlink_escaping_root(tmp_path: Path) -> None:
 
 def test_discover_rust_suffix(tmp_path: Path) -> None:
     # The suffix parameter routes discovery to a different language's files: a
-    # `.rs` sweep finds `a.rs`, never `a.py`; `target/` (cargo build output) is
-    # skipped; and the default (no `suffixes`) call is byte-unchanged Python-only.
+    # `.rs` sweep finds `a.rs`, never `a.py`; and the default (no `suffixes`) call
+    # is byte-unchanged Python-only.
     root = tmp_path / "root"
     src = root / "src"
     src.mkdir(parents=True)
     (src / "a.rs").write_text("fn main() {}\n", encoding="utf-8")
     (src / "a.py").write_text("x = 1\n", encoding="utf-8")
-    built = src / "target"
-    built.mkdir()
-    (built / "built.rs").write_text("fn x() {}\n", encoding="utf-8")
 
     cfg = WardlineConfig(source_roots=("src",))
 
     rust_files = discover(root, cfg, suffixes=frozenset({".rs"}))
-    assert sorted(p.name for p in rust_files) == ["a.rs"]  # a.rs only; not a.py, not target/
+    assert sorted(p.name for p in rust_files) == ["a.rs"]  # a.rs only; not a.py
 
     default_files = discover(root, cfg)  # default suffixes -> Python only
     assert sorted(p.name for p in default_files) == ["a.py"]
+
+
+def test_rust_discovery_prunes_only_project_root_target_dir(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    (root / "src" / "target").mkdir(parents=True)
+    (root / "src" / "target" / "mod.rs").write_text("pub fn legitimate() {}\n", encoding="utf-8")
+    (root / "target" / "debug").mkdir(parents=True)
+    (root / "target" / "debug" / "generated.rs").write_text("fn generated() {}\n", encoding="utf-8")
+
+    files = discover(root, WardlineConfig(source_roots=(".",)), suffixes=frozenset({".rs"}))
+
+    assert [p.relative_to(root).as_posix() for p in files] == ["src/target/mod.rs"]
+
+
+def test_mixed_suffix_discovery_keeps_nested_target_packages(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    pkg = root / "src" / "target"
+    pkg.mkdir(parents=True)
+    (pkg / "mod.rs").write_text("pub fn legitimate() {}\n", encoding="utf-8")
+    (pkg / "service.py").write_text("x = 1\n", encoding="utf-8")
+    (root / "target").mkdir()
+    (root / "target" / "generated.py").write_text("y = 2\n", encoding="utf-8")
+    (root / "target" / "generated.rs").write_text("fn generated() {}\n", encoding="utf-8")
+
+    files = discover(root, WardlineConfig(source_roots=(".",)), suffixes=frozenset({".py", ".rs"}))
+
+    rel = [p.relative_to(root).as_posix() for p in files]
+    assert rel == ["src/target/mod.rs", "src/target/service.py"]
 
 
 def test_target_dir_is_not_skipped_for_python(tmp_path: Path) -> None:
@@ -110,6 +135,22 @@ def test_target_dir_is_not_skipped_for_python(tmp_path: Path) -> None:
     cfg = WardlineConfig(source_roots=("src",))
     files = discover(root, cfg)
     assert [p.name for p in files] == ["m.py"]
+
+
+def test_repo_gitignore_cannot_hide_source_from_discovery(tmp_path: Path) -> None:
+    (tmp_path / ".gitignore").write_text("pkg/\nsrc/generated/\n", encoding="utf-8")
+    (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "hidden.py").write_text("y = 2\n", encoding="utf-8")
+    generated = tmp_path / "src" / "generated"
+    generated.mkdir(parents=True)
+    (generated / "handler.py").write_text("z = 3\n", encoding="utf-8")
+
+    files = discover(tmp_path, WardlineConfig(source_roots=(".",)))
+
+    rel = sorted(p.relative_to(tmp_path).as_posix() for p in files)
+    assert rel == ["app.py", "pkg/hidden.py", "src/generated/handler.py"]
 
 
 def test_discover_rust_symlink_confined(tmp_path: Path) -> None:
@@ -140,17 +181,16 @@ def test_discover_rust_symlink_confined(tmp_path: Path) -> None:
     assert all(p.name != "evil.rs" for p in files)
 
 
-def test_gitignored_dir_is_not_scanned(tmp_path: Path) -> None:
-    # The owner's top blocker: discover() must consult .gitignore and PRUNE matched
-    # directories during the walk, never descending a multi-GB gitignored third-party
-    # tree. A dir listed in the project-root .gitignore yields none of its files.
+def test_respect_gitignore_prunes_dir_when_explicitly_enabled(tmp_path: Path) -> None:
+    # .gitignore is repository-controlled and is not the default scan boundary, but
+    # trusted callers may still opt into Git-like pruning for bulk third-party trees.
     (tmp_path / ".gitignore").write_text("third_party/\n", encoding="utf-8")
     (tmp_path / "app.py").write_text("x = 1\n", encoding="utf-8")
     vendored = tmp_path / "third_party" / "huge" / "deep"
     vendored.mkdir(parents=True)
     (vendored / "lib.py").write_text("y = 2\n", encoding="utf-8")
 
-    files = discover(tmp_path, WardlineConfig(source_roots=(".",)))
+    files = discover(tmp_path, WardlineConfig(source_roots=(".",)), respect_gitignore=True)
 
     rel = [p.relative_to(tmp_path).as_posix() for p in files]
     assert rel == ["app.py"]
@@ -158,9 +198,8 @@ def test_gitignored_dir_is_not_scanned(tmp_path: Path) -> None:
 
 
 def test_gitignored_walk_does_not_descend_ignored_dir(tmp_path: Path, monkeypatch) -> None:
-    # Pruning must happen DURING the walk (dirnames[:] in place), so os.walk never
-    # even enters the ignored subtree — not merely a post-filter. Assert the ignored
-    # directory is never yielded by the walk.
+    # When the trusted opt-in is enabled, pruning must happen DURING the walk
+    # (dirnames[:] in place), so os.walk never enters the ignored subtree.
     import wardline.core.discovery as discovery_mod
 
     (tmp_path / ".gitignore").write_text(".venv-vendor/\n", encoding="utf-8")
@@ -178,7 +217,7 @@ def test_gitignored_walk_does_not_descend_ignored_dir(tmp_path: Path, monkeypatc
             yield dirpath, dirnames, filenames
 
     monkeypatch.setattr(discovery_mod.os, "walk", spy_walk)
-    discover(tmp_path, WardlineConfig(source_roots=(".",)))
+    discover(tmp_path, WardlineConfig(source_roots=(".",)), respect_gitignore=True)
 
     assert ".venv-vendor" not in walked
     assert "pkg" not in walked
@@ -197,7 +236,7 @@ def test_negated_gitignore_pattern_keeps_dir(tmp_path: Path) -> None:
     (keep / "k.py").write_text("x = 1\n", encoding="utf-8")
     (drop / "d.py").write_text("y = 2\n", encoding="utf-8")
 
-    files = discover(tmp_path, WardlineConfig(source_roots=(".",)))
+    files = discover(tmp_path, WardlineConfig(source_roots=(".",)), respect_gitignore=True)
 
     rel = [p.relative_to(tmp_path).as_posix() for p in files]
     assert rel == ["build-keep/k.py"]
@@ -247,7 +286,7 @@ def test_nested_gitignore_layers(tmp_path: Path) -> None:
     other.mkdir()
     (other / "o.py").write_text("z = 3\n", encoding="utf-8")
 
-    files = discover(tmp_path, WardlineConfig(source_roots=(".",)))
+    files = discover(tmp_path, WardlineConfig(source_roots=(".",)), respect_gitignore=True)
 
     rel = sorted(p.relative_to(tmp_path).as_posix() for p in files)
     assert rel == ["generated/o.py", "pkg/real.py"]
@@ -264,7 +303,7 @@ def test_nested_anchored_gitignore_pattern_is_relative_to_its_own_directory(tmp_
     sibling.mkdir()
     (sibling / "keep.py").write_text("z = 3\n", encoding="utf-8")
 
-    files = discover(tmp_path, WardlineConfig(source_roots=(".",)))
+    files = discover(tmp_path, WardlineConfig(source_roots=(".",)), respect_gitignore=True)
 
     rel = sorted(p.relative_to(tmp_path).as_posix() for p in files)
     assert rel == ["generated/keep.py", "pkg/real.py"]
@@ -283,7 +322,7 @@ def test_gitignore_does_not_prune_outside_root(tmp_path: Path) -> None:
     (data / "keep.py").write_text("x = 1\n", encoding="utf-8")
 
     cfg = WardlineConfig(source_roots=("../sibling",))
-    files = discover(root, cfg)
+    files = discover(root, cfg, respect_gitignore=True)
 
     # The root's `data/` rule must not reach into the out-of-root sibling tree.
     rel = sorted(p.name for p in files)

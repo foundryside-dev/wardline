@@ -39,6 +39,12 @@ output/
 # port (a live, never-committed runtime artifact, not tracked state).
 .weft/*/ephemeral.port
 
+# Local sibling tool stores are runtime/tooling state for this checkout. Keep
+# wardline's own .weft/wardline/ suppression state visible and auditable.
+.weft/filigree/
+.weft/loomweave/
+.weft/warpline/
+
 # Filigree issue tracker
 .filigree/
 .env
@@ -56,7 +62,6 @@ coverage.json
 loomweave.yaml
 
 # Filigree issue tracker
-.weft/
 .filigree.conf
 .agents/skills/loomweave-workflow/.fingerprint
 .agents/skills/loomweave-workflow/SKILL.md

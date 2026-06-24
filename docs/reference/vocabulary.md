@@ -25,6 +25,7 @@ names are also discoverable without importing Wardline at all, via
 `wardline vocab`, which prints:
 
 ```text
+schema: wardline.vocabulary/v1
 version: wardline-generic-2
 entries:
 - canonical_name: external_boundary

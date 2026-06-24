@@ -40,7 +40,7 @@ least_trusted(INTEGRAL, ASSURED) == ASSURED  # weakest link wins
 absorbing top `MIXED_RAW`. After the three `least_trusted` migrations it has **no
 production call site** — it is retained deliberately as the documented contrast
 operator. See the ADR:
-[Retain the 8-state lattice](https://github.com/foundryside-dev/wardline/blob/main/docs/decisions/2026-05-31-wardline-taint-lattice-retain.md).
+[Retain the 8-state lattice](../decisions/2026-05-31-wardline-taint-lattice-retain.md).
 
 ## The discriminator: why even genuine value-merges use `least_trusted`
 
@@ -150,7 +150,7 @@ crosses between maps:
 
 When a caller launders raw data through a `@trust_boundary` validator, `PY-WL-101`
 reads the validator's **declared** output tier (`effective_return`,
-`project_resolver.py:156`) — not the raw input — because the trust model treats
+`project_resolver.py:268`) — not the raw input — because the trust model treats
 the annotation as the contract.
 
 This is sound for the statically-decidable property. A **broken** validator with
@@ -172,6 +172,6 @@ promises and what a value-level semantic analysis would require.
 
 - [Taint & trust model](model.md) — the reader-facing introduction.
 - [Rules](rules.md) — the checks built on this algebra.
-- [ADR: Retain the 8-state lattice](https://github.com/foundryside-dev/wardline/blob/main/docs/decisions/2026-05-31-wardline-taint-lattice-retain.md).
+- [ADR: Retain the 8-state lattice](../decisions/2026-05-31-wardline-taint-lattice-retain.md).
 - `docs/audits/2026-05-31-taint-combination-audit.md` — the audit this spec
   consolidates (findings F1–F6).

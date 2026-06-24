@@ -378,6 +378,32 @@ def test_executemany_tainted_operation_fires(tmp_path: Path) -> None:
     assert sqli[0].severity is Severity.ERROR
 
 
+def test_multiline_chained_execute_calls_have_distinct_fingerprints(tmp_path: Path) -> None:
+    findings = _analyze_files(
+        tmp_path,
+        {
+            "m.py": """
+            @trusted(level='ASSURED')
+            def f(p, conn):
+                a = read_raw(p)
+                b = read_raw(p)
+                return conn.cursor().execute(
+                    a
+                ).execute(
+                    b
+                )
+            """
+        },
+    )
+
+    sqli = _sqli(findings)
+    assert len(sqli) == 2
+    line_ends = [f.location.line_end for f in sqli]
+    assert all(line is not None for line in line_ends)
+    assert sorted(line for line in line_ends if line is not None) == [12, 14]
+    assert len({f.fingerprint for f in sqli}) == 2
+
+
 def test_118_undecorated_is_suppressed(tmp_path: Path) -> None:
     # Matrix slot (wardline-e159060db7): SQLInjection overrides check(), so its
     # tier-gate branch needs its own undecorated (UNKNOWN_RAW freedom-zone)

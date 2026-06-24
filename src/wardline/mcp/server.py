@@ -23,7 +23,12 @@ from wardline.core.baseline import generate_baseline, load_baseline
 from wardline.core.delta_scope import ScopeParseError, load_affected_scope, parse_affected_scope
 from wardline.core.errors import WardlineError
 from wardline.core.explain import explain_taint_result, explanation_from_context, explanation_to_dict
-from wardline.core.filigree_emit import FiligreeEmitter, filigree_destination, filigree_disabled_reason
+from wardline.core.filigree_emit import (
+    FiligreeEmitter,
+    filigree_destination,
+    filigree_disabled_reason,
+    redact_url_for_diagnostics,
+)
 from wardline.core.finding import Finding, Severity
 from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
@@ -118,7 +123,7 @@ def _emit_filigree(
         "status": er.status,
         "auth_rejected": er.auth_rejected,
         "token_sent": er.token_sent,
-        "url": er.url,
+        "url": redact_url_for_diagnostics(er.url),
         # N1 / C-10(a): name where findings went so a wrong-project write is visible.
         "destination": filigree_destination(er.url),
     }
@@ -791,20 +796,32 @@ def _scan_job_request(args: dict[str, Any], root: Path, filigree_url: str | None
     }
 
 
+def _redact_scan_job_status(status: dict[str, Any]) -> dict[str, Any]:
+    redacted = dict(status)
+    request = redacted.get("request")
+    if isinstance(request, dict):
+        safe_request = dict(request)
+        url = safe_request.get("filigree_url")
+        if isinstance(url, str):
+            safe_request["filigree_url"] = redact_url_for_diagnostics(url)
+        redacted["request"] = safe_request
+    return redacted
+
+
 def _scan_job_start(args: dict[str, Any], root: Path, filigree_url: str | None = None) -> dict[str, Any]:
     path = _path_arg(args, root)
     request = _scan_job_request(args, root, filigree_url)
-    return start_scan_job(path, request)
+    return _redact_scan_job_status(start_scan_job(path, request))
 
 
 def _scan_job_status(args: dict[str, Any], root: Path) -> dict[str, Any]:
     job_id = str(_require(args, "job_id"))
-    return read_scan_job_status(_path_arg(args, root), job_id)
+    return _redact_scan_job_status(read_scan_job_status(_path_arg(args, root), job_id))
 
 
 def _scan_job_cancel(args: dict[str, Any], root: Path) -> dict[str, Any]:
     job_id = str(_require(args, "job_id"))
-    return cancel_scan_job(_path_arg(args, root), job_id)
+    return _redact_scan_job_status(cancel_scan_job(_path_arg(args, root), job_id))
 
 
 def _scan(
@@ -2045,11 +2062,15 @@ _SCAN_TOOL: dict[str, Any] = {
     "output_schema": _SCAN_OUTPUT_SCHEMA,
     "annotations": {
         "title": "Trust-boundary scan",
-        "readOnlyHint": True,
+        # A bare local scan reads the checkout, but configured Filigree/Loomweave
+        # integrations can add outbound writes at call time. Advertise the
+        # conservative superset so MCP clients do not auto-run it as read-only.
+        "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
-        "openWorldHint": False,
+        "openWorldHint": True,
     },
+    "capabilities": frozenset({ToolCapability.READ, ToolCapability.WRITE, ToolCapability.NETWORK}),
 }
 
 
@@ -3965,7 +3986,9 @@ def _doctor(
     *,
     started_at: float,
     filigree_url: str | None = None,
+    filigree_url_source: str | None = None,
     loomweave_url: str | None = None,
+    loomweave_url_source: str | None = None,
 ) -> dict[str, Any]:
     """The CLI `doctor --fix` envelope over MCP (A2, wardline-2ee1bbda82's sibling):
     install/federation health checks via the SAME machine_readable_doctor builder,
@@ -3982,7 +4005,22 @@ def _doctor(
     flag = args.get("filigree_url")
     if flag is not None and not isinstance(flag, str):
         raise ToolError("filigree_url must be a string")
-    payload = machine_readable_doctor(root, fix=repair, filigree_url=flag or filigree_url, loomweave_url=loomweave_url)
+    payload = machine_readable_doctor(
+        root,
+        fix=repair,
+        filigree_url=filigree_url,
+        filigree_url_source=filigree_url_source,
+        loomweave_url=loomweave_url,
+        loomweave_url_source=loomweave_url_source,
+    )
+    if flag is not None:
+        message = (
+            "caller-supplied filigree_url is not accepted over MCP; configure the "
+            "wardline MCP server launch flag or WARDLINE_FILIGREE_URL instead"
+        )
+        payload["checks"].append({"id": "doctor.filigree_url", "status": "error", "fixed": False, "message": message})
+        payload["ok"] = False
+        payload["next_actions"].append(f"doctor.filigree_url: {message}")
     return attach_server_identity(payload, root=root, started_at=started_at)
 
 
@@ -3999,8 +4037,8 @@ _DOCTOR_OUTPUT_SCHEMA: dict[str, Any] = {
         "checks": {
             "type": "array",
             "description": "Uniform health-check verdicts: wardline.config, mcp.registration, marker_package, "
-            "loomweave.url, filigree.url, decorator_grammar, scan.output_path, auth.token, filigree.auth, then "
-            "server.freshness last.",
+            "loomweave.url, filigree.url, decorator_grammar, scan.output_path, auth.token, filigree.auth, "
+            "optionally doctor.filigree_url for rejected MCP caller input, then server.freshness last.",
             "items": {
                 "type": "object",
                 "properties": {
@@ -4094,9 +4132,9 @@ _DOCTOR_TOOL: dict[str, Any] = {
             },
             "filigree_url": {
                 "type": "string",
-                "description": "Filigree URL to probe for emit auth (default: the server's "
-                "configured URL, then WARDLINE_FILIGREE_URL, then the .mcp.json arg). "
-                "Only loopback origins are ever probed with a token.",
+                "description": "Deprecated and rejected over MCP: caller-supplied probe URLs "
+                "are not trusted with Filigree credentials. Configure the server launch "
+                "flag, WARDLINE_FILIGREE_URL, or the project .mcp.json entry instead.",
             },
         },
     },
@@ -4109,6 +4147,17 @@ _DOCTOR_TOOL: dict[str, Any] = {
         "openWorldHint": False,
     },
 }
+
+
+def _rekey_collision_wire(collision: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "new_fp": collision.new_fp,
+        "old_fps": list(collision.old_fps),
+        "message": collision.message,
+    }
+    if getattr(collision, "new_fps", ()):
+        payload["new_fps"] = list(collision.new_fps)
+    return payload
 
 
 def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, Any]:
@@ -4145,9 +4194,7 @@ def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, 
             "fingerprint_scheme_to": journal.fingerprint_scheme_to,
             "snapshot_prescheme": journal.snapshot_prescheme,
             "orphan_cause": ORPHAN_CAUSE,
-            "collisions": [
-                {"new_fp": c.new_fp, "old_fps": list(c.old_fps), "message": c.message} for c in journal.collisions
-            ],
+            "collisions": [_rekey_collision_wire(c) for c in journal.collisions],
             "legs": [
                 {
                     "name": leg.name,
@@ -4211,9 +4258,7 @@ def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, 
             "stale_count": len(report.stale),
             "stale_sample": list(report.stale[:ORPHAN_SAMPLE_LIMIT]),
             "stale_cause": STALE_CAUSE,
-            "collisions": [
-                {"new_fp": c.new_fp, "old_fps": list(c.old_fps), "message": c.message} for c in report.collisions
-            ],
+            "collisions": [_rekey_collision_wire(c) for c in report.collisions],
             "per_store": dict(report.per_store),
             "prescheme": report.prescheme,
             "current_scheme_stores": list(report.current_scheme_stores),
@@ -4278,24 +4323,33 @@ _REKEY_OUTPUT_SCHEMA: dict[str, Any] = {
         },
         "collisions": {
             "type": "array",
-            "description": "probe/apply/resume: pre-rekey fingerprints that collapse to the same new fingerprint "
-            "under the new scheme; all involved old fingerprints are orphaned, not carried.",
+            "description": "probe/apply/resume: ambiguous rekey mappings. Either multiple pre-rekey fingerprints "
+            "collapse to one new fingerprint, or one pre-rekey fingerprint fans out to multiple new fingerprints. "
+            "All involved old fingerprints are orphaned, not carried.",
             "items": {
                 "type": "object",
                 "properties": {
                     "new_fp": {
-                        "type": "string",
-                        "description": "The new-scheme fingerprint that more than one old fingerprint maps onto.",
+                        "type": ["string", "null"],
+                        "description": "Collapse: the new-scheme fingerprint that more than one old fingerprint maps "
+                        "onto. Fan-out: null, with new_fps carrying the candidate new fingerprints.",
+                    },
+                    "new_fps": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Fan-out only: the candidate new-scheme fingerprints one old fingerprint maps "
+                        "onto. Omitted for collapse collisions.",
                     },
                     "old_fps": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "The colliding pre-rekey fingerprints (sorted).",
+                        "description": "The ambiguous pre-rekey fingerprints (sorted). Fan-out entries contain one old "
+                        "fingerprint.",
                     },
                     "message": {
                         "type": "string",
-                        "description": "WLN-ENGINE-FINGERPRINT-COLLISION diagnostic explaining that the colliding "
-                        "verdicts are orphaned.",
+                        "description": "WLN-ENGINE-FINGERPRINT-COLLISION or WLN-ENGINE-FINGERPRINT-FANOUT diagnostic "
+                        "explaining that the verdicts are orphaned.",
                     },
                 },
                 "required": ["new_fp", "old_fps", "message"],
@@ -4555,13 +4609,17 @@ class WardlineMCPServer:
         *,
         root: Path,
         loomweave_url: str | None = None,
+        loomweave_url_source: str | None = None,
         filigree_url: str | None = None,
+        filigree_url_source: str | None = None,
         allow_write: bool = True,
         allow_network: bool = True,
     ) -> None:
         self.root = Path(root)
         self.loomweave_url = loomweave_url
+        self.loomweave_url_source = loomweave_url_source
         self.filigree_url = filigree_url
+        self.filigree_url_source = filigree_url_source
         # Recorded once at construction: the doctor tool's freshness verdict compares
         # on-disk source mtimes against this to expose a stale long-lived server.
         self.started_at = time.time()
@@ -4782,9 +4840,10 @@ class WardlineMCPServer:
                 handler=lambda args, root: _waiver_add(
                     args,
                     root,
-                    # An entity_symbol needs Loomweave to resolve; an opaque entity_id does
-                    # not. Build the client only when a symbol is present (None otherwise).
-                    self._loomweave_client(_cfg(args, root)) if args.get("entity_symbol") else None,
+                    # entity_id wins over entity_symbol; only L2 symbol binding needs Loomweave.
+                    self._loomweave_client(_cfg(args, root))
+                    if args.get("entity_symbol") and not args.get("entity_id")
+                    else None,
                 ),
             )
         )
@@ -4802,7 +4861,9 @@ class WardlineMCPServer:
                     root,
                     started_at=self.started_at,
                     filigree_url=self.filigree_url,
+                    filigree_url_source=self.filigree_url_source,
                     loomweave_url=self.loomweave_url,
+                    loomweave_url_source=self.loomweave_url_source,
                 ),
             )
         )
@@ -4875,7 +4936,10 @@ class WardlineMCPServer:
         )
 
     def _effective_tool_capabilities(self, tool: Tool, arguments: dict[str, Any]) -> frozenset[ToolCapability]:
-        capabilities = set(tool.capabilities)
+        # ``scan`` advertises the conservative possible-effects superset in
+        # tools/list, but hardened runtime policy should still allow a purely
+        # local scan when no integration URL resolves.
+        capabilities = {ToolCapability.READ} if tool.name == "scan" else set(tool.capabilities)
         if tool.name == "scan" and (
             self._resolved_loomweave_url_for_policy(arguments) is not None
             or self._resolved_filigree_url_for_policy(arguments) is not None
@@ -4899,18 +4963,25 @@ class WardlineMCPServer:
             capabilities.add(ToolCapability.NETWORK)
         if tool.name == "judge" and bool(arguments.get("write", False)):
             capabilities.add(ToolCapability.WRITE)
+        if (
+            tool.name == "waiver_add"
+            and bool(arguments.get("entity_symbol"))
+            and not bool(arguments.get("entity_id"))
+            and self._resolved_loomweave_url_for_policy(arguments) is not None
+        ):
+            capabilities.add(ToolCapability.NETWORK)
         if tool.name == "doctor":
             if bool(arguments.get("repair", False)):
                 capabilities.add(ToolCapability.WRITE)
-            from wardline.install.doctor import _resolve_probe_url
+            from wardline.install.doctor import _filigree_auth_probe_would_network
 
-            flag = arguments.get("filigree_url")
-            probe_url = flag if isinstance(flag, str) and flag else None
-            if _resolve_probe_url(self.root, probe_url or self.filigree_url) is not None:
+            if _filigree_auth_probe_would_network(self.root, self.filigree_url):
                 # The filigree-auth probe will touch the (loopback-only) network.
                 capabilities.add(ToolCapability.NETWORK)
         if tool.name == "rekey":
-            if any(bool(arguments.get(k, False)) for k in ("apply", "resume", "rollback")):
+            if bool(arguments.get("cache_dir")) or any(
+                bool(arguments.get(k, False)) for k in ("apply", "resume", "rollback")
+            ):
                 capabilities.add(ToolCapability.WRITE)
             if bool(arguments.get("apply", False)) and self._resolved_filigree_url_for_policy(arguments) is not None:
                 # apply's last leg re-emits the rekeyed findings to Filigree.

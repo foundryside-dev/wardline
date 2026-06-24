@@ -1,5 +1,5 @@
 {
-  "corpus_version": 4,
+  "corpus_version": 6,
   "fingerprint_scheme": "wlfp2",
-  "reason": "record sink call spans in finding locations"
+  "reason": "call-site full-span discriminator"
 }

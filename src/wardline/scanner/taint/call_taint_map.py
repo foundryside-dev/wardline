@@ -23,7 +23,10 @@ three import forms: ``import urllib.request`` (alias map collapses to
 ``{"urllib": "urllib"}``; the call is written ``urllib.request.urlopen``),
 ``import urllib.request as ur``, and ``from urllib.request import urlopen``.
 
-Project entries take precedence over stdlib (``setdefault`` for stdlib).
+Project entries take precedence over stdlib (``setdefault`` for stdlib), except
+for submodule expansion below a stdlib root that the project itself does not own.
+That keeps path-only modules such as ``os/path.py`` from spoofing runtime
+``import os``.
 Residual known gap: an aliased serialisation sink NOT in the stdlib table (e.g.
 ``import pickle as p`` when pickle is uncurated) has no taint_map entry and the
 literal sink check misses the alias, so it falls back to the function taint —
@@ -32,6 +35,7 @@ pre-existing, not worsened here.
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
@@ -62,6 +66,18 @@ def _match_config_item(item: str, alias_map: dict[str, str]) -> list[str]:
     return keys
 
 
+def _top_level_module(dotted: str) -> str:
+    return dotted.partition(".")[0]
+
+
+def _can_trust_project_import_target(
+    target: str,
+    project_by_module: Mapping[str, Mapping[str, TaintState]],
+) -> bool:
+    root = _top_level_module(target)
+    return root not in sys.stdlib_module_names or root in project_by_module
+
+
 def build_call_taint_map(
     *,
     module_path: str,
@@ -86,24 +102,28 @@ def build_call_taint_map(
 
     # (b)+(c) Imported project symbols, via the file's alias map.
     for local, target in alias_map.items():
-        bucket = project_by_module.get(target)
-        if bucket is not None:
-            # module import: dotted ``local.func`` calls
-            for func_name, taint in bucket.items():
-                tm[f"{local}.{func_name}"] = taint
-        for module, module_bucket in project_by_module.items():
-            if module.startswith(target + "."):
-                # ``import pkg.sub`` collapses the alias to ``pkg``; the call is
-                # written ``local.<rest-of-module>.fn`` just like multi-component
-                # stdlib imports.
-                remainder = module[len(target) + 1 :]
-                for func_name, taint in module_bucket.items():
-                    tm[f"{local}.{remainder}.{func_name}"] = taint
+        if _can_trust_project_import_target(target, project_by_module):
+            bucket = project_by_module.get(target)
+            if bucket is not None:
+                # module import: dotted ``local.func`` calls
+                for func_name, taint in bucket.items():
+                    tm[f"{local}.{func_name}"] = taint
+            for module, module_bucket in project_by_module.items():
+                if module.startswith(target + "."):
+                    # ``import pkg.sub`` collapses the alias to ``pkg``; the call is
+                    # written ``local.<rest-of-module>.fn`` just like multi-component
+                    # stdlib imports. Do not apply this beneath a stdlib root unless the
+                    # project owns that root package/module; a path-only ``os/path.py``
+                    # must not spoof runtime ``import os``.
+                    remainder = module[len(target) + 1 :]
+                    for func_name, taint in module_bucket.items():
+                        tm[f"{local}.{remainder}.{func_name}"] = taint
         # from-import of a project function: target == "module.func_name"
         mod, _, leaf = target.rpartition(".")
-        mod_bucket = project_by_module.get(mod)
-        if mod_bucket is not None and leaf in mod_bucket:
-            tm[local] = mod_bucket[leaf]
+        if _can_trust_project_import_target(mod, project_by_module):
+            mod_bucket = project_by_module.get(mod)
+            if mod_bucket is not None and leaf in mod_bucket:
+                tm[local] = mod_bucket[leaf]
 
     # (d) stdlib_taint with the serialisation-sink override.
     stdlib = load_stdlib_taint()

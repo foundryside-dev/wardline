@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from wardline.core.errors import DossierError
-from wardline.core.finding import UNANALYZED_RULE_IDS, Kind, SuppressionState
+from wardline.core.finding import INCOMPLETE_ANALYSIS_RULE_IDS, Kind, SuppressionState
 from wardline.core.identity import ContentStatus, EntityBinding, IdentityStatus
 from wardline.core.paths import enclosing_project_root
 from wardline.core.run import run_scan
@@ -52,10 +52,9 @@ UNKNOWN_TIERS: frozenset[str] = frozenset(
 
 # Per-entity engine under-scan FACTs (carry a qualname) — their presence means the
 # entity's body was NOT fully analysed, so its trust verdict is "unknown", never
-# "clean". UNANALYZED_RULE_IDS covers file/source-root under-scans; FUNCTION-SKIPPED
-# is the per-function recursion-limit skip (NOT in UNANALYZED_RULE_IDS by design,
-# since the function was reached — but its taint was never computed).
-UNDER_SCAN_RULE_IDS: frozenset[str] = UNANALYZED_RULE_IDS | {"WLN-ENGINE-FUNCTION-SKIPPED"}
+# "clean". The shared incomplete-analysis set covers file/source-root under-scans plus
+# per-function skips (not counted in ScanSummary.unanalyzed by design).
+UNDER_SCAN_RULE_IDS: frozenset[str] = INCOMPLETE_ANALYSIS_RULE_IDS
 
 if TYPE_CHECKING:
     from wardline.core.run import ScanResult

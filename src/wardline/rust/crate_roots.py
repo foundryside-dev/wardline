@@ -7,7 +7,7 @@ exactly; that source is the contract for behaviors the corpus does not pin:
   ``toml::Value`` — ADR-049's "read as text" means *not cargo-metadata*, not a
   hand-rolled scan). ``[package].name`` is taken only if the manifest parses AND
   the name is a string: ``name.workspace = true`` parses as a table and falls
-  through; unparseable TOML falls through.
+  through; unparseable or non-UTF-8 TOML falls through.
 * **Two-branch registration:** a dir is a crate root iff (a) its manifest yields a
   string ``[package].name`` -> that name ``-``->``_`` normalised; ELSE (b)
   ``src/lib.rs`` or ``src/main.rs`` exists -> the directory name normalised. A
@@ -90,12 +90,12 @@ def _package_name(manifest: Path) -> str | None:
     """``[package].name`` iff ``manifest`` parses as TOML and the name is a string.
 
     ``name.workspace = true`` parses as a TABLE -> ``None`` (falls through to the
-    dir-name branch); unparseable/unreadable TOML -> ``None`` likewise.
+    dir-name branch); unparseable/unreadable/non-UTF-8 TOML -> ``None`` likewise.
     """
     try:
         with manifest.open("rb") as fh:
             value = tomllib.load(fh)
-    except (OSError, tomllib.TOMLDecodeError):
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
         return None
     package = value.get("package")
     if not isinstance(package, dict):

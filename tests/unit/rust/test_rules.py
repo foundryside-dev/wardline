@@ -63,6 +63,22 @@ def test_shell_injection_fires_warn_anchored_at_trigger() -> None:
     assert f.location.line_start == 4
 
 
+def test_shell_injection_fires_through_args_array() -> None:
+    src = _TRUSTED + "fn f() {\n" + _SEED + '    Command::new("sh").args(["-c", t]).output();\n}\n'
+    assert [f.rule_id for f in _findings(src)] == ["RS-WL-112"]
+
+
+def test_shell_injection_fires_through_captured_format_identifier() -> None:
+    src = (
+        _TRUSTED
+        + "fn f() {\n"
+        + _SEED
+        + '    let s = format!("rm {t}");\n'
+        + '    Command::new("sh").arg("-c").arg(s).output();\n}\n'
+    )
+    assert [f.rule_id for f in _findings(src)] == ["RS-WL-112"]
+
+
 def test_pinned_taint_path_golden_strings() -> None:
     (prog,) = _findings(_PROGRAM_INJECTION)
     (shell,) = _findings(_SHELL_INJECTION)
@@ -160,6 +176,17 @@ def test_assignment_reassign_to_tainted_command_fires() -> None:
     assert [f.rule_id for f in _findings(src)] == ["RS-WL-108"]
 
 
+def test_shadow_rebind_extending_command_builder_still_fires() -> None:
+    # Rust evaluates the initializer before shadowing the old binding, so the RHS `cmd`
+    # is still the tainted Command builder and the later terminal must remain visible.
+    src = (
+        _TRUSTED + "fn f() {\n" + _SEED + "    let cmd = Command::new(t);\n"
+        '    let cmd = cmd.arg("--flag");\n'
+        "    cmd.output();\n}\n"
+    )
+    assert [f.rule_id for f in _findings(src)] == ["RS-WL-108"]
+
+
 def test_assignment_reassign_to_non_command_drops_the_builder() -> None:
     # Reassigning a Command-bound name to a non-command must drop the tracked builder entirely;
     # a later `.output()` on it is a method call on some other value, not a phantom spawn.
@@ -217,10 +244,18 @@ def test_foreign_crate_env_var_is_not_a_taint_source() -> None:
     assert _findings(src) == []
 
 
-def test_a_typoed_trusted_marker_does_not_abort_the_whole_file_scan() -> None:
-    # A malformed @trusted level must fail closed for that fn, not crash the scan.
+def test_a_typoed_trusted_marker_emits_gate_eligible_diagnostic() -> None:
+    # A malformed @trusted level must fail closed for that fn, not crash the scan, and
+    # must not disappear silently: otherwise a typo can turn a trusted sink green.
     src = "/// @trusted(level=BOGUS)\nfn f() {\n" + _SEED + "    Command::new(t).output();\n}\n"
-    assert _findings(src) == []  # fail-closed, no exception
+    (diag,) = _findings(src)
+    assert diag.rule_id == "WLN-ENGINE-RUST-INVALID-TRUST-MARKER"
+    assert diag.severity is Severity.ERROR
+    assert diag.kind is Kind.DEFECT
+    assert diag.location.path == "src/m.rs"
+    assert diag.location.line_start == 2
+    assert diag.qualname == "demo.m.f"
+    assert "invalid level 'BOGUS'" in diag.message
 
 
 def test_two_commands_on_one_line_get_distinct_fingerprints() -> None:

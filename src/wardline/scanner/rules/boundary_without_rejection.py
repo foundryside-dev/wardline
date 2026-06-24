@@ -40,6 +40,7 @@ from wardline.scanner.rules._ast_helpers import (
     is_degenerate_boundary,
     rejecting_helper_calls,
 )
+from wardline.scanner.rules._fingerprint import entity_source_fingerprint
 from wardline.scanner.rules._sink_helpers import module_alias_map
 from wardline.scanner.rules.metadata import RuleMetadata
 
@@ -110,10 +111,10 @@ class BoundaryWithoutRejection:
                         rule_id=self.rule_id,
                         path=entity.location.path,
                         qualname=qualname,
-                        # Join-key stability (weft-4a9d0f863c): one finding per anchored qualname,
-                        # so (rule, path, line, qualname) is already unique. body/return tiers are
-                        # resolved values that drift as the suite is extended — keep them off the key.
-                        taint_path=None,
+                        # Line-independent source-body discriminator: one finding per anchored
+                        # qualname, but a different same-qualname entity body must not inherit
+                        # an old suppression.
+                        taint_path=entity_source_fingerprint(entity.node),
                     ),
                     qualname=qualname,
                     properties={"body_taint": body.value, "return_taint": ret.value},

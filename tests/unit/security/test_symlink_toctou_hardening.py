@@ -166,6 +166,129 @@ def test_explicit_agent_summary_output_refuses_symlink(tmp_path: Path) -> None:
     assert victim.read_text(encoding="utf-8") == "KEEP\n"  # target untouched
 
 
+@pytest.mark.parametrize(
+    ("fmt", "filename"),
+    [
+        ("jsonl", "findings.jsonl"),
+        ("sarif", "findings.sarif"),
+        ("legis", "scan.legis.json"),
+    ],
+)
+def test_explicit_relative_scan_output_refuses_parent_symlink_escape(
+    tmp_path: Path, monkeypatch, fmt: str, filename: str
+) -> None:
+    # `wardline scan . --output reports/<file>` runs inside an untrusted checkout.
+    # A repo-controlled symlinked parent must not redirect the explicit artifact
+    # outside the scan root.
+    from click.testing import CliRunner
+
+    from wardline.cli.main import cli
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "svc.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (project / "reports").symlink_to(outside, target_is_directory=True)
+    monkeypatch.chdir(project)
+
+    result = CliRunner().invoke(cli, ["scan", ".", "--format", fmt, "--output", f"reports/{filename}"])
+
+    assert result.exit_code == 2
+    assert "escapes project root" in result.output
+    assert not (outside / filename).exists()
+
+
+def test_explicit_output_through_root_alias_refuses_parent_symlink_escape(tmp_path: Path, monkeypatch) -> None:
+    # The output path can name the same scan root through a symlink alias. Once the path
+    # enters the untrusted root, later repo-controlled parent symlinks must still be
+    # rejected instead of falling back to the outside-output writer.
+    from click.testing import CliRunner
+
+    from wardline.cli.main import cli
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "svc.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(project, target_is_directory=True)
+    (project / "reports").symlink_to(outside, target_is_directory=True)
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(cli, ["scan", str(project), "--output", "alias/reports/findings.jsonl"])
+
+    assert result.exit_code == 2
+    assert "escapes project root" in result.output
+    assert not (outside / "findings.jsonl").exists()
+
+
+def test_explicit_output_through_subdir_alias_dotdot_refuses_parent_symlink_escape(tmp_path: Path, monkeypatch) -> None:
+    from click.testing import CliRunner
+
+    from wardline.cli.main import cli
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "subdir").mkdir()
+    (project / "svc.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    alias = tmp_path / "alias_to_subdir"
+    alias.symlink_to(project / "subdir", target_is_directory=True)
+    (project / "reports").symlink_to(outside, target_is_directory=True)
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(
+        cli,
+        ["scan", str(project), "--output", "alias_to_subdir/../reports/findings.jsonl"],
+    )
+
+    assert result.exit_code == 2
+    assert "escapes project root" in result.output
+    assert not (outside / "findings.jsonl").exists()
+
+
+def test_explicit_relative_outside_scan_output_remains_allowed(tmp_path: Path, monkeypatch) -> None:
+    from click.testing import CliRunner
+
+    from wardline.cli.main import cli
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "svc.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    monkeypatch.chdir(project)
+
+    result = CliRunner().invoke(cli, ["scan", ".", "--output", "../outside.jsonl"])
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "outside.jsonl").exists()
+
+
+def test_explicit_relative_agent_summary_output_refuses_parent_symlink_escape(tmp_path: Path, monkeypatch) -> None:
+    from click.testing import CliRunner
+
+    from wardline.cli.main import cli
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "svc.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (project / "reports").symlink_to(outside, target_is_directory=True)
+    monkeypatch.chdir(project)
+
+    result = CliRunner().invoke(
+        cli,
+        ["scan", ".", "--format", "agent-summary", "--output", "reports/summary.json"],
+    )
+
+    assert result.exit_code == 2
+    assert "escapes project root" in result.output
+    assert not (outside / "summary.json").exists()
+
+
 def test_scan_job_explicit_agent_summary_output_refuses_symlink(tmp_path: Path) -> None:
     # The scan-job WORKER agent-summary artifact write must be no-follow too (regression for
     # the fa1ca063 _write_scan_artifact restructure, which lost the guard): a planted
@@ -187,6 +310,110 @@ def test_scan_job_explicit_agent_summary_output_refuses_symlink(tmp_path: Path) 
     )
     # the job records a failed/errored artifact write rather than clobbering the target
     assert victim.read_text(encoding="utf-8") == "KEEP\n"
+
+
+def test_scan_job_explicit_output_through_root_alias_refuses_parent_symlink_escape(tmp_path: Path, monkeypatch) -> None:
+    from click.testing import CliRunner
+
+    from wardline.cli.main import cli
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "svc.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(project, target_is_directory=True)
+    (project / "reports").symlink_to(outside, target_is_directory=True)
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "scan-job",
+            "start",
+            str(project),
+            "--output",
+            str(alias / "reports" / "findings.jsonl"),
+            "--foreground",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["status"] == "failed"
+    assert not (outside / "findings.jsonl").exists()
+
+
+def test_scan_job_explicit_output_through_subdir_alias_dotdot_refuses_parent_symlink_escape(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from click.testing import CliRunner
+
+    from wardline.cli.main import cli
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "subdir").mkdir()
+    (project / "svc.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    alias = tmp_path / "alias_to_subdir"
+    alias.symlink_to(project / "subdir", target_is_directory=True)
+    (project / "reports").symlink_to(outside, target_is_directory=True)
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "scan-job",
+            "start",
+            str(project),
+            "--output",
+            str(alias / ".." / "reports" / "findings.jsonl"),
+            "--foreground",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["status"] == "failed"
+    assert not (outside / "findings.jsonl").exists()
+
+
+def test_scan_job_agent_summary_through_subdir_alias_dotdot_refuses_parent_symlink_escape(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from click.testing import CliRunner
+
+    from wardline.cli.main import cli
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "subdir").mkdir()
+    (project / "svc.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    alias = tmp_path / "alias_to_subdir"
+    alias.symlink_to(project / "subdir", target_is_directory=True)
+    (project / "reports").symlink_to(outside, target_is_directory=True)
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "scan-job",
+            "start",
+            str(project),
+            "--format",
+            "agent-summary",
+            "--output",
+            str(alias / ".." / "reports" / "summary.json"),
+            "--foreground",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["status"] == "failed"
+    assert not (outside / "summary.json").exists()
 
 
 def test_pid_is_scan_job_worker_rejects_non_worker_group_leader() -> None:

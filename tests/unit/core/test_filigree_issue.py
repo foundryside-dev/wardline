@@ -14,6 +14,7 @@ from wardline.core.filigree_issue import (
     Response,
     api_base_url_from_weft,
     attach_loomweave_identity_for_finding,
+    attach_loomweave_identity_for_qualname,
     build_promote_body,
     promote_url_from_weft,
 )
@@ -454,6 +455,45 @@ def test_attach_threads_rust_plugin_through_locator_resolve_and_entity_kind(monk
     assert res.attached is True
     assert transport.calls[0]["body"]["entity_id"] == "rust:function:demo.m.leaky"
     assert transport.calls[0]["body"]["entity_kind"] == "rust:function"
+
+
+def test_attach_refuses_unresolved_hinted_legacy_locator_even_with_taint_fact():
+    class HintedRejectedLegacyLoomweave:
+        def __init__(self):
+            self.plugin_hints = []
+            self.fact_calls = []
+
+        def capabilities(self):
+            return None  # pre-SEI -> the legacy locator path
+
+        def resolve(self, qualnames, *, plugin=None):
+            self.plugin_hints.append(plugin)
+            return SimpleNamespace(resolved={}, unresolved=list(qualnames))
+
+        def get_taint_fact(self, qualname):
+            self.fact_calls.append(qualname)
+            return SimpleNamespace(current_content_hash="wrong-plugin-hash")
+
+    client = HintedRejectedLegacyLoomweave()
+    transport = RecordingTransport()
+    filer = FiligreeIssueFiler("http://f/api/weft/scan-results", transport=transport)
+
+    res = attach_loomweave_identity_for_qualname(
+        qualname="demo.m.leaky",
+        issue_id="wardline-1",
+        filer=filer,
+        loomweave_client=client,
+        plugin="rust",
+    )
+
+    assert client.plugin_hints == ["rust"]
+    assert client.fact_calls == []
+    assert res.attempted is True
+    assert res.attached is False
+    assert res.entity_id is None
+    assert res.content_hash is None
+    assert res.reason == "Loomweave did not resolve legacy locator binding; association not attached"
+    assert transport.calls == []
 
 
 def test_file_2xx_non_string_issue_id_is_normalized_to_none():

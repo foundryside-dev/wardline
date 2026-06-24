@@ -100,6 +100,30 @@ def test_scan_job_start_threads_request_to_core(tmp_path: Path, monkeypatch) -> 
     ]
 
 
+def test_scan_job_start_redacts_filigree_url_in_returned_request(tmp_path: Path, monkeypatch) -> None:
+    secret_url = "https://user:secret@filigree.local/api/p/demo/weft/scan-results?token=abc#frag"
+    redacted = "https://<redacted>@filigree.local/api/p/demo/weft/scan-results"
+    captured: list[dict[str, Any]] = []
+
+    def fake_start(root: Path, request: dict[str, Any], *, foreground: bool = False) -> dict[str, Any]:
+        captured.append(request)
+        status = _status()
+        status["request"] = dict(request)
+        return status
+
+    monkeypatch.setattr(server_mod, "start_scan_job", fake_start)
+    server = WardlineMCPServer(root=tmp_path, filigree_url=secret_url)
+
+    out = _tool_call(server, "scan_job_start")
+
+    assert captured[0]["filigree_url"] == secret_url
+    assert out["request"]["filigree_url"] == redacted
+    exposed = json.dumps(out)
+    assert "user:secret" not in exposed
+    assert "token=abc" not in exposed
+    assert "#frag" not in exposed
+
+
 def test_scan_job_start_schema_and_runtime_accept_case_insensitive_fail_on(
     tmp_path: Path,
     monkeypatch,
@@ -144,6 +168,27 @@ def test_scan_job_status_and_cancel_call_core(tmp_path: Path, monkeypatch) -> No
     assert status["status"] == "running"
     assert cancel["status"] == "cancelled"
     assert seen == [("status", tmp_path, "b" * 32), ("cancel", tmp_path, "b" * 32)]
+
+
+def test_scan_job_status_redacts_filigree_url_in_returned_request(tmp_path: Path, monkeypatch) -> None:
+    secret_url = "https://user:secret@filigree.local/api/p/demo/weft/scan-results?token=abc#frag"
+    redacted = "https://<redacted>@filigree.local/api/p/demo/weft/scan-results"
+
+    def fake_status(root: Path, job_id: str) -> dict[str, Any]:
+        status = _status(job_id=job_id)
+        status["request"] = {"filigree_url": secret_url}
+        return status
+
+    monkeypatch.setattr(server_mod, "read_scan_job_status", fake_status)
+    server = WardlineMCPServer(root=tmp_path)
+
+    out = _tool_call(server, "scan_job_status", {"job_id": "b" * 32})
+
+    assert out["request"]["filigree_url"] == redacted
+    exposed = json.dumps(out)
+    assert "user:secret" not in exposed
+    assert "token=abc" not in exposed
+    assert "#frag" not in exposed
 
 
 def test_scan_job_start_respects_write_and_network_policy(tmp_path: Path, monkeypatch) -> None:
