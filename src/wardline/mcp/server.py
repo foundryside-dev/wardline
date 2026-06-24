@@ -2045,11 +2045,15 @@ _SCAN_TOOL: dict[str, Any] = {
     "output_schema": _SCAN_OUTPUT_SCHEMA,
     "annotations": {
         "title": "Trust-boundary scan",
-        "readOnlyHint": True,
+        # A bare local scan reads the checkout, but configured Filigree/Loomweave
+        # integrations can add outbound writes at call time. Advertise the
+        # conservative superset so MCP clients do not auto-run it as read-only.
+        "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
-        "openWorldHint": False,
+        "openWorldHint": True,
     },
+    "capabilities": frozenset({ToolCapability.READ, ToolCapability.WRITE, ToolCapability.NETWORK}),
 }
 
 
@@ -4884,7 +4888,10 @@ class WardlineMCPServer:
         )
 
     def _effective_tool_capabilities(self, tool: Tool, arguments: dict[str, Any]) -> frozenset[ToolCapability]:
-        capabilities = set(tool.capabilities)
+        # ``scan`` advertises the conservative possible-effects superset in
+        # tools/list, but hardened runtime policy should still allow a purely
+        # local scan when no integration URL resolves.
+        capabilities = {ToolCapability.READ} if tool.name == "scan" else set(tool.capabilities)
         if tool.name == "scan" and (
             self._resolved_loomweave_url_for_policy(arguments) is not None
             or self._resolved_filigree_url_for_policy(arguments) is not None

@@ -34,6 +34,38 @@ def test_tools_list_exposes_tool_capability_classes() -> None:
     assert {"network", "write"} <= set(tools["file_finding"]["capabilities"])
 
 
+def test_scan_tool_annotations_match_possible_integration_side_effects() -> None:
+    server = WardlineMCPServer(root=Path("tests/fixtures/sample_project"))
+    resp = server.rpc.dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
+    scan = next(tool for tool in resp["result"]["tools"] if tool["name"] == "scan")
+
+    assert scan["annotations"]["readOnlyHint"] is False
+    assert scan["annotations"]["openWorldHint"] is True
+    assert {"network", "write"} <= set(scan["capabilities"])
+
+
+def test_local_scan_without_integrations_is_allowed_under_hardened_policy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    called = False
+
+    def fake_scan(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        nonlocal called
+        called = True
+        return {"ok": True}
+
+    monkeypatch.setattr(server_mod, "_scan", fake_scan)
+    server = WardlineMCPServer(root=tmp_path, allow_network=False, allow_write=False)
+
+    result = _tool_call(server, "scan")
+
+    assert result.get("isError") is not True
+    assert result["structuredContent"] == {"ok": True}
+    assert called is True
+
+
 def test_no_network_policy_denies_network_tool_before_handler(tmp_path: Path) -> None:
     called = False
     server = WardlineMCPServer(root=tmp_path, allow_network=False)
