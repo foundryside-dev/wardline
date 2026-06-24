@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+import wardline.install.block as block_module
 from wardline.core.errors import WardlineError
 from wardline.install.block import _atomic_write_text, inject_block, render_block
 
@@ -191,6 +192,44 @@ def test_uppercase_foreign_namespace_registers_as_boundary(tmp_path: Path) -> No
     text = f.read_text(encoding="utf-8")
     assert upper_foreign in text
     assert "FILIGREE BODY" in text
+
+
+def test_foreign_block_detection_is_linear_for_many_unmatched_opens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Probe:
+        group_calls = 0
+
+    class FakeFence:
+        def __init__(self, ns: str, pos: int) -> None:
+            self.ns = ns
+            self.pos = pos
+
+        def group(self, name: str) -> str:
+            Probe.group_calls += 1
+            if name == "ns":
+                return self.ns
+            if name == "close":
+                return ""
+            raise AssertionError(name)
+
+        def start(self) -> int:
+            return self.pos
+
+    class FakeFencePattern:
+        def __init__(self, fences: list[FakeFence]) -> None:
+            self.fences = fences
+
+        def finditer(self, _content: str, _search_from: int = 0) -> list[FakeFence]:
+            return self.fences
+
+    fence_count = 80
+    fences = [FakeFence(f"foreign-{i}", i) for i in range(fence_count)]
+    content = "x" * (fence_count + 1)
+    monkeypatch.setattr(block_module, "_INSTR_FENCE_RE", FakeFencePattern(fences))
+
+    assert block_module._first_real_foreign_block_pos(content, 0) == len(content)
+    assert Probe.group_calls <= fence_count * 4
 
 
 def test_append_on_unclosed_own_with_trailing_text_preserves_all(

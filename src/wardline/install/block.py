@@ -84,15 +84,18 @@ def _first_real_foreign_block_pos(content: str, search_from: int) -> int:
     Returns ``len(content)`` when no real foreign block follows (bound at EOF).
     The namespace match is case-insensitive (C-4 (h)).
     """
-    fences = list(_INSTR_FENCE_RE.finditer(content, search_from))
-    for i, m in enumerate(fences):
+    closes_after: set[str] = set()
+    boundary: int | None = None
+    for m in reversed(list(_INSTR_FENCE_RE.finditer(content, search_from))):
         ns = m.group("ns").lower()
-        if ns == _OWN_NS or m.group("close"):
+        is_close = bool(m.group("close"))
+        if ns == _OWN_NS:
             continue
-        # Foreign open: a boundary only if a matching foreign close follows it.
-        if any(n.group("ns").lower() == ns and n.group("close") for n in fences[i + 1 :]):
-            return m.start()
-    return len(content)
+        if is_close:
+            closes_after.add(ns)
+        elif ns in closes_after:
+            boundary = m.start()
+    return boundary if boundary is not None else len(content)
 
 
 def _first_own_open_fence_pos(content: str) -> int:
