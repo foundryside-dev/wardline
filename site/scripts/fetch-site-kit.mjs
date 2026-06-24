@@ -8,6 +8,7 @@
 // realization of the "git subdirectory dependency" decision (IA §1.3, §6):
 // not a published registry package, not a submodule, not a hand-vendored static
 // copy — a regenerated, never-committed vendor tree refreshed on every build.
+// Privileged GitHub Actions builds must pin the remote fetch to a full commit SHA.
 //
 // Runs before `npm install` (the preinstall hook) so the file: target exists
 // when the install resolves it; the Pages workflow runs it explicitly too.
@@ -21,9 +22,12 @@ import { tmpdir } from 'node:os';
 const here = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(here, '..');
 
+const DEFAULT_WEFT_SITE_KIT_REF = 'a8f9a6a77458d2ec697cfbc1f71dd88a51962cb7';
 const REPO = process.env.WEFT_SITE_KIT_REPO || 'https://github.com/foundryside-dev/weft.git';
-const REF = process.env.WEFT_SITE_KIT_REF || 'main';
+const REF = process.env.WEFT_SITE_KIT_REF || DEFAULT_WEFT_SITE_KIT_REF;
 const SUBDIR = 'packages/site-kit';
+const IN_GITHUB_ACTIONS = process.env.GITHUB_ACTIONS === 'true';
+const FULL_SHA_RE = /^[0-9a-f]{40}$/i;
 
 const dest = join(siteRoot, 'vendor', 'site-kit');
 
@@ -33,6 +37,12 @@ const localKit = join(siteRoot, '..', '..', 'weft', 'packages', 'site-kit');
 
 function run(cmd, args, opts) {
   execFileSync(cmd, args, { stdio: 'inherit', ...opts });
+}
+
+function requirePinnedRefForPrivilegedBuild(ref) {
+  if (IN_GITHUB_ACTIONS && !FULL_SHA_RE.test(ref)) {
+    throw new Error(`[fetch-site-kit] WEFT_SITE_KIT_REF must be a 40-character commit SHA in GitHub Actions; got ${ref}`);
+  }
 }
 
 async function vendorFrom(srcDir, label) {
@@ -49,19 +59,27 @@ async function vendorFrom(srcDir, label) {
 }
 
 async function main() {
-  if (process.env.WEFT_SITE_KIT_LOCAL === '1' || (existsSync(localKit) && process.env.WEFT_SITE_KIT_REMOTE !== '1')) {
+  if (
+    !IN_GITHUB_ACTIONS &&
+    (process.env.WEFT_SITE_KIT_LOCAL === '1' || (existsSync(localKit) && process.env.WEFT_SITE_KIT_REMOTE !== '1'))
+  ) {
     if (existsSync(localKit)) {
       await vendorFrom(localKit, `local checkout (${localKit})`);
       return;
     }
   }
+  requirePinnedRefForPrivilegedBuild(REF);
 
   const tmp = await mkdir(join(tmpdir(), `weft-site-kit-${Date.now()}`), { recursive: true }).then(
     (d) => d || join(tmpdir(), `weft-site-kit-${Date.now()}`),
   );
   const clonePath = join(tmpdir(), `weft-site-kit-${process.pid}-${Date.now()}`);
   try {
-    run('git', ['clone', '--depth', '1', '--filter=blob:none', '--sparse', '--branch', REF, REPO, clonePath]);
+    run('git', ['init', clonePath]);
+    run('git', ['remote', 'add', 'origin', REPO], { cwd: clonePath });
+    run('git', ['fetch', '--depth', '1', '--filter=blob:none', 'origin', REF], { cwd: clonePath });
+    run('git', ['checkout', '--detach', 'FETCH_HEAD'], { cwd: clonePath });
+    run('git', ['sparse-checkout', 'init', '--cone'], { cwd: clonePath });
     run('git', ['sparse-checkout', 'set', SUBDIR], { cwd: clonePath });
     await vendorFrom(join(clonePath, SUBDIR), `${REPO}#${REF}:${SUBDIR}`);
   } finally {
