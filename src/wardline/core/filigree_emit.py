@@ -502,6 +502,10 @@ def _parse_success_response(resp: Response) -> EmitResult:
     )
 
 
+def _chunk_rejection_detail(layer: str, status: int) -> str:
+    return f"chunk rejected at {layer} layer ({status})"
+
+
 def _record_pending_partial_failures(
     failures: list[FailedFinding],
     chunks: Sequence[_ScanResultChunk],
@@ -757,7 +761,7 @@ class FiligreeEmitter:
                     # Filigree is present but its opt-in bearer auth is on and refusing us.
                     # Stays SOFT (enrichment unavailable, never exit-2) — but distinguished
                     # as auth so the caller can say the actionable thing.
-                    detail = f"chunk rejected at auth layer ({resp.status}): {resp.body}"
+                    detail = _chunk_rejection_detail("auth", resp.status)
                     _record_pending_partial_failures(failures, chunks, chunk_index - 1, detail=detail)
                     return EmitResult(
                         reachable=False,
@@ -772,7 +776,7 @@ class FiligreeEmitter:
                 if resp.status >= 500:
                     # Server-side outage (5xx) — the sibling is degraded, not a Wardline
                     # payload bug. Treat like absent (warn + continue), carrying the status.
-                    detail = f"chunk rejected at server layer ({resp.status}): {resp.body}"
+                    detail = _chunk_rejection_detail("server", resp.status)
                     _record_pending_partial_failures(failures, chunks, chunk_index - 1, detail=detail)
                     return EmitResult(
                         reachable=False,
@@ -789,12 +793,10 @@ class FiligreeEmitter:
                     if self._protocol_errors_loud:
                         raise FiligreeEmitError(message)
                     # Fail-soft: the chunk (and every chunk after it) is un-ingested. PDR-0023 —
-                    # record EACH still-pending finding as a ``partial`` failure carrying the
-                    # rejecting status, so the caller reads "K findings failed because the chunk
-                    # was rejected (<status>)" instead of an opaque count that looks like success
-                    # minus a number. ``partial`` (chunk-wide) is named distinctly from a
-                    # per-finding ``rejected`` because the cause is the request, not the body.
-                    detail = f"chunk rejected at protocol layer ({resp.status}): {resp.body}"
+                    # record EACH still-pending finding as a ``partial`` failure carrying only
+                    # bounded request-status context; the response body stays in one warning
+                    # below instead of being duplicated once per un-ingested finding.
+                    detail = _chunk_rejection_detail("protocol", resp.status)
                     _record_pending_partial_failures(failures, chunks, chunk_index - 1, detail=detail)
                     warnings.append(message)
                     break

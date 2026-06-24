@@ -600,6 +600,27 @@ def test_protocol_reject_fail_soft_records_each_pending_finding_as_partial() -> 
     assert all(f.fingerprint == _PREFIXED_A for f in res.failures)
 
 
+def test_protocol_reject_fail_soft_does_not_duplicate_response_body_per_failure() -> None:
+    response_body = "remote rejection detail: " + ("x" * 4096)
+    findings = [
+        _f(
+            fingerprint=f"{i:064x}",
+            location=Location(path=f"src/{i}.py", line_start=1),
+        )
+        for i in range(12)
+    ]
+    t = _FakeTransport(response=Response(status=422, body=response_body))
+
+    res = FiligreeEmitter("http://x", transport=t, protocol_errors_loud=False).emit(findings)
+
+    assert res.failed == len(findings)
+    assert all(f.reason == "partial" for f in res.failures)
+    assert all("422" in f.detail for f in res.failures)
+    assert all(response_body not in f.detail for f in res.failures)
+    assert json.dumps([f.to_wire() for f in res.failures]).count(response_body) == 0
+    assert json.dumps(res.warnings).count(response_body) == 1
+
+
 def test_failed_count_is_derived_from_failures_and_cannot_disagree() -> None:
     # The count is a property over failures — there is no setter to hardwire a contradictory
     # failed=0 while failures is non-empty (the confident-empty defect the invariant forbids).
