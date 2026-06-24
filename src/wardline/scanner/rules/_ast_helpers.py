@@ -36,12 +36,16 @@ _RAISING_CONVERSION_NAMES: frozenset[str] = frozenset({"int", "float", "complex"
 def _own_statements(node: ast.AST) -> Iterator[ast.stmt]:
     """Yield every statement in *node*'s own scope, not descending into nested
     def/class bodies. Includes the bodies of if/for/while/try/with at any depth."""
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+    result: list[ast.stmt] = []
+    stack: list[ast.AST] = list(reversed(list(ast.iter_child_nodes(node))))
+    while stack:
+        current = stack.pop()
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
-        if isinstance(child, ast.stmt):
-            yield child
-        yield from _own_statements(child)
+        if isinstance(current, ast.stmt):
+            result.append(current)
+        stack.extend(reversed(list(ast.iter_child_nodes(current))))
+    return iter(result)
 
 
 def _own_reachable_statements(
@@ -67,14 +71,18 @@ def _own_nodes_in_reachable_stmt(stmt: ast.stmt) -> Iterator[ast.AST]:
 
 
 def _walk_own_non_stmt_children(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            yield child
-        elif isinstance(child, ast.stmt):
+    result: list[ast.AST] = []
+    stack: list[ast.AST] = list(reversed(list(ast.iter_child_nodes(node))))
+    while stack:
+        current = stack.pop()
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            result.append(current)
+        elif isinstance(current, ast.stmt):
             continue
         else:
-            yield child
-            yield from _walk_own_non_stmt_children(child)
+            result.append(current)
+            stack.extend(reversed(list(ast.iter_child_nodes(current))))
+    return iter(result)
 
 
 def _reachable_statements_in_block(
@@ -639,9 +647,13 @@ def own_nodes(node: ast.AST) -> Iterator[ast.AST]:
 
 
 def _walk_own(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            yield child
+    result: list[ast.AST] = []
+    stack: list[ast.AST] = list(reversed(list(ast.iter_child_nodes(node))))
+    while stack:
+        current = stack.pop()
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            result.append(current)
         else:
-            yield child
-            yield from _walk_own(child)
+            result.append(current)
+            stack.extend(reversed(list(ast.iter_child_nodes(current))))
+    return iter(result)

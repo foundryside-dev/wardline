@@ -105,38 +105,33 @@ def iter_calls_in_function_body(
     values, base classes, metaclass keywords) are still attributed to ``node``.
     """
 
-    def walk_node(current: ast.AST) -> Iterator[ast.Call]:
+    result: list[ast.Call] = []
+    stack: list[ast.AST] = list(reversed(node.body))
+
+    while stack:
+        current = stack.pop()
         if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            for decorator in current.decorator_list:
-                yield from walk_node(decorator)
-            yield from _walk_argument_defaults(current.args)
-            return
+            args = current.args
+            stack.extend(reversed([kw for kw in args.kw_defaults if kw is not None]))
+            stack.extend(reversed(args.defaults))
+            stack.extend(reversed(current.decorator_list))
+            continue
         if isinstance(current, ast.ClassDef):
-            for decorator in current.decorator_list:
-                yield from walk_node(decorator)
-            for base in current.bases:
-                yield from walk_node(base)
-            for keyword in current.keywords:
-                yield from walk_node(keyword.value)
-            return
+            stack.extend(reversed([kw.value for kw in current.keywords]))
+            stack.extend(reversed(current.bases))
+            stack.extend(reversed(current.decorator_list))
+            continue
         if isinstance(current, ast.Lambda):
-            yield from _walk_argument_defaults(current.args)
-            return
+            args = current.args
+            stack.extend(reversed([kw for kw in args.kw_defaults if kw is not None]))
+            stack.extend(reversed(args.defaults))
+            continue
         if isinstance(current, ast.Call):
-            yield current
-        for child in ast.iter_child_nodes(current):
-            yield from walk_node(child)
+            result.append(current)
 
-    def _walk_argument_defaults(args: ast.arguments) -> Iterator[ast.Call]:
-        for default in args.defaults:
-            yield from walk_node(default)
-        for kw_default in args.kw_defaults:
-            if kw_default is None:
-                continue
-            yield from walk_node(kw_default)
+        stack.extend(reversed(list(ast.iter_child_nodes(current))))
 
-    for stmt in node.body:
-        yield from walk_node(stmt)
+    return iter(result)
 
 
 def resolve_self_method_fqn(
