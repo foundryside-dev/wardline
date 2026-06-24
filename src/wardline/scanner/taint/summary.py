@@ -85,11 +85,9 @@ def compute_cache_key(
 
     Each component is length-prefixed before hashing so distinct inputs cannot
     collide (without it, ``(b"ab", "c")`` and ``(b"a", "bc")`` would hash alike).
-    CRLF in ``source_bytes`` is rejected so Linux/Windows checkouts of the same
-    commit produce identical keys.
+    ``source_bytes`` are hashed exactly as read from disk so downstream freshness
+    checks compare the same bytes the scanner analyzed.
     """
-    if source_bytes.find(b"\r\n") != -1:
-        raise ValueError("CRLF bytes in source — normalise to LF before hashing")
     hasher = hashlib.sha256()
     _write_len_prefixed(hasher, module_path.encode("utf-8"))
     _write_len_prefixed(hasher, source_bytes)

@@ -45,9 +45,10 @@ def test_cache_key_includes_module_identity() -> None:
     assert _key(module_path="pkg.a") != _key(module_path="pkg.b")
 
 
-def test_cache_key_rejects_crlf_source() -> None:
-    with pytest.raises(ValueError, match="CRLF"):
-        _key(source_bytes=b"def f():\r\n    pass\r\n")
+def test_cache_key_hashes_crlf_source_bytes() -> None:
+    crlf_key = _key(source_bytes=b"def f():\r\n    pass\r\n")
+    assert crlf_key == _key(source_bytes=b"def f():\r\n    pass\r\n")
+    assert crlf_key != _key(source_bytes=b"def f():\n    pass\n")
 
 
 def test_cache_key_length_prefixed_no_collision() -> None:

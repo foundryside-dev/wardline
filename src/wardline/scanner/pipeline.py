@@ -127,8 +127,8 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
             continue
 
         try:
-            source = path.read_text(encoding="utf-8")
-            source_bytes = source.encode("utf-8")
+            source_bytes = path.read_bytes()
+            source = source_bytes.decode("utf-8")
             source_sha256 = hashlib.sha256(source_bytes).hexdigest()
 
             from wardline.core.ruleset import ruleset_hash
