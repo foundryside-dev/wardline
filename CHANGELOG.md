@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-06-24
+
 ### Fixed
 - **Auto-discovered Loomweave emission no longer kills a base-install scan.**
   `wardline scan` auto-discovers a running Loomweave from its published
