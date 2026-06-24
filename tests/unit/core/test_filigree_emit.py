@@ -11,6 +11,7 @@ from wardline.core.filigree_emit import (
     FiligreeEmitter,
     Response,
     build_scan_results_body,
+    filigree_destination,
     filigree_disabled_reason,
 )
 from wardline.core.finding import (
@@ -499,6 +500,44 @@ def test_disabled_reason_403_and_unreachable_unchanged_in_shape() -> None:
     assert filigree_disabled_reason(reachable=True, status=None) is None
 
 
+def test_diagnostic_url_redaction_removes_credentials_query_and_fragment() -> None:
+    url = "https://user:secret@filigree.example:8443/api/p/demo/weft/scan-results?token=abc#frag"
+    redacted = "https://<redacted>@filigree.example:8443/api/p/demo/weft/scan-results"
+
+    reason = filigree_disabled_reason(reachable=False, status=401, token_sent=True, url=url)
+    destination = filigree_destination(url)
+
+    assert reason is not None
+    assert redacted in reason
+    assert destination == {"url": redacted, "project": "demo", "project_pinned": True}
+    exposed = json.dumps({"reason": reason, "destination": destination})
+    assert "user:secret" not in exposed
+    assert "token=abc" not in exposed
+    assert "#frag" not in exposed
+
+
+def test_diagnostic_url_redaction_handles_scheme_relative_userinfo() -> None:
+    from wardline.core.filigree_emit import redact_url_for_diagnostics
+
+    redacted = redact_url_for_diagnostics("//user:secret@filigree.example/api/weft/scan-results?token=abc#frag")
+
+    assert redacted == "//<redacted>@filigree.example/api/weft/scan-results"
+    assert "user:secret" not in redacted
+    assert "token=abc" not in redacted
+    assert "#frag" not in redacted
+
+
+def test_diagnostic_url_redaction_handles_bare_userinfo_like_value() -> None:
+    from wardline.core.filigree_emit import redact_url_for_diagnostics
+
+    redacted = redact_url_for_diagnostics("user:secret@filigree.example/api/weft/scan-results?token=abc#frag")
+
+    assert redacted == "<redacted>@filigree.example/api/weft/scan-results"
+    assert "user:secret" not in redacted
+    assert "token=abc" not in redacted
+    assert "#frag" not in redacted
+
+
 def test_2xx_with_unparseable_body_warns_not_crashes() -> None:
     # POST accepted (2xx) but the body is not a JSON object -> surface a warning,
     # reachable=True, zeroed stats; must NOT raise.
@@ -621,6 +660,20 @@ def test_protocol_reject_fail_soft_does_not_duplicate_response_body_per_failure(
     assert json.dumps(res.warnings).count(response_body) == 1
 
 
+def test_protocol_reject_warning_redacts_url_secrets() -> None:
+    url = "https://user:secret@filigree.example/api/weft/scan-results?token=abc#frag"
+    redacted = "https://<redacted>@filigree.example/api/weft/scan-results"
+    t = _FakeTransport(response=Response(status=422, body="payload rejected"))
+
+    res = FiligreeEmitter(url, transport=t, protocol_errors_loud=False).emit([_f()])
+
+    assert res.warnings
+    assert redacted in res.warnings[0]
+    assert "user:secret" not in res.warnings[0]
+    assert "token=abc" not in res.warnings[0]
+    assert "#frag" not in res.warnings[0]
+
+
 def test_failed_count_is_derived_from_failures_and_cannot_disagree() -> None:
     # The count is a property over failures — there is no setter to hardwire a contradictory
     # failed=0 while failures is non-empty (the confident-empty defect the invariant forbids).
@@ -720,6 +773,35 @@ def test_urllib_transport_rejects_non_http_scheme() -> None:
 
     with pytest.raises(FiligreeEmitError):
         UrllibTransport().post("file:///etc/passwd", b"{}", {})
+
+
+@pytest.mark.parametrize("method", ["get", "post"])
+def test_urllib_transport_redacts_invalid_url_exceptions(monkeypatch, method: str) -> None:
+    import http.client
+    import urllib.request
+
+    from wardline.core.filigree_emit import UrllibTransport
+
+    url = "https://user:secret@filigree.example/api/weft/scan-results?token=abc#frag"
+
+    def _raise_invalid_url(req, timeout=None):  # noqa: ARG001
+        raise http.client.InvalidURL("nonnumeric port: 'secret@filigree.example'")
+
+    monkeypatch.setattr(urllib.request, "urlopen", _raise_invalid_url)
+    transport = UrllibTransport()
+
+    with pytest.raises(FiligreeEmitError) as exc:
+        if method == "get":
+            transport.get(url, {})
+        else:
+            transport.post(url, b"{}", {"Content-Type": "application/json"})
+
+    message = str(exc.value)
+    assert "https://<redacted>@filigree.example/api/weft/scan-results" in message
+    assert "user:secret" not in message
+    assert "secret@filigree.example" not in message
+    assert "token=abc" not in message
+    assert "#frag" not in message
 
 
 def test_judged_finding_carries_suppression_metadata() -> None:

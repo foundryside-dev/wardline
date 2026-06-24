@@ -12,6 +12,7 @@ enrichment so an upload reject cannot preempt the local gate verdict.
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import urllib.error
@@ -132,12 +133,46 @@ def filigree_url_project(url: str | None) -> str | None:
     return None
 
 
+def redact_url_for_diagnostics(url: str | None) -> str | None:
+    """Return a URL safe for user-visible diagnostics.
+
+    Filigree URLs may come from operator configuration and can carry credentials in
+    userinfo, query tokens, or fragments. Keep the origin/path for destination
+    debugging, but never echo credential-bearing components.
+    """
+    if url is None:
+        return None
+    stripped = url.split("?", 1)[0].split("#", 1)[0]
+    parts = urllib.parse.urlsplit(url)
+    if parts.netloc:
+        scheme = parts.scheme
+        try:
+            host = parts.hostname or ""
+            port = parts.port
+        except ValueError:
+            return f"{scheme + ':' if scheme else ''}//<redacted>"
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        if port is not None:
+            host = f"{host}:{port}"
+        if parts.username is not None or parts.password is not None:
+            host = f"<redacted>@{host}"
+        return urllib.parse.urlunsplit((scheme, host, parts.path, "", ""))
+    if "@" in stripped:
+        _, host_path = stripped.rsplit("@", 1)
+        if host_path:
+            return f"<redacted>@{host_path}"
+    if not parts.scheme:
+        return stripped
+    return urllib.parse.urlunsplit((parts.scheme, "", parts.path, "", ""))
+
+
 def filigree_destination(url: str | None) -> dict[str, Any]:
     """The destination echo for the emit status block (N1 / C-10(a)): name where findings
     were sent so a wrong-project write is visible at the caller instead of reading as
     success. ``project_pinned`` is False when Filigree will resolve the project itself."""
     project = filigree_url_project(url)
-    return {"url": url, "project": project, "project_pinned": project is not None}
+    return {"url": redact_url_for_diagnostics(url), "project": project, "project_pinned": project is not None}
 
 
 def filigree_api_base_url(url: str) -> str:
@@ -153,7 +188,10 @@ def filigree_api_base_url(url: str) -> str:
     work-join can never disagree about what one configured URL means (dogfood-4 A3/A4)."""
     parts = urllib.parse.urlsplit(url)
     if parts.scheme.lower() not in _ALLOWED_SCHEMES:
-        raise FiligreeEmitError(f"filigree URL must use http or https; got scheme {parts.scheme!r} in {url!r}")
+        diagnostic_url = redact_url_for_diagnostics(url)
+        raise FiligreeEmitError(
+            f"filigree URL must use http or https; got scheme {parts.scheme!r} in {diagnostic_url!r}"
+        )
     segments = [s for s in parts.path.split("/") if s]
     base = segments[: segments.index("api") + 1] if "api" in segments else [*segments, "api"]
     project = filigree_url_project(url)
@@ -542,7 +580,8 @@ def filigree_disabled_reason(
     """
     if reachable:
         return None
-    at = f" at {url}" if url else ""
+    diagnostic_url = redact_url_for_diagnostics(url)
+    at = f" at {diagnostic_url}" if diagnostic_url else ""
     if status in (401, 403):
         # 403 → token present but lacks access (a token won't help). 401 → split by whether a
         # token was actually SENT: absent (set one) vs rejected (the value is wrong). The old
@@ -569,12 +608,19 @@ class UrllibTransport:
     def __init__(self, timeout: float = 30.0) -> None:
         self._timeout = timeout
 
+    def _invalid_url_error(self, url: str) -> FiligreeEmitError:
+        diagnostic_url = redact_url_for_diagnostics(url)
+        return FiligreeEmitError(f"filigree URL is invalid: {diagnostic_url!r}")
+
     def post(self, url: str, body: bytes, headers: Mapping[str, str]) -> Response:
         # Restrict to http(s): a stray file://, ftp:// or data: URL is a user error, not
         # an ingest target — turn it into a clean loud failure (and justify the S310 below).
         scheme = urllib.parse.urlsplit(url).scheme.lower()
         if scheme not in _ALLOWED_SCHEMES:
-            raise FiligreeEmitError(f"--filigree-url must use http or https; got scheme {scheme!r} in {url!r}")
+            diagnostic_url = redact_url_for_diagnostics(url)
+            raise FiligreeEmitError(
+                f"--filigree-url must use http or https; got scheme {scheme!r} in {diagnostic_url!r}"
+            )
         request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")
         try:
             with urllib.request.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
@@ -585,11 +631,16 @@ class UrllibTransport:
             # the underlying socket.
             with exc:
                 return Response(status=exc.code, body=read_response_text(exc))
+        except http.client.InvalidURL:
+            raise self._invalid_url_error(url) from None
 
     def get(self, url: str, headers: Mapping[str, str]) -> Response:
         scheme = urllib.parse.urlsplit(url).scheme.lower()
         if scheme not in _ALLOWED_SCHEMES:
-            raise FiligreeEmitError(f"filigree URL must use http or https; got scheme {scheme!r} in {url!r}")
+            diagnostic_url = redact_url_for_diagnostics(url)
+            raise FiligreeEmitError(
+                f"filigree URL must use http or https; got scheme {scheme!r} in {diagnostic_url!r}"
+            )
         request = urllib.request.Request(url, headers=dict(headers), method="GET")
         try:
             with urllib.request.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
@@ -597,6 +648,8 @@ class UrllibTransport:
         except urllib.error.HTTPError as exc:
             with exc:
                 return Response(status=exc.code, body=read_response_text(exc))
+        except http.client.InvalidURL:
+            raise self._invalid_url_error(url) from None
 
 
 def _resolve_operator_max_findings_per_request(explicit: int | None) -> int | None:
@@ -789,7 +842,8 @@ class FiligreeEmitter:
                         url=self._url,
                     )
                 if not 200 <= resp.status < 300:
-                    message = f"Filigree rejected scan-results ({resp.status}) at {self._url}: {resp.body}"
+                    diagnostic_url = redact_url_for_diagnostics(self._url)
+                    message = f"Filigree rejected scan-results ({resp.status}) at {diagnostic_url}: {resp.body}"
                     if self._protocol_errors_loud:
                         raise FiligreeEmitError(message)
                     # Fail-soft: the chunk (and every chunk after it) is un-ingested. PDR-0023 —

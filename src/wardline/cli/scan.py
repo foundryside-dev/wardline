@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import urllib.parse
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
 
@@ -26,6 +25,7 @@ from wardline.core.filigree_emit import (
     filigree_destination,
     filigree_disabled_reason,
     filigree_url_project,
+    redact_url_for_diagnostics,
 )
 from wardline.core.finding import Severity
 from wardline.core.paths import weft_config_path
@@ -464,6 +464,7 @@ def scan(
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
     if emit_result is not None:
+        logged_filigree_url = _redact_url_for_log(filigree_url)
         if not emit_result.reachable:
             if emit_result.auth_rejected:
                 # Reachable but refused — actionable, NOT "could not reach" (dogfood #5).
@@ -471,7 +472,7 @@ def scan(
                 # access / blocked → setting a token won't help) so the remedy fits.
                 if emit_result.status == 403:
                     click.echo(
-                        f"warning: Filigree returned 403 (forbidden) at {filigree_url}; the token is "
+                        f"warning: Filigree returned 403 (forbidden) at {logged_filigree_url}; the token is "
                         "present but lacks access (scope/permission) or the request is blocked. "
                         "Findings written locally only.",
                         err=True,
@@ -480,26 +481,26 @@ def scan(
                     # A token WAS sent and rejected — the value is wrong, not absent. Saying
                     # "set the token" here is the C-7 misdiagnosis (weft-23574069a1).
                     click.echo(
-                        f"warning: Filigree rejected the token (401) at {filigree_url}; a token WAS sent but "
+                        f"warning: Filigree rejected the token (401) at {logged_filigree_url}; a token WAS sent but "
                         "its value is wrong — align WEFT_FEDERATION_TOKEN (env or .env) to the canonical "
                         "federation token. Findings written locally only.",
                         err=True,
                     )
                 else:
                     click.echo(
-                        f"warning: Filigree returned 401 (auth rejected) at {filigree_url}; no token was sent — "
+                        f"warning: Filigree returned 401 (auth rejected) at {logged_filigree_url}; no token was sent — "
                         "set WEFT_FEDERATION_TOKEN (env or .env) to the project token. Findings written locally only.",
                         err=True,
                     )
             elif emit_result.status is not None:
                 click.echo(
-                    f"warning: Filigree returned {emit_result.status} (server error) at {filigree_url}; "
+                    f"warning: Filigree returned {emit_result.status} (server error) at {logged_filigree_url}; "
                     "findings written locally only.",
                     err=True,
                 )
             else:
                 click.echo(
-                    f"warning: could not reach Filigree at {filigree_url}; findings written locally only.",
+                    f"warning: could not reach Filigree at {logged_filigree_url}; findings written locally only.",
                     err=True,
                 )
         else:
@@ -513,7 +514,7 @@ def scan(
                 else "unscoped endpoint (URL pins no project; add ?project= to make routing explicit)"
             )
             line = (
-                f"emitted {len(findings)} finding(s) to {filigree_url} [{where}] — "
+                f"emitted {len(findings)} finding(s) to {logged_filigree_url} [{where}] — "
                 f"{emit_result.created} created / {emit_result.updated} updated"
             )
             if emit_result.failed:
@@ -702,20 +703,4 @@ def _loomweave_status(result: object | None) -> dict[str, object]:
 
 
 def _redact_url_for_log(url: str | None) -> str:
-    if url is None:
-        return "<not configured>"
-    parts = urllib.parse.urlsplit(url)
-    if not parts.scheme or not parts.netloc:
-        return url.split("?", 1)[0].split("#", 1)[0]
-    try:
-        host = parts.hostname or ""
-        port = parts.port
-    except ValueError:
-        return f"{parts.scheme}://<redacted>"
-    if ":" in host and not host.startswith("["):
-        host = f"[{host}]"
-    if port is not None:
-        host = f"{host}:{port}"
-    if parts.username is not None or parts.password is not None:
-        host = f"<redacted>@{host}"
-    return urllib.parse.urlunsplit((parts.scheme, host, parts.path, "", ""))
+    return redact_url_for_diagnostics(url) or "<not configured>"

@@ -23,7 +23,12 @@ from wardline.core.baseline import generate_baseline, load_baseline
 from wardline.core.delta_scope import ScopeParseError, load_affected_scope, parse_affected_scope
 from wardline.core.errors import WardlineError
 from wardline.core.explain import explain_taint_result, explanation_from_context, explanation_to_dict
-from wardline.core.filigree_emit import FiligreeEmitter, filigree_destination, filigree_disabled_reason
+from wardline.core.filigree_emit import (
+    FiligreeEmitter,
+    filigree_destination,
+    filigree_disabled_reason,
+    redact_url_for_diagnostics,
+)
 from wardline.core.finding import Finding, Severity
 from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
@@ -118,7 +123,7 @@ def _emit_filigree(
         "status": er.status,
         "auth_rejected": er.auth_rejected,
         "token_sent": er.token_sent,
-        "url": er.url,
+        "url": redact_url_for_diagnostics(er.url),
         # N1 / C-10(a): name where findings went so a wrong-project write is visible.
         "destination": filigree_destination(er.url),
     }
@@ -791,20 +796,32 @@ def _scan_job_request(args: dict[str, Any], root: Path, filigree_url: str | None
     }
 
 
+def _redact_scan_job_status(status: dict[str, Any]) -> dict[str, Any]:
+    redacted = dict(status)
+    request = redacted.get("request")
+    if isinstance(request, dict):
+        safe_request = dict(request)
+        url = safe_request.get("filigree_url")
+        if isinstance(url, str):
+            safe_request["filigree_url"] = redact_url_for_diagnostics(url)
+        redacted["request"] = safe_request
+    return redacted
+
+
 def _scan_job_start(args: dict[str, Any], root: Path, filigree_url: str | None = None) -> dict[str, Any]:
     path = _path_arg(args, root)
     request = _scan_job_request(args, root, filigree_url)
-    return start_scan_job(path, request)
+    return _redact_scan_job_status(start_scan_job(path, request))
 
 
 def _scan_job_status(args: dict[str, Any], root: Path) -> dict[str, Any]:
     job_id = str(_require(args, "job_id"))
-    return read_scan_job_status(_path_arg(args, root), job_id)
+    return _redact_scan_job_status(read_scan_job_status(_path_arg(args, root), job_id))
 
 
 def _scan_job_cancel(args: dict[str, Any], root: Path) -> dict[str, Any]:
     job_id = str(_require(args, "job_id"))
-    return cancel_scan_job(_path_arg(args, root), job_id)
+    return _redact_scan_job_status(cancel_scan_job(_path_arg(args, root), job_id))
 
 
 def _scan(

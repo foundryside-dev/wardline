@@ -257,6 +257,79 @@ def test_scan_job_start_allows_timeout_opt_out(tmp_path: Path) -> None:
     assert payload["request"]["timeout_seconds"] == 0.0
 
 
+def test_scan_job_start_redacts_filigree_url_in_stdout_request(tmp_path: Path, monkeypatch) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    secret_url = "https://user:secret@filigree.example/api/p/demo/weft/scan-results?token=abc#frag"
+    redacted_url = "https://<redacted>@filigree.example/api/p/demo/weft/scan-results"
+    captured_requests: list[dict[str, object]] = []
+
+    def fake_start_scan_job(root: Path, request: dict[str, object], *, foreground: bool = False) -> dict[str, object]:
+        captured_requests.append(dict(request))
+        payload = _base_job("c" * 32)
+        payload["request"] = dict(request)
+        return payload
+
+    monkeypatch.setattr("wardline.cli.scan_job.start_scan_job", fake_start_scan_job)
+
+    result = CliRunner().invoke(cli, ["scan-job", "start", str(project), "--filigree-url", secret_url])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert captured_requests[0]["filigree_url"] == secret_url
+    assert payload["request"]["filigree_url"] == redacted_url
+    assert "user:secret" not in result.output
+    assert "token=abc" not in result.output
+    assert "#frag" not in result.output
+
+
+def test_scan_job_status_redacts_filigree_url_in_stdout_request(tmp_path: Path, monkeypatch) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    secret_url = "https://user:secret@filigree.example/api/p/demo/weft/scan-results?token=abc#frag"
+    redacted_url = "https://<redacted>@filigree.example/api/p/demo/weft/scan-results"
+
+    def fake_read_scan_job_status(root: Path, job_id: str) -> dict[str, object]:
+        payload = _base_job(job_id)
+        payload["request"] = {"filigree_url": secret_url}
+        return payload
+
+    monkeypatch.setattr("wardline.cli.scan_job.read_scan_job_status", fake_read_scan_job_status)
+
+    result = CliRunner().invoke(cli, ["scan-job", "status", "d" * 32, "--path", str(project)])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["request"]["filigree_url"] == redacted_url
+    assert "user:secret" not in result.output
+    assert "token=abc" not in result.output
+    assert "#frag" not in result.output
+
+
+def test_scan_job_cancel_redacts_filigree_url_in_stdout_request(tmp_path: Path, monkeypatch) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    secret_url = "https://user:secret@filigree.example/api/p/demo/weft/scan-results?token=abc#frag"
+    redacted_url = "https://<redacted>@filigree.example/api/p/demo/weft/scan-results"
+
+    def fake_cancel_scan_job(root: Path, job_id: str) -> dict[str, object]:
+        payload = _base_job(job_id)
+        payload["status"] = "cancelled"
+        payload["request"] = {"filigree_url": secret_url}
+        return payload
+
+    monkeypatch.setattr("wardline.cli.scan_job.cancel_scan_job", fake_cancel_scan_job)
+
+    result = CliRunner().invoke(cli, ["scan-job", "cancel", "e" * 32, "--path", str(project)])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["request"]["filigree_url"] == redacted_url
+    assert "user:secret" not in result.output
+    assert "token=abc" not in result.output
+    assert "#frag" not in result.output
+
+
 def test_scan_job_background_worker_does_not_run_from_untrusted_root(tmp_path: Path, monkeypatch) -> None:
     project = tmp_path / "proj"
     project.mkdir()

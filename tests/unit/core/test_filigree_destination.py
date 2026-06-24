@@ -24,7 +24,7 @@ def test_url_project_none_when_unpinned() -> None:
 def test_destination_pinned() -> None:
     d = filigree_destination("http://127.0.0.1:8749/api/weft/scan-results?project=lacuna")
     assert d == {
-        "url": "http://127.0.0.1:8749/api/weft/scan-results?project=lacuna",
+        "url": "http://127.0.0.1:8749/api/weft/scan-results",
         "project": "lacuna",
         "project_pinned": True,
     }
