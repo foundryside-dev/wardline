@@ -103,7 +103,7 @@ class RustAnalyzer:
                 sources[file] = file.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as exc:
                 read_errors[file] = str(exc)
-        overlays = _build_overlays(sources, resolved_root, crate_roots)
+        overlays, overlay_errors = _build_overlays(sources, resolved_root, crate_roots)
         findings: list[Finding] = []
         functions_total = 0
         functions_declared = 0
@@ -112,6 +112,9 @@ class RustAnalyzer:
             relpath = _relpath(file, resolved_root)
             if file in read_errors:
                 findings.append(_parse_error_finding(relpath, read_errors[file]))
+                continue
+            if file in overlay_errors:
+                findings.append(_file_failed_finding(relpath, overlay_errors[file]))
                 continue
             source = sources[file]
             tree = parse_rust(source)
@@ -219,7 +222,11 @@ def _relpath(file: Path, resolved_root: Path) -> str:
     return resolved.as_posix()
 
 
-def _build_overlays(sources: dict[Path, str], resolved_root: Path, roots: CrateRoots) -> dict[Path, MountOverlay]:
+def _build_overlays(
+    sources: dict[Path, str],
+    resolved_root: Path,
+    roots: CrateRoots,
+) -> tuple[dict[Path, MountOverlay], dict[Path, str]]:
     """One ``#[path]`` mount overlay per crate (ADR-049 Amendment 8), discovered over
     the scanned IN-SRC sources of that crate (class-2/3 files keep their ``#out``
     non-conformance routes — a mount declared outside ``src/`` is outside loomweave's
@@ -228,6 +235,7 @@ def _build_overlays(sources: dict[Path, str], resolved_root: Path, roots: CrateR
     root"). A mount declared in a file outside the scan list is invisible — the overlay
     is the view of the scanned tree."""
     per_crate: dict[Path, tuple[str, dict[str, str]]] = {}
+    rel_paths: dict[str, Path] = {}
     for file, source in sources.items():
         resolved = file.resolve()
         crate_dir = roots.crate_dir_for(resolved)
@@ -236,15 +244,25 @@ def _build_overlays(sources: dict[Path, str], resolved_root: Path, roots: CrateR
             continue
         if not resolved.is_relative_to(resolved_root):
             continue  # defensive: discover confines to root
-        per_crate.setdefault(crate_dir, (crate_name, {}))[1][resolved.relative_to(resolved_root).as_posix()] = source
-    return {
-        crate_dir: build_mount_overlay(
+        rel = resolved.relative_to(resolved_root).as_posix()
+        rel_paths[rel] = file
+        per_crate.setdefault(crate_dir, (crate_name, {}))[1][rel] = source
+    overlay_errors: dict[Path, str] = {}
+    overlays: dict[Path, MountOverlay] = {}
+    for crate_dir, (crate_name, crate_sources) in per_crate.items():
+
+        def record_overlay_error(relpath: str, exc: Exception) -> None:
+            source_path = rel_paths.get(relpath)
+            if source_path is not None:
+                overlay_errors[source_path] = f"{type(exc).__name__}: {exc}"
+
+        overlays[crate_dir] = build_mount_overlay(
             crate_sources,
             crate=crate_name,
             src_root=(crate_dir / "src").relative_to(resolved_root).as_posix(),
+            error_callback=record_overlay_error,
         )
-        for crate_dir, (crate_name, crate_sources) in per_crate.items()
-    }
+    return overlays, overlay_errors
 
 
 def _module_for(file: Path, resolved_root: Path, roots: CrateRoots, overlays: dict[Path, MountOverlay]) -> str:

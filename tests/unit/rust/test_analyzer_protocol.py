@@ -195,3 +195,33 @@ def test_one_crashing_file_is_isolated_and_does_not_lose_other_findings(tmp_path
     # The other file's real finding survived the neighbour's crash.
     survivors = [f for f in findings if f.rule_id == "RS-WL-108"]
     assert len(survivors) == 1 and survivors[0].location.path == "inject.rs"
+
+
+def test_mount_overlay_crash_is_isolated_and_does_not_lose_other_findings(tmp_path) -> None:
+    # The #[path] mount overlay is a prepass over in-src crate files. A pathological
+    # inline module tree must not crash before the normal per-file isolation loop.
+    (tmp_path / "Cargo.toml").write_text(
+        '[package]\nname = "demo"\nversion = "0.1.0"\nedition = "2021"\n',
+        encoding="utf-8",
+    )
+    src = tmp_path / "src"
+    src.mkdir()
+    deep = src / "lib.rs"
+    deep.write_text(
+        '#[path = "inject.rs"] mod mounted;\n'
+        + " ".join("mod m {" for _ in range(1000))
+        + " fn leaf() {} "
+        + "}" * 1000,
+        encoding="utf-8",
+    )
+    inject = src / "inject.rs"
+    inject.write_text(_INJECTION, encoding="utf-8")
+
+    findings = list(RustAnalyzer().analyze([deep, inject], _cfg(), root=tmp_path))
+
+    file_failed = [f for f in findings if f.rule_id == "WLN-ENGINE-FILE-FAILED"]
+    assert len(file_failed) == 1 and file_failed[0].location.path == "src/lib.rs"
+    assert "RecursionError" in file_failed[0].message
+    survivors = [f for f in findings if f.rule_id == "RS-WL-108"]
+    assert len(survivors) == 1 and survivors[0].location.path == "src/inject.rs"
+    assert survivors[0].qualname == "demo.inject.run"
