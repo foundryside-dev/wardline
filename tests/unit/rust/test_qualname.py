@@ -83,6 +83,16 @@ def test_normalize_cfg_sorts_nested_any_all_without_colliding() -> None:
     assert left != right
 
 
+def test_deep_cfg_predicate_does_not_exhaust_python_recursion() -> None:
+    predicate = "x"
+    for _ in range(1500):
+        predicate = f"any({predicate})"
+
+    suffix = cfg_discriminant([f"({predicate})"])
+
+    assert suffix.startswith("@cfg(any(any(")
+
+
 def test_normalize_cfg_predicate_escapes_reserved_chars() -> None:
     # % before : (order matters — injective, mirrors loomweave escape_reserved:
     # the introducer is encoded first so a literal source `%3A` cannot alias a

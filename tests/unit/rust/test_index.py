@@ -191,6 +191,17 @@ def test_file_module_entity_emitted_first_and_inline_mods_at_source_position() -
     assert by_q["demo.inner.g"].parent == "demo.inner"
 
 
+def test_deep_inline_modules_do_not_exhaust_python_recursion() -> None:
+    depth = 1000
+    src = " ".join("mod m {" for _ in range(depth)) + " fn leaf() {} " + "}" * depth
+
+    entities = discover_rust_entities(src, module="demo")
+
+    assert len(entities) == depth + 2
+    assert entities[-1].qualname == f"{'demo' + '.m' * depth}.leaf"
+    assert entities[-1].kind == "function"
+
+
 def test_per_kind_twin_counting() -> None:
     # The twin counter is per-(kind, name) — extract.rs twin_counts. `fn S` and
     # `struct S` share a name but NOT a kind, so the cfg-gated fn is no twin and

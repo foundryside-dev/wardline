@@ -101,6 +101,17 @@ class RustEntity:
     parent: str | None
 
 
+@dataclass(slots=True)
+class _ScopeFrame:
+    module: str
+    items: list[tuple[Node, list[str]]]
+    twin_counts: Counter[tuple[str, str]]
+    final_impl_quals: dict[int, str]
+    method_twin_counts: Counter[tuple[str, str]]
+    seen_impl_quals: set[str]
+    next_index: int = 0
+
+
 def index_entities(tree: Tree, nmap: NodeIdMap, *, module: str, path: str = "") -> list[RustEntity]:
     """Emit the entities of an already-parsed ``tree`` under its ``nmap``.
 
@@ -133,6 +144,53 @@ def _walk_scope(
     entities: list[RustEntity],
     path: str,
 ) -> None:
+    stack = [_scope_frame(child_nodes, module)]
+    while stack:
+        frame = stack.pop()
+        while frame.next_index < len(frame.items):
+            node, cfgs = frame.items[frame.next_index]
+            frame.next_index += 1
+
+            if node.type == "mod_item":
+                body = node.child_by_field_name("body")
+                if body is None:  # `mod foo;` (external) has no body to descend
+                    continue
+                name = _name(node)
+                nested = f"{frame.module}.{name}"
+                if cfgs and frame.twin_counts[("module", name)] > 1:
+                    nested += q.cfg_discriminant(cfgs)
+                # The inline-mod entity is emitted AT its source position, BEFORE its
+                # members (corpus nested_inline_mod row order; extract.rs inline-mod arm).
+                entities.append(_entity(nested, "module", node, nmap, path, parent=frame.module))
+                stack.append(frame)
+                stack.append(_scope_frame(body.children, nested))
+                break
+            if node.type == "impl_item":
+                impl_qualname = frame.final_impl_quals.get(node.id)
+                if impl_qualname is None:
+                    continue
+                if impl_qualname not in frame.seen_impl_quals:
+                    frame.seen_impl_quals.add(impl_qualname)
+                    entities.append(_entity(impl_qualname, "impl", node, nmap, path, parent=frame.module))
+                _emit_impl_methods(node, impl_qualname, nmap, entities, path, frame.method_twin_counts)
+                continue
+
+            kind = _LEAF_KINDS[node.type]
+            name = _name(node)
+            if kind == "const" and name == "_":
+                # ADR-049 Amendment 9: `const _` is NOT an entity — skipped
+                # UNCONDITIONALLY on `ident == "_"` (skip-only-when-twinned would make
+                # the emitted set sibling-dependent and churn SEI; nothing can ever name
+                # the item, so no discriminant can rescue it). No entity, no containment;
+                # a finding inside one attributes to the enclosing module by line.
+                continue
+            qualname = f"{frame.module}.{name}"
+            if cfgs and frame.twin_counts[(kind, name)] > 1:
+                qualname += q.cfg_discriminant(cfgs)
+            entities.append(_entity(qualname, kind, node, nmap, path, parent=frame.module))
+
+
+def _scope_frame(child_nodes: Iterable[Node], module: str) -> _ScopeFrame:
     # Attributes are *preceding siblings* of the item they decorate, so accumulate
     # every pending cfg predicate RAW onto the next item (mirrors extract.rs
     # `cfg_predicates` — ALL stacked #[cfg]s feed the discriminant, normalisation
@@ -222,48 +280,17 @@ def _walk_scope(
             for method, _mcfgs in _impl_methods_with_cfgs(node):
                 method_twin_counts[(final_qual, _name(method))] += 1
 
-    # First block with a given (cfg-augmented) impl qualname emits the ONE merged impl
-    # entity; later same-key blocks only append methods (extract.rs `seen_impl_ids`).
-    # The set is PER-INVOCATION (each nested scope gets a fresh one); that is sound
-    # because the impl qualname embeds the full module path, so two impls in different
-    # scopes can never share a key — dedup only ever needs to see one scope at a time.
-    seen_impl_quals: set[str] = set()
-
-    for node, cfgs in items:
-        if node.type == "mod_item":
-            body = node.child_by_field_name("body")
-            if body is None:  # `mod foo;` (external) has no body to descend
-                continue
-            name = _name(node)
-            nested = f"{module}.{name}"
-            if cfgs and twin_counts[("module", name)] > 1:
-                nested += q.cfg_discriminant(cfgs)
-            # The inline-mod entity is emitted AT its source position, BEFORE its
-            # members (corpus nested_inline_mod row order; extract.rs inline-mod arm).
-            entities.append(_entity(nested, "module", node, nmap, path, parent=module))
-            _walk_scope(body.children, nested, nmap, entities, path)
-        elif node.type == "impl_item":
-            impl_qualname = final_impl_quals.get(node.id)
-            if impl_qualname is None:
-                continue
-            if impl_qualname not in seen_impl_quals:
-                seen_impl_quals.add(impl_qualname)
-                entities.append(_entity(impl_qualname, "impl", node, nmap, path, parent=module))
-            _emit_impl_methods(node, impl_qualname, nmap, entities, path, method_twin_counts)
-        else:
-            kind = _LEAF_KINDS[node.type]
-            name = _name(node)
-            if kind == "const" and name == "_":
-                # ADR-049 Amendment 9: `const _` is NOT an entity — skipped
-                # UNCONDITIONALLY on `ident == "_"` (skip-only-when-twinned would make
-                # the emitted set sibling-dependent and churn SEI; nothing can ever name
-                # the item, so no discriminant can rescue it). No entity, no containment;
-                # a finding inside one attributes to the enclosing module by line.
-                continue
-            qualname = f"{module}.{name}"
-            if cfgs and twin_counts[(kind, name)] > 1:
-                qualname += q.cfg_discriminant(cfgs)
-            entities.append(_entity(qualname, kind, node, nmap, path, parent=module))
+    return _ScopeFrame(
+        module=module,
+        items=items,
+        twin_counts=twin_counts,
+        final_impl_quals=final_impl_quals,
+        method_twin_counts=method_twin_counts,
+        # First block with a given (cfg-augmented) impl qualname emits the ONE merged
+        # impl entity; later same-key blocks only append methods (extract.rs
+        # `seen_impl_ids`). This stays per-scope because the frame owns the set.
+        seen_impl_quals=set(),
+    )
 
 
 def _named_item_key(node: Node) -> tuple[str, str] | None:
