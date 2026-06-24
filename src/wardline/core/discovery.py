@@ -47,8 +47,22 @@ def _is_root_build_artifact(child: Path, root: Path) -> bool:
     )
 
 
-def _should_prune_dir(child: Path, root: Path, skip_dirs: frozenset[str]) -> bool:
-    return _is_floored_dir(child.name, skip_dirs) or _is_root_build_artifact(child, root)
+def _is_root_rust_build_artifact(child: Path, root: Path) -> bool:
+    return child.parent == root and child.name == "target"
+
+
+def _should_prune_dir(
+    child: Path,
+    root: Path,
+    skip_dirs: frozenset[str],
+    *,
+    prune_rust_target: bool,
+) -> bool:
+    return (
+        _is_floored_dir(child.name, skip_dirs)
+        or _is_root_build_artifact(child, root)
+        or (prune_rust_target and _is_root_rust_build_artifact(child, root))
+    )
 
 
 def discover(
@@ -73,10 +87,10 @@ def discover(
     ``respect_gitignore=True``.
     """
     root = root.resolve()
-    # `target` is cargo build output — skip it only in `.rs` mode. It is a legitimate
-    # Python package name, so adding it to the global skip set would silently under-scan
-    # Python projects (the very failure wardline surfaces loudly elsewhere).
-    skip_dirs = _ALWAYS_SKIP | {"target"} if ".rs" in suffixes else _ALWAYS_SKIP
+    # `target` is cargo build output only at the project root. Nested directories with
+    # that name can be legitimate source modules and must not be treated as floor dirs.
+    prune_rust_target = ".rs" in suffixes
+    skip_dirs = _ALWAYS_SKIP
     root_ignore: GitignoreMatcher | None = None
     if respect_gitignore:
         # Trusted opt-in only: .gitignore is repository-controlled and can hide tracked
@@ -108,7 +122,7 @@ def discover(
             kept: list[str] = []
             for dirname in sorted(dirnames):
                 child = current / dirname
-                if _should_prune_dir(child, root, skip_dirs):
+                if _should_prune_dir(child, root, skip_dirs, prune_rust_target=prune_rust_target):
                     continue
                 if ignore is not None and _gitignored_dir(child, root, ignore):
                     continue
