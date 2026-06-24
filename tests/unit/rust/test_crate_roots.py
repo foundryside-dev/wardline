@@ -96,6 +96,33 @@ def test_unparseable_manifest_falls_back_to_dir_name(tmp_path: Path) -> None:
     assert roots.crate_name_for(crate / "src" / "lib.rs") == "broken"
 
 
+def test_invalid_utf8_manifest_falls_back_to_dir_name(tmp_path: Path) -> None:
+    crate = tmp_path / "bad-utf8"
+    (crate / "src").mkdir(parents=True)
+    (crate / "Cargo.toml").write_bytes(b"\xff\xfe\xfd")
+    lib = crate / "src" / "lib.rs"
+    lib.write_text("pub fn f() {}\n", encoding="utf-8")
+
+    roots = discover_crate_roots(tmp_path)
+
+    assert roots.crate_name_for(lib) == "bad_utf8"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="symlinks: posix-only fixture")
+def test_invalid_utf8_manifest_file_symlink_falls_back_to_dir_name(tmp_path: Path) -> None:
+    outside = tmp_path / "outside-Cargo.toml"
+    outside.write_bytes(b"\xff\xfe\xfd")
+    crate = tmp_path / "linked-utf8"
+    (crate / "src").mkdir(parents=True)
+    (crate / "Cargo.toml").symlink_to(outside)
+    lib = crate / "src" / "lib.rs"
+    lib.write_text("pub fn f() {}\n", encoding="utf-8")
+
+    roots = discover_crate_roots(tmp_path)
+
+    assert roots.crate_name_for(lib) == "linked_utf8"
+
+
 @pytest.mark.skipif(os.name != "posix", reason="symlinks: posix-only fixture")
 def test_symlinked_external_crate_dir_is_not_registered(tmp_path: Path) -> None:
     # Mirrors loomweave's does_not_register_crate_roots_reached_through_symlinked_dirs:

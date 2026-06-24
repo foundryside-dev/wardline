@@ -15,6 +15,8 @@ two protocol invariants the integration depends on:
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 pytest.importorskip("tree_sitter", reason="wardline[rust] extra not installed")
@@ -168,6 +170,31 @@ def test_multiple_files_accumulate_findings(tmp_path) -> None:
     findings = list(RustAnalyzer().analyze([tmp_path / "a.rs", tmp_path / "b.rs"], _cfg(), root=tmp_path))
     rs = [f for f in findings if f.rule_id.startswith("RS-WL-")]
     assert sorted(f.location.path for f in rs) == ["a.rs", "b.rs"]
+
+
+def test_invalid_utf8_manifest_does_not_abort_scan(tmp_path) -> None:
+    (tmp_path / "Cargo.toml").write_bytes(b"\xff\xfe\xfd")
+    (tmp_path / "m.rs").write_text(_INJECTION, encoding="utf-8")
+
+    findings = list(RustAnalyzer().analyze([tmp_path / "m.rs"], _cfg(), root=tmp_path))
+
+    rs = [f for f in findings if f.rule_id.startswith("RS-WL-")]
+    assert [f.rule_id for f in rs] == ["RS-WL-108"]
+    assert rs[0].location.path == "m.rs"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="symlinks: posix-only fixture")
+def test_invalid_utf8_manifest_symlink_does_not_abort_scan(tmp_path) -> None:
+    outside = tmp_path / "outside-Cargo.toml"
+    outside.write_bytes(b"\xff\xfe\xfd")
+    (tmp_path / "Cargo.toml").symlink_to(outside)
+    (tmp_path / "m.rs").write_text(_INJECTION, encoding="utf-8")
+
+    findings = list(RustAnalyzer().analyze([tmp_path / "m.rs"], _cfg(), root=tmp_path))
+
+    rs = [f for f in findings if f.rule_id.startswith("RS-WL-")]
+    assert [f.rule_id for f in rs] == ["RS-WL-108"]
+    assert rs[0].location.path == "m.rs"
 
 
 def test_one_crashing_file_is_isolated_and_does_not_lose_other_findings(tmp_path) -> None:
