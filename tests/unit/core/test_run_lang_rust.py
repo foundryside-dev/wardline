@@ -42,6 +42,24 @@ def test_run_scan_rust_clean_tree_passes(tmp_path) -> None:
     assert gate_decision(result, Severity.ERROR).tripped is False
 
 
+def test_run_scan_rust_invalid_trusted_marker_trips_gate(tmp_path) -> None:
+    (tmp_path / "m.rs").write_text(
+        "/// @trusted(level=ASSUREDD)\n"
+        'fn run() {\n    let t = std::env::var("X").unwrap();\n    Command::new(t).output();\n}\n',
+        encoding="utf-8",
+    )
+
+    result = run_scan(tmp_path, lang="rust")
+
+    diagnostics = [f for f in result.findings if f.rule_id == "WLN-ENGINE-RUST-INVALID-TRUST-MARKER"]
+    assert len(diagnostics) == 1
+    assert diagnostics[0].severity is Severity.ERROR
+    assert diagnostics[0].location.path == "m.rs"
+    assert diagnostics[0].location.line_start == 2
+    assert "invalid level 'ASSUREDD'" in diagnostics[0].message
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
 def test_run_scan_rust_malformed_file_counts_unanalyzed(tmp_path) -> None:
     (tmp_path / "broken.rs").write_text("fn f( {\n    std::env::var(\n", encoding="utf-8")
     result = run_scan(tmp_path, lang="rust")

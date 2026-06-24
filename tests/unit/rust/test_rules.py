@@ -228,10 +228,18 @@ def test_foreign_crate_env_var_is_not_a_taint_source() -> None:
     assert _findings(src) == []
 
 
-def test_a_typoed_trusted_marker_does_not_abort_the_whole_file_scan() -> None:
-    # A malformed @trusted level must fail closed for that fn, not crash the scan.
+def test_a_typoed_trusted_marker_emits_gate_eligible_diagnostic() -> None:
+    # A malformed @trusted level must fail closed for that fn, not crash the scan, and
+    # must not disappear silently: otherwise a typo can turn a trusted sink green.
     src = "/// @trusted(level=BOGUS)\nfn f() {\n" + _SEED + "    Command::new(t).output();\n}\n"
-    assert _findings(src) == []  # fail-closed, no exception
+    (diag,) = _findings(src)
+    assert diag.rule_id == "WLN-ENGINE-RUST-INVALID-TRUST-MARKER"
+    assert diag.severity is Severity.ERROR
+    assert diag.kind is Kind.DEFECT
+    assert diag.location.path == "src/m.rs"
+    assert diag.location.line_start == 2
+    assert diag.qualname == "demo.m.f"
+    assert "invalid level 'BOGUS'" in diag.message
 
 
 def test_two_commands_on_one_line_get_distinct_fingerprints() -> None:

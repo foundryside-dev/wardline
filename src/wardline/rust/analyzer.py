@@ -29,7 +29,7 @@ from wardline.rust import qualname as q
 from wardline.rust.context import RustAnalysisContext, RustTriggerContext
 from wardline.rust.crate_roots import CrateRoots, discover_crate_roots
 from wardline.rust.dataflow import analyze_command_dataflow
-from wardline.rust.index import index_entities
+from wardline.rust.index import RustEntity, index_entities
 from wardline.rust.mounts import MountOverlay, build_mount_overlay
 from wardline.rust.nodeid import mint_node_ids
 from wardline.rust.parse import has_errors, parse_rust
@@ -167,17 +167,18 @@ class RustAnalyzer:
 
         project_taints: dict[str, TaintState] = {}
         triggers: list[RustTriggerContext] = []
+        diagnostics: list[Finding] = []
         for entity in callables:
             # Phase 1b: the index emits the full ten-kind surface; the taint path
             # judges CALLABLES only (a module/struct/const has no body to seed or
             # walk — feeding one to taint_for/dataflow would be a category error).
             try:
                 seed = self._provider.taint_for(entity.node)
-            except ValueError:
-                # A typo'd @trusted marker must not abort the scan: fail closed for this fn
-                # (its findings suppressed). NOTE: a typo is currently swallowed silently —
-                # surfacing it as an operator-visible diagnostic FACT is tracked backlog
-                # (rust-bug-hunt-2026-06-09), not yet built.
+            except ValueError as exc:
+                # A typo'd @trusted marker must not abort the scan, but it also must not
+                # silently suppress that fn's findings into a false green. Keep the fn's
+                # fail-closed tier and emit a gate-eligible diagnostic at the bad callable.
+                diagnostics.append(_invalid_trust_marker_finding(entity, path, str(exc)))
                 seed = None
             tier = seed.body_taint if seed is not None else _FAIL_CLOSED
             project_taints[entity.qualname] = tier
@@ -209,7 +210,7 @@ class RustAnalyzer:
             # ACROSS kinds; the id's kind segment is what separates them).
             entities={q.entity_id(e.kind, e.qualname): e for e in entities},
         )
-        findings: list[Finding] = []
+        findings: list[Finding] = list(diagnostics)
         for rule in self._rules:
             findings.extend(rule.check(context))
         return findings, context, len(callables)
@@ -336,6 +337,21 @@ def _parse_error_finding(relpath: str, detail: str) -> Finding:
 def _file_failed_finding(relpath: str, detail: str) -> Finding:
     # Analysis raised AFTER a clean parse — a per-file under-scan, counted toward unanalyzed.
     return _engine_defect("WLN-ENGINE-FILE-FAILED", f"{relpath}: Rust analysis failed ({detail})", relpath)
+
+
+def _invalid_trust_marker_finding(entity: RustEntity, relpath: str, detail: str) -> Finding:
+    rule_id = "WLN-ENGINE-RUST-INVALID-TRUST-MARKER"
+    line = entity.location.line_start or 1
+    return Finding(
+        rule_id=rule_id,
+        message=f"{relpath}:{line}: invalid Rust @trusted marker on {entity.qualname} ({detail})",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path=relpath, line_start=line, line_end=line),
+        fingerprint=_fp(rule_id, relpath, entity.qualname),
+        qualname=entity.qualname,
+        properties={"lang": "rust"},
+    )
 
 
 def _coverage_finding(functions_total: int, functions_declared: int, files_analyzed: int) -> Finding:
