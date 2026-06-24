@@ -36,12 +36,21 @@ _RAISING_CONVERSION_NAMES: frozenset[str] = frozenset({"int", "float", "complex"
 def _own_statements(node: ast.AST) -> Iterator[ast.stmt]:
     """Yield every statement in *node*'s own scope, not descending into nested
     def/class bodies. Includes the bodies of if/for/while/try/with at any depth."""
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            continue
-        if isinstance(child, ast.stmt):
-            yield child
-        yield from _own_statements(child)
+    result: list[ast.stmt] = []
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        children = list(ast.iter_child_nodes(current))
+        if children:
+            for child in reversed(children):
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    continue
+                stack.append(child)
+
+        if current is not node and isinstance(current, ast.stmt):
+            result.append(current)
+
+    return iter(result)
 
 
 def _own_reachable_statements(

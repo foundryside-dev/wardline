@@ -43,11 +43,18 @@ from wardline.scanner.index import Entity
 def _own_nodes_in(node: ast.AST) -> Iterator[ast.AST]:
     """Yield *node* and every descendant in its own scope (including *node* itself), not
     descending into nested def/class/lambda scopes."""
-    yield node
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            continue
-        yield from _own_nodes_in(child)
+    result: list[ast.AST] = []
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        result.append(current)
+        children = list(ast.iter_child_nodes(current))
+        if children:
+            for child in reversed(children):
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                    continue
+                stack.append(child)
+    return iter(result)
 
 
 def _target_names(target: ast.expr) -> Iterator[str]:
