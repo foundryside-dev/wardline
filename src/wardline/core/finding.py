@@ -158,14 +158,16 @@ class Finding:
 # change as the rule suite is extended/refined).
 #
 # INVARIANT (enforce at every call site — see tests/golden/identity): ``taint_path``
-# carries ONLY a SOURCE-DERIVED discriminator and exists SOLELY to separate two
-# distinct findings that share (rule_id, path, line_start, qualname). A component
-# may appear in ``taint_path`` only if it is BOTH (a) derived purely from source
-# tokens / lexical position (a sink dotted-name, a callee spelling as written, a
-# decorator marker/level token, a call's ``col_offset``) — NOT a resolved
-# ``TaintState`` tier and NOT ``via_callee`` — AND (b) load-bearing: actually
-# needed to tell two co-located findings apart. A rule that emits at most one
-# finding per (rule_id, path, qualname) passes ``taint_path=None``.
+# carries ONLY a SOURCE-DERIVED discriminator. A component may appear in
+# ``taint_path`` only if it is derived purely from source tokens / lexical position
+# (a sink dotted-name, a callee spelling as written, a decorator marker/level token,
+# a call's ``col_offset``, or a singleton entity body discriminator) — NOT a
+# resolved ``TaintState`` tier and NOT ``via_callee`` — and is load-bearing. For
+# multi-emit rules, it separates two distinct findings that share (rule_id, path,
+# qualname). For singleton entity-level rules, it may bind the finding to the
+# current source body/signature so a same-qualname redefinition cannot inherit a
+# stale suppression. Rules with no additional source discriminator still pass
+# ``taint_path=None``.
 # Resolved tiers belong in ``message``/``properties``, never the join key.
 # This invariant is no longer convention-only: ``scanner.diagnostics.build_collision_findings``
 # enforces it at runtime over the full emitted set (wardline-8fb773a7af) — two DISTINCT
@@ -203,7 +205,9 @@ def compute_finding_fingerprint(
 # orphaning every verdict. The IN-MEMORY ``Finding.fingerprint`` stays bare
 # 64-hex; the prefix is applied only when serialising to a store/wire and
 # stripped (``parse_fingerprint``) when reading one back. ``wlfp1`` is this
-# (line_start-IN) formula; the move-stability rekey will bump it to ``wlfp2``.
+# (line_start-IN) formula; ``wlfp2`` is the line_start-OUT core formula. Rule-level
+# discriminator changes within the same core formula intentionally fail active for
+# old suppressions instead of requiring a global scheme bump for every rule.
 FINGERPRINT_SCHEME = "wlfp2"
 
 _HEX_DIGITS = frozenset("0123456789abcdef")

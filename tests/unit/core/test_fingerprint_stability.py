@@ -6,8 +6,13 @@ waiver). The fingerprint inputs are ``(rule_id, path, qualname, taint_path)`` �
 an ENTITY-RELATIVE discriminator in ``taint_path`` (``node.lineno -
 entity.location.line_start`` + the lexical span). So the contract is:
 
-  * **Anchor-preserving edits** — rename a local, add a trailing comment, edit
-    code *below* the finding — keep the fingerprint byte-identical.
+  * **Anchor-preserving edits** — add a trailing comment or edit code *below* the
+    finding — keep the fingerprint byte-identical.
+  * **Singleton body/signature edits** — rename a local or parameter, change the
+    entity body shape, or otherwise alter source semantics — change the
+    fingerprint. Singleton entity-level rules use a line-independent source
+    discriminator so a same-qualname redefinition cannot inherit stale
+    suppressions.
   * **Whole-entity moves** — inserting a blank line / comment ABOVE the flagged
     ``def`` shifts every absolute line but keeps the fingerprint, because the
     discriminator is relative to the enclosing entity. This is the churn fix
@@ -16,7 +21,7 @@ entity.location.line_start`` + the lexical span). So the contract is:
     ABOVE a multi-emit node (a sink call), DOES change that finding's
     fingerprint, because the node's offset relative to its def moved. This is the
     accepted limitation: entity-relative, not move-stable in the strong sense.
-    (A def-anchored singleton, taint_path=None, is immune to in-function edits.)
+    (A def-anchored singleton is line-independent, but not body-independent.)
 """
 
 from __future__ import annotations
@@ -50,10 +55,17 @@ def v(p):
 _DECL_ANCHOR_PRESERVING = """
 @trust_boundary(to_level='ASSURED')
 def v(p):
-    payload = p  # renamed local + trailing comment
-    return payload
+    data = p  # trailing comment
+    return data
 def added_below():
     return 1
+"""
+
+_DECL_LOCAL_RENAME = """
+@trust_boundary(to_level='ASSURED')
+def v(p):
+    payload = p
+    return payload
 """
 
 _DECL_LINE_SHIFTING = """
@@ -71,11 +83,17 @@ def test_declaration_anchor_preserving_edits_keep_fingerprint(tmp_path: Path) ->
     assert base and base == preserved
 
 
+def test_declaration_local_rename_changes_fingerprint(tmp_path: Path) -> None:
+    base = _fingerprints(tmp_path, _DECL_BASE, "PY-WL-102")
+    renamed = _fingerprints(tmp_path, _DECL_LOCAL_RENAME, "PY-WL-102")
+    assert base and renamed and base != renamed
+
+
 def test_declaration_whole_entity_move_keeps_fingerprint(tmp_path: Path) -> None:
     # A blank line ABOVE the def moves the whole entity down. Under wlfp2 the
-    # def-anchored singleton (taint_path=None, qualname-keyed) is invariant to that
-    # — the churn fix (wardline-8654423823): a benign edit above a function no
-    # longer rekeys its baseline/waiver/Filigree join.
+    # def-anchored singleton discriminator is invariant to that — the churn fix
+    # (wardline-8654423823): a benign edit above a function no longer rekeys its
+    # baseline/waiver/Filigree join.
     base = _fingerprints(tmp_path, _DECL_BASE, "PY-WL-102")
     shifted = _fingerprints(tmp_path, _DECL_LINE_SHIFTING, "PY-WL-102")
     assert base and shifted and base == shifted

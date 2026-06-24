@@ -1,5 +1,5 @@
 {
-  "corpus_version": 4,
+  "corpus_version": 5,
   "fingerprint_scheme": "wlfp2",
-  "reason": "record sink call spans in finding locations"
+  "reason": "rekey singleton entity-level findings with source-body discriminator for wardline-31540f8492"
 }

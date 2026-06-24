@@ -133,7 +133,7 @@
   ],
   "explain": {
     "explanation": {
-      "fingerprint": "9c3d7b71f8e1e06b7f22d24db966e05be8b4384d8d538a61e7221231d7d9c6d4",
+      "fingerprint": "26832120b7d5db3a8177800c56827e88087af068aca73070330051a5bd83897f",
       "immediate_tainted_callee": null,
       "line": 43,
       "path": "identity_stress.py",
@@ -146,7 +146,7 @@
       "tier_out": null,
       "unresolved_call_count": 0
     },
-    "fingerprint": "9c3d7b71f8e1e06b7f22d24db966e05be8b4384d8d538a61e7221231d7d9c6d4"
+    "fingerprint": "26832120b7d5db3a8177800c56827e88087af068aca73070330051a5bd83897f"
   },
   "facts": [
     {
@@ -212,7 +212,7 @@
         },
         "findings": [
           {
-            "fingerprint": "9c3d7b71f8e1e06b7f22d24db966e05be8b4384d8d538a61e7221231d7d9c6d4",
+            "fingerprint": "26832120b7d5db3a8177800c56827e88087af068aca73070330051a5bd83897f",
             "line_start": 43,
             "path": "identity_stress.py",
             "rule_id": "PY-WL-111"
@@ -467,7 +467,7 @@
         },
         "findings": [
           {
-            "fingerprint": "7b49218a9f624f5d345f4947ce59746393d3d71bf98588abe823af6d789a945a",
+            "fingerprint": "e648fd8f2e1f027aa5b854180eea9dbc79dfe211e9ce45fdbfa20dbdd1d2312e",
             "line_start": 56,
             "path": "identity_stress.py",
             "rule_id": "PY-WL-101"
@@ -489,7 +489,7 @@
   "findings": [
     {
       "confidence": null,
-      "fingerprint": "9c3d7b71f8e1e06b7f22d24db966e05be8b4384d8d538a61e7221231d7d9c6d4",
+      "fingerprint": "26832120b7d5db3a8177800c56827e88087af068aca73070330051a5bd83897f",
       "kind": "defect",
       "location": {
         "col_end": 16,
@@ -514,7 +514,7 @@
     },
     {
       "confidence": null,
-      "fingerprint": "7b49218a9f624f5d345f4947ce59746393d3d71bf98588abe823af6d789a945a",
+      "fingerprint": "e648fd8f2e1f027aa5b854180eea9dbc79dfe211e9ce45fdbfa20dbdd1d2312e",
       "kind": "defect",
       "location": {
         "col_end": 22,
@@ -564,7 +564,7 @@
               "text": "identity_stress.assert_only_boundary declares a trust boundary (EXTERNAL_RAW -> ASSURED) but its only rejection path is assert — stripped under python -O, so the validation vanishes in production"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "9c3d7b71f8e1e06b7f22d24db966e05be8b4384d8d538a61e7221231d7d9c6d4"
+              "wardlineFingerprint/v2": "26832120b7d5db3a8177800c56827e88087af068aca73070330051a5bd83897f"
             },
             "properties": {
               "internalSeverity": "ERROR",
@@ -646,7 +646,7 @@
               "text": "identity_stress.untrusted_reaches_trusted declares return trust ASSURED but actually returns EXTERNAL_RAW (less trusted) — untrusted data reaches a trusted producer"
             },
             "partialFingerprints": {
-              "wardlineFingerprint/v2": "7b49218a9f624f5d345f4947ce59746393d3d71bf98588abe823af6d789a945a"
+              "wardlineFingerprint/v2": "e648fd8f2e1f027aa5b854180eea9dbc79dfe211e9ce45fdbfa20dbdd1d2312e"
             },
             "properties": {
               "internalSeverity": "ERROR",

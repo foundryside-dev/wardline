@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.scanner.grammar import BUILTIN_BOUNDARY_TYPES
+from wardline.scanner.rules._fingerprint import entity_source_fingerprint
 from wardline.scanner.rules.metadata import RuleMetadata
 from wardline.scanner.taint.decorator_provider import _is_builtin_decorator_fqn
 
@@ -130,10 +131,10 @@ class ContradictoryTrust:
                         rule_id=self.rule_id,
                         path=entity.location.path,
                         qualname=qualname,
-                        # Join-key stability (weft-4a9d0f863c): one finding per anchored qualname, so
-                        # (rule, path, line, qualname) is already unique; the marker set is source-derived
-                        # but not load-bearing for the join key. It stays in message/properties only.
-                        taint_path=None,
+                        # Line-independent source-body discriminator: one finding per anchored
+                        # qualname, but a different same-qualname entity body must not inherit
+                        # an old suppression.
+                        taint_path=entity_source_fingerprint(entity.node),
                     ),
                     qualname=qualname,
                     properties={"markers": markers_label},
