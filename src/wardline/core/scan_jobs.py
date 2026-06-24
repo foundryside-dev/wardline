@@ -30,7 +30,12 @@ from wardline.core.filigree_emit import (
 )
 from wardline.core.finding import Severity
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
-from wardline.core.safe_paths import safe_project_path, safe_write_text, write_text_no_follow
+from wardline.core.safe_paths import (
+    explicit_output_target,
+    safe_project_path,
+    safe_write_text,
+    write_text_no_follow,
+)
 from wardline.core.sarif import SarifSink
 
 _JOB_ID_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -297,7 +302,7 @@ def _write_scan_artifact(
     filigree_emit: dict[str, Any] | None = None,
     migration_hint: str | None = None,
 ) -> None:
-    sink_root = root if output.is_relative_to(root.resolve()) else None
+    output, sink_root = explicit_output_target(root, output)
     if fmt == "sarif":
         SarifSink(output, root=sink_root).write(result.findings, result.context)
         return

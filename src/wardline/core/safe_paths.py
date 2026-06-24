@@ -42,6 +42,37 @@ def safe_write_text(root: Path, target: Path, content: str, *, label: str | None
     _write_text_no_follow(safe_path, content, label=label or safe_path.name)
 
 
+def explicit_output_target(root: Path, target: Path, *, cwd: Path | None = None) -> tuple[Path, Path | None]:
+    """Return the concrete explicit output target and its project guard root.
+
+    Relative explicit outputs belong to the caller's CWD. If the target is inside
+    ``root`` or reaches ``root`` through an existing symlink prefix, return the
+    scan root as a guard so parent symlink escapes are rejected. Explicit outside
+    targets keep no-follow-only behavior.
+    """
+    base = cwd or Path.cwd()
+    root_abs = _absolute_no_symlinks(root, base)
+    target_abs = _absolute_no_symlinks(target, base)
+    root_resolved = root.resolve()
+    if (
+        _is_relative_to(target_abs, root_abs)
+        or _is_relative_to(target_abs, root_resolved)
+        or _path_enters_root(target, root_resolved, cwd=base)
+    ):
+        return target_abs, root_resolved
+    return target, None
+
+
+def write_explicit_output_text(root: Path, target: Path, content: str, *, label: str | None = None) -> None:
+    """Write explicit command output with project-root guarding when it lands in ``root``."""
+    safe_target, safe_root = explicit_output_target(root, target)
+    name = label or safe_target.name
+    if safe_root is not None:
+        safe_write_text(safe_root, safe_target, content, label=name)
+    else:
+        write_text_no_follow(safe_target, content, label=name)
+
+
 def write_text_no_follow(target: Path, content: str, *, label: str | None = None) -> None:
     """Write ``content`` without following a final-component symlink."""
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -60,6 +91,39 @@ def _write_text_no_follow(path: Path, content: str, *, label: str) -> None:
         raise
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(content)
+
+
+def _absolute_no_symlinks(path: Path, cwd: Path) -> Path:
+    candidate = path if path.is_absolute() else cwd / path
+    return Path(os.path.abspath(os.fspath(candidate)))
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _path_enters_root(path: Path, root: Path, *, cwd: Path) -> bool:
+    if path.is_absolute():
+        current = Path(path.anchor)
+        parts = path.parts[1:]
+    else:
+        current = cwd
+        parts = path.parts
+    for part in parts:
+        if part in {"", "."}:
+            continue
+        current = current / part
+        try:
+            resolved = current.resolve(strict=True)
+        except (OSError, RuntimeError):
+            continue
+        if resolved == root or _is_relative_to(resolved, root):
+            return True
+    return False
 
 
 def safe_read_text_if_regular(

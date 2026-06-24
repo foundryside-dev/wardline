@@ -30,7 +30,7 @@ from wardline.core.filigree_emit import (
 from wardline.core.finding import Severity
 from wardline.core.paths import weft_config_path
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
-from wardline.core.safe_paths import write_text_no_follow
+from wardline.core.safe_paths import explicit_output_target, write_explicit_output_text
 from wardline.core.sarif import SarifSink, build_sarif
 
 if TYPE_CHECKING:
@@ -357,13 +357,15 @@ def scan(
                 )
             else:
                 assert output is not None
-                SarifSink(output).write(findings, result.context, run_properties=scope_props)
+                output, output_root = explicit_output_target(path, output)
+                SarifSink(output, root=output_root).write(findings, result.context, run_properties=scope_props)
         elif fmt == "jsonl":
             if output_is_default:
                 output = write_scan_artifact(path, fmt, cfg, "".join(f"{finding.to_jsonl()}\n" for finding in findings))
             else:
                 assert output is not None
-                JsonlSink(output).write(findings)
+                output, output_root = explicit_output_target(path, output)
+                JsonlSink(output, root=output_root).write(findings)
         elif fmt == "legis":
             # The signed, verbatim-postable scan for legis's POST /wardline/scan-results.
             # Signs when WARDLINE_LEGIS_ARTIFACT_KEY is provisioned (env/.env); else emits
@@ -388,7 +390,7 @@ def scan(
                 output = write_scan_artifact(path, fmt, cfg, artifact_json)
             else:
                 assert output is not None
-                write_text_no_follow(output, artifact_json, label=output.name)
+                write_explicit_output_text(path, output, artifact_json)
             # Loud signal: an artifact marked dirty is UNSIGNED (dev/tour only). legis
             # records it `unverified`; never gate CI on it. The dirty/signed status comes
             # from the shared authority; the human stderr wording stays CLI-specific.
@@ -456,7 +458,7 @@ def scan(
                 # write_text would follow a repo-controlled symlink at the chosen filename
                 # and truncate an arbitrary user-writable target in an untrusted checkout.
                 assert output is not None
-                write_text_no_follow(output, agent_summary_json, label=output.name)
+                write_explicit_output_text(path, output, agent_summary_json)
         assert output is not None
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
