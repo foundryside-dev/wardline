@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-06-24
+
+### Fixed
+- **Auto-discovered Loomweave emission no longer kills a base-install scan.**
+  `wardline scan` auto-discovers a running Loomweave from its published
+  ephemeral port (ADR-044) with no `--loomweave-url` flag. On an install
+  without the `[loomweave]` extra, the opt-in taint-fact write reached
+  `require_blake3()` and raised `LoomweaveError`, which the CLI surfaced as a
+  hard `exit 2` ("could not run — missing blake3 dep"). The taint-store write
+  is now FULLY fail-soft at parity with the MCP `scan` tool: a `LoomweaveError`
+  (missing extra, 4xx, or bad scheme) degrades to a not-reachable write with an
+  actionable warning, and the scan's gate — its real job — is unaffected.
+  Reported by a federated sibling (elspeth).
+
 ## [1.0.6] - 2026-06-20
 
 ### Changed

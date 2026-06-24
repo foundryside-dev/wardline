@@ -419,20 +419,29 @@ def scan(
                 scanned_paths=result.scanned_paths,
                 mark_unseen=False if delta_mode else None,
             )
-        # Loomweave taint-store write is fail-soft: an outage/403 returns a not-reachable
-        # WriteResult (reported below); a LoomweaveError (missing extra, 4xx, bad scheme)
-        # is a WardlineError → caught here → exit 2, exactly as Filigree errors do.
+        # Loomweave taint-store write is FULLY fail-soft, at parity with the MCP scan tool
+        # (mcp/server.py): an outage/403 returns a not-reachable WriteResult, and a
+        # LoomweaveError (missing [loomweave] extra, 4xx, bad scheme) is caught right here
+        # and degraded to the same not-reachable WriteResult (reported below). The write is
+        # a best-effort enrichment side-channel, never load-bearing for the gate — it must
+        # not change the scan's exit code. This matters because the loomweave URL can be
+        # AUTO-DISCOVERED from a sibling's published ephemeral port (ADR-044) with no flag,
+        # so a base install without blake3 must not have its gate killed by an optional dep.
         if loomweave_url is not None:
-            from wardline.loomweave.client import LoomweaveClient
+            from wardline.core.errors import LoomweaveError
+            from wardline.loomweave.client import LoomweaveClient, WriteResult
             from wardline.loomweave.config import load_loomweave_token, resolve_project_name
             from wardline.loomweave.write import write_facts_to_loomweave
 
-            client = LoomweaveClient(
-                loomweave_url,
-                secret=load_loomweave_token(path),
-                project=resolve_project_name(path),
-            )
-            loomweave_result = write_facts_to_loomweave(result, path, client)
+            try:
+                client = LoomweaveClient(
+                    loomweave_url,
+                    secret=load_loomweave_token(path),
+                    project=resolve_project_name(path),
+                )
+                loomweave_result = write_facts_to_loomweave(result, path, client)
+            except LoomweaveError as exc:
+                loomweave_result = WriteResult(reachable=False, disabled_reason=str(exc))
         if fmt == "agent-summary":
             from wardline.core.agent_summary import build_agent_summary
 
