@@ -73,6 +73,8 @@ FINGERPRINT_SCHEME_FIELD = "fingerprint_scheme"
 SCAN_SCOPE_FIELD = "scan_scope"
 SCAN_SCOPE_SCHEMA = "wardline-legis-scan-scope-1"
 
+_SAFE_GIT_CONFIG = ("-c", "core.fsmonitor=false")
+
 # The one shared vocabulary — legis carries these 8 tiers verbatim (TRUST_TIERS in
 # legis ingest.py). Sourced from the lattice so the two can never drift.
 TRUST_TIERS: frozenset[str] = frozenset(t.value for t in TaintState)
@@ -199,7 +201,7 @@ def _git_tree_sha(root: Path) -> str | None:
     """
     try:
         rev = subprocess.run(
-            ["git", "rev-parse", "HEAD^{tree}"],
+            ["git", *_SAFE_GIT_CONFIG, "rev-parse", "HEAD^{tree}"],
             cwd=root,
             capture_output=True,
             text=True,
@@ -215,7 +217,7 @@ def _git_repo_root(root: Path) -> Path | None:
     """The containing git repository root, or None when unavailable."""
     try:
         rev = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
+            ["git", *_SAFE_GIT_CONFIG, "rev-parse", "--show-toplevel"],
             cwd=root,
             capture_output=True,
             text=True,

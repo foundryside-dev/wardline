@@ -1,0 +1,4 @@
+## $(date +%Y-%m-%d) - Prevent RCE via malicious .git/config core.fsmonitor
+**Vulnerability:** Invoking `git` operations (like `diff` or `ls-files`) programmatically in untrusted repositories without overriding configuration can allow arbitrary command execution via a malicious `.git/config` setting `core.fsmonitor`.
+**Learning:** `subprocess.run(["git", ...])` is not completely safe, even for seemingly innocuous commands like `git diff` or `git rev-parse`. A repository downloaded from an untrusted source might carry a customized configuration that points to an executable bundled with the repository.
+**Prevention:** When invoking `git` via `subprocess` against potentially untrusted directories, always apply the configuration `("-c", "core.fsmonitor=false")` (typically defined as `_SAFE_GIT_CONFIG`) directly in the command arguments.
