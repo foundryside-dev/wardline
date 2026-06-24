@@ -42,7 +42,7 @@ jobs:
         working-directory: site
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configure Pages
         # Pin the Pages source to GitHub Actions (build_type=workflow); enables
