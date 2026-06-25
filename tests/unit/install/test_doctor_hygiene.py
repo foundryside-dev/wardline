@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from wardline.install.doctor import DoctorCheck, _check_gitignore, _sweep_stray_artifacts, machine_readable_doctor
+from wardline.mcp.server import _DOCTOR_TOOL
 
 
 def test_doctorcheck_to_dict_includes_payload_when_present():
@@ -221,3 +222,43 @@ def test_subdir_root_climbs_to_project(tmp_path, monkeypatch):
     machine_readable_doctor(sub, fix=True)          # invoked at the SUBDIR
     assert (proj / ".gitignore").exists()           # gitignore written at the PROJECT root
     assert not stray.exists()                       # swept at the project root
+
+
+# ---------------------------------------------------------------------------
+# MCP tool advertisement + confinement (Task 10)
+# ---------------------------------------------------------------------------
+
+def test_doctor_tool_advertises_destructive():
+    """_DOCTOR_TOOL must advertise destructiveHint: True now that repair:true deletes
+    stray managed scan artifacts."""
+    assert _DOCTOR_TOOL["annotations"]["destructiveHint"] is True
+
+
+def test_mcp_path_deletes_confined_managed_only(tmp_path, monkeypatch):
+    """Drive the sweep through machine_readable_doctor(fix=True) exactly as the MCP
+    _doctor handler does, and verify:
+      (a) a managed timestamped file inside <proj>/src/.wardline/ is deleted,
+      (b) an unstamped bare findings.jsonl is kept (REVIEW, not deleted),
+      (c) a symlinked managed file inside .wardline/ is NOT unlinked; its target intact.
+    Uses the same HOME/which/command isolation as the existing doctor tests."""
+    proj = _proj(tmp_path)
+    _isolated_repair(monkeypatch, proj)
+
+    # (a) managed stray inside a .wardline/ dir -> must be deleted
+    inside = _stray(proj, f"src/.wardline/{STAMP}-findings.jsonl")
+
+    # (b) unstamped bare findings.jsonl at project root -> kept (REVIEW)
+    bare = _stray(proj, "findings.jsonl")
+
+    # (c) symlinked managed file inside a .wardline/ dir -> NOT unlinked; target intact
+    real = tmp_path.parent / "real_task10.jsonl"
+    real.write_text("x", encoding="utf-8")
+    wd = proj / "lib" / ".wardline"
+    wd.mkdir(parents=True)
+    os.symlink(real, wd / f"{STAMP}-findings.jsonl")
+
+    machine_readable_doctor(proj, fix=True)
+
+    assert not inside.exists(), "managed stray inside .wardline/ must be deleted"
+    assert bare.exists(), "unstamped findings.jsonl must NOT be deleted (REVIEW only)"
+    assert real.exists(), "symlink target must not be unlinked"
