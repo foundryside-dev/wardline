@@ -11,6 +11,8 @@ from pathlib import Path
 
 from wardline.core.config import WardlineConfig
 from wardline.core.errors import WardlineError
+from wardline.core.paths import artifacts_dir as _artifacts_dir_for
+from wardline.core.paths import project_root_for
 from wardline.core.safe_paths import safe_project_path
 
 _FORMAT_SUFFIXES = {
@@ -30,10 +32,10 @@ def artifact_suffix(fmt: str) -> str:
 
 
 def timestamped_scan_artifact(root: Path, fmt: str, config: WardlineConfig) -> Path:
-    root_resolved = root.resolve()
-    artifact_dir = _artifact_dir(root_resolved, config)
+    proj_root = project_root_for(root)
+    artifact_dir = _artifact_dir(root, config)
     suffix = artifact_suffix(fmt)
-    for candidate in _timestamped_candidates(root_resolved, artifact_dir, suffix):
+    for candidate in _timestamped_candidates(proj_root, artifact_dir, suffix):
         if not candidate.exists():
             return candidate
     raise WardlineError(f"{suffix}: could not allocate a unique scan artifact name")
@@ -41,15 +43,15 @@ def timestamped_scan_artifact(root: Path, fmt: str, config: WardlineConfig) -> P
 
 def write_scan_artifact(root: Path, fmt: str, config: WardlineConfig, content: str) -> Path:
     """Write a default scan artifact with exclusive create and retention."""
-    root_resolved = root.resolve()
-    artifact_dir = _artifact_dir(root_resolved, config)
+    proj_root = project_root_for(root)
+    artifact_dir = _artifact_dir(root, config)
     suffix = artifact_suffix(fmt)
-    for candidate in _timestamped_candidates(root_resolved, artifact_dir, suffix):
+    for candidate in _timestamped_candidates(proj_root, artifact_dir, suffix):
         try:
-            _write_text_exclusive(root_resolved, candidate, content, label=candidate.name)
+            _write_text_exclusive(proj_root, candidate, content, label=candidate.name)
         except FileExistsError:
             continue
-        prune_scan_artifacts(root_resolved, candidate, fmt, config.artifacts.retain)
+        prune_scan_artifacts(proj_root, candidate, fmt, config.artifacts.retain)
         return candidate
     raise WardlineError(f"{suffix}: could not allocate a unique scan artifact name")
 
@@ -78,8 +80,8 @@ def prune_scan_artifacts(root: Path, artifact: Path, fmt: str, retain: int) -> N
             raise WardlineError(f"{path.name}: failed to prune old scan artifact: {exc}") from exc
 
 
-def _artifact_dir(root_resolved: Path, config: WardlineConfig) -> Path:
-    return safe_project_path(root_resolved, Path(config.artifacts.dir), label="wardline scan artifacts")
+def _artifact_dir(root: Path, config: WardlineConfig) -> Path:
+    return _artifacts_dir_for(root, config.artifacts.dir)
 
 
 def _timestamped_candidates(root_resolved: Path, artifact_dir: Path, suffix: str) -> Iterator[Path]:
