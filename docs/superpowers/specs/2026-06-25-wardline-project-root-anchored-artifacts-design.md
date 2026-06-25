@@ -36,9 +36,12 @@ finding (artifact path self-description) is deferred to §9 backlog by scope dis
    project `.gitignore` ignores the artifacts dir + legacy `findings.jsonl`; (b) sweep
    wardline-**managed** stray artifacts out of the tree and report unstamped strays for
    manual review. The check-only `wardline doctor` reports the same gaps without acting.
-   Both actions **anchor to the same project root Part 1 writes to** (§4 intro), and the
-   destructive delete half is **CLI-only** (§4.2 / §8) — the MCP `doctor` tool degrades it
-   to report-only.
+   Both actions **anchor to the same project root Part 1 writes to** (§4 intro). The
+   destructive delete is reachable from **both** the CLI and the MCP `doctor` tool
+   (`repair:true`); its blast radius is bounded by confinement + the narrowed authorship
+   heuristic (delete only managed-pattern files inside a `.wardline/` dir, under root,
+   no-follow), and the MCP `doctor` tool's `destructiveHint` is flipped to `True` to
+   advertise it honestly (§4.2 / §8).
 
 **Definition of done:**
 
@@ -54,9 +57,10 @@ finding (artifact path self-description) is deferred to §9 backlog by scope dis
   managed stray artifacts, leaves+reports unstamped strays, and emits this in both human
   and `--fix` JSON output. The two new actions target `project_root_for(root)`, the same
   dir Part 1 writes to (§4 intro).
-- The MCP `doctor` tool with `repair:true` runs the gitignore-ensure + existing install
-  repairs but **does not delete** stray files — it reports them; `destructiveHint`
-  stays `False` and honest (§8).
+- The MCP `doctor` tool with `repair:true` performs the **same** gitignore-ensure +
+  stray-delete the CLI does, confined under the (possibly untrusted) server root by the
+  managed-pattern + `.wardline/`-dir + no-follow guards; its `destructiveHint` is `True`
+  (§8). An MCP-surface regression pins the confinement (§6 test #18).
 - Full suite green; ruff/mypy clean; base stays zero-dep.
 
 **Explicitly NOT in scope (YAGNI):**
@@ -244,9 +248,18 @@ Two clarifications the panel forced, because the prior draft was ambiguous:
 
 Both new helpers take a `fix: bool` and perform **zero filesystem mutation when
 `fix=False`** (gitignore: report would-add lines; sweep: report would-remove /
-would-review, no `unlink`). The destructive *delete* in the sweep is additionally gated
-by `allow_destructive_sweep: bool` (§4.2 / §8) so the MCP surface can request `fix=True`
-(gitignore + install repairs) without triggering deletions.
+would-review, no `unlink`). When `fix=True` the sweep deletes — on **both** the CLI and
+the MCP `doctor` tool (`repair:true`), which route through the same
+`machine_readable_doctor(root, fix=repair)` → `repair_install` path. The decision (your
+call, 2026-06-25) is to allow MCP-triggered deletion rather than gate it CLI-only: an
+agent operating the project should be able to clear stray artifacts, consistent with the
+MCP-primary / "agents operate and extend" posture. Safety is carried by *bounding the
+action*, not by hiding it from the agent surface — confinement under `proj`, the narrowed
+authorship heuristic (§4.2), and no-follow — plus flipping the MCP `doctor` tool's
+`destructiveHint` to `True` so the now-destructive op is advertised honestly. The MCP
+`doctor` tool **must be added to §1 scope** (it was previously silent) and its deletion
+reach justified under §8's untrusted-`weft.toml` threat model; a §6 regression (test #18)
+drives the sweep through `machine_readable_doctor(fix=True)` and asserts confinement.
 
 **Root reconciliation (must-fix #1).** The prior draft said the actions "hook into
 `repair_install(root)`", which resolves `root` **literally** — but Part 1 writes the
@@ -314,10 +327,12 @@ Ensure the project `.gitignore` ignores the **configured** artifacts dir (defaul
 - Status: `created` / `updated` / `ok` (already present). Reported as a `gitignore`
   check (a `DoctorCheck`).
 
-### 4.2 Stray-artifact sweep — `_sweep_stray_artifacts(proj, *, fix, allow_destructive)`
+### 4.2 Stray-artifact sweep — `_sweep_stray_artifacts(proj, *, fix)`
 
-Find wardline-**managed** artifacts sitting outside the standard dir and remove them
-(CLI only); report unstamped and out-of-`.wardline` strays.
+Find wardline-**managed** artifacts sitting outside the standard dir and remove them (on
+both the CLI and the MCP `doctor` tool when `fix=True`); report unstamped and
+out-of-`.wardline` strays. No surface gate — deletion is bounded by the guards below, not
+hidden from the agent surface (the 2026-06-25 "MCP can delete too" decision).
 
 - **Managed pattern:** reuse `artifacts._managed_artifact_pattern(suffix)` across all
   four known suffixes (`findings.jsonl`, `findings.sarif`, `findings.agent-summary.json`,
@@ -348,8 +363,8 @@ Find wardline-**managed** artifacts sitting outside the standard dir and remove 
   that `_has_project_markers(dir)` reports True (mirror `enclosing_project_root`'s
   own-markers stop, `paths.py`). Otherwise the outer sweep deletes a nested project's
   current artifacts.
-- **Delete mechanics (CLI only).** Deletion happens only when `fix and allow_destructive`.
-  Delete managed files found **inside a `.wardline/`-named dir outside the standard
+- **Delete mechanics.** Deletion happens when `fix=True` (both CLI and the MCP `doctor`
+  tool). Delete managed files found **inside a `.wardline/`-named dir outside the standard
   artifacts dir**, confined under `proj` via `safe_project_path`, regular-file/no-follow
   checked (`_is_regular_file_no_follow`). Wrap each per-file `safe_project_path` call in
   `try/except WardlineError: continue` so one symlinked/escaping entry **skips** rather
@@ -361,11 +376,17 @@ Find wardline-**managed** artifacts sitting outside the standard dir and remove 
 - **Report, never delete:** unstamped files (a bare `findings.jsonl` of unknown
   provenance — e.g. esper-lite's 600-mode 834 KB root file) *and* managed-pattern files
   outside a `.wardline/` dir, listed under a `REVIEW` line for the human.
-- **MCP posture (must-fix #2):** on the MCP `doctor` tool, `allow_destructive` is
-  **False**, so the sweep is **report-only** — it lists removable/review strays but
-  deletes nothing. See §8.
+- **MCP posture (must-fix #2 — resolved "MCP can delete too").** The MCP `doctor` tool
+  with `repair:true` performs the same delete as the CLI (same confined,
+  `.wardline/`-narrowed, no-follow path), since both route through
+  `machine_readable_doctor(root, fix=repair)` → `repair_install`. The implementation
+  **must flip the doctor tool's `destructiveHint` from `False` to `True`** (`mcp/server.py`,
+  the `_DOCTOR_TOOL` annotations) so a now-destructive op is not advertised as
+  non-destructive, and the agent-facing tool description should note that `repair:true`
+  may delete managed stray artifacts under the server root. See §8 for the threat-model
+  justification and §6 test #18 for the confinement regression.
 - Status: `stray_artifacts` check (a `DoctorCheck`) — reports counts of removed managed
-  files (CLI) and flagged-for-review files, with paths.
+  files and flagged-for-review files, with paths.
 
 ### 4.3 Output shape (authoritative on plumbing)
 
@@ -472,11 +493,15 @@ write; the sweep is a walk + filter + guarded unlink with deletion behind two bo
     `machine_readable_doctor(fix=False)` leave a planted stray on disk AND add NO managed
     gitignore block; `--fix` JSON includes `gitignore` and `stray_artifacts` checks with
     the right `status`/`removed`/`review` fields.
-18. **MCP surface (must-fix #2):** `machine_readable_doctor(fix=True)` driven as the MCP
-    `doctor` tool does (`allow_destructive=False`) **reports** strays but deletes nothing,
-    while still ensuring the gitignore; and a CLI-path test with `allow_destructive=True`
-    confines deletions under root, matches only the managed pattern, and is no-follow
-    against a planted out-of-root symlink + an in-tree stray.
+18. **MCP-surface deletion confinement (must-fix #2):** drive the sweep through
+    `machine_readable_doctor(fix=True)` exactly as the MCP `doctor(repair:true)` handler
+    does, against a planted tree containing (a) a managed stray inside a
+    `‹subdir›/.wardline/` → deleted, (b) a managed-named file that is a **symlink** → not
+    unlinked, (c) a managed-named file pointed at via an out-of-root **dir symlink** → not
+    reached/deleted, (d) an unstamped + a bare-managed file → REVIEW, not deleted. Assert
+    deletions are confined under root, match only the managed pattern inside `.wardline/`,
+    and never follow a symlink. Pair with a unit asserting the MCP `doctor` tool's
+    `_DOCTOR_TOOL` annotation reports `destructiveHint: True`.
 
 ---
 
@@ -487,8 +512,9 @@ write; the sweep is a walk + filter + guarded unlink with deletion behind two bo
   artifact lands in `‹project-root›/.wardline/` — anchored to the project root (the
   `weft.toml` directory), **independent of where `wardline scan` is invoked** — and that
   a subdir scan is still flagged. Note `wardline doctor --repair` sets up the gitignore
-  and clears stray artifacts (and that stray deletion is a **CLI** action; the MCP
-  `doctor` tool reports strays for a human to clear).
+  and clears stray artifacts — available from both the CLI and the MCP `doctor` tool
+  (`repair:true`), which deletes managed strays under the project root and is advertised
+  `destructiveHint: True`.
 - `CHANGELOG.md` `[Unreleased]`:
   - **Changed** — default scan artifacts now anchor to the weft-project root rather than
     the scan cwd; retention is therefore project-root-wide across heterogeneous
@@ -497,7 +523,9 @@ write; the sweep is a walk + filter + guarded unlink with deletion behind two bo
     now-stale per-subdir `.wardline/` dirs — any CI/automation reading a hardcoded
     `‹subdir›/.wardline/*-findings.jsonl` path must be updated.
   - **Added** — `wardline doctor --repair` gitignores the artifacts dir and sweeps stray
-    managed artifacts (CLI-only deletion; MCP reports).
+    managed artifacts; deletion is available on both the CLI and the MCP `doctor` tool
+    (`repair:true`, now advertised `destructiveHint: True`), bounded to managed-pattern
+    files inside `.wardline/` dirs under the project root.
 
 ---
 
@@ -509,20 +537,25 @@ write; the sweep is a walk + filter + guarded unlink with deletion behind two bo
   its anchor. Documented under CHANGELOG **Changed** with the migration note.
 - **Untrusted weft.toml.** `artifacts_dir` confinement (mirroring `weft_state_dir`) is
   the guard; test #5 pins it.
-- **Destructive sweep, MCP-reachable (must-fix #2).** The MCP `doctor` tool reads
-  `repair` from agent args and calls the same `machine_readable_doctor(root, fix=repair)`
-  → `repair_install` path; without a guard the file-deleting sweep would be
-  agent-invokable against the (possibly untrusted) server-root checkout, while the tool's
-  `destructiveHint` is `False` (advertised non-destructive). **Decision:** gate the
-  *delete* behind a CLI-only `allow_destructive_sweep` flag threaded through
-  `repair_install`/`machine_readable_doctor`; the MCP `_doctor` handler leaves it `False`,
-  so MCP `doctor(repair:true)` still ensures the gitignore + runs the existing idempotent
-  install repairs + **reports** strays, but deletes nothing. This keeps `destructiveHint:
-  False` honest (no MCP `destructiveHint` change needed) and confines irreversible
-  deletion to an explicit human-invoked CLI action — squarely "humans on the loop" for a
-  delete. The CLI delete still confines under root, matches only the managed pattern
-  *inside a `.wardline/` dir*, is no-follow, and skips on `safe_project_path` failure.
-  Tests #16, #18 pin it.
+- **Destructive sweep, MCP-reachable — intended (must-fix #2, resolved "MCP can delete
+  too").** The MCP `doctor` tool reads `repair` from agent args and calls the same
+  `machine_readable_doctor(root, fix=repair)` → `repair_install` path, so the sweep's
+  delete is reachable from the agent surface against the (possibly untrusted) server-root
+  checkout. **Decision:** allow it rather than gate it CLI-only — an agent operating the
+  project should be able to clear stray artifacts (MCP-primary / "agents operate and
+  extend"). The risk is managed by *bounding the action and advertising it*, not by hiding
+  it: (1) the delete is confined under `proj` via `safe_project_path`, no-follow, and
+  matches **only** the managed timestamp pattern **inside a `.wardline/`-named dir** —
+  blast radius is wardline's own stamped artifacts, never arbitrary source; (2) unstamped
+  and bare-managed files are report-only; (3) the sweep stops at nested project markers;
+  (4) the implementation **flips the `_DOCTOR_TOOL` `destructiveHint` to `True`** so the
+  op is honestly advertised, and the tool description notes deletion. An agent that
+  shouldn't delete simply does not pass `repair:true`. Tests #16 (symlink safety) and #18
+  (MCP-surface confinement + `destructiveHint: True`) pin it. **Residual risk accepted:** a
+  crafted untrusted repo could induce deletion of files it placed inside a `.wardline/`
+  dir matching the stamp pattern — i.e. wardline deletes attacker-planted files that
+  *look* like its own artifacts, which is a no-op-equivalent loss (the attacker's own
+  planted bytes), not exfiltration or escape.
 - **Authorship heuristic.** A timestamp-pattern filename is not proof of wardline
   authorship; auto-delete is narrowed to managed files *inside `.wardline/` dirs*, and
   everything else is report-only (§4.2). Bounds the blast radius of the destructive path
