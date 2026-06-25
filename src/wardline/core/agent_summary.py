@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from wardline.core.federation_status import default_filigree_emit_status, default_loomweave_write_status
 from wardline.core.finding import Finding, Kind, SuppressionState
 from wardline.core.run import GateDecision, ScanResult
 
@@ -30,26 +31,14 @@ def _is_engine_fact(f: Finding) -> bool:
 
 
 def _default_filigree_status() -> dict[str, Any]:
-    return {
-        "configured": False,
-        "reachable": None,
-        "created": 0,
-        "updated": 0,
-        "failed": 0,
-        "failures": [],
-        "warnings": [],
-        "disabled_reason": "not configured",
-    }
+    # Canonical builder (core/federation_status). The agent-summary default has never
+    # carried ``destination`` on its bare default path — include_destination=False
+    # preserves that.
+    return default_filigree_emit_status(include_destination=False)
 
 
 def _default_loomweave_status() -> dict[str, Any]:
-    return {
-        "configured": False,
-        "reachable": None,
-        "written": 0,
-        "unresolved_qualnames": [],
-        "disabled_reason": "not configured",
-    }
+    return default_loomweave_write_status()
 
 
 @dataclass(frozen=True, slots=True)

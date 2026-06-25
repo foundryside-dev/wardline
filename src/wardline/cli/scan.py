@@ -20,11 +20,10 @@ from wardline.core.delta_scope import (
 )
 from wardline.core.emit import JsonlSink
 from wardline.core.errors import WardlineError
+from wardline.core.federation_status import filigree_emit_status, loomweave_write_status
 from wardline.core.filigree_emit import (
     EmitResult,
     FiligreeEmitter,
-    filigree_destination,
-    filigree_disabled_reason,
     filigree_url_project,
 )
 from wardline.core.finding import Severity
@@ -658,54 +657,13 @@ def _build_sei_resolver(loomweave_url: str | None, root: Path) -> SeiResolver | 
 
 
 def _filigree_status(result: EmitResult | None) -> dict[str, object]:
-    if result is None:
-        return {
-            "configured": False,
-            "reachable": None,
-            "created": 0,
-            "updated": 0,
-            "failed": 0,
-            "failures": [],
-            "warnings": [],
-            "disabled_reason": "not configured",
-            "destination": filigree_destination(None),
-        }
-    return {
-        "configured": True,
-        "reachable": result.reachable,
-        "created": result.created,
-        "updated": result.updated,
-        "failed": result.failed,
-        # PDR-0023: per-finding reject reasons so a partial ingest is not flattened to a count.
-        "failures": [f.to_wire() for f in result.failures],
-        "warnings": list(result.warnings),
-        "disabled_reason": filigree_disabled_reason(
-            reachable=result.reachable,
-            status=result.status,
-            token_sent=result.token_sent,
-            url=result.url,
-        ),
-        # N1 / C-10(a): name where findings went so a wrong-project write is visible.
-        "destination": filigree_destination(result.url),
-    }
+    # Canonical builder (core/federation_status). configured is derived from result-is-None
+    # because the CLI only ever has a result when an emitter was configured.
+    return filigree_emit_status(result, configured=result is not None, include_destination=True)
 
 
 def _loomweave_status(result: object | None) -> dict[str, object]:
-    if result is None:
-        return {
-            "configured": False,
-            "reachable": None,
-            "written": 0,
-            "unresolved_qualnames": [],
-            "disabled_reason": "not configured",
-        }
-    return {
-        "configured": True,
-        "reachable": getattr(result, "reachable", False),
-        "written": getattr(result, "written", 0),
-        "unresolved_qualnames": list(getattr(result, "unresolved_qualnames", ())),
-        "disabled_reason": getattr(result, "disabled_reason", None),
-    }
+    return loomweave_write_status(result)
 
 
 def _redact_url_for_log(url: str | None) -> str:
