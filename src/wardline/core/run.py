@@ -440,9 +440,8 @@ def run_scan(
                 rule_id="WLN-ENGINE-NESTED-SCAN-ROOT",
                 message=(
                     f"scan root '{rel.as_posix()}' is a subdirectory of the weft project at "
-                    f"{enclosing}: {qualname_clause}the project's baseline/waivers/judged state "
-                    "is not loaded, and output defaults under the subdirectory. Scan the project "
-                    "root for federation-stable results."
+                    f"{enclosing}: {qualname_clause}and the project's baseline/waivers/judged "
+                    "state is not loaded. Scan the project root for federation-stable results."
                 ),
                 severity=Severity.NONE,
                 kind=Kind.FACT,
