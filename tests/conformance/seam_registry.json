@@ -197,19 +197,20 @@
     "consumer_or_second_producer": "filigree",
     "wire": "POST /api/weft/scan-results (classic scan-results emission/intake body)",
     "two_sided": true,
-    "oracle_shape": null,
-    "oracle_test": "tests/unit/core/test_filigree_emit.py",
-    "marker": "filigree_e2e",
+    "self_authored_producer": true,
+    "oracle_shape": "byte_golden_corpus",
+    "oracle_test": "tests/conformance/test_filigree_scan_results_wire_golden.py",
+    "marker": null,
     "drift_alarm": null,
-    "drift_test": null,
-    "bar_verdict": "partial",
+    "drift_test": "tests/conformance/test_filigree_scan_results_wire_golden.py",
+    "bar_verdict": "at_bar",
     "deferred_reason": null,
     "wire_change": "none",
     "evidence_paths": [
+      "tests/conformance/test_filigree_scan_results_wire_golden.py",
+      "tests/conformance/fixtures/wardline-scan-results-wire.golden.json",
       "tests/unit/core/test_filigree_emit.py:1-47",
-      "tests/e2e/test_filigree_promote_live.py:13",
-      "src/wardline/core/filigree_emit.py:102-110",
-      ".github/workflows/ci.yml:152"
+      "src/wardline/core/filigree_emit.py:79-109"
     ]
   },
   {

@@ -630,6 +630,35 @@ def _assert_at_bar_two_sided_fail_closed(row: dict[str, Any], ctx: str) -> None:
             "the contract from wardline's LIVE runtime source (the producing enum/constant)"
         )
 
+        # A self_authored_producer + byte_golden_corpus row is EXEMPT from the
+        # live-oracle marker requirement (line 508): both fail-closed legs — the
+        # Layer-1 byte-pin AND the producer-source recheck above — rest entirely on
+        # the protective test file RUNNING in the default suite. That "runs offline
+        # by default" claim is only true if the file carries NO addopts-excluded
+        # marker (else a one-line `pytestmark = pytest.mark.<excluded>` edit would
+        # silently DESELECT both legs in the default run while this gate keeps
+        # certifying the row at_bar). Mirror the guard the sibling marker-exempt
+        # branches use (lines 565-569, 653-657) so the exemption is paid for, not
+        # assumed: assert the drift_test (and the oracle_test, when distinct) carry
+        # no excluded marker. Scoped to this exempt case ONLY — scenario /
+        # byte_golden seams that DO declare an excluded live-oracle marker
+        # (e.g. SEI / qualname-parity / warpline) legitimately apply it in the same
+        # file as their default-suite byte-pin and must not be tripped here.
+        if row["oracle_shape"] == "byte_golden_corpus":
+            protective_paths = {row["drift_test"]}
+            if row["oracle_test"] is not None:
+                protective_paths.add(row["oracle_test"])
+            for protective in protective_paths:
+                for excluded in _EXCLUDED_MARKERS:
+                    assert not _marker_is_applied_in_file(excluded, protective), (
+                        f"{ctx}: self_authored_producer byte_golden_corpus protective test "
+                        f"{protective!r} carries addopts-excluded marker {excluded!r} — it would be "
+                        "DESELECTED in the default suite, falsifying the default-suite fail-closed "
+                        "claim that the marker exemption (line 508) rests on. Both the Layer-1 "
+                        "byte-pin and the producer-source recheck must run by default; an excluded "
+                        "marker on this file silently disables them"
+                    )
+
 
 def _assert_at_bar_one_sided_golden_fail_closed(row: dict[str, Any], ctx: str) -> None:
     """A one-sided (no-peer) ``byte_golden_corpus`` at_bar seam — wardline freezing its
