@@ -267,21 +267,25 @@
     "seam": "Vocabulary descriptor (cross-product trust-vocab contract) \u2014 wardline (producer) \u2192 loomweave (consumer)",
     "authority": "wardline",
     "consumer_or_second_producer": "loomweave",
-    "wire": "vocabulary descriptor (trust-vocab) \u2014 src/wardline/core/vocabulary.yaml",
-    "two_sided": false,
-    "oracle_shape": null,
-    "oracle_test": null,
+    "wire": "tests/conformance/fixtures/wardline-vocabulary-descriptor.golden.yaml (the NG-25 trust-vocabulary descriptor wardline emits to .weft/wardline/vocabulary.yaml: {schema: wardline.vocabulary/v1, version, entries[{canonical_name, group, attrs}]}). Wardline IS the AUTHORITY: it OWNS the trust-vocabulary via wardline.core.registry.REGISTRY and serializes it through wardline.core.descriptor.build_vocabulary_descriptor / descriptor_to_yaml, so the vendored golden is a copy of wardline's OWN derived bytes and the Layer-1 UPSTREAM_BLOB_SHA byte-pin (test_vocabulary_descriptor_wire_golden.py) is wardline-pins-wardline. The circular oracle is broken by a PRODUCER-SOURCE recheck (self_authored_producer=true): test_golden_matches_live_descriptor_producer imports the LIVE wardline.core.descriptor.descriptor_to_yaml and asserts its emitted bytes == the frozen golden (and the build_vocabulary_descriptor dict == the parsed golden), so a vocabulary drift (a decorator added/removed, a group/attr changed, schema/version bumped) reds even though the byte-pin still passes. The seam-registry gate REQUIRES that producer-source recheck (an in-process wardline runtime import + an equality assert tying an imported wardline symbol to the golden) for self_authored_producer at_bar rows, so a deleted/byte-pin-only drift_test reds the gate. The loomweave (Python plugin) consumer reads these exact bytes and GATES ON version (asserts the descriptor version == its EXPECTED_DESCRIPTOR_VERSION, currently wardline-generic-2 == wardline's REGISTRY_VERSION \u2014 a real cross-tool coupling: bump one without the other and loomweave flags version_skew), PARSES entries (canonical_name/group/attrs) into WardlineVocabulary for tag emission, and TOLERATES the schema field without acting on it (its schema-format-version handling is deferred to loomweave's own Task B). Its consumer-side oracle lives in the loomweave repo (referenced as evidence) \u2014 this row pins the producer-authored descriptor bytes that make the two sides agree.",
+    "two_sided": true,
+    "self_authored_producer": true,
+    "oracle_shape": "byte_golden_corpus",
+    "oracle_test": "tests/conformance/test_vocabulary_descriptor_wire_golden.py",
     "marker": null,
     "drift_alarm": null,
-    "drift_test": null,
-    "bar_verdict": "gap",
+    "drift_test": "tests/conformance/test_vocabulary_descriptor_wire_golden.py",
+    "bar_verdict": "at_bar",
     "deferred_reason": null,
     "wire_change": "none",
     "evidence_paths": [
+      "tests/conformance/test_vocabulary_descriptor_wire_golden.py",
+      "tests/conformance/fixtures/wardline-vocabulary-descriptor.golden.yaml",
       "tests/unit/core/test_descriptor.py:57-71",
       "tests/unit/core/test_descriptor.py:74-85",
+      "src/wardline/core/descriptor.py:42-68",
       "src/wardline/core/vocabulary.yaml:1",
-      "src/wardline/_version.py:1"
+      "loomweave (sibling repo): plugins/python/src/loomweave_plugin_python/wardline_descriptor.py \u2014 reads .weft/wardline/vocabulary.yaml BYTES, parses schema/version/entries into WardlineVocabulary, emits wardline:external_boundary / wardline:trusted entity_tags (consumer-side oracle of this descriptor; lives in the loomweave repo, not this one)"
     ]
   },
   {
@@ -337,7 +341,7 @@
     "seam": "Filigree ephemeral-port discovery convention (producer: filigree dashboard publishes <project>/.weft/filigree/ephemeral.port; consumers: loomweave + wardline read it to override configured base_url, enrich-only, fail-soft)",
     "authority": "filigree",
     "consumer_or_second_producer": "wardline",
-    "wire": "ephemeral-port file (.weft/filigree port file: plain integer) \u2014 one producer, two consumers",
+    "wire": "ephemeral-port file (.weft/filigree/ephemeral.port: plain ASCII integer) \u2014 one producer (filigree ephemeral.write_port_file = write_atomic(port_file, str(port))), two consumers. STAYS GAP \u2014 assessed 2026-06-25, deliberately NOT advanced. Wardline DOES have a real reader (core/config._read_published_port + install/detect._filigree_url_from_project: read .weft/filigree/ephemeral.port, strip, isdigit-guard, int(), range-check 1..65535), but the 'contract' is an unframeable bare integer: the producer convention is str(port) and the consumer is int(text.strip()), so there is NO freezable contract literal to byte-pin \u2014 a golden of '8542' pins nothing about the format, and the format itself is runtime behavior, not a constant. The ONLY string literal common to both sides is the filename 'ephemeral.port'; a Layer-2 recheck against filigree source could at best assert 'ephemeral.port' in filigree_src, which is near-tautological (it proves a filename string exists, not that any contract is conformed to) \u2014 writing it to flip the row would be exactly the circular/tautological oracle the gate exists to prevent. The wire is also enrich-only / fail-soft by design (detect.py: 'we do NOT write any config'; fail-soft falls through on every defect), with no strict format contract either side conforms to. An honest at_bar is not constructible here; it correctly stays gap.",
     "two_sided": true,
     "oracle_shape": null,
     "oracle_test": null,
@@ -348,7 +352,9 @@
     "deferred_reason": null,
     "wire_change": "none",
     "evidence_paths": [
-      "src/wardline/core/config.py:433-434"
+      "src/wardline/core/config.py:299-320",
+      "src/wardline/install/detect.py:78-100",
+      "filigree (sibling repo): src/filigree/ephemeral.py:509-513 write_port_file = write_atomic(port_file, str(port)) \u2014 the bare-integer producer convention; no freezable format contract to conform to"
     ]
   },
   {
