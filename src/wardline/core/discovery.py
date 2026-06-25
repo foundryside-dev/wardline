@@ -29,6 +29,10 @@ _ALWAYS_SKIP = frozenset(
     }
 )
 
+# Public alias for reuse by the doctor stray-artifact sweep (single source of the
+# hard directory skip-set). Keep in sync with _ALWAYS_SKIP.
+WALK_SKIP_DIRS = _ALWAYS_SKIP
+
 # Python packaging output names are pruned only when they are direct children of the
 # scan root. Under a configured source root, `build` and `dist` can be legitimate
 # package names and must not silently disappear from the scan.
