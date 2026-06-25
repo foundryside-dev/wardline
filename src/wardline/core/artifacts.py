@@ -34,6 +34,7 @@ def artifact_suffix(fmt: str) -> str:
 def timestamped_scan_artifact(root: Path, fmt: str, config: WardlineConfig) -> Path:
     proj_root = project_root_for(root)
     artifact_dir = _artifact_dir(root, config)
+    safe_project_path(proj_root, artifact_dir, label="wardline scan artifacts")
     suffix = artifact_suffix(fmt)
     for candidate in _timestamped_candidates(proj_root, artifact_dir, suffix):
         if not candidate.exists():
@@ -45,6 +46,7 @@ def write_scan_artifact(root: Path, fmt: str, config: WardlineConfig, content: s
     """Write a default scan artifact with exclusive create and retention."""
     proj_root = project_root_for(root)
     artifact_dir = _artifact_dir(root, config)
+    safe_project_path(proj_root, artifact_dir, label="wardline scan artifacts")
     suffix = artifact_suffix(fmt)
     for candidate in _timestamped_candidates(proj_root, artifact_dir, suffix):
         try:
