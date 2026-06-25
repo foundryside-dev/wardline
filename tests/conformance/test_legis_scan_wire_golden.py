@@ -1,12 +1,17 @@
-"""Shared cross-member golden vector for the wardline → legis scan wire (G1).
+"""wardline's live-emit superset freeze for the wardline → legis scan wire (G1).
 
-``legis_scan_wire.golden.json`` is the ONE concrete instance of the legis scan
-artifact that BOTH wardline (producer) and legis (consumer) load and assert
-against — replacing the two *independent vendored mirrors*
-(``test_legis_artifact_contract_freeze.py`` here, legis's own vendored ``from_wire``)
-whose hand-copied drift is the federation-interface-audit **G1 / seam-S8** finding:
-wardline could rename ``findings`` and stay green while legis silently governs an
-EMPTY scan under a ``verified`` status (the consumer reads ``scan.get("findings", [])``).
+``legis_scan_wire.golden.json`` is wardline's OWN signed golden: it pins wardline's
+live ``build_legis_artifact`` emit (the full superset including ``scan_scope`` /
+``fingerprint_scheme``) to a concrete instance and verifies it offline under
+:data:`GOLDEN_KEY`. It is NOT the cross-member shared vector — the SINGLE byte-identical
+vector both repos load is ``wardline_scan_artifact.v1.json`` (authored by legis, vendored
++ byte-pinned into wardline by ``test_wardline_scan_artifact_shared_vector.py``, and driven
+through legis's real ingest in ``legis/tests/contract/weft/test_wardline_scan_artifact_contract.py``).
+This file complements that shared-vector oracle: the shared vector pins the byte-exact wire +
+HMAC across the two repos, while this golden freezes wardline's broader live-emit key-set so a
+producer-side rename of ``findings`` cannot stay green (the federation-interface-audit
+**G1 / seam-S8** finding: legis reads ``scan.get("findings", [])`` and would silently govern
+an EMPTY scan under a ``verified`` status).
 
 The vector is a deterministic, self-consistent **signed** artifact: its volatile
 fields (``scanner_identity``, ``rule_set_version``, ``commit_sha``, ``tree_sha``) are

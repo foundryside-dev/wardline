@@ -176,20 +176,23 @@
     "seam": "Wardline\u2192legis scan-artifact wire (HMAC-signed findings, G1) \u2014 producer wardline (/home/john/wardline), consumer legis (/home/john/legis)",
     "authority": "wardline",
     "consumer_or_second_producer": "legis",
-    "wire": "tests/conformance/legis_scan_wire.golden.json (HMAC-signed findings envelope; shared signed vector under GOLDEN_KEY)",
+    "wire": "tests/conformance/vectors/wardline_scan_artifact.v1.json — the SINGLE shared cross-member vector, AUTHORED by legis (legis/tests/contract/weft/vectors/wardline_scan_artifact.v1.json) and vendored byte-identical into wardline. legis (consumer) drives its real active_defects/verify over it; wardline (producer) byte-pins it (VENDORED_BLOB_SHA fd4b21be…) and proves its real sign_artifact reproduces the byte-exact expected_signature + its real project_finding emits the vector finding wire. Both sides now load the SAME bytes — closing the two-independent-mirrors gap that was the 2026-06-10 G1 incident (root cause #2). The older wardline-only legis_scan_wire.golden.json + test_legis_scan_wire_golden.py remain as wardline's live-emit superset freeze.",
     "two_sided": true,
-    "oracle_shape": "shared_signed_vector",
-    "oracle_test": "tests/conformance/test_legis_scan_wire_golden.py",
-    "marker": null,
-    "drift_alarm": null,
-    "drift_test": null,
-    "bar_verdict": "partial",
+    "oracle_shape": "byte_golden_corpus",
+    "oracle_test": "tests/conformance/test_wardline_scan_artifact_shared_vector.py",
+    "marker": "legis_scan_artifact_drift",
+    "drift_alarm": "legis_scan_artifact_drift",
+    "drift_test": "tests/conformance/test_wardline_scan_artifact_shared_vector.py",
+    "bar_verdict": "at_bar",
     "deferred_reason": null,
     "wire_change": "none",
+    "peer_conformance": "legis (consumer) at_bar in-repo: legis/tests/contract/weft/test_wardline_scan_artifact_contract.py drives real ingest over the byte-identical vector (legis blob fd4b21be6f8df15fda37606c65df73fd464b9aea).",
     "evidence_paths": [
+      "tests/conformance/test_wardline_scan_artifact_shared_vector.py",
+      "tests/conformance/vectors/wardline_scan_artifact.v1.json",
       "tests/conformance/test_legis_scan_wire_golden.py:102-162",
-      "tests/conformance/legis_scan_wire.golden.json",
-      "tests/unit/core/test_legis_artifact.py:64-67"
+      "tests/conformance/test_legis_artifact_contract_freeze.py",
+      "tests/conformance/test_legis_intake_contract.py"
     ]
   },
   {
