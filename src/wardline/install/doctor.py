@@ -6,6 +6,7 @@ import ipaddress
 import json
 import os
 import tomllib
+from collections.abc import Sequence
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
@@ -48,6 +49,8 @@ class DoctorCheck:
     status: str
     fixed: bool = False
     message: str | None = None
+    removed: Sequence[str] = ()
+    review: Sequence[str] = ()
 
     @property
     def ok(self) -> bool:
@@ -57,6 +60,10 @@ class DoctorCheck:
         data: dict[str, Any] = {"id": self.id, "status": self.status, "fixed": self.fixed}
         if self.message:
             data["message"] = self.message
+        if self.removed:
+            data["removed"] = list(self.removed)
+        if self.review:
+            data["review"] = list(self.review)
         return data
 
 
