@@ -1,6 +1,6 @@
 [
   {
-    "seam": "SEI conformance (loomweave producer ↔ wardline consumer)",
+    "seam": "SEI conformance (loomweave producer \u2194 wardline consumer)",
     "authority": "loomweave",
     "consumer_or_second_producer": "wardline",
     "wire": "tests/conformance/fixtures/sei-conformance-oracle.json (vendored scenario fixture; SEI token opaque)",
@@ -24,10 +24,10 @@
     ]
   },
   {
-    "seam": "SEI conformance (loomweave producer ↔ legis consumer)",
+    "seam": "SEI conformance (loomweave producer \u2194 legis consumer)",
     "authority": "loomweave",
     "consumer_or_second_producer": "legis",
-    "wire": "SEI token over loomweave HTTP identity routes (legis-side consumption — not exercised in this repo)",
+    "wire": "SEI token over loomweave HTTP identity routes (legis-side consumption \u2014 not exercised in this repo)",
     "two_sided": true,
     "oracle_shape": "scenario",
     "oracle_test": null,
@@ -40,10 +40,10 @@
     "evidence_paths": []
   },
   {
-    "seam": "SEI consumer (loomweave producer ↔ charter consumer): charter consumes opaque SEI from loomweave for rename-resilient requirement↔code traceability (clarion_entity --satisfies--> requirement_version)",
+    "seam": "SEI consumer (loomweave producer \u2194 charter consumer): charter consumes opaque SEI from loomweave for rename-resilient requirement\u2194code traceability (clarion_entity --satisfies--> requirement_version)",
     "authority": "loomweave",
     "consumer_or_second_producer": "charter",
-    "wire": "opaque SEI token (charter-side consumption — not exercised in this repo)",
+    "wire": "opaque SEI token (charter-side consumption \u2014 not exercised in this repo)",
     "two_sided": true,
     "oracle_shape": "scenario",
     "oracle_test": null,
@@ -72,7 +72,7 @@
     "evidence_paths": []
   },
   {
-    "seam": "loomweave HTTP Read API (file resolution, call-graph linkages, capability discovery) — peer pair loomweave (producer) ↔ filigree (consumer, ADR-014 registry backend).",
+    "seam": "loomweave HTTP Read API (file resolution, call-graph linkages, capability discovery) \u2014 peer pair loomweave (producer) \u2194 filigree (consumer, ADR-014 registry backend).",
     "authority": "loomweave",
     "consumer_or_second_producer": "wardline",
     "wire": "loomweave HTTP Read API (file resolution, call-graph linkages, capability discovery)",
@@ -104,10 +104,10 @@
     "evidence_paths": []
   },
   {
-    "seam": "loomweave→legis SEI wire transport (HTTP identity routes): legis (consumer) sends optionally-HMAC-signed (X-Weft-Component) requests to loomweave's /api/v1/_capabilities, /identity/resolve, /identity/sei/:sei, /identity/lineage/:sei; loomweave (producer) serves them as its dossier/audit-spine participation surface. Responses unsigned, integrity rests on TLS.",
+    "seam": "loomweave\u2192legis SEI wire transport (HTTP identity routes): legis (consumer) sends optionally-HMAC-signed (X-Weft-Component) requests to loomweave's /api/v1/_capabilities, /identity/resolve, /identity/sei/:sei, /identity/lineage/:sei; loomweave (producer) serves them as its dossier/audit-spine participation surface. Responses unsigned, integrity rests on TLS.",
     "authority": "loomweave",
     "consumer_or_second_producer": "legis",
-    "wire": "loomweave HTTP identity routes (resolve / sei/:sei / lineage) — legis consumer (not exercised in this repo)",
+    "wire": "loomweave HTTP identity routes (resolve / sei/:sei / lineage) \u2014 legis consumer (not exercised in this repo)",
     "two_sided": true,
     "oracle_shape": "scenario",
     "oracle_test": null,
@@ -120,7 +120,7 @@
     "evidence_paths": []
   },
   {
-    "seam": "Wardline→loomweave taint-fact store (HMAC write + read-by-SEI, blake3 freshness, wardline-taint-1 blob) — SP9/T3.4",
+    "seam": "Wardline\u2192loomweave taint-fact store (HMAC write + read-by-SEI, blake3 freshness, wardline-taint-1 blob) \u2014 SP9/T3.4",
     "authority": "wardline",
     "consumer_or_second_producer": "loomweave",
     "wire": "POST/GET taint-fact store (HMAC write + read-by-SEI, blake3 freshness, wardline-taint-1 blob)",
@@ -144,10 +144,10 @@
     ]
   },
   {
-    "seam": "Wardline qualname normalization / parity (Python + Rust corpus) — producer wardline, consumer loomweave",
+    "seam": "Wardline qualname normalization / parity (Python + Rust corpus) \u2014 producer wardline, consumer loomweave",
     "authority": "loomweave",
     "consumer_or_second_producer": "wardline",
-    "wire": "vendored qualname corpora (Rust: tests/conformance/qualnames_rust.json; Python: tests/conformance/loomweave_qualname_parity.json); ADR-049 second-producer parity. BOTH axes carry a Layer-1 vendored byte-pin that runs in the default suite — Rust UPSTREAM_BLOB_SHA (test_loomweave_rust_qualname_parity.py:119, the gate's drift_test) and Python VENDORED_BLOB_SHA (test_loomweave_qualname_parity.py, listed under additional_drift_tests so the gate byte-pin-checks it too) — plus a Layer-2 loomweave_drift live recheck per axis (Python's compares substantive content, ignoring the vendored _wardline_provenance/$comment metadata). The seam-registry gate enforces BOTH axes' byte-pins (drift_test + every additional_drift_tests entry); neither is review-only.",
+    "wire": "vendored qualname corpora (Rust: tests/conformance/qualnames_rust.json; Python: tests/conformance/loomweave_qualname_parity.json); ADR-049 second-producer parity. BOTH axes carry a Layer-1 vendored byte-pin that runs in the default suite \u2014 Rust UPSTREAM_BLOB_SHA (test_loomweave_rust_qualname_parity.py:119, the gate's drift_test) and Python VENDORED_BLOB_SHA (test_loomweave_qualname_parity.py, listed under additional_drift_tests so the gate byte-pin-checks it too) \u2014 plus a Layer-2 loomweave_drift live recheck per axis (Python's compares substantive content, ignoring the vendored _wardline_provenance/$comment metadata). The seam-registry gate enforces BOTH axes' byte-pins (drift_test + every additional_drift_tests entry); neither is review-only.",
     "two_sided": true,
     "oracle_shape": "byte_golden_corpus",
     "oracle_test": "tests/conformance/test_loomweave_rust_qualname_parity.py",
@@ -172,7 +172,7 @@
     ]
   },
   {
-    "seam": "Wardline→legis scan-artifact wire (HMAC-signed findings, G1) — producer wardline (/home/john/wardline), consumer legis (/home/john/legis)",
+    "seam": "Wardline\u2192legis scan-artifact wire (HMAC-signed findings, G1) \u2014 producer wardline (/home/john/wardline), consumer legis (/home/john/legis)",
     "authority": "wardline",
     "consumer_or_second_producer": "legis",
     "wire": "tests/conformance/legis_scan_wire.golden.json (HMAC-signed findings envelope; shared signed vector under GOLDEN_KEY)",
@@ -192,7 +192,7 @@
     ]
   },
   {
-    "seam": "Wardline→Filigree scan-results emission/intake (POST /api/weft/scan-results, classic /api/v1/scan-results alias)",
+    "seam": "Wardline\u2192Filigree scan-results emission/intake (POST /api/weft/scan-results, classic /api/v1/scan-results alias)",
     "authority": "wardline",
     "consumer_or_second_producer": "filigree",
     "wire": "POST /api/weft/scan-results (classic scan-results emission/intake body)",
@@ -233,10 +233,10 @@
     ]
   },
   {
-    "seam": "Finding identity & wire contract (fingerprint/qualname/spans) — wardline (producer) ↔ filigree (consumer)",
+    "seam": "Finding identity & wire contract (fingerprint/qualname/spans) \u2014 wardline (producer) \u2194 filigree (consumer)",
     "authority": "wardline",
     "consumer_or_second_producer": "filigree",
-    "wire": "finding identity corpus (fingerprint/qualname/spans) — tests/golden/identity/corpus",
+    "wire": "finding identity corpus (fingerprint/qualname/spans) \u2014 tests/golden/identity/corpus",
     "two_sided": true,
     "oracle_shape": "byte_golden_corpus",
     "oracle_test": "tests/golden/identity/test_identity_parity.py",
@@ -256,10 +256,10 @@
     ]
   },
   {
-    "seam": "Vocabulary descriptor (cross-product trust-vocab contract) — wardline (producer) → loomweave (consumer)",
+    "seam": "Vocabulary descriptor (cross-product trust-vocab contract) \u2014 wardline (producer) \u2192 loomweave (consumer)",
     "authority": "wardline",
     "consumer_or_second_producer": "loomweave",
-    "wire": "vocabulary descriptor (trust-vocab) — src/wardline/core/vocabulary.yaml",
+    "wire": "vocabulary descriptor (trust-vocab) \u2014 src/wardline/core/vocabulary.yaml",
     "two_sided": false,
     "oracle_shape": null,
     "oracle_test": null,
@@ -277,7 +277,7 @@
     ]
   },
   {
-    "seam": "Weft canonical reason-vocabulary conformance (weft hub contract → filigree + legis + wardline emit/ingest)",
+    "seam": "Weft canonical reason-vocabulary conformance (weft hub contract \u2192 filigree + legis + wardline emit/ingest)",
     "authority": "weft-hub",
     "consumer_or_second_producer": "wardline",
     "wire": "weft canonical reason-vocabulary (weft hub contract -> filigree + legis + wardline); vendored byte-for-byte at tests/conformance/fixtures/weft-reason-vocab.json with a Layer-1 UPSTREAM_BLOB_SHA byte-pin (test_weft_reason_vocab_conformance.py:110) that runs in the default suite, plus a Layer-2 reason_vocab_drift live recheck against the weft hub source.",
@@ -300,7 +300,7 @@
     ]
   },
   {
-    "seam": "WEFT_FEDERATION_TOKEN bearer-token auth contract (filigree producer ↔ wardline consumer)",
+    "seam": "WEFT_FEDERATION_TOKEN bearer-token auth contract (filigree producer \u2194 wardline consumer)",
     "authority": "filigree",
     "consumer_or_second_producer": "wardline",
     "wire": "WEFT_FEDERATION_TOKEN bearer-token auth contract (filigree producer <-> wardline consumer): canonical env var WEFT_FEDERATION_TOKEN (+ deprecated FILIGREE_FEDERATION_API_TOKEN/FILIGREE_API_TOKEN aliases, read-order), .weft/filigree/federation_token tier-2 file, Authorization: Bearer <token>, 401/403-reject / 400-authed-bad-body / 2xx-authed ladder. Wardline AUTHORS the vendored restatement (filigree ships no fixture), so the Layer-1 byte-pin is wardline-pins-wardline (self_authored_restatement=true); the circular oracle is broken by the Layer-2 filigree_token_drift SUBSTANTIVE recheck that re-derives the contract from the sibling filigree source. The seam-registry gate REQUIRES that substantive authority-side recheck (not merely a registered drift marker) for self_authored_restatement at_bar rows, so a deleted/no-op recheck reds the gate.",
@@ -329,7 +329,7 @@
     "seam": "Filigree ephemeral-port discovery convention (producer: filigree dashboard publishes <project>/.weft/filigree/ephemeral.port; consumers: loomweave + wardline read it to override configured base_url, enrich-only, fail-soft)",
     "authority": "filigree",
     "consumer_or_second_producer": "wardline",
-    "wire": "ephemeral-port file (.weft/filigree port file: plain integer) — one producer, two consumers",
+    "wire": "ephemeral-port file (.weft/filigree port file: plain integer) \u2014 one producer, two consumers",
     "two_sided": true,
     "oracle_shape": null,
     "oracle_test": null,
@@ -344,7 +344,7 @@
     ]
   },
   {
-    "seam": "loomweave→Filigree scan-results intake (analyze Phase 8 finding emission): loomweave analyze Phase 8 POSTs persisted findings to Filigree POST /api/v1/scan-results, gated by integrations.filigree.{enabled,emit_findings} (default false) + WEFT_FEDERATION_TOKEN bearer; enrich-only degrade on Filigree absent.",
+    "seam": "loomweave\u2192Filigree scan-results intake (analyze Phase 8 finding emission): loomweave analyze Phase 8 POSTs persisted findings to Filigree POST /api/v1/scan-results, gated by integrations.filigree.{enabled,emit_findings} (default false) + WEFT_FEDERATION_TOKEN bearer; enrich-only degrade on Filigree absent.",
     "authority": "loomweave",
     "consumer_or_second_producer": "filigree",
     "wire": "POST /api/weft/scan-results (loomweave analyze Phase 8 finding emission -> filigree intake; not exercised in this repo)",
@@ -360,7 +360,7 @@
     "evidence_paths": []
   },
   {
-    "seam": "loomweave→Filigree issue-detail enrichment: GET /api/weft/issues/{issue_id} consumed by loomweave's issues_for per-match `issue` block (title/status/priority); enrich-only, degrades to issue:null on 404/unreachable.",
+    "seam": "loomweave\u2192Filigree issue-detail enrichment: GET /api/weft/issues/{issue_id} consumed by loomweave's issues_for per-match `issue` block (title/status/priority); enrich-only, degrades to issue:null on 404/unreachable.",
     "authority": "filigree",
     "consumer_or_second_producer": "loomweave",
     "wire": "GET /api/weft/issues/{issue_id} (issue-detail enrichment; not exercised in this repo)",
@@ -376,7 +376,7 @@
     "evidence_paths": []
   },
   {
-    "seam": "loomweave→Filigree wardline-finding reconciliation (Flow B read-time): loomweave consumes GET /api/weft/files?scan_source=wardline and GET /api/weft/findings?scan_source=wardline from Filigree, then matches metadata.wardline.qualname byte-exact against the entity_id segment-3 canonical_qualified_name. Producer = Filigree (passthrough store of an opaque metadata blob), consumer = loomweave. Enrich-only: degrades to result_kind:\"unavailable\" on absence/truncation.",
+    "seam": "loomweave\u2192Filigree wardline-finding reconciliation (Flow B read-time): loomweave consumes GET /api/weft/files?scan_source=wardline and GET /api/weft/findings?scan_source=wardline from Filigree, then matches metadata.wardline.qualname byte-exact against the entity_id segment-3 canonical_qualified_name. Producer = Filigree (passthrough store of an opaque metadata blob), consumer = loomweave. Enrich-only: degrades to result_kind:\"unavailable\" on absence/truncation.",
     "authority": "loomweave",
     "consumer_or_second_producer": "filigree",
     "wire": "Flow B read-time wardline-finding reconciliation (not exercised in this repo)",
@@ -392,7 +392,7 @@
     "evidence_paths": []
   },
   {
-    "seam": "loomweave→Filigree clean-stale retention sweep (POST /api/weft/findings/clean-stale, loomweave analyze --prune-unseen)",
+    "seam": "loomweave\u2192Filigree clean-stale retention sweep (POST /api/weft/findings/clean-stale, loomweave analyze --prune-unseen)",
     "authority": "loomweave",
     "consumer_or_second_producer": "filigree",
     "wire": "POST /api/weft/findings/clean-stale (retention sweep; not exercised in this repo)",
@@ -411,7 +411,7 @@
     "seam": "legis git-rename provider for loomweave SEI matcher (GET /git/renames flat array + GET /git/rename-feed object; consumed by loomweave LegisGitRenameSource, unioned with shell --cached working-tree renames)",
     "authority": "legis",
     "consumer_or_second_producer": "loomweave",
-    "wire": "GET /git/renames (flat array) + GET single — legis producer, loomweave consumer (not exercised in this repo)",
+    "wire": "GET /git/renames (flat array) + GET single \u2014 legis producer, loomweave consumer (not exercised in this repo)",
     "two_sided": true,
     "oracle_shape": null,
     "oracle_test": null,
@@ -424,7 +424,7 @@
     "evidence_paths": []
   },
   {
-    "seam": "legis→Filigree governed sign-off binding",
+    "seam": "legis\u2192Filigree governed sign-off binding",
     "authority": "legis",
     "consumer_or_second_producer": "filigree",
     "wire": "governed sign-off binding (legis -> filigree; not exercised in this repo)",
@@ -440,7 +440,7 @@
     "evidence_paths": []
   },
   {
-    "seam": "Warpline reverify-worklist (warpline.reverify_worklist.v1): producer warpline (/home/john/warpline) → two consumers, wardline delta-scan scope (/home/john/wardline) and filigree warpline_worklist_ingest (/home/john/filigree)",
+    "seam": "Warpline reverify-worklist (warpline.reverify_worklist.v1): producer warpline (/home/john/warpline) \u2192 two consumers, wardline delta-scan scope (/home/john/wardline) and filigree warpline_worklist_ingest (/home/john/filigree)",
     "authority": "warpline",
     "consumer_or_second_producer": "wardline",
     "wire": "warpline.reverify_worklist.v1 worklist envelope (warpline reverify | wardline scan --affected -)",
@@ -463,7 +463,7 @@
     ]
   },
   {
-    "seam": "Wardline→warpline attest / change-impact contract (wardline-attest-2): a planned versioned attest surface where wardline publishes a signed, full-scan, commit-pinned evidence bundle whose per-boundary entries carry a content_hash binding key + 3-valued clean/defect/unknown verdict, and warpline pulls it to do mechanical (commit, content_hash) equality to decide \"proven clean at commit X\". Wardline owns the trust verdict; warpline never declares clean.",
+    "seam": "Wardline\u2192warpline attest / change-impact contract (wardline-attest-2): a planned versioned attest surface where wardline publishes a signed, full-scan, commit-pinned evidence bundle whose per-boundary entries carry a content_hash binding key + 3-valued clean/defect/unknown verdict, and warpline pulls it to do mechanical (commit, content_hash) equality to decide \"proven clean at commit X\". Wardline owns the trust verdict; warpline never declares clean.",
     "authority": "wardline",
     "consumer_or_second_producer": "warpline",
     "wire": "wardline-attest-2 attest / change-impact contract (planned; not yet emitted)",
@@ -483,7 +483,7 @@
     ]
   },
   {
-    "seam": "legis→warpline preflight advisory read (consumer: legis HTTP client of warpline; producer: warpline impact-radius / reverify-worklist)",
+    "seam": "legis\u2192warpline preflight advisory read (consumer: legis HTTP client of warpline; producer: warpline impact-radius / reverify-worklist)",
     "authority": "warpline",
     "consumer_or_second_producer": "legis",
     "wire": "legis->warpline preflight advisory read (not exercised in this repo)",
@@ -515,7 +515,7 @@
     "evidence_paths": []
   },
   {
-    "seam": "Charter→Filigree issue/work traceability (filigree_issue --implements_work_for--> requirement_version; filigree_issue --resolves_gap--> gap)",
+    "seam": "Charter\u2192Filigree issue/work traceability (filigree_issue --implements_work_for--> requirement_version; filigree_issue --resolves_gap--> gap)",
     "authority": "charter",
     "consumer_or_second_producer": "filigree",
     "wire": "filigree_issue --implements_work_for--> requirement trace-link (not exercised in this repo)",
@@ -531,7 +531,7 @@
     "evidence_paths": []
   },
   {
-    "seam": "Charter→Wardline finding violations (wardline_finding --violates--> acceptance_criterion). Producer: /home/john/wardline. Consumer: /home/john/charter.",
+    "seam": "Charter\u2192Wardline finding violations (wardline_finding --violates--> acceptance_criterion). Producer: /home/john/wardline. Consumer: /home/john/charter.",
     "authority": "charter",
     "consumer_or_second_producer": "wardline",
     "wire": "wardline_finding --violates--> acceptance_criterion trace-link (not exercised in this repo)",
@@ -549,7 +549,7 @@
     ]
   },
   {
-    "seam": "Charter→legis preflight facts envelope (weft.charter.preflight_facts.v1)",
+    "seam": "Charter\u2192legis preflight facts envelope (weft.charter.preflight_facts.v1)",
     "authority": "charter",
     "consumer_or_second_producer": "legis",
     "wire": "weft.charter.preflight_facts.v1 envelope (not exercised in this repo)",
@@ -613,7 +613,7 @@
     "evidence_paths": []
   },
   {
-    "seam": "Charter↔Filigree shared actor/attestation authority registry",
+    "seam": "Charter\u2194Filigree shared actor/attestation authority registry",
     "authority": "charter",
     "consumer_or_second_producer": "filigree",
     "wire": "shared actor/attestation authority registry (producer-side aspiration only; no binding exists)",
@@ -632,7 +632,7 @@
     "seam": "weft.toml shared federation config contract (producer/authority: filigree proposes schema; peers wardline + filigree + loomweave + legis). Two-sided federation cross-read of sibling [X].url keys.",
     "authority": "filigree",
     "consumer_or_second_producer": "wardline",
-    "wire": "weft.toml shared federation config (sibling [X].url cross-read) — schema DRAFT/unmerged at the weft hub",
+    "wire": "weft.toml shared federation config (sibling [X].url cross-read) \u2014 schema DRAFT/unmerged at the weft hub",
     "two_sided": true,
     "oracle_shape": null,
     "oracle_test": "tests/unit/core/test_config_toml.py",
@@ -651,10 +651,10 @@
     ]
   },
   {
-    "seam": "loomweave.yaml federation configuration (loomweave-local) — loomweave reads its own loomweave.yaml for federation config governing every outbound seam to filigree/legis/wardline (Filigree base_url + emit_findings gate, serve.http.wardline_taint_write, token/identity env-vars). Single-reader artifact: loomweave is the sole consumer/producer.",
+    "seam": "loomweave.yaml federation configuration (loomweave-local) \u2014 loomweave reads its own loomweave.yaml for federation config governing every outbound seam to filigree/legis/wardline (Filigree base_url + emit_findings gate, serve.http.wardline_taint_write, token/identity env-vars). Single-reader artifact: loomweave is the sole consumer/producer.",
     "authority": "loomweave",
     "consumer_or_second_producer": "loomweave",
-    "wire": "loomweave.yaml federation configuration — single-reader (loomweave is sole producer AND consumer)",
+    "wire": "loomweave.yaml federation configuration \u2014 single-reader (loomweave is sole producer AND consumer)",
     "two_sided": false,
     "oracle_shape": null,
     "oracle_test": null,
@@ -662,7 +662,7 @@
     "drift_alarm": null,
     "drift_test": null,
     "bar_verdict": "one_sided_na",
-    "deferred_reason": "Deliberately single-reader: producer_repo == consumer_repo == loomweave; filigree only WRITES the file to drive a spawned `loomweave serve` (launcher/operator), never deserializes it as a contract. Shared-corpus + drift-alarm is N/A, not failed — two-sided landing does not apply.",
+    "deferred_reason": "Deliberately single-reader: producer_repo == consumer_repo == loomweave; filigree only WRITES the file to drive a spawned `loomweave serve` (launcher/operator), never deserializes it as a contract. Shared-corpus + drift-alarm is N/A, not failed \u2014 two-sided landing does not apply.",
     "wire_change": "none",
     "evidence_paths": []
   },
@@ -670,7 +670,7 @@
     "seam": "Wardline federation status envelope (cross-surface emission status block: filigree_emit / loomweave_write reported across MCP scan, CLI scan, and scan-job result paths)",
     "authority": "wardline",
     "consumer_or_second_producer": "wardline",
-    "wire": "federation status envelope (filigree_emit/loomweave_write status across MCP/CLI/scan-job) — Wardline-internal, agent-consumed",
+    "wire": "federation status envelope (filigree_emit/loomweave_write status across MCP/CLI/scan-job) \u2014 Wardline-internal, agent-consumed",
     "two_sided": false,
     "oracle_shape": null,
     "oracle_test": "tests/conformance/test_mcp_structured_output.py",
@@ -699,7 +699,7 @@
     "drift_alarm": null,
     "drift_test": null,
     "bar_verdict": "one_sided_na",
-    "deferred_reason": "Not a two-sided cross-repo wire seam — internal Wardline plumbing. The consolidated in-process transport is not wire-observable; the actual wires each client speaks are SEPARATE seams with their own contracts. The refactor is required to be byte-wire-invariant, so no peer-repo landing coordination applies.",
+    "deferred_reason": "Not a two-sided cross-repo wire seam \u2014 internal Wardline plumbing. The consolidated in-process transport is not wire-observable; the actual wires each client speaks are SEPARATE seams with their own contracts. The refactor is required to be byte-wire-invariant, so no peer-repo landing coordination applies.",
     "wire_change": "none",
     "evidence_paths": [
       "tests/unit/core/test_http.py"
@@ -709,26 +709,24 @@
     "seam": "Wardline MCP tool/resource contracts (structured output B1/B2)",
     "authority": "wardline",
     "consumer_or_second_producer": "mcp-client",
-    "wire": "MCP tool/resource contracts (structuredContent matches declared outputSchema; B1/B2 dual-emission)",
+    "wire": "Wardline MCP tool/resource outputSchema surface (18 tools) frozen to a committed golden tests/conformance/mcp_output_schemas.golden.json with a Layer-1 VENDORED_BLOB_SHA byte-pin in the default suite; one-sided (wardline is sole authority of its own schema), so no peer drift_test \u2014 the golden freeze breaks the old circular self-validation oracle.",
     "two_sided": false,
-    "oracle_shape": null,
-    "oracle_test": "tests/conformance/test_mcp_structured_output.py",
+    "oracle_shape": "byte_golden_corpus",
+    "oracle_test": "tests/conformance/test_mcp_output_schema_golden.py",
     "marker": null,
     "drift_alarm": null,
     "drift_test": null,
-    "bar_verdict": "partial",
+    "bar_verdict": "at_bar",
     "deferred_reason": null,
     "wire_change": "none",
     "evidence_paths": [
-      "tests/conformance/test_mcp_structured_output.py:102-112",
-      "tests/conformance/test_mcp_structured_output.py:130",
-      "tests/conformance/test_mcp_structured_output.py:149",
-      "src/wardline/mcp/server.py:1061",
-      "src/wardline/mcp/server.py:2045"
+      "tests/conformance/test_mcp_output_schema_golden.py",
+      "tests/conformance/mcp_output_schemas.golden.json",
+      "tests/conformance/test_mcp_structured_output.py"
     ]
   },
   {
-    "seam": "Charter↔peers MCP read-only tool/resource inventory co-registration (peer_pair charter↔filigree; producer & consumer both /home/john/charter)",
+    "seam": "Charter\u2194peers MCP read-only tool/resource inventory co-registration (peer_pair charter\u2194filigree; producer & consumer both /home/john/charter)",
     "authority": "charter",
     "consumer_or_second_producer": "filigree",
     "wire": "MCP read-only tool/resource inventory co-registration (charter <-> peers; not exercised in this repo)",

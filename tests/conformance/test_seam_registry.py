@@ -371,6 +371,13 @@ def _assert_at_bar_marker(row: dict[str, Any], ctx: str) -> None:
     # wall the gold G1 mechanism out of at_bar.
     if row["oracle_shape"] == "shared_signed_vector":
         return
+    # A one-sided (no-peer) ``byte_golden_corpus`` seam — wardline freezing its OWN
+    # produced schema (e.g. the MCP outputSchema surface) to a committed golden — has
+    # no live PEER wire to assert, so it needs no live-oracle marker; its fail-closed
+    # protection is the default-suite golden byte-pin, asserted in
+    # _assert_at_bar_one_sided_golden_fail_closed.
+    if not row["two_sided"] and row["oracle_shape"] == "byte_golden_corpus":
+        return
 
     marker = row["marker"]
     assert marker is not None, f"{ctx}: an at_bar row must declare a marker satisfying the taxonomy"
@@ -479,6 +486,32 @@ def _assert_at_bar_two_sided_fail_closed(row: dict[str, Any], ctx: str) -> None:
         )
 
 
+def _assert_at_bar_one_sided_golden_fail_closed(row: dict[str, Any], ctx: str) -> None:
+    """A one-sided (no-peer) ``byte_golden_corpus`` at_bar seam — wardline freezing its
+    OWN produced schema to a committed golden — must carry a Layer-1 byte-pin in its
+    oracle_test that runs in the DEFAULT suite, so a silent schema change fails closed.
+    There is no upstream peer, hence no drift_test / live-oracle marker; the golden
+    byte-pin IS the fail-closed oracle (analogous to the shared_signed_vector exemption)."""
+    oracle = row["oracle_test"]
+    assert oracle is not None, f"{ctx}: one-sided byte_golden_corpus at_bar requires an oracle_test"
+    oracle_path = _REPO_ROOT / oracle
+    assert oracle_path.is_file(), f"{ctx}: one-sided at_bar oracle_test does not exist: {oracle}"
+    text = oracle_path.read_text("utf-8")
+    assert _has_layer1_byte_pin(text), (
+        f"{ctx}: one-sided byte_golden_corpus at_bar oracle_test lacks a Layer-1 byte-pin "
+        "((UPSTREAM|VENDORED)_BLOB_SHA = \"<40-hex>\" or a git hash-object / "
+        "hashlib.sha1(b\"blob ...\") recomputation); a silent schema change would not fail "
+        "closed in the default suite"
+    )
+    # The golden freeze only fails closed if it RUNS by default — reject an oracle
+    # carrying any addopts-excluded marker (else it would be skipped and the claim lies).
+    for excluded in _EXCLUDED_MARKERS:
+        assert not _marker_is_applied_in_file(excluded, oracle), (
+            f"{ctx}: one-sided golden oracle_test carries excluded marker {excluded!r} "
+            "— it would be skipped in the default suite, so the fail-closed claim is false"
+        )
+
+
 def test_registry_verdicts_are_backed_by_real_artifacts() -> None:
     for i, row in enumerate(_ROWS):
         verdict = row["bar_verdict"]
@@ -495,6 +528,8 @@ def test_registry_verdicts_are_backed_by_real_artifacts() -> None:
             _assert_at_bar_marker(row, ctx)
             if row["two_sided"]:
                 _assert_at_bar_two_sided_fail_closed(row, ctx)
+            elif row["oracle_shape"] == "byte_golden_corpus":
+                _assert_at_bar_one_sided_golden_fail_closed(row, ctx)
 
         elif verdict == "partial":
             assert row["oracle_test"] is not None, (
