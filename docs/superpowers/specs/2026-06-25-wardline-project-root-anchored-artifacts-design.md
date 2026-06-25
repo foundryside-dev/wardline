@@ -262,6 +262,19 @@ checks keep their literal-`--root` anchoring (out of scope, §1). Also **fix the
 `--root ‹subdir›` suffix, or point it at the enclosing project root) so the steered
 invocation lands on the right tree.
 
+**Snapshot `proj` BEFORE `repair_install` runs (ordering hazard).** `machine_readable_doctor`
+computes `config_missing_before` and then, under `fix=True`, calls `repair_install(root)`
+*before* the `checks` list is built — and `repair_install` → `_ensure_weft_config(root)`
+plants a `weft.toml` at the **literal** `root` when absent. If the new helpers computed
+`proj` *after* that, a fresh-subdir invocation (`doctor --repair --root ‹fresh-subdir›`
+inside a federated project) would see the just-planted subdir `weft.toml`, so
+`project_root_for(subdir)` would return the **subdir** (now a marker-carrying root) and
+the climb to the enclosing project is defeated — and a nested `weft.toml` is left behind.
+Compute `proj = paths.project_root_for(root)` once, alongside `config_missing_before`
+(i.e. before the `if fix:` block), and thread that snapshot into both new helpers. After
+the `scan.py:238` hint fix the steered invocation is already at the project root where
+this never bites, but the snapshot makes the off-path manual invocation correct too.
+
 ### 4.1 `.gitignore` hygiene — `_check_gitignore(proj, *, fix)`
 
 Ensure the project `.gitignore` ignores the **configured** artifacts dir (default
@@ -517,6 +530,13 @@ write; the sweep is a walk + filter + guarded unlink with deletion behind two bo
 - **Nested vendored project.** Walking from `project_root_for(root)` could reach a
   sub-project's own `.wardline/`; the sweep stops at nested project markers (§4.2). Test
   #15 pins it.
+- **Repair-ordering hazard (`_ensure_weft_config` vs the must-fix-#1 climb).** Under
+  `fix=True`, `repair_install` plants a `weft.toml` at the literal `root` *before* the
+  new checks run; computing `project_root_for(root)` after that would make a fresh-subdir
+  invocation anchor to the subdir (now a root) and defeat the climb, leaving a nested
+  `weft.toml`. Mitigation: snapshot `proj` before the `if fix:` block and thread it in
+  (§4 intro). Benign on the steered project-root invocation; the snapshot fixes the
+  off-path manual `--root ‹subdir›` case.
 - **Import hygiene.** `paths.py` owns `DEFAULT_ARTIFACT_DIR`; `config.py` re-exports it
   (§3.1). The reverse direction is a real cycle and is rejected, not offered as an option.
 
