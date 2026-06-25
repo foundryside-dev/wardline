@@ -656,6 +656,7 @@ def machine_readable_doctor(
     """Return the shared machine-readable doctor shape, optionally repairing install bindings."""
     before = {check.name: check for check in check_install(root)}
     config_missing_before = not weft_config_path(root).exists()
+    proj = paths.project_root_for(root)  # snapshot BEFORE repair_install plants weft.toml at literal root
     bindings_fixed = False
     if fix:
         repair_install(root)
@@ -693,6 +694,8 @@ def machine_readable_doctor(
     checks.append(_check_scan_output_path(root))
     checks.append(_check_auth_token(root))
     checks.append(_check_filigree_auth(root, repair=fix, probe_target=probe_target, transport=transport))
+    checks.append(_check_gitignore(proj, fix=fix))
+    checks.append(_sweep_stray_artifacts(proj, fix=fix))
 
     next_actions = [f"{check.id}: {check.message}" for check in checks if not check.ok and check.message]
     return {

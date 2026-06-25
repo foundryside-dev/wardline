@@ -8,10 +8,13 @@ from pathlib import Path
 import click
 
 from wardline.core.errors import WardlineError
+from wardline.core.paths import project_root_for
 from wardline.install.doctor import (
     _check_config,
     _check_filigree_auth,
+    _check_gitignore,
     _resolve_probe_target,
+    _sweep_stray_artifacts,
     check_install,
     machine_readable_doctor,
     repair_install,
@@ -45,6 +48,7 @@ def doctor(root: Path, repair: bool, fix_json: bool, filigree_url: str | None) -
         raise SystemExit(1)
 
     if repair:
+        proj = project_root_for(root)
         # Resolve the probe URL BEFORE repair_install rewrites .mcp.json (which would
         # erase a configured --filigree-url arg), so repair can still probe/recover.
         probe_target = _resolve_probe_target(root, filigree_url)
@@ -64,10 +68,17 @@ def doctor(root: Path, repair: bool, fix_json: bool, filigree_url: str | None) -
         fcheck = _check_filigree_auth(root, repair=True, probe_target=probe_target)
         fstatus = ("fixed" if fcheck.fixed else fcheck.message) if fcheck.ok else f"failed ({fcheck.message})"
         click.echo(f"  filigree.auth: {fstatus}")
+        gi = _check_gitignore(proj, fix=True)
+        click.echo(f"  gitignore: {gi.status}" + (f" ({gi.message})" if gi.message else ""))
+        sw = _sweep_stray_artifacts(proj, fix=True)
+        click.echo(f"  stray artifacts: removed {len(sw.removed)}, review {len(sw.review)}")
+        for r in sw.review:
+            click.echo(f"    REVIEW   {r}  (unstamped/bare — remove by hand if it's a stray scan)")
         if not all(check.ok for check in after) or not config_check.ok or not fcheck.ok:
             raise SystemExit(1)
         return
 
+    proj = project_root_for(root)
     checks = check_install(root)
     config_check = _check_config(root, fixed=False)
     fcheck = _check_filigree_auth(root, repair=False, filigree_url=filigree_url)
@@ -80,5 +91,12 @@ def doctor(root: Path, repair: bool, fix_json: bool, filigree_url: str | None) -
         click.echo(f"  weft.toml: {config_check.message}")
     fmsg = fcheck.message or ("ok" if fcheck.ok else "error")
     click.echo(f"  filigree.auth: {fmsg}")
+    gi = _check_gitignore(proj, fix=False)
+    # gi.status is advisory-"ok" even with a gap, so render on the message, not gi.ok.
+    if gi.status == "error" or "missing" in (gi.message or ""):
+        click.echo(f"  gitignore: {gi.message}")
+    sw = _sweep_stray_artifacts(proj, fix=False)
+    if sw.removed or sw.review:
+        click.echo(f"  stray artifacts: {sw.message}")
     if not ok:
         raise SystemExit(1)

@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from wardline.install.doctor import DoctorCheck, _check_gitignore, _sweep_stray_artifacts
+from wardline.install.doctor import DoctorCheck, _check_gitignore, _sweep_stray_artifacts, machine_readable_doctor
 
 
 def test_doctorcheck_to_dict_includes_payload_when_present():
@@ -162,3 +162,62 @@ def test_sweep_stops_at_nested_project_root(tmp_path):
     keep = _stray(proj, f"vendor/subproj/.wardline/{STAMP}-findings.jsonl")
     _sweep_stray_artifacts(proj, fix=True)
     assert keep.exists()                           # nested project's artifacts untouched
+
+
+# ---------------------------------------------------------------------------
+# machine_readable_doctor wiring (Task 9)
+# ---------------------------------------------------------------------------
+
+def _isolated_repair(monkeypatch, proj):
+    """Apply the same home/command/which isolation the CLI doctor tests use."""
+    home = proj / "_fake_home"
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_TOKEN", raising=False)
+
+
+def test_machine_readable_includes_new_checks(tmp_path, monkeypatch):
+    proj = _proj(tmp_path)
+    _isolated_repair(monkeypatch, proj)
+    _stray(proj, f"src/.wardline/{STAMP}-findings.jsonl")
+    payload = machine_readable_doctor(proj, fix=True)
+    ids = {c["id"] for c in payload["checks"]}
+    assert {"gitignore", "stray_artifacts"} <= ids
+
+
+def test_successful_repair_new_checks_report_ok(tmp_path, monkeypatch):
+    # Must-fix (plan review): a SUCCESSFUL repair must return status "ok" so it does not
+    # flip machine_readable_doctor's all(check.ok) aggregation and make `doctor --fix` /
+    # MCP doctor exit 1 on success. (Asserting payload["ok"] is True would be wrong here —
+    # other checks fail on a bare project — so pin the two new checks specifically.)
+    proj = _proj(tmp_path)
+    _isolated_repair(monkeypatch, proj)
+    _stray(proj, f"src/.wardline/{STAMP}-findings.jsonl")
+    by_id = {c["id"]: c for c in machine_readable_doctor(proj, fix=True)["checks"]}
+    assert by_id["gitignore"]["status"] == "ok" and by_id["gitignore"]["fixed"] is True
+    assert by_id["stray_artifacts"]["status"] == "ok"
+
+
+def test_check_only_does_not_mutate(tmp_path, monkeypatch):
+    proj = _proj(tmp_path)
+    _isolated_repair(monkeypatch, proj)
+    stray = _stray(proj, f"src/.wardline/{STAMP}-findings.jsonl")
+    payload = machine_readable_doctor(proj, fix=False)
+    assert stray.exists()                           # no delete
+    assert not (proj / ".gitignore").exists()       # no write
+    sweep = next(c for c in payload["checks"] if c["id"] == "stray_artifacts")
+    assert sweep["fixed"] is False
+
+
+def test_subdir_root_climbs_to_project(tmp_path, monkeypatch):
+    proj = _proj(tmp_path)
+    _isolated_repair(monkeypatch, proj)
+    sub = proj / "src" / "pkg"
+    sub.mkdir(parents=True)
+    stray = _stray(proj, f"src/.wardline/{STAMP}-findings.jsonl")
+    machine_readable_doctor(sub, fix=True)          # invoked at the SUBDIR
+    assert (proj / ".gitignore").exists()           # gitignore written at the PROJECT root
+    assert not stray.exists()                       # swept at the project root

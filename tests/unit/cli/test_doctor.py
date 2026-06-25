@@ -220,3 +220,34 @@ def test_doctor_fix_json_includes_filigree_auth_check(tmp_path: Path, monkeypatc
     payload = _json.loads(result.output)
     ids = [c["id"] for c in payload["checks"]]
     assert "filigree.auth" in ids
+
+
+STAMP = "20260624T111539Z"
+
+
+def test_check_only_exits_0_when_only_gap_is_gitignore_and_stray(tmp_path: Path, monkeypatch) -> None:
+    """Advisory checks (gitignore gap + stray present) must NOT make wardline doctor exit 1."""
+    home = tmp_path / "home"
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_TOKEN", raising=False)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+
+    # Repair first to make the mandatory checks pass.
+    repair = CliRunner().invoke(cli, ["doctor", "--root", str(tmp_path), "--repair"])
+    assert repair.exit_code == 0, repair.output
+
+    # Delete the gitignore created by repair, plant a stray artifact.
+    (tmp_path / ".gitignore").unlink(missing_ok=True)
+    stray_dir = tmp_path / "src" / ".wardline"
+    stray_dir.mkdir(parents=True, exist_ok=True)
+    (stray_dir / f"{STAMP}-findings.jsonl").write_text("{}\n", encoding="utf-8")
+
+    # Check-only with ONLY advisory gaps: must exit 0.
+    result = CliRunner().invoke(cli, ["doctor", "--root", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    # The advisory lines are rendered as informational output.
+    assert "gitignore" in result.output
+    assert "stray artifacts" in result.output

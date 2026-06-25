@@ -28,7 +28,7 @@ from wardline.core.filigree_emit import (
     redact_url_for_diagnostics,
 )
 from wardline.core.finding import Severity
-from wardline.core.paths import weft_config_path
+from wardline.core.paths import project_root_for, weft_config_path
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
 from wardline.core.safe_paths import explicit_output_target, write_explicit_output_text
 from wardline.core.sarif import SarifSink, build_sarif
@@ -215,9 +215,9 @@ def scan(
     fingerprints are minted relative to it, and baseline/waiver/judged
     suppression state is read from PATH's .weft/wardline/. Scan the project
     root — a subdirectory scan mints qualnames other Weft tools
-    (Loomweave/Filigree/dossier) will not match, misses the project's
-    suppression state, and writes output into the subdirectory (wardline
-    warns when it detects this).
+    (Loomweave/Filigree/dossier) will not match and misses the project's
+    suppression state (wardline warns when it detects this). The default
+    findings artifact still lands in the project root's .wardline/.
     """
     if lang == "rust":
         # Posture banner: RS-WL-* identity is graduated (frozen, baseline-eligible) but
@@ -234,10 +234,11 @@ def scan(
     loomweave_result = None
     try:
         if config_path is None and not strict_defaults and not weft_config_path(path).is_file():
+            proj = project_root_for(path)
             click.echo(
                 "warning: no weft.toml found; using built-in source_roots=['.'], which can make "
                 "project-root scans broad and slow. Run `wardline doctor --repair --root "
-                f"{path}` to create a bounded default policy, or `wardline scan-job start {path}` "
+                f"{proj}` to create a bounded default policy, or `wardline scan-job start {path}` "
                 "for a pollable long-running scan.",
                 err=True,
             )
