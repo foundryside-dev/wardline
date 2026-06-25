@@ -501,7 +501,7 @@ git commit -m "feat(doctor): DoctorCheck carries removed/review payload lists"
 
 **Interfaces:**
 - Consumes: `paths.artifacts_dir`, `paths.project_root_for`, `config.load`, `safe_paths.safe_read_text_if_regular`, `safe_paths.safe_write_text`.
-- Produces: `_check_gitignore(proj: Path, *, fix: bool) -> DoctorCheck` (id `"gitignore"`). When `fix=False`: report only (status `error` if lines missing, else `ok`), no write. When `fix=True`: ensure the managed block, status `created`/`updated`/`ok`.
+- Produces: `_check_gitignore(proj: Path, *, fix: bool) -> DoctorCheck` (id `"gitignore"`). **Advisory status contract:** success (already-present, or repaired) → `status="ok"` (`fixed=True` when it wrote); a detected-but-unfixed gap in `fix=False` → still `status="ok"` with the gap in `message`; only a write refusal (symlinked `.gitignore`) → `status="error"`. Never returns `"created"`/`"updated"` (see the status-contract note under Step 3).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -516,7 +516,7 @@ def _proj(tmp_path: Path) -> Path:
 def test_gitignore_created_then_idempotent(tmp_path):
     proj = _proj(tmp_path)
     c1 = _check_gitignore(proj, fix=True)
-    assert c1.status in {"created", "updated"}
+    assert c1.status == "ok" and c1.fixed is True and "added" in (c1.message or "")  # success => ok (not created/updated)
     body = (proj / ".gitignore").read_text(encoding="utf-8")
     assert ".wardline/" in body and "findings.jsonl" in body
     c2 = _check_gitignore(proj, fix=True)
@@ -547,14 +547,25 @@ def test_gitignore_preserves_existing_content(tmp_path):
 def test_gitignore_check_only_no_write(tmp_path):
     proj = _proj(tmp_path)
     c = _check_gitignore(proj, fix=False)
-    assert c.status == "error"  # missing lines reported
+    assert c.status == "ok"                       # advisory — does NOT fail aggregation
+    assert "missing" in (c.message or "")         # but the gap is reported
     assert not (proj / ".gitignore").exists()
 
 def test_gitignore_commented_entry_does_not_satisfy(tmp_path):
     proj = _proj(tmp_path)
     (proj / ".gitignore").write_text("#.wardline/\n!findings.jsonl\n", encoding="utf-8")
     c = _check_gitignore(proj, fix=False)
-    assert c.status == "error"  # commented/negated lines don't count
+    assert "missing" in (c.message or "")         # commented/negated lines don't count as present
+
+def test_gitignore_symlink_reports_error_not_abort(tmp_path):
+    import os
+    proj = _proj(tmp_path)
+    target = tmp_path.parent / "evil"
+    target.write_text("", encoding="utf-8")
+    os.symlink(target, proj / ".gitignore")       # untrusted-repo surface
+    c = _check_gitignore(proj, fix=True)
+    assert c.status == "error" and "symlink" in (c.message or "")
+    assert target.read_text(encoding="utf-8") == ""  # never written through the link
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -600,21 +611,31 @@ def _check_gitignore(proj: Path, *, fix: bool) -> DoctorCheck:
     present = _gitignore_present_entries(existing)
     missing = [w for w in wanted if w.rstrip("/") not in present]
     if not missing:
-        return DoctorCheck("gitignore", "ok")
+        return DoctorCheck("gitignore", "ok", message="present")
     if not fix:
-        return DoctorCheck("gitignore", "error", message="missing ignore lines: " + ", ".join(missing))
+        # ADVISORY: a missing ignore line must NOT make .ok False — that would flip
+        # machine_readable_doctor's all(check.ok) and fail `doctor --fix` / MCP doctor.
+        # Status stays "ok"; the gap is surfaced in the message.
+        return DoctorCheck("gitignore", "ok", message="missing ignore lines: " + ", ".join(missing) + " (run --repair)")
     block = "\n".join([_GITIGNORE_HEADER, *missing]) + "\n"
     if existing and not existing.endswith("\n"):
-        block = "\n" + block
-    new_text = existing + ("\n" if existing and not existing.endswith("\n\n") and not existing.endswith("\n") else "") + block
-    # Simpler & correct: prepend the newline inside `block` (above); just append block.
-    new_text = existing + block
-    safe_write_text(proj, gitignore, new_text, label=".gitignore")
-    status = "created" if not existing else "updated"
-    return DoctorCheck("gitignore", status, fixed=True, message="added " + ", ".join(missing))
+        block = "\n" + block  # don't concatenate the header onto a no-newline last line
+    try:
+        safe_write_text(proj, gitignore, existing + block, label=".gitignore")
+    except WardlineError:
+        # A symlinked/escaping .gitignore is an untrusted-repo surface (spec §8). Report a
+        # single check error rather than letting the raise abort the whole doctor run.
+        return DoctorCheck("gitignore", "error", message="refused to write through a symlinked .gitignore")
+    return DoctorCheck("gitignore", "ok", fixed=True, message="added " + ", ".join(missing))
 ```
 
-(Keep the single clean append: `new_text = existing + block`, where `block` already prepends a `\n` if `existing` lacks a trailing newline. Delete the intermediate `new_text` assignment shown for illustration.)
+**Status contract (must-fix from plan review):** these checks are *advisory*. A successful
+repair returns `status="ok"` + `fixed=True` (never `"created"`/`"updated"` — `DoctorCheck.ok`
+is `status == "ok"`, doctor.py:53, and `machine_readable_doctor` does `all(check.ok)`,
+doctor.py:571, so a non-`"ok"` success status makes a clean `doctor --fix`/MCP
+`doctor(repair:true)` report `ok:false` and exit 1). A detected-but-unfixed gap also stays
+`"ok"` (advisory). The only `"error"` is a genuine write refusal (symlinked `.gitignore`),
+caught here instead of propagating. `WardlineError` is already imported at doctor.py:16.
 
 - [ ] **Step 4: Run to verify pass**
 
@@ -750,16 +771,21 @@ def _sweep_stray_artifacts(proj: Path, *, fix: bool) -> DoctorCheck:
         ]
         in_wardline_dir = here.name == ".wardline" and here.resolve() != standard
         for fname in filenames:
-            if not _is_managed_name(fname):
-                continue
             fpath = here / fname
-            if not in_wardline_dir:
-                review.append(str(fpath.relative_to(proj)))     # bare-managed -> REVIEW
+            managed = _is_managed_name(fname)                     # timestamped: 2026...-findings.jsonl
+            bare = fname in _MANAGED_SUFFIXES and not managed     # unstamped: findings.jsonl
+            if not managed and not bare:
+                continue
+            rel = str(fpath.relative_to(proj))
+            # ONLY a timestamped (managed) file INSIDE a non-standard .wardline/ dir is
+            # auto-deletable; bare-managed, or managed outside .wardline/, is REVIEW.
+            if not (managed and in_wardline_dir):
+                review.append(rel)
                 continue
             if not _artifacts._is_regular_file_no_follow(fpath):
                 continue                                          # symlink / non-regular -> skip
             if not fix:
-                removed.append(str(fpath.relative_to(proj)))      # would-remove (no unlink)
+                removed.append(rel)                               # would-remove (no unlink)
                 continue
             try:
                 safe = safe_project_path(proj, fpath, label=fname)
@@ -769,16 +795,8 @@ def _sweep_stray_artifacts(proj: Path, *, fix: bool) -> DoctorCheck:
                 safe.unlink()
             except OSError:
                 continue
-            removed.append(str(fpath.relative_to(proj)))
+            removed.append(rel)
             emptied_dirs.append(here)
-    # also flag bare unstamped findings.jsonl-style files: covered by _is_managed_name? No —
-    # a bare "findings.jsonl" has no timestamp, so it is NOT managed; report it explicitly.
-    for dirpath, dirnames, filenames in os.walk(proj, followlinks=False):
-        here = Path(dirpath)
-        dirnames[:] = [d for d in dirnames if d not in discovery.WALK_SKIP_DIRS and (here / d).resolve() != standard and not _has_project_markers(here / d)]
-        for fname in filenames:
-            if fname in _MANAGED_SUFFIXES and not _is_managed_name(fname):
-                review.append(str((here / fname).relative_to(proj)))
     if fix:
         for d in emptied_dirs:
             try:
@@ -786,12 +804,15 @@ def _sweep_stray_artifacts(proj: Path, *, fix: bool) -> DoctorCheck:
                     d.rmdir()                                     # os.rmdir only; ENOTEMPTY guards
             except OSError:
                 pass
-    status = "ok" if not removed and not review else ("updated" if (fix and removed) else "error")
-    msg = f"removed {len(removed)}, review {len(review)}"
-    return DoctorCheck("stray_artifacts", status, fixed=bool(fix and removed), message=msg, removed=removed, review=review)
+    # ADVISORY status (must-fix from plan review): stray artifacts are cleanup items, not a
+    # health failure, so status stays "ok" and the sweep never flips machine_readable_doctor's
+    # all(check.ok) aggregation (which would fail `doctor --fix` / MCP doctor on success).
+    msg = (f"removed {len(removed)}, review {len(review)}" if fix
+           else f"{len(removed)} removable, review {len(review)}")
+    return DoctorCheck("stray_artifacts", "ok", fixed=bool(fix and removed), message=msg, removed=removed, review=review)
 ```
 
-(Consolidate the two walks into one in the final implementation — the second loop is shown only to make the "bare unstamped" reporting explicit. A single walk that branches on `_is_managed_name(fname)` vs `fname in _MANAGED_SUFFIXES` is cleaner and is what to ship.)
+(Single walk: `managed` = timestamped name (auto-deletable only inside a non-standard `.wardline/`); `bare` = an unstamped `findings.jsonl`-family name (always REVIEW). The `os.walk(followlinks=False)` plus the `dirnames[:]` prune (hard-skip set + standard-dir + nested-marker) bounds the traversal and never descends a symlinked dir.)
 
 - [ ] **Step 4: Run to verify pass**
 
@@ -829,6 +850,17 @@ def test_machine_readable_includes_new_checks(tmp_path):
     payload = machine_readable_doctor(proj, fix=True)
     ids = {c["id"] for c in payload["checks"]}
     assert {"gitignore", "stray_artifacts"} <= ids
+
+def test_successful_repair_new_checks_report_ok(tmp_path):
+    # Must-fix (plan review): a SUCCESSFUL repair must return status "ok" so it does not
+    # flip machine_readable_doctor's all(check.ok) aggregation and make `doctor --fix` /
+    # MCP doctor exit 1 on success. (Asserting payload["ok"] is True would be wrong here —
+    # other checks fail on a bare project — so pin the two new checks specifically.)
+    proj = _proj(tmp_path)
+    _stray(proj, f"src/.wardline/{STAMP}-findings.jsonl")
+    by_id = {c["id"]: c for c in machine_readable_doctor(proj, fix=True)["checks"]}
+    assert by_id["gitignore"]["status"] == "ok" and by_id["gitignore"]["fixed"] is True
+    assert by_id["stray_artifacts"]["status"] == "ok"
 
 def test_check_only_does_not_mutate(tmp_path):
     proj = _proj(tmp_path)
@@ -874,8 +906,7 @@ Then after the existing `checks.append(_check_filigree_auth(...))` (line 567) ap
 In the `--repair` branch (after the `filigree.auth` line ~66), compute `proj` **before** `repair_install` (top of the branch) and render:
 
 ```python
-        from wardline.core.paths import project_root_for
-        proj = project_root_for(root)
+        proj = project_root_for(root)   # project_root_for imported at module top
         # ... existing repair_install + after/config/filigree rendering ...
         gi = _check_gitignore(proj, fix=True)
         click.echo(f"  gitignore: {gi.status}" + (f" ({gi.message})" if gi.message else ""))
@@ -890,21 +921,21 @@ In the check-only branch (after the `filigree.auth` line ~82):
 ```python
         proj = project_root_for(root)
         gi = _check_gitignore(proj, fix=False)
-        if not gi.ok:
+        # gi.status is advisory-"ok" even with a gap, so render on the message, not gi.ok.
+        if gi.status == "error" or "missing" in (gi.message or ""):
             click.echo(f"  gitignore: {gi.message}")
         sw = _sweep_stray_artifacts(proj, fix=False)
         if sw.removed or sw.review:
             click.echo(f"  stray artifacts: {sw.message}")
 ```
 
-Import the two helpers in `cli/doctor.py`'s `from wardline.install.doctor import (...)` block: add `_check_gitignore`, `_sweep_stray_artifacts`. Fold the new checks into the branch's final `ok`/SystemExit accounting (a failed check-only `gitignore` should not necessarily fail `wardline doctor`; treat gitignore/stray as advisory in check-only — do NOT raise SystemExit(1) solely for a missing gitignore line, to avoid breaking existing exit-code expectations; assert this in a test).
+Add `_check_gitignore`, `_sweep_stray_artifacts` to `cli/doctor.py`'s `from wardline.install.doctor import (...)` block, and `from wardline.core.paths import project_root_for` to its module-top imports (do NOT use function-local imports — see Task 9 Step 5 note). Because the two checks are advisory (status stays `"ok"` except on a symlink write-refusal), they do **not** enter the branch's `ok`/`SystemExit` accounting: a missing gitignore line or a present stray must NOT make `wardline doctor` exit 1. Leave the existing `all(check.ok for check in ...)` accounting untouched (gitignore/stray are rendered for information only); add a test asserting `wardline doctor` (check-only) exits 0 when the only "gap" is a missing gitignore line + a stray present.
 
-- [ ] **Step 5: Fix the scan hint** (`cli/scan.py:238-240`)
+- [ ] **Step 5: Fix the scan hint AND the stale docstring** (`cli/scan.py`)
 
-Replace the hint so it points at the project root, not the scanned subdir:
+(a) Add `project_root_for` to `cli/scan.py`'s existing `from wardline.core.paths import ...` block (it already imports `weft_config_path`). Replace the hint (lines 238-240) so it points at the project root, not the scanned subdir:
 
 ```python
-            from wardline.core.paths import project_root_for
             proj = project_root_for(path)
             click.echo(
                 "warning: no weft.toml found; using built-in source_roots=['.'], which can make "
@@ -915,7 +946,17 @@ Replace the hint so it points at the project root, not the scanned subdir:
             )
 ```
 
-(If importing inside the function is undesirable, hoist `from wardline.core.paths import project_root_for, weft_config_path` to the module top — `weft_config_path` is already imported.)
+(b) **Fix the stale `scan()` docstring** (lines 216-220, should-fix from plan review). It still
+says a subdirectory scan "writes output into the subdirectory (wardline warns when it detects
+this)" — false after Part 1 (output now lands at the project root). Change the tail of that
+sentence:
+
+```python
+    root — a subdirectory scan mints qualnames other Weft tools
+    (Loomweave/Filigree/dossier) will not match and misses the project's
+    suppression state (wardline warns when it detects this). The default
+    findings artifact still lands in the project root's .wardline/.
+```
 
 - [ ] **Step 6: Run tests**
 
