@@ -38,6 +38,10 @@ scanned 2 file(s); 4 finding(s) — 0 suppressed (0 baseline / 0 waiver / 0 judg
 !!! note "Where the findings go"
     In `jsonl` mode the findings are written to a file, not printed. The summary
     line names the destination — here, a timestamped artifact under `.wardline/`.
+    The artifact always lands under `<project-root>/.wardline/`, where the project
+    root is the directory containing `weft.toml`, independent of which subdirectory
+    `wardline scan` was invoked from. A subdirectory scan is still flagged with
+    `WLN-ENGINE-NESTED-SCAN-ROOT`; the artifact location itself is always the root.
     Use `--output PATH` to write to an exact path, or `--format sarif` for SARIF.
     The summary itself is printed to standard output.
 

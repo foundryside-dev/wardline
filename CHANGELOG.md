@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Default scan artifacts now anchor to the weft-project root (the `weft.toml` directory)
+  rather than the scan cwd, so a subdirectory scan writes to `<project-root>/.wardline/`.
+  Retention is therefore project-root-wide across heterogeneous subdir/root scans sharing
+  one `.wardline/`. **Migration:** the artifact moves to the project root; `wardline doctor
+  --repair` sweeps now-stale per-subdir `.wardline/` dirs — update any CI/automation reading
+  a hardcoded `<subdir>/.wardline/*-findings.jsonl` path.
+
+### Added
+- `wardline doctor --repair` gitignores the artifacts dir and sweeps stray managed
+  artifacts; deletion is available on both the CLI and the MCP `doctor` tool (`repair:true`,
+  advertised `destructiveHint: True`), bounded to managed-pattern files inside `.wardline/`
+  dirs under the project root.
+
 ### Fixed
 - **Candidate-set merge no longer scales cubically (scan DoS).** The Level-2
   branch-join merges for lambda bindings (`_merge_branch_bindings`) and
