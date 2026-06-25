@@ -18,8 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `wardline doctor --repair` gitignores the artifacts dir and sweeps stray managed
   artifacts; deletion is available on both the CLI and the MCP `doctor` tool (`repair:true`,
-  advertised `destructiveHint: True`), bounded to managed-pattern files inside `.wardline/`
-  dirs under the project root.
+  advertised `destructiveHint: true`), bounded to managed (timestamped) files inside
+  non-standard `.wardline/` dirs under the project root; emptied dirs are removed
+  best-effort (non-empty dirs are left in place).
 
 ### Fixed
 - **Candidate-set merge no longer scales cubically (scan DoS).** The Level-2

@@ -234,6 +234,40 @@ def test_doctor_tool_advertises_destructive():
     assert _DOCTOR_TOOL["annotations"]["destructiveHint"] is True
 
 
+def test_custom_dir_project_protects_default_wardline_dir(tmp_path):
+    """A project with a custom artifacts dir must not sweep the default .wardline/ dir.
+
+    Root cause: a subdir scan loads config from the scan path; if no weft.toml is
+    present there, it defaults to .wardline/ for output. When the project root's
+    weft.toml sets a custom dir, doctor must treat BOTH the custom dir AND the default
+    .wardline/ as standard (protected), not sweep the default dir's contents.
+    """
+    proj = _proj(tmp_path)
+    # Overwrite with a custom artifacts dir so doctor loads "out/wl" from the project root.
+    (proj / "weft.toml").write_text("[wardline.artifacts]\ndir = \"out/wl\"\n", encoding="utf-8")
+
+    # A subdir-scan artifact in the default .wardline/ location — must NOT be deleted.
+    default_artifact = _stray(proj, f".wardline/{STAMP}-findings.jsonl")
+
+    # A genuine nested stray in src/.wardline/ — must be deleted.
+    nested_stray = _stray(proj, f"src/.wardline/{STAMP}-findings.jsonl")
+
+    _sweep_stray_artifacts(proj, fix=True)
+    _check_gitignore(proj, fix=True)
+
+    # Default .wardline artifact survives (it's tool-owned output, not a stray).
+    assert default_artifact.exists(), ".wardline/ artifact must survive (standard dir)"
+
+    # Nested stray is removed (genuine stray — not a standard dir).
+    assert not nested_stray.exists(), "src/.wardline/ stray must be deleted"
+
+    # .gitignore must cover BOTH the custom dir AND the default .wardline/.
+    gitignore_body = (proj / ".gitignore").read_text(encoding="utf-8")
+    assert "out/wl/" in gitignore_body, "custom dir must be gitignored"
+    assert ".wardline/" in gitignore_body, "default .wardline/ must also be gitignored"
+    assert "findings.jsonl" in gitignore_body
+
+
 def test_mcp_path_deletes_confined_managed_only(tmp_path, monkeypatch):
     """Drive the sweep through machine_readable_doctor(fix=True) exactly as the MCP
     _doctor handler does, and verify:

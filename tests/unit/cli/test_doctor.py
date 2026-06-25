@@ -251,3 +251,64 @@ def test_check_only_exits_0_when_only_gap_is_gitignore_and_stray(tmp_path: Path,
     # The advisory lines are rendered as informational output.
     assert "gitignore" in result.output
     assert "stray artifacts" in result.output
+
+
+def test_repair_exits_nonzero_on_symlinked_gitignore(tmp_path: Path, monkeypatch) -> None:
+    """A symlinked .gitignore is a write-refusal (status=error); --repair must exit 1.
+
+    Finding 2: the --repair branch excluded the gitignore error from its SystemExit(1)
+    condition, so a symlinked .gitignore (genuine write refusal) exited 0 inconsistently
+    with the JSON/MCP surface (which uses all(check.ok) and treats status=error as not-ok).
+    """
+    import os as _os
+
+    home = tmp_path / "home"
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_TOKEN", raising=False)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+
+    # Repair first so all mandatory checks pass.
+    repair = CliRunner().invoke(cli, ["doctor", "--root", str(tmp_path), "--repair"])
+    assert repair.exit_code == 0, repair.output
+
+    # Replace the real .gitignore with a symlink pointing outside the project.
+    # _check_gitignore will refuse to write through it -> status="error".
+    target = tmp_path.parent / "evil_gitignore"
+    target.write_text("", encoding="utf-8")
+    (tmp_path / ".gitignore").unlink()
+    _os.symlink(target, tmp_path / ".gitignore")
+
+    # --repair with a symlinked .gitignore must exit non-zero (write refusal IS a failure).
+    result = CliRunner().invoke(cli, ["doctor", "--root", str(tmp_path), "--repair"])
+    assert result.exit_code != 0, f"expected non-zero exit but got 0; output: {result.output}"
+    assert "gitignore" in result.output
+
+
+def test_repair_exits_zero_on_missing_gitignore_line(tmp_path: Path, monkeypatch) -> None:
+    """A missing gitignore line (status=ok, gap advisory) must NOT make --repair exit 1.
+
+    Finding 2 complement: only the error status (write refusal) drives non-zero exit;
+    a plain missing-line gap that is successfully added exits 0.
+    """
+    home = tmp_path / "home"
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_TOKEN", raising=False)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: home)
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+
+    # Repair first so all mandatory checks pass.
+    repair = CliRunner().invoke(cli, ["doctor", "--root", str(tmp_path), "--repair"])
+    assert repair.exit_code == 0, repair.output
+
+    # Delete the gitignore so the repair will add lines (gap, not error).
+    (tmp_path / ".gitignore").unlink(missing_ok=True)
+
+    # --repair that adds the missing lines must exit 0 (successfully fixed).
+    result = CliRunner().invoke(cli, ["doctor", "--root", str(tmp_path), "--repair"])
+    assert result.exit_code == 0, f"expected exit 0 but got {result.exit_code}; output: {result.output}"
+    assert (tmp_path / ".gitignore").exists()

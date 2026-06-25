@@ -74,7 +74,7 @@ def doctor(root: Path, repair: bool, fix_json: bool, filigree_url: str | None) -
         click.echo(f"  stray artifacts: removed {len(sw.removed)}, review {len(sw.review)}")
         for r in sw.review:
             click.echo(f"    REVIEW   {r}  (unstamped/bare — remove by hand if it's a stray scan)")
-        if not all(check.ok for check in after) or not config_check.ok or not fcheck.ok:
+        if not all(check.ok for check in after) or not config_check.ok or not fcheck.ok or gi.status == "error":
             raise SystemExit(1)
         return
 

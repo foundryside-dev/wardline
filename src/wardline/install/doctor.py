@@ -137,21 +137,30 @@ def _is_managed_name(name: str) -> bool:
 
 def _sweep_stray_artifacts(proj: Path, *, fix: bool) -> DoctorCheck:
     proj = proj.resolve()
-    standard = paths.artifacts_dir(proj, _artifacts_dir_relname(proj) or ".wardline")
+    # Both the configured artifacts dir AND the default .wardline are standard dirs:
+    # a subdir scan loads config from the scan path (no weft.toml => default .wardline),
+    # so it may write to <proj>/.wardline/ even when the project root's weft.toml
+    # configures a custom dir. Both locations are tool-owned and must not be swept.
+    standard_dirs = {
+        paths.artifacts_dir(proj, _artifacts_dir_relname(proj)),
+        paths.artifacts_dir(proj, paths.DEFAULT_ARTIFACT_DIR),
+    }
     removed: list[str] = []
     review: list[str] = []
     emptied_dirs: list[Path] = []
+    # topdown=True (the os.walk default) is REQUIRED: the dirnames[:] prune below
+    # (nested-project-root stop + standard-dir skip) is a no-op under topdown=False.
     for dirpath, dirnames, filenames in os.walk(proj, followlinks=False):
         here = Path(dirpath)
-        # prune: hard-skip set, .git, the standard artifacts dir, and nested project roots
+        # prune: hard-skip set, .git, the standard artifacts dirs, and nested project roots
         dirnames[:] = [
             d
             for d in dirnames
             if d not in discovery.WALK_SKIP_DIRS
-            and (here / d).resolve() != standard
+            and (here / d).resolve() not in standard_dirs
             and not paths._has_project_markers(here / d)
         ]
-        in_wardline_dir = here.name == ".wardline" and here.resolve() != standard
+        in_wardline_dir = here.name == ".wardline" and here.resolve() not in standard_dirs
         for fname in filenames:
             fpath = here / fname
             managed = _is_managed_name(fname)                     # timestamped: 2026...-findings.jsonl
@@ -182,7 +191,7 @@ def _sweep_stray_artifacts(proj: Path, *, fix: bool) -> DoctorCheck:
     if fix:
         for d in emptied_dirs:
             try:
-                if d.resolve() != standard and not d.is_symlink():
+                if d.resolve() not in standard_dirs and not d.is_symlink():
                     d.rmdir()                                     # os.rmdir only; ENOTEMPTY guards
             except OSError:
                 pass
@@ -208,8 +217,14 @@ def _gitignore_present_entries(text: str) -> set[str]:
 
 def _check_gitignore(proj: Path, *, fix: bool) -> DoctorCheck:
     gitignore = proj / ".gitignore"
-    dir_entry = _artifacts_dir_relname(proj) + "/"
-    wanted = [dir_entry, "findings.jsonl"]
+    # Always protect BOTH the configured artifacts dir AND the default .wardline/:
+    # a subdir scan may write to .wardline/ even when the project root weft.toml
+    # uses a custom dir, so both locations need gitignore coverage.
+    dir_entries: set[str] = {
+        _artifacts_dir_relname(proj) + "/",
+        paths.DEFAULT_ARTIFACT_DIR + "/",
+    }
+    wanted = sorted(dir_entries) + ["findings.jsonl"]
     existing = safe_read_text_if_regular(proj, gitignore, label=".gitignore") or ""
     present = _gitignore_present_entries(existing)
     missing = [w for w in wanted if w.rstrip("/") not in present]
