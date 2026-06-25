@@ -116,11 +116,11 @@
     "marker": null,
     "drift_alarm": null,
     "drift_test": null,
-    "bar_verdict": "peer_conformant",
+    "bar_verdict": "gap",
     "deferred_reason": null,
     "wire_change": "none",
     "evidence_paths": [],
-    "peer_conformance": "Conformant in peer repos (wardline not a party). The identity-route response SEMANTICS (resolve/sei/lineage/capability, carry-vs-orphan) are pinned by legis's SEI oracle over the \u00a78 fixture; the HMAC transport by the HMAC-wire oracle. legis@6a750cc tests/conformance/test_sei_oracle.py + test_sei_oracle_byte_pin.py + test_loomweave_hmac_wire_conformance.py."
+    "peer_conformance": "Partially covered, NOT two-sided at the bar (wardline not a party). Honest split: the SEI carry/orphan/capability SEMANTICS are pinned by legis SEI oracle over the \u00a78 fixture BUT via an in-process FakeLoomweave that BYPASSES the HTTP wire; the HMAC auth/transport is proven live-gated (legis@6a750cc test_loomweave_hmac_wire_conformance.py). GAP: no default-suite test freezes a golden of loomweave identity-route RESPONSE SHAPES ({sei,current_locator,content_hash,alive} / lineage) driving legis real _decode_json_response \u2014 the wire-shape axis is unfrozen. To close: vendor a loomweave identity-route response golden + legis consumer oracle (legis is the consumer; loomweave the producer/authority)."
   },
   {
     "seam": "Wardline\u2192loomweave taint-fact store (HMAC write + read-by-SEI, blake3 freshness, wardline-taint-1 blob) \u2014 SP9/T3.4",
