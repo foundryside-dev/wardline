@@ -121,7 +121,13 @@ def _legis_source_vector() -> Path | None:
     if env := os.environ.get("LEGIS_REPO"):
         candidates.append(Path(env) / "tests" / "contract" / "weft" / "vectors" / "wardline_scan_artifact.v1.json")
     candidates.append(
-        Path(__file__).resolve().parents[3] / "legis" / "tests" / "contract" / "weft" / "vectors" / "wardline_scan_artifact.v1.json"
+        Path(__file__).resolve().parents[3]
+        / "legis"
+        / "tests"
+        / "contract"
+        / "weft"
+        / "vectors"
+        / "wardline_scan_artifact.v1.json"
     )
     return next((path for path in candidates if path.exists()), None)
 

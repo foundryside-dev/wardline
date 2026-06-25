@@ -102,7 +102,7 @@ _REPO_ROOT = _HERE.parent.parent
 _REGISTRY_PATH = _HERE / "seam_registry.json"
 _PYPROJECT_PATH = _REPO_ROOT / "pyproject.toml"
 
-_VALID_VERDICTS = frozenset({"at_bar", "partial", "deferred", "one_sided_na", "gap"})
+_VALID_VERDICTS = frozenset({"at_bar", "partial", "deferred", "one_sided_na", "gap", "peer_conformant"})
 _VALID_ORACLE_SHAPES = frozenset({"scenario", "byte_golden_corpus", "shared_signed_vector"})
 
 # Required keys that must be a non-empty string.
@@ -731,6 +731,37 @@ def test_registry_verdicts_are_backed_by_real_artifacts() -> None:
             reason = row["deferred_reason"]
             assert isinstance(reason, str) and reason.strip(), (
                 f"{ctx}: {verdict} requires a non-empty deferred_reason"
+            )
+
+        elif verdict == "peer_conformant":
+            # A seam wardline is NOT a party to (a pure peer-to-peer interface, e.g.
+            # loomweave↔legis or legis↔filigree). The wardline-rooted gate CANNOT run an
+            # oracle for it — its conformance lives in the peer repos' own suites. This
+            # verdict is a documented disposition, not a gate-enforced one; it exists so a
+            # genuinely-conformant peer seam stops reading as a bare ``gap`` (which would
+            # imply undone work). To keep it from laundering a wardline-PARTY seam that
+            # should be at_bar, the gate requires three things:
+            #   (a) wardline is genuinely not a party (neither authority nor the
+            #       consumer/second-producer is wardline) — a wardline-party seam with a
+            #       real oracle is at_bar, and without one it is gap/partial, never this;
+            #   (b) a non-empty ``peer_conformance`` evidence string (peer repo + commit +
+            #       test path) so the claim is auditable, not a bare assertion;
+            #   (c) no wardline ``oracle_test`` — there cannot be one for a seam wardline
+            #       does not participate in (cite the peer test in ``peer_conformance``).
+            assert row["authority"] != "wardline" and row["consumer_or_second_producer"] != "wardline", (
+                f"{ctx}: peer_conformant requires wardline to NOT be a party (authority or "
+                "consumer/second-producer). A wardline-party seam with a real oracle is at_bar; "
+                "without one it is gap or partial — never peer_conformant."
+            )
+            evidence = row.get("peer_conformance")
+            assert isinstance(evidence, str) and evidence.strip(), (
+                f"{ctx}: peer_conformant requires a non-empty 'peer_conformance' evidence string "
+                "(name the peer repo(s) + commit(s) + test path(s) proving the seam conforms in "
+                "its own repos; the wardline gate cannot run that oracle)."
+            )
+            assert row["oracle_test"] is None, (
+                f"{ctx}: peer_conformant row must have a null oracle_test — wardline has no in-repo "
+                "oracle for a seam it is not party to. Cite the peer test in 'peer_conformance'."
             )
 
         elif verdict == "gap":

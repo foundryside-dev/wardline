@@ -34,10 +34,11 @@
     "marker": null,
     "drift_alarm": null,
     "drift_test": null,
-    "bar_verdict": "gap",
+    "bar_verdict": "peer_conformant",
     "deferred_reason": null,
     "wire_change": "none",
-    "evidence_paths": []
+    "evidence_paths": [],
+    "peer_conformance": "Conformant in peer repos (wardline not a party). loomweave AUTHORS sei-conformance-oracle.json; legis (consumer) vendors it byte-identical (blob 0ea577025d94c028a0f682b7d29765079455718c) + Layer-1 byte-pin + drives the REAL IdentityResolver/find_orphan_gaps/AuditStore over all 6 \u00a78 scenarios. legis@6a750cc tests/conformance/test_sei_oracle.py + test_sei_oracle_byte_pin.py."
   },
   {
     "seam": "SEI consumer (loomweave producer \u2194 charter consumer): charter consumes opaque SEI from loomweave for rename-resilient requirement\u2194code traceability (clarion_entity --satisfies--> requirement_version)",
@@ -90,7 +91,7 @@
   {
     "seam": "loomweave HMAC/Bearer inbound auth for HTTP Read API (producer: /home/john/loomweave, consumer: /home/john/legis)",
     "authority": "loomweave",
-    "consumer_or_second_producer": "wardline",
+    "consumer_or_second_producer": "legis",
     "wire": "loomweave HMAC/Bearer canonical request signing (auth.rs <-> weft_signing.py; ADR-034/042)",
     "two_sided": true,
     "oracle_shape": null,
@@ -98,10 +99,11 @@
     "marker": null,
     "drift_alarm": null,
     "drift_test": null,
-    "bar_verdict": "gap",
+    "bar_verdict": "peer_conformant",
     "deferred_reason": null,
     "wire_change": "none",
-    "evidence_paths": []
+    "evidence_paths": [],
+    "peer_conformance": "Conformant in peer repos (wardline not a party). legis (consumer) REAL signer (sign_loomweave_request) agrees with loomweave's REAL Rust HMAC verifier (component_hmac_hex/canonical_hmac_message) \u2014 live-gated 200-vs-401 proof + skip-clean Layer-2 recheck of loomweave's canonical-message template. The SEI-semantics + legis-own-HMAC axes were already subsumed by the SEI oracle; only the cross-impl agreement was uncovered. legis@6a750cc tests/conformance/test_loomweave_hmac_wire_conformance.py."
   },
   {
     "seam": "loomweave\u2192legis SEI wire transport (HTTP identity routes): legis (consumer) sends optionally-HMAC-signed (X-Weft-Component) requests to loomweave's /api/v1/_capabilities, /identity/resolve, /identity/sei/:sei, /identity/lineage/:sei; loomweave (producer) serves them as its dossier/audit-spine participation surface. Responses unsigned, integrity rests on TLS.",
@@ -114,10 +116,11 @@
     "marker": null,
     "drift_alarm": null,
     "drift_test": null,
-    "bar_verdict": "gap",
+    "bar_verdict": "peer_conformant",
     "deferred_reason": null,
     "wire_change": "none",
-    "evidence_paths": []
+    "evidence_paths": [],
+    "peer_conformance": "Conformant in peer repos (wardline not a party). The identity-route response SEMANTICS (resolve/sei/lineage/capability, carry-vs-orphan) are pinned by legis's SEI oracle over the \u00a78 fixture; the HMAC transport by the HMAC-wire oracle. legis@6a750cc tests/conformance/test_sei_oracle.py + test_sei_oracle_byte_pin.py + test_loomweave_hmac_wire_conformance.py."
   },
   {
     "seam": "Wardline\u2192loomweave taint-fact store (HMAC write + read-by-SEI, blake3 freshness, wardline-taint-1 blob) \u2014 SP9/T3.4",
@@ -176,7 +179,7 @@
     "seam": "Wardline\u2192legis scan-artifact wire (HMAC-signed findings, G1) \u2014 producer wardline (/home/john/wardline), consumer legis (/home/john/legis)",
     "authority": "wardline",
     "consumer_or_second_producer": "legis",
-    "wire": "tests/conformance/vectors/wardline_scan_artifact.v1.json — the SINGLE shared cross-member vector, AUTHORED by legis (legis/tests/contract/weft/vectors/wardline_scan_artifact.v1.json) and vendored byte-identical into wardline. legis (consumer) drives its real active_defects/verify over it; wardline (producer) byte-pins it (VENDORED_BLOB_SHA fd4b21be…) and proves its real sign_artifact reproduces the byte-exact expected_signature + its real project_finding emits the vector finding wire. Both sides now load the SAME bytes — closing the two-independent-mirrors gap that was the 2026-06-10 G1 incident (root cause #2). The older wardline-only legis_scan_wire.golden.json + test_legis_scan_wire_golden.py remain as wardline's live-emit superset freeze.",
+    "wire": "tests/conformance/vectors/wardline_scan_artifact.v1.json \u2014 the SINGLE shared cross-member vector, AUTHORED by legis (legis/tests/contract/weft/vectors/wardline_scan_artifact.v1.json) and vendored byte-identical into wardline. legis (consumer) drives its real active_defects/verify over it; wardline (producer) byte-pins it (VENDORED_BLOB_SHA fd4b21be\u2026) and proves its real sign_artifact reproduces the byte-exact expected_signature + its real project_finding emits the vector finding wire. Both sides now load the SAME bytes \u2014 closing the two-independent-mirrors gap that was the 2026-06-10 G1 incident (root cause #2). The older wardline-only legis_scan_wire.golden.json + test_legis_scan_wire_golden.py remain as wardline's live-emit superset freeze.",
     "two_sided": true,
     "oracle_shape": "byte_golden_corpus",
     "oracle_test": "tests/conformance/test_wardline_scan_artifact_shared_vector.py",
@@ -236,7 +239,7 @@
       "tests/conformance/test_filigree_suppression_filter_contract.py:24-36",
       "tests/conformance/filigree_suppression_filter_contract.json:1-20",
       "src/wardline/core/finding.py:71-75",
-      "filigree (sibling repo): tests/conformance/test_wardline_suppression_filter_contract.py — filigree consumer-side oracle of this same contract (referenced as evidence; lives in the filigree repo, not this one)"
+      "filigree (sibling repo): tests/conformance/test_wardline_suppression_filter_contract.py \u2014 filigree consumer-side oracle of this same contract (referenced as evidence; lives in the filigree repo, not this one)"
     ]
   },
   {
@@ -435,10 +438,11 @@
     "marker": null,
     "drift_alarm": null,
     "drift_test": null,
-    "bar_verdict": "gap",
+    "bar_verdict": "peer_conformant",
     "deferred_reason": null,
     "wire_change": "none",
-    "evidence_paths": []
+    "evidence_paths": [],
+    "peer_conformance": "Conformant in peer repos (wardline not a party). Shared golden git_renames.v1.json (blob 74f69ee81b030a31f9fdd37dc1c49543fbe389c2) frozen from legis's REAL GET /git/renames; legis producer oracle (legis@6a750cc tests/contract/weft/test_git_rename_wire_conformance.py) + loomweave consumer drives the REAL parse_legis_rename_json over the byte-identical copy (loomweave@9c30ce0 crates/loomweave-cli/src/sei_git.rs, tests/fixtures/weft/git_renames.v1.json). AGREE; both byte-pins negative-probed."
   },
   {
     "seam": "legis\u2192Filigree governed sign-off binding",
@@ -451,10 +455,11 @@
     "marker": null,
     "drift_alarm": null,
     "drift_test": null,
-    "bar_verdict": "gap",
+    "bar_verdict": "peer_conformant",
     "deferred_reason": null,
     "wire_change": "none",
-    "evidence_paths": []
+    "evidence_paths": [],
+    "peer_conformance": "Conformant in peer repos (wardline not a party). Distinct wire (not subsumed by entity-associations): the governed POST body carries the signoff_seq+signature extension. Shared golden (blob 8796aeb5b8d7d067c82af17e361aa45fe5007b4e); legis producer drives the REAL HttpFiligreeClient (legis@6a750cc tests/contract/weft/test_signoff_binding_wire_conformance.py) + filigree consumer drives the REAL ASGI entity-associations route, persists the extension + flips to governed (filigree@59a75a9 tests/federation/test_signoff_binding_wire_conformance_oracle.py). AGREE; real-client key-rename negative-probed."
   },
   {
     "seam": "Warpline reverify-worklist (warpline.reverify_worklist.v1): producer warpline (/home/john/warpline) \u2192 two consumers, wardline delta-scan scope (/home/john/wardline) and filigree warpline_worklist_ingest (/home/john/filigree)",
@@ -513,7 +518,8 @@
     "bar_verdict": "gap",
     "deferred_reason": null,
     "wire_change": "none",
-    "evidence_paths": []
+    "evidence_paths": [],
+    "peer_conformance": "Legis side frozen, warpline producer absent (wardline not a party; warpline mid-flight). legis CONSUMER side frozen (legis@6f50a33 tests/warpline_preflight/test_warpline_preflight_oracle.py, byte-pin 44bb515d528fdaca5b12703a896f55cd96c2483b, real read_warpline_preflight). FINDING: warpline ships NO HTTP producer for the flat {affected:[{sei}],count}/{entries:[{sei}],count} shape legis's client expects \u2014 its real surface is the rich MCP envelope (data.affected/data.items, no count). OBLIGATION: warpline must ship the flat producer + fixture; the Layer-2 recheck auto-arms then. Not yet two-sided \u2014 honest gap."
   },
   {
     "seam": "legis per-SEI attestation read for warpline verification (attestation_get)",
@@ -529,7 +535,8 @@
     "bar_verdict": "gap",
     "deferred_reason": null,
     "wire_change": "none",
-    "evidence_paths": []
+    "evidence_paths": [],
+    "peer_conformance": "Legis producer frozen, warpline consumer unwired (wardline not a party; warpline mid-flight). legis PRODUCER frozen (legis@6f50a33 tests/conformance/test_warpline_attestation_oracle.py, REAL attestation_get MCP wire, byte-pin ad894cc0d93cb9e8f5631bfccacbdeacbbae4994, SEI-keyed/rename-stable, fail-closed unavailable discriminant). OBLIGATION: warpline's LegisClient.governance_for_sei is 'disabled' (unwired) \u2014 must read attestation_get and map status->posture (unavailable != empty, the asymmetric-error security rule). Not yet two-sided \u2014 honest gap."
   },
   {
     "seam": "Charter\u2192Filigree issue/work traceability (filigree_issue --implements_work_for--> requirement_version; filigree_issue --resolves_gap--> gap)",
@@ -579,7 +586,8 @@
     "bar_verdict": "gap",
     "deferred_reason": null,
     "wire_change": "none",
-    "evidence_paths": []
+    "evidence_paths": [],
+    "peer_conformance": "Producer frozen, consumer genuinely absent (wardline not a party). plainweave PRODUCES the envelope and has frozen its golden (plainweave tests/fixtures/contracts/legis/preflight-facts.json blob 10506f0359317da614237df3694f038bc141009e). legis has ZERO references to it in src/tests \u2014 no ingest path exists; legis/service/preflight.py consumes WARPLINE's wire, not this one. An honest no-contract on the consumer side: a test would be a tautology. Closeable only once legis grows a real preflight_facts ingest."
   },
   {
     "seam": "Charter stable requirement identity (charter:req:PROJECT_KEY:NNNN opaque ID), peer_pair charter->filigree (consumer_repo in metadata says loomweave; neither resolves it)",
