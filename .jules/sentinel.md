@@ -1,0 +1,4 @@
+## 2025-06-25 - Prevent Git Core fsmonitor Local Code Execution
+**Vulnerability:** Running `git` commands (like `rev-parse`, `diff`, `ls-files`) via `subprocess.run` inside an untrusted directory can lead to arbitrary code execution if the directory contains a malicious `.git/config` configuring `core.fsmonitor` to run a malicious executable.
+**Learning:** `git` executes commands specified in the repository's configuration under `core.fsmonitor` upon certain operations, which inherently executes code when operating on untrusted repositories without proper safety checks.
+**Prevention:** Always invoke `git` operations via `subprocess` against potentially untrusted directories with the explicit configuration `("-c", "core.fsmonitor=false")` (typically defined as `_SAFE_GIT_CONFIG`) to suppress arbitrary code execution via malicious `.git/config` settings.
