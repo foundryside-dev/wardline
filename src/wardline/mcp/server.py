@@ -4119,7 +4119,9 @@ _DOCTOR_TOOL: dict[str, Any] = {
     "long-lived server predates the on-disk wardline code — its results are "
     "stale; restart the MCP server. Read-only by default; `repair: true` "
     "(write-gated) repairs install artifacts and re-pins a rejected "
-    "federation token.",
+    "federation token. With repair: true it also deletes stray "
+    "wardline-managed scan artifacts (timestamped files inside .wardline/ "
+    "dirs) under the project root.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -4128,7 +4130,8 @@ _DOCTOR_TOOL: dict[str, Any] = {
                 "description": "Default false (pure probe, writes nothing). true repairs "
                 "install artifacts (CLAUDE.md/AGENTS.md blocks, .claude/.agents skills, "
                 ".mcp.json + Codex registration, .weft state dir) and, when Filigree "
-                "rejected the emit token, re-pins the accepted local mint in .env.",
+                "rejected the emit token, re-pins the accepted local mint in .env. "
+                "Also sweeps stray managed scan artifacts under the project root.",
             },
             "filigree_url": {
                 "type": "string",
@@ -4142,7 +4145,7 @@ _DOCTOR_TOOL: dict[str, Any] = {
     "annotations": {
         "title": "Install and federation health check",
         "readOnlyHint": False,
-        "destructiveHint": False,
+        "destructiveHint": True,
         "idempotentHint": True,
         "openWorldHint": False,
     },

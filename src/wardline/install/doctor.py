@@ -6,17 +6,20 @@ import ipaddress
 import json
 import os
 import tomllib
+from collections.abc import Sequence
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from wardline.core.config import _filigree_published_url, filigree_server_scoped_url, load
+from wardline.core import artifacts as _artifacts
+from wardline.core import discovery, paths
+from wardline.core.config import ArtifactSettings, _filigree_published_url, filigree_server_scoped_url, load
 from wardline.core.errors import ConfigError, WardlineError
 from wardline.core.filigree_emit import FiligreeEmitter, Transport, UrllibTransport
 from wardline.core.paths import weft_config_path, weft_state_dir
-from wardline.core.safe_paths import safe_read_text_if_regular, safe_write_text
+from wardline.core.safe_paths import safe_project_path, safe_read_text_if_regular, safe_write_text
 from wardline.filigree.config import load_filigree_token
 from wardline.install.block import inject_block
 from wardline.install.detect import (
@@ -48,6 +51,8 @@ class DoctorCheck:
     status: str
     fixed: bool = False
     message: str | None = None
+    removed: Sequence[str] = ()
+    review: Sequence[str] = ()
 
     @property
     def ok(self) -> bool:
@@ -57,6 +62,10 @@ class DoctorCheck:
         data: dict[str, Any] = {"id": self.id, "status": self.status, "fixed": self.fixed}
         if self.message:
             data["message"] = self.message
+        if self.removed:
+            data["removed"] = list(self.removed)
+        if self.review:
+            data["review"] = list(self.review)
         return data
 
 
@@ -102,6 +111,140 @@ def _ensure_weft_config(root: Path) -> bool:
         return False
     safe_write_text(root, cfg_path, _default_weft_config(root), label="weft.toml")
     return True
+
+
+_GITIGNORE_HEADER = "# Wardline scan artifacts"
+
+
+def _artifacts_dir_relname(proj: Path) -> str:
+    """The project-root-relative dir name to ignore (always in-tree by construction)."""
+    try:
+        cfg = load(weft_config_path(proj))
+        artifacts_dir_value = cfg.artifacts.dir
+    except (ConfigError, OSError):
+        artifacts_dir_value = ArtifactSettings().dir
+    resolved = paths.artifacts_dir(proj, artifacts_dir_value)
+    rel = resolved.relative_to(proj.resolve())
+    return rel.as_posix()
+
+
+_MANAGED_SUFFIXES = ("findings.jsonl", "findings.sarif", "findings.agent-summary.json", "scan.legis.json")
+
+
+def _is_managed_name(name: str) -> bool:
+    return any(_artifacts._managed_artifact_pattern(s).match(name) for s in _MANAGED_SUFFIXES)
+
+
+def _sweep_stray_artifacts(proj: Path, *, fix: bool) -> DoctorCheck:
+    proj = proj.resolve()
+    # Both the configured artifacts dir AND the default .wardline are standard dirs:
+    # a subdir scan loads config from the scan path (no weft.toml => default .wardline),
+    # so it may write to <proj>/.wardline/ even when the project root's weft.toml
+    # configures a custom dir. Both locations are tool-owned and must not be swept.
+    standard_dirs = {
+        paths.artifacts_dir(proj, _artifacts_dir_relname(proj)),
+        paths.artifacts_dir(proj, paths.DEFAULT_ARTIFACT_DIR),
+    }
+    removed: list[str] = []
+    review: list[str] = []
+    emptied_dirs: list[Path] = []
+    # topdown=True (the os.walk default) is REQUIRED: the dirnames[:] prune below
+    # (nested-project-root stop + standard-dir skip) is a no-op under topdown=False.
+    for dirpath, dirnames, filenames in os.walk(proj, followlinks=False):
+        here = Path(dirpath)
+        # prune: hard-skip set, .git, the standard artifacts dirs, and nested project roots
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in discovery.WALK_SKIP_DIRS
+            and (here / d).resolve() not in standard_dirs
+            and not paths._has_project_markers(here / d)
+        ]
+        in_wardline_dir = here.name == ".wardline" and here.resolve() not in standard_dirs
+        for fname in filenames:
+            fpath = here / fname
+            managed = _is_managed_name(fname)                     # timestamped: 2026...-findings.jsonl
+            bare = fname in _MANAGED_SUFFIXES and not managed     # unstamped: findings.jsonl
+            if not managed and not bare:
+                continue
+            rel = str(fpath.relative_to(proj))
+            # ONLY a timestamped (managed) file INSIDE a non-standard .wardline/ dir is
+            # auto-deletable; bare-managed, or managed outside .wardline/, is REVIEW.
+            if not (managed and in_wardline_dir):
+                review.append(rel)
+                continue
+            if not _artifacts._is_regular_file_no_follow(fpath):
+                continue                                          # symlink / non-regular -> skip
+            if not fix:
+                removed.append(rel)                               # would-remove (no unlink)
+                continue
+            try:
+                safe = safe_project_path(proj, fpath, label=fname)
+            except WardlineError:
+                continue                                          # escaping entry -> skip, keep sweeping
+            try:
+                safe.unlink()
+            except OSError:
+                continue
+            removed.append(rel)
+            emptied_dirs.append(here)
+    if fix:
+        for d in emptied_dirs:
+            try:
+                if d.resolve() not in standard_dirs and not d.is_symlink():
+                    d.rmdir()                                     # os.rmdir only; ENOTEMPTY guards
+            except OSError:
+                pass
+    # ADVISORY status (must-fix from plan review): stray artifacts are cleanup items, not a
+    # health failure, so status stays "ok" and the sweep never flips machine_readable_doctor's
+    # all(check.ok) aggregation (which would fail `doctor --fix` / MCP doctor on success).
+    msg = (f"removed {len(removed)}, review {len(review)}" if fix
+           else f"{len(removed)} removable, review {len(review)}")
+    return DoctorCheck(
+        "stray_artifacts", "ok", fixed=bool(fix and removed), message=msg, removed=removed, review=review
+    )
+
+
+def _gitignore_present_entries(text: str) -> set[str]:
+    out: set[str] = set()
+    for raw in text.splitlines():           # handles \n, \r\n, \r
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith("!"):
+            continue
+        out.add(line.rstrip("/"))           # trailing-slash tolerant
+    return out
+
+
+def _check_gitignore(proj: Path, *, fix: bool) -> DoctorCheck:
+    gitignore = proj / ".gitignore"
+    # Always protect BOTH the configured artifacts dir AND the default .wardline/:
+    # a subdir scan may write to .wardline/ even when the project root weft.toml
+    # uses a custom dir, so both locations need gitignore coverage.
+    dir_entries: set[str] = {
+        _artifacts_dir_relname(proj) + "/",
+        paths.DEFAULT_ARTIFACT_DIR + "/",
+    }
+    wanted = sorted(dir_entries) + ["findings.jsonl"]
+    existing = safe_read_text_if_regular(proj, gitignore, label=".gitignore") or ""
+    present = _gitignore_present_entries(existing)
+    missing = [w for w in wanted if w.rstrip("/") not in present]
+    if not missing:
+        return DoctorCheck("gitignore", "ok", message="present")
+    if not fix:
+        # ADVISORY: a missing ignore line must NOT make .ok False — that would flip
+        # machine_readable_doctor's all(check.ok) and fail `doctor --fix` / MCP doctor.
+        # Status stays "ok"; the gap is surfaced in the message.
+        return DoctorCheck("gitignore", "ok", message="missing ignore lines: " + ", ".join(missing) + " (run --repair)")
+    block = "\n".join([_GITIGNORE_HEADER, *missing]) + "\n"
+    if existing and not existing.endswith("\n"):
+        block = "\n" + block  # don't concatenate the header onto a no-newline last line
+    try:
+        safe_write_text(proj, gitignore, existing + block, label=".gitignore")
+    except WardlineError:
+        # A symlinked/escaping .gitignore is an untrusted-repo surface (spec §8). Report a
+        # single check error rather than letting the raise abort the whole doctor run.
+        return DoctorCheck("gitignore", "error", message="refused to write through a symlinked .gitignore")
+    return DoctorCheck("gitignore", "ok", fixed=True, message="added " + ", ".join(missing))
 
 
 def _has_instruction_block(path: Path) -> bool:
@@ -528,6 +671,7 @@ def machine_readable_doctor(
     """Return the shared machine-readable doctor shape, optionally repairing install bindings."""
     before = {check.name: check for check in check_install(root)}
     config_missing_before = not weft_config_path(root).exists()
+    proj = paths.project_root_for(root)  # snapshot BEFORE repair_install plants weft.toml at literal root
     bindings_fixed = False
     if fix:
         repair_install(root)
@@ -565,6 +709,8 @@ def machine_readable_doctor(
     checks.append(_check_scan_output_path(root))
     checks.append(_check_auth_token(root))
     checks.append(_check_filigree_auth(root, repair=fix, probe_target=probe_target, transport=transport))
+    checks.append(_check_gitignore(proj, fix=fix))
+    checks.append(_sweep_stray_artifacts(proj, fix=fix))
 
     next_actions = [f"{check.id}: {check.message}" for check in checks if not check.ok and check.message]
     return {

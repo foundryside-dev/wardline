@@ -930,3 +930,21 @@ def test_run_scan_nested_src_root_has_empty_qualname_prefix(tmp_path: Path) -> N
     result = run_scan(src)
     fact = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-NESTED-SCAN-ROOT")
     assert fact.properties["qualname_prefix"] == ""
+
+
+def test_nested_scan_root_message_drops_output_clause(tmp_path: Path) -> None:
+    # Post-artifact-anchor: the WLN-ENGINE-NESTED-SCAN-ROOT message must NOT claim
+    # "output defaults under the subdirectory" (now false — output anchors to the
+    # project root), but must still warn about the qualname and state-loading hazards.
+    proj = tmp_path / "proj"
+    (proj / ".weft" / "wardline").mkdir(parents=True)
+    sub = proj / "src" / "pkg"
+    sub.mkdir(parents=True)
+    (sub / "m.py").write_text("x = 1\n", encoding="utf-8")
+    result = run_scan(sub)
+    facts = [f for f in result.findings if f.rule_id == "WLN-ENGINE-NESTED-SCAN-ROOT"]
+    assert facts, "expected the nested-scan-root FACT"
+    msg = facts[0].message
+    assert "is a subdirectory of the weft project" in msg
+    assert "output defaults under the subdirectory" not in msg
+    assert "baseline/waivers/judged state is not loaded" in msg

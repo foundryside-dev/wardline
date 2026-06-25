@@ -21,6 +21,7 @@ from pathlib import Path
 WEFT_MEMBER = "wardline"
 WEFT_CONFIG_FILE = "weft.toml"
 _WEFT_DIR = ".weft"
+DEFAULT_ARTIFACT_DIR = ".wardline"
 
 
 def weft_config_path(root: Path) -> Path:
@@ -134,3 +135,33 @@ def sibling_state_dir(root: Path, sibling: str) -> Path:
 def legacy_sibling_dir(root: Path, sibling: str) -> Path:
     """Legacy pre-consolidation dot-dir for a sibling (transition-window fallback)."""
     return root / f".{sibling}"
+
+
+def project_root_for(scan_path: Path) -> Path:
+    """The weft-project root governing a scan of *scan_path* (always resolved).
+
+    enclosing_project_root() returns the nearest STRICT ancestor carrying project
+    markers, or None when scan_path itself is a root OR no ancestor is one. In both
+    None cases the governing root is scan_path itself.
+    """
+    return enclosing_project_root(scan_path) or scan_path.resolve()
+
+
+def artifacts_dir(scan_path: Path, artifacts_dir_value: str) -> Path:
+    """Resolved scan-artifact directory, anchored to project_root_for(scan_path).
+
+    Mirrors weft_state_dir's confinement: a relative value resolves under the project
+    root; an absolute value is honored only if inside it; any value resolving OUTSIDE
+    (absolute elsewhere or a ``..`` escape) falls back to the default ``.wardline``
+    under the project root. weft.toml is untrusted input, so this denies a malicious
+    artifacts.dir both a write-redirect and an exit-2 DoS.
+    """
+    project_root = project_root_for(scan_path)  # already fully resolved
+    default = project_root / DEFAULT_ARTIFACT_DIR
+    candidate = Path(artifacts_dir_value)
+    resolved = (candidate if candidate.is_absolute() else project_root / candidate).resolve()
+    try:
+        resolved.relative_to(project_root)
+    except ValueError:
+        return default
+    return resolved

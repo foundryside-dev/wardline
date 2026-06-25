@@ -43,9 +43,10 @@ $ wardline scan src/wardline --format sarif --output results.sarif
 ```
 
 With `--format sarif` and no `--output`, the default file is a timestamped SARIF
-artifact under `.wardline/` (or `[wardline.artifacts].dir`). The log carries one
-run with a `wardline` driver, minimal rule descriptors (the distinct rule IDs
-seen), and one result per finding —
+artifact under `.wardline/` (or `[wardline.artifacts].dir`) at the project root
+(the `weft.toml` directory), independent of where `wardline scan` is invoked.
+The log carries one run with a `wardline` driver, minimal rule descriptors (the
+distinct rule IDs seen), and one result per finding —
 `ruleId` + `ruleIndex`, a `level` mapped from severity (`CRITICAL`/`ERROR` →
 `error`, `WARN` → `warning`, `INFO` → `note`, `NONE` → `none`), a physical
 location, and `partialFingerprints` carrying Wardline's stable fingerprint.

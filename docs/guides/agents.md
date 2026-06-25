@@ -79,7 +79,13 @@ $ wardline doctor
 Use `wardline doctor --repair` after moving binaries, starting a Filigree
 dashboard, or changing sibling tool config. It refreshes the instruction blocks,
 skills, and MCP entries, and re-detects siblings using the same discovery rules
-as `wardline install` — it never writes `weft.toml` or a sibling binding.
+as `wardline install` — it never writes `weft.toml` or a sibling binding. It
+also gitignores the artifacts directory (`[wardline.artifacts].dir`, default
+`.wardline/`) and sweeps stray Wardline-managed artifacts under the project root,
+deleting managed-pattern (timestamped) files inside `.wardline/` directories and
+reporting unstamped or bare strays for manual review. The MCP `doctor` tool
+with `repair: true` performs the same hygiene and is advertised as destructive
+(`destructiveHint: true`).
 
 Over MCP, the `doctor` tool returns the same machine-readable envelope
 (read-only by default; pass `repair: true` for the write-gated repair) **plus
@@ -165,11 +171,13 @@ wardline scan . --fail-on ERROR --output "$out"
 ```
 
 A `scan` always writes a findings file. By default it goes to a timestamped
-artifact under `.wardline/` with retention; point `--output` at a per-run
-temporary file — as above — when a hook needs exact cleanup semantics. Avoid
-predictable filenames in shared directories such as `/tmp`. The script's exit
-code becomes the hook's exit code: a clean tree commits, a new defect aborts the
-commit with the finding already on screen for the agent to act on.
+artifact under `.wardline/` at the **project root** (the `weft.toml` directory),
+with retention applied project-root-wide — a subdirectory scan writes to the
+same pool as a root scan. Point `--output` at a per-run temporary file — as
+above — when a hook needs exact cleanup semantics. Avoid predictable filenames
+in shared directories such as `/tmp`. The script's exit code becomes the hook's
+exit code: a clean tree commits, a new defect aborts the commit with the finding
+already on screen for the agent to act on.
 
 ## Let the agent triage with `wardline judge`
 
