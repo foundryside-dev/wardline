@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from wardline.core.config import _filigree_published_url, filigree_server_scoped_url, load
+from wardline.core import paths
+from wardline.core.config import ArtifactSettings, _filigree_published_url, filigree_server_scoped_url, load
 from wardline.core.errors import ConfigError, WardlineError
 from wardline.core.filigree_emit import FiligreeEmitter, Transport, UrllibTransport
 from wardline.core.paths import weft_config_path, weft_state_dir
@@ -109,6 +110,57 @@ def _ensure_weft_config(root: Path) -> bool:
         return False
     safe_write_text(root, cfg_path, _default_weft_config(root), label="weft.toml")
     return True
+
+
+_GITIGNORE_HEADER = "# Wardline scan artifacts"
+
+
+def _artifacts_dir_relname(proj: Path) -> str:
+    """The project-root-relative dir name to ignore (always in-tree by construction)."""
+    try:
+        cfg = load(weft_config_path(proj))
+        artifacts_dir_value = cfg.artifacts.dir
+    except (ConfigError, OSError):
+        artifacts_dir_value = ArtifactSettings().dir
+    resolved = paths.artifacts_dir(proj, artifacts_dir_value)
+    rel = resolved.relative_to(proj.resolve())
+    return rel.as_posix()
+
+
+def _gitignore_present_entries(text: str) -> set[str]:
+    out: set[str] = set()
+    for raw in text.splitlines():           # handles \n, \r\n, \r
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith("!"):
+            continue
+        out.add(line.rstrip("/"))           # trailing-slash tolerant
+    return out
+
+
+def _check_gitignore(proj: Path, *, fix: bool) -> DoctorCheck:
+    gitignore = proj / ".gitignore"
+    dir_entry = _artifacts_dir_relname(proj) + "/"
+    wanted = [dir_entry, "findings.jsonl"]
+    existing = safe_read_text_if_regular(proj, gitignore, label=".gitignore") or ""
+    present = _gitignore_present_entries(existing)
+    missing = [w for w in wanted if w.rstrip("/") not in present]
+    if not missing:
+        return DoctorCheck("gitignore", "ok", message="present")
+    if not fix:
+        # ADVISORY: a missing ignore line must NOT make .ok False — that would flip
+        # machine_readable_doctor's all(check.ok) and fail `doctor --fix` / MCP doctor.
+        # Status stays "ok"; the gap is surfaced in the message.
+        return DoctorCheck("gitignore", "ok", message="missing ignore lines: " + ", ".join(missing) + " (run --repair)")
+    block = "\n".join([_GITIGNORE_HEADER, *missing]) + "\n"
+    if existing and not existing.endswith("\n"):
+        block = "\n" + block  # don't concatenate the header onto a no-newline last line
+    try:
+        safe_write_text(proj, gitignore, existing + block, label=".gitignore")
+    except WardlineError:
+        # A symlinked/escaping .gitignore is an untrusted-repo surface (spec §8). Report a
+        # single check error rather than letting the raise abort the whole doctor run.
+        return DoctorCheck("gitignore", "error", message="refused to write through a symlinked .gitignore")
+    return DoctorCheck("gitignore", "ok", fixed=True, message="added " + ", ".join(missing))
 
 
 def _has_instruction_block(path: Path) -> bool:
