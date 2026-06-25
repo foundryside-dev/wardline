@@ -108,3 +108,52 @@ def test_enclosing_project_root_ignores_sibling_only_weft_dir(tmp_path):
     sub = tmp_path / "specimen"
     sub.mkdir()
     assert paths.enclosing_project_root(sub) is None
+
+
+# --- project_root_for + artifacts_dir helpers --------------------------------
+
+
+def _mark_project(root: Path) -> None:
+    (root / "weft.toml").write_text("[wardline]\n", encoding="utf-8")
+
+def test_project_root_for_self_when_marked(tmp_path: Path) -> None:
+    _mark_project(tmp_path)
+    assert paths.project_root_for(tmp_path) == tmp_path.resolve()
+
+def test_project_root_for_climbs_to_enclosing(tmp_path: Path) -> None:
+    _mark_project(tmp_path)
+    sub = tmp_path / "src" / "pkg"
+    sub.mkdir(parents=True)
+    assert paths.project_root_for(sub) == tmp_path.resolve()
+
+def test_project_root_for_unfederated_is_self(tmp_path: Path) -> None:
+    sub = tmp_path / "a" / "b"
+    sub.mkdir(parents=True)
+    assert paths.project_root_for(sub) == sub.resolve()
+
+def test_artifacts_dir_default(tmp_path: Path) -> None:
+    _mark_project(tmp_path)
+    assert paths.artifacts_dir(tmp_path, ".wardline") == (tmp_path.resolve() / ".wardline")
+
+def test_artifacts_dir_relative_override(tmp_path: Path) -> None:
+    _mark_project(tmp_path)
+    assert paths.artifacts_dir(tmp_path, "out/wl") == (tmp_path.resolve() / "out" / "wl")
+
+def test_artifacts_dir_absolute_inside_honored(tmp_path: Path) -> None:
+    _mark_project(tmp_path)
+    inside = tmp_path.resolve() / "build" / "wl"
+    assert paths.artifacts_dir(tmp_path, str(inside)) == inside
+
+def test_artifacts_dir_absolute_outside_falls_back(tmp_path: Path) -> None:
+    _mark_project(tmp_path)
+    assert paths.artifacts_dir(tmp_path, "/etc/wardline") == (tmp_path.resolve() / ".wardline")
+
+def test_artifacts_dir_dotdot_escape_falls_back(tmp_path: Path) -> None:
+    _mark_project(tmp_path)
+    assert paths.artifacts_dir(tmp_path, "../../etc") == (tmp_path.resolve() / ".wardline")
+
+def test_artifacts_dir_anchors_to_enclosing_for_subdir(tmp_path: Path) -> None:
+    _mark_project(tmp_path)
+    sub = tmp_path / "src" / "pkg"
+    sub.mkdir(parents=True)
+    assert paths.artifacts_dir(sub, ".wardline") == (tmp_path.resolve() / ".wardline")

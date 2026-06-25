@@ -17,12 +17,12 @@ from wardline.core.config_schema import WARDLINE_SCHEMA
 from wardline.core.errors import ConfigError
 from wardline.core.optional_deps import require_jsonschema
 from wardline.core.paths import (
+    DEFAULT_ARTIFACT_DIR,
     legacy_sibling_dir,
     sibling_state_dir,
 )
 from wardline.core.safe_paths import safe_read_text_if_regular
 
-DEFAULT_ARTIFACT_DIR = ".wardline"
 DEFAULT_ARTIFACT_RETAIN = 20
 
 
