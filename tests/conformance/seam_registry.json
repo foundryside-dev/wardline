@@ -147,14 +147,14 @@
     "seam": "Wardline qualname normalization / parity (Python + Rust corpus) — producer wardline, consumer loomweave",
     "authority": "loomweave",
     "consumer_or_second_producer": "wardline",
-    "wire": "vendored qualname corpora (tests/conformance/qualnames_rust.json + qualnames.json); ADR-049 second-producer parity",
+    "wire": "vendored qualname corpora (Rust: tests/conformance/qualnames_rust.json; Python: tests/conformance/loomweave_qualname_parity.json); ADR-049 second-producer parity. BOTH axes carry a Layer-1 vendored byte-pin that runs in the default suite — Rust UPSTREAM_BLOB_SHA (test_loomweave_rust_qualname_parity.py:119) and Python VENDORED_BLOB_SHA (test_loomweave_qualname_parity.py) — plus a Layer-2 loomweave_drift live recheck per axis (Python's compares substantive content, ignoring the vendored _wardline_provenance/$comment metadata).",
     "two_sided": true,
     "oracle_shape": "byte_golden_corpus",
     "oracle_test": "tests/conformance/test_loomweave_rust_qualname_parity.py",
-    "marker": null,
+    "marker": "loomweave_e2e",
     "drift_alarm": "loomweave_drift",
     "drift_test": "tests/conformance/test_loomweave_rust_qualname_parity.py",
-    "bar_verdict": "partial",
+    "bar_verdict": "at_bar",
     "deferred_reason": null,
     "wire_change": "none",
     "evidence_paths": [
@@ -162,7 +162,10 @@
       "tests/conformance/test_loomweave_rust_qualname_parity.py:193-209",
       "tests/conformance/test_loomweave_rust_qualname_parity.py:255-294",
       "tests/conformance/qualnames_rust.json",
-      "tests/conformance/test_loomweave_qualname_parity.py:24-57"
+      "tests/conformance/loomweave_qualname_parity.json",
+      "tests/conformance/test_loomweave_qualname_parity.py",
+      "tests/e2e/test_loomweave_live.py:410-466",
+      "src/wardline/_live_oracle.py:6-21"
     ]
   },
   {
