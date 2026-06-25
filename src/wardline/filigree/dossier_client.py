@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.parse
-import urllib.request
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -27,7 +26,7 @@ from typing import Any, Protocol
 from wardline.core.dossier import TicketRef, WorkSection
 from wardline.core.errors import FiligreeEmitError
 from wardline.core.filigree_emit import filigree_api_base_url
-from wardline.core.http import read_response_text
+from wardline.core.http import WeftHttp
 from wardline.core.identity import ContentStatus, EntityBinding, content_status
 
 _ALLOWED_SCHEMES = ("http", "https")
@@ -45,23 +44,22 @@ class Transport(Protocol):
 
 class UrllibTransport:
     def __init__(self, timeout: float = 30.0) -> None:
-        self._timeout = timeout
+        # Mirror loomweave/client.UrllibTransport: HTTPError (a URLError subclass) is
+        # surfaced as a Response carrying its >=400 status rather than collapsing into the
+        # "unreachable" branch — so a 4xx/5xx is classified, not mistaken for an outage.
+        # URLError/OSError still propagate to work(), which fail-softs to an honest
+        # ``unavailable`` section. WeftHttp keeps this client's exact scheme-error wording.
+        self._http = WeftHttp(
+            timeout=timeout,
+            allowed_schemes=_ALLOWED_SCHEMES,
+            scheme_error=lambda scheme, url: FiligreeEmitError(
+                f"filigree dossier URL must use http or https; got scheme {scheme!r} in {url!r}"
+            ),
+        )
 
     def get(self, url: str, headers: Mapping[str, str]) -> Response:
-        scheme = urllib.parse.urlsplit(url).scheme.lower()
-        if scheme not in _ALLOWED_SCHEMES:
-            raise FiligreeEmitError(f"filigree dossier URL must use http or https; got scheme {scheme!r} in {url!r}")
-        req = urllib.request.Request(url, headers=dict(headers), method="GET")
-        try:
-            with urllib.request.urlopen(req, timeout=self._timeout) as resp:  # noqa: S310
-                return Response(status=resp.status, body=read_response_text(resp))
-        except urllib.error.HTTPError as exc:
-            # Mirror loomweave/client.UrllibTransport: surface the HTTP status to the
-            # caller (a >=400 band) rather than letting HTTPError (a URLError subclass)
-            # collapse into the "unreachable" branch — so a 4xx/5xx is classified, not
-            # mistaken for an outage.
-            with exc:
-                return Response(status=exc.code, body=read_response_text(exc))
+        result = self._http.fetch("GET", url, headers=headers)
+        return Response(status=result.status, body=result.body)
 
 
 def _rows_of(parsed: Any) -> list[dict[str, Any]]:

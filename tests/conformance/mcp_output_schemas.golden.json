@@ -1,0 +1,4158 @@
+{
+  "assure": {
+    "additionalProperties": false,
+    "description": "Trust-surface coverage posture: how many declared trust boundaries got a definite verdict vs. how many are honestly unknown, plus waiver debt. Identical to the CLI `assure` JSON.",
+    "properties": {
+      "baselined_total": {
+        "description": "Findings suppressed by the baseline in this scan.",
+        "type": "integer"
+      },
+      "boundaries_total": {
+        "description": "Denominator: count of anchored (trust-declared) entities. proven + defect_total + len(unknown) == boundaries_total.",
+        "type": "integer"
+      },
+      "coverage_pct": {
+        "description": "Share of known boundaries with a definite verdict over known boundaries plus unanalyzed files, rounded to 1 decimal. null when there are no boundaries and no unanalyzed files.",
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "defect_total": {
+        "description": "Boundaries with a definite defect verdict (a defect counts as COVERED \u2014 the engine reached a verdict).",
+        "type": "integer"
+      },
+      "engine_limited": {
+        "description": "Under-scan pressure: entity-level unknowns with an engine reason plus unanalyzed files.",
+        "type": "integer"
+      },
+      "judged_total": {
+        "description": "Findings suppressed by judge verdicts in this scan.",
+        "type": "integer"
+      },
+      "proven": {
+        "description": "Boundaries with a definite clean verdict.",
+        "type": "integer"
+      },
+      "unanalyzed_rule_ids": {
+        "description": "Distinct under-scan rule ids present in the scan findings, sorted lexicographically.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "unanalyzed_total": {
+        "description": "Files discovered but never analyzed. Each counts as at least one uncovered surface item in coverage_pct.",
+        "type": "integer"
+      },
+      "unknown": {
+        "description": "The honesty gap: anchored entities whose trust could not be proven either way, sorted by qualname.",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "location": {
+              "additionalProperties": false,
+              "description": "Where the entity is declared; both fields null when no location is known.",
+              "properties": {
+                "line": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "path",
+                "line"
+              ],
+              "type": "object"
+            },
+            "qualname": {
+              "description": "Qualified name of the anchored entity.",
+              "type": "string"
+            },
+            "reason": {
+              "description": "Engine under-scan FACT message when the body was not analysed (parse/recursion skip), else null (undeclared / unprovable).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "tier": {
+              "description": "Declared trust tier, or null if undeclared.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "qualname",
+            "tier",
+            "location",
+            "reason"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "waiver_debt": {
+        "description": "Configured waivers with days-to-expiry, sorted by fingerprint. Populated even when nothing was analysable.",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "days_left": {
+              "description": "Days until expiry; may be NEGATIVE for a lapsed waiver; null for no expiry.",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "expires": {
+              "description": "ISO date the waiver expires, or null for no expiry.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "fingerprint": {
+              "description": "Finding fingerprint the waiver covers.",
+              "type": "string"
+            },
+            "reason": {
+              "description": "The waiver's recorded justification.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "fingerprint",
+            "expires",
+            "days_left",
+            "reason"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "boundaries_total",
+      "proven",
+      "defect_total",
+      "unknown",
+      "engine_limited",
+      "coverage_pct",
+      "unanalyzed_total",
+      "unanalyzed_rule_ids",
+      "waiver_debt",
+      "baselined_total",
+      "judged_total"
+    ],
+    "type": "object"
+  },
+  "attest": {
+    "additionalProperties": false,
+    "description": "Signed, reproducible evidence bundle: a deterministic payload plus an HMAC-SHA256 signature under the shared project key (tamper-evidence within the key-holding trust domain, not asymmetric proof).",
+    "properties": {
+      "payload": {
+        "additionalProperties": false,
+        "description": "The signed, deterministic attestation payload (canonical compact key-sorted JSON is the reproducibility target).",
+        "properties": {
+          "attested_at": {
+            "description": "ISO date the bundle was built; re-derivation on verify uses this as `today`.",
+            "type": "string"
+          },
+          "boundaries": {
+            "description": "Per-boundary trust verdicts, sorted by qualname; empty when nothing was analysable.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "qualname": {
+                  "description": "Qualified name of the anchored entity.",
+                  "type": "string"
+                },
+                "sei": {
+                  "description": "Loomweave SEI resolved at build time; null without a Loomweave client or when unresolvable.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "tier": {
+                  "description": "Declared trust tier, or null if undeclared.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "verdict": {
+                  "description": "The entity's trust verdict from the single source of truth (classify_entity_trust).",
+                  "enum": [
+                    "clean",
+                    "defect",
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "qualname",
+                "sei",
+                "verdict",
+                "tier"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "commit": {
+            "description": "`git rev-parse HEAD` of the tree, or null for a non-git tree / missing git.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dirty": {
+            "description": "True iff the working tree had uncommitted changes (MCP refuses dirty trees unless allow_dirty=true).",
+            "type": "boolean"
+          },
+          "posture": {
+            "additionalProperties": false,
+            "description": "The trust-surface coverage posture at attestation time (same shape as the `assure` tool result).",
+            "properties": {
+              "baselined_total": {
+                "type": "integer"
+              },
+              "boundaries_total": {
+                "type": "integer"
+              },
+              "coverage_pct": {
+                "description": "null when there are no boundaries and no unanalyzed files.",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "defect_total": {
+                "type": "integer"
+              },
+              "engine_limited": {
+                "type": "integer"
+              },
+              "judged_total": {
+                "type": "integer"
+              },
+              "proven": {
+                "type": "integer"
+              },
+              "unanalyzed_rule_ids": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "unanalyzed_total": {
+                "type": "integer"
+              },
+              "unknown": {
+                "description": "Anchored entities with no definite verdict, sorted by qualname.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "location": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "line": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "path": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "line"
+                      ],
+                      "type": "object"
+                    },
+                    "qualname": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "tier": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "qualname",
+                    "tier",
+                    "location",
+                    "reason"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "waiver_debt": {
+                "description": "Configured waivers with days-to-expiry (the only date-sensitive payload field), sorted by fingerprint.",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "days_left": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "expires": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "fingerprint": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "fingerprint",
+                    "expires",
+                    "days_left",
+                    "reason"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "boundaries_total",
+              "proven",
+              "defect_total",
+              "unknown",
+              "engine_limited",
+              "coverage_pct",
+              "unanalyzed_total",
+              "unanalyzed_rule_ids",
+              "waiver_debt",
+              "baselined_total",
+              "judged_total"
+            ],
+            "type": "object"
+          },
+          "ruleset_hash": {
+            "description": "Deterministic 'sha256:<hex>' over the effective scan policy.",
+            "type": "string"
+          },
+          "sei_source": {
+            "description": "'loomweave' iff a client was supplied AND at least one SEI resolved; else 'unavailable'.",
+            "enum": [
+              "loomweave",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "wardline_version": {
+            "description": "Wardline version that produced the bundle.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wardline_version",
+          "attested_at",
+          "commit",
+          "dirty",
+          "ruleset_hash",
+          "posture",
+          "boundaries",
+          "sei_source"
+        ],
+        "type": "object"
+      },
+      "schema": {
+        "description": "Wire-contract tag; bound into the HMAC so a relabel cannot verify.",
+        "enum": [
+          "wardline-attest-1"
+        ],
+        "type": "string"
+      },
+      "signature": {
+        "additionalProperties": false,
+        "description": "HMAC-SHA256 over the canonical {schema, payload} envelope bytes.",
+        "properties": {
+          "alg": {
+            "enum": [
+              "HMAC-SHA256"
+            ],
+            "type": "string"
+          },
+          "key_id": {
+            "description": "Non-secret 8-hex short id of the signing key (distinguishes keys without revealing them).",
+            "type": "string"
+          },
+          "value": {
+            "description": "Hex HMAC digest.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "alg",
+          "value",
+          "key_id"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "schema",
+      "payload",
+      "signature"
+    ],
+    "type": "object"
+  },
+  "baseline": {
+    "additionalProperties": false,
+    "description": "Success payload of the wardline MCP `baseline` tool: records the result of generating (or finding an existing) suppression baseline for the project.",
+    "properties": {
+      "already_exists": {
+        "description": "Only present when overwrite was not requested: true if a baseline file already existed (nothing was written; counts reflect the existing file), false if a new baseline was created. Absent when overwrite=true succeeds.",
+        "type": "boolean"
+      },
+      "baselined_count": {
+        "description": "Number of finding fingerprints in the baseline. On a fresh generation this is the count just written; when the baseline already existed (already_exists=true) it is the count in the existing file.",
+        "type": "integer"
+      },
+      "path": {
+        "description": "Absolute path of the baseline file.",
+        "type": "string"
+      },
+      "reason": {
+        "description": "Caller-supplied reason for creating the baseline; null when not provided.",
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "baselined_count",
+      "path",
+      "reason"
+    ],
+    "type": "object"
+  },
+  "decorator_coverage": {
+    "additionalProperties": false,
+    "description": "Row-level inventory of every trust-decorated entity under the project (the row-level sibling of assure): each declared trust-surface entity with its current verdict, findings, identity binding, and open-work state, plus a rollup summary.",
+    "properties": {
+      "rows": {
+        "description": "One row per declared trust-decorated entity, sorted by qualname. Empty when the scan produced no analysis context.",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "active_finding_fingerprints": {
+              "description": "Sorted fingerprints of active (non-suppressed) defect findings on the entity.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "actual_tier": {
+              "description": "Engine-computed actual return taint; null when not computed.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "declared_tier": {
+              "description": "Declared return trust tier; null when undeclared.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "decorators": {
+              "description": "Decorators as declared, each prefixed with '@'.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "finding_state": {
+              "description": "defect when active findings exist; suppressed when only accepted findings exist; unknown when the verdict is unknown; else clean.",
+              "enum": [
+                "defect",
+                "suppressed",
+                "unknown",
+                "clean"
+              ],
+              "type": "string"
+            },
+            "identity": {
+              "additionalProperties": false,
+              "description": "Cross-tool identity binding for the row. Degrades to available=false with a reason when Loomweave is not configured / unreachable / resolved no SEI.",
+              "properties": {
+                "available": {
+                  "description": "True only when an SEI was resolved for the entity.",
+                  "type": "boolean"
+                },
+                "content_hash": {
+                  "description": "Current content hash from the binding, when available.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "content_status": {
+                  "description": "Content axis: has the entity's code changed?",
+                  "enum": [
+                    "fresh",
+                    "stale",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                "identity_status": {
+                  "description": "Identity axis: is this the same entity?",
+                  "enum": [
+                    "alive",
+                    "orphaned",
+                    "unavailable"
+                  ],
+                  "type": "string"
+                },
+                "locator": {
+                  "description": "The Loomweave-style locator, e.g. python:function:pkg.mod.func.",
+                  "type": "string"
+                },
+                "reason": {
+                  "description": "Why identity is unavailable (e.g. 'loomweave not configured', 'no SEI resolved'); null when an SEI was resolved.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "sei": {
+                  "description": "Opaque stable entity identifier; null when not resolved.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "available",
+                "locator",
+                "sei",
+                "identity_status",
+                "content_status",
+                "content_hash",
+                "reason"
+              ],
+              "type": "object"
+            },
+            "line": {
+              "description": "Entity start line; null when the declared qualname has no scanned entity.",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "path": {
+              "description": "Source file path; null when the declared qualname has no scanned entity.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "qualname": {
+              "description": "The entity's qualified name, minted relative to the scan root.",
+              "type": "string"
+            },
+            "suppressed_finding_fingerprints": {
+              "description": "Sorted fingerprints of accepted (baselined/waived/judged) defect findings.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "verdict": {
+              "description": "Three-valued, fail-closed trust verdict for the entity.",
+              "enum": [
+                "defect",
+                "clean",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "work": {
+              "additionalProperties": false,
+              "description": "Open work from Filigree, keyed on the SEI. available=false with a reason when Filigree is not configured / unreachable / there is no SEI binding.",
+              "properties": {
+                "available": {
+                  "type": "boolean"
+                },
+                "content_status": {
+                  "description": "stale when any ticket binding drifted; unknown when a compare was impossible.",
+                  "enum": [
+                    "fresh",
+                    "stale",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
+                "identity_status": {
+                  "enum": [
+                    "alive",
+                    "orphaned",
+                    "unavailable"
+                  ],
+                  "type": "string"
+                },
+                "reason": {
+                  "description": "Why the section is unavailable; null when available.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "tickets": {
+                  "description": "Filigree issues bound to the entity.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "drift": {
+                        "description": "True when the issue was bound to a PRIOR version of the entity (content hash at attach no longer matches).",
+                        "type": "boolean"
+                      },
+                      "issue_id": {
+                        "type": "string"
+                      },
+                      "priority": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "status": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "title": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "issue_id",
+                      "status",
+                      "priority",
+                      "title",
+                      "drift"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "available",
+                "tickets",
+                "identity_status",
+                "content_status",
+                "reason"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "qualname",
+            "path",
+            "line",
+            "decorators",
+            "declared_tier",
+            "actual_tier",
+            "verdict",
+            "finding_state",
+            "active_finding_fingerprints",
+            "suppressed_finding_fingerprints",
+            "identity",
+            "work"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "summary": {
+        "additionalProperties": false,
+        "description": "Rollup counts over rows by finding_state.",
+        "properties": {
+          "clean": {
+            "description": "Rows with finding_state == clean.",
+            "type": "integer"
+          },
+          "defect": {
+            "description": "Rows with finding_state == defect.",
+            "type": "integer"
+          },
+          "suppressed": {
+            "description": "Rows with finding_state == suppressed.",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Total declared trust-surface entities.",
+            "type": "integer"
+          },
+          "unknown": {
+            "description": "Rows with finding_state == unknown.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "clean",
+          "defect",
+          "unknown",
+          "suppressed"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "summary",
+      "rows"
+    ],
+    "type": "object"
+  },
+  "doctor": {
+    "additionalProperties": false,
+    "description": "Doctor success payload: the CLI `doctor --fix` machine-readable envelope (install/federation health checks) plus the running MCP server's self-identification block and a `server.freshness` check appended to the check list.",
+    "properties": {
+      "checks": {
+        "description": "Uniform health-check verdicts: wardline.config, mcp.registration, marker_package, loomweave.url, filigree.url, decorator_grammar, scan.output_path, auth.token, filigree.auth, optionally doctor.filigree_url for rejected MCP caller input, then server.freshness last.",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "fixed": {
+              "description": "True when this run's repair (repair: true) corrected the underlying condition.",
+              "type": "boolean"
+            },
+            "id": {
+              "description": "Stable check identifier, e.g. 'wardline.config' or 'server.freshness'.",
+              "type": "string"
+            },
+            "message": {
+              "description": "Human/agent-readable detail. Present only when the check produced a non-empty message (always on errors; sometimes on informational ok results).",
+              "type": "string"
+            },
+            "status": {
+              "description": "Check verdict.",
+              "enum": [
+                "ok",
+                "error"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "status",
+            "fixed"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "next_actions": {
+        "description": "One '<check id>: <message>' action line per failed check that carries a message; empty when everything is healthy.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "ok": {
+        "description": "True only when every check (including the appended server.freshness check) passed.",
+        "type": "boolean"
+      },
+      "server": {
+        "additionalProperties": false,
+        "description": "The running MCP server's self-identification: detects a stale long-lived server (source on disk newer than process start).",
+        "properties": {
+          "fresh": {
+            "description": "False when on-disk package source changed after this process started \u2014 the server is serving OLD code and must be restarted.",
+            "type": "boolean"
+          },
+          "package_version": {
+            "description": "Installed wardline package version.",
+            "type": "string"
+          },
+          "pid": {
+            "description": "Server process id.",
+            "type": "integer"
+          },
+          "project_root": {
+            "description": "Absolute project root this server is confined to.",
+            "type": "string"
+          },
+          "source_latest_mtime": {
+            "description": "ISO-8601 UTC mtime of the newest *.py file under the imported wardline package, or null when nothing was statable.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_latest_path": {
+            "description": "Package-relative path of that newest source file, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "started_at": {
+            "description": "ISO-8601 UTC timestamp of server process start.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "package_version",
+          "pid",
+          "project_root",
+          "started_at",
+          "source_latest_mtime",
+          "source_latest_path",
+          "fresh"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "ok",
+      "checks",
+      "next_actions",
+      "server"
+    ],
+    "type": "object"
+  },
+  "dossier": {
+    "additionalProperties": false,
+    "description": "One-call entity dossier envelope: Wardline's own trust posture (always re-derived fresh) plus Loomweave linkages and Filigree open work, each cross-tool section degrading to an honest unavailable shape (available=false + reason) when its source is absent. Token-bounded with an explicit truncation marker.",
+    "properties": {
+      "identity": {
+        "additionalProperties": false,
+        "description": "Who the entity is plus its two-axis freshness (identity axis / content axis). Never trimmed by the budgeter.",
+        "properties": {
+          "content_hash": {
+            "description": "Current content hash from the binding, when available.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content_status": {
+            "description": "Content axis: has the entity's code changed? Never inferred from identity.",
+            "enum": [
+              "fresh",
+              "stale",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "identity_status": {
+            "description": "Identity axis: is this the same entity? Never inferred from content.",
+            "enum": [
+              "alive",
+              "orphaned",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "keyed_on_sei": {
+            "description": "True when the cross-tool sections were keyed on the SEI rather than a locator.",
+            "type": "boolean"
+          },
+          "kind": {
+            "description": "Entity kind (e.g. function); null when unknown.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "line_end": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "line_start": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "path": {
+            "description": "Source file path of the entity.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "qualname": {
+            "description": "The entity's qualified name, minted relative to the scan root.",
+            "type": "string"
+          },
+          "sei": {
+            "description": "Opaque stable entity identifier (the cross-tool binding key); null when no Loomweave binding was resolved.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "qualname",
+          "kind",
+          "path",
+          "line_start",
+          "line_end",
+          "sei",
+          "keyed_on_sei",
+          "identity_status",
+          "content_status",
+          "content_hash"
+        ],
+        "type": "object"
+      },
+      "linkages": {
+        "additionalProperties": false,
+        "description": "Call-graph neighbourhood from Loomweave. available=false with a reason when Loomweave is not configured / unreachable / serves no HTTP linkages.",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "callees": {
+            "description": "Callee entity locators; empty when unavailable. May be trimmed by the token budgeter.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "callers": {
+            "description": "Caller entity locators; empty when unavailable. May be trimmed by the token budgeter.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "content_status": {
+            "enum": [
+              "fresh",
+              "stale",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "identity_status": {
+            "enum": [
+              "alive",
+              "orphaned",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why the section is unavailable or degraded (e.g. one-sided linkage failure); null when fully available.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scc_peers": {
+            "description": "Strongly-connected-component peers (currently always empty: SCC membership is not served over HTTP).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "available",
+          "callers",
+          "callees",
+          "scc_peers",
+          "identity_status",
+          "content_status",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "shape": {
+        "additionalProperties": false,
+        "description": "Signature and decorators as declared in source.",
+        "properties": {
+          "decorators": {
+            "description": "Decorators as declared, each prefixed with '@'.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "signature": {
+            "description": "Rendered signature, e.g. \"(p) -> str\".",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "signature",
+          "decorators"
+        ],
+        "type": "object"
+      },
+      "synthesis": {
+        "description": "Best-effort one-paragraph actionable join of all sections; null when dropped to fit the token budget.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "truncation": {
+        "additionalProperties": false,
+        "description": "Elision-honest truncation marker: truncated=false on a complete envelope; when true, elided names every trimmed list with shown-of-total counts.",
+        "properties": {
+          "elided": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "section": {
+                  "description": "Dotted list path that was trimmed, e.g. \"linkages.callers\" or \"trust.active_findings\".",
+                  "type": "string"
+                },
+                "shown": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "section",
+                "shown",
+                "total"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "note": {
+            "description": "Human-readable trim summary; null when not truncated.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "truncated",
+          "elided",
+          "note"
+        ],
+        "type": "object"
+      },
+      "trust": {
+        "additionalProperties": false,
+        "description": "Wardline's OWN trust posture, re-derived from a live scan (fresh by construction).",
+        "properties": {
+          "active_findings": {
+            "description": "Active (non-suppressed) defect findings on the entity. May be trimmed by the token budgeter (see truncation.elided).",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "line": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "rule_id": {
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "CRITICAL",
+                    "ERROR",
+                    "WARN",
+                    "INFO",
+                    "NONE"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rule_id",
+                "severity",
+                "message",
+                "line"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "actual_return": {
+            "description": "Engine-computed actual return taint; null when not computed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "declared_return": {
+            "description": "Declared return trust tier; null when undeclared.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "freshness": {
+            "description": "Constant: the trust section is re-derived on demand, never stale.",
+            "enum": [
+              "fresh_by_construction"
+            ],
+            "type": "string"
+          },
+          "gate_verdict": {
+            "description": "Three-valued, fail-closed verdict: defect (active findings), clean (declared posture that conforms), unknown (undeclared/unprovable/under-scanned).",
+            "enum": [
+              "defect",
+              "clean",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "suppressed_findings": {
+            "description": "Count of accepted (baselined/waived/judged) defects \u2014 known debt a clean verdict must not hide.",
+            "type": "integer"
+          },
+          "unanalyzed_reason": {
+            "description": "Engine under-scan fact (parse error / recursion skip) when the body was not analysed; else null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "declared_return",
+          "actual_return",
+          "gate_verdict",
+          "active_findings",
+          "suppressed_findings",
+          "unanalyzed_reason",
+          "freshness"
+        ],
+        "type": "object"
+      },
+      "work": {
+        "additionalProperties": false,
+        "description": "Open work from Filigree, keyed on the SEI. available=false with a reason when Filigree is not configured / unreachable / there is no binding.",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "content_status": {
+            "description": "stale when any ticket binding drifted; unknown when a compare was impossible.",
+            "enum": [
+              "fresh",
+              "stale",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "identity_status": {
+            "enum": [
+              "alive",
+              "orphaned",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why the section is unavailable; null when available.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tickets": {
+            "description": "Filigree issues bound to the entity. May be trimmed by the token budgeter.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "drift": {
+                  "description": "True when the issue was bound to a PRIOR version of the entity (content hash at attach no longer matches).",
+                  "type": "boolean"
+                },
+                "issue_id": {
+                  "type": "string"
+                },
+                "priority": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "issue_id",
+                "status",
+                "priority",
+                "title",
+                "drift"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "available",
+          "tickets",
+          "identity_status",
+          "content_status",
+          "reason"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "identity",
+      "shape",
+      "trust",
+      "linkages",
+      "work",
+      "synthesis",
+      "truncation"
+    ],
+    "type": "object"
+  },
+  "explain_taint": {
+    "additionalProperties": false,
+    "description": "Success payload of the explain_taint tool: the taint provenance slice for one finding (single source: core/explain.explain_taint_result, shared with the CLI `wardline explain-taint`). Served either from a fresh Loomweave store fact (no re-scan) or from an SP8 re-run; both paths produce this same key set. With chain=true and a configured Loomweave store, a `chain` block is additionally attached.",
+    "properties": {
+      "chain": {
+        "additionalProperties": false,
+        "description": "Full N-hop taint chain from the sink to the originating boundary, walked from the Loomweave store. Present whenever the call passed chain=true: status 'walked' carries the hops; status 'unavailable' is the explicit C-10(c) degrade marker (no Loomweave store configured, or no sink qualname to anchor on) naming the missing capability and its enablement path \u2014 the walk never degrades silently.",
+        "properties": {
+          "enablement": {
+            "description": "unavailable only: how to enable the missing capability; null when walked.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hops": {
+            "description": "Ordered hops from the sink toward the boundary leaf. The walk stops cleanly at a boundary (contributing_callee_qualname null on the last hop) or truncates explicitly (see truncated_at).",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "contributing_callee_qualname": {
+                  "description": "Next hop toward the boundary; null at the boundary leaf (clean finish).",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "qualname": {
+                  "description": "Qualified name of the function at this hop.",
+                  "type": "string"
+                },
+                "tier_in": {
+                  "description": "Actual trust tier arriving at this hop (from the stored fact; null when absent).",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "tier_out": {
+                  "description": "Trust tier this hop declares it returns (from the stored fact; null when absent).",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "qualname",
+                "tier_in",
+                "tier_out",
+                "contributing_callee_qualname"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "missing_capability": {
+            "description": "unavailable only: what the walk lacked ('loomweave_taint_store' or 'sink_qualname'); null when walked.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "walked: the store walk ran (hops below). unavailable: the walk could not run; see missing_capability/enablement.",
+            "enum": [
+              "walked",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "truncated_at": {
+            "description": "Qualified name of the next hop the walk could NOT take (stale/absent fact, read error, cycle, or max_hops reached) \u2014 truncation is always explicit; null means the chain reached the boundary cleanly.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "hops",
+          "truncated_at",
+          "missing_capability",
+          "enablement"
+        ],
+        "type": "object"
+      },
+      "fingerprint": {
+        "description": "Stable finding fingerprint. May be the empty string on the store-served path when the entity blob carries no per-finding rows (the entity is known, the specific finding is not).",
+        "type": "string"
+      },
+      "immediate_tainted_callee": {
+        "description": "Bare trailing name of the call that introduced the untrusted return into the sink (null when unresolved).",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "location": {
+        "additionalProperties": false,
+        "description": "Source location of the finding. path may be empty and line null on the store-served path when the blob has no per-finding rows.",
+        "properties": {
+          "line": {
+            "description": "1-based start line of the finding (null when unknown).",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "path": {
+            "description": "Root-relative posix path of the finding's file (empty string when unknown on the store-served path).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "line"
+        ],
+        "type": "object"
+      },
+      "remediation": {
+        "additionalProperties": false,
+        "description": "Advisory fix-at-the-boundary hint derived from the explanation; never replaces the factual taint fields above.",
+        "properties": {
+          "caveat": {
+            "description": "Standing warning against blind decorator insertion / over-trusting the hint.",
+            "type": "string"
+          },
+          "kind": {
+            "description": "boundary_placement for PY-WL-101 (place/repair a @trust_boundary at the validating function); sink_hygiene for the dangerous-sink family (rule-specific fix guidance naming the source and sink); review_required for rules with no automated hint.",
+            "enum": [
+              "boundary_placement",
+              "sink_hygiene",
+              "review_required"
+            ],
+            "type": "string"
+          },
+          "rule_id": {
+            "description": "Rule the hint applies to (echoes the top-level rule_id).",
+            "type": "string"
+          },
+          "sink_qualname": {
+            "description": "Sink the hint refers to (null when the finding has no qualname).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_qualname": {
+            "description": "Taint source the hint refers to: the resolved boundary, else the immediate tainted callee, else null when unresolved.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "description": "Human/agent-readable remediation guidance sentence.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "rule_id",
+          "summary",
+          "sink_qualname",
+          "source_qualname",
+          "caveat"
+        ],
+        "type": "object"
+      },
+      "resolved_call_count": {
+        "description": "Number of calls inside the sink the engine resolved during taint computation.",
+        "type": "integer"
+      },
+      "rule_id": {
+        "description": "Rule that produced the finding (e.g. PY-WL-101). May be the empty string on the store-served path when no per-finding row matched.",
+        "type": "string"
+      },
+      "sink_qualname": {
+        "description": "Qualified name of the sink function the tainted value reaches (null when the engine has no qualname for the finding).",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "source_boundary_qualname": {
+        "description": "Originating boundary resolved one hop from the sink: qualified name of the boundary function the taint came from (null when not resolvable in one hop). On the store-served path this is the blob's contributing_callee_qualname.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "source_resolution": {
+        "additionalProperties": false,
+        "description": "C-10(c) honesty block: whether the taint source is named above, and when it is NOT, why and what capability would resolve it further \u2014 an explicit degrade marker, never nulls that read as a complete-but-empty answer.",
+        "properties": {
+          "enablement": {
+            "description": "unresolved only: how to enable the missing capability; null otherwise.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "missing_capability": {
+            "description": "unresolved only: capability that could resolve further \u2014 'loomweave_taint_store' when no store is configured; null when resolved or when nothing more would help.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "description": "unresolved only: why wardline's own single-scan analysis could not name the source; null when resolved.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "resolved when immediate_tainted_callee or source_boundary_qualname is named; unresolved otherwise.",
+            "enum": [
+              "resolved",
+              "unresolved"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "reason",
+          "missing_capability",
+          "enablement"
+        ],
+        "type": "object"
+      },
+      "tier_in": {
+        "description": "Actual (untrusted) trust tier arriving at the sink, e.g. EXTERNAL_RAW (null when the engine recorded none).",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "tier_out": {
+        "description": "Trust tier the sink declares it returns, e.g. INTEGRAL (null when the engine recorded none).",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "unresolved_call_count": {
+        "description": "Number of calls inside the sink the engine could NOT resolve (residual uncertainty in the explanation).",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "fingerprint",
+      "rule_id",
+      "sink_qualname",
+      "location",
+      "tier_in",
+      "tier_out",
+      "immediate_tainted_callee",
+      "source_boundary_qualname",
+      "source_resolution",
+      "resolved_call_count",
+      "unresolved_call_count",
+      "remediation"
+    ],
+    "type": "object"
+  },
+  "file_finding": {
+    "additionalProperties": false,
+    "description": "Success payload of the file_finding tool: the outcome of promoting ONE finding (by fingerprint) into a tracked Filigree issue, fail-soft on reachability.",
+    "properties": {
+      "created": {
+        "description": "True when the promote created a NEW issue (vs returning an existing one).",
+        "type": "boolean"
+      },
+      "disabled_reason": {
+        "description": "Why enrichment was unavailable (e.g. 'filigree unreachable', 'filigree 503'); null on success.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "fingerprint": {
+        "description": "The fingerprint that was filed (echoed from the request).",
+        "type": "string"
+      },
+      "identity_attach": {
+        "additionalProperties": false,
+        "description": "Present only when attach_loomweave_identity=true was requested: the outcome of binding the finding's Loomweave entity identity to the filed issue.",
+        "properties": {
+          "attached": {
+            "description": "Whether the entity association was successfully attached to the Filigree issue.",
+            "type": "boolean"
+          },
+          "attempted": {
+            "description": "Whether an identity attach was attempted at all (false when there is no issue_id or no Loomweave URL configured).",
+            "type": "boolean"
+          },
+          "binding_kind": {
+            "description": "Whether the binding used a rename-stable SEI or a legacy locator; null when no binding was attempted.",
+            "enum": [
+              "sei",
+              "locator",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "content_hash": {
+            "description": "The entity content hash captured at attach time (drift-detection anchor); null when unresolved.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entity_id": {
+            "description": "The entity identifier used for the binding \u2014 a 'loomweave:eid:...' SEI or a legacy '{plugin}:function:{qualname}' locator.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "description": "Human-readable reason when not attempted or skipped; null on success.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "attempted",
+          "attached",
+          "entity_id",
+          "content_hash",
+          "binding_kind",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "issue_id": {
+        "description": "The Filigree issue id the fingerprint was promoted into; null when unreachable or the fingerprint was not found.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "not_found": {
+        "description": "True when Filigree was reachable but the fingerprint is unknown to it (404 \u2014 emit findings to Filigree first).",
+        "type": "boolean"
+      },
+      "reachable": {
+        "description": "Whether Filigree's promote route was reachable. False on transport failure, 5xx outage, or 401/403 auth refusal (all soft).",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "reachable",
+      "issue_id",
+      "created",
+      "not_found",
+      "fingerprint",
+      "disabled_reason"
+    ],
+    "type": "object"
+  },
+  "fix": {
+    "additionalProperties": false,
+    "description": "Success payload of the wardline MCP `fix` tool: mechanical autofix results (PY-WL-111 assert-at-boundary rewrites), either previewed (default / dry_run) or applied in-place (apply=true).",
+    "properties": {
+      "applied": {
+        "description": "True when fixes were written to disk (apply=true and not dry_run), false when this was a preview. Absent on the early-return path where the scan found no fixable findings.",
+        "type": "boolean"
+      },
+      "fixed": {
+        "additionalProperties": {
+          "items": {
+            "description": "Description of one fix in this file.",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "description": "Open map of file path (relative to the scanned `path` argument, NOT the project root) -> list of human-readable descriptions of the fixes previewed/applied in that file. Empty object when no fixable findings were found or no fixes could be produced.",
+        "type": "object"
+      },
+      "message": {
+        "description": "Human-readable summary, e.g. 'No fixable findings found.', 'Previewed fixes for N files.' or 'Applied fixes for N files.'",
+        "type": "string"
+      }
+    },
+    "required": [
+      "fixed",
+      "message"
+    ],
+    "type": "object"
+  },
+  "judge": {
+    "additionalProperties": false,
+    "description": "Success payload of the judge tool: per-finding LLM triage verdicts plus the persistence outcome of FALSE_POSITIVE records.",
+    "properties": {
+      "held_back": {
+        "description": "FALSE_POSITIVE verdicts NOT persisted because their confidence fell below the write floor.",
+        "type": "integer"
+      },
+      "verdicts": {
+        "description": "One flattened verdict per triaged finding.",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "confidence": {
+              "description": "The judge's calibrated confidence in the verdict, 0.0 to 1.0.",
+              "type": "number"
+            },
+            "fingerprint": {
+              "description": "Stable fingerprint of the judged finding.",
+              "type": "string"
+            },
+            "label": {
+              "description": "The judge's verdict: a real defect vs an analyzer over-approximation.",
+              "enum": [
+                "TRUE_POSITIVE",
+                "FALSE_POSITIVE"
+              ],
+              "type": "string"
+            },
+            "line": {
+              "description": "1-based start line; null when unknown.",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "path": {
+              "description": "Repo-relative file path of the finding.",
+              "type": "string"
+            },
+            "rationale": {
+              "description": "The model's verbatim reasoning (the audit primitive); always a non-empty string.",
+              "type": "string"
+            },
+            "rule_id": {
+              "description": "Rule that produced the finding.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "fingerprint",
+            "rule_id",
+            "path",
+            "line",
+            "label",
+            "confidence",
+            "rationale"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "wrote": {
+        "description": "FALSE_POSITIVE verdicts persisted to .wardline/judged.yaml (0 unless write=true).",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "verdicts",
+      "wrote",
+      "held_back"
+    ],
+    "type": "object"
+  },
+  "rekey": {
+    "additionalProperties": false,
+    "description": "Rekey success payload. Four shapes share the 'mode' discriminator: 'probe' (default, read-only dry run), 'apply' and 'resume' (journal block reporting the migration's per-leg state), and 'rollback' ({mode, restored, note}). All non-'mode' fields are mode-specific.",
+    "properties": {
+      "clean": {
+        "description": "probe only: true when there are no orphans and no collisions \u2014 an apply would carry every stored verdict (or, when no_op, there is simply nothing to migrate).",
+        "type": "boolean"
+      },
+      "collisions": {
+        "description": "probe/apply/resume: ambiguous rekey mappings. Either multiple pre-rekey fingerprints collapse to one new fingerprint, or one pre-rekey fingerprint fans out to multiple new fingerprints. All involved old fingerprints are orphaned, not carried.",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "description": "WLN-ENGINE-FINGERPRINT-COLLISION or WLN-ENGINE-FINGERPRINT-FANOUT diagnostic explaining that the verdicts are orphaned.",
+              "type": "string"
+            },
+            "new_fp": {
+              "description": "Collapse: the new-scheme fingerprint that more than one old fingerprint maps onto. Fan-out: null, with new_fps carrying the candidate new fingerprints.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "new_fps": {
+              "description": "Fan-out only: the candidate new-scheme fingerprints one old fingerprint maps onto. Omitted for collapse collisions.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "old_fps": {
+              "description": "The ambiguous pre-rekey fingerprints (sorted). Fan-out entries contain one old fingerprint.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "new_fp",
+            "old_fps",
+            "message"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "complete": {
+        "description": "apply/resume: true when every migration leg is done.",
+        "type": "boolean"
+      },
+      "current_scheme_stores": {
+        "description": "probe only: store file names ALREADY at the live fingerprint scheme \u2014 a rekey is a no-op for them; their entries were matched against the current scan's fingerprints.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "fingerprint_scheme_from": {
+        "description": "apply/resume: the fingerprint scheme being migrated from (e.g. 'wlfp1').",
+        "type": "string"
+      },
+      "fingerprint_scheme_to": {
+        "description": "apply/resume: the fingerprint scheme being migrated to (e.g. 'wlfp2').",
+        "type": "string"
+      },
+      "legs": {
+        "description": "apply/resume: per-leg migration state, in application order (baseline, judged, waivers, filigree).",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "carried_count": {
+              "description": "Number of stored verdicts re-keyed and carried forward by this leg (count only; can be the whole store).",
+              "type": "integer"
+            },
+            "debt": {
+              "description": "Filigree leg only: recorded reconciliation debt when the leg soft-failed (re-run with apply to retry); null otherwise.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "done": {
+              "description": "True when this leg has been applied and persisted.",
+              "type": "boolean"
+            },
+            "name": {
+              "description": "Leg name: one of 'baseline', 'judged', 'waivers', 'filigree' in a journal this code wrote.",
+              "type": "string"
+            },
+            "orphaned_count": {
+              "description": "Number of stored verdicts this leg dropped \u2014 never silent; the full verbatim list is recorded in the on-disk migration journal.",
+              "type": "integer"
+            },
+            "orphaned_sample": {
+              "description": "Bounded sample of the old fingerprints this leg dropped (counts are authoritative; full list in the migration journal).",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "name",
+            "done",
+            "carried_count",
+            "orphaned_count",
+            "orphaned_sample",
+            "debt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "matched": {
+        "description": "probe only: count of distinct stored fingerprints that map to a current finding \u2014 each store is judged against ITS OWN scheme (a wlfp1 store via the migration remap, a store already at the live scheme via the current fingerprints).",
+        "type": "integer"
+      },
+      "mode": {
+        "description": "Which rekey operation ran. 'probe' is the read-only default; 'apply'/'resume'/'rollback' are explicit, mutually exclusive write modes.",
+        "enum": [
+          "probe",
+          "apply",
+          "resume",
+          "rollback"
+        ],
+        "type": "string"
+      },
+      "next_action": {
+        "description": "apply/resume, only when the migration is INCOMPLETE: instruction to re-run the rekey tool to finish pending leg(s).",
+        "type": "string"
+      },
+      "next_pending_leg": {
+        "description": "apply/resume: name of the first not-done leg, or null when the migration is complete.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "no_op": {
+        "description": "probe only: true when every populated store already carries the live scheme \u2014 no fingerprint migration is pending and an apply would be refused.",
+        "type": "boolean"
+      },
+      "note": {
+        "description": "rollback only: caveat that Filigree associations from the forward run are NOT reversed (no remap endpoint); reconcile manually if needed.",
+        "type": "string"
+      },
+      "orphan_cause": {
+        "description": "probe/apply/resume: fixed explanation string for why a stored fingerprint can orphan (source moved/deleted, or a custom multi-emit rule not surfacing taint_path_v0).",
+        "type": "string"
+      },
+      "orphaned_count": {
+        "description": "probe only: number of stored OLD-SCHEME fingerprints with no current finding \u2014 these verdicts would be dropped by an apply. Stores already at the live scheme never orphan (see stale_*).",
+        "type": "integer"
+      },
+      "orphaned_sample": {
+        "description": "probe only: bounded sorted sample of the orphaned fingerprints (counts are authoritative; an apply records the full list verbatim in the migration journal).",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "per_store": {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "description": "probe only: open map of store file name (e.g. 'baseline.yaml') -> count of its stored fingerprints with no current finding. Only stores with orphans appear.",
+        "type": "object"
+      },
+      "prescheme": {
+        "description": "probe only: true when a live store predates the fingerprint-scheme stamp, so orphans MAY be a fingerprint-formula change rather than source churn.",
+        "type": "boolean"
+      },
+      "restored": {
+        "description": "rollback only: store file names restored from the pre-migration snapshot.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "scanned_findings": {
+        "description": "probe only: number of findings the suppression-free scan produced (each carries an old/new fingerprint pair).",
+        "type": "integer"
+      },
+      "snapshot_prescheme": {
+        "description": "apply/resume: true when the snapshotted stores carried no scheme stamp (pre-scheme), so orphans may be a formula change \u2014 surfaced as a caution.",
+        "type": "boolean"
+      },
+      "stale_cause": {
+        "description": "probe only: fixed explanation string for why a current-scheme entry can be stale.",
+        "type": "string"
+      },
+      "stale_count": {
+        "description": "probe only: number of CURRENT-scheme store entries matching no current finding \u2014 baseline drift, NOT migration orphans; a rekey would not touch them and they do not dirty the probe.",
+        "type": "integer"
+      },
+      "stale_sample": {
+        "description": "probe only: bounded sorted sample of the stale fingerprints.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "mode"
+    ],
+    "type": "object"
+  },
+  "scan": {
+    "$defs": {
+      "active_defect_entry": {
+        "additionalProperties": false,
+        "description": "One active defect, with explain availability and suggested next tool calls; explanation is inlined only under scan(explain:true) for findings with a qualname, up to the cap.",
+        "properties": {
+          "explain": {
+            "additionalProperties": false,
+            "properties": {
+              "available": {
+                "type": "boolean"
+              },
+              "reason": {
+                "description": "Why explain is unavailable (no qualname), or null.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "suggested_call": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "arguments": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "fingerprint": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "fingerprint"
+                        ],
+                        "type": "object"
+                      },
+                      "tool": {
+                        "enum": [
+                          "explain_taint"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "tool",
+                      "arguments"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "available",
+              "reason",
+              "suggested_call"
+            ],
+            "type": "object"
+          },
+          "explanation": {
+            "$ref": "#/$defs/explanation"
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "defect",
+              "fact",
+              "classification",
+              "metric",
+              "suggestion"
+            ],
+            "type": "string"
+          },
+          "location": {
+            "$ref": "#/$defs/location"
+          },
+          "message": {
+            "type": "string"
+          },
+          "next_tool_calls": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "arguments": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "fingerprint": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "fingerprint"
+                  ],
+                  "type": "object"
+                },
+                "tool": {
+                  "enum": [
+                    "explain_taint",
+                    "file_finding"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "arguments"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "qualname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rule_id": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "CRITICAL",
+              "ERROR",
+              "WARN",
+              "INFO",
+              "NONE"
+            ],
+            "type": "string"
+          },
+          "suppression_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "suppression_state": {
+            "enum": [
+              "active",
+              "baselined",
+              "waived",
+              "judged"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "rule_id",
+          "severity",
+          "kind",
+          "qualname",
+          "location",
+          "message",
+          "suppression_state",
+          "suppression_reason",
+          "explain",
+          "next_tool_calls"
+        ],
+        "type": "object"
+      },
+      "explanation": {
+        "additionalProperties": false,
+        "description": "Inlined taint provenance (same shape as the explanation slice of explain_taint).",
+        "properties": {
+          "immediate_tainted_callee": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remediation": {
+            "additionalProperties": false,
+            "properties": {
+              "caveat": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "boundary_placement",
+                  "sink_hygiene",
+                  "review_required"
+                ],
+                "type": "string"
+              },
+              "rule_id": {
+                "type": "string"
+              },
+              "sink_qualname": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source_qualname": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "rule_id",
+              "summary",
+              "sink_qualname",
+              "source_qualname",
+              "caveat"
+            ],
+            "type": "object"
+          },
+          "resolved_call_count": {
+            "type": "integer"
+          },
+          "source_boundary_qualname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_resolution": {
+            "additionalProperties": false,
+            "description": "C-10(c) honesty block: explicit resolved/unresolved verdict on the taint source, with reason + missing capability + enablement when unresolved.",
+            "properties": {
+              "enablement": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "missing_capability": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "resolved",
+                  "unresolved"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "status",
+              "reason",
+              "missing_capability",
+              "enablement"
+            ],
+            "type": "object"
+          },
+          "tier_in": {
+            "description": "Actual (untrusted) tier arriving at the sink.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tier_out": {
+            "description": "Tier the sink declares it returns.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unresolved_call_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tier_in",
+          "tier_out",
+          "immediate_tainted_callee",
+          "source_boundary_qualname",
+          "source_resolution",
+          "resolved_call_count",
+          "unresolved_call_count",
+          "remediation"
+        ],
+        "type": "object"
+      },
+      "filigree_destination": {
+        "additionalProperties": false,
+        "description": "Where findings were (or would be) sent, so a wrong-project write is visible.",
+        "properties": {
+          "project": {
+            "description": "The project pinned in the URL, or null when Filigree resolves it server-side.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project_pinned": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "url",
+          "project",
+          "project_pinned"
+        ],
+        "type": "object"
+      },
+      "filigree_emit_failures": {
+        "description": "PDR-0023 honesty surface: one record per finding that did NOT land in Filigree, so a PARTIAL ingest ('M of N emitted, K rejected because R') is byte-distinguishable from a clean emit. Empty on a clean run \u2014 but earned from real per-finding records, not hardwired.",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "cause": {
+              "description": "weft-reason carrier `cause`: the why (Filigree's detail, else the domain reason). Always present on a failure.",
+              "type": "string"
+            },
+            "detail": {
+              "description": "Filigree's per-finding reject explanation.",
+              "type": "string"
+            },
+            "fingerprint": {
+              "description": "Wardline join key for the failed finding (absent when chunk-wide).",
+              "type": "string"
+            },
+            "fix": {
+              "description": "weft-reason carrier `fix` (MANDATORY on a non-clean carrier): the remedy.",
+              "type": "string"
+            },
+            "reason": {
+              "description": "Machine-readable failure case: rejected (Filigree refused this finding), validation_error (malformed body), scheme_mismatch (fingerprint-scheme drift \u2014 a join-miss, not a true-negative), partial (whole chunk rejected at the protocol layer; cause is the request, not the body).",
+              "enum": [
+                "rejected",
+                "validation_error",
+                "scheme_mismatch",
+                "partial"
+              ],
+              "type": "string"
+            },
+            "reason_class": {
+              "description": "weft-reason (G1): the canonical reason_class this failure maps to (one of the closed 11 in contracts/weft-reason-vocab.json). validation_error maps to rejected; the domain term stays in `reason`/`cause`.",
+              "enum": [
+                "rejected",
+                "scheme_mismatch",
+                "partial"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "reason",
+            "detail",
+            "reason_class",
+            "cause",
+            "fix"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "filigree_emit_status": {
+        "additionalProperties": false,
+        "description": "Normalized Filigree emit status (always an object; configured:false when no emitter).",
+        "properties": {
+          "auth_rejected": {
+            "description": "Absent when not configured.",
+            "type": "boolean"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "created": {
+            "type": "integer"
+          },
+          "destination": {
+            "$ref": "#/$defs/filigree_destination"
+          },
+          "disabled_reason": {
+            "description": "Actionable reason (auth-rejected vs server error vs unreachable vs not configured), or null when reached.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failed": {
+            "description": "Count of un-ingested findings (derived from `failures`); 0 is earned, not assumed.",
+            "type": "integer"
+          },
+          "failures": {
+            "$ref": "#/$defs/filigree_emit_failures"
+          },
+          "reachable": {
+            "description": "null when not configured.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "status": {
+            "description": "HTTP error status for soft failures; absent when not configured.",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "token_sent": {
+            "description": "Absent when not configured.",
+            "type": "boolean"
+          },
+          "updated": {
+            "type": "integer"
+          },
+          "url": {
+            "description": "Absent when not configured.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "configured",
+          "reachable",
+          "created",
+          "updated",
+          "failed",
+          "failures",
+          "warnings",
+          "disabled_reason",
+          "destination"
+        ],
+        "type": "object"
+      },
+      "finding_entry": {
+        "additionalProperties": false,
+        "description": "One finding (suppressed / engine-fact / informational display arrays).",
+        "properties": {
+          "fingerprint": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "defect",
+              "fact",
+              "classification",
+              "metric",
+              "suggestion"
+            ],
+            "type": "string"
+          },
+          "location": {
+            "$ref": "#/$defs/location"
+          },
+          "message": {
+            "type": "string"
+          },
+          "qualname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rule_id": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "CRITICAL",
+              "ERROR",
+              "WARN",
+              "INFO",
+              "NONE"
+            ],
+            "type": "string"
+          },
+          "suppression_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "suppression_state": {
+            "enum": [
+              "active",
+              "baselined",
+              "waived",
+              "judged"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint",
+          "rule_id",
+          "severity",
+          "kind",
+          "qualname",
+          "location",
+          "message",
+          "suppression_state",
+          "suppression_reason"
+        ],
+        "type": "object"
+      },
+      "location": {
+        "additionalProperties": false,
+        "properties": {
+          "line_end": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "line_start": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "path": {
+            "description": "Repo-relative POSIX path.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "line_start",
+          "line_end"
+        ],
+        "type": "object"
+      },
+      "loomweave_write_status": {
+        "additionalProperties": false,
+        "description": "Normalized Loomweave taint-fact write status (always an object; configured:false when no client).",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "disabled_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reachable": {
+            "description": "null when not configured.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "unresolved_qualnames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "written": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "configured",
+          "reachable",
+          "written",
+          "unresolved_qualnames",
+          "disabled_reason"
+        ],
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Success payload of the wardline MCP `scan` tool (the dict _scan returns, served verbatim as structuredContent).",
+    "properties": {
+      "agent_summary": {
+        "additionalProperties": false,
+        "description": "The stable agent-oriented handoff block (schema wardline-agent-summary-1): active defects first, suppressed debt visible, integration status explicit, suggested next tool calls.",
+        "properties": {
+          "active_defects": {
+            "description": "Non-suppressed defects in the displayed page (severity-sorted). Each entry carries explain/next_tool_calls hints; with explain:true an inlined explanation (capped \u2014 see truncation.explanations_truncated).",
+            "items": {
+              "$ref": "#/$defs/active_defect_entry"
+            },
+            "type": "array"
+          },
+          "engine_facts": {
+            "description": "Engine diagnostic facts (WLN-ENGINE-*) in the displayed page.",
+            "items": {
+              "$ref": "#/$defs/finding_entry"
+            },
+            "type": "array"
+          },
+          "gate": {
+            "additionalProperties": false,
+            "description": "Gate echo inside the agent summary (no sub-gate attribution flags here; see the top-level gate block for those).",
+            "properties": {
+              "evaluated": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "exit_class": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "type": "integer"
+              },
+              "fail_on": {
+                "enum": [
+                  "CRITICAL",
+                  "ERROR",
+                  "WARN",
+                  "INFO",
+                  "NONE",
+                  null
+                ]
+              },
+              "migration_hint": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              },
+              "tripped": {
+                "type": "boolean"
+              },
+              "verdict": {
+                "enum": [
+                  "NOT_EVALUATED",
+                  "PASSED",
+                  "FAILED"
+                ],
+                "type": "string"
+              },
+              "would_trip_at": {
+                "enum": [
+                  "CRITICAL",
+                  "ERROR",
+                  "WARN",
+                  "INFO",
+                  null
+                ]
+              }
+            },
+            "required": [
+              "tripped",
+              "fail_on",
+              "exit_class",
+              "verdict",
+              "would_trip_at",
+              "reason",
+              "evaluated",
+              "migration_hint"
+            ],
+            "type": "object"
+          },
+          "informational": {
+            "description": "Non-defect, non-engine-fact findings (metrics, classifications, suggestions) in the displayed page.",
+            "items": {
+              "$ref": "#/$defs/finding_entry"
+            },
+            "type": "array"
+          },
+          "integrations": {
+            "additionalProperties": false,
+            "properties": {
+              "filigree_emit": {
+                "$ref": "#/$defs/filigree_emit_status"
+              },
+              "loomweave_write": {
+                "$ref": "#/$defs/loomweave_write_status"
+              }
+            },
+            "required": [
+              "filigree_emit",
+              "loomweave_write"
+            ],
+            "type": "object"
+          },
+          "next_actions": {
+            "description": "Gate-aware suggested next tool calls, driven by the whole-project active count (not the displayed slice).",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "reason": {
+                  "type": "string"
+                },
+                "tool": {
+                  "enum": [
+                    "explain_taint",
+                    "file_finding",
+                    "scan"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "tool",
+                "reason"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "schema": {
+            "enum": [
+              "wardline-agent-summary-1"
+            ],
+            "type": "string"
+          },
+          "summary": {
+            "additionalProperties": false,
+            "description": "Whole-project counts (never affected by where/pagination filters).",
+            "properties": {
+              "active_defects": {
+                "type": "integer"
+              },
+              "baselined": {
+                "type": "integer"
+              },
+              "engine_facts": {
+                "description": "Kind.FACT findings with a WLN-ENGINE-* rule_id.",
+                "type": "integer"
+              },
+              "files_scanned": {
+                "type": "integer"
+              },
+              "informational": {
+                "description": "ALL non-defect findings (engine facts included; the display array below excludes them).",
+                "type": "integer"
+              },
+              "judged": {
+                "type": "integer"
+              },
+              "suppressed_findings": {
+                "type": "integer"
+              },
+              "total_findings": {
+                "type": "integer"
+              },
+              "unanalyzed": {
+                "type": "integer"
+              },
+              "waived": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "files_scanned",
+              "total_findings",
+              "active_defects",
+              "suppressed_findings",
+              "engine_facts",
+              "baselined",
+              "waived",
+              "judged",
+              "informational",
+              "unanalyzed"
+            ],
+            "type": "object"
+          },
+          "suppressed_findings": {
+            "description": "Suppressed (baselined/waived/judged) defects in the displayed page.",
+            "items": {
+              "$ref": "#/$defs/finding_entry"
+            },
+            "type": "array"
+          },
+          "truncation": {
+            "additionalProperties": false,
+            "description": "Single pagination descriptor for the four display arrays (one ordered union: active, suppressed, engine facts, informational).",
+            "properties": {
+              "explanations_truncated": {
+                "description": "True when explain:true hit the inlining cap before covering every shown active defect.",
+                "type": "boolean"
+              },
+              "findings_returned": {
+                "type": "integer"
+              },
+              "findings_total": {
+                "description": "Size of the displayed union before paging.",
+                "type": "integer"
+              },
+              "findings_truncated": {
+                "type": "boolean"
+              },
+              "include_suppressed": {
+                "type": "boolean"
+              },
+              "max_findings": {
+                "description": "Effective page size; null means uncapped (full:true).",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "next_offset": {
+                "description": "Pass as offset to fetch the next page; null when complete.",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "offset": {
+                "type": "integer"
+              },
+              "summary_only": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "summary_only",
+              "include_suppressed",
+              "max_findings",
+              "offset",
+              "findings_total",
+              "findings_returned",
+              "next_offset",
+              "findings_truncated",
+              "explanations_truncated"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "schema",
+          "summary",
+          "gate",
+          "integrations",
+          "active_defects",
+          "suppressed_findings",
+          "engine_facts",
+          "informational",
+          "truncation",
+          "next_actions"
+        ],
+        "type": "object"
+      },
+      "files_scanned": {
+        "description": "Number of files discovered (see scope.files_analyzed for the delta-mode analyzed count).",
+        "type": "integer"
+      },
+      "filigree": {
+        "description": "Raw Filigree emit result; null when no emitter is configured.",
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "auth_rejected": {
+                "description": "True when the emit was refused with 401/403.",
+                "type": "boolean"
+              },
+              "created": {
+                "type": "integer"
+              },
+              "destination": {
+                "$ref": "#/$defs/filigree_destination"
+              },
+              "failed": {
+                "description": "Count of un-ingested findings (derived from `failures`); 0 is earned from real records, not assumed.",
+                "type": "integer"
+              },
+              "failures": {
+                "$ref": "#/$defs/filigree_emit_failures"
+              },
+              "reachable": {
+                "type": "boolean"
+              },
+              "status": {
+                "description": "HTTP error status (401/403/5xx) for soft failures; null on success or transport failure.",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "token_sent": {
+                "description": "Whether a bearer token was actually sent (splits a 401 into absent vs rejected).",
+                "type": "boolean"
+              },
+              "updated": {
+                "type": "integer"
+              },
+              "url": {
+                "description": "The endpoint attempted.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "warnings": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "reachable",
+              "created",
+              "updated",
+              "failed",
+              "failures",
+              "warnings",
+              "status",
+              "auth_rejected",
+              "token_sent",
+              "url",
+              "destination"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "filigree_emit": {
+        "$ref": "#/$defs/filigree_emit_status"
+      },
+      "gate": {
+        "additionalProperties": false,
+        "description": "The pass/fail gate decision (a trip is data, not an error).",
+        "properties": {
+          "evaluated": {
+            "description": "Which population the gate judged (unsuppressed default vs suppression-honoring).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "exit_class": {
+            "description": "0 clean, 1 gate tripped (mirrors tripped).",
+            "enum": [
+              0,
+              1
+            ],
+            "type": "integer"
+          },
+          "fail_on": {
+            "description": "The severity threshold evaluated, or null when no --fail-on ran.",
+            "enum": [
+              "CRITICAL",
+              "ERROR",
+              "WARN",
+              "INFO",
+              "NONE",
+              null
+            ]
+          },
+          "fail_on_unanalyzed": {
+            "description": "Whether the unanalyzed sub-gate knob was set.",
+            "type": "boolean"
+          },
+          "migration_hint": {
+            "description": "Secure-gate-default rollout hint, or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "description": "Human-readable verdict naming the count/class of defects that decided it.",
+            "type": "string"
+          },
+          "severity_tripped": {
+            "description": "Sub-gate attribution: the severity threshold tripped.",
+            "type": "boolean"
+          },
+          "tripped": {
+            "type": "boolean"
+          },
+          "unanalyzed_tripped": {
+            "description": "Sub-gate attribution: the unanalyzed gate tripped.",
+            "type": "boolean"
+          },
+          "verdict": {
+            "description": "NOT_EVALUATED when no authoritative severity gate judged the full gate population; FAILED iff tripped.",
+            "enum": [
+              "NOT_EVALUATED",
+              "PASSED",
+              "FAILED"
+            ],
+            "type": "string"
+          },
+          "would_trip_at": {
+            "description": "Highest severity at which the gate WOULD trip on the evaluated population, or null if nothing would.",
+            "enum": [
+              "CRITICAL",
+              "ERROR",
+              "WARN",
+              "INFO",
+              null
+            ]
+          }
+        },
+        "required": [
+          "tripped",
+          "fail_on",
+          "fail_on_unanalyzed",
+          "exit_class",
+          "verdict",
+          "severity_tripped",
+          "unanalyzed_tripped",
+          "would_trip_at",
+          "reason",
+          "evaluated",
+          "migration_hint"
+        ],
+        "type": "object"
+      },
+      "legis_artifact": {
+        "additionalProperties": false,
+        "description": "OPTIONAL: the verbatim-postable signed scan object for legis POST /wardline/scan-results. Present only when a WARDLINE_LEGIS_ARTIFACT_KEY is provisioned or legis_artifact:true was passed, AND building it did not fail (a signing refusal omits it). Suppressed under summary_only:true unless legis_artifact:true is passed explicitly \u2014 summary_only promises the smallest gate payload.",
+        "properties": {
+          "artifact_signature": {
+            "description": "hmac-sha256:v2:<hex> over the canonical scan-minus-signature; present only on the signed (key + clean tree) path.",
+            "type": "string"
+          },
+          "commit_sha": {
+            "description": "Present when provenance was readable (always on the signed path).",
+            "type": "string"
+          },
+          "dirty": {
+            "description": "Present (true) only when the working tree was dirty (unsigned dev artifact).",
+            "type": "boolean"
+          },
+          "findings": {
+            "description": "The gate population projected onto legis's accepted vocabulary.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "fingerprint": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "defect",
+                    "fact",
+                    "classification",
+                    "metric",
+                    "suggestion"
+                  ],
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "properties": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Trust-tier-valued properties only (plus suppression_reason proof on non-active defects); diagnostics dropped.",
+                  "type": "object"
+                },
+                "qualname": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "rule_id": {
+                  "type": "string"
+                },
+                "severity": {
+                  "enum": [
+                    "CRITICAL",
+                    "ERROR",
+                    "WARN",
+                    "INFO",
+                    "NONE"
+                  ],
+                  "type": "string"
+                },
+                "suppression_state": {
+                  "enum": [
+                    "active",
+                    "waived",
+                    "suppressed"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rule_id",
+                "message",
+                "severity",
+                "kind",
+                "fingerprint",
+                "qualname",
+                "properties",
+                "suppression_state"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "fingerprint_scheme": {
+            "type": "string"
+          },
+          "rule_set_version": {
+            "description": "Hash of the effective ruleset.",
+            "type": "string"
+          },
+          "scan_scope": {
+            "additionalProperties": false,
+            "description": "Signed scope binding: scan root, configured/resolved source roots, and realized files.",
+            "properties": {
+              "is_git_root": {
+                "description": "True only when the scan root is the containing git repository root.",
+                "type": "boolean"
+              },
+              "resolved_source_roots": {
+                "description": "Configured source roots resolved relative to the signed scope base.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "scan_root": {
+                "description": "Scan root relative to the git repository root when in git; otherwise '.'.",
+                "type": "string"
+              },
+              "scanned_paths": {
+                "description": "Files actually discovered and analyzed, relative to the scan root.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "schema": {
+                "enum": [
+                  "wardline-legis-scan-scope-1"
+                ],
+                "type": "string"
+              },
+              "source_roots": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "schema",
+              "scan_root",
+              "is_git_root",
+              "source_roots",
+              "resolved_source_roots",
+              "scanned_paths"
+            ],
+            "type": "object"
+          },
+          "scanner_identity": {
+            "description": "wardline@<version>.",
+            "type": "string"
+          },
+          "tree_sha": {
+            "description": "Committed tree SHA; present on the signed path and best-effort otherwise.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scanner_identity",
+          "rule_set_version",
+          "fingerprint_scheme",
+          "findings",
+          "scan_scope"
+        ],
+        "type": "object"
+      },
+      "legis_artifact_status": {
+        "additionalProperties": false,
+        "description": "OPTIONAL: signed/dirty status of the legis artifact attempt. Present whenever the legis block was activated (key provisioned or legis_artifact:true), including when signing was refused and legis_artifact itself is absent.",
+        "properties": {
+          "configured": {
+            "enum": [
+              true
+            ],
+            "type": "boolean"
+          },
+          "dirty": {
+            "description": "Present only when the artifact was actually built (absent on a build refusal).",
+            "type": "boolean"
+          },
+          "key_id": {
+            "description": "Non-secret short id of the HMAC key (first 8 hex of sha256), or null when unkeyed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "description": "Refusal/unverified reason (e.g. dirty-tree refusal), or null.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "signed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configured",
+          "signed",
+          "key_id",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "loomweave": {
+        "description": "Raw Loomweave taint-fact write result; null when no Loomweave client is configured.",
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "disabled_reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reachable": {
+                "type": "boolean"
+              },
+              "unresolved_qualnames": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "written": {
+                "description": "Entity taint blobs written.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "reachable",
+              "written",
+              "unresolved_qualnames",
+              "disabled_reason"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "loomweave_write": {
+        "$ref": "#/$defs/loomweave_write_status"
+      },
+      "scope": {
+        "additionalProperties": false,
+        "description": "OPTIONAL: the delta-scan (--affected) honesty/provenance block. Present only when an `affected` scope was supplied; absent on a full scan. Declares whether the run analyzed a scoped subset (mode='delta', gate_authority='advisory') or fell back to a full scan (mode='full-fallback', gate_authority='gate-of-record'). In delta mode, only scoped files were analyzed; a clean delta is advisory and not a gate-of-record pass.",
+        "properties": {
+          "boundary_caveat": {
+            "description": "The fixed honesty caveat naming the in-scope-correctness hazard (cross-file taint outside the analyzed set is not computed).",
+            "type": "string"
+          },
+          "entities_requested": {
+            "description": "Number of input items in the supplied affected scope.",
+            "type": "integer"
+          },
+          "fell_back_count": {
+            "description": "Entities resolved via the spoofable qualname-locator path rather than an authoritative SEI.",
+            "type": "integer"
+          },
+          "files_analyzed": {
+            "description": "Files actually analyzed; the scoped subset in delta mode, == files_discovered in full-fallback.",
+            "type": "integer"
+          },
+          "files_discovered": {
+            "description": "Files discovered (== top-level files_scanned).",
+            "type": "integer"
+          },
+          "gate_authority": {
+            "description": "Machine-readable companion to mode: advisory in delta mode (a clean delta is not a full-tree pass), gate-of-record in full-fallback.",
+            "enum": [
+              "advisory",
+              "gate-of-record"
+            ],
+            "type": "string"
+          },
+          "in_scope_findings": {
+            "description": "Displayed (post-filter) finding count for the affected entities.",
+            "type": "integer"
+          },
+          "loomweave_used": {
+            "description": "Whether the authoritative SEI (loomweave) resolution path fired for any entity.",
+            "type": "boolean"
+          },
+          "mode": {
+            "description": "delta = a scoped file subset was analyzed; full-fallback = the scope resolved zero files (empty / all-unresolvable) so a full scan ran (fail-closed honesty).",
+            "enum": [
+              "delta",
+              "full-fallback"
+            ],
+            "type": "string"
+          },
+          "stale_sei_count": {
+            "description": "Entities whose SEI resolved to a now-absent qualname (loomweave stale vs working tree).",
+            "type": "integer"
+          },
+          "unresolved_entities": {
+            "description": "Entities that did not resolve to any file even in delta mode (scanned subset, not fallback).",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "locator": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "sei": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "gate_authority",
+          "entities_requested",
+          "files_discovered",
+          "files_analyzed",
+          "in_scope_findings",
+          "fell_back_count",
+          "stale_sei_count",
+          "unresolved_entities",
+          "loomweave_used",
+          "boundary_caveat"
+        ],
+        "type": "object"
+      },
+      "summary": {
+        "additionalProperties": false,
+        "description": "Whole-project finding counts. active+baselined+waived+judged+informational == total; unanalyzed is an overlay, not a partition member.",
+        "properties": {
+          "active": {
+            "description": "Non-suppressed defects.",
+            "type": "integer"
+          },
+          "baselined": {
+            "type": "integer"
+          },
+          "informational": {
+            "description": "All non-defect findings (facts, metrics, classifications).",
+            "type": "integer"
+          },
+          "judged": {
+            "type": "integer"
+          },
+          "total": {
+            "description": "Every finding (defects + facts/metrics).",
+            "type": "integer"
+          },
+          "unanalyzed": {
+            "description": "Files discovered but never analysed (parse errors / too-deep / missing source roots); overlay count.",
+            "type": "integer"
+          },
+          "waived": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "active",
+          "baselined",
+          "waived",
+          "judged",
+          "informational",
+          "unanalyzed"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "files_scanned",
+      "summary",
+      "gate",
+      "loomweave",
+      "filigree",
+      "loomweave_write",
+      "filigree_emit",
+      "agent_summary"
+    ],
+    "type": "object"
+  },
+  "scan_file_findings": {
+    "additionalProperties": false,
+    "description": "Success payload of the scan_file_findings tool: one-shot scan -> (optionally) emit findings to Filigree -> (optionally) promote selected active defects into tracked issues.",
+    "properties": {
+      "active_defects": {
+        "description": "Every active (non-suppressed) defect in the scan, each with its per-finding promotion and identity-attach outcome.",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "explanation": {
+              "additionalProperties": false,
+              "description": "One-hop taint provenance slice. Present only when the finding has a qualname AND the scan produced an analysis context.",
+              "properties": {
+                "immediate_tainted_callee": {
+                  "description": "The directly-called function that contributed the taint, if resolved.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "resolved_call_count": {
+                  "description": "Calls inside the function the analyzer resolved.",
+                  "type": "integer"
+                },
+                "source_boundary_qualname": {
+                  "description": "Qualname of the boundary function the taint originated from (one hop only).",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "tier_in": {
+                  "description": "Actual (untrusted) trust tier arriving at the sink.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "tier_out": {
+                  "description": "Trust tier the sink declares it returns.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "unresolved_call_count": {
+                  "description": "Calls the analyzer could not resolve.",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "tier_in",
+                "tier_out",
+                "immediate_tainted_callee",
+                "source_boundary_qualname",
+                "resolved_call_count",
+                "unresolved_call_count"
+              ],
+              "type": "object"
+            },
+            "fingerprint": {
+              "description": "Stable finding fingerprint (the promotion join key).",
+              "type": "string"
+            },
+            "identity_attach": {
+              "additionalProperties": false,
+              "description": "Outcome of binding the finding's Loomweave entity identity to the promoted issue.",
+              "properties": {
+                "attached": {
+                  "description": "Whether the entity association was successfully attached.",
+                  "type": "boolean"
+                },
+                "attempted": {
+                  "description": "Whether an identity attach was attempted at all.",
+                  "type": "boolean"
+                },
+                "binding_kind": {
+                  "description": "Whether the binding used a rename-stable SEI or a legacy locator; null when no binding was attempted.",
+                  "enum": [
+                    "sei",
+                    "locator",
+                    null
+                  ],
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "content_hash": {
+                  "description": "Entity content hash captured at attach time; null when unresolved.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "entity_id": {
+                  "description": "The entity identifier used \u2014 a 'loomweave:eid:...' SEI or a legacy locator.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "reason": {
+                  "description": "Why the attach was not attempted or was skipped; null on success.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "attempted",
+                "attached",
+                "entity_id",
+                "content_hash",
+                "binding_kind",
+                "reason"
+              ],
+              "type": "object"
+            },
+            "line": {
+              "description": "1-based start line; null when unknown.",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "message": {
+              "description": "Human-readable finding message.",
+              "type": "string"
+            },
+            "path": {
+              "description": "Repo-relative file path of the finding.",
+              "type": "string"
+            },
+            "promotion": {
+              "additionalProperties": false,
+              "description": "Per-finding Filigree promote outcome for this defect.",
+              "properties": {
+                "attempted": {
+                  "description": "Whether a promote was actually attempted (false in dry_run, when unselected, or when no filer is configured).",
+                  "type": "boolean"
+                },
+                "created": {
+                  "description": "True when the promote created a NEW issue.",
+                  "type": "boolean"
+                },
+                "disabled_reason": {
+                  "description": "Why the promote did not happen or failed soft; null on success.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "issue_id": {
+                  "description": "The Filigree issue id; null when not attempted, unreachable, or not found.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "not_found": {
+                  "description": "True when Filigree was reachable but the fingerprint is unknown to it (404).",
+                  "type": "boolean"
+                },
+                "reachable": {
+                  "description": "Whether Filigree was reachable for the promote; null when not attempted.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "selected": {
+                  "description": "Whether this finding was in the selection set.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "selected",
+                "attempted",
+                "reachable",
+                "issue_id",
+                "created",
+                "not_found",
+                "disabled_reason"
+              ],
+              "type": "object"
+            },
+            "qualname": {
+              "description": "Dotted module-qualified name of the enclosing callable; null when the finding has no callable anchor.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "rule_id": {
+              "description": "Rule that produced the finding (e.g. PY-WL-101).",
+              "type": "string"
+            },
+            "severity": {
+              "description": "Finding severity.",
+              "enum": [
+                "CRITICAL",
+                "ERROR",
+                "WARN",
+                "INFO",
+                "NONE"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "fingerprint",
+            "rule_id",
+            "severity",
+            "message",
+            "qualname",
+            "path",
+            "line",
+            "promotion",
+            "identity_attach"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "files_scanned": {
+        "description": "Number of files the scan analyzed.",
+        "type": "integer"
+      },
+      "filigree_emit": {
+        "additionalProperties": false,
+        "description": "Outcome of bulk-emitting scan findings to Filigree (runs only when findings were selected and an emitter is configured).",
+        "properties": {
+          "configured": {
+            "description": "Whether a Filigree emitter is configured for this server.",
+            "type": "boolean"
+          },
+          "created": {
+            "description": "Findings newly created in Filigree.",
+            "type": "integer"
+          },
+          "disabled_reason": {
+            "description": "Why the emit failed soft \u2014 the discriminated 401/403-vs-5xx-vs-transport ladder ('not configured', 'filigree rejected the token (401)...', 'filigree unreachable'). null means success OR no emit was attempted (dry-run / nothing selected) \u2014 read `reachable` to tell them apart (null = no attempt).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "failed": {
+            "description": "Count of findings that did NOT land in Filigree (derived from `failures`). 0 here is earned from real per-finding records, not assumed \u2014 see `failures` for which and why.",
+            "type": "integer"
+          },
+          "failures": {
+            "description": "PDR-0023 honesty surface: one record per finding that failed to land, so a PARTIAL ingest ('M of N emitted, K rejected because R') is distinguishable from a clean emit ('all N emitted'). Empty on a clean run \u2014 but earned, not hardwired.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "cause": {
+                  "description": "weft-reason carrier `cause`: the why (Filigree's detail, else the domain reason). Always present on a failure (a failure is never clean).",
+                  "type": "string"
+                },
+                "detail": {
+                  "description": "Filigree's per-finding reject explanation.",
+                  "type": "string"
+                },
+                "fingerprint": {
+                  "description": "The wardline join key for the failed finding (absent when the failure is chunk-wide and not attributable to one finding).",
+                  "type": "string"
+                },
+                "fix": {
+                  "description": "weft-reason carrier `fix` (MANDATORY on a non-clean carrier): the remedial action.",
+                  "type": "string"
+                },
+                "reason": {
+                  "description": "Machine-readable failure case: rejected (Filigree refused this finding), validation_error (malformed body), scheme_mismatch (fingerprint-scheme drift \u2014 a join-miss, not a true-negative), partial (the whole chunk was rejected at the protocol layer, so the cause is the request not the body).",
+                  "enum": [
+                    "rejected",
+                    "validation_error",
+                    "scheme_mismatch",
+                    "partial"
+                  ],
+                  "type": "string"
+                },
+                "reason_class": {
+                  "description": "weft-reason (G1): the canonical reason_class this failure maps to (one of the closed 11 in contracts/weft-reason-vocab.json). validation_error maps to rejected; the domain term stays in `reason`/`cause`.",
+                  "enum": [
+                    "rejected",
+                    "scheme_mismatch",
+                    "partial"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "reason",
+                "detail",
+                "reason_class",
+                "cause",
+                "fix"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "reachable": {
+            "description": "Whether Filigree was reachable for the emit; null when no emit was attempted.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "updated": {
+            "description": "Findings updated in Filigree.",
+            "type": "integer"
+          },
+          "warnings": {
+            "description": "Non-fatal emit warnings.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "configured",
+          "reachable",
+          "created",
+          "updated",
+          "failed",
+          "failures",
+          "warnings",
+          "disabled_reason"
+        ],
+        "type": "object"
+      },
+      "gate": {
+        "additionalProperties": false,
+        "description": "The pass/fail gate decision for this scan (a trip is data, not an error).",
+        "properties": {
+          "exit_class": {
+            "description": "CLI-equivalent exit class: 0 clean, 1 gate tripped (2 is reserved for tool errors and never appears here).",
+            "type": "integer"
+          },
+          "fail_on": {
+            "description": "The severity threshold the gate evaluated (e.g. 'ERROR'); null when no threshold was given.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tripped": {
+            "description": "Whether the gate tripped.",
+            "type": "boolean"
+          },
+          "verdict": {
+            "description": "NOT_EVALUATED = no authoritative severity threshold judged the full gate population; PASSED/FAILED = configured gate(s) judged authoritatively. Never reads a bare scan or advisory delta as a clean pass.",
+            "enum": [
+              "NOT_EVALUATED",
+              "PASSED",
+              "FAILED"
+            ],
+            "type": "string"
+          },
+          "would_trip_at": {
+            "description": "Highest severity at which the gate WOULD trip on the evaluated population; null when nothing would trip.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "tripped",
+          "fail_on",
+          "exit_class",
+          "verdict",
+          "would_trip_at"
+        ],
+        "type": "object"
+      },
+      "mode": {
+        "description": "Selection mode that ran: dry_run (nothing promoted), all_active (every active defect selected), or fingerprints (explicit selection).",
+        "enum": [
+          "dry_run",
+          "all_active",
+          "fingerprints"
+        ],
+        "type": "string"
+      },
+      "selected_count": {
+        "description": "How many selected fingerprints matched known active defects.",
+        "type": "integer"
+      },
+      "summary": {
+        "additionalProperties": false,
+        "description": "Finding counts by suppression class for the whole scan.",
+        "properties": {
+          "active": {
+            "description": "Non-suppressed defects.",
+            "type": "integer"
+          },
+          "baselined": {
+            "description": "Defects suppressed by the baseline.",
+            "type": "integer"
+          },
+          "informational": {
+            "description": "Informational (non-gating) findings.",
+            "type": "integer"
+          },
+          "judged": {
+            "description": "Defects suppressed by judge FALSE_POSITIVE records.",
+            "type": "integer"
+          },
+          "total": {
+            "description": "Every finding (defects + facts/metrics).",
+            "type": "integer"
+          },
+          "unanalyzed": {
+            "description": "Files discovered but never analyzed (benign no-module skips excluded).",
+            "type": "integer"
+          },
+          "waived": {
+            "description": "Defects suppressed by waivers.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "active",
+          "baselined",
+          "waived",
+          "judged",
+          "informational",
+          "unanalyzed"
+        ],
+        "type": "object"
+      },
+      "unknown_fingerprints": {
+        "description": "Explicitly-requested fingerprints that are not among the scan's active defects.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "mode",
+      "files_scanned",
+      "summary",
+      "gate",
+      "filigree_emit",
+      "active_defects",
+      "selected_count",
+      "unknown_fingerprints"
+    ],
+    "type": "object"
+  },
+  "scan_job_cancel": {
+    "additionalProperties": true,
+    "description": "File-backed scan-job status. Non-terminal jobs include heartbeat/pid/progress; terminal jobs include summary/gate/artifacts when the worker reached them.",
+    "properties": {
+      "artifacts": {
+        "type": "object"
+      },
+      "error": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "failure_kind": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "heartbeat": {
+        "type": "string"
+      },
+      "job_id": {
+        "type": "string"
+      },
+      "phase": {
+        "type": "string"
+      },
+      "pid": {
+        "type": "integer"
+      },
+      "progress": {
+        "type": "object"
+      },
+      "request": {
+        "type": "object"
+      },
+      "status": {
+        "enum": [
+          "queued",
+          "running",
+          "running_stale",
+          "completed",
+          "completed_with_enrichment_failure",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "job_id",
+      "status",
+      "phase",
+      "progress",
+      "heartbeat",
+      "artifacts",
+      "failure_kind",
+      "error",
+      "request"
+    ],
+    "type": "object"
+  },
+  "scan_job_start": {
+    "additionalProperties": true,
+    "description": "File-backed scan-job status. Non-terminal jobs include heartbeat/pid/progress; terminal jobs include summary/gate/artifacts when the worker reached them.",
+    "properties": {
+      "artifacts": {
+        "type": "object"
+      },
+      "error": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "failure_kind": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "heartbeat": {
+        "type": "string"
+      },
+      "job_id": {
+        "type": "string"
+      },
+      "phase": {
+        "type": "string"
+      },
+      "pid": {
+        "type": "integer"
+      },
+      "progress": {
+        "type": "object"
+      },
+      "request": {
+        "type": "object"
+      },
+      "status": {
+        "enum": [
+          "queued",
+          "running",
+          "running_stale",
+          "completed",
+          "completed_with_enrichment_failure",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "job_id",
+      "status",
+      "phase",
+      "progress",
+      "heartbeat",
+      "artifacts",
+      "failure_kind",
+      "error",
+      "request"
+    ],
+    "type": "object"
+  },
+  "scan_job_status": {
+    "additionalProperties": true,
+    "description": "File-backed scan-job status. Non-terminal jobs include heartbeat/pid/progress; terminal jobs include summary/gate/artifacts when the worker reached them.",
+    "properties": {
+      "artifacts": {
+        "type": "object"
+      },
+      "error": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "failure_kind": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "heartbeat": {
+        "type": "string"
+      },
+      "job_id": {
+        "type": "string"
+      },
+      "phase": {
+        "type": "string"
+      },
+      "pid": {
+        "type": "integer"
+      },
+      "progress": {
+        "type": "object"
+      },
+      "request": {
+        "type": "object"
+      },
+      "status": {
+        "enum": [
+          "queued",
+          "running",
+          "running_stale",
+          "completed",
+          "completed_with_enrichment_failure",
+          "failed",
+          "cancelled"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "job_id",
+      "status",
+      "phase",
+      "progress",
+      "heartbeat",
+      "artifacts",
+      "failure_kind",
+      "error",
+      "request"
+    ],
+    "type": "object"
+  },
+  "verify_attestation": {
+    "additionalProperties": false,
+    "description": "Result of verifying an attestation bundle: signature check (always, offline) plus optional reproducibility re-derivation against the current tree.",
+    "properties": {
+      "mismatches": {
+        "description": "Top-level payload keys that differ between the recorded and re-derived payloads. Empty unless reproduced is false.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "note": {
+        "description": "Fixed caveat: reproducibility holds against the RECORDED commit; a mismatch may mean the tree moved, not tamper.",
+        "type": "string"
+      },
+      "reproduced": {
+        "description": "null when reproduce was not requested (or no root); true when the re-derived payload's canonical bytes equal the recorded payload's; false otherwise. A false may mean the tree moved on, not tamper.",
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "signature_valid": {
+        "description": "True iff the recomputed HMAC over the recorded payload matches the stored signature (schema tag, alg, and key_id must all match too).",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "signature_valid",
+      "reproduced",
+      "mismatches",
+      "note"
+    ],
+    "type": "object"
+  },
+  "waiver_add": {
+    "additionalProperties": false,
+    "description": "Success payload of the wardline MCP `waiver_add` tool: the waiver that now covers the fingerprint (newly added, or the pre-existing one when a waiver for the fingerprint was already present). When an inline entity_symbol was supplied but did NOT resolve to a SEI, the waiver is NOT written and only {fingerprint, created:false, unresolved_input} is returned (never an unbound-but-looks-bound record).",
+    "properties": {
+      "already_exists": {
+        "description": "True when a waiver for this fingerprint already existed and the returned fields describe that existing waiver; false when this call added a new waiver. Absent on an unresolved_input refusal.",
+        "type": "boolean"
+      },
+      "binding_kind": {
+        "description": "Whether the stored binding is a rename-stable SEI or a legacy locator; null when no entity binding was supplied.",
+        "enum": [
+          "sei",
+          "locator",
+          null
+        ],
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "created": {
+        "description": "Present only on an unresolved_input refusal: always false (the waiver was NOT written).",
+        "type": "boolean"
+      },
+      "entity_locator": {
+        "description": "Human-readable locator for the bound entity (e.g. 'python:function:pkg.mod.fn'); null when no inline entity binding was supplied.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "entity_sei": {
+        "description": "The rename-surviving Loomweave SEI bound to this waiver's code entity, or the opaque entity_id supplied verbatim; null when no inline entity binding was supplied.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "expires": {
+        "description": "Waiver expiry as an ISO date (YYYY-MM-DD). Null only when a pre-existing waiver loaded from the waivers file carries no expiry (the tool itself requires expires on new waivers). Absent on an unresolved_input refusal.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "fingerprint": {
+        "description": "The finding fingerprint the waiver covers.",
+        "type": "string"
+      },
+      "reason": {
+        "description": "The waiver's reason. When already_exists=true this is the EXISTING waiver's reason, which may differ from the one passed in this call. Absent on an unresolved_input refusal (nothing was written).",
+        "type": "string"
+      },
+      "unresolved_input": {
+        "additionalProperties": false,
+        "description": "Present only when an inline entity_symbol was supplied but did not resolve to a SEI. The waiver was NOT written. Canonical weft-reason carrier.",
+        "properties": {
+          "cause": {
+            "description": "Why the supplied entity reference did not resolve.",
+            "type": "string"
+          },
+          "fix": {
+            "description": "The actionable next step to make it resolve.",
+            "type": "string"
+          },
+          "reason_class": {
+            "enum": [
+              "unresolved_input"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason_class",
+          "cause",
+          "fix"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "fingerprint"
+    ],
+    "type": "object"
+  }
+}

@@ -19,11 +19,10 @@ from wardline.core.delta_scope import (
 )
 from wardline.core.emit import JsonlSink
 from wardline.core.errors import WardlineError
+from wardline.core.federation_status import filigree_emit_status, loomweave_write_status
 from wardline.core.filigree_emit import (
     EmitResult,
     FiligreeEmitter,
-    filigree_destination,
-    filigree_disabled_reason,
     filigree_url_project,
     redact_url_for_diagnostics,
 )
@@ -422,20 +421,29 @@ def scan(
                 scanned_paths=result.scanned_paths,
                 mark_unseen=False if delta_mode else None,
             )
-        # Loomweave taint-store write is fail-soft: an outage/403 returns a not-reachable
-        # WriteResult (reported below); a LoomweaveError (missing extra, 4xx, bad scheme)
-        # is a WardlineError → caught here → exit 2, exactly as Filigree errors do.
+        # Loomweave taint-store write is FULLY fail-soft, at parity with the MCP scan tool
+        # (mcp/server.py): an outage/403 returns a not-reachable WriteResult, and a
+        # LoomweaveError (missing [loomweave] extra, 4xx, bad scheme) is caught right here
+        # and degraded to the same not-reachable WriteResult (reported below). The write is
+        # a best-effort enrichment side-channel, never load-bearing for the gate — it must
+        # not change the scan's exit code. This matters because the loomweave URL can be
+        # AUTO-DISCOVERED from a sibling's published ephemeral port (ADR-044) with no flag,
+        # so a base install without blake3 must not have its gate killed by an optional dep.
         if loomweave_url is not None:
-            from wardline.loomweave.client import LoomweaveClient
+            from wardline.core.errors import LoomweaveError
+            from wardline.loomweave.client import LoomweaveClient, WriteResult
             from wardline.loomweave.config import load_loomweave_token, resolve_project_name
             from wardline.loomweave.write import write_facts_to_loomweave
 
-            client = LoomweaveClient(
-                loomweave_url,
-                secret=load_loomweave_token(path),
-                project=resolve_project_name(path),
-            )
-            loomweave_result = write_facts_to_loomweave(result, path, client)
+            try:
+                client = LoomweaveClient(
+                    loomweave_url,
+                    secret=load_loomweave_token(path),
+                    project=resolve_project_name(path),
+                )
+                loomweave_result = write_facts_to_loomweave(result, path, client)
+            except LoomweaveError as exc:
+                loomweave_result = WriteResult(reachable=False, disabled_reason=str(exc))
         if fmt == "agent-summary":
             from wardline.core.agent_summary import build_agent_summary
 
@@ -653,54 +661,13 @@ def _build_sei_resolver(loomweave_url: str | None, root: Path) -> SeiResolver | 
 
 
 def _filigree_status(result: EmitResult | None) -> dict[str, object]:
-    if result is None:
-        return {
-            "configured": False,
-            "reachable": None,
-            "created": 0,
-            "updated": 0,
-            "failed": 0,
-            "failures": [],
-            "warnings": [],
-            "disabled_reason": "not configured",
-            "destination": filigree_destination(None),
-        }
-    return {
-        "configured": True,
-        "reachable": result.reachable,
-        "created": result.created,
-        "updated": result.updated,
-        "failed": result.failed,
-        # PDR-0023: per-finding reject reasons so a partial ingest is not flattened to a count.
-        "failures": [f.to_wire() for f in result.failures],
-        "warnings": list(result.warnings),
-        "disabled_reason": filigree_disabled_reason(
-            reachable=result.reachable,
-            status=result.status,
-            token_sent=result.token_sent,
-            url=result.url,
-        ),
-        # N1 / C-10(a): name where findings went so a wrong-project write is visible.
-        "destination": filigree_destination(result.url),
-    }
+    # Canonical builder (core/federation_status). configured is derived from result-is-None
+    # because the CLI only ever has a result when an emitter was configured.
+    return filigree_emit_status(result, configured=result is not None, include_destination=True)
 
 
 def _loomweave_status(result: object | None) -> dict[str, object]:
-    if result is None:
-        return {
-            "configured": False,
-            "reachable": None,
-            "written": 0,
-            "unresolved_qualnames": [],
-            "disabled_reason": "not configured",
-        }
-    return {
-        "configured": True,
-        "reachable": getattr(result, "reachable", False),
-        "written": getattr(result, "written", 0),
-        "unresolved_qualnames": list(getattr(result, "unresolved_qualnames", ())),
-        "disabled_reason": getattr(result, "disabled_reason", None),
-    }
+    return loomweave_write_status(result)
 
 
 def _redact_url_for_log(url: str | None) -> str:

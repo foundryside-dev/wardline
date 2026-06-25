@@ -23,10 +23,16 @@ from wardline.core.baseline import generate_baseline, load_baseline
 from wardline.core.delta_scope import ScopeParseError, load_affected_scope, parse_affected_scope
 from wardline.core.errors import WardlineError
 from wardline.core.explain import explain_taint_result, explanation_from_context, explanation_to_dict
+from wardline.core.federation_status import (
+    SCAN_FILE_FINDINGS_FILIGREE_EMIT_SCHEMA,
+    filigree_emit_status_from_block,
+    filigree_emit_status_schema,
+    loomweave_write_status_from_block,
+    loomweave_write_status_schema,
+)
 from wardline.core.filigree_emit import (
     FiligreeEmitter,
     filigree_destination,
-    filigree_disabled_reason,
     redact_url_for_diagnostics,
 )
 from wardline.core.finding import Finding, Severity
@@ -130,37 +136,13 @@ def _emit_filigree(
 
 
 def _filigree_emit_status(block: dict[str, Any] | None) -> dict[str, Any]:
-    if block is None:
-        return {
-            "configured": False,
-            "reachable": None,
-            "created": 0,
-            "updated": 0,
-            "failed": 0,
-            "failures": [],
-            "warnings": [],
-            "disabled_reason": "not configured",
-            "destination": filigree_destination(None),
-        }
-    disabled_reason = filigree_disabled_reason(
-        reachable=bool(block.get("reachable")),
-        status=block.get("status"),
-        token_sent=bool(block.get("token_sent")),
-        url=block.get("url"),
-    )
-    return {"configured": True, "disabled_reason": disabled_reason, **block}
+    # Canonical builder (core/federation_status): the MCP block-based shape, carrying the
+    # discriminated transport detail and disabled_reason at position two.
+    return filigree_emit_status_from_block(block)
 
 
 def _loomweave_write_status(block: dict[str, Any] | None) -> dict[str, Any]:
-    if block is None:
-        return {
-            "configured": False,
-            "reachable": None,
-            "written": 0,
-            "unresolved_qualnames": [],
-            "disabled_reason": "not configured",
-        }
-    return {"configured": True, **block}
+    return loomweave_write_status_from_block(block)
 
 
 def _file_finding(args: dict[str, Any], root: Path, filer: Any, loomweave: Any = None) -> dict[str, Any]:
@@ -411,91 +393,9 @@ _SCAN_FILE_FINDINGS_OUTPUT_SCHEMA: dict[str, Any] = {
             "required": ["tripped", "fail_on", "exit_class", "verdict", "would_trip_at"],
             "additionalProperties": False,
         },
-        "filigree_emit": {
-            "type": "object",
-            "description": "Outcome of bulk-emitting scan findings to Filigree (runs only when findings were selected "
-            "and an emitter is configured).",
-            "properties": {
-                "configured": {
-                    "type": "boolean",
-                    "description": "Whether a Filigree emitter is configured for this server.",
-                },
-                "reachable": {
-                    "type": ["boolean", "null"],
-                    "description": "Whether Filigree was reachable for the emit; null when no emit was attempted.",
-                },
-                "created": {"type": "integer", "description": "Findings newly created in Filigree."},
-                "updated": {"type": "integer", "description": "Findings updated in Filigree."},
-                "failed": {
-                    "type": "integer",
-                    "description": "Count of findings that did NOT land in Filigree (derived from `failures`). "
-                    "0 here is earned from real per-finding records, not assumed — see `failures` for which and why.",
-                },
-                "failures": {
-                    "type": "array",
-                    "description": "PDR-0023 honesty surface: one record per finding that failed to land, so a "
-                    "PARTIAL ingest ('M of N emitted, K rejected because R') is distinguishable from a clean emit "
-                    "('all N emitted'). Empty on a clean run — but earned, not hardwired.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "reason": {
-                                "type": "string",
-                                "enum": ["rejected", "validation_error", "scheme_mismatch", "partial"],
-                                "description": "Machine-readable failure case: rejected (Filigree refused this "
-                                "finding), validation_error (malformed body), scheme_mismatch (fingerprint-scheme "
-                                "drift — a join-miss, not a true-negative), partial (the whole chunk was rejected at "
-                                "the protocol layer, so the cause is the request not the body).",
-                            },
-                            "detail": {"type": "string", "description": "Filigree's per-finding reject explanation."},
-                            "reason_class": {
-                                "type": "string",
-                                "enum": ["rejected", "scheme_mismatch", "partial"],
-                                "description": "weft-reason (G1): the canonical reason_class this failure maps to "
-                                "(one of the closed 11 in contracts/weft-reason-vocab.json). validation_error maps to "
-                                "rejected; the domain term stays in `reason`/`cause`.",
-                            },
-                            "cause": {
-                                "type": "string",
-                                "description": "weft-reason carrier `cause`: the why (Filigree's detail, else the "
-                                "domain reason). Always present on a failure (a failure is never clean).",
-                            },
-                            "fix": {
-                                "type": "string",
-                                "description": "weft-reason carrier `fix` (MANDATORY on a non-clean carrier): the "
-                                "remedial action.",
-                            },
-                            "fingerprint": {
-                                "type": "string",
-                                "description": "The wardline join key for the failed finding (absent when the "
-                                "failure is chunk-wide and not attributable to one finding).",
-                            },
-                        },
-                        "required": ["reason", "detail", "reason_class", "cause", "fix"],
-                        "additionalProperties": False,
-                    },
-                },
-                "warnings": {"type": "array", "items": {"type": "string"}, "description": "Non-fatal emit warnings."},
-                "disabled_reason": {
-                    "type": ["string", "null"],
-                    "description": "Why the emit failed soft — the discriminated 401/403-vs-5xx-vs-transport "
-                    "ladder ('not configured', 'filigree rejected the token (401)...', 'filigree unreachable'). "
-                    "null means success OR no emit was attempted (dry-run / nothing selected) — read `reachable` "
-                    "to tell them apart (null = no attempt).",
-                },
-            },
-            "required": [
-                "configured",
-                "reachable",
-                "created",
-                "updated",
-                "failed",
-                "failures",
-                "warnings",
-                "disabled_reason",
-            ],
-            "additionalProperties": False,
-        },
+        # ONE schema source (core/federation_status): the no-destination, no-transport-detail
+        # variant for the self-contained scan_file_findings schema (no $defs to $ref).
+        "filigree_emit": SCAN_FILE_FINDINGS_FILIGREE_EMIT_SCHEMA,
         "active_defects": {
             "type": "array",
             "description": "Every active (non-suppressed) defect in the scan, each with its per-finding promotion and "
@@ -1694,61 +1594,10 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "additionalProperties": False,
             },
         },
-        "filigree_emit_status": {
-            "type": "object",
-            "description": "Normalized Filigree emit status (always an object; configured:false when no emitter).",
-            "properties": {
-                "configured": {"type": "boolean"},
-                "reachable": {"type": ["boolean", "null"], "description": "null when not configured."},
-                "created": {"type": "integer"},
-                "updated": {"type": "integer"},
-                "failed": {
-                    "type": "integer",
-                    "description": "Count of un-ingested findings (derived from `failures`); 0 is earned, not assumed.",
-                },
-                "failures": {"$ref": "#/$defs/filigree_emit_failures"},
-                "warnings": {"type": "array", "items": {"type": "string"}},
-                "disabled_reason": {
-                    "type": ["string", "null"],
-                    "description": "Actionable reason (auth-rejected vs server error vs unreachable vs not "
-                    "configured), or null when reached.",
-                },
-                "destination": {"$ref": "#/$defs/filigree_destination"},
-                "status": {
-                    "type": ["integer", "null"],
-                    "description": "HTTP error status for soft failures; absent when not configured.",
-                },
-                "auth_rejected": {"type": "boolean", "description": "Absent when not configured."},
-                "token_sent": {"type": "boolean", "description": "Absent when not configured."},
-                "url": {"type": ["string", "null"], "description": "Absent when not configured."},
-            },
-            "required": [
-                "configured",
-                "reachable",
-                "created",
-                "updated",
-                "failed",
-                "failures",
-                "warnings",
-                "disabled_reason",
-                "destination",
-            ],
-            "additionalProperties": False,
-        },
-        "loomweave_write_status": {
-            "type": "object",
-            "description": "Normalized Loomweave taint-fact write status (always an object; configured:false when no "
-            "client).",
-            "properties": {
-                "configured": {"type": "boolean"},
-                "reachable": {"type": ["boolean", "null"], "description": "null when not configured."},
-                "written": {"type": "integer"},
-                "unresolved_qualnames": {"type": "array", "items": {"type": "string"}},
-                "disabled_reason": {"type": ["string", "null"]},
-            },
-            "required": ["configured", "reachable", "written", "unresolved_qualnames", "disabled_reason"],
-            "additionalProperties": False,
-        },
+        # ONE schema source (core/federation_status): the canonical, transport-detailed
+        # filigree_emit + loomweave_write $defs every scan-output $ref resolves to.
+        "filigree_emit_status": filigree_emit_status_schema(include_transport_detail=True),
+        "loomweave_write_status": loomweave_write_status_schema(),
         "location": {
             "type": "object",
             "properties": {

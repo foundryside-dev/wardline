@@ -1,0 +1,50 @@
+{
+  "contract": "weft/filigree-federation-bearer-token",
+  "_doc": "Wardline-AUTHORED vendored contract for filigree's WEFT_FEDERATION_TOKEN inbound bearer-token auth gate. Filigree is the PRODUCER/authority for this contract (it gates /api/weft/* + classic federation-write aliases + the dashboard /mcp transport); wardline is a CONSUMER (it RESOLVES a federation token and PRESENTS it as 'Authorization: Bearer <token>' on emit + verify_token). Filigree publishes NO machine-readable contract fixture: the contract lives in filigree source CONSTANTS (federation_token.py) + middleware LOGIC (dashboard_auth.py) + ADR-018. This file is wardline's vendored, byte-pinned restatement of the values + behaviour wardline depends on. The Layer-1 byte-pin (VENDORED_BLOB_SHA in the oracle test) freezes these bytes; the Layer-2 filigree_token_drift recheck re-reads the sibling filigree source and asserts the SUBSTANTIVE values below still match (it is intentionally NOT byte-exact against a sibling fixture, because filigree has none).",
+  "_provenance": {
+    "source_repo": "filigree",
+    "source_commit": "f59e423",
+    "source_files": [
+      "src/filigree/federation_token.py (git blob 6b90251071f8c9eff56e9a35972044d3fdfcd664)",
+      "src/filigree/dashboard_auth.py",
+      "docs/architecture/decisions/ADR-018-weft-bearer-token-auth.md"
+    ],
+    "vendored_on": "2026-06-25",
+    "vendored_by": "wardline (consumer side restatement; filigree is the authority)"
+  },
+  "env": {
+    "canonical_env_var": "WEFT_FEDERATION_TOKEN",
+    "deprecated_aliases": ["FILIGREE_FEDERATION_API_TOKEN", "FILIGREE_API_TOKEN"],
+    "read_order": ["WEFT_FEDERATION_TOKEN", "FILIGREE_FEDERATION_API_TOKEN", "FILIGREE_API_TOKEN"],
+    "empty_is_off": true,
+    "_note": "An env var set but blank/whitespace is skipped (federation auth not enabled from it). First non-empty wins, canonical first."
+  },
+  "token_file": {
+    "filename": "federation_token",
+    "project_store_relpath": ".weft/filigree/federation_token",
+    "home_store_relpath": ".config/filigree/federation_token",
+    "_note": "Tier-2 auto-minted persistence. A sibling on the same host reads the file back from the .weft/ subtree; cross-host deployments use the env var (tier 1). The file is the only locally-readable mint wardline probes during doctor --repair."
+  },
+  "header": {
+    "name": "Authorization",
+    "scheme": "Bearer",
+    "scheme_case_insensitive": true,
+    "format": "Bearer <token>",
+    "split_rule": "partition on the first single space; scheme compared case-insensitively; empty token after the scheme is rejected",
+    "example": "Authorization: Bearer <token>"
+  },
+  "status_ladder": {
+    "_doc": "Auth runs in middleware BEFORE body validation, so the status discriminates auth outcome independent of payload. This is the exact ladder wardline's FiligreeEmitter.verify_token() consumes.",
+    "missing_header_401": "no Authorization header, or a non-Bearer scheme, or an empty token => 401 PERMISSION + WWW-Authenticate: Bearer (token MISSING/MALFORMED)",
+    "wrong_token_401": "a syntactically-valid Bearer whose value does not match the resolved token => 401 PERMISSION + WWW-Authenticate: Bearer (token REJECTED)",
+    "forbidden_403": "token present but lacks access / blocked => 403 (a token won't help)",
+    "authed_bad_body_400": "auth PASSED then body validation rejected a deliberately-incomplete sentinel body (e.g. b'{}') => 400 (proves the bearer was accepted)",
+    "authed_ok_2xx": "auth PASSED and the body was accepted => 2xx"
+  },
+  "consumer_verdict": {
+    "_doc": "How a wardline CONSUMER (FiligreeEmitter.verify_token / emit) MUST interpret the status ladder. accepted == bearer passed the middleware auth check.",
+    "accepted_statuses": [400, 200, 201, 202, 204],
+    "rejected_statuses": [401, 403],
+    "inconclusive_statuses_unreachable": "any other status (5xx outage, 404 wrong-route, 3xx redirect) did NOT exercise the bearer check => reachable=False, accepted=False (never pin a token on an unverified probe)"
+  }
+}

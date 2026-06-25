@@ -68,8 +68,16 @@ def _write_loomweave_config(config: Path) -> None:
     )
 
 
+# Loomweave's tracing layer emits ANSI SGR colour codes around the structured
+# ``bind=127.0.0.1:PORT`` field (e.g. ``bind\x1b[0m\x1b[2m=\x1b[0m127.0.0.1:40299``
+# in loomweave >=1.3), which split the literal ``bind=`` apart. Strip ANSI escape
+# sequences before matching so the port parse survives colourised output.
+_ANSI_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
 def _base_url_from_loomweave_log(text: str) -> str | None:
-    match = re.search(r"\bbind=127\.0\.0\.1:(?P<port>[1-9][0-9]*)\b", text)
+    clean = _ANSI_SGR_RE.sub("", text)
+    match = re.search(r"\bbind=127\.0\.0\.1:(?P<port>[1-9][0-9]*)\b", clean)
     return f"http://127.0.0.1:{match.group('port')}" if match else None
 
 
@@ -397,6 +405,74 @@ def test_taint_read_by_sei_against_live_loomweave(loomweave_server: tuple[Path, 
     bogus = client.batch_get_by_sei(["loomweave:eid:0000000000000000000000000000dead"])
     assert bogus is not None and len(bogus) == 1
     assert bogus[0].exists is False
+
+
+def test_qualname_parity_against_live_loomweave(loomweave_server: tuple[Path, str]) -> None:
+    """Fail-closed LIVE qualname-parity oracle (the seam's missing leg).
+
+    The hermetic byte-frozen corpus + the ``loomweave_drift`` byte-pin recheck catch
+    *frozen-corpus* drift; they cannot catch a LIVE loomweave whose qualname dialect
+    has moved out from under the vendored fixture. This asserts that the qualname
+    Wardline MINTS from its OWN producer path (``module_dotted_name`` + the symbol's
+    ``__qualname__``) is exactly what a real ``loomweave serve`` accepts and echoes
+    back as the canonical segment-3 of its locator — so the skip-clean drift recheck
+    is backed by a fail-closed live assertion at the release gate.
+
+    Coverage scope — what IS and is NOT exercised live: only the MODULE half of the
+    qualname is computed by Wardline's normalization (``module_dotted_name("svc.py")``
+    — the src-strip / .py-drop / __init__-collapse dialect, the part most likely to
+    drift). The symbol-suffix half (``read_raw`` / ``leaky``) is a hardcoded literal,
+    trivial-by-construction, NOT minted from a symbol's ``__qualname__``; the
+    ``<locals>`` / nested-class ``reconstruct_qualname`` machinery is therefore NOT
+    exercised by this live oracle (it is pinned offline by the vendored corpus
+    vectors). ``resolve`` must report the composed qualnames RESOLVED
+    (``unresolved == []``) — the entities provably exist in the analyzed fixture, so
+    an unresolved qualname is live module-dialect drift and FAILS (never a fall-back
+    to a literal). The byte-equality of segment-3 is the belt-and-suspenders leg in
+    case loomweave ever resolved fuzzily; for the symbol suffix it is trivially true
+    by construction (same literal on both sides) — the load-bearing live signal is
+    the module-dialect half."""
+    proj, url = loomweave_server
+    from wardline.core.qualname import module_dotted_name
+    from wardline.loomweave.client import LoomweaveClient
+    from wardline.loomweave.config import load_loomweave_token, resolve_project_name
+
+    client = LoomweaveClient(url, secret=load_loomweave_token(proj), project=resolve_project_name(proj))
+
+    # Wardline MINTS the qualnames from its own producer path. svc.py defines two
+    # top-level functions; their qualname is f"{module}.{__qualname__}", and the
+    # module dialect (one src/-strip, .py-drop, __init__-collapse) is computed here.
+    module = module_dotted_name("svc.py")
+    assert module == "svc"  # the producer dialect, exercised — not assumed
+    wardline_qualnames = [f"{module}.read_raw", f"{module}.leaky"]
+
+    rr = client.resolve(wardline_qualnames)
+    # Reachable (sibling is up by fixture contract); a None here would be an outage,
+    # which under the loomweave_e2e marker fails closed via the conftest skip-arm only
+    # if it skipped — here it must be a live answer, so assert non-None outright.
+    assert rr is not None, "live loomweave resolve was unreachable mid-fixture"
+
+    # The parity signal: EVERY Wardline-minted qualname resolves. A populated
+    # `unresolved` is the live dialect drift alarm firing — fail closed, do not skip.
+    assert rr.unresolved == [], (
+        f"live loomweave did not resolve Wardline-minted qualnames {rr.unresolved!r} — "
+        "the qualname dialects have drifted (Wardline producer vs live loomweave authority)"
+    )
+    assert set(rr.resolved) == set(wardline_qualnames), (
+        f"resolved keys {sorted(rr.resolved)} != minted qualnames {sorted(wardline_qualnames)}"
+    )
+
+    # Belt-and-suspenders: loomweave's locator carries its AUTHORITATIVE canonical
+    # qualified name in segment-3 ({plugin}:{kind}:{qualified_name}); it must byte-equal
+    # the Wardline-minted qualname, proving the dialects agree character-for-character.
+    for qn in wardline_qualnames:
+        locator = rr.resolved[qn]
+        parts = locator.split(":", 2)
+        assert len(parts) == 3, f"unexpected locator shape for {qn!r}: {locator!r}"
+        assert parts[2] == qn, (
+            f"loomweave canonical qualname {parts[2]!r} (segment-3 of {locator!r}) "
+            f"!= Wardline-minted qualname {qn!r} — live qualname-dialect drift"
+        )
 
 
 def test_published_ephemeral_port_resolves_live_url(loomweave_server: tuple[Path, str]) -> None:

@@ -19,13 +19,12 @@ import math
 import secrets
 import urllib.error
 import urllib.parse
-import urllib.request
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from wardline.core.errors import LoomweaveError
-from wardline.core.http import read_response_text
+from wardline.core.http import WeftHttp
 from wardline.loomweave._hmac import sign_request
 
 logger = logging.getLogger(__name__)
@@ -48,20 +47,22 @@ class Transport(Protocol):
 
 class UrllibTransport:
     def __init__(self, timeout: float = 30.0) -> None:
-        self._timeout = timeout
+        # WeftHttp keeps this client's exact scheme-error wording (--loomweave-url) and the
+        # HTTPError -> Response (status preserved) conversion. URLError/OSError still
+        # propagate to _send(), which fail-softs (outage -> None). An empty body is sent as
+        # data=None (no request body) exactly as before — converted at the call site below.
+        self._http = WeftHttp(
+            timeout=timeout,
+            allowed_schemes=_ALLOWED_SCHEMES,
+            scheme_error=lambda scheme, url: LoomweaveError(
+                f"--loomweave-url must use http or https; got scheme {scheme!r} in {url!r}"
+            ),
+        )
 
     def request(self, method: str, url: str, body: bytes, headers: Mapping[str, str]) -> Response:
-        scheme = urllib.parse.urlsplit(url).scheme.lower()
-        if scheme not in _ALLOWED_SCHEMES:
-            raise LoomweaveError(f"--loomweave-url must use http or https; got scheme {scheme!r} in {url!r}")
         data = body if body else None
-        req = urllib.request.Request(url, data=data, headers=dict(headers), method=method)
-        try:
-            with urllib.request.urlopen(req, timeout=self._timeout) as resp:  # noqa: S310
-                return Response(status=resp.status, body=read_response_text(resp))
-        except urllib.error.HTTPError as exc:
-            with exc:
-                return Response(status=exc.code, body=read_response_text(exc))
+        result = self._http.fetch(method, url, body=data, headers=headers)
+        return Response(status=result.status, body=result.body)
 
 
 @dataclass(frozen=True, slots=True)

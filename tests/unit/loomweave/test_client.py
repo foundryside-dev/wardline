@@ -167,6 +167,16 @@ def test_urllib_transport_bounds_success_body(monkeypatch) -> None:
     assert resp.body.endswith("[truncated]")
 
 
+def test_urllib_transport_rejects_non_http_scheme() -> None:
+    # The scheme allow-list is a THREAT-001-class confinement: a file:///ftp:///data:
+    # --loomweave-url is a loud LoomweaveError naming the flag, never an ingest target.
+    # Pins loomweave's OWN scheme-error wording (--loomweave-url), not just the type.
+    from wardline.loomweave.client import UrllibTransport
+
+    with pytest.raises(LoomweaveError, match="--loomweave-url"):
+        UrllibTransport().request("POST", "file:///etc/passwd", b"{}", {})
+
+
 def test_connection_error_is_soft():
     class Boom:
         def request(self, *a, **k):

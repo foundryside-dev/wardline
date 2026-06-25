@@ -144,7 +144,7 @@ disable_error_code = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not network and not loomweave_e2e and not legis_e2e and not filigree_e2e and not rust_e2e and not loomweave_drift and not warpline_e2e'"
+addopts = "-m 'not network and not loomweave_e2e and not legis_e2e and not filigree_e2e and not rust_e2e and not loomweave_drift and not sei_drift and not warpline_e2e and not reason_vocab_drift and not filigree_token_drift and not worklist_drift and not legis_scan_artifact_drift'"
 markers = [
     "network: tests that need network (live OpenRouter judge e2e — SP5)",
     "loomweave_e2e: tests that need a real `loomweave serve` binary (SP9 round-trip)",
@@ -152,7 +152,12 @@ markers = [
     "filigree_e2e: tests that need a real Filigree with the promote route (WS-A2 round-trip)",
     "rust_e2e: live `wardline scan --lang rust` CLI subprocess over the .rs corpus (WP6)",
     "loomweave_drift: live recheck of the vendored Rust qualname corpus against the sibling loomweave checkout (release-gate drift alarm)",
+    "sei_drift: live recheck of the vendored SEI conformance oracle against the sibling loomweave source fixture (release-gate drift alarm)",
     "warpline_e2e: live `warpline reverify | wardline scan --affected -` round-trip (delta scope; weekly/manual)",
+    "reason_vocab_drift: live recheck of the vendored weft reason-vocabulary contract against the sibling weft hub source (release-gate drift alarm)",
+    "filigree_token_drift: live substantive recheck of the vendored WEFT_FEDERATION_TOKEN auth contract against the sibling filigree source (release-gate drift alarm)",
+    "worklist_drift: live recheck of the vendored warpline.reverify_worklist.v1 wire against the sibling warpline source (release-gate drift alarm)",
+    "legis_scan_artifact_drift: live recheck of the vendored wardline->legis scan-artifact vector against the sibling legis source (release-gate drift alarm)",
 ]
 
 [tool.coverage.run]

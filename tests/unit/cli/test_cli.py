@@ -1395,7 +1395,13 @@ def test_scan_reports_filigree_success_and_loomweave_unreachable_independently(t
     assert "connection refused" in result.output
 
 
-def test_scan_loomweave_loud_error_exits_2(tmp_path, monkeypatch) -> None:
+def test_scan_loomweave_error_is_fail_soft(tmp_path, monkeypatch) -> None:
+    # A LoomweaveError from the taint-store write (4xx / bad scheme / missing extra) is
+    # FULLY fail-soft at parity with the MCP scan tool: the write is a best-effort
+    # enrichment side-channel, never load-bearing for the gate, so it must not change the
+    # scan's exit code. (Previously a LoomweaveError exited 2 "exactly as Filigree errors
+    # do" — but Filigree uses stdlib urllib and has no missing-extra mode, so that
+    # precedent never covered the case that bit a federated sibling.)
     from wardline.core.errors import LoomweaveError
 
     proj = tmp_path / "proj"
@@ -1408,8 +1414,48 @@ def test_scan_loomweave_loud_error_exits_2(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("wardline.loomweave.write.write_facts_to_loomweave", _raise)
     out = tmp_path / "f.jsonl"
     result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--loomweave-url", "http://x/api/taint"])
-    assert result.exit_code == 2, result.output
+    assert result.exit_code == 0, result.output
+    assert "Loomweave taint store not written" in result.output
     assert "bad request" in result.output
+    assert "scan unaffected" in result.output
+
+
+def test_scan_missing_loomweave_extra_is_fail_soft_when_auto_discovered(tmp_path, monkeypatch) -> None:
+    # Regression (elspeth dogfood): a bare `wardline scan` in the Loom federation
+    # auto-discovers a running Loomweave from its published ephemeral port (ADR-044) with
+    # NO --loomweave-url flag. On a base install WITHOUT the [loomweave] extra, the
+    # taint-fact write reaches require_blake3() -> LoomweaveError. That used to exit 2
+    # ("could not run — missing blake3 dep"); it must instead degrade fail-soft, leaving
+    # the gate (the scan's real job) intact. Exercises the real resolve_loomweave_url ->
+    # published-port rung, with blake3 simulated absent at the genuine call site.
+    from wardline.core.errors import LoomweaveError
+
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    # Loomweave published its live read-API port -> resolve_loomweave_url returns it (no flag).
+    port_dir = proj / ".weft" / "loomweave"
+    port_dir.mkdir(parents=True)
+    (port_dir / "ephemeral.port").write_text("59999", encoding="utf-8")
+
+    # Simulate a base install: blake3 is not importable, so require_blake3() raises the
+    # actionable LoomweaveError at the exact site the write hits it.
+    def _missing_extra() -> ModuleType:
+        raise LoomweaveError(
+            "the Loomweave integration needs blake3 — install it with: pip install 'wardline[loomweave]'"
+        )
+
+    monkeypatch.setattr("wardline.loomweave.facts.require_blake3", _missing_extra)
+    out = tmp_path / "f.jsonl"
+    # No --loomweave-url: the URL is auto-discovered. No --fail-on either, so a clean run
+    # exits 0 and any non-soft failure would surface as a non-zero exit.
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out)])
+    assert result.exit_code == 0, result.output
+    assert "Loomweave taint store not written" in result.output
+    assert "blake3" in result.output
+    assert "wardline[loomweave]" in result.output
+    assert "scan unaffected" in result.output
 
 
 def test_baseline_create_honors_project_waivers(tmp_path) -> None:
