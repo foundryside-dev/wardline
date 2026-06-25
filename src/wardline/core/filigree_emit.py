@@ -16,7 +16,6 @@ import json
 import os
 import urllib.error
 import urllib.parse
-import urllib.request
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -30,7 +29,7 @@ from wardline.core.finding import (
     severity_to_filigree,
     to_filigree_metadata,
 )
-from wardline.core.http import read_response_text
+from wardline.core.http import WeftHttp
 
 _SUGGESTION_LIMIT = 10000
 _ALLOWED_SCHEMES = ("http", "https")
@@ -563,36 +562,33 @@ class Transport(Protocol):
 
 class UrllibTransport:
     def __init__(self, timeout: float = 30.0) -> None:
-        self._timeout = timeout
+        # Two http(s)-gated WeftHttp transports, one per route, so each keeps its OWN
+        # scheme-error wording (--filigree-url on the POST emit path, "filigree URL" on the
+        # GET schema-probe path) while sharing the round-trip + bounded-read + HTTPError-to-
+        # Response discipline. URLError/OSError still propagate to emit()/the probe, which
+        # apply the federation fail-soft (4xx loud / 5xx + outage soft) — unchanged.
+        self._post_http = WeftHttp(
+            timeout=timeout,
+            allowed_schemes=_ALLOWED_SCHEMES,
+            scheme_error=lambda scheme, url: FiligreeEmitError(
+                f"--filigree-url must use http or https; got scheme {scheme!r} in {url!r}"
+            ),
+        )
+        self._get_http = WeftHttp(
+            timeout=timeout,
+            allowed_schemes=_ALLOWED_SCHEMES,
+            scheme_error=lambda scheme, url: FiligreeEmitError(
+                f"filigree URL must use http or https; got scheme {scheme!r} in {url!r}"
+            ),
+        )
 
     def post(self, url: str, body: bytes, headers: Mapping[str, str]) -> Response:
-        # Restrict to http(s): a stray file://, ftp:// or data: URL is a user error, not
-        # an ingest target — turn it into a clean loud failure (and justify the S310 below).
-        scheme = urllib.parse.urlsplit(url).scheme.lower()
-        if scheme not in _ALLOWED_SCHEMES:
-            raise FiligreeEmitError(f"--filigree-url must use http or https; got scheme {scheme!r} in {url!r}")
-        request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")
-        try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
-                return Response(status=resp.status, body=read_response_text(resp))
-        except urllib.error.HTTPError as exc:
-            # An HTTP status reached us — a protocol-level outcome, not an outage. Convert it
-            # to a Response so emit() classifies by status (4xx loud / 5xx soft), and close
-            # the underlying socket.
-            with exc:
-                return Response(status=exc.code, body=read_response_text(exc))
+        result = self._post_http.fetch("POST", url, body=body, headers=headers)
+        return Response(status=result.status, body=result.body)
 
     def get(self, url: str, headers: Mapping[str, str]) -> Response:
-        scheme = urllib.parse.urlsplit(url).scheme.lower()
-        if scheme not in _ALLOWED_SCHEMES:
-            raise FiligreeEmitError(f"filigree URL must use http or https; got scheme {scheme!r} in {url!r}")
-        request = urllib.request.Request(url, headers=dict(headers), method="GET")
-        try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
-                return Response(status=resp.status, body=read_response_text(resp))
-        except urllib.error.HTTPError as exc:
-            with exc:
-                return Response(status=exc.code, body=read_response_text(exc))
+        result = self._get_http.fetch("GET", url, headers=headers)
+        return Response(status=result.status, body=result.body)
 
 
 def _resolve_operator_max_findings_per_request(explicit: int | None) -> int | None:
