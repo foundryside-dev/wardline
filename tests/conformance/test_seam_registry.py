@@ -53,6 +53,25 @@ Strengthening notes (what this module verifies vs what it cannot):
   In exchange, the oracle_test is asserted to carry NO addopts-excluded marker, so
   that "runs offline in the default suite" is proven, not assumed. Without this
   exemption the marker requirement would structurally wall G1 out of ``at_bar``.
+* A ``self_authored_producer`` ``at_bar`` seam — wardline IS the AUTHORITY for the
+  seam vocabulary, and the vendored contract is a copy of wardline's OWN frozen
+  bytes — has the same circular-oracle problem as ``self_authored_restatement`` but
+  resolved against a DIFFERENT source. ``self_authored_restatement`` rechecks
+  against a SIBLING authority's repo source; ``self_authored_producer`` rechecks
+  against wardline's OWN runtime source (the producing enum / constant), because
+  wardline owns the authority. The two flags are mutually distinct (a row may set
+  at most one). For such a row the Layer-1 byte-pin alone is wardline-pins-wardline;
+  the gate ADDITIONALLY requires the drift_test to carry a PRODUCER-SOURCE recheck:
+  an in-process import of a wardline runtime source (``from wardline. ...`` /
+  ``import wardline``) AND an equality/membership assertion that ties an IMPORTED
+  wardline runtime symbol to the vendored contract value. A self_authored_producer
+  row whose drift_test only byte-pins (no runtime-source recheck) FAILS the gate.
+  A ``byte_golden_corpus`` self_authored_producer row is marker-exempt (its
+  fail-closed protection is the default-suite byte-pin), but ONLY because the
+  producer-source recheck is independently required — the exemption is never a free
+  pass. Because a producer↔consumer seam is inherently two-sided, the schema test
+  enforces ``self_authored_producer ⇒ two_sided``, so the recheck requirement (which
+  lives in the two-sided at_bar branch) can never be bypassed via a one-sided route.
 
 KNOWN INCONSISTENCY (out of this module's reach — needs a one-line ``src/`` fix):
 ``rust_e2e`` is registered in pyproject markers + the addopts exclusion but is
@@ -231,6 +250,32 @@ def test_registry_schema_is_valid() -> None:
             assert isinstance(row["self_authored_restatement"], bool), (
                 f"{ctx}: 'self_authored_restatement' must be a bool"
             )
+        if "self_authored_producer" in row:
+            assert isinstance(row["self_authored_producer"], bool), (
+                f"{ctx}: 'self_authored_producer' must be a bool"
+            )
+
+        # self_authored_producer and self_authored_restatement are MUTUALLY DISTINCT:
+        # a producer row rechecks vs wardline's OWN runtime source (wardline is the
+        # authority); a restatement row rechecks vs a SIBLING authority's repo source.
+        # A single row cannot be both.
+        assert not (row.get("self_authored_producer") and row.get("self_authored_restatement")), (
+            f"{ctx}: a row cannot set BOTH self_authored_producer and self_authored_restatement "
+            "(producer = wardline IS the authority; restatement = wardline restates a SIBLING authority)"
+        )
+
+        # A producer↔consumer seam wardline authors is inherently TWO-SIDED. Enforcing
+        # this closes the one-sided fail-open: a self_authored_producer + byte_golden_corpus
+        # row is marker-exempt, so without this guard a two_sided=false row would be routed to
+        # the one-sided golden branch (byte-pin only) and skip the producer-source recheck —
+        # a circular free pass. The recheck lives in the two-sided at_bar branch, so force
+        # self_authored_producer rows down it.
+        if row.get("self_authored_producer"):
+            assert row["two_sided"] is True, (
+                f"{ctx}: a self_authored_producer row must be two_sided "
+                "(producer↔consumer is inherently two-sided; this routes it through the "
+                "two-sided at_bar branch where the producer-source recheck is enforced)"
+            )
 
 
 # --------------------------------------------------------------------------- #
@@ -350,6 +395,80 @@ def _has_substantive_sibling_source_recheck(text: str) -> bool:
     return has_env_locator and has_source_read and has_membership_assert
 
 
+def _imported_wardline_symbols(text: str) -> set[str]:
+    """Collect the in-process wardline runtime symbols imported by a drift_test.
+
+    Handles both forms:
+
+    * ``from wardline.core.finding import SuppressionState`` — yields the imported
+      NAMES (``SuppressionState``), honouring ``a as b`` (binds ``b``) and
+      comma-separated lists.
+    * ``import wardline`` / ``import wardline.core.finding as wf`` — yields the bound
+      module name (``wardline`` or the ``as`` alias) as the usable symbol.
+
+    These are the symbols a producer-source recheck must reference on its assertion
+    line, so the equality/membership check is tied to the LIVE wardline runtime — not
+    merely to the byte-pin's own ``actual == UPSTREAM_BLOB_SHA`` (that constant is not
+    an imported wardline symbol, so it cannot satisfy the recheck)."""
+    symbols: set[str] = set()
+    # from wardline... import A, B as C
+    for m in re.finditer(r"^\s*from\s+wardline(?:\.[\w.]+)?\s+import\s+(.+)$", text, re.MULTILINE):
+        for part in m.group(1).split(","):
+            name = part.strip().strip("()").strip()
+            if not name:
+                continue
+            if " as " in name:
+                name = name.split(" as ", 1)[1].strip()
+            name = name.split()[0].strip() if name.split() else name
+            if name and name != "*":
+                symbols.add(name)
+    # import wardline[.x.y][ as alias]
+    for m in re.finditer(r"^\s*import\s+(wardline(?:\.[\w.]+)?)(?:\s+as\s+(\w+))?\s*$", text, re.MULTILINE):
+        alias = m.group(2)
+        symbols.add(alias if alias else "wardline")
+    return symbols
+
+
+def _has_producer_source_recheck(text: str) -> bool:
+    """True if a drift_test carries a non-circular PRODUCER-SOURCE recheck — the
+    break a ``self_authored_producer`` at_bar seam needs.
+
+    Wardline IS the authority for such a seam, so the vendored contract is a copy of
+    wardline's OWN bytes; the Layer-1 byte-pin alone is wardline-pins-wardline. The
+    non-circular recheck imports wardline's LIVE runtime source and asserts a runtime
+    value EQUALS / is a member of the frozen contract value. Required shape (BOTH):
+
+    * an in-process import of a wardline runtime source (``from wardline. ...`` or
+      ``import wardline``); AND
+    * an ``assert`` line carrying an equality (``==``) or membership (`` in ``) check
+      whose text references one of the IMPORTED wardline symbols.
+
+    The imported-symbol tie is what makes this tight: the byte-pin's own
+    ``assert actual == UPSTREAM_BLOB_SHA`` references no imported wardline symbol, so a
+    drift_test that ONLY byte-pins (even one that happens to import wardline) does NOT
+    satisfy this — closing the fail-open the advisor flagged.
+
+    CAVEAT (semantic residual, same class as every other needle here): this is a TEXT
+    match for the recheck's shape — it proves the runtime-vs-contract assertion is
+    PRESENT, not that it is reachable at runtime. Full reachability is left to review."""
+    symbols = _imported_wardline_symbols(text)
+    if not symbols:
+        return False
+    sym_alt = "|".join(re.escape(s) for s in symbols)
+    # An assert line that performs an == or membership check AND names an imported
+    # wardline symbol (in either operand). One regex per line so the symbol and the
+    # operator co-occur on the SAME assertion.
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("assert "):
+            continue
+        if not (re.search(r"==", stripped) or re.search(r"\bin\b", stripped)):
+            continue
+        if re.search(rf"\b(?:{sym_alt})\b", stripped):
+            return True
+    return False
+
+
 def _has_shared_vector_pin(text: str) -> bool:
     """True if a ``shared_signed_vector`` oracle carries the shared-vector drift
     alarm: a named-constant signing-key binding plus an offline signature
@@ -377,6 +496,16 @@ def _assert_at_bar_marker(row: dict[str, Any], ctx: str) -> None:
     # protection is the default-suite golden byte-pin, asserted in
     # _assert_at_bar_one_sided_golden_fail_closed.
     if not row["two_sided"] and row["oracle_shape"] == "byte_golden_corpus":
+        return
+    # A ``self_authored_producer`` ``byte_golden_corpus`` seam — wardline IS the
+    # authority and freezes its OWN vocabulary to a vendored byte-corpus — needs no
+    # live-oracle marker either: its default-suite fail-closed protection is the
+    # byte-pin PLUS the producer-source recheck (both asserted in
+    # _assert_at_bar_two_sided_fail_closed). This exemption is NEVER a free pass — it is
+    # paired with the mandatory producer-source recheck there; without that recheck the
+    # row reds. (self_authored_producer ⇒ two_sided, enforced in the schema test, so this
+    # row always reaches the two-sided branch where the recheck is required.)
+    if row.get("self_authored_producer") and row["oracle_shape"] == "byte_golden_corpus":
         return
 
     marker = row["marker"]
@@ -483,6 +612,22 @@ def _assert_at_bar_two_sided_fail_closed(row: dict[str, Any], ctx: str) -> None:
             "source + an `assert <value> in <...src>` membership check). A self-authored "
             "byte-pin pins wardline's own bytes; the circular oracle is only broken by "
             "re-deriving the contract from the producing authority's real source"
+        )
+
+    # Self-authored PRODUCER: wardline IS the authority for this seam's vocabulary, so
+    # the vendored contract is a copy of wardline's OWN frozen bytes — the Layer-1
+    # byte-pin is wardline-pins-wardline. The non-circular break is a PRODUCER-SOURCE
+    # recheck in the drift_test: an in-process import of a wardline RUNTIME source plus
+    # an equality/membership assertion tying an imported wardline symbol to the vendored
+    # contract value. A self_authored_producer row whose drift_test only byte-pins (no
+    # runtime-source recheck) FAILS here — the byte-pin alone cannot break the circle.
+    if row.get("self_authored_producer"):
+        assert _has_producer_source_recheck(drift_text), (
+            f"{ctx}: self_authored_producer at_bar drift_test lacks a PRODUCER-SOURCE recheck "
+            "(an in-process `from wardline. ...` / `import wardline` import AND an "
+            "`assert <imported-wardline-symbol> == / in <contract value>` check). A self-authored "
+            "byte-pin pins wardline's own bytes; the circular oracle is only broken by re-deriving "
+            "the contract from wardline's LIVE runtime source (the producing enum/constant)"
         )
 
 

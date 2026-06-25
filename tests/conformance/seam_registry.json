@@ -216,20 +216,22 @@
     "seam": "Wardline suppression-state filter vocabulary (wardline SuppressionState enum -> filigree /api/weft/findings + MCP finding_list filter grammar)",
     "authority": "wardline",
     "consumer_or_second_producer": "filigree",
-    "wire": "tests/conformance/filigree_suppression_filter_contract.json (SuppressionState enum -> filigree filter values)",
+    "wire": "tests/conformance/filigree_suppression_filter_contract.json (SuppressionState enum -> filigree filter values). Wardline IS the AUTHORITY: it OWNS the suppression_state vocabulary via its SuppressionState enum, so the vendored contract is a copy of wardline's OWN bytes and the Layer-1 UPSTREAM_BLOB_SHA byte-pin (test_filigree_suppression_filter_contract.py) is wardline-pins-wardline. The circular oracle is broken by a PRODUCER-SOURCE recheck (self_authored_producer=true): test_vector_matches_suppression_state_enum imports the LIVE wardline.core.finding.SuppressionState enum and asserts its member values == the frozen contract's suppression_states, so an enum drift reds even though the byte-pin still passes. The seam-registry gate REQUIRES that producer-source recheck (an in-process wardline runtime import + an equality/membership assert tying an imported wardline symbol to the contract) for self_authored_producer at_bar rows, so a deleted/byte-pin-only drift_test reds the gate.",
     "two_sided": true,
-    "oracle_shape": null,
+    "oracle_shape": "byte_golden_corpus",
     "oracle_test": "tests/conformance/test_filigree_suppression_filter_contract.py",
     "marker": null,
     "drift_alarm": null,
-    "drift_test": null,
-    "bar_verdict": "partial",
+    "drift_test": "tests/conformance/test_filigree_suppression_filter_contract.py",
+    "self_authored_producer": true,
+    "bar_verdict": "at_bar",
     "deferred_reason": null,
     "wire_change": "none",
     "evidence_paths": [
       "tests/conformance/test_filigree_suppression_filter_contract.py:24-36",
       "tests/conformance/filigree_suppression_filter_contract.json:1-20",
-      "src/wardline/core/finding.py:71-75"
+      "src/wardline/core/finding.py:71-75",
+      "filigree (sibling repo): tests/conformance/test_wardline_suppression_filter_contract.py — filigree consumer-side oracle of this same contract (referenced as evidence; lives in the filigree repo, not this one)"
     ]
   },
   {
