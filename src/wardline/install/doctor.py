@@ -13,12 +13,13 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from wardline.core import paths
+from wardline.core import artifacts as _artifacts
+from wardline.core import discovery, paths
 from wardline.core.config import ArtifactSettings, _filigree_published_url, filigree_server_scoped_url, load
 from wardline.core.errors import ConfigError, WardlineError
 from wardline.core.filigree_emit import FiligreeEmitter, Transport, UrllibTransport
 from wardline.core.paths import weft_config_path, weft_state_dir
-from wardline.core.safe_paths import safe_read_text_if_regular, safe_write_text
+from wardline.core.safe_paths import safe_project_path, safe_read_text_if_regular, safe_write_text
 from wardline.filigree.config import load_filigree_token
 from wardline.install.block import inject_block
 from wardline.install.detect import (
@@ -125,6 +126,74 @@ def _artifacts_dir_relname(proj: Path) -> str:
     resolved = paths.artifacts_dir(proj, artifacts_dir_value)
     rel = resolved.relative_to(proj.resolve())
     return rel.as_posix()
+
+
+_MANAGED_SUFFIXES = ("findings.jsonl", "findings.sarif", "findings.agent-summary.json", "scan.legis.json")
+
+
+def _is_managed_name(name: str) -> bool:
+    return any(_artifacts._managed_artifact_pattern(s).match(name) for s in _MANAGED_SUFFIXES)
+
+
+def _sweep_stray_artifacts(proj: Path, *, fix: bool) -> DoctorCheck:
+    proj = proj.resolve()
+    standard = paths.artifacts_dir(proj, _artifacts_dir_relname(proj) or ".wardline")
+    removed: list[str] = []
+    review: list[str] = []
+    emptied_dirs: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(proj, followlinks=False):
+        here = Path(dirpath)
+        # prune: hard-skip set, .git, the standard artifacts dir, and nested project roots
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in discovery.WALK_SKIP_DIRS
+            and (here / d).resolve() != standard
+            and not paths._has_project_markers(here / d)
+        ]
+        in_wardline_dir = here.name == ".wardline" and here.resolve() != standard
+        for fname in filenames:
+            fpath = here / fname
+            managed = _is_managed_name(fname)                     # timestamped: 2026...-findings.jsonl
+            bare = fname in _MANAGED_SUFFIXES and not managed     # unstamped: findings.jsonl
+            if not managed and not bare:
+                continue
+            rel = str(fpath.relative_to(proj))
+            # ONLY a timestamped (managed) file INSIDE a non-standard .wardline/ dir is
+            # auto-deletable; bare-managed, or managed outside .wardline/, is REVIEW.
+            if not (managed and in_wardline_dir):
+                review.append(rel)
+                continue
+            if not _artifacts._is_regular_file_no_follow(fpath):
+                continue                                          # symlink / non-regular -> skip
+            if not fix:
+                removed.append(rel)                               # would-remove (no unlink)
+                continue
+            try:
+                safe = safe_project_path(proj, fpath, label=fname)
+            except WardlineError:
+                continue                                          # escaping entry -> skip, keep sweeping
+            try:
+                safe.unlink()
+            except OSError:
+                continue
+            removed.append(rel)
+            emptied_dirs.append(here)
+    if fix:
+        for d in emptied_dirs:
+            try:
+                if d.resolve() != standard and not d.is_symlink():
+                    d.rmdir()                                     # os.rmdir only; ENOTEMPTY guards
+            except OSError:
+                pass
+    # ADVISORY status (must-fix from plan review): stray artifacts are cleanup items, not a
+    # health failure, so status stays "ok" and the sweep never flips machine_readable_doctor's
+    # all(check.ok) aggregation (which would fail `doctor --fix` / MCP doctor on success).
+    msg = (f"removed {len(removed)}, review {len(review)}" if fix
+           else f"{len(removed)} removable, review {len(review)}")
+    return DoctorCheck(
+        "stray_artifacts", "ok", fixed=bool(fix and removed), message=msg, removed=removed, review=review
+    )
 
 
 def _gitignore_present_entries(text: str) -> set[str]:

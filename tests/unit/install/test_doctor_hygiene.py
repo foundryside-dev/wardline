@@ -1,6 +1,7 @@
+import os
 from pathlib import Path
 
-from wardline.install.doctor import DoctorCheck, _check_gitignore
+from wardline.install.doctor import DoctorCheck, _check_gitignore, _sweep_stray_artifacts
 
 
 def test_doctorcheck_to_dict_includes_payload_when_present():
@@ -81,3 +82,83 @@ def test_gitignore_symlink_reports_error_not_abort(tmp_path):
     c = _check_gitignore(proj, fix=True)
     assert c.status == "error" and "symlink" in (c.message or "")
     assert target.read_text(encoding="utf-8") == ""  # never written through the link
+
+
+# ---------------------------------------------------------------------------
+# _sweep_stray_artifacts
+# ---------------------------------------------------------------------------
+
+STAMP = "20260624T111539Z"
+
+
+def _stray(proj: Path, rel: str) -> Path:
+    p = proj / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("{}\n", encoding="utf-8")
+    return p
+
+
+def test_sweep_removes_nested_wardline_managed_file(tmp_path):
+    proj = _proj(tmp_path)
+    stray = _stray(proj, f"src/pkg/.wardline/{STAMP}-findings.jsonl")
+    c = _sweep_stray_artifacts(proj, fix=True)
+    assert not stray.exists()
+    assert not stray.parent.exists()              # emptied .wardline removed
+    assert any(str(stray) in r or "src/pkg/.wardline" in r for r in c.removed)
+
+
+def test_sweep_keeps_standard_dir(tmp_path):
+    proj = _proj(tmp_path)
+    keep = _stray(proj, f".wardline/{STAMP}-findings.jsonl")
+    _sweep_stray_artifacts(proj, fix=True)
+    assert keep.exists()                           # standard dir is skipped
+
+
+def test_sweep_reports_unstamped_and_bare_managed(tmp_path):
+    proj = _proj(tmp_path)
+    bare = _stray(proj, "findings.jsonl")
+    bare_managed = _stray(proj, f"logs/{STAMP}-findings.jsonl")   # managed name, NOT in a .wardline/ dir
+    c = _sweep_stray_artifacts(proj, fix=True)
+    assert bare.exists() and bare_managed.exists()
+    assert any("findings.jsonl" in r for r in c.review)
+    assert any(f"{STAMP}-findings.jsonl" in r for r in c.review)
+
+
+def test_sweep_check_only_no_delete(tmp_path):
+    proj = _proj(tmp_path)
+    stray = _stray(proj, f"src/.wardline/{STAMP}-findings.jsonl")
+    c = _sweep_stray_artifacts(proj, fix=False)
+    assert stray.exists()
+    assert not c.fixed
+
+
+def test_sweep_does_not_descend_symlinked_dir(tmp_path):
+    proj = _proj(tmp_path)
+    outside = tmp_path.parent / "outside_wl"
+    (outside / ".wardline").mkdir(parents=True)
+    target = outside / ".wardline" / f"{STAMP}-findings.jsonl"
+    target.write_text("{}\n", encoding="utf-8")
+    os.symlink(outside, proj / "linked")
+    _sweep_stray_artifacts(proj, fix=True)
+    assert target.exists()                         # never followed out of root
+
+
+def test_sweep_does_not_unlink_symlinked_managed_file(tmp_path):
+    proj = _proj(tmp_path)
+    real = tmp_path.parent / "real.jsonl"
+    real.write_text("{}\n", encoding="utf-8")
+    wd = proj / "src" / ".wardline"
+    wd.mkdir(parents=True)
+    os.symlink(real, wd / f"{STAMP}-findings.jsonl")
+    _sweep_stray_artifacts(proj, fix=True)
+    assert real.exists()                           # symlink skipped, target intact
+
+
+def test_sweep_stops_at_nested_project_root(tmp_path):
+    proj = _proj(tmp_path)
+    nested = proj / "vendor" / "subproj"
+    nested.mkdir(parents=True)
+    (nested / "weft.toml").write_text("[wardline]\n", encoding="utf-8")
+    keep = _stray(proj, f"vendor/subproj/.wardline/{STAMP}-findings.jsonl")
+    _sweep_stray_artifacts(proj, fix=True)
+    assert keep.exists()                           # nested project's artifacts untouched
