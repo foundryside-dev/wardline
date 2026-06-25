@@ -12,6 +12,9 @@ if TYPE_CHECKING:
     from wardline.scanner.index import Entity
 
 
+_SAFE_GIT_CONFIG = ("-c", "core.fsmonitor=false")
+
+
 def get_changed_files_since(ref: str, root: Path) -> set[str]:
     """Get the set of file paths (repo-relative, POSIX-style matching Location.path)
     that have changed since `ref`, including staged, unstaged, and untracked changes.
@@ -22,7 +25,7 @@ def get_changed_files_since(ref: str, root: Path) -> set[str]:
     # 1. Get the git toplevel directory.
     try:
         res = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
+            ["git", *_SAFE_GIT_CONFIG, "rev-parse", "--show-toplevel"],
             cwd=root,
             capture_output=True,
             text=True,
@@ -38,7 +41,7 @@ def get_changed_files_since(ref: str, root: Path) -> set[str]:
     # 2. Resolve ref to a verified object id before passing it to git diff.
     try:
         res = subprocess.run(
-            ["git", "rev-parse", "--verify", "--end-of-options", ref],
+            ["git", *_SAFE_GIT_CONFIG, "rev-parse", "--verify", "--end-of-options", ref],
             cwd=git_toplevel,
             capture_output=True,
             text=True,
@@ -54,7 +57,7 @@ def get_changed_files_since(ref: str, root: Path) -> set[str]:
     # 3. Get changed files since ref (committed since ref, staged, unstaged).
     try:
         res = subprocess.run(
-            ["git", "diff", "--name-only", verified_ref, "--"],
+            ["git", *_SAFE_GIT_CONFIG, "diff", "--name-only", verified_ref, "--"],
             cwd=git_toplevel,
             capture_output=True,
             text=True,
@@ -68,7 +71,7 @@ def get_changed_files_since(ref: str, root: Path) -> set[str]:
     # 4. Get untracked files.
     try:
         res = subprocess.run(
-            ["git", "ls-files", "--others", "--exclude-standard"],
+            ["git", *_SAFE_GIT_CONFIG, "ls-files", "--others", "--exclude-standard"],
             cwd=git_toplevel,
             capture_output=True,
             text=True,
