@@ -144,7 +144,7 @@ disable_error_code = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not network and not loomweave_e2e and not legis_e2e and not filigree_e2e and not rust_e2e and not loomweave_drift and not warpline_e2e'"
+addopts = "-m 'not network and not loomweave_e2e and not legis_e2e and not filigree_e2e and not rust_e2e and not loomweave_drift and not sei_drift and not warpline_e2e'"
 markers = [
     "network: tests that need network (live OpenRouter judge e2e — SP5)",
     "loomweave_e2e: tests that need a real `loomweave serve` binary (SP9 round-trip)",
@@ -152,6 +152,7 @@ markers = [
     "filigree_e2e: tests that need a real Filigree with the promote route (WS-A2 round-trip)",
     "rust_e2e: live `wardline scan --lang rust` CLI subprocess over the .rs corpus (WP6)",
     "loomweave_drift: live recheck of the vendored Rust qualname corpus against the sibling loomweave checkout (release-gate drift alarm)",
+    "sei_drift: live recheck of the vendored SEI conformance oracle against the sibling loomweave source fixture (release-gate drift alarm)",
     "warpline_e2e: live `warpline reverify | wardline scan --affected -` round-trip (delta scope; weekly/manual)",
 ]
 
