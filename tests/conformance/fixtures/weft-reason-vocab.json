@@ -1,0 +1,22 @@
+{
+  "$comment": "Canonical weft-reason vocabulary (G1). Source of truth doc: pm/2026-06-15-weft-reason-contract-G1.md. CONTRACT: every federation member's emitted reason_class values MUST be a subset of reason_classes below; every non-clean carrier MUST include cause + fix; a clean carrier omits cause + fix. Members stay independent repos (no shared runtime dep) and conform by a per-member conformance TEST that asserts its reason surface against this list. Domain-specific terms (e.g. legis key_absent) map to a canonical reason_class and keep the domain term in cause/detail.",
+  "version": 1,
+  "carrier": {
+    "fields": ["reason_class", "cause", "fix"],
+    "required_on_non_clean": ["reason_class", "cause", "fix"],
+    "clean_omits": ["cause", "fix"]
+  },
+  "reason_classes": {
+    "clean":            { "trust": true,        "meaning": "earned, complete true-negative" },
+    "disabled":         { "trust": false,       "meaning": "capability not configured / not on" },
+    "unresolved_input": { "trust": false,       "meaning": "a supplied ref/id did not resolve" },
+    "rejected":         { "trust": false,       "meaning": "peer reached, refused the item" },
+    "dead_path":        { "trust": false,       "meaning": "handler / code path unwired" },
+    "unreachable":      { "trust": false,       "meaning": "peer / dependency not reached" },
+    "misrouted":        { "trust": false,       "meaning": "went to the wrong destination" },
+    "error":            { "trust": false,       "meaning": "unexpected internal failure (loud catch-all, never silent)" },
+    "scheme_mismatch":  { "trust": false,       "meaning": "identity / fingerprint scheme drift (silent-corruption risk)" },
+    "stale":            { "trust": "qualified", "meaning": "real but older than the live anchor" },
+    "partial":          { "trust": "qualified", "meaning": "bounded / capped / some-failed" }
+  }
+}

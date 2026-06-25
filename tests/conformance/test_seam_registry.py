@@ -219,6 +219,19 @@ def test_registry_schema_is_valid() -> None:
                 f"{ctx}: invalid oracle_shape {row['oracle_shape']!r} (allowed: {sorted(_VALID_ORACLE_SHAPES)})"
             )
 
+        # Optional multi-axis / self-authored fields — validate their TYPE when
+        # present so they are load-bearing, not decorative. (The at_bar gate in
+        # _assert_at_bar_two_sided_fail_closed enforces their SEMANTICS.)
+        if "additional_drift_tests" in row:
+            extra = row["additional_drift_tests"]
+            assert isinstance(extra, list) and all(isinstance(p, str) and p.strip() for p in extra), (
+                f"{ctx}: 'additional_drift_tests' must be a list of non-empty strings"
+            )
+        if "self_authored_restatement" in row:
+            assert isinstance(row["self_authored_restatement"], bool), (
+                f"{ctx}: 'self_authored_restatement' must be a bool"
+            )
+
 
 # --------------------------------------------------------------------------- #
 # Per-verdict lie detector — claims must be backed by real artifacts on disk.
@@ -286,17 +299,55 @@ def _marker_applied_in_row_evidence(row: dict[str, Any], marker: str) -> bool:
 
 def _has_layer1_byte_pin(text: str) -> bool:
     """True if a drift_test file carries a Layer-1 byte-pin that runs in the
-    default suite — an actual PIN, not a mere mention. Requires either an
-    ``UPSTREAM_BLOB_SHA = "<40-hex>"`` assignment (the vendored-corpus byte pin)
-    or a ``git hash-object`` invocation, so a comment or string literal merely
-    naming ``blob_sha`` / ``git blob`` does NOT satisfy the check. The old loose
-    needles (``blob %d``, ``git blob``, bare ``blob_sha``) are intentionally
-    dropped as too weak."""
+    default suite — an actual PIN, not a mere mention. Requires either a 40-hex
+    blob-SHA pinned-constant assignment or a live ``git hash-object`` invocation,
+    so a comment or string literal merely naming ``blob_sha`` / ``git blob`` does
+    NOT satisfy the check. The old loose needles (``blob %d``, ``git blob``, bare
+    ``blob_sha``) are intentionally dropped as too weak.
+
+    The pinned-constant needle accepts both the ``UPSTREAM_BLOB_SHA`` name (the
+    canonical name for a blob byte-copied from the producing authority) and the
+    ``VENDORED_BLOB_SHA`` name (the Python qualname axis's pin, which deliberately
+    differs from upstream by a repo-local provenance wrapper — see
+    test_loomweave_qualname_parity.py). Both are real fail-closed byte-pins held
+    against a recomputed git-blob hash; the name difference is documentation, not
+    strength. A bare ``hashlib.sha1(b"blob ...")`` recompute is NOT accepted on its
+    own — the pin is the 40-hex CONSTANT the recompute is asserted against."""
     # The pinned-constant form: an assignment to a 40-char lowercase-hex SHA-1.
-    if re.search(r"UPSTREAM_BLOB_SHA\s*=\s*[\"'][0-9a-f]{40}[\"']", text):
+    if re.search(r"(?:UPSTREAM|VENDORED)_BLOB_SHA\s*=\s*[\"'][0-9a-f]{40}[\"']", text):
         return True
     # A live `git hash-object` recomputation of the vendored file's blob SHA.
     return bool(re.search(r"hash-object\b", text))
+
+
+def _has_substantive_sibling_source_recheck(text: str) -> bool:
+    """True if a drift_test file carries a SUBSTANTIVE authority-side recheck: it
+    reads the SIBLING authority's real source (via a ``WARDLINE_*_REPO`` env-keyed
+    repo locator) and asserts parsed source constants against the vendored
+    restatement. This is the circular-oracle break a SELF-AUTHORED at_bar seam
+    needs — the byte-pin alone pins wardline's OWN bytes (wardline-pins-wardline),
+    so the gate additionally requires the test that re-derives the contract from
+    the producing authority's REAL source to exist and be substantive.
+
+    Required shape (all three): a ``WARDLINE_*_REPO`` env locator (the sibling repo
+    root), a ``.read_text(`` of a sibling source file, AND an ``assert ... in
+    <source>`` membership check that ties a vendored contract value to a literal
+    found in that sibling source. A registered-but-no-op ``_drift`` marker (a
+    ``pass``-bodied recheck) does NOT satisfy this — the substantive shape must be
+    present.
+
+    CAVEAT (semantic residual, same class as every other needle here): this is a
+    TEXT match for the substantive recheck's shape — it proves the source-parsing
+    code is PRESENT, not that it is reachable at runtime (e.g. a ``return`` above
+    dead asserts would still match). The realistic regression this catches is the
+    finding's named one: the recheck deleted or gutted to a no-op. Full
+    reachability is left to review, as with the byte-pin needle."""
+    has_env_locator = re.search(r"WARDLINE_[A-Z]+_REPO\b", text) is not None
+    has_source_read = re.search(r"\.read_text\(", text) is not None
+    # An ``assert <something> in <src>`` membership check (the source-grep form the
+    # filigree_token Layer-2 uses: ``assert f'...' in token_src``).
+    has_membership_assert = re.search(r"\bassert\b[^\n]*\bin\b\s+\w*src\w*", text) is not None
+    return has_env_locator and has_source_read and has_membership_assert
 
 
 def _has_shared_vector_pin(text: str) -> bool:
@@ -386,11 +437,46 @@ def _assert_at_bar_two_sided_fail_closed(row: dict[str, Any], ctx: str) -> None:
     assert row["drift_test"] is not None, f"{ctx}: two_sided at_bar requires a non-null drift_test"
     drift_path = _REPO_ROOT / row["drift_test"]
     assert drift_path.is_file(), f"{ctx}: at_bar drift_test does not exist: {row['drift_test']}"
-    assert _has_layer1_byte_pin(drift_path.read_text("utf-8")), (
+    drift_text = drift_path.read_text("utf-8")
+    assert _has_layer1_byte_pin(drift_text), (
         f"{ctx}: two_sided at_bar drift_test lacks a Layer-1 byte-pin "
-        "(an UPSTREAM_BLOB_SHA = \"<40-hex>\" assignment or a git hash-object recomputation); "
-        "it would not fail closed in the default suite"
+        "(an (UPSTREAM|VENDORED)_BLOB_SHA = \"<40-hex>\" assignment or a git hash-object / "
+        "hashlib.sha1(b\"blob ...\") recomputation); it would not fail closed in the default suite"
     )
+
+    # Multi-axis enforcement: every axis a row declares must be gate-pinned, not
+    # just the single ``drift_test``. A multi-axis at_bar row (e.g. the qualname
+    # seam, Rust + Python) lists its secondary axes under ``additional_drift_tests``;
+    # each MUST be a real test file carrying its own Layer-1 byte-pin, so deleting
+    # or loosening a secondary-axis pin reds this gate (closing the "second axis
+    # rests on prose + an unenforced evidence_path" hole).
+    for extra in row.get("additional_drift_tests") or []:
+        assert _is_real_test_file(extra), (
+            f"{ctx}: additional_drift_tests entry is not a real test file "
+            f"(must be tests/-rooted, match test_*.py, and exist): {extra}"
+        )
+        extra_text = (_REPO_ROOT / extra).read_text("utf-8")
+        assert _has_layer1_byte_pin(extra_text), (
+            f"{ctx}: multi-axis at_bar additional_drift_test {extra!r} lacks a Layer-1 byte-pin "
+            "((UPSTREAM|VENDORED)_BLOB_SHA = \"<40-hex>\" or a git hash-object / "
+            "hashlib.sha1(b\"blob ...\") recomputation); the second axis is not gate-protected"
+        )
+
+    # Self-authored restatement: when the vendored blob pins WARDLINE's OWN bytes
+    # (the producing authority ships no fixture to byte-copy), the Layer-1 byte-pin
+    # is wardline-pins-wardline — it cannot break the circular oracle on its own.
+    # Such a row must declare ``self_authored_restatement: true`` AND its drift_test
+    # must carry a SUBSTANTIVE authority-side recheck that re-derives the contract
+    # from the sibling authority's REAL source (so a registered-but-no-op _drift
+    # marker can NOT carry the at_bar claim).
+    if row.get("self_authored_restatement"):
+        assert _has_substantive_sibling_source_recheck(drift_text), (
+            f"{ctx}: self_authored_restatement at_bar drift_test lacks a SUBSTANTIVE "
+            "authority-side recheck (a WARDLINE_*_REPO-keyed read of the sibling authority "
+            "source + an `assert <value> in <...src>` membership check). A self-authored "
+            "byte-pin pins wardline's own bytes; the circular oracle is only broken by "
+            "re-deriving the contract from the producing authority's real source"
+        )
 
 
 def test_registry_verdicts_are_backed_by_real_artifacts() -> None:

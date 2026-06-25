@@ -51,28 +51,24 @@ def _scenario(scenario_id: str) -> dict[str, Any]:
 
 
 def _loomweave_oracle_source() -> Path | None:
-    # Honor ``WARDLINE_LOOMWEAVE_REPO`` first (the established sibling-relocation
-    # env var, shared with the loomweave_drift precedent); accept the legacy
-    # unnamespaced ``LOOMWEAVE_REPO`` as a documented fallback. Both point at the
-    # repo ROOT; the SEI oracle's subpath (docs/federation/fixtures/...) is
-    # appended here. The parents[3] entry is the local-dev convenience fallback
-    # (../loomweave from the repo root); CI runners lack the sibling checkout, so
-    # the Layer-2 drift recheck skips clean there — the documented basis for the
-    # clean skip is the sibling's ABSENCE on runners, not a guarantee independent
-    # of runner layout.
-    candidates: list[Path] = []
+    # Env takes EXCLUSIVE precedence (first-configured, not first-existing): if
+    # ``WARDLINE_LOOMWEAVE_REPO`` (or the legacy unnamespaced ``LOOMWEAVE_REPO``)
+    # is set, resolve the sibling ONLY from it and skip clean if the oracle is
+    # absent under it — the parents[3] local-dev convenience checkout is consulted
+    # ONLY when no env var is set. This shares ONE resolution contract with the
+    # other ``_drift`` rechecks (test_loomweave_qualname_parity.py:150): an
+    # operator who points the release-gate env var at a specific checkout that
+    # lacks the file gets a clean skip, never a silent compare against the local
+    # convenience sibling. CI runners (env unset, no parents[3] sibling) skip
+    # clean — the documented basis for the clean skip is the sibling's ABSENCE,
+    # not a guarantee independent of runner layout.
+    subpath = ("docs", "federation", "fixtures", "sei-conformance-oracle.json")
     for var in ("WARDLINE_LOOMWEAVE_REPO", "LOOMWEAVE_REPO"):
         if env := os.environ.get(var):
-            candidates.append(Path(env) / "docs" / "federation" / "fixtures" / "sei-conformance-oracle.json")
-    candidates.append(
-        Path(__file__).resolve().parents[3]
-        / "loomweave"
-        / "docs"
-        / "federation"
-        / "fixtures"
-        / "sei-conformance-oracle.json"
-    )
-    return next((path for path in candidates if path.exists()), None)
+            path = Path(env).joinpath(*subpath)
+            return path if path.exists() else None
+    path = Path(__file__).resolve().parents[3] / "loomweave" / Path(*subpath)
+    return path if path.exists() else None
 
 
 COVERED_SCENARIOS = {
