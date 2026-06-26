@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from wardline._version import __version__
-from wardline.core.attest import git_state
+from wardline.core.attest import _SAFE_GIT_CONFIG, git_state
 from wardline.core.errors import LegisArtifactError
 from wardline.core.finding import FINGERPRINT_SCHEME, Finding, SuppressionState
 from wardline.core.ruleset import ruleset_hash
@@ -199,7 +199,7 @@ def _git_tree_sha(root: Path) -> str | None:
     """
     try:
         rev = subprocess.run(
-            ["git", "rev-parse", "HEAD^{tree}"],
+            ["git", *_SAFE_GIT_CONFIG, "rev-parse", "HEAD^{tree}"],
             cwd=root,
             capture_output=True,
             text=True,
@@ -215,7 +215,7 @@ def _git_repo_root(root: Path) -> Path | None:
     """The containing git repository root, or None when unavailable."""
     try:
         rev = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
+            ["git", *_SAFE_GIT_CONFIG, "rev-parse", "--show-toplevel"],
             cwd=root,
             capture_output=True,
             text=True,

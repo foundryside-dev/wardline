@@ -1,0 +1,4 @@
+## 2026-06-26 - Local Code Execution via Untrusted .git/config
+**Vulnerability:** The application executes `git` via `subprocess.run` against potentially untrusted directories without disabling `core.fsmonitor` or other executable git configurations. This allows for local code execution if a user runs Wardline against a directory containing a malicious `.git/config`.
+**Learning:** Even innocent read-only `git` commands (like `git status` or `git rev-parse`) can result in local code execution because git respects the `.git/config` file in the target directory, which may configure executable hooks or commands like `core.fsmonitor`.
+**Prevention:** When invoking `git` via `subprocess` against potentially untrusted directories, always prepend `("-c", "core.fsmonitor=false")` (the application's `_SAFE_GIT_CONFIG` constant) to the `git` command arguments to prevent execution of malicious repository configurations.
