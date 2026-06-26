@@ -1332,6 +1332,12 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                     "description": "Machine-readable companion to mode: advisory in delta mode (a clean delta is "
                     "not a full-tree pass), gate-of-record in full-fallback.",
                 },
+                "scope_source": {
+                    "type": "string",
+                    "enum": ["reverify_worklist_v1", "entity_list", "empty"],
+                    "description": "Which producer scope shape was parsed: a warpline.reverify_worklist.v1 "
+                    "worklist, a bare entity_list, or empty (zero usable entities). Declares the scope SOURCE.",
+                },
                 "entities_requested": {
                     "type": "integer",
                     "description": "Number of input items in the supplied affected scope.",
@@ -1376,6 +1382,12 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                     "type": "boolean",
                     "description": "Whether the authoritative SEI (loomweave) resolution path fired for any entity.",
                 },
+                "producer_generated_at": {
+                    "type": ["string", "null"],
+                    "description": "UNVERIFIED producer claim, echoed verbatim: the warpline worklist's "
+                    "data.generated_at (ISO-8601), a staleness proxy. Unauthenticated and never wardline-vouched; "
+                    "it never feeds mode, gate_authority, or any verdict. Null for a bare entity_list or when omitted.",
+                },
                 "boundary_caveat": {
                     "type": "string",
                     "description": "The fixed honesty caveat naming the in-scope-correctness hazard (cross-file taint "
@@ -1385,6 +1397,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
             "required": [
                 "mode",
                 "gate_authority",
+                "scope_source",
                 "entities_requested",
                 "files_discovered",
                 "files_analyzed",
@@ -1393,6 +1406,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "stale_sei_count",
                 "unresolved_entities",
                 "loomweave_used",
+                "producer_generated_at",
                 "boundary_caveat",
             ],
             "additionalProperties": False,

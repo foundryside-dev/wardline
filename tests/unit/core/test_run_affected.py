@@ -296,3 +296,20 @@ def test_delta_mode_summary_reflects_filtered_findings(tmp_path: Path) -> None:
 
     active_defects = [f for f in result.findings if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.ACTIVE]
     assert result.summary.active == len(active_defects) == 1
+
+
+def test_run_scope_block_declares_source_and_generated_at(tmp_path: Path) -> None:
+    (tmp_path / "a.py").write_text("def alpha():\n    return 1\n", encoding="utf-8")
+    affected = parse_affected_scope(
+        {
+            "schema": "warpline.reverify_worklist.v1",
+            "data": {
+                "generated_at": "2026-06-18T00:00:00Z",
+                "items": [{"entity": {"locator": "python:function:a.alpha", "sei": None}}],
+            },
+        }
+    )
+    result = run_scan(tmp_path, affected=affected)
+    assert result.scope is not None
+    assert result.scope.scope_source == "reverify_worklist_v1"
+    assert result.scope.producer_generated_at == "2026-06-18T00:00:00Z"

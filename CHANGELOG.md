@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a hardcoded `<subdir>/.wardline/*-findings.jsonl` path.
 
 ### Added
+- Delta-scan scope block now declares its `scope_source` and echoes warpline's unverified `producer_generated_at` (staleness proxy) across CLI/SARIF/MCP; MCP scope schema is key-parity-tested against `DeltaScopeReport`.
 - `wardline doctor --repair` gitignores the artifacts dir and sweeps stray managed
   artifacts; deletion is available on both the CLI and the MCP `doctor` tool (`repair:true`,
   advertised `destructiveHint: true`), bounded to managed (timestamped) files inside

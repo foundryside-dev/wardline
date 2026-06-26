@@ -111,19 +111,19 @@ There are **two distinct populations** of defects in one scan, and they can
 differ on purpose:
 
 1. **Emitted-active** — `summary.active` counts `active` defects in the
-   **emitted** (post-annotation) findings (built at `src/wardline/core/run.py:550`).
+   **emitted** (post-annotation) findings (built at `src/wardline/core/run.py:554`).
    Baseline / waiver / judged annotate these findings in place; a suppressed
    defect is still emitted, just not counted as `active`.
 
 2. **Gate population** — the `--fail-on` gate evaluates a **separate**
    `ScanResult.gate_findings` list: the *unsuppressed* population
-   (`src/wardline/core/run.py:485`). By default, repository-controlled
+   (`src/wardline/core/run.py:489`). By default, repository-controlled
    baseline / waiver / judged entries **annotate** the emitted findings but do
    **not** clear the gate — so a malicious PR cannot green the gate by committing
    a suppression keyed to its own new defect. `gate_decision` evaluates
    `gate_findings` when present, else falls back to `findings` (the trusted
    `--trust-suppressions` / directly-constructed path), selected at
-   `src/wardline/core/run.py:642` (`honors_suppressions`).
+   `src/wardline/core/run.py:648` (`honors_suppressions`).
 
 This is why **`summary.active: 0` can co-exist with `gate.tripped: true`**: every
 defect was suppressed by a committed baseline (so emitted-active is 0), but those
@@ -163,7 +163,7 @@ The MCP `scan` gate block exposes `gate.tripped` (`src/wardline/mcp/server.py:94
 
 `--new-since` scopes **both** populations identically: any `active` defect
 outside the delta is re-marked `baselined` in both the emitted and gate lists
-(`src/wardline/core/run.py:495`, `def apply_delta_scope`).
+(`src/wardline/core/run.py:499`, `def apply_delta_scope`).
 
 ## The three meanings of "new"
 
@@ -174,7 +174,7 @@ still legitimately means three different things depending on the surface:
 | "new" on this surface | Means | Owner / anchor |
 | --- | --- | --- |
 | Filigree store | An **unseen fingerprint** — first time this finding identity is seen for a `(file, scan_source)`. | **Filigree-owned** lifecycle (`src/wardline/core/filigree_emit.py:68-76`) |
-| `wardline scan --new-since <ref>` | **Delta-scope**: the gate fires only on defects in files/entities changed since a git ref; everything else is re-marked `baselined`. | `src/wardline/core/run.py:496`; help text `src/wardline/cli/scan.py` (`--new-since`) |
+| `wardline scan --new-since <ref>` | **Delta-scope**: the gate fires only on defects in files/entities changed since a git ref; everything else is re-marked `baselined`. | `src/wardline/core/run.py:499`; help text `src/wardline/cli/scan.py` (`--new-since`) |
 | (historical) CLI summary | Formerly relabelled the `active` count as "N new". **Corrected to "N active"**. | `src/wardline/cli/scan.py:568` |
 
 The first-seen Filigree sense and the delta-scope `--new-since` sense are
@@ -198,7 +198,7 @@ How each concept appears on each surface:
 | gate verdict | exit code + `--fail-on` | (`gate_findings`, `run.py:110`; `GateDecision`, `run.py:152`, `verdict` `run.py:162`) | `gate` (`server.py:941`), `gate.tripped` (`server.py:942`), `gate.verdict` (`server.py:946`) | `gate.tripped` (`agent_summary.py:144`), `gate.verdict` (`agent_summary.py:147`) | not emitted to Filigree |
 
 The unsuppressed gate population is built from `Baseline(frozenset())`
-(`src/wardline/core/run.py:485`).
+(`src/wardline/core/run.py:489`).
 
 ## For the suite
 

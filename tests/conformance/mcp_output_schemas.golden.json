@@ -3292,6 +3292,22 @@
             ],
             "type": "string"
           },
+          "producer_generated_at": {
+            "description": "UNVERIFIED producer claim, echoed verbatim: the warpline worklist's data.generated_at (ISO-8601), a staleness proxy. Unauthenticated and never wardline-vouched; it never feeds mode, gate_authority, or any verdict. Null for a bare entity_list or when omitted.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope_source": {
+            "description": "Which producer scope shape was parsed: a warpline.reverify_worklist.v1 worklist, a bare entity_list, or empty (zero usable entities). Declares the scope SOURCE.",
+            "enum": [
+              "reverify_worklist_v1",
+              "entity_list",
+              "empty"
+            ],
+            "type": "string"
+          },
           "stale_sei_count": {
             "description": "Entities whose SEI resolved to a now-absent qualname (loomweave stale vs working tree).",
             "type": "integer"
@@ -3322,6 +3338,7 @@
         "required": [
           "mode",
           "gate_authority",
+          "scope_source",
           "entities_requested",
           "files_discovered",
           "files_analyzed",
@@ -3330,6 +3347,7 @@
           "stale_sei_count",
           "unresolved_entities",
           "loomweave_used",
+          "producer_generated_at",
           "boundary_caveat"
         ],
         "type": "object"

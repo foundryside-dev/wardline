@@ -338,6 +338,8 @@ def run_scan(
     # only soundness gap is the declared inter-file one (spec §5.3a). Fail-closed: an empty
     # resolution → analyze EVERYTHING (full-fallback, INV-3).
     scope_mode: str | None = None
+    scope_source: str = ""
+    producer_generated_at: str | None = None
     affected_qualnames: frozenset[str] = frozenset()
     affected_files: frozenset[str] = frozenset()
     entities_requested = 0
@@ -348,6 +350,8 @@ def run_scan(
     analyze_files = files
     if affected is not None:
         entities_requested = affected.item_count
+        scope_source = affected.source_kind
+        producer_generated_at = affected.producer_generated_at
         index = build_qualname_index(files, root)
         resolved = resolve_affected_scope(affected, index=index, sei_resolver=sei_resolver)
         fell_back_count = len(resolved.fell_back)
@@ -563,6 +567,7 @@ def run_scan(
         scope = DeltaScopeReport(
             mode=scope_mode,
             gate_authority="advisory" if scope_mode == "delta" else "gate-of-record",
+            scope_source=scope_source,
             entities_requested=entities_requested,
             files_discovered=len(files),
             files_analyzed=len(analyze_files),
@@ -571,6 +576,7 @@ def run_scan(
             stale_sei_count=stale_sei_count,
             unresolved_entities=unresolved_entities,
             loomweave_used=loomweave_used,
+            producer_generated_at=producer_generated_at,
         )
     resolved_root = root.resolve()
     return ScanResult(
