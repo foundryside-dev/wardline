@@ -65,7 +65,7 @@ def test_to_dict_keys_and_shape() -> None:
         "stale_sei_count",
         "unresolved_entities",
         "loomweave_used",
-        "producer_generated_at",
+        "producer_completeness",
         "boundary_caveat",
     }
     assert d["mode"] == "delta"
@@ -79,7 +79,7 @@ def test_to_dict_keys_and_shape() -> None:
     assert d["stale_sei_count"] == 0
     assert d["loomweave_used"] is True
     assert d["boundary_caveat"] == BOUNDARY_CAVEAT
-    assert d["producer_generated_at"] is None
+    assert d["producer_completeness"] is None
     assert d["unresolved_entities"] == [
         {"locator": "python:function:pkg.bogus", "sei": None},
         {"locator": None, "sei": "loomweave:eid:gone"},
@@ -124,29 +124,64 @@ def test_stale_sei_and_fell_back_counts_surface_trust() -> None:
     assert d["stale_sei_count"] == 1
 
 
-# --- A1: AffectedScope.producer_generated_at ---
+# --- A1: AffectedScope.producer_completeness ---
+
+_SAMPLE_IC = {
+    "status": "partial",
+    "as_of": "2026-06-18T00:00:00+00:00",
+    "graph_fresh": True,
+    "graph_ref": "e5b022a65a74759344e67538a0bb823b64c843ad",
+    "depth_capped": True,
+    "unresolved_count": 0,
+    "reasons": ["depth_capped"],
+}
 
 
-def test_worklist_captures_generated_at() -> None:
+def test_worklist_captures_impact_completeness() -> None:
     payload = {
         "schema": "warpline.reverify_worklist.v1",
         "data": {
-            "generated_at": "2026-06-18T00:00:00Z",
+            "impact_completeness": _SAMPLE_IC,
             "items": [{"entity": {"locator": "python:function:a.alpha", "sei": None}}],
         },
     }
     scope = parse_affected_scope(payload)
     assert scope.source_kind == "reverify_worklist_v1"
-    assert scope.producer_generated_at == "2026-06-18T00:00:00Z"
+    assert scope.producer_completeness == _SAMPLE_IC
 
 
-def test_entity_list_has_no_generated_at() -> None:
+def test_worklist_missing_impact_completeness_returns_none() -> None:
+    payload = {
+        "schema": "warpline.reverify_worklist.v1",
+        "data": {
+            "items": [{"entity": {"locator": "python:function:a.alpha", "sei": None}}],
+        },
+    }
+    scope = parse_affected_scope(payload)
+    assert scope.source_kind == "reverify_worklist_v1"
+    assert scope.producer_completeness is None
+
+
+def test_worklist_non_dict_impact_completeness_returns_none() -> None:
+    """A non-dict value for impact_completeness is treated as absent (defensive capture)."""
+    payload = {
+        "schema": "warpline.reverify_worklist.v1",
+        "data": {
+            "impact_completeness": "not-a-dict",
+            "items": [{"entity": {"locator": "python:function:a.alpha", "sei": None}}],
+        },
+    }
+    scope = parse_affected_scope(payload)
+    assert scope.producer_completeness is None
+
+
+def test_entity_list_has_no_producer_completeness() -> None:
     scope = parse_affected_scope([{"locator": "python:function:a.alpha"}])
     assert scope.source_kind == "entity_list"
-    assert scope.producer_generated_at is None
+    assert scope.producer_completeness is None
 
 
-# --- A2: DeltaScopeReport scope_source + producer_generated_at ---
+# --- A2: DeltaScopeReport scope_source + producer_completeness ---
 
 
 def _report(**overrides: object) -> DeltaScopeReport:
@@ -162,20 +197,20 @@ def _report(**overrides: object) -> DeltaScopeReport:
         stale_sei_count=0,
         unresolved_entities=(),
         loomweave_used=False,
-        producer_generated_at="2026-06-18T00:00:00Z",
+        producer_completeness=_SAMPLE_IC,
     )
     base.update(overrides)
     return DeltaScopeReport(**base)  # type: ignore[arg-type]
 
 
-def test_report_serializes_scope_source_and_generated_at() -> None:
+def test_report_serializes_scope_source_and_producer_completeness() -> None:
     d = _report().to_dict()
     assert d["scope_source"] == "reverify_worklist_v1"
-    assert d["producer_generated_at"] == "2026-06-18T00:00:00Z"
-    assert set(d) >= {"scope_source", "producer_generated_at"}
+    assert d["producer_completeness"] == _SAMPLE_IC
+    assert set(d) >= {"scope_source", "producer_completeness"}
 
 
-def test_report_generated_at_defaults_none() -> None:
-    d = _report(producer_generated_at=None, scope_source="entity_list").to_dict()
-    assert d["producer_generated_at"] is None
+def test_report_producer_completeness_defaults_none() -> None:
+    d = _report(producer_completeness=None, scope_source="entity_list").to_dict()
+    assert d["producer_completeness"] is None
     assert d["scope_source"] == "entity_list"

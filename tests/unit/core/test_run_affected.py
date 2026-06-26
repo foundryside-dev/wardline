@@ -298,13 +298,22 @@ def test_delta_mode_summary_reflects_filtered_findings(tmp_path: Path) -> None:
     assert result.summary.active == len(active_defects) == 1
 
 
-def test_run_scope_block_declares_source_and_generated_at(tmp_path: Path) -> None:
+def test_run_scope_block_declares_source_and_producer_completeness(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("def alpha():\n    return 1\n", encoding="utf-8")
+    ic = {
+        "status": "partial",
+        "as_of": "2026-06-18T00:00:00+00:00",
+        "graph_fresh": True,
+        "graph_ref": "e5b022a65a74759344e67538a0bb823b64c843ad",
+        "depth_capped": True,
+        "unresolved_count": 0,
+        "reasons": ["depth_capped"],
+    }
     affected = parse_affected_scope(
         {
             "schema": "warpline.reverify_worklist.v1",
             "data": {
-                "generated_at": "2026-06-18T00:00:00Z",
+                "impact_completeness": ic,
                 "items": [{"entity": {"locator": "python:function:a.alpha", "sei": None}}],
             },
         }
@@ -312,4 +321,4 @@ def test_run_scope_block_declares_source_and_generated_at(tmp_path: Path) -> Non
     result = run_scan(tmp_path, affected=affected)
     assert result.scope is not None
     assert result.scope.scope_source == "reverify_worklist_v1"
-    assert result.scope.producer_generated_at == "2026-06-18T00:00:00Z"
+    assert result.scope.producer_completeness == ic

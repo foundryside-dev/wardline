@@ -1,7 +1,19 @@
 {
   "schema": "warpline.reverify_worklist.v1",
+  "ok": true,
+  "query": {},
   "data": {
-    "generated_at": "2026-06-18T00:00:00Z",
+    "completeness": "FULL",
+    "impact_completeness": {
+      "status": "unknown",
+      "as_of": "2026-06-18T00:00:00+00:00",
+      "graph_fresh": false,
+      "graph_ref": null,
+      "depth_capped": false,
+      "unresolved_count": 1,
+      "reasons": ["unresolved_entities"]
+    },
+    "staleness": {"snapshot_commit": null, "commits_behind": 0},
     "items": [
       {
         "entity": {
@@ -20,6 +32,16 @@
           "requirements": []
         }
       }
-    ]
+    ],
+    "resolved": [],
+    "unresolved": []
+  },
+  "warnings": [],
+  "next_actions": {},
+  "enrichment": {},
+  "enrichment_reasons": {},
+  "meta": {
+    "local_only": true,
+    "peer_side_effects": []
   }
 }

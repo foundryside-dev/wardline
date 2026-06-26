@@ -66,7 +66,7 @@ class AffectedScope:
     entities: frozenset[AffectedEntity]
     source_kind: str
     item_count: int
-    producer_generated_at: str | None = None
+    producer_completeness: dict[str, object] | None = None
 
 
 def parse_affected_scope(payload: object) -> AffectedScope:
@@ -173,11 +173,12 @@ def _parse_worklist(payload: dict[object, object]) -> AffectedScope:
     data = payload.get("data", payload)
     if not isinstance(data, dict):
         raise ScopeParseError(f"affected scope 'data' must be an object, got {type(data).__name__}")
-    generated_at = _coerce_str(data.get("generated_at"))
+    ic = data.get("impact_completeness")
+    producer_completeness = ic if isinstance(ic, dict) else None
     items = data.get("items")
     if items is None:
         # An object with no 'items' is a parseable but empty worklist — not malformed.
-        return AffectedScope(frozenset(), "empty", 0, producer_generated_at=generated_at)
+        return AffectedScope(frozenset(), "empty", 0, producer_completeness=producer_completeness)
     if not isinstance(items, list):
         raise ScopeParseError(f"affected scope 'items' must be a list, got {type(items).__name__}")
     _enforce_item_cap(len(items))
@@ -194,9 +195,9 @@ def _parse_worklist(payload: dict[object, object]) -> AffectedScope:
         if entity is not None:
             entities.add(entity)
     if not entities:
-        return AffectedScope(frozenset(), "empty", len(items), producer_generated_at=generated_at)
+        return AffectedScope(frozenset(), "empty", len(items), producer_completeness=producer_completeness)
     return AffectedScope(
-        frozenset(entities), "reverify_worklist_v1", len(items), producer_generated_at=generated_at
+        frozenset(entities), "reverify_worklist_v1", len(items), producer_completeness=producer_completeness
     )
 
 
@@ -256,8 +257,9 @@ class DeltaScopeReport:
     in full-fallback.
 
     ``scope_source`` records the parsed producer shape (``reverify_worklist_v1`` /
-    ``entity_list`` / ``empty``); ``producer_generated_at`` is the worklist's UNVERIFIED
-    ``data.generated_at`` staleness proxy, never wardline-vouched.
+    ``entity_list`` / ``empty``); ``producer_completeness`` is warpline's UNVERIFIED
+    ``data.impact_completeness`` object (completeness + staleness in one), echoed verbatim,
+    never wardline-vouched.
 
     ``fell_back_count`` / ``stale_sei_count`` surface how much of the scope rests on the
     spoofable qualname-locator path or a stale SEI, so a consumer can judge trust without
@@ -275,7 +277,7 @@ class DeltaScopeReport:
     stale_sei_count: int
     unresolved_entities: tuple[dict[str, str | None], ...]
     loomweave_used: bool
-    producer_generated_at: str | None = None
+    producer_completeness: dict[str, object] | None = None
     boundary_caveat: str = field(default=BOUNDARY_CAVEAT)
 
     def to_dict(self) -> dict[str, object]:
@@ -296,6 +298,6 @@ class DeltaScopeReport:
             "stale_sei_count": self.stale_sei_count,
             "unresolved_entities": [dict(e) for e in self.unresolved_entities],
             "loomweave_used": self.loomweave_used,
-            "producer_generated_at": self.producer_generated_at,
+            "producer_completeness": self.producer_completeness,
             "boundary_caveat": self.boundary_caveat,
         }

@@ -24,7 +24,7 @@ def _sample() -> dict[str, object]:
         stale_sei_count=0,
         unresolved_entities=(),
         loomweave_used=False,
-        producer_generated_at="2026-06-18T00:00:00Z",
+        producer_completeness={"status": "partial", "as_of": "2026-06-18T00:00:00+00:00"},
     ).to_dict()
 
 

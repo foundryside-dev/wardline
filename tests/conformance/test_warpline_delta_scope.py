@@ -250,14 +250,16 @@ def test_axis7_gate_population_not_narrowed(tmp_path: Path) -> None:
     assert delta_decision.exit_class == 1
 
 
-# --- C2: worklist generated_at capture + gated published-artifact drift marker -----
+# --- C2: worklist impact_completeness capture + gated published-artifact drift marker -----
 
 
-def test_consumer_captures_worklist_generated_at() -> None:
+def test_consumer_captures_impact_completeness() -> None:
     payload = json.loads((_FIXTURES / "worklist_alpha.v1.json").read_text(encoding="utf-8"))
     scope = parse_affected_scope(payload)
     assert scope.source_kind == "reverify_worklist_v1"
-    assert scope.producer_generated_at == "2026-06-18T00:00:00Z"
+    assert scope.producer_completeness is not None
+    assert scope.producer_completeness["status"] == "partial"
+    assert scope.producer_completeness["depth_capped"] is True
 
 
 @pytest.mark.skipif(
@@ -266,14 +268,26 @@ def test_consumer_captures_worklist_generated_at() -> None:
     "warpline.reverify_worklist.v1 artifact (gated on warpline publishing it)",
 )
 def test_vendored_worklist_matches_published_artifact() -> None:
-    # NOTE: EXISTENCE-ONLY integration placeholder.
-    # This test currently only confirms the published schema artifact FILE EXISTS at
-    # ``$WARPLINE_REPO/contracts/reverify_worklist.v1.schema.json``; it does NOT
-    # validate the vendored fixtures against that schema.  It is not yet real drift
-    # coverage.  When warpline publishes a stable schema, extend this test to load
-    # the schema (e.g. via jsonschema) and assert each vendored fixture in
-    # ``fixtures/warpline_delta/`` validates against it.
+    """Validate every vendored fixture against warpline's published schema.
+
+    Each fixture in ``fixtures/warpline_delta/*.v1.json`` must be a full valid envelope
+    conforming to the ``warpline.reverify_worklist.v1`` schema published at
+    ``$WARPLINE_REPO/contracts/reverify_worklist.v1.schema.json``.
+    """
+    import glob
+
+    from jsonschema import Draft202012Validator
+
     published = Path(os.environ["WARPLINE_REPO"]) / "contracts" / "reverify_worklist.v1.schema.json"
     assert published.is_file(), "warpline has not published the worklist contract artifact yet"
-    # When warpline publishes, assert each vendored fixture validates against `published`.
-    # Until then this is the documented integration point (skips clean).
+    schema = json.loads(published.read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema)
+    fixtures = sorted(glob.glob(str(_FIXTURES / "*.v1.json")))
+    assert fixtures, "no fixtures found in fixtures/warpline_delta/"
+    for fixture_path in fixtures:
+        instance = json.loads(Path(fixture_path).read_text(encoding="utf-8"))
+        errors = list(validator.iter_errors(instance))
+        assert not errors, (
+            f"fixture {fixture_path} does not validate against warpline's published schema:\n"
+            + "\n".join(str(e) for e in errors)
+        )

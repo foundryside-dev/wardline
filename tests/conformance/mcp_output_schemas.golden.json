@@ -3300,10 +3300,10 @@
             ],
             "type": "string"
           },
-          "producer_generated_at": {
-            "description": "UNVERIFIED producer claim, echoed verbatim: the warpline worklist's data.generated_at (ISO-8601), a staleness proxy. Unauthenticated and never wardline-vouched; it never feeds mode, gate_authority, or any verdict. Null for a bare entity_list or when omitted.",
+          "producer_completeness": {
+            "description": "UNVERIFIED producer claim, echoed VERBATIM: warpline's data.impact_completeness object (its self-assessed completeness + staleness of the change-impact analysis). Unauthenticated and never wardline-vouched; it never feeds mode, gate_authority, or any verdict. Null for a bare entity_list or when absent.",
             "type": [
-              "string",
+              "object",
               "null"
             ]
           },
@@ -3355,7 +3355,7 @@
           "stale_sei_count",
           "unresolved_entities",
           "loomweave_used",
-          "producer_generated_at",
+          "producer_completeness",
           "boundary_caveat"
         ],
         "type": "object"

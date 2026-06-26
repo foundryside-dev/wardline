@@ -1,6 +1,6 @@
 {
   "schema": "wardline.delta_scope.v1",
-  "description": "The --affected delta-scan honesty/provenance block (DeltaScopeReport.to_dict()). Producer: wardline. gate_authority='advisory' in delta mode is never a gate-of-record pass. producer_generated_at is an UNVERIFIED warpline claim.",
+  "description": "The --affected delta-scan honesty/provenance block (DeltaScopeReport.to_dict()). Producer: wardline. gate_authority='advisory' in delta mode is never a gate-of-record pass. producer_completeness is warpline's UNVERIFIED impact_completeness object, echoed verbatim.",
   "fields": [
     "mode",
     "gate_authority",
@@ -13,7 +13,7 @@
     "stale_sei_count",
     "unresolved_entities",
     "loomweave_used",
-    "producer_generated_at",
+    "producer_completeness",
     "boundary_caveat"
   ]
 }

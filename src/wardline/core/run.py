@@ -339,7 +339,7 @@ def run_scan(
     # resolution → analyze EVERYTHING (full-fallback, INV-3).
     scope_mode: str | None = None
     scope_source: str = ""
-    producer_generated_at: str | None = None
+    producer_completeness: dict[str, object] | None = None
     affected_qualnames: frozenset[str] = frozenset()
     affected_files: frozenset[str] = frozenset()
     entities_requested = 0
@@ -351,7 +351,7 @@ def run_scan(
     if affected is not None:
         entities_requested = affected.item_count
         scope_source = affected.source_kind
-        producer_generated_at = affected.producer_generated_at
+        producer_completeness = affected.producer_completeness
         index = build_qualname_index(files, root)
         resolved = resolve_affected_scope(affected, index=index, sei_resolver=sei_resolver)
         fell_back_count = len(resolved.fell_back)
@@ -576,7 +576,7 @@ def run_scan(
             stale_sei_count=stale_sei_count,
             unresolved_entities=unresolved_entities,
             loomweave_used=loomweave_used,
-            producer_generated_at=producer_generated_at,
+            producer_completeness=producer_completeness,
         )
     resolved_root = root.resolve()
     return ScanResult(

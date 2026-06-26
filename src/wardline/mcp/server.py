@@ -1382,11 +1382,12 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                     "type": "boolean",
                     "description": "Whether the authoritative SEI (loomweave) resolution path fired for any entity.",
                 },
-                "producer_generated_at": {
-                    "type": ["string", "null"],
-                    "description": "UNVERIFIED producer claim, echoed verbatim: the warpline worklist's "
-                    "data.generated_at (ISO-8601), a staleness proxy. Unauthenticated and never wardline-vouched; "
-                    "it never feeds mode, gate_authority, or any verdict. Null for a bare entity_list or when omitted.",
+                "producer_completeness": {
+                    "type": ["object", "null"],
+                    "description": "UNVERIFIED producer claim, echoed VERBATIM: warpline's "
+                    "data.impact_completeness object (its self-assessed completeness + staleness of the "
+                    "change-impact analysis). Unauthenticated and never wardline-vouched; it never feeds "
+                    "mode, gate_authority, or any verdict. Null for a bare entity_list or when absent.",
                 },
                 "boundary_caveat": {
                     "type": "string",
@@ -1406,7 +1407,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "stale_sei_count",
                 "unresolved_entities",
                 "loomweave_used",
-                "producer_generated_at",
+                "producer_completeness",
                 "boundary_caveat",
             ],
             "additionalProperties": False,
