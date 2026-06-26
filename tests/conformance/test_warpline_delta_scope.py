@@ -266,6 +266,13 @@ def test_consumer_captures_worklist_generated_at() -> None:
     "warpline.reverify_worklist.v1 artifact (gated on warpline publishing it)",
 )
 def test_vendored_worklist_matches_published_artifact() -> None:
+    # NOTE: EXISTENCE-ONLY integration placeholder.
+    # This test currently only confirms the published schema artifact FILE EXISTS at
+    # ``$WARPLINE_REPO/contracts/reverify_worklist.v1.schema.json``; it does NOT
+    # validate the vendored fixtures against that schema.  It is not yet real drift
+    # coverage.  When warpline publishes a stable schema, extend this test to load
+    # the schema (e.g. via jsonschema) and assert each vendored fixture in
+    # ``fixtures/warpline_delta/`` validates against it.
     published = Path(os.environ["WARPLINE_REPO"]) / "contracts" / "reverify_worklist.v1.schema.json"
     assert published.is_file(), "warpline has not published the worklist contract artifact yet"
     # When warpline publishes, assert each vendored fixture validates against `published`.

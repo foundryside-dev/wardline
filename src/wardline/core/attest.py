@@ -217,7 +217,7 @@ def _build_payload(
                 {
                     "qualname": qualname,
                     "sei": None,  # filled by _enrich_seis behind a lazy Loomweave import
-                    "content_hash": None,  # filled by _enrich_seis from the resolved binding (whole-file blake3)
+                    "content_hash": None,  # filled by _enrich_seis from the resolved binding (entity-body span blake3)
                     "verdict": verdict.verdict,
                     "tier": verdict.declared_tier,
                 }

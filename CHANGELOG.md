@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- **BREAKING (unreleased contract):** attest bundle schema bumped `wardline-attest-1` → `wardline-attest-2`; each boundary now carries `content_hash` (whole-file blake3 binding key, null when unresolved). `wardline-attest-1` bundles no longer verify.
+- **BREAKING (unreleased contract):** attest bundle schema bumped `wardline-attest-1` → `wardline-attest-2`; each boundary now carries `content_hash` (entity-body span blake3 binding key, null when unresolved). `wardline-attest-1` bundles no longer verify.
 - Default scan artifacts now anchor to the weft-project root (the `weft.toml` directory)
   rather than the scan cwd, so a subdirectory scan writes to `<project-root>/.wardline/`.
   Retention is therefore project-root-wide across heterogeneous subdir/root scans sharing

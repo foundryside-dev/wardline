@@ -488,7 +488,7 @@
     "seam": "Wardline\u2192warpline attest / change-impact contract (wardline-attest-2): a planned versioned attest surface where wardline publishes a signed, full-scan, commit-pinned evidence bundle whose per-boundary entries carry a content_hash binding key + 3-valued clean/defect/unknown verdict, and warpline pulls it to do mechanical (commit, content_hash) equality to decide \"proven clean at commit X\". Wardline owns the trust verdict; warpline never declares clean.",
     "authority": "wardline",
     "consumer_or_second_producer": "warpline",
-    "wire": "wardline-attest-2 attest / change-impact contract (producer IMPLEMENTED: ATTEST_SCHEMA='wardline-attest-2', per-boundary {qualname, sei, content_hash, verdict, tier}, content_hash=whole-file blake3 from EntityBinding; warpline consumer NOT YET wired)",
+    "wire": "wardline-attest-2 attest / change-impact contract (producer IMPLEMENTED: ATTEST_SCHEMA='wardline-attest-2', per-boundary {qualname, sei, content_hash, verdict, tier}, content_hash=entity-body span blake3 from EntityBinding (identity-resolve granularity); warpline consumer NOT YET wired)",
     "two_sided": true,
     "oracle_shape": null,
     "oracle_test": null,

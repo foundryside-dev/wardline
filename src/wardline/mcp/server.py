@@ -3259,8 +3259,9 @@ _ATTEST_OUTPUT_SCHEMA: dict[str, Any] = {
                             },
                             "content_hash": {
                                 "type": ["string", "null"],
-                                "description": "Whole-file blake3 binding key from the resolved Loomweave binding; "
-                                "null when unresolved. File granularity, not entity-span.",
+                                "description": "Entity-body span blake3 from the resolved Loomweave EntityBinding "
+                                "(identity-resolve granularity, same as Filigree content_hash_at_attach); "
+                                "null when unresolved. Entity-precise — compare only same-granularity per SEI.",
                             },
                             "verdict": {
                                 "type": "string",

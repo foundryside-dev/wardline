@@ -92,7 +92,7 @@ A bundle is a JSON object with schema `"wardline-attest-2"`:
 |---|---|---|
 | `qualname` | string | Fully-qualified function name of the trust boundary |
 | `sei` | string \| null | Loomweave SEI (stable, rename-resistant entity identifier) if resolved; `null` otherwise |
-| `content_hash` | string \| null | Whole-file blake3 binding key from the resolved Loomweave binding; `null` when unresolved. **File granularity, not entity-span** — do not key on it as entity-precise |
+| `content_hash` | string \| null | Entity-body span blake3 from the resolved Loomweave `EntityBinding` (identity-resolve granularity, same as Filigree's `content_hash_at_attach`); `null` when unresolved. **Entity-precise** — compare only against an entity-body hash for the same SEI, never a whole-file hash |
 | `verdict` | string | `"clean"` / `"defect"` / `"unknown"` — the engine's three-valued verdict for this boundary |
 | `tier` | string \| null | Declared trust tier (`"INTEGRAL"`, `"ASSURED"`, `"GUARDED"`, `"EXTERNAL_RAW"`) or `null` |
 
