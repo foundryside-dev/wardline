@@ -313,12 +313,18 @@ wardline mcp`}</code></pre>
       <h2 class="h2">What it is, and what it is not.</h2>
 
       <div class="limits">
-        <Banner client:visible tone="warn" title="A deconfliction and quality gate — not a hardened security boundary.">
-          Wardline is a static analyzer that helps you find untrusted data reaching
-          trusted code. It does not enforce anything at runtime and does not
-          adjudicate trust for the federation — Legis governs, Wardline analyses. Do
-          not read a passing scan as a security guarantee. It is the deterministic
-          gate that makes a trust-boundary leak visible; the rest is your design.
+        <Banner client:visible tone="danger" title="A deconfliction & quality gate — NOT a security gate, certification, or compliance audit.">
+          Wardline is a static analyzer that makes a trust-boundary leak visible and
+          can gate a build on its exit code. But its taint findings are
+          <strong>advisory deconfliction signals</strong> — not a security
+          certification and not a compliance audit — and a passing, or silent, scan
+          is <strong>not a clean bill of health</strong>: an empty result means you
+          have not yet declared a boundary, not that the code is safe. It does not
+          enforce at runtime, encrypt, or sandbox anything, and it does not
+          adjudicate trust for the federation — Legis governs, Wardline analyses. It
+          is deconfliction-first, not security: do not treat a passing scan as
+          security or compliance assurance for a regulated, confidential, or
+          otherwise sensitive system.
         </Banner>
 
         <ul class="limits__list">
