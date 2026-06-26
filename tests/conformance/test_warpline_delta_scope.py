@@ -30,8 +30,11 @@ negative case, and the gate-not-narrowed axis that re-states INV-4 at the golden
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
+
+import pytest
 
 from wardline.core.delta_resolve import build_qualname_index, resolve_affected_scope
 from wardline.core.delta_scope import BOUNDARY_CAVEAT, parse_affected_scope
@@ -245,3 +248,25 @@ def test_axis7_gate_population_not_narrowed(tmp_path: Path) -> None:
     assert delta_decision.tripped is True
     assert delta_decision.verdict == "FAILED"
     assert delta_decision.exit_class == 1
+
+
+# --- C2: worklist generated_at capture + gated published-artifact drift marker -----
+
+
+def test_consumer_captures_worklist_generated_at() -> None:
+    payload = json.loads((_FIXTURES / "worklist_alpha.v1.json").read_text(encoding="utf-8"))
+    scope = parse_affected_scope(payload)
+    assert scope.source_kind == "reverify_worklist_v1"
+    assert scope.producer_generated_at == "2026-06-18T00:00:00Z"
+
+
+@pytest.mark.skipif(
+    not os.environ.get("WARPLINE_REPO"),
+    reason="set WARPLINE_REPO to drift-check the vendored fixtures vs warpline's published "
+    "warpline.reverify_worklist.v1 artifact (gated on warpline publishing it)",
+)
+def test_vendored_worklist_matches_published_artifact() -> None:
+    published = Path(os.environ["WARPLINE_REPO"]) / "contracts" / "reverify_worklist.v1.schema.json"
+    assert published.is_file(), "warpline has not published the worklist contract artifact yet"
+    # When warpline publishes, assert each vendored fixture validates against `published`.
+    # Until then this is the documented integration point (skips clean).
