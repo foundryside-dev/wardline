@@ -173,6 +173,13 @@
             "items": {
               "additionalProperties": false,
               "properties": {
+                "content_hash": {
+                  "description": "Whole-file blake3 binding key from the resolved Loomweave binding; null when unresolved. File granularity, not entity-span.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "qualname": {
                   "description": "Qualified name of the anchored entity.",
                   "type": "string"
@@ -204,6 +211,7 @@
               "required": [
                 "qualname",
                 "sei",
+                "content_hash",
                 "verdict",
                 "tier"
               ],
@@ -395,7 +403,7 @@
       "schema": {
         "description": "Wire-contract tag; bound into the HMAC so a relabel cannot verify.",
         "enum": [
-          "wardline-attest-1"
+          "wardline-attest-2"
         ],
         "type": "string"
       },

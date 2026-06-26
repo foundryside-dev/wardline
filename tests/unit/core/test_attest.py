@@ -279,7 +279,7 @@ def test_build_attestation_shape_and_signature(tmp_path: Path) -> None:
 
     bundle = build_attestation(tree, _KEY, today=_PINNED)
 
-    assert bundle["schema"] == "wardline-attest-1"
+    assert bundle["schema"] == "wardline-attest-2"
     payload = bundle["payload"]
 
     # Non-git tree → commit None, dirty False.
@@ -298,7 +298,8 @@ def test_build_attestation_shape_and_signature(tmp_path: Path) -> None:
     assert quals == sorted(quals)
     assert quals  # there ARE anchored boundaries
     assert all(b["sei"] is None for b in boundaries)
-    assert {"qualname", "sei", "verdict", "tier"} == set(boundaries[0])
+    assert all(b["content_hash"] is None for b in boundaries)
+    assert {"qualname", "sei", "content_hash", "verdict", "tier"} == set(boundaries[0])
 
     # Signature round-trips with the right key.
     assert bundle["signature"]["alg"] == "HMAC-SHA256"
@@ -326,7 +327,7 @@ def test_build_attestation_shape_and_signature(tmp_path: Path) -> None:
     assert verify_attestation(tampered_key_id, _KEY)["signature_valid"] is False
 
     tampered_schema = copy.deepcopy(bundle)
-    tampered_schema["schema"] = "wardline-attest-2"
+    tampered_schema["schema"] = "wardline-attest-1"  # old bundles no longer verify
     assert verify_attestation(tampered_schema, _KEY)["signature_valid"] is False
 
 
@@ -527,8 +528,11 @@ def test_sei_keyed_bundle_fills_resolved_boundary_only(tmp_path: Path) -> None:
     assert set(client.plugin_hints) == {"python"}
     by_qn = {b["qualname"]: b for b in payload["boundaries"]}
     assert by_qn["m.leak"]["sei"] == _SEI  # the one resolvable qualname is keyed
+    assert by_qn["m.leak"]["content_hash"] == "ch"  # content_hash from resolved binding
     assert by_qn["m.clean"]["sei"] is None  # unresolved → honestly None
+    assert by_qn["m.clean"]["content_hash"] is None
     assert by_qn["m.src"]["sei"] is None
+    assert by_qn["m.src"]["content_hash"] is None
     assert verify_attestation(bundle, _KEY)["signature_valid"] is True
 
 
@@ -572,3 +576,60 @@ def test_sei_keyed_bundle_reproducibility(tmp_path: Path) -> None:
     assert without_client["reproduced"] is False
     assert "boundaries" in without_client["mismatches"]
     assert "sei_source" in without_client["mismatches"]
+
+
+# --------------------------------------------------------------------------- #
+# B1: wardline-attest-2 schema / content_hash per-boundary tests
+# --------------------------------------------------------------------------- #
+
+import types  # noqa: E402
+
+
+class _ResolveAllLoomweave:
+    """Minimal client for SEI enrichment: SEI-capable, resolves every locator to an
+    ALIVE binding carrying a content_hash. Satisfies the capabilities()/resolve()/
+    resolve_identity()/resolve_sei() surface _enrich_seis exercises.
+
+    Distinct from the selective _FakeLoomweave above (which only resolves one
+    qualname). This one resolves ALL qualnames to content_hash="blake3:deadbeef"."""
+
+    def capabilities(self) -> dict[str, object]:
+        return {"sei": {"supported": True, "version": 1}}
+
+    def resolve(self, qualnames: list[str], *, plugin: str | None = None) -> types.SimpleNamespace:
+        return types.SimpleNamespace(resolved={q: f"python:function:{q}" for q in qualnames})
+
+    def resolve_identity(self, locator: str) -> dict[str, object]:
+        return {
+            "alive": True,
+            "sei": "loomweave:eid:" + "a" * 32,
+            "current_locator": locator,
+            "content_hash": "blake3:deadbeef",
+        }
+
+    def resolve_sei(self, sei: str) -> dict[str, object]:
+        return {"alive": True}
+
+
+def test_schema_is_attest_2(tmp_path: Path) -> None:
+    bundle = build_attestation(_annotated_tree(tmp_path), _KEY, today=_PINNED)
+    assert bundle["schema"] == "wardline-attest-2"
+
+
+def test_boundaries_carry_content_hash_key_without_client(tmp_path: Path) -> None:
+    bundle = build_attestation(_annotated_tree(tmp_path), _KEY, today=_PINNED)
+    boundaries = bundle["payload"]["boundaries"]
+    assert boundaries  # src / clean / leak are declared boundaries
+    for b in boundaries:
+        assert "content_hash" in b
+        assert b["content_hash"] is None  # no loomweave client → honest None
+
+
+def test_boundaries_carry_resolved_content_hash_with_client(tmp_path: Path) -> None:
+    bundle = build_attestation(
+        _annotated_tree(tmp_path), _KEY, today=_PINNED, loomweave_client=_ResolveAllLoomweave()
+    )
+    clean = next(b for b in bundle["payload"]["boundaries"] if b["qualname"].endswith(".clean"))
+    assert clean["content_hash"] == "blake3:deadbeef"
+    assert clean["sei"] == "loomweave:eid:" + "a" * 32
+    assert bundle["payload"]["sei_source"] == "loomweave"

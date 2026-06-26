@@ -3146,7 +3146,7 @@ _ATTEST_OUTPUT_SCHEMA: dict[str, Any] = {
     "properties": {
         "schema": {
             "type": "string",
-            "enum": ["wardline-attest-1"],
+            "enum": ["wardline-attest-2"],
             "description": "Wire-contract tag; bound into the HMAC so a relabel cannot verify.",
         },
         "payload": {
@@ -3257,6 +3257,11 @@ _ATTEST_OUTPUT_SCHEMA: dict[str, Any] = {
                                 "description": "Loomweave SEI resolved at build time; null without a Loomweave client "
                                 "or when unresolvable.",
                             },
+                            "content_hash": {
+                                "type": ["string", "null"],
+                                "description": "Whole-file blake3 binding key from the resolved Loomweave binding; "
+                                "null when unresolved. File granularity, not entity-span.",
+                            },
                             "verdict": {
                                 "type": "string",
                                 "enum": ["clean", "defect", "unknown"],
@@ -3268,7 +3273,7 @@ _ATTEST_OUTPUT_SCHEMA: dict[str, Any] = {
                                 "description": "Declared trust tier, or null if undeclared.",
                             },
                         },
-                        "required": ["qualname", "sei", "verdict", "tier"],
+                        "required": ["qualname", "sei", "content_hash", "verdict", "tier"],
                         "additionalProperties": False,
                     },
                 },
