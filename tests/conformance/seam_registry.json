@@ -505,10 +505,10 @@
     ]
   },
   {
-    "seam": "legis\u2192warpline preflight advisory read (consumer: legis HTTP client of warpline; producer: warpline impact-radius / reverify-worklist)",
+    "seam": "legis\u2192warpline preflight_impact advisory read (warpline.preflight_impact.v1 envelope = warpline_impact_radius_get; consumer legis, producer warpline; reverify_worklist consumption ruled OUT per steward decision 2026-06-26)",
     "authority": "warpline",
     "consumer_or_second_producer": "legis",
-    "wire": "legis->warpline preflight advisory read (not exercised in this repo)",
+    "wire": "warpline.preflight_impact.v1 advisory impact set, surfaced via warpline_impact_radius_get (MCP/CLI success envelope: data.affected[], data.completeness, data.staleness, meta.local_only). legis consumes as advisory preflight context, never gates governance (SEAM 4 section 4A / GV-LG-1). reverify_worklist consumption ruled OUT per steward decision 2026-06-26.",
     "two_sided": true,
     "oracle_shape": null,
     "oracle_test": null,
@@ -518,8 +518,13 @@
     "bar_verdict": "gap",
     "deferred_reason": null,
     "wire_change": "none",
-    "evidence_paths": [],
-    "peer_conformance": "Legis side frozen, warpline producer absent (wardline not a party; warpline mid-flight). legis CONSUMER side frozen (legis@6f50a33 tests/warpline_preflight/test_warpline_preflight_oracle.py, byte-pin 44bb515d528fdaca5b12703a896f55cd96c2483b, real read_warpline_preflight). FINDING: warpline ships NO HTTP producer for the flat {affected:[{sei}],count}/{entries:[{sei}],count} shape legis's client expects \u2014 its real surface is the rich MCP envelope (data.affected/data.items, no count). OBLIGATION: warpline must ship the flat producer + fixture; the Layer-2 recheck auto-arms then. Not yet two-sided \u2014 honest gap."
+    "evidence_paths": [
+      "src/wardline/core/delta_scope.py:71-196",
+      "/home/john/weft/pm/2026-06-13-warpline-interface-lock.md:540-549",
+      "/home/john/weft/pm/2026-06-13-warpline-interface-lock.md:587-589",
+      "legis@6f50a33 tests/warpline_preflight/test_warpline_preflight_oracle.py"
+    ],
+    "peer_conformance": "STEWARD DECISION 2026-06-26 (weft seam steward = wardline). Contract basis: interface-lock SEAM 4 section 4A freezes warpline.preflight_impact.v1 at the SAME wire shape as warpline_impact_radius_get -- the MCP/CLI success envelope (data.affected[], data.completeness, data.staleness, meta.local_only) -- NOT a flat HTTP body; GV-LG-3 requires legis to read meta.local_only/peer_side_effects, which a flat {affected,count} body lacks. RULING: legis conforms DOWN to warpline's frozen envelope (consume data.affected, verify meta per GV-LG-3); warpline ships NOTHING -- a flat HTTP producer was the explicitly-REJECTED branch (a new non-MCP surface contradicting warpline's local-only/MCP-first identity). No lock amendment needed; this is the lock's status quo. REVERIFY RULED OUT (option b): section 4A sanctions ONLY impact_radius for legis; legis's reverify_worklist call is unsanctioned (named reverify consumers are filigree section 2A + wardline section 3), so legis DROPS it and relies on preflight_impact alone -- no new seam minted. STILL GAP (not at_bar): legis's current consumer oracle (legis@6f50a33 byte-pin 44bb515d528fdaca5b12703a896f55cd96c2483b) is a FALSE FREEZE -- it pins the flat {affected,count}/{entries,count} shape warpline never serves (G1-class: a mirror frozen to nothing real). Closeable once legis re-freezes its consumer against warpline's REAL warpline_impact_radius_get envelope (data.affected + meta) over a shared vendored golden; the Layer-2 recheck arms then. SIBLING SWEEP CLEAN (2026-06-26): wardline (delta_scope.py: data.items envelope) and filigree (warpline_consumer.py: data.get('items')) both consume the envelope correctly, plainweave has zero warpline refs -- legis is the SOLE offender, so the 'legis copied filigree's shape' theory is DISPROVEN (filigree reads the envelope). legis code fix dispatched in parallel (not wardline-resident)."
   },
   {
     "seam": "legis per-SEI attestation read for warpline verification (attestation_get)",
