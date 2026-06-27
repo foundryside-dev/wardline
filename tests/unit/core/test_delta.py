@@ -43,8 +43,24 @@ def test_get_changed_files_since_success(mock_run) -> None:
     res = get_changed_files_since("HEAD~1", root)
 
     assert res == {"foo.py", "bar.py", "baz.py"}
-    assert mock_run.call_args_list[1].args[0] == ["git", "-c", "core.fsmonitor=false", "rev-parse", "--verify", "--end-of-options", "HEAD~1"]
-    assert mock_run.call_args_list[2].args[0] == ["git", "-c", "core.fsmonitor=false", "diff", "--name-only", "abc123", "--"]
+    assert mock_run.call_args_list[1].args[0] == [
+        "git",
+        "-c",
+        "core.fsmonitor=false",
+        "rev-parse",
+        "--verify",
+        "--end-of-options",
+        "HEAD~1",
+    ]
+    assert mock_run.call_args_list[2].args[0] == [
+        "git",
+        "-c",
+        "core.fsmonitor=false",
+        "diff",
+        "--name-only",
+        "abc123",
+        "--",
+    ]
 
 
 @patch("subprocess.run")
