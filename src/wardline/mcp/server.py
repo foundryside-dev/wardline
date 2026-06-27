@@ -39,7 +39,7 @@ from wardline.core.finding import Finding, Severity
 from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
 from wardline.core.paths import baseline_path as baseline_file
-from wardline.core.paths import waivers_path, weft_config_path
+from wardline.core.paths import project_root_for, waivers_path, weft_config_path
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
 from wardline.core.scan_jobs import cancel_scan_job, read_scan_job_status, start_scan_job
 from wardline.core.sei_resolution import resolve_query_filters
@@ -4846,10 +4846,15 @@ class WardlineMCPServer:
         if tool.name == "doctor":
             if bool(arguments.get("repair", False)):
                 capabilities.add(ToolCapability.WRITE)
-            from wardline.install.doctor import _filigree_auth_probe_would_network
+            from wardline.install.doctor import (
+                _filigree_auth_probe_would_network,
+                _stale_sibling_port_probe_would_network,
+            )
 
-            if _filigree_auth_probe_would_network(self.root, self.filigree_url):
-                # The filigree-auth probe will touch the (loopback-only) network.
+            if _filigree_auth_probe_would_network(
+                self.root, self.filigree_url, self.filigree_url_source
+            ) or _stale_sibling_port_probe_would_network(project_root_for(self.root)):
+                # The filigree-auth or stale-port probe will touch the loopback network.
                 capabilities.add(ToolCapability.NETWORK)
         if tool.name == "rekey":
             if bool(arguments.get("cache_dir")) or any(

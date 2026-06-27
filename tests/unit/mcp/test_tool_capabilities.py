@@ -257,11 +257,13 @@ def test_scan_with_resolved_filigree_url_is_denied_by_no_write_policy(
     assert called is False
 
 
-def test_doctor_with_project_published_port_is_not_denied_by_no_network_policy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("sibling", ["filigree", "loomweave"])
+def test_doctor_with_published_sibling_port_is_denied_by_no_network_policy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sibling: str
 ) -> None:
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
-    port_file = tmp_path / ".weft" / "filigree" / "ephemeral.port"
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    port_file = tmp_path / ".weft" / sibling / "ephemeral.port"
     port_file.parent.mkdir(parents=True, exist_ok=True)
     port_file.write_text("8628", encoding="utf-8")
     called = False
@@ -273,6 +275,31 @@ def test_doctor_with_project_published_port_is_not_denied_by_no_network_policy(
 
     monkeypatch.setattr(server_mod, "_doctor", fake_doctor)
     server = WardlineMCPServer(root=tmp_path, allow_network=False)
+    result = _tool_call(server, "doctor", {"repair": False})
+
+    assert result.get("isError") is True
+    assert "network" in result["content"][0]["text"].lower()
+    assert called is False
+
+
+def test_doctor_with_only_remembered_published_port_source_is_not_network_gated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    called = False
+
+    def fake_doctor(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        nonlocal called
+        called = True
+        return {"ok": True}
+
+    monkeypatch.setattr(server_mod, "_doctor", fake_doctor)
+    server = WardlineMCPServer(
+        root=tmp_path,
+        filigree_url="http://localhost:8628/api/weft/scan-results",
+        filigree_url_source="published .weft/filigree/ephemeral.port",
+        allow_network=False,
+    )
     result = _tool_call(server, "doctor", {"repair": False})
 
     assert result.get("isError") is not True

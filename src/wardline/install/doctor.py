@@ -530,6 +530,29 @@ def _resolve_probe_target(root: Path, flag: str | None) -> _ProbeTarget | None:
     return None
 
 
+def _resolve_effective_probe_target(
+    root: Path,
+    effective_url: str | None,
+    effective_url_source: str | None,
+) -> _ProbeTarget | None:
+    """Resolve an already-effective Filigree URL without erasing its provenance."""
+    if effective_url is None:
+        return _resolve_probe_target(root, None)
+    if effective_url_source == "--filigree-url launch flag":
+        return _ProbeTarget(effective_url, "flag")
+    if effective_url_source == f"env {_FILIGREE_URL_ENV}":
+        return _ProbeTarget(effective_url, "env")
+    if effective_url_source == "Filigree server registry":
+        return _ProbeTarget(effective_url, "server-registry")
+    if (
+        effective_url_source
+        and effective_url_source.startswith("published ")
+        and effective_url_source.endswith("filigree/ephemeral.port")
+    ):
+        return _ProbeTarget(effective_url, "project-published-port", token_probe_allowed=False)
+    return _resolve_probe_target(root, effective_url)
+
+
 def _resolve_probe_url(root: Path, flag: str | None) -> str | None:
     """Probe-URL precedence: flag > WARDLINE_FILIGREE_URL env > .mcp.json wardline
     --filigree-url arg > Filigree's server registry. None when nothing safe resolves.
@@ -543,9 +566,21 @@ def _resolve_probe_url(root: Path, flag: str | None) -> str | None:
     return target.url
 
 
-def _filigree_auth_probe_would_network(root: Path, flag: str | None) -> bool:
-    target = _resolve_probe_target(root, flag)
+def _filigree_auth_probe_would_network(
+    root: Path,
+    effective_url: str | None,
+    effective_url_source: str | None = None,
+) -> bool:
+    target = _resolve_effective_probe_target(root, effective_url, effective_url_source)
     return bool(target and target.token_probe_allowed and _is_loopback(target.url))
+
+
+def _stale_sibling_port_probe_would_network(root: Path) -> bool:
+    for sibling in _DIALED_SIBLINGS:
+        for base in (sibling_state_dir(root, sibling), legacy_sibling_dir(root, sibling)):
+            if _read_port_file(root, base / "ephemeral.port") is not None:
+                return True
+    return False
 
 
 def _is_loopback(url: str) -> bool:
@@ -797,7 +832,7 @@ def machine_readable_doctor(
     # project scope, so the post-repair value is the URL the agent will actually emit
     # to — and the one whose auth the filigree-auth check should probe. Without fix,
     # repair is a no-op and this is just the recorded emit target.
-    probe_target = _resolve_probe_target(root, filigree_url)
+    probe_target = _resolve_effective_probe_target(root, filigree_url, filigree_url_source)
 
     checks: list[DoctorCheck] = []
     checks.append(_check_config(root, fixed=fix and config_missing_before and weft_config_path(root).exists()))

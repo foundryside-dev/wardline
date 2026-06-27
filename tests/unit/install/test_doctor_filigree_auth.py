@@ -385,6 +385,32 @@ def test_repair_does_not_probe_mints_against_project_published_port(tmp_path: Pa
     assert tmp_path.joinpath(".env").read_text(encoding="utf-8") == "WEFT_FEDERATION_TOKEN=STALE\n"
 
 
+def test_machine_readable_preserves_published_port_probe_provenance(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_TOKEN", raising=False)
+    monkeypatch.setenv("WEFT_FEDERATION_TOKEN", "SECRET")
+    monkeypatch.setattr("wardline.install.doctor.Path.home", lambda: tmp_path / "nohome")
+    port_file = tmp_path / ".weft" / "filigree" / "ephemeral.port"
+    port_file.parent.mkdir(parents=True)
+    port_file.write_text("9189", encoding="ascii")
+    transport = _ScriptedTransport({})
+
+    payload = machine_readable_doctor(
+        tmp_path,
+        fix=False,
+        filigree_url="http://localhost:9189/api/weft/scan-results",
+        filigree_url_source="published .weft/filigree/ephemeral.port",
+        transport=transport,
+        port_probe=lambda url: True,
+    )
+
+    auth = {c["id"]: c for c in payload["checks"]}["filigree.auth"]
+    assert auth["status"] == "ok"
+    assert "published port" in auth["message"]
+    assert "not probed" in auth["message"]
+    assert transport.calls == []
+
+
 # --- Task 5: repair -----------------------------------------------------------
 
 
