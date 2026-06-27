@@ -62,8 +62,8 @@ def test_gitignore_preserves_existing_content(tmp_path):
 def test_gitignore_check_only_no_write(tmp_path):
     proj = _proj(tmp_path)
     c = _check_gitignore(proj, fix=False)
-    assert c.status == "ok"                       # advisory — does NOT fail aggregation
-    assert "missing" in (c.message or "")         # but the gap is reported
+    assert c.status == "ok"  # advisory — does NOT fail aggregation
+    assert "missing" in (c.message or "")  # but the gap is reported
     assert not (proj / ".gitignore").exists()
 
 
@@ -71,15 +71,16 @@ def test_gitignore_commented_entry_does_not_satisfy(tmp_path):
     proj = _proj(tmp_path)
     (proj / ".gitignore").write_text("#.wardline/\n!findings.jsonl\n", encoding="utf-8")
     c = _check_gitignore(proj, fix=False)
-    assert "missing" in (c.message or "")         # commented/negated lines don't count as present
+    assert "missing" in (c.message or "")  # commented/negated lines don't count as present
 
 
 def test_gitignore_symlink_reports_error_not_abort(tmp_path):
     import os
+
     proj = _proj(tmp_path)
     target = tmp_path.parent / "evil"
     target.write_text("", encoding="utf-8")
-    os.symlink(target, proj / ".gitignore")       # untrusted-repo surface
+    os.symlink(target, proj / ".gitignore")  # untrusted-repo surface
     c = _check_gitignore(proj, fix=True)
     assert c.status == "error" and "symlink" in (c.message or "")
     assert target.read_text(encoding="utf-8") == ""  # never written through the link
@@ -104,7 +105,7 @@ def test_sweep_removes_nested_wardline_managed_file(tmp_path):
     stray = _stray(proj, f"src/pkg/.wardline/{STAMP}-findings.jsonl")
     c = _sweep_stray_artifacts(proj, fix=True)
     assert not stray.exists()
-    assert not stray.parent.exists()              # emptied .wardline removed
+    assert not stray.parent.exists()  # emptied .wardline removed
     assert any(str(stray) in r or "src/pkg/.wardline" in r for r in c.removed)
 
 
@@ -112,13 +113,13 @@ def test_sweep_keeps_standard_dir(tmp_path):
     proj = _proj(tmp_path)
     keep = _stray(proj, f".wardline/{STAMP}-findings.jsonl")
     _sweep_stray_artifacts(proj, fix=True)
-    assert keep.exists()                           # standard dir is skipped
+    assert keep.exists()  # standard dir is skipped
 
 
 def test_sweep_reports_unstamped_and_bare_managed(tmp_path):
     proj = _proj(tmp_path)
     bare = _stray(proj, "findings.jsonl")
-    bare_managed = _stray(proj, f"logs/{STAMP}-findings.jsonl")   # managed name, NOT in a .wardline/ dir
+    bare_managed = _stray(proj, f"logs/{STAMP}-findings.jsonl")  # managed name, NOT in a .wardline/ dir
     c = _sweep_stray_artifacts(proj, fix=True)
     assert bare.exists() and bare_managed.exists()
     assert any("findings.jsonl" in r for r in c.review)
@@ -141,7 +142,7 @@ def test_sweep_does_not_descend_symlinked_dir(tmp_path):
     target.write_text("{}\n", encoding="utf-8")
     os.symlink(outside, proj / "linked")
     _sweep_stray_artifacts(proj, fix=True)
-    assert target.exists()                         # never followed out of root
+    assert target.exists()  # never followed out of root
 
 
 def test_sweep_does_not_unlink_symlinked_managed_file(tmp_path):
@@ -152,7 +153,7 @@ def test_sweep_does_not_unlink_symlinked_managed_file(tmp_path):
     wd.mkdir(parents=True)
     os.symlink(real, wd / f"{STAMP}-findings.jsonl")
     _sweep_stray_artifacts(proj, fix=True)
-    assert real.exists()                           # symlink skipped, target intact
+    assert real.exists()  # symlink skipped, target intact
 
 
 def test_sweep_stops_at_nested_project_root(tmp_path):
@@ -162,12 +163,13 @@ def test_sweep_stops_at_nested_project_root(tmp_path):
     (nested / "weft.toml").write_text("[wardline]\n", encoding="utf-8")
     keep = _stray(proj, f"vendor/subproj/.wardline/{STAMP}-findings.jsonl")
     _sweep_stray_artifacts(proj, fix=True)
-    assert keep.exists()                           # nested project's artifacts untouched
+    assert keep.exists()  # nested project's artifacts untouched
 
 
 # ---------------------------------------------------------------------------
 # machine_readable_doctor wiring (Task 9)
 # ---------------------------------------------------------------------------
+
 
 def _isolated_repair(monkeypatch, proj):
     """Apply the same home/command/which isolation the CLI doctor tests use."""
@@ -207,8 +209,8 @@ def test_check_only_does_not_mutate(tmp_path, monkeypatch):
     _isolated_repair(monkeypatch, proj)
     stray = _stray(proj, f"src/.wardline/{STAMP}-findings.jsonl")
     payload = machine_readable_doctor(proj, fix=False)
-    assert stray.exists()                           # no delete
-    assert not (proj / ".gitignore").exists()       # no write
+    assert stray.exists()  # no delete
+    assert not (proj / ".gitignore").exists()  # no write
     sweep = next(c for c in payload["checks"] if c["id"] == "stray_artifacts")
     assert sweep["fixed"] is False
 
@@ -219,14 +221,15 @@ def test_subdir_root_climbs_to_project(tmp_path, monkeypatch):
     sub = proj / "src" / "pkg"
     sub.mkdir(parents=True)
     stray = _stray(proj, f"src/.wardline/{STAMP}-findings.jsonl")
-    machine_readable_doctor(sub, fix=True)          # invoked at the SUBDIR
-    assert (proj / ".gitignore").exists()           # gitignore written at the PROJECT root
-    assert not stray.exists()                       # swept at the project root
+    machine_readable_doctor(sub, fix=True)  # invoked at the SUBDIR
+    assert (proj / ".gitignore").exists()  # gitignore written at the PROJECT root
+    assert not stray.exists()  # swept at the project root
 
 
 # ---------------------------------------------------------------------------
 # MCP tool advertisement + confinement (Task 10)
 # ---------------------------------------------------------------------------
+
 
 def test_doctor_tool_advertises_destructive():
     """_DOCTOR_TOOL must advertise destructiveHint: True now that repair:true deletes
@@ -244,7 +247,7 @@ def test_custom_dir_project_protects_default_wardline_dir(tmp_path):
     """
     proj = _proj(tmp_path)
     # Overwrite with a custom artifacts dir so doctor loads "out/wl" from the project root.
-    (proj / "weft.toml").write_text("[wardline.artifacts]\ndir = \"out/wl\"\n", encoding="utf-8")
+    (proj / "weft.toml").write_text('[wardline.artifacts]\ndir = "out/wl"\n', encoding="utf-8")
 
     # A subdir-scan artifact in the default .wardline/ location — must NOT be deleted.
     default_artifact = _stray(proj, f".wardline/{STAMP}-findings.jsonl")

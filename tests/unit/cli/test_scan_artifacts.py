@@ -35,6 +35,7 @@ def _only_scan_artifact(project: Path) -> Path:
 # Test 1: subdir scan writes artifact at <project-root>/.wardline/, NOT under sub
 # ---------------------------------------------------------------------------
 
+
 def test_cli_subdir_scan_writes_artifact_at_project_root(tmp_path: Path) -> None:
     """``wardline scan src/pkg`` (weft project at tmp_path) → artifact at
     ``tmp_path/.wardline/``, NOT at ``tmp_path/src/pkg/.wardline/``."""
@@ -54,14 +55,13 @@ def test_cli_subdir_scan_writes_artifact_at_project_root(tmp_path: Path) -> None
         f"no timestamped findings artifact in {artifacts_dir!s}: {[p.name for p in jsonl_files]}"
     )
     # Negative: NO artifact written under the scanned subdirectory
-    assert not (sub / ".wardline").exists(), (
-        "artifact was written under the subdir — anchoring is broken"
-    )
+    assert not (sub / ".wardline").exists(), "artifact was written under the subdir — anchoring is broken"
 
 
 # ---------------------------------------------------------------------------
 # Test 2: true-root scan writes artifact at <root>/.wardline/
 # ---------------------------------------------------------------------------
+
 
 def test_cli_true_root_scan_writes_artifact_at_root(tmp_path: Path) -> None:
     """``wardline scan <root>`` where root carries ``weft.toml`` → artifact at
@@ -82,6 +82,7 @@ def test_cli_true_root_scan_writes_artifact_at_root(tmp_path: Path) -> None:
 # Test 3: unfederated tree (no weft.toml up the chain) → fallback to <scan-path>/.wardline/
 # ---------------------------------------------------------------------------
 
+
 def test_cli_unfederated_tree_falls_back_to_scan_path(tmp_path: Path) -> None:
     """No ``weft.toml`` anywhere in the ancestry → ``project_root_for`` returns
     ``scan_path`` itself, so the artifact lands at ``<scan_path>/.wardline/``."""
@@ -100,6 +101,7 @@ def test_cli_unfederated_tree_falls_back_to_scan_path(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Test 4: custom artifacts.dir anchors to <project-root>/out/wl
 # ---------------------------------------------------------------------------
+
 
 def test_cli_custom_artifacts_dir_anchors_to_project_root(tmp_path: Path) -> None:
     """``[wardline.artifacts] dir = "out/wl"`` in weft.toml (root scan) → artifact at
@@ -130,10 +132,11 @@ def test_cli_custom_artifacts_dir_anchors_to_project_root(tmp_path: Path) -> Non
 # Test 5: explicit --output is unaffected (verbatim) and no .wardline/ is created
 # ---------------------------------------------------------------------------
 
+
 def test_cli_explicit_output_unaffected(tmp_path: Path) -> None:
     """``--output path/to/findings.jsonl`` writes exactly there and NEVER creates a
     ``.wardline/`` directory under the project root."""
-    (tmp_path / "weft.toml").write_text('[wardline]\n', encoding="utf-8")
+    (tmp_path / "weft.toml").write_text("[wardline]\n", encoding="utf-8")
     (tmp_path / "app.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
     out_dir = tmp_path / "ci"
     out_dir.mkdir()
@@ -144,14 +147,13 @@ def test_cli_explicit_output_unaffected(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert out.exists(), f"expected output at {out}"
     # No automatic .wardline/ when --output is explicit
-    assert not (tmp_path / ".wardline").exists(), (
-        ".wardline/ was created even though --output was explicit"
-    )
+    assert not (tmp_path / ".wardline").exists(), ".wardline/ was created even though --output was explicit"
 
 
 # ---------------------------------------------------------------------------
 # Test 6: MCP _scan() writes NO disk artifact (regression guard)
 # ---------------------------------------------------------------------------
+
 
 def test_mcp_scan_writes_no_disk_artifact(tmp_path: Path) -> None:
     """The MCP ``scan`` tool must NEVER write a ``.wardline/`` disk artifact.

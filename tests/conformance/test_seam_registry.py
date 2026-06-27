@@ -188,9 +188,7 @@ def test_addopts_excludes_only_registered_markers() -> None:
     # Every excluded marker must be a registered marker (proves the tokenizer
     # extracted real names, and catches a typo'd exclusion).
     unregistered = _EXCLUDED_MARKERS - _REGISTERED_MARKERS
-    assert not unregistered, (
-        f"addopts excludes markers that are not declared in [markers]: {sorted(unregistered)}"
-    )
+    assert not unregistered, f"addopts excludes markers that are not declared in [markers]: {sorted(unregistered)}"
 
 
 def test_live_oracle_markers_are_registered_and_excluded() -> None:
@@ -251,9 +249,7 @@ def test_registry_schema_is_valid() -> None:
                 f"{ctx}: 'self_authored_restatement' must be a bool"
             )
         if "self_authored_producer" in row:
-            assert isinstance(row["self_authored_producer"], bool), (
-                f"{ctx}: 'self_authored_producer' must be a bool"
-            )
+            assert isinstance(row["self_authored_producer"], bool), f"{ctx}: 'self_authored_producer' must be a bool"
 
         # self_authored_producer and self_authored_restatement are MUTUALLY DISTINCT:
         # a producer row rechecks vs wardline's OWN runtime source (wardline is the
@@ -319,8 +315,7 @@ def _marker_is_applied_in_file(marker: str, path_str: str) -> bool:
     # ``pytestmark`` collects marks at module scope; require the marker name to
     # appear on a ``pytestmark`` assignment line (handles single + list forms).
     module_mark = any(
-        re.search(r"\bpytestmark\b", line) and re.search(rf"\.{name}\b", line)
-        for line in text.splitlines()
+        re.search(r"\bpytestmark\b", line) and re.search(rf"\.{name}\b", line) for line in text.splitlines()
     )
     return bool(decorator) or module_mark
 
@@ -576,8 +571,8 @@ def _assert_at_bar_two_sided_fail_closed(row: dict[str, Any], ctx: str) -> None:
     drift_text = drift_path.read_text("utf-8")
     assert _has_layer1_byte_pin(drift_text), (
         f"{ctx}: two_sided at_bar drift_test lacks a Layer-1 byte-pin "
-        "(an (UPSTREAM|VENDORED)_BLOB_SHA = \"<40-hex>\" assignment or a git hash-object / "
-        "hashlib.sha1(b\"blob ...\") recomputation); it would not fail closed in the default suite"
+        '(an (UPSTREAM|VENDORED)_BLOB_SHA = "<40-hex>" assignment or a git hash-object / '
+        'hashlib.sha1(b"blob ...") recomputation); it would not fail closed in the default suite'
     )
 
     # Multi-axis enforcement: every axis a row declares must be gate-pinned, not
@@ -594,8 +589,8 @@ def _assert_at_bar_two_sided_fail_closed(row: dict[str, Any], ctx: str) -> None:
         extra_text = (_REPO_ROOT / extra).read_text("utf-8")
         assert _has_layer1_byte_pin(extra_text), (
             f"{ctx}: multi-axis at_bar additional_drift_test {extra!r} lacks a Layer-1 byte-pin "
-            "((UPSTREAM|VENDORED)_BLOB_SHA = \"<40-hex>\" or a git hash-object / "
-            "hashlib.sha1(b\"blob ...\") recomputation); the second axis is not gate-protected"
+            '((UPSTREAM|VENDORED)_BLOB_SHA = "<40-hex>" or a git hash-object / '
+            'hashlib.sha1(b"blob ...") recomputation); the second axis is not gate-protected'
         )
 
     # Self-authored restatement: when the vendored blob pins WARDLINE's OWN bytes
@@ -673,8 +668,8 @@ def _assert_at_bar_one_sided_golden_fail_closed(row: dict[str, Any], ctx: str) -
     text = oracle_path.read_text("utf-8")
     assert _has_layer1_byte_pin(text), (
         f"{ctx}: one-sided byte_golden_corpus at_bar oracle_test lacks a Layer-1 byte-pin "
-        "((UPSTREAM|VENDORED)_BLOB_SHA = \"<40-hex>\" or a git hash-object / "
-        "hashlib.sha1(b\"blob ...\") recomputation); a silent schema change would not fail "
+        '((UPSTREAM|VENDORED)_BLOB_SHA = "<40-hex>" or a git hash-object / '
+        'hashlib.sha1(b"blob ...") recomputation); a silent schema change would not fail '
         "closed in the default suite"
     )
     # The golden freeze only fails closed if it RUNS by default — reject an oracle
@@ -729,9 +724,7 @@ def test_registry_verdicts_are_backed_by_real_artifacts() -> None:
 
         elif verdict in ("deferred", "one_sided_na"):
             reason = row["deferred_reason"]
-            assert isinstance(reason, str) and reason.strip(), (
-                f"{ctx}: {verdict} requires a non-empty deferred_reason"
-            )
+            assert isinstance(reason, str) and reason.strip(), f"{ctx}: {verdict} requires a non-empty deferred_reason"
 
         elif verdict == "peer_conformant":
             # A seam wardline is NOT a party to (a pure peer-to-peer interface, e.g.
@@ -812,9 +805,7 @@ def test_marker_taxonomy_guard_for_every_marked_row() -> None:
                 assert marker in _REGISTERED_MARKERS, (
                     f"{ctx}: live-oracle marker {marker!r} not declared in pyproject markers"
                 )
-                assert marker in _EXCLUDED_MARKERS, (
-                    f"{ctx}: live-oracle marker {marker!r} not in the addopts exclusion"
-                )
+                assert marker in _EXCLUDED_MARKERS, f"{ctx}: live-oracle marker {marker!r} not in the addopts exclusion"
                 assert marker in LIVE_ORACLE_MARKERS, (
                     f"{ctx}: live-oracle marker {marker!r} not in LIVE_ORACLE_MARKERS "
                     "(an armed WARDLINE_LIVE_ORACLE_REQUIRED=1 run would skip it clean "

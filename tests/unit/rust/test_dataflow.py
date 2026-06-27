@@ -130,9 +130,7 @@ def test_captured_identifier_format_carries_taint() -> None:
 
 
 def test_escaped_format_braces_do_not_capture_identifier() -> None:
-    (trig,) = _triggers(
-        _SEED + '    let s = format!("rm {{t}}");\n    Command::new("sh").arg("-c").arg(s).output();\n'
-    )
+    (trig,) = _triggers(_SEED + '    let s = format!("rm {{t}}");\n    Command::new("sh").arg("-c").arg(s).output();\n')
     assert not _has_raw_arg(trig)
 
 
@@ -170,10 +168,7 @@ def test_shadow_rebind_initializer_can_extend_previous_builder() -> None:
     # right-hand `c` below is the previous Command builder, so the rebinding must keep
     # the tracked builder alive for the later terminal.
     (trig,) = _triggers(
-        _SEED
-        + "    let c = Command::new(t);\n"
-        + '    let c = c.arg("--flag");\n'
-        + "    c.output();\n"
+        _SEED + "    let c = Command::new(t);\n" + '    let c = c.arg("--flag");\n' + "    c.output();\n"
     )
     assert trig.program_taint in RAW_ZONE
 
@@ -192,10 +187,7 @@ def test_terminal_result_rebind_drops_previous_same_name_builder() -> None:
 
 def test_terminal_result_rebind_to_new_name_is_not_a_builder_alias() -> None:
     trigs = _triggers(
-        _SEED
-        + "    let cmd = Command::new(t);\n"
-        + "    let result = cmd.output();\n"
-        + "    result.output();\n"
+        _SEED + "    let cmd = Command::new(t);\n" + "    let result = cmd.output();\n" + "    result.output();\n"
     )
     assert len(trigs) == 1
     assert trigs[0].program_taint in RAW_ZONE

@@ -270,12 +270,7 @@ def test_in_predicate_comment_is_token_invisible() -> None:
 def test_nested_cfg_twins_get_distinct_qualnames() -> None:
     # Nested any()/all() predicates must split on top-level commas only; a flat split
     # makes these two semantically different cfgs collapse onto the same @cfg suffix.
-    src = (
-        "#[cfg(any(all(a, a), all(c, b)))]\n"
-        "pub fn f() {}\n"
-        "#[cfg(any(all(a, b), all(c, a)))]\n"
-        "pub fn f() {}\n"
-    )
+    src = "#[cfg(any(all(a, a), all(c, b)))]\npub fn f() {}\n#[cfg(any(all(a, b), all(c, a)))]\npub fn f() {}\n"
     rows = [(e.qualname, e.kind) for e in discover_rust_entities(src, module="demo.m")]
     assert rows == [
         ("demo.m", "module"),

@@ -116,9 +116,7 @@ def test_fetch_bounds_success_body(monkeypatch) -> None:
 
 def test_fetch_bounds_http_error_body(monkeypatch) -> None:
     def _raise(req, timeout=None):  # noqa: ARG001
-        raise urllib.error.HTTPError(
-            "http://h", 400, "bad", {}, io.BytesIO(b"x" * (MAX_RESPONSE_BODY_BYTES + 9))
-        )
+        raise urllib.error.HTTPError("http://h", 400, "bad", {}, io.BytesIO(b"x" * (MAX_RESPONSE_BODY_BYTES + 9)))
 
     monkeypatch.setattr(urllib.request, "urlopen", _raise)
     result = WeftHttp().fetch("POST", "http://h/api", body=b"{}")

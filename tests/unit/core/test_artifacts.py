@@ -44,6 +44,7 @@ def test_escaping_artifacts_dir_falls_back_under_project_root(tmp_path: Path) ->
 
 # --- Existing retention / collision tests ---
 
+
 def test_retention_prunes_oldest(tmp_path: Path) -> None:
     """prune_scan_artifacts removes the oldest artifact when retain=2 and 2 exist."""
     _project(tmp_path)

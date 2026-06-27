@@ -166,9 +166,7 @@ def test_doctor_with_probe_url_is_denied_by_no_network_policy(tmp_path: Path, mo
     assert "network" in result["content"][0]["text"].lower()
 
 
-def test_doctor_caller_supplied_filigree_url_is_rejected_before_network_policy(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_doctor_caller_supplied_filigree_url_is_rejected_before_network_policy(tmp_path: Path, monkeypatch) -> None:
     import json
 
     _isolate(tmp_path, monkeypatch)

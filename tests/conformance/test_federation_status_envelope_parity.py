@@ -362,8 +362,18 @@ def test_raw_filigree_def_shares_structure_with_canonical() -> None:
     canon_props = canonical["properties"]
     # Every field the raw debug-echo block declares (it omits `configured`/`disabled_reason`, which
     # the NORMALIZED block adds) must structurally equal its canonical counterpart.
-    shared = {"created", "updated", "failed", "failures", "warnings", "status", "auth_rejected", "token_sent", "url",
-              "destination"}
+    shared = {
+        "created",
+        "updated",
+        "failed",
+        "failures",
+        "warnings",
+        "status",
+        "auth_rejected",
+        "token_sent",
+        "url",
+        "destination",
+    }
     assert shared <= set(raw_props), f"raw filigree $def lost a field: {shared - set(raw_props)}"
     for field in shared:
         assert _strip_descriptions(raw_props[field]) == _strip_descriptions(canon_props[field]), (

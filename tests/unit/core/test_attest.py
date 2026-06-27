@@ -626,9 +626,7 @@ def test_boundaries_carry_content_hash_key_without_client(tmp_path: Path) -> Non
 
 
 def test_boundaries_carry_resolved_content_hash_with_client(tmp_path: Path) -> None:
-    bundle = build_attestation(
-        _annotated_tree(tmp_path), _KEY, today=_PINNED, loomweave_client=_ResolveAllLoomweave()
-    )
+    bundle = build_attestation(_annotated_tree(tmp_path), _KEY, today=_PINNED, loomweave_client=_ResolveAllLoomweave())
     clean = next(b for b in bundle["payload"]["boundaries"] if b["qualname"].endswith(".clean"))
     assert clean["content_hash"] == "blake3:deadbeef"
     assert clean["sei"] == "loomweave:eid:" + "a" * 32

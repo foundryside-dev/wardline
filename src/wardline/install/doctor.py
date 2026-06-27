@@ -163,8 +163,8 @@ def _sweep_stray_artifacts(proj: Path, *, fix: bool) -> DoctorCheck:
         in_wardline_dir = here.name == ".wardline" and here.resolve() not in standard_dirs
         for fname in filenames:
             fpath = here / fname
-            managed = _is_managed_name(fname)                     # timestamped: 2026...-findings.jsonl
-            bare = fname in _MANAGED_SUFFIXES and not managed     # unstamped: findings.jsonl
+            managed = _is_managed_name(fname)  # timestamped: 2026...-findings.jsonl
+            bare = fname in _MANAGED_SUFFIXES and not managed  # unstamped: findings.jsonl
             if not managed and not bare:
                 continue
             rel = str(fpath.relative_to(proj))
@@ -174,14 +174,14 @@ def _sweep_stray_artifacts(proj: Path, *, fix: bool) -> DoctorCheck:
                 review.append(rel)
                 continue
             if not _artifacts._is_regular_file_no_follow(fpath):
-                continue                                          # symlink / non-regular -> skip
+                continue  # symlink / non-regular -> skip
             if not fix:
-                removed.append(rel)                               # would-remove (no unlink)
+                removed.append(rel)  # would-remove (no unlink)
                 continue
             try:
                 safe = safe_project_path(proj, fpath, label=fname)
             except WardlineError:
-                continue                                          # escaping entry -> skip, keep sweeping
+                continue  # escaping entry -> skip, keep sweeping
             try:
                 safe.unlink()
             except OSError:
@@ -192,14 +192,13 @@ def _sweep_stray_artifacts(proj: Path, *, fix: bool) -> DoctorCheck:
         for d in emptied_dirs:
             try:
                 if d.resolve() not in standard_dirs and not d.is_symlink():
-                    d.rmdir()                                     # os.rmdir only; ENOTEMPTY guards
+                    d.rmdir()  # os.rmdir only; ENOTEMPTY guards
             except OSError:
                 pass
     # ADVISORY status (must-fix from plan review): stray artifacts are cleanup items, not a
     # health failure, so status stays "ok" and the sweep never flips machine_readable_doctor's
     # all(check.ok) aggregation (which would fail `doctor --fix` / MCP doctor on success).
-    msg = (f"removed {len(removed)}, review {len(review)}" if fix
-           else f"{len(removed)} removable, review {len(review)}")
+    msg = f"removed {len(removed)}, review {len(review)}" if fix else f"{len(removed)} removable, review {len(review)}"
     return DoctorCheck(
         "stray_artifacts", "ok", fixed=bool(fix and removed), message=msg, removed=removed, review=review
     )
@@ -207,11 +206,11 @@ def _sweep_stray_artifacts(proj: Path, *, fix: bool) -> DoctorCheck:
 
 def _gitignore_present_entries(text: str) -> set[str]:
     out: set[str] = set()
-    for raw in text.splitlines():           # handles \n, \r\n, \r
+    for raw in text.splitlines():  # handles \n, \r\n, \r
         line = raw.strip()
         if not line or line.startswith("#") or line.startswith("!"):
             continue
-        out.add(line.rstrip("/"))           # trailing-slash tolerant
+        out.add(line.rstrip("/"))  # trailing-slash tolerant
     return out
 
 
