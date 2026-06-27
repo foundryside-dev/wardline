@@ -190,6 +190,9 @@ def project_finding(finding: Finding) -> dict[str, Any]:
     }
 
 
+_SAFE_GIT_CONFIG = ("-c", "core.fsmonitor=false")
+
+
 def _git_tree_sha(root: Path) -> str | None:
     """The committed tree object SHA (``git rev-parse HEAD^{tree}``), or None.
 
@@ -199,7 +202,7 @@ def _git_tree_sha(root: Path) -> str | None:
     """
     try:
         rev = subprocess.run(
-            ["git", "rev-parse", "HEAD^{tree}"],
+            ["git", *_SAFE_GIT_CONFIG, "rev-parse", "HEAD^{tree}"],
             cwd=root,
             capture_output=True,
             text=True,
@@ -215,7 +218,7 @@ def _git_repo_root(root: Path) -> Path | None:
     """The containing git repository root, or None when unavailable."""
     try:
         rev = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
+            ["git", *_SAFE_GIT_CONFIG, "rev-parse", "--show-toplevel"],
             cwd=root,
             capture_output=True,
             text=True,
