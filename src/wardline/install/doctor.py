@@ -6,7 +6,8 @@ import ipaddress
 import json
 import os
 import tomllib
-from collections.abc import Sequence
+import urllib.error
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
@@ -18,7 +19,8 @@ from wardline.core import discovery, paths
 from wardline.core.config import ArtifactSettings, _filigree_published_url, filigree_server_scoped_url, load
 from wardline.core.errors import ConfigError, WardlineError
 from wardline.core.filigree_emit import FiligreeEmitter, Transport, UrllibTransport
-from wardline.core.paths import weft_config_path, weft_state_dir
+from wardline.core.http import WeftHttp
+from wardline.core.paths import legacy_sibling_dir, sibling_state_dir, weft_config_path, weft_state_dir
 from wardline.core.safe_paths import safe_project_path, safe_read_text_if_regular, safe_write_text
 from wardline.filigree.config import load_filigree_token
 from wardline.install.block import inject_block
@@ -657,6 +659,120 @@ def _check_filigree_auth(
     )
 
 
+# Siblings a `wardline scan` DIALS during emission (filigree weft scan-results POST,
+# loomweave taint-fact write). Each origin is resolved live from
+# .weft/<sibling>/ephemeral.port; we clear ONLY these two — never another tool's file.
+_DIALED_SIBLINGS = ("filigree", "loomweave")
+
+# Probe each advertised port at the SAME host the scan dials, so 'reachable per doctor'
+# == 'reachable per scan' and we NEVER delete a live server's port file. filigree
+# publishes a ``localhost`` origin (``core/config`` self-heals over IPv4/IPv6 — a
+# filigree bound to ``::1`` only is reachable there, so a ``127.0.0.1`` probe would
+# wrongly call it dead and clear a live advertisement); loomweave publishes
+# ``127.0.0.1``. ``localhost`` is a safe superset regardless — ``create_connection``
+# walks every getaddrinfo result, so it still reaches a ``127.0.0.1``-only server.
+_SIBLING_PROBE_HOST = {"filigree": "localhost", "loomweave": "127.0.0.1"}
+
+# Short reachability deadline for the stale-port probe. Deliberately NOT the federation
+# clients' 30s `urlopen` default: doctor must answer fast, and the whole point is to
+# catch the port that WOULD make a scan hang. A dead port refuses instantly; a wedged
+# one (accepts TCP, never replies) is declared stale after this deadline, not after 30s.
+_STALE_PORT_PROBE_TIMEOUT = 2.0
+
+
+def _port_origin_reachable(url: str, timeout: float) -> bool:
+    """True iff *url* yields ANY HTTP response within *timeout* — a live server is
+    listening. A 4xx/5xx still proves liveness (``WeftHttp.fetch`` returns an
+    ``HttpResult``). A transport failure — connection refused / DNS / read timeout (a
+    server that accepts the TCP connection but never answers) — raises ``URLError`` /
+    ``OSError`` and reads as not reachable: the advertised instance is gone or wedged."""
+    try:
+        WeftHttp(timeout=timeout).fetch("GET", url)
+    except (urllib.error.URLError, OSError):
+        return False
+    return True
+
+
+def _read_port_file(root: Path, port_file: Path) -> int | None:
+    """The TCP port published in *port_file*, or None if absent / non-regular (a
+    symlink is never followed) / not a valid 1..65535 ASCII integer. Mirrors
+    ``core/config._read_published_port``'s parse discipline (ascii-only read, isdigit
+    gate, ``int()`` over-cap guard) so detection and the live dial agree on what counts."""
+    text = safe_read_text_if_regular(root, port_file, label="ephemeral.port", encoding="ascii")
+    if text is None:
+        return None
+    text = text.strip()
+    if not text.isdigit():
+        return None
+    try:
+        port = int(text)
+    except ValueError:  # all-digit payload over CPython's int() cap — fail-soft
+        return None
+    return port if 1 <= port <= 65535 else None
+
+
+def _check_stale_sibling_ports(
+    root: Path,
+    *,
+    fix: bool,
+    probe: Callable[[str], bool] | None = None,
+) -> DoctorCheck:
+    """Detect — and under *fix*, clear — stale ``.weft/<sibling>/ephemeral.port`` files
+    for the siblings a scan dials (filigree, loomweave).
+
+    A sibling's ``ephemeral.port`` advertises 'an instance is listening here NOW'. When
+    the owning ``serve`` process has exited or wedged, the file lingers and every
+    ``wardline scan`` dials a dead/hung origin — stalling the agent gate up to the 30s
+    federation ``urlopen`` timeout per round-trip on an emission that is purely advisory
+    (the reported hang). A short reachability probe classifies each advertised port:
+    unreachable (connection refused OR no HTTP reply within the deadline) ⇒ stale, and
+    ``--repair`` deletes the file so ``resolve_*_url`` falls back to 'no sibling' and the
+    scan stops dialing it. A live server (any HTTP status) is never touched.
+
+    ADVISORY (like stray artifacts): a stale port file is a hygiene item, not a health
+    failure, so status stays 'ok' and never flips the aggregate doctor verdict. The
+    delete is regular-file / no-follow confined: a symlinked ``ephemeral.port`` is read
+    as None (regular-only) and never followed or deleted."""
+    reach = probe if probe is not None else (lambda url: _port_origin_reachable(url, _STALE_PORT_PROBE_TIMEOUT))
+    stale: list[str] = []
+    removed: list[str] = []
+    for sibling in _DIALED_SIBLINGS:
+        host = _SIBLING_PROBE_HOST.get(sibling, "localhost")
+        # Prefer the consolidated .weft/<sibling>/ location; tolerate the legacy
+        # .<sibling>/ dot-dir, mirroring core/config._read_published_port_with_source.
+        for base in (sibling_state_dir(root, sibling), legacy_sibling_dir(root, sibling)):
+            port_file = base / "ephemeral.port"
+            port = _read_port_file(root, port_file)
+            if port is None:
+                continue
+            if reach(f"http://{host}:{port}/"):
+                continue  # a live server answers here — not stale, never touched
+            try:
+                rel = str(port_file.relative_to(root))
+            except ValueError:
+                rel = str(port_file)
+            stale.append(f"{sibling}:{port}")
+            if not fix:
+                removed.append(rel)  # would-remove (no unlink)
+                continue
+            if not _artifacts._is_regular_file_no_follow(port_file):
+                continue  # symlink / non-regular -> skip (defends the read->unlink TOCTOU)
+            try:
+                safe = safe_project_path(root, port_file, label="ephemeral.port")
+            except WardlineError:
+                continue  # escaping entry -> skip
+            try:
+                safe.unlink()
+            except OSError:
+                continue
+            removed.append(rel)
+    if fix:
+        msg = f"cleared {len(removed)} stale ({', '.join(stale)})" if stale else "no stale sibling ports"
+    else:
+        msg = f"{len(stale)} stale: {', '.join(stale)} (run --repair to clear)" if stale else "no stale sibling ports"
+    return DoctorCheck("stale_sibling_ports", "ok", fixed=bool(fix and removed), message=msg, removed=removed)
+
+
 def machine_readable_doctor(
     root: Path,
     *,
@@ -666,6 +782,7 @@ def machine_readable_doctor(
     loomweave_url: str | None = None,
     loomweave_url_source: str | None = None,
     transport: Transport | None = None,
+    port_probe: Callable[[str], bool] | None = None,
 ) -> dict[str, Any]:
     """Return the shared machine-readable doctor shape, optionally repairing install bindings."""
     before = {check.name: check for check in check_install(root)}
@@ -710,6 +827,7 @@ def machine_readable_doctor(
     checks.append(_check_filigree_auth(root, repair=fix, probe_target=probe_target, transport=transport))
     checks.append(_check_gitignore(proj, fix=fix))
     checks.append(_sweep_stray_artifacts(proj, fix=fix))
+    checks.append(_check_stale_sibling_ports(proj, fix=fix, probe=port_probe))
 
     next_actions = [f"{check.id}: {check.message}" for check in checks if not check.ok and check.message]
     return {

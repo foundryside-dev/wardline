@@ -23,6 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   advertised `destructiveHint: true`), bounded to managed (timestamped) files inside
   non-standard `.wardline/` dirs under the project root; emptied dirs are removed
   best-effort (non-empty dirs are left in place).
+- **`wardline doctor` detects and clears stale sibling `ephemeral.port` files** (new
+  `stale_sibling_ports` check, CLI + MCP `doctor` tool). A sibling's
+  `.weft/<sibling>/ephemeral.port` advertises a live `serve` instance; when that process
+  has exited or wedged, the file lingers and every scan dials a dead/hung origin —
+  stalling the agent gate up to the federation 30s `urlopen` timeout per round-trip on a
+  purely advisory emission (the reported `wardline scan` hang). The check probes each
+  advertised port (filigree, loomweave) at the host the scan dials, with a short 2s
+  deadline (not 30s): an unreachable port — connection refused **or** no HTTP reply within
+  the deadline (a wedged server) — is stale, and `--repair`/`fix:true` deletes the file so
+  the scan stops dialing it. A live server (any HTTP status) is never touched; the delete
+  is regular-file / no-follow confined (a symlinked `ephemeral.port` is never followed).
+  Advisory like the stray-artifact sweep — a stale port never flips the aggregate doctor
+  verdict.
 
 ### Fixed
 - **Candidate-set merge no longer scales cubically (scan DoS).** The Level-2

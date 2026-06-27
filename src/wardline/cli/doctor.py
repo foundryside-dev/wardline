@@ -13,6 +13,7 @@ from wardline.install.doctor import (
     _check_config,
     _check_filigree_auth,
     _check_gitignore,
+    _check_stale_sibling_ports,
     _resolve_probe_target,
     _sweep_stray_artifacts,
     check_install,
@@ -74,6 +75,8 @@ def doctor(root: Path, repair: bool, fix_json: bool, filigree_url: str | None) -
         click.echo(f"  stray artifacts: removed {len(sw.removed)}, review {len(sw.review)}")
         for r in sw.review:
             click.echo(f"    REVIEW   {r}  (unstamped/bare — remove by hand if it's a stray scan)")
+        sp = _check_stale_sibling_ports(proj, fix=True)
+        click.echo(f"  stale sibling ports: {sp.message}")
         if not all(check.ok for check in after) or not config_check.ok or not fcheck.ok or gi.status == "error":
             raise SystemExit(1)
         return
@@ -98,5 +101,8 @@ def doctor(root: Path, repair: bool, fix_json: bool, filigree_url: str | None) -
     sw = _sweep_stray_artifacts(proj, fix=False)
     if sw.removed or sw.review:
         click.echo(f"  stray artifacts: {sw.message}")
+    sp = _check_stale_sibling_ports(proj, fix=False)
+    if sp.removed:
+        click.echo(f"  stale sibling ports: {sp.message}")
     if not ok:
         raise SystemExit(1)
