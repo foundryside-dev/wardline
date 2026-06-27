@@ -8,6 +8,7 @@ import yaml
 from wardline.core.baseline import (
     BASELINE_VERSION,
     build_baseline_document,
+    inspect_baseline_store,
     load_baseline,
     write_baseline,
 )
@@ -210,3 +211,107 @@ def test_duplicate_fingerprint_in_file_raises(tmp_path: Path) -> None:
     )
     with pytest.raises(ConfigError):
         load_baseline(p)
+
+
+# ---------------------------------------------------------------------------
+# inspect_baseline_store — READ-ONLY repo-binding / store-read probe (doctor seam)
+# ---------------------------------------------------------------------------
+
+
+def test_inspect_store_absent_is_present_false_binding_false(tmp_path: Path) -> None:
+    # Opt-in feature simply not set up: absence is NOT the stale-binary incident.
+    status = inspect_baseline_store(tmp_path)
+    assert status.present is False
+    assert status.readable is False
+    assert status.schema_version is None
+    assert status.baseline_finding_count is None
+    assert status.binding_ok is False
+    assert status.message  # a soft, non-empty hint
+
+
+def test_inspect_store_present_readable_reads_schema_and_count(tmp_path: Path) -> None:
+    # Round-trip through the REAL writer at the REAL path (read-path == write-path):
+    # the load-bearing fact is the schema version READ FROM INSIDE the store.
+    write_baseline(baseline_path(tmp_path), [_finding(_FP_A), _finding(_FP_B)], root=tmp_path)
+    status = inspect_baseline_store(tmp_path)
+    assert status.present is True
+    assert status.readable is True
+    assert status.schema_version == BASELINE_VERSION
+    assert status.baseline_finding_count == 2
+    assert status.binding_ok is True
+
+
+def test_inspect_store_present_unreadable_version_mismatch(tmp_path: Path) -> None:
+    # The stale-binary incident: the store exists but carries a schema this build
+    # does not serve. binding_ok flips false; schema_version reports null (= a
+    # version I can serve); the on-disk version rides in the diagnostic message.
+    write_baseline(baseline_path(tmp_path), [_finding(_FP_A)], root=tmp_path)
+    p = baseline_path(tmp_path)
+    raw = yaml.safe_load(p.read_text(encoding="utf-8"))
+    raw["version"] = 999
+    p.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    status = inspect_baseline_store(tmp_path)
+    assert status.present is True
+    assert status.readable is False
+    assert status.schema_version is None
+    assert status.baseline_finding_count is None
+    assert status.binding_ok is False
+    assert "999" in status.message
+    assert str(BASELINE_VERSION) in status.message
+
+
+def test_inspect_store_present_malformed_is_unreadable(tmp_path: Path) -> None:
+    # A not-a-mapping top-level store is unreadable too (the broader incident class).
+    p = baseline_path(tmp_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("- not\n- a\n- mapping\n", encoding="utf-8")
+    status = inspect_baseline_store(tmp_path)
+    assert status.present is True
+    assert status.readable is False
+    assert status.binding_ok is False
+    assert status.schema_version is None
+
+
+def test_inspect_store_does_not_create_anything(tmp_path: Path) -> None:
+    # READ-ONLY: probing an absent store must never mkdir or write the baseline.
+    inspect_baseline_store(tmp_path)
+    assert not (tmp_path / ".weft").exists()
+
+
+def test_inspect_store_empty_store_has_null_schema_and_no_binding(tmp_path: Path) -> None:
+    # A degenerate empty `{}` store is loader-valid (readable) but carries NO version:
+    # schema_version stays null STRICTLY (never the served constant) and binding_ok is
+    # false — wardline can open it but has no servable-version fact. This keeps the
+    # non-tautological signal honest. (A real baseline always carries `version`, so the
+    # writer never produces this shape; only a crafted/truncated store does.)
+    p = baseline_path(tmp_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("{}\n", encoding="utf-8")
+    status = inspect_baseline_store(tmp_path)
+    assert status.present is True
+    assert status.readable is True  # loader accepts an empty mapping — not the incident
+    assert status.schema_version is None  # nothing was READ from the file
+    assert status.binding_ok is False  # so the harness predicate is NOT satisfied
+    assert status.baseline_finding_count == 0
+
+
+def test_inspect_store_unreadable_message_does_not_echo_store_content(tmp_path: Path) -> None:
+    # Trust-boundary: a crafted store must NOT be able to smuggle its content (an absolute
+    # path, a planted token) out through the doctor diagnostic message. A bad fingerprint
+    # scheme carrying a secret-shaped string must yield a content-free message.
+    leak = "/etc/secret/peer-token-AKIAEXFILTRATE"
+    p = baseline_path(tmp_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(
+        yaml.safe_dump({"fingerprint_scheme": leak, "version": BASELINE_VERSION, "entries": []}),
+        encoding="utf-8",
+    )
+    status = inspect_baseline_store(tmp_path)
+    assert status.readable is False
+    assert status.binding_ok is False
+    assert leak not in status.message  # the crafted content never reaches the seam
+    assert "AKIA" not in status.message
+    assert "baseline.yaml" in status.message  # only the store name + served version are named
+    assert str(BASELINE_VERSION) in status.message
+    # SchemeMismatchError is the raised type for a wrong scheme (a ConfigError subclass).
+    assert issubclass(SchemeMismatchError, ConfigError)

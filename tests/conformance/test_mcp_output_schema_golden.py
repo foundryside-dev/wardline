@@ -46,7 +46,7 @@ _GOLDEN: dict[str, Any] = json.loads(_GOLDEN_PATH.read_text("utf-8"))
 # git blob hash of the committed golden (``git hash-object``). A deliberate re-freeze
 # updates this constant in the SAME commit as the new bytes — see the RE-FREEZE
 # PROCEDURE in this module's header.
-VENDORED_BLOB_SHA = "29a9b390ed3ca59c03291f6aa577ee1b37227084"
+VENDORED_BLOB_SHA = "d560644e9853923858b8bb6351ed66adcf495f11"
 
 # The published 18-tool surface (advertisement order), pinned independently of the
 # sibling oracle so a surface change is caught here too.

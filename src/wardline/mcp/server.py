@@ -3972,8 +3972,54 @@ _DOCTOR_OUTPUT_SCHEMA: dict[str, Any] = {
             ],
             "additionalProperties": False,
         },
+        "repo_binding": {
+            "type": "object",
+            "description": "READ-ONLY repo-binding / store-read verdict: whether THIS build can read its "
+            "repo-scoped baseline store at resolved_root, at a schema it serves. The wardline analog of a stale "
+            "binary that starts cleanly but cannot read its store, silently going dark. The load-bearing fact is "
+            "store.schema_version, READ FROM INSIDE the store (not derived from the path).",
+            "properties": {
+                "resolved_root": {
+                    "type": "string",
+                    "description": "The server's launch --root that the store was probed under.",
+                },
+                "store": {
+                    "type": "object",
+                    "description": "Facts read from the baseline store (no secrets/peer tokens).",
+                    "properties": {
+                        "present": {
+                            "type": "boolean",
+                            "description": "True when the baseline.yaml store exists (baseline is opt-in).",
+                        },
+                        "readable": {
+                            "type": "boolean",
+                            "description": "True when the store parses and carries a schema this build serves.",
+                        },
+                        "schema_version": {
+                            "type": ["integer", "null"],
+                            "description": "On-disk store schema version when readable+served; null when absent or "
+                            "unreadable (null = a version I can serve — the unreadable on-disk version rides in the "
+                            "doctor.repo_binding check message).",
+                        },
+                        "baseline_finding_count": {
+                            "type": ["integer", "null"],
+                            "description": "Number of baselined findings when readable; null when absent/unreadable.",
+                        },
+                    },
+                    "required": ["present", "readable", "schema_version", "baseline_finding_count"],
+                    "additionalProperties": False,
+                },
+                "binding_ok": {
+                    "type": "boolean",
+                    "description": "True IFF the store is present AND readable at a served schema. False for an "
+                    "absent store (opt-in, not an error) AND for the present-but-unreadable stale-binary incident.",
+                },
+            },
+            "required": ["resolved_root", "store", "binding_ok"],
+            "additionalProperties": False,
+        },
     },
-    "required": ["ok", "checks", "next_actions", "server"],
+    "required": ["ok", "checks", "next_actions", "server", "repo_binding"],
     "additionalProperties": False,
 }
 

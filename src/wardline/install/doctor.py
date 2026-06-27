@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 
 from wardline.core import artifacts as _artifacts
 from wardline.core import discovery, paths
+from wardline.core.baseline import inspect_baseline_store
 from wardline.core.config import ArtifactSettings, _filigree_published_url, filigree_server_scoped_url, load
 from wardline.core.errors import ConfigError, WardlineError
 from wardline.core.filigree_emit import FiligreeEmitter, Transport, UrllibTransport
@@ -425,6 +426,34 @@ def _check_scan_output_path(root: Path) -> DoctorCheck:
     if not os.access(root, os.W_OK):
         return DoctorCheck("scan.output_path", "error", message=f"{root} is not writable")
     return DoctorCheck("scan.output_path", "ok")
+
+
+def _check_repo_binding(root: Path) -> tuple[DoctorCheck, dict[str, Any]]:
+    """READ-ONLY repo-binding probe: can THIS build read its baseline store at
+    ``root``, at a schema it serves? The wardline analog of the 2026-06-26
+    stale-binary incident — a server that starts cleanly but can't read its
+    repo-scoped store, so its findings silently go dark.
+
+    Fork-1 status split (honors wardline's not-noisy anti-goal): a PRESENT-but-
+    UNREADABLE store (version mismatch / malformed — the incident) is ``error`` and
+    flips doctor.ok; an ABSENT store (opt-in feature not set up) stays ``ok`` so it
+    never nags a baseline-less repo. The block reports ONLY resolved_root + store
+    facts (no secrets/peer tokens); the on-disk version of an unreadable store rides
+    in the check message even though ``store.schema_version`` reports null."""
+    status = inspect_baseline_store(root)
+    block: dict[str, Any] = {
+        "resolved_root": str(root),
+        "store": {
+            "present": status.present,
+            "readable": status.readable,
+            "schema_version": status.schema_version,
+            "baseline_finding_count": status.baseline_finding_count,
+        },
+        "binding_ok": status.binding_ok,
+    }
+    check_status = "error" if (status.present and not status.readable) else "ok"
+    check = DoctorCheck("doctor.repo_binding", check_status, message=status.message)
+    return check, block
 
 
 def _check_auth_token(root: Path) -> DoctorCheck:
@@ -863,12 +892,15 @@ def machine_readable_doctor(
     checks.append(_check_gitignore(proj, fix=fix))
     checks.append(_sweep_stray_artifacts(proj, fix=fix))
     checks.append(_check_stale_sibling_ports(proj, fix=fix, probe=port_probe))
+    repo_binding_check, repo_binding = _check_repo_binding(root)
+    checks.append(repo_binding_check)
 
     next_actions = [f"{check.id}: {check.message}" for check in checks if not check.ok and check.message]
     return {
         "ok": all(check.ok for check in checks),
         "checks": [check.to_dict() for check in checks],
         "next_actions": next_actions,
+        "repo_binding": repo_binding,
     }
 
 

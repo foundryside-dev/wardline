@@ -809,6 +809,61 @@
         "description": "True only when every check (including the appended server.freshness check) passed.",
         "type": "boolean"
       },
+      "repo_binding": {
+        "additionalProperties": false,
+        "description": "READ-ONLY repo-binding / store-read verdict: whether THIS build can read its repo-scoped baseline store at resolved_root, at a schema it serves. The wardline analog of a stale binary that starts cleanly but cannot read its store, silently going dark. The load-bearing fact is store.schema_version, READ FROM INSIDE the store (not derived from the path).",
+        "properties": {
+          "binding_ok": {
+            "description": "True IFF the store is present AND readable at a served schema. False for an absent store (opt-in, not an error) AND for the present-but-unreadable stale-binary incident.",
+            "type": "boolean"
+          },
+          "resolved_root": {
+            "description": "The server's launch --root that the store was probed under.",
+            "type": "string"
+          },
+          "store": {
+            "additionalProperties": false,
+            "description": "Facts read from the baseline store (no secrets/peer tokens).",
+            "properties": {
+              "baseline_finding_count": {
+                "description": "Number of baselined findings when readable; null when absent/unreadable.",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "present": {
+                "description": "True when the baseline.yaml store exists (baseline is opt-in).",
+                "type": "boolean"
+              },
+              "readable": {
+                "description": "True when the store parses and carries a schema this build serves.",
+                "type": "boolean"
+              },
+              "schema_version": {
+                "description": "On-disk store schema version when readable+served; null when absent or unreadable (null = a version I can serve \u2014 the unreadable on-disk version rides in the doctor.repo_binding check message).",
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "present",
+              "readable",
+              "schema_version",
+              "baseline_finding_count"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "resolved_root",
+          "store",
+          "binding_ok"
+        ],
+        "type": "object"
+      },
       "server": {
         "additionalProperties": false,
         "description": "The running MCP server's self-identification: detects a stale long-lived server (source on disk newer than process start).",
@@ -864,7 +919,8 @@
       "ok",
       "checks",
       "next_actions",
-      "server"
+      "server",
+      "repo_binding"
     ],
     "type": "object"
   },
