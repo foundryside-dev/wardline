@@ -53,6 +53,13 @@ URL trust, fingerprint-suppression misapply).
   (`test_check_does_not_send_token_to_project_published_port`), G1 precision held via the
   no-candidate-dropped soundness-lock family + full suite 4472 + dogfood 0-active. G2
   agent-surface axis confirmed at target; the bet is banked as paid off.
+- **Reading 2026-06-28 (PDR-0006):** closed a **cross-interpreter fingerprint-instability**
+  soundness hole. `entity_source_fingerprint` hashed `ast.dump`, which changed in CPython
+  3.13 (`show_empty=False` omits empty-list fields), so the cross-tool JOIN KEY
+  (baseline/waiver/judged stores + Filigree wire) was interpreter-dependent — a
+  silent-drop-on-join hazard. Fixed via a structural version-stable canonical dump (commit
+  `b6704c00`); join key now byte-identical 3.12 == 3.13, proven by the CI matrix (both legs
+  green) + full suite 3.12 4478 passed. **No scheme bump** (3.13 reference values unchanged).
 
 #### G2-seam — cross-repo seam honesty (no confident-empty)
 *Extension added 2026-06-27 for the weft-seam-conformance Now bet (PDR-0002 /
@@ -84,6 +91,15 @@ self-reported status field).
   reversal-trigger invariant for a new surface (it cannot return confident-empty
   without a reason). Net: the seam-honesty posture strengthened; the 6-set
   BASELINE→TARGET is unchanged.
+- **Reading 2026-06-28 (PDR-0005):** PRD-0002 **crit-3 complete + CI-verified.** The
+  producer-source byte-drift checks for the SEI-oracle (surface 6) and the warpline
+  reverify-worklist (surface 4 consumer leg) now run **required & fail-closed** in a new
+  weekly/dispatch `source-drift` CI job (byte-compare vs loomweave + warpline origin/main);
+  `sei_drift`/`worklist_drift` joined `LIVE_ORACLE_MARKERS`. crit-3a (delta-scope producer
+  artifact, surface 5) was already in-CI. Dispatched run 28301178826 green (2 passed). This
+  closes the **producer-artifact axis**; the seam-health **probe** (criteria 1/2 — Layer-1
+  `doctor --seams` self-check + Layer-2 consumer round-trip) remains the open work toward the
+  0-of-6 target. Tickets `79ba05f464` + `c0563eee74` closed.
 
 ### G3 — Zero-config activation
 `wardline scan .` runs and gates on an unconfigured repository with no required
