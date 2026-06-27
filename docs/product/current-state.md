@@ -28,6 +28,12 @@ round-trip-verified — never by trusting a self-reported status field.
 
 ## Landed this session
 
+- **PRD-0001 (Codex P1 close-out) formally ACCEPTED** (PDR-0004) — all 5 criteria met,
+  evidence re-run at HEAD (c797 DoS bound O(N²)-pinned, d96b credential gate fail-closed,
+  G1 held via the no-candidate-dropped soundness-lock family + suite 4472 + dogfood
+  0-active). The Codex hardening bet is banked as paid off; its long-pending ACCEPT is
+  closed. (Criterion-3 honesty note in PDR-0004: verified via soundness-lock tests, not a
+  literal pre/post byte-diff.)
 - **doctor.repo_binding seam producer leg** (commit `c661286f`, PDR-0003) — the
   producer half of lacuna's MCP-attachment harness: MCP `doctor` now emits a read-only
   `repo_binding` store-read check so a stale-but-running wardline reports "I can't read
@@ -37,41 +43,37 @@ round-trip-verified — never by trusting a self-reported status field.
 
 ## Open questions / blocked-on-owner
 
-1. **PRD-0001 ACCEPT is still pending — next session's first DECIDE act.** The Codex
-   hardening bet paid off (both P1s closed, batch 0, G2 at target) but was never
-   formally ACCEPTed. At ACCEPT, verify criterion 3's stronger form: a *byte-identical*
-   active-finding set (full suite + dogfood self-scan), not the close notes' weaker
-   "behavior-identical / no FN" claim. Then record an ACCEPT PDR.
-2. **Lacuna-owner handoff (open follow-up, not blocked-on-owner).** Relay the confirmed
+1. **Lacuna-owner handoff (open follow-up, not blocked-on-owner).** Relay the confirmed
    doctor contract to the Lacuna owner so their (provisional) probe row is wired to
    match: probe reads `structuredContent.repo_binding.binding_ok` +
    `repo_binding.store.schema_version`; predicate `binding_ok==true AND schema_version
    not null`; assert on `repo_binding.*`, **not** doctor `ok`. (warpline ships its
    sibling tool independently; field shapes converge.)
-3. **Seam bet "done" definition — settle before/at planning.** All *wardline-side*
+2. **Seam bet "done" definition — settle before/at planning.** All *wardline-side*
    seams `at_bar`, vs. cross-repo *peers* confirmed via live round-trip probe? Tracked
    open on `c66f62894b`.
-4. **North-star instrumentation still unmeasured.** Agent-fix success rate has no
+3. **North-star instrumentation still unmeasured.** Agent-fix success rate has no
    baseline corpus; this bet is judged on guardrails (G2-seam + G1/G3/G4) by design.
-5. **Nothing blocked on owner / escalated.** The editable reinstall was owner-confirmed
+4. **Nothing blocked on owner / escalated.** The editable reinstall was owner-confirmed
    in-session; no push/publish/deprecation/pricing/data-deletion this session.
 
-## What this checkpoint did
+## What this session persisted
 
-- Recorded **PDR-0003** (doctor.repo_binding seam + the Fork-1 absent→ok split,
-  `accepted`); added a dated **G2-seam reading** noting the new honesty surface landed +
-  round-trip-proven (6-set BASELINE/TARGET unchanged).
-- Reconciled: one code commit this session (`c661286f`); commented the landing on the
-  seam program tracker `c66f62894b`. Roadmap untouched (no horizon change).
+- **PDR-0004** — ACCEPT of PRD-0001 (Codex bet paid off; all 5 criteria met, evidence
+  re-run at HEAD); PRD-0001 header → ACCEPTED; dated G2 reading added.
+- **PDR-0003** — doctor.repo_binding seam + the Fork-1 absent→ok split; dated G2-seam
+  reading (new honesty surface landed + round-trip-proven; 6-set BASELINE/TARGET
+  unchanged). Tracker `c66f62894b` commented. Roadmap untouched (no horizon change).
 
 ## Where the next session starts
 
 1. Confirm the grant still holds (re-confirmed 2026-06-27; next due ~2026-09-25).
-2. **ACCEPT PRD-0001** with the byte-identical finding-set check (open question 1).
-3. Continue the seam frontier: dispatch `c0563eee74` / `79ba05f464` (PRD-0002 crit 3) →
-   `/axiom-planning`; relay the doctor contract to the Lacuna owner (open question 2).
+2. Continue the seam frontier (the Now bet): dispatch `c0563eee74` / `79ba05f464`
+   (PRD-0002 crit 3) → `/axiom-planning`; relay the doctor contract to the Lacuna owner
+   (open question 1).
 
 ## Provenance
 
 Decisions: `0001` (bootstrap), `0002` (Now rotation), `0003` (doctor seam / Fork-1
-split). Tactical truth is the tracker; intent lives here and in `roadmap.md`.
+split), `0004` (ACCEPT PRD-0001). Tactical truth is the tracker; intent lives here and
+in `roadmap.md`.

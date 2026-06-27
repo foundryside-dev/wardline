@@ -1,4 +1,4 @@
-# PRD-0001 — Codex P1 close-out            Status: ready-for-planning
+# PRD-0001 — Codex P1 close-out            Status: ACCEPTED (PDR-0004, 2026-06-28)
 Decision: PDR-0001   Bet (roadmap.md): Now   Target metric (metrics.md): G2 — soundness / surface integrity
 
 ## Problem

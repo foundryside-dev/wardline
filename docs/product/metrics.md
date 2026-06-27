@@ -47,6 +47,12 @@ URL trust, fingerprint-suppression misapply).
   agent-surface axis of G2 is at target.
 - Enforced by: the soundness oracle + the security regression suite. A new
   fail-open hole is a P0.
+- **Reading 2026-06-28 (PDR-0004):** PRD-0001 (the P1 slice of G2) formally **ACCEPTED**
+  — all 5 criteria met, evidence re-run at HEAD: c797 DoS bound pinned O(N²)
+  (`test_lambda_candidate_merge_is_not_cubic...`), d96b credential gate fail-closed
+  (`test_check_does_not_send_token_to_project_published_port`), G1 precision held via the
+  no-candidate-dropped soundness-lock family + full suite 4472 + dogfood 0-active. G2
+  agent-surface axis confirmed at target; the bet is banked as paid off.
 
 #### G2-seam — cross-repo seam honesty (no confident-empty)
 *Extension added 2026-06-27 for the weft-seam-conformance Now bet (PDR-0002 /
