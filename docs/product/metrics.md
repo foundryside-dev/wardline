@@ -37,13 +37,37 @@ population must stay true-positive-dominant.
 ### G2 — Soundness / surface integrity (no false green, no policy bypass)
 Zero known fail-open taint holes (untrusted→trusted laundering) **and** zero
 known agent-surface policy bypasses (MCP network/write-policy escapes, sibling
-URL trust, fingerprint-suppression misapply). This is the guardrail the **Now**
-bet directly serves.
+URL trust, fingerprint-suppression misapply).
 - `BASELINE → TARGET`: `BASELINE: open codex-security-2026-06-20 batch (≈44
   open) → TARGET: 0 open in that batch by 2026-07-31; thereafter 0 known
   fail-open/bypass holes, held continuously`
+- **Reading 2026-06-27:** `codex-security-2026-06-20` batch = **0 open**;
+  `codex-security` overall = **0 open** — TARGET hit ahead of the 07-31 backstop
+  (both P1s `c797baf28b` / `d96b94d4e9` closed with red/green regressions). The
+  agent-surface axis of G2 is at target.
 - Enforced by: the soundness oracle + the security regression suite. A new
   fail-open hole is a P0.
+
+#### G2-seam — cross-repo seam honesty (no confident-empty)
+*Extension added 2026-06-27 for the weft-seam-conformance Now bet (PDR-0002 /
+PRD-0002), framed by the hub seam-health-map (`~/weft/pm/2026-06-15-seam-health-
+map.md`).* The outcome: **no Wardline-owned seam surface can return an answer
+indistinguishable from a legitimate true-negative** — every one emits a
+machine-readable `reason` for empty/partial/stale, and every consumer read is
+round-trip-verifiable under the agreed identity scheme (never by trusting a
+self-reported status field).
+- **Closed surface set (6)** Wardline owns: (1) wardline→filigree emit, (2)
+  wardline→legis attest, (3) SEI loomweave→wardline consumer read, (4) warpline
+  worklist consumer read, (5) wardline delta-scope producer artifact, (6)
+  SEI-oracle producer-source CI drift.
+- `BASELINE → TARGET`: `BASELINE (2026-06-15 seam-health-map): of 6, 3 lie or
+  cannot self-report — (1) hardwired failed:[], (2) attest key-absent fail-open
+  with no amber/key_id, (3) SEI-wire-transport "gap" with no round-trip — and 0
+  consumer round-trip probes exist → TARGET: 0 of 6 can return a
+  true-negative-indistinguishable answer (all 6 emit a machine-readable reason
+  and/or are round-trip/drift-verified) by 2026-07-31`
+- Reversal trigger: a new Wardline seam surface that returns confident-empty with
+  no reason is a P0, same class as a fail-open taint hole.
 
 ### G3 — Zero-config activation
 `wardline scan .` runs and gates on an unconfigured repository with no required

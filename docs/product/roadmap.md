@@ -6,26 +6,34 @@
 > turning one bet into an implementation plan is `/axiom-planning`. Do not add
 > dates or scores here.
 
-Seeded on bootstrap (2026-06-22) from observed direction: recent git history
-(26 of the last 50 commits are `fix:`), the dominant tracker labels
-(`codex-security` ×89, `codex-security-2026-06-20` ×44, `security-finding` ×47),
-the in-progress item, and the recorded MCP-primary and frictionless-surface
-programs. Treat horizon placement as a proposal for the human to confirm in
-`DECIDE`.
+`Updated: 2026-06-27 (PDR-0002)` — Now rotated Later→Now to
+weft-seam-conformance; the Codex hardening campaign paid off (batch 0 open, G2 at
+target) and moved to ACCEPT. Originally seeded on bootstrap (2026-06-22) from
+observed direction (git history, the dominant `codex-security` labels, the
+in-progress item, and the recorded MCP-primary / frictionless-surface programs).
 
 ## Now — the current bet
 
-**Close out the Codex security-review hardening campaign on the shipped 1.0.x
-agent surface.** A large external (Codex) security review produced ~89 findings
-against the agent-facing MCP / CLI / federation surfaces (sibling-URL trust,
-network-policy bypasses, rekey/provenance, fingerprint-suppression misapply,
-Rust-frontend crashes). The last ~25 commits and the single in-progress ticket
-(`wardline-14359d070b`) are all part of this. **Intent: drive the
-`codex-security-2026-06-20` batch to zero, with each fix verified at the
-boundary, before opening a new capability front.**
+**Close out the Wardline residency of the weft-seam-conformance program — give
+every Wardline-owned seam back its ability to say "I don't know."** The federation
+*is* the product (PDR-0023); the seams are the crown jewels. A silent join-miss
+(scheme drift, unresolved SEI, stale snapshot, dropped signature, absent artifact
+key) returns a confident, well-formed answer (`affected:[]`, `failed:[]`,
+`freshness:"unknown"`) that is **byte-indistinguishable from a true-negative** —
+and the agent commits the lie as the premise of its next decision. **Intent: every
+Wardline seam surface reports emptiness/staleness with a machine-readable
+`reason`, and every consumer read is round-trip-verified under the agreed identity
+scheme — never by trusting a self-reported status field.** Spec: PRD-0002 /
+`~/weft/pm/2026-06-15-seam-health-map.md`. Program tracker: `wardline-c66f62894b`.
 
-- *Metric it moves:* the **soundness / surface-integrity guardrail** (no known
-  fail-open or policy-bypass holes on the agent surface).
+- *Metric it moves:* **G2-seam — cross-repo seam honesty** (`metrics.md`): 0 of 6
+  Wardline-owned seam surfaces can return a true-negative-indistinguishable answer.
+
+> *Just completed (→ ACCEPT, not Now):* the **Codex security-review hardening
+> close-out** (PDR-0001 / PRD-0001). Both P1s closed + regression-pinned, the
+> `codex-security-2026-06-20` batch is 0 open, and guardrail **G2 is at target**.
+> Awaiting a formal ACCEPT pass against PRD-0001's criteria (incl. the
+> byte-identical active-finding check).
 
 ## Next — proposed, not committed
 

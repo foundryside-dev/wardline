@@ -76,7 +76,10 @@ optimization:
 ## Authority grant
 
 `Status: CONFIRMED` · `Granted by: john@foundryside.dev` · `Last reviewed:
-2026-06-22` · `Review cadence: 90 days`
+2026-06-27` · `Review cadence: 90 days`
+
+> Re-confirmed unchanged by the owner on 2026-06-27 (RESUME grant check). Grant
+> content is identical to the 2026-06-22 confirmation; only the review date moved.
 
 The product-owner agent acts **autonomously within strategy**:
 - prioritize and reprioritize the backlog,
