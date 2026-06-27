@@ -68,6 +68,16 @@ self-reported status field).
   and/or are round-trip/drift-verified) by 2026-07-31`
 - Reversal trigger: a new Wardline seam surface that returns confident-empty with
   no reason is a P0, same class as a fail-open taint hole.
+- **Reading 2026-06-28 (PDR-0003):** a NEW Wardline-owned seam-honesty surface landed
+  — MCP `doctor.repo_binding` store-read check (lacuna consumer-read seam; commit
+  `c661286f`). It is honest by construction: present-but-unreadable emits a
+  machine-readable reason and `binding_ok=false`; the non-tautological signal is the
+  baseline `schema_version` read from inside the store. **Round-trip-proven** against
+  the freshly-spawned installed `wardline mcp` (binding_ok=true/schema_version=1 for a
+  repo with a baseline). Outside the original 6-surface set, but it *satisfies* the
+  reversal-trigger invariant for a new surface (it cannot return confident-empty
+  without a reason). Net: the seam-honesty posture strengthened; the 6-set
+  BASELINE→TARGET is unchanged.
 
 ### G3 — Zero-config activation
 `wardline scan .` runs and gates on an unconfigured repository with no required
