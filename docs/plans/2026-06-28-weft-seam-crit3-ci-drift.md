@@ -114,9 +114,12 @@ checkout step + marker selection + one env-var rename does not warrant a
 
 1. **crit-3a banked** — DONE (ticket `c0563eee74` commented + narrowed 2026-06-28).
 2. **T2 env-var normalize** — DONE this session (verified red→green).
-3. **Owner action** — provision the cross-repo read credential (above). The only blocker for T3.
-4. **T3** — once the credential exists: fold the source-drift markers into `live-oracles`,
-   fail-closed. Small + mechanical; `/review-plan` optional given the size.
+3. **Owner action** — provision the cross-repo read credential. ✅ DONE 2026-06-28 (owner added
+   `WARDLINE_SIBLING_SOURCE_TOKEN`, org-wide read).
+4. **T3** — ✅ DONE 2026-06-28. New `source-drift` job folds the source-drift markers into the
+   weekly/dispatch cadence, fail-closed; `sei_drift` + `worklist_drift` added to
+   `LIVE_ORACLE_MARKERS`. Verified GREEN on dispatched run 28301178826 (2 passed vs loomweave +
+   warpline origin/main). Tickets `79ba05f464` + `c0563eee74` closed.
 
 ---
 
@@ -129,11 +132,16 @@ checkout step + marker selection + one env-var rename does not warrant a
   `WARPLINE_REPO`; unified to `WARDLINE_WARPLINE_REPO` (one resolution contract across all `_drift`
   rechecks). Verified red→green: skipped pre-fix with the standard var set; now runs + passes vs
   warpline's published schema. ruff clean. *(wardline-only, no gate.)*
-- **T3 — CI job for source drift (gated on the fork).** New/extended fail-closed job that
-  provisions sibling source and runs `pytest -m "sei_drift or worklist_drift"` (+ the
-  published-schema validation) with `WARDLINE_LIVE_ORACLE_REQUIRED=1`. Each leg lands with a
-  test/CI assertion that fails pre-fix (e.g. a planted drifted byte reds the job).
-- **T4 — Guardrail proof (PRD crit 5).** Confirm G1 (byte-identical active-finding set before/after
-  — these are test/CI-only changes, no engine touch), G3 (no new required human config — the
-  credential is CI-secret infra, not a `wardline scan` config step), G4 (no new base runtime dep;
-  `jsonschema` already an extra used by the published-schema test).
+- **T3 — CI source-drift job. ✅ DONE 2026-06-28.** New `source-drift` job
+  (.github/workflows/ci.yml) checks out loomweave + warpline origin/main
+  (`WARDLINE_SIBLING_SOURCE_TOKEN`) and runs `pytest -m "sei_drift or worklist_drift"` under
+  `WARDLINE_LIVE_ORACLE_REQUIRED=1`; `sei_drift` + `worklist_drift` added to
+  `LIVE_ORACLE_MARKERS` (src semantic change); unit-test + taxonomy-doc contract updated.
+  Verified GREEN (run 28301178826, 2 passed). Fail-closed proven locally (armed skip → fail) and
+  the real local warpline-ahead drift was caught. Commit 8fe09d6f. **Deferred (peer-gated):** the
+  published-SCHEMA validation stays OUT until warpline pushes `reverify_worklist.v1.schema.json`
+  to origin/main (today only in ~34 local commits); arm it then by marking the schema test
+  `worklist_drift`. Easy follow-on: `loomweave_drift` (loomweave already checked out in the job).
+- **T4 — Guardrail proof (PRD crit 5). ✅ DONE.** G1: test/CI-only changes, no engine touch — full
+  default suite 4475 passed (no active-finding change). G3: no new required human config (the
+  credential is CI-secret infra, not a `wardline scan` step). G4: no new base runtime dep.
