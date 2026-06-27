@@ -4,6 +4,8 @@ Wardline publishes a signed, full-scan, commit-pinned attest bundle. Warpline's
 risk-as-verification ("Rung 2") consumes it to decide whether an entity was *proven
 clean at a commit*. **Wardline is the trust authority; warpline never declares clean.**
 
+> Agent-facing operational counterpart: [`wardline-attest-2-consumer-prompt.md`](./wardline-attest-2-consumer-prompt.md) — keep the two in lockstep.
+
 ## Bundle shape (verbatim)
 
 `payload.boundaries[]`: `{qualname, sei, content_hash, verdict, tier}`
