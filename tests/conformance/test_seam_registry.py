@@ -26,10 +26,17 @@ Marker taxonomy (resolve ``_e2e`` vs ``_drift`` explicitly):
   armed ``WARDLINE_LIVE_ORACLE_REQUIRED=1`` run fails it closed instead of
   skipping clean).
 * A ``_drift`` (Layer-2 live recheck) marker must appear in pyproject markers +
-  the addopts exclusion. It is intentionally NOT required to be in
-  ``LIVE_ORACLE_MARKERS``: the default-suite fail-closed protection for that
-  two-sided seam comes instead from the Layer-1 byte-pin (an unmarked test
-  pinning the vendored fixture hash, which always runs).
+  the addopts exclusion. Its default-suite fail-closed protection is the Layer-1
+  byte-pin (an unmarked test pinning the vendored fixture hash, which always runs),
+  so a ``_drift`` marker is NOT *required* to be in ``LIVE_ORACLE_MARKERS``. It MAY
+  be, once an armed CI job provisions its sibling SOURCE and runs it: ``sei_drift``
+  and ``worklist_drift`` ARE in ``LIVE_ORACLE_MARKERS`` (crit-3b — wardline-79ba05f464
+  / wardline-c0563eee74) because the weekly ``source-drift`` job checks out the
+  loomweave + warpline sources and runs them under ``WARDLINE_LIVE_ORACLE_REQUIRED=1``,
+  so a missing-source skip fails closed there. ``_drift`` markers that no armed job
+  runs (``loomweave_drift``, ``reason_vocab_drift``, ``filigree_token_drift``,
+  ``legis_scan_artifact_drift``) stay OUT — promoting one without an armed job that
+  runs it would be a false fail-closed claim.
 
 Strengthening notes (what this module verifies vs what it cannot):
 

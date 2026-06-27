@@ -263,22 +263,25 @@ def test_consumer_captures_impact_completeness() -> None:
 
 
 @pytest.mark.skipif(
-    not os.environ.get("WARPLINE_REPO"),
-    reason="set WARPLINE_REPO to drift-check the vendored fixtures vs warpline's published "
-    "warpline.reverify_worklist.v1 artifact (gated on warpline publishing it)",
+    not os.environ.get("WARDLINE_WARPLINE_REPO"),
+    reason="set WARDLINE_WARPLINE_REPO to drift-check the vendored fixtures vs warpline's "
+    "published warpline.reverify_worklist.v1 schema (one resolution contract shared with the "
+    "other _drift rechecks). NOT yet in the fail-closed source-drift job: warpline has not "
+    "pushed contracts/reverify_worklist.v1.schema.json to origin/main; this leg arms (add the "
+    "worklist_drift marker) once it does.",
 )
 def test_vendored_worklist_matches_published_artifact() -> None:
     """Validate every vendored fixture against warpline's published schema.
 
     Each fixture in ``fixtures/warpline_delta/*.v1.json`` must be a full valid envelope
     conforming to the ``warpline.reverify_worklist.v1`` schema published at
-    ``$WARPLINE_REPO/contracts/reverify_worklist.v1.schema.json``.
+    ``$WARDLINE_WARPLINE_REPO/contracts/reverify_worklist.v1.schema.json``.
     """
     import glob
 
     from jsonschema import Draft202012Validator
 
-    published = Path(os.environ["WARPLINE_REPO"]) / "contracts" / "reverify_worklist.v1.schema.json"
+    published = Path(os.environ["WARDLINE_WARPLINE_REPO"]) / "contracts" / "reverify_worklist.v1.schema.json"
     assert published.is_file(), "warpline has not published the worklist contract artifact yet"
     schema = json.loads(published.read_text(encoding="utf-8"))
     validator = Draft202012Validator(schema)
