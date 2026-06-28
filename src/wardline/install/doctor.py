@@ -18,7 +18,7 @@ from wardline.core import artifacts as _artifacts
 from wardline.core import discovery, paths
 from wardline.core.baseline import inspect_baseline_store
 from wardline.core.config import ArtifactSettings, _filigree_published_url, filigree_server_scoped_url, load
-from wardline.core.errors import ConfigError, WardlineError
+from wardline.core.errors import ConfigError, LoomweaveError, WardlineError
 from wardline.core.filigree_emit import FiligreeEmitter, Transport, UrllibTransport
 from wardline.core.http import WeftHttp
 from wardline.core.paths import legacy_sibling_dir, sibling_state_dir, weft_config_path, weft_state_dir
@@ -511,10 +511,10 @@ def _rewrite_env_token(env_path: Path, value: str) -> None:
 _FILIGREE_URL_ENV = "WARDLINE_FILIGREE_URL"
 
 
-def _mcp_filigree_url(root: Path) -> str | None:
-    """The ``--filigree-url`` value from the wardline server entry in ``.mcp.json``,
-    or None. This is the URL the agent's MCP server actually emits to, and the only
-    place it is recorded in the common (MCP) setup."""
+def _mcp_wardline_arg(root: Path, flag: str) -> str | None:
+    """The value of *flag* (``--filigree-url`` / ``--loomweave-url``) on the wardline
+    server entry in ``.mcp.json``, or None. This is the only place a sibling emit target
+    is recorded in the common (MCP) setup — the URL the agent's MCP server emits to."""
     path = root / ".mcp.json"
     if not path.is_file():
         return None
@@ -526,11 +526,19 @@ def _mcp_filigree_url(root: Path) -> str | None:
         args = raw["mcpServers"]["wardline"]["args"]
         if not isinstance(args, list):
             return None
-        idx = args.index("--filigree-url")
+        idx = args.index(flag)
         value = args[idx + 1]
     except (KeyError, TypeError, ValueError, IndexError):
         return None
     return value if isinstance(value, str) else None
+
+
+def _mcp_filigree_url(root: Path) -> str | None:
+    return _mcp_wardline_arg(root, "--filigree-url")
+
+
+def _mcp_loomweave_url(root: Path) -> str | None:
+    return _mcp_wardline_arg(root, "--loomweave-url")
 
 
 @dataclass(frozen=True, slots=True)
@@ -837,6 +845,105 @@ def _check_stale_sibling_ports(
     return DoctorCheck("stale_sibling_ports", "ok", fixed=bool(fix and removed), message=msg, removed=removed)
 
 
+# A tiny source->sink flow the taint engine MUST fire on: a curated external source
+# (the Flask request multidict) reaching a command sink, INSIDE a declared trust
+# boundary. wardline is annotation-driven, so the @trusted marker is load-bearing — it
+# is what gives the gate something to enforce; without it the analyzer is inert by
+# design (the very thing Part A surfaces). Analyzed STATICALLY (never executed), so
+# neither flask nor wardline.decorators need be importable at scan time.
+_ENGINE_SELFTEST_SOURCE = """\
+from wardline.decorators import trusted
+import os
+import flask
+
+
+@trusted
+def _wardline_engine_selftest() -> None:
+    os.system(flask.request.args.get("cmd"))
+"""
+
+
+def _run_engine_selftest() -> list[Any]:
+    """Analyze the built-in self-test fixture in a throwaway temp dir and return its
+    findings. The fixture lives OUTSIDE the source tree (a tempdir) so it can never be
+    swept into wardline's own corpus scan / golden."""
+    import tempfile
+
+    from wardline.core.config import WardlineConfig
+    from wardline.scanner.analyzer import WardlineAnalyzer
+
+    with tempfile.TemporaryDirectory(prefix="wardline-selftest-") as td:
+        d = Path(td)
+        fixture = d / "_wardline_engine_selftest.py"
+        fixture.write_text(_ENGINE_SELFTEST_SOURCE, encoding="utf-8")
+        return list(WardlineAnalyzer().analyze([fixture], WardlineConfig(), root=d))
+
+
+def _check_engine_selftest() -> DoctorCheck:
+    """Engine self-test: run the taint analyzer on a known source->sink fixture and
+    assert the expected ERROR fires. Proves the analysis pipeline is wired and FIRING in
+    this install (a corrupt grammar/rule registry, a broken parse gate, or a regressed
+    propagation path would make it silent).
+
+    Deliberately scoped to the ENGINE, NOT the user's target: a passing self-test does
+    NOT mean the user's scans enforce — an annotation-free codebase is still inert by
+    design. Part A's per-scan resolution posture carries that separate signal."""
+    from wardline.core.finding import Kind
+
+    try:
+        findings = _run_engine_selftest()
+    except Exception as exc:  # noqa: BLE001 — any engine failure IS a self-test failure
+        return DoctorCheck("engine.selftest", "error", message=f"engine self-test could not run: {exc}")
+    if any(getattr(f, "kind", None) is Kind.DEFECT and f.rule_id == "PY-WL-108" for f in findings):
+        return DoctorCheck("engine.selftest", "ok", message="taint analysis fires correctly")
+    return DoctorCheck(
+        "engine.selftest",
+        "error",
+        message="engine self-test FAILED: a known untrusted->os.system flow did not fire PY-WL-108",
+    )
+
+
+_LOOMWEAVE_URL_ENV = "WARDLINE_LOOMWEAVE_URL"
+
+
+def _loomweave_configured(root: Path, effective_url: str | None) -> bool:
+    """True when the operator has EXPLICITLY pointed wardline at a Loomweave taint store:
+    the answering process's ``--loomweave-url`` launch flag, the ``WARDLINE_LOOMWEAVE_URL``
+    env var, or a ``--loomweave-url`` arg on the wardline server entry in ``.mcp.json``.
+
+    Ambient published-port auto-discovery is deliberately NOT counted: it is not an
+    operator intent, and a base install that dials a sibling it merely *found* degrades
+    fail-soft (the scan's gate stays intact). Flagging it would nag every base install
+    that happens to run alongside a Loomweave sibling."""
+    return (
+        bool(effective_url)
+        or bool(os.environ.get(_LOOMWEAVE_URL_ENV))
+        or _mcp_loomweave_url(root) is not None
+    )
+
+
+def _check_loomweave_dep(root: Path, *, effective_url: str | None = None) -> DoctorCheck:
+    """Flag a configured-but-uninstalled Loomweave integration: a Loomweave taint-store
+    URL is wired but the ``[loomweave]`` extra (``blake3``) is missing, so every
+    ``wardline scan`` taint-fact write silently no-ops. The write is fail-soft (the gate
+    is unaffected), which is exactly why this is otherwise invisible — doctor is the
+    operator-visibility compensator."""
+    if not _loomweave_configured(root, effective_url):
+        return DoctorCheck("loomweave.dep", "ok", message="loomweave not configured")
+    try:
+        from wardline.loomweave import require_blake3
+
+        require_blake3()
+    except (LoomweaveError, ImportError):
+        return DoctorCheck(
+            "loomweave.dep",
+            "error",
+            message="loomweave is configured but its [loomweave] extra is not installed; "
+            "taint-store writes silently no-op — install: pip install 'wardline[loomweave]'",
+        )
+    return DoctorCheck("loomweave.dep", "ok", message="loomweave extra installed")
+
+
 def machine_readable_doctor(
     root: Path,
     *,
@@ -867,6 +974,7 @@ def machine_readable_doctor(
     checks.append(_check_config(root, fixed=fix and config_missing_before and weft_config_path(root).exists()))
     checks.append(_check_mcp_registration(root, before=before))
     checks.append(_check_marker_package())
+    checks.append(_check_engine_selftest())
     checks.append(
         _check_url(
             root,
@@ -876,6 +984,7 @@ def machine_readable_doctor(
             effective_url_source=loomweave_url_source,
         )
     )
+    checks.append(_check_loomweave_dep(root, effective_url=loomweave_url))
     checks.append(
         _check_url(
             root,
