@@ -155,6 +155,36 @@ _STORAGE_READ_METHODS: frozenset[str] = frozenset({"fetchone", "fetchall", "fetc
 # receiver" rule, which would over-fire on ``.strip()``/``.lower()``/in-place validators).
 _RECEIVER_MUTATING_METHODS: frozenset[str] = frozenset({"append", "add", "extend", "update", "insert"})
 
+
+@dataclass(frozen=True, slots=True)
+class _RequestMembers:
+    """The curated DATA members of a recognized web-request type. ``properties`` are raw
+    when READ as an attribute (``req.query_params``); ``methods`` are raw when CALLED
+    (``req.json()``). The split is precision, not coverage: a bare uncalled ``req.json``
+    is a bound coroutine-method object, not data, so it stays clean."""
+
+    properties: frozenset[str]
+    methods: frozenset[str]
+
+
+# Annotation-based external-data SOURCE seeding for framework request types (FastAPI /
+# Starlette). A function parameter typed with one of these FQNs is a request boundary;
+# curated members read off it are EXTERNAL_RAW (the typed-receiver + curated-member
+# model — NOT whole-param tainting, so ``req.app``/``req.state``/``req.url``/``req.scope``/
+# ``req.client`` stay clean). The match is on the RESOLVED type via the alias map, never
+# the parameter name. FastAPI's ``Request`` subclasses Starlette's (identical accessor
+# surface), so both keys share one member set; both are still needed because the alias
+# map records the import spelling actually used. Mechanism is general — a new framework is
+# one dict row; seeding stays scoped to these two FQNs deliberately (precision over recall).
+_STARLETTE_REQUEST_MEMBERS = _RequestMembers(
+    properties=frozenset({"query_params", "path_params", "headers", "cookies"}),
+    methods=frozenset({"json", "body", "form", "stream"}),
+)
+_REQUEST_SOURCE_TYPES: dict[str, _RequestMembers] = {
+    "fastapi.Request": _STARLETTE_REQUEST_MEMBERS,
+    "starlette.requests.Request": _STARLETTE_REQUEST_MEMBERS,
+}
+
 _CURRENT_ALIAS_MAP: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
     "_CURRENT_ALIAS_MAP", default=None
 )
@@ -382,6 +412,7 @@ def analyze_function_variables(
     token_args = _CURRENT_CALL_SITE_ARG_TAINTS.set(call_site_arg_taints)
     token_module = _CURRENT_MODULE_PREFIX.set(context.module_prefix)
     try:
+        return_var_types: dict[str, list[str]] = {}
         variable_taints = compute_variable_taints(
             func_node,
             function_taint,
@@ -391,14 +422,34 @@ def analyze_function_variables(
             call_site_arg_taints=call_site_arg_taints,
             param_meets=context.param_meets,
             provenance_clash=context.provenance_clash,
+            out_var_types=return_var_types,
         )
-        return_taint = compute_return_taint(
-            func_node,
-            function_taint,
-            dict(taint_map),
-            variable_taints,
-            call_site_taints,
-        )
+        # Re-establish ONLY the request-source receiver types for the return-taint VALUE pass.
+        # compute_variable_taints resets _CURRENT_VAR_TYPES on exit, so a helper that DIRECTLY
+        # returns a request-source expression (``return req.query_params.get('x')``) would
+        # otherwise compute a CLEAN return taint — a false negative the local-var form does not
+        # have, and an inconsistency: a @trusted boundary leaking raw request data goes
+        # undetected by PY-WL-101 (Part C review, wardline-bd9d1e65cb). FILTERED to request-type
+        # FQNs (and their candidates) so the GENERAL typed-receiver dispatch stays inert in the
+        # return pass — zero blast radius on non-request ``return typed.method()`` resolution.
+        # Scoped to compute_return_taint (the value pass); compute_return_callee is explain-only.
+        return_request_types: dict[str, list[str]] = {}
+        for name, fqns in return_var_types.items():
+            request_fqns = [f for f in fqns if f in _REQUEST_SOURCE_TYPES]
+            if request_fqns:
+                return_request_types[name] = request_fqns
+        token_rt_types = _CURRENT_VAR_TYPES.set(return_request_types) if return_request_types else None
+        try:
+            return_taint = compute_return_taint(
+                func_node,
+                function_taint,
+                dict(taint_map),
+                variable_taints,
+                call_site_taints,
+            )
+        finally:
+            if token_rt_types is not None:
+                _CURRENT_VAR_TYPES.reset(token_rt_types)
         # compute_return_callee is PROVENANCE-ONLY: _assignment_callee re-resolves
         # every direct-call assignment RHS against the FINAL var_taints, and letting
         # that re-resolution record would COMBINE post-call taint into the at-call
@@ -612,6 +663,7 @@ def compute_variable_taints(
     param_meets: dict[str, TaintState] | None = None,
     *,
     provenance_clash: bool | None = None,
+    out_var_types: dict[str, list[str]] | None = None,
 ) -> dict[str, TaintState]:
     """Compute per-variable taint for a function body.
 
@@ -673,6 +725,13 @@ def compute_variable_taints(
         if call_site_taints is not None:
             worst = _worst_ever_var_taints(call_site_taints, var_taints)
             _resolve_lambda_bodies(func_node, function_taint, taint_map, worst)
+        # Expose the resolved receiver-TYPE map (param annotations + ``x = Type()``
+        # rebinds) for callers that re-establish it for the return-taint pass, where the
+        # type-gated source seeds would otherwise be blind (the contextvar is reset below).
+        if out_var_types is not None:
+            current_types = _CURRENT_VAR_TYPES.get()
+            if current_types is not None:
+                out_var_types.update(current_types)
         return var_taints
     finally:
         if token_clash is not None:
@@ -857,6 +916,22 @@ def _resolve_expr(
             root = _call_root_name(node)
             if not (root is not None and root not in ("self", "cls") and var_taints.get(root) in RAW_ZONE):
                 return taint_map[dotted]
+        # Framework request SOURCE (Part C): a curated DATA property read off a parameter
+        # typed ``fastapi.Request``/``starlette.requests.Request`` (``req.query_params``,
+        # ``.path_params``, ``.headers``, ``.cookies``) is EXTERNAL_RAW — attacker wire
+        # input regardless of how ``req`` itself is tainted. Matched on the RESOLVED type
+        # (``_CURRENT_VAR_TYPES``, populated from the annotation in ``_seed_parameters``),
+        # NEVER the parameter name. Method members (``.json()``...) are seeded in
+        # ``_resolve_call`` (this expr path never sees the Call's attr). Placed after the
+        # ``taint_map`` self/cross-method block so a project summary still wins first (no
+        # collision: ``req`` is a tracked parameter, not a module-rooted key).
+        if isinstance(node.value, ast.Name):
+            var_types = _CURRENT_VAR_TYPES.get()
+            if var_types is not None:
+                for fqn in var_types.get(node.value.id, ()):
+                    members = _REQUEST_SOURCE_TYPES.get(fqn)
+                    if members is not None and node.attr in members.properties:
+                        return TaintState.EXTERNAL_RAW
         return _resolve_expr(node.value, function_taint, taint_map, var_taints)
     if isinstance(node, ast.Await):
         # Unwrap — the inner expression (typically a Call) is already handled.
@@ -1152,6 +1227,17 @@ def _resolve_call(
                     for hit in hits[1:]:
                         result = combine(result, hit)
                     return result
+                # Framework request SOURCE (Part C): a curated DATA method called on a
+                # request-typed receiver (``req.json()``/``.body()``/``.form()``/
+                # ``.stream()``) is EXTERNAL_RAW. Placed AFTER the project-summary dispatch
+                # so a genuine ``Type.method`` summary still wins first — for a literal
+                # ``fastapi.Request`` receiver no such summary exists, so ``hits`` is empty,
+                # the all-candidates guard fails, and control reaches here. Property members
+                # are seeded in ``_resolve_expr``; this path handles only the Call form.
+                for type_fqn in candidates:
+                    members = _REQUEST_SOURCE_TYPES.get(type_fqn)
+                    if members is not None and node.func.attr in members.methods:
+                        return TaintState.EXTERNAL_RAW
         attr = node.func.attr
         if attr in _STORAGE_READ_METHODS:
             # DB-cursor fetch loads stored/external data → seed EXTERNAL_RAW, like a file
