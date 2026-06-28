@@ -33,6 +33,14 @@ population must stay true-positive-dominant.
   measured 2026-09-30`
 - Proxy already in the repo: suppression/waiver growth vs. rule growth (a single
   rule accruing disproportionate waivers signals lattice mis-design).
+- **Reading 2026-06-28 (PDR-0007/0008):** Part A's inert banner is calibrated +
+  reliance-gated — it stays silent on the annotated corpus (anchored=43) and on
+  bare scans, so **no G1 impact**. The pack-bridge (PDR-0008) validating-boundary
+  seed has **UNMEASURED** FP quality on the real elspeth tree — its 25 boundaries
+  are not yet calibrated. Reversal trigger: pack FP rate **> 0.05 of active
+  findings** reopens the seed mapping (PDR-0008). Calibration is the tracked
+  follow-on (`wardline-bd9d1e65cb`) before the pack is recommended as a gate of
+  record.
 
 ### G2 — Soundness / surface integrity (no false green, no policy bypass)
 Zero known fail-open taint holes (untrusted→trusted laundering) **and** zero
@@ -107,6 +115,18 @@ human configuration — power arrives as activation, never as a form.
 - `BASELINE → TARGET`: `BASELINE: holds at 1.0.6 (base package zero runtime
   deps; scanner via one extra) → TARGET: still holds, 0 required-config steps,
   re-checked each release`
+- **Reading 2026-06-28 (PDR-0007/0008):** G3 (runs unconfigured) **still holds** —
+  but the elspeth dogfood surfaced an important nuance: *"runs and gates" ≠
+  "enforces."* wardline is annotation-driven, so on a codebase with no declared
+  trust boundaries the gate is **inert** (passes green checking nothing) — the
+  thesis "works first time" silently degrading to "checks nothing." This is **not a
+  G3 breach** (no required config to *run*), but it is the gap between activation and
+  *enforcement*. Part A (PDR-0007) makes the gap **honest** (always-on
+  `resolution.inert` + a reliance-gated banner); the pack-bridge (PDR-0008) is the
+  zero-*human*-config path to enforcement on a team's existing annotations. **Open
+  strategic question (owner):** whether truly-unannotated apps warrant
+  framework-boundary auto-inference — a revision of the "silent until opted in"
+  anti-goal, escalated, not enacted.
 
 ### G4 — Weight discipline (anti-enterprise-creep)
 The base package stays zero-runtime-dependency; capability stays behind opt-in
