@@ -2774,6 +2774,42 @@
             },
             "type": "array"
           },
+          "resolution": {
+            "additionalProperties": false,
+            "description": "Scan-level ENFORCEMENT posture. wardline fires only when untrusted data crosses a DECLARED trust boundary (@trusted / @external_boundary / @trust_boundary); inert=true means the scan recognized NONE, so a --fail-on gate over it passes green while checking nothing.",
+            "properties": {
+              "functions_analyzed": {
+                "type": "integer"
+              },
+              "inert": {
+                "type": "boolean"
+              },
+              "low_resolution_functions": {
+                "type": "integer"
+              },
+              "low_resolution_ratio": {
+                "type": "number"
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "recognized_boundaries": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "inert",
+              "functions_analyzed",
+              "recognized_boundaries",
+              "low_resolution_functions",
+              "low_resolution_ratio",
+              "reason"
+            ],
+            "type": "object"
+          },
           "schema": {
             "enum": [
               "wardline-agent-summary-1"
@@ -2899,6 +2935,7 @@
           "summary",
           "gate",
           "integrations",
+          "resolution",
           "active_defects",
           "suppressed_findings",
           "engine_facts",

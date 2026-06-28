@@ -12,6 +12,7 @@ from typing import Any
 
 from wardline.core.federation_status import default_filigree_emit_status, default_loomweave_write_status
 from wardline.core.finding import Finding, Kind, SuppressionState
+from wardline.core.resolution_posture import compute_resolution_posture
 from wardline.core.run import GateDecision, ScanResult
 
 SCHEMA = "wardline-agent-summary-1"
@@ -154,6 +155,12 @@ class AgentSummary:
                 "filigree_emit": dict(self.filigree_emit),
                 "loomweave_write": dict(self.loomweave_write),
             },
+            # Scan-level ENFORCEMENT posture. wardline only fires when untrusted data
+            # crosses a DECLARED trust boundary; a scan that recognized none enforces
+            # nothing and a --fail-on gate over it passes green while checking nothing.
+            # Counts are always whole-project (independent of the displayed/paginated
+            # arrays), so a filtered view never hides an inert verdict.
+            "resolution": compute_resolution_posture(self.result.findings).to_dict(),
             "active_defects": active_defects,
             "suppressed_findings": suppressed,
             "engine_facts": engine_facts,

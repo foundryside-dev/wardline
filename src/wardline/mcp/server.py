@@ -1220,6 +1220,29 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                     "required": ["filigree_emit", "loomweave_write"],
                     "additionalProperties": False,
                 },
+                "resolution": {
+                    "type": "object",
+                    "description": "Scan-level ENFORCEMENT posture. wardline fires only when untrusted data crosses a "
+                    "DECLARED trust boundary (@trusted / @external_boundary / @trust_boundary); inert=true means the "
+                    "scan recognized NONE, so a --fail-on gate over it passes green while checking nothing.",
+                    "properties": {
+                        "inert": {"type": "boolean"},
+                        "functions_analyzed": {"type": "integer"},
+                        "recognized_boundaries": {"type": "integer"},
+                        "low_resolution_functions": {"type": "integer"},
+                        "low_resolution_ratio": {"type": "number"},
+                        "reason": {"type": ["string", "null"]},
+                    },
+                    "required": [
+                        "inert",
+                        "functions_analyzed",
+                        "recognized_boundaries",
+                        "low_resolution_functions",
+                        "low_resolution_ratio",
+                        "reason",
+                    ],
+                    "additionalProperties": False,
+                },
                 "active_defects": {
                     "type": "array",
                     "description": "Non-suppressed defects in the displayed page (severity-sorted). Each entry "
@@ -1304,6 +1327,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "summary",
                 "gate",
                 "integrations",
+                "resolution",
                 "active_defects",
                 "suppressed_findings",
                 "engine_facts",

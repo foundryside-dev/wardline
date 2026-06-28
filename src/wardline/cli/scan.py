@@ -28,6 +28,7 @@ from wardline.core.filigree_emit import (
 )
 from wardline.core.finding import Severity
 from wardline.core.paths import project_root_for, weft_config_path
+from wardline.core.resolution_posture import compute_resolution_posture
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
 from wardline.core.safe_paths import explicit_output_target, write_explicit_output_text
 from wardline.core.sarif import SarifSink, build_sarif
@@ -629,6 +630,17 @@ def scan(
         # Only the unanalyzed gate ran and it passed — keep the no-vacuous-severity-green
         # signal a NOT_EVALUATED verdict used to carry here.
         click.echo(f"gate: PASSED (--fail-on-unanalyzed only) — {gate_dec.reason}", err=True)
+    # Inert-gate anti-false-green (Python; the counterpart of the Rust empty-trust-surface
+    # warning). wardline fires only when untrusted data crosses a DECLARED trust boundary,
+    # so a scan that recognized NONE enforces nothing. Fire LOUD only when someone is
+    # RELYING on the gate — a severity threshold was armed (--fail-on) and it PASSED — which
+    # is exactly the false-assurance case (an armed gate going green while checking nothing).
+    # A bare scan already prints `gate: NOT_EVALUATED`; the always-on structured
+    # `resolution.inert` field (agent-summary / MCP) carries the signal for consumers there.
+    if lang != "rust" and fail_on is not None and not gate_dec.tripped:
+        posture = compute_resolution_posture(result.findings)
+        if posture.inert:
+            click.echo(f"warning: {posture.reason}", err=True)
     if gate_dec.tripped:
         raise SystemExit(1)
 
