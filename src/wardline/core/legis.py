@@ -49,6 +49,9 @@ from wardline.core.ruleset import ruleset_hash
 from wardline.core.safe_paths import safe_project_file
 from wardline.core.taints import TaintState
 
+_SAFE_GIT_CONFIG = ("-c", "core.fsmonitor=false")
+
+
 if TYPE_CHECKING:
     from wardline.core.config import WardlineConfig
     from wardline.core.run import ScanResult
@@ -199,7 +202,7 @@ def _git_tree_sha(root: Path) -> str | None:
     """
     try:
         rev = subprocess.run(
-            ["git", "rev-parse", "HEAD^{tree}"],
+            ["git", *_SAFE_GIT_CONFIG, "rev-parse", "HEAD^{tree}"],
             cwd=root,
             capture_output=True,
             text=True,
@@ -215,7 +218,7 @@ def _git_repo_root(root: Path) -> Path | None:
     """The containing git repository root, or None when unavailable."""
     try:
         rev = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
+            ["git", *_SAFE_GIT_CONFIG, "rev-parse", "--show-toplevel"],
             cwd=root,
             capture_output=True,
             text=True,
