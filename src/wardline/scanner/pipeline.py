@@ -14,8 +14,8 @@ from wardline.core.qualname import module_dotted_name
 from wardline.core.taints import TaintState
 from wardline.scanner.ast_primitives import build_import_alias_map
 from wardline.scanner.index import Entity, discover_class_qualnames, discover_file_entities
-from wardline.scanner.taint.function_level import seed_function_taints
-from wardline.scanner.taint.project_resolver import ModuleInput
+from wardline.scanner.taint.function_level import FunctionSeed, seed_function_taints
+from wardline.scanner.taint.project_resolver import _RESOLVER_VERSION, ModuleInput
 from wardline.scanner.taint.provider import SeedContext, TaintSourceProvider
 from wardline.scanner.taint.variable_level import (
     VariableTaintContext,
@@ -132,7 +132,6 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
             source_sha256 = hashlib.sha256(source_bytes).hexdigest()
 
             from wardline.core.ruleset import ruleset_hash
-            from wardline.scanner.taint.project_resolver import _RESOLVER_VERSION
             from wardline.scanner.taint.summary import SUMMARY_SCHEMA_VERSION, compute_cache_key
 
             cache_key = compute_cache_key(
@@ -163,8 +162,6 @@ def run_parse_project_stage(stage_input: ParseProjectInput) -> ParseProjectOutpu
             )
             for ent in entities:
                 if ent.qualname in stage_input.config.untrusted_sources:
-                    from wardline.scanner.taint.function_level import FunctionSeed
-
                     # The seed below IS the directive taking effect — record the match
                     # so the analyzer's unused-source diagnostic does not contradict it.
                     matched_config_sources.add(ent.qualname)

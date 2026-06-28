@@ -19,7 +19,8 @@ from wardline.core import config as config_mod
 from wardline.core.assure import build_posture
 from wardline.core.attest import build_attestation, verify_attestation
 from wardline.core.attest_key import load_attest_key
-from wardline.core.baseline import generate_baseline, load_baseline
+from wardline.core.baseline import load_baseline
+from wardline.core.baseline_ops import generate_baseline
 from wardline.core.delta_scope import ScopeParseError, load_affected_scope, parse_affected_scope
 from wardline.core.errors import WardlineError
 from wardline.core.explain import explain_taint_result, explanation_from_context, explanation_to_dict

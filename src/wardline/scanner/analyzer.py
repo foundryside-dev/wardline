@@ -17,7 +17,7 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity
-from wardline.core.taints import RAW_ZONE, TaintState, combine
+from wardline.core.taints import _PROVENANCE_CLASH, RAW_ZONE, TaintState, combine
 from wardline.scanner.context import AnalysisContext, RuleRegistry
 from wardline.scanner.diagnostics import (
     build_collision_findings,
@@ -238,8 +238,6 @@ class WardlineAnalyzer:
         self.last_context: AnalysisContext | None = None
 
     def analyze(self, files: Sequence[Path], config: WardlineConfig, *, root: Path) -> Sequence[Finding]:
-        from wardline.core.taints import _PROVENANCE_CLASH
-
         token_clash = _PROVENANCE_CLASH.set(config.provenance_clash)
         try:
             return self._analyze_inner(files, config, root=root)

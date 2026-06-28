@@ -3,7 +3,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from wardline.core.baseline import generate_baseline, load_baseline
+from wardline.core.baseline import load_baseline
+from wardline.core.baseline_ops import generate_baseline
 from wardline.core.paths import baseline_path
 from wardline.core.run import run_scan
 

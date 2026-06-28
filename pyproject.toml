@@ -170,13 +170,136 @@ show_missing = true
 [tool.importlinter]
 root_package = "wardline"
 
-# REPORT-ONLY layering contracts (CI runs `lint-imports || true`). They encode the
-# intended core/ layering: the taint engine must not depend on the attestation layer.
-# This contract is BROKEN today (wardline.scanner.pipeline / .taint.project_resolver
-# import wardline.core.attest); the layering agent moves that code (wardline-9ec283d168
-# code half). Until then the non-blocking step surfaces the violation without gating CI.
+# ENFORCING layering contracts (CI runs `lint-imports`, gating). They encode the
+# load-bearing direction of the dependency graph: the analysis ENGINE and the gate
+# POLICY are the depended-upon floor and must never reach up into orchestration,
+# output, or federation. These are the two relations with zero legitimate exceptions.
+#
+# Tier model (bottom = most depended-upon): engine < policy < {federation, surface}.
+#   engine     wardline.scanner.*, wardline.decorators.*, wardline.rust.*, and the
+#              engine-floor core modules (finding, taints, identity, registry, ruleset,
+#              config, paths, protocols, errors, discovery, frontends, ...).
+#   policy     baseline, suppression, waivers, judged, finding_identity, delta, delta_scope.
+#   federation sibling-tool integration: loomweave.*, filigree.*, weft_*, and core's
+#              filigree_emit/filigree_issue/legis/federation_status/sei_resolution/delta_resolve.
+#   surface    cli/mcp/install/lsp + orchestration & output core modules (run, baseline_ops,
+#              attest, assure, dossier, emit, sarif, explain, agent_summary, ...).
+#
+# federation<->surface is deliberately NOT layered: the federation CLIENT modules are
+# leaf-level (surfaces call them) while the federation INTEGRATION glue (weft_dossier,
+# loomweave.write, filigree.dossier_client) legitimately COMPOSES surface modules
+# (core.dossier, core.run). Forcing a federation<->surface order would flag that
+# legitimate composition. Intra-tier cycles (which a forbidden contract cannot see) are
+# guarded separately by tests/conformance/test_import_layering.py, which ALSO mirrors the
+# full engine/policy tier-purity classification (so every engine-floor module — not just
+# the source_modules listed below — is held pure) and checks every module named here still
+# resolves (import-linter silently ignores a forbidden_modules entry that no longer exists).
+#
+# Note: these contracts forbid even TYPE_CHECKING-only upward imports (import-linter counts
+# typing edges). Use ``from __future__ import annotations`` + string annotations in a lower
+# tier rather than a guarded ``from wardline.core.run import ...``. The companion cycle test
+# excludes TYPE_CHECKING edges (they are not runtime cycles), so that stricter-here behavior
+# is intentional, not a divergence bug.
+#
+# History: wardline-9ec283d168 broke the original engine->attest inversion (project_resolver
+# now imports ruleset_hash from core.ruleset); wardline-a0eaa7dd12 broke the residual
+# core cycle (relocated the scan-running baseline ops to core.baseline_ops) and the scanner
+# grammar<->rules cycle (extracted scanner.boundary_types), then promoted these to enforcing.
+
 [[tool.importlinter.contracts]]
-name = "Taint engine must not import the attestation layer"
+name = "Engine must not import policy, federation, or surface"
 type = "forbidden"
-source_modules = ["wardline.scanner"]
-forbidden_modules = ["wardline.core.attest"]
+source_modules = ["wardline.scanner", "wardline.decorators", "wardline.rust"]
+forbidden_modules = [
+    # policy
+    "wardline.core.baseline",
+    "wardline.core.suppression",
+    "wardline.core.waivers",
+    "wardline.core.judged",
+    "wardline.core.finding_identity",
+    "wardline.core.delta",
+    "wardline.core.delta_scope",
+    # federation
+    "wardline.core.filigree_emit",
+    "wardline.core.filigree_issue",
+    "wardline.core.legis",
+    "wardline.core.federation_status",
+    "wardline.core.sei_resolution",
+    "wardline.core.delta_resolve",
+    "wardline.loomweave",
+    "wardline.filigree",
+    "wardline.weft_decorator_coverage",
+    "wardline.weft_dossier",
+    # surface
+    "wardline.core.run",
+    "wardline.core.baseline_ops",
+    "wardline.core.attest",
+    "wardline.core.attest_key",
+    "wardline.core.assure",
+    "wardline.core.dossier",
+    "wardline.core.emit",
+    "wardline.core.sarif",
+    "wardline.core.explain",
+    "wardline.core.agent_summary",
+    "wardline.core.decorator_coverage",
+    "wardline.core.judge",
+    "wardline.core.judge_run",
+    "wardline.core.triage",
+    "wardline.core.rekey",
+    "wardline.core.autofix",
+    "wardline.core.scan_jobs",
+    "wardline.core.scan_file_workflow",
+    "wardline.cli",
+    "wardline.mcp",
+    "wardline.install",
+    "wardline.lsp",
+]
+
+[[tool.importlinter.contracts]]
+name = "Policy must not import federation or surface"
+type = "forbidden"
+source_modules = [
+    "wardline.core.baseline",
+    "wardline.core.suppression",
+    "wardline.core.waivers",
+    "wardline.core.judged",
+    "wardline.core.finding_identity",
+    "wardline.core.delta",
+    "wardline.core.delta_scope",
+]
+forbidden_modules = [
+    # federation
+    "wardline.core.filigree_emit",
+    "wardline.core.filigree_issue",
+    "wardline.core.legis",
+    "wardline.core.federation_status",
+    "wardline.core.sei_resolution",
+    "wardline.core.delta_resolve",
+    "wardline.loomweave",
+    "wardline.filigree",
+    "wardline.weft_decorator_coverage",
+    "wardline.weft_dossier",
+    # surface
+    "wardline.core.run",
+    "wardline.core.baseline_ops",
+    "wardline.core.attest",
+    "wardline.core.attest_key",
+    "wardline.core.assure",
+    "wardline.core.dossier",
+    "wardline.core.emit",
+    "wardline.core.sarif",
+    "wardline.core.explain",
+    "wardline.core.agent_summary",
+    "wardline.core.decorator_coverage",
+    "wardline.core.judge",
+    "wardline.core.judge_run",
+    "wardline.core.triage",
+    "wardline.core.rekey",
+    "wardline.core.autofix",
+    "wardline.core.scan_jobs",
+    "wardline.core.scan_file_workflow",
+    "wardline.cli",
+    "wardline.mcp",
+    "wardline.install",
+    "wardline.lsp",
+]

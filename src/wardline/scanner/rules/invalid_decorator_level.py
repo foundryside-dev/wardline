@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from wardline.core.finding import Finding, Kind, Severity
 from wardline.core.finding import compute_finding_fingerprint as _fp
 from wardline.core.taints import TaintState
-from wardline.scanner.grammar import BUILTIN_BOUNDARY_TYPES
+from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES
 from wardline.scanner.rules.metadata import RuleMetadata
 from wardline.scanner.taint.decorator_provider import _is_builtin_decorator_fqn, _shadowed_builtin_roots
 

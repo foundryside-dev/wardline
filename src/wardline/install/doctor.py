@@ -405,7 +405,7 @@ def _check_url(
 def _check_decorator_grammar() -> DoctorCheck:
     try:
         from wardline.core.registry import REGISTRY
-        from wardline.scanner.grammar import BUILTIN_BOUNDARY_TYPES
+        from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES
     except Exception as exc:
         return DoctorCheck("decorator_grammar", "error", message=f"cannot load grammar: {exc}")
 

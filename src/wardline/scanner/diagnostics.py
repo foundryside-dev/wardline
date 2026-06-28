@@ -114,7 +114,7 @@ def build_collision_findings(findings: list[Finding]) -> list[Finding]:
     single analyzer chokepoint and converts a silent mask into a loud signal.
 
     Why it matters: every fingerprint consumer treats ``Finding.fingerprint`` as a
-    UNIQUE join key. ``baseline.generate_baseline`` collapses same-fp findings with
+    UNIQUE join key. ``baseline.build_baseline_document`` collapses same-fp findings with
     ``setdefault`` (keep first); ``judged`` is last-write-wins; the baseline/waiver/
     judged YAML loaders REJECT a duplicate fingerprint outright; SARIF
     (``partialFingerprints``) and Filigree dedup downstream. So when two findings

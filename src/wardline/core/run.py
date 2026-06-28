@@ -39,7 +39,7 @@ from wardline.core.frontends import FRONTENDS
 from wardline.core.judged import load_judged
 from wardline.core.paths import baseline_path, enclosing_project_root, judged_path, weft_config_path
 from wardline.core.protocols import Analyzer
-from wardline.core.suppression import SEVERITY_ORDER, apply_suppressions, gate_trips, severity_gates
+from wardline.core.suppression import SEVERITY_ORDER, apply_suppressions, gate_breakdown, gate_trips, severity_gates
 from wardline.core.waivers import WaiverSet, load_project_waivers
 
 if TYPE_CHECKING:
@@ -729,8 +729,6 @@ def baseline_migration_hint(
         return None
     if not baseline_path(root).is_file():
         return None
-    from wardline.core.suppression import gate_breakdown
-
     fail_on = Severity(decision.fail_on)
     active, _suppressed = gate_breakdown(result.findings, fail_on)
     if active:
@@ -756,8 +754,6 @@ def baseline_migration_hint(
 def _gate_reason(result: ScanResult, fail_on: Severity, *, tripped: bool, honors_suppressions: bool) -> str:
     """The human verdict string, counted over the ACTUAL gate population so the numbers
     are exactly what tripped it."""
-    from wardline.core.suppression import gate_breakdown
-
     sev = fail_on.value
     if not tripped:
         return f"no {sev}+ defects in the evaluated population"

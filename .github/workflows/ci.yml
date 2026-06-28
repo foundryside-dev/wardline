@@ -31,11 +31,12 @@ jobs:
       - run: uv sync --all-extras --group dev
       - run: uv run ruff check src tests
       - run: uv run ruff format --check src tests
-      - name: Layering contracts (import-linter, report-only)
-        # Report-only: `|| true` keeps this non-blocking. Encodes intended core/ layering
-        # (taint engine must not import the attestation layer). BROKEN today; the layering
-        # agent moves the code (wardline-9ec283d168). Surfaces drift without gating CI.
-        run: uv run lint-imports || true
+      - name: Layering contracts (import-linter, enforcing)
+        # Gating: the engine and policy tiers must not import up into orchestration,
+        # output, or federation (engine-purity + policy-purity, both KEPT). See
+        # [tool.importlinter] in pyproject.toml for the tier model; intra-tier cycles
+        # are guarded by tests/conformance/test_import_layering.py.
+        run: uv run lint-imports
 
   typecheck:
     name: Types (mypy strict)
