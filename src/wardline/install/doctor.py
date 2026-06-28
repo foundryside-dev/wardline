@@ -915,11 +915,7 @@ def _loomweave_configured(root: Path, effective_url: str | None) -> bool:
     operator intent, and a base install that dials a sibling it merely *found* degrades
     fail-soft (the scan's gate stays intact). Flagging it would nag every base install
     that happens to run alongside a Loomweave sibling."""
-    return (
-        bool(effective_url)
-        or bool(os.environ.get(_LOOMWEAVE_URL_ENV))
-        or _mcp_loomweave_url(root) is not None
-    )
+    return bool(effective_url) or bool(os.environ.get(_LOOMWEAVE_URL_ENV)) or _mcp_loomweave_url(root) is not None
 
 
 def _check_loomweave_dep(root: Path, *, effective_url: str | None = None) -> DoctorCheck:
