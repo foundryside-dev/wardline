@@ -39,7 +39,7 @@ from wardline.core.frontends import FRONTENDS
 from wardline.core.judged import load_judged
 from wardline.core.paths import baseline_path, enclosing_project_root, judged_path, weft_config_path
 from wardline.core.protocols import Analyzer
-from wardline.core.suppression import SEVERITY_ORDER, apply_suppressions, gate_trips, severity_gates
+from wardline.core.suppression import SEVERITY_ORDER, apply_suppressions, gate_breakdown, gate_trips, severity_gates
 from wardline.core.waivers import WaiverSet, load_project_waivers
 
 if TYPE_CHECKING:
@@ -338,6 +338,8 @@ def run_scan(
     # only soundness gap is the declared inter-file one (spec §5.3a). Fail-closed: an empty
     # resolution → analyze EVERYTHING (full-fallback, INV-3).
     scope_mode: str | None = None
+    scope_source: str = ""
+    producer_completeness: dict[str, object] | None = None
     affected_qualnames: frozenset[str] = frozenset()
     affected_files: frozenset[str] = frozenset()
     entities_requested = 0
@@ -348,6 +350,8 @@ def run_scan(
     analyze_files = files
     if affected is not None:
         entities_requested = affected.item_count
+        scope_source = affected.source_kind
+        producer_completeness = affected.producer_completeness
         index = build_qualname_index(files, root)
         resolved = resolve_affected_scope(affected, index=index, sei_resolver=sei_resolver)
         fell_back_count = len(resolved.fell_back)
@@ -440,9 +444,8 @@ def run_scan(
                 rule_id="WLN-ENGINE-NESTED-SCAN-ROOT",
                 message=(
                     f"scan root '{rel.as_posix()}' is a subdirectory of the weft project at "
-                    f"{enclosing}: {qualname_clause}the project's baseline/waivers/judged state "
-                    "is not loaded, and output defaults under the subdirectory. Scan the project "
-                    "root for federation-stable results."
+                    f"{enclosing}: {qualname_clause}and the project's baseline/waivers/judged "
+                    "state is not loaded. Scan the project root for federation-stable results."
                 ),
                 severity=Severity.NONE,
                 kind=Kind.FACT,
@@ -564,6 +567,7 @@ def run_scan(
         scope = DeltaScopeReport(
             mode=scope_mode,
             gate_authority="advisory" if scope_mode == "delta" else "gate-of-record",
+            scope_source=scope_source,
             entities_requested=entities_requested,
             files_discovered=len(files),
             files_analyzed=len(analyze_files),
@@ -572,6 +576,7 @@ def run_scan(
             stale_sei_count=stale_sei_count,
             unresolved_entities=unresolved_entities,
             loomweave_used=loomweave_used,
+            producer_completeness=producer_completeness,
         )
     resolved_root = root.resolve()
     return ScanResult(
@@ -724,8 +729,6 @@ def baseline_migration_hint(
         return None
     if not baseline_path(root).is_file():
         return None
-    from wardline.core.suppression import gate_breakdown
-
     fail_on = Severity(decision.fail_on)
     active, _suppressed = gate_breakdown(result.findings, fail_on)
     if active:
@@ -751,8 +754,6 @@ def baseline_migration_hint(
 def _gate_reason(result: ScanResult, fail_on: Severity, *, tripped: bool, honors_suppressions: bool) -> str:
     """The human verdict string, counted over the ACTUAL gate population so the numbers
     are exactly what tripped it."""
-    from wardline.core.suppression import gate_breakdown
-
     sev = fail_on.value
     if not tripped:
         return f"no {sev}+ defects in the evaluated population"

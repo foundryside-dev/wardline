@@ -29,7 +29,7 @@ from wardline.rust import qualname as q
 from wardline.rust.context import RustAnalysisContext, RustTriggerContext
 from wardline.rust.crate_roots import CrateRoots, discover_crate_roots
 from wardline.rust.dataflow import analyze_command_dataflow
-from wardline.rust.index import index_entities
+from wardline.rust.index import RustEntity, index_entities
 from wardline.rust.mounts import MountOverlay, build_mount_overlay
 from wardline.rust.nodeid import mint_node_ids
 from wardline.rust.parse import has_errors, parse_rust
@@ -103,7 +103,7 @@ class RustAnalyzer:
                 sources[file] = file.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as exc:
                 read_errors[file] = str(exc)
-        overlays = _build_overlays(sources, resolved_root, crate_roots)
+        overlays, overlay_errors = _build_overlays(sources, resolved_root, crate_roots)
         findings: list[Finding] = []
         functions_total = 0
         functions_declared = 0
@@ -112,6 +112,9 @@ class RustAnalyzer:
             relpath = _relpath(file, resolved_root)
             if file in read_errors:
                 findings.append(_parse_error_finding(relpath, read_errors[file]))
+                continue
+            if file in overlay_errors:
+                findings.append(_file_failed_finding(relpath, overlay_errors[file]))
                 continue
             source = sources[file]
             tree = parse_rust(source)
@@ -164,17 +167,18 @@ class RustAnalyzer:
 
         project_taints: dict[str, TaintState] = {}
         triggers: list[RustTriggerContext] = []
+        diagnostics: list[Finding] = []
         for entity in callables:
             # Phase 1b: the index emits the full ten-kind surface; the taint path
             # judges CALLABLES only (a module/struct/const has no body to seed or
             # walk — feeding one to taint_for/dataflow would be a category error).
             try:
                 seed = self._provider.taint_for(entity.node)
-            except ValueError:
-                # A typo'd @trusted marker must not abort the scan: fail closed for this fn
-                # (its findings suppressed). NOTE: a typo is currently swallowed silently —
-                # surfacing it as an operator-visible diagnostic FACT is tracked backlog
-                # (rust-bug-hunt-2026-06-09), not yet built.
+            except ValueError as exc:
+                # A typo'd @trusted marker must not abort the scan, but it also must not
+                # silently suppress that fn's findings into a false green. Keep the fn's
+                # fail-closed tier and emit a gate-eligible diagnostic at the bad callable.
+                diagnostics.append(_invalid_trust_marker_finding(entity, path, str(exc)))
                 seed = None
             tier = seed.body_taint if seed is not None else _FAIL_CLOSED
             project_taints[entity.qualname] = tier
@@ -206,7 +210,7 @@ class RustAnalyzer:
             # ACROSS kinds; the id's kind segment is what separates them).
             entities={q.entity_id(e.kind, e.qualname): e for e in entities},
         )
-        findings: list[Finding] = []
+        findings: list[Finding] = list(diagnostics)
         for rule in self._rules:
             findings.extend(rule.check(context))
         return findings, context, len(callables)
@@ -219,7 +223,11 @@ def _relpath(file: Path, resolved_root: Path) -> str:
     return resolved.as_posix()
 
 
-def _build_overlays(sources: dict[Path, str], resolved_root: Path, roots: CrateRoots) -> dict[Path, MountOverlay]:
+def _build_overlays(
+    sources: dict[Path, str],
+    resolved_root: Path,
+    roots: CrateRoots,
+) -> tuple[dict[Path, MountOverlay], dict[Path, str]]:
     """One ``#[path]`` mount overlay per crate (ADR-049 Amendment 8), discovered over
     the scanned IN-SRC sources of that crate (class-2/3 files keep their ``#out``
     non-conformance routes — a mount declared outside ``src/`` is outside loomweave's
@@ -228,6 +236,7 @@ def _build_overlays(sources: dict[Path, str], resolved_root: Path, roots: CrateR
     root"). A mount declared in a file outside the scan list is invisible — the overlay
     is the view of the scanned tree."""
     per_crate: dict[Path, tuple[str, dict[str, str]]] = {}
+    rel_paths: dict[str, Path] = {}
     for file, source in sources.items():
         resolved = file.resolve()
         crate_dir = roots.crate_dir_for(resolved)
@@ -236,15 +245,25 @@ def _build_overlays(sources: dict[Path, str], resolved_root: Path, roots: CrateR
             continue
         if not resolved.is_relative_to(resolved_root):
             continue  # defensive: discover confines to root
-        per_crate.setdefault(crate_dir, (crate_name, {}))[1][resolved.relative_to(resolved_root).as_posix()] = source
-    return {
-        crate_dir: build_mount_overlay(
+        rel = resolved.relative_to(resolved_root).as_posix()
+        rel_paths[rel] = file
+        per_crate.setdefault(crate_dir, (crate_name, {}))[1][rel] = source
+    overlay_errors: dict[Path, str] = {}
+    overlays: dict[Path, MountOverlay] = {}
+    for crate_dir, (crate_name, crate_sources) in per_crate.items():
+
+        def record_overlay_error(relpath: str, exc: Exception) -> None:
+            source_path = rel_paths.get(relpath)
+            if source_path is not None:
+                overlay_errors[source_path] = f"{type(exc).__name__}: {exc}"
+
+        overlays[crate_dir] = build_mount_overlay(
             crate_sources,
             crate=crate_name,
             src_root=(crate_dir / "src").relative_to(resolved_root).as_posix(),
+            error_callback=record_overlay_error,
         )
-        for crate_dir, (crate_name, crate_sources) in per_crate.items()
-    }
+    return overlays, overlay_errors
 
 
 def _module_for(file: Path, resolved_root: Path, roots: CrateRoots, overlays: dict[Path, MountOverlay]) -> str:
@@ -318,6 +337,21 @@ def _parse_error_finding(relpath: str, detail: str) -> Finding:
 def _file_failed_finding(relpath: str, detail: str) -> Finding:
     # Analysis raised AFTER a clean parse — a per-file under-scan, counted toward unanalyzed.
     return _engine_defect("WLN-ENGINE-FILE-FAILED", f"{relpath}: Rust analysis failed ({detail})", relpath)
+
+
+def _invalid_trust_marker_finding(entity: RustEntity, relpath: str, detail: str) -> Finding:
+    rule_id = "WLN-ENGINE-RUST-INVALID-TRUST-MARKER"
+    line = entity.location.line_start or 1
+    return Finding(
+        rule_id=rule_id,
+        message=f"{relpath}:{line}: invalid Rust @trusted marker on {entity.qualname} ({detail})",
+        severity=Severity.ERROR,
+        kind=Kind.DEFECT,
+        location=Location(path=relpath, line_start=line, line_end=line),
+        fingerprint=_fp(rule_id, relpath, entity.qualname),
+        qualname=entity.qualname,
+        properties={"lang": "rust"},
+    )
 
 
 def _coverage_finding(functions_total: int, functions_declared: int, files_analyzed: int) -> Finding:

@@ -10,6 +10,7 @@ from wardline.install.doctor import (
     _check_project_mcp,
     _is_loopback,
     _mcp_filigree_url,
+    _resolve_probe_target,
     _resolve_probe_url,
     _rewrite_env_token,
     machine_readable_doctor,
@@ -159,18 +160,20 @@ def test_resolve_probe_url_none_when_unconfigured(tmp_path: Path, monkeypatch) -
     assert _resolve_probe_url(tmp_path, None) is None
 
 
-def test_resolve_probe_url_falls_back_to_published_port(tmp_path: Path, monkeypatch) -> None:
-    # The real esper-lite shape: filigree runs an ephemeral per-project daemon (it
-    # publishes .weft/filigree/ephemeral.port) but the wardline .mcp.json entry pins
-    # no --filigree-url. The emit path (resolve_filigree_url) auto-discovers that port,
-    # so the doctor probe MUST too -- otherwise doctor is blind to the very daemon
-    # wardline will emit to and report "nothing to verify".
+def test_resolve_probe_url_excludes_project_published_port(tmp_path: Path, monkeypatch) -> None:
+    # A project-owned published-port file can name an attacker-controlled local port.
+    # The structured target keeps provenance for messaging, but the legacy string helper
+    # must not hand that URL to future credential-bearing callers.
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setattr("wardline.install.doctor.Path.home", lambda: tmp_path / "nohome")
     port_file = tmp_path / ".weft" / "filigree" / "ephemeral.port"
     port_file.parent.mkdir(parents=True)
     port_file.write_text("9189", encoding="ascii")
-    assert _resolve_probe_url(tmp_path, None) == "http://localhost:9189/api/weft/scan-results"
+    assert _resolve_probe_url(tmp_path, None) is None
+    target = _resolve_probe_target(tmp_path, None)
+    assert target is not None
+    assert target.url == "http://localhost:9189/api/weft/scan-results"
+    assert target.token_probe_allowed is False
 
 
 def test_resolve_probe_url_mcp_arg_beats_published_port(tmp_path: Path, monkeypatch) -> None:
@@ -211,11 +214,13 @@ class _ScriptedTransport:
     def __init__(self, status_by_token: dict[str, int], *, unreachable: bool = False) -> None:
         self._status_by_token = status_by_token
         self._unreachable = unreachable
+        self.calls: list[tuple[str, str]] = []
 
     def post(self, url: str, body: bytes, headers: Mapping[str, str]) -> Response:
         if self._unreachable:
             raise OSError("connection refused")
         token = headers.get("Authorization", "").removeprefix("Bearer ")
+        self.calls.append((url, headers.get("Authorization", "")))
         return Response(status=self._status_by_token.get(token, 401), body="")
 
 
@@ -302,28 +307,31 @@ class _PortRoutedTransport:
     def __init__(self, live_port: int, status: int = 400) -> None:
         self._live_port = live_port
         self._status = status
+        self.calls: list[tuple[str, str]] = []
 
     def post(self, url: str, body: bytes, headers: Mapping[str, str]) -> Response:
         from urllib.parse import urlsplit
 
+        self.calls.append((url, headers.get("Authorization", "")))
         if urlsplit(url).port != self._live_port:
             raise OSError("connection refused")
         return Response(status=self._status, body="")
 
 
-def test_check_flags_stale_pin_shadowing_live_published_daemon(tmp_path: Path, monkeypatch) -> None:
-    # .mcp.json pins a rotated-away port (9229, dead) while Filigree is live on the
-    # published per-project port (9397). Plain `doctor` must NOT mask this as a soft
-    # "not reachable" — it surfaces an error pointing at `--repair` (drop the stale pin).
+def test_check_does_not_follow_published_port_after_pinned_url_fails(tmp_path: Path, monkeypatch) -> None:
+    # .mcp.json pins an explicit loopback target. A repository-owned published-port
+    # file may be stale or planted, so doctor must not follow it with the bearer after
+    # the explicit pin is unreachable.
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
     monkeypatch.setenv("WEFT_FEDERATION_TOKEN", "T")
     (tmp_path / ".weft" / "filigree").mkdir(parents=True)
     (tmp_path / ".weft" / "filigree" / "ephemeral.port").write_text("9397", encoding="utf-8")
     _write_mcp_with_filigree_url(tmp_path, "http://127.0.0.1:9229/api/weft/scan-results")
-    check = _check_filigree_auth(tmp_path, repair=False, transport=_PortRoutedTransport(9397))
-    assert check.status == "error"
-    assert "9397" in (check.message or "")
-    assert "--repair" in (check.message or "")
+    transport = _PortRoutedTransport(9397)
+    check = _check_filigree_auth(tmp_path, repair=False, transport=transport)
+    assert check.status == "ok"
+    assert "not reachable" in (check.message or "")
+    assert transport.calls == [("http://127.0.0.1:9229/api/weft/scan-results", "Bearer T")]
 
 
 def test_check_stays_soft_when_pin_dead_and_no_live_published(tmp_path: Path, monkeypatch) -> None:
@@ -336,22 +344,71 @@ def test_check_stays_soft_when_pin_dead_and_no_live_published(tmp_path: Path, mo
     assert "not reachable" in (check.message or "")
 
 
-def test_check_detects_rejected_token_via_published_port(tmp_path: Path, monkeypatch) -> None:
-    # esper-lite shape end-to-end: no pinned --filigree-url, but a live ephemeral
-    # daemon is discoverable via the published port. The doctor must probe it and
-    # catch a stale token -- the case the old "nothing to verify" was blind to.
+def test_check_does_not_send_token_to_project_published_port(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
-    monkeypatch.delenv("WEFT_FEDERATION_TOKEN", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_TOKEN", raising=False)
+    monkeypatch.setenv("WEFT_FEDERATION_TOKEN", "SECRET")
     monkeypatch.setattr("wardline.install.doctor.Path.home", lambda: tmp_path / "nohome")
     port_file = tmp_path / ".weft" / "filigree" / "ephemeral.port"
     port_file.parent.mkdir(parents=True)
     port_file.write_text("9189", encoding="ascii")
-    tmp_path.joinpath(".env").write_text("WARDLINE_FILIGREE_TOKEN=STALE\n", encoding="utf-8")
-    t = _ScriptedTransport({"GOOD": 400})  # daemon accepts GOOD; STALE -> 401
-    check = _check_filigree_auth(tmp_path, repair=False, transport=t)
-    assert check.status == "error"
-    assert "rejected" in (check.message or "")
+    transport = _ScriptedTransport({})
+
+    check = _check_filigree_auth(tmp_path, repair=False, transport=transport)
+
+    assert check.status == "ok"
+    assert "published port" in (check.message or "")
+    assert "not probed" in (check.message or "")
+    assert transport.calls == []
+
+
+def test_repair_does_not_probe_mints_against_project_published_port(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.delenv("WEFT_FEDERATION_TOKEN", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_TOKEN", raising=False)
+    monkeypatch.setattr("wardline.install.doctor.Path.home", lambda: tmp_path / "home")
+    port_file = tmp_path / ".weft" / "filigree" / "ephemeral.port"
+    port_file.parent.mkdir(parents=True)
+    port_file.write_text("9189", encoding="ascii")
+    tmp_path.joinpath(".env").write_text("WEFT_FEDERATION_TOKEN=STALE\n", encoding="utf-8")
+    home_mint = tmp_path / "home" / ".config" / "filigree"
+    home_mint.mkdir(parents=True)
+    (home_mint / "federation_token").write_text("GOOD\n", encoding="utf-8")
+    transport = _ScriptedTransport({"GOOD": 400})
+
+    check = _check_filigree_auth(tmp_path, repair=True, transport=transport)
+
+    assert check.status == "ok"
+    assert "published port" in (check.message or "")
+    assert "not probed" in (check.message or "")
+    assert transport.calls == []
+    assert tmp_path.joinpath(".env").read_text(encoding="utf-8") == "WEFT_FEDERATION_TOKEN=STALE\n"
+
+
+def test_machine_readable_preserves_published_port_probe_provenance(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_TOKEN", raising=False)
+    monkeypatch.setenv("WEFT_FEDERATION_TOKEN", "SECRET")
+    monkeypatch.setattr("wardline.install.doctor.Path.home", lambda: tmp_path / "nohome")
+    port_file = tmp_path / ".weft" / "filigree" / "ephemeral.port"
+    port_file.parent.mkdir(parents=True)
+    port_file.write_text("9189", encoding="ascii")
+    transport = _ScriptedTransport({})
+
+    payload = machine_readable_doctor(
+        tmp_path,
+        fix=False,
+        filigree_url="http://localhost:9189/api/weft/scan-results",
+        filigree_url_source="published .weft/filigree/ephemeral.port",
+        transport=transport,
+        port_probe=lambda url: True,
+    )
+
+    auth = {c["id"]: c for c in payload["checks"]}["filigree.auth"]
+    assert auth["status"] == "ok"
+    assert "published port" in auth["message"]
+    assert "not probed" in auth["message"]
+    assert transport.calls == []
 
 
 # --- Task 5: repair -----------------------------------------------------------

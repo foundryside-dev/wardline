@@ -48,12 +48,22 @@ wardline judge [OPTIONS] [PATH]
   Triage active DEFECTs with the opt-in LLM judge.
 
 Options:
-  --config PATH
+  --config FILE
   --model TEXT             OpenRouter model slug (overrides config).
   --context-lines INTEGER  Excerpt radius (default 30).
   --max-findings INTEGER   Cap findings triaged this run.
   --write                  Append FALSE_POSITIVE verdicts to
                            .weft/wardline/judged.yaml (default: dry-run).
+  --trust-judge-policy     Allow loading judge.policy_file from the scanned
+                           project as untrusted judge context.
+  --trust-judge-config     Allow project judge config to select model,
+                           context, cap, and write confidence floor.
+  --trust-pack TEXT        Allow importing this trust-grammar pack from
+                           weft.toml [wardline]. May be repeated.
+  --allow-custom-packs     Allow loading custom trust-grammar packs from the
+                           local project directory.
+  --strict-defaults        Ignore repository-supplied custom configuration
+                           overrides (weft.toml).
   --help                   Show this message and exit.
 ```
 

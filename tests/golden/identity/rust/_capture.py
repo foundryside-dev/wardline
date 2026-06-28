@@ -75,9 +75,11 @@ def _parsed_files(root: Path) -> list[RustParsedFile]:
     crate_roots = discover_crate_roots(resolved_root)
     sources = {file: file.read_text(encoding="utf-8") for file in files}
     # Same Amendment-8 pre-pass as the analyzer: per-crate #[path] mount overlays.
-    overlays = _build_overlays(sources, resolved_root, crate_roots)
+    overlays, overlay_errors = _build_overlays(sources, resolved_root, crate_roots)
     parsed: list[RustParsedFile] = []
     for file in files:
+        if file in overlay_errors:
+            continue
         module = _module_for(file, resolved_root, crate_roots, overlays)
         relpath = file.resolve().relative_to(resolved_root).as_posix()
         parsed.append(index_rust_file(source=sources[file], module=module, path=relpath))

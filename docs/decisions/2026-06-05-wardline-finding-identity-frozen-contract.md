@@ -111,16 +111,18 @@ pass unchanged.** Concretely:
    across builds for identical source. Call-site-anchored rules that can emit more
    than one finding per `(rule_id, path, line_start, qualname)` discriminate by the
    sink/callee spelling plus the call node's **full lexical span**, serialized as
-   `{col_offset}:{end_col_offset}`. These are CPython `ast` column coordinates:
-   **0-based UTF-8 byte offsets**, with a `Call` anchored at its func-expression
-   start (so a method chain's outer and inner calls share `col_offset` but differ in
-   `end_col_offset`). A second engine MUST reproduce these byte-offset column
-   semantics — the same obligation `entity_spans` (§3) already imposes — or the
-   hashed join key drifts *silently* (unlike a span diff, which the parity test
-   surfaces). A per-line source-order ordinal was considered as a more portable
-   alternative but rejected: it would require the rule to sort calls by
-   `(lineno, col_offset)` anyway, reintroducing the column dependency without the
-   span's collision-completeness.
+   `{lineno - entity_line_start}:{col_offset}:{end_lineno - entity_line_start}:{end_col_offset}`.
+   The line coordinates are entity-relative so moving the whole function does not
+   rekey the finding; the column coordinates are CPython `ast` **0-based UTF-8 byte
+   offsets**. `end_col_offset` is relative to `end_lineno`, not globally unique:
+   multiline chained calls can share start line/column and ending column while
+   differing only in `end_lineno`, so both line deltas are load-bearing. A second
+   engine MUST reproduce these byte-offset column semantics — the same obligation
+   `entity_spans` (§3) already imposes — or the hashed join key drifts *silently*
+   (unlike a span diff, which the parity test surfaces). A per-line source-order
+   ordinal was considered as a more portable alternative but rejected: it would
+   require the rule to sort calls by `(lineno, col_offset)` anyway, reintroducing
+   the column dependency without the span's collision-completeness.
 
 ## Consequences
 

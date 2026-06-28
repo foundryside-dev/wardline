@@ -45,12 +45,16 @@ def test_mcp_resolves_loomweave_url_from_env(tmp_path: Path, monkeypatch) -> Non
             *,
             root: Path,
             loomweave_url: str | None = None,
+            loomweave_url_source: str | None = None,
             filigree_url: str | None = None,
+            filigree_url_source: str | None = None,
             allow_write: bool = True,
             allow_network: bool = True,
         ) -> None:
             captured["loomweave_url"] = loomweave_url
+            captured["loomweave_url_source"] = loomweave_url_source
             captured["filigree_url"] = filigree_url
+            captured["filigree_url_source"] = filigree_url_source
             captured["allow_write"] = allow_write
             captured["allow_network"] = allow_network
             self.rpc = self
@@ -62,6 +66,7 @@ def test_mcp_resolves_loomweave_url_from_env(tmp_path: Path, monkeypatch) -> Non
     result = CliRunner().invoke(cli, ["mcp", "--root", str(tmp_path)])
     assert result.exit_code == 0, result.output
     assert captured["loomweave_url"] == "http://localhost:9000/configured-loomweave"
+    assert captured["loomweave_url_source"] == "env WARDLINE_LOOMWEAVE_URL"
 
 
 def test_install_writes_all_artifacts(tmp_path: Path, monkeypatch) -> None:

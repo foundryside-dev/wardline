@@ -1287,6 +1287,72 @@ def test_scan_loomweave_soft_outage_redacts_url_secrets(tmp_path, monkeypatch) -
     assert "#frag" not in result.output
 
 
+def test_scan_filigree_agent_summary_redacts_url_secrets(tmp_path, monkeypatch) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    secret_url = "https://user:secret@filigree.example/api/p/demo/weft/scan-results?token=abc#frag"
+    redacted = "https://<redacted>@filigree.example/api/p/demo/weft/scan-results"
+
+    class _AuthRejectedEmitter:
+        def __init__(self, url, **kw):
+            self.url = url
+
+        def emit(self, findings, *, scanned_paths=(), language=None, mark_unseen=None):
+            from wardline.core.filigree_emit import EmitResult
+
+            return EmitResult(reachable=False, status=401, token_sent=True, url=self.url)
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _AuthRejectedEmitter)
+    out = tmp_path / "summary.json"
+
+    result = CliRunner().invoke(
+        scan,
+        [str(proj), "--format", "agent-summary", "--output", str(out), "--filigree-url", secret_url],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = _json.loads(out.read_text(encoding="utf-8"))
+    filigree = payload["integrations"]["filigree_emit"]
+    exposed = _json.dumps(filigree)
+    assert filigree["destination"]["url"] == redacted
+    assert redacted in filigree["disabled_reason"]
+    assert "user:secret" not in result.output
+    assert "user:secret" not in exposed
+    assert "token=abc" not in result.output
+    assert "token=abc" not in exposed
+    assert "#frag" not in result.output
+    assert "#frag" not in exposed
+
+
+def test_scan_filigree_soft_outage_redacts_url_secrets(tmp_path, monkeypatch) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    secret_url = "https://user:secret@filigree.example/api/weft/scan-results?token=abc#frag"
+    redacted = "https://<redacted>@filigree.example/api/weft/scan-results"
+
+    class _AbsentEmitter:
+        def __init__(self, url, **kw):
+            pass
+
+        def emit(self, findings, *, scanned_paths=(), language=None, mark_unseen=None):
+            from wardline.core.filigree_emit import EmitResult
+
+            return EmitResult(reachable=False)
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _AbsentEmitter)
+    out = tmp_path / "f.jsonl"
+
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--filigree-url", secret_url])
+
+    assert result.exit_code == 0, result.output
+    assert redacted in result.output
+    assert "user:secret" not in result.output
+    assert "token=abc" not in result.output
+    assert "#frag" not in result.output
+
+
 def test_scan_reports_filigree_success_and_loomweave_unreachable_independently(tmp_path, monkeypatch) -> None:
     from wardline.loomweave.client import WriteResult
 
@@ -1355,7 +1421,7 @@ def test_scan_loomweave_error_is_fail_soft(tmp_path, monkeypatch) -> None:
 
 
 def test_scan_missing_loomweave_extra_is_fail_soft_when_auto_discovered(tmp_path, monkeypatch) -> None:
-    # Regression (elspeth dogfood): a bare `wardline scan` in the Loom federation
+    # Regression (framework-app dogfood): a bare `wardline scan` in the Loom federation
     # auto-discovers a running Loomweave from its published ephemeral port (ADR-044) with
     # NO --loomweave-url flag. On a base install WITHOUT the [loomweave] extra, the
     # taint-fact write reaches require_blake3() -> LoomweaveError. That used to exit 2

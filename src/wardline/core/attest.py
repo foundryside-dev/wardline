@@ -59,7 +59,7 @@ from wardline.core.ruleset import ruleset_hash
 from wardline.core.run import run_scan
 from wardline.core.waivers import load_project_waivers
 
-ATTEST_SCHEMA = "wardline-attest-1"
+ATTEST_SCHEMA = "wardline-attest-2"
 # `git status` must not execute repo-local helpers while attesting untrusted trees.
 _SAFE_GIT_CONFIG = ("-c", "core.fsmonitor=false")
 
@@ -156,6 +156,7 @@ def _enrich_seis(boundaries: list[dict[str, Any]], loomweave_client: Any) -> str
                 continue
             if binding is not None and binding.sei:
                 boundary["sei"] = binding.sei
+                boundary["content_hash"] = binding.content_hash
                 resolved_any = True
     except Exception:  # noqa: BLE001 — whole-enrichment fail-soft, see docstring
         return "unavailable"
@@ -215,7 +216,8 @@ def _build_payload(
             boundaries.append(
                 {
                     "qualname": qualname,
-                    "sei": None,  # filled by _enrich_seis below behind a lazy Loomweave import
+                    "sei": None,  # filled by _enrich_seis behind a lazy Loomweave import
+                    "content_hash": None,  # filled by _enrich_seis from the resolved binding (entity-body span blake3)
                     "verdict": verdict.verdict,
                     "tier": verdict.declared_tier,
                 }

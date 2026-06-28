@@ -7,6 +7,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-29
+
+### Changed
+- **BREAKING (unreleased contract):** attest bundle schema bumped `wardline-attest-1` → `wardline-attest-2`; each boundary now carries `content_hash` (entity-body span blake3 binding key, null when unresolved). `wardline-attest-1` bundles no longer verify.
+- Default scan artifacts now anchor to the weft-project root (the `weft.toml` directory)
+  rather than the scan cwd, so a subdirectory scan writes to `<project-root>/.wardline/`.
+  Retention is therefore project-root-wide across heterogeneous subdir/root scans sharing
+  one `.wardline/`. **Migration:** the artifact moves to the project root; `wardline doctor
+  --repair` sweeps now-stale per-subdir `.wardline/` dirs — update any CI/automation reading
+  a hardcoded `<subdir>/.wardline/*-findings.jsonl` path.
+
+### Added
+- **FastAPI / Starlette request-type taint source coverage.** `wardline` now seeds
+  untrusted taint from the raw request accessors on `fastapi.Request` /
+  `starlette.requests.Request` receivers — the `query_params` / `path_params` /
+  `headers` / `cookies` properties and the `json` / `body` / `form` / `stream`
+  methods — so request data flowing into a declared `@trusted` sink is flagged
+  without hand-annotating every access. Type-aware: a non-request attribute on the
+  same receiver (e.g. `req.app.state.db`) does not fire. Still annotation-driven —
+  it lights up on top of your declared trusted core, not on an unannotated app.
+- **Inert-gate visibility (enforcement-posture honesty).** Scan output now always
+  carries a `resolution.inert` posture field (agent-summary + MCP). An armed gate
+  (`--fail-on`) that passes while the scan recognized **zero** trust boundaries
+  prints a reliance-gated stderr banner — closing the "green while checking nothing"
+  false-assurance gap on annotation-driven scans. Calibrated to stay silent on bare/
+  advisory scans and on legitimately boundary-free pure-logic code.
+- **Third-party trust-vocabulary pack-bridge.** A wardline pack can now map another
+  project's own trust-boundary decorator vocabulary onto a wardline `BoundaryType`,
+  so a team with existing trust annotations in a different grammar gets enforcement
+  by referencing one pack under `[wardline] packs` in `weft.toml` (or `--trust-pack`)
+  — no re-annotation.
+- **`wardline doctor` engine self-test + loomweave-dep flag.** New `engine.selftest`
+  check runs the analyzer on a built-in trusted source→sink and asserts the taint
+  rule fires ("taint analysis fires correctly"); new `loomweave.dep` check flags a
+  configured-but-missing `[loomweave]` extra.
+- **`wardline doctor` repo-binding store-read check.** A present-but-unreadable
+  baseline store now reports a machine-readable reason and `binding_ok=false` — the
+  seam can say "I can't read my store" instead of returning a confident empty.
+- Delta-scan scope block now declares its `scope_source` and echoes warpline's unverified `producer_completeness` (warpline's `data.impact_completeness` — combined completeness+staleness object) across CLI/SARIF/MCP; MCP scope schema is key-parity-tested against `DeltaScopeReport`. Replaces the removed `producer_generated_at` (which read a phantom `data.generated_at` key warpline never emitted).
+- `wardline doctor --repair` gitignores the artifacts dir and sweeps stray managed
+  artifacts; deletion is available on both the CLI and the MCP `doctor` tool (`repair:true`,
+  advertised `destructiveHint: true`), bounded to managed (timestamped) files inside
+  non-standard `.wardline/` dirs under the project root; emptied dirs are removed
+  best-effort (non-empty dirs are left in place).
+- **`wardline doctor` detects and clears stale sibling `ephemeral.port` files** (new
+  `stale_sibling_ports` check, CLI + MCP `doctor` tool). A sibling's
+  `.weft/<sibling>/ephemeral.port` advertises a live `serve` instance; when that process
+  has exited or wedged, the file lingers and every scan dials a dead/hung origin —
+  stalling the agent gate up to the federation 30s `urlopen` timeout per round-trip on a
+  purely advisory emission (the reported `wardline scan` hang). The check probes each
+  advertised port (filigree, loomweave) at the host the scan dials, with a short 2s
+  deadline (not 30s): an unreachable port — connection refused **or** no HTTP reply within
+  the deadline (a wedged server) — is stale, and `--repair`/`fix:true` deletes the file so
+  the scan stops dialing it. A live server (any HTTP status) is never touched; the delete
+  is regular-file / no-follow confined (a symlinked `ephemeral.port` is never followed).
+  Advisory like the stray-artifact sweep — a stale port never flips the aggregate doctor
+  verdict.
+
+### Security
+- **Cross-interpreter fingerprint determinism (3.12 == 3.13).** `entity_source_fingerprint`
+  previously hashed `ast.dump`, whose output changed in CPython 3.13
+  (`show_empty=False` omits empty-list fields), making the cross-tool JOIN KEY
+  (baseline / waiver / judged stores + the Filigree wire) interpreter-dependent — a
+  silent-drop-on-join hazard where a finding suppressed under one interpreter could
+  reappear under another. The fingerprint now uses a structural, version-stable
+  canonical dump; the join key is byte-identical across 3.12 / 3.13, proven by the CI
+  matrix. **No scheme bump** — 3.13 reference values are unchanged.
+- **Agent-surface hardening batch.** Closed a set of MCP / federation policy-bypass
+  and resource-exhaustion holes: MCP network-policy gates on `waiver_add` entity
+  resolution and `rekey` cache-dir writes; rejection of untrusted MCP sibling and
+  doctor-caller URLs; rekey snapshot-provenance hardening; stdlib-submodule
+  spoof-taint prevention; Filigree diagnostic-URL redaction, response-body-amplification
+  bound, and unsafe-mint-token soft-fail; a quadratic foreign-fence scan bound (and,
+  under Fixed, the cubic candidate-set scan-DoS). Enforced by the soundness oracle +
+  the security regression suite; a new fail-open hole is treated as a P0.
+
+### Fixed
+- **Candidate-set merge no longer scales cubically (scan DoS).** The Level-2
+  branch-join merges for lambda bindings (`_merge_branch_bindings`) and
+  receiver-type candidates (`_merge_branch_types`) deduplicated with a nested
+  linear scan of the growing candidate list — O(bucket²) per merge, O(N³)
+  across a chain of `N` one-armed branches rebinding the same name. An
+  attacker-authored file (~1100 such branches) could drive a default-gate scan
+  to ~15s and exhaust CPU on every local and CI run. Both merges now dedup via
+  an identity/equality set (O(bucket) per merge, O(N²) cumulative), preserving
+  the exact candidate set and insertion order; the demonstrated 1100-branch case
+  drops from seconds to milliseconds. No analysis behavior changes — the
+  candidate sets are identical, so no false negative is introduced.
+  Reviewed regression source: `eff4eed2` (wardline-c797baf28b).
+
 ## [1.0.7] - 2026-06-24
 
 ### Fixed
@@ -1353,6 +1443,7 @@ for Python — enterprise-class trust-boundary analysis at small-team weight.
 - **Packaging** — MIT-licensed; optional extras `scanner` (config + CLI) and
   `weft` (HTTP integrations).
 
+[Unreleased]: https://github.com/foundryside-dev/wardline/compare/v1.0.6...HEAD
 [1.0.6]: https://github.com/foundryside-dev/wardline/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/foundryside-dev/wardline/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/foundryside-dev/wardline/compare/v1.0.3...v1.0.4

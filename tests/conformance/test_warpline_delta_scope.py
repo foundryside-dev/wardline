@@ -30,8 +30,11 @@ negative case, and the gate-not-narrowed axis that re-states INV-4 at the golden
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
+
+import pytest
 
 from wardline.core.delta_resolve import build_qualname_index, resolve_affected_scope
 from wardline.core.delta_scope import BOUNDARY_CAVEAT, parse_affected_scope
@@ -39,6 +42,7 @@ from wardline.core.finding import Severity
 from wardline.core.run import gate_decision, run_scan
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "warpline_delta"
+_WARPLINE_CONTRACT_FIXTURES = Path(__file__).parent / "fixtures" / "warpline_contract"
 _SAMPLE_TREE = _FIXTURES / "sample_tree"
 
 
@@ -245,3 +249,61 @@ def test_axis7_gate_population_not_narrowed(tmp_path: Path) -> None:
     assert delta_decision.tripped is True
     assert delta_decision.verdict == "FAILED"
     assert delta_decision.exit_class == 1
+
+
+# --- C2: worklist completeness capture + gated published-artifact drift marker -----
+
+
+def test_consumer_captures_worklist_completeness() -> None:
+    payload = json.loads((_FIXTURES / "worklist_alpha.v1.json").read_text(encoding="utf-8"))
+    scope = parse_affected_scope(payload)
+    assert scope.source_kind == "reverify_worklist_v1"
+    assert scope.producer_completeness is not None
+    assert scope.producer_completeness["completeness"] == "FULL"
+    assert scope.producer_completeness["staleness"] == {"snapshot_commit": None, "commits_behind": 0}
+
+
+def test_consumer_captures_published_warpline_completeness_fields() -> None:
+    payload = json.loads((_WARPLINE_CONTRACT_FIXTURES / "mcp-response-reverify.json").read_text(encoding="utf-8"))
+
+    scope = parse_affected_scope(payload)
+
+    assert scope.source_kind == "reverify_worklist_v1"
+    assert scope.producer_completeness == {
+        "completeness": "NO_SNAPSHOT",
+        "staleness": {"snapshot_commit": None, "commits_behind": None},
+    }
+
+
+@pytest.mark.skipif(
+    not os.environ.get("WARDLINE_WARPLINE_REPO"),
+    reason="set WARDLINE_WARPLINE_REPO to drift-check the vendored fixtures vs warpline's "
+    "published warpline.reverify_worklist.v1 schema (one resolution contract shared with the "
+    "other _drift rechecks). NOT yet in the fail-closed source-drift job: warpline has not "
+    "pushed contracts/reverify_worklist.v1.schema.json to origin/main; this leg arms (add the "
+    "worklist_drift marker) once it does.",
+)
+def test_vendored_worklist_matches_published_artifact() -> None:
+    """Validate every vendored fixture against warpline's published schema.
+
+    Each fixture in ``fixtures/warpline_delta/*.v1.json`` must be a full valid envelope
+    conforming to the ``warpline.reverify_worklist.v1`` schema published at
+    ``$WARDLINE_WARPLINE_REPO/contracts/reverify_worklist.v1.schema.json``.
+    """
+    import glob
+
+    from jsonschema import Draft202012Validator
+
+    published = Path(os.environ["WARDLINE_WARPLINE_REPO"]) / "contracts" / "reverify_worklist.v1.schema.json"
+    assert published.is_file(), "warpline has not published the worklist contract artifact yet"
+    schema = json.loads(published.read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema)
+    fixtures = sorted(glob.glob(str(_FIXTURES / "*.v1.json")))
+    assert fixtures, "no fixtures found in fixtures/warpline_delta/"
+    for fixture_path in fixtures:
+        instance = json.loads(Path(fixture_path).read_text(encoding="utf-8"))
+        errors = list(validator.iter_errors(instance))
+        assert not errors, (
+            f"fixture {fixture_path} does not validate against warpline's published schema:\n"
+            + "\n".join(str(e) for e in errors)
+        )

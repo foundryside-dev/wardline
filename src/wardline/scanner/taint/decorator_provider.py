@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 from wardline.core.registry import REGISTRY, REGISTRY_VERSION
 from wardline.core.taints import TRUST_RANK, TaintState
-from wardline.scanner.grammar import BUILTIN_BOUNDARY_TYPES, BoundaryType
+from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES, BoundaryType
 from wardline.scanner.taint.provider import FunctionTaint, SeedResult
 
 if TYPE_CHECKING:

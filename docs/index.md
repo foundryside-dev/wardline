@@ -5,7 +5,7 @@ boundaries. It scans Python source, includes a Rust command-injection preview,
 and gives agents and CI a deterministic gate for untrusted data reaching trusted
 code.
 
-This is the wardline documentation site — the front door for installing,
+This is the wardline documentation index — the front door for installing,
 running, and integrating the tool, with the concept, guide, and reference
 material behind it.
 

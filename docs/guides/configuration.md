@@ -18,9 +18,10 @@ defaults: it scans `.` with all rules enabled.
 !!! warning "But unknown keys and out-of-range values in a *present* `[wardline]` table are hard errors"
     Once a `[wardline]` table parses, it is validated against a JSON Schema
     (draft 2020-12). The table, the `[wardline.rules]` block, the
-    `[wardline.judge]` block, and the `[wardline.autofix]` block all set
-    `additionalProperties: false`, so a typo'd key or an out-of-range value
-    **fails loud** — Wardline exits `2` rather than silently ignoring it.
+    `[wardline.judge]` block, the `[wardline.artifacts]` block, and the
+    `[wardline.autofix]` block all set `additionalProperties: false`, so a
+    typo'd key or an out-of-range value **fails loud** — Wardline exits `2`
+    rather than silently ignoring it.
 
     ```console
     $ wardline scan .
@@ -87,17 +88,29 @@ A relative `store_dir` resolves under the scan root. The attest signing key is
 ### `[wardline.artifacts]`
 
 Scan outputs are written under `.wardline/` by default using timestamped names
-such as `20260620T153012Z-findings.jsonl`. Wardline prunes older artifacts for
-the same output format after each default-output scan:
+such as `20260620T153012Z-findings.jsonl`. The artifact directory always anchors
+to the **weft-project root** — the directory containing `weft.toml` — regardless
+of which subdirectory `wardline scan` is invoked from. This means subdir and
+root scans share one `.wardline/` pool and retention is project-root-wide.
+A subdirectory scan is still flagged with `WLN-ENGINE-NESTED-SCAN-ROOT`.
+
+Wardline prunes older artifacts for the same output format after each
+default-output scan:
 
 ```toml
 [wardline.artifacts]
-dir = ".wardline"  # the default; relative paths resolve under the scan root
+dir = ".wardline"  # the default; relative paths resolve under the project root
 retain = 20        # keep the newest 20 artifacts per format
 ```
 
 Use `--output PATH` when a workflow needs an exact file path; explicit output
 paths bypass artifact timestamping and retention.
+
+`wardline doctor --repair` (CLI) and the MCP `doctor` tool with `repair: true`
+gitignore the artifacts directory and sweep stray Wardline-managed (timestamped)
+artifacts found under the project root. Deletion is bounded to managed-pattern
+files inside `.wardline/` directories; unstamped or bare files are reported for
+manual review rather than deleted.
 
 ### `packs`
 

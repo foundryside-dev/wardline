@@ -8,10 +8,16 @@ from pathlib import Path
 import click
 
 from wardline.core.errors import WardlineError
+from wardline.core.paths import project_root_for
 from wardline.install.doctor import (
     _check_config,
+    _check_engine_selftest,
     _check_filigree_auth,
-    _resolve_probe_url,
+    _check_gitignore,
+    _check_loomweave_dep,
+    _check_stale_sibling_ports,
+    _resolve_probe_target,
+    _sweep_stray_artifacts,
     check_install,
     machine_readable_doctor,
     repair_install,
@@ -45,9 +51,10 @@ def doctor(root: Path, repair: bool, fix_json: bool, filigree_url: str | None) -
         raise SystemExit(1)
 
     if repair:
+        proj = project_root_for(root)
         # Resolve the probe URL BEFORE repair_install rewrites .mcp.json (which would
         # erase a configured --filigree-url arg), so repair can still probe/recover.
-        probe_url = _resolve_probe_url(root, filigree_url)
+        probe_target = _resolve_probe_target(root, filigree_url)
         try:
             statuses = repair_install(root)
         except WardlineError as exc:
@@ -61,17 +68,40 @@ def doctor(root: Path, repair: bool, fix_json: bool, filigree_url: str | None) -
             click.echo(f"  {check.name}: {status}")
         config_status = statuses.get("weft.toml", "checked") if config_check.ok else f"failed ({config_check.message})"
         click.echo(f"  weft.toml: {config_status}")
-        fcheck = _check_filigree_auth(root, repair=True, filigree_url=probe_url)
+        fcheck = _check_filigree_auth(root, repair=True, probe_target=probe_target)
         fstatus = ("fixed" if fcheck.fixed else fcheck.message) if fcheck.ok else f"failed ({fcheck.message})"
         click.echo(f"  filigree.auth: {fstatus}")
-        if not all(check.ok for check in after) or not config_check.ok or not fcheck.ok:
+        gi = _check_gitignore(proj, fix=True)
+        click.echo(f"  gitignore: {gi.status}" + (f" ({gi.message})" if gi.message else ""))
+        sw = _sweep_stray_artifacts(proj, fix=True)
+        click.echo(f"  stray artifacts: removed {len(sw.removed)}, review {len(sw.review)}")
+        for r in sw.review:
+            click.echo(f"    REVIEW   {r}  (unstamped/bare — remove by hand if it's a stray scan)")
+        sp = _check_stale_sibling_ports(proj, fix=True)
+        click.echo(f"  stale sibling ports: {sp.message}")
+        selftest = _check_engine_selftest()
+        click.echo(f"  engine.selftest: {selftest.message or ('ok' if selftest.ok else 'error')}")
+        lw_dep = _check_loomweave_dep(root)
+        if not lw_dep.ok:
+            click.echo(f"  loomweave.dep: {lw_dep.message}")
+        if (
+            not all(check.ok for check in after)
+            or not config_check.ok
+            or not fcheck.ok
+            or gi.status == "error"
+            or not selftest.ok
+            or not lw_dep.ok
+        ):
             raise SystemExit(1)
         return
 
+    proj = project_root_for(root)
     checks = check_install(root)
     config_check = _check_config(root, fixed=False)
     fcheck = _check_filigree_auth(root, repair=False, filigree_url=filigree_url)
-    ok = all(check.ok for check in checks) and config_check.ok and fcheck.ok
+    selftest = _check_engine_selftest()
+    lw_dep = _check_loomweave_dep(root)
+    ok = all(check.ok for check in checks) and config_check.ok and fcheck.ok and selftest.ok and lw_dep.ok
     click.echo("wardline doctor: ok" if ok else "wardline doctor:")
     for check in checks:
         if not check.ok:
@@ -80,5 +110,20 @@ def doctor(root: Path, repair: bool, fix_json: bool, filigree_url: str | None) -
         click.echo(f"  weft.toml: {config_check.message}")
     fmsg = fcheck.message or ("ok" if fcheck.ok else "error")
     click.echo(f"  filigree.auth: {fmsg}")
+    # engine self-test: always show — a green here is the agent's proof the analyzer
+    # actually fires in this install (NOT that the user's scans enforce — see Part A).
+    click.echo(f"  engine.selftest: {selftest.message or ('ok' if selftest.ok else 'error')}")
+    if not lw_dep.ok:
+        click.echo(f"  loomweave.dep: {lw_dep.message}")
+    gi = _check_gitignore(proj, fix=False)
+    # gi.status is advisory-"ok" even with a gap, so render on the message, not gi.ok.
+    if gi.status == "error" or "missing" in (gi.message or ""):
+        click.echo(f"  gitignore: {gi.message}")
+    sw = _sweep_stray_artifacts(proj, fix=False)
+    if sw.removed or sw.review:
+        click.echo(f"  stray artifacts: {sw.message}")
+    sp = _check_stale_sibling_ports(proj, fix=False)
+    if sp.removed:
+        click.echo(f"  stale sibling ports: {sp.message}")
     if not ok:
         raise SystemExit(1)

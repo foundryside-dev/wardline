@@ -21,6 +21,7 @@ from wardline.core.judge_run import (
     JudgeOutcome,
     effective_judge_settings,
     resolve_policy_block,
+    resolve_project_policy,
     run_judge,
 )
 from wardline.core.judge_run import (
@@ -108,7 +109,6 @@ def judge(
         # (network) caller branch from the CLI.
         _load_env_key(path)
         policy_block = resolve_policy_block(path, settings)
-        from wardline.core.judge_run import resolve_project_policy
 
         project_policy = resolve_project_policy(path, settings, trust_judge_policy=trust_judge_policy)
 

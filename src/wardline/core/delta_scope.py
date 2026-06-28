@@ -66,6 +66,7 @@ class AffectedScope:
     entities: frozenset[AffectedEntity]
     source_kind: str
     item_count: int
+    producer_completeness: dict[str, object] | None = None
 
 
 def parse_affected_scope(payload: object) -> AffectedScope:
@@ -172,10 +173,11 @@ def _parse_worklist(payload: dict[object, object]) -> AffectedScope:
     data = payload.get("data", payload)
     if not isinstance(data, dict):
         raise ScopeParseError(f"affected scope 'data' must be an object, got {type(data).__name__}")
+    producer_completeness = _producer_completeness(data)
     items = data.get("items")
     if items is None:
         # An object with no 'items' is a parseable but empty worklist — not malformed.
-        return AffectedScope(frozenset(), "empty", 0)
+        return AffectedScope(frozenset(), "empty", 0, producer_completeness=producer_completeness)
     if not isinstance(items, list):
         raise ScopeParseError(f"affected scope 'items' must be a list, got {type(items).__name__}")
     _enforce_item_cap(len(items))
@@ -192,8 +194,30 @@ def _parse_worklist(payload: dict[object, object]) -> AffectedScope:
         if entity is not None:
             entities.add(entity)
     if not entities:
-        return AffectedScope(frozenset(), "empty", len(items))
-    return AffectedScope(frozenset(entities), "reverify_worklist_v1", len(items))
+        return AffectedScope(frozenset(), "empty", len(items), producer_completeness=producer_completeness)
+    return AffectedScope(
+        frozenset(entities), "reverify_worklist_v1", len(items), producer_completeness=producer_completeness
+    )
+
+
+def _producer_completeness(data: dict[object, object]) -> dict[str, object] | None:
+    """Capture Warpline's unverified completeness claim without vouching for it.
+
+    Current Warpline producer output carries the claim as sibling fields
+    ``data.completeness`` and ``data.staleness``. Older delta fixtures carried a single
+    ``data.impact_completeness`` object; keep that as a compatibility fallback.
+    """
+    completeness = data.get("completeness")
+    staleness = data.get("staleness")
+    published: dict[str, object] = {}
+    if isinstance(completeness, str):
+        published["completeness"] = completeness
+    if isinstance(staleness, dict):
+        published["staleness"] = dict(staleness)
+    if published:
+        return published
+    ic = data.get("impact_completeness")
+    return dict(ic) if isinstance(ic, dict) else None
 
 
 def _parse_entity_list(payload: list[object]) -> AffectedScope:
@@ -251,6 +275,12 @@ class DeltaScopeReport:
     scoped files were analyzed, so a clean delta is not a full-tree pass), ``"gate-of-record"``
     in full-fallback.
 
+    ``scope_source`` records the parsed producer shape (``reverify_worklist_v1`` /
+    ``entity_list`` / ``empty``); ``producer_completeness`` is warpline's UNVERIFIED
+    completeness claim from ``data.completeness`` / ``data.staleness`` (or legacy
+    ``data.impact_completeness`` when the published fields are absent), never
+    wardline-vouched.
+
     ``fell_back_count`` / ``stale_sei_count`` surface how much of the scope rests on the
     spoofable qualname-locator path or a stale SEI, so a consumer can judge trust without
     treating fell-back entities as SEI-equivalent. ``unresolved_entities`` lists every
@@ -258,6 +288,7 @@ class DeltaScopeReport:
 
     mode: str
     gate_authority: str
+    scope_source: str
     entities_requested: int
     files_discovered: int
     files_analyzed: int
@@ -266,6 +297,7 @@ class DeltaScopeReport:
     stale_sei_count: int
     unresolved_entities: tuple[dict[str, str | None], ...]
     loomweave_used: bool
+    producer_completeness: dict[str, object] | None = None
     boundary_caveat: str = field(default=BOUNDARY_CAVEAT)
 
     def to_dict(self) -> dict[str, object]:
@@ -277,6 +309,7 @@ class DeltaScopeReport:
         return {
             "mode": self.mode,
             "gate_authority": self.gate_authority,
+            "scope_source": self.scope_source,
             "entities_requested": self.entities_requested,
             "files_discovered": self.files_discovered,
             "files_analyzed": self.files_analyzed,
@@ -285,5 +318,6 @@ class DeltaScopeReport:
             "stale_sei_count": self.stale_sei_count,
             "unresolved_entities": [dict(e) for e in self.unresolved_entities],
             "loomweave_used": self.loomweave_used,
+            "producer_completeness": self.producer_completeness,
             "boundary_caveat": self.boundary_caveat,
         }

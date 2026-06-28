@@ -1,4 +1,8 @@
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from wardline.core.gitignore import GitignoreMatcher
 
@@ -102,3 +106,46 @@ def test_character_class() -> None:
     m = GitignoreMatcher.from_text("build[0-9]/\n")
     assert m.match("build3", is_dir=True)
     assert not m.match("buildX", is_dir=True)
+
+
+def test_repo_gitignore_tracks_wardline_suppression_state() -> None:
+    if shutil.which("git") is None:
+        pytest.skip("git is required to validate repository ignore policy")
+    repo = Path(__file__).resolve().parents[3]
+    in_worktree = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "--is-inside-work-tree"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if in_worktree.returncode != 0:
+        pytest.skip("repository ignore policy test requires a git checkout")
+
+    def check_ignore(path: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", "-C", str(repo), "check-ignore", "--no-index", "-v", path],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    for state_file in (
+        ".weft/wardline/baseline.yaml",
+        ".weft/wardline/waivers.yaml",
+        ".weft/wardline/judged.yaml",
+    ):
+        result = check_ignore(state_file)
+        assert result.returncode == 1, result.stdout + result.stderr
+
+    for sibling_store_file in (
+        ".weft/filigree/federation_token",
+        ".weft/loomweave/loomweave.db",
+        ".weft/warpline/warpline.db",
+    ):
+        result = check_ignore(sibling_store_file)
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    for port_file in (".weft/new-sibling/ephemeral.port",):
+        result = check_ignore(port_file)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert ".weft/*/ephemeral.port" in result.stdout

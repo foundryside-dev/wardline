@@ -12,8 +12,6 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from wardline.core.config import (
-    _filigree_published_url,
-    _loomweave_published_url,
     filigree_server_scoped_url,
 )
 from wardline.core.errors import WardlineError
@@ -41,16 +39,12 @@ def _local_mcp_entry() -> dict[str, object]:
     return {"type": "stdio", "command": _find_wardline_command(), "args": ["mcp", "--root", "."]}
 
 
-# Operator-pinned sibling-endpoint flags, reconciled on repair (see
-# _desired_sibling_url):
-#   - a NON-loopback (remote) pin is the operator's deliberate endpoint — preserved.
-#   - a loopback pin that a live published-port rung can reconstruct is DROPPED, so
-#     runtime discovery owns the always-current port. A frozen pin to a rotated-away
-#     port otherwise shadows the live daemon (the legacy .filigree/ephemeral.port rung
-#     outliving a port rotation is the canonical way this happens). Filigree SERVER
-#     mode is the exception: an unscoped write fail-closes under a multi-project
-#     daemon, so a loopback pin is repaired to the live project scope rather than
-#     dropped.
+# Sibling-endpoint flags found in project `.mcp.json`, reconciled on repair (see
+# _desired_sibling_url). The file is repository-controlled input, so remote/non-loopback
+# pins are not trusted as operator intent and are dropped during canonicalization.
+#   - a loopback pin is preserved because repair cannot prove a sibling daemon is
+#     live from repository-owned `.weft/<sibling>/ephemeral.port` alone, unless
+#     Filigree SERVER mode provides a scoped target from Filigree's home registry.
 #   - a loopback pin with no live daemon is preserved verbatim (cannot be improved).
 _PRESERVED_ARG_FLAGS = ("--filigree-url", "--loomweave-url")
 
@@ -81,9 +75,10 @@ def _flag_pairs(entry: object) -> list[tuple[str, str]]:
 
 def _same_scope_target(a: str, b: str) -> bool:
     """True when two URLs name the same Filigree write target up to loopback host
-    spelling — identical port and path (the scope-bearing parts). Lets an already-
-    correct entry that merely spells the host ``127.0.0.1`` (vs our ``localhost``) be
-    recognised as correct and preserved verbatim, rather than churned every repair."""
+    spelling — identical scheme, port, path, and query (the scope-bearing parts).
+    Lets an already-correct entry that merely spells the host ``127.0.0.1`` (vs
+    our ``localhost``) be recognised as correct and preserved verbatim, rather
+    than churned every repair."""
     try:
         pa, pb = urlsplit(a), urlsplit(b)
         # .port lazily parses the authority; a malformed literal (http://localhost:notaport)
@@ -92,48 +87,47 @@ def _same_scope_target(a: str, b: str) -> bool:
         a_port, b_port = pa.port, pb.port
     except ValueError:
         return False
+    if pa.scheme.lower() != pb.scheme.lower():
+        return False
     if pa.hostname not in _LOOPBACK_HOSTS or pb.hostname not in _LOOPBACK_HOSTS:
         return False
-    return (a_port, pa.path) == (b_port, pb.path)
+    return (a_port, pa.path, pa.query) == (b_port, pb.path, pb.query)
 
 
 def _is_loopback_url(value: str) -> bool:
     """True when *value* is a loopback HTTP URL (a default-shaped, locally-rebuildable
-    target). A non-loopback host is an operator's deliberate remote endpoint and is
-    never rewritten."""
+    target). Non-loopback project-config endpoints are not treated as trusted repair
+    input."""
     try:
-        host = urlsplit(value).hostname
+        parsed = urlsplit(value)
+        # Parse the port inside the guard too; a malformed loopback URL is not a
+        # trustworthy operator pin and should be repaired or dropped, not preserved.
+        _port = parsed.port
     except ValueError:
         return False
-    return host in _LOOPBACK_HOSTS
+    return parsed.scheme.lower() in {"http", "https"} and parsed.hostname in _LOOPBACK_HOSTS
 
 
 def _desired_sibling_url(flag: str, existing: str | None, root: Path) -> str | None:
     """The value to write for *flag* (``--filigree-url`` / ``--loomweave-url``), or
     ``None`` to DROP the flag entirely.
 
-    A non-loopback (remote) pin is the operator's deliberate endpoint and is always
-    preserved. A loopback pin is a locally-rebuildable target: when a live published
-    port exists for that sibling the pin is redundant-or-stale, so it is dropped and
-    runtime published-port discovery owns the (always-current) port — except in
-    Filigree server mode, where an unscoped write fail-closes (N1) and the pin is
-    repaired to the live project scope instead. With no live daemon the pin is left
-    verbatim (we cannot improve on it). A fresh entry (no pin) only gains a flag in
-    Filigree server mode, where the scoped target must be baked."""
+    Project `.mcp.json` is repo-controlled input. Non-loopback pins found there are
+    dropped, not preserved, because repair cannot distinguish operator intent from a
+    committed exfil endpoint. A loopback pin is preserved verbatim unless Filigree
+    server mode supplies a home-registry-scoped target: repository-owned published
+    port files are not live/identity proof, so they are not enough to delete or replace
+    an explicit local pin. A fresh entry (no pin) only gains a flag in Filigree server
+    mode, where the scoped target must be baked."""
     if existing is not None and not _is_loopback_url(existing):
-        return existing  # remote endpoint — operator's deliberate choice, never touched
+        existing = None  # untrusted remote pin from repo config; treat as absent
     if flag == "--filigree-url":
         scope = filigree_server_scoped_url(root)
         if scope is not None:
             if existing is None:
                 return scope  # fresh server-mode install lands a working scoped target
             return existing if _same_scope_target(existing, scope) else scope
-        published: str | None = _filigree_published_url(root)
-    else:
-        published = _loomweave_published_url(root)
-    if existing is None:
-        return None  # per-project discovery owns the port; never bake a loopback pin
-    return None if published is not None else existing
+    return existing
 
 
 def _desired_sibling_args(entry: object, root: Path) -> list[str]:
@@ -177,12 +171,12 @@ def _desired_local_entry(existing: object, root: Path) -> dict[str, object]:
 def merge_mcp_entry(root: Path) -> str:
     """Add/replace the `wardline` entry under mcpServers. Returns created|updated|unchanged.
 
-    An existing entry's operator-pinned ``--loomweave-url`` and (remote)
-    ``--filigree-url`` args are preserved (they are the runtime emit/discovery target
-    when the published-port rung cannot reconstruct them). When Filigree runs in
-    server mode for *root*, a default-shaped (loopback) or absent ``--filigree-url`` is
-    set/repaired to the live project scope so a fresh install lands a working,
-    fail-close-safe emit target out of the box."""
+    Existing sibling URL args are reconciled from repository-controlled `.mcp.json`
+    input: remote/non-loopback values are dropped, and loopback values are preserved
+    unless Filigree server mode supplies a scoped home-registry target. When Filigree
+    runs in server mode for *root*, a default-shaped (loopback) or absent
+    ``--filigree-url`` is set/repaired to the live project scope so a fresh install
+    lands a working, fail-close-safe emit target out of the box."""
     path = safe_project_file(root, root / ".mcp.json", label=".mcp.json")
     if not path.exists():
         payload = {"mcpServers": {"wardline": _desired_local_entry(None, root)}}

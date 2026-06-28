@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 from wardline.core.run import run_scan
@@ -51,6 +52,25 @@ def test_content_hash_is_blake3_whole_file_and_top_level_and_in_blob(tmp_path):
     assert fact["content_hash_at_compute"] == expected
     assert fact["wardline_json"]["content_hash_at_compute"] == expected
     assert len(expected) == 64
+
+
+def test_crlf_file_still_emits_fresh_taint_facts(tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    raw = _LEAKY.replace("\n", "\r\n").encode("utf-8")
+    (proj / "svc.py").write_bytes(raw)
+    result = run_scan(proj)
+
+    import blake3
+
+    facts = {f["qualname"]: f for f in build_taint_facts(result, proj)}
+    expected = blake3.blake3(raw).hexdigest()
+
+    assert not [f for f in result.findings if f.rule_id == "WLN-ENGINE-FILE-FAILED"]
+    assert "svc.leaky" in facts
+    assert facts["svc.leaky"]["content_hash_at_compute"] == expected
+    assert result.context is not None
+    assert result.context.analyzed_source_sha256["svc.py"] == hashlib.sha256(raw).hexdigest()
 
 
 def test_fact_emission_refuses_files_changed_after_scan(tmp_path):

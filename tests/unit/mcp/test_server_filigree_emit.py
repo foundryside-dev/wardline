@@ -6,6 +6,8 @@ fail-soft, but Filigree protocol/client rejections (FiligreeEmitError) are loud:
 the MCP scan must not return a successful payload that hides tracker drift.
 """
 
+import json
+
 import pytest
 
 from wardline.core.errors import FiligreeEmitError
@@ -166,6 +168,27 @@ def test_scan_filigree_403_says_forbidden_not_set_a_token(tmp_path):
     assert "403" in reason and "forbidden" in reason
     assert "WEFT_FEDERATION_TOKEN" not in reason
     assert "unreachable" not in reason
+
+
+def test_scan_redacts_filigree_url_in_machine_readable_status(tmp_path):
+    (tmp_path / "svc.py").write_text(_LEAKY, encoding="utf-8")
+    secret_url = "https://user:secret@filigree.example/api/p/demo/weft/scan-results?token=abc#frag"
+    redacted = "https://<redacted>@filigree.example/api/p/demo/weft/scan-results"
+    out = _scan(
+        {},
+        tmp_path,
+        None,
+        FakeEmitter(EmitResult(reachable=False, status=401, token_sent=True, url=secret_url)),
+    )
+
+    block = out["filigree_emit"]
+    assert block["url"] == redacted
+    assert block["destination"] == {"url": redacted, "project": "demo", "project_pinned": True}
+    assert redacted in block["disabled_reason"]
+    exposed = json.dumps(block)
+    assert "user:secret" not in exposed
+    assert "token=abc" not in exposed
+    assert "#frag" not in exposed
 
 
 def test_scan_partial_ingest_surfaces_failures_to_agent(tmp_path):

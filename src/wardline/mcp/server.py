@@ -19,16 +19,28 @@ from wardline.core import config as config_mod
 from wardline.core.assure import build_posture
 from wardline.core.attest import build_attestation, verify_attestation
 from wardline.core.attest_key import load_attest_key
-from wardline.core.baseline import generate_baseline, load_baseline
+from wardline.core.baseline import load_baseline
+from wardline.core.baseline_ops import generate_baseline
 from wardline.core.delta_scope import ScopeParseError, load_affected_scope, parse_affected_scope
 from wardline.core.errors import WardlineError
 from wardline.core.explain import explain_taint_result, explanation_from_context, explanation_to_dict
-from wardline.core.filigree_emit import FiligreeEmitter, filigree_destination, filigree_disabled_reason
+from wardline.core.federation_status import (
+    SCAN_FILE_FINDINGS_FILIGREE_EMIT_SCHEMA,
+    filigree_emit_status_from_block,
+    filigree_emit_status_schema,
+    loomweave_write_status_from_block,
+    loomweave_write_status_schema,
+)
+from wardline.core.filigree_emit import (
+    FiligreeEmitter,
+    filigree_destination,
+    redact_url_for_diagnostics,
+)
 from wardline.core.finding import Finding, Severity
 from wardline.core.finding_query import filter_findings
 from wardline.core.judge_run import run_judge
 from wardline.core.paths import baseline_path as baseline_file
-from wardline.core.paths import waivers_path, weft_config_path
+from wardline.core.paths import project_root_for, waivers_path, weft_config_path
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
 from wardline.core.scan_jobs import cancel_scan_job, read_scan_job_status, start_scan_job
 from wardline.core.sei_resolution import resolve_query_filters
@@ -118,44 +130,20 @@ def _emit_filigree(
         "status": er.status,
         "auth_rejected": er.auth_rejected,
         "token_sent": er.token_sent,
-        "url": er.url,
+        "url": redact_url_for_diagnostics(er.url),
         # N1 / C-10(a): name where findings went so a wrong-project write is visible.
         "destination": filigree_destination(er.url),
     }
 
 
 def _filigree_emit_status(block: dict[str, Any] | None) -> dict[str, Any]:
-    if block is None:
-        return {
-            "configured": False,
-            "reachable": None,
-            "created": 0,
-            "updated": 0,
-            "failed": 0,
-            "failures": [],
-            "warnings": [],
-            "disabled_reason": "not configured",
-            "destination": filigree_destination(None),
-        }
-    disabled_reason = filigree_disabled_reason(
-        reachable=bool(block.get("reachable")),
-        status=block.get("status"),
-        token_sent=bool(block.get("token_sent")),
-        url=block.get("url"),
-    )
-    return {"configured": True, "disabled_reason": disabled_reason, **block}
+    # Canonical builder (core/federation_status): the MCP block-based shape, carrying the
+    # discriminated transport detail and disabled_reason at position two.
+    return filigree_emit_status_from_block(block)
 
 
 def _loomweave_write_status(block: dict[str, Any] | None) -> dict[str, Any]:
-    if block is None:
-        return {
-            "configured": False,
-            "reachable": None,
-            "written": 0,
-            "unresolved_qualnames": [],
-            "disabled_reason": "not configured",
-        }
-    return {"configured": True, **block}
+    return loomweave_write_status_from_block(block)
 
 
 def _file_finding(args: dict[str, Any], root: Path, filer: Any, loomweave: Any = None) -> dict[str, Any]:
@@ -406,91 +394,9 @@ _SCAN_FILE_FINDINGS_OUTPUT_SCHEMA: dict[str, Any] = {
             "required": ["tripped", "fail_on", "exit_class", "verdict", "would_trip_at"],
             "additionalProperties": False,
         },
-        "filigree_emit": {
-            "type": "object",
-            "description": "Outcome of bulk-emitting scan findings to Filigree (runs only when findings were selected "
-            "and an emitter is configured).",
-            "properties": {
-                "configured": {
-                    "type": "boolean",
-                    "description": "Whether a Filigree emitter is configured for this server.",
-                },
-                "reachable": {
-                    "type": ["boolean", "null"],
-                    "description": "Whether Filigree was reachable for the emit; null when no emit was attempted.",
-                },
-                "created": {"type": "integer", "description": "Findings newly created in Filigree."},
-                "updated": {"type": "integer", "description": "Findings updated in Filigree."},
-                "failed": {
-                    "type": "integer",
-                    "description": "Count of findings that did NOT land in Filigree (derived from `failures`). "
-                    "0 here is earned from real per-finding records, not assumed — see `failures` for which and why.",
-                },
-                "failures": {
-                    "type": "array",
-                    "description": "PDR-0023 honesty surface: one record per finding that failed to land, so a "
-                    "PARTIAL ingest ('M of N emitted, K rejected because R') is distinguishable from a clean emit "
-                    "('all N emitted'). Empty on a clean run — but earned, not hardwired.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "reason": {
-                                "type": "string",
-                                "enum": ["rejected", "validation_error", "scheme_mismatch", "partial"],
-                                "description": "Machine-readable failure case: rejected (Filigree refused this "
-                                "finding), validation_error (malformed body), scheme_mismatch (fingerprint-scheme "
-                                "drift — a join-miss, not a true-negative), partial (the whole chunk was rejected at "
-                                "the protocol layer, so the cause is the request not the body).",
-                            },
-                            "detail": {"type": "string", "description": "Filigree's per-finding reject explanation."},
-                            "reason_class": {
-                                "type": "string",
-                                "enum": ["rejected", "scheme_mismatch", "partial"],
-                                "description": "weft-reason (G1): the canonical reason_class this failure maps to "
-                                "(one of the closed 11 in contracts/weft-reason-vocab.json). validation_error maps to "
-                                "rejected; the domain term stays in `reason`/`cause`.",
-                            },
-                            "cause": {
-                                "type": "string",
-                                "description": "weft-reason carrier `cause`: the why (Filigree's detail, else the "
-                                "domain reason). Always present on a failure (a failure is never clean).",
-                            },
-                            "fix": {
-                                "type": "string",
-                                "description": "weft-reason carrier `fix` (MANDATORY on a non-clean carrier): the "
-                                "remedial action.",
-                            },
-                            "fingerprint": {
-                                "type": "string",
-                                "description": "The wardline join key for the failed finding (absent when the "
-                                "failure is chunk-wide and not attributable to one finding).",
-                            },
-                        },
-                        "required": ["reason", "detail", "reason_class", "cause", "fix"],
-                        "additionalProperties": False,
-                    },
-                },
-                "warnings": {"type": "array", "items": {"type": "string"}, "description": "Non-fatal emit warnings."},
-                "disabled_reason": {
-                    "type": ["string", "null"],
-                    "description": "Why the emit failed soft — the discriminated 401/403-vs-5xx-vs-transport "
-                    "ladder ('not configured', 'filigree rejected the token (401)...', 'filigree unreachable'). "
-                    "null means success OR no emit was attempted (dry-run / nothing selected) — read `reachable` "
-                    "to tell them apart (null = no attempt).",
-                },
-            },
-            "required": [
-                "configured",
-                "reachable",
-                "created",
-                "updated",
-                "failed",
-                "failures",
-                "warnings",
-                "disabled_reason",
-            ],
-            "additionalProperties": False,
-        },
+        # ONE schema source (core/federation_status): the no-destination, no-transport-detail
+        # variant for the self-contained scan_file_findings schema (no $defs to $ref).
+        "filigree_emit": SCAN_FILE_FINDINGS_FILIGREE_EMIT_SCHEMA,
         "active_defects": {
             "type": "array",
             "description": "Every active (non-suppressed) defect in the scan, each with its per-finding promotion and "
@@ -791,20 +697,32 @@ def _scan_job_request(args: dict[str, Any], root: Path, filigree_url: str | None
     }
 
 
+def _redact_scan_job_status(status: dict[str, Any]) -> dict[str, Any]:
+    redacted = dict(status)
+    request = redacted.get("request")
+    if isinstance(request, dict):
+        safe_request = dict(request)
+        url = safe_request.get("filigree_url")
+        if isinstance(url, str):
+            safe_request["filigree_url"] = redact_url_for_diagnostics(url)
+        redacted["request"] = safe_request
+    return redacted
+
+
 def _scan_job_start(args: dict[str, Any], root: Path, filigree_url: str | None = None) -> dict[str, Any]:
     path = _path_arg(args, root)
     request = _scan_job_request(args, root, filigree_url)
-    return start_scan_job(path, request)
+    return _redact_scan_job_status(start_scan_job(path, request))
 
 
 def _scan_job_status(args: dict[str, Any], root: Path) -> dict[str, Any]:
     job_id = str(_require(args, "job_id"))
-    return read_scan_job_status(_path_arg(args, root), job_id)
+    return _redact_scan_job_status(read_scan_job_status(_path_arg(args, root), job_id))
 
 
 def _scan_job_cancel(args: dict[str, Any], root: Path) -> dict[str, Any]:
     job_id = str(_require(args, "job_id"))
-    return cancel_scan_job(_path_arg(args, root), job_id)
+    return _redact_scan_job_status(cancel_scan_job(_path_arg(args, root), job_id))
 
 
 def _scan(
@@ -1302,6 +1220,29 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                     "required": ["filigree_emit", "loomweave_write"],
                     "additionalProperties": False,
                 },
+                "resolution": {
+                    "type": "object",
+                    "description": "Scan-level ENFORCEMENT posture. wardline fires only when untrusted data crosses a "
+                    "DECLARED trust boundary (@trusted / @external_boundary / @trust_boundary); inert=true means the "
+                    "scan recognized NONE, so a --fail-on gate over it passes green while checking nothing.",
+                    "properties": {
+                        "inert": {"type": "boolean"},
+                        "functions_analyzed": {"type": "integer"},
+                        "recognized_boundaries": {"type": "integer"},
+                        "low_resolution_functions": {"type": "integer"},
+                        "low_resolution_ratio": {"type": "number"},
+                        "reason": {"type": ["string", "null"]},
+                    },
+                    "required": [
+                        "inert",
+                        "functions_analyzed",
+                        "recognized_boundaries",
+                        "low_resolution_functions",
+                        "low_resolution_ratio",
+                        "reason",
+                    ],
+                    "additionalProperties": False,
+                },
                 "active_defects": {
                     "type": "array",
                     "description": "Non-suppressed defects in the displayed page (severity-sorted). Each entry "
@@ -1386,6 +1327,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "summary",
                 "gate",
                 "integrations",
+                "resolution",
                 "active_defects",
                 "suppressed_findings",
                 "engine_facts",
@@ -1414,6 +1356,12 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                     "enum": ["advisory", "gate-of-record"],
                     "description": "Machine-readable companion to mode: advisory in delta mode (a clean delta is "
                     "not a full-tree pass), gate-of-record in full-fallback.",
+                },
+                "scope_source": {
+                    "type": "string",
+                    "enum": ["reverify_worklist_v1", "entity_list", "empty"],
+                    "description": "Which producer scope shape was parsed: a warpline.reverify_worklist.v1 "
+                    "worklist, a bare entity_list, or empty (zero usable entities). Declares the scope SOURCE.",
                 },
                 "entities_requested": {
                     "type": "integer",
@@ -1459,6 +1407,13 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                     "type": "boolean",
                     "description": "Whether the authoritative SEI (loomweave) resolution path fired for any entity.",
                 },
+                "producer_completeness": {
+                    "type": ["object", "null"],
+                    "description": "UNVERIFIED producer claim: warpline's data.completeness and data.staleness "
+                    "fields (or legacy data.impact_completeness when the published fields are absent). "
+                    "Unauthenticated and never wardline-vouched; it never feeds mode, gate_authority, or any "
+                    "verdict. Null for a bare entity_list or when absent.",
+                },
                 "boundary_caveat": {
                     "type": "string",
                     "description": "The fixed honesty caveat naming the in-scope-correctness hazard (cross-file taint "
@@ -1468,6 +1423,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
             "required": [
                 "mode",
                 "gate_authority",
+                "scope_source",
                 "entities_requested",
                 "files_discovered",
                 "files_analyzed",
@@ -1476,6 +1432,7 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "stale_sei_count",
                 "unresolved_entities",
                 "loomweave_used",
+                "producer_completeness",
                 "boundary_caveat",
             ],
             "additionalProperties": False,
@@ -1677,61 +1634,10 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 "additionalProperties": False,
             },
         },
-        "filigree_emit_status": {
-            "type": "object",
-            "description": "Normalized Filigree emit status (always an object; configured:false when no emitter).",
-            "properties": {
-                "configured": {"type": "boolean"},
-                "reachable": {"type": ["boolean", "null"], "description": "null when not configured."},
-                "created": {"type": "integer"},
-                "updated": {"type": "integer"},
-                "failed": {
-                    "type": "integer",
-                    "description": "Count of un-ingested findings (derived from `failures`); 0 is earned, not assumed.",
-                },
-                "failures": {"$ref": "#/$defs/filigree_emit_failures"},
-                "warnings": {"type": "array", "items": {"type": "string"}},
-                "disabled_reason": {
-                    "type": ["string", "null"],
-                    "description": "Actionable reason (auth-rejected vs server error vs unreachable vs not "
-                    "configured), or null when reached.",
-                },
-                "destination": {"$ref": "#/$defs/filigree_destination"},
-                "status": {
-                    "type": ["integer", "null"],
-                    "description": "HTTP error status for soft failures; absent when not configured.",
-                },
-                "auth_rejected": {"type": "boolean", "description": "Absent when not configured."},
-                "token_sent": {"type": "boolean", "description": "Absent when not configured."},
-                "url": {"type": ["string", "null"], "description": "Absent when not configured."},
-            },
-            "required": [
-                "configured",
-                "reachable",
-                "created",
-                "updated",
-                "failed",
-                "failures",
-                "warnings",
-                "disabled_reason",
-                "destination",
-            ],
-            "additionalProperties": False,
-        },
-        "loomweave_write_status": {
-            "type": "object",
-            "description": "Normalized Loomweave taint-fact write status (always an object; configured:false when no "
-            "client).",
-            "properties": {
-                "configured": {"type": "boolean"},
-                "reachable": {"type": ["boolean", "null"], "description": "null when not configured."},
-                "written": {"type": "integer"},
-                "unresolved_qualnames": {"type": "array", "items": {"type": "string"}},
-                "disabled_reason": {"type": ["string", "null"]},
-            },
-            "required": ["configured", "reachable", "written", "unresolved_qualnames", "disabled_reason"],
-            "additionalProperties": False,
-        },
+        # ONE schema source (core/federation_status): the canonical, transport-detailed
+        # filigree_emit + loomweave_write $defs every scan-output $ref resolves to.
+        "filigree_emit_status": filigree_emit_status_schema(include_transport_detail=True),
+        "loomweave_write_status": loomweave_write_status_schema(),
         "location": {
             "type": "object",
             "properties": {
@@ -2045,11 +1951,15 @@ _SCAN_TOOL: dict[str, Any] = {
     "output_schema": _SCAN_OUTPUT_SCHEMA,
     "annotations": {
         "title": "Trust-boundary scan",
-        "readOnlyHint": True,
+        # A bare local scan reads the checkout, but configured Filigree/Loomweave
+        # integrations can add outbound writes at call time. Advertise the
+        # conservative superset so MCP clients do not auto-run it as read-only.
+        "readOnlyHint": False,
         "destructiveHint": False,
         "idempotentHint": True,
-        "openWorldHint": False,
+        "openWorldHint": True,
     },
+    "capabilities": frozenset({ToolCapability.READ, ToolCapability.WRITE, ToolCapability.NETWORK}),
 }
 
 
@@ -3262,7 +3172,7 @@ _ATTEST_OUTPUT_SCHEMA: dict[str, Any] = {
     "properties": {
         "schema": {
             "type": "string",
-            "enum": ["wardline-attest-1"],
+            "enum": ["wardline-attest-2"],
             "description": "Wire-contract tag; bound into the HMAC so a relabel cannot verify.",
         },
         "payload": {
@@ -3373,6 +3283,12 @@ _ATTEST_OUTPUT_SCHEMA: dict[str, Any] = {
                                 "description": "Loomweave SEI resolved at build time; null without a Loomweave client "
                                 "or when unresolvable.",
                             },
+                            "content_hash": {
+                                "type": ["string", "null"],
+                                "description": "Entity-body span blake3 from the resolved Loomweave EntityBinding "
+                                "(identity-resolve granularity, same as Filigree content_hash_at_attach); "
+                                "null when unresolved. Entity-precise — compare only same-granularity per SEI.",
+                            },
                             "verdict": {
                                 "type": "string",
                                 "enum": ["clean", "defect", "unknown"],
@@ -3384,7 +3300,7 @@ _ATTEST_OUTPUT_SCHEMA: dict[str, Any] = {
                                 "description": "Declared trust tier, or null if undeclared.",
                             },
                         },
-                        "required": ["qualname", "sei", "verdict", "tier"],
+                        "required": ["qualname", "sei", "content_hash", "verdict", "tier"],
                         "additionalProperties": False,
                     },
                 },
@@ -3965,7 +3881,9 @@ def _doctor(
     *,
     started_at: float,
     filigree_url: str | None = None,
+    filigree_url_source: str | None = None,
     loomweave_url: str | None = None,
+    loomweave_url_source: str | None = None,
 ) -> dict[str, Any]:
     """The CLI `doctor --fix` envelope over MCP (A2, wardline-2ee1bbda82's sibling):
     install/federation health checks via the SAME machine_readable_doctor builder,
@@ -3982,7 +3900,22 @@ def _doctor(
     flag = args.get("filigree_url")
     if flag is not None and not isinstance(flag, str):
         raise ToolError("filigree_url must be a string")
-    payload = machine_readable_doctor(root, fix=repair, filigree_url=flag or filigree_url, loomweave_url=loomweave_url)
+    payload = machine_readable_doctor(
+        root,
+        fix=repair,
+        filigree_url=filigree_url,
+        filigree_url_source=filigree_url_source,
+        loomweave_url=loomweave_url,
+        loomweave_url_source=loomweave_url_source,
+    )
+    if flag is not None:
+        message = (
+            "caller-supplied filigree_url is not accepted over MCP; configure the "
+            "wardline MCP server launch flag or WARDLINE_FILIGREE_URL instead"
+        )
+        payload["checks"].append({"id": "doctor.filigree_url", "status": "error", "fixed": False, "message": message})
+        payload["ok"] = False
+        payload["next_actions"].append(f"doctor.filigree_url: {message}")
     return attach_server_identity(payload, root=root, started_at=started_at)
 
 
@@ -3999,8 +3932,8 @@ _DOCTOR_OUTPUT_SCHEMA: dict[str, Any] = {
         "checks": {
             "type": "array",
             "description": "Uniform health-check verdicts: wardline.config, mcp.registration, marker_package, "
-            "loomweave.url, filigree.url, decorator_grammar, scan.output_path, auth.token, filigree.auth, then "
-            "server.freshness last.",
+            "loomweave.url, filigree.url, decorator_grammar, scan.output_path, auth.token, filigree.auth, "
+            "optionally doctor.filigree_url for rejected MCP caller input, then server.freshness last.",
             "items": {
                 "type": "object",
                 "properties": {
@@ -4017,6 +3950,18 @@ _DOCTOR_OUTPUT_SCHEMA: dict[str, Any] = {
                         "type": "string",
                         "description": "Human/agent-readable detail. Present only when the check produced a non-empty "
                         "message (always on errors; sometimes on informational ok results).",
+                    },
+                    "removed": {
+                        "type": "array",
+                        "description": "Project-relative paths removed by this check, present only for repair checks "
+                        "that cleaned files.",
+                        "items": {"type": "string"},
+                    },
+                    "review": {
+                        "type": "array",
+                        "description": "Project-relative paths the check intentionally left for operator review, "
+                        "present only when non-empty.",
+                        "items": {"type": "string"},
                     },
                 },
                 "required": ["id", "status", "fixed"],
@@ -4064,8 +4009,54 @@ _DOCTOR_OUTPUT_SCHEMA: dict[str, Any] = {
             ],
             "additionalProperties": False,
         },
+        "repo_binding": {
+            "type": "object",
+            "description": "READ-ONLY repo-binding / store-read verdict: whether THIS build can read its "
+            "repo-scoped baseline store at resolved_root, at a schema it serves. The wardline analog of a stale "
+            "binary that starts cleanly but cannot read its store, silently going dark. The load-bearing fact is "
+            "store.schema_version, READ FROM INSIDE the store (not derived from the path).",
+            "properties": {
+                "resolved_root": {
+                    "type": "string",
+                    "description": "The server's launch --root that the store was probed under.",
+                },
+                "store": {
+                    "type": "object",
+                    "description": "Facts read from the baseline store (no secrets/peer tokens).",
+                    "properties": {
+                        "present": {
+                            "type": "boolean",
+                            "description": "True when the baseline.yaml store exists (baseline is opt-in).",
+                        },
+                        "readable": {
+                            "type": "boolean",
+                            "description": "True when the store parses and carries a schema this build serves.",
+                        },
+                        "schema_version": {
+                            "type": ["integer", "null"],
+                            "description": "On-disk store schema version when readable+served; null when absent or "
+                            "unreadable (null = a version I can serve — the unreadable on-disk version rides in the "
+                            "doctor.repo_binding check message).",
+                        },
+                        "baseline_finding_count": {
+                            "type": ["integer", "null"],
+                            "description": "Number of baselined findings when readable; null when absent/unreadable.",
+                        },
+                    },
+                    "required": ["present", "readable", "schema_version", "baseline_finding_count"],
+                    "additionalProperties": False,
+                },
+                "binding_ok": {
+                    "type": "boolean",
+                    "description": "True IFF the store is present AND readable at a served schema. False for an "
+                    "absent store (opt-in, not an error) AND for the present-but-unreadable stale-binary incident.",
+                },
+            },
+            "required": ["resolved_root", "store", "binding_ok"],
+            "additionalProperties": False,
+        },
     },
-    "required": ["ok", "checks", "next_actions", "server"],
+    "required": ["ok", "checks", "next_actions", "server", "repo_binding"],
     "additionalProperties": False,
 }
 
@@ -4081,7 +4072,9 @@ _DOCTOR_TOOL: dict[str, Any] = {
     "long-lived server predates the on-disk wardline code — its results are "
     "stale; restart the MCP server. Read-only by default; `repair: true` "
     "(write-gated) repairs install artifacts and re-pins a rejected "
-    "federation token.",
+    "federation token. With repair: true it also deletes stray "
+    "wardline-managed scan artifacts (timestamped files inside .wardline/ "
+    "dirs) under the project root.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -4090,13 +4083,14 @@ _DOCTOR_TOOL: dict[str, Any] = {
                 "description": "Default false (pure probe, writes nothing). true repairs "
                 "install artifacts (CLAUDE.md/AGENTS.md blocks, .claude/.agents skills, "
                 ".mcp.json + Codex registration, .weft state dir) and, when Filigree "
-                "rejected the emit token, re-pins the accepted local mint in .env.",
+                "rejected the emit token, re-pins the accepted local mint in .env. "
+                "Also sweeps stray managed scan artifacts under the project root.",
             },
             "filigree_url": {
                 "type": "string",
-                "description": "Filigree URL to probe for emit auth (default: the server's "
-                "configured URL, then WARDLINE_FILIGREE_URL, then the .mcp.json arg). "
-                "Only loopback origins are ever probed with a token.",
+                "description": "Deprecated and rejected over MCP: caller-supplied probe URLs "
+                "are not trusted with Filigree credentials. Configure the server launch "
+                "flag, WARDLINE_FILIGREE_URL, or the project .mcp.json entry instead.",
             },
         },
     },
@@ -4104,11 +4098,22 @@ _DOCTOR_TOOL: dict[str, Any] = {
     "annotations": {
         "title": "Install and federation health check",
         "readOnlyHint": False,
-        "destructiveHint": False,
+        "destructiveHint": True,
         "idempotentHint": True,
         "openWorldHint": False,
     },
 }
+
+
+def _rekey_collision_wire(collision: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "new_fp": collision.new_fp,
+        "old_fps": list(collision.old_fps),
+        "message": collision.message,
+    }
+    if getattr(collision, "new_fps", ()):
+        payload["new_fps"] = list(collision.new_fps)
+    return payload
 
 
 def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, Any]:
@@ -4145,9 +4150,7 @@ def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, 
             "fingerprint_scheme_to": journal.fingerprint_scheme_to,
             "snapshot_prescheme": journal.snapshot_prescheme,
             "orphan_cause": ORPHAN_CAUSE,
-            "collisions": [
-                {"new_fp": c.new_fp, "old_fps": list(c.old_fps), "message": c.message} for c in journal.collisions
-            ],
+            "collisions": [_rekey_collision_wire(c) for c in journal.collisions],
             "legs": [
                 {
                     "name": leg.name,
@@ -4211,9 +4214,7 @@ def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, 
             "stale_count": len(report.stale),
             "stale_sample": list(report.stale[:ORPHAN_SAMPLE_LIMIT]),
             "stale_cause": STALE_CAUSE,
-            "collisions": [
-                {"new_fp": c.new_fp, "old_fps": list(c.old_fps), "message": c.message} for c in report.collisions
-            ],
+            "collisions": [_rekey_collision_wire(c) for c in report.collisions],
             "per_store": dict(report.per_store),
             "prescheme": report.prescheme,
             "current_scheme_stores": list(report.current_scheme_stores),
@@ -4278,24 +4279,33 @@ _REKEY_OUTPUT_SCHEMA: dict[str, Any] = {
         },
         "collisions": {
             "type": "array",
-            "description": "probe/apply/resume: pre-rekey fingerprints that collapse to the same new fingerprint "
-            "under the new scheme; all involved old fingerprints are orphaned, not carried.",
+            "description": "probe/apply/resume: ambiguous rekey mappings. Either multiple pre-rekey fingerprints "
+            "collapse to one new fingerprint, or one pre-rekey fingerprint fans out to multiple new fingerprints. "
+            "All involved old fingerprints are orphaned, not carried.",
             "items": {
                 "type": "object",
                 "properties": {
                     "new_fp": {
-                        "type": "string",
-                        "description": "The new-scheme fingerprint that more than one old fingerprint maps onto.",
+                        "type": ["string", "null"],
+                        "description": "Collapse: the new-scheme fingerprint that more than one old fingerprint maps "
+                        "onto. Fan-out: null, with new_fps carrying the candidate new fingerprints.",
+                    },
+                    "new_fps": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Fan-out only: the candidate new-scheme fingerprints one old fingerprint maps "
+                        "onto. Omitted for collapse collisions.",
                     },
                     "old_fps": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "The colliding pre-rekey fingerprints (sorted).",
+                        "description": "The ambiguous pre-rekey fingerprints (sorted). Fan-out entries contain one old "
+                        "fingerprint.",
                     },
                     "message": {
                         "type": "string",
-                        "description": "WLN-ENGINE-FINGERPRINT-COLLISION diagnostic explaining that the colliding "
-                        "verdicts are orphaned.",
+                        "description": "WLN-ENGINE-FINGERPRINT-COLLISION or WLN-ENGINE-FINGERPRINT-FANOUT diagnostic "
+                        "explaining that the verdicts are orphaned.",
                     },
                 },
                 "required": ["new_fp", "old_fps", "message"],
@@ -4555,13 +4565,17 @@ class WardlineMCPServer:
         *,
         root: Path,
         loomweave_url: str | None = None,
+        loomweave_url_source: str | None = None,
         filigree_url: str | None = None,
+        filigree_url_source: str | None = None,
         allow_write: bool = True,
         allow_network: bool = True,
     ) -> None:
         self.root = Path(root)
         self.loomweave_url = loomweave_url
+        self.loomweave_url_source = loomweave_url_source
         self.filigree_url = filigree_url
+        self.filigree_url_source = filigree_url_source
         # Recorded once at construction: the doctor tool's freshness verdict compares
         # on-disk source mtimes against this to expose a stale long-lived server.
         self.started_at = time.time()
@@ -4782,9 +4796,10 @@ class WardlineMCPServer:
                 handler=lambda args, root: _waiver_add(
                     args,
                     root,
-                    # An entity_symbol needs Loomweave to resolve; an opaque entity_id does
-                    # not. Build the client only when a symbol is present (None otherwise).
-                    self._loomweave_client(_cfg(args, root)) if args.get("entity_symbol") else None,
+                    # entity_id wins over entity_symbol; only L2 symbol binding needs Loomweave.
+                    self._loomweave_client(_cfg(args, root))
+                    if args.get("entity_symbol") and not args.get("entity_id")
+                    else None,
                 ),
             )
         )
@@ -4802,7 +4817,9 @@ class WardlineMCPServer:
                     root,
                     started_at=self.started_at,
                     filigree_url=self.filigree_url,
+                    filigree_url_source=self.filigree_url_source,
                     loomweave_url=self.loomweave_url,
+                    loomweave_url_source=self.loomweave_url_source,
                 ),
             )
         )
@@ -4875,7 +4892,10 @@ class WardlineMCPServer:
         )
 
     def _effective_tool_capabilities(self, tool: Tool, arguments: dict[str, Any]) -> frozenset[ToolCapability]:
-        capabilities = set(tool.capabilities)
+        # ``scan`` advertises the conservative possible-effects superset in
+        # tools/list, but hardened runtime policy should still allow a purely
+        # local scan when no integration URL resolves.
+        capabilities = {ToolCapability.READ} if tool.name == "scan" else set(tool.capabilities)
         if tool.name == "scan" and (
             self._resolved_loomweave_url_for_policy(arguments) is not None
             or self._resolved_filigree_url_for_policy(arguments) is not None
@@ -4899,18 +4919,30 @@ class WardlineMCPServer:
             capabilities.add(ToolCapability.NETWORK)
         if tool.name == "judge" and bool(arguments.get("write", False)):
             capabilities.add(ToolCapability.WRITE)
+        if (
+            tool.name == "waiver_add"
+            and bool(arguments.get("entity_symbol"))
+            and not bool(arguments.get("entity_id"))
+            and self._resolved_loomweave_url_for_policy(arguments) is not None
+        ):
+            capabilities.add(ToolCapability.NETWORK)
         if tool.name == "doctor":
             if bool(arguments.get("repair", False)):
                 capabilities.add(ToolCapability.WRITE)
-            from wardline.install.doctor import _resolve_probe_url
+            from wardline.install.doctor import (
+                _filigree_auth_probe_would_network,
+                _stale_sibling_port_probe_would_network,
+            )
 
-            flag = arguments.get("filigree_url")
-            probe_url = flag if isinstance(flag, str) and flag else None
-            if _resolve_probe_url(self.root, probe_url or self.filigree_url) is not None:
-                # The filigree-auth probe will touch the (loopback-only) network.
+            if _filigree_auth_probe_would_network(
+                self.root, self.filigree_url, self.filigree_url_source
+            ) or _stale_sibling_port_probe_would_network(project_root_for(self.root)):
+                # The filigree-auth or stale-port probe will touch the loopback network.
                 capabilities.add(ToolCapability.NETWORK)
         if tool.name == "rekey":
-            if any(bool(arguments.get(k, False)) for k in ("apply", "resume", "rollback")):
+            if bool(arguments.get("cache_dir")) or any(
+                bool(arguments.get(k, False)) for k in ("apply", "resume", "rollback")
+            ):
                 capabilities.add(ToolCapability.WRITE)
             if bool(arguments.get("apply", False)) and self._resolved_filigree_url_for_policy(arguments) is not None:
                 # apply's last leg re-emits the rekeyed findings to Filigree.

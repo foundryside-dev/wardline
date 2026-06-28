@@ -25,7 +25,8 @@ class RuleMetadata:
     # carry a source-derived entity-relative discriminator in ``taint_path`` (a col span
     # or PY-WL-114's ordinal), since ``line_start`` no longer separates co-located
     # findings (wlfp2, wardline-8654423823). A singleton (<=1 finding per qualname)
-    # passes ``taint_path=None``. Default is the conservative SINGLETON; the
-    # ``test_discriminator_shape`` source-AST lint enforces multi_emit <-> taint_path
-    # so a multi-emit rule cannot silently ship a colliding ``None``.
+    # may use the line-independent source-body discriminator so a different body
+    # or signature under the same qualname cannot inherit a stale suppression. Default is the
+    # conservative SINGLETON; the ``test_discriminator_shape`` source-AST lint enforces
+    # that multi_emit rules do not use singleton discriminators.
     multi_emit: bool = False

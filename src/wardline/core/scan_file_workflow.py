@@ -7,7 +7,8 @@ from typing import Any
 
 from wardline.core.errors import WardlineError
 from wardline.core.explain import TaintExplanation, explanation_from_context
-from wardline.core.filigree_emit import EmitResult, filigree_disabled_reason
+from wardline.core.federation_status import filigree_emit_status
+from wardline.core.filigree_emit import EmitResult
 from wardline.core.filigree_issue import (
     FileResult,
     IdentityAttachResult,
@@ -46,35 +47,11 @@ def _finding_base(finding: Finding, explanation: TaintExplanation | None) -> dic
 
 
 def _emit_to_dict(result: EmitResult | None, *, configured: bool) -> dict[str, Any]:
-    if result is None:
-        return {
-            "configured": configured,
-            "reachable": None,
-            "created": 0,
-            "updated": 0,
-            "failed": 0,
-            "failures": [],
-            "warnings": [],
-            "disabled_reason": None if configured else "not configured",
-        }
-    return {
-        "configured": configured,
-        "reachable": result.reachable,
-        "created": result.created,
-        "updated": result.updated,
-        "failed": result.failed,
-        # PDR-0023: per-finding reject reasons so a partial ingest is distinguishable from clean.
-        "failures": [f.to_wire() for f in result.failures],
-        "warnings": list(result.warnings),
-        # Delegate to the shared 401/403-vs-5xx-vs-transport ladder (dogfood #5) instead
-        # of flattening every soft failure to "filigree unreachable".
-        "disabled_reason": filigree_disabled_reason(
-            reachable=result.reachable,
-            status=result.status,
-            token_sent=result.token_sent,
-            url=result.url,
-        ),
-    }
+    # Canonical builder (core/federation_status). The scan_file_findings block is the
+    # no-destination variant: include_destination=False, and ``configured`` is explicit so
+    # a configured-but-dry-run (result is None) renders disabled_reason:null, not
+    # "not configured".
+    return filigree_emit_status(result, configured=configured, include_destination=False)
 
 
 def _file_to_dict(result: FileResult | None, *, selected: bool, configured: bool) -> dict[str, Any]:

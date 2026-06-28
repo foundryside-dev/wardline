@@ -36,7 +36,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, cast
 
-from wardline.core.taints import TaintState  # noqa: TC001  # runtime: deserialise
+from wardline.core.taints import _PROVENANCE_CLASH, TaintState  # noqa: TC001  # runtime: deserialise
 from wardline.scanner.taint.summary import (  # noqa: TC001  # runtime: deserialise
     SUMMARY_SCHEMA_VERSION,
     FunctionSummary,
@@ -80,8 +80,6 @@ def _parse_cache_taint(raw: str, field: str) -> TaintState:
     poisoned file with a warning (cold-cache fallback), so an enforced invariant
     here cannot crash a scan.
     """
-    from wardline.core.taints import _PROVENANCE_CLASH
-
     state = TaintState(raw)  # may raise ValueError on a non-canonical string
     if state == TaintState.MIXED_RAW and _PROVENANCE_CLASH.get():
         return state

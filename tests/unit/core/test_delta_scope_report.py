@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from wardline.core.delta_scope import BOUNDARY_CAVEAT, DeltaScopeReport
+from wardline.core.delta_scope import BOUNDARY_CAVEAT, DeltaScopeReport, parse_affected_scope
 
 
 def _delta_report(**overrides: object) -> DeltaScopeReport:
     base: dict[str, object] = {
         "mode": "delta",
         "gate_authority": "advisory",
+        "scope_source": "reverify_worklist_v1",
         "entities_requested": 3,
         "files_discovered": 10,
         "files_analyzed": 2,
@@ -55,6 +56,7 @@ def test_to_dict_keys_and_shape() -> None:
     assert set(d.keys()) == {
         "mode",
         "gate_authority",
+        "scope_source",
         "entities_requested",
         "files_discovered",
         "files_analyzed",
@@ -63,10 +65,12 @@ def test_to_dict_keys_and_shape() -> None:
         "stale_sei_count",
         "unresolved_entities",
         "loomweave_used",
+        "producer_completeness",
         "boundary_caveat",
     }
     assert d["mode"] == "delta"
     assert d["gate_authority"] == "advisory"
+    assert d["scope_source"] == "reverify_worklist_v1"
     assert d["entities_requested"] == 3
     assert d["files_discovered"] == 10
     assert d["files_analyzed"] == 2
@@ -75,6 +79,7 @@ def test_to_dict_keys_and_shape() -> None:
     assert d["stale_sei_count"] == 0
     assert d["loomweave_used"] is True
     assert d["boundary_caveat"] == BOUNDARY_CAVEAT
+    assert d["producer_completeness"] is None
     assert d["unresolved_entities"] == [
         {"locator": "python:function:pkg.bogus", "sei": None},
         {"locator": None, "sei": "loomweave:eid:gone"},
@@ -117,3 +122,95 @@ def test_stale_sei_and_fell_back_counts_surface_trust() -> None:
     d = report.to_dict()
     assert d["fell_back_count"] == 2
     assert d["stale_sei_count"] == 1
+
+
+# --- A1: AffectedScope.producer_completeness ---
+
+_SAMPLE_IC = {
+    "status": "partial",
+    "as_of": "2026-06-18T00:00:00+00:00",
+    "graph_fresh": True,
+    "graph_ref": "e5b022a65a74759344e67538a0bb823b64c843ad",
+    "depth_capped": True,
+    "unresolved_count": 0,
+    "reasons": ["depth_capped"],
+}
+
+
+def test_worklist_captures_impact_completeness() -> None:
+    payload = {
+        "schema": "warpline.reverify_worklist.v1",
+        "data": {
+            "impact_completeness": _SAMPLE_IC,
+            "items": [{"entity": {"locator": "python:function:a.alpha", "sei": None}}],
+        },
+    }
+    scope = parse_affected_scope(payload)
+    assert scope.source_kind == "reverify_worklist_v1"
+    assert scope.producer_completeness == _SAMPLE_IC
+
+
+def test_worklist_missing_impact_completeness_returns_none() -> None:
+    payload = {
+        "schema": "warpline.reverify_worklist.v1",
+        "data": {
+            "items": [{"entity": {"locator": "python:function:a.alpha", "sei": None}}],
+        },
+    }
+    scope = parse_affected_scope(payload)
+    assert scope.source_kind == "reverify_worklist_v1"
+    assert scope.producer_completeness is None
+
+
+def test_worklist_non_dict_impact_completeness_returns_none() -> None:
+    """A non-dict value for impact_completeness is treated as absent (defensive capture)."""
+    payload = {
+        "schema": "warpline.reverify_worklist.v1",
+        "data": {
+            "impact_completeness": "not-a-dict",
+            "items": [{"entity": {"locator": "python:function:a.alpha", "sei": None}}],
+        },
+    }
+    scope = parse_affected_scope(payload)
+    assert scope.producer_completeness is None
+
+
+def test_entity_list_has_no_producer_completeness() -> None:
+    scope = parse_affected_scope([{"locator": "python:function:a.alpha"}])
+    assert scope.source_kind == "entity_list"
+    assert scope.producer_completeness is None
+
+
+# --- A2: DeltaScopeReport scope_source + producer_completeness ---
+
+
+def _report(**overrides: object) -> DeltaScopeReport:
+    base: dict[str, object] = dict(
+        mode="delta",
+        gate_authority="advisory",
+        scope_source="reverify_worklist_v1",
+        entities_requested=1,
+        files_discovered=1,
+        files_analyzed=1,
+        in_scope_findings=0,
+        fell_back_count=0,
+        stale_sei_count=0,
+        unresolved_entities=(),
+        loomweave_used=False,
+        producer_completeness=_SAMPLE_IC,
+    )
+    base.update(overrides)
+    return DeltaScopeReport(**base)  # type: ignore[arg-type]
+
+
+def test_report_serializes_scope_source_and_producer_completeness() -> None:
+    d = _report().to_dict()
+    assert d["scope_source"] == "reverify_worklist_v1"
+    assert d["producer_completeness"] == _SAMPLE_IC
+    assert set(d) >= {"scope_source", "producer_completeness"}
+
+
+def test_report_producer_completeness_defaults_none() -> None:
+    d = _report(producer_completeness=None, scope_source="entity_list").to_dict()
+    assert d["producer_completeness"] is None
+    assert d["scope_source"] == "entity_list"

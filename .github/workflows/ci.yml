@@ -21,31 +21,32 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
           python-version: "3.13"
       - run: uv sync --all-extras --group dev
       - run: uv run ruff check src tests
       - run: uv run ruff format --check src tests
-      - name: Layering contracts (import-linter, report-only)
-        # Report-only: `|| true` keeps this non-blocking. Encodes intended core/ layering
-        # (taint engine must not import the attestation layer). BROKEN today; the layering
-        # agent moves the code (wardline-9ec283d168). Surfaces drift without gating CI.
-        run: uv run lint-imports || true
+      - name: Layering contracts (import-linter, enforcing)
+        # Gating: the engine and policy tiers must not import up into orchestration,
+        # output, or federation (engine-purity + policy-purity, both KEPT). See
+        # [tool.importlinter] in pyproject.toml for the tier model; intra-tier cycles
+        # are guarded by tests/conformance/test_import_layering.py.
+        run: uv run lint-imports
 
   typecheck:
     name: Types (mypy strict)
     runs-on: ubuntu-latest
     if: github.event_name != 'schedule'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
           python-version: "3.13"
@@ -60,10 +61,10 @@ jobs:
       matrix:
         python-version: ["3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
@@ -76,10 +77,10 @@ jobs:
     needs: test
     if: github.event_name != 'schedule'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
           python-version: "3.13"
@@ -120,10 +121,10 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
           python-version: "3.13"
@@ -163,10 +164,10 @@ jobs:
           - name: Warpline
             marker: warpline_e2e
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
           python-version: "3.13"
@@ -187,4 +188,59 @@ jobs:
             echo "- Marker: \`${{ matrix.marker }}\`"
             echo "- Trigger: \`${{ github.event_name }}\`"
             echo "- Missing local services, secrets, or capabilities fail this required oracle run."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Producer-source drift: byte-compares wardline's vendored fixtures against the
+  # authoritative sibling SOURCE on origin/main (loomweave SEI oracle, warpline
+  # reverify-worklist wire). The default PR suite already fail-closes on a vendored-copy
+  # EDIT via the Layer-1 blob-pins; this job closes the other half — a silent divergence
+  # between the vendored copy and the upstream HEAD — which no PR-time test can see without
+  # the sibling source. Weekly/dispatch only (a sibling change must never block a wardline
+  # PR); needs WARDLINE_SIBLING_SOURCE_TOKEN (read-only) to check out the private siblings.
+  # crit-3b: wardline-79ba05f464 (SEI) / wardline-c0563eee74 (warpline worklist).
+  source-drift:
+    name: Sibling-source drift (weekly/manual, fail-closed)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check out loomweave source (read-only)
+        uses: actions/checkout@v7
+        with:
+          repository: foundryside-dev/loomweave
+          token: ${{ secrets.WARDLINE_SIBLING_SOURCE_TOKEN }}
+          path: _siblings/loomweave
+          persist-credentials: false
+      - name: Check out warpline source (read-only)
+        uses: actions/checkout@v7
+        with:
+          repository: foundryside-dev/warpline
+          token: ${{ secrets.WARDLINE_SIBLING_SOURCE_TOKEN }}
+          path: _siblings/warpline
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+          python-version: "3.13"
+      - run: uv sync --all-extras --group dev
+      - name: Source-byte drift vs sibling origin/main (fail-closed)
+        # WARDLINE_LIVE_ORACLE_REQUIRED=1 turns a missing-source SKIP into a FAILURE
+        # (sei_drift/worklist_drift are in LIVE_ORACLE_MARKERS), so a broken checkout fails
+        # the required run instead of passing green. A genuine drift (a sibling shipped a new
+        # contract) reds this until wardline re-vendors per each module's RE-VENDOR PROCEDURE.
+        run: uv run pytest tests/conformance -m "sei_drift or worklist_drift" -v
+        env:
+          WARDLINE_LIVE_ORACLE_REQUIRED: "1"
+          WARDLINE_LOOMWEAVE_REPO: ${{ github.workspace }}/_siblings/loomweave
+          WARDLINE_WARPLINE_REPO: ${{ github.workspace }}/_siblings/warpline
+      - name: Summarize source-drift
+        if: always()
+        run: |
+          {
+            echo "### Sibling-source drift"
+            echo "- Markers: \`sei_drift\`, \`worklist_drift\` (byte-compare vs loomweave + warpline origin/main)"
+            echo "- Trigger: \`${{ github.event_name }}\`"
+            echo "- A vendored-fixture drift, or a failed sibling checkout, fails this required run."
           } >> "$GITHUB_STEP_SUMMARY"

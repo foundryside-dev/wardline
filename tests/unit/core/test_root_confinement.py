@@ -6,7 +6,7 @@ import pytest
 
 from wardline.core.assure import build_posture
 from wardline.core.attest import build_attestation, verify_attestation
-from wardline.core.baseline import generate_baseline
+from wardline.core.baseline_ops import generate_baseline
 from wardline.core.dossier import build_dossier
 from wardline.core.errors import ConfigError
 from wardline.core.judge import JudgeRequest, JudgeResponse, JudgeVerdict

@@ -128,6 +128,79 @@ def test_recursion_error_still_yields_function_skip_fact(tmp_path, monkeypatch) 
     assert not any(f.rule_id == "WLN-ENGINE-FILE-FAILED" for f in findings)
 
 
+def test_l2_budget_exceeded_emits_gate_eligible_function_skip(tmp_path, monkeypatch) -> None:
+    import wardline.scanner.taint.variable_level as variable_level
+
+    monkeypatch.setattr(variable_level, "L2_WORK_BUDGET", 7)
+    _write(
+        tmp_path,
+        "svc.py",
+        """
+        from wardline.decorators import external_boundary, trusted
+
+        @external_boundary
+        def read_raw(p):
+            return p
+
+        @trusted(level='ASSURED')
+        def leaky(p):
+            v0 = read_raw(p)
+            v1 = read_raw(p)
+            eval(v1)
+        """,
+    )
+
+    result = run_scan(tmp_path)
+
+    skipped = [f for f in result.findings if f.rule_id == "WLN-ENGINE-FUNCTION-SKIPPED"]
+    assert len(skipped) == 1
+    assert skipped[0].kind is Kind.DEFECT
+    assert skipped[0].severity is Severity.ERROR
+    assert skipped[0].qualname == "svc.leaky"
+    assert skipped[0].location.path == "svc.py"
+    assert skipped[0].location.line_start is not None
+    assert skipped[0].properties["reason"] == "taint_budget_exceeded"
+    assert skipped[0].properties["budget"] == 7
+    assert skipped[0].properties["attempted"] > 7
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+    ctx = result.context
+    assert ctx is not None
+    assert ctx.function_var_taints["svc.leaky"] == {}
+    assert ctx.function_return_taints["svc.leaky"] == TaintState.UNKNOWN_RAW
+
+
+def test_candidate_key_budget_exceeded_emits_function_skip(tmp_path, monkeypatch) -> None:
+    import wardline.scanner.analyzer as analyzer_mod
+
+    monkeypatch.setattr(analyzer_mod, "_CANDIDATE_KEY_BUDGET", 4)
+    _write(
+        tmp_path,
+        "svc.py",
+        """
+        from wardline.decorators import trusted
+
+        @trusted(level='ASSURED')
+        def wide(p, obj):
+            obj.a.b.c.d
+            return p
+        """,
+    )
+
+    result = run_scan(tmp_path)
+
+    skipped = [f for f in result.findings if f.rule_id == "WLN-ENGINE-FUNCTION-SKIPPED"]
+    assert len(skipped) == 1
+    assert skipped[0].qualname == "svc.wide"
+    assert skipped[0].kind is Kind.DEFECT
+    assert skipped[0].severity is Severity.ERROR
+    assert skipped[0].properties["reason"] == "taint_budget_exceeded"
+    assert skipped[0].properties["operation"] == "candidate_key_probe"
+    assert skipped[0].properties["budget"] == 4
+    assert skipped[0].properties["attempted"] > 4
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
 def test_fixpoint_recursion_error_yields_function_skip_and_unknown_return(tmp_path, monkeypatch) -> None:
     # The fixpoint rerun must not silently retain pass-1 results. It surfaces the same
     # function-level skip diagnostic and overwrites the affected function with UNKNOWN_RAW.

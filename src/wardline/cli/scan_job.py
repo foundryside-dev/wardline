@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 
 from wardline.core.errors import WardlineError
+from wardline.core.filigree_emit import redact_url_for_diagnostics
 from wardline.core.scan_jobs import (
     DEFAULT_SCAN_JOB_TIMEOUT_SECONDS,
     cancel_scan_job,
@@ -19,6 +20,18 @@ from wardline.core.scan_jobs import (
 @click.group(name="scan-job")
 def scan_job() -> None:
     """Start and poll file-backed Wardline scan jobs."""
+
+
+def _redact_scan_job_status(status: dict[str, object]) -> dict[str, object]:
+    redacted = dict(status)
+    request = redacted.get("request")
+    if isinstance(request, dict):
+        safe_request = dict(request)
+        url = safe_request.get("filigree_url")
+        if isinstance(url, str):
+            safe_request["filigree_url"] = redact_url_for_diagnostics(url)
+        redacted["request"] = safe_request
+    return redacted
 
 
 @scan_job.command("start")
@@ -90,7 +103,7 @@ def start(
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
-    click.echo(json.dumps(status, sort_keys=True))
+    click.echo(json.dumps(_redact_scan_job_status(status), sort_keys=True))
 
 
 @scan_job.command("status")
@@ -103,7 +116,7 @@ def status(job_id: str, path: Path) -> None:
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
-    click.echo(json.dumps(payload, sort_keys=True))
+    click.echo(json.dumps(_redact_scan_job_status(payload), sort_keys=True))
 
 
 @scan_job.command("cancel")
@@ -116,4 +129,4 @@ def cancel(job_id: str, path: Path) -> None:
     except WardlineError as exc:
         click.echo(f"error: {exc}", err=True)
         raise SystemExit(2) from exc
-    click.echo(json.dumps(payload, sort_keys=True))
+    click.echo(json.dumps(_redact_scan_job_status(payload), sort_keys=True))

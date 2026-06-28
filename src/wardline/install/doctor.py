@@ -6,17 +6,23 @@ import ipaddress
 import json
 import os
 import tomllib
+import urllib.error
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from wardline.core.config import _filigree_published_url, load
-from wardline.core.errors import ConfigError, WardlineError
+from wardline.core import artifacts as _artifacts
+from wardline.core import discovery, paths
+from wardline.core.baseline import inspect_baseline_store
+from wardline.core.config import ArtifactSettings, _filigree_published_url, filigree_server_scoped_url, load
+from wardline.core.errors import ConfigError, LoomweaveError, WardlineError
 from wardline.core.filigree_emit import FiligreeEmitter, Transport, UrllibTransport
-from wardline.core.paths import weft_config_path, weft_state_dir
-from wardline.core.safe_paths import safe_read_text_if_regular, safe_write_text
+from wardline.core.http import WeftHttp
+from wardline.core.paths import legacy_sibling_dir, sibling_state_dir, weft_config_path, weft_state_dir
+from wardline.core.safe_paths import safe_project_path, safe_read_text_if_regular, safe_write_text
 from wardline.filigree.config import load_filigree_token
 from wardline.install.block import inject_block
 from wardline.install.detect import (
@@ -48,6 +54,8 @@ class DoctorCheck:
     status: str
     fixed: bool = False
     message: str | None = None
+    removed: Sequence[str] = ()
+    review: Sequence[str] = ()
 
     @property
     def ok(self) -> bool:
@@ -57,6 +65,10 @@ class DoctorCheck:
         data: dict[str, Any] = {"id": self.id, "status": self.status, "fixed": self.fixed}
         if self.message:
             data["message"] = self.message
+        if self.removed:
+            data["removed"] = list(self.removed)
+        if self.review:
+            data["review"] = list(self.review)
         return data
 
 
@@ -102,6 +114,139 @@ def _ensure_weft_config(root: Path) -> bool:
         return False
     safe_write_text(root, cfg_path, _default_weft_config(root), label="weft.toml")
     return True
+
+
+_GITIGNORE_HEADER = "# Wardline scan artifacts"
+
+
+def _artifacts_dir_relname(proj: Path) -> str:
+    """The project-root-relative dir name to ignore (always in-tree by construction)."""
+    try:
+        cfg = load(weft_config_path(proj))
+        artifacts_dir_value = cfg.artifacts.dir
+    except (ConfigError, OSError):
+        artifacts_dir_value = ArtifactSettings().dir
+    resolved = paths.artifacts_dir(proj, artifacts_dir_value)
+    rel = resolved.relative_to(proj.resolve())
+    return rel.as_posix()
+
+
+_MANAGED_SUFFIXES = ("findings.jsonl", "findings.sarif", "findings.agent-summary.json", "scan.legis.json")
+
+
+def _is_managed_name(name: str) -> bool:
+    return any(_artifacts._managed_artifact_pattern(s).match(name) for s in _MANAGED_SUFFIXES)
+
+
+def _sweep_stray_artifacts(proj: Path, *, fix: bool) -> DoctorCheck:
+    proj = proj.resolve()
+    # Both the configured artifacts dir AND the default .wardline are standard dirs:
+    # a subdir scan loads config from the scan path (no weft.toml => default .wardline),
+    # so it may write to <proj>/.wardline/ even when the project root's weft.toml
+    # configures a custom dir. Both locations are tool-owned and must not be swept.
+    standard_dirs = {
+        paths.artifacts_dir(proj, _artifacts_dir_relname(proj)),
+        paths.artifacts_dir(proj, paths.DEFAULT_ARTIFACT_DIR),
+    }
+    removed: list[str] = []
+    review: list[str] = []
+    emptied_dirs: list[Path] = []
+    # topdown=True (the os.walk default) is REQUIRED: the dirnames[:] prune below
+    # (nested-project-root stop + standard-dir skip) is a no-op under topdown=False.
+    for dirpath, dirnames, filenames in os.walk(proj, followlinks=False):
+        here = Path(dirpath)
+        # prune: hard-skip set, .git, the standard artifacts dirs, and nested project roots
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in discovery.WALK_SKIP_DIRS
+            and (here / d).resolve() not in standard_dirs
+            and not paths._has_project_markers(here / d)
+        ]
+        in_wardline_dir = here.name == ".wardline" and here.resolve() not in standard_dirs
+        for fname in filenames:
+            fpath = here / fname
+            managed = _is_managed_name(fname)  # timestamped: 2026...-findings.jsonl
+            bare = fname in _MANAGED_SUFFIXES and not managed  # unstamped: findings.jsonl
+            if not managed and not bare:
+                continue
+            rel = str(fpath.relative_to(proj))
+            # ONLY a timestamped (managed) file INSIDE a non-standard .wardline/ dir is
+            # auto-deletable; bare-managed, or managed outside .wardline/, is REVIEW.
+            if not (managed and in_wardline_dir):
+                review.append(rel)
+                continue
+            if not _artifacts._is_regular_file_no_follow(fpath):
+                continue  # symlink / non-regular -> skip
+            if not fix:
+                removed.append(rel)  # would-remove (no unlink)
+                continue
+            try:
+                safe = safe_project_path(proj, fpath, label=fname)
+            except WardlineError:
+                continue  # escaping entry -> skip, keep sweeping
+            try:
+                safe.unlink()
+            except OSError:
+                continue
+            removed.append(rel)
+            emptied_dirs.append(here)
+    if fix:
+        for d in emptied_dirs:
+            try:
+                if d.resolve() not in standard_dirs and not d.is_symlink():
+                    d.rmdir()  # os.rmdir only; ENOTEMPTY guards
+            except OSError:
+                pass
+    # ADVISORY status (must-fix from plan review): stray artifacts are cleanup items, not a
+    # health failure, so status stays "ok" and the sweep never flips machine_readable_doctor's
+    # all(check.ok) aggregation (which would fail `doctor --fix` / MCP doctor on success).
+    msg = f"removed {len(removed)}, review {len(review)}" if fix else f"{len(removed)} removable, review {len(review)}"
+    return DoctorCheck(
+        "stray_artifacts", "ok", fixed=bool(fix and removed), message=msg, removed=removed, review=review
+    )
+
+
+def _gitignore_present_entries(text: str) -> set[str]:
+    out: set[str] = set()
+    for raw in text.splitlines():  # handles \n, \r\n, \r
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith("!"):
+            continue
+        out.add(line.rstrip("/"))  # trailing-slash tolerant
+    return out
+
+
+def _check_gitignore(proj: Path, *, fix: bool) -> DoctorCheck:
+    gitignore = proj / ".gitignore"
+    # Always protect BOTH the configured artifacts dir AND the default .wardline/:
+    # a subdir scan may write to .wardline/ even when the project root weft.toml
+    # uses a custom dir, so both locations need gitignore coverage.
+    dir_entries: set[str] = {
+        _artifacts_dir_relname(proj) + "/",
+        paths.DEFAULT_ARTIFACT_DIR + "/",
+    }
+    wanted = sorted(dir_entries) + ["findings.jsonl"]
+    existing = safe_read_text_if_regular(proj, gitignore, label=".gitignore") or ""
+    present = _gitignore_present_entries(existing)
+    missing = [w for w in wanted if w.rstrip("/") not in present]
+    if not missing:
+        return DoctorCheck("gitignore", "ok", message="present")
+    if not fix:
+        # ADVISORY: a missing ignore line must NOT make .ok False — that would flip
+        # machine_readable_doctor's all(check.ok) and fail `doctor --fix` / MCP doctor.
+        # Status stays "ok"; the gap is surfaced in the message.
+        return DoctorCheck("gitignore", "ok", message="missing ignore lines: " + ", ".join(missing) + " (run --repair)")
+    block = "\n".join([_GITIGNORE_HEADER, *missing]) + "\n"
+    if existing and not existing.endswith("\n"):
+        block = "\n" + block  # don't concatenate the header onto a no-newline last line
+    try:
+        safe_write_text(proj, gitignore, existing + block, label=".gitignore")
+    except WardlineError:
+        # A symlinked/escaping .gitignore is an untrusted-repo surface (spec §8). Report a
+        # single check error rather than letting the raise abort the whole doctor run.
+        return DoctorCheck("gitignore", "error", message="refused to write through a symlinked .gitignore")
+    return DoctorCheck("gitignore", "ok", fixed=True, message="added " + ", ".join(missing))
 
 
 def _has_instruction_block(path: Path) -> bool:
@@ -226,20 +371,29 @@ def _valid_http_url(url: str) -> bool:
     return parsed.scheme.lower() in {"http", "https"} and bool(parsed.netloc)
 
 
-def _check_url(root: Path, key: str, *, fixed: bool, effective_url: str | None = None) -> DoctorCheck:
+def _check_url(
+    root: Path,
+    key: str,
+    *,
+    fixed: bool,
+    effective_url: str | None = None,
+    effective_url_source: str | None = None,
+) -> DoctorCheck:
     # Doctor must vouch for the EFFECTIVE config of the process answering it
     # (dogfood-4 B8: it said "not configured" while the same server was launched
     # with --loomweave-url/--filigree-url and using them successfully). Precedence
-    # mirrors runtime resolution: the launch flag the caller threads in, then the
-    # env var. Each verdict names its provenance so two surfaces can never
-    # silently disagree about WHICH config they describe. Live local discovery
-    # (.weft/<sibling>/ephemeral.port) is dynamic and not a doctor concern.
+    # mirrors runtime resolution: a caller-threaded effective URL, then the env
+    # var. Each verdict names provenance so two surfaces can never silently
+    # disagree about WHICH config they describe. When the effective URL was
+    # resolved before the server was constructed, the caller must pass its source
+    # too so a published-port URL is not mislabeled as a launch flag.
     env_key = "WARDLINE_LOOMWEAVE_URL" if key == "loomweave" else "WARDLINE_FILIGREE_URL"
     check_id = f"{key}.url"
     if effective_url:
+        source = effective_url_source or f"--{key}-url launch flag"
         if _valid_http_url(effective_url):
-            return DoctorCheck(check_id, "ok", fixed=fixed, message=f"from --{key}-url launch flag")
-        return DoctorCheck(check_id, "error", fixed=False, message=f"invalid URL (launch flag): {effective_url!r}")
+            return DoctorCheck(check_id, "ok", fixed=fixed, message=f"from {source}")
+        return DoctorCheck(check_id, "error", fixed=False, message=f"invalid URL ({source}): {effective_url!r}")
     url = os.environ.get(env_key)
     if not url:
         return DoctorCheck(check_id, "ok", fixed=fixed, message="not configured (no launch flag, no env)")
@@ -251,7 +405,7 @@ def _check_url(root: Path, key: str, *, fixed: bool, effective_url: str | None =
 def _check_decorator_grammar() -> DoctorCheck:
     try:
         from wardline.core.registry import REGISTRY
-        from wardline.scanner.grammar import BUILTIN_BOUNDARY_TYPES
+        from wardline.scanner.boundary_types import BUILTIN_BOUNDARY_TYPES
     except Exception as exc:
         return DoctorCheck("decorator_grammar", "error", message=f"cannot load grammar: {exc}")
 
@@ -272,6 +426,34 @@ def _check_scan_output_path(root: Path) -> DoctorCheck:
     if not os.access(root, os.W_OK):
         return DoctorCheck("scan.output_path", "error", message=f"{root} is not writable")
     return DoctorCheck("scan.output_path", "ok")
+
+
+def _check_repo_binding(root: Path) -> tuple[DoctorCheck, dict[str, Any]]:
+    """READ-ONLY repo-binding probe: can THIS build read its baseline store at
+    ``root``, at a schema it serves? The wardline analog of the 2026-06-26
+    stale-binary incident — a server that starts cleanly but can't read its
+    repo-scoped store, so its findings silently go dark.
+
+    Fork-1 status split (honors wardline's not-noisy anti-goal): a PRESENT-but-
+    UNREADABLE store (version mismatch / malformed — the incident) is ``error`` and
+    flips doctor.ok; an ABSENT store (opt-in feature not set up) stays ``ok`` so it
+    never nags a baseline-less repo. The block reports ONLY resolved_root + store
+    facts (no secrets/peer tokens); the on-disk version of an unreadable store rides
+    in the check message even though ``store.schema_version`` reports null."""
+    status = inspect_baseline_store(root)
+    block: dict[str, Any] = {
+        "resolved_root": str(root),
+        "store": {
+            "present": status.present,
+            "readable": status.readable,
+            "schema_version": status.schema_version,
+            "baseline_finding_count": status.baseline_finding_count,
+        },
+        "binding_ok": status.binding_ok,
+    }
+    check_status = "error" if (status.present and not status.readable) else "ok"
+    check = DoctorCheck("doctor.repo_binding", check_status, message=status.message)
+    return check, block
 
 
 def _check_auth_token(root: Path) -> DoctorCheck:
@@ -329,10 +511,10 @@ def _rewrite_env_token(env_path: Path, value: str) -> None:
 _FILIGREE_URL_ENV = "WARDLINE_FILIGREE_URL"
 
 
-def _mcp_filigree_url(root: Path) -> str | None:
-    """The ``--filigree-url`` value from the wardline server entry in ``.mcp.json``,
-    or None. This is the URL the agent's MCP server actually emits to, and the only
-    place it is recorded in the common (MCP) setup."""
+def _mcp_wardline_arg(root: Path, flag: str) -> str | None:
+    """The value of *flag* (``--filigree-url`` / ``--loomweave-url``) on the wardline
+    server entry in ``.mcp.json``, or None. This is the only place a sibling emit target
+    is recorded in the common (MCP) setup — the URL the agent's MCP server emits to."""
     path = root / ".mcp.json"
     if not path.is_file():
         return None
@@ -344,33 +526,98 @@ def _mcp_filigree_url(root: Path) -> str | None:
         args = raw["mcpServers"]["wardline"]["args"]
         if not isinstance(args, list):
             return None
-        idx = args.index("--filigree-url")
+        idx = args.index(flag)
         value = args[idx + 1]
     except (KeyError, TypeError, ValueError, IndexError):
         return None
     return value if isinstance(value, str) else None
 
 
-def _resolve_probe_url(root: Path, flag: str | None) -> str | None:
-    """Probe-URL precedence: flag > WARDLINE_FILIGREE_URL env > .mcp.json wardline
-    --filigree-url arg > Filigree's published port. None when nothing resolves.
+def _mcp_filigree_url(root: Path) -> str | None:
+    return _mcp_wardline_arg(root, "--filigree-url")
 
-    This mirrors the actual emit path (:func:`core.config.resolve_filigree_url`)
-    exactly: a scan auto-discovers a live Filigree daemon from its published
-    ``ephemeral.port`` (or the server-mode registry), so a project with a running
-    Filigree but no pinned ``--filigree-url`` (the common ethereal/per-project case)
-    *does* emit — and *does* need a valid token. The published-port rung is therefore
-    included so doctor verifies the credential the scan will really use rather than
-    reporting "nothing to verify" and leaving a 401 to surface only at emit time. The
-    rung is read-only and the token is sent only to loopback (the ``_is_loopback``
-    guard in :func:`_check_filigree_auth`), and a published port implies a daemon that
-    bound it, so this still does no speculative network."""
+
+def _mcp_loomweave_url(root: Path) -> str | None:
+    return _mcp_wardline_arg(root, "--loomweave-url")
+
+
+@dataclass(frozen=True, slots=True)
+class _ProbeTarget:
+    url: str
+    source: str
+    token_probe_allowed: bool = True
+
+
+def _resolve_probe_target(root: Path, flag: str | None) -> _ProbeTarget | None:
+    """Resolve the Filigree auth-probe target while preserving URL provenance."""
     if flag:
-        return flag
+        return _ProbeTarget(flag, "flag")
     env = os.environ.get(_FILIGREE_URL_ENV)
     if env:
-        return env
-    return _mcp_filigree_url(root) or _filigree_published_url(root)
+        return _ProbeTarget(env, "env")
+    mcp = _mcp_filigree_url(root)
+    if mcp:
+        return _ProbeTarget(mcp, "mcp")
+    scoped = filigree_server_scoped_url(root)
+    if scoped is not None:
+        return _ProbeTarget(scoped, "server-registry")
+    published = _filigree_published_url(root)
+    if published is not None:
+        return _ProbeTarget(published, "project-published-port", token_probe_allowed=False)
+    return None
+
+
+def _resolve_effective_probe_target(
+    root: Path,
+    effective_url: str | None,
+    effective_url_source: str | None,
+) -> _ProbeTarget | None:
+    """Resolve an already-effective Filigree URL without erasing its provenance."""
+    if effective_url is None:
+        return _resolve_probe_target(root, None)
+    if effective_url_source == "--filigree-url launch flag":
+        return _ProbeTarget(effective_url, "flag")
+    if effective_url_source == f"env {_FILIGREE_URL_ENV}":
+        return _ProbeTarget(effective_url, "env")
+    if effective_url_source == "Filigree server registry":
+        return _ProbeTarget(effective_url, "server-registry")
+    if (
+        effective_url_source
+        and effective_url_source.startswith("published ")
+        and effective_url_source.endswith("filigree/ephemeral.port")
+    ):
+        return _ProbeTarget(effective_url, "project-published-port", token_probe_allowed=False)
+    return _resolve_probe_target(root, effective_url)
+
+
+def _resolve_probe_url(root: Path, flag: str | None) -> str | None:
+    """Probe-URL precedence: flag > WARDLINE_FILIGREE_URL env > .mcp.json wardline
+    --filigree-url arg > Filigree's server registry. None when nothing safe resolves.
+
+    Compatibility wrapper for callers that only need the URL. The auth-probe path
+    uses :func:`_resolve_probe_target` so it can distinguish operator-pinned targets
+    from repository-owned ``ephemeral.port`` discovery before sending a bearer."""
+    target = _resolve_probe_target(root, flag)
+    if target is None or not target.token_probe_allowed:
+        return None
+    return target.url
+
+
+def _filigree_auth_probe_would_network(
+    root: Path,
+    effective_url: str | None,
+    effective_url_source: str | None = None,
+) -> bool:
+    target = _resolve_effective_probe_target(root, effective_url, effective_url_source)
+    return bool(target and target.token_probe_allowed and _is_loopback(target.url))
+
+
+def _stale_sibling_port_probe_would_network(root: Path) -> bool:
+    for sibling in _DIALED_SIBLINGS:
+        for base in (sibling_state_dir(root, sibling), legacy_sibling_dir(root, sibling)):
+            if _read_port_file(root, base / "ephemeral.port") is not None:
+                return True
+    return False
 
 
 def _is_loopback(url: str) -> bool:
@@ -436,64 +683,33 @@ def _repair_filigree_auth(root: Path, url: str, transport: Transport) -> DoctorC
     )
 
 
-def _same_target(a: str, b: str) -> bool:
-    """True when two URLs name the same write target up to host spelling — identical
-    port and path. A bad literal reads as non-matching rather than crashing the check."""
-    try:
-        pa, pb = urlsplit(a), urlsplit(b)
-        return (pa.port, pa.path) == (pb.port, pb.path)
-    except ValueError:
-        return False
-
-
-def _live_published_url_behind_stale_pin(
-    root: Path, probed_url: str, transport: Transport, token: str | None
-) -> str | None:
-    """When the probed (pinned) Filigree URL is unreachable, return a DIFFERENT
-    published-port URL that IS reachable — the signature of a stale ``.mcp.json``
-    ``--filigree-url`` pin shadowing a daemon that rotated to a new port (the common
-    legacy ``.filigree/ephemeral.port`` rung outliving a rotation). ``None`` when there
-    is no pin, no live published target, or the published target names the same port (a
-    genuinely-absent daemon — left as the soft "not reachable" result)."""
-    if _mcp_filigree_url(root) is None:
-        return None  # no pin: the probed URL already IS the published one
-    published = _filigree_published_url(root)
-    if published is None or _same_target(probed_url, published) or not _is_loopback(published):
-        return None
-    probe = FiligreeEmitter(published, transport=transport, token=token).verify_token()
-    return published if probe.reachable else None
-
-
 def _check_filigree_auth(
     root: Path,
     *,
     repair: bool,
     filigree_url: str | None = None,
     transport: Transport | None = None,
+    probe_target: _ProbeTarget | None = None,
 ) -> DoctorCheck:
     """Verify the token wardline would emit is accepted by the configured Filigree
     daemon. Read-only probe; under *repair*, recover the accepted token from local
     mints and pin it in .env. The probe targets only loopback origins."""
     probe_transport = transport if transport is not None else UrllibTransport(timeout=2.0)
-    url = _resolve_probe_url(root, filigree_url)
-    if url is None:
+    target = probe_target or _resolve_probe_target(root, filigree_url)
+    if target is None:
         return DoctorCheck("filigree.auth", "ok", message="filigree not configured; nothing to verify")
+    url = target.url
     if not _is_loopback(url):
         return DoctorCheck("filigree.auth", "ok", message="non-loopback filigree; token not probed")
+    if not target.token_probe_allowed:
+        return DoctorCheck(
+            "filigree.auth",
+            "ok",
+            message="filigree resolved from project published port; token not probed",
+        )
     token = load_filigree_token(root)  # may be None — probe anyway (the daemon may have auth off)
     probe = FiligreeEmitter(url, transport=probe_transport, token=token).verify_token()
     if not probe.reachable:
-        live = _live_published_url_behind_stale_pin(root, url, probe_transport, token)
-        if live is not None:
-            return DoctorCheck(
-                "filigree.auth",
-                "error",
-                message=(
-                    f"configured --filigree-url ({url}) is unreachable, but Filigree is live at "
-                    f"{live} (published port); run `wardline doctor --repair` to drop the stale pin "
-                    "so discovery follows the live port"
-                ),
-            )
         return DoctorCheck("filigree.auth", "ok", message="filigree daemon not reachable; token not verified")
     if probe.accepted:
         return DoctorCheck("filigree.auth", "ok")
@@ -515,17 +731,230 @@ def _check_filigree_auth(
     )
 
 
+# Siblings a `wardline scan` DIALS during emission (filigree weft scan-results POST,
+# loomweave taint-fact write). Each origin is resolved live from
+# .weft/<sibling>/ephemeral.port; we clear ONLY these two — never another tool's file.
+_DIALED_SIBLINGS = ("filigree", "loomweave")
+
+# Probe each advertised port at the SAME host the scan dials, so 'reachable per doctor'
+# == 'reachable per scan' and we NEVER delete a live server's port file. filigree
+# publishes a ``localhost`` origin (``core/config`` self-heals over IPv4/IPv6 — a
+# filigree bound to ``::1`` only is reachable there, so a ``127.0.0.1`` probe would
+# wrongly call it dead and clear a live advertisement); loomweave publishes
+# ``127.0.0.1``. ``localhost`` is a safe superset regardless — ``create_connection``
+# walks every getaddrinfo result, so it still reaches a ``127.0.0.1``-only server.
+_SIBLING_PROBE_HOST = {"filigree": "localhost", "loomweave": "127.0.0.1"}
+
+# Short reachability deadline for the stale-port probe. Deliberately NOT the federation
+# clients' 30s `urlopen` default: doctor must answer fast, and the whole point is to
+# catch the port that WOULD make a scan hang. A dead port refuses instantly; a wedged
+# one (accepts TCP, never replies) is declared stale after this deadline, not after 30s.
+_STALE_PORT_PROBE_TIMEOUT = 2.0
+
+
+def _port_origin_reachable(url: str, timeout: float) -> bool:
+    """True iff *url* yields ANY HTTP response within *timeout* — a live server is
+    listening. A 4xx/5xx still proves liveness (``WeftHttp.fetch`` returns an
+    ``HttpResult``). A transport failure — connection refused / DNS / read timeout (a
+    server that accepts the TCP connection but never answers) — raises ``URLError`` /
+    ``OSError`` and reads as not reachable: the advertised instance is gone or wedged."""
+    try:
+        WeftHttp(timeout=timeout).fetch("GET", url)
+    except (urllib.error.URLError, OSError):
+        return False
+    return True
+
+
+def _read_port_file(root: Path, port_file: Path) -> int | None:
+    """The TCP port published in *port_file*, or None if absent / non-regular (a
+    symlink is never followed) / not a valid 1..65535 ASCII integer. Mirrors
+    ``core/config._read_published_port``'s parse discipline (ascii-only read, isdigit
+    gate, ``int()`` over-cap guard) so detection and the live dial agree on what counts."""
+    text = safe_read_text_if_regular(root, port_file, label="ephemeral.port", encoding="ascii")
+    if text is None:
+        return None
+    text = text.strip()
+    if not text.isdigit():
+        return None
+    try:
+        port = int(text)
+    except ValueError:  # all-digit payload over CPython's int() cap — fail-soft
+        return None
+    return port if 1 <= port <= 65535 else None
+
+
+def _check_stale_sibling_ports(
+    root: Path,
+    *,
+    fix: bool,
+    probe: Callable[[str], bool] | None = None,
+) -> DoctorCheck:
+    """Detect — and under *fix*, clear — stale ``.weft/<sibling>/ephemeral.port`` files
+    for the siblings a scan dials (filigree, loomweave).
+
+    A sibling's ``ephemeral.port`` advertises 'an instance is listening here NOW'. When
+    the owning ``serve`` process has exited or wedged, the file lingers and every
+    ``wardline scan`` dials a dead/hung origin — stalling the agent gate up to the 30s
+    federation ``urlopen`` timeout per round-trip on an emission that is purely advisory
+    (the reported hang). A short reachability probe classifies each advertised port:
+    unreachable (connection refused OR no HTTP reply within the deadline) ⇒ stale, and
+    ``--repair`` deletes the file so ``resolve_*_url`` falls back to 'no sibling' and the
+    scan stops dialing it. A live server (any HTTP status) is never touched.
+
+    ADVISORY (like stray artifacts): a stale port file is a hygiene item, not a health
+    failure, so status stays 'ok' and never flips the aggregate doctor verdict. The
+    delete is regular-file / no-follow confined: a symlinked ``ephemeral.port`` is read
+    as None (regular-only) and never followed or deleted."""
+    reach = probe if probe is not None else (lambda url: _port_origin_reachable(url, _STALE_PORT_PROBE_TIMEOUT))
+    stale: list[str] = []
+    removed: list[str] = []
+    for sibling in _DIALED_SIBLINGS:
+        host = _SIBLING_PROBE_HOST.get(sibling, "localhost")
+        # Prefer the consolidated .weft/<sibling>/ location; tolerate the legacy
+        # .<sibling>/ dot-dir, mirroring core/config._read_published_port_with_source.
+        for base in (sibling_state_dir(root, sibling), legacy_sibling_dir(root, sibling)):
+            port_file = base / "ephemeral.port"
+            port = _read_port_file(root, port_file)
+            if port is None:
+                continue
+            if reach(f"http://{host}:{port}/"):
+                continue  # a live server answers here — not stale, never touched
+            try:
+                rel = str(port_file.relative_to(root))
+            except ValueError:
+                rel = str(port_file)
+            stale.append(f"{sibling}:{port}")
+            if not fix:
+                removed.append(rel)  # would-remove (no unlink)
+                continue
+            if not _artifacts._is_regular_file_no_follow(port_file):
+                continue  # symlink / non-regular -> skip (defends the read->unlink TOCTOU)
+            try:
+                safe = safe_project_path(root, port_file, label="ephemeral.port")
+            except WardlineError:
+                continue  # escaping entry -> skip
+            try:
+                safe.unlink()
+            except OSError:
+                continue
+            removed.append(rel)
+    if fix:
+        msg = f"cleared {len(removed)} stale ({', '.join(stale)})" if stale else "no stale sibling ports"
+    else:
+        msg = f"{len(stale)} stale: {', '.join(stale)} (run --repair to clear)" if stale else "no stale sibling ports"
+    return DoctorCheck("stale_sibling_ports", "ok", fixed=bool(fix and removed), message=msg, removed=removed)
+
+
+# A tiny source->sink flow the taint engine MUST fire on: a curated external source
+# (the Flask request multidict) reaching a command sink, INSIDE a declared trust
+# boundary. wardline is annotation-driven, so the @trusted marker is load-bearing — it
+# is what gives the gate something to enforce; without it the analyzer is inert by
+# design (the very thing Part A surfaces). Analyzed STATICALLY (never executed), so
+# neither flask nor wardline.decorators need be importable at scan time.
+_ENGINE_SELFTEST_SOURCE = """\
+from wardline.decorators import trusted
+import os
+import flask
+
+
+@trusted
+def _wardline_engine_selftest() -> None:
+    os.system(flask.request.args.get("cmd"))
+"""
+
+
+def _run_engine_selftest() -> list[Any]:
+    """Analyze the built-in self-test fixture in a throwaway temp dir and return its
+    findings. The fixture lives OUTSIDE the source tree (a tempdir) so it can never be
+    swept into wardline's own corpus scan / golden."""
+    import tempfile
+
+    from wardline.core.config import WardlineConfig
+    from wardline.scanner.analyzer import WardlineAnalyzer
+
+    with tempfile.TemporaryDirectory(prefix="wardline-selftest-") as td:
+        d = Path(td)
+        fixture = d / "_wardline_engine_selftest.py"
+        fixture.write_text(_ENGINE_SELFTEST_SOURCE, encoding="utf-8")
+        return list(WardlineAnalyzer().analyze([fixture], WardlineConfig(), root=d))
+
+
+def _check_engine_selftest() -> DoctorCheck:
+    """Engine self-test: run the taint analyzer on a known source->sink fixture and
+    assert the expected ERROR fires. Proves the analysis pipeline is wired and FIRING in
+    this install (a corrupt grammar/rule registry, a broken parse gate, or a regressed
+    propagation path would make it silent).
+
+    Deliberately scoped to the ENGINE, NOT the user's target: a passing self-test does
+    NOT mean the user's scans enforce — an annotation-free codebase is still inert by
+    design. Part A's per-scan resolution posture carries that separate signal."""
+    from wardline.core.finding import Kind
+
+    try:
+        findings = _run_engine_selftest()
+    except Exception as exc:  # noqa: BLE001 — any engine failure IS a self-test failure
+        return DoctorCheck("engine.selftest", "error", message=f"engine self-test could not run: {exc}")
+    if any(getattr(f, "kind", None) is Kind.DEFECT and f.rule_id == "PY-WL-108" for f in findings):
+        return DoctorCheck("engine.selftest", "ok", message="taint analysis fires correctly")
+    return DoctorCheck(
+        "engine.selftest",
+        "error",
+        message="engine self-test FAILED: a known untrusted->os.system flow did not fire PY-WL-108",
+    )
+
+
+_LOOMWEAVE_URL_ENV = "WARDLINE_LOOMWEAVE_URL"
+
+
+def _loomweave_configured(root: Path, effective_url: str | None) -> bool:
+    """True when the operator has EXPLICITLY pointed wardline at a Loomweave taint store:
+    the answering process's ``--loomweave-url`` launch flag, the ``WARDLINE_LOOMWEAVE_URL``
+    env var, or a ``--loomweave-url`` arg on the wardline server entry in ``.mcp.json``.
+
+    Ambient published-port auto-discovery is deliberately NOT counted: it is not an
+    operator intent, and a base install that dials a sibling it merely *found* degrades
+    fail-soft (the scan's gate stays intact). Flagging it would nag every base install
+    that happens to run alongside a Loomweave sibling."""
+    return bool(effective_url) or bool(os.environ.get(_LOOMWEAVE_URL_ENV)) or _mcp_loomweave_url(root) is not None
+
+
+def _check_loomweave_dep(root: Path, *, effective_url: str | None = None) -> DoctorCheck:
+    """Flag a configured-but-uninstalled Loomweave integration: a Loomweave taint-store
+    URL is wired but the ``[loomweave]`` extra (``blake3``) is missing, so every
+    ``wardline scan`` taint-fact write silently no-ops. The write is fail-soft (the gate
+    is unaffected), which is exactly why this is otherwise invisible — doctor is the
+    operator-visibility compensator."""
+    if not _loomweave_configured(root, effective_url):
+        return DoctorCheck("loomweave.dep", "ok", message="loomweave not configured")
+    try:
+        from wardline.loomweave import require_blake3
+
+        require_blake3()
+    except (LoomweaveError, ImportError):
+        return DoctorCheck(
+            "loomweave.dep",
+            "error",
+            message="loomweave is configured but its [loomweave] extra is not installed; "
+            "taint-store writes silently no-op — install: pip install 'wardline[loomweave]'",
+        )
+    return DoctorCheck("loomweave.dep", "ok", message="loomweave extra installed")
+
+
 def machine_readable_doctor(
     root: Path,
     *,
     fix: bool = False,
     filigree_url: str | None = None,
+    filigree_url_source: str | None = None,
     loomweave_url: str | None = None,
+    loomweave_url_source: str | None = None,
     transport: Transport | None = None,
+    port_probe: Callable[[str], bool] | None = None,
 ) -> dict[str, Any]:
     """Return the shared machine-readable doctor shape, optionally repairing install bindings."""
     before = {check.name: check for check in check_install(root)}
     config_missing_before = not weft_config_path(root).exists()
+    proj = paths.project_root_for(root)  # snapshot BEFORE repair_install plants weft.toml at literal root
     bindings_fixed = False
     if fix:
         repair_install(root)
@@ -535,24 +964,48 @@ def machine_readable_doctor(
     # project scope, so the post-repair value is the URL the agent will actually emit
     # to — and the one whose auth the filigree-auth check should probe. Without fix,
     # repair is a no-op and this is just the recorded emit target.
-    probe_url = _resolve_probe_url(root, filigree_url)
+    probe_target = _resolve_effective_probe_target(root, filigree_url, filigree_url_source)
 
     checks: list[DoctorCheck] = []
     checks.append(_check_config(root, fixed=fix and config_missing_before and weft_config_path(root).exists()))
     checks.append(_check_mcp_registration(root, before=before))
     checks.append(_check_marker_package())
-    checks.append(_check_url(root, "loomweave", fixed=bindings_fixed, effective_url=loomweave_url))
-    checks.append(_check_url(root, "filigree", fixed=bindings_fixed, effective_url=filigree_url))
+    checks.append(_check_engine_selftest())
+    checks.append(
+        _check_url(
+            root,
+            "loomweave",
+            fixed=bindings_fixed,
+            effective_url=loomweave_url,
+            effective_url_source=loomweave_url_source,
+        )
+    )
+    checks.append(_check_loomweave_dep(root, effective_url=loomweave_url))
+    checks.append(
+        _check_url(
+            root,
+            "filigree",
+            fixed=bindings_fixed,
+            effective_url=filigree_url,
+            effective_url_source=filigree_url_source,
+        )
+    )
     checks.append(_check_decorator_grammar())
     checks.append(_check_scan_output_path(root))
     checks.append(_check_auth_token(root))
-    checks.append(_check_filigree_auth(root, repair=fix, filigree_url=probe_url, transport=transport))
+    checks.append(_check_filigree_auth(root, repair=fix, probe_target=probe_target, transport=transport))
+    checks.append(_check_gitignore(proj, fix=fix))
+    checks.append(_sweep_stray_artifacts(proj, fix=fix))
+    checks.append(_check_stale_sibling_ports(proj, fix=fix, probe=port_probe))
+    repo_binding_check, repo_binding = _check_repo_binding(root)
+    checks.append(repo_binding_check)
 
     next_actions = [f"{check.id}: {check.message}" for check in checks if not check.ok and check.message]
     return {
         "ok": all(check.ok for check in checks),
         "checks": [check.to_dict() for check in checks],
         "next_actions": next_actions,
+        "repo_binding": repo_binding,
     }
 
 

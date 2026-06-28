@@ -115,13 +115,13 @@ def test_corpus_fingerprints_are_collision_free(name: str) -> None:
     # only stay distinct via the per-call source discriminator, so this gate is
     # non-vacuous for every call-site-anchored rule:
     #   - PY-WL-118 ``chained_queries``: a CHAINED ``execute(a).execute(b)`` whose two
-    #     calls share a start column — distinct ONLY via the full span end-column, so
-    #     this line guards specifically against a span -> start-column-only regression.
+    #     calls share a start column — distinct ONLY via the full span, so this line
+    #     guards specifically against a span -> start-column-only regression.
     #   - PY-WL-106 ``double_deserialize`` and PY-WL-105/PY-WL-120 ``fan_out_stored``:
     #     sibling calls on one line — guard against a discriminator -> None regression.
-    # All four call-site rules share the identical ``@{col_offset}:{end_col_offset}``
-    # pattern, so the chained PY-WL-118 line is representative of the span requirement
-    # for the family.
+    # The call-site rules share the identical entity-relative
+    # ``start:col:end:end_col`` span pattern, so the chained PY-WL-118 line is
+    # representative of the span requirement for the family.
     findings = _capture(name)["findings"]
     fps = [f["fingerprint"] for f in findings]
     dupes = {fp for fp in fps if fps.count(fp) > 1}

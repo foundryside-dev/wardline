@@ -32,6 +32,35 @@ def test_rust_only_skip_never_fails_even_when_required(monkeypatch: pytest.Monke
     assert should_fail_live_oracle_skip(["rust_e2e"], "skipped") is False
 
 
+def test_sei_and_worklist_drift_are_live_oracle_markers() -> None:
+    # crit-3b: the SEI-oracle (wardline-79ba05f464) and warpline worklist
+    # (wardline-c0563eee74) SOURCE-byte drift rechecks are run armed in the weekly
+    # `source-drift` CI job (which checks out the loomweave + warpline sources), so a
+    # missing-source skip must FAIL closed there instead of passing clean. That is only
+    # honest if these drift markers are in the fail-closed set.
+    assert "sei_drift" in LIVE_ORACLE_MARKERS
+    assert "worklist_drift" in LIVE_ORACLE_MARKERS
+
+
+def test_source_drift_markers_fail_closed_only_when_armed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(LIVE_ORACLE_REQUIRED_ENV, "1")
+    assert should_fail_live_oracle_skip(["sei_drift"], "skipped") is True
+    assert should_fail_live_oracle_skip(["worklist_drift"], "skipped") is True
+
+    monkeypatch.delenv(LIVE_ORACLE_REQUIRED_ENV, raising=False)
+    assert should_fail_live_oracle_skip(["sei_drift"], "skipped") is False
+    assert should_fail_live_oracle_skip(["worklist_drift"], "skipped") is False
+
+
+def test_unrun_drift_markers_are_not_live_oracle_markers() -> None:
+    # These _drift seams are run by NO armed CI job, so they stay the skip-clean
+    # release-gate tier (their default-suite guard is the Layer-1 byte-pin). Promoting one
+    # to LIVE_ORACLE_MARKERS without an armed job that runs it would be a false fail-closed
+    # claim. Guards against an accidental copy-paste promotion.
+    for name in ("loomweave_drift", "reason_vocab_drift", "filigree_token_drift", "legis_scan_artifact_drift"):
+        assert name not in LIVE_ORACLE_MARKERS
+
+
 @pytest.mark.warpline_e2e
 def test_warpline_marker_is_registered() -> None:
     # If `warpline_e2e` were unregistered, collecting this test would raise a

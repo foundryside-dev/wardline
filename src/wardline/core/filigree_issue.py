@@ -419,9 +419,7 @@ def attach_loomweave_identity_for_qualname(
             entity_kind=f"{plugin}:function",
         )
 
-    legacy = _legacy_locator_binding(
-        loomweave_client, qualname, fallback_locator=binding.locator or locator, plugin=plugin
-    )
+    legacy = _legacy_locator_binding(loomweave_client, qualname, plugin=plugin)
     if legacy.entity_id and legacy.content_hash:
         return filer.attach_entity_association(
             issue_id=issue_id,
@@ -432,23 +430,19 @@ def attach_loomweave_identity_for_qualname(
     return legacy
 
 
-def _legacy_locator_binding(
-    loomweave_client: Any, qualname: str, *, fallback_locator: str, plugin: str = "python"
-) -> IdentityAttachResult:
-    entity_id: str | None = fallback_locator
+def _legacy_locator_binding(loomweave_client: Any, qualname: str, *, plugin: str = "python") -> IdentityAttachResult:
+    entity_id: str | None = None
     content_hash: str | None = None
     try:
         resolved = loomweave_client.resolve([qualname], plugin=plugin)
     except Exception as exc:
         return IdentityAttachResult.skipped(
             f"Loomweave legacy locator resolve failed: {exc}",
-            entity_id=entity_id,
             binding_kind="locator",
         )
     if resolved is None:
         return IdentityAttachResult.skipped(
             "Loomweave unavailable while resolving legacy locator",
-            entity_id=entity_id,
             binding_kind="locator",
         )
     resolved_map = getattr(resolved, "resolved", {})
@@ -456,6 +450,11 @@ def _legacy_locator_binding(
         resolved_value = resolved_map.get(qualname)
         if isinstance(resolved_value, str) and resolved_value:
             entity_id = resolved_value
+    if entity_id is None:
+        return IdentityAttachResult.skipped(
+            "Loomweave did not resolve legacy locator binding; association not attached",
+            binding_kind="locator",
+        )
 
     try:
         fact = loomweave_client.get_taint_fact(qualname)

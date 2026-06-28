@@ -220,6 +220,99 @@ def test_trust_suppressions_restores_old_gate_clearing(tmp_path: Path, writer) -
     assert gate_decision(result, Severity.ERROR).tripped is False
 
 
+def test_trust_suppressions_does_not_carry_baseline_to_different_redefinition(tmp_path: Path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    svc = proj / "svc.py"
+    svc.write_text(
+        textwrap.dedent(
+            """
+            from wardline.decorators import trust_boundary
+
+            @trust_boundary(to_level="ASSURED")
+            def validate(p):
+                x = p
+                return x
+            """
+        ),
+        encoding="utf-8",
+    )
+    first = run_scan(proj)
+    old = next(f for f in first.findings if f.rule_id == "PY-WL-102")
+    _write_baseline(proj, old.fingerprint)
+
+    svc.write_text(
+        textwrap.dedent(
+            """
+            from wardline.decorators import trust_boundary
+
+            @trust_boundary(to_level="ASSURED")
+            def validate(p):
+                if not p:
+                    raise ValueError
+                return p
+
+            @trust_boundary(to_level="ASSURED")
+            def validate(p):
+                x = p
+                y = x
+                return y
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_scan(proj, trust_suppressions=True)
+
+    current = next(f for f in result.findings if f.rule_id == "PY-WL-102")
+    assert current.qualname == old.qualname == "svc.validate"
+    assert current.fingerprint != old.fingerprint
+    assert current.suppressed is SuppressionState.ACTIVE
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
+def test_trust_suppressions_does_not_carry_baseline_across_reflective_name_change(tmp_path: Path) -> None:
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    svc = proj / "svc.py"
+    svc.write_text(
+        textwrap.dedent(
+            """
+            from wardline.decorators import trust_boundary
+
+            @trust_boundary(to_level="ASSURED")
+            def validate(payload):
+                return locals()["payload"]
+            """
+        ),
+        encoding="utf-8",
+    )
+    first = run_scan(proj)
+    old = next(f for f in first.findings if f.rule_id == "PY-WL-102")
+    _write_baseline(proj, old.fingerprint)
+
+    svc.write_text(
+        textwrap.dedent(
+            """
+            from wardline.decorators import trust_boundary
+
+            @trust_boundary(to_level="ASSURED")
+            def validate(p):
+                return locals()["payload"]
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_scan(proj, trust_suppressions=True)
+
+    current = next(f for f in result.findings if f.rule_id == "PY-WL-102")
+    assert current.qualname == old.qualname == "svc.validate"
+    assert current.fingerprint != old.fingerprint
+    assert current.suppressed is SuppressionState.ACTIVE
+    assert gate_decision(result, Severity.ERROR).tripped is True
+
+
 def test_gate_decision_reason_names_suppressed_population_on_default_trip(tmp_path: Path) -> None:
     # The dogfood #2 confusion: summary.active:0 + gate.tripped:true. The verdict must
     # SAY why — name the suppressed-but-gated count and the escape hatches — and name the
@@ -837,3 +930,21 @@ def test_run_scan_nested_src_root_has_empty_qualname_prefix(tmp_path: Path) -> N
     result = run_scan(src)
     fact = next(f for f in result.findings if f.rule_id == "WLN-ENGINE-NESTED-SCAN-ROOT")
     assert fact.properties["qualname_prefix"] == ""
+
+
+def test_nested_scan_root_message_drops_output_clause(tmp_path: Path) -> None:
+    # Post-artifact-anchor: the WLN-ENGINE-NESTED-SCAN-ROOT message must NOT claim
+    # "output defaults under the subdirectory" (now false — output anchors to the
+    # project root), but must still warn about the qualname and state-loading hazards.
+    proj = tmp_path / "proj"
+    (proj / ".weft" / "wardline").mkdir(parents=True)
+    sub = proj / "src" / "pkg"
+    sub.mkdir(parents=True)
+    (sub / "m.py").write_text("x = 1\n", encoding="utf-8")
+    result = run_scan(sub)
+    facts = [f for f in result.findings if f.rule_id == "WLN-ENGINE-NESTED-SCAN-ROOT"]
+    assert facts, "expected the nested-scan-root FACT"
+    msg = facts[0].message
+    assert "is a subdirectory of the weft project" in msg
+    assert "output defaults under the subdirectory" not in msg
+    assert "baseline/waivers/judged state is not loaded" in msg

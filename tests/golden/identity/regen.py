@@ -30,7 +30,13 @@ _INPUTS = {
 # 3->4: P3 value-rekey (wardline-8654423823) — line_start dropped from the hash +
 # move-stable entity-relative discriminators, so every PY-WL-*/RS-WL-* fingerprint
 # VALUE changes and META.fingerprint_scheme advances wlfp1->wlfp2.
-CORPUS_VERSION = 4
+# 4->5: singleton rule value-rekey (wardline-31540f8492) — singleton entity-level
+# findings fold a line-independent source-body discriminator into taint_path so old
+# same-qualname suppressions cannot apply to a different body or signature.
+# 5->6: call-site span value-rekey (wardline-a1bcb70c15) — multi-emit call-site
+# findings fold entity-relative end_lineno into taint_path so multiline chained calls
+# that share start line/column and end column cannot collide.
+CORPUS_VERSION = 6
 
 
 def main() -> None:

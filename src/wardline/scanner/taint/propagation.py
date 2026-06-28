@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from functools import reduce
 from typing import TYPE_CHECKING, Any, Literal
 
-from wardline.core.taints import TRUST_RANK
+from wardline.core.taints import _PROVENANCE_CLASH, TRUST_RANK, combine
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -135,8 +135,6 @@ def _compute_scc_round(
     phase2_floor: dict[str, TaintState],
 ) -> tuple[dict[str, TaintState], dict[str, str | None]]:
     """Compute one synchronous SCC refinement round from a stable snapshot."""
-    from wardline.core.taints import combine
-
     updates: dict[str, TaintState] = {}
     via_callee: dict[str, str | None] = {}
 
@@ -201,8 +199,6 @@ def propagate_callgraph_taints(
     list[tuple[str, str]],
     dict[frozenset[str], int],
 ]:
-    from wardline.core.taints import _PROVENANCE_CLASH
-
     clash_val = getattr(config, "provenance_clash", False) if config is not None else False
     token_clash = _PROVENANCE_CLASH.set(clash_val)
     try:
@@ -235,8 +231,6 @@ def _propagate_callgraph_taints_inner(
     dict[frozenset[str], int],
 ]:
     """Run SCC-based fixed-point propagation to refine L1 taints."""
-    from wardline.core.taints import combine
-
     scc_iteration_counts: dict[frozenset[str], int] = {}
 
     if not taint_map:

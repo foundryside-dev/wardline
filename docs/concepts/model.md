@@ -66,6 +66,7 @@ emit the canonical list:
 
 ```console
 $ wardline vocab
+schema: wardline.vocabulary/v1
 version: wardline-generic-2
 entries:
 - canonical_name: external_boundary

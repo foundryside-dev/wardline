@@ -7,9 +7,10 @@ help:  ## Show this help message
 install:  ## Install all extras + dev tooling
 	uv sync --all-extras --group dev
 
-lint:  ## Run linter + format check
+lint:  ## Run linter + format check + layering contracts
 	uv run ruff check src tests
 	uv run ruff format --check src tests
+	uv run lint-imports
 
 format:  ## Auto-format and fix lint
 	uv run ruff format src tests

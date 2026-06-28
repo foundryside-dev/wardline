@@ -10,7 +10,9 @@ reconstruction drift fails this test, not just a membership bug.
 from __future__ import annotations
 
 import hashlib
+import textwrap
 
+from wardline.core.config import WardlineConfig
 from wardline.core.finding import ENGINE_PATH, Finding, Kind, Location, Severity
 from wardline.core.rekey import (
     _POLICY_CONFIG_RULE_ID,
@@ -20,6 +22,7 @@ from wardline.core.rekey import (
     compute_old_new_fingerprints,
     is_join_population,
 )
+from wardline.scanner.analyzer import WardlineAnalyzer
 
 _POLICY_TAINT = "rules.enable:empty"
 
@@ -77,6 +80,42 @@ def test_engine_diagnostic_old_fp_is_identity() -> None:
     f = _engine_diagnostic_finding("d" * 64)
     [remap] = compute_old_new_fingerprints([f])
     assert remap.old_fp == remap.new_fp == "d" * 64
+
+
+def test_multiline_callsite_old_fp_fanout_is_orphaned(tmp_path) -> None:
+    src = (
+        "from wardline.decorators import external_boundary, trusted\n"
+        "@external_boundary\ndef read_raw(p):\n    return p\n"
+        + textwrap.dedent(
+            """
+            @trusted(level='ASSURED')
+            def f(p, conn):
+                a = read_raw(p)
+                b = read_raw(p)
+                return conn.cursor().execute(
+                    a
+                ).execute(
+                    b
+                )
+            """
+        )
+    )
+    path = tmp_path / "m.py"
+    path.write_text(src, encoding="utf-8")
+    findings = WardlineAnalyzer().analyze([path], WardlineConfig(), root=tmp_path)
+    sqli = [f for f in findings if f.rule_id == "PY-WL-118"]
+
+    assert len(sqli) == 2
+    assert len({f.fingerprint for f in sqli}) == 2
+    remaps = compute_old_new_fingerprints(sqli)
+    assert len({r.old_fp for r in remaps}) == 1
+
+    result = build_remap(remaps)
+
+    assert result.old_to_new == {}
+    assert len(result.collisions) == 1
+    assert result.collisions[0].old_fps == (remaps[0].old_fp,)
+    assert result.collisions[0].new_fps == tuple(sorted(f.fingerprint for f in sqli))
 
 
 def test_policy_config_baselined_verdict_carries_across_rekey() -> None:

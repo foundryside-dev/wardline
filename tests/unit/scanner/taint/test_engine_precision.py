@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pytest
 
+import wardline.scanner.taint.variable_level as variable_level
 from wardline.core.config import WardlineConfig
 from wardline.core.finding import Kind
 from wardline.core.taints import TaintState
@@ -63,11 +64,67 @@ def _vt(
     return compute_variable_taints(func, function_taint, taint_map or {}, alias_map=alias_map, param_meets=param_meets)
 
 
+def _func(src: str) -> ast.FunctionDef | ast.AsyncFunctionDef:
+    func = ast.parse(src).body[0]
+    assert isinstance(func, ast.FunctionDef | ast.AsyncFunctionDef)
+    return func
+
+
 def _defects(tmp_path: Path, src: str) -> list[tuple[str, int | None]]:
     p = tmp_path / "m.py"
     p.write_text(_HEADER + textwrap.dedent(src), encoding="utf-8")
     findings = WardlineAnalyzer().analyze([p], WardlineConfig(), root=tmp_path)
     return [(f.rule_id, f.location.line_start) for f in findings if f.kind is Kind.DEFECT]
+
+
+# ── L2 work budget bounds attacker-authored super-linear inputs ─────────────
+
+
+def test_l2_work_budget_bounds_per_statement_snapshots(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(variable_level, "L2_WORK_BUDGET", 8)
+    call_site_taints: dict[int, dict[str, TaintState]] = {}
+
+    with pytest.raises(variable_level.L2BudgetExceeded) as exc:
+        compute_variable_taints(
+            _func("def f(p):\n    v0 = read_raw(p)\n    v1 = read_raw(p)\n    v2 = read_raw(p)\n"),
+            T.INTEGRAL,
+            _RAW_TM,
+            call_site_taints=call_site_taints,
+        )
+
+    assert exc.value.operation == "statement_snapshot"
+    assert exc.value.attempted > exc.value.budget
+
+
+def test_l2_work_budget_bounds_loop_fixpoint_iterations(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(variable_level, "L2_WORK_BUDGET", 18)
+
+    with pytest.raises(variable_level.L2BudgetExceeded) as exc:
+        compute_variable_taints(
+            _func(
+                "def f(flag, raw):\n"
+                "    x2 = raw\n"
+                "    x1 = 'safe'\n"
+                "    x0 = 'safe'\n"
+                "    while flag:\n"
+                "        x0 = x1\n"
+                "        x1 = x2\n"
+            ),
+            T.INTEGRAL,
+            {},
+        )
+
+    assert exc.value.operation in {"loop_iteration", "loop_merge"}
+
+
+def test_l2_work_budget_bounds_branch_candidate_copies(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(variable_level, "L2_WORK_BUDGET", 30)
+    body = "\n".join(f"    if flag{i}:\n        cb = lambda v: sink{i}(v)" for i in range(8))
+
+    with pytest.raises(variable_level.L2BudgetExceeded) as exc:
+        compute_variable_taints(_func(f"def f(p):\n{body}\n    cb(p)\n"), T.INTEGRAL, {})
+
+    assert exc.value.operation in {"lambda_branch_copy", "lambda_branch_merge"}
 
 
 # ── (1) container-conversion builtins propagate argument taint ──────────────

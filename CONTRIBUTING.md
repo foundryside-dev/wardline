@@ -63,7 +63,7 @@ see `CLAUDE.md`).
 
 - **TDD.** Write the failing test first.
 - Keep PRs focused — one logical change per PR.
-- New behavior needs tests. New `wardline.yaml` keys need a `config_schema.py` update.
+- New behavior needs tests. New `[wardline]` keys in `weft.toml` need a `config_schema.py` update.
 - No back-compat shims for unreleased specs — make clean changes.
 - Wardline scans its own source as a CI gate; keep the tree finding-clean (or baselined).
 

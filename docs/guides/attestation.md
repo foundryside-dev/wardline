@@ -42,11 +42,11 @@ always wins, so CI injects the key as a secret env var without touching `.env`.
 
 ## The bundle shape
 
-A bundle is a JSON object with schema `"wardline-attest-1"`:
+A bundle is a JSON object with schema `"wardline-attest-2"`:
 
 ```json
 {
-  "schema": "wardline-attest-1",
+  "schema": "wardline-attest-2",
   "payload": {
     "wardline_version": "1.0.0",
     "attested_at": "2026-06-03",
@@ -58,6 +58,7 @@ A bundle is a JSON object with schema `"wardline-attest-1"`:
       {
         "qualname": "myapp.ingestion.parse_payload",
         "sei": "loomweave:eid:0123456789abcdef0123456789abcdef",
+        "content_hash": "blake3:c0ffee...",
         "verdict": "clean",
         "tier": "ASSURED"
       }
@@ -91,6 +92,7 @@ A bundle is a JSON object with schema `"wardline-attest-1"`:
 |---|---|---|
 | `qualname` | string | Fully-qualified function name of the trust boundary |
 | `sei` | string \| null | Loomweave SEI (stable, rename-resistant entity identifier) if resolved; `null` otherwise |
+| `content_hash` | string \| null | Entity-body span blake3 from the resolved Loomweave `EntityBinding` (identity-resolve granularity, same as Filigree's `content_hash_at_attach`); `null` when unresolved. **Entity-precise** — compare only against an entity-body hash for the same SEI, never a whole-file hash |
 | `verdict` | string | `"clean"` / `"defect"` / `"unknown"` — the engine's three-valued verdict for this boundary |
 | `tier` | string \| null | Declared trust tier (`"INTEGRAL"`, `"ASSURED"`, `"GUARDED"`, `"EXTERNAL_RAW"`) or `null` |
 
@@ -138,7 +140,7 @@ overrides the dirty-tree refusal. When no attest key is found, the tool returns 
 
 ```console
 $ wardline attest src/myapp
-{"schema": "wardline-attest-1", "payload": {...}, "signature": {...}}
+{"schema": "wardline-attest-2", "payload": {...}, "signature": {...}}
 ```
 
 Write to a file with `--out`:
@@ -165,7 +167,7 @@ Verification is two separable checks:
    true`. A mismatch may mean the tree moved on since the bundle was produced — not
    necessarily tamper. The `note` field in the result says so explicitly.
 
-The result object from both CLI and MCP `verify_attestation`:
+The result object from both CLI (`attest --verify`) and MCP (`verify_attestation`):
 
 ```json
 {
@@ -193,8 +195,10 @@ The result object from both CLI and MCP `verify_attestation`:
 The `bundle` argument is required (the parsed JSON object, not a path). `reproduce`
 defaults to `false`. The tool returns the result object above.
 
-CLI exit codes for `--verify`: `0` if `signature_valid`, `1` if not. The
-reproducibility result does not affect the exit code.
+CLI exit codes for `--verify`: `0` if `signature_valid` (and, when `--reproduce`
+is passed, also `reproduced`); `1` otherwise. So without `--reproduce` the
+reproducibility result does not affect the exit code, but with `--reproduce` a
+reproducibility mismatch yields exit `1` even when the signature is valid.
 
 ### CLI
 

@@ -250,7 +250,7 @@ are confined under the server root (the same guarantee as `scan`).
 
 ```console
 $ wardline assure src/myproject --format human
-Trust-surface coverage: 91.7% (11/12 boundaries reached a definite verdict)
+Trust-surface coverage: 91.7% (11/12 surface item(s) reached a definite verdict)
   proven:   9
   defect:   1
   unknown:  1  (1 engine-limited)

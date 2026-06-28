@@ -75,7 +75,7 @@ def test_build_round_trips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     result = runner.invoke(cli, ["attest", str(tmp_path)])
     assert result.exit_code == 0, result.output
     bundle = json.loads(result.output)
-    assert bundle["schema"] == "wardline-attest-1"
+    assert bundle["schema"] == "wardline-attest-2"
 
     key = load_attest_key(tmp_path)
     assert key is not None

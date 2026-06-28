@@ -57,6 +57,8 @@ _SERIALISATION_SINKS: frozenset[str] = frozenset(
         "yaml.load",
         "yaml.safe_load_all",
         "yaml.load_all",
+        "yaml.unsafe_load",
+        "yaml.full_load",
         "marshal.dumps",
         "marshal.dump",
         "marshal.loads",
@@ -153,6 +155,36 @@ _STORAGE_READ_METHODS: frozenset[str] = frozenset({"fetchone", "fetchall", "fetc
 # receiver" rule, which would over-fire on ``.strip()``/``.lower()``/in-place validators).
 _RECEIVER_MUTATING_METHODS: frozenset[str] = frozenset({"append", "add", "extend", "update", "insert"})
 
+
+@dataclass(frozen=True, slots=True)
+class _RequestMembers:
+    """The curated DATA members of a recognized web-request type. ``properties`` are raw
+    when READ as an attribute (``req.query_params``); ``methods`` are raw when CALLED
+    (``req.json()``). The split is precision, not coverage: a bare uncalled ``req.json``
+    is a bound coroutine-method object, not data, so it stays clean."""
+
+    properties: frozenset[str]
+    methods: frozenset[str]
+
+
+# Annotation-based external-data SOURCE seeding for framework request types (FastAPI /
+# Starlette). A function parameter typed with one of these FQNs is a request boundary;
+# curated members read off it are EXTERNAL_RAW (the typed-receiver + curated-member
+# model — NOT whole-param tainting, so ``req.app``/``req.state``/``req.url``/``req.scope``/
+# ``req.client`` stay clean). The match is on the RESOLVED type via the alias map, never
+# the parameter name. FastAPI's ``Request`` subclasses Starlette's (identical accessor
+# surface), so both keys share one member set; both are still needed because the alias
+# map records the import spelling actually used. Mechanism is general — a new framework is
+# one dict row; seeding stays scoped to these two FQNs deliberately (precision over recall).
+_STARLETTE_REQUEST_MEMBERS = _RequestMembers(
+    properties=frozenset({"query_params", "path_params", "headers", "cookies"}),
+    methods=frozenset({"json", "body", "form", "stream"}),
+)
+_REQUEST_SOURCE_TYPES: dict[str, _RequestMembers] = {
+    "fastapi.Request": _STARLETTE_REQUEST_MEMBERS,
+    "starlette.requests.Request": _STARLETTE_REQUEST_MEMBERS,
+}
+
 _CURRENT_ALIAS_MAP: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar(
     "_CURRENT_ALIAS_MAP", default=None
 )
@@ -215,6 +247,45 @@ _CURRENT_ACTIVE_LAMBDAS: contextvars.ContextVar[set[int] | None] = contextvars.C
 _CURRENT_MODULE_PREFIX: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "_CURRENT_MODULE_PREFIX", default=None
 )
+
+# Per-function L2 work ceiling. The counter is deliberately coarse but tied to
+# the attacker-amplifiable operations: statement snapshots, branch candidate
+# copies/merges, and loop fixpoint state work.
+L2_WORK_BUDGET = 50_000_000
+
+
+class L2BudgetExceeded(RuntimeError):
+    """Raised when one function's L2 taint walk exceeds the work budget."""
+
+    def __init__(self, *, budget: int, attempted: int, operation: str) -> None:
+        super().__init__(f"L2 work budget exceeded during {operation}: {attempted}>{budget}")
+        self.budget = budget
+        self.attempted = attempted
+        self.operation = operation
+
+
+@dataclass(slots=True)
+class _L2WorkBudget:
+    budget: int
+    used: int = 0
+
+
+_CURRENT_L2_WORK_BUDGET: contextvars.ContextVar[_L2WorkBudget | None] = contextvars.ContextVar(
+    "_CURRENT_L2_WORK_BUDGET", default=None
+)
+
+
+def _charge_l2_work(amount: int, operation: str) -> None:
+    if amount <= 0:
+        return
+    budget = _CURRENT_L2_WORK_BUDGET.get()
+    if budget is None or budget.budget <= 0:
+        return
+    attempted = budget.used + amount
+    if attempted > budget.budget:
+        raise L2BudgetExceeded(budget=budget.budget, attempted=attempted, operation=operation)
+    budget.used = attempted
+
 
 _CONTEXT_ENCODERS: frozenset[str] = frozenset(
     {
@@ -341,6 +412,7 @@ def analyze_function_variables(
     token_args = _CURRENT_CALL_SITE_ARG_TAINTS.set(call_site_arg_taints)
     token_module = _CURRENT_MODULE_PREFIX.set(context.module_prefix)
     try:
+        return_var_types: dict[str, list[str]] = {}
         variable_taints = compute_variable_taints(
             func_node,
             function_taint,
@@ -350,14 +422,34 @@ def analyze_function_variables(
             call_site_arg_taints=call_site_arg_taints,
             param_meets=context.param_meets,
             provenance_clash=context.provenance_clash,
+            out_var_types=return_var_types,
         )
-        return_taint = compute_return_taint(
-            func_node,
-            function_taint,
-            dict(taint_map),
-            variable_taints,
-            call_site_taints,
-        )
+        # Re-establish ONLY the request-source receiver types for the return-taint VALUE pass.
+        # compute_variable_taints resets _CURRENT_VAR_TYPES on exit, so a helper that DIRECTLY
+        # returns a request-source expression (``return req.query_params.get('x')``) would
+        # otherwise compute a CLEAN return taint — a false negative the local-var form does not
+        # have, and an inconsistency: a @trusted boundary leaking raw request data goes
+        # undetected by PY-WL-101 (Part C review, wardline-bd9d1e65cb). FILTERED to request-type
+        # FQNs (and their candidates) so the GENERAL typed-receiver dispatch stays inert in the
+        # return pass — zero blast radius on non-request ``return typed.method()`` resolution.
+        # Scoped to compute_return_taint (the value pass); compute_return_callee is explain-only.
+        return_request_types: dict[str, list[str]] = {}
+        for name, fqns in return_var_types.items():
+            request_fqns = [f for f in fqns if f in _REQUEST_SOURCE_TYPES]
+            if request_fqns:
+                return_request_types[name] = request_fqns
+        token_rt_types = _CURRENT_VAR_TYPES.set(return_request_types) if return_request_types else None
+        try:
+            return_taint = compute_return_taint(
+                func_node,
+                function_taint,
+                dict(taint_map),
+                variable_taints,
+                call_site_taints,
+            )
+        finally:
+            if token_rt_types is not None:
+                _CURRENT_VAR_TYPES.reset(token_rt_types)
         # compute_return_callee is PROVENANCE-ONLY: _assignment_callee re-resolves
         # every direct-call assignment RHS against the FINAL var_taints, and letting
         # that re-resolution record would COMBINE post-call taint into the at-call
@@ -571,6 +663,7 @@ def compute_variable_taints(
     param_meets: dict[str, TaintState] | None = None,
     *,
     provenance_clash: bool | None = None,
+    out_var_types: dict[str, list[str]] | None = None,
 ) -> dict[str, TaintState]:
     """Compute per-variable taint for a function body.
 
@@ -607,6 +700,7 @@ def compute_variable_taints(
     token = None
     token_args = None
     token_clash = None
+    token_budget = _CURRENT_L2_WORK_BUDGET.set(_L2WorkBudget(L2_WORK_BUDGET))
     if provenance_clash is not None:
         token_clash = _PROVENANCE_CLASH.set(provenance_clash)
     token_types = _CURRENT_VAR_TYPES.set({})
@@ -631,6 +725,13 @@ def compute_variable_taints(
         if call_site_taints is not None:
             worst = _worst_ever_var_taints(call_site_taints, var_taints)
             _resolve_lambda_bodies(func_node, function_taint, taint_map, worst)
+        # Expose the resolved receiver-TYPE map (param annotations + ``x = Type()``
+        # rebinds) for callers that re-establish it for the return-taint pass, where the
+        # type-gated source seeds would otherwise be blind (the contextvar is reset below).
+        if out_var_types is not None:
+            current_types = _CURRENT_VAR_TYPES.get()
+            if current_types is not None:
+                out_var_types.update(current_types)
         return var_taints
     finally:
         if token_clash is not None:
@@ -641,6 +742,7 @@ def compute_variable_taints(
             _CURRENT_ALIAS_MAP.reset(token)
         if token_args is not None:
             _CURRENT_CALL_SITE_ARG_TAINTS.reset(token_args)
+        _CURRENT_L2_WORK_BUDGET.reset(token_budget)
 
 
 def _seed_parameters(
@@ -814,6 +916,22 @@ def _resolve_expr(
             root = _call_root_name(node)
             if not (root is not None and root not in ("self", "cls") and var_taints.get(root) in RAW_ZONE):
                 return taint_map[dotted]
+        # Framework request SOURCE (Part C): a curated DATA property read off a parameter
+        # typed ``fastapi.Request``/``starlette.requests.Request`` (``req.query_params``,
+        # ``.path_params``, ``.headers``, ``.cookies``) is EXTERNAL_RAW — attacker wire
+        # input regardless of how ``req`` itself is tainted. Matched on the RESOLVED type
+        # (``_CURRENT_VAR_TYPES``, populated from the annotation in ``_seed_parameters``),
+        # NEVER the parameter name. Method members (``.json()``...) are seeded in
+        # ``_resolve_call`` (this expr path never sees the Call's attr). Placed after the
+        # ``taint_map`` self/cross-method block so a project summary still wins first (no
+        # collision: ``req`` is a tracked parameter, not a module-rooted key).
+        if isinstance(node.value, ast.Name):
+            var_types = _CURRENT_VAR_TYPES.get()
+            if var_types is not None:
+                for fqn in var_types.get(node.value.id, ()):
+                    members = _REQUEST_SOURCE_TYPES.get(fqn)
+                    if members is not None and node.attr in members.properties:
+                        return TaintState.EXTERNAL_RAW
         return _resolve_expr(node.value, function_taint, taint_map, var_taints)
     if isinstance(node, ast.Await):
         # Unwrap — the inner expression (typically a Call) is already handled.
@@ -1109,6 +1227,17 @@ def _resolve_call(
                     for hit in hits[1:]:
                         result = combine(result, hit)
                     return result
+                # Framework request SOURCE (Part C): a curated DATA method called on a
+                # request-typed receiver (``req.json()``/``.body()``/``.form()``/
+                # ``.stream()``) is EXTERNAL_RAW. Placed AFTER the project-summary dispatch
+                # so a genuine ``Type.method`` summary still wins first — for a literal
+                # ``fastapi.Request`` receiver no such summary exists, so ``hits`` is empty,
+                # the all-candidates guard fails, and control reaches here. Property members
+                # are seeded in ``_resolve_expr``; this path handles only the Call form.
+                for type_fqn in candidates:
+                    members = _REQUEST_SOURCE_TYPES.get(type_fqn)
+                    if members is not None and node.func.attr in members.methods:
+                        return TaintState.EXTERNAL_RAW
         attr = node.func.attr
         if attr in _STORAGE_READ_METHODS:
             # DB-cursor fetch loads stored/external data → seed EXTERNAL_RAW, like a file
@@ -1232,10 +1361,12 @@ def _process_stmt(
     Uses isinstance dispatch rather than match/case to avoid PY-WL-003
     structural-gate findings at ASSURED taint (UNCONDITIONAL severity).
     """
+    _charge_l2_work(1, "statement")
     if call_site_taints is not None:
         # Flow-sensitive snapshot: var taints AS THEY ARE before this statement
         # executes (after all prior siblings; branch-local inside if/try/match arms).
         # A sink rule reads this for a sink call's enclosing statement.
+        _charge_l2_work(len(var_taints), "statement_snapshot")
         call_site_taints[id(stmt)] = dict(var_taints)
 
     if isinstance(stmt, ast.Assign):
@@ -1615,6 +1746,8 @@ def _branch_copy(parent: dict[str, list[ast.Lambda]] | None) -> dict[str, list[a
     (wardline-36016d26f3), mirroring how ``var_taints`` is copied per arm. The candidate
     LISTS are copied too, so an arm's rebind/removal cannot mutate the parent's or a
     sibling's set in place (wardline-383f83fafe)."""
+    if parent is not None:
+        _charge_l2_work(sum(1 + len(lams) for lams in parent.values()), "lambda_branch_copy")
     return {name: list(lams) for name, lams in parent.items()} if parent is not None else None
 
 
@@ -1623,6 +1756,8 @@ def _types_branch_copy(parent: dict[str, list[str]] | None) -> dict[str, list[st
     (``None`` when types are not being tracked). Candidate LISTS are copied too,
     so an arm's strong update cannot mutate the parent's or a sibling's set in
     place — branch-local exactly like ``var_taints`` (wardline-b369c7d06c)."""
+    if parent is not None:
+        _charge_l2_work(sum(1 + len(types) for types in parent.values()), "type_branch_copy")
     return {name: list(types) for name, types in parent.items()} if parent is not None else None
 
 
@@ -1655,14 +1790,24 @@ def _merge_branch_types(
     if parent is None:
         return
     merged: dict[str, list[str]] = {}
+    # Dedup FQNs (strings) via a per-name equality-set, NOT a nested ``fqn not in
+    # bucket`` scan: a chain of one-armed ``if flagK: x = ClsK()`` rebinds grows the
+    # candidate set to N, and the linear rescan made each merge O(bucket**2) →
+    # O(N**3) cumulative, the same DoS class as the lambda-binding merge
+    # (wardline-c797baf28b). The set is O(1) per insert and preserves the exact
+    # candidate set and first-seen insertion order the nested scan produced.
+    seen_fqns: dict[str, set[str]] = {}
     tracked_arms = [arm for arm in arms if arm is not None]
     for arm in tracked_arms:
         for name, types in arm.items():
             if not types:
                 continue  # uphold the absent-or-non-empty invariant
+            _charge_l2_work(1 + len(types), "type_branch_merge")
             bucket = merged.setdefault(name, [])
+            seen = seen_fqns.setdefault(name, set())
             for fqn in types:
-                if fqn not in bucket:
+                if fqn not in seen:
+                    seen.add(fqn)
                     bucket.append(fqn)
     for name, bucket in merged.items():
         if UNTYPED_ARM_CANDIDATE not in bucket and any(not arm.get(name) for arm in tracked_arms):
@@ -1729,17 +1874,28 @@ def _merge_branch_bindings(
     if parent is None:
         return
     merged: dict[str, list[ast.Lambda]] = {}
+    # Dedup by identity (ast nodes don't define __eq__) via a per-name id-set, NOT a
+    # nested ``any(... is ...)`` scan of the growing bucket: a chain of one-armed
+    # branches rebinding the same name grows the candidate set to N, and the linear
+    # rescan made each merge O(bucket**2), so an attacker-authored file with ~1100
+    # such branches drove a DEFAULT-gate scan to O(N**3) / ~15s (wardline-c797baf28b).
+    # The id-set is O(1) per insert → O(bucket) per merge, and preserves the exact
+    # candidate set and first-seen insertion order the nested scan produced. ast nodes
+    # are live for the whole analysis (held by the tree), so an id can't be reused
+    # mid-merge — identity membership is sound.
+    seen_ids: dict[str, set[int]] = {}
     for arm in arms:
         if arm is None:
             continue
         for name, lams in arm.items():
             if not lams:
                 continue  # uphold the empty-list-never-stored invariant (see docstring)
+            _charge_l2_work(1 + len(lams), "lambda_branch_merge")
             bucket = merged.setdefault(name, [])
+            seen = seen_ids.setdefault(name, set())
             for lam in lams:
-                # Dedup by identity (ast nodes don't define __eq__): the same lambda
-                # carried unchanged through several arms should be resolved once.
-                if not any(lam is seen for seen in bucket):
+                if id(lam) not in seen:
+                    seen.add(id(lam))
                     bucket.append(lam)
     parent.clear()
     parent.update(merged)
@@ -1757,6 +1913,7 @@ def _handle_if(
     _resolve_expr(stmt.test, function_taint, taint_map, var_taints)
 
     # Snapshot before branches.
+    _charge_l2_work(len(var_taints), "branch_snapshot")
     pre_if = dict(var_taints)
     parent_lambdas = _CURRENT_LAMBDA_BINDINGS.get()
     parent_types = _CURRENT_VAR_TYPES.get()
@@ -1764,6 +1921,7 @@ def _handle_if(
     # Walk the if-body with arm-local lambda-bindings and receiver-type copies —
     # branch-local like var_taints, so a lambda bound or class rebound here cannot
     # leak into the else arm.
+    _charge_l2_work(len(var_taints), "branch_var_copy")
     if_taints = dict(var_taints)
     if_lambdas = _branch_copy(parent_lambdas)
     if_types = _types_branch_copy(parent_types)
@@ -1771,6 +1929,7 @@ def _handle_if(
 
     if stmt.orelse:
         # Walk the else-body on its own arm-local copies.
+        _charge_l2_work(len(var_taints), "branch_var_copy")
         else_taints = dict(var_taints)
         else_lambdas = _branch_copy(parent_lambdas)
         else_types = _types_branch_copy(parent_types)
@@ -1792,6 +1951,7 @@ def _handle_if(
     # not clash to MIXED_RAW; a raw branch still propagates (least_trusted keeps
     # its rank).
     all_vars = set(if_taints) | set(else_taints)
+    _charge_l2_work(len(all_vars), "branch_merge")
     for var in all_vars:
         if_val = if_taints.get(var)
         else_val = else_taints.get(var)
@@ -1819,6 +1979,7 @@ def _handle_for(
     )
 
     # Snapshot pre-loop.
+    _charge_l2_work(len(var_taints), "loop_pre_state")
     pre_loop = dict(var_taints)
 
     # Lambda bindings are mutated in place on the shared map across iterations (no per-arm
@@ -1852,13 +2013,16 @@ def _handle_for(
     # practice safety net (finite monotone lattice over a fixed local-name set guarantees it).
     iterations = 0
     while True:
+        _charge_l2_work(1 + len(var_taints), "loop_iteration")
         current_state = dict(var_taints)
         # Assign the loop variable.
         _assign_target(stmt.target, iter_taint, var_taints)
         # Walk body.
         _walk_body(stmt.body, function_taint, taint_map, var_taints, call_site_taints)
         # Merge body state with pre-loop
-        for var in set(var_taints) | set(pre_loop):
+        merge_vars = set(var_taints) | set(pre_loop)
+        _charge_l2_work(len(merge_vars), "loop_merge")
+        for var in merge_vars:
             var_taints[var] = combine(var_taints.get(var, function_taint), pre_loop.get(var, function_taint))
         iterations += 1
         if var_taints == current_state:
@@ -1895,6 +2059,7 @@ def _handle_while(
     call_site_taints: dict[int, dict[str, TaintState]] | None = None,
 ) -> None:
     """Handle while loops — body merges with pre-loop state."""
+    _charge_l2_work(len(var_taints), "loop_pre_state")
     pre_loop = dict(var_taints)
 
     # The body is a conditionally-executed arm (a reachable 0-iteration path), so snapshot
@@ -1909,10 +2074,13 @@ def _handle_while(
     # (wardline-e04db6e656).
     iterations = 0
     while True:
+        _charge_l2_work(1 + len(var_taints), "loop_iteration")
         current_state = dict(var_taints)
         _resolve_expr(stmt.test, function_taint, taint_map, var_taints)
         _walk_body(stmt.body, function_taint, taint_map, var_taints, call_site_taints)
-        for var in set(var_taints) | set(pre_loop):
+        merge_vars = set(var_taints) | set(pre_loop)
+        _charge_l2_work(len(merge_vars), "loop_merge")
+        for var in merge_vars:
             var_taints[var] = combine(var_taints.get(var, function_taint), pre_loop.get(var, function_taint))
         iterations += 1
         if var_taints == current_state:

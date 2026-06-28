@@ -46,7 +46,10 @@ if TYPE_CHECKING:
 # Bumped sp1d→sp1e: engine taint behaviour changed (DB-fetch source seed, container-mutator
 # write-back, loop fixpoint convergence, branch-conditional candidate callees) — invalidates
 # persisted/warm summary caches so they cannot serve stale-CLEAN results (cf. wardline-9d6a81b9e7).
-_RESOLVER_VERSION = "sp1e"
+# Bumped sp1e→sp1f: FastAPI/starlette request-type SOURCE seeding (Part C, wardline-bd9d1e65cb)
+# — a new taint-seeding behaviour, so warm/persisted summaries of a project's request-handler
+# modules must recompute rather than serve their stale-CLEAN pre-upgrade results.
+_RESOLVER_VERSION = "sp1f"
 
 
 @dataclass(frozen=True, slots=True)

@@ -38,3 +38,15 @@ def test_snapshot_is_idempotent_and_never_clobbers(tmp_path: Path) -> None:
     present = snapshot_stores(root)
     assert "baseline.yaml" in present
     assert (snapshot_dir(root) / "baseline.yaml").read_text(encoding="utf-8") == "ORIGINAL"
+
+
+def test_snapshot_skips_symlinked_live_store(tmp_path: Path) -> None:
+    root = tmp_path
+    state = paths.weft_state_dir(root)
+    state.mkdir(parents=True)
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-baseline.yaml"
+    outside.write_text("SECRET-BYTES", encoding="utf-8")
+    (state / "baseline.yaml").symlink_to(outside)
+
+    assert snapshot_stores(root) == ()
+    assert not (snapshot_dir(root) / "baseline.yaml").exists()

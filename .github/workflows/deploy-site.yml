@@ -4,7 +4,7 @@
 # copied verbatim into the build output). It consumes the shared @weft/site-kit,
 # which lives in a SUBDIRECTORY of a DIFFERENT repo (foundryside-dev/weft).
 # npm cannot install a git subdirectory as a file: dep directly, so the build
-# sparse-fetches packages/site-kit into site/vendor/site-kit first
+# sparse-fetches a pinned packages/site-kit commit into site/vendor/site-kit first
 # (scripts/fetch-site-kit.mjs), then `npm install` resolves the file: dep and
 # `astro build` compiles it. The fetch also runs as a preinstall hook, but the
 # explicit step keeps the order legible.
@@ -29,6 +29,11 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+env:
+  # Privileged Pages builds must consume an immutable site-kit revision. Update
+  # this SHA deliberately when promoting a new foundryside-dev/weft site kit.
+  WEFT_SITE_KIT_REF: a8f9a6a77458d2ec697cfbc1f71dd88a51962cb7
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -37,13 +42,13 @@ jobs:
         working-directory: site
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configure Pages
         # Pin the Pages source to GitHub Actions (build_type=workflow); enables
         # Pages if needed. Without this, deploy-pages fails when the repo is
         # still set to "Deploy from a branch".
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
         with:
           enablement: true
 
@@ -78,4 +83,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

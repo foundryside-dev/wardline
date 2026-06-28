@@ -12,11 +12,11 @@ enrichment so an upload reject cannot preempt the local gate verdict.
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import urllib.error
 import urllib.parse
-import urllib.request
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -24,13 +24,13 @@ from typing import Any, Protocol
 from wardline.core.errors import FiligreeEmitError
 from wardline.core.finding import (
     FINGERPRINT_SCHEME,
-    UNANALYZED_RULE_IDS,
+    INCOMPLETE_ANALYSIS_RULE_IDS,
     Finding,
     format_fingerprint,
     severity_to_filigree,
     to_filigree_metadata,
 )
-from wardline.core.http import read_response_text
+from wardline.core.http import WeftHttp
 
 _SUGGESTION_LIMIT = 10000
 _ALLOWED_SCHEMES = ("http", "https")
@@ -91,18 +91,18 @@ def build_scan_results_body(
     ``unseen_in_latest``. Clean files are represented by ``scanned_paths`` so
     close-on-fixed can reconcile a file whose last finding disappeared.
 
-    If any file was discovered but not analyzed, do not run the absent-fingerprint
-    sweep: a parse/file failure means missing findings are not proof of a fix.
+    If any file or function was not soundly analyzed, do not run the absent-fingerprint
+    sweep: missing findings are not proof of a fix.
     """
     findings_wire = [_finding_to_wire(f, language=language) for f in findings]
     scanned = list(dict.fromkeys(p for p in scanned_paths if p))
-    has_unanalyzed = any(f.rule_id in UNANALYZED_RULE_IDS for f in findings)
+    has_incomplete_analysis = any(f.rule_id in INCOMPLETE_ANALYSIS_RULE_IDS for f in findings)
     if mark_unseen is None:
-        mark_unseen = bool(findings_wire or scanned) and not has_unanalyzed
+        mark_unseen = bool(findings_wire or scanned) and not has_incomplete_analysis
     body = {
         "scan_source": scan_source,
         "fingerprint_scheme": FINGERPRINT_SCHEME,
-        "mark_unseen": bool(mark_unseen) and not has_unanalyzed,
+        "mark_unseen": bool(mark_unseen) and not has_incomplete_analysis,
         "findings": findings_wire,
     }
     if scanned:
@@ -132,12 +132,46 @@ def filigree_url_project(url: str | None) -> str | None:
     return None
 
 
+def redact_url_for_diagnostics(url: str | None) -> str | None:
+    """Return a URL safe for user-visible diagnostics.
+
+    Filigree URLs may come from operator configuration and can carry credentials in
+    userinfo, query tokens, or fragments. Keep the origin/path for destination
+    debugging, but never echo credential-bearing components.
+    """
+    if url is None:
+        return None
+    stripped = url.split("?", 1)[0].split("#", 1)[0]
+    parts = urllib.parse.urlsplit(url)
+    if parts.netloc:
+        scheme = parts.scheme
+        try:
+            host = parts.hostname or ""
+            port = parts.port
+        except ValueError:
+            return f"{scheme + ':' if scheme else ''}//<redacted>"
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        if port is not None:
+            host = f"{host}:{port}"
+        if parts.username is not None or parts.password is not None:
+            host = f"<redacted>@{host}"
+        return urllib.parse.urlunsplit((scheme, host, parts.path, "", ""))
+    if "@" in stripped:
+        _, host_path = stripped.rsplit("@", 1)
+        if host_path:
+            return f"<redacted>@{host_path}"
+    if not parts.scheme:
+        return stripped
+    return urllib.parse.urlunsplit((parts.scheme, "", parts.path, "", ""))
+
+
 def filigree_destination(url: str | None) -> dict[str, Any]:
     """The destination echo for the emit status block (N1 / C-10(a)): name where findings
     were sent so a wrong-project write is visible at the caller instead of reading as
     success. ``project_pinned`` is False when Filigree will resolve the project itself."""
     project = filigree_url_project(url)
-    return {"url": url, "project": project, "project_pinned": project is not None}
+    return {"url": redact_url_for_diagnostics(url), "project": project, "project_pinned": project is not None}
 
 
 def filigree_api_base_url(url: str) -> str:
@@ -153,7 +187,10 @@ def filigree_api_base_url(url: str) -> str:
     work-join can never disagree about what one configured URL means (dogfood-4 A3/A4)."""
     parts = urllib.parse.urlsplit(url)
     if parts.scheme.lower() not in _ALLOWED_SCHEMES:
-        raise FiligreeEmitError(f"filigree URL must use http or https; got scheme {parts.scheme!r} in {url!r}")
+        diagnostic_url = redact_url_for_diagnostics(url)
+        raise FiligreeEmitError(
+            f"filigree URL must use http or https; got scheme {parts.scheme!r} in {diagnostic_url!r}"
+        )
     segments = [s for s in parts.path.split("/") if s]
     base = segments[: segments.index("api") + 1] if "api" in segments else [*segments, "api"]
     project = filigree_url_project(url)
@@ -375,7 +412,7 @@ def _scan_result_chunks(
         raise ValueError("max_findings_per_request must be at least 1")
 
     deduped_scanned_paths = tuple(dict.fromkeys(p for p in scanned_paths if p))
-    can_mark_unseen = not force_no_mark_unseen and not any(f.rule_id in UNANALYZED_RULE_IDS for f in findings)
+    can_mark_unseen = not force_no_mark_unseen and not any(f.rule_id in INCOMPLETE_ANALYSIS_RULE_IDS for f in findings)
     if len(findings) <= max_findings_per_request:
         return (
             _ScanResultChunk(
@@ -502,6 +539,10 @@ def _parse_success_response(resp: Response) -> EmitResult:
     )
 
 
+def _chunk_rejection_detail(layer: str, status: int) -> str:
+    return f"chunk rejected at {layer} layer ({status})"
+
+
 def _record_pending_partial_failures(
     failures: list[FailedFinding],
     chunks: Sequence[_ScanResultChunk],
@@ -538,7 +579,8 @@ def filigree_disabled_reason(
     """
     if reachable:
         return None
-    at = f" at {url}" if url else ""
+    diagnostic_url = redact_url_for_diagnostics(url)
+    at = f" at {diagnostic_url}" if diagnostic_url else ""
     if status in (401, 403):
         # 403 → token present but lacks access (a token won't help). 401 → split by whether a
         # token was actually SENT: absent (set one) vs rejected (the value is wrong). The old
@@ -563,36 +605,44 @@ class Transport(Protocol):
 
 class UrllibTransport:
     def __init__(self, timeout: float = 30.0) -> None:
-        self._timeout = timeout
+        # Two http(s)-gated WeftHttp transports, one per route, so each keeps its OWN
+        # scheme-error wording (--filigree-url on the POST emit path, "filigree URL" on the
+        # GET schema-probe path) while sharing the round-trip + bounded-read + HTTPError-to-
+        # Response discipline. URLError/OSError still propagate to emit()/the probe, which
+        # apply the federation fail-soft (4xx loud / 5xx + outage soft) — unchanged.
+        self._post_http = WeftHttp(
+            timeout=timeout,
+            allowed_schemes=_ALLOWED_SCHEMES,
+            scheme_error=lambda scheme, url: FiligreeEmitError(
+                f"--filigree-url must use http or https; got scheme {scheme!r} in {redact_url_for_diagnostics(url)!r}"
+            ),
+        )
+        self._get_http = WeftHttp(
+            timeout=timeout,
+            allowed_schemes=_ALLOWED_SCHEMES,
+            scheme_error=lambda scheme, url: FiligreeEmitError(
+                f"filigree URL must use http or https; got scheme {scheme!r} in {redact_url_for_diagnostics(url)!r}"
+            ),
+        )
+
+    def _invalid_url_error(self, url: str) -> FiligreeEmitError:
+        diagnostic_url = redact_url_for_diagnostics(url)
+        return FiligreeEmitError(f"filigree URL is invalid: {diagnostic_url!r}")
 
     def post(self, url: str, body: bytes, headers: Mapping[str, str]) -> Response:
-        # Restrict to http(s): a stray file://, ftp:// or data: URL is a user error, not
-        # an ingest target — turn it into a clean loud failure (and justify the S310 below).
-        scheme = urllib.parse.urlsplit(url).scheme.lower()
-        if scheme not in _ALLOWED_SCHEMES:
-            raise FiligreeEmitError(f"--filigree-url must use http or https; got scheme {scheme!r} in {url!r}")
-        request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")
         try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
-                return Response(status=resp.status, body=read_response_text(resp))
-        except urllib.error.HTTPError as exc:
-            # An HTTP status reached us — a protocol-level outcome, not an outage. Convert it
-            # to a Response so emit() classifies by status (4xx loud / 5xx soft), and close
-            # the underlying socket.
-            with exc:
-                return Response(status=exc.code, body=read_response_text(exc))
+            result = self._post_http.fetch("POST", url, body=body, headers=headers)
+        except http.client.InvalidURL:
+            # A malformed URL (e.g. a bad port) raised inside urllib — redact before surfacing.
+            raise self._invalid_url_error(url) from None
+        return Response(status=result.status, body=result.body)
 
     def get(self, url: str, headers: Mapping[str, str]) -> Response:
-        scheme = urllib.parse.urlsplit(url).scheme.lower()
-        if scheme not in _ALLOWED_SCHEMES:
-            raise FiligreeEmitError(f"filigree URL must use http or https; got scheme {scheme!r} in {url!r}")
-        request = urllib.request.Request(url, headers=dict(headers), method="GET")
         try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
-                return Response(status=resp.status, body=read_response_text(resp))
-        except urllib.error.HTTPError as exc:
-            with exc:
-                return Response(status=exc.code, body=read_response_text(exc))
+            result = self._get_http.fetch("GET", url, headers=headers)
+        except http.client.InvalidURL:
+            raise self._invalid_url_error(url) from None
+        return Response(status=result.status, body=result.body)
 
 
 def _resolve_operator_max_findings_per_request(explicit: int | None) -> int | None:
@@ -757,7 +807,7 @@ class FiligreeEmitter:
                     # Filigree is present but its opt-in bearer auth is on and refusing us.
                     # Stays SOFT (enrichment unavailable, never exit-2) — but distinguished
                     # as auth so the caller can say the actionable thing.
-                    detail = f"chunk rejected at auth layer ({resp.status}): {resp.body}"
+                    detail = _chunk_rejection_detail("auth", resp.status)
                     _record_pending_partial_failures(failures, chunks, chunk_index - 1, detail=detail)
                     return EmitResult(
                         reachable=False,
@@ -772,7 +822,7 @@ class FiligreeEmitter:
                 if resp.status >= 500:
                     # Server-side outage (5xx) — the sibling is degraded, not a Wardline
                     # payload bug. Treat like absent (warn + continue), carrying the status.
-                    detail = f"chunk rejected at server layer ({resp.status}): {resp.body}"
+                    detail = _chunk_rejection_detail("server", resp.status)
                     _record_pending_partial_failures(failures, chunks, chunk_index - 1, detail=detail)
                     return EmitResult(
                         reachable=False,
@@ -785,16 +835,15 @@ class FiligreeEmitter:
                         url=self._url,
                     )
                 if not 200 <= resp.status < 300:
-                    message = f"Filigree rejected scan-results ({resp.status}) at {self._url}: {resp.body}"
+                    diagnostic_url = redact_url_for_diagnostics(self._url)
+                    message = f"Filigree rejected scan-results ({resp.status}) at {diagnostic_url}: {resp.body}"
                     if self._protocol_errors_loud:
                         raise FiligreeEmitError(message)
                     # Fail-soft: the chunk (and every chunk after it) is un-ingested. PDR-0023 —
-                    # record EACH still-pending finding as a ``partial`` failure carrying the
-                    # rejecting status, so the caller reads "K findings failed because the chunk
-                    # was rejected (<status>)" instead of an opaque count that looks like success
-                    # minus a number. ``partial`` (chunk-wide) is named distinctly from a
-                    # per-finding ``rejected`` because the cause is the request, not the body.
-                    detail = f"chunk rejected at protocol layer ({resp.status}): {resp.body}"
+                    # record EACH still-pending finding as a ``partial`` failure carrying only
+                    # bounded request-status context; the response body stays in one warning
+                    # below instead of being duplicated once per un-ingested finding.
+                    detail = _chunk_rejection_detail("protocol", resp.status)
                     _record_pending_partial_failures(failures, chunks, chunk_index - 1, detail=detail)
                     warnings.append(message)
                     break

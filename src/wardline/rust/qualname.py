@@ -116,33 +116,113 @@ def rust_module_route(*, crate: str, src_root: str, file: str) -> str:
 
 
 def normalize_cfg_predicate(text: str) -> str:
-    """Canonicalise a ``cfg(...)`` predicate, mirroring loomweave ``qualname.rs``
-    ``normalise_pred`` BYTE-FOR-BYTE (the @cfg discriminant is a parity surface).
+    """Canonicalise a ``cfg(...)`` predicate for a stable ``@cfg`` discriminant.
 
     ``text`` is the RAW argument token-tree text, with or without its outer parens
     (``"(unix)"`` / ``"unix"`` / ``"(any(windows, unix))"``); the outer cfg-argument
-    parens (if present) are stripped to the bare predicate, then — in the oracle's
-    exact order: all whitespace removed; every reserved entity-id char escaped
+    parens (if present) are stripped to the bare predicate and all whitespace is
+    removed. Top-level ``any(...)``/``all(...)`` predicates recursively normalise and
+    sort their arguments using only top-level commas, so nested predicates cannot
+    collide by being split apart. Leaf predicates escape reserved entity-id chars
     (``_escape_reserved``: ``%`` -> ``%25`` first, then ``:`` -> ``%3A`` — injective,
-    so ``feature="a:b"`` and a literal source ``feature="a%3Ab"`` stay distinct); and
-    a single top-level ``any(...)``/``all(...)`` wrapper's args sorted by a **naive**
-    ``split(',')`` (NOT paren-aware — this is exactly the oracle's algorithm; deeper
-    nesting is left as the deterministic stripped string, even though that mangles,
-    because the contract is byte-equality with the oracle, not a "nicer" canonical
-    form). The escape runs on the whole stripped predicate BEFORE the any()/all()
-    split, exactly as in ``normalise_pred``.
+    so ``feature="a:b"`` and a literal source ``feature="a%3Ab"`` stay distinct).
     """
+    return _normalize_cfg_predicate(text, depth=0)
+
+
+_MAX_CFG_NORMALIZE_DEPTH = 128
+
+
+def _normalize_cfg_predicate(text: str, *, depth: int) -> str:
     stripped = "".join(text.split())
-    if stripped.startswith("(") and stripped.endswith(")"):
-        stripped = stripped[1:-1]
-    stripped = _escape_reserved(stripped)
+    stripped = _strip_wrapping_parens(stripped)
+    if depth >= _MAX_CFG_NORMALIZE_DEPTH:
+        return _escape_reserved(stripped)
     for fn in ("any", "all"):
-        prefix = fn + "("
-        if stripped.startswith(prefix) and stripped.endswith(")"):
-            inner = stripped[len(prefix) : -1]
-            parts = sorted(inner.split(","))  # naive split — matches the oracle verbatim
+        inner = _call_inner(stripped, fn)
+        if inner is not None:
+            split = _split_top_level_commas(inner)
+            if split is None:
+                return _escape_reserved(stripped)
+            parts = sorted(_normalize_cfg_predicate(part, depth=depth + 1) for part in split)
             return f"{fn}({','.join(parts)})"
-    return stripped
+    return _escape_reserved(stripped)
+
+
+def _strip_wrapping_parens(text: str) -> str:
+    if not (text.startswith("(") and text.endswith(")")):
+        return text
+    if _matching_rparen(text, 0) != len(text) - 1:
+        return text
+    return text[1:-1]
+
+
+def _call_inner(text: str, fn: str) -> str | None:
+    prefix = fn + "("
+    if not text.startswith(prefix):
+        return None
+    open_index = len(fn)
+    if _matching_rparen(text, open_index) != len(text) - 1:
+        return None
+    return text[len(prefix) : -1]
+
+
+def _matching_rparen(text: str, open_index: int) -> int | None:
+    depth = 0
+    in_string = False
+    escaped = False
+    for index, char in enumerate(text[open_index:], start=open_index):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+            if depth < 0:
+                return None
+    return None
+
+
+def _split_top_level_commas(text: str) -> list[str] | None:
+    parts: list[str] = []
+    start = 0
+    depth = 0
+    in_string = False
+    escaped = False
+    for index, char in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth < 0:
+                return None
+        elif char == "," and depth == 0:
+            parts.append(text[start:index])
+            start = index + 1
+    if in_string or depth != 0:
+        return None
+    parts.append(text[start:])
+    return parts
 
 
 def _escape_reserved(s: str) -> str:
