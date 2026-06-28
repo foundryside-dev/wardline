@@ -1421,7 +1421,7 @@ def test_scan_loomweave_error_is_fail_soft(tmp_path, monkeypatch) -> None:
 
 
 def test_scan_missing_loomweave_extra_is_fail_soft_when_auto_discovered(tmp_path, monkeypatch) -> None:
-    # Regression (elspeth dogfood): a bare `wardline scan` in the Loom federation
+    # Regression (framework-app dogfood): a bare `wardline scan` in the Loom federation
     # auto-discovers a running Loomweave from its published ephemeral port (ADR-044) with
     # NO --loomweave-url flag. On a base install WITHOUT the [loomweave] extra, the
     # taint-fact write reaches require_blake3() -> LoomweaveError. That used to exit 2

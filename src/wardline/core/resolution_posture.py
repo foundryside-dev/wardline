@@ -16,9 +16,9 @@ functions seeded from a recognized boundary or configured source, and whose tota
 the number of functions analyzed. No engine change, no analysis cost.
 
 A scan is INERT when it recognized ZERO trust boundaries over a non-trivial amount of
-code. That fires on elspeth (anchored=0 over thousands of functions — no wardline
-annotations) and stays quiet on any annotated codebase (the corpus: anchored=43). A
-tiny temp-dir exploration (below the function floor) is exempt. ``low_resolution_ratio``
+code. That fires on a framework app carrying no wardline annotations (anchored=0 over
+thousands of functions) and stays quiet on any annotated codebase (the corpus:
+anchored=43). A tiny temp-dir exploration (below the function floor) is exempt. ``low_resolution_ratio``
 is reported alongside as a secondary health number but does not, by itself, drive the
 verdict — a framework-heavy app legitimately resolves few of its library calls.
 """

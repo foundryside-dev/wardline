@@ -4,7 +4,7 @@ The Python counterpart of the Rust empty-trust-surface warning
 (``test_scan_rust.py::test_scan_lang_rust_warns_on_empty_trust_surface``): a Python
 scan over a codebase that declares NO wardline trust boundaries enforces nothing, so a
 clean/green result there proves nothing. The CLI must say so loudly on stderr — that is
-the false-green an armed ``--fail-on ERROR`` gate hides (the elspeth failure mode).
+the false-green an armed ``--fail-on ERROR`` gate hides (the framework-app failure mode).
 """
 
 from __future__ import annotations

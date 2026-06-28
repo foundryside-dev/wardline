@@ -7,8 +7,8 @@ checking nothing. ``compute_resolution_posture`` turns the engine's own run metr
 a scan-level "inert" verdict an agent cannot miss.
 
 Calibration anchors (verified live during the investigation):
-  * elspeth full-repo scan: taint_source_counts={anchored:0, fallback:5319} — no wardline
-    annotations anywhere -> MUST flag inert.
+  * a framework full-repo scan: taint_source_counts={anchored:0, fallback:5319} — no
+    wardline annotations anywhere -> MUST flag inert.
   * wardline corpus scan: taint_source_counts={anchored:43, fallback:5} -> MUST stay quiet.
   * a single @trusted firing fixture: anchored=1 -> quiet.
 """
@@ -42,7 +42,7 @@ def _low_res(i: int) -> Finding:
     )
 
 
-def test_elspeth_shaped_scan_is_inert() -> None:
+def test_framework_shaped_scan_is_inert() -> None:
     findings = [_metric({"anchored": 0, "fallback": 5319, "module_default": 0})]
     findings += [_low_res(i) for i in range(3314)]
     posture = compute_resolution_posture(findings)

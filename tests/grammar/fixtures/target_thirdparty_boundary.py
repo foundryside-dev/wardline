@@ -1,12 +1,12 @@
-"""Scanned target mirroring elspeth's real ``@trust_boundary`` usage — analyzed
-STATICALLY, never executed (so ``elspeth`` need not exist).
+"""Scanned target mirroring a third-party ``@trust_boundary`` usage — analyzed
+STATICALLY, never executed (so ``acme`` need not exist).
 
 ``validates`` returns a constant (validated) on its only path — clean.
 ``leaks`` returns its untrusted ``source_param`` unvalidated — declared ASSURED by the
 pack's seed but actually EXTERNAL_RAW, so a builtin trust-contract rule must fire.
 """
 
-from elspeth.contracts.trust_boundary import trust_boundary
+from acme.security.trust_boundary import trust_boundary
 
 
 @trust_boundary(tier=3, source="external response body", source_param="response_data")

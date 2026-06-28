@@ -364,9 +364,9 @@ def call_judge(
     parsed = _parse_verdict_payload(raw_text)
     total, cached = _extract_usage(completion)
     # Record the SERVED model (OpenRouter may route to a fallback), falling back to
-    # the requested slug ONLY when the transport omitted the field. Spec §4.2 / elspeth
-    # C1-1: don't fabricate a served id, but don't discard a valid verdict over missing
-    # metadata either. This fallback is deliberate — do not "harden" it into a crash.
+    # the requested slug ONLY when the transport omitted the field. Spec §4.2: don't
+    # fabricate a served id, but don't discard a valid verdict over missing metadata
+    # either. This fallback is deliberate — do not "harden" it into a crash.
     served = completion.get("model")
     return JudgeResponse(
         verdict=JudgeVerdict(parsed["verdict"]),
