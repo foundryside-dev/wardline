@@ -9,12 +9,14 @@ a git diff; only ``fingerprint`` is loaded into the match set. No governance.
 
 from __future__ import annotations
 
+import os
+import stat
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from wardline.core.errors import ConfigError
+from wardline.core.errors import ConfigError, WardlineError
 from wardline.core.finding import (
     FINGERPRINT_SCHEME,
     Finding,
@@ -26,7 +28,7 @@ from wardline.core.finding import (
 )
 from wardline.core.optional_deps import require_yaml
 from wardline.core.paths import baseline_path as baseline_file
-from wardline.core.safe_paths import safe_write_text, write_text_no_follow
+from wardline.core.safe_paths import read_bytes_no_follow, safe_project_path, safe_write_text, write_text_no_follow
 
 BASELINE_VERSION: int = 1
 """Bumped on a format change; validated on load (mirrors STDLIB_TAINT_VERSION)."""
@@ -77,6 +79,27 @@ class BaselineStoreStatus:
     message: str
 
 
+def _read_store_text_no_follow(root: Path, path: Path) -> tuple[bool, str | None]:
+    """Return ``(present, text)`` for a repo-owned store without following symlinks."""
+    candidate = path if path.is_absolute() else Path(os.path.abspath(os.fspath(path)))
+    try:
+        safe = safe_project_path(root, candidate, label=path.name)
+        mode = safe.stat(follow_symlinks=False).st_mode
+    except FileNotFoundError:
+        return False, None
+    except (OSError, WardlineError):
+        return True, None
+    if not stat.S_ISREG(mode):
+        return True, None
+    raw = read_bytes_no_follow(safe)
+    if raw is None:
+        return True, None
+    try:
+        return True, raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return True, None
+
+
 def inspect_baseline_store(root: Path) -> BaselineStoreStatus:
     """Probe the baseline store for ``root`` WITHOUT writing/migrating/creating it.
 
@@ -94,7 +117,8 @@ def inspect_baseline_store(root: Path) -> BaselineStoreStatus:
       on-disk version (when available) named in ``message``.
     """
     path = baseline_file(root)
-    if not path.exists():
+    present, text = _read_store_text_no_follow(root, path)
+    if not present:
         return BaselineStoreStatus(
             present=False,
             readable=False,
@@ -106,9 +130,18 @@ def inspect_baseline_store(root: Path) -> BaselineStoreStatus:
                 "run `wardline baseline create` to enable it"
             ),
         )
+    if text is None:
+        return BaselineStoreStatus(
+            present=True,
+            readable=False,
+            schema_version=None,
+            baseline_finding_count=None,
+            binding_ok=False,
+            message=f"baseline store {path.name} is unreadable — regenerate the baseline",
+        )
     yaml = require_yaml("reading baseline.yaml")
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raw = yaml.safe_load(text) or {}
     except yaml.YAMLError:
         # Keep the message generic + content-free: a raw YAMLError can echo a file snippet.
         return BaselineStoreStatus(

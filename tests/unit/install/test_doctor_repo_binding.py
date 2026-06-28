@@ -80,6 +80,28 @@ def test_check_repo_binding_present_unreadable_is_error(tmp_path: Path) -> None:
     assert block["store"]["schema_version"] is None
 
 
+def test_check_repo_binding_symlinked_store_is_unreadable_not_followed(tmp_path: Path) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-baseline.yaml"
+    write_baseline(outside, [_finding(_FP_A)], root=None)
+    p = baseline_path(tmp_path)
+    p.parent.mkdir(parents=True)
+    p.symlink_to(outside)
+
+    check, block = _check_repo_binding(tmp_path)
+
+    assert check.status == "error"
+    assert check.ok is False
+    assert block["binding_ok"] is False
+    assert block["store"] == {
+        "present": True,
+        "readable": False,
+        "schema_version": None,
+        "baseline_finding_count": None,
+    }
+    assert "baseline.yaml" in (check.message or "")
+    assert str(outside) not in (check.message or "")
+
+
 def _isolate(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
     monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)

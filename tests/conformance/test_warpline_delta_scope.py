@@ -42,6 +42,7 @@ from wardline.core.finding import Severity
 from wardline.core.run import gate_decision, run_scan
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "warpline_delta"
+_WARPLINE_CONTRACT_FIXTURES = Path(__file__).parent / "fixtures" / "warpline_contract"
 _SAMPLE_TREE = _FIXTURES / "sample_tree"
 
 
@@ -250,16 +251,28 @@ def test_axis7_gate_population_not_narrowed(tmp_path: Path) -> None:
     assert delta_decision.exit_class == 1
 
 
-# --- C2: worklist impact_completeness capture + gated published-artifact drift marker -----
+# --- C2: worklist completeness capture + gated published-artifact drift marker -----
 
 
-def test_consumer_captures_impact_completeness() -> None:
+def test_consumer_captures_worklist_completeness() -> None:
     payload = json.loads((_FIXTURES / "worklist_alpha.v1.json").read_text(encoding="utf-8"))
     scope = parse_affected_scope(payload)
     assert scope.source_kind == "reverify_worklist_v1"
     assert scope.producer_completeness is not None
-    assert scope.producer_completeness["status"] == "partial"
-    assert scope.producer_completeness["depth_capped"] is True
+    assert scope.producer_completeness["completeness"] == "FULL"
+    assert scope.producer_completeness["staleness"] == {"snapshot_commit": None, "commits_behind": 0}
+
+
+def test_consumer_captures_published_warpline_completeness_fields() -> None:
+    payload = json.loads((_WARPLINE_CONTRACT_FIXTURES / "mcp-response-reverify.json").read_text(encoding="utf-8"))
+
+    scope = parse_affected_scope(payload)
+
+    assert scope.source_kind == "reverify_worklist_v1"
+    assert scope.producer_completeness == {
+        "completeness": "NO_SNAPSHOT",
+        "staleness": {"snapshot_commit": None, "commits_behind": None},
+    }
 
 
 @pytest.mark.skipif(

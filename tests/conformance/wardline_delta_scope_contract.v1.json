@@ -1,6 +1,6 @@
 {
   "schema": "wardline.delta_scope.v1",
-  "description": "The --affected delta-scan honesty/provenance block (DeltaScopeReport.to_dict()). Producer: wardline. gate_authority='advisory' in delta mode is never a gate-of-record pass. producer_completeness is warpline's UNVERIFIED impact_completeness object, echoed verbatim.",
+  "description": "The --affected delta-scan honesty/provenance block (DeltaScopeReport.to_dict()). Producer: wardline. gate_authority='advisory' in delta mode is never a gate-of-record pass. producer_completeness is warpline's UNVERIFIED data.completeness/data.staleness claim (or legacy impact_completeness when published fields are absent).",
   "fields": [
     "mode",
     "gate_authority",

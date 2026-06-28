@@ -1384,10 +1384,10 @@ _SCAN_OUTPUT_SCHEMA: dict[str, Any] = {
                 },
                 "producer_completeness": {
                     "type": ["object", "null"],
-                    "description": "UNVERIFIED producer claim, echoed VERBATIM: warpline's "
-                    "data.impact_completeness object (its self-assessed completeness + staleness of the "
-                    "change-impact analysis). Unauthenticated and never wardline-vouched; it never feeds "
-                    "mode, gate_authority, or any verdict. Null for a bare entity_list or when absent.",
+                    "description": "UNVERIFIED producer claim: warpline's data.completeness and data.staleness "
+                    "fields (or legacy data.impact_completeness when the published fields are absent). "
+                    "Unauthenticated and never wardline-vouched; it never feeds mode, gate_authority, or any "
+                    "verdict. Null for a bare entity_list or when absent.",
                 },
                 "boundary_caveat": {
                     "type": "string",
@@ -3925,6 +3925,18 @@ _DOCTOR_OUTPUT_SCHEMA: dict[str, Any] = {
                         "type": "string",
                         "description": "Human/agent-readable detail. Present only when the check produced a non-empty "
                         "message (always on errors; sometimes on informational ok results).",
+                    },
+                    "removed": {
+                        "type": "array",
+                        "description": "Project-relative paths removed by this check, present only for repair checks "
+                        "that cleaned files.",
+                        "items": {"type": "string"},
+                    },
+                    "review": {
+                        "type": "array",
+                        "description": "Project-relative paths the check intentionally left for operator review, "
+                        "present only when non-empty.",
+                        "items": {"type": "string"},
                     },
                 },
                 "required": ["id", "status", "fixed"],

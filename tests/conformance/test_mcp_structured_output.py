@@ -17,6 +17,7 @@ Three layers, each pinned for EVERY registered tool:
 from __future__ import annotations
 
 import json
+import socket
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -84,6 +85,12 @@ def _leaky_project(tmp_path: Path) -> Path:
     proj.mkdir()
     (proj / "svc.py").write_text(_LEAKY, encoding="utf-8")
     return proj
+
+
+def _closed_loopback_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
 def _entries(server: WardlineMCPServer) -> dict[str, dict[str, Any]]:
@@ -361,6 +368,27 @@ def test_doctor_structured_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     out = _validated(server, "doctor", {})
     assert out["checks"][-1]["id"] == "server.freshness"
     assert out["server"]["fresh"] is True
+
+
+def test_doctor_stale_port_structured_output_matches_schema(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Drives the stale-port branch that emits per-check payload fields.
+    monkeypatch.delenv("WARDLINE_LOOMWEAVE_URL", raising=False)
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setattr("wardline.install.mcp_json.Path.home", lambda: tmp_path / "home")
+    monkeypatch.setattr("wardline.install.mcp_json._find_wardline_command", lambda: "/bin/wardline")
+    monkeypatch.setattr("wardline.install.detect.shutil.which", lambda _: None)
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "weft.toml").write_text("[wardline]\n", encoding="utf-8")
+    port_file = proj / ".weft" / "filigree" / "ephemeral.port"
+    port_file.parent.mkdir(parents=True)
+    port_file.write_text(str(_closed_loopback_port()), encoding="utf-8")
+    server = WardlineMCPServer(root=proj)
+
+    out = _validated(server, "doctor", {"repair": True})
+
+    stale = next(c for c in out["checks"] if c["id"] == "stale_sibling_ports")
+    assert stale["removed"] == [".weft/filigree/ephemeral.port"]
 
 
 def test_rekey_structured_output(tmp_path: Path) -> None:
