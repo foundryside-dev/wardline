@@ -6,7 +6,9 @@
 > turning one bet into an implementation plan is `/axiom-planning`. Do not add
 > dates or scores here.
 
-`Updated: 2026-06-27 (PDR-0002)` — Now rotated Later→Now to
+`Updated: 2026-06-29 (PDR-0009)` — added option B (framework-boundary enforcement
+for unannotated apps) to Later as PARKED+gated; **Now is unchanged** (seam-health
+probe). Prior: `2026-06-27 (PDR-0002)` rotated Now Later→Now to
 weft-seam-conformance; the Codex hardening campaign paid off (batch 0 open, G2 at
 target) and moved to ACCEPT. Originally seeded on bootstrap (2026-06-22) from
 observed direction (git history, the dominant `codex-security` labels, the
@@ -61,6 +63,13 @@ scheme — never by trusting a self-reported status field.** Spec: PRD-0002 /
 
 ## Later — direction, not plan
 
+- **Framework-boundary enforcement for truly-unannotated apps (option B) —
+  PARKED, gated.** Per-parameter seed granularity + framework boundary inference
+  so an unannotated FastAPI/Flask app gets real enforcement. A vision change (it
+  revises "silent until opted in") *and* an engine-model change. Held by owner
+  decision (PDR-0009); reopens only when *reliance-gated inert* framework apps
+  reach ≥ 5 across measured corpora (baseline 2026-06-29 = 1). The cheap in-thesis
+  floor (raw-`Request.*` source seeding) already shipped as Part C.
 - Generative agent-extension plane: agent-authored boundary types and rules in
   the shared trust grammar, inheriting the soundness invariants (the invariant-2
   "most powerful version" ceiling).

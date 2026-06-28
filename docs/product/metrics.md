@@ -127,6 +127,22 @@ human configuration — power arrives as activation, never as a form.
   strategic question (owner):** whether truly-unannotated apps warrant
   framework-boundary auto-inference — a revision of the "silent until opted in"
   anti-goal, escalated, not enacted.
+- **Reading 2026-06-29 (Q4 owner decision A+C — inert-gate prevalence instrumented).**
+  Owner chose "instrument first, hold vision"; the within-grant measurement ran over
+  the local Weft corpus (`q4-framework-auto-inference-examination.md` → Measured
+  baseline). Harm surface, not raw inertness: of **9** repos with a wardline gate
+  plausibly armed, **5** are framework-shaped (real web surface), and **5 of 5 scan
+  inert** (`recognized_boundaries=0`) — the inert false-green is the *common case* for
+  framework apps. But **realized reliance-gated harm = 1** (only elspeth armed an
+  explicit `--fail-on`; the others invoke wardline advisorily → `NOT_EVALUATED`). The
+  metric is harm-specific: non-framework libraries (warpline, murk) scan inert
+  *correctly* and are excluded; the annotated library lacuna enforces
+  (`recognized=33`). **Decision-relevant cap:** N=5 framework apps, all Weft siblings —
+  cannot size external demand for the engine+vision change (option B), which is why B
+  stays parked. Confirms A. **Metric-bound reversal trigger** (replaces the self-sealing
+  PDR-0008 RT2): reopen B if *reliance-gated inert* framework apps (armed `--fail-on` +
+  framework + `recognized_boundaries=0`) reach **≥ 5** across measured corpora,
+  re-measured each release. Baseline = **1**.
 
 ### G4 — Weight discipline (anti-enterprise-creep)
 The base package stays zero-runtime-dependency; capability stays behind opt-in
