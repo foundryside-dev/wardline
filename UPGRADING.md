@@ -17,10 +17,14 @@ trust boundary), `PY-WL-120` (stored taint → trusted), `PY-WL-121` (XXE),
 `PY-WL-116`/`117`/`123`/`126` (WARN) and `PY-WL-125` (INFO).
 
 **What to do.** This is a real finding, not noise — fix it at the boundary/sink.
-If you must defer, use the normal escape hatches: `wardline baseline` (or the
-`waiver_add` MCP tool) to suppress a specific finding, or `--new-since <ref>` to
-scope the gate to changed code. There is no config flag to restore the old
-"preview never gates" behavior.
+If you must defer, mind the secure default: the gate evaluates the *unsuppressed*
+population, so a committed baseline or waiver clears it **only** under
+`--trust-suppressions` (a trusted local checkout), not in a default CI run. In
+**CI**, scope the gate with `--new-since <merge-base>` so it fires only on changed
+code; a baselined/waived finding alone will not turn the build green. (`wardline
+baseline` / the `waiver_add` MCP tool still record the suppression for the
+trusted-checkout and `--new-since` paths.) There is no config flag to restore the
+old "preview never gates" behavior.
 
 ## To v1.0 — Weft config/store consolidation (BREAKING)
 

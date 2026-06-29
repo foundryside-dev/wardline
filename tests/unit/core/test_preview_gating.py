@@ -23,7 +23,7 @@ import pytest
 
 from wardline.core.finding import Finding, Kind, Location, Maturity, Severity
 from wardline.core.run import gate_decision, run_scan
-from wardline.core.suppression import gate_trips
+from wardline.core.suppression import gate_breakdown, gate_trips
 from wardline.scanner.rules import BUILTIN_RULE_CLASSES
 
 _PREVIEW_RULES = [cls for cls in BUILTIN_RULE_CLASSES if cls.metadata.maturity is Maturity.PREVIEW]
@@ -56,12 +56,27 @@ def test_preview_maturity_does_not_change_gate_outcome() -> None:
     assert gate_trips([preview], Severity.ERROR) == gate_trips([stable], Severity.ERROR) is True
 
 
+def test_preview_error_defect_is_counted_active_in_gate_breakdown() -> None:
+    # Coherence guard between the gate PREDICATE (gate_trips) and the COUNT/REASON path
+    # (gate_breakdown -> _gate_reason). A future regression that re-added a
+    # `maturity is PREVIEW: continue` to gate_breakdown or _gate_reason ALONE would make
+    # the gate trip while the reason said "0 active ERROR+ defect(s)" — an incoherent
+    # verdict the full suite would otherwise still pass green. Pin the count too.
+    f = _active_defect(rule_id="PY-WL-119", severity=Severity.ERROR, maturity=Maturity.PREVIEW)
+    assert gate_breakdown([f], Severity.ERROR) == (1, 0)  # (active, suppressed)
+
+
 @pytest.mark.parametrize("cls", _PREVIEW_RULES, ids=lambda c: c.metadata.rule_id)
 def test_every_preview_rule_participates_in_gate(cls) -> None:
     # Universal invariant over the whole registry: no preview rule is silently
     # excluded from the gate at its own base severity. This is what makes the
     # root cause unable to recur when a NEW preview rule is added.
     md = cls.metadata
+    # Preconditions so a future mis-declared preview rule fails cleanly HERE with a
+    # clear message rather than with a KeyError deep inside gate_trips (NONE severity)
+    # or by silently mis-passing (non-DEFECT kind never gates).
+    assert md.kind is Kind.DEFECT, f"{md.rule_id} is preview but not a DEFECT — it would never gate"
+    assert md.base_severity is not Severity.NONE, f"{md.rule_id} is preview with NONE severity — cannot gate"
     f = _active_defect(rule_id=md.rule_id, severity=md.base_severity, maturity=Maturity.PREVIEW)
     assert gate_trips([f], md.base_severity) is True, f"{md.rule_id} (preview, {md.base_severity.value}) must gate"
 
@@ -100,3 +115,21 @@ def test_sql_injection_118_gates_end_to_end(tmp_path: Path) -> None:
     decision = gate_decision(result, Severity.ERROR)
     assert decision.tripped is True
     assert decision.would_trip_at == "ERROR"
+
+
+def test_collect_and_write_baseline_captures_preview_defect(tmp_path: Path) -> None:
+    # The baseline escape hatch must capture preview defects: they now gate, so they
+    # must be suppressible too. Pins the ORCHESTRATION (collect_and_write_baseline),
+    # not just the pure build_baseline_document derive — the stale docstring that said
+    # "EXCLUDING preview findings that never gate" had no test holding it honest.
+    from wardline.core.baseline_ops import collect_and_write_baseline
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "b.py").write_text(
+        "from wardline.decorators import trust_boundary\n"
+        "@trust_boundary(to_level='ASSURED')\ndef ingest(payload):\n    return payload\n",
+        encoding="utf-8",
+    )
+    baselined = collect_and_write_baseline(proj, overwrite=True)
+    assert any(f.rule_id == "PY-WL-119" for f in baselined)

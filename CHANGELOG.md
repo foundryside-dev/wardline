@@ -22,14 +22,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   baseline, waivers, and judge exactly like stable rules". Preview findings are also
   now baselineable, so a preview false-positive has the usual escape hatch.
   **Behavior change:** a repository that scans clean today but contains one of these
-  flows will now correctly **fail** `--fail-on ERROR`. Clear it the normal way —
-  fix the boundary/sink, baseline/waive the finding, or scope with `--new-since`.
-  This applies at every threshold, not just ERROR: the WARN-severity preview rules
+  flows will now correctly **fail** `--fail-on`. Fix the boundary/sink, or reach for
+  an escape hatch — but mind the secure default: the gate evaluates the *unsuppressed*
+  population, so a committed baseline/waiver clears it only under `--trust-suppressions`
+  (a trusted local checkout). In **CI**, scope with `--new-since <merge-base>`; a
+  baselined or waived finding alone will not turn the build green. This applies at
+  every threshold, not just ERROR: the WARN-severity preview rules
   (`PY-WL-116`/`117`/`123`/`126`) now gate under `--fail-on WARN`, and `PY-WL-125`
   (INFO) under `--fail-on INFO` — a CI pinned below ERROR is affected too.
 
+## [1.1.0] - 2026-06-29
+
 ### Changed
-- **BREAKING (unreleased contract):** attest bundle schema bumped `wardline-attest-1` → `wardline-attest-2`; each boundary now carries `content_hash` (entity-body span blake3 binding key, null when unresolved). `wardline-attest-1` bundles no longer verify.
+- **BREAKING:** attest bundle schema bumped `wardline-attest-1` → `wardline-attest-2`; each boundary now carries `content_hash` (entity-body span blake3 binding key, null when unresolved). `wardline-attest-1` bundles no longer verify.
 - Default scan artifacts now anchor to the weft-project root (the `weft.toml` directory)
   rather than the scan cwd, so a subdirectory scan writes to `<project-root>/.wardline/`.
   Retention is therefore project-root-wide across heterogeneous subdir/root scans sharing
