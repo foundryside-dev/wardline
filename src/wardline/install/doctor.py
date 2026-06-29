@@ -935,7 +935,9 @@ def _check_loomweave_dep(root: Path, *, effective_url: str | None = None) -> Doc
             "loomweave.dep",
             "error",
             message="loomweave is configured but its [loomweave] extra is not installed; "
-            "taint-store writes silently no-op — install: pip install 'wardline[loomweave]'",
+            "taint-store writes silently no-op — reinstall with the extra: "
+            "`uv tool install 'wardline[loomweave]'` (uv tool) or "
+            "`pip install 'wardline[loomweave]'` (venv)",
         )
     return DoctorCheck("loomweave.dep", "ok", message="loomweave extra installed")
 
