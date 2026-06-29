@@ -29,12 +29,32 @@ from wardline.core.filigree_emit import (
 from wardline.core.finding import Severity
 from wardline.core.paths import project_root_for, weft_config_path
 from wardline.core.resolution_posture import compute_resolution_posture
-from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
+from wardline.core.ruleset import ruleset_hash
+from wardline.core.run import ScanResult, baseline_migration_hint, gate_decision, run_scan
 from wardline.core.safe_paths import explicit_output_target, write_explicit_output_text
 from wardline.core.sarif import SarifSink, build_sarif
 
 if TYPE_CHECKING:
     from wardline.loomweave.identity import SeiResolver
+
+
+def _scan_manifest_record(result: ScanResult, ruleset_id: str, *, full_coverage: bool) -> dict[str, object]:
+    """The ``scan_manifest`` header record for the default jsonl artifact.
+
+    ``covered_paths`` is the repo-relative POSIX scan inventory in the SAME format as
+    ``Finding.location.path``, so a now-absent prior finding only reads as RESOLVED when its
+    path is genuinely in scope. It DEFAULTS to the ANALYZED set (``result.analyzed_paths``):
+    in ``--affected`` delta mode a discovered-but-not-re-analyzed file is NOT over-claimed as
+    covered (a prior finding there stays indeterminate, not falsely resolved). ``full_coverage``
+    emits the full DISCOVERED inventory (``result.scanned_paths``); for a full scan the two are
+    identical. ``ruleset_id`` is the top-level ruleset hash (== legis ``rule_set_version``).
+    """
+    covered = result.scanned_paths if full_coverage else result.analyzed_paths
+    return {
+        "kind": "scan_manifest",
+        "scope": {"covered_paths": list(covered)},
+        "ruleset_id": ruleset_id,
+    }
 
 
 @click.command()
@@ -185,6 +205,18 @@ if TYPE_CHECKING:
         "lets the dev/tour loop exercise the Wardline->legis handshake without a commit."
     ),
 )
+@click.option(
+    "--manifest-full-coverage",
+    is_flag=True,
+    default=False,
+    help=(
+        "For --format jsonl: emit the FULL discovered scan inventory in the scan_manifest "
+        "covered_paths, not just the analyzed set. Default off — covered_paths reports only "
+        "the re-analyzed paths so a discovered-but-unanalyzed file in --affected delta mode is "
+        "not over-claimed as coverage (which could read a still-present finding as resolved). "
+        "No effect on a full scan, where analyzed == discovered."
+    ),
+)
 def scan(
     path: Path,
     config_path: Path | None,
@@ -208,6 +240,7 @@ def scan(
     allow_source_root_escape: bool,
     trust_suppressions: bool,
     allow_dirty: bool,
+    manifest_full_coverage: bool,
 ) -> None:
     """Scan PATH for findings.
 
@@ -362,7 +395,21 @@ def scan(
                 SarifSink(output, root=output_root).write(findings, result.context, run_properties=scope_props)
         elif fmt == "jsonl":
             if output_is_default:
-                output = write_scan_artifact(path, fmt, cfg, "".join(f"{finding.to_jsonl()}\n" for finding in findings))
+                # Header record: a `scan_manifest` JSONL line the federated consumer
+                # (plainweave's wardline_adapter) keys on to compute resolved/unseen. See
+                # _scan_manifest_record: covered_paths defaults to the ANALYZED set (honest
+                # coverage in --affected delta mode); --manifest-full-coverage opts into the
+                # full discovered inventory. Emitted UNCONDITIONALLY — a clean scan
+                # (findings == []) is exactly when RESOLVED detection matters most, so the
+                # artifact is never empty and the consumer's scan-identity-absent degrade only
+                # fires for pre-manifest snapshots. Additive: existing line-by-line finding
+                # readers ignore an unknown `kind`.
+                manifest = json.dumps(
+                    _scan_manifest_record(result, ruleset_hash(cfg), full_coverage=manifest_full_coverage),
+                    separators=(",", ":"),
+                )
+                body = manifest + "\n" + "".join(f"{finding.to_jsonl()}\n" for finding in findings)
+                output = write_scan_artifact(path, fmt, cfg, body)
             else:
                 assert output is not None
                 output, output_root = explicit_output_target(path, output)

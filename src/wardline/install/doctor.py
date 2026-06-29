@@ -683,6 +683,24 @@ def _repair_filigree_auth(root: Path, url: str, transport: Transport) -> DoctorC
     )
 
 
+def _filigree_local_mode(root: Path) -> str | None:
+    """The ``mode`` of a locally-configured filigree project (``.weft/filigree/config.json``;
+    the legacy ``.filigree/`` dot-dir is tolerated), or ``None`` when filigree is not configured
+    in this project at all. ``ethereal`` mode runs no daemon — and wardline emits findings to a
+    filigree *daemon* URL — so a configured-but-ethereal project has no endpoint to reach, which
+    the auth probe must distinguish from "filigree absent"."""
+    for base in (sibling_state_dir(root, "filigree"), legacy_sibling_dir(root, "filigree")):
+        text = safe_read_text_if_regular(root, base / "config.json", label="filigree config")
+        if text is None:
+            continue
+        try:
+            mode = json.loads(text).get("mode")
+        except (json.JSONDecodeError, ValueError, AttributeError):
+            return "unknown"
+        return mode if isinstance(mode, str) and mode else "unknown"
+    return None
+
+
 def _check_filigree_auth(
     root: Path,
     *,
@@ -697,7 +715,23 @@ def _check_filigree_auth(
     probe_transport = transport if transport is not None else UrllibTransport(timeout=2.0)
     target = probe_target or _resolve_probe_target(root, filigree_url)
     if target is None:
-        return DoctorCheck("filigree.auth", "ok", message="filigree not configured; nothing to verify")
+        mode = _filigree_local_mode(root)
+        if mode is None:
+            return DoctorCheck("filigree.auth", "ok", message="filigree not configured; nothing to verify")
+        if mode == "ethereal":
+            return DoctorCheck(
+                "filigree.auth",
+                "ok",
+                message="filigree is configured in ethereal mode (no daemon) — wardline emits "
+                "findings to a filigree daemon, so there is no endpoint to reach yet; put filigree "
+                "in daemon mode: `filigree install --mode server`, then `filigree server start`",
+            )
+        return DoctorCheck(
+            "filigree.auth",
+            "ok",
+            message="filigree is configured but no daemon is reachable; wardline emits to a "
+            "filigree daemon — start it with `filigree server start`",
+        )
     url = target.url
     if not _is_loopback(url):
         return DoctorCheck("filigree.auth", "ok", message="non-loopback filigree; token not probed")
@@ -931,11 +965,13 @@ def _check_loomweave_dep(root: Path, *, effective_url: str | None = None) -> Doc
 
         require_blake3()
     except (LoomweaveError, ImportError):
+        from wardline.core.optional_deps import extra_install_hint
+
         return DoctorCheck(
             "loomweave.dep",
             "error",
             message="loomweave is configured but its [loomweave] extra is not installed; "
-            "taint-store writes silently no-op — install: pip install 'wardline[loomweave]'",
+            f"taint-store writes silently no-op — install with {extra_install_hint('loomweave')}",
         )
     return DoctorCheck("loomweave.dep", "ok", message="loomweave extra installed")
 

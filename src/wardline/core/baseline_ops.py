@@ -37,9 +37,10 @@ def collect_and_write_baseline(
     """Derive the baselineable findings for ``root`` and write them to
     ``.weft/wardline/baseline.yaml``. Returns the findings that were baselined.
 
-    Captures current stable DEFECTs, EXCLUDING preview findings that never gate
-    and any with an active waiver (else the baseline swallows them and their
-    expiry never resurfaces — spec §8).
+    Captures current DEFECTs regardless of maturity — preview rules gate, so a
+    preview finding must be baselineable too (wardline-4ada23bb09) — EXCLUDING any
+    with an active waiver (else the baseline swallows them and their expiry never
+    resurfaces — spec §8).
     Honors ``config_path`` exactly as ``scan`` does, so the baseline is built
     from the same waiver set the scans will consume.
 

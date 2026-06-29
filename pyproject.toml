@@ -23,7 +23,12 @@ classifiers = [
 [project.optional-dependencies]
 scanner = ["pyyaml>=6.0", "jsonschema>=4.0", "click>=8.0"]
 docs = ["mkdocs>=1.6", "mkdocs-material>=9.5"]
-loomweave = ["blake3>=1.0"]
+# Loomweave taint-store integration. Its taint-fact writes fire only DURING `wardline
+# scan` (the scan pipeline persists per-entity facts), so it needs the scanner deps and
+# self-includes `wardline[scanner]` — `uv tool install` REPLACES extras (does not merge),
+# so a bare `wardline[loomweave]` would otherwise drop scanner and break the CLI. Mirrors
+# the `rust` extra below.
+loomweave = ["wardline[scanner]", "blake3>=1.0"]
 # Rust frontend (preview, Tier-A command-injection). tree-sitter-rust 0.24.2's
 # parser is ABI 15, loadable only by tree-sitter core >=0.25.0 — do NOT trust the
 # grammar's stale self-declared `tree-sitter~=0.22`. Both ship cp39-abi3 stable-ABI

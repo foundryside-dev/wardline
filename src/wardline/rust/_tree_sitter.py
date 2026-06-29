@@ -31,8 +31,10 @@ def require_rust() -> tuple[Language, Parser]:
         from tree_sitter import Language, Parser
         from tree_sitter_rust import language as _rust_language
     except ModuleNotFoundError as exc:
+        from wardline.core.optional_deps import extra_install_hint
+
         raise RustToolingError(
-            "the Rust frontend needs tree-sitter — install it with: pip install 'wardline[rust]'"
+            f"the Rust frontend needs tree-sitter — install with {extra_install_hint('rust')}"
         ) from exc
     grammar = Language(_rust_language())
     return grammar, Parser(grammar)
