@@ -111,14 +111,18 @@ def test_build_document_is_order_independent() -> None:
     assert build_baseline_document(fs) == build_baseline_document(list(reversed(fs)))
 
 
-def test_build_document_excludes_preview_findings_that_never_gate() -> None:
+def test_build_document_includes_preview_findings_that_gate() -> None:
+    # wardline-4ada23bb09: preview rules gate exactly like stable ones, so a
+    # preview DEFECT both trips the gate AND must be baselineable — otherwise a
+    # preview false-positive could break the build with no escape hatch.
     preview = _preview_finding(_FP_A)
     stable = _finding(_FP_B)
 
     doc = build_baseline_document([preview, stable])
 
-    assert gate_trips([preview], Severity.ERROR) is False
-    assert [entry["fingerprint"] for entry in doc["entries"]] == [_FP_B]
+    assert gate_trips([preview], Severity.ERROR) is True
+    # CRITICAL sorts before ERROR; both are present (preview is no longer dropped).
+    assert sorted(entry["fingerprint"] for entry in doc["entries"]) == sorted([_FP_A, _FP_B])
 
 
 def test_write_then_load_round_trips(tmp_path: Path) -> None:

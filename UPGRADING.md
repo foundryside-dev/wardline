@@ -2,6 +2,26 @@
 
 Migration notes for changes that can alter a previously-green run. Newest first.
 
+## To the next release (recommended v1.2) — preview rules now gate (soundness)
+
+`wardline-4ada23bb09`. The `--fail-on` gate previously **ignored** any rule whose
+`maturity` is `preview`, so a scan could pass green while an active ERROR defect
+was present. `maturity` is now purely informational; **preview rules gate (and
+are baselineable) exactly like stable rules**, matching the documented contract.
+
+**Who is affected.** A repository that scans green today but contains one of the
+previously-non-gating preview findings will now correctly **fail**. At
+`--fail-on ERROR`: `PY-WL-118` (SQL injection), `PY-WL-119` (no-op/degenerate
+trust boundary), `PY-WL-120` (stored taint → trusted), `PY-WL-121` (XXE),
+`PY-WL-122` (SSTI), `PY-WL-124` (native-library load). At lower thresholds also
+`PY-WL-116`/`117`/`123`/`126` (WARN) and `PY-WL-125` (INFO).
+
+**What to do.** This is a real finding, not noise — fix it at the boundary/sink.
+If you must defer, use the normal escape hatches: `wardline baseline` (or the
+`waiver_add` MCP tool) to suppress a specific finding, or `--new-since <ref>` to
+scope the gate to changed code. There is no config flag to restore the old
+"preview never gates" behavior.
+
 ## To v1.0 — Weft config/store consolidation (BREAKING)
 
 Wardline's operator config and machine state moved onto the Weft federation

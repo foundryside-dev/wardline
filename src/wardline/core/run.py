@@ -31,7 +31,6 @@ from wardline.core.finding import (
     Finding,
     Kind,
     Location,
-    Maturity,
     Severity,
     SuppressionState,
 )
@@ -98,6 +97,11 @@ class ScanResult:
     # this exact run instead of re-deriving. Never serialised over MCP.
     context: AnalysisContext | None
     scanned_paths: tuple[str, ...] = ()
+    # The ANALYZED subset (== ``scanned_paths`` for a full scan; the narrower re-analyzed
+    # set in ``--affected`` delta mode). ``scan_manifest.covered_paths`` defaults to this so a
+    # discovered-but-not-re-analyzed delta file is not over-claimed as coverage — a prior
+    # finding there stays indeterminate, not falsely resolved.
+    analyzed_paths: tuple[str, ...] = ()
     # The UNSUPPRESSED gate population (None SENTINEL — never a falsy-empty fallback).
     # Repository-controlled baseline/waiver/judged still ANNOTATE ``findings`` (visible
     # as ``suppressed=…``), but a malicious PR must not be able to clear the ``--fail-on``
@@ -588,6 +592,10 @@ def run_scan(
             path.relative_to(resolved_root).as_posix() if path.is_relative_to(resolved_root) else path.as_posix()
             for path in files
         ),
+        analyzed_paths=tuple(
+            path.relative_to(resolved_root).as_posix() if path.is_relative_to(resolved_root) else path.as_posix()
+            for path in analyze_files
+        ),
         gate_findings=gate_findings,
         gate_honors_suppressions=gate_honors_suppressions,
         scope=scope,
@@ -736,10 +744,7 @@ def baseline_migration_hint(
     baselined = sum(
         1
         for f in result.findings
-        if f.kind is Kind.DEFECT
-        and f.suppressed is SuppressionState.BASELINED
-        and f.maturity is not Maturity.PREVIEW
-        and severity_gates(f.severity, fail_on)
+        if f.kind is Kind.DEFECT and f.suppressed is SuppressionState.BASELINED and severity_gates(f.severity, fail_on)
     )
     if not baselined:
         return None  # tripped by waived/judged only — different escape, not this hint
@@ -778,7 +783,7 @@ def _gate_reason(result: ScanResult, fail_on: Severity, *, tripped: bool, honors
     active = 0
     suppressed = 0
     for f in gate_pop:
-        if f.kind is not Kind.DEFECT or f.maturity is Maturity.PREVIEW:
+        if f.kind is not Kind.DEFECT:
             continue
         if f.suppressed is not SuppressionState.ACTIVE or not severity_gates(f.severity, fail_on):
             continue

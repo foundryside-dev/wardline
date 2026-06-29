@@ -13,7 +13,7 @@ from dataclasses import replace
 from datetime import date
 
 from wardline.core.baseline import Baseline
-from wardline.core.finding import ENGINE_PATH, Finding, Kind, Maturity, Severity, SuppressionState
+from wardline.core.finding import ENGINE_PATH, Finding, Kind, Severity, SuppressionState
 from wardline.core.finding_identity import resolve_identity
 from wardline.core.judged import JudgedSet
 from wardline.core.waivers import WaiverSet
@@ -91,8 +91,6 @@ def gate_trips(findings: Iterable[Finding], fail_on: Severity) -> bool:
     for f in findings:
         if f.kind is not Kind.DEFECT or f.suppressed is not SuppressionState.ACTIVE:
             continue
-        if f.maturity is Maturity.PREVIEW:
-            continue
         rank = _RANK.get(f.severity)
         if rank is not None and rank >= threshold:
             return True
@@ -103,8 +101,8 @@ def gate_breakdown(findings: Iterable[Finding], fail_on: Severity) -> tuple[int,
     """Count gate-relevant DEFECTs at/above ``fail_on`` in the ANNOTATED population,
     split into ``(active, suppressed)``.
 
-    Same predicate as :func:`gate_trips` (DEFECT, non-PREVIEW, severity >= threshold)
-    but counts instead of short-circuiting and partitions by whether the finding is
+    Same predicate as :func:`gate_trips` (DEFECT, severity >= threshold) but counts
+    instead of short-circuiting and partitions by whether the finding is
     ACTIVE or repository-suppressed (baselined / waived / judged). Lets the gate verdict
     say *which* population tripped it without re-deriving the rule. Under the secure
     default the suppressed count is exactly the set that gates only because suppressions
@@ -114,7 +112,7 @@ def gate_breakdown(findings: Iterable[Finding], fail_on: Severity) -> tuple[int,
     active = 0
     suppressed = 0
     for f in findings:
-        if f.kind is not Kind.DEFECT or f.maturity is Maturity.PREVIEW:
+        if f.kind is not Kind.DEFECT:
             continue
         rank = _RANK.get(f.severity)
         if rank is None or rank < threshold:

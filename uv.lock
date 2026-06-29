@@ -1250,6 +1250,9 @@ docs = [
 ]
 loomweave = [
     { name = "blake3" },
+    { name = "click" },
+    { name = "jsonschema" },
+    { name = "pyyaml" },
 ]
 rust = [
     { name = "click" },
@@ -1280,12 +1283,15 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "blake3", marker = "extra == 'loomweave'", specifier = ">=1.0" },
+    { name = "click", marker = "extra == 'loomweave'", specifier = ">=8.0" },
     { name = "click", marker = "extra == 'rust'", specifier = ">=8.0" },
     { name = "click", marker = "extra == 'scanner'", specifier = ">=8.0" },
+    { name = "jsonschema", marker = "extra == 'loomweave'", specifier = ">=4.0" },
     { name = "jsonschema", marker = "extra == 'rust'", specifier = ">=4.0" },
     { name = "jsonschema", marker = "extra == 'scanner'", specifier = ">=4.0" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6" },
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5" },
+    { name = "pyyaml", marker = "extra == 'loomweave'", specifier = ">=6.0" },
     { name = "pyyaml", marker = "extra == 'rust'", specifier = ">=6.0" },
     { name = "pyyaml", marker = "extra == 'scanner'", specifier = ">=6.0" },
     { name = "tree-sitter", marker = "extra == 'rust'", specifier = ">=0.25,<0.26" },

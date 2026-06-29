@@ -21,7 +21,6 @@ from wardline.core.finding import (
     FINGERPRINT_SCHEME,
     Finding,
     Kind,
-    Maturity,
     Severity,
     require_fingerprint_scheme,
 )
@@ -201,7 +200,11 @@ def inspect_baseline_store(root: Path) -> BaselineStoreStatus:
 
 
 def _is_baselineable_finding(finding: Finding) -> bool:
-    return finding.kind is Kind.DEFECT and finding.maturity is not Maturity.PREVIEW
+    # A DEFECT is baselineable regardless of rule maturity: preview rules gate
+    # exactly like stable ones (wardline-4ada23bb09), so a preview finding that
+    # gates must be suppressible too — otherwise a preview FP could break the
+    # build with no escape hatch. ``maturity`` is informational only.
+    return finding.kind is Kind.DEFECT
 
 
 def build_baseline_document(findings: Iterable[Finding]) -> dict[str, Any]:

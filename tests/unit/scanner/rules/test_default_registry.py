@@ -118,7 +118,12 @@ def test_analyzer_runs_default_rules_end_to_end(tmp_path) -> None:
     assert any(f.rule_id == "PY-WL-101" and f.qualname == "svc.leaky" for f in defects)
 
 
-def test_preview_rules_are_non_gating() -> None:
+def test_preview_rules_gate_like_stable() -> None:
+    # wardline-4ada23bb09: a preview rule's finding is stamped maturity=PREVIEW
+    # (informational — "predicates may still sharpen"), but it participates in the
+    # gate exactly like a stable rule. Previously gate_trips skipped PREVIEW, so an
+    # ERROR-severity preview rule (118 SQLi, 119, 121 XXE, 122 SSTI, ...) fired but
+    # --fail-on ERROR passed green. This pins the stamping AND the gate together.
     from wardline.core.finding import Finding, Kind, Location, Maturity, Severity
     from wardline.core.finding import compute_finding_fingerprint as _fp
     from wardline.core.suppression import gate_trips
@@ -165,7 +170,7 @@ def test_preview_rules_are_non_gating() -> None:
 
     findings = registry.run(context)
     assert len(findings) == 1
+    # maturity is still stamped from the rule metadata (informational label)…
     assert findings[0].maturity == Maturity.PREVIEW
-
-    # Check that it doesn't trip the gate
-    assert not gate_trips(findings, Severity.ERROR)
+    # …but it no longer exempts the finding from the gate.
+    assert gate_trips(findings, Severity.ERROR)
