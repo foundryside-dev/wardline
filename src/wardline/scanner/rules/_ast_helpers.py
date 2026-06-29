@@ -67,14 +67,38 @@ def _own_nodes_in_reachable_stmt(stmt: ast.stmt) -> Iterator[ast.AST]:
 
 
 def _walk_own_non_stmt_children(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            yield child
-        elif isinstance(child, ast.stmt):
+    # Perf opt: Replaced recursive yield from with explicit stack to avoid
+    # deep callstack overhead and generator creation during hot-path AST traversal.
+    # We must push elements in reverse order to preserve original top-down, left-to-right
+    # traversal, and we use generator comprehension to avoid eager large list instantiation.
+    stack: list[ast.AST] = []
+    for field in reversed(node._fields):
+        try:
+            value = getattr(node, field)
+        except AttributeError:
+            continue
+        if isinstance(value, list):
+            stack.extend(n for n in reversed(value) if isinstance(n, ast.AST))
+        elif isinstance(value, ast.AST):
+            stack.append(value)
+
+    while stack:
+        current = stack.pop()
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            yield current
+        elif isinstance(current, ast.stmt):
             continue
         else:
-            yield child
-            yield from _walk_own_non_stmt_children(child)
+            yield current
+            for field in reversed(current._fields):
+                try:
+                    value = getattr(current, field)
+                except AttributeError:
+                    continue
+                if isinstance(value, list):
+                    stack.extend(n for n in reversed(value) if isinstance(n, ast.AST))
+                elif isinstance(value, ast.AST):
+                    stack.append(value)
 
 
 def _reachable_statements_in_block(
@@ -639,9 +663,33 @@ def own_nodes(node: ast.AST) -> Iterator[ast.AST]:
 
 
 def _walk_own(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            yield child
+    # Perf opt: Explicit stack replaces yield from recursion for hot-path AST traversal.
+    # Preserves lazy evaluation and short-circuiting capabilities.
+    # Child nodes are pushed to the stack in reverse order to keep exact traversal sequence.
+    # We use generator comprehension inside extend() to prevent eager subtree evaluation.
+    stack: list[ast.AST] = []
+    for field in reversed(node._fields):
+        try:
+            value = getattr(node, field)
+        except AttributeError:
+            continue
+        if isinstance(value, list):
+            stack.extend(n for n in reversed(value) if isinstance(n, ast.AST))
+        elif isinstance(value, ast.AST):
+            stack.append(value)
+
+    while stack:
+        current = stack.pop()
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            yield current
         else:
-            yield child
-            yield from _walk_own(child)
+            yield current
+            for field in reversed(current._fields):
+                try:
+                    value = getattr(current, field)
+                except AttributeError:
+                    continue
+                if isinstance(value, list):
+                    stack.extend(n for n in reversed(value) if isinstance(n, ast.AST))
+                elif isinstance(value, ast.AST):
+                    stack.append(value)
