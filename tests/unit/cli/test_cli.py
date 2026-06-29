@@ -1443,7 +1443,8 @@ def test_scan_missing_loomweave_extra_is_fail_soft_when_auto_discovered(tmp_path
     # actionable LoomweaveError at the exact site the write hits it.
     def _missing_extra() -> ModuleType:
         raise LoomweaveError(
-            "the Loomweave integration needs blake3 — install it with: pip install 'wardline[loomweave]'"
+            "the Loomweave integration needs blake3 — install with "
+            "`uv tool install 'wardline[loomweave]'` (uv tool) or `pip install 'wardline[loomweave]'` (venv)"
         )
 
     monkeypatch.setattr("wardline.loomweave.facts.require_blake3", _missing_extra)

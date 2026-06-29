@@ -22,7 +22,9 @@ def require_blake3() -> ModuleType:
     try:
         import blake3
     except ModuleNotFoundError as exc:
+        from wardline.core.optional_deps import extra_install_hint
+
         raise LoomweaveError(
-            "the Loomweave integration needs blake3 — install it with: pip install 'wardline[loomweave]'"
+            f"the Loomweave integration needs blake3 — install with {extra_install_hint('loomweave')}"
         ) from exc
     return blake3

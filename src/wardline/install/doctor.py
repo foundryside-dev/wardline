@@ -931,13 +931,13 @@ def _check_loomweave_dep(root: Path, *, effective_url: str | None = None) -> Doc
 
         require_blake3()
     except (LoomweaveError, ImportError):
+        from wardline.core.optional_deps import extra_install_hint
+
         return DoctorCheck(
             "loomweave.dep",
             "error",
             message="loomweave is configured but its [loomweave] extra is not installed; "
-            "taint-store writes silently no-op — reinstall with the extra: "
-            "`uv tool install 'wardline[loomweave]'` (uv tool) or "
-            "`pip install 'wardline[loomweave]'` (venv)",
+            f"taint-store writes silently no-op — install with {extra_install_hint('loomweave')}",
         )
     return DoctorCheck("loomweave.dep", "ok", message="loomweave extra installed")
 
