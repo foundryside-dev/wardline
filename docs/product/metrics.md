@@ -151,6 +151,14 @@ gates) enters the tool.
 - `BASELINE → TARGET`: `BASELINE: base = 0 runtime deps at 1.0.6 → TARGET: base
   stays 0 runtime deps; new deps only behind a named extra, re-checked each
   release`
+- **Reading 2026-06-29 (PDR-0010):** per-release extras re-check — base package stays
+  **0 runtime deps** (G4 holds); capability stays behind named extras. Fixed an
+  install-friction defect: the `loomweave` extra was not self-sufficient under `uv tool
+  install` (which replaces, not merges, extras), so a bare `wardline[loomweave]` dropped
+  the scanner deps and broke the CLI (whack-a-mole). Now `loomweave` self-includes
+  `wardline[scanner]` (mirrors `rust`) so single-extra installs carry their prerequisites.
+  **No weight creep** (loomweave still opt-in; base unchanged) and **no G4 trigger
+  crossed**. Pinned by `test_extras_composition.py`; tracker `wardline-c8d7e020e8`.
 
 ## Notes
 
