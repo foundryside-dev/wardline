@@ -298,6 +298,23 @@ def test_check_ok_when_url_unresolved(tmp_path: Path, monkeypatch) -> None:
     assert "not configured" in (check.message or "")
 
 
+def test_check_ethereal_mode_advises_daemon(tmp_path: Path, monkeypatch) -> None:
+    # filigree IS configured locally but in ethereal mode (no daemon). wardline emits to a
+    # filigree *daemon* URL, so there is no endpoint to reach — but the message must say THAT
+    # and point at server mode, not the misleading "not configured" (which reads as "absent").
+    monkeypatch.delenv("WARDLINE_FILIGREE_URL", raising=False)
+    monkeypatch.setattr("wardline.install.doctor.Path.home", lambda: tmp_path / "nohome")
+    cfg = tmp_path / ".weft" / "filigree" / "config.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(json.dumps({"prefix": "x", "name": "x", "version": 1, "mode": "ethereal"}), encoding="utf-8")
+    check = _check_filigree_auth(tmp_path, repair=False, transport=_ScriptedTransport({}))
+    assert check.status == "ok"
+    msg = check.message or ""
+    assert "ethereal" in msg
+    assert "filigree install --mode server" in msg
+    assert "not configured" not in msg
+
+
 # --- Stale --filigree-url pin shadowing a LIVE published daemon (rotated port) -------
 
 
