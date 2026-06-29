@@ -453,16 +453,31 @@ class WardlineAnalyzer:
             return result
 
         def _iter_l2_body_nodes(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.AST]:
-            def walk(current: ast.AST) -> Iterator[ast.AST]:
-                for child in ast.iter_child_nodes(current):
-                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-                        continue
-                    yield child
-                    yield from walk(child)
+            # Perf opt: Stack-based AST traversal instead of deep recursive yield from.
+            # Child nodes pushed in reverse to preserve expected AST iteration order, avoiding eager list overhead.
+            stack: list[ast.AST] = []
+            stack.extend(reversed(node.body))
 
-            for stmt in node.body:
-                yield stmt
-                yield from walk(stmt)
+            while stack:
+                current = stack.pop()
+                yield current
+
+                for field in reversed(current._fields):
+                    try:
+                        value = getattr(current, field)
+                    except AttributeError:
+                        continue
+                    if isinstance(value, list):
+                        stack.extend(
+                            n
+                            for n in reversed(value)
+                            if isinstance(n, ast.AST)
+                            and not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda))
+                        )
+                    elif isinstance(value, ast.AST) and not isinstance(
+                        value, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+                    ):
+                        stack.append(value)
 
         def _assignment_targets(node: ast.AST) -> list[ast.expr]:
             if isinstance(node, ast.Assign):

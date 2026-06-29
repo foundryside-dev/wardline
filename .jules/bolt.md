@@ -1,0 +1,3 @@
+## 2023-10-27 - Explicit stack AST traversal over recursive generators
+**Learning:** In highly recursive AST hot-paths (`_walk_own`, `_iter_l2_body_nodes`), replacing `yield from` recursion with an explicit stack eliminates generator overhead and prevents deep callstacks while preserving short-circuit capability. It is essential to push nodes in reverse order and use generator comprehensions inside `stack.extend()` to avoid eager evaluation and high memory overhead.
+**Action:** When working on deep AST traversals, always favor an explicit stack with `yield` and inline generator comprehensions over nested `yield from` recursion.
