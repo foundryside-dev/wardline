@@ -1,0 +1,3 @@
+## 2024-06-30 - AST Traversal performance optimization
+**Learning:** Python's `ast.iter_child_nodes` coupled with deep generator delegation (`yield from`) can add a major overhead for large or deep abstract syntax trees in performance-critical codebases. While an inline C implementation like `list(ast.iter_child_nodes())` is fast, managing a stack implicitly through nested generator frames creates significant delegation lag.
+**Action:** When implementing deep AST walks for short-circuited scans (where lazy eval matters), replace recursive `yield from` with a flat list stack. To avoid eager whole-tree computations, iterate over `reversed(getattr(n, "_fields", ()))` directly to fetch immediate children and push them into the stack, avoiding expensive allocations.

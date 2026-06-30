@@ -36,12 +36,27 @@ _RAISING_CONVERSION_NAMES: frozenset[str] = frozenset({"int", "float", "complex"
 def _own_statements(node: ast.AST) -> Iterator[ast.stmt]:
     """Yield every statement in *node*'s own scope, not descending into nested
     def/class bodies. Includes the bodies of if/for/while/try/with at any depth."""
-    for child in ast.iter_child_nodes(node):
+    stack: list[ast.AST] = []
+
+    def push_children(n: ast.AST) -> None:
+        for field in reversed(getattr(n, "_fields", ())):
+            val = getattr(n, field, None)
+            if isinstance(val, list):
+                for item in reversed(val):
+                    if isinstance(item, ast.AST):
+                        stack.append(item)
+            elif isinstance(val, ast.AST):
+                stack.append(val)
+
+    push_children(node)
+
+    while stack:
+        child = stack.pop()
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
         if isinstance(child, ast.stmt):
             yield child
-        yield from _own_statements(child)
+        push_children(child)
 
 
 def _own_reachable_statements(
@@ -67,14 +82,29 @@ def _own_nodes_in_reachable_stmt(stmt: ast.stmt) -> Iterator[ast.AST]:
 
 
 def _walk_own_non_stmt_children(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
+    stack: list[ast.AST] = []
+
+    def push_children(n: ast.AST) -> None:
+        for field in reversed(getattr(n, "_fields", ())):
+            val = getattr(n, field, None)
+            if isinstance(val, list):
+                for item in reversed(val):
+                    if isinstance(item, ast.AST):
+                        stack.append(item)
+            elif isinstance(val, ast.AST):
+                stack.append(val)
+
+    push_children(node)
+
+    while stack:
+        child = stack.pop()
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             yield child
         elif isinstance(child, ast.stmt):
             continue
         else:
             yield child
-            yield from _walk_own_non_stmt_children(child)
+            push_children(child)
 
 
 def _reachable_statements_in_block(
@@ -639,9 +669,24 @@ def own_nodes(node: ast.AST) -> Iterator[ast.AST]:
 
 
 def _walk_own(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
+    stack: list[ast.AST] = []
+
+    def push_children(n: ast.AST) -> None:
+        for field in reversed(getattr(n, "_fields", ())):
+            val = getattr(n, field, None)
+            if isinstance(val, list):
+                for item in reversed(val):
+                    if isinstance(item, ast.AST):
+                        stack.append(item)
+            elif isinstance(val, ast.AST):
+                stack.append(val)
+
+    push_children(node)
+
+    while stack:
+        child = stack.pop()
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             yield child
         else:
             yield child
-            yield from _walk_own(child)
+            push_children(child)
