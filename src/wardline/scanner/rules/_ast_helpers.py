@@ -67,14 +67,46 @@ def _own_nodes_in_reachable_stmt(stmt: ast.stmt) -> Iterator[ast.AST]:
 
 
 def _walk_own_non_stmt_children(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            yield child
-        elif isinstance(child, ast.stmt):
+    stack: list[ast.AST] = []
+
+    children: list[ast.AST] = []
+    for name in node._fields:
+        try:
+            field = getattr(node, name)
+        except AttributeError:
+            continue
+        if isinstance(field, ast.AST):
+            children.append(field)
+        elif isinstance(field, list):
+            for item in field:
+                if isinstance(item, ast.AST):
+                    children.append(item)
+    if children:
+        stack.extend(reversed(children))
+
+    while stack:
+        current = stack.pop()
+
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            yield current
+        elif isinstance(current, ast.stmt):
             continue
         else:
-            yield child
-            yield from _walk_own_non_stmt_children(child)
+            yield current
+            curr_children = []
+            for name in current._fields:
+                try:
+                    field = getattr(current, name)
+                except AttributeError:
+                    continue
+                if isinstance(field, ast.AST):
+                    curr_children.append(field)
+                elif isinstance(field, list):
+                    for item in field:
+                        if isinstance(item, ast.AST):
+                            curr_children.append(item)
+            if curr_children:
+                stack.extend(reversed(curr_children))
 
 
 def _reachable_statements_in_block(
@@ -639,9 +671,41 @@ def own_nodes(node: ast.AST) -> Iterator[ast.AST]:
 
 
 def _walk_own(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            yield child
+    stack: list[ast.AST] = []
+
+    children: list[ast.AST] = []
+    for name in node._fields:
+        try:
+            field = getattr(node, name)
+        except AttributeError:
+            continue
+        if isinstance(field, ast.AST):
+            children.append(field)
+        elif isinstance(field, list):
+            for item in field:
+                if isinstance(item, ast.AST):
+                    children.append(item)
+    if children:
+        stack.extend(reversed(children))
+
+    while stack:
+        current = stack.pop()
+
+        if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            yield current
         else:
-            yield child
-            yield from _walk_own(child)
+            yield current
+            curr_children = []
+            for name in current._fields:
+                try:
+                    field = getattr(current, name)
+                except AttributeError:
+                    continue
+                if isinstance(field, ast.AST):
+                    curr_children.append(field)
+                elif isinstance(field, list):
+                    for item in field:
+                        if isinstance(item, ast.AST):
+                            curr_children.append(item)
+            if curr_children:
+                stack.extend(reversed(curr_children))
