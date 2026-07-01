@@ -41,6 +41,14 @@ population must stay true-positive-dominant.
   findings** reopens the seed mapping (PDR-0008). Calibration is the tracked
   follow-on (`wardline-bd9d1e65cb`) before the pack is recommended as a gate of
   record.
+- **Reading 2026-06-30 (PDR-0011):** ~11 preview rules now **GATE** (they were silently
+  non-gating). New FP-surface: preview predicates "may still sharpen," so a preview
+  false-positive can now break a build. **WATCH** (this is where PDR-0011's reversal trigger
+  lives): preview-rule waiver/baseline growth vs. preview-rule additions, and the FP rate on
+  the preview population — **> 0.05 reopens** the gate-like-stable call, answered by per-rule
+  severity downgrade, never a non-gating tier. Escape hatches confirmed working for preview
+  findings (baseline now captures them; `--new-since` scopes CI). **UNMEASURED** so far —
+  same instrumentation gap as the G1 baseline; no reading crossed.
 
 ### G2 — Soundness / surface integrity (no false green, no policy bypass)
 Zero known fail-open taint holes (untrusted→trusted laundering) **and** zero
@@ -68,6 +76,17 @@ URL trust, fingerprint-suppression misapply).
   silent-drop-on-join hazard. Fixed via a structural version-stable canonical dump (commit
   `b6704c00`); join key now byte-identical 3.12 == 3.13, proven by the CI matrix (both legs
   green) + full suite 3.12 4478 passed. **No scheme bump** (3.13 reference values unchanged).
+- **Reading 2026-06-30 (PDR-0011):** closed a **G2 false-green** — the `--fail-on` gate
+  silently skipped `maturity: preview` findings, so six ERROR-severity rules (PY-WL-118 SQLi,
+  119 no-op boundary, 120 stored-taint, 121 XXE, 122 SSTI, 124 native-load) fired as active
+  ERROR defects while the gate passed green (`would_trip_at: null`). Pre-existing in 1.1.0;
+  surfaced while validating the pack-bridge dogfood; blast radius wider than the bug filed
+  (the real axis was maturity, not rule 119). Fixed by making `maturity` informational-only
+  (preview now gates + is baselineable exactly like stable) at all five gate/suppression
+  sites; a universal registry-wide regression pin (`test_preview_gating.py`) blocks
+  recurrence for any future preview rule. Shipped **v1.2.0** (PR #83, main CI green, tagged +
+  PyPI-published + installed to the local uv tool, all owner-directed). G2 posture: a known
+  false-green class closed; **held at 0 known false-green / fail-open holes.**
 
 #### G2-seam — cross-repo seam honesty (no confident-empty)
 *Extension added 2026-06-27 for the weft-seam-conformance Now bet (PDR-0002 /
