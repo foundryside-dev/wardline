@@ -7,6 +7,15 @@ trust. It parses the THREE real marker sources (never a hardcoded mirror) and
 re-derives, from the filesystem, whether each row's claim is backed by an
 artifact that actually exists and actually fails closed.
 
+CANON PROVENANCE (PDR-0045, 2026-07-01): the canonical weft seam-index is
+HUB-OWNED at ``weft/contracts/seam-index.json`` (a catalog + blessing registry).
+This ``seam_registry.json`` is a producer-contributed CONFORMANCE MIRROR: it
+RUNS the gate and SURFACES findings -- it is NOT federation canon, and it does
+not issue cross-sibling rulings (those are hub blessings; the wardline
+self-appointment as weft seam arbiter was dissolved by PDR-0045). Any drift
+check is a wardline-side source-drift job against the hub index, never a
+hub-side lint against this mirror's export.
+
 A row that claims ``at_bar`` with a fabricated ``oracle_test`` path, an
 unregistered pytest marker, or (when two-sided) a ``drift_test`` that lacks a
 Layer-1 byte-pin must turn this suite RED. Green therefore comes from an HONEST
