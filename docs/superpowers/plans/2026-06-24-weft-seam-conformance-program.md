@@ -2,6 +2,14 @@
 
 > **Status:** PLAN — awaiting approval. No execution (no merges, no publishes) until signed off.
 > **Date:** 2026-06-24
+>
+> **⚠ SUPERSEDED — hub-index direction (PDR-0045, 2026-07-01):** the P0-W2 / P8-W2 tracks
+> below describe the hub seam-index as POPULATED FROM this registry (a hub-side sync-lint
+> validating the hub against wardline's export), homed at a `~/loom` that never existed.
+> That direction is REVERSED by hub decision PDR-0045: the canonical seam-index is hub-owned
+> at `~/weft/contracts/seam-index.json`; THIS registry is a producer-contributed conformance
+> MIRROR that CITES the hub index (pull-down). Any drift check is a wardline-side source-drift
+> job, never a hub-side lint. The sync-lint was never built, so nothing was migrated.
 > **Provenance:** produced by a throttled (4-wide) multi-agent audit across the five Loom repos
 > + warpline. 40 seams discovered; skeptically audited against the SEI bar; reusable kit designed;
 > plan synthesized and adversarially reviewed (24 findings, 8 blocking — folded into this final).
