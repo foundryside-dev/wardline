@@ -67,14 +67,34 @@ def _own_nodes_in_reachable_stmt(stmt: ast.stmt) -> Iterator[ast.AST]:
 
 
 def _walk_own_non_stmt_children(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            yield child
-        elif isinstance(child, ast.stmt):
-            continue
-        else:
-            yield child
-            yield from _walk_own_non_stmt_children(child)
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        if current is not node:
+            if isinstance(current, ast.stmt) and not isinstance(
+                current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+            ):
+                continue
+            yield current
+            if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                continue
+        if hasattr(current, "_fields"):
+            # PERF: Explicit stack traversal avoids yield from recursion overhead on hot paths.
+            # Eagerly pushing reversed children ensures left-to-right depth-first order.
+            children = []
+            for field in current._fields:
+                try:
+                    value = getattr(current, field)
+                except AttributeError:
+                    continue
+                if isinstance(value, list):
+                    for item in value:
+                        if isinstance(item, ast.AST):
+                            children.append(item)
+                elif isinstance(value, ast.AST):
+                    children.append(value)
+            if children:
+                stack.extend(reversed(children))
 
 
 def _reachable_statements_in_block(
@@ -639,9 +659,27 @@ def own_nodes(node: ast.AST) -> Iterator[ast.AST]:
 
 
 def _walk_own(node: ast.AST) -> Iterator[ast.AST]:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            yield child
-        else:
-            yield child
-            yield from _walk_own(child)
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        if current is not node:
+            yield current
+            if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                continue
+        if hasattr(current, "_fields"):
+            # PERF: Explicit stack traversal avoids yield from recursion overhead on hot paths.
+            # Eagerly pushing reversed children ensures left-to-right depth-first order.
+            children = []
+            for field in current._fields:
+                try:
+                    value = getattr(current, field)
+                except AttributeError:
+                    continue
+                if isinstance(value, list):
+                    for item in value:
+                        if isinstance(item, ast.AST):
+                            children.append(item)
+                elif isinstance(value, ast.AST):
+                    children.append(value)
+            if children:
+                stack.extend(reversed(children))
