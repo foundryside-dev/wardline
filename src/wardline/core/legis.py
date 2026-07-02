@@ -53,6 +53,8 @@ if TYPE_CHECKING:
     from wardline.core.config import WardlineConfig
     from wardline.core.run import ScanResult
 
+_SAFE_GIT_CONFIG = ("-c", "core.fsmonitor=false")
+
 LEGIS_ARTIFACT_KEY_ENV = "WARDLINE_LEGIS_ARTIFACT_KEY"
 SIG_PREFIX = "hmac-sha256:v2:"
 ARTIFACT_SIGNATURE_FIELD = "artifact_signature"
