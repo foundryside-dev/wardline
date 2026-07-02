@@ -453,16 +453,33 @@ class WardlineAnalyzer:
             return result
 
         def _iter_l2_body_nodes(node: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.AST]:
-            def walk(current: ast.AST) -> Iterator[ast.AST]:
-                for child in ast.iter_child_nodes(current):
-                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-                        continue
-                    yield child
-                    yield from walk(child)
-
             for stmt in node.body:
                 yield stmt
-                yield from walk(stmt)
+                stack: list[ast.AST] = [stmt]
+                while stack:
+                    current = stack.pop()
+                    if current is not stmt:
+                        yield current
+                    if hasattr(current, "_fields"):
+                        # PERF: Explicit stack traversal avoids yield from recursion overhead on hot paths.
+                        # Eagerly pushing reversed children ensures left-to-right depth-first order.
+                        children = []
+                        for field in current._fields:
+                            try:
+                                value = getattr(current, field)
+                            except AttributeError:
+                                continue
+                            if isinstance(value, list):
+                                for item in value:
+                                    if isinstance(item, ast.AST):
+                                        children.append(item)
+                            elif isinstance(value, ast.AST):
+                                children.append(value)
+                        if children:
+                            for child in reversed(children):
+                                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                                    continue
+                                stack.append(child)
 
         def _assignment_targets(node: ast.AST) -> list[ast.expr]:
             if isinstance(node, ast.Assign):

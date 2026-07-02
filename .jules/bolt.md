@@ -1,0 +1,3 @@
+## 2024-07-02 - AST Traversal with explicit stack
+**Learning:** For hot-path AST traversal, use an explicit stack combined with `yield` instead of `yield from` recursion to preserve lazy evaluation and short-circuiting capabilities. Avoid eager list-appending (`list.append()`) to prevent computing the whole subtree when early matches exist. Reverse child nodes via `reversed()` before extending the stack to preserve traversal order. Critically, retain `isinstance(node, ast.AST)` checks to prevent `AttributeError`s when traversing `_fields`, as not all field values are AST nodes (some are strings or literals).
+**Action:** Replace `yield from` with explicit stack traversal and `yield` for hot-path AST traversals.
