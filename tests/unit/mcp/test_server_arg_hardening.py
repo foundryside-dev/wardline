@@ -47,9 +47,11 @@ def _leaky_project(tmp_path: Path) -> Path:
 
 
 def _dispatch(server: WardlineMCPServer, name: str, arguments: dict) -> dict:
-    return server.rpc.dispatch(
+    resp = server.rpc.dispatch(
         {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": arguments}}
     )
+    assert resp is not None  # dispatch returns None only for id-less notifications; this carries id=1
+    return resp
 
 
 def _block_jsonschema(monkeypatch) -> None:
