@@ -34,11 +34,14 @@ If you have not installed Wardline yet, start with
 - writes a global Codex MCP entry in `~/.codex/config.toml`;
 - **detects** a Loomweave taint store (`loomweave` on `PATH` or
   `WARDLINE_LOOMWEAVE_URL`) and a Filigree project (`.filigree.conf`) and reports
-  what it found — it writes **no** binding and persists **no** URL. `weft.toml`
-  stays operator-authored; live URLs come from the `--filigree-url` /
-  `--loomweave-url` flag, the `WARDLINE_FILIGREE_URL` / `WARDLINE_LOOMWEAVE_URL`
-  env var, or the published `.weft/<sibling>/ephemeral.port` rung (legacy
-  `.<sibling>/ephemeral.port` tolerated).
+  what it found. `weft.toml` stays operator-authored; live URLs come from the
+  `--filigree-url` / `--loomweave-url` flag, the `WARDLINE_FILIGREE_URL` /
+  `WARDLINE_LOOMWEAVE_URL` env var, Filigree's server-mode registry
+  (`~/.config/filigree/server.json` — a server-registered repo needs no flag;
+  install bakes that scoped target into the `.mcp.json` entry so the MCP
+  server's emit target is inspectable), or the published
+  `.weft/<sibling>/ephemeral.port` rung (legacy `.<sibling>/ephemeral.port`
+  tolerated).
 
 ```console
 $ wardline install

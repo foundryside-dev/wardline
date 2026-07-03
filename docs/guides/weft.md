@@ -83,11 +83,23 @@ output format, so SARIF output and CI gating compose.
 
 `--filigree-url` POSTs findings into Filigree's Weft scan-results lifecycle —
 Filigree owns finding *state* (status, seen-count, issue links); Wardline owns
-the analysis fact and the local baseline. Pass the full endpoint URL:
+the analysis fact and the local baseline. The flag is **optional for a repo
+registered with a server-mode Filigree daemon**: Wardline derives the
+project-scoped endpoint from Filigree's home registry
+(`~/.config/filigree/server.json`, matched against the repo's `.weft/filigree`
+store), so a bare `wardline scan .` already emits to the right project. Pass
+the full endpoint URL only to override that discovery:
 
 ```console
-$ wardline scan . --filigree-url http://localhost:8377/api/weft/scan-results
+$ wardline scan . --filigree-url http://localhost:8377/api/p/myproject/weft/scan-results
 ```
+
+Against a **server-mode** daemon the URL must carry the project scope —
+`/api/p/<prefix>/…` path or a `?project=<key>` query. Server-mode Filigree
+fail-closes an unscoped write with a 400 rather than let one project's
+findings land silently in another's tracker. The unscoped
+`…/api/weft/scan-results` form is correct only for a single-project
+(ethereal / per-project-port) Filigree.
 
 This is layered on top of the normal local output — Wardline still writes a
 timestamped JSONL artifact (or your exact `--output`) and runs the gate;
@@ -188,12 +200,23 @@ resolves, in precedence order, from:
 
 1. the `--filigree-url` / `--loomweave-url` flag;
 2. the `WARDLINE_FILIGREE_URL` / `WARDLINE_LOOMWEAVE_URL` environment variable;
-3. the published `<root>/.weft/<sibling>/ephemeral.port` file written by a running
+3. **(Filigree only)** the server-mode registry: when the repo's
+   `.weft/filigree` store is registered in `~/.config/filigree/server.json`,
+   Wardline derives the project-scoped
+   `http://localhost:<port>/api/p/<prefix>/weft/scan-results` from it —
+   a server-registered repo needs no flag at all;
+4. the published `<root>/.weft/<sibling>/ephemeral.port` file written by a running
    sibling (the legacy `<root>/.<sibling>/ephemeral.port` location is tolerated
-   during the transition window).
+   during the transition window). For Filigree this rung yields the unscoped
+   single-project URL, which is correct only outside server mode.
 
-`wardline install` / `wardline doctor` only **detect** whether a sibling is
-present — they write no binding and persist no URL.
+`wardline doctor` only **detects** whether a sibling is present (and probes the
+emit token, the `filigree.auth` check) — it persists no URL. `wardline install`
+resolves URLs live the same way, with one deliberate exception: when the
+Filigree server registry supplies a scoped target, install bakes it into the
+`.mcp.json` `wardline` entry (and repairs a stale loopback pin to the
+registered scope) so the long-lived MCP server's emit target is explicit and
+inspectable.
 
 ## See also
 

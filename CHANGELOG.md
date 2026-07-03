@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Docs
+- Documented the Filigree **server-registry rung** of sibling-URL resolution
+  (`docs/guides/weft.md`, `configuration.md`, `agents.md`): a repo registered
+  with a server-mode Filigree daemon needs no `--filigree-url` — Wardline
+  derives the project-scoped `/api/p/<prefix>/weft/scan-results` target from
+  `~/.config/filigree/server.json`, and `wardline install` bakes it into the
+  `.mcp.json` entry. The emitter example now uses a path-scoped URL, since
+  server-mode Filigree fail-closes unscoped writes; the unscoped form is
+  correct only for a single-project (ethereal) Filigree. Doc-only; the
+  resolution behavior itself shipped earlier.
+
 ## [1.2.0] - 2026-06-30
 
 ### Fixed

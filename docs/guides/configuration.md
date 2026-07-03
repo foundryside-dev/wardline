@@ -52,8 +52,11 @@ Everything nests under the `[wardline]` table.
     There is **no** `[wardline.filigree].url` or `[wardline.loomweave].url`
     config key. Sibling endpoint URLs resolve only via the `--filigree-url` /
     `--loomweave-url` flag, the `WARDLINE_FILIGREE_URL` / `WARDLINE_LOOMWEAVE_URL`
-    environment variable, or the published `<root>/.weft/<sibling>/ephemeral.port`
-    rung (legacy `<root>/.<sibling>/ephemeral.port` is tolerated). See
+    environment variable, or live discovery: for Filigree, the server-mode
+    registry (`~/.config/filigree/server.json`) supplies the project-scoped
+    `/api/p/<prefix>/` URL — a server-registered repo needs no flag — else the
+    published `<root>/.weft/<sibling>/ephemeral.port` rung (legacy
+    `<root>/.<sibling>/ephemeral.port` is tolerated). See
     [Weft integration](weft.md).
 
 !!! note "Waivers are not config keys"
