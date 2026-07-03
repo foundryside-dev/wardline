@@ -7,6 +7,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Concurrent-writer detection**: the scan now stat-snapshots the discovered file
+  inventory at discovery and re-checks it after analysis. If any scanned file was
+  written, truncated, or deleted while the scan ran, it emits a non-gating
+  `WLN-ENGINE-TREE-CHANGED-DURING-SCAN` FACT (and a CLI `warning:`) naming the files
+  and the consequence — findings reflect each file as first read, and a pre-commit
+  harness may fail the hook via its own files-modified check even though wardline's
+  gate verdict is unaffected. Motivated by the 2026-07-03 elspeth RCA
+  (`docs/handoffs/2026-07-03-elspeth-precommit-intermittent-rca.md`), where exactly
+  that pre-commit behavior on a shared checkout was misread as a wardline failure.
+
+### Security
+- **HTTP redirects are never followed on any credential-bearing transport.** urllib's
+  default handler re-sends every non-`Content-*` header — `Authorization: Bearer` and
+  the `X-Weft-*` HMAC trio — to a redirect target, cross-origin included, and rewrites
+  a redirected POST into a body-less GET whose 200 parsed as a clean, reachable emit
+  (silent false-green telemetry). The shared `WeftHttp` transport now refuses the first
+  3xx before dialing the target (pre-seeded stdlib redirect-loop guard, backstopped by
+  a typed fail-closed `WeftRedirectError`), and a 3xx surfaces as an ordinary
+  status-band outcome: `verify_token` reports it inconclusive (never pins a token on an
+  unverified probe), emit reports it as a failure, and the promote/judge legs reject
+  loudly. All federation clients (Filigree emit + promote/entity-association, Loomweave,
+  dossier) and the judge's OpenRouter transport (operator API key) now route through
+  this guard — the last two raw-`urlopen` credential paths (`core/filigree_issue.py`,
+  `core/judge.py`) were converted as part of this change (wardline-f68c483d92).
+- **Signing paths fail closed on indeterminate git state.** Git dirtiness is now
+  tri-state (`clean / dirty / unknown`): the legis artifact signs only on a proven-clean
+  tree, and `attest` signs an indeterminate tree only under explicit `allow_dirty`,
+  recording `dirty: null` uncoerced (previously a failed `git status` read as *clean*
+  and could sign a falsely-clean bundle). `verify_attestation` never coerces an unknown
+  state to clean.
+- **Credential-bearing URLs are redacted at every diagnostic seam.** Scheme-gate
+  errors, `filigree`-unreachable reasons, scan-job `status.json`/request persistence,
+  promote rejects, and redirect backstop messages now echo scheme+host only — no
+  userinfo, path, or query from a configured or attacker-steered URL reaches logs,
+  status files, or MCP results.
+
+### Fixed
+- **MCP boolean arguments no longer coerce truthy strings.** A string `"false"` passed
+  to a boolean tool arg (`fix.apply`, `judge.write`, `baseline.overwrite`,
+  `attest.allow_dirty`, `verify_attestation.reproduce`, `scan.*`, and every other
+  converted site) now returns a typed `ToolError` instead of being treated as `True` —
+  pre-fix, `fix` with `apply="false"` **applied**.
+- **The MCP handshake gate no longer special-cases test runs.** The
+  reject-before-`initialize` rule is enforced by the same code path everywhere (the
+  pytest-sniffing bypass was removed); protocol conformance tests now exercise the true
+  default.
+- **Scan-job terminal statuses are monotonic.** A landed terminal status
+  (`done`/`error`/`cancelled`) is no longer replaced by a slower writer finishing
+  second (parent/worker race).
+- **A configured gate over zero scanned files is `NOT_EVALUATED`, not a vacuous
+  `PASSED`** (`no_files_scanned`): an empty-but-existing source root or an exclude-all
+  config no longer reads as an authoritative green.
+
+### Changed
+- **Filigree emit accounting is honest about mid-batch failures**: `EmitResult` now
+  carries the landed chunk count, per-finding `partial` failures, and a
+  "connection dropped mid-emit: K of N chunk(s) landed" warning when the connection
+  drops after chunks landed (machine envelope; the CLI text surface is tracked in
+  wardline-7924d67d3b).
+- **Loomweave resolve stops on auth rejection**: a hinted 401/403 halts the batch and
+  is carried as `ResolveResult.auth_status` so surfaces can steer the operator to the
+  token rather than a phantom unresolved entity (consumer threading tracked in
+  wardline-6f9eece880); a zero-fact scan now reports the taint-store write as skipped
+  (`no facts`) rather than written.
+- **An armed severity gate that passes now says so** (wardline-eef3d30c7d). `wardline
+  scan --fail-on <SEV>` used to print a gate verdict only for `FAILED`,
+  `NOT_EVALUATED`, and the unanalyzed-only pass — a clean armed pass ended with the
+  bare summary. It now prints `gate: PASSED (--fail-on <SEV>) — <reason>` and
+  `gate: evaluated <population>` on stderr, so a hook-captured log is
+  self-diagnosing: when a hook harness fails the hook for its own reasons (e.g.
+  pre-commit's "files were modified by this hook" check tripped by a concurrent
+  writer on a shared checkout), the log now shows wardline's own verdict instead of
+  reading like a silent wardline failure. Diagnosed from an elspeth pre-commit
+  consumer report (2026-07-03); the intermittent commit failures were pre-commit's
+  diff-before/diff-after check attributing another session's tracked-file writes to
+  the slowest (whole-tree) hook — wardline exited 0 in every observed occurrence.
+
+### Docs
+- Documented the Filigree **server-registry rung** of sibling-URL resolution
+  (`docs/guides/weft.md`, `configuration.md`, `agents.md`): a repo registered
+  with a server-mode Filigree daemon needs no `--filigree-url` — Wardline
+  derives the project-scoped `/api/p/<prefix>/weft/scan-results` target from
+  `~/.config/filigree/server.json`, and `wardline install` bakes it into the
+  `.mcp.json` entry. The emitter example now uses a path-scoped URL, since
+  server-mode Filigree fail-closes unscoped writes; the unscoped form is
+  correct only for a single-project (ethereal) Filigree. Doc-only; the
+  resolution behavior itself shipped earlier.
+
 ## [1.2.0] - 2026-06-30
 
 ### Fixed

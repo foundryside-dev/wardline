@@ -38,7 +38,27 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+from wardline.mcp.protocol import JsonRpcServer
 from wardline.mcp.server import WardlineMCPServer
+
+_ORIG_RPC_INIT = JsonRpcServer.__init__
+
+
+@pytest.fixture(autouse=True)
+def _handshake_preopened(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Explicit opt-out of the MCP initialize gate (wardline-5e4a4ee246): this module
+    drives ``tools/list`` directly through ``dispatch()`` without the client handshake.
+    The gate itself (enabled by default) is pinned in ``test_mcp_handshake.py``."""
+
+    def _init(self: JsonRpcServer, *, server_name: str, server_version: str, require_handshake: bool = False) -> None:
+        _ORIG_RPC_INIT(
+            self, server_name=server_name, server_version=server_version, require_handshake=require_handshake
+        )
+
+    monkeypatch.setattr(JsonRpcServer, "__init__", _init)
+
 
 _GOLDEN_PATH = Path(__file__).parent / "mcp_output_schemas.golden.json"
 _GOLDEN: dict[str, Any] = json.loads(_GOLDEN_PATH.read_text("utf-8"))

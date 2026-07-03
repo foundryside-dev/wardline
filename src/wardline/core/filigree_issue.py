@@ -14,16 +14,15 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.parse
-import urllib.request
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
 from wardline.core.errors import FiligreeEmitError
-from wardline.core.filigree_emit import filigree_api_base_url
+from wardline.core.filigree_emit import filigree_api_base_url, redact_url_for_diagnostics, sanitize_peer_text
 from wardline.core.finding import FINGERPRINT_SCHEME, format_fingerprint
-from wardline.core.http import read_response_text
+from wardline.core.http import WeftHttp
 from wardline.loomweave.identity import SeiResolver
 
 _ALLOWED_SCHEMES = ("http", "https")
@@ -130,21 +129,24 @@ class Transport(Protocol):
 
 class UrllibTransport:
     def __init__(self, timeout: float = 30.0) -> None:
-        self._timeout = timeout
+        # WeftHttp owns the round-trip discipline: the http(s) scheme gate (a stray
+        # file:// / ftp:// / data: URL is a user error, not an ingest target — raised
+        # as this client's own FiligreeEmitError with the URL redacted, since a
+        # configured URL can carry credentials in userinfo / query tokens), the
+        # never-follow-redirects guard (this transport sends Authorization: Bearer —
+        # a followed 3xx would re-send it cross-origin and parse the redirect
+        # target's body as a clean promote), and the bounded body read.
+        self._http = WeftHttp(
+            timeout=timeout,
+            allowed_schemes=_ALLOWED_SCHEMES,
+            scheme_error=lambda scheme, url: FiligreeEmitError(
+                f"filigree URL must use http or https; got scheme {scheme!r} in {redact_url_for_diagnostics(url)!r}"
+            ),
+        )
 
     def post(self, url: str, body: bytes, headers: Mapping[str, str]) -> Response:
-        # Restrict to http(s): a stray file://, ftp:// or data: URL is a user error, not
-        # an ingest target — turn it into a clean loud failure (and justify the S310 below).
-        scheme = urllib.parse.urlsplit(url).scheme.lower()
-        if scheme not in _ALLOWED_SCHEMES:
-            raise FiligreeEmitError(f"filigree URL must use http or https; got scheme {scheme!r} in {url!r}")
-        request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")
-        try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
-                return Response(status=resp.status, body=read_response_text(resp))
-        except urllib.error.HTTPError as exc:
-            with exc:
-                return Response(status=exc.code, body=read_response_text(exc))
+        result = self._http.fetch("POST", url, body=body, headers=headers)
+        return Response(status=result.status, body=result.body)
 
 
 class FiligreeIssueFiler:
@@ -184,7 +186,13 @@ class FiligreeIssueFiler:
         if resp.status == 404:
             return FileResult(reachable=True, not_found=True)
         if not 200 <= resp.status < 300:
-            raise FiligreeEmitError(f"Filigree rejected promote ({resp.status}) at {self._url}: {resp.body}")
+            # Redact the URL (userinfo/query credentials — the module's own diagnostics
+            # doctrine, honored everywhere by the emit sibling) and bound + control-strip
+            # the peer-reported body before it reaches CLI stderr / MCP isError content.
+            raise FiligreeEmitError(
+                f"Filigree rejected promote ({resp.status}) at {redact_url_for_diagnostics(self._url)}; "
+                f"peer-reported detail: {sanitize_peer_text(resp.body)}"
+            )
         try:
             payload = json.loads(resp.body) if resp.body else {}
         except json.JSONDecodeError:

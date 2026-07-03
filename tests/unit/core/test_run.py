@@ -948,3 +948,215 @@ def test_nested_scan_root_message_drops_output_clause(tmp_path: Path) -> None:
     assert "is a subdirectory of the weft project" in msg
     assert "output defaults under the subdirectory" not in msg
     assert "baseline/waivers/judged state is not loaded" in msg
+
+
+# --- vacuous 0-files-scanned gate (telemetry finding: false green on empty discovery) ---
+
+
+def _empty_proj(tmp_path: Path) -> Path:
+    """A project whose configured source root EXISTS but yields zero discovered files —
+    the fully-silent variant of the 0-files false green (no SOURCE-ROOT-MISSING FACT,
+    unanalyzed == 0, nothing for the inert-posture check to see)."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    return proj
+
+
+def test_gate_decision_zero_files_with_fail_on_is_not_evaluated(tmp_path: Path) -> None:
+    # A --fail-on gate over ZERO scanned files judged nothing: the verdict must be
+    # NOT_EVALUATED with the machine-readable no_files_scanned reason, never an
+    # authoritative PASSED (the 0-files false green). Exit semantics unchanged: 0.
+    result = run_scan(_empty_proj(tmp_path))
+    assert result.files_scanned == 0
+    decision = gate_decision(result, Severity.ERROR)
+    assert decision.verdict == "NOT_EVALUATED"
+    assert decision.tripped is False and decision.exit_class == 0
+    assert decision.fail_on == "ERROR"
+    assert decision.files_scanned == 0
+    assert decision.reason is not None and "no_files_scanned" in decision.reason
+    assert "source_roots" in decision.reason  # points the operator at the likely misconfig
+
+
+def test_gate_decision_zero_files_from_empty_configured_source_root(tmp_path: Path) -> None:
+    # The existing-but-empty configured source root: discover yields nothing, no
+    # SOURCE-ROOT-MISSING FACT fires (the root exists), unanalyzed == 0 — the previously
+    # fully-silent false-green path. The gate must still refuse to read PASSED.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "weft.toml").write_text('[wardline]\nsource_roots = ["src"]\n', encoding="utf-8")
+    (proj / "src").mkdir()  # exists, but empty
+    result = run_scan(proj)
+    assert result.files_scanned == 0
+    assert result.summary.unanalyzed == 0  # no missing-root FACT — this variant is otherwise silent
+    decision = gate_decision(result, Severity.ERROR)
+    assert decision.verdict == "NOT_EVALUATED"
+    assert decision.tripped is False and decision.exit_class == 0
+    assert decision.reason is not None and "no_files_scanned" in decision.reason
+
+
+def test_gate_decision_zero_files_unanalyzed_only_gate_is_not_evaluated(tmp_path: Path) -> None:
+    # --fail-on-unanalyzed alone over zero scanned files also judged nothing — the
+    # "evaluated PASSED" shape of the unanalyzed-only gate requires a real population.
+    result = run_scan(_empty_proj(tmp_path))
+    decision = gate_decision(result, None, fail_on_unanalyzed=True)
+    assert decision.verdict == "NOT_EVALUATED"
+    assert decision.tripped is False and decision.exit_class == 0
+    assert decision.fail_on is None and decision.fail_on_unanalyzed is True
+    assert decision.reason is not None and "no_files_scanned" in decision.reason
+
+
+def test_gate_decision_zero_files_fail_closed_trips_still_fail(tmp_path: Path) -> None:
+    # Fail-closed precedence: a trip over a 0-file scan (e.g. the unanalyzed gate firing
+    # on a missing source root that left nothing discovered) stays FAILED — the vacuous
+    # NOT_EVALUATED shape only ever applies to an UNTRIPPED decision.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "weft.toml").write_text('[wardline]\nsource_roots = ["does_not_exist"]\n', encoding="utf-8")
+    with pytest.warns(UserWarning, match="source root does not exist"):
+        result = run_scan(proj)
+    assert result.files_scanned == 0
+    assert result.summary.unanalyzed >= 1
+    decision = gate_decision(result, Severity.ERROR, fail_on_unanalyzed=True)
+    assert decision.tripped is True and decision.verdict == "FAILED"
+    assert decision.exit_class == 1
+    assert decision.unanalyzed_tripped is True
+
+
+def test_gate_decision_bare_scan_zero_files_carries_files_scanned() -> None:
+    # The bare-scan branch (no gates configured) keeps its NOT_EVALUATED shape but now
+    # carries files-scanned visibility on the decision itself.
+    result = ScanResult(findings=[], summary=ScanSummary(0, 0, 0, 0, 0), files_scanned=0, context=None)
+    decision = gate_decision(result, None)
+    assert decision.verdict == "NOT_EVALUATED"
+    assert decision.files_scanned == 0
+
+
+def test_gate_decision_nonzero_files_pass_unchanged(tmp_path: Path) -> None:
+    # A real (non-empty) clean scan with a configured gate still reads PASSED — the
+    # vacuous branch must not widen into legitimate greens.
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "ok.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    result = run_scan(proj)
+    assert result.files_scanned == 1
+    decision = gate_decision(result, Severity.ERROR)
+    assert decision.verdict == "PASSED"
+    assert decision.files_scanned == 1
+
+
+def test_gate_decision_passed_over_zero_files_unconstructible() -> None:
+    # The __post_init__ guard: PASSED over zero scanned files is the 0-files false green
+    # made unconstructible (same discipline as dogfood #2), keyed on the typed field.
+    with pytest.raises(ValueError, match="no_files_scanned"):
+        GateDecision(
+            tripped=False,
+            fail_on="ERROR",
+            exit_class=0,
+            verdict="PASSED",
+            reason="clean",
+            evaluated="unsuppressed",
+            files_scanned=0,
+        )
+    # The vacuous NOT_EVALUATED shapes construct cleanly, including the unanalyzed-only
+    # knob (legal ONLY at files_scanned == 0 — otherwise that knob makes the gate evaluated).
+    GateDecision(
+        tripped=False,
+        fail_on="ERROR",
+        exit_class=0,
+        verdict="NOT_EVALUATED",
+        reason="no_files_scanned",
+        evaluated="unsuppressed",
+        files_scanned=0,
+    )
+    GateDecision(
+        tripped=False,
+        fail_on=None,
+        exit_class=0,
+        verdict="NOT_EVALUATED",
+        reason="no_files_scanned",
+        evaluated="unsuppressed",
+        fail_on_unanalyzed=True,
+        files_scanned=0,
+    )
+    # Legacy directly-constructed decisions (files_scanned unset -> None) keep their
+    # prior invariants: PASSED is fine, and the unanalyzed-only NOT_EVALUATED still raises.
+    GateDecision(
+        tripped=False, fail_on="ERROR", exit_class=0, verdict="PASSED", reason="clean", evaluated="unsuppressed"
+    )
+    with pytest.raises(ValueError, match="NOT_EVALUATED"):
+        GateDecision(
+            tripped=False,
+            fail_on=None,
+            exit_class=0,
+            verdict="NOT_EVALUATED",
+            reason="x",
+            evaluated="y",
+            fail_on_unanalyzed=True,
+            files_scanned=3,
+        )
+
+
+# --- concurrent-writer detection (WLN-ENGINE-TREE-CHANGED-DURING-SCAN) ----------------
+# A shared checkout under pre-commit: another session writing files during the scan
+# window gets the HOOK blamed by pre-commit's files-modified check (2026-07-03 elspeth
+# RCA). The engine watches the discovered inventory (stat snapshot at discovery,
+# re-stat after analysis) and surfaces any mutation as a non-gating FACT so every
+# surface (CLI warning, MCP result, artifact) can self-diagnose the harness failure.
+
+
+def _clean_two_file_project(tmp_path: Path) -> Path:
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "a.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    (project / "b.py").write_text("def g():\n    return 2\n", encoding="utf-8")
+    return project
+
+
+def test_run_scan_flags_file_changed_during_scan(tmp_path: Path) -> None:
+    project = _clean_two_file_project(tmp_path)
+    mutated: list[str] = []
+
+    def mutate_mid_scan(event: dict) -> None:
+        if event.get("phase") == "analyzing" and not mutated:
+            # concurrent writer: append to a DIFFERENT tracked file mid-window
+            with (project / "a.py").open("a", encoding="utf-8") as fh:
+                fh.write("# concurrent edit\n")
+            mutated.append("a.py")
+
+    result = run_scan(project, progress_callback=mutate_mid_scan)
+
+    facts = [f for f in result.findings if f.rule_id == "WLN-ENGINE-TREE-CHANGED-DURING-SCAN"]
+    assert len(facts) == 1, [f.rule_id for f in result.findings]
+    fact = facts[0]
+    assert fact.kind is Kind.FACT
+    assert fact.severity is Severity.NONE
+    assert fact.properties["files_changed"] == ["a.py"]
+    assert "a.py" in fact.message
+    # the self-diagnosis payload: names the pre-commit consequence explicitly
+    assert "pre-commit" in fact.message
+    # never gates: an armed severity gate still passes
+    decision = gate_decision(result, Severity.ERROR)
+    assert decision.tripped is False
+    assert decision.verdict == "PASSED"
+
+
+def test_run_scan_no_fact_when_tree_quiescent(tmp_path: Path) -> None:
+    project = _clean_two_file_project(tmp_path)
+    result = run_scan(project)
+    assert not [f for f in result.findings if f.rule_id == "WLN-ENGINE-TREE-CHANGED-DURING-SCAN"]
+
+
+def test_run_scan_flags_file_deleted_during_scan(tmp_path: Path) -> None:
+    project = _clean_two_file_project(tmp_path)
+
+    def delete_after_analysis(event: dict) -> None:
+        # phase "analyzed" fires after every file was read — deletion is then purely
+        # a tree mutation, never a read failure
+        if event.get("phase") == "analyzed" and (project / "b.py").exists():
+            (project / "b.py").unlink()
+
+    result = run_scan(project, progress_callback=delete_after_analysis)
+
+    facts = [f for f in result.findings if f.rule_id == "WLN-ENGINE-TREE-CHANGED-DURING-SCAN"]
+    assert len(facts) == 1
+    assert facts[0].properties["files_changed"] == ["b.py"]

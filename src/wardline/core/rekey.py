@@ -576,9 +576,21 @@ def apply_pending_legs(
 
 
 def _apply_filigree_leg(leg: Leg, findings: Sequence[Finding] | None, filigree: Any) -> None:
-    """Re-emit the current scan's join-population findings under their NEW (wlfp2)
-    fingerprints; Filigree's ``mark_unseen`` sweep closes the now-absent old_fp
-    associations (there is no remap endpoint, so this is reconciliation debt, honestly).
+    """Re-emit the current scan's findings under their NEW (wlfp2) fingerprints;
+    Filigree's ``mark_unseen`` sweep closes the now-absent old_fp associations (there
+    is no remap endpoint, so this is reconciliation debt, honestly).
+
+    The emit carries the FULL finding set (all kinds), exactly like a normal scan emit —
+    NOT the DEFECT-only join population. Filigree's sweep is kind-blind and scoped per
+    (file, scan_source): a DEFECT-only re-emit that names a file would sweep that file's
+    still-live FACT fingerprints as unseen (false "fixed"), and filtering out the
+    FACT-kind incomplete-analysis markers (WLN-ENGINE-SOURCE-ROOT-MISSING, the
+    out-of-root-symlink WLN-ENGINE-FILE-SKIPPED) would let the sweep run on a scan the
+    normal emit path refuses to sweep ("missing findings are not proof of a fix").
+    Emitting all kinds keeps the sweep — the leg's whole mechanism — while the emitter's
+    incomplete-analysis guard is computed over the unfiltered set. ``carried`` still
+    records only the join population: that is what the stores re-keyed on.
+
     Soft-fail: an unreachable / 401 / 5xx / bad-payload sibling records debt and leaves
     the leg not-done — it NEVER aborts the already-complete YAML migration."""
     if findings is None:
@@ -594,9 +606,9 @@ def _apply_filigree_leg(leg: Leg, findings: Sequence[Finding] | None, filigree: 
         leg.debt = None
         return
     population = [f for f in findings if is_join_population(f)]
-    scanned = sorted({f.location.path for f in population})
+    scanned = sorted({f.location.path for f in findings})
     try:
-        result = filigree.emit(population, scanned_paths=scanned)
+        result = filigree.emit(list(findings), scanned_paths=scanned)
     except FiligreeEmitError as exc:
         leg.done = False
         leg.debt = f"Filigree rejected the re-emit (bad payload/endpoint): {exc}"

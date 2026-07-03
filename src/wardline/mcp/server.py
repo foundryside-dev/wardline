@@ -165,7 +165,7 @@ def _file_finding(args: dict[str, Any], root: Path, filer: Any, loomweave: Any =
         "fingerprint": fp,
         "disabled_reason": res.disabled_reason,
     }
-    if bool(args.get("attach_loomweave_identity") or False):
+    if _bool_arg(args, "attach_loomweave_identity", False):
         from wardline.core.filigree_issue import attach_loomweave_identity_for_finding, identity_attach_result_to_json
 
         payload["identity_attach"] = identity_attach_result_to_json(
@@ -308,7 +308,11 @@ def _scan_file_findings(
     if not isinstance(labels_raw, list) or not all(isinstance(label, str) for label in labels_raw):
         raise ToolError("labels must be an array of strings")
     lang = _lang_arg(args)
-    dry_run = bool(args.get("dry_run", not (bool(args.get("all_active")) or bool(fingerprints_raw))))
+    # _bool_arg, not bool(...): without jsonschema the handler runs unvalidated, and
+    # bool("false") is True — a client sending the STRING "false" for all_active/dry_run
+    # would otherwise mass-promote every active defect into real Filigree issues.
+    all_active = _bool_arg(args, "all_active", False)
+    dry_run = _bool_arg(args, "dry_run", not (all_active or bool(fingerprints_raw)))
     path = _resolve_under_root(root, args["path"]) if args.get("path") else root
     from wardline.core.scan_file_workflow import scan_file_findings
 
@@ -318,12 +322,12 @@ def _scan_file_findings(
         config_path=_cfg(args, root),
         cache_dir=_cache_dir_arg(args, root),
         fail_on=fail_on.value if fail_on else None,
-        trust_local_packs=bool(args.get("trust_local_packs", False)),
+        trust_local_packs=_bool_arg(args, "trust_local_packs", False),
         trusted_packs=_trusted_packs_arg(args),
-        strict_defaults=bool(args.get("strict_defaults", False)),
+        strict_defaults=_bool_arg(args, "strict_defaults", False),
         lang=lang,
         fingerprints=tuple(fingerprints_raw),
-        all_active=bool(args.get("all_active", False)),
+        all_active=all_active,
         dry_run=dry_run,
         priority=args.get("priority"),
         labels=tuple(labels_raw),
@@ -661,9 +665,17 @@ def _fail_on_arg(raw: Any) -> Severity | None:
     if raw is None:
         return None
     try:
-        return Severity(str(raw).upper())
+        sev = Severity(str(raw).upper())
     except ValueError as exc:
         raise ToolError("fail_on must be one of CRITICAL/ERROR/WARN/INFO") from exc
+    if sev is Severity.NONE:
+        # Severity.NONE exists for facts/metrics but is deliberately absent from the
+        # gate's rank order (suppression.SEVERITY_ORDER). The jsonschema pattern already
+        # excludes it, but without jsonschema this handler runs unvalidated and an
+        # accepted NONE would surface as a KeyError-shaped "wardline internal error"
+        # deep in gate_trips instead of the documented enum error.
+        raise ToolError("fail_on must be one of CRITICAL/ERROR/WARN/INFO")
+    return sev
 
 
 def _scan_job_request(args: dict[str, Any], root: Path, filigree_url: str | None) -> dict[str, Any]:
@@ -790,9 +802,13 @@ def _scan(
         except WardlineError:
             # Loomweave probe failed (outage / pre-SEI 404) — fail-soft to qualname fallback.
             sei_resolver = None
+    # Resolved ONCE against the server root (the input schema documents `config` as
+    # root-relative) and reused for every downstream consumer — the legis artifact in
+    # particular must be built from the policy this scan actually ran with.
+    config_path = _cfg(args, root)
     result = run_scan(
         path,
-        config_path=_cfg(args, root),
+        config_path=config_path,
         cache_dir=cache_dir,
         confine_to_root=True,
         new_since=new_since,
@@ -846,7 +862,7 @@ def _scan(
         resolved_where = resolve_query_filters(
             where,
             root,
-            _cfg(args, root),
+            config_path,
             loomweave,
             strict_defaults=strict_defaults,
         )
@@ -969,6 +985,7 @@ def _scan(
         result,
         path,
         args,
+        config_path=config_path,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
@@ -2115,6 +2132,7 @@ def _attach_legis_artifact(
     path: Path,
     args: dict[str, Any],
     *,
+    config_path: Path | None,
     trust_local_packs: bool,
     trusted_packs: tuple[str, ...],
     strict_defaults: bool,
@@ -2140,7 +2158,7 @@ def _attach_legis_artifact(
     )
 
     key_str = load_legis_artifact_key(path)
-    explicit = bool(args.get("legis_artifact"))
+    explicit = _bool_arg(args, "legis_artifact", False)
     if key_str is None and not explicit:
         return  # not requested — default response unchanged
     if _bool_arg(args, "summary_only", False) and not explicit:
@@ -2150,9 +2168,16 @@ def _attach_legis_artifact(
         # legis_artifact:true still wins when the caller asks for both.
         return
 
+    # ``config_path`` is the SAME value ``run_scan`` received (an explicit ``config`` arg
+    # resolves against the SERVER root, per the input schema). Re-resolving the arg here
+    # against the scan sub-path would (a) load a DIFFERENT policy than the one that
+    # produced ``result`` — a signed artifact whose rule_set_version/scan_scope
+    # misattribute provenance on the legis wire — and (b) raise on a root-relative config
+    # that does not exist under (or escapes) the sub-path, turning a completed scan into
+    # isError in violation of this block's fail-soft contract.
     cfg = config_mod.load(
-        _cfg(args, path) or weft_config_path(path),
-        explicit=_cfg(args, path) is not None,
+        config_path or weft_config_path(path),
+        explicit=config_path is not None,
         trust_local_packs=trust_local_packs,
         trusted_packs=trusted_packs,
         strict_defaults=strict_defaults,
@@ -2210,7 +2235,7 @@ def _explain_taint(args: dict[str, Any], root: Path, loomweave: Any = None) -> d
         confine_to_root=True,
         loomweave=loomweave,
         sink_qualname=args.get("sink_qualname"),
-        chain=bool(args.get("chain")),
+        chain=_bool_arg(args, "chain", False),
         max_hops=int(max_hops_raw) if max_hops_raw is not None else 20,
     )
     if result_dict is None:
@@ -3150,16 +3175,19 @@ def _attest(args: dict[str, Any], root: Path, loomweave: Any = None) -> dict[str
     key = load_attest_key(resolved_root)
     if key is None:
         raise ToolError("no attest key — run `wardline install` to mint one (or set WARDLINE_ATTEST_KEY)")
-    allow_dirty = bool(args.get("allow_dirty", False))
+    # _bool_arg, not bool(...): without jsonschema the handler runs unvalidated, and
+    # bool("false") is True — a client sending the STRING "false" would otherwise sign
+    # a dirty tree it asked not to, or trust repo-local packs.
+    allow_dirty = _bool_arg(args, "allow_dirty", False)
     return build_attestation(
         resolved_root,
         key,
         config_path=_cfg(args, root),
         cache_dir=_cache_dir_arg(args, root),
         confine_to_root=True,
-        trust_local_packs=bool(args.get("trust_local_packs", False)),
+        trust_local_packs=_bool_arg(args, "trust_local_packs", False),
         trusted_packs=_trusted_packs_arg(args),
-        strict_defaults=bool(args.get("strict_defaults", False)),
+        strict_defaults=_bool_arg(args, "strict_defaults", False),
         loomweave_client=loomweave,
         allow_dirty=allow_dirty,
     )
@@ -3388,7 +3416,7 @@ def _verify_attestation(args: dict[str, Any], root: Path, loomweave: Any = None)
     key = load_attest_key(resolved_root)
     if key is None:
         raise ToolError("no attest key — run `wardline install` to mint one (or set WARDLINE_ATTEST_KEY)")
-    reproduce = bool(args.get("reproduce", False))
+    reproduce = _bool_arg(args, "reproduce", False)
     return verify_attestation(
         bundle,
         key,
@@ -3398,9 +3426,9 @@ def _verify_attestation(args: dict[str, Any], root: Path, loomweave: Any = None)
         cache_dir=_cache_dir_arg(args, root),
         loomweave_client=loomweave,
         confine_to_root=True,
-        trust_local_packs=bool(args.get("trust_local_packs", False)),
+        trust_local_packs=_bool_arg(args, "trust_local_packs", False),
         trusted_packs=_trusted_packs_arg(args),
-        strict_defaults=bool(args.get("strict_defaults", False)),
+        strict_defaults=_bool_arg(args, "strict_defaults", False),
     )
 
 
@@ -3482,13 +3510,13 @@ def _judge(args: dict[str, Any], root: Path) -> dict[str, Any]:
         config_path=_cfg(args, root),
         model=args.get("model"),
         max_findings=args.get("max_findings"),
-        write=bool(args.get("write", False)),
+        write=_bool_arg(args, "write", False),
         confine_to_root=True,
-        trust_local_packs=bool(args.get("trust_local_packs", False)),
+        trust_local_packs=_bool_arg(args, "trust_local_packs", False),
         trusted_packs=tuple(args.get("trust_packs") or []),
-        trust_judge_config=bool(args.get("trust_judge_config", False)),
-        trust_judge_policy=bool(args.get("trust_judge_policy", False)),
-        strict_defaults=bool(args.get("strict_defaults", False)),
+        trust_judge_config=_bool_arg(args, "trust_judge_config", False),
+        trust_judge_policy=_bool_arg(args, "trust_judge_policy", False),
+        strict_defaults=_bool_arg(args, "strict_defaults", False),
         context_lines=int(context_lines) if context_lines is not None else None,
     )
     return {
@@ -3593,7 +3621,7 @@ _JUDGE_TOOL: dict[str, Any] = {
 def _baseline(args: dict[str, Any], root: Path) -> dict[str, Any]:
     reason = args.get("reason")
     baseline_path = baseline_file(root)
-    overwrite = bool(args.get("overwrite", False))
+    overwrite = _bool_arg(args, "overwrite", False)
     try:
         count = generate_baseline(
             root,
@@ -3601,9 +3629,9 @@ def _baseline(args: dict[str, Any], root: Path) -> dict[str, Any]:
             config_path=_cfg(args, root),
             cache_dir=_cache_dir_arg(args, root),
             confine_to_root=True,
-            trust_local_packs=bool(args.get("trust_local_packs", False)),
+            trust_local_packs=_bool_arg(args, "trust_local_packs", False),
             trusted_packs=_trusted_packs_arg(args),
-            strict_defaults=bool(args.get("strict_defaults", False)),
+            strict_defaults=_bool_arg(args, "strict_defaults", False),
         )
     except FileExistsError:
         if overwrite:
@@ -4193,9 +4221,9 @@ def _rekey(args: dict[str, Any], root: Path, filigree: Any = None) -> dict[str, 
             config_path=_cfg(args, root),
             cache_dir=_cache_dir_arg(args, root),
             confine_to_root=True,
-            trust_local_packs=bool(args.get("trust_local_packs", False)),
+            trust_local_packs=_bool_arg(args, "trust_local_packs", False),
             trusted_packs=_trusted_packs_arg(args),
-            strict_defaults=bool(args.get("strict_defaults", False)),
+            strict_defaults=_bool_arg(args, "strict_defaults", False),
             skip_suppression=True,
             lang=lang,
         )
@@ -4493,7 +4521,7 @@ def _fix(args: dict[str, Any], root: Path) -> dict[str, Any]:
 
     from wardline.core.autofix import run_autofix
 
-    dry_run = not bool(args.get("apply", False)) or bool(args.get("dry_run", False))
+    dry_run = not _bool_arg(args, "apply", False) or _bool_arg(args, "dry_run", False)
     applied = run_autofix(findings, cfg, path, dry_run=dry_run)
     action = "Previewed" if dry_run else "Applied"
     return {
@@ -4658,14 +4686,10 @@ class WardlineMCPServer:
                 handler=lambda args, root: _scan(
                     args,
                     root,
-                    self._loomweave_client(
-                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
-                    ),
-                    self._filigree_emitter(
-                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
-                    ),
-                    trust_local_packs=bool(args.get("trust_local_packs") or False),
-                    strict_defaults=bool(args.get("strict_defaults") or False),
+                    self._loomweave_client(_cfg(args, root), strict_defaults=_bool_arg(args, "strict_defaults", False)),
+                    self._filigree_emitter(_cfg(args, root), strict_defaults=_bool_arg(args, "strict_defaults", False)),
+                    trust_local_packs=_bool_arg(args, "trust_local_packs", False),
+                    strict_defaults=_bool_arg(args, "strict_defaults", False),
                 ),
             )
         )
@@ -4675,7 +4699,7 @@ class WardlineMCPServer:
                 handler=lambda args, root: _scan_job_start(
                     args,
                     root,
-                    None if bool(args.get("local_only") or False) else self._resolved_filigree_url_for_policy(args),
+                    None if _bool_arg(args, "local_only", False) else self._resolved_filigree_url_for_policy(args),
                 ),
             )
         )
@@ -4731,9 +4755,7 @@ class WardlineMCPServer:
                 handler=lambda args, root: _attest(
                     args,
                     root,
-                    self._loomweave_client(
-                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
-                    ),
+                    self._loomweave_client(_cfg(args, root), strict_defaults=_bool_arg(args, "strict_defaults", False)),
                 ),
             )
         )
@@ -4743,9 +4765,7 @@ class WardlineMCPServer:
                 handler=lambda args, root: _verify_attestation(
                     args,
                     root,
-                    self._loomweave_client(
-                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
-                    ),
+                    self._loomweave_client(_cfg(args, root), strict_defaults=_bool_arg(args, "strict_defaults", False)),
                 ),
             )
         )
@@ -4757,7 +4777,7 @@ class WardlineMCPServer:
                     root,
                     self._filigree_filer(_cfg(args, root)),
                     self._loomweave_client(_cfg(args, root))
-                    if bool(args.get("attach_loomweave_identity") or False)
+                    if _bool_arg(args, "attach_loomweave_identity", False)
                     else None,
                 ),
             )
@@ -4768,13 +4788,9 @@ class WardlineMCPServer:
                 handler=lambda args, root: _scan_file_findings(
                     args,
                     root,
-                    self._filigree_emitter(
-                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
-                    ),
-                    self._filigree_filer(_cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)),
-                    self._loomweave_client(
-                        _cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False)
-                    ),
+                    self._filigree_emitter(_cfg(args, root), strict_defaults=_bool_arg(args, "strict_defaults", False)),
+                    self._filigree_filer(_cfg(args, root), strict_defaults=_bool_arg(args, "strict_defaults", False)),
+                    self._loomweave_client(_cfg(args, root), strict_defaults=_bool_arg(args, "strict_defaults", False)),
                 ),
             )
         )
@@ -4831,7 +4847,7 @@ class WardlineMCPServer:
                     root,
                     # The Filigree leg only runs under apply; building the emitter is
                     # cheap and returns None when no URL resolves.
-                    self._filigree_emitter(_cfg(args, root), strict_defaults=bool(args.get("strict_defaults") or False))
+                    self._filigree_emitter(_cfg(args, root), strict_defaults=_bool_arg(args, "strict_defaults", False))
                     if args.get("apply")
                     else None,
                 ),

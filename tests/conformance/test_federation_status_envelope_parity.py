@@ -34,7 +34,25 @@ from wardline.core import scan_jobs
 from wardline.core.filigree_emit import EmitResult, FailedFinding, filigree_destination
 from wardline.loomweave.client import WriteResult
 from wardline.mcp import server
+from wardline.mcp.protocol import JsonRpcServer
 from wardline.mcp.server import WardlineMCPServer
+
+_ORIG_RPC_INIT = JsonRpcServer.__init__
+
+
+@pytest.fixture(autouse=True)
+def _handshake_preopened(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Explicit opt-out of the MCP initialize gate (wardline-5e4a4ee246): this module
+    drives the scan tool directly through ``dispatch()`` without the client handshake.
+    The gate itself (enabled by default) is pinned in ``test_mcp_handshake.py``."""
+
+    def _init(self: JsonRpcServer, *, server_name: str, server_version: str, require_handshake: bool = False) -> None:
+        _ORIG_RPC_INIT(
+            self, server_name=server_name, server_version=server_version, require_handshake=require_handshake
+        )
+
+    monkeypatch.setattr(JsonRpcServer, "__init__", _init)
+
 
 # --- representative emit results spanning the soft-failure ladder -----------
 _OK = EmitResult(reachable=True, created=2, updated=1)

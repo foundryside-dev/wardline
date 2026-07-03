@@ -89,6 +89,37 @@ def test_write_oversized_single_fact_is_fail_soft_without_sending():
     assert t.calls == []
 
 
+def test_write_mid_batch_outage_preserves_partial_written_count():
+    # The documented contract: on a mid-batch soft failure earlier chunks may already
+    # be committed and `written` reflects the chunks that succeeded before the first
+    # failure — never a fabricated written=0 for facts the store now holds.
+    t = FakeTransport(
+        [
+            Response(status=200, body='{"written":2,"unresolved_qualnames":["m.gone"]}'),
+            Response(status=503, body='{"code":"STORAGE_ERROR"}'),
+        ]
+    )
+    facts = [{"qualname": f"m.f{i}", "wardline_json": {}} for i in range(4)]
+    result = _client(t, batch_max=2).write_taint_facts(facts)
+    assert result.reachable is False
+    assert result.written == 2
+    assert result.unresolved_qualnames == ("m.gone",)
+
+
+def test_write_mid_batch_403_preserves_partial_written_count_and_reason():
+    t = FakeTransport(
+        [
+            Response(status=200, body='{"written":2,"unresolved_qualnames":[]}'),
+            Response(status=403, body='{"code":"WRITE_DISABLED"}'),
+        ]
+    )
+    facts = [{"qualname": f"m.f{i}", "wardline_json": {}} for i in range(4)]
+    result = _client(t, batch_max=2).write_taint_facts(facts)
+    assert result.reachable is False
+    assert result.written == 2
+    assert result.disabled_reason == "WRITE_DISABLED"
+
+
 def test_batch_get_chunks_and_preserves_input_order():
     r1 = json.dumps([{"qualname": "a", "exists": False}, {"qualname": "b", "exists": False}])
     r2 = json.dumps([{"qualname": "c", "exists": True, "wardline_json": {"x": 1}, "current_content_hash": "deadbeef"}])
@@ -177,6 +208,23 @@ def test_urllib_transport_rejects_non_http_scheme() -> None:
         UrllibTransport().request("POST", "file:///etc/passwd", b"{}", {})
 
 
+def test_urllib_transport_scheme_error_redacts_credentials() -> None:
+    # The scheme-error text is captured verbatim into WriteResult.disabled_reason and
+    # persisted in the agent-summary / MCP scan envelopes (cli/scan.py, mcp/server.py),
+    # so a credential-bearing operator URL must be redacted at exception formation —
+    # filigree_emit's redact_url_for_diagnostics discipline, applied to this transport.
+    from wardline.loomweave.client import UrllibTransport
+
+    with pytest.raises(LoomweaveError) as excinfo:
+        UrllibTransport().request("POST", "ftps://user:hunter2@host/x?token=tok123", b"{}", {})
+    message = str(excinfo.value)
+    assert "hunter2" not in message
+    assert "tok123" not in message
+    assert "user" not in message.replace("<redacted>", "")
+    assert "<redacted>@host" in message
+    assert "'ftps'" in message  # the scheme itself stays diagnosable
+
+
 def test_connection_error_is_soft():
     class Boom:
         def request(self, *a, **k):
@@ -220,4 +268,62 @@ def test_resolve_unhinted_4xx_stays_loud():
     # against the hint-conditional soft band).
     t = FakeTransport([Response(status=400, body='{"code":"INVALID_PATH"}')])
     with pytest.raises(LoomweaveError, match="INVALID_PATH"):
+        _client(t).resolve(["m.f"])
+
+
+def test_resolve_hinted_401_is_auth_rejection_not_unresolved(caplog):
+    # Auth rejection (stale/wrong WEFT_FEDERATION_TOKEN, HMAC mismatch, clock skew) is
+    # NOT hint-field version skew (an older deny_unknown_fields Loomweave 400s, never
+    # 401s) and must never be misreported as "qualname unresolved" — the dogfood-#5 /
+    # C-7 misdiagnosis class. Fail-soft with a DISTINCT signal, never silent.
+    import logging
+
+    t = FakeTransport([Response(status=401, body='{"code":"AUTH"}')])
+    with caplog.at_level(logging.WARNING, logger="wardline.loomweave.client"):
+        result = _client(t).resolve(["m.f", "m.g"], plugin="python")
+    assert result is not None
+    assert result.resolved == {}
+    assert result.unresolved == []  # NOT reported as entity nonexistence
+    assert result.auth_status == 401
+    assert result.auth_rejected is True
+    assert any("401" in rec.message for rec in caplog.records)  # a signal, never silent
+
+
+def test_resolve_hinted_403_is_auth_rejection_not_unresolved():
+    t = FakeTransport([Response(status=403, body='{"code":"FORBIDDEN"}')])
+    result = _client(t).resolve(["m.f"], plugin="python")
+    assert result is not None
+    assert result.unresolved == []
+    assert result.auth_status == 403
+    assert result.auth_rejected is True
+
+
+def test_resolve_hinted_auth_rejection_keeps_earlier_chunk_results():
+    # Chunk 1 resolves; chunk 2 is auth-rejected mid-batch. What resolved before the
+    # rejection is kept, and the rejected chunk is not smeared into `unresolved`.
+    t = FakeTransport(
+        [
+            Response(status=200, body='{"resolved":{"a.b":"python:function:a.b"},"unresolved":["c.d"]}'),
+            Response(status=401, body='{"code":"AUTH"}'),
+        ]
+    )
+    result = _client(t, batch_max=2).resolve(["a.b", "c.d", "e.f", "g.h"], plugin="python")
+    assert result is not None
+    assert result.resolved == {"a.b": "python:function:a.b"}
+    assert result.unresolved == ["c.d"]
+    assert result.auth_status == 401
+
+
+def test_resolve_default_has_no_auth_rejection():
+    t = FakeTransport([Response(status=200, body='{"resolved":{},"unresolved":["m.f"]}')])
+    result = _client(t).resolve(["m.f"], plugin="python")
+    assert result.auth_status is None
+    assert result.auth_rejected is False
+
+
+def test_unhinted_401_stays_loud():
+    # Without a hint the whole 4xx band (auth included) is a loud LoomweaveError —
+    # the pre-existing posture, re-pinned against the new hinted auth carve-out.
+    t = FakeTransport([Response(status=401, body='{"code":"AUTH"}')])
+    with pytest.raises(LoomweaveError, match="401"):
         _client(t).resolve(["m.f"])

@@ -5,7 +5,17 @@ from wardline.mcp.protocol import PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS,
 
 
 def _server() -> JsonRpcServer:
-    srv = JsonRpcServer(server_name="wardline", server_version="0.1.0")
+    # Explicit opt-out of the initialize gate: these tests exercise dispatch
+    # semantics, not handshake sequencing (pinned by the gate tests below).
+    srv = JsonRpcServer(server_name="wardline", server_version="0.1.0", require_handshake=False)
+    srv.register("ping", lambda params: {"pong": params.get("n", 0) + 1})
+    return srv
+
+
+def _gated_server() -> JsonRpcServer:
+    # require_handshake=True passed EXPLICITLY (not relying on the default) so the
+    # tests/unit/mcp/conftest.py opt-out fixture cannot pre-open the gate here.
+    srv = JsonRpcServer(server_name="wardline", server_version="0.1.0", require_handshake=True)
     srv.register("ping", lambda params: {"pong": params.get("n", 0) + 1})
     return srv
 
@@ -195,8 +205,82 @@ def test_run_stdio_rejects_non_object_json() -> None:
 
 
 def test_initialization_gate() -> None:
-    srv = _server()
-    srv._initialized = False  # Force uninitialized to test gate
+    # wardline-5e4a4ee246: gate state comes from the constructor, never from
+    # environment sniffing — no private-attribute forcing needed to test it.
+    srv = _gated_server()
     resp = srv.dispatch({"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {"n": 1}})
     assert resp["error"]["code"] == -32600
     assert "not initialized" in resp["error"]["message"]
+
+
+def test_handshake_sequence_opens_gate() -> None:
+    """The real client sequence — initialize -> notifications/initialized -> call —
+    must open the gate, and each earlier step must still reject method calls."""
+    srv = _gated_server()
+    # before initialize: rejected
+    resp = srv.dispatch({"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {"n": 1}})
+    assert resp["error"]["code"] == -32600
+    assert "not initialized" in resp["error"]["message"]
+    # initialize succeeds
+    resp = srv.dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "initialize",
+            "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {}},
+        }
+    )
+    assert resp["result"]["serverInfo"]["name"] == "wardline"
+    # after initialize but BEFORE notifications/initialized: still rejected
+    resp = srv.dispatch({"jsonrpc": "2.0", "id": 3, "method": "ping", "params": {"n": 1}})
+    assert resp["error"]["code"] == -32600
+    # the initialized notification completes the handshake
+    assert srv.dispatch({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
+    resp = srv.dispatch({"jsonrpc": "2.0", "id": 4, "method": "ping", "params": {"n": 41}})
+    assert resp["result"] == {"pong": 42}
+
+
+def test_initialized_notification_before_initialize_does_not_open_gate() -> None:
+    srv = _gated_server()
+    assert srv.dispatch({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
+    resp = srv.dispatch({"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {"n": 1}})
+    assert resp["error"]["code"] == -32600
+    assert "not initialized" in resp["error"]["message"]
+
+
+def test_oversized_complete_line_does_not_swallow_next_message() -> None:
+    """A line whose total length (INCLUDING the trailing newline) is exactly
+    limit+1 is returned complete by readline(limit+1). The too-long recovery must
+    not drain — that would eat and drop the next legitimate message."""
+    limit = 10 * 1024 * 1024
+    srv = _server()
+    stdin = io.StringIO(
+        "a" * limit + "\n"  # limit content chars + '\n' -> len(raw) == limit+1, complete line
+        '{"jsonrpc": "2.0", "id": 7, "method": "ping", "params": {"n": 1}}\n'
+    )
+    stdout = io.StringIO()
+    srv.run_stdio(stdin=stdin, stdout=stdout)
+    lines = [json.loads(line) for line in stdout.getvalue().splitlines() if line]
+    assert len(lines) == 2
+    assert lines[0]["error"]["code"] == -32700  # line too long
+    assert lines[0]["id"] is None
+    assert lines[1]["id"] == 7  # the following message was answered, not swallowed
+    assert lines[1]["result"] == {"pong": 2}
+
+
+def test_oversized_truncated_line_drains_remainder_then_answers_next_message() -> None:
+    """When the oversized line IS truncated mid-line, the drain must consume the
+    remainder of that line only — the next message still gets its response."""
+    limit = 10 * 1024 * 1024
+    srv = _server()
+    stdin = io.StringIO(
+        "a" * (limit + 5) + "\n"  # readline returns limit+1 chars WITHOUT newline -> drain
+        '{"jsonrpc": "2.0", "id": 8, "method": "ping", "params": {"n": 2}}\n'
+    )
+    stdout = io.StringIO()
+    srv.run_stdio(stdin=stdin, stdout=stdout)
+    lines = [json.loads(line) for line in stdout.getvalue().splitlines() if line]
+    assert len(lines) == 2
+    assert lines[0]["error"]["code"] == -32700
+    assert lines[1]["id"] == 8
+    assert lines[1]["result"] == {"pong": 3}

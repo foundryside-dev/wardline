@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from wardline.core.errors import LoomweaveError
+from wardline.core.filigree_emit import redact_url_for_diagnostics
 from wardline.core.http import WeftHttp
 from wardline.loomweave._hmac import sign_request
 
@@ -51,11 +52,15 @@ class UrllibTransport:
         # HTTPError -> Response (status preserved) conversion. URLError/OSError still
         # propagate to _send(), which fail-softs (outage -> None). An empty body is sent as
         # data=None (no request body) exactly as before — converted at the call site below.
+        # The URL is REDACTED before it enters the exception text (filigree_emit parity):
+        # this message is captured verbatim into WriteResult.disabled_reason and persisted
+        # in the agent-summary / MCP scan envelopes, so a credential-bearing operator URL
+        # (userinfo/query token) must never ride it.
         self._http = WeftHttp(
             timeout=timeout,
             allowed_schemes=_ALLOWED_SCHEMES,
             scheme_error=lambda scheme, url: LoomweaveError(
-                f"--loomweave-url must use http or https; got scheme {scheme!r} in {url!r}"
+                f"--loomweave-url must use http or https; got scheme {scheme!r} in {redact_url_for_diagnostics(url)!r}"
             ),
         )
 
@@ -67,8 +72,19 @@ class UrllibTransport:
 
 @dataclass(frozen=True, slots=True)
 class ResolveResult:
+    """The resolve outcome. ``auth_status`` distinguishes an AUTH REJECTION (401/403 on
+    a hinted request — stale/wrong WEFT_FEDERATION_TOKEN, HMAC mismatch, clock skew)
+    from genuine entity nonexistence: when set, the rejected chunks' qualnames are NOT
+    appended to ``unresolved`` — "fix the token" must never read as "entity does not
+    exist" (the dogfood-#5 / C-7 misdiagnosis class)."""
+
     resolved: dict[str, str]
     unresolved: list[str]
+    auth_status: int | None = None  # 401/403 when a hinted chunk was auth-rejected
+
+    @property
+    def auth_rejected(self) -> bool:
+        return self.auth_status is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,9 +265,14 @@ class LoomweaveClient:
         Fail-soft posture: a 4xx on a HINTED request downgrades the chunk to
         unresolved — an older Loomweave whose ``ResolveRequest`` is
         ``deny_unknown_fields`` 400s on the hint field, and identity enrichment must
-        degrade, not crash. An UNHINTED 4xx stays loud (it cannot be a version skew on
-        this field — it is a real request bug, e.g. ``INVALID_PATH``, and silence
-        would hide it). Outage/5xx stays ``None`` ("unreachable", ``_send``)."""
+        degrade, not crash. EXCEPT 401/403: an auth rejection cannot be hint-field
+        version skew (an older deny_unknown_fields Loomweave returns 400, not 401) and
+        must not be misreported as "qualname unresolved" — resolution stops, the
+        rejected qualnames are NOT marked unresolved, and the rejection is surfaced as
+        ``ResolveResult.auth_status`` (plus a logged warning — a signal, never silent).
+        An UNHINTED 4xx stays loud (it cannot be a version skew on this field — it is
+        a real request bug, e.g. ``INVALID_PATH``, and silence would hide it).
+        Outage/5xx stays ``None`` ("unreachable", ``_send``)."""
         resolved: dict[str, str] = {}
         unresolved: list[str] = []
 
@@ -267,6 +288,18 @@ class LoomweaveClient:
             if resp is None:
                 return None
             if plugin is not None and 400 <= resp.status < 500:
+                if resp.status in (401, 403):
+                    # Auth rejection, not entity nonexistence. Stop (auth will not
+                    # recover mid-batch), keep what resolved so far, and carry the
+                    # status so consumers can steer the operator to the token, not
+                    # to a phantom "unresolved entity".
+                    logger.warning(
+                        "Loomweave rejected the hinted resolve with %d (auth); "
+                        "%d qualname(s) left unprobed (NOT reported unresolved)",
+                        resp.status,
+                        len(chunk),
+                    )
+                    return ResolveResult(resolved=resolved, unresolved=unresolved, auth_status=resp.status)
                 unresolved.extend(str(q) for q in chunk)
                 continue
             data = self._require_ok(resp, "/api/wardline/resolve")
@@ -294,10 +327,21 @@ class LoomweaveClient:
         for chunk in self._payload_chunks(facts, make_payload):
             payload = make_payload(chunk)
             resp = self._send("POST", "/api/wardline/taint-facts", payload)
+            # Both soft-failure returns preserve the accumulated partial counts (the
+            # documented contract: `written` reflects chunks that succeeded before the
+            # first failure), so a mid-batch outage/403 never reports written=0 for
+            # facts that ARE committed server-side (filigree_emit partial-count parity).
             if resp is None:
-                return WriteResult(reachable=False)  # soft outage
+                return WriteResult(  # soft outage
+                    reachable=False, written=written, unresolved_qualnames=tuple(unresolved)
+                )
             if resp.status == 403:
-                return WriteResult(reachable=False, disabled_reason=_error_code(resp.body) or "WRITE_DISABLED")
+                return WriteResult(
+                    reachable=False,
+                    written=written,
+                    unresolved_qualnames=tuple(unresolved),
+                    disabled_reason=_error_code(resp.body) or "WRITE_DISABLED",
+                )
             data = self._require_ok(resp, "/api/wardline/taint-facts")
             written += int(data.get("written", 0) or 0)
             uq = data.get("unresolved_qualnames")

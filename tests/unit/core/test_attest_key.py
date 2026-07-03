@@ -212,3 +212,78 @@ def test_mint_sets_permissions_on_dotenv(tmp_path: Path, monkeypatch: pytest.Mon
         mode = env_file.stat().st_mode
         # Mode on POSIX check for owner-only read/write (0o600 -> S_IRUSR | S_IWUSR)
         assert stat.S_IMODE(mode) == 0o600
+
+
+# ---------------------------------------------------------------------------
+# Test 6: mint_attest_key — secret never touches a loosely-readable file
+# ---------------------------------------------------------------------------
+
+
+def test_mint_fresh_env_is_0600_at_creation_without_chmod(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A FRESH .env is created 0o600 atomically via the os.open mode — no
+    chmod-after-write window. Proven by making chmod unusable: mint must still
+    succeed and the file must still be owner-only."""
+    import stat
+    import sys
+
+    monkeypatch.delenv(WARDLINE_ATTEST_KEY_ENV, raising=False)
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise OSError("chmod unavailable")
+
+    monkeypatch.setattr("wardline.core.attest_key.os.chmod", boom)
+    key, status = mint_attest_key(tmp_path)
+    assert status == "minted"
+    if sys.platform != "win32":
+        assert stat.S_IMODE((tmp_path / ".env").stat().st_mode) == 0o600
+    assert load_attest_key(tmp_path) == key
+
+
+def test_mint_tightens_existing_loose_env_before_append(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A pre-existing group/world-readable .env is chmod-ed to 0o600 BEFORE the
+    secret is appended, and existing content is preserved."""
+    import stat
+    import sys
+
+    monkeypatch.delenv(WARDLINE_ATTEST_KEY_ENV, raising=False)
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("EXISTING=1\n", encoding="utf-8")
+    dotenv.chmod(0o644)
+
+    key, status = mint_attest_key(tmp_path)
+    assert status == "minted"
+    text = dotenv.read_text(encoding="utf-8")
+    assert text.startswith("EXISTING=1\n")
+    assert f'WARDLINE_ATTEST_KEY="{key}"' in text
+    if sys.platform != "win32":
+        assert stat.S_IMODE(dotenv.stat().st_mode) == 0o600
+
+
+def test_mint_refuses_when_existing_env_cannot_be_tightened(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """If a pre-existing .env's mode cannot be restricted, minting refuses LOUDLY
+    (typed WardlineError) and the secret is never written to the loose file."""
+    monkeypatch.delenv(WARDLINE_ATTEST_KEY_ENV, raising=False)
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("EXISTING=1\n", encoding="utf-8")
+    dotenv.chmod(0o644)
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise PermissionError("operation not permitted")
+
+    monkeypatch.setattr("wardline.core.attest_key.os.chmod", boom)
+    with pytest.raises(WardlineError, match="restricted"):
+        mint_attest_key(tmp_path)
+    assert "WARDLINE_ATTEST_KEY" not in dotenv.read_text(encoding="utf-8")
+
+
+def test_mint_appends_missing_trailing_newline_before_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An existing .env without a trailing newline gets the entry on its own line."""
+    monkeypatch.delenv(WARDLINE_ATTEST_KEY_ENV, raising=False)
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("EXISTING=1", encoding="utf-8")  # no trailing newline
+
+    key, _ = mint_attest_key(tmp_path)
+    lines = dotenv.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "EXISTING=1"
+    assert lines[1] == f'WARDLINE_ATTEST_KEY="{key}"'
+    assert load_attest_key(tmp_path) == key

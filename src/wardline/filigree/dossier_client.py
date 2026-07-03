@@ -25,7 +25,7 @@ from typing import Any, Protocol
 
 from wardline.core.dossier import TicketRef, WorkSection
 from wardline.core.errors import FiligreeEmitError
-from wardline.core.filigree_emit import filigree_api_base_url
+from wardline.core.filigree_emit import filigree_api_base_url, redact_url_for_diagnostics
 from wardline.core.http import WeftHttp
 from wardline.core.identity import ContentStatus, EntityBinding, content_status
 
@@ -53,7 +53,8 @@ class UrllibTransport:
             timeout=timeout,
             allowed_schemes=_ALLOWED_SCHEMES,
             scheme_error=lambda scheme, url: FiligreeEmitError(
-                f"filigree dossier URL must use http or https; got scheme {scheme!r} in {url!r}"
+                f"filigree dossier URL must use http or https; got scheme {scheme!r} "
+                f"in {redact_url_for_diagnostics(url)!r}"
             ),
         )
 

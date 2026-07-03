@@ -14,8 +14,6 @@ import hashlib
 import json
 import os
 import urllib.error
-import urllib.parse
-import urllib.request
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -27,7 +25,7 @@ from wardline.core.errors import (
     JudgeContractError,
     JudgeTransportError,
 )
-from wardline.core.http import read_response_text
+from wardline.core.http import WeftHttp
 
 DEFAULT_JUDGE_MODEL: str = "anthropic/claude-opus-4-8"
 DEFAULT_JUDGE_MAX_TOKENS: int = 1024
@@ -295,19 +293,22 @@ class Transport(Protocol):
 
 class UrllibTransport:
     def __init__(self, timeout: float = 60.0) -> None:
-        self._timeout = timeout
+        # WeftHttp owns the round-trip discipline, including the never-follow-redirects
+        # guard: this transport sends the operator's OpenRouter API key as
+        # Authorization: Bearer, and a followed 3xx would re-send it cross-origin. A 3xx
+        # now surfaces as a status the call_judge band classifier treats as loud
+        # (3xx/4xx -> JudgeTransportError), matching the charter comment there.
+        self._http = WeftHttp(
+            timeout=timeout,
+            allowed_schemes=_ALLOWED_SCHEMES,
+            scheme_error=lambda scheme, url: JudgeConfigurationError(
+                f"judge URL must use http or https; got scheme {scheme!r} in {url!r}"
+            ),
+        )
 
     def post(self, url: str, body: bytes, headers: Mapping[str, str]) -> Response:
-        scheme = urllib.parse.urlsplit(url).scheme.lower()
-        if scheme not in _ALLOWED_SCHEMES:
-            raise JudgeConfigurationError(f"judge URL must use http or https; got scheme {scheme!r} in {url!r}")
-        request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")
-        try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
-                return Response(status=resp.status, body=read_response_text(resp))
-        except urllib.error.HTTPError as exc:
-            with exc:
-                return Response(status=exc.code, body=read_response_text(exc))
+        result = self._http.fetch("POST", url, body=body, headers=headers)
+        return Response(status=result.status, body=result.body)
 
 
 # --- orchestration -----------------------------------------------------------

@@ -149,6 +149,45 @@ def test_file_4xx_other_than_404_is_loud():
         FiligreeIssueFiler("http://h/api/weft/scan-results", transport=t).file("fp")
 
 
+def test_file_4xx_loud_error_redacts_url_credentials():
+    # The module's own redaction doctrine (redact_url_for_diagnostics: Filigree URLs can
+    # carry credentials in userinfo/query and must never be echoed): the loud promote
+    # reject propagates to CLI stderr and MCP isError content, so the URL it names must
+    # be redacted — exactly like the emit sibling's reject message.
+    url = "https://alice:s3cret@filigree.internal:8443/api/weft/scan-results?token=abc"
+    t = FakeTransport(422, '{"error":"unprocessable"}')
+    with pytest.raises(FiligreeEmitError) as exc:
+        FiligreeIssueFiler(url, transport=t).file("fp")
+    message = str(exc.value)
+    assert "Filigree rejected promote (422)" in message
+    assert "alice" not in message and "s3cret" not in message and "token=abc" not in message
+    assert "<redacted>@filigree.internal:8443" in message
+    assert "unprocessable" in message  # the peer's own reason still surfaces (bounded)
+
+
+def test_file_4xx_loud_error_bounds_peer_body():
+    # The reject body is peer-reported (untrusted) text: bounded + control-stripped at
+    # the seam, labelled peer-reported — never a 64KiB verbatim relay into agent context.
+    t = FakeTransport(422, "INJECT\n" * 8192)
+    with pytest.raises(FiligreeEmitError) as exc:
+        FiligreeIssueFiler("http://h/api/weft/scan-results", transport=t).file("fp")
+    message = str(exc.value)
+    assert len(message) < 800
+    assert "peer-reported" in message
+    assert "truncated" in message
+    assert "\n" not in message
+
+
+def test_urllib_transport_scheme_gate_redacts_url_credentials():
+    from wardline.core.filigree_issue import UrllibTransport
+
+    with pytest.raises(FiligreeEmitError) as exc:
+        UrllibTransport().post("ftp://alice:s3cret@h/x?token=abc", b"{}", {})
+    message = str(exc.value)
+    assert "http or https" in message
+    assert "s3cret" not in message and "token=abc" not in message
+
+
 @pytest.mark.parametrize("status", [401, 403])
 def test_file_auth_refused_is_soft(status):
     # Filigree's opt-in bearer auth is on and refusing us (401/403): enrichment

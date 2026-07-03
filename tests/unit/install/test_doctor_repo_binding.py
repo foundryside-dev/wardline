@@ -141,3 +141,50 @@ def test_machine_readable_doctor_unreadable_store_flips_ok(tmp_path: Path, monke
     payload = machine_readable_doctor(tmp_path, fix=False)
     assert payload["ok"] is False
     assert any("doctor.repo_binding" in a for a in payload["next_actions"])
+
+
+# ── Hardening carried over from main's forward-port (bdd84eb2): no-false-green +
+# honest-unreadable. bool is an int subclass, and a store can be hand-edited or
+# corrupted; the probe must never (a) report a non-integer version as a bound store,
+# nor (b) CRASH instead of reporting "I cannot read my store" (the point of the seam).
+
+
+def test_inspect_store_bool_version_is_not_a_false_green(tmp_path: Path) -> None:
+    from wardline.core.baseline import inspect_baseline_store
+
+    write_baseline(baseline_path(tmp_path), [_finding(_FP_A)], root=tmp_path)
+    p = baseline_path(tmp_path)
+    raw = yaml.safe_load(p.read_text(encoding="utf-8"))
+    raw["version"] = True  # YAML `version: true` — True == 1 and isinstance(True, int)
+    p.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    status = inspect_baseline_store(tmp_path)
+    assert status.binding_ok is False
+    assert status.schema_version is None  # NOT the bool True
+
+
+def test_inspect_store_non_utf8_reports_unreadable_not_crash(tmp_path: Path) -> None:
+    from wardline.core.baseline import inspect_baseline_store
+
+    p = baseline_path(tmp_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(b"version: 1\n\xff\xfeSECRETMARKER")  # invalid UTF-8
+    status = inspect_baseline_store(tmp_path)  # must not raise
+    assert status.present is True
+    assert status.readable is False
+    assert status.binding_ok is False
+    assert status.schema_version is None
+    assert "SECRETMARKER" not in status.message  # content-free
+
+
+def test_inspect_store_oversize_int_version_reports_unreadable_not_crash(tmp_path: Path) -> None:
+    from wardline.core.baseline import inspect_baseline_store
+
+    p = baseline_path(tmp_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    # A >4300-digit int makes PyYAML raise ValueError (not YAMLError) during safe_load.
+    p.write_text("version: " + ("9" * 5000) + "\nentries: []\n", encoding="utf-8")
+    status = inspect_baseline_store(tmp_path)  # must not raise
+    assert status.present is True
+    assert status.readable is False
+    assert status.binding_ok is False
+    assert status.schema_version is None

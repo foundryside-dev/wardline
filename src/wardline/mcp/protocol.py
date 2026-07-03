@@ -35,15 +35,20 @@ class McpError(Exception):
 
 
 class JsonRpcServer:
-    def __init__(self, *, server_name: str, server_version: str) -> None:
+    def __init__(self, *, server_name: str, server_version: str, require_handshake: bool = True) -> None:
+        """``require_handshake`` gates every non-initialize request behind the MCP
+        ``initialize`` -> ``notifications/initialized`` sequence (the default, and
+        the only correct posture for real clients). Tests that drive handlers
+        directly through ``dispatch()`` opt out EXPLICITLY with
+        ``require_handshake=False`` — never via environment sniffing
+        (wardline-5e4a4ee246: the old ``"pytest" in sys.modules`` probe silently
+        disabled the gate in any embedding host with pytest importable)."""
         self._name = server_name
         self._version = server_version
         self._handlers: dict[str, Handler] = {}
         self.capabilities: dict[str, Any] = {"tools": {}, "resources": {}, "prompts": {}}
-        import sys
-
-        self._initialized = "pytest" in sys.modules
-        self._initializing = "pytest" in sys.modules
+        self._initialized = not require_handshake
+        self._initializing = not require_handshake
 
     def register(self, method: str, handler: Handler) -> None:
         self._handlers[method] = handler
@@ -142,10 +147,16 @@ class JsonRpcServer:
                     break
                 if len(raw) > limit:
                     self._write(out_stream, self._err(None, _PARSE_ERROR, "line too long"))
-                    while True:
-                        chunk = in_stream.readline(limit + 1)
-                        if not chunk or chunk.endswith("\n"):
-                            break
+                    # Drain the rest of the oversized line ONLY when the read was
+                    # truncated mid-line. A read that already ends in '\n' consumed
+                    # the whole offending line (total length exactly limit+1); an
+                    # unconditional drain there would eat — and silently drop — the
+                    # NEXT legitimate JSON-RPC message.
+                    if not raw.endswith("\n"):
+                        while True:
+                            chunk = in_stream.readline(limit + 1)
+                            if not chunk or chunk.endswith("\n"):
+                                break
                     continue
                 line = raw.strip()
                 if not line:
