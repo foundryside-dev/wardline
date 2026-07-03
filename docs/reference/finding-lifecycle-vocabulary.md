@@ -61,7 +61,7 @@ The Filigree metadata only carries the key when the state is not `active`
 
 **"suppressed"** survives only as the umbrella *word* for "any state other than
 `active`": `baselined` + `waived` + `judged`. The CLI prints this sum as the
-`suppressed` count (`src/wardline/cli/scan.py:616`).
+`suppressed` count (`src/wardline/cli/scan.py:654`).
 
 ## `active` is the one word for "non-suppressed defect"
 
@@ -72,7 +72,7 @@ consistently, on every surface:
 | --- | --- | --- |
 | Enum | `src/wardline/core/finding.py:72` | `SuppressionState.ACTIVE = "active"` |
 | Summary field | `src/wardline/core/run.py:100`, built at `src/wardline/core/run.py:659` | `ScanSummary.active` |
-| CLI summary line | `src/wardline/cli/scan.py:617` | `… {s.active} active` |
+| CLI summary line | `src/wardline/cli/scan.py:655` | `… {s.active} active` |
 | MCP scan response | `src/wardline/mcp/server.py:944` | `summary.active` |
 | Agent-summary JSON | `src/wardline/core/agent_summary.py:130` | `summary.active_defects` |
 | `wardline:loop` prompt | `src/wardline/mcp/prompts.py:13` | "Read `summary.active`" |
@@ -166,7 +166,7 @@ The MCP `scan` gate block exposes `gate.tripped` (`src/wardline/mcp/server.py:95
 armed gate passes (so a hook-captured log self-diagnoses — a harness-side hook
 failure is distinguishable from a wardline failure, wardline-eef3d30c7d), or a
 `gate: NOT_EVALUATED — …` line for a bare scan
-(`src/wardline/cli/scan.py:676`).
+(`src/wardline/cli/scan.py:714`).
 
 `--new-since` scopes **both** populations identically: any `active` defect
 outside the delta is re-marked `baselined` in both the emitted and gate lists
@@ -182,7 +182,7 @@ still legitimately means three different things depending on the surface:
 | --- | --- | --- |
 | Filigree store | An **unseen fingerprint** — first time this finding identity is seen for a `(file, scan_source)`. | **Filigree-owned** lifecycle (`src/wardline/core/filigree_emit.py:68-76`) |
 | `wardline scan --new-since <ref>` | **Delta-scope**: the gate fires only on defects in files/entities changed since a git ref; everything else is re-marked `baselined`. | `src/wardline/core/run.py:598`; help text `src/wardline/cli/scan.py` (`--new-since`) |
-| (historical) CLI summary | Formerly relabelled the `active` count as "N new". **Corrected to "N active"**. | `src/wardline/cli/scan.py:617` |
+| (historical) CLI summary | Formerly relabelled the `active` count as "N new". **Corrected to "N active"**. | `src/wardline/cli/scan.py:655` |
 
 The first-seen Filigree sense and the delta-scope `--new-since` sense are
 genuinely distinct concepts; neither is "active".
@@ -194,8 +194,8 @@ How each concept appears on each surface:
 | Concept | CLI summary text | `ScanSummary` field | MCP `summary` key | Agent-summary key | Filigree store |
 | --- | --- | --- | --- | --- | --- |
 | every finding | `N finding(s)` | `total` (`run.py:99`) | `total` (`server.py:943`) | `total_findings` (`agent_summary.py:129`) | one finding per wire entry |
-| live defect | `N active` (`scan.py:617`) | `active` (`run.py:100,596`) | `active` (`server.py:944`) | `active_defects` (`agent_summary.py:130`) | no `suppression_state` key (`finding.py:295`) |
-| suppressed (sum) | `N suppressed` (`scan.py:616`) | `baselined+waived+judged` | the three keys | `suppressed_findings` (`agent_summary.py:131`) | `metadata.wardline.suppression_state` (`finding.py:295`) |
+| live defect | `N active` (`scan.py:655`) | `active` (`run.py:100,596`) | `active` (`server.py:944`) | `active_defects` (`agent_summary.py:130`) | no `suppression_state` key (`finding.py:295`) |
+| suppressed (sum) | `N suppressed` (`scan.py:654`) | `baselined+waived+judged` | the three keys | `suppressed_findings` (`agent_summary.py:131`) | `metadata.wardline.suppression_state` (`finding.py:295`) |
 | baselined | `N baseline` | `baselined` (`run.py:102`) | `baselined` (`server.py:945`) | `baselined` (`agent_summary.py:133`) | `suppression_state: "baselined"` |
 | waived | `N waiver` | `waived` (`run.py:103`) | `waived` (`server.py:946`) | `waived` (`agent_summary.py:134`) | `suppression_state: "waived"` |
 | judged | `N judged` | `judged` (`run.py:104`) | `judged` (`server.py:947`) | `judged` (`agent_summary.py:135`) | `suppression_state: "judged"` |

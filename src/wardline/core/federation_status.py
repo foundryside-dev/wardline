@@ -78,12 +78,15 @@ def filigree_emit_status(
         "failures": [f.to_wire() for f in result.failures],
         "warnings": list(result.warnings),
         # The shared 401/403-vs-5xx-vs-transport ladder (dogfood #5) instead of flattening
-        # every soft failure to "filigree unreachable".
+        # every soft failure to "filigree unreachable". chunks_landed keeps the string
+        # honest on a MID-BATCH failure (wardline-7924d67d3b) — scan_jobs persists it
+        # verbatim as the terminal job `error`, so it must not contradict the counts.
         "disabled_reason": filigree_disabled_reason(
             reachable=result.reachable,
             status=result.status,
             token_sent=result.token_sent,
             url=result.url,
+            chunks_landed=result.chunks_landed,
         ),
     }
     if include_destination:

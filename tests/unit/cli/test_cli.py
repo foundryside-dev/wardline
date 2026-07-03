@@ -1317,6 +1317,115 @@ def test_scan_loomweave_soft_outage_redacts_url_secrets(tmp_path, monkeypatch) -
     assert "#frag" not in result.output
 
 
+def test_scan_loomweave_partial_write_surfaces_written_count(tmp_path, monkeypatch) -> None:
+    # PDR-0023 at the human surface: a mid-batch outage after chunks committed must
+    # NOT render the flat "taint store not written" — earlier chunks ARE in the store.
+    from wardline.loomweave.client import WriteResult
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+    monkeypatch.setattr(
+        "wardline.loomweave.write.write_facts_to_loomweave",
+        lambda *a, **k: WriteResult(reachable=False, written=4),
+    )
+    out = tmp_path / "f.jsonl"
+    result = CliRunner().invoke(scan, [str(proj), "--output", str(out), "--loomweave-url", "http://x/api/taint"])
+    assert result.exit_code == 0, result.output
+    assert "Loomweave taint store not written" not in result.output
+    assert "partially written" in result.output
+    assert "4 taint fact(s)" in result.output
+    assert "scan unaffected" in result.output
+
+
+def test_scan_filigree_partial_emit_transport_drop_surfaces_counts(tmp_path, monkeypatch) -> None:
+    # A connection drop on chunk 2 after chunk 1 landed is NOT first-contact failure:
+    # Filigree ingested chunk 1 (rows created/updated, mark_unseen ran). The CLI must
+    # render the partial counts + warnings, not "could not reach ... locally only".
+    from wardline.core.filigree_emit import EmitResult, FailedFinding
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+
+    class _MidEmitDropEmitter:
+        def __init__(self, url, **kw):
+            self.url = url
+
+        def emit(self, findings, *, scanned_paths=(), language=None, mark_unseen=None):
+            return EmitResult(
+                reachable=False,
+                created=3,
+                updated=2,
+                failures=(
+                    FailedFinding(
+                        reason="partial",
+                        detail="chunk failed at transport layer (connection dropped mid-emit)",
+                    ),
+                ),
+                warnings=(
+                    "Filigree connection dropped mid-emit: 1 of 2 chunk(s) landed before the "
+                    "transport failure; ingested counts are partial and the remaining findings "
+                    "are recorded as 'partial' failures — re-emit to reconcile.",
+                ),
+                token_sent=True,
+                url=self.url,
+                chunks_landed=1,
+            )
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _MidEmitDropEmitter)
+    out = tmp_path / "f.jsonl"
+    result = CliRunner().invoke(
+        scan, [str(proj), "--output", str(out), "--filigree-url", "http://filigree/api/weft/scan-results"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "could not reach Filigree" not in result.output
+    assert "written locally only" not in result.output.lower()
+    assert "3 created / 2 updated" in result.output
+    assert "1 finding(s) did not land" in result.output
+    assert "1 of 2 chunk(s) landed" in result.output
+
+
+def test_scan_filigree_partial_emit_mid_batch_auth_reject_surfaces_counts(tmp_path, monkeypatch) -> None:
+    # Same honesty rule for the mid-batch 401: chunks 1..N-1 landed before the token
+    # was rejected, so "Findings written locally only" would misreport remote mutation.
+    from wardline.core.filigree_emit import EmitResult, FailedFinding
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    _write(proj, "svc.py", _LEAKY)
+
+    class _MidBatchAuthRejectEmitter:
+        def __init__(self, url, **kw):
+            self.url = url
+
+        def emit(self, findings, *, scanned_paths=(), language=None, mark_unseen=None):
+            failures = tuple(
+                FailedFinding(reason="partial", detail="chunk rejected by auth (HTTP 401)") for _ in range(3)
+            )
+            return EmitResult(
+                reachable=False,
+                created=2,
+                updated=0,
+                failures=failures,
+                status=401,
+                token_sent=True,
+                url=self.url,
+                chunks_landed=1,
+            )
+
+    monkeypatch.setattr("wardline.cli.scan.FiligreeEmitter", _MidBatchAuthRejectEmitter)
+    out = tmp_path / "f.jsonl"
+    result = CliRunner().invoke(
+        scan, [str(proj), "--output", str(out), "--filigree-url", "http://filigree/api/weft/scan-results"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "401" in result.output
+    assert "written locally only" not in result.output.lower()
+    assert "2 created / 0 updated" in result.output
+    assert "3 finding(s) did not land" in result.output
+
+
 def test_scan_filigree_agent_summary_redacts_url_secrets(tmp_path, monkeypatch) -> None:
     proj = tmp_path / "proj"
     proj.mkdir()

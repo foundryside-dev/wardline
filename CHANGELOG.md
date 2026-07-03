@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-03
+
 ### Added
 - **Concurrent-writer detection**: the scan now stat-snapshots the discovered file
   inventory at discovery and re-checks it after analysis. If any scanned file was
@@ -60,13 +62,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A configured gate over zero scanned files is `NOT_EVALUATED`, not a vacuous
   `PASSED`** (`no_files_scanned`): an empty-but-existing source root or an exclude-all
   config no longer reads as an authoritative green.
+- **Partial federation mutations are no longer reported as clean failures on the human
+  surfaces** (wardline-7924d67d3b). A mid-emit failure after chunks landed used to
+  print `could not reach Filigree …; findings written locally only` (CLI) and persist
+  `filigree unreachable` as the scan-job terminal `error` — flatly false once Filigree
+  had ingested earlier chunks and run their mark_unseen sweeps. The CLI unreachable
+  branch now renders the partial truth (chunks landed, created/updated counts, findings
+  that did not land, producer warnings) on every soft-failure rung — auth, server error,
+  and transport alike — and the transport rung says `connection dropped mid-emit`
+  instead of claiming first-contact unreachability; `filigree_disabled_reason` appends
+  the landed-chunk count on mid-batch failures so the scan-job `error` field and
+  agent-summary `disabled_reason` agree with the counts beside them. Likewise a partial
+  Loomweave taint-fact write (a later chunk hit an outage/403 after earlier chunks
+  committed) now reports `taint store partially written … N taint fact(s) committed
+  before the failure` instead of the flat `taint store not written`.
 
 ### Changed
 - **Filigree emit accounting is honest about mid-batch failures**: `EmitResult` now
   carries the landed chunk count, per-finding `partial` failures, and a
   "connection dropped mid-emit: K of N chunk(s) landed" warning when the connection
-  drops after chunks landed (machine envelope; the CLI text surface is tracked in
-  wardline-7924d67d3b).
+  drops after chunks landed (machine envelope; the CLI and scan-job text surfaces
+  ship in this release — see Fixed, wardline-7924d67d3b).
 - **Loomweave resolve stops on auth rejection**: a hinted 401/403 halts the batch and
   is carried as `ResolveResult.auth_status` so surfaces can steer the operator to the
   token rather than a phantom unresolved entity (consumer threading tracked in
@@ -1556,7 +1572,11 @@ for Python — enterprise-class trust-boundary analysis at small-team weight.
 - **Packaging** — MIT-licensed; optional extras `scanner` (config + CLI) and
   `weft` (HTTP integrations).
 
-[Unreleased]: https://github.com/foundryside-dev/wardline/compare/v1.0.6...HEAD
+[Unreleased]: https://github.com/foundryside-dev/wardline/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/foundryside-dev/wardline/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/foundryside-dev/wardline/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/foundryside-dev/wardline/compare/v1.0.7...v1.1.0
+[1.0.7]: https://github.com/foundryside-dev/wardline/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/foundryside-dev/wardline/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/foundryside-dev/wardline/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/foundryside-dev/wardline/compare/v1.0.3...v1.0.4
