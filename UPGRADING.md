@@ -2,7 +2,27 @@
 
 Migration notes for changes that can alter a previously-green run. Newest first.
 
-## To the next release (recommended v1.2) — preview rules now gate (soundness)
+## To v1.3 — federation transports refuse redirects; signing fails closed
+
+**Redirects are never followed on credential-bearing transports**
+(`wardline-f68c483d92`). Previously urllib followed a 3xx, re-sending
+`Authorization`/`X-Weft-*` headers to the redirect target (cross-origin included)
+and rewriting a redirected POST into a body-less GET whose 200 read as a clean
+emit — a silent false green. If your `--filigree-url` / `--loomweave-url` /
+OpenRouter endpoint resolves through a redirect (an `http→https` upgrade, a host
+alias), the transport now refuses the first 3xx fail-closed: emits report
+failure, `verify_token` reports inconclusive, and the promote/judge legs reject
+loudly. **What to do:** point the URL at the final, post-redirect target. The
+taint gate itself is unaffected — federation stays non-gating enrichment.
+
+**Signing paths fail closed on indeterminate git state.** A failed `git status`
+no longer coerces to *clean*: the legis artifact signs only on a proven-clean
+tree, and `attest` signs an indeterminate tree only under explicit
+`allow_dirty` (recording `dirty: null` uncoerced). A CI job that signed from a
+checkout where git state could not be read now fails instead of producing a
+falsely-clean signed bundle.
+
+## To v1.2 — preview rules now gate (soundness)
 
 `wardline-4ada23bb09`. The `--fail-on` gate previously **ignored** any rule whose
 `maturity` is `preview`, so a scan could pass green while an active ERROR defect
