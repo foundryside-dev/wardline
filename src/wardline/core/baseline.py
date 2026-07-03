@@ -77,6 +77,14 @@ class BaselineStoreStatus:
     message: str
 
 
+def _is_servable_version(value: object) -> bool:
+    """True only for a genuine integer version. ``bool`` is an ``int`` subclass, so a
+    crafted ``version: true`` would otherwise satisfy ``isinstance(_, int)`` AND the
+    ``== BASELINE_VERSION`` gate (``True == 1``) and report a non-integer schema_version
+    as a false green — the exact no-false-green invariant this probe must hold."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def _read_store_text_no_follow(root: Path, path: Path) -> tuple[bool, str | None]:
     """Return ``(present, text)`` for a repo-owned store without following symlinks."""
     candidate = path if path.is_absolute() else Path(os.path.abspath(os.fspath(path)))
@@ -140,7 +148,9 @@ def inspect_baseline_store(root: Path) -> BaselineStoreStatus:
     yaml = require_yaml("reading baseline.yaml")
     try:
         raw = yaml.safe_load(text) or {}
-    except yaml.YAMLError:
+    except (yaml.YAMLError, ValueError):
+        # ValueError included: PyYAML raises it (not YAMLError) for a >4300-digit int —
+        # the probe must report honest-unreadable, never crash (bdd84eb2 hardening).
         # Keep the message generic + content-free: a raw YAMLError can echo a file snippet.
         return BaselineStoreStatus(
             present=True,
@@ -154,7 +164,7 @@ def inspect_baseline_store(root: Path) -> BaselineStoreStatus:
     try:
         baseline = _build_baseline(raw, path.name)
     except ConfigError:
-        if isinstance(on_disk_version, int) and on_disk_version != BASELINE_VERSION:
+        if _is_servable_version(on_disk_version) and on_disk_version != BASELINE_VERSION:
             message = (
                 f"baseline store schema v{on_disk_version} not served by this build "
                 f"(serves v{BASELINE_VERSION}) — rebuild wardline or regenerate the baseline"
@@ -181,7 +191,7 @@ def inspect_baseline_store(root: Path) -> BaselineStoreStatus:
     # version field, so schema_version stays null and binding_ok is false: wardline can
     # open it but has no servable-version fact to assert. A real baseline (even with zero
     # findings) always carries `version`, so this only ever affects a crafted/empty store.
-    schema_version = on_disk_version if isinstance(on_disk_version, int) else None
+    schema_version = on_disk_version if _is_servable_version(on_disk_version) else None
     count = len(baseline.fingerprints)
     binding_ok = schema_version is not None
     message = (
