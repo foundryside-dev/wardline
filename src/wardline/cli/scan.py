@@ -677,6 +677,17 @@ def scan(
         # Only the unanalyzed gate ran and it passed — keep the no-vacuous-severity-green
         # signal a NOT_EVALUATED verdict used to carry here.
         click.echo(f"gate: PASSED (--fail-on-unanalyzed only) — {gate_dec.reason}", err=True)
+    else:
+        # An armed severity gate that PASSED must say so: a hook harness (pre-commit) can
+        # fail this hook for reasons outside wardline — e.g. a concurrent writer tripping
+        # pre-commit's files-modified check — and without a verdict line the captured log
+        # is indistinguishable from a wardline failure (wardline-eef3d30c7d). Same
+        # knob-attribution grammar as the FAILED branch.
+        knobs = [f"--fail-on {gate_dec.fail_on}"]
+        if gate_dec.fail_on_unanalyzed:
+            knobs.append("--fail-on-unanalyzed")
+        click.echo(f"gate: PASSED ({', '.join(knobs)}) — {gate_dec.reason}", err=True)
+        click.echo(f"gate: evaluated {gate_dec.evaluated}", err=True)
     # Inert-gate anti-false-green (Python; the counterpart of the Rust empty-trust-surface
     # warning). wardline fires only when untrusted data crosses a DECLARED trust boundary,
     # so a scan that recognized NONE enforces nothing. Fire LOUD only when someone is

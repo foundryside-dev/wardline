@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **An armed severity gate that passes now says so** (wardline-eef3d30c7d). `wardline
+  scan --fail-on <SEV>` used to print a gate verdict only for `FAILED`,
+  `NOT_EVALUATED`, and the unanalyzed-only pass — a clean armed pass ended with the
+  bare summary. It now prints `gate: PASSED (--fail-on <SEV>) — <reason>` and
+  `gate: evaluated <population>` on stderr, so a hook-captured log is
+  self-diagnosing: when a hook harness fails the hook for its own reasons (e.g.
+  pre-commit's "files were modified by this hook" check tripped by a concurrent
+  writer on a shared checkout), the log now shows wardline's own verdict instead of
+  reading like a silent wardline failure. Diagnosed from an elspeth pre-commit
+  consumer report (2026-07-03); the intermittent commit failures were pre-commit's
+  diff-before/diff-after check attributing another session's tracked-file writes to
+  the slowest (whole-tree) hook — wardline exited 0 in every observed occurrence.
+
 ### Docs
 - Documented the Filigree **server-registry rung** of sibling-URL resolution
   (`docs/guides/weft.md`, `configuration.md`, `agents.md`): a repo registered

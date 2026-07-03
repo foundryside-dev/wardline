@@ -426,6 +426,36 @@ def test_scan_gate_trip_prints_reason_and_population(tmp_path: Path) -> None:
     assert "gate: evaluated" in result.output
 
 
+def test_scan_armed_gate_pass_prints_verdict_and_population(tmp_path: Path) -> None:
+    # An armed severity gate that PASSES must say so on stderr: a hook harness
+    # (pre-commit) can fail the hook for reasons outside wardline, and without a
+    # verdict line the captured log is indistinguishable from a wardline failure
+    # (wardline-eef3d30c7d, elspeth pre-commit misdiagnosis 2026-07-03).
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "app.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    out = tmp_path / "o.jsonl"
+    result = CliRunner().invoke(cli, ["scan", str(project), "--fail-on", "ERROR", "--output", str(out)])
+    assert result.exit_code == 0, result.output
+    assert "gate: PASSED (--fail-on ERROR) — no ERROR+ defects in the evaluated population" in result.output
+    assert "gate: evaluated unsuppressed" in result.output
+
+
+def test_scan_armed_gate_pass_verdict_names_both_knobs(tmp_path: Path) -> None:
+    # With both sub-gates armed and passing, the verdict names both knobs — same
+    # attribution grammar as the FAILED line.
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "app.py").write_text("def ok():\n    return 1\n", encoding="utf-8")
+    out = tmp_path / "o.jsonl"
+    result = CliRunner().invoke(
+        cli,
+        ["scan", str(project), "--fail-on", "ERROR", "--fail-on-unanalyzed", "--output", str(out)],
+    )
+    assert result.exit_code == 0, result.output
+    assert "gate: PASSED (--fail-on ERROR, --fail-on-unanalyzed) — " in result.output
+
+
 def test_scan_baselined_only_trip_prints_migration_hint(tmp_path: Path) -> None:
     # Dogfood #3: a committed baseline that used to clear the gate now re-enters it.
     # The CLI must emit the loud one-line migration signal, not just exit 1.
