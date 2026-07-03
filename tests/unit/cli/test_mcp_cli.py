@@ -13,6 +13,21 @@ def _mcp_doctor_payload(result_output: str) -> dict:
     return json.loads(response["result"]["content"][0]["text"])
 
 
+def _doctor_request() -> str:
+    """A full client sequence: the initialize gate is on by default (wardline-5e4a4ee246)."""
+    messages = [
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": "2024-11-05", "capabilities": {}},
+        },
+        {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "doctor"}},
+    ]
+    return "".join(json.dumps(m) + "\n" for m in messages)
+
+
 def test_stdio_loop_handles_initialize_then_tools_list(tmp_path) -> None:
     server = WardlineMCPServer(root=tmp_path)
     stdin = io.StringIO(
@@ -122,8 +137,7 @@ def test_mcp_doctor_preserves_env_url_provenance(tmp_path, monkeypatch) -> None:
         lambda *args, **kwargs: DoctorCheck("filigree.auth", "ok"),
     )
 
-    request = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "doctor"}}) + "\n"
-    result = CliRunner().invoke(cli, ["mcp", "--root", str(tmp_path)], input=request)
+    result = CliRunner().invoke(cli, ["mcp", "--root", str(tmp_path)], input=_doctor_request())
 
     assert result.exit_code == 0, result.output
     by_id = {c["id"]: c for c in _mcp_doctor_payload(result.output)["checks"]}
@@ -145,8 +159,7 @@ def test_mcp_doctor_preserves_published_port_url_provenance(tmp_path, monkeypatc
         lambda *args, **kwargs: DoctorCheck("filigree.auth", "ok"),
     )
 
-    request = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "doctor"}}) + "\n"
-    result = CliRunner().invoke(cli, ["mcp", "--root", str(tmp_path)], input=request)
+    result = CliRunner().invoke(cli, ["mcp", "--root", str(tmp_path)], input=_doctor_request())
 
     assert result.exit_code == 0, result.output
     by_id = {c["id"]: c for c in _mcp_doctor_payload(result.output)["checks"]}
@@ -169,6 +182,8 @@ def test_mcp_command_runs_stdio_end_to_end(tmp_path) -> None:
                 "params": {"protocolVersion": "2024-11-05", "capabilities": {}},
             }
         )
+        + "\n"
+        + json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"})
         + "\n"
         + json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
         + "\n"

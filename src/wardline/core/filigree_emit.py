@@ -51,6 +51,29 @@ def _cap_suggestion(suggestion: str | None) -> str | None:
     return suggestion if len(suggestion) <= _SUGGESTION_LIMIT else suggestion[:_SUGGESTION_LIMIT]
 
 
+# Peer-supplied response text (reject bodies, per-finding reject details, relayed
+# warnings) is UNTRUSTED input: nothing authenticates the responder (loopback HTTP,
+# auto-discovered ephemeral ports), and these strings flow verbatim into agent-visible
+# telemetry (the MCP filigree_emit block, isError content, CLI stderr). The transport
+# already bounds a read at 64KiB; this is the telemetry-sized cap applied at the parse
+# seam so a hostile or broken sibling cannot inject 64KiB of instruction-shaped text
+# into an agent's context per response.
+_PEER_TEXT_LIMIT = 500
+_PEER_TEXT_TRUNCATION_MARKER = "…[peer-reported text truncated by wardline]"
+
+
+def sanitize_peer_text(text: str, *, limit: int = _PEER_TEXT_LIMIT) -> str:
+    """Bound and control-strip peer-reported response text before it enters
+    agent-visible diagnostics. Non-printable characters (newlines, ANSI escapes,
+    other control bytes) become single spaces so a peer cannot forge message
+    structure; anything past ``limit`` is cut with an explicit truncation marker
+    (a bounded echo never silently reads as the full peer report)."""
+    cleaned = "".join(ch if ch.isprintable() else " " for ch in text)
+    if len(cleaned) > limit:
+        cleaned = cleaned[:limit] + _PEER_TEXT_TRUNCATION_MARKER
+    return cleaned
+
+
 def _language_for_finding(finding: Finding) -> str:
     path = finding.location.path.lower()
     rule_id = finding.rule_id.upper()
@@ -268,6 +291,11 @@ class FailedFinding:
     ``fingerprint`` is the wardline join key when Filigree reported it (None when the
     failure is chunk-wide and not attributable to a single finding).
 
+    ``detail`` (and a Filigree-reported ``fingerprint``) is PEER-REPORTED text: it is
+    Filigree's own account of the reject, relayed so the caller can act on it, but it
+    is untrusted input — bounded and control-stripped at the parse seam
+    (:func:`sanitize_peer_text`) before it enters agent-visible telemetry.
+
     weft-reason (G1): a FailedFinding is always a NON-clean carrier, so it exposes the
     canonical carrier triple {reason_class, cause, fix} (see ``to_wire``) ALONGSIDE the
     shipped domain ``reason``/``detail`` fields. ``reason_class`` is one of the canonical
@@ -339,6 +367,14 @@ class EmitResult:
     # name WHERE it tried without the caller threading it separately.
     token_sent: bool = False
     url: str | None = None
+    # How many chunks Filigree ingested (2xx) on this attempt. Load-bearing for the
+    # MID-BATCH transport failure: a URLError on chunk N>1 leaves ``status=None`` (no
+    # HTTP status reached us) but chunks 1..N-1 DID land — Filigree created/updated
+    # rows and ran their mark_unseen sweeps. ``chunks_landed`` is what makes "M landed
+    # before the connection dropped" representable instead of being zeroed into a
+    # first-contact "could not reach" (the PDR-0023 honesty violation the 401/5xx
+    # mid-batch paths were already fixed to avoid).
+    chunks_landed: int = 0
 
     @property
     def failed(self) -> int:
@@ -358,12 +394,18 @@ class EmitResult:
     def __post_init__(self) -> None:
         # Mirror GateDecision's construction-time guard so a second constructor cannot
         # express a contradictory outcome: a reached/success result carries no error status.
-        # A transport-unreachable result has no status and cannot have accepted counts;
-        # status-bearing soft failures may carry counts from chunks that landed before the
-        # failing chunk and ``partial`` failures for the chunks that did not.
+        # A FIRST-CONTACT transport-unreachable result (no chunk ever landed) has no status
+        # and cannot have accepted counts; status-bearing soft failures AND a mid-batch
+        # transport failure (``chunks_landed`` > 0) may carry counts from chunks that landed
+        # before the failing chunk and ``partial`` failures for the chunks that did not.
         if self.reachable and self.status is not None:
             raise ValueError(f"a reachable EmitResult carries no error status (got {self.status})")
-        if not self.reachable and self.status is None and (self.created or self.updated or self.failed):
+        if (
+            not self.reachable
+            and self.status is None
+            and self.chunks_landed == 0
+            and (self.created or self.updated or self.failed)
+        ):
             raise ValueError("a transport-unreachable EmitResult must have zero created/updated/failed")
 
 
@@ -500,13 +542,16 @@ def _parse_failed_entry(entry: Any) -> FailedFinding:
     if isinstance(entry, Mapping):
         fingerprint = entry.get("fingerprint") or entry.get("id")
         detail = entry.get("detail") or entry.get("message") or entry.get("error") or ""
+        # detail/fingerprint are peer-reported: bound + control-strip at the seam so a
+        # hostile sibling cannot inject unbounded instruction-shaped text into the
+        # agent-visible failures block (a real fingerprint is short and passes intact).
         return FailedFinding(
             reason=_normalize_failure_reason(entry.get("reason")),
-            detail=str(detail),
-            fingerprint=str(fingerprint) if fingerprint is not None else None,
+            detail=sanitize_peer_text(str(detail)),
+            fingerprint=sanitize_peer_text(str(fingerprint)) if fingerprint is not None else None,
         )
     # A bare scalar (id string): Filigree refused it but gave no structured reason.
-    return FailedFinding(reason="rejected", fingerprint=str(entry) if entry is not None else None)
+    return FailedFinding(reason="rejected", fingerprint=sanitize_peer_text(str(entry)) if entry is not None else None)
 
 
 def _parse_success_response(resp: Response) -> EmitResult:
@@ -524,7 +569,10 @@ def _parse_success_response(resp: Response) -> EmitResult:
     stats: dict[str, Any] = raw_stats if isinstance(raw_stats, dict) else {}
     raw_warnings = payload.get("warnings")
     if isinstance(raw_warnings, list):
-        warnings.extend(str(w) for w in raw_warnings)
+        # Peer-relayed warnings are labelled as Filigree's own report (so agent surfaces
+        # can render them as peer-reported, distinct from wardline-generated warnings)
+        # and are bounded + control-stripped at the seam like every peer string.
+        warnings.extend(f"filigree reported: {sanitize_peer_text(str(w))}" for w in raw_warnings)
     raw_failed = payload.get("failed")
     # PDR-0023: preserve Filigree's PER-FINDING reject reasons instead of flattening to a
     # count. A 2xx where Filigree silently dropped K findings is now distinguishable from a
@@ -792,6 +840,8 @@ class FiligreeEmitter:
         updated = 0
         failures: list[FailedFinding] = []
         warnings: list[str] = []
+        chunks_landed = 0
+        chunk_index = 0
         try:
             for chunk_index, chunk in enumerate(chunks, start=1):
                 body = json.dumps(
@@ -818,6 +868,7 @@ class FiligreeEmitter:
                         status=resp.status,
                         token_sent=token_sent,
                         url=self._url,
+                        chunks_landed=chunks_landed,
                     )
                 if resp.status >= 500:
                     # Server-side outage (5xx) — the sibling is degraded, not a Wardline
@@ -833,10 +884,17 @@ class FiligreeEmitter:
                         status=resp.status,
                         token_sent=token_sent,
                         url=self._url,
+                        chunks_landed=chunks_landed,
                     )
                 if not 200 <= resp.status < 300:
                     diagnostic_url = redact_url_for_diagnostics(self._url)
-                    message = f"Filigree rejected scan-results ({resp.status}) at {diagnostic_url}: {resp.body}"
+                    # The response body is Filigree's own (peer-reported, untrusted) account
+                    # of the reject: bounded + control-stripped at this seam before it enters
+                    # the loud FiligreeEmitError / the agent-visible warnings block.
+                    message = (
+                        f"Filigree rejected scan-results ({resp.status}) at {diagnostic_url}; "
+                        f"peer-reported detail: {sanitize_peer_text(resp.body)}"
+                    )
                     if self._protocol_errors_loud:
                         raise FiligreeEmitError(message)
                     # Fail-soft: the chunk (and every chunk after it) is un-ingested. PDR-0023 —
@@ -852,10 +910,34 @@ class FiligreeEmitter:
                 updated += chunk_result.updated
                 failures.extend(chunk_result.failures)
                 warnings.extend(chunk_result.warnings)
+                chunks_landed += 1
         except (urllib.error.URLError, OSError):
-            # Connection refused / DNS / timeout — sibling absent. Enrichment is
-            # non-load-bearing: warn (at the CLI) and continue. No status reached us, so
-            # this is the genuine "could not reach" case (status=None).
+            # Connection refused / DNS / timeout — transport failure, no HTTP status
+            # reached us (status=None). Enrichment is non-load-bearing: warn (at the
+            # CLI) and continue. But "could not reach" is only the FIRST-CONTACT truth:
+            # if earlier chunks already landed 2xx, Filigree ingested them (and ran
+            # their mark_unseen sweeps), so mirror the mid-batch 401/5xx paths — keep
+            # the accumulated counts, record every not-yet-landed finding as a
+            # ``partial`` failure, and leave a loud warning (PDR-0023: partial-emit
+            # truth is never discarded into a zeroed "unreachable").
+            if chunks_landed:
+                detail = "chunk failed at transport layer (connection dropped mid-emit)"
+                _record_pending_partial_failures(failures, chunks, chunk_index - 1, detail=detail)
+                warnings.append(
+                    f"Filigree connection dropped mid-emit: {chunks_landed} of {len(chunks)} chunk(s) "
+                    "landed before the transport failure; ingested counts are partial and the "
+                    "remaining findings are recorded as 'partial' failures — re-emit to reconcile."
+                )
+                return EmitResult(
+                    reachable=False,
+                    created=created,
+                    updated=updated,
+                    failures=tuple(failures),
+                    warnings=tuple(warnings),
+                    token_sent=token_sent,
+                    url=self._url,
+                    chunks_landed=chunks_landed,
+                )
             return EmitResult(reachable=False, token_sent=token_sent, url=self._url)
         return EmitResult(
             reachable=True,
@@ -865,6 +947,7 @@ class FiligreeEmitter:
             warnings=tuple(warnings),
             token_sent=token_sent,
             url=self._url,
+            chunks_landed=chunks_landed,
         )
 
     def verify_token(self) -> ProbeResult:

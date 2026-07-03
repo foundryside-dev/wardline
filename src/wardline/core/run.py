@@ -130,6 +130,16 @@ class ScanResult:
     # ``files_discovered``/``files_analyzed`` and the boundary caveat — see
     # ``wardline.core.delta_scope.DeltaScopeReport``.
     scope: DeltaScopeReport | None = None
+    # The post-suppression, PRE-delta-filter annotated findings — set only in ``--affected``
+    # delta mode, where ``findings`` has been narrowed to the affected entities. This is
+    # the population ``_gate_reason`` consults to classify each gating defect by its
+    # REPOSITORY suppression state (baselined/waived/judged): the delta-filtered display
+    # set drops co-located findings, so classifying against it would misreport a repo-
+    # suppressed defect as 'active' and hide the --trust-suppressions escape guidance.
+    # ``None`` ⇒ ``findings`` IS the un-narrowed annotated population (full scan,
+    # full-fallback, or --new-since, which relabels without filtering) — INV-1: the full
+    # path carries nothing extra.
+    annotated_findings: list[Finding] | None = None
 
     @property
     def honors_suppressions(self) -> bool:
@@ -181,6 +191,15 @@ class GateDecision:
     fail_on_unanalyzed: bool = False
     severity_tripped: bool = False
     unanalyzed_tripped: bool = False
+    # Files-scanned visibility ON the decision itself (the factory always sets it from
+    # ``ScanResult.files_scanned``; ``None`` only for a directly-constructed decision).
+    # A configured gate over ZERO scanned files judged nothing — ``gate_decision`` returns
+    # NOT_EVALUATED with a ``no_files_scanned`` reason instead of a vacuous PASSED (a
+    # mis-pointed source root that still exists, or an exclude-all config, must never
+    # read as an authoritative green), and ``__post_init__`` makes PASSED-over-0-files
+    # unconstructible. Exit-code semantics are unchanged (untripped ⇒ 0): the honest
+    # verdict + machine-readable reason are the signal, matching the advisory-delta shape.
+    files_scanned: int | None = None
 
     def __post_init__(self) -> None:
         # Enforce the invariants the ``gate_decision`` factory upholds so a *second*
@@ -197,10 +216,23 @@ class GateDecision:
         # configured, but a clean analyzed subset is not a gate-of-record for skipped files.
         if self.verdict == "NOT_EVALUATED" and self.tripped:
             raise ValueError("verdict NOT_EVALUATED requires an untripped decision")
-        if self.verdict == "NOT_EVALUATED" and self.fail_on is None and self.fail_on_unanalyzed:
+        # An unanalyzed-only gate that judged a real population is EVALUATED — but over
+        # ZERO scanned files it judged nothing, so the vacuous NOT_EVALUATED shape is the
+        # one legal exception (keyed on the typed field, never on reason text).
+        if (
+            self.verdict == "NOT_EVALUATED"
+            and self.fail_on is None
+            and self.fail_on_unanalyzed
+            and self.files_scanned != 0
+        ):
             raise ValueError("verdict NOT_EVALUATED with only --fail-on-unanalyzed would hide an evaluated gate")
         if self.verdict == "PASSED" and self.fail_on is None and not self.fail_on_unanalyzed:
             raise ValueError("verdict PASSED requires a configured gate")
+        # A configured gate over zero scanned files judged NOTHING — PASSED there is the
+        # 0-files false green. FAILED stays constructible (fail-closed: e.g. the unanalyzed
+        # gate tripping on a missing source root with nothing else discovered).
+        if self.verdict == "PASSED" and self.files_scanned == 0:
+            raise ValueError("verdict PASSED over zero scanned files is a vacuous green (no_files_scanned)")
         if (self.verdict == "FAILED") != self.tripped:
             raise ValueError("verdict FAILED iff the gate tripped")
         # Every decision carries its reason now — including NOT_EVALUATED (what would trip).
@@ -546,10 +578,16 @@ def run_scan(
     # MATERIALISE the gate population HERE as the post-suppression / pre-delta-filter
     # snapshot, and record that the posture still honors suppressions. Only the DISPLAYED
     # ``findings`` then get the delta filter.
+    annotated_findings: list[Finding] | None = None
     if scope_mode == "delta":
         if trust_suppressions and gate_findings is None:
             gate_findings = list(findings)
             gate_honors_suppressions = True
+        # Snapshot the annotated population BEFORE the display narrowing so _gate_reason
+        # can classify gate-population defects by their repository suppression state —
+        # a co-located baselined defect dropped from display must not be misreported as
+        # 'active' in the gate reason.
+        annotated_findings = list(findings)
         findings = filter_to_affected(findings, affected_qualnames, affected_files)
 
     defects = [f for f in findings if f.kind is Kind.DEFECT]
@@ -599,6 +637,7 @@ def run_scan(
         gate_findings=gate_findings,
         gate_honors_suppressions=gate_honors_suppressions,
         scope=scope,
+        annotated_findings=annotated_findings,
     )
 
 
@@ -673,10 +712,36 @@ def gate_decision(result: ScanResult, fail_on: Severity | None, *, fail_on_unana
             reason=_not_evaluated_reason(would_trip_at, evaluated),
             evaluated=evaluated,
             would_trip_at=would_trip_at,
+            files_scanned=result.files_scanned,
         )
     severity_tripped = fail_on is not None and gate_trips(gate_population, fail_on)
     unanalyzed_tripped = bool(fail_on_unanalyzed and result.summary.unanalyzed)
     tripped = severity_tripped or unanalyzed_tripped
+    if not tripped and result.files_scanned == 0:
+        # Vacuous scan: a configured gate over ZERO scanned files judged nothing — an
+        # existing-but-empty source root or an exclude-all config would otherwise read as
+        # an authoritative PASSED with no signal anywhere (the missing-root case at least
+        # emits a FACT; this one is silent). NOT_EVALUATED with the machine-readable
+        # ``no_files_scanned`` reason is the honest shape, mirroring the advisory-delta
+        # posture. Exit stays 0 — a legitimately-empty-but-configured scan is not a trip
+        # (fail-closed trips like the unanalyzed gate on a missing root take precedence
+        # above: this branch only runs untripped).
+        return GateDecision(
+            tripped=False,
+            fail_on=fail_on.value if fail_on is not None else None,
+            exit_class=0,
+            verdict="NOT_EVALUATED",
+            reason=(
+                f"no files scanned (no_files_scanned): discovery yielded 0 files under the "
+                f"configured source roots, so the configured gate(s) judged an empty "
+                f"population and a PASSED would be vacuous; check source_roots/exclude in "
+                f"the config; evaluated {evaluated}"
+            ),
+            evaluated=evaluated,
+            would_trip_at=would_trip_at,
+            fail_on_unanalyzed=fail_on_unanalyzed,
+            files_scanned=0,
+        )
     advisory_scope = result.scope if result.scope is not None and result.scope.mode == "delta" else None
     advisory_delta = fail_on is not None and advisory_scope is not None and advisory_scope.gate_authority == "advisory"
     if fail_on is not None:
@@ -708,6 +773,7 @@ def gate_decision(result: ScanResult, fail_on: Severity | None, *, fail_on_unana
         fail_on_unanalyzed=fail_on_unanalyzed,
         severity_tripped=severity_tripped,
         unanalyzed_tripped=unanalyzed_tripped,
+        files_scanned=result.files_scanned,
     )
 
 
@@ -774,12 +840,17 @@ def _gate_reason(result: ScanResult, fail_on: Severity, *, tripped: bool, honors
         active, _ = gate_breakdown(honored_pop, fail_on)
         return f"{active} active {sev}+ defect(s) at or above {sev}"
     # Secure default: classify the defects that ACTUALLY gate (the unsuppressed gate
-    # population) by their state in the emitted findings. A ``--new-since`` delta scopes
+    # population) by their repository-annotated state. A ``--new-since`` delta scopes
     # out-of-delta defects to BASELINED in the gate population too, so they are not ACTIVE
     # here and are correctly NOT counted — the reason never inflates with scoped-out
-    # findings nor points at a flag that was already supplied.
+    # findings nor points at a flag that was already supplied. Classify against the
+    # PRE-delta-filter annotated population (``annotated_findings``) when it exists: in
+    # ``--affected`` delta mode ``result.findings`` is the narrowed DISPLAY set, so a
+    # repo-suppressed defect on a non-affected entity would miss the map, default to
+    # ACTIVE, and both overstate the active count and hide the escape guidance below.
     gate_pop = result.gate_findings or []
-    emitted_state = {f.fingerprint: f.suppressed for f in result.findings}
+    annotated = result.annotated_findings if result.annotated_findings is not None else result.findings
+    emitted_state = {f.fingerprint: f.suppressed for f in annotated}
     active = 0
     suppressed = 0
     for f in gate_pop:

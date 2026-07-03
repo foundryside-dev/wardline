@@ -304,7 +304,32 @@ def build_legis_artifact(
 
     Sign last, over the otherwise-complete scan: ``artifact_signature`` is added after
     the rest is in place, exactly as legis verifies (scan-minus-signature).
+
+    Two refusals guard the wire's honesty regardless of ``key``/``allow_dirty``:
+    an ``--affected`` delta scan (``result.scope`` advisory) is refused outright — the
+    frozen legis wire cannot mark partial scope, so the artifact would over-claim
+    coverage (:class:`LegisArtifactError`); and an INDETERMINATE working tree
+    (``git status`` failed → ``dirty is None``) is never treated as clean — with a key
+    it is refused unless ``allow_dirty`` routes to the unsigned dev artifact, marked
+    ``dirty: true``.
     """
+    # An ``--affected`` delta scan analyzes only the affected subset while
+    # ``scanned_paths`` (and thus ``scan_scope``) records the FULL discovery, and the
+    # contract-frozen legis wire carries no scope-mode/advisory field to say so. Emitting
+    # would hand legis a partial finding population cryptographically indistinguishable
+    # from a full-repository scan of the same commit — a (potentially signed) false green
+    # under an attacker-influenceable worklist (INV-4 / THREAT-001). Refuse loudly,
+    # mirroring the ``--affected`` cannot-drive ``--fail-on`` rejection: a delta scan is
+    # advisory and cannot back the legis hop. ``full-fallback`` IS the gate of record (the
+    # whole tree was analyzed), so it passes; any future non-gate-of-record mode fails
+    # closed here rather than over-claiming scope on the wire.
+    if result.scope is not None and result.scope.gate_authority != "gate-of-record":
+        raise LegisArtifactError(
+            "refusing to build a legis artifact for an --affected delta scan: only the affected "
+            "subset was analyzed, but the artifact would claim the full discovered scope with no "
+            "advisory marker on the frozen legis wire; run a full scan for the legis hop"
+        )
+
     # Mirror gate_decision's exact population selection so the artifact tracks the gate:
     # use ``gate_findings`` whenever it is present, falling back to ``findings`` only for
     # the legacy ``None`` sentinel. Secure-default -> the unsuppressed population (baselined/
@@ -331,15 +356,28 @@ def build_legis_artifact(
     commit, dirty = git_state(root)
     repo_root = _git_repo_root(root)
 
-    # Signing is CLEAN-TREE-ONLY. A key + clean tree produces the signed, verified
-    # artifact. A key + dirty tree is refused loudly UNLESS ``allow_dirty`` — and even
-    # then we do NOT sign: the only ``tree_sha`` we can read is the *committed* tree,
-    # which does not describe dirty working content, so signing it would be false
-    # provenance (see :func:`_git_tree_sha`). Instead ``allow_dirty`` falls through to
-    # the unsigned dev artifact below, clearly marked ``dirty: true`` (legis records it
-    # ``unverified``). This lets the dev/tour loop exercise the full Wardline→legis
-    # handshake without a commit, while keeping signature *verification* clean-tree-only.
-    if key is not None and not dirty:
+    # Signing is CLEAN-TREE-ONLY, and "clean" must be POSITIVELY ESTABLISHED. ``dirty``
+    # is a tri-state (:func:`git_state`): ``dirty is None`` means git could not enumerate
+    # the working tree (corrupted index, .git permission failure), so cleanliness is
+    # indeterminate — signing the committed ``tree_sha`` for content git could not even
+    # read would be false provenance, exactly like the dirty case, so it fails CLOSED
+    # (refused with a key, or falls through to the unsigned dev artifact under
+    # ``allow_dirty``, marked ``dirty: true`` because we cannot vouch otherwise).
+    # A key + clean tree produces the signed, verified artifact. A key + dirty tree is
+    # refused loudly UNLESS ``allow_dirty`` — and even then we do NOT sign: the only
+    # ``tree_sha`` we can read is the *committed* tree, which does not describe dirty
+    # working content, so signing it would be false provenance (see
+    # :func:`_git_tree_sha`). Instead ``allow_dirty`` falls through to the unsigned dev
+    # artifact below, clearly marked ``dirty: true`` (legis records it ``unverified``).
+    # This lets the dev/tour loop exercise the full Wardline→legis handshake without a
+    # commit, while keeping signature *verification* clean-tree-only.
+    if key is not None and dirty is None and not allow_dirty:
+        raise LegisArtifactError(
+            "cannot sign legis artifact: working-tree cleanliness is indeterminate "
+            "(`git status` failed); repair the repository, or pass allow_dirty for an "
+            "unsigned dev artifact"
+        )
+    if key is not None and dirty is False:
         if commit is None:
             raise LegisArtifactError(
                 "cannot sign legis artifact: not a git repository, so commit/tree provenance is unavailable"
@@ -362,16 +400,20 @@ def build_legis_artifact(
             "(uncommitted changes); commit first or pass allow_dirty for an unsigned dev artifact"
         )
 
-    # Unsigned (no key, or key + allow_dirty on a dirty tree): supply whatever
-    # provenance we can honestly read; legis marks it unverified. Never fabricate a
-    # tree_sha — omit it if unreadable. A dirty tree is flagged so neither the agent
-    # nor a human mistakes the committed provenance for the scanned working content.
+    # Unsigned (no key, or key + allow_dirty on a dirty/indeterminate tree): supply
+    # whatever provenance we can honestly read; legis marks it unverified. Never
+    # fabricate a tree_sha — omit it if unreadable. A dirty tree is flagged so neither
+    # the agent nor a human mistakes the committed provenance for the scanned working
+    # content; an INDETERMINATE tree (``dirty is None`` — commit resolved but ``git
+    # status`` failed) is flagged the same way, because we cannot vouch that the
+    # committed provenance describes the scanned content. A non-repo tree is
+    # ``(None, False)`` and carries no marker.
     if commit is not None:
         scan["commit_sha"] = commit
         tree = _git_tree_sha(root)
         if tree is not None:
             scan["tree_sha"] = tree
-    if dirty:
+    if dirty or dirty is None:
         scan[DIRTY_FIELD] = True
     return scan
 

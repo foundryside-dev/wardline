@@ -26,11 +26,28 @@ import jsonschema
 import pytest
 
 from wardline.core.judge import JudgeResponse, JudgeVerdict
-from wardline.mcp.protocol import PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS
+from wardline.mcp.protocol import PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS, JsonRpcServer
 from wardline.mcp.server import WardlineMCPServer
 from wardline.mcp.tooling import ToolCapability
 
 FIXTURE = Path("tests/fixtures/sample_project")
+
+_ORIG_RPC_INIT = JsonRpcServer.__init__
+
+
+@pytest.fixture(autouse=True)
+def _handshake_preopened(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Explicit opt-out of the MCP initialize gate (wardline-5e4a4ee246): this module
+    drives tool surfaces directly through ``dispatch()`` without the client handshake.
+    The gate itself (enabled by default) is pinned in ``test_mcp_handshake.py``."""
+
+    def _init(self: JsonRpcServer, *, server_name: str, server_version: str, require_handshake: bool = False) -> None:
+        _ORIG_RPC_INIT(
+            self, server_name=server_name, server_version=server_version, require_handshake=require_handshake
+        )
+
+    monkeypatch.setattr(JsonRpcServer, "__init__", _init)
+
 
 # The published 18-tool surface, in advertisement order.
 EXPECTED_TOOLS = (
@@ -123,7 +140,20 @@ def _validated(server: WardlineMCPServer, name: str, arguments: dict[str, Any]) 
 
 @pytest.fixture(scope="module")
 def fixture_server() -> WardlineMCPServer:
-    return WardlineMCPServer(root=FIXTURE)
+    # Module scope means this is constructed BEFORE the function-scoped autouse
+    # opt-out fixture patches the gate default, so run the real client handshake.
+    server = WardlineMCPServer(root=FIXTURE)
+    resp = server.rpc.dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "initialize",
+            "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {}},
+        }
+    )
+    assert "error" not in resp, resp
+    assert server.rpc.dispatch({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
+    return server
 
 
 # ---------------------------------------------------------------------------

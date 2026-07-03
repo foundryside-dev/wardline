@@ -334,3 +334,102 @@ def test_signing_non_repo_refuses(tmp_path) -> None:
     cfg = load_config(repo / "weft.toml")
     with pytest.raises(LegisArtifactError):
         legis.build_legis_artifact(result, root=repo, config=cfg, key=b"k")
+
+
+# ---------------------------------------------------------------------------
+# build_legis_artifact — --affected delta refusal (scope honesty on the frozen wire)
+# ---------------------------------------------------------------------------
+from wardline.core.delta_scope import DeltaScopeReport  # noqa: E402
+
+
+def _scope(mode: str = "delta", gate_authority: str = "advisory") -> DeltaScopeReport:
+    return DeltaScopeReport(
+        mode=mode,
+        gate_authority=gate_authority,
+        scope_source="reverify_worklist_v1",
+        entities_requested=1,
+        files_discovered=5,
+        files_analyzed=1,
+        in_scope_findings=0,
+        fell_back_count=0,
+        stale_sei_count=0,
+        unresolved_entities=(),
+        loomweave_used=False,
+    )
+
+
+def _result_with_scope(scope: DeltaScopeReport):
+    from wardline.core.run import ScanResult, ScanSummary
+
+    return ScanResult(
+        findings=[_finding()],
+        summary=ScanSummary(total=1, active=1, baselined=0, waived=0, judged=0),
+        files_scanned=1,
+        context=None,
+        scanned_paths=("svc.py", "other.py"),
+        analyzed_paths=("svc.py",),
+        scope=scope,
+    )
+
+
+def test_delta_scan_refuses_legis_artifact_signed_unsigned_and_allow_dirty(tmp_path) -> None:
+    # An --affected delta scan analyzes only the affected subset while scan_scope
+    # would claim the FULL discovery on a wire with no advisory marker — a
+    # (potentially signed) false-green over unanalyzed files. Refused for every
+    # key/allow_dirty combination: allow_dirty relaxes provenance, never scope honesty.
+    result = _result_with_scope(_scope())
+    repo = tmp_path / "norepo"
+    repo.mkdir()
+    cfg = load_config(repo / "weft.toml")
+    for key, allow_dirty in ((b"k", False), (None, False), (b"k", True), (None, True)):
+        with pytest.raises(LegisArtifactError, match="delta"):
+            legis.build_legis_artifact(result, root=repo, config=cfg, key=key, allow_dirty=allow_dirty)
+
+
+def test_full_fallback_scope_builds_artifact(tmp_path) -> None:
+    # full-fallback IS the gate of record (the whole tree was analyzed after the
+    # scope resolved zero files) — the artifact's full-scope claim is honest.
+    result = _result_with_scope(_scope(mode="full-fallback", gate_authority="gate-of-record"))
+    repo = tmp_path / "norepo"
+    repo.mkdir()
+    cfg = load_config(repo / "weft.toml")
+    scan = legis.build_legis_artifact(result, root=repo, config=cfg, key=None)
+    assert len(scan["findings"]) == 1
+    assert scan["scan_scope"]["scanned_paths"] == ["svc.py", "other.py"]
+
+
+# ---------------------------------------------------------------------------
+# build_legis_artifact — indeterminate `git status` fails CLOSED (tri-state dirty)
+# ---------------------------------------------------------------------------
+def test_signing_refuses_indeterminate_git_status(tmp_path, monkeypatch) -> None:
+    # git_state returns dirty=None when `git status` itself fails: cleanliness is
+    # indeterminate, so the clean-tree-only signing gate must NOT treat it as clean
+    # (signing the committed tree_sha for content git could not enumerate is false
+    # provenance). Fail closed with the typed error.
+    repo = _committed_repo(tmp_path)
+    monkeypatch.setattr(legis, "git_state", lambda root: ("a" * 40, None))
+    with pytest.raises(LegisArtifactError, match="indeterminate"):
+        _build(repo, key=b"k")
+
+
+def test_indeterminate_with_allow_dirty_emits_unsigned_dirty_marked(tmp_path, monkeypatch) -> None:
+    # allow_dirty routes an indeterminate tree to the unsigned dev artifact, marked
+    # dirty:true — we cannot vouch that the committed provenance describes the
+    # scanned content, so the marker is set conservatively. Never signed.
+    repo = _committed_repo(tmp_path)
+    monkeypatch.setattr(legis, "git_state", lambda root: ("a" * 40, None))
+    scan = _build(repo, key=b"k", allow_dirty=True)
+    assert "artifact_signature" not in scan
+    assert scan["dirty"] is True
+    assert scan["commit_sha"] == "a" * 40
+
+
+def test_keyless_indeterminate_emits_unsigned_dirty_marked(tmp_path, monkeypatch) -> None:
+    # Without a key the unsigned artifact still carries the conservative dirty
+    # marker on an indeterminate tree (legis records it unverified) — never a
+    # silent clean-looking artifact over content git could not enumerate.
+    repo = _committed_repo(tmp_path)
+    monkeypatch.setattr(legis, "git_state", lambda root: ("a" * 40, None))
+    scan = _build(repo, key=None)
+    assert "artifact_signature" not in scan
+    assert scan["dirty"] is True

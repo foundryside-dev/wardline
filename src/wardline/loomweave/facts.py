@@ -54,9 +54,18 @@ def _resolve_callee_qualname(context: AnalysisContext, qualname: str, callee: st
 
 def build_taint_facts(result: ScanResult, root: Path) -> list[dict[str, Any]]:
     """Build the write payloads (one per function entity). Empty list if the scan
-    produced no context (no entities)."""
+    produced no context (no entities), or if the scan is an ``--affected`` DELTA scan:
+    delta mode display-filters ``result.findings`` to the affected entities while the
+    context still carries every entity in every analyzed file, so projecting the
+    filtered findings onto all entities would fabricate hollow ``findings: []`` blobs
+    with a current content hash for every co-located / caller-closure entity (a
+    false-green overwrite of correct store facts). ``write_facts_to_loomweave`` skips
+    delta earlier WITH a signalled reason; this guard makes the projection itself safe
+    for any direct caller. ``full-fallback`` analyzed the whole tree and builds normally."""
     context = result.context
     if context is None:
+        return []
+    if result.scope is not None and result.scope.mode == "delta":
         return []
     hash_cache: dict[str, str] = {}
 

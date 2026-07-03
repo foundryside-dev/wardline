@@ -64,12 +64,19 @@ ATTEST_SCHEMA = "wardline-attest-2"
 _SAFE_GIT_CONFIG = ("-c", "core.fsmonitor=false")
 
 
-def git_state(root: Path) -> tuple[str | None, bool]:
+def git_state(root: Path) -> tuple[str | None, bool | None]:
     """Return ``(commit, dirty)`` for the working tree at ``root``.
 
     ``commit`` is the stripped stdout of ``git rev-parse HEAD`` (cwd=root), or None if
     ``root`` is not a git repo, git is not installed, or the command exits non-zero.
-    ``dirty`` is True iff ``git status --porcelain`` (cwd=root) emits any output.
+    ``dirty`` is a TRI-STATE: True iff ``git status --porcelain`` (cwd=root) emits any
+    output, False iff it ran and emitted nothing, and **None when cleanliness is
+    INDETERMINATE** — HEAD resolved but ``git status`` itself failed (OSError /
+    non-zero exit: a corrupted index, .git permission problem, transient git failure).
+    Indeterminate must never be conflated with clean: the clean-tree-only signing
+    gates (:func:`wardline.core.legis.build_legis_artifact`,
+    :func:`build_attestation`) fail CLOSED on None — signing a tree whose content git
+    could not even enumerate would be false provenance.
 
     Read-only: no network, no mutation. A missing-git / non-repo state is reported as
     ``(None, False)``, never raised — attestation of a non-git tree is legitimate.
@@ -96,10 +103,10 @@ def git_state(root: Path) -> tuple[str | None, bool]:
             capture_output=True,
             text=True,
         )
-    except OSError:  # pragma: no cover
-        return commit, False
-    if status.returncode != 0:  # pragma: no cover - unusual
-        return commit, False
+    except OSError:
+        return commit, None  # indeterminate — NOT clean; signing gates fail closed
+    if status.returncode != 0:
+        return commit, None  # indeterminate — NOT clean; signing gates fail closed
     dirty = bool(status.stdout.strip())
     return commit, dirty
 
@@ -277,6 +284,14 @@ def build_attestation(
         today=today,
         loomweave_client=loomweave_client,
     )
+    # Fail CLOSED on the tri-state: ``dirty is None`` means git could not enumerate the
+    # working tree, so cleanliness is indeterminate — never treated as clean. A non-repo
+    # tree is ``(commit=None, dirty=False)`` and stays attestable.
+    if payload["dirty"] is None and not allow_dirty:
+        raise AttestError(
+            "refusing to attest: working-tree cleanliness is indeterminate (`git status` failed); "
+            "repair the repository or pass allow_dirty to record dirty: null"
+        )
     if payload["dirty"] and not allow_dirty:
         raise AttestError("refusing to attest a dirty working tree (uncommitted changes); pass allow_dirty to override")
 
@@ -325,6 +340,10 @@ def verify_attestation(
     if not isinstance(bundle, dict):
         raise AttestError("attestation bundle must be a JSON object")
     schema = bundle.get("schema")
+    if "payload" not in bundle:
+        # Typed shape violation, matching the sibling checks above/below — a direct
+        # core-API caller must never see a raw KeyError (wardline-d59f35c626).
+        raise AttestError("attestation bundle missing payload")
     recorded_payload_raw = bundle["payload"]
     if not isinstance(recorded_payload_raw, dict):
         raise AttestError("attestation payload must be a JSON object")

@@ -631,3 +631,103 @@ def test_boundaries_carry_resolved_content_hash_with_client(tmp_path: Path) -> N
     assert clean["content_hash"] == "blake3:deadbeef"
     assert clean["sei"] == "loomweave:eid:" + "a" * 32
     assert bundle["payload"]["sei_source"] == "loomweave"
+
+
+# --------------------------------------------------------------------------- #
+# 7. Tri-state git_state — an indeterminate `git status` is NOT clean
+# --------------------------------------------------------------------------- #
+def _committed_module_repo(tmp_path: Path) -> Path:
+    repo = tmp_path / "gitrepo"
+    repo.mkdir()
+    (repo / "m.py").write_text(_MODULE, encoding="utf-8")
+    _git(["init"], repo)
+    _git(["add", "-A"], repo)
+    _git(
+        ["-c", "user.email=t@example.com", "-c", "user.name=Test", "commit", "-m", "init"],
+        repo,
+    )
+    return repo
+
+
+def test_git_state_status_oserror_is_indeterminate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # HEAD resolves but `git status` cannot run: dirty must be None (indeterminate),
+    # never False — a failed status is not evidence of a clean tree.
+    repo = _committed_module_repo(tmp_path)
+    real_run = subprocess.run
+
+    def fake_run(cmd: list[str], *args: object, **kwargs: object) -> object:
+        if isinstance(cmd, list) and "status" in cmd:
+            raise OSError("simulated git status failure")
+        return real_run(cmd, *args, **kwargs)  # type: ignore[call-overload]
+
+    monkeypatch.setattr("wardline.core.attest.subprocess.run", fake_run)
+    commit, dirty = git_state(repo)
+    assert commit is not None
+    assert dirty is None
+
+
+def test_git_state_status_nonzero_is_indeterminate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = _committed_module_repo(tmp_path)
+    real_run = subprocess.run
+
+    def fake_run(cmd: list[str], *args: object, **kwargs: object) -> object:
+        if isinstance(cmd, list) and "status" in cmd:
+            return subprocess.CompletedProcess(cmd, returncode=128, stdout="", stderr="fatal: index corrupt")
+        return real_run(cmd, *args, **kwargs)  # type: ignore[call-overload]
+
+    monkeypatch.setattr("wardline.core.attest.subprocess.run", fake_run)
+    commit, dirty = git_state(repo)
+    assert commit is not None
+    assert dirty is None
+
+
+def test_build_attestation_fails_closed_on_indeterminate_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The dirty-tree refusal gate must fail CLOSED when cleanliness is indeterminate:
+    # git_state -> (commit, None) with allow_dirty=False refuses with the typed error
+    # rather than signing a bundle whose tree state git could not enumerate.
+    tree = _annotated_tree(tmp_path)
+    monkeypatch.setattr("wardline.core.attest.git_state", lambda root: ("a" * 40, None))
+    with pytest.raises(AttestError, match="indeterminate"):
+        build_attestation(tree, _KEY, allow_dirty=False, today=_PINNED)
+
+
+def test_build_attestation_allow_dirty_records_null_on_indeterminate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # allow_dirty=True still builds, but honestly records dirty: null (unknown) —
+    # never a fabricated clean/dirty verdict. The signature is over the recorded bytes.
+    tree = _annotated_tree(tmp_path)
+    monkeypatch.setattr("wardline.core.attest.git_state", lambda root: ("a" * 40, None))
+    bundle = build_attestation(tree, _KEY, allow_dirty=True, today=_PINNED)
+    assert bundle["payload"]["dirty"] is None
+    assert bundle["payload"]["commit"] == "a" * 40
+    assert verify_attestation(bundle, _KEY)["signature_valid"] is True
+
+
+# --------------------------------------------------------------------------- #
+# 8. Bundle shape violations — typed AttestError, never a raw KeyError
+#    (wardline-d59f35c626)
+# --------------------------------------------------------------------------- #
+def test_verify_missing_payload_raises_typed_attest_error() -> None:
+    with pytest.raises(AttestError, match="missing payload"):
+        verify_attestation({"schema": "wardline-attest-2", "signature": {}}, _KEY)
+
+
+def test_verify_non_dict_payload_raises_typed_attest_error() -> None:
+    with pytest.raises(AttestError, match="JSON object"):
+        verify_attestation({"schema": "wardline-attest-2", "payload": "nope", "signature": {}}, _KEY)
+
+
+def test_verify_missing_schema_is_invalid_not_an_error() -> None:
+    # A bundle with no top-level `schema` must degrade to signature_valid=False
+    # (the schema == ATTEST_SCHEMA conjunct), never raise — even when the digest
+    # itself matches the schema="" signing view.
+    from wardline.core.attest import _sign
+
+    payload = {"attested_at": "2026-06-03"}
+    bundle = {"payload": payload, "signature": _sign(payload, _KEY, schema="")}
+    result = verify_attestation(bundle, _KEY)
+    assert result["signature_valid"] is False
+    assert result["reproduced"] is None

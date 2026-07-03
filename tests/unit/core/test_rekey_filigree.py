@@ -18,9 +18,11 @@ class _FakeEmitter:
     def __init__(self, result: EmitResult) -> None:
         self._result = result
         self.calls: list = []
+        self.scanned_paths_calls: list = []
 
     def emit(self, findings, *, scanned_paths=()):  # type: ignore[no-untyped-def]
         self.calls.append(list(findings))
+        self.scanned_paths_calls.append(list(scanned_paths))
         return self._result
 
 
@@ -90,6 +92,49 @@ def test_filigree_leg_soft_fails_and_then_succeeds(tmp_path: Path) -> None:
     assert j.leg("filigree").done is True
     assert j.leg("filigree").debt is None
     assert j.complete
+
+
+def test_filigree_leg_emits_all_kinds_not_the_defect_only_join_population(tmp_path: Path) -> None:
+    # The re-emit rides Filigree's kind-blind, per-(file, scan_source) mark_unseen
+    # sweep. A DEFECT-only subset would (a) sweep still-live FACT fingerprints on the
+    # named files as unseen (false "fixed"), and (b) drop the FACT-kind
+    # incomplete-analysis markers (e.g. WLN-ENGINE-SOURCE-ROOT-MISSING) BEFORE the
+    # emitter's has_incomplete_analysis guard runs, enabling a sweep the normal
+    # all-kinds emit path would refuse. So the leg must emit the FULL finding set,
+    # exactly like a normal scan emit — while ``carried`` still records only the
+    # DEFECT join population the stores re-keyed on.
+    defect = _join_finding()
+    fact = Finding(
+        rule_id="WLN-ENGINE-SOURCE-ROOT-MISSING",
+        message="configured source root does not exist",
+        severity=Severity.NONE,
+        kind=Kind.FACT,
+        location=Location(path="<engine>", line_start=1),
+        fingerprint="f" * 64,
+    )
+    colocated_fact = Finding(
+        rule_id="WLN-ENGINE-UNKNOWN-IMPORT",
+        message="unknown import",
+        severity=Severity.NONE,
+        kind=Kind.FACT,
+        location=Location(path="m.py", line_start=1),
+        fingerprint="e" * 64,
+    )
+
+    j = _journal_yaml_done()
+    ok = _FakeEmitter(EmitResult(reachable=True, url="http://x"))
+    apply_pending_legs(tmp_path, j, findings=[defect, fact, colocated_fact], filigree=ok)
+
+    assert j.leg("filigree").done is True
+    emitted = ok.calls[0]
+    # ALL kinds are on the wire (the FACTs are re-asserted, so the sweep cannot read
+    # their absence as a fix, and the incomplete-analysis marker reaches the guard).
+    assert {f.fingerprint for f in emitted} == {defect.fingerprint, fact.fingerprint, colocated_fact.fingerprint}
+    assert any(f.kind is Kind.FACT for f in emitted)
+    # scanned_paths covers every emitted finding's file (complete-per-path chunks).
+    assert ok.scanned_paths_calls[0] == sorted({"m.py", "<engine>"})
+    # ...but the store-join bookkeeping stays DEFECT-only.
+    assert j.leg("filigree").carried == [defect.fingerprint]
 
 
 def test_no_filigree_configured_is_a_noop_done(tmp_path: Path) -> None:

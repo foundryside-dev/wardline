@@ -264,3 +264,16 @@ def test_urllib_transport_get_bounds_http_error_body(monkeypatch) -> None:
     resp = UrllibTransport().get("http://f/api/entity-associations?entity_id=x", {})
     assert len(resp.body) < MAX_RESPONSE_BODY_BYTES + 128
     assert resp.body.endswith("[truncated]")
+
+
+def test_urllib_transport_scheme_error_redacts_credentials() -> None:
+    # The scheme-error seam must not echo userinfo credentials into the exception
+    # message (finding 15: unredacted URL in transport diagnostics).
+    from wardline.filigree.dossier_client import UrllibTransport
+
+    with pytest.raises(FiligreeEmitError) as excinfo:
+        UrllibTransport().get("ftp://alice:hunter2@filigree.example/api", {})
+    message = str(excinfo.value)
+    assert "hunter2" not in message
+    assert "alice" not in message
+    assert "http or https" in message

@@ -10,7 +10,6 @@ import hashlib
 import os
 import secrets
 import subprocess
-from contextlib import suppress
 from pathlib import Path
 
 from wardline.core.errors import WardlineError
@@ -63,6 +62,12 @@ def mint_attest_key(root: Path) -> tuple[str, str]:
       ensure ``.env`` is listed in ``root/.gitignore``, and return
       ``(key, "minted")``.
 
+    The secret never touches a loosely-readable file: a fresh ``.env`` is created
+    ``0o600`` atomically (``os.open`` mode, no chmod-after-write window), and a
+    pre-existing ``.env`` is chmod-ed to ``0o600`` *before* the append — if that
+    tightening fails, minting refuses (:class:`WardlineError`) rather than writing
+    the signing key somewhere other users may read.
+
     Idempotent: a second call with the same root returns ``"present"`` without
     duplicating the entry.
     """
@@ -79,17 +84,31 @@ def mint_attest_key(root: Path) -> tuple[str, str]:
         )
 
     key = secrets.token_hex(32)
+    entry = f'{WARDLINE_ATTEST_KEY_ENV}="{key}"\n'
 
     if env_path.exists():
-        text = env_path.read_text(encoding="utf-8")
-        if not text.endswith("\n"):
-            text += "\n"
-        text += f'{WARDLINE_ATTEST_KEY_ENV}="{key}"\n'
-    else:
-        text = f'{WARDLINE_ATTEST_KEY_ENV}="{key}"\n'
-    env_path.write_text(text, encoding="utf-8")
-    with suppress(OSError):
-        os.chmod(env_path, 0o600)
+        # Tighten a pre-existing .env BEFORE the secret touches disk: appending into a
+        # group/world-readable file and chmod-ing afterwards leaves a read window, and a
+        # silently-failed chmod would leave the signing key exposed indefinitely. If the
+        # mode cannot be restricted, refuse loudly rather than write the secret.
+        try:
+            os.chmod(env_path, 0o600)
+        except OSError as exc:
+            raise WardlineError(
+                "refusing to write WARDLINE_ATTEST_KEY into .env whose permissions cannot be "
+                f"restricted to owner-only (0o600): {exc}; fix the file's ownership/mode or "
+                "provide WARDLINE_ATTEST_KEY from the environment"
+            ) from exc
+        if not env_path.read_text(encoding="utf-8").endswith("\n"):
+            entry = "\n" + entry
+
+    # Create-or-append through a descriptor opened with mode 0o600 so a FRESH .env is
+    # never readable by other users, even for an instant — no chmod-after-write window.
+    fd = os.open(env_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        os.write(fd, entry.encode("utf-8"))
+    finally:
+        os.close(fd)
 
     # --- ensure .env is gitignored --------------------------------------
     gitignore_path = safe_project_file(root, root / ".gitignore", label=".gitignore")

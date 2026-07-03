@@ -110,6 +110,7 @@ def test_capabilities_match_actually_registered_methods() -> None:
                 "method": "initialize",
                 "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {}},
             },
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
             {"jsonrpc": "2.0", "id": 2, "method": "resources/list", "params": {}},
         ]
     )
@@ -129,6 +130,7 @@ def test_tool_execution_error_is_iserror_result_not_jsonrpc_error() -> None:
                 "method": "initialize",
                 "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {}},
             },
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
             {
                 "jsonrpc": "2.0",
                 "id": 2,
@@ -156,6 +158,7 @@ def test_unknown_method_is_a_jsonrpc_error() -> None:
                 "method": "initialize",
                 "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {}},
             },
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
             {"jsonrpc": "2.0", "id": 2, "method": "no/such/method", "params": {}},
         ]
     )
@@ -164,9 +167,9 @@ def test_unknown_method_is_a_jsonrpc_error() -> None:
 
 
 def test_reject_before_initialize() -> None:
+    # wardline-5e4a4ee246: the gate is enabled BY DEFAULT — no private-flag
+    # forcing. This pins that pytest importability no longer pre-opens it.
     server = WardlineMCPServer(root=FIXTURE)
-    server.rpc._initialized = False
-    server.rpc._initializing = False
     messages = [{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}]
     stdin = io.StringIO("".join(json.dumps(m) + "\n" for m in messages))
     stdout = io.StringIO()
@@ -175,6 +178,29 @@ def test_reject_before_initialize() -> None:
     assert len(responses) == 1
     assert responses[0]["error"]["code"] == -32600
     assert "server not initialized" in responses[0]["error"]["message"]
+
+
+def test_reject_between_initialize_and_initialized_notification() -> None:
+    """The gate opens only on notifications/initialized, not on the initialize
+    response — driven through the real stdio loop with the default (gated) server."""
+    responses = _drive(
+        [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {}},
+            },
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            {"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}},
+        ]
+    )
+    by_id = {r["id"]: r for r in responses}
+    assert "result" in by_id[1]
+    assert by_id[2]["error"]["code"] == -32600
+    assert "server not initialized" in by_id[2]["error"]["message"]
+    assert any(t["name"] == "scan" for t in by_id[3]["result"]["tools"])
 
 
 def test_line_too_long() -> None:

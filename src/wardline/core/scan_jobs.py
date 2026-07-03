@@ -20,12 +20,14 @@ from pathlib import Path
 from typing import Any
 
 from wardline.core.agent_summary import build_agent_summary
+from wardline.core.config import resolve_filigree_url
 from wardline.core.emit import JsonlSink
 from wardline.core.errors import WardlineError
 from wardline.core.federation_status import filigree_emit_status
 from wardline.core.filigree_emit import (
     EmitResult,
     FiligreeEmitter,
+    redact_url_for_diagnostics,
 )
 from wardline.core.finding import Severity
 from wardline.core.run import baseline_migration_hint, gate_decision, run_scan
@@ -44,6 +46,12 @@ _STALE_AFTER_SECONDS = 30.0
 DEFAULT_SCAN_JOB_TIMEOUT_SECONDS = 30 * 60
 _TERMINAL_STATUSES = {"completed", "completed_with_enrichment_failure", "failed", "cancelled"}
 _WORKER_MODULE = "wardline.cli.scan_job_worker"
+# Out-of-band parent→worker handoff for the LIVE Filigree URL. request.json/status.json
+# persist only the redacted destination (they live in the scanned project tree, where a
+# credential-bearing URL could be committed or backed up), so the background worker
+# receives the live URL through its process environment instead of from disk — the same
+# never-persist posture as the bearer token (``load_filigree_token`` re-resolves it).
+_SCAN_JOB_FILIGREE_URL_ENV = "WARDLINE_SCAN_JOB_FILIGREE_URL"
 
 
 class _ScanJobTimeout(WardlineError):
@@ -133,7 +141,29 @@ def cancel_scan_job(root: Path, job_id: str) -> dict[str, Any]:
     return _write_status(root, job_id, status)
 
 
+def _persisted_status(path: Path) -> dict[str, Any] | None:
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 def _write_status(root: Path, job_id: str, status: dict[str, Any]) -> dict[str, Any]:
+    # Terminal statuses are MONOTONIC (first terminal write wins). The parent's
+    # post-``Popen`` handoff write, ``cancel_scan_job``, and the stale-worker liveness
+    # refresh all read-modify-write the same ``status.json`` as the worker with no
+    # cross-process lock, so a stale writer could otherwise regress a landed terminal
+    # status — e.g. a fast worker's ``completed`` clobbered back to ``running`` by the
+    # parent, then flipped to ``failed``/``stale_worker`` once the exited worker's pid
+    # reads dead. Compare-and-keep: re-read the on-disk status immediately before
+    # writing and refuse to replace a landed terminal status with anything else,
+    # returning the terminal truth to the caller instead.
+    landed = _persisted_status(status_path(root, job_id))
+    if landed is not None:
+        landed_status = str(landed.get("status"))
+        if landed_status in _TERMINAL_STATUSES and str(status.get("status")) != landed_status:
+            return landed
     timestamp = _now()
     status.setdefault("created_at", timestamp)
     status["updated_at"] = timestamp
@@ -298,6 +328,16 @@ def _write_scan_artifact(
 def start_scan_job(root: Path, request: dict[str, Any], *, foreground: bool = False) -> dict[str, Any]:
     root = root.resolve()
     request = _normalize_request(request)
+    raw_url = request.get("filigree_url")
+    live_filigree_url = str(raw_url) if raw_url else None
+    # ``request.json``/``status.json`` land in the scanned project tree, where a
+    # credential-bearing Filigree URL (userinfo, query token) could be committed,
+    # backed up, or read by anything with checkout access — the read surfaces
+    # (CLI/MCP) already redact this exact field on every response. Persist only the
+    # redacted destination; the live URL reaches the worker out-of-band (foreground:
+    # direct argument; background: process environment) and is otherwise re-resolved
+    # from env/published-port, like the bearer token.
+    request["filigree_url"] = redact_url_for_diagnostics(live_filigree_url)
     job_id = uuid.uuid4().hex
     directory = job_dir(root, job_id)
     directory.mkdir(parents=True, exist_ok=True)
@@ -305,11 +345,15 @@ def start_scan_job(root: Path, request: dict[str, Any], *, foreground: bool = Fa
     _write_status(root, job_id, status)
     safe_write_text(root, request_path(root, job_id), json.dumps(request, indent=2, sort_keys=True) + "\n")
     if foreground:
-        run_scan_job_worker(root, job_id)
+        run_scan_job_worker(root, job_id, filigree_url=live_filigree_url)
         return read_scan_job_status(root, job_id)
 
     stdout_path = directory / "stdout.log"
     stderr_path = directory / "stderr.log"
+    worker_env: dict[str, str] | None = None
+    if live_filigree_url is not None:
+        worker_env = dict(os.environ)
+        worker_env[_SCAN_JOB_FILIGREE_URL_ENV] = live_filigree_url
     with stdout_path.open("ab") as stdout, stderr_path.open("ab") as stderr:
         proc = subprocess.Popen(  # noqa: S603
             [sys.executable, "-m", _WORKER_MODULE, str(root), job_id],
@@ -320,6 +364,7 @@ def start_scan_job(root: Path, request: dict[str, Any], *, foreground: bool = Fa
             stdout=stdout,
             stderr=stderr,
             start_new_session=True,
+            env=worker_env,
         )
     status["status"] = "running"
     status["phase"] = "starting"
@@ -328,7 +373,27 @@ def start_scan_job(root: Path, request: dict[str, Any], *, foreground: bool = Fa
     return _write_status(root, job_id, status)
 
 
-def run_scan_job_worker(root: Path, job_id: str) -> None:
+def _live_filigree_url(root: Path, request: dict[str, Any], handoff: str | None) -> str | None:
+    """Resolve the live emit URL for a job whose persisted request is redacted.
+
+    Precedence: the start-time handoff (foreground argument, then the background
+    worker's process environment) carries the caller's exact URL — including
+    credentials and any ``?project=`` pin the redaction strips; failing that,
+    re-resolve from env/published-port the way the bearer token is re-resolved."""
+    if handoff:
+        return handoff
+    env_handoff = os.environ.get(_SCAN_JOB_FILIGREE_URL_ENV)
+    if env_handoff:
+        return env_handoff
+    return resolve_filigree_url(
+        None,
+        root,
+        Path(str(request["config"])) if request.get("config") else None,
+        strict_defaults=bool(request.get("strict_defaults", False)),
+    )
+
+
+def run_scan_job_worker(root: Path, job_id: str, *, filigree_url: str | None = None) -> None:
     root = root.resolve()
     request_file = request_path(root, job_id)
     request = json.loads(request_file.read_text(encoding="utf-8"))
@@ -405,14 +470,22 @@ def run_scan_job_worker(root: Path, job_id: str) -> None:
             status.update({"phase": "emitting_filigree", "progress": _progress(2)})
             with lock:
                 _write_status(root, job_id, status)
-            explicit_cap = request.get("filigree_max_findings_per_request")
-            max_findings = int(explicit_cap) if explicit_cap is not None else None
-            emit_result = FiligreeEmitter(
-                str(request["filigree_url"]),
-                token=load_filigree_token(root),
-                max_findings_per_request=max_findings,
-                protocol_errors_loud=False,
-            ).emit(result.findings, scanned_paths=result.scanned_paths)
+            live_url = _live_filigree_url(root, request, filigree_url)
+            if live_url is None:
+                # An emit was configured but the live destination could not be
+                # recovered (no handoff and nothing to re-resolve). Signal an
+                # unreachable emit — completed_with_enrichment_failure — rather
+                # than silently skipping the configured enrichment.
+                emit_result = EmitResult(reachable=False, url=str(request["filigree_url"]))
+            else:
+                explicit_cap = request.get("filigree_max_findings_per_request")
+                max_findings = int(explicit_cap) if explicit_cap is not None else None
+                emit_result = FiligreeEmitter(
+                    live_url,
+                    token=load_filigree_token(root),
+                    max_findings_per_request=max_findings,
+                    protocol_errors_loud=False,
+                ).emit(result.findings, scanned_paths=result.scanned_paths)
 
         fail_on = str(request["fail_on"]) if request.get("fail_on") else None
         decision = gate_decision(

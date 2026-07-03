@@ -322,3 +322,97 @@ def test_run_scope_block_declares_source_and_producer_completeness(tmp_path: Pat
     assert result.scope is not None
     assert result.scope.scope_source == "reverify_worklist_v1"
     assert result.scope.producer_completeness == ic
+
+
+# --- _gate_reason suppression classification in delta mode (telemetry finding: repo-
+# suppressed defects misreported as 'active' because the emitted-state map was built
+# from the delta-FILTERED display set) ---
+
+from wardline.core.finding import FINGERPRINT_SCHEME  # noqa: E402
+from wardline.core.paths import baseline_path  # noqa: E402
+
+# ``alpha`` is clean; ``beta`` is the co-located leaky entity carrying the ERROR.
+_CLEAN_ALPHA_LEAKY_BETA = (
+    "from wardline.decorators import external_boundary, trusted\n"
+    "@external_boundary\ndef read_raw(p):\n    return p\n"
+    "def alpha(p):\n    return 'safe'\n"
+    "@trusted\ndef beta(p):\n    return read_raw(p)\n"
+)
+
+
+def _write_baseline(proj: Path, fp: str) -> None:
+    bl = baseline_path(proj)
+    bl.parent.mkdir(parents=True, exist_ok=True)
+    bl.write_text(
+        f"fingerprint_scheme: {FINGERPRINT_SCHEME}\nversion: 1\n"
+        f"entries:\n  - fingerprint: {fp}\n    rule_id: PY-WL-101\n    path: svc.py\n    message: m\n",
+        encoding="utf-8",
+    )
+
+
+def test_delta_gate_reason_classifies_repo_suppressed_defect_as_suppressed(tmp_path: Path) -> None:
+    """A repo-BASELINED defect on a non-affected co-located entity correctly trips the
+    unsuppressed gate (INV-4), but the REASON must classify it by its repository
+    suppression state — 'suppressed ... not cleared' with the --trust-suppressions/
+    --new-since escape guidance — not overstate it as 'active'. The classification map
+    must be built from the PRE-delta-filter annotated population, because the display
+    set has dropped the co-located finding."""
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "svc.py").write_text(_CLEAN_ALPHA_LEAKY_BETA, encoding="utf-8")
+    fp = next(f.fingerprint for f in run_scan(proj).findings if f.rule_id == "PY-WL-101")
+    _write_baseline(proj, fp)
+    scope = parse_affected_scope([{"locator": "python:function:svc.alpha"}])
+
+    result = run_scan(proj, affected=scope)
+
+    assert result.scope is not None and result.scope.mode == "delta"
+    # The display set dropped beta's finding entirely (alpha is clean).
+    assert _py101_quals(result.findings) == set()
+    decision = gate_decision(result, Severity.ERROR)
+    # Gate verdict is (correctly) tripped — INV-4 unchanged.
+    assert decision.tripped is True and decision.verdict == "FAILED"
+    assert decision.reason is not None
+    # The reason names the SUPPRESSED classification and the genuine escape hatches.
+    assert "1 suppressed" in decision.reason
+    assert "not cleared" in decision.reason
+    assert "--trust-suppressions" in decision.reason
+    # It must NOT be misreported as an active defect.
+    assert "1 active" not in decision.reason
+
+
+def test_delta_gate_reason_mixed_counts_use_prefilter_state(tmp_path: Path) -> None:
+    """Mixed composition in delta mode: the affected entity's ERROR is genuinely active,
+    the co-located (display-dropped) entity's ERROR is baselined — the reason must say
+    '1 active + 1 suppressed', never '2 active'."""
+    proj = _co_located_proj(tmp_path)  # alpha AND beta both leaky
+    fp_beta = next(
+        f.fingerprint for f in run_scan(proj).findings if f.rule_id == "PY-WL-101" and f.qualname == "svc.beta"
+    )
+    _write_baseline(proj, fp_beta)
+    scope = parse_affected_scope([{"locator": "python:function:svc.alpha"}])
+
+    result = run_scan(proj, affected=scope)
+    decision = gate_decision(result, Severity.ERROR)
+
+    assert decision.tripped is True
+    assert decision.reason is not None
+    assert "1 active + 1 suppressed" in decision.reason
+    assert "2 active" not in decision.reason
+
+
+def test_delta_result_carries_prefilter_annotated_population(tmp_path: Path) -> None:
+    """Delta mode snapshots the post-suppression, pre-delta-filter annotated findings on
+    the result (the population _gate_reason classifies against); a full scan carries
+    None — the full path pays nothing extra (INV-1)."""
+    proj = _co_located_proj(tmp_path)
+    scope = parse_affected_scope([{"locator": "python:function:svc.alpha"}])
+
+    delta = run_scan(proj, affected=scope)
+    assert delta.annotated_findings is not None
+    assert _py101_quals(delta.annotated_findings) == {"svc.alpha", "svc.beta"}
+    # The display set was still narrowed — the snapshot is a sibling, not a replacement.
+    assert _py101_quals(delta.findings) == {"svc.alpha"}
+
+    full = run_scan(proj)
+    assert full.annotated_findings is None
